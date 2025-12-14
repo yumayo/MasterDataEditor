@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace App.MasterDataEditor
 {
-	public static class WebView2HandlerFileWriteRequest
+	public static class WebView2HandlerWriteFileRequest
 	{
 		public static object Invoke(JsonElement root)
 		{
@@ -47,7 +47,7 @@ namespace App.MasterDataEditor
 				}
 
 				var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-				var appFolder = Path.Combine(appDataPath, "App.MasterDataEditor");
+				var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor");
 				Directory.CreateDirectory(appFolder);
 				var filePath = Path.Combine(appFolder, filename);
 

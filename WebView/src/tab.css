@@ -1,0 +1,115 @@
+.tab {
+    background-color: var(--background-color);
+    color: var(--font-color);
+
+    /*
+     * 座標固定で組んでいます。
+     * 幅は後でjavascriptで変更できるようにします。
+     */
+    position: fixed;
+    left: 300px;
+    top: 0;
+    height: 36px;
+    width: calc(100vw - 300px);
+    margin: 0;
+
+    /* 横スクロールのみです。 */
+    overflow-x: scroll;
+    overflow-y: hidden;
+
+    user-select: none;
+}
+
+.tab::-webkit-scrollbar {
+    height: 4px;
+}
+
+.tab-list {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    line-height: 32px;
+    list-style: none;
+    white-space: nowrap;
+}
+
+.tab-button {
+    padding-left: 16px;
+    padding-right: 4px;
+}
+
+.tab-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+[data-theme="dark"] .tab-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* タブボタンの境界に線を引きます。 */
+.tab-button {
+    border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+[data-theme="dark"] .tab-button {
+    border-right: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+/* 編集中のタブの色を変えます。 */
+.tab-button-active {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+[data-theme="dark"] .tab-button-active {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* cssで作る閉じるボタンです。 */
+/* https://kouhekikyozou.com/css_close_button */
+.close-button {
+    position: relative;
+    width: 20px;
+    height: 20px;
+
+    vertical-align: middle;
+
+    background: 0;
+    border: 0;
+
+    border-radius: 4px;
+
+    margin-left: 4px;
+}
+
+/* 閉じるボタンをマウスオーバー中なら背景をつけます。 */
+.close-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+[data-theme="dark"] .close-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 閉じるボタンをクリックしている間は閉じるボタンの背景を濃くします */
+.close-button:active {
+    background-color: rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] .close-button:active {
+    background-color:rgba(255, 255, 255, 0.2);
+}
+
+/* タブボタンがマウスホバー中は閉じるボタンを表示します */
+.tab-button:hover .close-button::before, .tab-button:hover .close-button::after { /* 共通設定 */
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1px; /* 棒の幅（太さ） */
+    height: 12px; /* 棒の高さ */
+    background: var(--font-color);
+}
+
+/* タブボタンがマウスホバー中は閉じるボタンを表示します */
+.tab-button:hover .close-button::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+/* タブボタンがマウスホバー中は閉じるボタンを表示します */
+.tab-button:hover .close-button::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}

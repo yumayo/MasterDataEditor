@@ -1,0 +1,44 @@
+body {
+    /* 画面いっぱいにしたいので */
+    margin: 0;
+
+    font-family: sans-serif;
+
+    /* エディターなので小さめのフォントにします。 */
+    font-size: 13px;
+}
+
+:root {
+    --font-color: #21252b;
+    --background-color: #ffffff;
+    --background-sub-color: #f3f3f3;
+    --scroll-bar-background-color: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="dark"] {
+    --font-color: #abb2bf;
+    --background-color: #21252b;
+    --background-sub-color: #282c34;
+    --scroll-bar-background-color: rgba(255, 255, 255, 0.2);
+}
+
+*::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+
+    /* 背景色に合わせるためなくしておきます。 */
+    background: 0;
+}
+
+*::-webkit-scrollbar-corner {
+
+    /* 背景色に合わせるためなくしておきます。 */
+    background: 0;
+}
+
+*::-webkit-scrollbar-thumb {
+    background-color: var(--scroll-bar-background-color);
+}

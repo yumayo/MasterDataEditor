@@ -50,9 +50,9 @@ public class WebView2Handler
 
 	public void SendMessageToWebView(object data)
 	{
-		_dispatcher?.Invoke(() =>
+		_dispatcher.Invoke(() =>
 		{
-			if (_webView2?.CoreWebView2 != null)
+			try
 			{
 				var options = new JsonSerializerOptions
 				{
@@ -64,9 +64,9 @@ public class WebView2Handler
 
 				_webView2.CoreWebView2.PostWebMessageAsString(json);
 			}
-			else
+			catch (Exception e)
 			{
-				Logger.Error(null, "WebView2が初期化されていません。メッセージ送信をスキップします。");
+				Logger.Error(e, "WebView2へのメッセージの送信に失敗しました。");
 			}
 		});
 	}
@@ -108,12 +108,16 @@ public class WebView2Handler
 
 					switch (messageType)
 					{
-						case "file_read_request":
-							SendMessageToWebView(WebView2HandlerFileReadRequest.Invoke(root));
+						case "read_file_request":
+							SendMessageToWebView(WebView2HandlerReadFileRequest.Invoke(root));
 							break;
 
-						case "file_write_request":
-							SendMessageToWebView(WebView2HandlerFileWriteRequest.Invoke(root));
+						case "write_file_request":
+							SendMessageToWebView(WebView2HandlerWriteFileRequest.Invoke(root));
+							break;
+
+						case "find_files_request":
+							SendMessageToWebView(WebView2HandlerFindFilesRequest.Invoke(root));
 							break;
 
 						default:

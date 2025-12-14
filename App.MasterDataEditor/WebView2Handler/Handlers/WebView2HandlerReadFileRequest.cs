@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace App.MasterDataEditor
 {
-	public static class WebView2HandlerFileReadRequest
+	public static class WebView2HandlerReadFileRequest
 	{
 		public static object Invoke(JsonElement root)
 		{
@@ -15,7 +15,7 @@ namespace App.MasterDataEditor
 					Logger.Warning("ファイル読み込み拒否");
 					return new
 					{
-						type = "file_read_response",
+						type = "read_file_response",
 						success = false,
 						error = "Invalid filename",
 					};
@@ -28,14 +28,15 @@ namespace App.MasterDataEditor
 					Logger.Warning($"ファイル読み込み拒否: 無効なファイル名 {filename}");
 					return new
 					{
-						type = "file_read_response",
+						type = "read_file_response",
 						success = false,
 						error = "Invalid filename",
 					};
 				}
 
 				var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-				var appFolder = Path.Combine(appDataPath, "App.MasterDataEditor");
+				var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor");
+				Directory.CreateDirectory(appFolder);
 				var filePath = Path.Combine(appFolder, filename);
 
 				string data = "";
@@ -46,7 +47,7 @@ namespace App.MasterDataEditor
 
 				return new
 				{
-					type = "file_read_response",
+					type = "read_file_response",
 					success = true,
 					data
 				};
@@ -56,7 +57,7 @@ namespace App.MasterDataEditor
 				Logger.Error(ex, "ファイル読み込み時にエラーが発生しました。");
 				return new
 				{
-					type = "file_read_response",
+					type = "read_file_response",
 					success = false,
 					error = ex.Message,
 				};

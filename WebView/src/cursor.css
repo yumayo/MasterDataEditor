@@ -1,0 +1,5 @@
+.cursor {
+    border: 1px solid green;
+
+    position: absolute;
+}

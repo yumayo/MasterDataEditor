@@ -8,8 +8,6 @@ public class Logger
 {
 	private static Logger? _singleton;
 
-	private static readonly string LogName = "App.MasterDataEditor";
-
 	private readonly TextWriter _textWriterSynchronized;
 
 	private Logger(TextWriter textWriterSynchronized)
@@ -19,15 +17,15 @@ public class Logger
 
 	public static void Setup()
 	{
-		var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "log");
-		var logName = LogName + ".log";
-		var path = Path.Join(logDirectory, logName);
+		var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+		var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor");
+		Directory.CreateDirectory(appFolder);
 
-		var directoryName = Path.GetDirectoryName(path);
-		if (!Directory.Exists(directoryName))
-		{
-			Directory.CreateDirectory(directoryName!);
-		}
+		var logDirectory = Path.Combine(appFolder, "log");
+		Directory.CreateDirectory(logDirectory);
+
+		var logName = "App.MasterDataEditor.log";
+		var path = Path.Join(logDirectory, logName);
 
 		var streamWriter = File.AppendText(path);
 		var textWriterSynchronized = TextWriter.Synchronized(streamWriter);

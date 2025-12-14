@@ -19,7 +19,7 @@ namespace App.MasterDataEditor
 			}
 
 			// 無効な文字をチェック
-			var invalidChars = Path.GetInvalidFileNameChars();
+			var invalidChars = Path.GetInvalidPathChars();
 			if (filename.Any(c => invalidChars.Contains(c)))
 			{
 				return false;

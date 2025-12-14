@@ -1,0 +1,29 @@
+.table-text-field {
+    outline: none;
+
+    caret-color: var(--font-color);
+
+    font-family: sans-serif;
+
+    /* エディターなので小さめのフォントにします。 */
+    font-size: 13px;
+
+    color: var(--font-color);
+
+    position: absolute;
+}
+
+.table-text-field-active {
+
+    background-color: var(--background-sub-color);
+
+    border: 1px solid var(--background-color);
+
+    padding: 0 6px;
+
+    box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .table-text-field {
+    box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.7);
+}

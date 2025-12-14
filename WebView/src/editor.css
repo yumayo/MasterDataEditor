@@ -1,0 +1,13 @@
+.editor {
+
+    background-color: var(--background-sub-color);
+    color: var(--font-color);
+
+    position: fixed;
+    left: 300px;
+    top: 36px;
+    height: calc(100vh - 36px);
+    width: calc(100vw - 300px);
+
+    overflow-y: scroll;
+}
