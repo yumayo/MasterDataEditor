@@ -1,4 +1,4 @@
-.table-text-field {
+.grid-textfield {
     outline: none;
 
     caret-color: var(--font-color);
@@ -13,7 +13,7 @@
     position: absolute;
 }
 
-.table-text-field-active {
+.grid-textfield-active {
 
     background-color: var(--background-sub-color);
 
@@ -24,6 +24,6 @@
     box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.3);
 }
 
-[data-theme="dark"] .table-text-field {
+[data-theme="dark"] .grid-textfield {
     box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.7);
 }

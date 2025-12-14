@@ -187,18 +187,18 @@ class Store {
         const allChildren = Array.from(this.table.element.children) as HTMLElement[];
         const header: HTMLElement[] = [];
         for (const row of allChildren) {
-            if (row.classList.contains('table-header')) {
+            if (row.classList.contains('editor-table-header')) {
                 header.push(row);
             } else {
                 break;
             }
         }
 
-        const headerKey = header.find(row => row.classList.contains('table-header-key'))!;
-        const headerName = header.find(row => row.classList.contains('table-header-name'))!;
-        const headerType = header.find(row => row.classList.contains('table-header-type'))!;
-        const headerComment = header.find(row => row.classList.contains('table-header-comment'))!;
-        const headerReferences = header.find(row => row.classList.contains('table-header-references'))!;
+        const headerKey = header.find(row => row.classList.contains('editor-table-header-key'))!;
+        const headerName = header.find(row => row.classList.contains('editor-table-header-name'))!;
+        const headerType = header.find(row => row.classList.contains('editor-table-header-type'))!;
+        const headerComment = header.find(row => row.classList.contains('editor-table-header-comment'))!;
+        const headerReferences = header.find(row => row.classList.contains('editor-table-header-references'))!;
 
         const columns = [];
         for (let i = 0; i < headerName.children.length; ++i) {
@@ -232,7 +232,7 @@ class Store {
             );
         }
 
-        const body = allChildren.filter(row => !row.classList.contains('table-header'));
+        const body = allChildren.filter(row => !row.classList.contains('editor-table-header'));
 
         const rows = body.map(row => new EditorTableDataRow(Array.from(row.children).map(x => x.textContent!)));
 

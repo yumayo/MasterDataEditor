@@ -7,7 +7,7 @@ export class EditorTable {
 
     constructor(tableData: EditorTableData) {
         const table = document.createElement('div');
-        table.classList.add('table');
+        table.classList.add('editor-table');
 
         {
             const cells = [];
@@ -16,7 +16,7 @@ export class EditorTable {
                 cells.push(EditorTable.createCell(column.key));
             }
             const row = EditorTable.createRow(cells);
-            row.classList.add('table-header', 'table-header-key');
+            row.classList.add('editor-table-header', 'editor-table-header-key');
             table.appendChild(row);
         }
 
@@ -27,7 +27,7 @@ export class EditorTable {
                 cells.push(EditorTable.createCell(column.name));
             }
             const row = EditorTable.createRow(cells);
-            row.classList.add('table-header', 'table-header-name');
+            row.classList.add('editor-table-header', 'editor-table-header-name');
             table.appendChild(row);
         }
 
@@ -38,7 +38,7 @@ export class EditorTable {
                 cells.push(EditorTable.createCell(column.type));
             }
             const row = EditorTable.createRow(cells);
-            row.classList.add('table-header', 'table-header-type');
+            row.classList.add('editor-table-header', 'editor-table-header-type');
             table.appendChild(row);
         }
 
@@ -49,7 +49,7 @@ export class EditorTable {
                 cells.push(EditorTable.createCell(column.comment));
             }
             const row = EditorTable.createRow(cells);
-            row.classList.add('table-header', 'table-header-comment');
+            row.classList.add('editor-table-header', 'editor-table-header-comment');
             table.appendChild(row);
         }
 
@@ -60,7 +60,7 @@ export class EditorTable {
                 cells.push(EditorTable.createCell(column.references));
             }
             const row = EditorTable.createRow(cells);
-            row.classList.add('table-header', 'table-header-references');
+            row.classList.add('editor-table-header', 'editor-table-header-references');
             table.appendChild(row);
         }
 
@@ -89,7 +89,7 @@ export class EditorTable {
 
     private static createRow(cells: HTMLElement[]) {
         const row = document.createElement('div');
-        row.classList.add('table-row');
+        row.classList.add('editor-table-row');
         for (let i = 0; i < cells.length; ++i) {
             row.appendChild(cells[i]);
         }
@@ -98,7 +98,7 @@ export class EditorTable {
 
     private static createCell(value: number | string | string[] | undefined) {
         const cell = document.createElement('div');
-        cell.classList.add('table-cell');
+        cell.classList.add('editor-table-cell');
         cell.addEventListener('dblclick', () => {
             Store.enableCellEditMode();
         });

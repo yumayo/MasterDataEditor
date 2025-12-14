@@ -1,10 +1,10 @@
-.table {
+.editor-table {
     display: table;
 
     user-select: none;
 }
 
-.table-row {
+.editor-table-row {
     display: table-row;
 
     min-height: 20px;
@@ -13,7 +13,7 @@
     line-height: 20px;
 }
 
-.table-cell {
+.editor-table-cell {
     display: table-cell;
 
     min-width: 100px;
@@ -35,11 +35,11 @@
 }
 
 /* テーブルのセルの上の線の描画 */
-.table-row .table-cell {
+.editor-table-row .editor-table-cell {
     border-bottom: 1px solid var(--background-color);
 }
 
 /* テーブルのセルの左の線の描画 */
-.table-cell {
+.editor-table-cell {
     border-right: 1px solid var(--background-color);
 }

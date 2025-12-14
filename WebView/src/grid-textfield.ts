@@ -16,7 +16,7 @@ export class GridTextField {
         element.style.width = '0px';
         element.style.top = '-99999px';
         element.style.left = '-99999px';
-        element.classList.add('table-text-field');
+        element.classList.add('grid-textfield');
         element.setAttribute('contenteditable', 'true');
         element.appendChild(document.createElement('br')); // 改行してキャレットをテキストボックス外にして非表示にしています。
         this.element = element;
@@ -37,7 +37,7 @@ export class GridTextField {
         if (this.visible) return;
 
         this.visible = true;
-        this.element.classList.add('table-text-field-active');
+        this.element.classList.add('grid-textfield-active');
         this.element.textContent = null;
 
         this.element.style.left = rect.left + 'px';
@@ -139,7 +139,7 @@ export class GridTextField {
         this.element.style.top = '-99999px';
         this.element.style.left = '-99999px';
         this.element.appendChild(document.createElement('br'));
-        this.element.classList.remove('table-text-field-active');
+        this.element.classList.remove('grid-textfield-active');
     }
 
     resize(width: number) {

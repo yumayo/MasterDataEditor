@@ -20,7 +20,7 @@ export class TabButton {
         this.element.addEventListener('click', () => this.onClick());
 
         const closeButton = document.createElement('button');
-        closeButton.classList.add('close-button');
+        closeButton.classList.add('tab-button-close');
         closeButton.addEventListener('click', (ev: MouseEvent) => this.onClickCloseButton(ev));
 
         this.element.appendChild(closeButton);
