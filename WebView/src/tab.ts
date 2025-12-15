@@ -96,4 +96,13 @@ export class Tab {
             this.tabButtons.splice(index, 1);
         }
     }
+
+    clearEditor() {
+        Store.tableHolder?.clear();
+        Store.tableName = undefined;
+        Store.tableData = undefined;
+        Store.table = undefined;
+        Store.cursor = undefined;
+        Store.textField = undefined;
+    }
 }
