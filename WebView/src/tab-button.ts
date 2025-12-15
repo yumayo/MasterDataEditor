@@ -42,6 +42,9 @@ export class TabButton {
         // liのclickイベントが呼び出されてしまうためイベントの伝播を止めておきます。
         ev.stopPropagation();
 
+        // 自分自身をタブから登録解除します。
+        this.tab.removeTabButton(this.name);
+
         // 閉じるボタンが押されたので自分自身を削除します。
         this.element.remove();
 

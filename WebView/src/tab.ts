@@ -89,4 +89,11 @@ export class Tab {
         if (index <= 0) return undefined;
         return this.tabButtons[index - 1];
     }
+
+    removeTabButton(name: string) {
+        const index = this.tabButtons.findIndex(x => x.name === name);
+        if (index !== -1) {
+            this.tabButtons.splice(index, 1);
+        }
+    }
 }

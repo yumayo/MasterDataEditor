@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ファイルに文字列データを書き込む（汎用API）
  */
 export async function writeFileAsync(filename: string, data: string): Promise<void> {
