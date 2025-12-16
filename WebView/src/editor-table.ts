@@ -1,13 +1,31 @@
 import {EditorTableData} from "./model/editor-table-data";
 import Store from "./store";
+import {Selection, CellPosition} from "./selection";
 
 export class EditorTable {
 
     element: HTMLElement;
 
-    constructor(tableData: EditorTableData) {
+    private readonly selection: Selection;
+
+    constructor(tableData: EditorTableData, selection: Selection) {
+        this.selection = selection;
         const table = document.createElement('div');
         table.classList.add('editor-table');
+
+        table.addEventListener('mousemove', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('editor-table-cell')) {
+                const position = EditorTable.getCellPosition(target, table);
+                if (position) {
+                    this.selection.update(position.row, position.column);
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            this.selection.end();
+        });
 
         {
             const cells = [];
@@ -102,10 +120,32 @@ export class EditorTable {
         cell.addEventListener('dblclick', () => {
             Store.enableCellEditMode(true);
         });
-        cell.addEventListener('mousedown', () => {
+        cell.addEventListener('mousedown', (e) => {
             Store.selectCell(cell);
         });
         cell.textContent = value as any;
         return cell;
+    }
+
+    public static getCellPosition(cell: HTMLElement, tableElement: HTMLElement): CellPosition | null {
+        let row: number;
+        for (let i = 0; i < tableElement.children.length; ++i) {
+            if (tableElement.children[i] === cell.parentElement) {
+                row = i;
+                break;
+            }
+        }
+        if (row === undefined) return null;
+
+        let column: number;
+        for (let i = 0; i < tableElement.children[row].children.length; ++i) {
+            if (tableElement.children[row].children[i] === cell) {
+                column = i;
+                break;
+            }
+        }
+        if (column === undefined) return null;
+
+        return { row, column };
     }
 }

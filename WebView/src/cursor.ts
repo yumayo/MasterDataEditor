@@ -1,5 +1,3 @@
-import Store from "./store";
-
 export class Cursor {
 
     element: HTMLElement;
@@ -18,9 +16,6 @@ export class Cursor {
         const element = document.createElement('div');
         element.classList.add('cursor');
         element.style.width = '20px';
-        element.addEventListener('dblclick', () => {
-            Store.enableCellEditMode(true);
-        });
         this.element = element;
     }
 

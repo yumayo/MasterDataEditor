@@ -8,6 +8,7 @@ import {EditorTableDataColumn} from "./model/editor-table-data-column";
 import {EditorTableDataRow} from "./model/editor-table-data-row";
 import {EditorTable} from "./editor-table";
 import {Tab} from "./tab";
+import {Selection} from "./selection";
 
 class Store {
 
@@ -26,6 +27,8 @@ class Store {
     cursor: Cursor | undefined;
 
     tab: Tab;
+
+    selection: Selection | undefined;
 
     constructor() {
         this.explorer = new Explorer();
@@ -115,28 +118,18 @@ class Store {
             cellRect.height - 1
         );
 
-        let row;
-        for (let i = 0; i < this.table.element.children.length; ++i) {
-            if (this.table.element.children[i] === cell.parentElement) {
-                row = i;
-                break;
-            }
-        }
-        if (row === undefined) return;
-
-        let column;
-        for (let i = 0; i < this.table.element.children[row].children.length; ++i) {
-            if (this.table.element.children[row].children[i] === cell) {
-                column = i;
-                break;
-            }
-        }
-        if (column === undefined) return;
+        const position = EditorTable.getCellPosition(cell, this.table.element);
+        if (!position) return;
 
         this.textField.submitText();
         this.textField.hide();
 
-        this.cursor.move(row, column, rect);
+        this.cursor.move(position.row, position.column, rect);
+
+        // 選択開始
+        if (this.selection) {
+            this.selection.start(position.row, position.column);
+        }
     }
 
     moveCell(x: number, y: number) {
@@ -251,8 +244,13 @@ class Store {
 
         this.tableHolder = new EditorTableHolder();
 
-        this.table = new EditorTable(tableData);
+        this.selection = new Selection();
+
+        this.table = new EditorTable(tableData, this.selection);
         this.tableHolder.element.appendChild(this.table.element);
+
+        this.selection.setTableElement(this.table.element);
+        this.tableHolder.element.appendChild(this.selection.element);
 
         this.cursor = new Cursor();
         this.tableHolder.element.appendChild(this.cursor.element);
@@ -261,6 +259,10 @@ class Store {
         this.tableHolder.element.appendChild(this.textField.element);
 
         this.moveCell(0, 0);
+
+        // 初期選択を設定
+        this.selection.start(0, 0);
+        this.selection.end();
 
         // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
         this.textField.enable();
