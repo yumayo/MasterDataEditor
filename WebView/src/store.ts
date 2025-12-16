@@ -32,7 +32,7 @@ class Store {
         this.tab = new Tab();
     }
 
-    enableCellEditMode() {
+    enableCellEditMode(preserveContent: boolean) {
 
         if (!this.textField) return;
         if (!this.table) return;
@@ -55,7 +55,7 @@ class Store {
         this.cursor.move(this.cursor.row, this.cursor.column, rect);
 
         const cellText = target.cell.textContent ?? '';
-        this.textField.show(rect, cellText);
+        this.textField.show(rect, cellText, preserveContent);
     }
 
     submitText(text: string) {

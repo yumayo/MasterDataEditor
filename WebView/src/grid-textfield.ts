@@ -33,7 +33,7 @@ export class GridTextField {
         this.element.focus();
     }
 
-    show(rect: DOMRect, cellText: string) {
+    show(rect: DOMRect, cellText: string, preserveContent: boolean) {
         if (this.visible) return;
 
         this.visible = true;
@@ -42,20 +42,26 @@ export class GridTextField {
         this.element.style.left = rect.left + 'px';
         this.element.style.top = rect.top + 'px';
 
-        // セルのテキストをコピーする
-        this.element.textContent = cellText;
-        Store.resizeTextField(cellText);
+        if (preserveContent) {
+            // ダブルクリック時: セルのテキストをコピーする
+            this.element.textContent = cellText;
+            Store.resizeTextField(cellText);
 
-        // カーソルを一番後ろに設定する
-        if (cellText.length > 0) {
-            const range = document.createRange();
-            range.selectNodeContents(this.element);
-            range.collapse(false);
-            const selection = window.getSelection();
-            if (selection) {
-                selection.removeAllRanges();
-                selection.addRange(range);
+            // カーソルを一番後ろに設定する
+            if (cellText.length > 0) {
+                const range = document.createRange();
+                range.selectNodeContents(this.element);
+                range.collapse(false);
+                const selection = window.getSelection();
+                if (selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
             }
+        } else {
+            // キーボード入力時: セルの内容をクリアして新規入力
+            this.element.textContent = null;
+            Store.resizeTextField('');
         }
     }
 
@@ -118,7 +124,7 @@ export class GridTextField {
                 Store.submitText('');
             }
             if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
-                Store.enableCellEditMode();
+                Store.enableCellEditMode(false);
             }
         }
     }

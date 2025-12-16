@@ -100,7 +100,7 @@ export class EditorTable {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
         cell.addEventListener('dblclick', () => {
-            Store.enableCellEditMode();
+            Store.enableCellEditMode(true);
         });
         cell.addEventListener('mousedown', () => {
             Store.selectCell(cell);

@@ -19,7 +19,7 @@ export class Cursor {
         element.classList.add('cursor');
         element.style.width = '20px';
         element.addEventListener('dblclick', () => {
-            Store.enableCellEditMode();
+            Store.enableCellEditMode(true);
         });
         this.element = element;
     }
