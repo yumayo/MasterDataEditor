@@ -3,6 +3,7 @@ import Store from "./store";
 import {Csv} from "./csv";
 import {TabButton} from "./tab-button";
 import {readFileAsync} from "./api";
+import {EditorTable} from "./editor-table";
 
 /**
  * VSCodeやGoogleChromeのタブと同じものです。
@@ -12,6 +13,8 @@ export class Tab {
     element: HTMLElement;
 
     tabButtons: TabButton[];
+
+    public refEditorTable: EditorTable | undefined;
 
     constructor() {
         this.element = document.getElementById('tab-content')!;
@@ -98,7 +101,7 @@ export class Tab {
     }
 
     clearEditor() {
-        Store.tableHolder?.clear();
+        this.refEditorTable?.clear();
         Store.tableName = undefined;
         Store.tableData = undefined;
         Store.table = undefined;

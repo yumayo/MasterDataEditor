@@ -1,6 +1,5 @@
 import {GridTextField} from "./grid-textfield";
 import {Cursor} from "./cursor";
-import {EditorTableHolder} from "./editor-table-holder";
 import {EditorTableData} from "./model/editor-table-data";
 import {Explorer} from "./explorer";
 import {Utility} from "./utility";
@@ -17,8 +16,6 @@ class Store {
     tableName: string | undefined;
 
     tableData: EditorTableData | undefined;
-
-    tableHolder: EditorTableHolder | undefined;
 
     table: EditorTable | undefined;
 
@@ -238,31 +235,30 @@ class Store {
         this.tableName = name;
         this.tableData = tableData;
 
-        if (this.tableHolder) {
-            this.tableHolder.clear();
-        }
-
-        this.tableHolder = new EditorTableHolder();
-
         this.selection = new Selection();
 
+        // 上書きする前にテーブル内のエレメントを全削除する必要があるため、呼び出しておきます。
+        this.table?.clear();
         this.table = new EditorTable(tableData, this.selection);
-        this.tableHolder.element.appendChild(this.table.element);
+        this.table.contentElement.appendChild(this.table.element);
 
         this.selection.setTableElement(this.table.element);
-        this.tableHolder.element.appendChild(this.selection.element);
+        this.table.contentElement.appendChild(this.selection.element);
 
         this.cursor = new Cursor();
-        this.tableHolder.element.appendChild(this.cursor.element);
+        this.table.contentElement.appendChild(this.cursor.element);
 
         this.textField = new GridTextField();
-        this.tableHolder.element.appendChild(this.textField.element);
+        this.table.contentElement.appendChild(this.textField.element);
 
         this.moveCell(0, 0);
 
         // 初期選択を設定
         this.selection.start(0, 0);
         this.selection.end();
+
+        // タブを選択したときにテーブル内のエレメントを全削除する必要があるため、参照を持っておきます。
+        this.tab.refEditorTable = this.table;
 
         // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
         this.textField.enable();

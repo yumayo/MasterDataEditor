@@ -5,6 +5,8 @@ import {Selection, CellPosition} from "./selection";
 export class EditorTable {
 
     element: HTMLElement;
+    
+    contentElement: HTMLElement;
 
     private readonly selection: Selection;
 
@@ -12,6 +14,8 @@ export class EditorTable {
         this.selection = selection;
         const table = document.createElement('div');
         table.classList.add('editor-table');
+
+        this.contentElement = document.getElementById('editor-table-content')!;
 
         table.addEventListener('mousemove', (e) => {
             const target = e.target as HTMLElement;
@@ -103,6 +107,10 @@ export class EditorTable {
         }
 
         this.element = table;
+    }
+    
+    public clear() {
+        this.contentElement.innerHTML = '';
     }
 
     private static createRow(cells: HTMLElement[]) {
