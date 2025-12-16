@@ -54,7 +54,8 @@ class Store {
 
         this.cursor.move(this.cursor.row, this.cursor.column, rect);
 
-        this.textField.show(rect);
+        const cellText = target.cell.textContent ?? '';
+        this.textField.show(rect, cellText);
     }
 
     submitText(text: string) {

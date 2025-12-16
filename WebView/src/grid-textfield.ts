@@ -33,28 +33,30 @@ export class GridTextField {
         this.element.focus();
     }
 
-    show(rect: DOMRect) {
+    show(rect: DOMRect, cellText: string) {
         if (this.visible) return;
 
         this.visible = true;
         this.element.classList.add('grid-textfield-active');
-        this.element.textContent = null;
 
         this.element.style.left = rect.left + 'px';
         this.element.style.top = rect.top + 'px';
 
-        // これなんで空文字でリサイズしてるんだっけ
-        Store.resizeTextField('');
+        // セルのテキストをコピーする
+        this.element.textContent = cellText;
+        Store.resizeTextField(cellText);
 
-        // カーソルを一番後ろに設定しています。
-        // セルのテキストをそのまま使う
-        // this.element.textContent = this.target.textContent;
-        // const range = document.createRange();
-        // range.setStart(this.element, 1);
-        // range.collapse(true);
-        // const selection = window.getSelection();
-        // selection.removeAllRanges();
-        // selection.addRange(range);
+        // カーソルを一番後ろに設定する
+        if (cellText.length > 0) {
+            const range = document.createRange();
+            range.selectNodeContents(this.element);
+            range.collapse(false);
+            const selection = window.getSelection();
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
     }
 
     isActive() {
