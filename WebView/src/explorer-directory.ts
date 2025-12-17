@@ -1,26 +1,23 @@
 import {Tab} from "./tab";
-import Store from "./store";
+import {ExplorerFile} from "./explorer-file";
 
 export class ExplorerDirectory {
 
-    element: HTMLElement;
-    indent: number;
+    readonly tab: Tab;
 
-    constructor(element: HTMLElement, indent: number) {
+    readonly element: HTMLElement;
+    readonly depth: number;
+
+    constructor(tab: Tab, element: HTMLElement, depth: number) {
+        this.tab = tab;
+
         this.element = element;
-        this.indent = indent;
+        this.depth = depth;
     }
 
-    append(name: string) {
-        const li = document.createElement('div');
-        li.textContent = name;
-        li.classList.add('explorer-file');
-        li.setAttribute('style', 'padding-left: ' + this.indent * 16 + 'px');
-        li.addEventListener('click', async function () {
-            const tabButton = Store.tab.append(name);
-            tabButton.click();
-        });
-        this.element.appendChild(li);
+    appendFile(name: string) {
+        const file = new ExplorerFile(this.tab, name, this.depth + 1);
+        this.element.appendChild(file.element);
     }
 
     appendDirectory(name: string) {
@@ -29,7 +26,7 @@ export class ExplorerDirectory {
 
         const directoryName = document.createElement('div');
         directoryName.classList.add('explorer-directory-name');
-        directoryName.setAttribute('style', 'padding-left: ' + this.indent * 16 + 'px');
+        directoryName.setAttribute('style', 'padding-left: ' + this.depth * 16 + 'px');
         directoryName.textContent = name;
 
         directory.appendChild(directoryName);
@@ -39,6 +36,6 @@ export class ExplorerDirectory {
 
         this.element.appendChild(directory);
 
-        return new ExplorerDirectory(ul, this.indent + 1);
+        return new ExplorerDirectory(this.tab, ul, this.depth + 1);
     }
 }

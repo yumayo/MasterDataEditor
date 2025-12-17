@@ -1,116 +1,175 @@
 import {EditorTableData} from "./model/editor-table-data";
-import Store from "./store";
 import {Selection, CellPosition} from "./selection";
+import {EditorTableDataColumn} from "./model/editor-table-data-column";
+import {EditorTableDataRow} from "./model/editor-table-data-row";
+import {enableCellEditMode, selectCell} from "./editor-actions";
+import {GridTextField} from "./grid-textfield";
+import {Cursor} from "./cursor";
 
 export class EditorTable {
+    readonly tableName: string;
+    readonly tableData: EditorTableData;
 
-    element: HTMLElement;
+    readonly element: HTMLElement;
+
+    constructor(tableName: string, tableData: EditorTableData) {
+
+        this.tableData = tableData;
+        this.tableName = tableName;
+
+        this.element = document.createElement('div');
+    }
     
-    contentElement: HTMLElement;
+    setup(textField: GridTextField, cursor: Cursor, selection: Selection) {
 
-    private readonly selection: Selection;
+        this.element.classList.add('editor-table');
 
-    constructor(tableData: EditorTableData, selection: Selection) {
-        this.selection = selection;
-        const table = document.createElement('div');
-        table.classList.add('editor-table');
-
-        this.contentElement = document.getElementById('editor-table-content')!;
-
-        table.addEventListener('mousemove', (e) => {
+        this.element.addEventListener('mousemove', (e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('editor-table-cell')) {
-                const position = EditorTable.getCellPosition(target, table);
+                const position = EditorTable.getCellPosition(target, this.element);
                 if (position) {
-                    this.selection.update(position.row, position.column);
+                    selection.update(position.row, position.column);
                 }
             }
         });
 
         window.addEventListener('mouseup', () => {
-            this.selection.end();
+            selection.end();
         });
 
         {
             const cells = [];
-            for (let i = 0; i < tableData.header.length; ++i) {
-                const column = tableData.header[i];
-                cells.push(EditorTable.createCell(column.key));
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const column = this.tableData.header[i];
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.key));
             }
             const row = EditorTable.createRow(cells);
             row.classList.add('editor-table-header', 'editor-table-header-key');
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
         {
             const cells = [];
-            for (let i = 0; i < tableData.header.length; ++i) {
-                const column = tableData.header[i];
-                cells.push(EditorTable.createCell(column.name));
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const column = this.tableData.header[i];
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.name));
             }
             const row = EditorTable.createRow(cells);
             row.classList.add('editor-table-header', 'editor-table-header-name');
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
         {
             const cells = [];
-            for (let i = 0; i < tableData.header.length; ++i) {
-                const column = tableData.header[i];
-                cells.push(EditorTable.createCell(column.type));
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const column = this.tableData.header[i];
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.type));
             }
             const row = EditorTable.createRow(cells);
             row.classList.add('editor-table-header', 'editor-table-header-type');
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
         {
             const cells = [];
-            for (let i = 0; i < tableData.header.length; ++i) {
-                const column = tableData.header[i];
-                cells.push(EditorTable.createCell(column.comment));
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const column = this.tableData.header[i];
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.comment));
             }
             const row = EditorTable.createRow(cells);
             row.classList.add('editor-table-header', 'editor-table-header-comment');
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
         {
             const cells = [];
-            for (let i = 0; i < tableData.header.length; ++i) {
-                const column = tableData.header[i];
-                cells.push(EditorTable.createCell(column.references));
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const column = this.tableData.header[i];
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.references));
             }
             const row = EditorTable.createRow(cells);
             row.classList.add('editor-table-header', 'editor-table-header-references');
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
-        for (let i = 0; i < tableData.body.length; ++i) {
+        for (let i = 0; i < this.tableData.body.length; ++i) {
             const cells = [];
-            for (let j = 0; j < tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(tableData.body[i].values[j]);
+            for (let j = 0; j < this.tableData.header.length; ++j) {
+                const cell = EditorTable.createCell(this, textField, cursor, selection, this.tableData.body[i].values[j]);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells);
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
 
-        for (let i = 0; i < 1000 - tableData.body.length; ++i) {
+        for (let i = 0; i < 1000 - this.tableData.body.length; ++i) {
             const cells = [];
-            for (let j = 0; j < tableData.header.length; ++j) {
-                const cell = EditorTable.createCell('');
+            for (let j = 0; j < this.tableData.header.length; ++j) {
+                const cell = EditorTable.createCell(this, textField, cursor, selection, '');
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells);
-            table.appendChild(row);
+            this.element.appendChild(row);
         }
-
-        this.element = table;
     }
-    
-    public clear() {
-        this.contentElement.innerHTML = '';
+
+    public serializeTable() {
+        if (!this.tableData) return;
+
+        const allChildren = Array.from(this.element.children) as HTMLElement[];
+        const header: HTMLElement[] = [];
+        for (const row of allChildren) {
+            if (row.classList.contains('editor-table-header')) {
+                header.push(row);
+            } else {
+                break;
+            }
+        }
+
+        const headerKey = header.find(row => row.classList.contains('editor-table-header-key'))!;
+        const headerName = header.find(row => row.classList.contains('editor-table-header-name'))!;
+        const headerType = header.find(row => row.classList.contains('editor-table-header-type'))!;
+        const headerComment = header.find(row => row.classList.contains('editor-table-header-comment'))!;
+        const headerReferences = header.find(row => row.classList.contains('editor-table-header-references'))!;
+
+        const columns = [];
+        for (let i = 0; i < headerName.children.length; ++i) {
+
+            const comment = headerComment.children[i].textContent;
+            let jsonComment: string | undefined;
+            if (comment !== null && comment !== '') {
+                jsonComment = comment;
+            } else {
+                jsonComment = undefined;
+            }
+
+            const references = (headerReferences.children[i]?.textContent?.split(',') ?? [])
+                .filter(x => x !== '');
+
+            let jsonReference: string[];
+            if (references.length > 0) {
+                jsonReference = references;
+            } else {
+                jsonReference = [];
+            }
+
+            columns.push(
+                new EditorTableDataColumn(
+                    parseInt(headerKey.children[i].textContent!),
+                    headerName.children[i].textContent!,
+                    headerType.children[i].textContent!,
+                    jsonComment,
+                    jsonReference,
+                )
+            );
+        }
+
+        const body = allChildren.filter(row => !row.classList.contains('editor-table-header'));
+
+        const rows = body.map(row => new EditorTableDataRow(Array.from(row.children).map(x => x.textContent!)));
+
+        return new EditorTableData(this.tableData.description, this.tableData.primaryKey, columns, rows);
     }
 
     private static createRow(cells: HTMLElement[]) {
@@ -122,38 +181,38 @@ export class EditorTable {
         return row;
     }
 
-    private static createCell(value: number | string | string[] | undefined) {
+    private static createCell(table: EditorTable, textField: GridTextField, cursor: Cursor, selection: Selection, value: number | string | string[] | undefined) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
         cell.addEventListener('dblclick', () => {
-            Store.enableCellEditMode(true);
+            enableCellEditMode(table, textField, cursor, true);
         });
-        cell.addEventListener('mousedown', (e) => {
-            Store.selectCell(cell);
+        cell.addEventListener('mousedown', () => {
+            selectCell(table, textField, cursor, selection, cell);
         });
         cell.textContent = value as any;
         return cell;
     }
 
     public static getCellPosition(cell: HTMLElement, tableElement: HTMLElement): CellPosition | null {
-        let row: number;
+        let row: number = -1;
         for (let i = 0; i < tableElement.children.length; ++i) {
             if (tableElement.children[i] === cell.parentElement) {
                 row = i;
                 break;
             }
         }
-        if (row === undefined) return null;
+        if (row === -1) return null;
 
-        let column: number;
+        let column: number = -1;
         for (let i = 0; i < tableElement.children[row].children.length; ++i) {
             if (tableElement.children[row].children[i] === cell) {
                 column = i;
                 break;
             }
         }
-        if (column === undefined) return null;
+        if (column === -1) return null;
 
-        return { row, column };
+        return {row, column};
     }
 }

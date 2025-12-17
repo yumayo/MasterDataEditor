@@ -1,14 +1,16 @@
 import {Tab} from "./tab";
+import {Editor} from "./editor";
 
 export class TabButton {
 
-    element: HTMLLIElement;
+    readonly tab: Tab;
+    readonly editor: Editor;
 
-    name: string;
+    readonly element: HTMLLIElement;
+    readonly name: string;
 
-    tab: Tab;
-
-    constructor(name: string, tab: Tab) {
+    constructor(editor: Editor, tab: Tab, name: string) {
+        this.editor = editor;
         this.name = name;
         this.tab = tab;
 
@@ -17,11 +19,11 @@ export class TabButton {
         this.element.classList.add('tab-button');
         this.element.textContent = name;
 
-        this.element.addEventListener('click', () => this.onClick());
+        this.element.addEventListener('click', this.onClick.bind(this));
 
         const closeButton = document.createElement('button');
         closeButton.classList.add('tab-button-close');
-        closeButton.addEventListener('click', (ev: MouseEvent) => this.onClickCloseButton(ev));
+        closeButton.addEventListener('click', this.onClickCloseButton.bind(this));
 
         this.element.appendChild(closeButton);
     }
@@ -76,9 +78,8 @@ export class TabButton {
             return;
         }
 
-        // 自分自身の両隣がいない場合は、全てのタブが存在していないためそれをタブに報告します。
-        // Editor部分を空にします。
-        this.tab.clearEditor();
+        // 自分自身の両隣がいない場合は、全てのタブが存在していないためEditor部分を空にします。
+        this.editor.clear();
     }
 
     enable() {

@@ -1,9 +1,9 @@
 import {EditorTableData} from "./model/editor-table-data";
-import Store from "./store";
 import {Csv} from "./csv";
 import {TabButton} from "./tab-button";
 import {readFileAsync} from "./api";
-import {EditorTable} from "./editor-table";
+import {createTable} from "./editor-actions";
+import {Editor} from "./editor";
 
 /**
  * VSCodeやGoogleChromeのタブと同じものです。
@@ -14,9 +14,10 @@ export class Tab {
 
     tabButtons: TabButton[];
 
-    public refEditorTable: EditorTable | undefined;
+    readonly editor: Editor;
 
-    constructor() {
+    constructor(editor: Editor) {
+        this.editor = editor;
         this.element = document.getElementById('tab-content')!;
         this.tabButtons = [];
     }
@@ -25,8 +26,6 @@ export class Tab {
      * タブに要素を追加します。
      *
      * すでに追加されている名前だった場合は何もせず、その要素を返却します。
-     *
-     * @param name
      */
     append(name: string) {
 
@@ -36,7 +35,7 @@ export class Tab {
             return tabButton;
         }
 
-        tabButton = new TabButton(name, this);
+        tabButton = new TabButton(this.editor, this, name);
         this.tabButtons.push(tabButton);
 
         this.element.appendChild(tabButton.element);
@@ -44,14 +43,29 @@ export class Tab {
         return tabButton;
     }
 
-    disableAll() {
-        this.tabButtons.forEach(x => x.disable());
+    findNextTabButton(name: string) {
+        const index = this.tabButtons.findIndex(x => x.name === name);
+        if (index === -1 || index >= this.tabButtons.length - 1) return undefined;
+        return this.tabButtons[index + 1];
+    }
+
+    findPrevTabButton(name: string) {
+        const index = this.tabButtons.findIndex(x => x.name === name);
+        if (index <= 0) return undefined;
+        return this.tabButtons[index - 1];
+    }
+
+    removeTabButton(name: string) {
+        const index = this.tabButtons.findIndex(x => x.name === name);
+        if (index !== -1) {
+            this.tabButtons.splice(index, 1);
+        }
     }
 
     enableTabButton(name: string) {
 
         // ちょっと面倒なので、一回全部無効な状態にします。
-        this.disableAll();
+        this.tabButtons.forEach(x => x.disable());
 
         // 同じ名前のelementをactiveにします。
         const tabButton = this.tabButtons.find(x => x.name === name);
@@ -74,38 +88,9 @@ export class Tab {
                 csv.load(csvFileContents);
 
                 const tableData = EditorTableData.parse(json, csv);
-                Store.createTable(name, tableData);
-
+                createTable(this.editor, name, tableData);
             });
 
         });
-    }
-
-    findNextTabButton(name: string) {
-        const index = this.tabButtons.findIndex(x => x.name === name);
-        if (index === -1 || index >= this.tabButtons.length - 1) return undefined;
-        return this.tabButtons[index + 1];
-    }
-
-    findPrevTabButton(name: string) {
-        const index = this.tabButtons.findIndex(x => x.name === name);
-        if (index <= 0) return undefined;
-        return this.tabButtons[index - 1];
-    }
-
-    removeTabButton(name: string) {
-        const index = this.tabButtons.findIndex(x => x.name === name);
-        if (index !== -1) {
-            this.tabButtons.splice(index, 1);
-        }
-    }
-
-    clearEditor() {
-        this.refEditorTable?.clear();
-        Store.tableName = undefined;
-        Store.tableData = undefined;
-        Store.table = undefined;
-        Store.cursor = undefined;
-        Store.textField = undefined;
     }
 }

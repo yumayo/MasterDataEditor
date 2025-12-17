@@ -6,6 +6,6 @@
         xmlns:local="clr-namespace:App.MasterDataEditor"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="マスターデータエディター" Height="450" Width="800">
     <wv2:WebView2 Name="webView2" />
 </Window>

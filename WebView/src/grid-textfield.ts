@@ -1,4 +1,7 @@
-import Store from "./store";
+import {EditorTable} from "./editor-table";
+import {Utility} from "./utility";
+import {getTarget, moveCell, submitText, enableCellEditMode} from "./editor-actions";
+import {Cursor} from "./cursor";
 
 export class GridTextField {
 
@@ -8,7 +11,13 @@ export class GridTextField {
 
     visible: boolean;
 
-    constructor() {
+    readonly table: EditorTable;
+    readonly cursor: Cursor;
+
+    constructor(table: EditorTable, cursor: Cursor) {
+        this.table = table;
+        this.cursor = cursor;
+
         this.active = false;
         this.visible = false;
 
@@ -45,7 +54,7 @@ export class GridTextField {
         if (preserveContent) {
             // ダブルクリック時: セルのテキストをコピーする
             this.element.textContent = cellText;
-            Store.resizeTextField(cellText);
+            this.resizeTextField(cellText);
 
             // カーソルを一番後ろに設定する
             if (cellText.length > 0) {
@@ -61,7 +70,7 @@ export class GridTextField {
         } else {
             // キーボード入力時: セルの内容をクリアして新規入力
             this.element.textContent = null;
-            Store.resizeTextField('');
+            this.resizeTextField('');
         }
     }
 
@@ -83,7 +92,7 @@ export class GridTextField {
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
 
-        Store.submitText(this.element.textContent ?? '');
+        submitText(this.table, this, this.cursor, this.element.textContent ?? '');
 
         // 非表示にします。
         this.hide();
@@ -100,44 +109,44 @@ export class GridTextField {
 
             // IMEの入力中であれば決定しないです。
             if (!keyboardEvent.isComposing && keyboardEvent.code === 'Enter') {
-                Store.submitText(this.element.textContent ?? '');
-                Store.moveCell(0, 1);
+                submitText(this.table, this, this.cursor, this.element.textContent ?? '');
+                moveCell(this.table, this.cursor, 0, 1);
             }
         } else {
             if (keyboardEvent.key === 'ArrowRight') {
-                Store.moveCell(1, 0);
+                moveCell(this.table, this.cursor, 1, 0);
             } else if (keyboardEvent.key === 'ArrowLeft') {
-                Store.moveCell(-1, 0);
+                moveCell(this.table, this.cursor, -1, 0);
             } else if (keyboardEvent.key === 'ArrowUp') {
-                Store.moveCell(0, -1);
+                moveCell(this.table, this.cursor, 0, -1);
             } else if (keyboardEvent.key === 'ArrowDown') {
-                Store.moveCell(0, 1);
+                moveCell(this.table, this.cursor, 0, 1);
             } else if (keyboardEvent.key === 'Enter') {
                 if (keyboardEvent.shiftKey) {
-                    Store.moveCell(1, 0);
+                    moveCell(this.table, this.cursor, 1, 0);
                 } else {
-                    Store.moveCell(0, 1);
+                    moveCell(this.table, this.cursor, 0, 1);
                 }
             } else if (keyboardEvent.key === 'Backspace') {
-                Store.submitText('');
+                submitText(this.table, this, this.cursor, '');
             } else if (keyboardEvent.key === 'Delete') {
-                Store.submitText('');
+                submitText(this.table, this, this.cursor, '');
             }
             if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
-                Store.enableCellEditMode(false);
+                enableCellEditMode(this.table, this, this.cursor, false);
             }
         }
     }
 
     onInput() {
         if (!this.active) return;
-        Store.resizeTextField(this.element.textContent ?? '');
+        this.resizeTextField(this.element.textContent ?? '');
     }
 
     submitText() {
         if (!this.visible) return;
 
-        Store.submitText(this.element.textContent ?? '');
+        submitText(this.table, this, this.cursor, this.element.textContent ?? '');
     }
 
     hide() {
@@ -152,5 +161,34 @@ export class GridTextField {
 
     resize(width: number) {
         this.element.style.width = width + 'px';
+    }
+
+    resizeTextField(textContent: string) {
+
+        const target = getTarget(this.table, this.cursor);
+        if (!target) return;
+
+        const textFieldWidth = Utility.getTextWidth(textContent, 'normal 13px sans-serif');
+
+        // 自分自身を探す。
+        let i = 0;
+        for (; i < target.row.children.length; ++i) {
+            if (target.cell === target.row.children[i]) {
+                break;
+            }
+        }
+
+        // 自分から右側にあるセルを結合する。
+        let width = - 1 - 1 - 6 - 6; // borderの1pxとpaddingの6px
+        width += 1; // ←なぜか必要な1px
+        for (; i < target.row.children.length; ++i) {
+            const elm = target.row.children[i];
+            width += elm.getBoundingClientRect().width;
+            if (textFieldWidth < width) {
+                break;
+            }
+        }
+
+        this.resize(width);
     }
 }
