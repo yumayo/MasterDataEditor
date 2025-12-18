@@ -40,6 +40,31 @@ export class EditorTable {
 
         {
             const cells = [];
+            // 左上隅の空セル
+            const cornerCell = document.createElement('div');
+            cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
+            cells.push(cornerCell);
+
+            // 列ヘッダー (A, B, C, ...)
+            for (let i = 0; i < this.tableData.header.length; ++i) {
+                const columnHeaderCell = document.createElement('div');
+                columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
+                columnHeaderCell.textContent = EditorTable.columnIndexToLabel(i);
+                cells.push(columnHeaderCell);
+            }
+            const columnHeaderRow = EditorTable.createRow(cells);
+            columnHeaderRow.classList.add('editor-table-column-header-row');
+            this.element.appendChild(columnHeaderRow);
+        }
+
+        {
+            const cells = [];
+            // 行ヘッダー (1)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = '1';
+            cells.push(rowHeaderCell);
+
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
                 cells.push(EditorTable.createCell(this, textField, cursor, selection, column.key));
@@ -51,6 +76,12 @@ export class EditorTable {
 
         {
             const cells = [];
+            // 行ヘッダー (2)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = '2';
+            cells.push(rowHeaderCell);
+
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
                 cells.push(EditorTable.createCell(this, textField, cursor, selection, column.name));
@@ -62,6 +93,12 @@ export class EditorTable {
 
         {
             const cells = [];
+            // 行ヘッダー (3)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = '3';
+            cells.push(rowHeaderCell);
+
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
                 cells.push(EditorTable.createCell(this, textField, cursor, selection, column.type));
@@ -73,6 +110,12 @@ export class EditorTable {
 
         {
             const cells = [];
+            // 行ヘッダー (4)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = '4';
+            cells.push(rowHeaderCell);
+
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
                 cells.push(EditorTable.createCell(this, textField, cursor, selection, column.comment));
@@ -84,6 +127,12 @@ export class EditorTable {
 
         {
             const cells = [];
+            // 行ヘッダー (5)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = '5';
+            cells.push(rowHeaderCell);
+
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
                 cells.push(EditorTable.createCell(this, textField, cursor, selection, column.references));
@@ -95,6 +144,12 @@ export class EditorTable {
 
         for (let i = 0; i < this.tableData.body.length; ++i) {
             const cells = [];
+            // 行ヘッダー (6, 7, 8, ...)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = String(i + 6);
+            cells.push(rowHeaderCell);
+
             for (let j = 0; j < this.tableData.header.length; ++j) {
                 const cell = EditorTable.createCell(this, textField, cursor, selection, this.tableData.body[i].values[j]);
                 cells.push(cell);
@@ -105,6 +160,12 @@ export class EditorTable {
 
         for (let i = 0; i < 1000 - this.tableData.body.length; ++i) {
             const cells = [];
+            // 行ヘッダー (続き)
+            const rowHeaderCell = document.createElement('div');
+            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+            rowHeaderCell.textContent = String(this.tableData.body.length + i + 6);
+            cells.push(rowHeaderCell);
+
             for (let j = 0; j < this.tableData.header.length; ++j) {
                 const cell = EditorTable.createCell(this, textField, cursor, selection, '');
                 cells.push(cell);
@@ -214,5 +275,15 @@ export class EditorTable {
         if (column === -1) return null;
 
         return {row, column};
+    }
+
+    private static columnIndexToLabel(index: number): string {
+        let label = '';
+        let num = index;
+        while (num >= 0) {
+            label = String.fromCharCode(65 + (num % 26)) + label;
+            num = Math.floor(num / 26) - 1;
+        }
+        return label;
     }
 }

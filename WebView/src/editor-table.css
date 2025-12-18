@@ -43,3 +43,33 @@
 .editor-table-cell {
     border-right: 1px solid var(--background-color);
 }
+
+/* 列ヘッダー行のスタイル */
+.editor-table-column-header-row {
+    background-color: var(--background-color);
+}
+
+/* 列ヘッダーセルのスタイル */
+.editor-table-column-header {
+    background-color: var(--background-color);
+    text-align: center;
+    font-weight: bold;
+}
+
+/* 行ヘッダーセルのスタイル */
+.editor-table-row-header {
+    background-color: var(--background-color);
+    text-align: center;
+    font-weight: bold;
+    min-width: 40px;
+    max-width: 40px;
+    width: 40px;
+}
+
+/* 左上隅のセルのスタイル */
+.editor-table-corner-cell {
+    background-color: var(--background-color);
+    min-width: 40px;
+    max-width: 40px;
+    width: 40px;
+}
