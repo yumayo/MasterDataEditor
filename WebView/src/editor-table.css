@@ -47,6 +47,9 @@
 /* 列ヘッダー行のスタイル */
 .editor-table-column-header-row {
     background-color: var(--background-color);
+    position: sticky;
+    top: 0;
+    z-index: 3;
 }
 
 /* 列ヘッダーセルのスタイル */
@@ -64,6 +67,9 @@
     min-width: 40px;
     max-width: 40px;
     width: 40px;
+    position: sticky;
+    left: 0;
+    z-index: 2;
 }
 
 /* 左上隅のセルのスタイル */
@@ -72,4 +78,7 @@
     min-width: 40px;
     max-width: 40px;
     width: 40px;
+    position: sticky;
+    left: 0;
+    z-index: 4;
 }

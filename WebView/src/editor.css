@@ -9,5 +9,5 @@
     height: calc(100vh - 36px);
     width: calc(100vw - 300px);
 
-    overflow-y: scroll;
+    overflow: auto;
 }
