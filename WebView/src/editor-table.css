@@ -6,25 +6,20 @@
 
 .editor-table-row {
     display: table-row;
-
-    min-height: 20px;
-    max-height: 20px;
-
-    line-height: 20px;
 }
+
+/* 行高をCSS変数で制御（デフォルトは20px） */
+.editor-table-row[data-row] .editor-table-cell {
+    height: var(--row-height, 20px);
+    min-height: var(--row-height, 20px);
+    max-height: var(--row-height, 20px);
+    line-height: var(--row-height, 20px);
+}
+
+/* 各行ごとのCSS変数はJavaScriptで動的に生成される */
 
 .editor-table-cell {
     display: table-cell;
-
-    min-width: 100px;
-    max-width: 100px;
-    width: 100px;
-
-    min-height: 20px;
-    max-height: 20px;
-    height: 20px;
-
-    line-height: 20px;
 
     padding-left: 6px;
     padding-right: 6px;
@@ -33,6 +28,8 @@
 
     white-space: nowrap;
 }
+
+/* 列幅と行高はJavaScriptで動的に生成される */
 
 /* テーブルのセルの上の線の描画 */
 .editor-table-row .editor-table-cell {
@@ -81,4 +78,64 @@
     position: sticky;
     left: 0;
     z-index: 4;
+}
+
+/* 列リサイズハンドル */
+.column-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 5px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+}
+
+.column-resize-handle:hover {
+    background-color: rgba(128, 128, 128, 0.3);
+}
+
+/* 行リサイズハンドル */
+.row-resize-handle {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 5px;
+    cursor: row-resize;
+    user-select: none;
+}
+
+.row-resize-handle:hover {
+    background-color: rgba(128, 128, 128, 0.3);
+}
+
+/* ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする */
+.editor-table-column-header,
+.editor-table-row-header {
+    position: relative;
+}
+
+/* リサイズガイドライン */
+.resize-guideline {
+    position: absolute;
+    background-color: #4a90d9;
+    pointer-events: none;
+    z-index: 100;
+}
+
+/* 列リサイズ時のガイドライン（縦線） */
+.resize-guideline-column {
+    width: 2px;
+    top: 0;
+    bottom: 0;
+    height: 100%;
+}
+
+/* 行リサイズ時のガイドライン（横線） */
+.resize-guideline-row {
+    height: 2px;
+    left: 0;
+    right: 0;
+    width: 100%;
 }

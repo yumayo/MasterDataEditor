@@ -24,6 +24,45 @@ export class EditorTable {
 
         this.element.classList.add('editor-table');
 
+        // CSS変数で列幅と行高を初期化
+        for (let i = 0; i < this.tableData.header.length; ++i) {
+            this.element.style.setProperty(`--col-${i}-width`, '100px');
+        }
+        // 列ヘッダー行 + ヘッダー5行 + データ行 + 空行
+        const totalRows = 1 + 5 + this.tableData.body.length + (100 - this.tableData.body.length);
+        for (let i = 0; i < totalRows; ++i) {
+            this.element.style.setProperty(`--row-${i}-height`, '20px');
+        }
+
+        // 動的に行高と列幅のCSSルールを生成
+        this.generateRowHeightStyles(totalRows);
+        this.generateColumnWidthStyles(this.tableData.header.length);
+
+        // 列幅リサイズの状態管理
+        let isResizingColumn = false;
+        let resizingColumnIndex = -1;
+        let resizeStartX = 0;
+        let resizeStartWidth = 0;
+        let resizeColumnStartLeft = 0;
+
+        // 行高リサイズの状態管理
+        let isResizingRow = false;
+        let resizingRowIndex = -1;
+        let resizeStartY = 0;
+        let resizeStartHeight = 0;
+        let resizeRowStartTop = 0;
+
+        // リサイズ用ガイドライン要素を作成
+        const resizeGuideline = document.createElement('div');
+        resizeGuideline.classList.add('resize-guideline');
+        resizeGuideline.style.display = 'none';
+
+        // editorの親要素に追加（テーブルの外に配置）
+        const editorElement = document.getElementById('editor');
+        if (editorElement) {
+            editorElement.appendChild(resizeGuideline);
+        }
+
         this.element.addEventListener('mousemove', (e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('editor-table-cell')) {
@@ -34,8 +73,52 @@ export class EditorTable {
             }
         });
 
-        window.addEventListener('mouseup', () => {
+        window.addEventListener('mousemove', (e) => {
+            if (isResizingColumn) {
+                const deltaX = e.clientX - resizeStartX;
+                const newLeft = resizeColumnStartLeft + deltaX;
+
+                // ガイドラインの位置を更新（実際のセルは変更しない）
+                resizeGuideline.style.left = newLeft + 'px';
+            }
+
+            if (isResizingRow) {
+                const deltaY = e.clientY - resizeStartY;
+                const newTop = resizeRowStartTop + deltaY;
+
+                // ガイドラインの位置を更新（実際のセルは変更しない）
+                resizeGuideline.style.top = newTop + 'px';
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (isResizingColumn) {
+                const deltaX = e.clientX - resizeStartX;
+                const newWidth = Math.max(20, resizeStartWidth + deltaX);
+
+                // マウスアップ時にCSS変数を更新
+                this.element.style.setProperty(`--col-${resizingColumnIndex}-width`, newWidth + 'px');
+
+                // ガイドラインを非表示
+                resizeGuideline.style.display = 'none';
+                resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
+            }
+
+            if (isResizingRow) {
+                const deltaY = e.clientY - resizeStartY;
+                const newHeight = Math.max(20, resizeStartHeight + deltaY);
+
+                // マウスアップ時にCSS変数を更新
+                this.element.style.setProperty(`--row-${resizingRowIndex}-height`, newHeight + 'px');
+
+                // ガイドラインを非表示
+                resizeGuideline.style.display = 'none';
+                resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
+            }
+
             selection.end();
+            isResizingColumn = false;
+            isResizingRow = false;
         });
 
         {
@@ -50,26 +133,70 @@ export class EditorTable {
                 const columnHeaderCell = document.createElement('div');
                 columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
                 columnHeaderCell.textContent = EditorTable.columnIndexToLabel(i);
+                columnHeaderCell.dataset.columnIndex = String(i);
+                columnHeaderCell.dataset.col = String(i);
+
+                // リサイズハンドルを追加
+                const resizeHandle = document.createElement('div');
+                resizeHandle.classList.add('column-resize-handle');
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    isResizingColumn = true;
+                    resizingColumnIndex = i;
+                    resizeStartX = e.clientX;
+                    const width = columnHeaderCell.offsetWidth;
+                    resizeStartWidth = width;
+
+                    // ガイドラインを表示（縦線）
+                    const rect = columnHeaderCell.getBoundingClientRect();
+                    const editorRect = editorElement!.getBoundingClientRect();
+                    resizeColumnStartLeft = rect.right - editorRect.left + editorElement!.scrollLeft;
+                    resizeGuideline.style.display = 'block';
+                    resizeGuideline.style.left = resizeColumnStartLeft + 'px';
+                    resizeGuideline.style.top = '0';
+                    resizeGuideline.classList.add('resize-guideline-column');
+                    resizeGuideline.classList.remove('resize-guideline-row');
+                });
+                columnHeaderCell.appendChild(resizeHandle);
+
                 cells.push(columnHeaderCell);
             }
-            const columnHeaderRow = EditorTable.createRow(cells);
+            const columnHeaderRow = EditorTable.createRow(cells, 0);
             columnHeaderRow.classList.add('editor-table-column-header-row');
             this.element.appendChild(columnHeaderRow);
         }
 
+        // 行リサイズ時にガイドラインを表示する共通関数
+        const showRowGuideline = (cell: HTMLElement) => {
+            const rect = cell.getBoundingClientRect();
+            const editorRect = editorElement!.getBoundingClientRect();
+            resizeRowStartTop = rect.bottom - editorRect.top + editorElement!.scrollTop;
+            resizeGuideline.style.display = 'block';
+            resizeGuideline.style.top = resizeRowStartTop + 'px';
+            resizeGuideline.style.left = '0';
+            resizeGuideline.classList.add('resize-guideline-row');
+            resizeGuideline.classList.remove('resize-guideline-column');
+        };
+
         {
             const cells = [];
             // 行ヘッダー (1)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = '1';
+            const rowHeaderCell = EditorTable.createRowHeaderCell('1', 0, () => {
+                isResizingRow = true;
+                resizingRowIndex = 1;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.key));
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.key, i));
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, 1);
             row.classList.add('editor-table-header', 'editor-table-header-key');
             this.element.appendChild(row);
         }
@@ -77,16 +204,21 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (2)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = '2';
+            const rowHeaderCell = EditorTable.createRowHeaderCell('2', 1, () => {
+                isResizingRow = true;
+                resizingRowIndex = 2;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.name));
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.name, i));
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, 2);
             row.classList.add('editor-table-header', 'editor-table-header-name');
             this.element.appendChild(row);
         }
@@ -94,16 +226,21 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (3)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = '3';
+            const rowHeaderCell = EditorTable.createRowHeaderCell('3', 2, () => {
+                isResizingRow = true;
+                resizingRowIndex = 3;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.type));
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.type, i));
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, 3);
             row.classList.add('editor-table-header', 'editor-table-header-type');
             this.element.appendChild(row);
         }
@@ -111,16 +248,21 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (4)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = '4';
+            const rowHeaderCell = EditorTable.createRowHeaderCell('4', 3, () => {
+                isResizingRow = true;
+                resizingRowIndex = 4;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.comment));
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.comment, i));
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, 4);
             row.classList.add('editor-table-header', 'editor-table-header-comment');
             this.element.appendChild(row);
         }
@@ -128,16 +270,21 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (5)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = '5';
+            const rowHeaderCell = EditorTable.createRowHeaderCell('5', 4, () => {
+                isResizingRow = true;
+                resizingRowIndex = 5;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.references));
+                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.references, i));
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, 5);
             row.classList.add('editor-table-header', 'editor-table-header-references');
             this.element.appendChild(row);
         }
@@ -145,32 +292,44 @@ export class EditorTable {
         for (let i = 0; i < this.tableData.body.length; ++i) {
             const cells = [];
             // 行ヘッダー (6, 7, 8, ...)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = String(i + 6);
+            const rowIndex = i + 6;
+            const rowHeaderCell = EditorTable.createRowHeaderCell(String(i + 6), i + 5, () => {
+                isResizingRow = true;
+                resizingRowIndex = rowIndex;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, cursor, selection, this.tableData.body[i].values[j]);
+                const cell = EditorTable.createCell(this, textField, cursor, selection, this.tableData.body[i].values[j], j);
                 cells.push(cell);
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, rowIndex);
             this.element.appendChild(row);
         }
 
-        for (let i = 0; i < 1000 - this.tableData.body.length; ++i) {
+        for (let i = 0; i < 100 - this.tableData.body.length; ++i) {
             const cells = [];
             // 行ヘッダー (続き)
-            const rowHeaderCell = document.createElement('div');
-            rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-            rowHeaderCell.textContent = String(this.tableData.body.length + i + 6);
+            const rowIndex = this.tableData.body.length + i + 6;
+            const rowHeaderCell = EditorTable.createRowHeaderCell(String(this.tableData.body.length + i + 6), this.tableData.body.length + i + 5, () => {
+                isResizingRow = true;
+                resizingRowIndex = rowIndex;
+            }, (startY: number, startHeight: number) => {
+                resizeStartY = startY;
+                resizeStartHeight = startHeight;
+            }, showRowGuideline);
+
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, cursor, selection, '');
+                const cell = EditorTable.createCell(this, textField, cursor, selection, '', j);
                 cells.push(cell);
             }
-            const row = EditorTable.createRow(cells);
+            const row = EditorTable.createRow(cells, rowIndex);
             this.element.appendChild(row);
         }
     }
@@ -233,18 +392,22 @@ export class EditorTable {
         return new EditorTableData(this.tableData.description, this.tableData.primaryKey, columns, rows);
     }
 
-    private static createRow(cells: HTMLElement[]) {
+    private static createRow(cells: HTMLElement[], rowIndex?: number) {
         const row = document.createElement('div');
         row.classList.add('editor-table-row');
+        if (rowIndex !== undefined) {
+            row.dataset.row = String(rowIndex);
+        }
         for (let i = 0; i < cells.length; ++i) {
             row.appendChild(cells[i]);
         }
         return row;
     }
 
-    private static createCell(table: EditorTable, textField: GridTextField, cursor: Cursor, selection: Selection, value: number | string | string[] | undefined) {
+    private static createCell(table: EditorTable, textField: GridTextField, cursor: Cursor, selection: Selection, value: number | string | string[] | undefined, columnIndex: number) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
+        cell.dataset.col = String(columnIndex);
         cell.addEventListener('dblclick', () => {
             enableCellEditMode(table, textField, cursor, true);
         });
@@ -285,5 +448,72 @@ export class EditorTable {
             num = Math.floor(num / 26) - 1;
         }
         return label;
+    }
+
+    private static createRowHeaderCell(
+        text: string,
+        rowIndex: number,
+        onResizeStart: () => void,
+        setResizeState: (startY: number, startHeight: number) => void,
+        showGuideline: (cell: HTMLElement) => void
+    ): HTMLElement {
+        const rowHeaderCell = document.createElement('div');
+        rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+        rowHeaderCell.textContent = text;
+        rowHeaderCell.dataset.rowIndex = String(rowIndex);
+
+        const resizeHandle = document.createElement('div');
+        resizeHandle.classList.add('row-resize-handle');
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onResizeStart();
+            const height = rowHeaderCell.offsetHeight;
+            setResizeState(e.clientY, height);
+            showGuideline(rowHeaderCell);
+        });
+        rowHeaderCell.appendChild(resizeHandle);
+
+        return rowHeaderCell;
+    }
+
+    private generateRowHeightStyles(totalRows: number): void {
+        // 既存のスタイルシートがあれば削除
+        const existingStyle = document.getElementById('editor-table-row-heights');
+        if (existingStyle) {
+            existingStyle.remove();
+        }
+
+        // 新しいスタイルシートを作成
+        const style = document.createElement('style');
+        style.id = 'editor-table-row-heights';
+
+        let css = '';
+        for (let i = 0; i < totalRows; ++i) {
+            css += `.editor-table-row[data-row="${i}"] { --row-height: var(--row-${i}-height, 20px); }\n`;
+        }
+
+        style.textContent = css;
+        document.head.appendChild(style);
+    }
+
+    private generateColumnWidthStyles(columnCount: number): void {
+        // 既存のスタイルシートがあれば削除
+        const existingStyle = document.getElementById('editor-table-column-widths');
+        if (existingStyle) {
+            existingStyle.remove();
+        }
+
+        // 新しいスタイルシートを作成
+        const style = document.createElement('style');
+        style.id = 'editor-table-column-widths';
+
+        let css = '';
+        for (let i = 0; i < columnCount; ++i) {
+            css += `.editor-table-cell[data-col="${i}"] { width: var(--col-${i}-width, 100px); min-width: var(--col-${i}-width, 100px); max-width: var(--col-${i}-width, 100px); }\n`;
+        }
+
+        style.textContent = css;
+        document.head.appendChild(style);
     }
 }
