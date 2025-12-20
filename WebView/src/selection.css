@@ -1,15 +1,15 @@
 /* 選択されたセル（アンカー以外）の背景色と内部枠線 */
 .editor-table-row .cell-selected {
     background-color: rgba(0, 120, 215, 0.2);
-    border-right-color: rgba(0, 120, 215, 0.3);
-    border-bottom-color: rgba(0, 120, 215, 0.3);
+    border-right-color: #1a364d;
+    border-bottom-color: #1a364d;
 }
 
 /* アンカーセル（カーソル位置）は背景色を付けないが、内部枠線は上塗り */
 .editor-table-row .cell-anchor {
     background-color: transparent;
-    border-right-color: rgba(0, 120, 215, 0.3);
-    border-bottom-color: rgba(0, 120, 215, 0.3);
+    border-right-color: #1a364d;
+    border-bottom-color: #1a364d;
 }
 
 /* 選択範囲の境界線 - box-shadowを使用して元の枠線に重ねる */
