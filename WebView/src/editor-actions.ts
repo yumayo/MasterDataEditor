@@ -68,7 +68,6 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     editor.appendChild(table.element);
 
     const selection = new Selection(table.element);
-    editor.appendChild(selection.element);
 
     const textField = new GridTextField(table, selection);
     editor.appendChild(textField.element);
