@@ -112,6 +112,12 @@ export class GridTextField {
                 submitText(this.table, this, this.selection, this.element.textContent ?? '');
                 moveCell(this.table, this.selection, 0, 1);
             }
+
+            // ESCキーで入力をキャンセルして元に戻す
+            if (keyboardEvent.key === 'Escape') {
+                keyboardEvent.preventDefault();
+                this.hide();
+            }
         } else {
             if (keyboardEvent.key === 'ArrowRight') {
                 moveCell(this.table, this.selection, 1, 0);
