@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
 import {getTarget, moveCell, submitText, enableCellEditMode} from "./editor-actions";
-import {Cursor} from "./cursor";
+import {Selection} from "./selection";
 
 export class GridTextField {
 
@@ -12,11 +12,11 @@ export class GridTextField {
     visible: boolean;
 
     readonly table: EditorTable;
-    readonly cursor: Cursor;
+    readonly selection: Selection;
 
-    constructor(table: EditorTable, cursor: Cursor) {
+    constructor(table: EditorTable, selection: Selection) {
         this.table = table;
-        this.cursor = cursor;
+        this.selection = selection;
 
         this.active = false;
         this.visible = false;
@@ -92,7 +92,7 @@ export class GridTextField {
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
 
-        submitText(this.table, this, this.cursor, this.element.textContent ?? '');
+        submitText(this.table, this, this.selection, this.element.textContent ?? '');
 
         // 非表示にします。
         this.hide();
@@ -109,31 +109,31 @@ export class GridTextField {
 
             // IMEの入力中であれば決定しないです。
             if (!keyboardEvent.isComposing && keyboardEvent.code === 'Enter') {
-                submitText(this.table, this, this.cursor, this.element.textContent ?? '');
-                moveCell(this.table, this.cursor, 0, 1);
+                submitText(this.table, this, this.selection, this.element.textContent ?? '');
+                moveCell(this.table, this.selection, 0, 1);
             }
         } else {
             if (keyboardEvent.key === 'ArrowRight') {
-                moveCell(this.table, this.cursor, 1, 0);
+                moveCell(this.table, this.selection, 1, 0);
             } else if (keyboardEvent.key === 'ArrowLeft') {
-                moveCell(this.table, this.cursor, -1, 0);
+                moveCell(this.table, this.selection, -1, 0);
             } else if (keyboardEvent.key === 'ArrowUp') {
-                moveCell(this.table, this.cursor, 0, -1);
+                moveCell(this.table, this.selection, 0, -1);
             } else if (keyboardEvent.key === 'ArrowDown') {
-                moveCell(this.table, this.cursor, 0, 1);
+                moveCell(this.table, this.selection, 0, 1);
             } else if (keyboardEvent.key === 'Enter') {
                 if (keyboardEvent.shiftKey) {
-                    moveCell(this.table, this.cursor, 1, 0);
+                    moveCell(this.table, this.selection, 1, 0);
                 } else {
-                    moveCell(this.table, this.cursor, 0, 1);
+                    moveCell(this.table, this.selection, 0, 1);
                 }
             } else if (keyboardEvent.key === 'Backspace') {
-                submitText(this.table, this, this.cursor, '');
+                submitText(this.table, this, this.selection, '');
             } else if (keyboardEvent.key === 'Delete') {
-                submitText(this.table, this, this.cursor, '');
+                submitText(this.table, this, this.selection, '');
             }
             if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
-                enableCellEditMode(this.table, this, this.cursor, false);
+                enableCellEditMode(this.table, this, this.selection, false);
             }
         }
     }
@@ -146,7 +146,7 @@ export class GridTextField {
     submitText() {
         if (!this.visible) return;
 
-        submitText(this.table, this, this.cursor, this.element.textContent ?? '');
+        submitText(this.table, this, this.selection, this.element.textContent ?? '');
     }
 
     hide() {
@@ -165,7 +165,7 @@ export class GridTextField {
 
     resizeTextField(textContent: string) {
 
-        const target = getTarget(this.table, this.cursor);
+        const target = getTarget(this.table, this.selection);
         if (!target) return;
 
         const textFieldWidth = Utility.getTextWidth(textContent, 'normal 13px sans-serif');

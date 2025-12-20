@@ -4,7 +4,6 @@ import {EditorTableDataColumn} from "./model/editor-table-data-column";
 import {EditorTableDataRow} from "./model/editor-table-data-row";
 import {enableCellEditMode, selectCell} from "./editor-actions";
 import {GridTextField} from "./grid-textfield";
-import {Cursor} from "./cursor";
 
 export class EditorTable {
     readonly tableName: string;
@@ -20,7 +19,7 @@ export class EditorTable {
         this.element = document.createElement('div');
     }
     
-    setup(textField: GridTextField, cursor: Cursor, selection: Selection) {
+    setup(textField: GridTextField, selection: Selection) {
 
         this.element.classList.add('editor-table');
 
@@ -194,7 +193,7 @@ export class EditorTable {
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.key, i));
+                cells.push(EditorTable.createCell(this, textField, selection, column.key, i));
             }
             const row = EditorTable.createRow(cells, 1);
             row.classList.add('editor-table-header', 'editor-table-header-key');
@@ -216,7 +215,7 @@ export class EditorTable {
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.name, i));
+                cells.push(EditorTable.createCell(this, textField, selection, column.name, i));
             }
             const row = EditorTable.createRow(cells, 2);
             row.classList.add('editor-table-header', 'editor-table-header-name');
@@ -238,7 +237,7 @@ export class EditorTable {
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.type, i));
+                cells.push(EditorTable.createCell(this, textField, selection, column.type, i));
             }
             const row = EditorTable.createRow(cells, 3);
             row.classList.add('editor-table-header', 'editor-table-header-type');
@@ -260,7 +259,7 @@ export class EditorTable {
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.comment, i));
+                cells.push(EditorTable.createCell(this, textField, selection, column.comment, i));
             }
             const row = EditorTable.createRow(cells, 4);
             row.classList.add('editor-table-header', 'editor-table-header-comment');
@@ -282,7 +281,7 @@ export class EditorTable {
 
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, cursor, selection, column.references, i));
+                cells.push(EditorTable.createCell(this, textField, selection, column.references, i));
             }
             const row = EditorTable.createRow(cells, 5);
             row.classList.add('editor-table-header', 'editor-table-header-references');
@@ -304,7 +303,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, cursor, selection, this.tableData.body[i].values[j], j);
+                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -326,7 +325,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, cursor, selection, '', j);
+                const cell = EditorTable.createCell(this, textField, selection, '', j);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -404,15 +403,15 @@ export class EditorTable {
         return row;
     }
 
-    private static createCell(table: EditorTable, textField: GridTextField, cursor: Cursor, selection: Selection, value: number | string | string[] | undefined, columnIndex: number) {
+    private static createCell(table: EditorTable, textField: GridTextField, selection: Selection, value: number | string | string[] | undefined, columnIndex: number) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
         cell.dataset.col = String(columnIndex);
         cell.addEventListener('dblclick', () => {
-            enableCellEditMode(table, textField, cursor, true);
+            enableCellEditMode(table, textField, selection, true);
         });
         cell.addEventListener('mousedown', () => {
-            selectCell(table, textField, cursor, selection, cell);
+            selectCell(table, textField, selection, cell);
         });
         cell.textContent = value as any;
         return cell;

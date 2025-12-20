@@ -7,31 +7,43 @@ export class Selection {
 
     element: HTMLElement;
 
-    private anchor: CellPosition | null;
+    row: number;
 
-    private focus: CellPosition | null;
+    column: number;
+
+    private anchor: CellPosition;
+
+    private focus: CellPosition;
 
     private selecting: boolean;
 
-    private tableElement: HTMLElement | null;
+    private tableElement: HTMLElement;
 
-    constructor() {
-        this.anchor = null;
-        this.focus = null;
+    constructor(tableElement: HTMLElement) {
+        this.row = 0;
+        this.column = 0;
+        this.anchor = { row: 0, column: 0 };
+        this.focus = { row: 0, column: 0 };
         this.selecting = false;
-        this.tableElement = null;
+        this.tableElement = tableElement;
 
         const element = document.createElement('div');
         element.classList.add('selection');
         this.element = element;
     }
 
-    setTableElement(tableElement: HTMLElement): void {
-        this.tableElement = tableElement;
+    move(row: number, column: number): void {
+        this.row = row;
+        this.column = column;
+        this.anchor = { row, column };
+        this.focus = { row, column };
+        this.updateRenderer();
     }
 
     start(row: number, column: number): void {
         this.selecting = true;
+        this.row = row;
+        this.column = column;
         this.anchor = { row, column };
         this.focus = { row, column };
         this.updateRenderer();
@@ -48,40 +60,23 @@ export class Selection {
         this.selecting = false;
     }
 
-    clear(): void {
-        this.anchor = null;
-        this.focus = null;
-        this.hideRenderer();
-    }
-
     isSelecting(): boolean {
         return this.selecting;
     }
 
-    hasSelection(): boolean {
-        return this.anchor !== null && this.focus !== null;
-    }
-
     isSingleCell(): boolean {
-        if (!this.anchor || !this.focus) return true;
         return this.anchor.row === this.focus.row && this.anchor.column === this.focus.column;
     }
 
-    getAnchor(): CellPosition | null {
+    getAnchor(): CellPosition {
         return this.anchor;
     }
 
-    getFocus(): CellPosition | null {
+    getFocus(): CellPosition {
         return this.focus;
     }
 
     private updateRenderer(): void {
-        if (!this.tableElement) return;
-        if (!this.anchor || !this.focus) {
-            this.hideRenderer();
-            return;
-        }
-
         const startRow = Math.min(this.anchor.row, this.focus.row);
         const startColumn = Math.min(this.anchor.column, this.focus.column);
         const endRow = Math.max(this.anchor.row, this.focus.row);

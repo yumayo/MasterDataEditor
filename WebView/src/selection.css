@@ -4,7 +4,3 @@
     border: 1px solid rgba(0, 120, 215, 0.5);
     pointer-events: none;
 }
-
-.selection-active {
-    display: block;
-}
