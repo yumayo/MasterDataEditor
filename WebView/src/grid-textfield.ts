@@ -119,6 +119,20 @@ export class GridTextField {
                 this.hide();
             }
         } else {
+            // Ctrl+C: コピー
+            if (keyboardEvent.ctrlKey && keyboardEvent.key === 'c') {
+                keyboardEvent.preventDefault();
+                this.selection.copy();
+                return;
+            }
+
+            // Ctrl+V: ペースト
+            if (keyboardEvent.ctrlKey && keyboardEvent.key === 'v') {
+                keyboardEvent.preventDefault();
+                this.pasteFromCopyRange();
+                return;
+            }
+
             if (keyboardEvent.key === 'ArrowRight') {
                 moveCell(this.table, this.selection, 1, 0);
             } else if (keyboardEvent.key === 'ArrowLeft') {
@@ -196,5 +210,42 @@ export class GridTextField {
         }
 
         this.resize(width);
+    }
+
+    pasteFromCopyRange() {
+        if (!this.selection.hasCopyRange()) return;
+
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+
+        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
+        const copyColumnCount = copyRange.endColumn - copyRange.startColumn + 1;
+
+        const tableRowCount = this.table.element.children.length;
+        const tableColumnCount = tableRowCount > 0
+            ? (this.table.element.children[0] as HTMLElement).children.length
+            : 0;
+
+        // コピー範囲のセル内容をペースト先にコピー
+        for (let r = 0; r < copyRowCount; r++) {
+            const destRow = anchor.row + r;
+            if (destRow >= tableRowCount) break;
+
+            const srcRowElement = this.table.element.children[copyRange.startRow + r] as HTMLElement;
+            const destRowElement = this.table.element.children[destRow] as HTMLElement;
+
+            for (let c = 0; c < copyColumnCount; c++) {
+                const destColumn = anchor.column + c;
+                if (destColumn >= tableColumnCount) break;
+
+                const srcCell = srcRowElement.children[copyRange.startColumn + c] as HTMLElement;
+                const destCell = destRowElement.children[destColumn] as HTMLElement;
+
+                destCell.textContent = srcCell.textContent;
+            }
+        }
+
+        // コピー範囲をクリア
+        this.selection.clearCopyRange();
     }
 }
