@@ -133,6 +133,13 @@ export class GridTextField {
                 return;
             }
 
+            // ESCキーでコピー範囲の点線表示を解除
+            if (keyboardEvent.key === 'Escape') {
+                keyboardEvent.preventDefault();
+                this.selection.clearCopyRange();
+                return;
+            }
+
             if (keyboardEvent.key === 'ArrowRight') {
                 moveCell(this.table, this.selection, 1, 0);
             } else if (keyboardEvent.key === 'ArrowLeft') {
