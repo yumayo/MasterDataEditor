@@ -2,6 +2,7 @@ import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
 import {getTarget, moveCell, submitText, enableCellEditMode} from "./editor-actions";
 import {Selection} from "./selection";
+import {History, CellChange} from "./history";
 
 export class GridTextField {
 
@@ -13,10 +14,12 @@ export class GridTextField {
 
     readonly table: EditorTable;
     readonly selection: Selection;
+    readonly history: History;
 
-    constructor(table: EditorTable, selection: Selection) {
+    constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
         this.selection = selection;
+        this.history = history;
 
         this.active = false;
         this.visible = false;
@@ -92,7 +95,7 @@ export class GridTextField {
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
 
-        submitText(this.table, this, this.selection, this.element.textContent ?? '');
+        submitText(this.table, this, this.selection, this.element.textContent ?? '', this.history);
 
         // 非表示にします。
         this.hide();
@@ -109,7 +112,7 @@ export class GridTextField {
 
             // IMEの入力中であれば決定しないです。
             if (!keyboardEvent.isComposing && keyboardEvent.code === 'Enter') {
-                submitText(this.table, this, this.selection, this.element.textContent ?? '');
+                submitText(this.table, this, this.selection, this.element.textContent ?? '', this.history);
                 moveCell(this.table, this.selection, 0, 1);
             }
 
@@ -130,6 +133,20 @@ export class GridTextField {
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 'v') {
                 keyboardEvent.preventDefault();
                 this.pasteFromCopyRange();
+                return;
+            }
+
+            // Ctrl+Z: Undo
+            if (keyboardEvent.ctrlKey && keyboardEvent.key === 'z') {
+                keyboardEvent.preventDefault();
+                this.history.undo();
+                return;
+            }
+
+            // Ctrl+Y: Redo
+            if (keyboardEvent.ctrlKey && keyboardEvent.key === 'y') {
+                keyboardEvent.preventDefault();
+                this.history.redo();
                 return;
             }
 
@@ -155,9 +172,9 @@ export class GridTextField {
                     moveCell(this.table, this.selection, 0, 1);
                 }
             } else if (keyboardEvent.key === 'Backspace') {
-                submitText(this.table, this, this.selection, '');
+                submitText(this.table, this, this.selection, '', this.history);
             } else if (keyboardEvent.key === 'Delete') {
-                submitText(this.table, this, this.selection, '');
+                submitText(this.table, this, this.selection, '', this.history);
             }
             if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
                 enableCellEditMode(this.table, this, this.selection, false);
@@ -173,7 +190,7 @@ export class GridTextField {
     submitText() {
         if (!this.visible) return;
 
-        submitText(this.table, this, this.selection, this.element.textContent ?? '');
+        submitText(this.table, this, this.selection, this.element.textContent ?? '', this.history);
     }
 
     hide() {
@@ -233,6 +250,9 @@ export class GridTextField {
             ? (this.table.element.children[0] as HTMLElement).children.length
             : 0;
 
+        // 履歴用の変更リスト
+        const changes: CellChange[] = [];
+
         // コピー範囲のセル内容をペースト先にコピー
         for (let r = 0; r < copyRowCount; r++) {
             const destRow = anchor.row + r;
@@ -248,9 +268,23 @@ export class GridTextField {
                 const srcCell = srcRowElement.children[copyRange.startColumn + c] as HTMLElement;
                 const destCell = destRowElement.children[destColumn] as HTMLElement;
 
-                destCell.textContent = srcCell.textContent;
+                const oldValue = destCell.textContent ?? '';
+                const newValue = srcCell.textContent ?? '';
+
+                // 履歴に変更を記録
+                changes.push({
+                    row: destRow,
+                    column: destColumn,
+                    oldValue: oldValue,
+                    newValue: newValue
+                });
+
+                destCell.textContent = newValue;
             }
         }
+
+        // 履歴に追加
+        this.history.push({ changes: changes });
 
         // コピー範囲をクリア
         this.selection.clearCopyRange();

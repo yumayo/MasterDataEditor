@@ -3,6 +3,7 @@ import {GridTextField} from "./grid-textfield";
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection} from "./selection";
 import {Editor} from "./editor";
+import {History} from "./history";
 
 export function getTarget(table: EditorTable, selection: Selection) {
     const row = table.element.children[selection.row] as HTMLElement;
@@ -25,8 +26,13 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
     textField.show(rect, cellText, preserveContent);
 }
 
-export function submitText(table: EditorTable, textField: GridTextField, selection: Selection, text: string) {
+export function submitText(table: EditorTable, textField: GridTextField, selection: Selection, text: string, history: History) {
     const target = getTarget(table, selection);
+
+    const oldValue = target.cell.textContent ?? '';
+
+    // 履歴に追加
+    history.pushSingleChange(selection.row, selection.column, oldValue, text);
 
     target.cell.textContent = text;
 
@@ -69,7 +75,10 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     const selection = new Selection(table.element);
 
-    const textField = new GridTextField(table, selection);
+    // 履歴管理（最大1000件）
+    const history = new History(table.element, 1000);
+
+    const textField = new GridTextField(table, selection, history);
     editor.appendChild(textField.element);
 
     table.setup(textField, selection);
@@ -80,5 +89,5 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
     textField.enable();
 
-    return {selection, table, textField};
+    return {selection, table, textField, history};
 }
