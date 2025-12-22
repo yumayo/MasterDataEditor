@@ -50,6 +50,14 @@ export class Selection {
         this.updateRenderer();
     }
 
+    setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+        this.row = startRow;
+        this.column = startColumn;
+        this.anchor = { row: startRow, column: startColumn };
+        this.focus = { row: endRow, column: endColumn };
+        this.updateRenderer();
+    }
+
     start(row: number, column: number): void {
         this.selecting = true;
         this.row = row;

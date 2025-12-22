@@ -139,14 +139,20 @@ export class GridTextField {
             // Ctrl+Z: Undo
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 'z') {
                 keyboardEvent.preventDefault();
-                this.history.undo();
+                const result = this.history.undo();
+                if (result) {
+                    this.selection.setRange(result.startRow, result.startColumn, result.endRow, result.endColumn);
+                }
                 return;
             }
 
             // Ctrl+Y: Redo
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 'y') {
                 keyboardEvent.preventDefault();
-                this.history.redo();
+                const result = this.history.redo();
+                if (result) {
+                    this.selection.setRange(result.startRow, result.startColumn, result.endRow, result.endColumn);
+                }
                 return;
             }
 

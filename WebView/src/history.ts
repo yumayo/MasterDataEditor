@@ -16,6 +16,16 @@ export interface HistoryAction {
 }
 
 /**
+ * Undo/Redo操作の結果
+ */
+export interface HistoryResult {
+    startRow: number;
+    startColumn: number;
+    endRow: number;
+    endColumn: number;
+}
+
+/**
  * Undo/Redo履歴を管理するクラス
  */
 export class History {
@@ -67,10 +77,11 @@ export class History {
 
     /**
      * Undo操作
+     * @returns 変更されたセル範囲。Undoできなかった場合はundefined
      */
-    undo(): boolean {
+    undo(): HistoryResult | undefined {
         const action = this.undoStack.pop();
-        if (!action) return false;
+        if (!action) return undefined;
 
         // 変更を逆順で元に戻す
         for (let i = action.changes.length - 1; i >= 0; i--) {
@@ -81,15 +92,16 @@ export class History {
         // Redoスタックに追加
         this.redoStack.push(action);
 
-        return true;
+        return this.getActionRange(action);
     }
 
     /**
      * Redo操作
+     * @returns 変更されたセル範囲。Redoできなかった場合はundefined
      */
-    redo(): boolean {
+    redo(): HistoryResult | undefined {
         const action = this.redoStack.pop();
-        if (!action) return false;
+        if (!action) return undefined;
 
         // 変更を再適用
         for (const change of action.changes) {
@@ -99,7 +111,31 @@ export class History {
         // Undoスタックに追加
         this.undoStack.push(action);
 
-        return true;
+        return this.getActionRange(action);
+    }
+
+    /**
+     * アクションの変更範囲を取得
+     */
+    private getActionRange(action: HistoryAction): HistoryResult {
+        let minRow = action.changes[0].row;
+        let maxRow = action.changes[0].row;
+        let minColumn = action.changes[0].column;
+        let maxColumn = action.changes[0].column;
+
+        for (const change of action.changes) {
+            minRow = Math.min(minRow, change.row);
+            maxRow = Math.max(maxRow, change.row);
+            minColumn = Math.min(minColumn, change.column);
+            maxColumn = Math.max(maxColumn, change.column);
+        }
+
+        return {
+            startRow: minRow,
+            startColumn: minColumn,
+            endRow: maxRow,
+            endColumn: maxColumn
+        };
     }
 
     /**
