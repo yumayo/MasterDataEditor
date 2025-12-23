@@ -196,14 +196,22 @@ export function applyFillSeries(
         }
     }
 
-    // 履歴に追加
-    history.push({ changes });
-
     // 選択範囲を更新（ソース + ターゲット）
     const newStartRow = Math.min(sourceStartRow, targetStartRow);
     const newStartColumn = Math.min(sourceStartColumn, targetStartColumn);
     const newEndRow = Math.max(sourceEndRow, targetEndRow);
     const newEndColumn = Math.max(sourceEndColumn, targetEndColumn);
+
+    // 履歴に追加（範囲情報を含める）
+    history.push({
+        changes,
+        range: {
+            startRow: newStartRow,
+            startColumn: newStartColumn,
+            endRow: newEndRow,
+            endColumn: newEndColumn
+        }
+    });
 
     selection.setRange(newStartRow, newStartColumn, newEndRow, newEndColumn);
 }

@@ -13,6 +13,16 @@ export interface CellChange {
  */
 export interface HistoryAction {
     changes: CellChange[];
+    /**
+     * 選択範囲
+     * 空白セルを含む場合でも範囲を正しく復元するため、別で選択範囲も持つ。
+     */
+    range: {
+        startRow: number;
+        startColumn: number;
+        endRow: number;
+        endColumn: number;
+    };
 }
 
 /**
@@ -45,17 +55,15 @@ export class History {
      * アクションを履歴に追加
      */
     push(action: HistoryAction): void {
-        // 変更がない場合は追加しない
-        if (action.changes.length === 0) return;
-
         // 実際に値が変わっているchangeのみをフィルタ
         const meaningfulChanges = action.changes.filter(
             change => change.oldValue !== change.newValue
         );
 
+        // 変更がない場合は追加しない
         if (meaningfulChanges.length === 0) return;
 
-        this.undoStack.push({ changes: meaningfulChanges });
+        this.undoStack.push({ changes: meaningfulChanges, range: action.range });
 
         // 最大履歴数を超えた場合、古いものを削除
         if (this.undoStack.length > this.maxHistorySize) {
@@ -71,7 +79,8 @@ export class History {
      */
     pushSingleChange(row: number, column: number, oldValue: string, newValue: string): void {
         this.push({
-            changes: [{ row, column, oldValue, newValue }]
+            changes: [{ row, column, oldValue, newValue }],
+            range: { startRow: row, startColumn: column, endRow: row, endColumn: column }
         });
     }
 
@@ -92,7 +101,7 @@ export class History {
         // Redoスタックに追加
         this.redoStack.push(action);
 
-        return this.getActionRange(action);
+        return action.range;
     }
 
     /**
@@ -111,31 +120,7 @@ export class History {
         // Undoスタックに追加
         this.undoStack.push(action);
 
-        return this.getActionRange(action);
-    }
-
-    /**
-     * アクションの変更範囲を取得
-     */
-    private getActionRange(action: HistoryAction): HistoryResult {
-        let minRow = action.changes[0].row;
-        let maxRow = action.changes[0].row;
-        let minColumn = action.changes[0].column;
-        let maxColumn = action.changes[0].column;
-
-        for (const change of action.changes) {
-            minRow = Math.min(minRow, change.row);
-            maxRow = Math.max(maxRow, change.row);
-            minColumn = Math.min(minColumn, change.column);
-            maxColumn = Math.max(maxColumn, change.column);
-        }
-
-        return {
-            startRow: minRow,
-            startColumn: minColumn,
-            endRow: maxRow,
-            endColumn: maxColumn
-        };
+        return action.range;
     }
 
     /**

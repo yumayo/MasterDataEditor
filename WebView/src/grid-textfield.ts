@@ -403,12 +403,20 @@ export class GridTextField {
             }
         }
 
-        // 履歴に追加
-        this.history.push({ changes: changes });
-
         // 貼り付け先の範囲を計算
         const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
         const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
+
+        // 履歴に追加（範囲情報を含める）
+        this.history.push({
+            changes: changes,
+            range: {
+                startRow: anchor.row,
+                startColumn: anchor.column,
+                endRow: pasteEndRow,
+                endColumn: pasteEndColumn
+            }
+        });
 
         // 選択範囲をコピー元と同じサイズに設定
         this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
