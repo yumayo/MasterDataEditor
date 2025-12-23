@@ -97,3 +97,40 @@
 .editor-table-row .cell-copied-border-right {
     border-right: 1px dashed rgba(0, 120, 215, 0.9);
 }
+
+/* フィルハンドル（選択範囲右下の小さな四角） */
+.fill-handle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background-color: rgba(0, 120, 215, 0.9);
+    border: 1px solid white;
+    cursor: crosshair;
+    z-index: 10;
+    display: none;
+}
+
+.fill-handle:hover {
+    background-color: rgba(0, 120, 215, 1);
+}
+
+/* フィルプレビュー範囲のスタイル */
+.cell-fill-preview {
+    background-color: rgba(0, 120, 215, 0.1);
+}
+
+.editor-table-row .cell-fill-border-top {
+    border-top: 1px dashed rgba(0, 120, 215, 0.8);
+}
+
+.editor-table-row .cell-fill-border-bottom {
+    border-bottom: 1px dashed rgba(0, 120, 215, 0.8);
+}
+
+.editor-table-row .cell-fill-border-left {
+    border-left: 1px dashed rgba(0, 120, 215, 0.8);
+}
+
+.editor-table-row .cell-fill-border-right {
+    border-right: 1px dashed rgba(0, 120, 215, 0.8);
+}

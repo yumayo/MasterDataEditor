@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries} from "./editor-actions";
 import {Selection} from "./selection";
 import {History, CellChange} from "./history";
 
@@ -36,6 +36,104 @@ export class GridTextField {
         this.element.addEventListener('focusout', this.onFocusout.bind(this));
         this.element.addEventListener('keydown', this.onKeydown.bind(this));
         this.element.addEventListener('input', this.onInput.bind(this));
+
+        // フィルハンドルのイベント登録
+        this.setupFillHandle();
+    }
+
+    private setupFillHandle(): void {
+        const fillHandle = this.selection.getFillHandle();
+
+        // フィルハンドルのドラッグ開始
+        fillHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const anchor = this.selection.getAnchor();
+            this.selection.startFill(anchor.row, anchor.column);
+        });
+
+        // フィルハンドルのダブルクリック
+        fillHandle.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            this.fillToMaxRow();
+        });
+
+        // テーブル上でのマウス移動（フィル中）
+        this.table.element.addEventListener('mousemove', (e) => {
+            if (!this.selection.isFilling()) return;
+
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('editor-table-cell')) {
+                const position = EditorTable.getCellPosition(target, this.table.element);
+                if (position) {
+                    this.selection.updateFill(position.row, position.column);
+                }
+            }
+        });
+
+        // マウスアップでフィル確定
+        window.addEventListener('mouseup', () => {
+            if (!this.selection.isFilling()) return;
+
+            const fillInfo = this.selection.getFillInfo();
+            this.selection.endFill();
+
+            if (fillInfo) {
+                applyFillSeries(
+                    this.table,
+                    this.selection,
+                    this.history,
+                    fillInfo.direction,
+                    fillInfo.sourceRange.startRow,
+                    fillInfo.sourceRange.startColumn,
+                    fillInfo.sourceRange.endRow,
+                    fillInfo.sourceRange.endColumn,
+                    fillInfo.targetRange.startRow,
+                    fillInfo.targetRange.startColumn,
+                    fillInfo.targetRange.endRow,
+                    fillInfo.targetRange.endColumn,
+                    fillInfo.count
+                );
+            }
+        });
+    }
+
+    /**
+     * ダブルクリックでデータ領域の最大行までフィル
+     */
+    private fillToMaxRow(): void {
+        const maxDataRow = this.selection.getMaxDataRow();
+        const anchor = this.selection.getAnchor();
+        const focus = this.selection.getFocus();
+
+        const startRow = Math.min(anchor.row, focus.row);
+        const endRow = Math.max(anchor.row, focus.row);
+        const startColumn = Math.min(anchor.column, focus.column);
+        const endColumn = Math.max(anchor.column, focus.column);
+
+        // 現在の選択範囲の最下行よりも下にデータがある場合のみフィル
+        if (maxDataRow > endRow) {
+            const count = maxDataRow - endRow;
+
+            applyFillSeries(
+                this.table,
+                this.selection,
+                this.history,
+                'down',
+                startRow,
+                startColumn,
+                endRow,
+                endColumn,
+                endRow + 1,
+                startColumn,
+                maxDataRow,
+                endColumn,
+                count
+            );
+        }
     }
 
     enable() {

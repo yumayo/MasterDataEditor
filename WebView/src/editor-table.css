@@ -1,5 +1,6 @@
 .editor-table {
     display: table;
+    position: relative;
 
     user-select: none;
 }
