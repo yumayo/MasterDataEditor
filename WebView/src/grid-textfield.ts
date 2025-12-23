@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell} from "./editor-actions";
 import {Selection} from "./selection";
 import {History, CellChange} from "./history";
 
@@ -262,13 +262,29 @@ export class GridTextField {
             }
 
             if (keyboardEvent.key === 'ArrowRight') {
-                moveCell(this.table, this.selection, 1, 0);
+                if (keyboardEvent.shiftKey) {
+                    extendSelectionCell(this.table, this.selection, 1, 0);
+                } else {
+                    moveCell(this.table, this.selection, 1, 0);
+                }
             } else if (keyboardEvent.key === 'ArrowLeft') {
-                moveCell(this.table, this.selection, -1, 0);
+                if (keyboardEvent.shiftKey) {
+                    extendSelectionCell(this.table, this.selection, -1, 0);
+                } else {
+                    moveCell(this.table, this.selection, -1, 0);
+                }
             } else if (keyboardEvent.key === 'ArrowUp') {
-                moveCell(this.table, this.selection, 0, -1);
+                if (keyboardEvent.shiftKey) {
+                    extendSelectionCell(this.table, this.selection, 0, -1);
+                } else {
+                    moveCell(this.table, this.selection, 0, -1);
+                }
             } else if (keyboardEvent.key === 'ArrowDown') {
-                moveCell(this.table, this.selection, 0, 1);
+                if (keyboardEvent.shiftKey) {
+                    extendSelectionCell(this.table, this.selection, 0, 1);
+                } else {
+                    moveCell(this.table, this.selection, 0, 1);
+                }
             } else if (keyboardEvent.key === 'Enter') {
                 if (keyboardEvent.shiftKey) {
                     moveCell(this.table, this.selection, 1, 0);

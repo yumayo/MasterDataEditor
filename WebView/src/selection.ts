@@ -99,6 +99,16 @@ export class Selection {
         this.selecting = false;
     }
 
+    /**
+     * フォーカスを移動して選択範囲を拡張する（Shift+矢印キー用）
+     */
+    extendSelection(row: number, column: number): void {
+        this.focus = { row, column };
+        this.row = row;
+        this.column = column;
+        this.updateRenderer();
+    }
+
     isSelecting(): boolean {
         return this.selecting;
     }

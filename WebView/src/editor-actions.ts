@@ -66,6 +66,20 @@ export function moveCell(table: EditorTable, selection: Selection, x: number, y:
     selection.move(row, column);
 }
 
+export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {
+    const rowLength = table.element.children.length;
+    if (rowLength === 0) return;
+
+    const columnLength = (table.element.children[0] as HTMLElement).children.length;
+    if (columnLength === 0) return;
+
+    const focus = selection.getFocus();
+    const column = Math.max(Math.min(focus.column + x, columnLength - 1), 0);
+    const row = Math.max(Math.min(focus.row + y, rowLength - 1), 0);
+
+    selection.extendSelection(row, column);
+}
+
 export function createTable(editor: Editor, name: string, tableData: EditorTableData) {
 
     // 上書きする前にテーブル内のエレメントを全削除する必要があるため、呼び出しておきます。
