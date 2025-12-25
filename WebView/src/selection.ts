@@ -158,6 +158,18 @@ export class Selection {
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
     }
 
+    /**
+     * コピー範囲を設定する（Undo/Redo用）
+     */
+    setCopyRange(range: CellRange): void {
+        if (range.startRow < 0) {
+            this.clearCopyRange();
+        } else {
+            this.copyRange = range;
+            this.updateCopyRenderer();
+        }
+    }
+
     private updateCopyRenderer(): void {
         // 以前のコピー範囲のスタイルを削除
         for (const cell of this.copiedCells) {

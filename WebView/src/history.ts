@@ -9,6 +9,16 @@ export interface CellChange {
 }
 
 /**
+ * セル範囲
+ */
+export interface CellRange {
+    startRow: number;
+    startColumn: number;
+    endRow: number;
+    endColumn: number;
+}
+
+/**
  * 履歴に記録するアクション（複数セルの変更をまとめて1つのアクションとする）
  */
 export interface HistoryAction {
@@ -17,22 +27,20 @@ export interface HistoryAction {
      * 選択範囲
      * 空白セルを含む場合でも範囲を正しく復元するため、別で選択範囲も持つ。
      */
-    range: {
-        startRow: number;
-        startColumn: number;
-        endRow: number;
-        endColumn: number;
-    };
+    range: CellRange;
+    /**
+     * コピー範囲（点線表示用）
+     * アクション実行前のコピー範囲を保存し、Undo時に復元する。
+     */
+    copyRange: CellRange;
 }
 
 /**
  * Undo/Redo操作の結果
  */
 export interface HistoryResult {
-    startRow: number;
-    startColumn: number;
-    endRow: number;
-    endColumn: number;
+    range: CellRange;
+    copyRange: CellRange;
 }
 
 /**
@@ -63,7 +71,11 @@ export class History {
         // 変更がない場合は追加しない
         if (meaningfulChanges.length === 0) return;
 
-        this.undoStack.push({ changes: meaningfulChanges, range: action.range });
+        this.undoStack.push({
+            changes: meaningfulChanges,
+            range: action.range,
+            copyRange: action.copyRange
+        });
 
         // 最大履歴数を超えた場合、古いものを削除
         if (this.undoStack.length > this.maxHistorySize) {
@@ -77,16 +89,17 @@ export class History {
     /**
      * 単一セルの変更を履歴に追加
      */
-    pushSingleChange(row: number, column: number, oldValue: string, newValue: string): void {
+    pushSingleChange(row: number, column: number, oldValue: string, newValue: string, copyRange: CellRange): void {
         this.push({
             changes: [{ row, column, oldValue, newValue }],
-            range: { startRow: row, startColumn: column, endRow: row, endColumn: column }
+            range: { startRow: row, startColumn: column, endRow: row, endColumn: column },
+            copyRange: copyRange
         });
     }
 
     /**
      * Undo操作
-     * @returns 変更されたセル範囲。Undoできなかった場合はundefined
+     * @returns 変更されたセル範囲とコピー範囲。Undoできなかった場合はundefined
      */
     undo(): HistoryResult | undefined {
         const action = this.undoStack.pop();
@@ -101,7 +114,7 @@ export class History {
         // Redoスタックに追加
         this.redoStack.push(action);
 
-        return action.range;
+        return { range: action.range, copyRange: action.copyRange };
     }
 
     /**
@@ -120,7 +133,8 @@ export class History {
         // Undoスタックに追加
         this.undoStack.push(action);
 
-        return action.range;
+        // Redo時はコピー範囲をクリア（アクション実行後の状態に戻す）
+        return { range: action.range, copyRange: { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 } };
     }
 
     /**

@@ -239,7 +239,8 @@ export class GridTextField {
                 keyboardEvent.preventDefault();
                 const result = this.history.undo();
                 if (result) {
-                    this.selection.setRange(result.startRow, result.startColumn, result.endRow, result.endColumn);
+                    this.selection.setRange(result.range.startRow, result.range.startColumn, result.range.endRow, result.range.endColumn);
+                    this.selection.setCopyRange(result.copyRange);
                 }
                 return;
             }
@@ -249,7 +250,8 @@ export class GridTextField {
                 keyboardEvent.preventDefault();
                 const result = this.history.redo();
                 if (result) {
-                    this.selection.setRange(result.startRow, result.startColumn, result.endRow, result.endColumn);
+                    this.selection.setRange(result.range.startRow, result.range.startColumn, result.range.endRow, result.range.endColumn);
+                    this.selection.setCopyRange(result.copyRange);
                 }
                 return;
             }
@@ -407,7 +409,7 @@ export class GridTextField {
         const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
         const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
 
-        // 履歴に追加（範囲情報を含める）
+        // 履歴に追加（範囲情報とコピー範囲を含める）
         this.history.push({
             changes: changes,
             range: {
@@ -415,7 +417,8 @@ export class GridTextField {
                 startColumn: anchor.column,
                 endRow: pasteEndRow,
                 endColumn: pasteEndColumn
-            }
+            },
+            copyRange: copyRange
         });
 
         // 選択範囲をコピー元と同じサイズに設定

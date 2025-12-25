@@ -32,8 +32,9 @@ export function submitText(table: EditorTable, textField: GridTextField, selecti
 
     const oldValue = target.cell.textContent ?? '';
 
-    // 履歴に追加
-    history.pushSingleChange(selection.row, selection.column, oldValue, text);
+    // 履歴に追加（現在のコピー範囲も保存）
+    const copyRange = selection.getCopyRange();
+    history.pushSingleChange(selection.row, selection.column, oldValue, text, copyRange);
 
     target.cell.textContent = text;
 
@@ -202,7 +203,8 @@ export function applyFillSeries(
     const newEndRow = Math.max(sourceEndRow, targetEndRow);
     const newEndColumn = Math.max(sourceEndColumn, targetEndColumn);
 
-    // 履歴に追加（範囲情報を含める）
+    // 履歴に追加（範囲情報とコピー範囲を含める）
+    const copyRange = selection.getCopyRange();
     history.push({
         changes,
         range: {
@@ -210,7 +212,8 @@ export function applyFillSeries(
             startColumn: newStartColumn,
             endRow: newEndRow,
             endColumn: newEndColumn
-        }
+        },
+        copyRange: copyRange
     });
 
     selection.setRange(newStartRow, newStartColumn, newEndRow, newEndColumn);
