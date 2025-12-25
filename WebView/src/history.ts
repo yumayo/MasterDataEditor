@@ -24,8 +24,8 @@ export interface CellRange {
 export interface HistoryAction {
     changes: CellChange[];
     /**
-     * 選択範囲
-     * 空白セルを含む場合でも範囲を正しく復元するため、別で選択範囲も持つ。
+     * 操作前の選択範囲
+     * Undo時に復元する。Redo時はchangesを含めた範囲を計算して使用する。
      */
     range: CellRange;
     /**
@@ -133,8 +133,17 @@ export class History {
         // Undoスタックに追加
         this.undoStack.push(action);
 
-        // Redo時はコピー範囲をクリア（アクション実行後の状態に戻す）
-        return { range: action.range, copyRange: { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 } };
+        // Redo時はchangesを含めた範囲を計算（操作後の選択範囲を復元）
+        const redoRange = { ...action.range };
+        for (const change of action.changes) {
+            redoRange.startRow = Math.min(redoRange.startRow, change.row);
+            redoRange.endRow = Math.max(redoRange.endRow, change.row);
+            redoRange.startColumn = Math.min(redoRange.startColumn, change.column);
+            redoRange.endColumn = Math.max(redoRange.endColumn, change.column);
+        }
+
+        // Redo時もコピー範囲を復元
+        return { range: redoRange, copyRange: action.copyRange };
     }
 
     /**

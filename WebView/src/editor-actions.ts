@@ -203,15 +203,17 @@ export function applyFillSeries(
     const newEndRow = Math.max(sourceEndRow, targetEndRow);
     const newEndColumn = Math.max(sourceEndColumn, targetEndColumn);
 
-    // 履歴に追加（範囲情報とコピー範囲を含める）
+    // 履歴に追加（フィル前のソース範囲を保存）
+    // Undo時: ソース範囲に戻る
+    // Redo時: changesを含めた範囲が計算される（ソース＋ターゲット）
     const copyRange = selection.getCopyRange();
     history.push({
         changes,
         range: {
-            startRow: newStartRow,
-            startColumn: newStartColumn,
-            endRow: newEndRow,
-            endColumn: newEndColumn
+            startRow: sourceStartRow,
+            startColumn: sourceStartColumn,
+            endRow: sourceEndRow,
+            endColumn: sourceEndColumn
         },
         copyRange: copyRange
     });
