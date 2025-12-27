@@ -61,8 +61,9 @@ export function moveCell(table: EditorTable, selection: Selection, x: number, y:
     const columnLength = (table.element.children[0] as HTMLElement).children.length;
     if (columnLength === 0) return;
 
-    const column = Math.max(Math.min(selection.column + x, columnLength - 1), 0);
-    const row = Math.max(Math.min(selection.row + y, rowLength - 1), 0);
+    // ヘッダー（行0、列0）は選択できないので最小値を1にする
+    const column = Math.max(Math.min(selection.column + x, columnLength - 1), 1);
+    const row = Math.max(Math.min(selection.row + y, rowLength - 1), 1);
 
     selection.move(row, column);
 }
@@ -75,8 +76,9 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
     if (columnLength === 0) return;
 
     const focus = selection.getFocus();
-    const column = Math.max(Math.min(focus.column + x, columnLength - 1), 0);
-    const row = Math.max(Math.min(focus.row + y, rowLength - 1), 0);
+    // ヘッダー（行0、列0）は選択できないので最小値を1にする
+    const column = Math.max(Math.min(focus.column + x, columnLength - 1), 1);
+    const row = Math.max(Math.min(focus.row + y, rowLength - 1), 1);
 
     selection.extendSelection(row, column);
 }
@@ -99,8 +101,8 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     table.setup(textField, selection);
 
-    // 初期選択を設定
-    selection.move(0, 0);
+    // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
+    selection.move(1, 1);
 
     // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
     textField.enable();

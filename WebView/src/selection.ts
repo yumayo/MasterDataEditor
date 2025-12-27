@@ -43,10 +43,11 @@ export class Selection {
     private fillPreviewCells: HTMLElement[];
 
     constructor(tableElement: HTMLElement, editorElement: HTMLElement) {
-        this.row = 0;
-        this.column = 0;
-        this.anchor = { row: 0, column: 0 };
-        this.focus = { row: 0, column: 0 };
+        // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
+        this.row = 1;
+        this.column = 1;
+        this.anchor = { row: 1, column: 1 };
+        this.focus = { row: 1, column: 1 };
         this.selecting = false;
         this.tableElement = tableElement;
         this.editorElement = editorElement;
@@ -80,6 +81,9 @@ export class Selection {
     }
 
     start(row: number, column: number): void {
+        // ヘッダー（行0、列0）は選択できない
+        if (row < 1 || column < 1) return;
+
         this.selecting = true;
         this.row = row;
         this.column = column;
@@ -90,6 +94,9 @@ export class Selection {
 
     update(row: number, column: number): void {
         if (!this.selecting) return;
+
+        // ヘッダー（行0、列0）は選択できない
+        if (row < 1 || column < 1) return;
 
         this.focus = { row, column };
         this.updateRenderer();
