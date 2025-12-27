@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
 import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell} from "./editor-actions";
-import {Selection} from "./selection";
+import {Selection, CellRange} from "./selection";
 import {History, CellChange} from "./history";
 
 export class GridTextField {
@@ -358,42 +358,57 @@ export class GridTextField {
         this.resize(width);
     }
 
-    pasteFromCopyRange() {
-        if (!this.selection.hasCopyRange()) return;
-
-        const copyRange = this.selection.getCopyRange();
-        const anchor = this.selection.getAnchor();
-
+    /**
+     * コピー範囲からソースデータを取得する
+     */
+    private getSourceData(copyRange: CellRange): string[][] {
         const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
         const copyColumnCount = copyRange.endColumn - copyRange.startColumn + 1;
 
-        const tableRowCount = this.table.element.children.length;
-        const tableColumnCount = tableRowCount > 0
-            ? (this.table.element.children[0] as HTMLElement).children.length
-            : 0;
+        const sourceData: string[][] = [];
+        for (let r = 0; r < copyRowCount; r++) {
+            const srcRowElement = this.table.element.children[copyRange.startRow + r] as HTMLElement;
+            const rowData: string[] = [];
+            for (let c = 0; c < copyColumnCount; c++) {
+                const srcCell = srcRowElement.children[copyRange.startColumn + c] as HTMLElement;
+                rowData.push(srcCell.textContent ?? '');
+            }
+            sourceData.push(rowData);
+        }
+        return sourceData;
+    }
 
-        // 履歴用の変更リスト
+    /**
+     * 通常のペースト：アンカー位置からコピー範囲と同じサイズでペースト
+     */
+    private pasteNormal(sourceData: string[][], copyRange: CellRange): void {
+        const anchor = this.selection.getAnchor();
+        const copyRowCount = sourceData.length;
+        const copyColumnCount = sourceData[0].length;
+
+        const tableRowCount = this.table.element.children.length;
+        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+
         const changes: CellChange[] = [];
 
-        // コピー範囲のセル内容をペースト先にコピー
+        const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
+        const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
+
         for (let r = 0; r < copyRowCount; r++) {
             const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
 
-            const srcRowElement = this.table.element.children[copyRange.startRow + r] as HTMLElement;
             const destRowElement = this.table.element.children[destRow] as HTMLElement;
 
             for (let c = 0; c < copyColumnCount; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
 
-                const srcCell = srcRowElement.children[copyRange.startColumn + c] as HTMLElement;
                 const destCell = destRowElement.children[destColumn] as HTMLElement;
 
                 const oldValue = destCell.textContent ?? '';
-                const newValue = srcCell.textContent ?? '';
+                const newValue = sourceData[r][c];
 
-                // 履歴に変更を記録
                 changes.push({
                     row: destRow,
                     column: destColumn,
@@ -405,11 +420,6 @@ export class GridTextField {
             }
         }
 
-        // 貼り付け先の範囲を計算
-        const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
-        const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
-
-        // 履歴に追加（範囲情報とコピー範囲を含める）
         this.history.push({
             changes: changes,
             range: {
@@ -421,10 +431,95 @@ export class GridTextField {
             copyRange: copyRange
         });
 
-        // 選択範囲をコピー元と同じサイズに設定
         this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
+    }
 
-        // コピー範囲をクリア
+    /**
+     * 倍数ペースト：選択範囲全体にコピーデータを繰り返しfill
+     */
+    private pasteWithFill(sourceData: string[][], selectionRange: CellRange, copyRange: CellRange): void {
+        const copyRowCount = sourceData.length;
+        const copyColumnCount = sourceData[0].length;
+
+        const tableRowCount = this.table.element.children.length;
+        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+
+        const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
+        const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
+
+        const changes: CellChange[] = [];
+
+        for (let r = 0; r < selectionRowCount; r++) {
+            const destRow = selectionRange.startRow + r;
+            if (destRow >= tableRowCount) break;
+
+            const destRowElement = this.table.element.children[destRow] as HTMLElement;
+            const srcRowIndex = r % copyRowCount;
+
+            for (let c = 0; c < selectionColumnCount; c++) {
+                const destColumn = selectionRange.startColumn + c;
+                if (destColumn >= tableColumnCount) break;
+
+                const destCell = destRowElement.children[destColumn] as HTMLElement;
+                const srcColumnIndex = c % copyColumnCount;
+
+                const oldValue = destCell.textContent ?? '';
+                const newValue = sourceData[srcRowIndex][srcColumnIndex];
+
+                changes.push({
+                    row: destRow,
+                    column: destColumn,
+                    oldValue: oldValue,
+                    newValue: newValue
+                });
+
+                destCell.textContent = newValue;
+            }
+        }
+
+        this.history.push({
+            changes: changes,
+            range: selectionRange,
+            copyRange: copyRange
+        });
+
+        this.selection.setRange(
+            selectionRange.startRow,
+            selectionRange.startColumn,
+            selectionRange.endRow,
+            selectionRange.endColumn
+        );
+    }
+
+    /**
+     * 選択範囲がコピー範囲の倍数かどうかを判定
+     */
+    private shouldFillSelection(copyRange: CellRange, selectionRange: CellRange): boolean {
+        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
+        const copyColumnCount = copyRange.endColumn - copyRange.startColumn + 1;
+        const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
+        const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
+
+        const isRowMultiple = selectionRowCount >= copyRowCount && selectionRowCount % copyRowCount === 0;
+        const isColumnMultiple = selectionColumnCount >= copyColumnCount && selectionColumnCount % copyColumnCount === 0;
+        const isLarger = selectionRowCount > copyRowCount || selectionColumnCount > copyColumnCount;
+
+        return isRowMultiple && isColumnMultiple && isLarger;
+    }
+
+    pasteFromCopyRange(): void {
+        if (!this.selection.hasCopyRange()) return;
+
+        const copyRange = this.selection.getCopyRange();
+        const selectionRange = this.selection.getSelectionRange();
+        const sourceData = this.getSourceData(copyRange);
+
+        if (this.shouldFillSelection(copyRange, selectionRange)) {
+            this.pasteWithFill(sourceData, selectionRange, copyRange);
+        } else {
+            this.pasteNormal(sourceData, copyRange);
+        }
+
         this.selection.clearCopyRange();
     }
 }

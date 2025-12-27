@@ -132,6 +132,15 @@ export class Selection {
         return this.focus;
     }
 
+    getSelectionRange(): CellRange {
+        return {
+            startRow: Math.min(this.anchor.row, this.focus.row),
+            startColumn: Math.min(this.anchor.column, this.focus.column),
+            endRow: Math.max(this.anchor.row, this.focus.row),
+            endColumn: Math.max(this.anchor.column, this.focus.column)
+        };
+    }
+
     getCopyRange(): CellRange {
         return this.copyRange;
     }
