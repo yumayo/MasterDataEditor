@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange} from "./editor-actions";
 import {Selection, CellRange} from "./selection";
 import {History, CellChange} from "./history";
 
@@ -293,10 +293,8 @@ export class GridTextField {
                 } else {
                     moveCell(this.table, this.selection, 0, 1);
                 }
-            } else if (keyboardEvent.key === 'Backspace') {
-                submitText(this.table, this, this.selection, '', this.history);
             } else if (keyboardEvent.key === 'Delete') {
-                submitText(this.table, this, this.selection, '', this.history);
+                clearSelectionRange(this.table, this.selection, this.history);
             }
             if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
                 enableCellEditMode(this.table, this, this.selection, false);

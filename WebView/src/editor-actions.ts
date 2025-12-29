@@ -41,6 +41,42 @@ export function submitText(table: EditorTable, textField: GridTextField, selecti
     textField.hide();
 }
 
+/**
+ * 選択範囲内のすべてのセルを空にする
+ */
+export function clearSelectionRange(table: EditorTable, selection: Selection, history: History): void {
+    const range = selection.getSelectionRange();
+    const copyRange = selection.getCopyRange();
+    const changes: CellChange[] = [];
+
+    for (let r = range.startRow; r <= range.endRow; r++) {
+        const rowElement = table.element.children[r] as HTMLElement;
+
+        for (let c = range.startColumn; c <= range.endColumn; c++) {
+            const cell = rowElement.children[c] as HTMLElement;
+            const oldValue = cell.textContent ?? '';
+
+            if (oldValue !== '') {
+                changes.push({
+                    row: r,
+                    column: c,
+                    oldValue: oldValue,
+                    newValue: ''
+                });
+                cell.textContent = '';
+            }
+        }
+    }
+
+    if (changes.length > 0) {
+        history.push({
+            changes: changes,
+            range: range,
+            copyRange: copyRange
+        });
+    }
+}
+
 export function selectCell(table: EditorTable, textField: GridTextField, selection: Selection, cell: HTMLDivElement) {
     const position = EditorTable.getCellPosition(cell, table.element);
     if (!position) return;
