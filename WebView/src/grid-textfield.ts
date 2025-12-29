@@ -656,7 +656,5 @@ export class GridTextField {
         } else {
             this.pasteNormal(sourceData, copyRange);
         }
-
-        this.selection.clearCopyRange();
     }
 }
