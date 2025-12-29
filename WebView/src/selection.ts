@@ -107,6 +107,124 @@ export class Selection {
     }
 
     /**
+     * 列全体を選択する（列ヘッダークリック時）
+     */
+    selectColumn(column: number): void {
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        this.row = 1;
+        this.column = column;
+        this.anchor = { row: 1, column: column };
+        this.focus = { row: rowCount - 1, column: column };
+        this.selecting = true;
+        this.updateRenderer();
+    }
+
+    /**
+     * 行全体を選択する（行ヘッダークリック時）
+     */
+    selectRow(row: number): void {
+        if (row < 1) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        if (!firstRow) return;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+
+        this.row = row;
+        this.column = 1;
+        this.anchor = { row: row, column: 1 };
+        this.focus = { row: row, column: columnCount - 1 };
+        this.selecting = true;
+        this.updateRenderer();
+    }
+
+    /**
+     * 現在のアンカーから指定した列まで選択を拡張する（Shift+列ヘッダークリック時）
+     */
+    extendToColumn(column: number): void {
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        // アンカーを保持したまま、フォーカスを新しい列に拡張
+        this.anchor = { row: 1, column: this.anchor.column };
+        this.focus = { row: rowCount - 1, column: column };
+        this.row = 1;
+        this.column = column;
+        this.updateRenderer();
+    }
+
+    /**
+     * 現在のアンカーから指定した行まで選択を拡張する（Shift+行ヘッダークリック時）
+     */
+    extendToRow(row: number): void {
+        if (row < 1) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        if (!firstRow) return;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+
+        // アンカーを保持したまま、フォーカスを新しい行に拡張
+        this.anchor = { row: this.anchor.row, column: 1 };
+        this.focus = { row: row, column: columnCount - 1 };
+        this.row = row;
+        this.column = 1;
+        this.updateRenderer();
+    }
+
+    /**
+     * 現在の選択範囲に列を追加する（Ctrl+列ヘッダークリック時）
+     */
+    addColumn(column: number): void {
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        // 現在の選択範囲を取得
+        const currentRange = this.getSelectionRange();
+
+        // 新しい選択範囲を計算（列を含めるように拡張）
+        const newStartColumn = Math.min(currentRange.startColumn, column);
+        const newEndColumn = Math.max(currentRange.endColumn, column);
+
+        // 行は全行を選択
+        this.anchor = { row: 1, column: newStartColumn };
+        this.focus = { row: rowCount - 1, column: newEndColumn };
+        this.row = 1;
+        this.column = column;
+        this.selecting = true;
+        this.updateRenderer();
+    }
+
+    /**
+     * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
+     */
+    addRow(row: number): void {
+        if (row < 1) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        if (!firstRow) return;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+
+        // 現在の選択範囲を取得
+        const currentRange = this.getSelectionRange();
+
+        // 新しい選択範囲を計算（行を含めるように拡張）
+        const newStartRow = Math.min(currentRange.startRow, row);
+        const newEndRow = Math.max(currentRange.endRow, row);
+
+        // 列は全列を選択
+        this.anchor = { row: newStartRow, column: 1 };
+        this.focus = { row: newEndRow, column: columnCount - 1 };
+        this.row = row;
+        this.column = 1;
+        this.selecting = true;
+        this.updateRenderer();
+    }
+
+    /**
      * フォーカスを移動して選択範囲を拡張する（Shift+矢印キー用）
      */
     extendSelection(row: number, column: number): void {

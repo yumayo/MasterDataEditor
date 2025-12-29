@@ -2,7 +2,7 @@ import {EditorTableData} from "./model/editor-table-data";
 import {Selection, CellPosition} from "./selection";
 import {EditorTableDataColumn} from "./model/editor-table-data-column";
 import {EditorTableDataRow} from "./model/editor-table-data-row";
-import {enableCellEditMode, selectCell} from "./editor-actions";
+import {enableCellEditMode} from "./editor-actions";
 import {GridTextField} from "./grid-textfield";
 
 export class EditorTable {
@@ -135,6 +135,24 @@ export class EditorTable {
                 columnHeaderCell.dataset.columnIndex = String(i);
                 columnHeaderCell.dataset.col = String(i);
 
+                // 列ヘッダークリックで列全体を選択
+                const columnIndex = i + 1; // 列0は行ヘッダーなので+1
+                columnHeaderCell.addEventListener('mousedown', (e) => {
+                    textField.submitText();
+                    textField.hide();
+
+                    if (e.shiftKey) {
+                        // Shift+クリック: 現在のアンカーから連続選択
+                        selection.extendToColumn(columnIndex);
+                    } else if (e.ctrlKey || e.metaKey) {
+                        // Ctrl+クリック: 列を追加選択
+                        selection.addColumn(columnIndex);
+                    } else {
+                        // 通常クリック: 列全体を選択
+                        selection.selectColumn(columnIndex);
+                    }
+                });
+
                 // リサイズハンドルを追加
                 const resizeHandle = document.createElement('div');
                 resizeHandle.classList.add('column-resize-handle');
@@ -178,6 +196,25 @@ export class EditorTable {
             resizeGuideline.classList.remove('resize-guideline-column');
         };
 
+        // 行ヘッダークリック用のハンドラ作成関数
+        const createRowHeaderClickHandler = (rowIndex: number) => {
+            return (e: MouseEvent) => {
+                textField.submitText();
+                textField.hide();
+
+                if (e.shiftKey) {
+                    // Shift+クリック: 現在のアンカーから連続選択
+                    selection.extendToRow(rowIndex);
+                } else if (e.ctrlKey || e.metaKey) {
+                    // Ctrl+クリック: 行を追加選択
+                    selection.addRow(rowIndex);
+                } else {
+                    // 通常クリック: 行全体を選択
+                    selection.selectRow(rowIndex);
+                }
+            };
+        };
+
         {
             const cells = [];
             // 行ヘッダー (1)
@@ -187,7 +224,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(1));
 
             cells.push(rowHeaderCell);
 
@@ -209,7 +246,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(2));
 
             cells.push(rowHeaderCell);
 
@@ -231,7 +268,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(3));
 
             cells.push(rowHeaderCell);
 
@@ -253,7 +290,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(4));
 
             cells.push(rowHeaderCell);
 
@@ -275,7 +312,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(5));
 
             cells.push(rowHeaderCell);
 
@@ -298,7 +335,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(rowIndex));
 
             cells.push(rowHeaderCell);
 
@@ -320,7 +357,7 @@ export class EditorTable {
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
-            }, showRowGuideline);
+            }, showRowGuideline, createRowHeaderClickHandler(rowIndex));
 
             cells.push(rowHeaderCell);
 
@@ -410,8 +447,20 @@ export class EditorTable {
         cell.addEventListener('dblclick', () => {
             enableCellEditMode(table, textField, selection, true);
         });
-        cell.addEventListener('mousedown', () => {
-            selectCell(table, textField, selection, cell);
+        cell.addEventListener('mousedown', (e) => {
+            const position = EditorTable.getCellPosition(cell, table.element);
+            if (!position) return;
+
+            textField.submitText();
+            textField.hide();
+
+            if (e.shiftKey) {
+                // Shift+クリック: 現在のアンカーから連続選択
+                selection.extendSelection(position.row, position.column);
+            } else {
+                // 通常クリック: セルを選択
+                selection.start(position.row, position.column);
+            }
         });
         cell.textContent = value as any;
         return cell;
@@ -454,12 +503,19 @@ export class EditorTable {
         rowIndex: number,
         onResizeStart: () => void,
         setResizeState: (startY: number, startHeight: number) => void,
-        showGuideline: (cell: HTMLElement) => void
+        showGuideline: (cell: HTMLElement) => void,
+        onRowHeaderClick: (e: MouseEvent) => void
     ): HTMLElement {
         const rowHeaderCell = document.createElement('div');
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = text;
         rowHeaderCell.dataset.rowIndex = String(rowIndex);
+
+        // 行ヘッダークリックで行全体を選択
+        rowHeaderCell.addEventListener('mousedown', (e) => {
+            // リサイズハンドルからのイベントは処理しない（stopPropagationされる）
+            onRowHeaderClick(e);
+        });
 
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
