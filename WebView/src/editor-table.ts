@@ -67,7 +67,16 @@ export class EditorTable {
             if (target.classList.contains('editor-table-cell')) {
                 const position = EditorTable.getCellPosition(target, this.element);
                 if (position) {
-                    selection.update(position.row, position.column);
+                    if (selection.isSelectingColumn()) {
+                        // 列ヘッダーをドラッグ中: 列のみ更新
+                        selection.updateColumn(position.column);
+                    } else if (selection.isSelectingRow()) {
+                        // 行ヘッダーをドラッグ中: 行のみ更新
+                        selection.updateRow(position.row);
+                    } else {
+                        // 通常のセル選択
+                        selection.update(position.row, position.column);
+                    }
                 }
             }
         });

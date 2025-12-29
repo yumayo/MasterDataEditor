@@ -24,6 +24,10 @@ export class Selection {
 
     private selecting: boolean;
 
+    private selectingColumn: boolean;
+
+    private selectingRow: boolean;
+
     private tableElement: HTMLElement;
 
     private editorElement: HTMLElement;
@@ -49,6 +53,8 @@ export class Selection {
         this.anchor = { row: 1, column: 1 };
         this.focus = { row: 1, column: 1 };
         this.selecting = false;
+        this.selectingColumn = false;
+        this.selectingRow = false;
         this.tableElement = tableElement;
         this.editorElement = editorElement;
         this.selectedCells = [];
@@ -104,6 +110,8 @@ export class Selection {
 
     end(): void {
         this.selecting = false;
+        this.selectingColumn = false;
+        this.selectingRow = false;
     }
 
     /**
@@ -118,6 +126,8 @@ export class Selection {
         this.anchor = { row: 1, column: column };
         this.focus = { row: rowCount - 1, column: column };
         this.selecting = true;
+        this.selectingColumn = true;
+        this.selectingRow = false;
         this.updateRenderer();
     }
 
@@ -137,6 +147,8 @@ export class Selection {
         this.anchor = { row: row, column: 1 };
         this.focus = { row: row, column: columnCount - 1 };
         this.selecting = true;
+        this.selectingColumn = false;
+        this.selectingRow = true;
         this.updateRenderer();
     }
 
@@ -236,6 +248,54 @@ export class Selection {
 
     isSelecting(): boolean {
         return this.selecting;
+    }
+
+    isSelectingColumn(): boolean {
+        return this.selectingColumn;
+    }
+
+    isSelectingRow(): boolean {
+        return this.selectingRow;
+    }
+
+    /**
+     * 列選択のドラッグ更新（列ヘッダーをドラッグ中に呼ばれる）
+     */
+    updateColumn(column: number): void {
+        if (!this.selectingColumn) return;
+        if (column < 1) return;
+
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+        if (column >= columnCount) return;
+
+        this.focus = { row: rowCount - 1, column: column };
+        this.column = column;
+        this.updateRenderer();
+    }
+
+    /**
+     * 行選択のドラッグ更新（行ヘッダーをドラッグ中に呼ばれる）
+     */
+    updateRow(row: number): void {
+        if (!this.selectingRow) return;
+        if (row < 1) return;
+
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+        if (row >= rowCount) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+
+        this.focus = { row: row, column: columnCount - 1 };
+        this.row = row;
+        this.updateRenderer();
     }
 
     isSingleCell(): boolean {
