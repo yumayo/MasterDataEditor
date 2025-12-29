@@ -36,6 +36,7 @@ export class GridTextField {
         this.element.addEventListener('focusout', this.onFocusout.bind(this));
         this.element.addEventListener('keydown', this.onKeydown.bind(this));
         this.element.addEventListener('input', this.onInput.bind(this));
+        this.element.addEventListener('paste', this.onPaste.bind(this));
 
         // フィルハンドルのイベント登録
         this.setupFillHandle();
@@ -227,10 +228,9 @@ export class GridTextField {
                 return;
             }
 
-            // Ctrl+V: ペースト
+            // Ctrl+V: ペースト（pasteイベントで処理するためpreventDefaultしない）
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 'v') {
-                keyboardEvent.preventDefault();
-                this.pasteFromCopyRange();
+                // pasteイベントに任せる
                 return;
             }
 
@@ -307,6 +307,108 @@ export class GridTextField {
     onInput() {
         if (!this.active) return;
         this.resizeTextField(this.element.textContent ?? '');
+    }
+
+    /**
+     * システムクリップボードからのペーストイベントを処理する
+     */
+    onPaste(event: ClipboardEvent): void {
+        if (!this.active) return;
+
+        // テキスト入力モード中（visible）は通常のペースト動作を許可
+        if (this.visible) return;
+
+        event.preventDefault();
+
+        const clipboardData = event.clipboardData;
+        if (!clipboardData) return;
+
+        // クリップボードからテキストを取得
+        const text = clipboardData.getData('text/plain');
+        if (!text) return;
+
+        // タブ区切り・改行区切りのテキストを2次元配列に解析
+        const sourceData = this.parseClipboardText(text);
+        if (sourceData.length === 0) return;
+
+        this.pasteFromClipboardData(sourceData);
+    }
+
+    /**
+     * クリップボードのテキストを2次元配列に解析する
+     * タブで列区切り、改行で行区切り
+     */
+    private parseClipboardText(text: string): string[][] {
+        // 末尾の改行を除去
+        const trimmedText = text.replace(/\r?\n$/, '');
+
+        // 行に分割（\r\nと\nの両方に対応）
+        const lines = trimmedText.split(/\r?\n/);
+
+        const result: string[][] = [];
+        for (const line of lines) {
+            // タブで列に分割
+            const cells = line.split('\t');
+            result.push(cells);
+        }
+
+        return result;
+    }
+
+    /**
+     * 解析したクリップボードデータをテーブルに貼り付ける
+     */
+    private pasteFromClipboardData(sourceData: string[][]): void {
+        const anchor = this.selection.getAnchor();
+        const copyRowCount = sourceData.length;
+        const copyColumnCount = sourceData[0].length;
+
+        const tableRowCount = this.table.element.children.length;
+        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+
+        const changes: CellChange[] = [];
+
+        const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
+        const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
+
+        for (let r = 0; r < copyRowCount; r++) {
+            const destRow = anchor.row + r;
+            if (destRow >= tableRowCount) break;
+
+            const destRowElement = this.table.element.children[destRow] as HTMLElement;
+
+            for (let c = 0; c < copyColumnCount; c++) {
+                const destColumn = anchor.column + c;
+                if (destColumn >= tableColumnCount) break;
+
+                const destCell = destRowElement.children[destColumn] as HTMLElement;
+
+                const oldValue = destCell.textContent ?? '';
+                const newValue = sourceData[r][c];
+
+                changes.push({
+                    row: destRow,
+                    column: destColumn,
+                    oldValue: oldValue,
+                    newValue: newValue
+                });
+
+                destCell.textContent = newValue;
+            }
+        }
+
+        this.history.push({
+            changes: changes,
+            range: {
+                startRow: anchor.row,
+                startColumn: anchor.column,
+                endRow: pasteEndRow,
+                endColumn: pasteEndColumn
+            },
+            copyRange: { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 }
+        });
+
+        this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
     }
 
     submitText() {

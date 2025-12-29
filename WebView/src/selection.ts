@@ -335,6 +335,68 @@ export class Selection {
 
         this.copyRange = { startRow, startColumn, endRow, endColumn };
         this.updateCopyRenderer();
+
+        // システムクリップボードにコピー
+        this.copyToClipboard(startRow, startColumn, endRow, endColumn);
+    }
+
+    /**
+     * 選択範囲をシステムクリップボードにコピーする
+     */
+    private copyToClipboard(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+        const rows: string[] = [];
+
+        for (let r = startRow; r <= endRow; r++) {
+            const rowElement = this.tableElement.children[r] as HTMLElement;
+            if (!rowElement) continue;
+
+            const cells: string[] = [];
+            for (let c = startColumn; c <= endColumn; c++) {
+                const cell = rowElement.children[c] as HTMLElement;
+                cells.push(cell.textContent ?? '');
+            }
+            rows.push(cells.join('\t'));
+        }
+
+        const textData = rows.join('\n');
+
+        // HTML形式も作成（Excelやスプレッドシートでより良い形式で貼り付けられる）
+        const htmlRows: string[] = [];
+        for (let r = startRow; r <= endRow; r++) {
+            const rowElement = this.tableElement.children[r] as HTMLElement;
+            if (!rowElement) continue;
+
+            const htmlCells: string[] = [];
+            for (let c = startColumn; c <= endColumn; c++) {
+                const cell = rowElement.children[c] as HTMLElement;
+                const content = this.escapeHtml(cell.textContent ?? '');
+                htmlCells.push(`<td>${content}</td>`);
+            }
+            htmlRows.push(`<tr>${htmlCells.join('')}</tr>`);
+        }
+        const htmlData = `<table>${htmlRows.join('')}</table>`;
+
+        // クリップボードに書き込み
+        navigator.clipboard.write([
+            new ClipboardItem({
+                'text/plain': new Blob([textData], { type: 'text/plain' }),
+                'text/html': new Blob([htmlData], { type: 'text/html' })
+            })
+        ]).catch(err => {
+            console.error('クリップボードへの書き込みに失敗しました:', err);
+        });
+    }
+
+    /**
+     * HTML特殊文字をエスケープする
+     */
+    private escapeHtml(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     clearCopyRange(): void {
