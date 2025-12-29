@@ -327,11 +327,45 @@ export class GridTextField {
         const text = clipboardData.getData('text/plain');
         if (!text) return;
 
+        // コピー範囲がある場合、クリップボードの内容と比較
+        if (this.selection.hasCopyRange()) {
+            const copyRangeText = this.getCopyRangeText();
+            // 改行コードを正規化して比較（\r\nを\nに変換、末尾の改行を除去）
+            const normalizedClipboardText = text.replace(/\r\n/g, '\n').replace(/\n$/, '');
+            const normalizedCopyRangeText = copyRangeText.replace(/\r\n/g, '\n').replace(/\n$/, '');
+            // クリップボードの内容とコピー範囲の内容が一致する場合は倍数ペースト
+            if (normalizedClipboardText === normalizedCopyRangeText) {
+                this.pasteFromCopyRange();
+                return;
+            }
+        }
+
         // タブ区切り・改行区切りのテキストを2次元配列に解析
         const sourceData = this.parseClipboardText(text);
         if (sourceData.length === 0) return;
 
         this.pasteFromClipboardData(sourceData);
+    }
+
+    /**
+     * コピー範囲のセル内容からテキストを生成する
+     * （クリップボードと同じ形式：タブ区切り、改行区切り）
+     */
+    private getCopyRangeText(): string {
+        const copyRange = this.selection.getCopyRange();
+        const rows: string[] = [];
+
+        for (let r = copyRange.startRow; r <= copyRange.endRow; r++) {
+            const rowElement = this.table.element.children[r] as HTMLElement;
+            const cells: string[] = [];
+            for (let c = copyRange.startColumn; c <= copyRange.endColumn; c++) {
+                const cell = rowElement.children[c] as HTMLElement;
+                cells.push(cell.textContent ?? '');
+            }
+            rows.push(cells.join('\t'));
+        }
+
+        return rows.join('\n');
     }
 
     /**
