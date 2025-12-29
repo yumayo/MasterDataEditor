@@ -360,6 +360,7 @@ export class GridTextField {
      */
     private pasteFromClipboardData(sourceData: string[][]): void {
         const anchor = this.selection.getAnchor();
+        const copyRange = this.selection.getCopyRange();
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
 
@@ -405,7 +406,7 @@ export class GridTextField {
                 endRow: pasteEndRow,
                 endColumn: pasteEndColumn
             },
-            copyRange: { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 }
+            copyRange: copyRange
         });
 
         this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
