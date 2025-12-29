@@ -210,6 +210,27 @@ export class Selection {
     }
 
     /**
+     * 全セルを選択する（左上コーナークリック時）
+     */
+    selectAll(): void {
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        const firstRow = this.tableElement.children[0] as HTMLElement;
+        const columnCount = firstRow.children.length;
+        if (columnCount < 2) return;
+
+        this.row = 1;
+        this.column = 1;
+        this.anchor = { row: 1, column: 1 };
+        this.focus = { row: rowCount - 1, column: columnCount - 1 };
+        this.selecting = false;
+        this.selectingColumn = false;
+        this.selectingRow = false;
+        this.updateRenderer();
+    }
+
+    /**
      * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
      */
     addRow(row: number): void {

@@ -134,6 +134,14 @@ export class EditorTable {
             // 左上隅の空セル
             const cornerCell = document.createElement('div');
             cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
+
+            // コーナーセルクリックで全選択
+            cornerCell.addEventListener('mousedown', () => {
+                textField.submitText();
+                textField.hide();
+                selection.selectAll();
+            });
+
             cells.push(cornerCell);
 
             // 列ヘッダー (A, B, C, ...)
