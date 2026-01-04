@@ -141,7 +141,7 @@ export class GridTextField {
         if (this.active) return;
 
         this.active = true;
-        this.element.focus();
+        this.element.focus({ preventScroll: true });
     }
 
     show(rect: DOMRect, cellText: string, preserveContent: boolean) {
@@ -189,7 +189,7 @@ export class GridTextField {
 
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
-        this.element.focus();
+        this.element.focus({ preventScroll: true });
 
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
