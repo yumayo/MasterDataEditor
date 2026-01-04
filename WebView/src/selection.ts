@@ -46,9 +46,6 @@ export class Selection {
 
     private fillPreviewCells: HTMLElement[];
 
-    // 範囲選択内移動モード用（Enter/Tabキーでの移動時に範囲を維持するため）
-    private lockedRange: CellRange;
-
     constructor(tableElement: HTMLElement, editorElement: HTMLElement) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.row = 1;
@@ -66,7 +63,6 @@ export class Selection {
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
         this.fillPreviewCells = [];
-        this.lockedRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
 
         // フィルハンドル要素を作成
         this.fillHandle = document.createElement('div');
@@ -79,16 +75,7 @@ export class Selection {
         this.column = column;
         this.anchor = { row, column };
         this.focus = { row, column };
-        this.clearLockedRange();
         this.updateRenderer();
-    }
-
-    private clearLockedRange(): void {
-        this.lockedRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
-    }
-
-    private hasLockedRange(): boolean {
-        return this.lockedRange.startRow >= 0;
     }
 
     setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
@@ -96,22 +83,6 @@ export class Selection {
         this.column = startColumn;
         this.anchor = { row: startRow, column: startColumn };
         this.focus = { row: endRow, column: endColumn };
-        this.clearLockedRange();
-        this.updateRenderer();
-    }
-
-    /**
-     * 範囲選択を維持したままアンカー位置だけを移動する（Enter/Tabキー用）
-     * 範囲選択をlockedRangeに保存し、アンカー位置だけを移動する
-     */
-    moveWithinRange(row: number, column: number): void {
-        // 初回呼び出し時に現在の選択範囲をロック
-        if (!this.hasLockedRange()) {
-            this.lockedRange = this.getSelectionRange();
-        }
-        this.row = row;
-        this.column = column;
-        this.anchor = { row, column };
         this.updateRenderer();
     }
 
@@ -124,7 +95,6 @@ export class Selection {
         this.column = column;
         this.anchor = { row, column };
         this.focus = { row, column };
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -158,7 +128,6 @@ export class Selection {
         this.selecting = true;
         this.selectingColumn = true;
         this.selectingRow = false;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -180,7 +149,6 @@ export class Selection {
         this.selecting = true;
         this.selectingColumn = false;
         this.selectingRow = true;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -196,7 +164,6 @@ export class Selection {
         this.focus = { row: rowCount - 1, column: column };
         this.row = 1;
         this.column = column;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -216,7 +183,6 @@ export class Selection {
         this.focus = { row: row, column: columnCount - 1 };
         this.row = row;
         this.column = 1;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -240,7 +206,6 @@ export class Selection {
         this.row = 1;
         this.column = column;
         this.selecting = true;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -262,7 +227,6 @@ export class Selection {
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -290,7 +254,6 @@ export class Selection {
         this.row = row;
         this.column = 1;
         this.selecting = true;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -301,7 +264,6 @@ export class Selection {
         this.focus = { row, column };
         this.row = row;
         this.column = column;
-        this.clearLockedRange();
         this.updateRenderer();
     }
 
@@ -358,11 +320,6 @@ export class Selection {
     }
 
     isSingleCell(): boolean {
-        // lockedRangeがある場合は、その範囲が単一セルかどうかを判定
-        if (this.hasLockedRange()) {
-            return this.lockedRange.startRow === this.lockedRange.endRow &&
-                   this.lockedRange.startColumn === this.lockedRange.endColumn;
-        }
         return this.anchor.row === this.focus.row && this.anchor.column === this.focus.column;
     }
 
@@ -375,10 +332,6 @@ export class Selection {
     }
 
     getSelectionRange(): CellRange {
-        // lockedRangeがある場合はそれを返す（Enter/Tabキーでの範囲内移動中）
-        if (this.hasLockedRange()) {
-            return this.lockedRange;
-        }
         return {
             startRow: Math.min(this.anchor.row, this.focus.row),
             startColumn: Math.min(this.anchor.column, this.focus.column),
@@ -547,23 +500,10 @@ export class Selection {
         }
         this.selectedCells = [];
 
-        // lockedRangeがある場合はそれを使用し、なければanchor/focusから計算
-        let startRow: number;
-        let startColumn: number;
-        let endRow: number;
-        let endColumn: number;
-
-        if (this.hasLockedRange()) {
-            startRow = this.lockedRange.startRow;
-            startColumn = this.lockedRange.startColumn;
-            endRow = this.lockedRange.endRow;
-            endColumn = this.lockedRange.endColumn;
-        } else {
-            startRow = Math.min(this.anchor.row, this.focus.row);
-            startColumn = Math.min(this.anchor.column, this.focus.column);
-            endRow = Math.max(this.anchor.row, this.focus.row);
-            endColumn = Math.max(this.anchor.column, this.focus.column);
-        }
+        const startRow = Math.min(this.anchor.row, this.focus.row);
+        const startColumn = Math.min(this.anchor.column, this.focus.column);
+        const endRow = Math.max(this.anchor.row, this.focus.row);
+        const endColumn = Math.max(this.anchor.column, this.focus.column);
 
         // 選択範囲内のすべてのセルにスタイルを適用
         for (let r = startRow; r <= endRow; r++) {

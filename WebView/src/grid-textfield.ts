@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange} from "./editor-actions";
 import {Selection, CellRange} from "./selection";
 import {History, CellChange} from "./history";
 
@@ -212,22 +212,7 @@ export class GridTextField {
             // IMEの入力中であれば決定しないです。
             if (!keyboardEvent.isComposing && keyboardEvent.code === 'Enter') {
                 submitText(this.table, this, this.selection, this.element.textContent ?? '', this.history);
-                if (keyboardEvent.shiftKey) {
-                    moveCellUpWithinSelection(this.table, this.selection);
-                } else {
-                    moveCellDownWithinSelection(this.table, this.selection);
-                }
-            }
-
-            // Tabキーの処理（編集中）
-            if (keyboardEvent.key === 'Tab') {
-                keyboardEvent.preventDefault();
-                submitText(this.table, this, this.selection, this.element.textContent ?? '', this.history);
-                if (keyboardEvent.shiftKey) {
-                    moveCellLeftWithinSelection(this.table, this.selection);
-                } else {
-                    moveCellRightWithinSelection(this.table, this.selection);
-                }
+                moveCell(this.table, this.selection, 0, 1);
             }
 
             // ESCキーで入力をキャンセルして元に戻す
@@ -304,16 +289,9 @@ export class GridTextField {
                 }
             } else if (keyboardEvent.key === 'Enter') {
                 if (keyboardEvent.shiftKey) {
-                    moveCellUpWithinSelection(this.table, this.selection);
+                    moveCell(this.table, this.selection, 1, 0);
                 } else {
-                    moveCellDownWithinSelection(this.table, this.selection);
-                }
-            } else if (keyboardEvent.key === 'Tab') {
-                keyboardEvent.preventDefault();
-                if (keyboardEvent.shiftKey) {
-                    moveCellLeftWithinSelection(this.table, this.selection);
-                } else {
-                    moveCellRightWithinSelection(this.table, this.selection);
+                    moveCell(this.table, this.selection, 0, 1);
                 }
             } else if (keyboardEvent.key === 'Delete') {
                 clearSelectionRange(this.table, this.selection, this.history);
