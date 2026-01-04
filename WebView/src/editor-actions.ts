@@ -119,6 +119,138 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
     selection.extendSelection(row, column);
 }
 
+/**
+ * 範囲選択内で下方向に移動する（Enterキー用）
+ * 範囲選択がない場合は通常の下方向移動
+ * 範囲の最下行にいる場合は右隣の列の最上行に移動
+ * 右端の列の最下行にいる場合は範囲の左上に戻る
+ */
+export function moveCellDownWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const anchor = selection.getAnchor();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 0, 1);
+        return;
+    }
+
+    let newRow = anchor.row + 1;
+    let newColumn = anchor.column;
+
+    // 範囲の最下行を超えた場合
+    if (newRow > range.endRow) {
+        newRow = range.startRow;
+        newColumn = anchor.column + 1;
+
+        // 範囲の右端を超えた場合は左上に戻る
+        if (newColumn > range.endColumn) {
+            newColumn = range.startColumn;
+        }
+    }
+
+    selection.moveWithinRange(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で上方向に移動する（Shift+Enterキー用）
+ * 範囲選択がない場合は通常の上方向移動
+ * 範囲の最上行にいる場合は左隣の列の最下行に移動
+ * 左端の列の最上行にいる場合は範囲の右下に戻る
+ */
+export function moveCellUpWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const anchor = selection.getAnchor();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 0, -1);
+        return;
+    }
+
+    let newRow = anchor.row - 1;
+    let newColumn = anchor.column;
+
+    // 範囲の最上行を超えた場合
+    if (newRow < range.startRow) {
+        newRow = range.endRow;
+        newColumn = anchor.column - 1;
+
+        // 範囲の左端を超えた場合は右下に戻る
+        if (newColumn < range.startColumn) {
+            newColumn = range.endColumn;
+        }
+    }
+
+    selection.moveWithinRange(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で右方向に移動する（Tabキー用）
+ * 範囲選択がない場合は通常の右方向移動
+ * 範囲の右端にいる場合は次の行の左端に移動
+ * 右端の最下行にいる場合は範囲の左上に戻る
+ */
+export function moveCellRightWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const anchor = selection.getAnchor();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 1, 0);
+        return;
+    }
+
+    let newRow = anchor.row;
+    let newColumn = anchor.column + 1;
+
+    // 範囲の右端を超えた場合
+    if (newColumn > range.endColumn) {
+        newColumn = range.startColumn;
+        newRow = anchor.row + 1;
+
+        // 範囲の最下行を超えた場合は左上に戻る
+        if (newRow > range.endRow) {
+            newRow = range.startRow;
+        }
+    }
+
+    selection.moveWithinRange(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で左方向に移動する（Shift+Tabキー用）
+ * 範囲選択がない場合は通常の左方向移動
+ * 範囲の左端にいる場合は前の行の右端に移動
+ * 左端の最上行にいる場合は範囲の右下に戻る
+ */
+export function moveCellLeftWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const anchor = selection.getAnchor();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, -1, 0);
+        return;
+    }
+
+    let newRow = anchor.row;
+    let newColumn = anchor.column - 1;
+
+    // 範囲の左端を超えた場合
+    if (newColumn < range.startColumn) {
+        newColumn = range.endColumn;
+        newRow = anchor.row - 1;
+
+        // 範囲の最上行を超えた場合は右下に戻る
+        if (newRow < range.startRow) {
+            newRow = range.endRow;
+        }
+    }
+
+    selection.moveWithinRange(newRow, newColumn);
+}
+
 export function createTable(editor: Editor, name: string, tableData: EditorTableData) {
 
     // 上書きする前にテーブル内のエレメントを全削除する必要があるため、呼び出しておきます。
