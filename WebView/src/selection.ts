@@ -14,11 +14,7 @@ export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 export class Selection {
 
-    row: number;
-
-    column: number;
-
-    private anchor: CellPosition;
+    private range: CellRange;
 
     private focus: CellPosition;
 
@@ -32,6 +28,12 @@ export class Selection {
 
     private editorElement: HTMLElement;
 
+    /**
+     * 選択範囲されたセル
+     * 選択範囲を解除するときに、すべてのセルのclassを見なくてもいいように、変数に置いています。
+     * パフォーマンス改善用の変数で、なくても問題はありません。
+     * @private
+     */
     private selectedCells: HTMLElement[];
 
     private copiedCells: HTMLElement[];
@@ -48,10 +50,8 @@ export class Selection {
 
     constructor(tableElement: HTMLElement, editorElement: HTMLElement) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
-        this.row = 1;
-        this.column = 1;
-        this.anchor = { row: 1, column: 1 };
-        this.focus = { row: 1, column: 1 };
+        this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
+        this.focus = { row: 1, column: 1 }; // constructor 初期設定
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
@@ -70,41 +70,43 @@ export class Selection {
         this.editorElement.appendChild(this.fillHandle);
     }
 
+    /**
+     * フォーカスを移動します。範囲選択は変更しません。
+     * @param row
+     * @param column
+     */
     move(row: number, column: number): void {
-        this.row = row;
-        this.column = column;
-        this.anchor = { row, column };
-        this.focus = { row, column };
+        row = Math.max(1, row);
+        column = Math.max(1, column);
+
+        this.focus = { row, column }; // move フォーカスを移動します。範囲選択の変更なし
         this.updateRenderer();
     }
 
+    /**
+     * 選択範囲を設定します。フォーカスは移動しません。
+     * @param startRow
+     * @param startColumn
+     * @param endRow
+     * @param endColumn
+     */
     setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.row = startRow;
-        this.column = startColumn;
-        this.anchor = { row: startRow, column: startColumn };
-        this.focus = { row: endRow, column: endColumn };
+        startRow = Math.max(1, startRow);
+        startColumn = Math.max(1, startColumn);
+        endRow = Math.max(1, endRow);
+        endColumn = Math.max(1, endColumn);
+
+        this.range = { startRow, startColumn, endRow, endColumn };
         this.updateRenderer();
     }
 
     start(row: number, column: number): void {
-        // ヘッダー（行0、列0）は選択できない
-        if (row < 1 || column < 1) return;
+        row = Math.max(1, row);
+        column = Math.max(1, column);
 
         this.selecting = true;
-        this.row = row;
-        this.column = column;
-        this.anchor = { row, column };
-        this.focus = { row, column };
-        this.updateRenderer();
-    }
-
-    update(row: number, column: number): void {
-        if (!this.selecting) return;
-
-        // ヘッダー（行0、列0）は選択できない
-        if (row < 1 || column < 1) return;
-
-        this.focus = { row, column };
+        this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
+        this.focus = { row, column }; // start 選択開始位置にフォーカスを設定
         this.updateRenderer();
     }
 
@@ -118,13 +120,12 @@ export class Selection {
      * 列全体を選択する（列ヘッダークリック時）
      */
     selectColumn(column: number): void {
+        console.log('[selectColumn] column:', column);
         const rowCount = this.tableElement.children.length;
         if (rowCount < 2) return;
 
-        this.row = 1;
-        this.column = column;
-        this.anchor = { row: 1, column: column };
-        this.focus = { row: rowCount - 1, column: column };
+        this.range = { startRow: 1, startColumn: column, endRow: rowCount - 1, endColumn: column };
+        this.focus = { row: 1, column: column }; // selectColumn 列ヘッダークリック
         this.selecting = true;
         this.selectingColumn = true;
         this.selectingRow = false;
@@ -135,6 +136,7 @@ export class Selection {
      * 行全体を選択する（行ヘッダークリック時）
      */
     selectRow(row: number): void {
+        console.log('[selectRow] row:', row);
         if (row < 1) return;
 
         const firstRow = this.tableElement.children[0] as HTMLElement;
@@ -142,10 +144,8 @@ export class Selection {
         const columnCount = firstRow.children.length;
         if (columnCount < 2) return;
 
-        this.row = row;
-        this.column = 1;
-        this.anchor = { row: row, column: 1 };
-        this.focus = { row: row, column: columnCount - 1 };
+        this.range = { startRow: row, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
+        this.focus = { row: row, column: 1 }; // selectRow 行ヘッダークリック
         this.selecting = true;
         this.selectingColumn = false;
         this.selectingRow = true;
@@ -156,14 +156,12 @@ export class Selection {
      * 現在のアンカーから指定した列まで選択を拡張する（Shift+列ヘッダークリック時）
      */
     extendToColumn(column: number): void {
+        console.log('[extendToColumn] column:', column);
         const rowCount = this.tableElement.children.length;
         if (rowCount < 2) return;
 
-        // アンカーを保持したまま、フォーカスを新しい列に拡張
-        this.anchor = { row: 1, column: this.anchor.column };
-        this.focus = { row: rowCount - 1, column: column };
-        this.row = 1;
-        this.column = column;
+        // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
+        this.range = { startRow: 1, startColumn: this.range.startColumn, endRow: rowCount - 1, endColumn: column };
         this.updateRenderer();
     }
 
@@ -171,6 +169,7 @@ export class Selection {
      * 現在のアンカーから指定した行まで選択を拡張する（Shift+行ヘッダークリック時）
      */
     extendToRow(row: number): void {
+        console.log('[extendToRow] row:', row);
         if (row < 1) return;
 
         const firstRow = this.tableElement.children[0] as HTMLElement;
@@ -178,34 +177,8 @@ export class Selection {
         const columnCount = firstRow.children.length;
         if (columnCount < 2) return;
 
-        // アンカーを保持したまま、フォーカスを新しい行に拡張
-        this.anchor = { row: this.anchor.row, column: 1 };
-        this.focus = { row: row, column: columnCount - 1 };
-        this.row = row;
-        this.column = 1;
-        this.updateRenderer();
-    }
-
-    /**
-     * 現在の選択範囲に列を追加する（Ctrl+列ヘッダークリック時）
-     */
-    addColumn(column: number): void {
-        const rowCount = this.tableElement.children.length;
-        if (rowCount < 2) return;
-
-        // 現在の選択範囲を取得
-        const currentRange = this.getSelectionRange();
-
-        // 新しい選択範囲を計算（列を含めるように拡張）
-        const newStartColumn = Math.min(currentRange.startColumn, column);
-        const newEndColumn = Math.max(currentRange.endColumn, column);
-
-        // 行は全行を選択
-        this.anchor = { row: 1, column: newStartColumn };
-        this.focus = { row: rowCount - 1, column: newEndColumn };
-        this.row = 1;
-        this.column = column;
-        this.selecting = true;
+        // アンカー（startRow）を保持したまま、endRowを新しい行に拡張
+        this.range = { startRow: this.range.startRow, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
         this.updateRenderer();
     }
 
@@ -220,10 +193,8 @@ export class Selection {
         const columnCount = firstRow.children.length;
         if (columnCount < 2) return;
 
-        this.row = 1;
-        this.column = 1;
-        this.anchor = { row: 1, column: 1 };
-        this.focus = { row: rowCount - 1, column: columnCount - 1 };
+        this.range = { startRow: 1, startColumn: 1, endRow: rowCount - 1, endColumn: columnCount - 1 };
+        this.focus = { row: 1, column: 1 }; // selectAll 左上コーナークリック
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
@@ -231,9 +202,28 @@ export class Selection {
     }
 
     /**
+     * 現在の選択範囲に列を追加する（Ctrl+列ヘッダークリック時）
+     */
+    addColumn(column: number): void {
+        console.log('[addColumn] column:', column);
+        const rowCount = this.tableElement.children.length;
+        if (rowCount < 2) return;
+
+        // 新しい選択範囲を計算（列を含めるように拡張）
+        const newStartColumn = Math.min(this.range.startColumn, column);
+        const newEndColumn = Math.max(this.range.endColumn, column);
+
+        // 行は全行を選択
+        this.range = { startRow: 1, startColumn: newStartColumn, endRow: rowCount - 1, endColumn: newEndColumn };
+        this.selecting = true;
+        this.updateRenderer();
+    }
+
+    /**
      * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
      */
     addRow(row: number): void {
+        console.log('[addRow] row:', row);
         if (row < 1) return;
 
         const firstRow = this.tableElement.children[0] as HTMLElement;
@@ -241,29 +231,39 @@ export class Selection {
         const columnCount = firstRow.children.length;
         if (columnCount < 2) return;
 
-        // 現在の選択範囲を取得
-        const currentRange = this.getSelectionRange();
-
         // 新しい選択範囲を計算（行を含めるように拡張）
-        const newStartRow = Math.min(currentRange.startRow, row);
-        const newEndRow = Math.max(currentRange.endRow, row);
+        const newStartRow = Math.min(this.range.startRow, row);
+        const newEndRow = Math.max(this.range.endRow, row);
 
         // 列は全列を選択
-        this.anchor = { row: newStartRow, column: 1 };
-        this.focus = { row: newEndRow, column: columnCount - 1 };
-        this.row = row;
-        this.column = 1;
+        this.range = { startRow: newStartRow, startColumn: 1, endRow: newEndRow, endColumn: columnCount - 1 };
         this.selecting = true;
         this.updateRenderer();
     }
 
     /**
-     * フォーカスを移動して選択範囲を拡張する（Shift+矢印キー用）
+     * フォーカスを移動して選択範囲を拡張する（絶対座標用）
+     * マウス操作による範囲選択は絶対座標的なものです。
      */
     extendSelection(row: number, column: number): void {
-        this.focus = { row, column };
-        this.row = row;
-        this.column = column;
+        this.range = {
+            ...this.range,
+            endRow: Math.max(1, row),
+            endColumn: Math.max(1, column)
+        };
+        this.updateRenderer();
+    }
+
+    /**
+     * フォーカスを移動して選択範囲を拡張する（相対座標用）
+     * 矢印キーは相対的に範囲を操作します。
+     */
+    extendSelectionOffset(x: number, y: number): void {
+        this.range = { 
+            ...this.range,
+            endRow: Math.max(1, this.range.endRow + y),
+            endColumn: Math.max(1, this.range.endColumn + x)
+        };
         this.updateRenderer();
     }
 
@@ -283,6 +283,7 @@ export class Selection {
      * 列選択のドラッグ更新（列ヘッダーをドラッグ中に呼ばれる）
      */
     updateColumn(column: number): void {
+        console.log('[updateColumn] column:', column, 'selectingColumn:', this.selectingColumn);
         if (!this.selectingColumn) return;
         if (column < 1) return;
 
@@ -294,8 +295,7 @@ export class Selection {
         if (columnCount < 2) return;
         if (column >= columnCount) return;
 
-        this.focus = { row: rowCount - 1, column: column };
-        this.column = column;
+        this.range = { ...this.range, endColumn: column };
         this.updateRenderer();
     }
 
@@ -303,6 +303,7 @@ export class Selection {
      * 行選択のドラッグ更新（行ヘッダーをドラッグ中に呼ばれる）
      */
     updateRow(row: number): void {
+        console.log('[updateRow] row:', row, 'selectingRow:', this.selectingRow);
         if (!this.selectingRow) return;
         if (row < 1) return;
 
@@ -314,29 +315,32 @@ export class Selection {
         const columnCount = firstRow.children.length;
         if (columnCount < 2) return;
 
-        this.focus = { row: row, column: columnCount - 1 };
-        this.row = row;
+        this.range = { ...this.range, endRow: row };
         this.updateRenderer();
     }
 
     isSingleCell(): boolean {
-        return this.anchor.row === this.focus.row && this.anchor.column === this.focus.column;
+        return this.range.startRow === this.range.endRow && this.range.startColumn === this.range.endColumn;
     }
 
     getAnchor(): CellPosition {
-        return this.anchor;
+        return { row: this.range.startRow, column: this.range.startColumn };
     }
 
     getFocus(): CellPosition {
         return this.focus;
     }
 
+    getRange(): CellRange {
+        return this.range;
+    }
+
     getSelectionRange(): CellRange {
         return {
-            startRow: Math.min(this.anchor.row, this.focus.row),
-            startColumn: Math.min(this.anchor.column, this.focus.column),
-            endRow: Math.max(this.anchor.row, this.focus.row),
-            endColumn: Math.max(this.anchor.column, this.focus.column)
+            startRow: Math.min(this.range.startRow, this.range.endRow),
+            startColumn: Math.min(this.range.startColumn, this.range.endColumn),
+            endRow: Math.max(this.range.startRow, this.range.endRow),
+            endColumn: Math.max(this.range.startColumn, this.range.endColumn)
         };
     }
 
@@ -349,16 +353,13 @@ export class Selection {
     }
 
     copy(): void {
-        const startRow = Math.min(this.anchor.row, this.focus.row);
-        const startColumn = Math.min(this.anchor.column, this.focus.column);
-        const endRow = Math.max(this.anchor.row, this.focus.row);
-        const endColumn = Math.max(this.anchor.column, this.focus.column);
+        const selectionRange = this.getSelectionRange();
 
-        this.copyRange = { startRow, startColumn, endRow, endColumn };
+        this.copyRange = selectionRange;
         this.updateCopyRenderer();
 
         // システムクリップボードにコピー
-        this.copyToClipboard(startRow, startColumn, endRow, endColumn);
+        this.copyToClipboard(selectionRange.startRow, selectionRange.startColumn, selectionRange.endRow, selectionRange.endColumn);
     }
 
     /**
@@ -500,10 +501,8 @@ export class Selection {
         }
         this.selectedCells = [];
 
-        const startRow = Math.min(this.anchor.row, this.focus.row);
-        const startColumn = Math.min(this.anchor.column, this.focus.column);
-        const endRow = Math.max(this.anchor.row, this.focus.row);
-        const endColumn = Math.max(this.anchor.column, this.focus.column);
+        const selectionRange = this.getSelectionRange();
+        const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
         // 選択範囲内のすべてのセルにスタイルを適用
         for (let r = startRow; r <= endRow; r++) {
@@ -516,10 +515,10 @@ export class Selection {
 
                 this.selectedCells.push(cell);
 
-                // アンカーセル（カーソル位置）かどうか
-                const isAnchor = r === this.anchor.row && c === this.anchor.column;
+                // フォーカスセル（現在の編集位置）かどうか
+                const isFocus = r === this.focus.row && c === this.focus.column;
 
-                if (isAnchor) {
+                if (isFocus) {
                     cell.classList.add('cell-anchor');
                 } else {
                     cell.classList.add('cell-selected');
@@ -546,8 +545,9 @@ export class Selection {
     }
 
     private updateFillHandlePosition(): void {
-        const endRow = Math.max(this.anchor.row, this.focus.row);
-        const endColumn = Math.max(this.anchor.column, this.focus.column);
+        const selectionRange = this.getSelectionRange();
+        const endRow = selectionRange.endRow;
+        const endColumn = selectionRange.endColumn;
 
         const rowElement = this.tableElement.children[endRow] as HTMLElement;
         if (!rowElement) return;
@@ -593,10 +593,8 @@ export class Selection {
      * フィルの方向と範囲を取得
      */
     getFillInfo(): { direction: FillDirection; sourceRange: CellRange; targetRange: CellRange; count: number } | undefined {
-        const startRow = Math.min(this.anchor.row, this.focus.row);
-        const startColumn = Math.min(this.anchor.column, this.focus.column);
-        const endRow = Math.max(this.anchor.row, this.focus.row);
-        const endColumn = Math.max(this.anchor.column, this.focus.column);
+        const selectionRange = this.getSelectionRange();
+        const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
         const targetRow = this.fillTarget.row;
         const targetColumn = this.fillTarget.column;

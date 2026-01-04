@@ -62,7 +62,7 @@ export class EditorTable {
             editorElement.appendChild(resizeGuideline);
         }
 
-        this.element.addEventListener('mousemove', (e) => {
+        window.addEventListener('mousemove', (e) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('editor-table-cell')) {
                 const position = EditorTable.getCellPosition(target, this.element);
@@ -73,9 +73,9 @@ export class EditorTable {
                     } else if (selection.isSelectingRow()) {
                         // 行ヘッダーをドラッグ中: 行のみ更新
                         selection.updateRow(position.row);
-                    } else {
+                    } else if (selection.isSelecting()) {
                         // 通常のセル選択
-                        selection.update(position.row, position.column);
+                        selection.extendSelection(position.row, position.column);
                     }
                 }
             }

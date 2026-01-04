@@ -7,8 +7,9 @@ import {History, CellChange} from "./history";
 import {generateSeriesData} from "./fill-series";
 
 export function getTarget(table: EditorTable, selection: Selection) {
-    const row = table.element.children[selection.row] as HTMLElement;
-    const cell = row.children[selection.column] as HTMLElement;
+    const focus = selection.getFocus();
+    const row = table.element.children[focus.row] as HTMLElement;
+    const cell = row.children[focus.column] as HTMLElement;
     return {row: row, cell: cell};
 }
 
@@ -29,12 +30,13 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
 
 export function submitText(table: EditorTable, textField: GridTextField, selection: Selection, text: string, history: History) {
     const target = getTarget(table, selection);
+    const focus = selection.getFocus();
 
     const oldValue = target.cell.textContent ?? '';
 
     // 履歴に追加（現在のコピー範囲も保存）
     const copyRange = selection.getCopyRange();
-    history.pushSingleChange(selection.row, selection.column, oldValue, text, copyRange);
+    history.pushSingleChange(focus.row, focus.column, oldValue, text, copyRange);
 
     target.cell.textContent = text;
 
@@ -77,34 +79,16 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
     }
 }
 
-export function selectCell(table: EditorTable, textField: GridTextField, selection: Selection, cell: HTMLDivElement) {
-    const position = EditorTable.getCellPosition(cell, table.element);
-    if (!position) return;
-
-    textField.submitText();
-    textField.hide();
-
-    // 選択開始
-    selection.start(position.row, position.column);
-}
-
+/**
+ * 範囲選択を解除し、セルを相対座標分移動します。
+ * @param table
+ * @param selection
+ * @param x
+ * @param y
+ */
 export function moveCell(table: EditorTable, selection: Selection, x: number, y: number) {
     console.trace(`${x}, ${y}`);
 
-    const rowLength = table.element.children.length;
-    if (rowLength === 0) return;
-
-    const columnLength = (table.element.children[0] as HTMLElement).children.length;
-    if (columnLength === 0) return;
-
-    // ヘッダー（行0、列0）は選択できないので最小値を1にする
-    const column = Math.max(Math.min(selection.column + x, columnLength - 1), 1);
-    const row = Math.max(Math.min(selection.row + y, rowLength - 1), 1);
-
-    selection.move(row, column);
-}
-
-export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {
     const rowLength = table.element.children.length;
     if (rowLength === 0) return;
 
@@ -116,7 +100,155 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
     const column = Math.max(Math.min(focus.column + x, columnLength - 1), 1);
     const row = Math.max(Math.min(focus.row + y, rowLength - 1), 1);
 
-    selection.extendSelection(row, column);
+    // 始点と終点を一致させることで
+    selection.setRange(row, column, row, column);
+    selection.move(row, column);
+}
+
+export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {
+    const rowLength = table.element.children.length;
+    if (rowLength === 0) return;
+
+    const columnLength = (table.element.children[0] as HTMLElement).children.length;
+    if (columnLength === 0) return;
+    
+    selection.getSelectionRange();
+
+    x = Math.min(columnLength, x);
+    y = Math.min(rowLength, y);
+    selection.extendSelectionOffset(x, y);
+}
+
+/**
+ * 範囲選択内で下方向に移動する（Enterキー用）
+ * 範囲選択がない場合は通常の下方向移動
+ * 範囲の最下行にいる場合は右隣の列の最上行に移動
+ * 右端の列の最下行にいる場合は範囲の左上に戻る
+ */
+export function moveCellDownWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const focus = selection.getFocus();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 0, 1);
+        return;
+    }
+
+    let newRow = focus.row + 1;
+    let newColumn = focus.column;
+
+    // 範囲の最下行を超えた場合
+    if (newRow > range.endRow) {
+        newRow = range.startRow;
+        newColumn = focus.column + 1;
+
+        // 範囲の右端を超えた場合は左上に戻る
+        if (newColumn > range.endColumn) {
+            newColumn = range.startColumn;
+        }
+    }
+
+    selection.move(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で上方向に移動する（Shift+Enterキー用）
+ * 範囲選択がない場合は通常の上方向移動
+ * 範囲の最上行にいる場合は左隣の列の最下行に移動
+ * 左端の列の最上行にいる場合は範囲の右下に戻る
+ */
+export function moveCellUpWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const focus = selection.getFocus();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 0, -1);
+        return;
+    }
+
+    let newRow = focus.row - 1;
+    let newColumn = focus.column;
+
+    // 範囲の最上行を超えた場合
+    if (newRow < range.startRow) {
+        newRow = range.endRow;
+        newColumn = focus.column - 1;
+
+        // 範囲の左端を超えた場合は右下に戻る
+        if (newColumn < range.startColumn) {
+            newColumn = range.endColumn;
+        }
+    }
+
+    selection.move(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で右方向に移動する（Tabキー用）
+ * 範囲選択がない場合は通常の右方向移動
+ * 範囲の右端にいる場合は次の行の左端に移動
+ * 右端の最下行にいる場合は範囲の左上に戻る
+ */
+export function moveCellRightWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const focus = selection.getFocus();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, 1, 0);
+        return;
+    }
+
+    let newRow = focus.row;
+    let newColumn = focus.column + 1;
+
+    // 範囲の右端を超えた場合
+    if (newColumn > range.endColumn) {
+        newColumn = range.startColumn;
+        newRow = focus.row + 1;
+
+        // 範囲の最下行を超えた場合は左上に戻る
+        if (newRow > range.endRow) {
+            newRow = range.startRow;
+        }
+    }
+
+    selection.move(newRow, newColumn);
+}
+
+/**
+ * 範囲選択内で左方向に移動する（Shift+Tabキー用）
+ * 範囲選択がない場合は通常の左方向移動
+ * 範囲の左端にいる場合は前の行の右端に移動
+ * 左端の最上行にいる場合は範囲の右下に戻る
+ */
+export function moveCellLeftWithinSelection(table: EditorTable, selection: Selection): void {
+    const range = selection.getSelectionRange();
+    const focus = selection.getFocus();
+
+    // 単一セル選択の場合は通常の移動
+    if (selection.isSingleCell()) {
+        moveCell(table, selection, -1, 0);
+        return;
+    }
+
+    let newRow = focus.row;
+    let newColumn = focus.column - 1;
+
+    // 範囲の左端を超えた場合
+    if (newColumn < range.startColumn) {
+        newColumn = range.endColumn;
+        newRow = focus.row - 1;
+
+        // 範囲の最上行を超えた場合は右下に戻る
+        if (newRow < range.startRow) {
+            newRow = range.endRow;
+        }
+    }
+
+    selection.move(newRow, newColumn);
 }
 
 export function createTable(editor: Editor, name: string, tableData: EditorTableData) {
@@ -138,6 +270,7 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     table.setup(textField, selection);
 
     // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
+    selection.setRange(1, 1, 1, 1);
     selection.move(1, 1);
 
     // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
