@@ -5,6 +5,7 @@ import {Selection, FillDirection} from "./selection";
 import {Editor} from "./editor";
 import {History, CellChange} from "./history";
 import {generateSeriesData} from "./fill-series";
+import {ContextMenu} from "./context-menu";
 
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
@@ -267,7 +268,9 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     const textField = new GridTextField(table, selection, history);
     editor.appendChild(textField.element);
 
-    table.setup(textField, selection);
+    const contextMenu = new ContextMenu(editor.element);
+
+    table.setup(textField, selection, contextMenu);
 
     // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
     selection.setRange(1, 1, 1, 1);
