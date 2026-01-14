@@ -3,7 +3,8 @@ import {GridTextField} from "./grid-textfield";
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection, FillDirection} from "./selection";
 import {Editor} from "./editor";
-import {History, CellChange} from "./history";
+import {History} from "./history";
+import {CellChange} from "./command";
 import {generateSeriesData} from "./fill-series";
 import {ContextMenu} from "./context-menu";
 
@@ -270,7 +271,7 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     const contextMenu = new ContextMenu(editor.element);
 
-    table.setup(textField, selection, contextMenu);
+    table.setup(textField, selection, contextMenu, history);
 
     // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
     selection.setRange(1, 1, 1, 1);

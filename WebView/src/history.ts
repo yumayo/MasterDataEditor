@@ -1,28 +1,11 @@
-/**
- * セルの変更を表すアクション
- */
-export interface CellChange {
-    row: number;
-    column: number;
-    oldValue: string;
-    newValue: string;
-}
+import { Command, CellChangeCommand, CellChange } from "./command";
+import { CellRange } from "./selection";
 
 /**
- * セル範囲
+ * 履歴に記録するエントリ
  */
-export interface CellRange {
-    startRow: number;
-    startColumn: number;
-    endRow: number;
-    endColumn: number;
-}
-
-/**
- * 履歴に記録するアクション（複数セルの変更をまとめて1つのアクションとする）
- */
-export interface HistoryAction {
-    changes: CellChange[];
+export interface HistoryEntry {
+    command: Command;
     /**
      * 操作前の選択範囲
      * Undo時に復元する。Redo時はchangesを含めた範囲を計算して使用する。
@@ -44,11 +27,11 @@ export interface HistoryResult {
 }
 
 /**
- * Undo/Redo履歴を管理するクラス
+ * Undo/Redo履歴を管理するクラス（Commandパターン対応）
  */
 export class History {
-    private undoStack: HistoryAction[];
-    private redoStack: HistoryAction[];
+    private undoStack: HistoryEntry[];
+    private redoStack: HistoryEntry[];
     private readonly maxHistorySize: number;
     private tableElement: HTMLElement;
 
@@ -60,21 +43,15 @@ export class History {
     }
 
     /**
-     * アクションを履歴に追加
+     * コマンドを履歴に追加して実行する
      */
-    push(action: HistoryAction): void {
-        // 実際に値が変わっているchangeのみをフィルタ
-        const meaningfulChanges = action.changes.filter(
-            change => change.oldValue !== change.newValue
-        );
-
-        // 変更がない場合は追加しない
-        if (meaningfulChanges.length === 0) return;
+    executeCommand(command: Command, range: CellRange, copyRange: CellRange): void {
+        command.execute();
 
         this.undoStack.push({
-            changes: meaningfulChanges,
-            range: action.range,
-            copyRange: action.copyRange
+            command,
+            range,
+            copyRange
         });
 
         // 最大履歴数を超えた場合、古いものを削除
@@ -84,6 +61,48 @@ export class History {
 
         // 新しいアクションが追加されたらRedoスタックをクリア
         this.redoStack = [];
+    }
+
+    /**
+     * コマンドを履歴に追加（既に実行済みの場合）
+     */
+    pushCommand(command: Command, range: CellRange, copyRange: CellRange): void {
+        this.undoStack.push({
+            command,
+            range,
+            copyRange
+        });
+
+        // 最大履歴数を超えた場合、古いものを削除
+        if (this.undoStack.length > this.maxHistorySize) {
+            this.undoStack.shift();
+        }
+
+        // 新しいアクションが追加されたらRedoスタックをクリア
+        this.redoStack = [];
+    }
+
+    /**
+     * 後方互換性: 旧形式のアクションを履歴に追加
+     */
+    push(action: { changes: CellChange[]; range: CellRange; copyRange: CellRange }): void {
+        // 実際に値が変わっているchangeのみをフィルタ
+        const meaningfulChanges = action.changes.filter(
+            change => change.oldValue !== change.newValue
+        );
+
+        // 変更がない場合は追加しない
+        if (meaningfulChanges.length === 0) return;
+
+        const command = new CellChangeCommand(
+            this.tableElement,
+            meaningfulChanges,
+            action.range,
+            action.copyRange
+        );
+
+        // 既に実行済みなのでpushCommandを使用
+        this.pushCommand(command, action.range, action.copyRange);
     }
 
     /**
@@ -102,19 +121,15 @@ export class History {
      * @returns 変更されたセル範囲とコピー範囲。Undoできなかった場合はundefined
      */
     undo(): HistoryResult | undefined {
-        const action = this.undoStack.pop();
-        if (!action) return undefined;
+        const entry = this.undoStack.pop();
+        if (!entry) return undefined;
 
-        // 変更を逆順で元に戻す
-        for (let i = action.changes.length - 1; i >= 0; i--) {
-            const change = action.changes[i];
-            this.setCellValue(change.row, change.column, change.oldValue);
-        }
+        entry.command.undo();
 
         // Redoスタックに追加
-        this.redoStack.push(action);
+        this.redoStack.push(entry);
 
-        return { range: action.range, copyRange: action.copyRange };
+        return { range: entry.range, copyRange: entry.copyRange };
     }
 
     /**
@@ -122,28 +137,27 @@ export class History {
      * @returns 変更されたセル範囲。Redoできなかった場合はundefined
      */
     redo(): HistoryResult | undefined {
-        const action = this.redoStack.pop();
-        if (!action) return undefined;
+        const entry = this.redoStack.pop();
+        if (!entry) return undefined;
 
-        // 変更を再適用
-        for (const change of action.changes) {
-            this.setCellValue(change.row, change.column, change.newValue);
-        }
+        entry.command.redo();
 
         // Undoスタックに追加
-        this.undoStack.push(action);
+        this.undoStack.push(entry);
 
-        // Redo時はchangesを含めた範囲を計算（操作後の選択範囲を復元）
-        const redoRange = { ...action.range };
-        for (const change of action.changes) {
-            redoRange.startRow = Math.min(redoRange.startRow, change.row);
-            redoRange.endRow = Math.max(redoRange.endRow, change.row);
-            redoRange.startColumn = Math.min(redoRange.startColumn, change.column);
-            redoRange.endColumn = Math.max(redoRange.endColumn, change.column);
+        // Redo時はCellChangeCommandの場合、changesを含めた範囲を計算
+        let redoRange = { ...entry.range };
+        if (entry.command instanceof CellChangeCommand) {
+            const changes = entry.command.getChanges();
+            for (const change of changes) {
+                redoRange.startRow = Math.min(redoRange.startRow, change.row);
+                redoRange.endRow = Math.max(redoRange.endRow, change.row);
+                redoRange.startColumn = Math.min(redoRange.startColumn, change.column);
+                redoRange.endColumn = Math.max(redoRange.endColumn, change.column);
+            }
         }
 
-        // Redo時もコピー範囲を復元
-        return { range: redoRange, copyRange: action.copyRange };
+        return { range: redoRange, copyRange: entry.copyRange };
     }
 
     /**
@@ -169,15 +183,9 @@ export class History {
     }
 
     /**
-     * セルの値を設定
+     * テーブル要素を取得
      */
-    private setCellValue(row: number, column: number, value: string): void {
-        const rowElement = this.tableElement.children[row] as HTMLElement;
-        if (!rowElement) return;
-
-        const cell = rowElement.children[column] as HTMLElement;
-        if (!cell) return;
-
-        cell.textContent = value;
+    getTableElement(): HTMLElement {
+        return this.tableElement;
     }
 }

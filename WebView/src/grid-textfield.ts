@@ -2,7 +2,8 @@ import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
 import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection} from "./editor-actions";
 import {Selection, CellRange} from "./selection";
-import {History, CellChange} from "./history";
+import {History} from "./history";
+import {CellChange} from "./command";
 
 export class GridTextField {
 

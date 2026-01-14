@@ -5,6 +5,8 @@ import {EditorTableDataRow} from "./model/editor-table-data-row";
 import {enableCellEditMode} from "./editor-actions";
 import {GridTextField} from "./grid-textfield";
 import {ContextMenu} from "./context-menu";
+import {History} from "./history";
+import {InsertColumnCommand, InsertRowCommand, ColumnWidthCommand, RowHeightCommand} from "./command";
 
 export class EditorTable {
     readonly tableName: string;
@@ -20,7 +22,7 @@ export class EditorTable {
         this.element = document.createElement('div');
     }
     
-    setup(textField: GridTextField, selection: Selection, contextMenu: ContextMenu) {
+    setup(textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History) {
 
         this.element.classList.add('editor-table');
 
@@ -44,6 +46,7 @@ export class EditorTable {
         let resizeStartX = 0;
         let resizeStartWidth = 0;
         let resizeColumnStartLeft = 0;
+        let resizeColumnOldWidth = '100px';
 
         // 行高リサイズの状態管理
         let isResizingRow = false;
@@ -51,6 +54,7 @@ export class EditorTable {
         let resizeStartY = 0;
         let resizeStartHeight = 0;
         let resizeRowStartTop = 0;
+        let resizeRowOldHeight = '20px';
 
         // リサイズ用ガイドライン要素を作成
         const resizeGuideline = document.createElement('div');
@@ -104,9 +108,29 @@ export class EditorTable {
             if (isResizingColumn) {
                 const deltaX = e.clientX - resizeStartX;
                 const newWidth = Math.max(20, resizeStartWidth + deltaX);
+                const newWidthStr = newWidth + 'px';
 
-                // マウスアップ時にCSS変数を更新
-                this.element.style.setProperty(`--col-${resizingColumnIndex}-width`, newWidth + 'px');
+                // 幅が変わった場合のみ履歴に追加
+                if (resizeColumnOldWidth !== newWidthStr) {
+                    const command = new ColumnWidthCommand(
+                        this.element,
+                        resizingColumnIndex,
+                        resizeColumnOldWidth,
+                        newWidthStr
+                    );
+                    // マウスアップ時にCSS変数を更新（executeを直接呼ぶ代わりに）
+                    this.element.style.setProperty(`--col-${resizingColumnIndex}-width`, newWidthStr);
+
+                    // 履歴に追加（既に実行済み）
+                    const copyRange = selection.getCopyRange();
+                    const anchor = selection.getAnchor();
+                    history.pushCommand(command, {
+                        startRow: anchor.row,
+                        startColumn: anchor.column,
+                        endRow: anchor.row,
+                        endColumn: anchor.column
+                    }, copyRange);
+                }
 
                 // ガイドラインを非表示
                 resizeGuideline.style.display = 'none';
@@ -116,9 +140,29 @@ export class EditorTable {
             if (isResizingRow) {
                 const deltaY = e.clientY - resizeStartY;
                 const newHeight = Math.max(20, resizeStartHeight + deltaY);
+                const newHeightStr = newHeight + 'px';
 
-                // マウスアップ時にCSS変数を更新
-                this.element.style.setProperty(`--row-${resizingRowIndex}-height`, newHeight + 'px');
+                // 高さが変わった場合のみ履歴に追加
+                if (resizeRowOldHeight !== newHeightStr) {
+                    const command = new RowHeightCommand(
+                        this.element,
+                        resizingRowIndex,
+                        resizeRowOldHeight,
+                        newHeightStr
+                    );
+                    // マウスアップ時にCSS変数を更新
+                    this.element.style.setProperty(`--row-${resizingRowIndex}-height`, newHeightStr);
+
+                    // 履歴に追加（既に実行済み）
+                    const copyRange = selection.getCopyRange();
+                    const anchor = selection.getAnchor();
+                    history.pushCommand(command, {
+                        startRow: anchor.row,
+                        startColumn: anchor.column,
+                        endRow: anchor.row,
+                        endColumn: anchor.column
+                    }, copyRange);
+                }
 
                 // ガイドラインを非表示
                 resizeGuideline.style.display = 'none';
@@ -183,13 +227,13 @@ export class EditorTable {
                         {
                             label: '左に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu);
+                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
                             }
                         },
                         {
                             label: '右に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu);
+                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
                             }
                         }
                     ]);
@@ -206,6 +250,8 @@ export class EditorTable {
                     resizeStartX = e.clientX;
                     const width = columnHeaderCell.offsetWidth;
                     resizeStartWidth = width;
+                    // 元の幅を保存（Undo用）
+                    resizeColumnOldWidth = this.element.style.getPropertyValue(`--col-${i}-width`) || '100px';
 
                     // ガイドラインを表示（縦線）
                     const rect = columnHeaderCell.getBoundingClientRect();
@@ -271,13 +317,13 @@ export class EditorTable {
                     {
                         label: '上に行を挿入',
                         action: () => {
-                            this.insertRow(contextMenuRowIndex, textField, selection, contextMenu);
+                            this.insertRow(contextMenuRowIndex, textField, selection, contextMenu, history);
                         }
                     },
                     {
                         label: '下に行を挿入',
                         action: () => {
-                            this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu);
+                            this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
                         }
                     }
                 ]);
@@ -290,6 +336,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell('1', 0, () => {
                 isResizingRow = true;
                 resizingRowIndex = 1;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-1-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -312,6 +359,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell('2', 1, () => {
                 isResizingRow = true;
                 resizingRowIndex = 2;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-2-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -334,6 +382,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell('3', 2, () => {
                 isResizingRow = true;
                 resizingRowIndex = 3;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-3-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -356,6 +405,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell('4', 3, () => {
                 isResizingRow = true;
                 resizingRowIndex = 4;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-4-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -378,6 +428,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell('5', 4, () => {
                 isResizingRow = true;
                 resizingRowIndex = 5;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-5-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -401,6 +452,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell(String(i + 6), i + 5, () => {
                 isResizingRow = true;
                 resizingRowIndex = rowIndex;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -423,6 +475,7 @@ export class EditorTable {
             const rowHeaderCell = EditorTable.createRowHeaderCell(String(this.tableData.body.length + i + 6), this.tableData.body.length + i + 5, () => {
                 isResizingRow = true;
                 resizingRowIndex = rowIndex;
+                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
             }, (startY: number, startHeight: number) => {
                 resizeStartY = startY;
                 resizeStartHeight = startHeight;
@@ -497,7 +550,32 @@ export class EditorTable {
         return new EditorTableData(this.tableData.description, this.tableData.primaryKey, columns, rows);
     }
 
-    public insertColumn(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu): void {
+    /**
+     * 列挿入の公開メソッド（Commandを使用してhistoryに追加）
+     */
+    public insertColumn(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+        const command = new InsertColumnCommand(
+            this,
+            columnIndex,
+            textField,
+            selection,
+            contextMenu,
+            history
+        );
+        const copyRange = selection.getCopyRange();
+        const anchor = selection.getAnchor();
+        history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
+    }
+
+    /**
+     * 列挿入の内部実装（Commandから呼び出される）
+     */
+    public insertColumnInternal(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
         // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
         const columnHeaderRow = this.element.children[0];
         const totalColumns = columnHeaderRow.children.length - 1;
@@ -550,13 +628,13 @@ export class EditorTable {
                         {
                             label: '左に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu);
+                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
                             }
                         },
                         {
                             label: '右に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu);
+                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
                             }
                         }
                     ]);
@@ -612,7 +690,32 @@ export class EditorTable {
         this.generateColumnWidthStyles(totalColumns + 1);
     }
 
-    public insertRow(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu): void {
+    /**
+     * 行挿入の公開メソッド（Commandを使用してhistoryに追加）
+     */
+    public insertRow(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+        const command = new InsertRowCommand(
+            this,
+            rowIndex,
+            textField,
+            selection,
+            contextMenu,
+            history
+        );
+        const copyRange = selection.getCopyRange();
+        const anchor = selection.getAnchor();
+        history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
+    }
+
+    /**
+     * 行挿入の内部実装（Commandから呼び出される）
+     */
+    public insertRowInternal(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
         const totalRows = this.element.children.length;
         // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
         const columnHeaderRow = this.element.children[0];
@@ -661,13 +764,13 @@ export class EditorTable {
                 {
                     label: '上に行を挿入',
                     action: () => {
-                        this.insertRow(contextMenuRowIndex, textField, selection, contextMenu);
+                        this.insertRow(contextMenuRowIndex, textField, selection, contextMenu, history);
                     }
                 },
                 {
                     label: '下に行を挿入',
                     action: () => {
-                        this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu);
+                        this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
                     }
                 }
             ]);
@@ -855,5 +958,106 @@ export class EditorTable {
 
         style.textContent = css;
         document.head.appendChild(style);
+    }
+
+    /**
+     * 列を削除する（Undo用）
+     */
+    public deleteColumn(columnIndex: number): void {
+        const columnHeaderRow = this.element.children[0];
+        const totalColumns = columnHeaderRow.children.length - 1;
+
+        // 各行から指定位置のセルを削除
+        for (let rowIdx = 0; rowIdx < this.element.children.length; ++rowIdx) {
+            const row = this.element.children[rowIdx] as HTMLElement;
+            // columnIndex + 1 は行ヘッダーを除いた位置
+            const cellToRemove = row.children[columnIndex + 1];
+            if (cellToRemove) {
+                cellToRemove.remove();
+            }
+
+            // 列ヘッダー行の場合、ラベルを更新
+            if (rowIdx === 0) {
+                for (let i = 0; i < totalColumns - 1; ++i) {
+                    const headerCell = row.children[i + 1] as HTMLElement;
+                    headerCell.dataset.columnIndex = String(i);
+                    headerCell.dataset.col = String(i);
+                    const label = EditorTable.columnIndexToLabel(i);
+
+                    let textNode: Text | undefined;
+                    for (const node of Array.from(headerCell.childNodes)) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            textNode = node as Text;
+                            break;
+                        }
+                    }
+
+                    if (textNode) {
+                        textNode.textContent = label;
+                    } else {
+                        headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
+                    }
+                }
+            } else {
+                // data-colを更新
+                for (let i = columnIndex; i < row.children.length - 1; ++i) {
+                    const cell = row.children[i + 1] as HTMLElement;
+                    cell.dataset.col = String(i);
+                }
+            }
+        }
+
+        // CSS変数をシフト
+        for (let i = columnIndex; i < totalColumns - 1; ++i) {
+            const nextWidth = this.element.style.getPropertyValue(`--col-${i + 1}-width`) || '100px';
+            this.element.style.setProperty(`--col-${i}-width`, nextWidth);
+        }
+        this.element.style.removeProperty(`--col-${totalColumns - 1}-width`);
+
+        // スタイルを再生成
+        this.generateColumnWidthStyles(totalColumns - 1);
+    }
+
+    /**
+     * 行を削除する（Undo用）
+     */
+    public deleteRow(rowIndex: number): void {
+        const totalRows = this.element.children.length;
+
+        // 指定位置の行を削除
+        const rowToRemove = this.element.children[rowIndex];
+        if (rowToRemove) {
+            rowToRemove.remove();
+        }
+
+        // 後続の行のdata-rowと行ヘッダーの番号を更新
+        for (let i = rowIndex; i < this.element.children.length; ++i) {
+            const row = this.element.children[i] as HTMLElement;
+            row.dataset.row = String(i);
+            const header = row.children[0] as HTMLElement;
+            if (header.classList.contains('editor-table-row-header')) {
+                // リサイズハンドルを保持しながらテキストを更新
+                const resizeHandle = header.querySelector('.row-resize-handle');
+                header.textContent = String(i);
+                header.dataset.rowIndex = String(i - 1);
+                if (resizeHandle) {
+                    header.appendChild(resizeHandle);
+                } else {
+                    const newResizeHandle = document.createElement('div');
+                    newResizeHandle.classList.add('row-resize-handle');
+                    header.appendChild(newResizeHandle);
+                }
+            }
+        }
+
+        // CSS変数をシフト
+        for (let i = rowIndex; i < totalRows - 1; ++i) {
+            const nextHeight = this.element.style.getPropertyValue(`--row-${i + 1}-height`) || '20px';
+            this.element.style.setProperty(`--row-${i}-height`, nextHeight);
+        }
+        this.element.style.removeProperty(`--row-${totalRows - 1}-height`);
+
+        // スタイルを再生成
+        this.generateRowHeightStyles(totalRows - 1);
     }
 }
