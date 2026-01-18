@@ -6,13 +6,32 @@ import {enableCellEditMode} from "./editor-actions";
 import {GridTextField} from "./grid-textfield";
 import {ContextMenu} from "./context-menu";
 import {History} from "./history";
-import {InsertColumnCommand, InsertRowCommand, ColumnWidthCommand, RowHeightCommand} from "./command";
+import {InsertColumnCommand, InsertRowCommand, ColumnWidthCommand, RowHeightCommand, DeleteColumnCommand, DeleteRowCommand} from "./command";
 
 export class EditorTable {
     readonly tableName: string;
     readonly tableData: EditorTableData;
 
     readonly element: HTMLElement;
+
+    private editorElement!: HTMLElement;
+    private selection!: Selection;
+    private history!: History;
+    private resizeGuideline!: HTMLElement;
+
+    private isResizingColumn: boolean = false;
+    private resizingColumnIndex: number = -1;
+    private resizeStartX: number = 0;
+    private resizeStartWidth: number = 0;
+    private resizeColumnStartLeft: number = 0;
+    private resizeColumnOldWidth: string = '100px';
+
+    private isResizingRow: boolean = false;
+    private resizingRowIndex: number = -1;
+    private resizeStartY: number = 0;
+    private resizeStartHeight: number = 0;
+    private resizeRowStartTop: number = 0;
+    private resizeRowOldHeight: string = '20px';
 
     constructor(tableName: string, tableData: EditorTableData) {
 
@@ -22,7 +41,12 @@ export class EditorTable {
         this.element = document.createElement('div');
     }
     
-    setup(textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History) {
+    setup(textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History, editorElement: HTMLElement) {
+
+        // インスタンス変数に保存
+        this.editorElement = editorElement;
+        this.selection = selection;
+        this.history = history;
 
         this.element.classList.add('editor-table');
 
@@ -40,32 +64,13 @@ export class EditorTable {
         this.generateRowHeightStyles(totalRows);
         this.generateColumnWidthStyles(this.tableData.header.length);
 
-        // 列幅リサイズの状態管理
-        let isResizingColumn = false;
-        let resizingColumnIndex = -1;
-        let resizeStartX = 0;
-        let resizeStartWidth = 0;
-        let resizeColumnStartLeft = 0;
-        let resizeColumnOldWidth = '100px';
-
-        // 行高リサイズの状態管理
-        let isResizingRow = false;
-        let resizingRowIndex = -1;
-        let resizeStartY = 0;
-        let resizeStartHeight = 0;
-        let resizeRowStartTop = 0;
-        let resizeRowOldHeight = '20px';
-
         // リサイズ用ガイドライン要素を作成
-        const resizeGuideline = document.createElement('div');
-        resizeGuideline.classList.add('resize-guideline');
-        resizeGuideline.style.display = 'none';
+        this.resizeGuideline = document.createElement('div');
+        this.resizeGuideline.classList.add('resize-guideline');
+        this.resizeGuideline.style.display = 'none';
 
         // editorの親要素に追加（テーブルの外に配置）
-        const editorElement = document.getElementById('editor');
-        if (editorElement) {
-            editorElement.appendChild(resizeGuideline);
-        }
+        this.editorElement.appendChild(this.resizeGuideline);
 
         window.addEventListener('mousemove', (e) => {
             const target = e.target as HTMLElement;
@@ -87,44 +92,44 @@ export class EditorTable {
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (isResizingColumn) {
-                const deltaX = e.clientX - resizeStartX;
-                const newLeft = resizeColumnStartLeft + deltaX;
+            if (this.isResizingColumn) {
+                const deltaX = e.clientX - this.resizeStartX;
+                const newLeft = this.resizeColumnStartLeft + deltaX;
 
                 // ガイドラインの位置を更新（実際のセルは変更しない）
-                resizeGuideline.style.left = newLeft + 'px';
+                this.resizeGuideline.style.left = newLeft + 'px';
             }
 
-            if (isResizingRow) {
-                const deltaY = e.clientY - resizeStartY;
-                const newTop = resizeRowStartTop + deltaY;
+            if (this.isResizingRow) {
+                const deltaY = e.clientY - this.resizeStartY;
+                const newTop = this.resizeRowStartTop + deltaY;
 
                 // ガイドラインの位置を更新（実際のセルは変更しない）
-                resizeGuideline.style.top = newTop + 'px';
+                this.resizeGuideline.style.top = newTop + 'px';
             }
         });
 
         window.addEventListener('mouseup', (e) => {
-            if (isResizingColumn) {
-                const deltaX = e.clientX - resizeStartX;
-                const newWidth = Math.max(20, resizeStartWidth + deltaX);
+            if (this.isResizingColumn) {
+                const deltaX = e.clientX - this.resizeStartX;
+                const newWidth = Math.max(20, this.resizeStartWidth + deltaX);
                 const newWidthStr = newWidth + 'px';
 
                 // 幅が変わった場合のみ履歴に追加
-                if (resizeColumnOldWidth !== newWidthStr) {
+                if (this.resizeColumnOldWidth !== newWidthStr) {
                     const command = new ColumnWidthCommand(
                         this.element,
-                        resizingColumnIndex,
-                        resizeColumnOldWidth,
+                        this.resizingColumnIndex,
+                        this.resizeColumnOldWidth,
                         newWidthStr
                     );
                     // マウスアップ時にCSS変数を更新（executeを直接呼ぶ代わりに）
-                    this.element.style.setProperty(`--col-${resizingColumnIndex}-width`, newWidthStr);
+                    this.element.style.setProperty(`--col-${this.resizingColumnIndex}-width`, newWidthStr);
 
                     // 履歴に追加（既に実行済み）
-                    const copyRange = selection.getCopyRange();
-                    const anchor = selection.getAnchor();
-                    history.pushCommand(command, {
+                    const copyRange = this.selection.getCopyRange();
+                    const anchor = this.selection.getAnchor();
+                    this.history.pushCommand(command, {
                         startRow: anchor.row,
                         startColumn: anchor.column,
                         endRow: anchor.row,
@@ -133,30 +138,30 @@ export class EditorTable {
                 }
 
                 // ガイドラインを非表示
-                resizeGuideline.style.display = 'none';
-                resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
+                this.resizeGuideline.style.display = 'none';
+                this.resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
             }
 
-            if (isResizingRow) {
-                const deltaY = e.clientY - resizeStartY;
-                const newHeight = Math.max(20, resizeStartHeight + deltaY);
+            if (this.isResizingRow) {
+                const deltaY = e.clientY - this.resizeStartY;
+                const newHeight = Math.max(20, this.resizeStartHeight + deltaY);
                 const newHeightStr = newHeight + 'px';
 
                 // 高さが変わった場合のみ履歴に追加
-                if (resizeRowOldHeight !== newHeightStr) {
+                if (this.resizeRowOldHeight !== newHeightStr) {
                     const command = new RowHeightCommand(
                         this.element,
-                        resizingRowIndex,
-                        resizeRowOldHeight,
+                        this.resizingRowIndex,
+                        this.resizeRowOldHeight,
                         newHeightStr
                     );
                     // マウスアップ時にCSS変数を更新
-                    this.element.style.setProperty(`--row-${resizingRowIndex}-height`, newHeightStr);
+                    this.element.style.setProperty(`--row-${this.resizingRowIndex}-height`, newHeightStr);
 
                     // 履歴に追加（既に実行済み）
-                    const copyRange = selection.getCopyRange();
-                    const anchor = selection.getAnchor();
-                    history.pushCommand(command, {
+                    const copyRange = this.selection.getCopyRange();
+                    const anchor = this.selection.getAnchor();
+                    this.history.pushCommand(command, {
                         startRow: anchor.row,
                         startColumn: anchor.column,
                         endRow: anchor.row,
@@ -165,13 +170,13 @@ export class EditorTable {
                 }
 
                 // ガイドラインを非表示
-                resizeGuideline.style.display = 'none';
-                resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
+                this.resizeGuideline.style.display = 'none';
+                this.resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
             }
 
-            selection.end();
-            isResizingColumn = false;
-            isResizingRow = false;
+            this.selection.end();
+            this.isResizingColumn = false;
+            this.isResizingRow = false;
         });
 
         {
@@ -235,6 +240,12 @@ export class EditorTable {
                             action: () => {
                                 this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
                             }
+                        },
+                        {
+                            label: '列を削除',
+                            action: () => {
+                                this.removeColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                            }
                         }
                     ]);
                 });
@@ -242,27 +253,7 @@ export class EditorTable {
                 // リサイズハンドルを追加
                 const resizeHandle = document.createElement('div');
                 resizeHandle.classList.add('column-resize-handle');
-                resizeHandle.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    isResizingColumn = true;
-                    resizingColumnIndex = i;
-                    resizeStartX = e.clientX;
-                    const width = columnHeaderCell.offsetWidth;
-                    resizeStartWidth = width;
-                    // 元の幅を保存（Undo用）
-                    resizeColumnOldWidth = this.element.style.getPropertyValue(`--col-${i}-width`) || '100px';
-
-                    // ガイドラインを表示（縦線）
-                    const rect = columnHeaderCell.getBoundingClientRect();
-                    const editorRect = editorElement!.getBoundingClientRect();
-                    resizeColumnStartLeft = rect.right - editorRect.left + editorElement!.scrollLeft;
-                    resizeGuideline.style.display = 'block';
-                    resizeGuideline.style.left = resizeColumnStartLeft + 'px';
-                    resizeGuideline.style.top = '0';
-                    resizeGuideline.classList.add('resize-guideline-column');
-                    resizeGuideline.classList.remove('resize-guideline-row');
-                });
+                this.setupColumnResizeHandle(resizeHandle, columnHeaderCell, i);
                 columnHeaderCell.appendChild(resizeHandle);
 
                 cells.push(columnHeaderCell);
@@ -271,18 +262,6 @@ export class EditorTable {
             columnHeaderRow.classList.add('editor-table-column-header-row');
             this.element.appendChild(columnHeaderRow);
         }
-
-        // 行リサイズ時にガイドラインを表示する共通関数
-        const showRowGuideline = (cell: HTMLElement) => {
-            const rect = cell.getBoundingClientRect();
-            const editorRect = editorElement!.getBoundingClientRect();
-            resizeRowStartTop = rect.bottom - editorRect.top + editorElement!.scrollTop;
-            resizeGuideline.style.display = 'block';
-            resizeGuideline.style.top = resizeRowStartTop + 'px';
-            resizeGuideline.style.left = '0';
-            resizeGuideline.classList.add('resize-guideline-row');
-            resizeGuideline.classList.remove('resize-guideline-column');
-        };
 
         // 行ヘッダークリック用のハンドラ作成関数
         const createRowHeaderClickHandler = (rowHeaderCell: HTMLElement) => {
@@ -325,6 +304,12 @@ export class EditorTable {
                         action: () => {
                             this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
                         }
+                    },
+                    {
+                        label: '行を削除',
+                        action: () => {
+                            this.removeRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                        }
                     }
                 ]);
             };
@@ -333,14 +318,7 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (1)
-            const rowHeaderCell = EditorTable.createRowHeaderCell('1', 0, () => {
-                isResizingRow = true;
-                resizingRowIndex = 1;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-1-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell('1', 0, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -356,14 +334,7 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (2)
-            const rowHeaderCell = EditorTable.createRowHeaderCell('2', 1, () => {
-                isResizingRow = true;
-                resizingRowIndex = 2;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-2-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell('2', 1, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -379,14 +350,7 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (3)
-            const rowHeaderCell = EditorTable.createRowHeaderCell('3', 2, () => {
-                isResizingRow = true;
-                resizingRowIndex = 3;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-3-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell('3', 2, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -402,14 +366,7 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (4)
-            const rowHeaderCell = EditorTable.createRowHeaderCell('4', 3, () => {
-                isResizingRow = true;
-                resizingRowIndex = 4;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-4-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell('4', 3, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -425,14 +382,7 @@ export class EditorTable {
         {
             const cells = [];
             // 行ヘッダー (5)
-            const rowHeaderCell = EditorTable.createRowHeaderCell('5', 4, () => {
-                isResizingRow = true;
-                resizingRowIndex = 5;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-5-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell('5', 4, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -449,14 +399,7 @@ export class EditorTable {
             const cells = [];
             // 行ヘッダー (6, 7, 8, ...)
             const rowIndex = i + 6;
-            const rowHeaderCell = EditorTable.createRowHeaderCell(String(i + 6), i + 5, () => {
-                isResizingRow = true;
-                resizingRowIndex = rowIndex;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell(String(i + 6), i + 5, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -472,14 +415,7 @@ export class EditorTable {
             const cells = [];
             // 行ヘッダー (続き)
             const rowIndex = this.tableData.body.length + i + 6;
-            const rowHeaderCell = EditorTable.createRowHeaderCell(String(this.tableData.body.length + i + 6), this.tableData.body.length + i + 5, () => {
-                isResizingRow = true;
-                resizingRowIndex = rowIndex;
-                resizeRowOldHeight = this.element.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
-            }, (startY: number, startHeight: number) => {
-                resizeStartY = startY;
-                resizeStartHeight = startHeight;
-            }, showRowGuideline, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell(String(this.tableData.body.length + i + 6), this.tableData.body.length + i + 5, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -636,6 +572,12 @@ export class EditorTable {
                             action: () => {
                                 this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
                             }
+                        },
+                        {
+                            label: '列を削除',
+                            action: () => {
+                                this.removeColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                            }
                         }
                     ]);
                 });
@@ -643,6 +585,7 @@ export class EditorTable {
                 // リサイズハンドルを追加
                 const resizeHandle = document.createElement('div');
                 resizeHandle.classList.add('column-resize-handle');
+                this.setupColumnResizeHandle(resizeHandle, newHeaderCell, columnIndex);
                 newHeaderCell.appendChild(resizeHandle);
 
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
@@ -671,6 +614,16 @@ export class EditorTable {
                         // テキストノードがない場合は先頭に挿入
                         headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
                     }
+
+                    // リサイズハンドルのイベントハンドラを再設定
+                    const resizeHandle = headerCell.querySelector('.column-resize-handle');
+                    if (resizeHandle) {
+                        resizeHandle.remove();
+                    }
+                    const newResizeHandle = document.createElement('div');
+                    newResizeHandle.classList.add('column-resize-handle');
+                    this.setupColumnResizeHandle(newResizeHandle, headerCell, i);
+                    headerCell.appendChild(newResizeHandle);
                 }
             } else {
                 // 通常の行
@@ -772,6 +725,12 @@ export class EditorTable {
                     action: () => {
                         this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
                     }
+                },
+                {
+                    label: '行を削除',
+                    action: () => {
+                        this.removeRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                    }
                 }
             ]);
         });
@@ -779,6 +738,7 @@ export class EditorTable {
         // リサイズハンドルを追加
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
+        this.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex);
         rowHeaderCell.appendChild(resizeHandle);
 
         cells.push(rowHeaderCell);
@@ -799,17 +759,79 @@ export class EditorTable {
             row.dataset.row = String(i);
             const header = row.children[0] as HTMLElement;
             if (header.classList.contains('editor-table-row-header')) {
-                header.textContent = String(i);
+                // テキストノードを更新（リサイズハンドルは保持）
+                let textNode: Text | undefined;
+                for (const node of Array.from(header.childNodes)) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        textNode = node as Text;
+                        break;
+                    }
+                }
+                if (textNode) {
+                    textNode.textContent = String(i);
+                } else {
+                    header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+                }
                 header.dataset.rowIndex = String(i - 1);
-                // リサイズハンドルを再追加
-                const handle = document.createElement('div');
-                handle.classList.add('row-resize-handle');
-                header.appendChild(handle);
+
+                // リサイズハンドルのイベントハンドラを再設定
+                const resizeHandle = header.querySelector('.row-resize-handle');
+                if (resizeHandle) {
+                    resizeHandle.remove();
+                }
+                const newResizeHandle = document.createElement('div');
+                newResizeHandle.classList.add('row-resize-handle');
+                this.setupRowResizeHandle(newResizeHandle, header, i);
+                header.appendChild(newResizeHandle);
             }
         }
 
         // 行高スタイルを再生成
         this.generateRowHeightStyles(totalRows + 1);
+    }
+
+    /**
+     * 列削除の公開メソッド（Commandを使用してhistoryに追加）
+     */
+    public removeColumn(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+        const command = new DeleteColumnCommand(
+            this,
+            columnIndex,
+            textField,
+            selection,
+            contextMenu,
+            history
+        );
+        const copyRange = selection.getCopyRange();
+        const anchor = selection.getAnchor();
+        history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
+    }
+
+    /**
+     * 行削除の公開メソッド（Commandを使用してhistoryに追加）
+     */
+    public removeRow(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+        const command = new DeleteRowCommand(
+            this,
+            rowIndex,
+            textField,
+            selection,
+            contextMenu,
+            history
+        );
+        const copyRange = selection.getCopyRange();
+        const anchor = selection.getAnchor();
+        history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
     }
 
     private static createRow(cells: HTMLElement[], rowIndex?: number) {
@@ -882,12 +904,9 @@ export class EditorTable {
         return label;
     }
 
-    private static createRowHeaderCell(
+    private createRowHeaderCell(
         text: string,
         rowIndex: number,
-        onResizeStart: () => void,
-        setResizeState: (startY: number, startHeight: number) => void,
-        showGuideline: (cell: HTMLElement) => void,
         createClickHandler: (cell: HTMLElement) => (e: MouseEvent) => void,
         createContextMenuHandler: (cell: HTMLElement) => (e: MouseEvent) => void
     ): HTMLElement {
@@ -907,14 +926,7 @@ export class EditorTable {
 
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
-        resizeHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onResizeStart();
-            const height = rowHeaderCell.offsetHeight;
-            setResizeState(e.clientY, height);
-            showGuideline(rowHeaderCell);
-        });
+        this.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);
         rowHeaderCell.appendChild(resizeHandle);
 
         return rowHeaderCell;
@@ -961,6 +973,60 @@ export class EditorTable {
     }
 
     /**
+     * 列リサイズハンドルをセットアップ
+     */
+    private setupColumnResizeHandle(resizeHandle: HTMLElement, columnHeaderCell: HTMLElement, columnIndex: number): void {
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.isResizingColumn = true;
+            this.resizingColumnIndex = columnIndex;
+            this.resizeStartX = e.clientX;
+            const width = columnHeaderCell.offsetWidth;
+            this.resizeStartWidth = width;
+            // 元の幅を保存（Undo用）
+            this.resizeColumnOldWidth = this.element.style.getPropertyValue(`--col-${columnIndex}-width`) || '100px';
+
+            // ガイドラインを表示（縦線）
+            const rect = columnHeaderCell.getBoundingClientRect();
+            const editorRect = this.editorElement.getBoundingClientRect();
+            this.resizeColumnStartLeft = rect.right - editorRect.left + this.editorElement.scrollLeft;
+            this.resizeGuideline.style.display = 'block';
+            this.resizeGuideline.style.left = this.resizeColumnStartLeft + 'px';
+            this.resizeGuideline.style.top = '0';
+            this.resizeGuideline.classList.add('resize-guideline-column');
+            this.resizeGuideline.classList.remove('resize-guideline-row');
+        });
+    }
+
+    /**
+     * 行リサイズハンドルをセットアップ
+     */
+    private setupRowResizeHandle(resizeHandle: HTMLElement, rowHeaderCell: HTMLElement, rowIndex: number): void {
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.isResizingRow = true;
+            this.resizingRowIndex = rowIndex;
+            this.resizeStartY = e.clientY;
+            const height = rowHeaderCell.offsetHeight;
+            this.resizeStartHeight = height;
+            // 元の高さを保存（Undo用）
+            this.resizeRowOldHeight = this.element.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
+
+            // ガイドラインを表示（横線）
+            const rect = rowHeaderCell.getBoundingClientRect();
+            const editorRect = this.editorElement.getBoundingClientRect();
+            this.resizeRowStartTop = rect.bottom - editorRect.top + this.editorElement.scrollTop;
+            this.resizeGuideline.style.display = 'block';
+            this.resizeGuideline.style.top = this.resizeRowStartTop + 'px';
+            this.resizeGuideline.style.left = '0';
+            this.resizeGuideline.classList.add('resize-guideline-row');
+            this.resizeGuideline.classList.remove('resize-guideline-column');
+        });
+    }
+
+    /**
      * 列を削除する（Undo用）
      */
     public deleteColumn(columnIndex: number): void {
@@ -997,6 +1063,16 @@ export class EditorTable {
                     } else {
                         headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
                     }
+
+                    // リサイズハンドルのイベントハンドラを再設定
+                    const resizeHandle = headerCell.querySelector('.column-resize-handle');
+                    if (resizeHandle) {
+                        resizeHandle.remove();
+                    }
+                    const newResizeHandle = document.createElement('div');
+                    newResizeHandle.classList.add('column-resize-handle');
+                    this.setupColumnResizeHandle(newResizeHandle, headerCell, i);
+                    headerCell.appendChild(newResizeHandle);
                 }
             } else {
                 // data-colを更新
@@ -1036,17 +1112,30 @@ export class EditorTable {
             row.dataset.row = String(i);
             const header = row.children[0] as HTMLElement;
             if (header.classList.contains('editor-table-row-header')) {
-                // リサイズハンドルを保持しながらテキストを更新
-                const resizeHandle = header.querySelector('.row-resize-handle');
-                header.textContent = String(i);
-                header.dataset.rowIndex = String(i - 1);
-                if (resizeHandle) {
-                    header.appendChild(resizeHandle);
-                } else {
-                    const newResizeHandle = document.createElement('div');
-                    newResizeHandle.classList.add('row-resize-handle');
-                    header.appendChild(newResizeHandle);
+                // テキストノードを更新（リサイズハンドルは保持）
+                let textNode: Text | undefined;
+                for (const node of Array.from(header.childNodes)) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        textNode = node as Text;
+                        break;
+                    }
                 }
+                if (textNode) {
+                    textNode.textContent = String(i);
+                } else {
+                    header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+                }
+                header.dataset.rowIndex = String(i - 1);
+
+                // リサイズハンドルのイベントハンドラを再設定
+                const resizeHandle = header.querySelector('.row-resize-handle');
+                if (resizeHandle) {
+                    resizeHandle.remove();
+                }
+                const newResizeHandle = document.createElement('div');
+                newResizeHandle.classList.add('row-resize-handle');
+                this.setupRowResizeHandle(newResizeHandle, header, i);
+                header.appendChild(newResizeHandle);
             }
         }
 

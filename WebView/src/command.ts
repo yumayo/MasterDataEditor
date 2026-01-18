@@ -282,3 +282,175 @@ export class RowHeightCommand implements Command {
         return `RowHeight[${this.rowIndex}]: ${this.oldHeight} -> ${this.newHeight}`;
     }
 }
+
+/**
+ * 列を削除するコマンド
+ * deleteColumn/insertColumnInternalメソッドを呼び出す形で実装
+ */
+export class DeleteColumnCommand implements Command {
+    private editorTable: any;
+    private columnIndex: number;
+    private textField: any;
+    private selection: any;
+    private contextMenu: any;
+    private history: any;
+    private deletedCellValues: string[];
+    private deletedWidth: string;
+
+    constructor(
+        editorTable: any,
+        columnIndex: number,
+        textField: any,
+        selection: any,
+        contextMenu: any,
+        history: any
+    ) {
+        this.editorTable = editorTable;
+        this.columnIndex = columnIndex;
+        this.textField = textField;
+        this.selection = selection;
+        this.contextMenu = contextMenu;
+        this.history = history;
+        this.deletedCellValues = [];
+        this.deletedWidth = '';
+    }
+
+    execute(): void {
+        const tableElement = this.editorTable.element;
+        this.deletedCellValues = [];
+
+        // 各行から削除する列のセル値を保存（列ヘッダー行を除く）
+        for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
+            const row = tableElement.children[rowIdx] as HTMLElement;
+            const cell = row.children[this.columnIndex + 1] as HTMLElement;
+            if (cell) {
+                this.deletedCellValues.push(cell.textContent || '');
+            }
+        }
+
+        // 列幅を保存
+        this.deletedWidth = tableElement.style.getPropertyValue(`--col-${this.columnIndex}-width`) || '100px';
+
+        // 列を削除
+        this.editorTable.deleteColumn(this.columnIndex);
+    }
+
+    undo(): void {
+        // 列を挿入
+        this.editorTable.insertColumnInternal(this.columnIndex, this.textField, this.selection, this.contextMenu, this.history);
+
+        // セル値を復元
+        const tableElement = this.editorTable.element;
+        for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
+            const row = tableElement.children[rowIdx] as HTMLElement;
+            const cell = row.children[this.columnIndex + 1] as HTMLElement;
+            if (cell && this.deletedCellValues[rowIdx - 1] !== undefined) {
+                cell.textContent = this.deletedCellValues[rowIdx - 1];
+            }
+        }
+
+        // 列幅を復元
+        tableElement.style.setProperty(`--col-${this.columnIndex}-width`, this.deletedWidth);
+    }
+
+    redo(): void {
+        // 再削除時は再度データを保存する必要がある
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `DeleteColumn at ${this.columnIndex}`;
+    }
+
+    getColumnIndex(): number {
+        return this.columnIndex;
+    }
+}
+
+/**
+ * 行を削除するコマンド
+ * deleteRow/insertRowInternalメソッドを呼び出す形で実装
+ */
+export class DeleteRowCommand implements Command {
+    private editorTable: any;
+    private rowIndex: number;
+    private textField: any;
+    private selection: any;
+    private contextMenu: any;
+    private history: any;
+    private deletedCellValues: string[];
+    private deletedHeight: string;
+
+    constructor(
+        editorTable: any,
+        rowIndex: number,
+        textField: any,
+        selection: any,
+        contextMenu: any,
+        history: any
+    ) {
+        this.editorTable = editorTable;
+        this.rowIndex = rowIndex;
+        this.textField = textField;
+        this.selection = selection;
+        this.contextMenu = contextMenu;
+        this.history = history;
+        this.deletedCellValues = [];
+        this.deletedHeight = '';
+    }
+
+    execute(): void {
+        const tableElement = this.editorTable.element;
+        this.deletedCellValues = [];
+
+        // 削除する行のセル値を保存（行ヘッダーセルを除く）
+        const row = tableElement.children[this.rowIndex] as HTMLElement;
+        if (row) {
+            for (let colIdx = 1; colIdx < row.children.length; ++colIdx) {
+                const cell = row.children[colIdx] as HTMLElement;
+                if (cell) {
+                    this.deletedCellValues.push(cell.textContent || '');
+                }
+            }
+
+            // 行高を保存
+            this.deletedHeight = tableElement.style.getPropertyValue(`--row-${this.rowIndex - 1}-height`) || '20px';
+        }
+
+        // 行を削除
+        this.editorTable.deleteRow(this.rowIndex);
+    }
+
+    undo(): void {
+        // 行を挿入
+        this.editorTable.insertRowInternal(this.rowIndex, this.textField, this.selection, this.contextMenu, this.history);
+
+        // セル値を復元
+        const tableElement = this.editorTable.element;
+        const row = tableElement.children[this.rowIndex] as HTMLElement;
+        if (row) {
+            for (let colIdx = 1; colIdx < row.children.length; ++colIdx) {
+                const cell = row.children[colIdx] as HTMLElement;
+                if (cell && this.deletedCellValues[colIdx - 1] !== undefined) {
+                    cell.textContent = this.deletedCellValues[colIdx - 1];
+                }
+            }
+
+            // 行高を復元
+            tableElement.style.setProperty(`--row-${this.rowIndex - 1}-height`, this.deletedHeight);
+        }
+    }
+
+    redo(): void {
+        // 再削除時は再度データを保存する必要がある
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `DeleteRow at ${this.rowIndex}`;
+    }
+
+    getRowIndex(): number {
+        return this.rowIndex;
+    }
+}

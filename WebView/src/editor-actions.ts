@@ -271,7 +271,7 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     const contextMenu = new ContextMenu(editor.element);
 
-    table.setup(textField, selection, contextMenu, history);
+    table.setup(textField, selection, contextMenu, history, editor.element);
 
     // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
     selection.setRange(1, 1, 1, 1);
