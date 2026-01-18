@@ -277,8 +277,12 @@ export class GridTextField {
             // ESCキーでコピー範囲の点線表示を解除
             if (keyboardEvent.key === 'Escape') {
                 keyboardEvent.preventDefault();
-                this.selection.clearCopyRange();
-                this.history.clearCopyRange();
+                if (this.selection.hasCopyRange()) {
+                    this.selection.clearCopyRange();
+                } else {
+                    // コピー範囲が設定されていないときは履歴のコピー範囲をクリア
+                    this.history.clearCopyRange();
+                }
                 return;
             }
 
