@@ -85,6 +85,9 @@ export class AreaResizer {
                         endRow: anchor.row,
                         endColumn: anchor.column
                     }, copyRange);
+
+                    // selection の描画領域を更新
+                    this.selection.updateRendererAfterResize();
                 }
 
                 // ガイドラインを非表示
@@ -117,6 +120,9 @@ export class AreaResizer {
                         endRow: anchor.row,
                         endColumn: anchor.column
                     }, copyRange);
+
+                    // selection の描画領域を更新
+                    this.selection.updateRendererAfterResize();
                 }
 
                 // ガイドラインを非表示

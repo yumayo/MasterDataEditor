@@ -527,6 +527,24 @@ export class Selection {
         this.updateFillHandlePosition();
     }
 
+    /**
+     * リサイズ後に描画領域を更新する（area-resizerから呼び出される）
+     */
+    updateRendererAfterResize(): void {
+        // 選択範囲を更新
+        this.updateRenderer();
+
+        // コピー範囲を更新
+        if (this.hasCopyRange()) {
+            this.updateCopyRenderer();
+        }
+
+        // フィルプレビューを更新
+        if (this.filling) {
+            this.updateFillPreview();
+        }
+    }
+
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
         const endRow = selectionRange.endRow;
