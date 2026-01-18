@@ -34,23 +34,11 @@
     background-color: rgba(0, 120, 215, 1);
 }
 
-/* フィルプレビュー範囲のスタイル */
-.cell-fill-preview {
+/* フィルプレビュー範囲表示用の独立した要素 */
+.fill-preview {
+    position: absolute;
+    border: 1px dashed rgba(0, 120, 215, 0.8);
     background-color: rgba(0, 120, 215, 0.1);
-}
-
-.editor-table-row .cell-fill-border-top {
-    border-top: 1px dashed rgba(0, 120, 215, 0.8);
-}
-
-.editor-table-row .cell-fill-border-bottom {
-    border-bottom: 1px dashed rgba(0, 120, 215, 0.8);
-}
-
-.editor-table-row .cell-fill-border-left {
-    border-left: 1px dashed rgba(0, 120, 215, 0.8);
-}
-
-.editor-table-row .cell-fill-border-right {
-    border-right: 1px dashed rgba(0, 120, 215, 0.8);
+    pointer-events: none;
+    display: none;
 }

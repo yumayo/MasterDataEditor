@@ -22,6 +22,8 @@ export class Selection {
 
     copyBorderElement: HTMLElement;
 
+    fillPreviewElement: HTMLElement;
+
     private range: CellRange;
 
     private focus: CellPosition;
@@ -44,8 +46,6 @@ export class Selection {
 
     private fillTarget: CellPosition;
 
-    private fillPreviewCells: HTMLElement[];
-
     constructor(tableElement: HTMLElement, editorElement: HTMLElement) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
@@ -58,7 +58,6 @@ export class Selection {
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
-        this.fillPreviewCells = [];
 
         // 選択範囲表示用の要素を作成
         const element = document.createElement('div');
@@ -79,6 +78,11 @@ export class Selection {
         const copyBorderElement = document.createElement('div');
         copyBorderElement.classList.add('copy-border');
         this.copyBorderElement = copyBorderElement;
+
+        // フィルプレビュー範囲表示用の要素を作成
+        const fillPreviewElement = document.createElement('div');
+        fillPreviewElement.classList.add('fill-preview');
+        this.fillPreviewElement = fillPreviewElement;
 
         // フィルハンドル要素を作成
         this.fillHandle = document.createElement('div');
@@ -721,53 +725,41 @@ export class Selection {
     }
 
     private updateFillPreview(): void {
-        this.clearFillPreview();
-
         const fillInfo = this.getFillInfo();
-        if (!fillInfo) return;
+        if (!fillInfo) {
+            this.clearFillPreview();
+            return;
+        }
 
         const { targetRange } = fillInfo;
 
-        // プレビュー範囲内のセルにスタイルを適用
-        for (let r = targetRange.startRow; r <= targetRange.endRow; r++) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
+        const tableRect = this.tableElement.getBoundingClientRect();
 
-            for (let c = targetRange.startColumn; c <= targetRange.endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                if (!cell) continue;
+        const startCell = this.tableElement.children[targetRange.startRow]?.children[targetRange.startColumn] as HTMLElement | undefined;
+        const endCell = this.tableElement.children[targetRange.endRow]?.children[targetRange.endColumn] as HTMLElement | undefined;
 
-                this.fillPreviewCells.push(cell);
-                cell.classList.add('cell-fill-preview');
-
-                // 境界線のクラスを追加
-                if (r === targetRange.startRow) {
-                    cell.classList.add('cell-fill-border-top');
-                }
-                if (r === targetRange.endRow) {
-                    cell.classList.add('cell-fill-border-bottom');
-                }
-                if (c === targetRange.startColumn) {
-                    cell.classList.add('cell-fill-border-left');
-                }
-                if (c === targetRange.endColumn) {
-                    cell.classList.add('cell-fill-border-right');
-                }
-            }
+        if (!startCell || !endCell) {
+            this.clearFillPreview();
+            return;
         }
+
+        const startRect = startCell.getBoundingClientRect();
+        const endRect = endCell.getBoundingClientRect();
+
+        const left = Math.round(startRect.left - tableRect.left - 1);
+        const top = Math.round(startRect.top - tableRect.top - 1);
+        const width = Math.round(endRect.right - startRect.left - 1);
+        const height = Math.round(endRect.bottom - startRect.top - 1);
+
+        this.fillPreviewElement.style.left = left + 'px';
+        this.fillPreviewElement.style.top = top + 'px';
+        this.fillPreviewElement.style.width = width + 'px';
+        this.fillPreviewElement.style.height = height + 'px';
+        this.fillPreviewElement.style.display = 'block';
     }
 
     private clearFillPreview(): void {
-        for (const cell of this.fillPreviewCells) {
-            cell.classList.remove(
-                'cell-fill-preview',
-                'cell-fill-border-top',
-                'cell-fill-border-bottom',
-                'cell-fill-border-left',
-                'cell-fill-border-right'
-            );
-        }
-        this.fillPreviewCells = [];
+        this.fillPreviewElement.style.display = 'none';
     }
 
     /**
