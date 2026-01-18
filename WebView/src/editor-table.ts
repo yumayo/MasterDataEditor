@@ -1,7 +1,5 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection, CellPosition} from "./selection";
-import {EditorTableDataColumn} from "./model/editor-table-data-column";
-import {EditorTableDataRow} from "./model/editor-table-data-row";
 import {enableCellEditMode} from "./editor-actions";
 import {GridTextField} from "./grid-textfield";
 import {ContextMenu} from "./context-menu";
@@ -90,7 +88,7 @@ export class EditorTable {
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 const columnHeaderCell = document.createElement('div');
                 columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
-                columnHeaderCell.textContent = EditorTable.columnIndexToLabel(i);
+                columnHeaderCell.textContent = this.tableData.header[i].name;
                 columnHeaderCell.dataset.columnIndex = String(i);
                 columnHeaderCell.dataset.col = String(i);
 
@@ -350,7 +348,7 @@ export class EditorTable {
                     const headerCell = row.children[i + 1] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    const label = EditorTable.columnIndexToLabel(i);
+                    const label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
 
                     // 既存のテキストノードを探して更新（リサイズハンドルは保持）
                     let textNode: Text | undefined;
@@ -647,16 +645,6 @@ export class EditorTable {
         return {row, column};
     }
 
-    private static columnIndexToLabel(index: number): string {
-        let label = '';
-        let num = index;
-        while (num >= 0) {
-            label = String.fromCharCode(65 + (num % 26)) + label;
-            num = Math.floor(num / 26) - 1;
-        }
-        return label;
-    }
-
     private createRowHeaderCell(
         text: string,
         rowIndex: number,
@@ -707,7 +695,7 @@ export class EditorTable {
                     const headerCell = row.children[i + 1] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    const label = EditorTable.columnIndexToLabel(i);
+                    const label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
 
                     let textNode: Text | undefined;
                     for (const node of Array.from(headerCell.childNodes)) {
