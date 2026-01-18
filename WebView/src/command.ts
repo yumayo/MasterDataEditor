@@ -419,7 +419,7 @@ export class DeleteRowCommand implements Command {
             }
 
             // 行高を保存
-            this.deletedHeight = tableElement.style.getPropertyValue(`--row-${this.rowIndex - 1}-height`) || '20px';
+            this.deletedHeight = tableElement.style.getPropertyValue(`--row-${this.rowIndex}-height`) || '20px';
         }
 
         // 行を削除
@@ -442,7 +442,7 @@ export class DeleteRowCommand implements Command {
             }
 
             // 行高を復元
-            tableElement.style.setProperty(`--row-${this.rowIndex - 1}-height`, this.deletedHeight);
+            tableElement.style.setProperty(`--row-${this.rowIndex}-height`, this.deletedHeight);
         }
     }
 
