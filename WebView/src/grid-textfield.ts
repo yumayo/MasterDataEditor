@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection, saveTableData} from "./editor-actions";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
 import {CellChange} from "./command";
@@ -237,6 +237,13 @@ export class GridTextField {
                 this.hide();
             }
         } else {
+            // Ctrl+S: 保存
+            if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
+                keyboardEvent.preventDefault();
+                saveTableData(this.table);
+                return;
+            }
+
             // Ctrl+C: コピー
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 'c') {
                 keyboardEvent.preventDefault();

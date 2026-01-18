@@ -8,6 +8,8 @@ import {CellChange} from "./command";
 import {generateSeriesData} from "./fill-series";
 import {ContextMenu} from "./context-menu";
 import {AreaResizer} from "./area-resizer";
+import {Csv} from "./csv";
+import {readFileAsync, writeFileAsync} from "./api";
 
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
@@ -400,4 +402,137 @@ export function applyFillSeries(
     });
 
     selection.setRange(newStartRow, newStartColumn, newEndRow, newEndColumn);
+}
+
+/**
+ * テーブルのDOMからCSVデータを抽出する
+ * @param table EditorTable
+ * @returns ヘッダー配列とボディ配列
+ */
+function extractTableData(table: EditorTable): { header: string[]; body: string[][] } {
+    const header: string[] = [];
+    const body: string[][] = [];
+
+    // 行0は列ヘッダー行
+    const headerRow = table.element.children[0] as HTMLElement;
+    // 列0はコーナーセルなのでスキップ
+    for (let c = 1; c < headerRow.children.length; c++) {
+        const cell = headerRow.children[c] as HTMLElement;
+        // textContentを取得（リサイズハンドルなどの子要素を含まないようにテキストノードのみ）
+        let text = '';
+        for (const node of Array.from(cell.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                text = node.textContent ?? '';
+                break;
+            }
+        }
+        header.push(text);
+    }
+
+    // 行1以降がデータ行
+    for (let r = 1; r < table.element.children.length; r++) {
+        const row = table.element.children[r] as HTMLElement;
+        const rowData: string[] = [];
+
+        // 列0は行ヘッダーなのでスキップ
+        for (let c = 1; c < row.children.length; c++) {
+            const cell = row.children[c] as HTMLElement;
+            rowData.push(cell.textContent ?? '');
+        }
+
+        // 最初のセルが空でない行のみ追加（データがある行のみ保存）
+        if (rowData.length > 0 && rowData[0] !== '') {
+            body.push(rowData);
+        } else {
+            // 空行に到達したら終了
+            break;
+        }
+    }
+
+    return { header, body };
+}
+
+/**
+ * 既存CSVとテーブルデータをマージする
+ * - 既存CSVのヘッダーを基準にする
+ * - テーブルの列が既存CSVにあれば、その位置のデータを上書き
+ * - テーブルの列が既存CSVになければ、新しい列として追加
+ *
+ * @param existingCsv 既存のCSV
+ * @param tableData テーブルから抽出したデータ
+ * @returns マージされたCSV
+ */
+function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; body: string[][] }): Csv {
+    const resultCsv = new Csv();
+
+    // 既存CSVのヘッダーをベースに、新しい列を追加
+    const mergedHeader: string[] = [...existingCsv.header];
+    const tableToMergedIndex: number[] = [];  // テーブル列 -> マージ後のCSV列のマッピング
+
+    for (let i = 0; i < tableData.header.length; i++) {
+        const columnName = tableData.header[i];
+        const existingIndex = existingCsv.header.indexOf(columnName);
+
+        if (existingIndex !== -1) {
+            // 既存CSVに存在する列
+            tableToMergedIndex.push(existingIndex);
+        } else {
+            // 新しい列を追加
+            tableToMergedIndex.push(mergedHeader.length);
+            mergedHeader.push(columnName);
+        }
+    }
+
+    resultCsv.header = mergedHeader;
+
+    // ボディデータをマージ
+    const mergedBody: string[][] = [];
+    for (let r = 0; r < tableData.body.length; r++) {
+        const tableRow = tableData.body[r];
+        // マージ後のヘッダーの長さで空行を初期化
+        const mergedRow: string[] = new Array(mergedHeader.length).fill('');
+
+        // テーブルのデータを対応する列に配置
+        for (let c = 0; c < tableRow.length; c++) {
+            const mergedIndex = tableToMergedIndex[c];
+            mergedRow[mergedIndex] = tableRow[c];
+        }
+
+        mergedBody.push(mergedRow);
+    }
+
+    resultCsv.body = mergedBody;
+
+    return resultCsv;
+}
+
+/**
+ * テーブルデータをCSVファイルに保存する（既存CSVとマージ）
+ * @param table EditorTable
+ */
+export async function saveTableData(table: EditorTable): Promise<void> {
+    const tableName = table.tableName;
+    const csvPath = `data/${tableName}.csv`;
+
+    // テーブルからデータを抽出
+    const tableData = extractTableData(table);
+
+    // 既存CSVを読み込む
+    let existingCsv = new Csv();
+    try {
+        const existingCsvContents = await readFileAsync(csvPath);
+        existingCsv.load(existingCsvContents);
+    } catch {
+        // ファイルが存在しない場合は空のCSVとして扱う
+        existingCsv.header = [];
+        existingCsv.body = [];
+    }
+
+    // マージ
+    const mergedCsv = mergeCsvData(existingCsv, tableData);
+
+    // 保存
+    await writeFileAsync(csvPath, mergedCsv.toString());
+
+    console.log(`Saved ${csvPath}`);
 }
