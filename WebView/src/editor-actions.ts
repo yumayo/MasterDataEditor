@@ -263,6 +263,7 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     editor.appendChild(table.element);
 
     const selection = new Selection(table.element, editor.element);
+    editor.appendChild(selection.element);
 
     // 履歴管理（最大1000件）
     const history = new History(table.element, 1000);

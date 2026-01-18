@@ -14,6 +14,12 @@ export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 export class Selection {
 
+    element: HTMLElement;
+
+    private focusColumnBackground: HTMLElement;
+
+    private otherColumnsBackground: HTMLElement;
+
     private range: CellRange;
 
     private focus: CellPosition;
@@ -27,14 +33,6 @@ export class Selection {
     private tableElement: HTMLElement;
 
     private editorElement: HTMLElement;
-
-    /**
-     * 選択範囲されたセル
-     * 選択範囲を解除するときに、すべてのセルのclassを見なくてもいいように、変数に置いています。
-     * パフォーマンス改善用の変数で、なくても問題はありません。
-     * @private
-     */
-    private selectedCells: HTMLElement[];
 
     private copiedCells: HTMLElement[];
 
@@ -57,12 +55,26 @@ export class Selection {
         this.selectingRow = false;
         this.tableElement = tableElement;
         this.editorElement = editorElement;
-        this.selectedCells = [];
         this.copiedCells = [];
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
         this.fillPreviewCells = [];
+
+        // 選択範囲表示用の要素を作成
+        const element = document.createElement('div');
+        element.classList.add('selection');
+        this.element = element;
+
+        const focusColumnBackground = document.createElement('div');
+        focusColumnBackground.classList.add('selection-background');
+        this.focusColumnBackground = focusColumnBackground;
+        this.element.appendChild(focusColumnBackground);
+
+        const otherColumnsBackground = document.createElement('div');
+        otherColumnsBackground.classList.add('selection-background');
+        this.otherColumnsBackground = otherColumnsBackground;
+        this.element.appendChild(otherColumnsBackground);
 
         // フィルハンドル要素を作成
         this.fillHandle = document.createElement('div');
@@ -495,50 +507,36 @@ export class Selection {
     }
 
     private updateRenderer(): void {
-        // 以前選択されていたセルからスタイルを削除
-        for (const cell of this.selectedCells) {
-            cell.classList.remove('cell-selected', 'cell-anchor', 'cell-border-top', 'cell-border-bottom', 'cell-border-left', 'cell-border-right');
-        }
-        this.selectedCells = [];
-
         const selectionRange = this.getSelectionRange();
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
-        // 選択範囲内のすべてのセルにスタイルを適用
-        for (let r = startRow; r <= endRow; r++) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
+        const tableRect = this.tableElement.getBoundingClientRect();
 
-            for (let c = startColumn; c <= endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                if (!cell) continue;
+        const startCell = this.tableElement.children[startRow]?.children[startColumn] as HTMLElement | undefined;
+        const endCell = this.tableElement.children[endRow]?.children[endColumn] as HTMLElement | undefined;
+        const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
 
-                this.selectedCells.push(cell);
-
-                // フォーカスセル（現在の編集位置）かどうか
-                const isFocus = r === this.focus.row && c === this.focus.column;
-
-                if (isFocus) {
-                    cell.classList.add('cell-anchor');
-                } else {
-                    cell.classList.add('cell-selected');
-                }
-
-                // 境界線のクラスを追加
-                if (r === startRow) {
-                    cell.classList.add('cell-border-top');
-                }
-                if (r === endRow) {
-                    cell.classList.add('cell-border-bottom');
-                }
-                if (c === startColumn) {
-                    cell.classList.add('cell-border-left');
-                }
-                if (c === endColumn) {
-                    cell.classList.add('cell-border-right');
-                }
-            }
+        if (!startCell || !endCell || !focusCell) {
+            this.hideRenderer();
+            return;
         }
+
+        const startRect = startCell.getBoundingClientRect();
+        const endRect = endCell.getBoundingClientRect();
+        const focusRect = focusCell.getBoundingClientRect();
+
+        const left = Math.round(startRect.left - tableRect.left - 1);
+        const top = Math.round(startRect.top - tableRect.top - 1);
+        const width = Math.round(endRect.right - startRect.left - 1);
+        const height = Math.round(endRect.bottom - startRect.top - 1);
+
+        this.element.style.left = left + 'px';
+        this.element.style.top = top + 'px';
+        this.element.style.width = width + 'px';
+        this.element.style.height = height + 'px';
+
+        // 背景要素の位置を設定（フォーカスセルを除く）
+        this.updateBackgroundElements(startRect, endRect, focusRect);
 
         // フィルハンドルの位置を更新
         this.updateFillHandlePosition();
@@ -562,6 +560,87 @@ export class Selection {
         this.fillHandle.style.left = (cellRect.right - editorRect.left + this.editorElement.scrollLeft - 4) + 'px';
         this.fillHandle.style.top = (cellRect.bottom - editorRect.top + this.editorElement.scrollTop - 4) + 'px';
         this.fillHandle.style.display = 'block';
+    }
+
+    private updateBackgroundElements(startRect: DOMRect, endRect: DOMRect, focusRect: DOMRect): void {
+        // フォーカスの位置判定はセル座標で行う（浮動小数点誤差を避ける）
+        const isFocusTop = this.focus.row <= this.range.endRow;
+        const isFocusLeft = this.focus.column <= this.range.endColumn;
+
+        // 座標計算は最後にまとめて整数化する
+        const focusLeftPx = Math.floor(focusRect.left - startRect.left);
+        const focusTopPx = Math.floor(focusRect.top - startRect.top);
+        const focusWidth = Math.ceil(focusRect.width);
+        const focusHeight = Math.ceil(focusRect.height);
+        const totalWidth = Math.ceil(endRect.right - startRect.left);
+        const totalHeight = Math.ceil(endRect.bottom - startRect.top);
+
+        // 単一セルの場合は背景を非表示
+        if (this.isSingleCell()) {
+            this.focusColumnBackground.style.display = 'none';
+            this.otherColumnsBackground.style.display = 'none';
+            return;
+        }
+
+        this.focusColumnBackground.style.display = 'block';
+        this.otherColumnsBackground.style.display = 'block';
+
+        if (isFocusTop && isFocusLeft) {
+            // フォーカスが左上
+            // focusColumn: フォーカスの下から最下部まで（フォーカス列）
+            this.focusColumnBackground.style.left = '0px';
+            this.focusColumnBackground.style.top = focusHeight + 'px';
+            this.focusColumnBackground.style.width = focusWidth + 'px';
+            this.focusColumnBackground.style.height = (totalHeight - focusHeight) + 'px';
+            // otherColumns: フォーカスの右隣から右下まで
+            this.otherColumnsBackground.style.left = focusWidth + 'px';
+            this.otherColumnsBackground.style.top = '0px';
+            this.otherColumnsBackground.style.width = (totalWidth - focusWidth) + 'px';
+            this.otherColumnsBackground.style.height = totalHeight + 'px';
+        } else if (isFocusTop && !isFocusLeft) {
+            // フォーカスが右上
+            // focusColumn: フォーカスの下から最下部まで（フォーカス列）
+            this.focusColumnBackground.style.left = focusLeftPx + 'px';
+            this.focusColumnBackground.style.top = focusHeight + 'px';
+            this.focusColumnBackground.style.width = focusWidth + 'px';
+            this.focusColumnBackground.style.height = (totalHeight - focusHeight) + 'px';
+            // otherColumns: 左端からフォーカスの左隣まで
+            this.otherColumnsBackground.style.left = '0px';
+            this.otherColumnsBackground.style.top = '0px';
+            this.otherColumnsBackground.style.width = focusLeftPx + 'px';
+            this.otherColumnsBackground.style.height = totalHeight + 'px';
+        } else if (!isFocusTop && isFocusLeft) {
+            // フォーカスが左下
+            // focusColumn: 最上部からフォーカスの上まで（フォーカス列）
+            this.focusColumnBackground.style.left = '0px';
+            this.focusColumnBackground.style.top = '0px';
+            this.focusColumnBackground.style.width = focusWidth + 'px';
+            this.focusColumnBackground.style.height = focusTopPx + 'px';
+            // otherColumns: フォーカスの右隣から右下まで
+            this.otherColumnsBackground.style.left = focusWidth + 'px';
+            this.otherColumnsBackground.style.top = '0px';
+            this.otherColumnsBackground.style.width = (totalWidth - focusWidth) + 'px';
+            this.otherColumnsBackground.style.height = totalHeight + 'px';
+        } else {
+            // フォーカスが右下
+            // focusColumn: 最上部からフォーカスの上まで（フォーカス列）
+            this.focusColumnBackground.style.left = focusLeftPx + 'px';
+            this.focusColumnBackground.style.top = '0px';
+            this.focusColumnBackground.style.width = focusWidth + 'px';
+            this.focusColumnBackground.style.height = focusTopPx + 'px';
+            // otherColumns: 左端からフォーカスの左隣まで
+            this.otherColumnsBackground.style.left = '0px';
+            this.otherColumnsBackground.style.top = '0px';
+            this.otherColumnsBackground.style.width = focusLeftPx + 'px';
+            this.otherColumnsBackground.style.height = totalHeight + 'px';
+        }
+    }
+
+    private hideRenderer(): void {
+        this.element.style.left = '-99999px';
+        this.element.style.top = '-99999px';
+        this.element.style.width = '0px';
+        this.element.style.height = '0px';
     }
 
     getFillHandle(): HTMLElement {
