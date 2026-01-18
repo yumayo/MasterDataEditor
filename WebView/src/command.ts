@@ -1,4 +1,9 @@
 import { CellRange } from "./selection";
+import type { EditorTable } from "./editor-table";
+import type { GridTextField } from "./grid-textfield";
+import type { Selection } from "./selection";
+import type { ContextMenu } from "./context-menu";
+import type { History } from "./history";
 
 /**
  * Undo/Redo可能なコマンドのインターフェース
@@ -114,20 +119,20 @@ export class CellChangeCommand implements Command {
  * insertColumn/deleteColumnメソッドを呼び出す形で実装
  */
 export class InsertColumnCommand implements Command {
-    private editorTable: any; // EditorTable型への循環参照を避けるためany
+    private editorTable: EditorTable;
     private columnIndex: number;
-    private textField: any;
-    private selection: any;
-    private contextMenu: any;
-    private history: any;
+    private textField: GridTextField;
+    private selection: Selection;
+    private contextMenu: ContextMenu;
+    private history: History;
 
     constructor(
-        editorTable: any,
+        editorTable: EditorTable,
         columnIndex: number,
-        textField: any,
-        selection: any,
-        contextMenu: any,
-        history: any
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History
     ) {
         this.editorTable = editorTable;
         this.columnIndex = columnIndex;
@@ -163,20 +168,20 @@ export class InsertColumnCommand implements Command {
  * insertRow/deleteRowメソッドを呼び出す形で実装
  */
 export class InsertRowCommand implements Command {
-    private editorTable: any;
+    private editorTable: EditorTable;
     private rowIndex: number;
-    private textField: any;
-    private selection: any;
-    private contextMenu: any;
-    private history: any;
+    private textField: GridTextField;
+    private selection: Selection;
+    private contextMenu: ContextMenu;
+    private history: History;
 
     constructor(
-        editorTable: any,
+        editorTable: EditorTable,
         rowIndex: number,
-        textField: any,
-        selection: any,
-        contextMenu: any,
-        history: any
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History
     ) {
         this.editorTable = editorTable;
         this.rowIndex = rowIndex;
@@ -288,22 +293,22 @@ export class RowHeightCommand implements Command {
  * deleteColumn/insertColumnInternalメソッドを呼び出す形で実装
  */
 export class DeleteColumnCommand implements Command {
-    private editorTable: any;
+    private editorTable: EditorTable;
     private columnIndex: number;
-    private textField: any;
-    private selection: any;
-    private contextMenu: any;
-    private history: any;
+    private textField: GridTextField;
+    private selection: Selection;
+    private contextMenu: ContextMenu;
+    private history: History;
     private deletedCellValues: string[];
     private deletedWidth: string;
 
     constructor(
-        editorTable: any,
+        editorTable: EditorTable,
         columnIndex: number,
-        textField: any,
-        selection: any,
-        contextMenu: any,
-        history: any
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History
     ) {
         this.editorTable = editorTable;
         this.columnIndex = columnIndex;
@@ -372,22 +377,22 @@ export class DeleteColumnCommand implements Command {
  * deleteRow/insertRowInternalメソッドを呼び出す形で実装
  */
 export class DeleteRowCommand implements Command {
-    private editorTable: any;
+    private editorTable: EditorTable;
     private rowIndex: number;
-    private textField: any;
-    private selection: any;
-    private contextMenu: any;
-    private history: any;
+    private textField: GridTextField;
+    private selection: Selection;
+    private contextMenu: ContextMenu;
+    private history: History;
     private deletedCellValues: string[];
     private deletedHeight: string;
 
     constructor(
-        editorTable: any,
+        editorTable: EditorTable,
         rowIndex: number,
-        textField: any,
-        selection: any,
-        contextMenu: any,
-        history: any
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History
     ) {
         this.editorTable = editorTable;
         this.rowIndex = rowIndex;
