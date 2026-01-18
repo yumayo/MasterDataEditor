@@ -20,6 +20,8 @@ export class Selection {
 
     private otherColumnsBackground: HTMLElement;
 
+    copyBorderElement: HTMLElement;
+
     private range: CellRange;
 
     private focus: CellPosition;
@@ -33,8 +35,6 @@ export class Selection {
     private tableElement: HTMLElement;
 
     private editorElement: HTMLElement;
-
-    private copiedCells: HTMLElement[];
 
     private copyRange: CellRange;
 
@@ -55,7 +55,6 @@ export class Selection {
         this.selectingRow = false;
         this.tableElement = tableElement;
         this.editorElement = editorElement;
-        this.copiedCells = [];
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
@@ -75,6 +74,11 @@ export class Selection {
         otherColumnsBackground.classList.add('selection-background');
         this.otherColumnsBackground = otherColumnsBackground;
         this.element.appendChild(otherColumnsBackground);
+
+        // コピー範囲表示用の要素を作成
+        const copyBorderElement = document.createElement('div');
+        copyBorderElement.classList.add('copy-border');
+        this.copyBorderElement = copyBorderElement;
 
         // フィルハンドル要素を作成
         this.fillHandle = document.createElement('div');
@@ -434,18 +438,8 @@ export class Selection {
     }
 
     clearCopyRange(): void {
-        // 以前のコピー範囲のスタイルを削除
-        for (const cell of this.copiedCells) {
-            cell.classList.remove(
-                'cell-copied',
-                'cell-copied-border-top',
-                'cell-copied-border-bottom',
-                'cell-copied-border-left',
-                'cell-copied-border-right'
-            );
-        }
-        this.copiedCells = [];
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
+        this.hideCopyBorder();
     }
 
     /**
@@ -461,49 +455,36 @@ export class Selection {
     }
 
     private updateCopyRenderer(): void {
-        // 以前のコピー範囲のスタイルを削除
-        for (const cell of this.copiedCells) {
-            cell.classList.remove(
-                'cell-copied',
-                'cell-copied-border-top',
-                'cell-copied-border-bottom',
-                'cell-copied-border-left',
-                'cell-copied-border-right'
-            );
+        if (!this.hasCopyRange()) {
+            this.hideCopyBorder();
+            return;
         }
-        this.copiedCells = [];
-
-        if (!this.hasCopyRange()) return;
 
         const { startRow, startColumn, endRow, endColumn } = this.copyRange;
 
-        // コピー範囲内のすべてのセルにスタイルを適用
-        for (let r = startRow; r <= endRow; r++) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
+        const tableRect = this.tableElement.getBoundingClientRect();
 
-            for (let c = startColumn; c <= endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                if (!cell) continue;
+        const startCell = this.tableElement.children[startRow]?.children[startColumn] as HTMLElement | undefined;
+        const endCell = this.tableElement.children[endRow]?.children[endColumn] as HTMLElement | undefined;
 
-                this.copiedCells.push(cell);
-                cell.classList.add('cell-copied');
-
-                // 境界線のクラスを追加
-                if (r === startRow) {
-                    cell.classList.add('cell-copied-border-top');
-                }
-                if (r === endRow) {
-                    cell.classList.add('cell-copied-border-bottom');
-                }
-                if (c === startColumn) {
-                    cell.classList.add('cell-copied-border-left');
-                }
-                if (c === endColumn) {
-                    cell.classList.add('cell-copied-border-right');
-                }
-            }
+        if (!startCell || !endCell) {
+            this.hideCopyBorder();
+            return;
         }
+
+        const startRect = startCell.getBoundingClientRect();
+        const endRect = endCell.getBoundingClientRect();
+
+        const left = Math.round(startRect.left - tableRect.left - 1);
+        const top = Math.round(startRect.top - tableRect.top - 1);
+        const width = Math.round(endRect.right - startRect.left - 1);
+        const height = Math.round(endRect.bottom - startRect.top - 1);
+
+        this.copyBorderElement.style.left = left + 'px';
+        this.copyBorderElement.style.top = top + 'px';
+        this.copyBorderElement.style.width = width + 'px';
+        this.copyBorderElement.style.height = height + 'px';
+        this.copyBorderElement.style.display = 'block';
     }
 
     private updateRenderer(): void {
@@ -641,6 +622,10 @@ export class Selection {
         this.element.style.top = '-99999px';
         this.element.style.width = '0px';
         this.element.style.height = '0px';
+    }
+
+    private hideCopyBorder(): void {
+        this.copyBorderElement.style.display = 'none';
     }
 
     getFillHandle(): HTMLElement {

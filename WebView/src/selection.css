@@ -10,27 +10,12 @@
     background-color: rgba(0, 120, 215, 0.2);
 }
 
-/* コピー範囲の点線枠 */
-/* box-sizing: border-boxでborderを内側に含め、領域サイズを維持 */
-/* .editor-table-row を付けて詳細度を上げ、editor-table.cssのborderを上書き */
-.cell-copied {
-    box-sizing: border-box;
-}
-
-.editor-table-row .cell-copied-border-top {
-    border-top: 1px dashed rgba(0, 120, 215, 0.9);
-}
-
-.editor-table-row .cell-copied-border-bottom {
-    border-bottom: 1px dashed rgba(0, 120, 215, 0.9);
-}
-
-.editor-table-row .cell-copied-border-left {
-    border-left: 1px dashed rgba(0, 120, 215, 0.9);
-}
-
-.editor-table-row .cell-copied-border-right {
-    border-right: 1px dashed rgba(0, 120, 215, 0.9);
+/* コピー範囲の点線枠表示用の独立した要素 */
+.copy-border {
+    position: absolute;
+    border: 1px dashed rgba(0, 120, 215, 0.9);
+    pointer-events: none;
+    display: none;
 }
 
 /* フィルハンドル（選択範囲右下の小さな四角） */
