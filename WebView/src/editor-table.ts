@@ -207,91 +207,10 @@ export class EditorTable {
             };
         };
 
-        {
-            const cells = [];
-            // 行ヘッダー (1)
-            const rowHeaderCell = this.createRowHeaderCell('1', 0, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
-
-            cells.push(rowHeaderCell);
-
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, selection, column.key, i));
-            }
-            const row = EditorTable.createRow(cells, 1);
-            row.classList.add('editor-table-header', 'editor-table-header-key');
-            this.element.appendChild(row);
-        }
-
-        {
-            const cells = [];
-            // 行ヘッダー (2)
-            const rowHeaderCell = this.createRowHeaderCell('2', 1, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
-
-            cells.push(rowHeaderCell);
-
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, selection, column.name, i));
-            }
-            const row = EditorTable.createRow(cells, 2);
-            row.classList.add('editor-table-header', 'editor-table-header-name');
-            this.element.appendChild(row);
-        }
-
-        {
-            const cells = [];
-            // 行ヘッダー (3)
-            const rowHeaderCell = this.createRowHeaderCell('3', 2, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
-
-            cells.push(rowHeaderCell);
-
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, selection, column.type, i));
-            }
-            const row = EditorTable.createRow(cells, 3);
-            row.classList.add('editor-table-header', 'editor-table-header-type');
-            this.element.appendChild(row);
-        }
-
-        {
-            const cells = [];
-            // 行ヘッダー (4)
-            const rowHeaderCell = this.createRowHeaderCell('4', 3, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
-
-            cells.push(rowHeaderCell);
-
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, selection, column.comment, i));
-            }
-            const row = EditorTable.createRow(cells, 4);
-            row.classList.add('editor-table-header', 'editor-table-header-comment');
-            this.element.appendChild(row);
-        }
-
-        {
-            const cells = [];
-            // 行ヘッダー (5)
-            const rowHeaderCell = this.createRowHeaderCell('5', 4, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
-
-            cells.push(rowHeaderCell);
-
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                const column = this.tableData.header[i];
-                cells.push(EditorTable.createCell(this, textField, selection, column.references, i));
-            }
-            const row = EditorTable.createRow(cells, 5);
-            row.classList.add('editor-table-header', 'editor-table-header-references');
-            this.element.appendChild(row);
-        }
-
         for (let i = 0; i < this.tableData.body.length; ++i) {
             const cells = [];
-            // 行ヘッダー (6, 7, 8, ...)
-            const rowIndex = i + 6;
-            const rowHeaderCell = this.createRowHeaderCell(String(i + 6), i + 5, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowIndex = i;
+            const rowHeaderCell = this.createRowHeaderCell(String(i + 1), i, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
@@ -306,8 +225,8 @@ export class EditorTable {
         for (let i = 0; i < 100 - this.tableData.body.length; ++i) {
             const cells = [];
             // 行ヘッダー (続き)
-            const rowIndex = this.tableData.body.length + i + 6;
-            const rowHeaderCell = this.createRowHeaderCell(String(this.tableData.body.length + i + 6), this.tableData.body.length + i + 5, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowIndex = this.tableData.body.length + i;
+            const rowHeaderCell = this.createRowHeaderCell(String(this.tableData.body.length + i + 1), this.tableData.body.length + i, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
 
             cells.push(rowHeaderCell);
 
