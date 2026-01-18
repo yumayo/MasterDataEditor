@@ -30,14 +30,14 @@ export interface HistoryResult {
  * Undo/Redo履歴を管理するクラス（Commandパターン対応）
  */
 export class History {
-    private undoStack: HistoryEntry[];
-    private redoStack: HistoryEntry[];
+    private history: HistoryEntry[];
+    private currentIndex: number;
     private readonly maxHistorySize: number;
     private tableElement: HTMLElement;
 
     constructor(tableElement: HTMLElement, maxHistorySize: number) {
-        this.undoStack = [];
-        this.redoStack = [];
+        this.history = [];
+        this.currentIndex = -1;
         this.maxHistorySize = maxHistorySize;
         this.tableElement = tableElement;
     }
@@ -48,38 +48,48 @@ export class History {
     executeCommand(command: Command, range: CellRange, copyRange: CellRange): void {
         command.execute();
 
-        this.undoStack.push({
+        // 現在の位置より後の履歴を削除
+        this.history.splice(this.currentIndex + 1);
+
+        // 新しいエントリを追加
+        this.history.push({
             command,
             range,
             copyRange
         });
 
-        // 最大履歴数を超えた場合、古いものを削除
-        if (this.undoStack.length > this.maxHistorySize) {
-            this.undoStack.shift();
-        }
+        // 現在のインデックスを更新
+        this.currentIndex = this.history.length - 1;
 
-        // 新しいアクションが追加されたらRedoスタックをクリア
-        this.redoStack = [];
+        // 最大履歴数を超えた場合、古いものを削除
+        if (this.history.length > this.maxHistorySize) {
+            this.history.shift();
+            this.currentIndex = this.currentIndex - 1;
+        }
     }
 
     /**
      * コマンドを履歴に追加（既に実行済みの場合）
      */
     pushCommand(command: Command, range: CellRange, copyRange: CellRange): void {
-        this.undoStack.push({
+        // 現在の位置より後の履歴を削除
+        this.history.splice(this.currentIndex + 1);
+
+        // 新しいエントリを追加
+        this.history.push({
             command,
             range,
             copyRange
         });
 
-        // 最大履歴数を超えた場合、古いものを削除
-        if (this.undoStack.length > this.maxHistorySize) {
-            this.undoStack.shift();
-        }
+        // 現在のインデックスを更新
+        this.currentIndex = this.history.length - 1;
 
-        // 新しいアクションが追加されたらRedoスタックをクリア
-        this.redoStack = [];
+        // 最大履歴数を超えた場合、古いものを削除
+        if (this.history.length > this.maxHistorySize) {
+            this.history.shift();
+            this.currentIndex = this.currentIndex - 1;
+        }
     }
 
     /**
@@ -121,13 +131,12 @@ export class History {
      * @returns 変更されたセル範囲とコピー範囲。Undoできなかった場合はundefined
      */
     undo(): HistoryResult | undefined {
-        const entry = this.undoStack.pop();
-        if (!entry) return undefined;
+        if (this.currentIndex < 0) return undefined;
 
+        const entry = this.history[this.currentIndex];
         entry.command.undo();
 
-        // Redoスタックに追加
-        this.redoStack.push(entry);
+        this.currentIndex = this.currentIndex - 1;
 
         return { range: entry.range, copyRange: entry.copyRange };
     }
@@ -137,13 +146,12 @@ export class History {
      * @returns 変更されたセル範囲。Redoできなかった場合はundefined
      */
     redo(): HistoryResult | undefined {
-        const entry = this.redoStack.pop();
-        if (!entry) return undefined;
+        if (this.currentIndex >= this.history.length - 1) return undefined;
+
+        this.currentIndex = this.currentIndex + 1;
+        const entry = this.history[this.currentIndex];
 
         entry.command.redo();
-
-        // Undoスタックに追加
-        this.undoStack.push(entry);
 
         // Redo時はCellChangeCommandの場合、changesを含めた範囲を計算
         let redoRange = { ...entry.range };
@@ -164,22 +172,22 @@ export class History {
      * Undo可能かどうか
      */
     canUndo(): boolean {
-        return this.undoStack.length > 0;
+        return this.currentIndex >= 0;
     }
 
     /**
      * Redo可能かどうか
      */
     canRedo(): boolean {
-        return this.redoStack.length > 0;
+        return this.currentIndex < this.history.length - 1;
     }
 
     /**
      * 履歴をクリア
      */
     clear(): void {
-        this.undoStack = [];
-        this.redoStack = [];
+        this.history = [];
+        this.currentIndex = -1;
     }
 
     /**
@@ -187,5 +195,47 @@ export class History {
      */
     getTableElement(): HTMLElement {
         return this.tableElement;
+    }
+
+    /**
+     * 現在使用されている履歴のコピー範囲をクリアする（ESCキー対応）
+     * 前後の履歴で同じコピー範囲を持つものも一緒にクリアする
+     */
+    clearCopyRange(): void {
+        if (this.currentIndex < 0) return;
+
+        const currentEntry = this.history[this.currentIndex];
+        const targetCopyRange = currentEntry.copyRange;
+
+        // 無効な範囲の場合は何もしない
+        if (targetCopyRange.endRow < 0 || targetCopyRange.endColumn < 0) return;
+
+        const clearedRange: CellRange = { startRow: 0, startColumn: 0, endRow: -1, endColumn: -1 };
+
+        // 同じコピー範囲かどうかを判定する関数
+        const isSameCopyRange = (range1: CellRange, range2: CellRange): boolean => {
+            return range1.startRow === range2.startRow &&
+                   range1.startColumn === range2.startColumn &&
+                   range1.endRow === range2.endRow &&
+                   range1.endColumn === range2.endColumn;
+        };
+
+        // 現在の位置から前方向に同じコピー範囲を探してクリア
+        for (let i = this.currentIndex; i >= 0; i = i - 1) {
+            if (isSameCopyRange(this.history[i].copyRange, targetCopyRange)) {
+                this.history[i].copyRange = { ...clearedRange };
+            } else {
+                break;
+            }
+        }
+
+        // 現在の位置から後方向に同じコピー範囲を探してクリア
+        for (let i = this.currentIndex + 1; i < this.history.length; i = i + 1) {
+            if (isSameCopyRange(this.history[i].copyRange, targetCopyRange)) {
+                this.history[i].copyRange = { ...clearedRange };
+            } else {
+                break;
+            }
+        }
     }
 }

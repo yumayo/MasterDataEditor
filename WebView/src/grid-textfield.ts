@@ -278,6 +278,7 @@ export class GridTextField {
             if (keyboardEvent.key === 'Escape') {
                 keyboardEvent.preventDefault();
                 this.selection.clearCopyRange();
+                this.history.clearCopyRange();
                 return;
             }
 
