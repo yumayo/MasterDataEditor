@@ -239,64 +239,6 @@ export class EditorTable {
         }
     }
 
-    public serializeTable() {
-        if (!this.tableData) return;
-
-        const allChildren = Array.from(this.element.children) as HTMLElement[];
-        const header: HTMLElement[] = [];
-        for (const row of allChildren) {
-            if (row.classList.contains('editor-table-header')) {
-                header.push(row);
-            } else {
-                break;
-            }
-        }
-
-        const headerKey = header.find(row => row.classList.contains('editor-table-header-key'))!;
-        const headerName = header.find(row => row.classList.contains('editor-table-header-name'))!;
-        const headerType = header.find(row => row.classList.contains('editor-table-header-type'))!;
-        const headerComment = header.find(row => row.classList.contains('editor-table-header-comment'))!;
-        const headerReferences = header.find(row => row.classList.contains('editor-table-header-references'))!;
-
-        const columns = [];
-        for (let i = 0; i < headerName.children.length; ++i) {
-
-            const comment = headerComment.children[i].textContent;
-            let jsonComment: string | undefined;
-            if (comment !== null && comment !== '') {
-                jsonComment = comment;
-            } else {
-                jsonComment = undefined;
-            }
-
-            const references = (headerReferences.children[i]?.textContent?.split(',') ?? [])
-                .filter(x => x !== '');
-
-            let jsonReference: string[];
-            if (references.length > 0) {
-                jsonReference = references;
-            } else {
-                jsonReference = [];
-            }
-
-            columns.push(
-                new EditorTableDataColumn(
-                    parseInt(headerKey.children[i].textContent!),
-                    headerName.children[i].textContent!,
-                    headerType.children[i].textContent!,
-                    jsonComment,
-                    jsonReference,
-                )
-            );
-        }
-
-        const body = allChildren.filter(row => !row.classList.contains('editor-table-header'));
-
-        const rows = body.map(row => new EditorTableDataRow(Array.from(row.children).map(x => x.textContent!)));
-
-        return new EditorTableData(this.tableData.description, this.tableData.primaryKey, columns, rows);
-    }
-
     /**
      * 列挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
