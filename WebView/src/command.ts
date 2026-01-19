@@ -216,29 +216,29 @@ export class InsertRowCommand implements Command {
  * 列幅を変更するコマンド
  */
 export class ColumnWidthCommand implements Command {
-    private tableElement: HTMLElement;
+    private editorTable: EditorTable;
     private columnIndex: number;
     private oldWidth: string;
     private newWidth: string;
 
     constructor(
-        tableElement: HTMLElement,
+        editorTable: EditorTable,
         columnIndex: number,
         oldWidth: string,
         newWidth: string
     ) {
-        this.tableElement = tableElement;
+        this.editorTable = editorTable;
         this.columnIndex = columnIndex;
         this.oldWidth = oldWidth;
         this.newWidth = newWidth;
     }
 
     execute(): void {
-        this.tableElement.style.setProperty(`--col-${this.columnIndex}-width`, this.newWidth);
+        this.editorTable.setColumnWidth(this.columnIndex, this.newWidth);
     }
 
     undo(): void {
-        this.tableElement.style.setProperty(`--col-${this.columnIndex}-width`, this.oldWidth);
+        this.editorTable.setColumnWidth(this.columnIndex, this.oldWidth);
     }
 
     redo(): void {
@@ -254,29 +254,29 @@ export class ColumnWidthCommand implements Command {
  * 行高を変更するコマンド
  */
 export class RowHeightCommand implements Command {
-    private tableElement: HTMLElement;
+    private editorTable: EditorTable;
     private rowIndex: number;
     private oldHeight: string;
     private newHeight: string;
 
     constructor(
-        tableElement: HTMLElement,
+        editorTable: EditorTable,
         rowIndex: number,
         oldHeight: string,
         newHeight: string
     ) {
-        this.tableElement = tableElement;
+        this.editorTable = editorTable;
         this.rowIndex = rowIndex;
         this.oldHeight = oldHeight;
         this.newHeight = newHeight;
     }
 
     execute(): void {
-        this.tableElement.style.setProperty(`--row-${this.rowIndex}-height`, this.newHeight);
+        this.editorTable.setRowHeight(this.rowIndex, this.newHeight);
     }
 
     undo(): void {
-        this.tableElement.style.setProperty(`--row-${this.rowIndex}-height`, this.oldHeight);
+        this.editorTable.setRowHeight(this.rowIndex, this.oldHeight);
     }
 
     redo(): void {

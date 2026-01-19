@@ -16,6 +16,9 @@ export class EditorTable {
     private selection!: Selection;
     private areaResizer!: AreaResizer;
 
+    private mousemoveHandler: ((e: MouseEvent) => void) | undefined;
+    private mouseupHandler: (() => void) | undefined;
+
     constructor(tableName: string, tableData: EditorTableData) {
 
         this.tableData = tableData;
@@ -32,21 +35,8 @@ export class EditorTable {
 
         this.element.classList.add('editor-table');
 
-        // CSS変数で列幅と行高を初期化
-        for (let i = 0; i < this.tableData.header.length; ++i) {
-            this.element.style.setProperty(`--col-${i}-width`, '100px');
-        }
-        // 列ヘッダー行 + ヘッダー5行 + データ行 + 空行
-        const totalRows = 1 + 5 + this.tableData.body.length + (100 - this.tableData.body.length);
-        for (let i = 0; i < totalRows; ++i) {
-            this.element.style.setProperty(`--row-${i}-height`, '20px');
-        }
-
-        // 動的に行高と列幅のCSSルールを生成
-        this.areaResizer.generateRowHeightStyles(totalRows);
-        this.areaResizer.generateColumnWidthStyles(this.tableData.header.length);
-
-        window.addEventListener('mousemove', (e) => {
+        // グローバルイベントハンドラーを定義（activate/deactivateで登録・解除）
+        this.mousemoveHandler = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             if (target.classList.contains('editor-table-cell')) {
                 const position = EditorTable.getCellPosition(target, this.element);
@@ -63,17 +53,18 @@ export class EditorTable {
                     }
                 }
             }
-        });
+        };
 
-        window.addEventListener('mouseup', () => {
+        this.mouseupHandler = () => {
             this.selection.end();
-        });
+        };
 
         {
             const cells = [];
             // 左上隅の空セル
             const cornerCell = document.createElement('div');
             cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
+            EditorTable.applyCellHeight(cornerCell, '20px');
 
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', () => {
@@ -91,6 +82,9 @@ export class EditorTable {
                 columnHeaderCell.textContent = this.tableData.header[i].name;
                 columnHeaderCell.dataset.columnIndex = String(i);
                 columnHeaderCell.dataset.col = String(i);
+                // 幅と高さを直接設定
+                EditorTable.applyCellWidth(columnHeaderCell, '100px');
+                EditorTable.applyCellHeight(columnHeaderCell, '20px');
 
                 // 列ヘッダークリックで列全体を選択
                 columnHeaderCell.addEventListener('mousedown', (e) => {
@@ -213,7 +207,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j);
+                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j, '100px', '20px');
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -229,7 +223,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, '', j);
+                const cell = EditorTable.createCell(this, textField, selection, '', j, '100px', '20px');
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -267,13 +261,6 @@ export class EditorTable {
         const columnHeaderRow = this.element.children[0];
         const totalColumns = columnHeaderRow.children.length - 1;
 
-        // CSS変数を更新（既存の列をシフト）
-        for (let i = totalColumns; i > columnIndex; --i) {
-            const prevWidth = this.element.style.getPropertyValue(`--col-${i - 1}-width`) || '100px';
-            this.element.style.setProperty(`--col-${i}-width`, prevWidth);
-        }
-        this.element.style.setProperty(`--col-${columnIndex}-width`, '100px');
-
         // 各行に新しいセルを挿入
         for (let currentRowIndex = 0; currentRowIndex < this.element.children.length; ++currentRowIndex) {
             const row = this.element.children[currentRowIndex] as HTMLElement;
@@ -284,6 +271,9 @@ export class EditorTable {
                 newHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
                 newHeaderCell.dataset.columnIndex = String(columnIndex);
                 newHeaderCell.dataset.col = String(columnIndex);
+                // 幅と高さを直接設定
+                EditorTable.applyCellWidth(newHeaderCell, '100px');
+                EditorTable.applyCellHeight(newHeaderCell, '20px');
 
                 // 列ヘッダーのテキストを更新（全列を再計算）
                 const newColumnCount = totalColumns + 1;
@@ -377,8 +367,8 @@ export class EditorTable {
                     headerCell.appendChild(newResizeHandle);
                 }
             } else {
-                // 通常の行
-                const newCell = EditorTable.createCell(this, textField, selection, '', columnIndex);
+                // 通常の行: 行の高さは既存のセルから取得
+                const newCell = EditorTable.createCell(this, textField, selection, '', columnIndex, '100px', '20');
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newCell, insertBefore);
 
@@ -389,9 +379,6 @@ export class EditorTable {
                 }
             }
         }
-
-        // 列幅スタイルを再生成
-        this.areaResizer.generateColumnWidthStyles(totalColumns + 1);
     }
 
     /**
@@ -420,17 +407,9 @@ export class EditorTable {
      * 行挿入の内部実装（Commandから呼び出される）
      */
     public insertRowInternal(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        const totalRows = this.element.children.length;
         // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
         const columnHeaderRow = this.element.children[0];
         const columnCount = columnHeaderRow.children.length - 1;
-
-        // CSS変数を更新（既存の行をシフト）
-        for (let i = totalRows; i > rowIndex; --i) {
-            const prevHeight = this.element.style.getPropertyValue(`--row-${i - 1}-height`) || '20px';
-            this.element.style.setProperty(`--row-${i}-height`, prevHeight);
-        }
-        this.element.style.setProperty(`--row-${rowIndex}-height`, '20px');
 
         // 新しい行を作成
         const cells: HTMLElement[] = [];
@@ -440,6 +419,7 @@ export class EditorTable {
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = String(rowIndex);
         rowHeaderCell.dataset.rowIndex = String(rowIndex - 1);
+        EditorTable.applyCellHeight(rowHeaderCell, '20px');
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
@@ -494,9 +474,9 @@ export class EditorTable {
 
         cells.push(rowHeaderCell);
 
-        // データセルを作成
+        // データセルを作成（列幅は列ヘッダーから取得）
         for (let j = 0; j < columnCount; ++j) {
-            const cell = EditorTable.createCell(this, textField, selection, '', j);
+            const cell = EditorTable.createCell(this, textField, selection, '', j, '100', '20px');
             cells.push(cell);
         }
 
@@ -536,9 +516,6 @@ export class EditorTable {
                 header.appendChild(newResizeHandle);
             }
         }
-
-        // 行高スタイルを再生成
-        this.areaResizer.generateRowHeightStyles(totalRows + 1);
     }
 
     /**
@@ -597,10 +574,13 @@ export class EditorTable {
         return row;
     }
 
-    private static createCell(table: EditorTable, textField: GridTextField, selection: Selection, value: number | string | string[] | undefined, columnIndex: number) {
+    private static createCell(table: EditorTable, textField: GridTextField, selection: Selection, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
         cell.dataset.col = String(columnIndex);
+        // 幅と高さを直接スタイルに設定
+        EditorTable.applyCellWidth(cell, width);
+        EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
             enableCellEditMode(table, textField, selection, true);
         });
@@ -655,6 +635,7 @@ export class EditorTable {
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = text;
         rowHeaderCell.dataset.rowIndex = String(rowIndex);
+        EditorTable.applyCellHeight(rowHeaderCell, '20px');
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
@@ -729,24 +710,12 @@ export class EditorTable {
                 }
             }
         }
-
-        // CSS変数をシフト
-        for (let i = columnIndex; i < totalColumns - 1; ++i) {
-            const nextWidth = this.element.style.getPropertyValue(`--col-${i + 1}-width`) || '100px';
-            this.element.style.setProperty(`--col-${i}-width`, nextWidth);
-        }
-        this.element.style.removeProperty(`--col-${totalColumns - 1}-width`);
-
-        // スタイルを再生成
-        this.areaResizer.generateColumnWidthStyles(totalColumns - 1);
     }
 
     /**
      * 行を削除する（Undo用）
      */
     public deleteRow(rowIndex: number): void {
-        const totalRows = this.element.children.length;
-
         // 指定位置の行を削除
         const rowToRemove = this.element.children[rowIndex];
         if (rowToRemove) {
@@ -785,15 +754,95 @@ export class EditorTable {
                 header.appendChild(newResizeHandle);
             }
         }
+    }
 
-        // CSS変数をシフト
-        for (let i = rowIndex; i < totalRows - 1; ++i) {
-            const nextHeight = this.element.style.getPropertyValue(`--row-${i + 1}-height`) || '20px';
-            this.element.style.setProperty(`--row-${i}-height`, nextHeight);
+    /**
+     * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
+     */
+    activate(): void {
+        if (this.mousemoveHandler) {
+            window.addEventListener('mousemove', this.mousemoveHandler);
         }
-        this.element.style.removeProperty(`--row-${totalRows - 1}-height`);
+        if (this.mouseupHandler) {
+            window.addEventListener('mouseup', this.mouseupHandler);
+        }
+    }
 
-        // スタイルを再生成
-        this.areaResizer.generateRowHeightStyles(totalRows - 1);
+    /**
+     * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
+     */
+    deactivate(): void {
+        if (this.mousemoveHandler) {
+            window.removeEventListener('mousemove', this.mousemoveHandler);
+        }
+        if (this.mouseupHandler) {
+            window.removeEventListener('mouseup', this.mouseupHandler);
+        }
+    }
+
+    /**
+     * 指定列の幅を取得（列ヘッダーセルから取得）
+     */
+    getColumnWidth(columnIndex: number): string {
+        const columnHeaderRow = this.element.children[0];
+        const headerCell = columnHeaderRow.children[columnIndex + 1] as HTMLElement;
+        return headerCell.style.width || '100px';
+    }
+
+    /**
+     * 指定列の幅を設定し、その列の全セルのスタイルを更新
+     */
+    setColumnWidth(columnIndex: number, width: string): void {
+        // 全行の該当列セルのスタイルを更新
+        for (let i = 0; i < this.element.children.length; ++i) {
+            const row = this.element.children[i] as HTMLElement;
+            // columnIndex + 1: 行ヘッダーを除く
+            const cell = row.children[columnIndex + 1] as HTMLElement;
+            if (cell) {
+                EditorTable.applyCellWidth(cell, width);
+            }
+        }
+    }
+
+    /**
+     * 指定行の高さを取得（その行の最初のセルから取得）
+     */
+    getRowHeight(rowIndex: number): string {
+        const row = this.element.children[rowIndex] as HTMLElement;
+        const cell = row.children[0] as HTMLElement;
+        return cell.style.height || '20px';
+    }
+
+    /**
+     * 指定行の高さを設定し、その行の全セルのスタイルを更新
+     */
+    setRowHeight(rowIndex: number, height: string): void {
+        // 該当行の全セルのスタイルを更新
+        const row = this.element.children[rowIndex] as HTMLElement;
+        if (row) {
+            for (let i = 0; i < row.children.length; ++i) {
+                const cell = row.children[i] as HTMLElement;
+                EditorTable.applyCellHeight(cell, height);
+            }
+        }
+    }
+
+    /**
+     * セルに幅のスタイルを適用
+     */
+    static applyCellWidth(cell: HTMLElement, width: string): void {
+        cell.style.width = width;
+        cell.style.minWidth = width;
+        cell.style.maxWidth = width;
+    }
+
+    /**
+     * セルに高さのスタイルを適用
+     */
+    static applyCellHeight(cell: HTMLElement, height: string): void {
+        cell.style.height = height;
+        cell.style.minHeight = height;
+        cell.style.maxHeight = height;
+        cell.style.lineHeight = height;
     }
 }

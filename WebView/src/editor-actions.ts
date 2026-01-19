@@ -277,9 +277,12 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     const contextMenu = new ContextMenu(editor.element);
 
-    const areaResizer = new AreaResizer(table.element, editor.element, history, selection);
+    const areaResizer = new AreaResizer(editor.element, history, selection);
 
     table.setup(textField, selection, contextMenu, history, areaResizer);
+
+    // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
+    areaResizer.setEditorTable(table);
 
     // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
     selection.setRange(1, 1, 1, 1);

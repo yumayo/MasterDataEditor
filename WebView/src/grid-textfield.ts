@@ -17,6 +17,8 @@ export class GridTextField {
     readonly selection: Selection;
     readonly history: History;
 
+    private mouseupHandler: (() => void) | undefined;
+
     constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
         this.selection = selection;
@@ -76,8 +78,8 @@ export class GridTextField {
             }
         });
 
-        // マウスアップでフィル確定
-        window.addEventListener('mouseup', () => {
+        // グローバルイベントハンドラーを定義（activate/deactivateで登録・解除）
+        this.mouseupHandler = () => {
             if (!this.selection.isFilling()) return;
 
             const fillInfo = this.selection.getFillInfo();
@@ -100,7 +102,7 @@ export class GridTextField {
                     fillInfo.count
                 );
             }
-        });
+        };
     }
 
     /**
@@ -690,6 +692,25 @@ export class GridTextField {
             this.pasteWithFill(sourceData, selectionRange, copyRange);
         } else {
             this.pasteNormal(sourceData, copyRange);
+        }
+    }
+
+    /**
+     * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
+     */
+    activate(): void {
+        if (this.mouseupHandler) {
+            window.addEventListener('mouseup', this.mouseupHandler);
+        }
+    }
+
+    /**
+     * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
+     */
+    deactivate(): void {
+        this.active = false;
+        if (this.mouseupHandler) {
+            window.removeEventListener('mouseup', this.mouseupHandler);
         }
     }
 }

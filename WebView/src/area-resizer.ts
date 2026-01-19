@@ -1,9 +1,10 @@
 import type { History } from "./history";
 import type { Selection } from "./selection";
+import type { EditorTable } from "./editor-table";
 import { ColumnWidthCommand, RowHeightCommand } from "./command";
 
 export class AreaResizer {
-    private tableElement: HTMLElement;
+    private editorTable!: EditorTable;
     private editorElement: HTMLElement;
     private history: History;
     private selection: Selection;
@@ -23,8 +24,10 @@ export class AreaResizer {
     private resizeRowStartTop: number = 0;
     private resizeRowOldHeight: string = '20px';
 
-    constructor(tableElement: HTMLElement, editorElement: HTMLElement, history: History, selection: Selection) {
-        this.tableElement = tableElement;
+    private mousemoveHandler!: (e: MouseEvent) => void;
+    private mouseupHandler!: (e: MouseEvent) => void;
+
+    constructor(editorElement: HTMLElement, history: History, selection: Selection) {
         this.editorElement = editorElement;
         this.history = history;
         this.selection = selection;
@@ -40,8 +43,16 @@ export class AreaResizer {
         this.setupEventListeners();
     }
 
+    /**
+     * EditorTableへの参照を設定
+     */
+    setEditorTable(editorTable: EditorTable): void {
+        this.editorTable = editorTable;
+    }
+
     private setupEventListeners(): void {
-        window.addEventListener('mousemove', (e) => {
+        // グローバルイベントハンドラーを定義（activate/deactivateで登録・解除）
+        this.mousemoveHandler = (e: MouseEvent) => {
             if (this.isResizingColumn) {
                 const deltaX = e.clientX - this.resizeStartX;
                 const newLeft = this.resizeColumnStartLeft + deltaX;
@@ -57,9 +68,9 @@ export class AreaResizer {
                 // ガイドラインの位置を更新（実際のセルは変更しない）
                 this.resizeGuideline.style.top = newTop + 'px';
             }
-        });
+        };
 
-        window.addEventListener('mouseup', (e) => {
+        this.mouseupHandler = (e: MouseEvent) => {
             if (this.isResizingColumn) {
                 const deltaX = e.clientX - this.resizeStartX;
                 const newWidth = Math.max(20, this.resizeStartWidth + deltaX);
@@ -68,13 +79,13 @@ export class AreaResizer {
                 // 幅が変わった場合のみ履歴に追加
                 if (this.resizeColumnOldWidth !== newWidthStr) {
                     const command = new ColumnWidthCommand(
-                        this.tableElement,
+                        this.editorTable,
                         this.resizingColumnIndex,
                         this.resizeColumnOldWidth,
                         newWidthStr
                     );
-                    // マウスアップ時にCSS変数を更新（executeを直接呼ぶ代わりに）
-                    this.tableElement.style.setProperty(`--col-${this.resizingColumnIndex}-width`, newWidthStr);
+                    // マウスアップ時にセルのスタイルを更新
+                    this.editorTable.setColumnWidth(this.resizingColumnIndex, newWidthStr);
 
                     // 履歴に追加（既に実行済み）
                     const copyRange = this.selection.getCopyRange();
@@ -103,13 +114,13 @@ export class AreaResizer {
                 // 高さが変わった場合のみ履歴に追加
                 if (this.resizeRowOldHeight !== newHeightStr) {
                     const command = new RowHeightCommand(
-                        this.tableElement,
+                        this.editorTable,
                         this.resizingRowIndex,
                         this.resizeRowOldHeight,
                         newHeightStr
                     );
-                    // マウスアップ時にCSS変数を更新
-                    this.tableElement.style.setProperty(`--row-${this.resizingRowIndex}-height`, newHeightStr);
+                    // マウスアップ時にセルのスタイルを更新
+                    this.editorTable.setRowHeight(this.resizingRowIndex, newHeightStr);
 
                     // 履歴に追加（既に実行済み）
                     const copyRange = this.selection.getCopyRange();
@@ -132,7 +143,23 @@ export class AreaResizer {
 
             this.isResizingColumn = false;
             this.isResizingRow = false;
-        });
+        };
+    }
+
+    /**
+     * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
+     */
+    activate(): void {
+        window.addEventListener('mousemove', this.mousemoveHandler);
+        window.addEventListener('mouseup', this.mouseupHandler);
+    }
+
+    /**
+     * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
+     */
+    deactivate(): void {
+        window.removeEventListener('mousemove', this.mousemoveHandler);
+        window.removeEventListener('mouseup', this.mouseupHandler);
     }
 
     /**
@@ -147,8 +174,8 @@ export class AreaResizer {
             this.resizeStartX = e.clientX;
             const width = columnHeaderCell.offsetWidth;
             this.resizeStartWidth = width;
-            // 元の幅を保存（Undo用）
-            this.resizeColumnOldWidth = this.tableElement.style.getPropertyValue(`--col-${columnIndex}-width`) || '100px';
+            // 元の幅を保存（Undo用）- セルのスタイルから取得
+            this.resizeColumnOldWidth = columnHeaderCell.style.width || '100px';
 
             // ガイドラインを表示（縦線）
             const rect = columnHeaderCell.getBoundingClientRect();
@@ -174,8 +201,8 @@ export class AreaResizer {
             this.resizeStartY = e.clientY;
             const height = rowHeaderCell.offsetHeight;
             this.resizeStartHeight = height;
-            // 元の高さを保存（Undo用）
-            this.resizeRowOldHeight = this.tableElement.style.getPropertyValue(`--row-${rowIndex}-height`) || '20px';
+            // 元の高さを保存（Undo用）- セルのスタイルから取得
+            this.resizeRowOldHeight = rowHeaderCell.style.height || '20px';
 
             // ガイドラインを表示（横線）
             const rect = rowHeaderCell.getBoundingClientRect();
@@ -187,51 +214,5 @@ export class AreaResizer {
             this.resizeGuideline.classList.add('resize-guideline-row');
             this.resizeGuideline.classList.remove('resize-guideline-column');
         });
-    }
-
-    /**
-     * 動的に行高のCSSルールを生成
-     */
-    public generateRowHeightStyles(totalRows: number): void {
-        // 既存のスタイルシートがあれば削除
-        const existingStyle = document.getElementById('editor-table-row-heights');
-        if (existingStyle) {
-            existingStyle.remove();
-        }
-
-        // 新しいスタイルシートを作成
-        const style = document.createElement('style');
-        style.id = 'editor-table-row-heights';
-
-        let css = '';
-        for (let i = 0; i < totalRows; ++i) {
-            css += `.editor-table-row[data-row="${i}"] { --row-height: var(--row-${i}-height, 20px); }\n`;
-        }
-
-        style.textContent = css;
-        document.head.appendChild(style);
-    }
-
-    /**
-     * 動的に列幅のCSSルールを生成
-     */
-    public generateColumnWidthStyles(columnCount: number): void {
-        // 既存のスタイルシートがあれば削除
-        const existingStyle = document.getElementById('editor-table-column-widths');
-        if (existingStyle) {
-            existingStyle.remove();
-        }
-
-        // 新しいスタイルシートを作成
-        const style = document.createElement('style');
-        style.id = 'editor-table-column-widths';
-
-        let css = '';
-        for (let i = 0; i < columnCount; ++i) {
-            css += `.editor-table-cell[data-col="${i}"] { width: var(--col-${i}-width, 100px); min-width: var(--col-${i}-width, 100px); max-width: var(--col-${i}-width, 100px); }\n`;
-        }
-
-        style.textContent = css;
-        document.head.appendChild(style);
     }
 }

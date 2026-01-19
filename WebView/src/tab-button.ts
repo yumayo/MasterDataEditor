@@ -77,9 +77,6 @@ export class TabButton {
             this.tab.enableTabButton(prev.name);
             return;
         }
-
-        // 自分自身の両隣がいない場合は、全てのタブが存在していないためEditor部分を空にします。
-        this.editor.clear();
     }
 
     enable() {

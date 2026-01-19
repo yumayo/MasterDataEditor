@@ -162,7 +162,6 @@ export function generateSeriesData(
 
     if (direction === 'down' || direction === 'up') {
         // 縦方向のフィル: 各列ごとに連続データを生成
-        const numRows = sourceValues.length;
         const numCols = sourceValues[0].length;
 
         for (let i = 0; i < count; i++) {
@@ -179,7 +178,6 @@ export function generateSeriesData(
     } else {
         // 横方向のフィル: 各行ごとに連続データを生成
         const numRows = sourceValues.length;
-        const numCols = sourceValues[0].length;
 
         for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
             const rowValues = [...sourceValues[rowIdx]];

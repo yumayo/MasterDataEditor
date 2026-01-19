@@ -9,15 +9,7 @@
     display: table-row;
 }
 
-/* 行高をCSS変数で制御（デフォルトは20px） */
-.editor-table-row[data-row] .editor-table-cell {
-    height: var(--row-height, 20px);
-    min-height: var(--row-height, 20px);
-    max-height: var(--row-height, 20px);
-    line-height: var(--row-height, 20px);
-}
-
-/* 各行ごとのCSS変数はJavaScriptで動的に生成される */
+/* 行高と列幅は各セルのインラインスタイルで制御される */
 
 .editor-table-cell {
     display: table-cell;
@@ -29,8 +21,6 @@
 
     white-space: nowrap;
 }
-
-/* 列幅と行高はJavaScriptで動的に生成される */
 
 /* テーブルのセルの上の線の描画 */
 .editor-table-row .editor-table-cell {
