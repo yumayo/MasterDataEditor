@@ -333,8 +333,8 @@ export class DeleteColumnCommand implements Command {
             }
         }
 
-        // 列幅を保存
-        this.deletedWidth = tableElement.style.getPropertyValue(`--col-${this.columnIndex}-width`) || '100px';
+        // 列幅を保存（セルのスタイルから取得）
+        this.deletedWidth = this.editorTable.getColumnWidth(this.columnIndex);
 
         // 列を削除
         this.editorTable.deleteColumn(this.columnIndex);
@@ -354,8 +354,8 @@ export class DeleteColumnCommand implements Command {
             }
         }
 
-        // 列幅を復元
-        tableElement.style.setProperty(`--col-${this.columnIndex}-width`, this.deletedWidth);
+        // 列幅を復元（全セルに適用）
+        this.editorTable.setColumnWidth(this.columnIndex, this.deletedWidth);
     }
 
     redo(): void {
@@ -418,8 +418,8 @@ export class DeleteRowCommand implements Command {
                 }
             }
 
-            // 行高を保存
-            this.deletedHeight = tableElement.style.getPropertyValue(`--row-${this.rowIndex}-height`) || '20px';
+            // 行高を保存（セルのスタイルから取得）
+            this.deletedHeight = this.editorTable.getRowHeight(this.rowIndex);
         }
 
         // 行を削除
@@ -441,8 +441,8 @@ export class DeleteRowCommand implements Command {
                 }
             }
 
-            // 行高を復元
-            tableElement.style.setProperty(`--row-${this.rowIndex}-height`, this.deletedHeight);
+            // 行高を復元（全セルに適用）
+            this.editorTable.setRowHeight(this.rowIndex, this.deletedHeight);
         }
     }
 
