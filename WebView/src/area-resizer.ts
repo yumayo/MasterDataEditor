@@ -2,6 +2,7 @@ import type { History } from "./history";
 import type { Selection } from "./selection";
 import type { EditorTable } from "./editor-table";
 import { ColumnWidthCommand, RowHeightCommand } from "./command";
+import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT } from "./constant";
 
 export class AreaResizer {
     private editorTable!: EditorTable;
@@ -15,14 +16,14 @@ export class AreaResizer {
     private resizeStartX: number = 0;
     private resizeStartWidth: number = 0;
     private resizeColumnStartLeft: number = 0;
-    private resizeColumnOldWidth: string = '100px';
+    private resizeColumnOldWidth: string = DEFAULT_COLUMN_WIDTH;
 
     private isResizingRow: boolean = false;
     private resizingRowIndex: number = -1;
     private resizeStartY: number = 0;
     private resizeStartHeight: number = 0;
     private resizeRowStartTop: number = 0;
-    private resizeRowOldHeight: string = '20px';
+    private resizeRowOldHeight: string = DEFAULT_ROW_HEIGHT;
 
     private mousemoveHandler!: (e: MouseEvent) => void;
     private mouseupHandler!: (e: MouseEvent) => void;
@@ -175,7 +176,7 @@ export class AreaResizer {
             const width = columnHeaderCell.offsetWidth;
             this.resizeStartWidth = width;
             // 元の幅を保存（Undo用）- セルのスタイルから取得
-            this.resizeColumnOldWidth = columnHeaderCell.style.width || '100px';
+            this.resizeColumnOldWidth = columnHeaderCell.style.width || DEFAULT_COLUMN_WIDTH;
 
             // ガイドラインを表示（縦線）
             const rect = columnHeaderCell.getBoundingClientRect();
@@ -202,7 +203,7 @@ export class AreaResizer {
             const height = rowHeaderCell.offsetHeight;
             this.resizeStartHeight = height;
             // 元の高さを保存（Undo用）- セルのスタイルから取得
-            this.resizeRowOldHeight = rowHeaderCell.style.height || '20px';
+            this.resizeRowOldHeight = rowHeaderCell.style.height || DEFAULT_ROW_HEIGHT;
 
             // ガイドラインを表示（横線）
             const rect = rowHeaderCell.getBoundingClientRect();

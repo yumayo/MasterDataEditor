@@ -6,6 +6,7 @@ import {ContextMenu} from "./context-menu";
 import {History} from "./history";
 import {InsertColumnCommand, InsertRowCommand, DeleteColumnCommand, DeleteRowCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
+import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
 
 export class EditorTable {
     readonly tableName: string;
@@ -64,7 +65,7 @@ export class EditorTable {
             // 左上隅の空セル
             const cornerCell = document.createElement('div');
             cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
-            EditorTable.applyCellHeight(cornerCell, '20px');
+            EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
 
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', () => {
@@ -83,8 +84,8 @@ export class EditorTable {
                 columnHeaderCell.dataset.columnIndex = String(i);
                 columnHeaderCell.dataset.col = String(i);
                 // 幅と高さを直接設定
-                EditorTable.applyCellWidth(columnHeaderCell, '100px');
-                EditorTable.applyCellHeight(columnHeaderCell, '20px');
+                EditorTable.applyCellWidth(columnHeaderCell, DEFAULT_COLUMN_WIDTH);
+                EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
 
                 // 列ヘッダークリックで列全体を選択
                 columnHeaderCell.addEventListener('mousedown', (e) => {
@@ -207,7 +208,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j, '100px', '20px');
+                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -223,7 +224,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, '', j, '100px', '20px');
+                const cell = EditorTable.createCell(this, textField, selection, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -272,8 +273,8 @@ export class EditorTable {
                 newHeaderCell.dataset.columnIndex = String(columnIndex);
                 newHeaderCell.dataset.col = String(columnIndex);
                 // 幅と高さを直接設定
-                EditorTable.applyCellWidth(newHeaderCell, '100px');
-                EditorTable.applyCellHeight(newHeaderCell, '20px');
+                EditorTable.applyCellWidth(newHeaderCell, DEFAULT_COLUMN_WIDTH);
+                EditorTable.applyCellHeight(newHeaderCell, DEFAULT_ROW_HEIGHT);
 
                 // 列ヘッダーのテキストを更新（全列を再計算）
                 const newColumnCount = totalColumns + 1;
@@ -368,7 +369,7 @@ export class EditorTable {
                 }
             } else {
                 // 通常の行: 行の高さは既存のセルから取得
-                const newCell = EditorTable.createCell(this, textField, selection, '', columnIndex, '100px', '20');
+                const newCell = EditorTable.createCell(this, textField, selection, '', columnIndex, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newCell, insertBefore);
 
@@ -419,7 +420,7 @@ export class EditorTable {
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = String(rowIndex);
         rowHeaderCell.dataset.rowIndex = String(rowIndex - 1);
-        EditorTable.applyCellHeight(rowHeaderCell, '20px');
+        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
@@ -476,7 +477,7 @@ export class EditorTable {
 
         // データセルを作成（列幅は列ヘッダーから取得）
         for (let j = 0; j < columnCount; ++j) {
-            const cell = EditorTable.createCell(this, textField, selection, '', j, '100', '20px');
+            const cell = EditorTable.createCell(this, textField, selection, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
             cells.push(cell);
         }
 
@@ -635,7 +636,7 @@ export class EditorTable {
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = text;
         rowHeaderCell.dataset.rowIndex = String(rowIndex);
-        EditorTable.applyCellHeight(rowHeaderCell, '20px');
+        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
@@ -786,7 +787,7 @@ export class EditorTable {
     getColumnWidth(columnIndex: number): string {
         const columnHeaderRow = this.element.children[0];
         const headerCell = columnHeaderRow.children[columnIndex + 1] as HTMLElement;
-        return headerCell.style.width || '100px';
+        return headerCell.style.width || DEFAULT_COLUMN_WIDTH;
     }
 
     /**
@@ -810,7 +811,7 @@ export class EditorTable {
     getRowHeight(rowIndex: number): string {
         const row = this.element.children[rowIndex] as HTMLElement;
         const cell = row.children[0] as HTMLElement;
-        return cell.style.height || '20px';
+        return cell.style.height || DEFAULT_ROW_HEIGHT;
     }
 
     /**
