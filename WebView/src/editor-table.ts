@@ -339,7 +339,17 @@ export class EditorTable {
                     const headerCell = row.children[i + 1] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    const label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
+                    // 挿入位置を考慮してラベルを決定
+                    // i < columnIndex: 元の位置のラベル
+                    // i == columnIndex: 新しく挿入された列（空）
+                    // i > columnIndex: 元の位置-1のラベル
+                    let label = '';
+                    if (i < columnIndex) {
+                        label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
+                    } else if (i > columnIndex) {
+                        const originalIndex = i - 1;
+                        label = originalIndex < this.tableData.header.length ? this.tableData.header[originalIndex].name : '';
+                    }
 
                     // 既存のテキストノードを探して更新（リサイズハンドルは保持）
                     let textNode: Text | undefined;
