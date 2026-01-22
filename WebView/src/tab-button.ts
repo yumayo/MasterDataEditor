@@ -13,6 +13,7 @@ export class TabButton {
     private closeButton: HTMLButtonElement;
 
     constructor(editor: Editor, tab: Tab, name: string) {
+        console.log('[TabButton] constructor', name);
         this.editor = editor;
         this.name = name;
         this.tab = tab;
@@ -23,6 +24,9 @@ export class TabButton {
         this.element.textContent = name;
 
         this.element.addEventListener('click', this.onClick.bind(this));
+
+        // マウスイベントでドラッグアンドドロップを実装（WebView2対応）
+        this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
 
         // 閉じるボタンと丸ポッチを配置するコンテナ
         const buttonContainer = document.createElement('div');
@@ -118,5 +122,55 @@ export class TabButton {
 
     disable() {
         this.element.classList.remove('tab-button-active')
+    }
+
+    private onMouseDown(ev: MouseEvent) {
+        // 閉じるボタンのクリックは除外
+        if ((ev.target as HTMLElement).classList.contains('tab-button-close')) {
+            return;
+        }
+
+        // 左ボタンのみ
+        if (ev.button !== 0) {
+            return;
+        }
+
+        const startX = ev.clientX;
+        const startY = ev.clientY;
+        let isDragging = false;
+
+        const onMouseMove = (moveEv: MouseEvent) => {
+            // 5px以上移動したらドラッグ開始
+            const dx = Math.abs(moveEv.clientX - startX);
+            const dy = Math.abs(moveEv.clientY - startY);
+
+            if (!isDragging && (dx > 5 || dy > 5)) {
+                isDragging = true;
+                this.element.classList.add('tab-button-dragging');
+                this.tab.setDraggingTabName(this.name);
+            }
+
+            if (isDragging) {
+                // ドロップ先のタブを探す
+                this.tab.updateDropIndicator(moveEv.clientX);
+            }
+        };
+
+        const onMouseUp = (upEv: MouseEvent) => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+
+            if (isDragging) {
+                // ドロップ処理
+                this.tab.dropTab(upEv.clientX);
+
+                this.element.classList.remove('tab-button-dragging');
+                this.tab.clearDropIndicators();
+                this.tab.clearDraggingTabName();
+            }
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
     }
 }

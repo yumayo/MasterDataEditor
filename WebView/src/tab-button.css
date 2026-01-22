@@ -127,3 +127,33 @@
 .tab-button:has(.tab-button-dirty-visible) .tab-button-container:hover .tab-button-close::after {
     transform: translate(-50%, -50%) rotate(-45deg);
 }
+
+/* ドラッグ中のタブのスタイル */
+.tab-button-dragging {
+    opacity: 0.5;
+}
+
+/* ドラッグ中は子要素へのポインターイベントを無効化してドロップを確実にする */
+.tab-button.tab-button-drop-left > *,
+.tab-button.tab-button-drop-right > * {
+    pointer-events: none;
+}
+
+/* ドロップ位置のインジケーター（左側） */
+.tab-button-drop-left {
+    box-shadow: inset 3px 0 0 0 var(--selection-color, #007fd4);
+}
+
+/* ドロップ位置のインジケーター（右側） */
+.tab-button-drop-right {
+    box-shadow: inset -3px 0 0 0 var(--selection-color, #007fd4);
+}
+
+/* ドラッグ中はカーソルを変更 */
+.tab-button {
+    cursor: grab;
+}
+
+.tab-button-dragging {
+    cursor: grabbing;
+}
