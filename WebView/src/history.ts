@@ -2,6 +2,19 @@ import { Command, CellChangeCommand, CellChange } from "./command";
 import { CellRange } from "./selection";
 
 /**
+ * savedIndexの特殊値
+ */
+/** 初期状態（ファイルから読み込んだ直後、未編集状態） */
+const SAVED_INDEX_INITIAL = -1 as const;
+/** 保存時点が履歴から削除された（常にdirty） */
+const SAVED_INDEX_LOST = -2 as const;
+
+/** savedIndexの特殊状態を表す型 */
+type SavedIndexSpecial = typeof SAVED_INDEX_INITIAL | typeof SAVED_INDEX_LOST;
+/** savedIndex全体の型（特殊状態または有効な履歴インデックス） */
+type SavedIndex = SavedIndexSpecial | number;
+
+/**
  * 履歴に記録するエントリ
  */
 export interface HistoryEntry {
@@ -35,6 +48,12 @@ export class History {
     private readonly maxHistorySize: number;
     private tableElement: HTMLElement;
     private onChangeCallback: (() => void) | undefined;
+    /**
+     * 保存時点のインデックス
+     * SAVED_INDEX_INITIALは初期状態（ファイルから読み込んだ直後、未編集状態）
+     * SAVED_INDEX_LOSTは保存時点が履歴から削除された（常にdirty）
+     */
+    private savedIndex: SavedIndex;
 
     constructor(tableElement: HTMLElement, maxHistorySize: number) {
         this.history = [];
@@ -42,6 +61,7 @@ export class History {
         this.maxHistorySize = maxHistorySize;
         this.tableElement = tableElement;
         this.onChangeCallback = undefined;
+        this.savedIndex = SAVED_INDEX_INITIAL;
     }
 
     /**
@@ -67,6 +87,10 @@ export class History {
         command.execute();
 
         // 現在の位置より後の履歴を削除
+        // savedIndexがこの削除範囲にある場合は無効化
+        if (this.savedIndex > this.currentIndex) {
+            this.savedIndex = SAVED_INDEX_LOST; // 保存時点が失われた
+        }
         this.history.splice(this.currentIndex + 1);
 
         // 新しいエントリを追加
@@ -83,6 +107,13 @@ export class History {
         if (this.history.length > this.maxHistorySize) {
             this.history.shift();
             this.currentIndex = this.currentIndex - 1;
+            // savedIndexも調整（0未満になった場合は-2で保存時点が失われた状態）
+            if (this.savedIndex >= 0) {
+                this.savedIndex = this.savedIndex - 1;
+                if (this.savedIndex < 0) {
+                    this.savedIndex = SAVED_INDEX_LOST;
+                }
+            }
         }
 
         // 変更通知
@@ -94,6 +125,10 @@ export class History {
      */
     pushCommand(command: Command, range: CellRange, copyRange: CellRange): void {
         // 現在の位置より後の履歴を削除
+        // savedIndexがこの削除範囲にある場合は無効化
+        if (this.savedIndex > this.currentIndex) {
+            this.savedIndex = SAVED_INDEX_LOST; // 保存時点が失われた
+        }
         this.history.splice(this.currentIndex + 1);
 
         // 新しいエントリを追加
@@ -110,6 +145,13 @@ export class History {
         if (this.history.length > this.maxHistorySize) {
             this.history.shift();
             this.currentIndex = this.currentIndex - 1;
+            // savedIndexも調整（0未満になった場合は-2で保存時点が失われた状態）
+            if (this.savedIndex >= 0) {
+                this.savedIndex = this.savedIndex - 1;
+                if (this.savedIndex < 0) {
+                    this.savedIndex = SAVED_INDEX_LOST;
+                }
+            }
         }
 
         // 変更通知
@@ -162,6 +204,9 @@ export class History {
 
         this.currentIndex = this.currentIndex - 1;
 
+        // dirty状態が変わった可能性があるので通知
+        this.notifyChange();
+
         return { range: entry.range, copyRange: entry.copyRange };
     }
 
@@ -189,6 +234,9 @@ export class History {
             }
         }
 
+        // dirty状態が変わった可能性があるので通知
+        this.notifyChange();
+
         return { range: redoRange, copyRange: entry.copyRange };
     }
 
@@ -212,6 +260,24 @@ export class History {
     clear(): void {
         this.history = [];
         this.currentIndex = -1;
+        this.savedIndex = SAVED_INDEX_INITIAL;
+    }
+
+    /**
+     * 現在の状態を保存済みとしてマーク
+     * Ctrl+Sで保存した後に呼び出す
+     */
+    markSaved(): void {
+        this.savedIndex = this.currentIndex;
+        this.notifyChange();
+    }
+
+    /**
+     * 未保存の変更があるかどうか
+     * @returns true: 保存時点から変更がある（dirty）, false: 保存時点と同じ（clean）
+     */
+    isDirty(): boolean {
+        return this.currentIndex !== this.savedIndex;
     }
 
     /**

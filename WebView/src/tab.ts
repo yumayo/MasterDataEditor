@@ -208,7 +208,7 @@ export class Tab {
                 const tabButton = this.tabButtons.find(x => x.name === name);
                 if (tabButton) {
                     history.setOnChangeCallback(() => {
-                        tabButton.setDirty(true);
+                        tabButton.setDirty(history.isDirty());
                     });
                 }
 
@@ -216,12 +216,11 @@ export class Tab {
                 const textField = new GridTextField(editorTable, selection, history);
                 wrapperElement.appendChild(textField.element);
 
-                // 保存完了時にタブのdirty状態をクリア
-                if (tabButton) {
-                    textField.setOnSaveCallback(() => {
-                        tabButton.setDirty(false);
-                    });
-                }
+                // 保存完了時に履歴を保存済みとしてマーク
+                // markSaved()がnotifyChange()を呼び、onChangeCallbackでdirty状態が更新される
+                textField.setOnSaveCallback(() => {
+                    history.markSaved();
+                });
 
                 // AreaResizerを作成
                 const areaResizer = new AreaResizer(wrapperElement, history, selection);
