@@ -37,19 +37,18 @@ async function postMessageAsync<T>(
         const responseHandler = (event: MessageEvent) => {
             try {
                 const responseData = JSON.parse(event.data);
-                if (responseData && responseData.type === `${apiName}_response`) {
-                    if (responseData.success) {
-                        clearTimeout(timeout);
-                        window.chrome.webview.removeEventListener('message', responseHandler);
-                        resolve(responseData.data as T);
-                    } else {
-                        clearTimeout(timeout);
-                        window.chrome.webview.removeEventListener('message', responseHandler);
-                        reject(new Error((responseData.error as string) || `${apiName} failed`));
-                    }
+                console.log(`[DEBUG] ${apiName} received:`, responseData);
+                // 関係のないメッセージは無視して待ち続ける
+                if (!responseData || responseData.type !== `${apiName}_response`) {
+                    return;
+                }
+
+                clearTimeout(timeout);
+                window.chrome.webview.removeEventListener('message', responseHandler);
+
+                if (responseData.success) {
+                    resolve(responseData.data as T);
                 } else {
-                    clearTimeout(timeout);
-                    window.chrome.webview.removeEventListener('message', responseHandler);
                     reject(new Error((responseData.error as string) || `${apiName} failed`));
                 }
                 
