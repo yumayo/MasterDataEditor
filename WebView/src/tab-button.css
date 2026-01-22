@@ -55,8 +55,8 @@
     opacity: 1;
 }
 
-/* マウスオーバー時は丸ポッチを非表示 */
-.tab-button:hover .tab-button-dirty {
+/* 丸ポッチが表示されているとき: コンテナホバーで丸ポッチを非表示 */
+.tab-button-container:hover .tab-button-dirty-visible {
     opacity: 0;
 }
 
@@ -89,8 +89,9 @@
     background-color:rgba(255, 255, 255, 0.2);
 }
 
-/* タブボタンがマウスホバー中は閉じるボタンを表示します */
-.tab-button:hover .tab-button-close::before, .tab-button:hover .tab-button-close::after { /* 共通設定 */
+/* 丸ポッチが表示されていないとき: タブホバーで閉じるボタンを表示 */
+.tab-button:hover:not(:has(.tab-button-dirty-visible)) .tab-button-close::before,
+.tab-button:hover:not(:has(.tab-button-dirty-visible)) .tab-button-close::after { /* 共通設定 */
     content: "";
     position: absolute;
     top: 50%;
@@ -100,11 +101,30 @@
     background: var(--font-color);
 }
 
-/* タブボタンがマウスホバー中は閉じるボタンを表示します */
-.tab-button:hover .tab-button-close::before {
+/* 丸ポッチが表示されていないとき: タブホバーで閉じるボタンを表示 */
+.tab-button:hover:not(:has(.tab-button-dirty-visible)) .tab-button-close::before {
     transform: translate(-50%, -50%) rotate(45deg);
 }
-/* タブボタンがマウスホバー中は閉じるボタンを表示します */
-.tab-button:hover .tab-button-close::after {
+.tab-button:hover:not(:has(.tab-button-dirty-visible)) .tab-button-close::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+/* 丸ポッチが表示されているとき: コンテナホバーでのみ閉じるボタンを表示 */
+.tab-button:has(.tab-button-dirty-visible) .tab-button-container:hover .tab-button-close::before,
+.tab-button:has(.tab-button-dirty-visible) .tab-button-container:hover .tab-button-close::after { /* 共通設定 */
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1px; /* 棒の幅（太さ） */
+    height: 12px; /* 棒の高さ */
+    background: var(--font-color);
+}
+
+/* 丸ポッチが表示されているとき: コンテナホバーでのみ閉じるボタンを表示 */
+.tab-button:has(.tab-button-dirty-visible) .tab-button-container:hover .tab-button-close::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+.tab-button:has(.tab-button-dirty-visible) .tab-button-container:hover .tab-button-close::after {
     transform: translate(-50%, -50%) rotate(-45deg);
 }
