@@ -9,6 +9,9 @@ export class TabButton {
     readonly element: HTMLLIElement;
     readonly name: string;
 
+    private dirtyIndicator: HTMLElement;
+    private closeButton: HTMLButtonElement;
+
     constructor(editor: Editor, tab: Tab, name: string) {
         this.editor = editor;
         this.name = name;
@@ -21,11 +24,41 @@ export class TabButton {
 
         this.element.addEventListener('click', this.onClick.bind(this));
 
-        const closeButton = document.createElement('button');
-        closeButton.classList.add('tab-button-close');
-        closeButton.addEventListener('click', this.onClickCloseButton.bind(this));
+        // 閉じるボタンと丸ポッチを配置するコンテナ
+        const buttonContainer = document.createElement('div');
+        buttonContainer.classList.add('tab-button-container');
 
-        this.element.appendChild(closeButton);
+        // 編集中を示す丸ポッチ（閉じるボタンの下に配置）
+        this.dirtyIndicator = document.createElement('div');
+        this.dirtyIndicator.classList.add('tab-button-dirty');
+        buttonContainer.appendChild(this.dirtyIndicator);
+
+        // 閉じるボタン（丸ポッチの上に重なる）
+        this.closeButton = document.createElement('button');
+        this.closeButton.classList.add('tab-button-close');
+        this.closeButton.addEventListener('click', this.onClickCloseButton.bind(this));
+        buttonContainer.appendChild(this.closeButton);
+
+        this.element.appendChild(buttonContainer);
+    }
+
+    /**
+     * 編集状態（dirty）を設定
+     * @param dirty true: 編集あり（丸ポッチ表示）、false: 保存済み（丸ポッチ非表示）
+     */
+    setDirty(dirty: boolean): void {
+        if (dirty) {
+            this.dirtyIndicator.classList.add('tab-button-dirty-visible');
+        } else {
+            this.dirtyIndicator.classList.remove('tab-button-dirty-visible');
+        }
+    }
+
+    /**
+     * 編集状態を取得
+     */
+    isDirty(): boolean {
+        return this.dirtyIndicator.classList.contains('tab-button-dirty-visible');
     }
 
     click() {

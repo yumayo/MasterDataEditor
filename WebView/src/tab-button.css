@@ -1,4 +1,6 @@
 .tab-button {
+    display: flex;
+    align-items: center;
     padding-left: 16px;
     padding-right: 4px;
 }
@@ -26,21 +28,49 @@
     background-color: rgba(255, 255, 255, 0.05);
 }
 
-/* cssで作る閉じるボタンです。 */
-/* https://kouhekikyozou.com/css_close_button */
-.tab-button-close {
+/* 閉じるボタンと丸ポッチのコンテナ */
+.tab-button-container {
     position: relative;
     width: 20px;
     height: 20px;
+    margin-left: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 
-    vertical-align: middle;
+/* 編集中を示す丸ポッチ */
+.tab-button-dirty {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--font-color);
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+/* 編集中のときに丸ポッチを表示 */
+.tab-button-dirty-visible {
+    opacity: 1;
+}
+
+/* マウスオーバー時は丸ポッチを非表示 */
+.tab-button:hover .tab-button-dirty {
+    opacity: 0;
+}
+
+/* cssで作る閉じるボタンです。 */
+/* https://kouhekikyozou.com/css_close_button */
+.tab-button-close {
+    position: absolute;
+    width: 20px;
+    height: 20px;
 
     background: 0;
     border: 0;
 
     border-radius: 4px;
-
-    margin-left: 4px;
 }
 
 /* 閉じるボタンをマウスオーバー中なら背景をつけます。 */

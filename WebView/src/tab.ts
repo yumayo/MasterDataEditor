@@ -204,9 +204,24 @@ export class Tab {
                 // 履歴管理（最大1000件）
                 const history = new History(editorTable.element, 1000);
 
+                // 履歴変更時にタブのdirty状態を更新
+                const tabButton = this.tabButtons.find(x => x.name === name);
+                if (tabButton) {
+                    history.setOnChangeCallback(() => {
+                        tabButton.setDirty(true);
+                    });
+                }
+
                 // GridTextFieldを作成
                 const textField = new GridTextField(editorTable, selection, history);
                 wrapperElement.appendChild(textField.element);
+
+                // 保存完了時にタブのdirty状態をクリア
+                if (tabButton) {
+                    textField.setOnSaveCallback(() => {
+                        tabButton.setDirty(false);
+                    });
+                }
 
                 // AreaResizerを作成
                 const areaResizer = new AreaResizer(wrapperElement, history, selection);

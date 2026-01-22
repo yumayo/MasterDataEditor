@@ -34,12 +34,30 @@ export class History {
     private currentIndex: number;
     private readonly maxHistorySize: number;
     private tableElement: HTMLElement;
+    private onChangeCallback: (() => void) | undefined;
 
     constructor(tableElement: HTMLElement, maxHistorySize: number) {
         this.history = [];
         this.currentIndex = -1;
         this.maxHistorySize = maxHistorySize;
         this.tableElement = tableElement;
+        this.onChangeCallback = undefined;
+    }
+
+    /**
+     * 変更時コールバックを設定
+     */
+    setOnChangeCallback(callback: () => void): void {
+        this.onChangeCallback = callback;
+    }
+
+    /**
+     * 変更通知を発火
+     */
+    private notifyChange(): void {
+        if (this.onChangeCallback) {
+            this.onChangeCallback();
+        }
     }
 
     /**
@@ -66,6 +84,9 @@ export class History {
             this.history.shift();
             this.currentIndex = this.currentIndex - 1;
         }
+
+        // 変更通知
+        this.notifyChange();
     }
 
     /**
@@ -90,6 +111,9 @@ export class History {
             this.history.shift();
             this.currentIndex = this.currentIndex - 1;
         }
+
+        // 変更通知
+        this.notifyChange();
     }
 
     /**

@@ -18,11 +18,13 @@ export class GridTextField {
     readonly history: History;
 
     private mouseupHandler: (() => void) | undefined;
+    private onSaveCallback: (() => void) | undefined;
 
     constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
         this.selection = selection;
         this.history = history;
+        this.onSaveCallback = undefined;
 
         this.active = false;
         this.visible = false;
@@ -242,7 +244,11 @@ export class GridTextField {
             // Ctrl+S: 保存
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
                 keyboardEvent.preventDefault();
-                saveTableData(this.table);
+                saveTableData(this.table).then(() => {
+                    if (this.onSaveCallback) {
+                        this.onSaveCallback();
+                    }
+                });
                 return;
             }
 
@@ -693,6 +699,13 @@ export class GridTextField {
         } else {
             this.pasteNormal(sourceData, copyRange);
         }
+    }
+
+    /**
+     * 保存完了時コールバックを設定
+     */
+    setOnSaveCallback(callback: () => void): void {
+        this.onSaveCallback = callback;
     }
 
     /**
