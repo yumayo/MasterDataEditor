@@ -27,7 +27,7 @@ public class WebView2Handler
 			await webView2.EnsureCoreWebView2Async(null);
 
 #if DEBUG
-			webView2.CoreWebView2.Navigate("http://localhost:5173");
+			webView2.CoreWebView2.Navigate("http://localhost:5174");
 #else
 			// HTMLファイルのパスを取得
 			var htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebView", "index.html");

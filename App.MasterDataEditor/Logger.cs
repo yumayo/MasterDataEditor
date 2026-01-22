@@ -18,7 +18,7 @@ public class Logger
 	public static void Setup()
 	{
 		var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-		var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor");
+		var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor.Codex");
 		Directory.CreateDirectory(appFolder);
 
 		var logDirectory = Path.Combine(appFolder, "log");
