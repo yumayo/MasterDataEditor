@@ -15,7 +15,7 @@ namespace App.MasterDataEditor
 					Logger.Warning("ファイル書き込み拒否");
 					return new
 					{
-						type = "file_write_response",
+						type = "write_file_response",
 						success = false,
 						error = "Required filename"
 					};
@@ -26,7 +26,7 @@ namespace App.MasterDataEditor
 					Logger.Warning("ファイル書き込み拒否");
 					return new
 					{
-						type = "file_write_response",
+						type = "write_file_response",
 						success = false,
 						error = "Required data"
 					};
@@ -39,7 +39,7 @@ namespace App.MasterDataEditor
 					Logger.Warning($"ファイル書き込み拒否: 無効なファイル名 {filename}");
 					return new
 					{
-						type = "file_write_response",
+						type = "write_file_response",
 						filename,
 						success = false,
 						error = "Invalid filename"
@@ -56,7 +56,7 @@ namespace App.MasterDataEditor
 
 				return new
 				{
-					type = "file_write_response",
+					type = "write_file_response",
 					success = true
 				};
 			}
@@ -65,7 +65,7 @@ namespace App.MasterDataEditor
 				Logger.Error(ex, $"ファイル書き込み時にエラーが発生しました。");
 				return new
 				{
-					type = "file_write_response",
+					type = "write_file_response",
 					success = false,
 					error = ex.Message,
 				};
