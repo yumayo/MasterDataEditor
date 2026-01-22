@@ -47,7 +47,6 @@
     border-radius: 50%;
     background-color: var(--font-color);
     opacity: 0;
-    transition: opacity 0.1s;
 }
 
 /* 編集中のときに丸ポッチを表示 */
