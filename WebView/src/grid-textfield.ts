@@ -244,10 +244,16 @@ export class GridTextField {
             // Ctrl+S: 保存
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
                 keyboardEvent.preventDefault();
+                console.log('[DEBUG] Ctrl+S pressed, calling saveTableData');
                 saveTableData(this.table).then(() => {
+                    console.log('[DEBUG] saveTableData.then() called');
+                    console.log('[DEBUG] onSaveCallback is:', this.onSaveCallback);
                     if (this.onSaveCallback) {
+                        console.log('[DEBUG] calling onSaveCallback');
                         this.onSaveCallback();
                     }
+                }).catch((error) => {
+                    console.error('[DEBUG] saveTableData failed:', error);
                 });
                 return;
             }
