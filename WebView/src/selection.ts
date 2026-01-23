@@ -525,6 +525,9 @@ export class Selection {
 
         // フィルハンドルの位置を更新
         this.updateFillHandlePosition();
+
+        // ヘッダーの選択状態を更新
+        this.updateHeaderSelection(selectionRange);
     }
 
     /**
@@ -644,6 +647,50 @@ export class Selection {
         this.element.style.top = '-99999px';
         this.element.style.width = '0px';
         this.element.style.height = '0px';
+    }
+
+    /**
+     * 選択範囲に基づいてヘッダーの選択状態を更新する
+     */
+    private updateHeaderSelection(selectionRange: CellRange): void {
+        const { startRow, startColumn, endRow, endColumn } = selectionRange;
+
+        // 列ヘッダー行を取得
+        const columnHeaderRow = this.tableElement.children[0] as HTMLElement;
+
+        // すべての列ヘッダーから選択状態を解除
+        for (let i = 1; i < columnHeaderRow.children.length; i++) {
+            const headerCell = columnHeaderRow.children[i] as HTMLElement;
+            headerCell.classList.remove('selected');
+        }
+
+        // すべての行ヘッダーから選択状態を解除
+        for (let i = 1; i < this.tableElement.children.length; i++) {
+            const row = this.tableElement.children[i] as HTMLElement;
+            const rowHeader = row.children[0] as HTMLElement;
+            if (rowHeader.classList.contains('editor-table-row-header')) {
+                rowHeader.classList.remove('selected');
+            }
+        }
+
+        // 選択範囲に含まれる列ヘッダーに選択状態を追加
+        for (let col = startColumn; col <= endColumn; col++) {
+            const headerCell = columnHeaderRow.children[col] as HTMLElement;
+            if (headerCell) {
+                headerCell.classList.add('selected');
+            }
+        }
+
+        // 選択範囲に含まれる行ヘッダーに選択状態を追加
+        for (let row = startRow; row <= endRow; row++) {
+            const rowElement = this.tableElement.children[row] as HTMLElement;
+            if (rowElement) {
+                const rowHeader = rowElement.children[0] as HTMLElement;
+                if (rowHeader.classList.contains('editor-table-row-header')) {
+                    rowHeader.classList.add('selected');
+                }
+            }
+        }
     }
 
     private hideCopyBorder(): void {

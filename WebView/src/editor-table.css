@@ -107,6 +107,16 @@
     position: relative;
 }
 
+/* 選択された列ヘッダーのスタイル */
+.editor-table-column-header.selected {
+    background-color: rgba(0, 120, 215, 0.3);
+}
+
+/* 選択された行ヘッダーのスタイル */
+.editor-table-row-header.selected {
+    background-color: rgba(0, 120, 215, 0.3);
+}
+
 /* リサイズガイドライン */
 .resize-guideline {
     position: absolute;
