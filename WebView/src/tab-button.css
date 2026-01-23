@@ -149,11 +149,11 @@
     box-shadow: inset -3px 0 0 0 var(--selection-color, #007fd4);
 }
 
-/* ドラッグ中はカーソルを変更 */
+/* マウスオーバー時はポインターカーソル */
 .tab-button {
-    cursor: grab;
+    cursor: pointer;
 }
 
 .tab-button-dragging {
-    cursor: grabbing;
+    cursor: pointer;
 }
