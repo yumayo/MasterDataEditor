@@ -258,16 +258,26 @@ export class EditorTable {
      * 列挿入の内部実装（Commandから呼び出される）
      */
     public insertColumnInternal(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
-        const columnHeaderRow = this.element.children[0];
-        const totalColumns = columnHeaderRow.children.length - 1;
-
         // 各行に新しいセルを挿入
         for (let currentRowIndex = 0; currentRowIndex < this.element.children.length; ++currentRowIndex) {
             const row = this.element.children[currentRowIndex] as HTMLElement;
 
             if (currentRowIndex === 0) {
                 // 列ヘッダー行
+                // 挿入前に既存のラベルをDOMから取得
+                const existingLabels: string[] = [];
+                for (let i = 1; i < row.children.length; ++i) {
+                    const headerCell = row.children[i] as HTMLElement;
+                    let label = '';
+                    for (const node of Array.from(headerCell.childNodes)) {
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            label = node.textContent || '';
+                            break;
+                        }
+                    }
+                    existingLabels.push(label);
+                }
+
                 const newHeaderCell = document.createElement('div');
                 newHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
                 newHeaderCell.dataset.columnIndex = String(columnIndex);
@@ -275,9 +285,6 @@ export class EditorTable {
                 // 幅と高さを直接設定
                 EditorTable.applyCellWidth(newHeaderCell, DEFAULT_COLUMN_WIDTH);
                 EditorTable.applyCellHeight(newHeaderCell, DEFAULT_ROW_HEIGHT);
-
-                // 列ヘッダーのテキストを更新（全列を再計算）
-                const newColumnCount = totalColumns + 1;
 
                 // 列ヘッダークリックで列全体を選択
                 newHeaderCell.addEventListener('mousedown', (e) => {
@@ -334,7 +341,8 @@ export class EditorTable {
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newHeaderCell, insertBefore);
 
-                // 全列ヘッダーのラベルを更新
+                // 全列ヘッダーのラベルを更新（DOMから取得した既存ラベルを使用）
+                const newColumnCount = existingLabels.length + 1;
                 for (let i = 0; i < newColumnCount; ++i) {
                     const headerCell = row.children[i + 1] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
@@ -342,14 +350,14 @@ export class EditorTable {
                     // 挿入位置を考慮してラベルを決定
                     // i < columnIndex: 元の位置のラベル
                     // i == columnIndex: 新しく挿入された列（空）
-                    // i > columnIndex: 元の位置-1のラベル
+                    // i > columnIndex: 元の位置-1のラベル（挿入によりずれた）
                     let label = '';
                     if (i < columnIndex) {
-                        label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
+                        label = existingLabels[i] || '';
                     } else if (i > columnIndex) {
-                        const originalIndex = i - 1;
-                        label = originalIndex < this.tableData.header.length ? this.tableData.header[originalIndex].name : '';
+                        label = existingLabels[i - 1] || '';
                     }
+                    // i === columnIndex の場合は空文字列のまま
 
                     // 既存のテキストノードを探して更新（リサイズハンドルは保持）
                     let textNode: Text | undefined;
@@ -368,9 +376,9 @@ export class EditorTable {
                     }
 
                     // リサイズハンドルのイベントハンドラを再設定
-                    const resizeHandle = headerCell.querySelector('.column-resize-handle');
-                    if (resizeHandle) {
-                        resizeHandle.remove();
+                    const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
+                    if (existingResizeHandle) {
+                        existingResizeHandle.remove();
                     }
                     const newResizeHandle = document.createElement('div');
                     newResizeHandle.classList.add('column-resize-handle');
@@ -390,6 +398,9 @@ export class EditorTable {
                 }
             }
         }
+
+        // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
+        selection.updateRendererAfterResize();
     }
 
     /**
@@ -527,6 +538,9 @@ export class EditorTable {
                 header.appendChild(newResizeHandle);
             }
         }
+
+        // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
+        selection.updateRendererAfterResize();
     }
 
     /**
@@ -672,6 +686,20 @@ export class EditorTable {
         const columnHeaderRow = this.element.children[0];
         const totalColumns = columnHeaderRow.children.length - 1;
 
+        // 削除前に既存のラベルをDOMから取得
+        const existingLabels: string[] = [];
+        for (let i = 1; i < columnHeaderRow.children.length; ++i) {
+            const headerCell = columnHeaderRow.children[i] as HTMLElement;
+            let label = '';
+            for (const node of Array.from(headerCell.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    label = node.textContent || '';
+                    break;
+                }
+            }
+            existingLabels.push(label);
+        }
+
         // 各行から指定位置のセルを削除
         for (let rowIdx = 0; rowIdx < this.element.children.length; ++rowIdx) {
             const row = this.element.children[rowIdx] as HTMLElement;
@@ -687,7 +715,15 @@ export class EditorTable {
                     const headerCell = row.children[i + 1] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    const label = i < this.tableData.header.length ? this.tableData.header[i].name : '';
+                    // 削除位置を考慮してラベルを決定（DOMから取得したラベルを使用）
+                    // i < columnIndex: 元の位置のラベル
+                    // i >= columnIndex: 元の位置+1のラベル（削除によりずれた）
+                    let label = '';
+                    if (i < columnIndex) {
+                        label = existingLabels[i] || '';
+                    } else {
+                        label = existingLabels[i + 1] || '';
+                    }
 
                     let textNode: Text | undefined;
                     for (const node of Array.from(headerCell.childNodes)) {
@@ -704,9 +740,9 @@ export class EditorTable {
                     }
 
                     // リサイズハンドルのイベントハンドラを再設定
-                    const resizeHandle = headerCell.querySelector('.column-resize-handle');
-                    if (resizeHandle) {
-                        resizeHandle.remove();
+                    const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
+                    if (existingResizeHandle) {
+                        existingResizeHandle.remove();
                     }
                     const newResizeHandle = document.createElement('div');
                     newResizeHandle.classList.add('column-resize-handle');
@@ -721,6 +757,9 @@ export class EditorTable {
                 }
             }
         }
+
+        // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
+        this.selection.updateRendererAfterResize();
     }
 
     /**
@@ -765,6 +804,9 @@ export class EditorTable {
                 header.appendChild(newResizeHandle);
             }
         }
+
+        // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
+        this.selection.updateRendererAfterResize();
     }
 
     /**
