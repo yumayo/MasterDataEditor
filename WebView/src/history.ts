@@ -1,4 +1,4 @@
-import { Command, CellChangeCommand, CellChange } from "./command";
+import { Command, CellChangeCommand, CellChange, DeleteColumnCommand, DeleteRowCommand, InsertColumnCommand, InsertRowCommand } from "./command";
 import { CellRange } from "./selection";
 
 /**
@@ -237,7 +237,16 @@ export class History {
         // dirty状態が変わった可能性があるので通知
         this.notifyChange();
 
-        return { range: redoRange, copyRange: entry.copyRange };
+        const shouldClearCopyRange =
+            entry.command instanceof DeleteColumnCommand ||
+            entry.command instanceof DeleteRowCommand ||
+            entry.command instanceof InsertColumnCommand ||
+            entry.command instanceof InsertRowCommand;
+        const redoCopyRange = shouldClearCopyRange
+            ? { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 }
+            : entry.copyRange;
+
+        return { range: redoRange, copyRange: redoCopyRange };
     }
 
     /**

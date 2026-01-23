@@ -399,6 +399,8 @@ export class EditorTable {
             }
         }
 
+        // コピー範囲をクリア（列構造が変わったため）
+        selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         selection.updateRendererAfterResize();
     }
@@ -539,6 +541,8 @@ export class EditorTable {
             }
         }
 
+        // コピー範囲をクリア（行構造が変わったため）
+        selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         selection.updateRendererAfterResize();
     }
@@ -758,6 +762,8 @@ export class EditorTable {
             }
         }
 
+        // コピー範囲をクリア（列構造が変わったため）
+        this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
     }
@@ -805,6 +811,8 @@ export class EditorTable {
             }
         }
 
+        // コピー範囲をクリア（行構造が変わったため）
+        this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
     }
