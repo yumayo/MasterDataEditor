@@ -299,6 +299,7 @@ export class DeleteColumnCommand implements Command {
     private selection: Selection;
     private contextMenu: ContextMenu;
     private history: History;
+    private deletedHeaderValue: string;
     private deletedCellValues: string[];
     private deletedWidth: string;
 
@@ -316,6 +317,7 @@ export class DeleteColumnCommand implements Command {
         this.selection = selection;
         this.contextMenu = contextMenu;
         this.history = history;
+        this.deletedHeaderValue = '';
         this.deletedCellValues = [];
         this.deletedWidth = '';
     }
@@ -323,6 +325,21 @@ export class DeleteColumnCommand implements Command {
     execute(): void {
         const tableElement = this.editorTable.element;
         this.deletedCellValues = [];
+
+        // 列ヘッダー行のセル値を保存
+        const headerRow = tableElement.children[0] as HTMLElement;
+        const headerCell = headerRow.children[this.columnIndex + 1] as HTMLElement;
+        if (headerCell) {
+            // 列ヘッダーセルはTEXT_NODEとしてテキストを持つ可能性がある
+            let label = '';
+            for (const node of Array.from(headerCell.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    label = node.textContent || '';
+                    break;
+                }
+            }
+            this.deletedHeaderValue = label;
+        }
 
         // 各行から削除する列のセル値を保存（列ヘッダー行を除く）
         for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
@@ -344,8 +361,27 @@ export class DeleteColumnCommand implements Command {
         // 列を挿入
         this.editorTable.insertColumnInternal(this.columnIndex, this.textField, this.selection, this.contextMenu, this.history);
 
-        // セル値を復元
         const tableElement = this.editorTable.element;
+
+        // 列ヘッダーの値を復元
+        const headerRow = tableElement.children[0] as HTMLElement;
+        const headerCell = headerRow.children[this.columnIndex + 1] as HTMLElement;
+        if (headerCell) {
+            // 既存のTEXT_NODEを探して更新、なければ追加
+            let textNodeFound = false;
+            for (const node of Array.from(headerCell.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    node.textContent = this.deletedHeaderValue;
+                    textNodeFound = true;
+                    break;
+                }
+            }
+            if (!textNodeFound) {
+                headerCell.insertBefore(document.createTextNode(this.deletedHeaderValue), headerCell.firstChild);
+            }
+        }
+
+        // セル値を復元
         for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
             const row = tableElement.children[rowIdx] as HTMLElement;
             const cell = row.children[this.columnIndex + 1] as HTMLElement;
