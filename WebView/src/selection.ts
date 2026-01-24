@@ -298,6 +298,7 @@ export class Selection {
             endColumn: Math.max(1, Math.min(nextEndColumn, maxColumn))
         };
         this.updateRenderer();
+        this.scrollCellIntoView(this.range.endRow, this.range.endColumn);
     }
 
     isSelecting(): boolean {
@@ -544,10 +545,14 @@ export class Selection {
     }
 
     private scrollFocusIntoView(): void {
-        const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
-        if (!focusCell) return;
+        this.scrollCellIntoView(this.focus.row, this.focus.column);
+    }
+
+    private scrollCellIntoView(row: number, column: number): void {
+        const targetCell = this.tableElement.children[row]?.children[column] as HTMLElement | undefined;
+        if (!targetCell) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
-        const focusRect = focusCell.getBoundingClientRect();
+        const targetRect = targetCell.getBoundingClientRect();
         const headerHeight = this.getHeaderHeight();
         const rowHeaderWidth = this.getRowHeaderWidth();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
@@ -560,16 +565,16 @@ export class Selection {
         let nextScrollTop = this.scrollBinding.getScrollTop();
         let nextScrollLeft = this.scrollBinding.getScrollLeft();
 
-        if (focusRect.top < visibleTop) {
-            nextScrollTop += focusRect.top - visibleTop;
-        } else if (focusRect.bottom > visibleBottom) {
-            nextScrollTop += focusRect.bottom - visibleBottom;
+        if (targetRect.top < visibleTop) {
+            nextScrollTop += targetRect.top - visibleTop;
+        } else if (targetRect.bottom > visibleBottom) {
+            nextScrollTop += targetRect.bottom - visibleBottom;
         }
 
-        if (focusRect.left < visibleLeft) {
-            nextScrollLeft += focusRect.left - visibleLeft;
-        } else if (focusRect.right > visibleRight) {
-            nextScrollLeft += focusRect.right - visibleRight;
+        if (targetRect.left < visibleLeft) {
+            nextScrollLeft += targetRect.left - visibleLeft;
+        } else if (targetRect.right > visibleRight) {
+            nextScrollLeft += targetRect.right - visibleRight;
         }
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
