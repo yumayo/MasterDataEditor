@@ -534,7 +534,79 @@ export class Selection {
     private scrollFocusIntoView(): void {
         const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
         if (!focusCell) return;
-        focusCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        const scrollContainer = this.getScrollContainer(focusCell);
+        if (!scrollContainer) {
+            focusCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            return;
+        }
+
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const focusRect = focusCell.getBoundingClientRect();
+        const headerHeight = this.getHeaderHeight();
+        const rowHeaderWidth = this.getRowHeaderWidth();
+        const { scrollbarWidth, scrollbarHeight } = this.getScrollbarSize(scrollContainer);
+
+        const visibleTop = containerRect.top + headerHeight;
+        const visibleBottom = containerRect.bottom - scrollbarHeight;
+        const visibleLeft = containerRect.left + rowHeaderWidth;
+        const visibleRight = containerRect.right - scrollbarWidth;
+
+        let nextScrollTop = scrollContainer.scrollTop;
+        let nextScrollLeft = scrollContainer.scrollLeft;
+
+        if (focusRect.top < visibleTop) {
+            nextScrollTop += focusRect.top - visibleTop;
+        } else if (focusRect.bottom > visibleBottom) {
+            nextScrollTop += focusRect.bottom - visibleBottom;
+        }
+
+        if (focusRect.left < visibleLeft) {
+            nextScrollLeft += focusRect.left - visibleLeft;
+        } else if (focusRect.right > visibleRight) {
+            nextScrollLeft += focusRect.right - visibleRight;
+        }
+
+        if (nextScrollTop !== scrollContainer.scrollTop) {
+            scrollContainer.scrollTop = nextScrollTop;
+        }
+        if (nextScrollLeft !== scrollContainer.scrollLeft) {
+            scrollContainer.scrollLeft = nextScrollLeft;
+        }
+    }
+
+    private getHeaderHeight(): number {
+        const headerRow = this.tableElement.children[0] as HTMLElement | undefined;
+        if (!headerRow) return 0;
+        return headerRow.getBoundingClientRect().height;
+    }
+
+    private getRowHeaderWidth(): number {
+        const headerRow = this.tableElement.children[0] as HTMLElement | undefined;
+        const cornerCell = headerRow?.children[0] as HTMLElement | undefined;
+        if (!cornerCell) return 0;
+        return cornerCell.getBoundingClientRect().width;
+    }
+
+    private getScrollbarSize(container: HTMLElement): { scrollbarWidth: number; scrollbarHeight: number } {
+        const scrollbarWidth = Math.max(0, container.offsetWidth - container.clientWidth);
+        const scrollbarHeight = Math.max(0, container.offsetHeight - container.clientHeight);
+        return { scrollbarWidth, scrollbarHeight };
+    }
+
+    private getScrollContainer(element: HTMLElement): HTMLElement | null {
+        let current: HTMLElement | null = element;
+        while (current) {
+            const style = window.getComputedStyle(current);
+            const overflowY = style.overflowY;
+            const overflowX = style.overflowX;
+            const canScrollY = (overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight;
+            const canScrollX = (overflowX === 'auto' || overflowX === 'scroll') && current.scrollWidth > current.clientWidth;
+            if (canScrollY || canScrollX) {
+                return current;
+            }
+            current = current.parentElement;
+        }
+        return null;
     }
 
     /**

@@ -19,6 +19,9 @@ export class EditorTable {
 
     private mousemoveHandler: ((e: MouseEvent) => void) | undefined;
     private mouseupHandler: (() => void) | undefined;
+    private scrollContainer: HTMLElement | null = null;
+    private scrollHandler: (() => void) | undefined;
+    private lastScrollLeft = -1;
 
     constructor(tableName: string, tableData: EditorTableData) {
 
@@ -230,6 +233,8 @@ export class EditorTable {
             const row = EditorTable.createRow(cells, rowIndex);
             this.element.appendChild(row);
         }
+
+        this.setupRowHeaderSticky();
     }
 
     /**
@@ -827,6 +832,10 @@ export class EditorTable {
         if (this.mouseupHandler) {
             window.addEventListener('mouseup', this.mouseupHandler);
         }
+        if (this.scrollContainer && this.scrollHandler) {
+            this.scrollContainer.addEventListener('scroll', this.scrollHandler);
+            this.updateRowHeaderSticky();
+        }
     }
 
     /**
@@ -839,6 +848,51 @@ export class EditorTable {
         if (this.mouseupHandler) {
             window.removeEventListener('mouseup', this.mouseupHandler);
         }
+        if (this.scrollContainer && this.scrollHandler) {
+            this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
+        }
+    }
+
+    private setupRowHeaderSticky(): void {
+        this.scrollContainer = this.findScrollContainer(this.element);
+        if (!this.scrollContainer) return;
+        this.scrollHandler = () => {
+            this.updateRowHeaderSticky();
+        };
+    }
+
+    private updateRowHeaderSticky(): void {
+        if (!this.scrollContainer) return;
+        const offset = this.scrollContainer.scrollLeft;
+        if (offset === this.lastScrollLeft) return;
+        this.lastScrollLeft = offset;
+
+        const rowHeaders = this.element.querySelectorAll('.editor-table-row-header, .editor-table-corner-cell') as NodeListOf<HTMLElement>;
+        if (rowHeaders.length === 0) return;
+        for (const header of rowHeaders) {
+            header.style.position = 'relative';
+            header.style.left = `${offset}px`;
+            header.style.transform = '';
+            header.style.zIndex = '20';
+            header.style.overflow = 'visible';
+            header.style.backgroundColor = 'var(--background-color)';
+        }
+    }
+
+    private findScrollContainer(element: HTMLElement): HTMLElement | null {
+        let current: HTMLElement | null = element;
+        while (current) {
+            const style = window.getComputedStyle(current);
+            const overflowY = style.overflowY;
+            const overflowX = style.overflowX;
+            const canScrollY = overflowY === 'auto' || overflowY === 'scroll';
+            const canScrollX = overflowX === 'auto' || overflowX === 'scroll';
+            if (canScrollY || canScrollX) {
+                return current;
+            }
+            current = current.parentElement;
+        }
+        return null;
     }
 
     /**

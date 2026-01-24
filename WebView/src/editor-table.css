@@ -37,7 +37,7 @@
     background-color: var(--background-color);
     position: sticky;
     top: 0;
-    z-index: 3;
+    z-index: 30;
 }
 
 /* 列ヘッダーセルのスタイル */
@@ -57,7 +57,7 @@
     width: 40px;
     position: sticky;
     left: 0;
-    z-index: 2;
+    z-index: 20;
 }
 
 /* 左上隅のセルのスタイル */
@@ -68,7 +68,7 @@
     width: 40px;
     position: sticky;
     left: 0;
-    z-index: 4;
+    z-index: 40;
 }
 
 /* 列リサイズハンドル */
