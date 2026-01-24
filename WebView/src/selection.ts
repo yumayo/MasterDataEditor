@@ -579,6 +579,14 @@ export class Selection {
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
             this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
+
+            // ブラウザの慣性スクロール等により次フレームでスクロール位置が上書きされる場合があるため再適用
+            const scrollBinding = this.scrollBinding;
+            window.requestAnimationFrame(() => {
+                if (scrollBinding.getScrollTop() !== nextScrollTop || scrollBinding.getScrollLeft() !== nextScrollLeft) {
+                    scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
+                }
+            });
         }
     }
 
