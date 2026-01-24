@@ -283,12 +283,19 @@ export class Selection {
     /**
      * フォーカスを移動して選択範囲を拡張する（相対座標用）
      * 矢印キーは相対的に範囲を操作します。
+     * @param x 列方向のオフセット
+     * @param y 行方向のオフセット
+     * @param maxRow 最大行インデックス（テーブルの行数-1）
+     * @param maxColumn 最大列インデックス（テーブルの列数-1）
      */
-    extendSelectionOffset(x: number, y: number): void {
-        this.range = { 
+    extendSelectionOffset(x: number, y: number, maxRow: number, maxColumn: number): void {
+        const nextEndRow = this.range.endRow + y;
+        const nextEndColumn = this.range.endColumn + x;
+
+        this.range = {
             ...this.range,
-            endRow: Math.max(1, this.range.endRow + y),
-            endColumn: Math.max(1, this.range.endColumn + x)
+            endRow: Math.max(1, Math.min(nextEndRow, maxRow)),
+            endColumn: Math.max(1, Math.min(nextEndColumn, maxColumn))
         };
         this.updateRenderer();
     }

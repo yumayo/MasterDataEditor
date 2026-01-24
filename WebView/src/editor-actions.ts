@@ -112,12 +112,11 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
 
     const columnLength = (table.element.children[0] as HTMLElement).children.length;
     if (columnLength === 0) return;
-    
-    selection.getSelectionRange();
 
-    x = Math.min(columnLength, x);
-    y = Math.min(rowLength, y);
-    selection.extendSelectionOffset(x, y);
+    const maxRow = rowLength - 1;
+    const maxColumn = columnLength - 1;
+
+    selection.extendSelectionOffset(x, y, maxRow, maxColumn);
 }
 
 /**
