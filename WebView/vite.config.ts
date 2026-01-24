@@ -1,5 +1,8 @@
-﻿import {defineConfig, Plugin, UserConfig} from 'vite'
+﻿import {defineConfig, loadEnv, Plugin, UserConfig} from 'vite'
+import path from 'path'
 
+// Load .env from parent directory
+const env = loadEnv('development', path.resolve(__dirname, '..'), '')
 
 function removeModuleType(): Plugin {
     return {
@@ -11,7 +14,7 @@ function removeModuleType(): Plugin {
 }
 
 function getRequiredDevPort(): number {
-    const rawPort = process.env.MASTER_DATA_EDITOR_DEV_PORT as string
+    const rawPort = env.MASTER_DATA_EDITOR_DEV_PORT
     const devPort = Number.parseInt(rawPort, 10)
     if (!Number.isFinite(devPort)) {
         throw new Error('Environment variable "MASTER_DATA_EDITOR_DEV_PORT" is required and must be a valid integer.')
