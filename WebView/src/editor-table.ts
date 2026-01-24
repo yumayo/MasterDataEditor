@@ -872,7 +872,6 @@ export class EditorTable {
             header.style.transform = '';
             header.style.zIndex = '20';
             header.style.overflow = 'visible';
-            header.style.backgroundColor = 'var(--background-color)';
         }
     }
 
