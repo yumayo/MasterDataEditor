@@ -9,6 +9,7 @@ import {GridTextField} from "./grid-textfield";
 import {History} from "./history";
 import {AreaResizer} from "./area-resizer";
 import {ContextMenu} from "./context-menu";
+import {ScrollViewportController} from "./scroll-viewport-controller";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -200,7 +201,10 @@ export class Tab {
                 wrapperElement.appendChild(editorTable.element);
 
                 // Selectionを作成
-                const selection = new Selection(editorTable.element, wrapperElement);
+                const scrollController = new ScrollViewportController(this.editor.element, () => {
+                    editorTable.onScroll();
+                });
+                const selection = new Selection(editorTable.element, wrapperElement, scrollController);
                 wrapperElement.appendChild(selection.element);
                 wrapperElement.appendChild(selection.copyBorderElement);
                 wrapperElement.appendChild(selection.fillPreviewElement);
@@ -230,7 +234,7 @@ export class Tab {
                 const areaResizer = new AreaResizer(wrapperElement, history, selection);
 
                 // EditorTableをセットアップ
-                editorTable.setup(textField, selection, this.contextMenu, history, areaResizer);
+                editorTable.setup(textField, selection, this.contextMenu, history, areaResizer, scrollController);
 
                 // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
                 areaResizer.setEditorTable(editorTable);

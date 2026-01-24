@@ -1,3 +1,5 @@
+import {ScrollViewportController} from "./scroll-viewport-controller";
+
 export interface CellPosition {
     row: number;
     column: number;
@@ -46,7 +48,9 @@ export class Selection {
 
     private fillTarget: CellPosition;
 
-    constructor(tableElement: HTMLElement, editorElement: HTMLElement) {
+    private scrollBinding: ScrollViewportController;
+
+    constructor(tableElement: HTMLElement, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
         this.focus = { row: 1, column: 1 }; // constructor 初期設定
@@ -58,6 +62,7 @@ export class Selection {
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
+        this.scrollBinding = scrollBinding;
 
         // 選択範囲表示用の要素を作成
         const element = document.createElement('div');
@@ -534,25 +539,19 @@ export class Selection {
     private scrollFocusIntoView(): void {
         const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
         if (!focusCell) return;
-        const scrollContainer = this.getScrollContainer(focusCell);
-        if (!scrollContainer) {
-            focusCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-            return;
-        }
-
-        const containerRect = scrollContainer.getBoundingClientRect();
+        const containerRect = this.scrollBinding.getBoundingClientRect();
         const focusRect = focusCell.getBoundingClientRect();
         const headerHeight = this.getHeaderHeight();
         const rowHeaderWidth = this.getRowHeaderWidth();
-        const { scrollbarWidth, scrollbarHeight } = this.getScrollbarSize(scrollContainer);
+        const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
 
         const visibleTop = containerRect.top + headerHeight;
         const visibleBottom = containerRect.bottom - scrollbarHeight;
         const visibleLeft = containerRect.left + rowHeaderWidth;
         const visibleRight = containerRect.right - scrollbarWidth;
 
-        let nextScrollTop = scrollContainer.scrollTop;
-        let nextScrollLeft = scrollContainer.scrollLeft;
+        let nextScrollTop = this.scrollBinding.getScrollTop();
+        let nextScrollLeft = this.scrollBinding.getScrollLeft();
 
         if (focusRect.top < visibleTop) {
             nextScrollTop += focusRect.top - visibleTop;
@@ -566,11 +565,8 @@ export class Selection {
             nextScrollLeft += focusRect.right - visibleRight;
         }
 
-        if (nextScrollTop !== scrollContainer.scrollTop) {
-            scrollContainer.scrollTop = nextScrollTop;
-        }
-        if (nextScrollLeft !== scrollContainer.scrollLeft) {
-            scrollContainer.scrollLeft = nextScrollLeft;
+        if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
+            this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
         }
     }
 
@@ -585,28 +581,6 @@ export class Selection {
         const cornerCell = headerRow?.children[0] as HTMLElement | undefined;
         if (!cornerCell) return 0;
         return cornerCell.getBoundingClientRect().width;
-    }
-
-    private getScrollbarSize(container: HTMLElement): { scrollbarWidth: number; scrollbarHeight: number } {
-        const scrollbarWidth = Math.max(0, container.offsetWidth - container.clientWidth);
-        const scrollbarHeight = Math.max(0, container.offsetHeight - container.clientHeight);
-        return { scrollbarWidth, scrollbarHeight };
-    }
-
-    private getScrollContainer(element: HTMLElement): HTMLElement | null {
-        let current: HTMLElement | null = element;
-        while (current) {
-            const style = window.getComputedStyle(current);
-            const overflowY = style.overflowY;
-            const overflowX = style.overflowX;
-            const canScrollY = (overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight;
-            const canScrollX = (overflowX === 'auto' || overflowX === 'scroll') && current.scrollWidth > current.clientWidth;
-            if (canScrollY || canScrollX) {
-                return current;
-            }
-            current = current.parentElement;
-        }
-        return null;
     }
 
     /**

@@ -7,6 +7,7 @@ import {History} from "./history";
 import {InsertColumnCommand, InsertRowCommand, DeleteColumnCommand, DeleteRowCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
+import {ScrollViewportController} from "./scroll-viewport-controller";
 
 export class EditorTable {
     readonly tableName: string;
@@ -19,8 +20,7 @@ export class EditorTable {
 
     private mousemoveHandler: ((e: MouseEvent) => void) | undefined;
     private mouseupHandler: (() => void) | undefined;
-    private scrollContainer: HTMLElement | null = null;
-    private scrollHandler: (() => void) | undefined;
+    private scrollBinding!: ScrollViewportController;
     private lastScrollLeft = -1;
 
     constructor(tableName: string, tableData: EditorTableData) {
@@ -31,7 +31,14 @@ export class EditorTable {
         this.element = document.createElement('div');
     }
     
-    setup(textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History, areaResizer: AreaResizer) {
+    setup(
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History,
+        areaResizer: AreaResizer,
+        scrollBinding: ScrollViewportController
+    ) {
 
         // インスタンス変数に保存
         this.selection = selection;
@@ -234,7 +241,7 @@ export class EditorTable {
             this.element.appendChild(row);
         }
 
-        this.setupRowHeaderSticky();
+        this.scrollBinding = scrollBinding;
     }
 
     /**
@@ -832,10 +839,7 @@ export class EditorTable {
         if (this.mouseupHandler) {
             window.addEventListener('mouseup', this.mouseupHandler);
         }
-        if (this.scrollContainer && this.scrollHandler) {
-            this.scrollContainer.addEventListener('scroll', this.scrollHandler);
-            this.updateRowHeaderSticky();
-        }
+        this.scrollBinding.activate();
     }
 
     /**
@@ -848,28 +852,21 @@ export class EditorTable {
         if (this.mouseupHandler) {
             window.removeEventListener('mouseup', this.mouseupHandler);
         }
-        if (this.scrollContainer && this.scrollHandler) {
-            this.scrollContainer.removeEventListener('scroll', this.scrollHandler);
-        }
+        this.scrollBinding.deactivate();
     }
 
-    private setupRowHeaderSticky(): void {
-        this.scrollContainer = this.findScrollContainer(this.element);
-        if (!this.scrollContainer) return;
-        this.scrollHandler = () => {
-            this.updateRowHeaderSticky();
-        };
+    onScroll(): void {
+        this.updateRowHeaderSticky();
     }
 
     private updateRowHeaderSticky(): void {
-        if (!this.scrollContainer) return;
-        const offset = this.scrollContainer.scrollLeft;
+        const offset = this.scrollBinding.getScrollLeft();
         if (offset === this.lastScrollLeft) return;
         this.lastScrollLeft = offset;
 
         const rowHeaders = this.element.querySelectorAll('.editor-table-row-header, .editor-table-corner-cell') as NodeListOf<HTMLElement>;
         if (rowHeaders.length === 0) return;
-        for (const header of rowHeaders) {
+        for (const header of Array.from(rowHeaders)) {
             header.style.position = 'relative';
             header.style.left = `${offset}px`;
             header.style.transform = '';
@@ -877,22 +874,6 @@ export class EditorTable {
             header.style.overflow = 'visible';
             header.style.backgroundColor = 'var(--background-color)';
         }
-    }
-
-    private findScrollContainer(element: HTMLElement): HTMLElement | null {
-        let current: HTMLElement | null = element;
-        while (current) {
-            const style = window.getComputedStyle(current);
-            const overflowY = style.overflowY;
-            const overflowX = style.overflowX;
-            const canScrollY = overflowY === 'auto' || overflowY === 'scroll';
-            const canScrollX = overflowX === 'auto' || overflowX === 'scroll';
-            if (canScrollY || canScrollX) {
-                return current;
-            }
-            current = current.parentElement;
-        }
-        return null;
     }
 
     /**

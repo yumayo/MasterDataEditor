@@ -10,6 +10,7 @@ import {ContextMenu} from "./context-menu";
 import {AreaResizer} from "./area-resizer";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
+import {ScrollViewportController} from "./scroll-viewport-controller";
 
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
@@ -264,7 +265,10 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
     const table = new EditorTable(name, tableData);
     editor.appendChild(table.element);
 
-    const selection = new Selection(table.element, editor.element);
+    const scrollController = new ScrollViewportController(editor.element, () => {
+        table.onScroll();
+    });
+    const selection = new Selection(table.element, editor.element, scrollController);
     editor.appendChild(selection.element);
     editor.appendChild(selection.copyBorderElement);
     editor.appendChild(selection.fillPreviewElement);
@@ -279,7 +283,7 @@ export function createTable(editor: Editor, name: string, tableData: EditorTable
 
     const areaResizer = new AreaResizer(editor.element, history, selection);
 
-    table.setup(textField, selection, contextMenu, history, areaResizer);
+    table.setup(textField, selection, contextMenu, history, areaResizer, scrollController);
 
     // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
     areaResizer.setEditorTable(table);
