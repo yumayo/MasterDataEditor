@@ -1,16 +1,11 @@
 import {EditorTable} from "./editor-table";
 import {GridTextField} from "./grid-textfield";
-import {EditorTableData} from "./model/editor-table-data";
 import {Selection, FillDirection} from "./selection";
-import {Editor} from "./editor";
 import {History} from "./history";
 import {CellChange} from "./command";
 import {generateSeriesData} from "./fill-series";
-import {ContextMenu} from "./context-menu";
-import {AreaResizer} from "./area-resizer";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
-import {ScrollViewportController} from "./scroll-viewport-controller";
 
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
@@ -255,47 +250,6 @@ export function moveCellLeftWithinSelection(table: EditorTable, selection: Selec
     }
 
     selection.move(newRow, newColumn);
-}
-
-export function createTable(editor: Editor, name: string, tableData: EditorTableData) {
-
-    // 上書きする前にテーブル内のエレメントを全削除する必要があるため、呼び出しておきます。
-    editor.clear();
-
-    const table = new EditorTable(name, tableData);
-    editor.appendChild(table.element);
-
-    const scrollController = new ScrollViewportController(editor.element, () => {
-        table.onScroll();
-    });
-    const selection = new Selection(table.element, editor.element, scrollController);
-    editor.appendChild(selection.element);
-    editor.appendChild(selection.copyBorderElement);
-    editor.appendChild(selection.fillPreviewElement);
-
-    // 履歴管理（最大1000件）
-    const history = new History(table.element, 1000);
-
-    const textField = new GridTextField(table, selection, history);
-    editor.appendChild(textField.element);
-
-    const contextMenu = new ContextMenu(editor.element);
-
-    const areaResizer = new AreaResizer(editor.element, history, selection);
-
-    table.setup(textField, selection, contextMenu, history, areaResizer, scrollController);
-
-    // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
-    areaResizer.setEditorTable(table);
-
-    // 初期選択をA1（row=1, column=1）に設定（row=0は列ヘッダー、column=0は行ヘッダー）
-    selection.setRange(1, 1, 1, 1);
-    selection.move(1, 1);
-
-    // 日本語のIMEを一文字目から入力できるように入力状態にしておきます。
-    textField.enable();
-
-    return {selection, table, textField, history};
 }
 
 /**
