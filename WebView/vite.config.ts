@@ -10,6 +10,16 @@ function removeModuleType(): Plugin {
     }
 }
 
+function getRequiredDevPort(): number {
+    const rawPort = process.env.MASTER_DATA_EDITOR_DEV_PORT as string
+    const devPort = Number.parseInt(rawPort, 10)
+    if (!Number.isFinite(devPort)) {
+        throw new Error('Environment variable "MASTER_DATA_EDITOR_DEV_PORT" is required and must be a valid integer.')
+    }
+
+    return devPort
+}
+
 let config: UserConfig;
 
 if (process.env.NODE_ENV === 'production') {
@@ -33,8 +43,13 @@ if (process.env.NODE_ENV === 'production') {
         }
     }
 } else {
+    const devPort = getRequiredDevPort()
     config = {
         base: './',
+        server: {
+            port: devPort,
+            strictPort: true
+        },
         build: {
             outDir: '../dist',
             emptyOutDir: true,

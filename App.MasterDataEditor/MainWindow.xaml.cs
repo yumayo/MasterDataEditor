@@ -15,6 +15,9 @@ public partial class MainWindow : Window
 	{
 		InitializeComponent();
 
+		var instanceLabel = AppEnvironment.GetRequired("MASTER_DATA_EDITOR_INSTANCE_LABEL");
+		Title = $"マスターデータエディター({instanceLabel})";
+
 		Logger.Info("Starting MainWindow service initialization");
 		Application.Current.Dispatcher.InvokeAsync(InitializeWebView2handler);
 
