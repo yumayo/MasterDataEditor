@@ -100,6 +100,7 @@ export class Selection {
         column = Math.max(1, column);
 
         this.focus = { row, column }; // move フォーカスを移動します。範囲選択の変更なし
+        this.scrollFocusIntoView();
         this.updateRenderer();
     }
 
@@ -528,6 +529,12 @@ export class Selection {
 
         // ヘッダーの選択状態を更新
         this.updateHeaderSelection(selectionRange);
+    }
+
+    private scrollFocusIntoView(): void {
+        const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
+        if (!focusCell) return;
+        focusCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     /**
