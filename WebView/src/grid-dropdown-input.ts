@@ -1,0 +1,322 @@
+import {ReferenceItem} from "./reference-data-cache";
+
+/**
+ * ドロップダウンでの選択完了時のコールバック
+ */
+export type DropdownSelectCallback = (id: string) => void;
+
+/**
+ * ドロップダウンのキャンセル時のコールバック
+ */
+export type DropdownCancelCallback = () => void;
+
+/**
+ * 参照列用のドロップダウン付き入力コンポーネント
+ */
+export class GridDropdownInput {
+    readonly element: HTMLElement;
+    private inputElement: HTMLElement;
+    private dropdownElement: HTMLElement;
+
+    private items: ReferenceItem[];
+    private filteredItems: ReferenceItem[];
+    private selectedIndex: number;
+    private visible: boolean;
+
+    private onSelect: DropdownSelectCallback;
+    private onCancel: DropdownCancelCallback;
+
+    constructor(parentElement: HTMLElement, onSelect: DropdownSelectCallback, onCancel: DropdownCancelCallback) {
+        this.items = [];
+        this.filteredItems = [];
+        this.selectedIndex = 0;
+        this.visible = false;
+        this.onSelect = onSelect;
+        this.onCancel = onCancel;
+
+        // コンテナ要素
+        this.element = document.createElement('div');
+        this.element.classList.add('grid-dropdown');
+
+        // 入力フィールド
+        this.inputElement = document.createElement('div');
+        this.inputElement.classList.add('grid-dropdown-input');
+        this.inputElement.setAttribute('contenteditable', 'true');
+        this.element.appendChild(this.inputElement);
+
+        // ドロップダウンリスト
+        this.dropdownElement = document.createElement('div');
+        this.dropdownElement.classList.add('grid-dropdown-list');
+        this.element.appendChild(this.dropdownElement);
+
+        // イベントリスナー
+        this.inputElement.addEventListener('input', this.onInput.bind(this));
+        this.inputElement.addEventListener('keydown', this.onKeydown.bind(this));
+        this.inputElement.addEventListener('focusout', this.onFocusout.bind(this));
+
+        parentElement.appendChild(this.element);
+    }
+
+    /**
+     * ドロップダウンを表示する
+     */
+    show(rect: DOMRect, items: ReferenceItem[], currentValue: string): void {
+        this.items = items;
+        this.visible = true;
+        this.selectedIndex = 0;
+
+        // 位置とサイズを設定
+        this.element.style.left = rect.left + 'px';
+        this.element.style.top = rect.top + 'px';
+
+        this.inputElement.style.width = rect.width + 'px';
+        this.inputElement.style.height = rect.height + 'px';
+        this.inputElement.style.lineHeight = rect.height + 'px';
+
+        // ドロップダウンの最小幅を入力フィールドと同じにする
+        this.dropdownElement.style.minWidth = rect.width + 'px';
+
+        // 現在の値を設定
+        this.inputElement.textContent = currentValue;
+
+        // 現在の値に基づいて初期選択を設定
+        const currentIndex = items.findIndex(item => item.id === currentValue);
+        if (currentIndex !== -1) {
+            this.selectedIndex = currentIndex;
+        }
+
+        // フィルタを適用
+        this.filterItems('');
+
+        // 表示
+        this.element.classList.add('visible');
+
+        // フォーカスを設定
+        this.inputElement.focus({preventScroll: true});
+
+        // カーソルを末尾に移動
+        this.moveCursorToEnd();
+    }
+
+    /**
+     * ドロップダウンを非表示にする
+     */
+    hide(): void {
+        this.visible = false;
+        this.element.classList.remove('visible');
+        this.inputElement.textContent = '';
+        this.dropdownElement.innerHTML = '';
+    }
+
+    /**
+     * ドロップダウンが表示中かどうか
+     */
+    isVisible(): boolean {
+        return this.visible;
+    }
+
+    /**
+     * 現在選択されているアイテムのIDを取得
+     */
+    getSelectedId(): string {
+        if (this.filteredItems.length === 0) {
+            return this.inputElement.textContent ?? '';
+        }
+        if (this.selectedIndex >= 0 && this.selectedIndex < this.filteredItems.length) {
+            return this.filteredItems[this.selectedIndex].id;
+        }
+        return this.inputElement.textContent ?? '';
+    }
+
+    /**
+     * 入力フィールドのテキストを取得
+     */
+    getInputText(): string {
+        return this.inputElement.textContent ?? '';
+    }
+
+    /**
+     * 入力イベント
+     */
+    private onInput(): void {
+        const filterText = this.inputElement.textContent ?? '';
+        this.filterItems(filterText);
+    }
+
+    /**
+     * キーボードイベント
+     */
+    private onKeydown(e: KeyboardEvent): void {
+        // IME変換中は何もしない
+        if (e.isComposing) {
+            return;
+        }
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                this.moveSelection(1);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                this.moveSelection(-1);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                this.confirmSelection();
+                break;
+            case 'Tab':
+                e.preventDefault();
+                this.confirmSelection();
+                break;
+            case 'Escape':
+                e.preventDefault();
+                this.cancel();
+                break;
+        }
+    }
+
+    /**
+     * フォーカスアウトイベント
+     */
+    private onFocusout(): void {
+        // フォーカスアウト時は確定
+        if (this.visible) {
+            this.confirmSelection();
+        }
+    }
+
+    /**
+     * 項目をフィルタリングする
+     */
+    private filterItems(filterText: string): void {
+        const lowerFilter = filterText.toLowerCase();
+
+        if (filterText === '') {
+            this.filteredItems = [...this.items];
+        } else {
+            this.filteredItems = this.items.filter(item => {
+                return item.id.toLowerCase().includes(lowerFilter) ||
+                       item.displayText.toLowerCase().includes(lowerFilter);
+            });
+        }
+
+        // 選択インデックスをリセット
+        this.selectedIndex = 0;
+
+        // ドロップダウンを更新
+        this.renderDropdown();
+    }
+
+    /**
+     * ドロップダウンを描画
+     */
+    private renderDropdown(): void {
+        this.dropdownElement.innerHTML = '';
+
+        if (this.filteredItems.length === 0) {
+            const emptyMessage = document.createElement('div');
+            emptyMessage.classList.add('grid-dropdown-empty');
+            emptyMessage.textContent = '該当なし';
+            this.dropdownElement.appendChild(emptyMessage);
+            return;
+        }
+
+        for (let i = 0; i < this.filteredItems.length; i++) {
+            const item = this.filteredItems[i];
+            const itemElement = document.createElement('div');
+            itemElement.classList.add('grid-dropdown-item');
+
+            if (i === this.selectedIndex) {
+                itemElement.classList.add('selected');
+            }
+
+            // 表示テキスト
+            const displaySpan = document.createElement('span');
+            displaySpan.textContent = item.displayText;
+            itemElement.appendChild(displaySpan);
+
+            // IDが表示テキストと異なる場合はIDも表示
+            if (item.id !== item.displayText) {
+                const idSpan = document.createElement('span');
+                idSpan.classList.add('grid-dropdown-item-id');
+                idSpan.textContent = `(${item.id})`;
+                itemElement.appendChild(idSpan);
+            }
+
+            // クリックイベント
+            itemElement.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.selectedIndex = i;
+                this.confirmSelection();
+            });
+
+            this.dropdownElement.appendChild(itemElement);
+        }
+
+        // 選択項目をスクロールして表示
+        this.scrollToSelected();
+    }
+
+    /**
+     * 選択を移動する
+     */
+    private moveSelection(delta: number): void {
+        if (this.filteredItems.length === 0) return;
+
+        this.selectedIndex += delta;
+
+        // 範囲内に収める
+        if (this.selectedIndex < 0) {
+            this.selectedIndex = this.filteredItems.length - 1;
+        } else if (this.selectedIndex >= this.filteredItems.length) {
+            this.selectedIndex = 0;
+        }
+
+        this.renderDropdown();
+    }
+
+    /**
+     * 選択項目をスクロールして表示
+     */
+    private scrollToSelected(): void {
+        const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
+        if (selectedElement) {
+            selectedElement.scrollIntoView({block: 'nearest'});
+        }
+    }
+
+    /**
+     * 選択を確定する
+     */
+    private confirmSelection(): void {
+        const id = this.getSelectedId();
+        this.hide();
+        this.onSelect(id);
+    }
+
+    /**
+     * キャンセルする
+     */
+    private cancel(): void {
+        this.hide();
+        this.onCancel();
+    }
+
+    /**
+     * カーソルを末尾に移動
+     */
+    private moveCursorToEnd(): void {
+        const text = this.inputElement.textContent ?? '';
+        if (text.length > 0) {
+            const range = document.createRange();
+            range.selectNodeContents(this.inputElement);
+            range.collapse(false);
+            const selection = window.getSelection();
+            if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+    }
+}

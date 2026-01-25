@@ -1,0 +1,71 @@
+/* ドロップダウン入力コンポーネント */
+.grid-dropdown {
+    position: absolute;
+    z-index: 100;
+    display: none;
+}
+
+.grid-dropdown.visible {
+    display: block;
+}
+
+/* 入力フィールド */
+.grid-dropdown-input {
+    position: absolute;
+    box-sizing: border-box;
+    padding: 0 6px;
+    font-size: 13px;
+    font-family: sans-serif;
+    background-color: var(--background-color);
+    border: 2px solid var(--selection-border-color);
+    outline: none;
+    overflow: hidden;
+    white-space: nowrap;
+    line-height: 24px;
+}
+
+/* ドロップダウンリスト */
+.grid-dropdown-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 100%;
+    max-height: 200px;
+    overflow-y: auto;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 101;
+}
+
+/* ドロップダウン項目 */
+.grid-dropdown-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 13px;
+    font-family: sans-serif;
+}
+
+.grid-dropdown-item:hover {
+    background-color: var(--selection-color);
+}
+
+.grid-dropdown-item.selected {
+    background-color: var(--selection-color);
+}
+
+/* 項目のID表示 */
+.grid-dropdown-item-id {
+    color: var(--text-color-secondary, #888);
+    font-size: 11px;
+    margin-left: 8px;
+}
+
+/* 項目が見つからない場合のメッセージ */
+.grid-dropdown-empty {
+    padding: 8px;
+    color: var(--text-color-secondary, #888);
+    font-style: italic;
+    font-size: 13px;
+}

@@ -10,6 +10,8 @@ import {History} from "./history";
 import {AreaResizer} from "./area-resizer";
 import {ContextMenu} from "./context-menu";
 import {ScrollViewportController} from "./scroll-viewport-controller";
+import {ReferenceDataCache} from "./reference-data-cache";
+import {GridDropdownInput} from "./grid-dropdown-input";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -21,6 +23,8 @@ export interface TabState {
     history: History;
     areaResizer: AreaResizer;
     wrapperElement: HTMLElement;
+    referenceDataCache: ReferenceDataCache;
+    dropdownInput: GridDropdownInput;
 }
 
 /**
@@ -233,11 +237,45 @@ export class Tab {
                 // AreaResizerを作成
                 const areaResizer = new AreaResizer(wrapperElement, history, selection);
 
+                // 参照データキャッシュを作成
+                const referenceDataCache = new ReferenceDataCache();
+
+                // 参照先テーブルを事前読み込み
+                // referenceは "テーブル名.列名" の形式なので、テーブル名部分を抽出
+                const referenceTables = tableData.header
+                    .map(col => col.reference)
+                    .filter((ref): ref is string => ref !== undefined)
+                    .map(ref => {
+                        const dotIndex = ref.indexOf('.');
+                        return dotIndex === -1 ? ref : ref.substring(0, dotIndex);
+                    });
+                // 重複を除去
+                const uniqueReferenceTables = Array.from(new Set(referenceTables));
+                if (uniqueReferenceTables.length > 0) {
+                    referenceDataCache.preload(uniqueReferenceTables);
+                }
+
+                // ドロップダウン入力コンポーネントを作成
+                const dropdownInput = new GridDropdownInput(
+                    wrapperElement,
+                    (id: string) => {
+                        // 選択確定時のコールバック
+                        textField.submitDropdownSelection(id);
+                    },
+                    () => {
+                        // キャンセル時のコールバック
+                        textField.cancelDropdown();
+                    }
+                );
+
                 // EditorTableをセットアップ
                 editorTable.setup(textField, selection, this.contextMenu, history, areaResizer, scrollController);
 
                 // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
                 areaResizer.setEditorTable(editorTable);
+
+                // GridTextFieldに参照データキャッシュとドロップダウンを設定
+                textField.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
 
                 // 初期選択をA1（row=1, column=1）に設定
                 selection.setRange(1, 1, 1, 1);
@@ -250,7 +288,9 @@ export class Tab {
                     textField,
                     history,
                     areaResizer,
-                    wrapperElement
+                    wrapperElement,
+                    referenceDataCache,
+                    dropdownInput
                 };
                 this.tabStates.set(name, state);
 

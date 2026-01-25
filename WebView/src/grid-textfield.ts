@@ -4,6 +4,9 @@ import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, ex
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
 import {CellChange} from "./command";
+import {ReferenceDataCache} from "./reference-data-cache";
+import {GridDropdownInput} from "./grid-dropdown-input";
+import {EditorTableData} from "./model/editor-table-data";
 
 export class GridTextField {
 
@@ -20,6 +23,12 @@ export class GridTextField {
     private mouseupHandler: (() => void) | undefined;
     private onSaveCallback: (() => void) | undefined;
 
+    // 参照列用のコンポーネント
+    private referenceDataCache: ReferenceDataCache | undefined;
+    private dropdownInput: GridDropdownInput | undefined;
+    private tableData: EditorTableData | undefined;
+    private dropdownActive: boolean;
+
     constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
         this.selection = selection;
@@ -28,6 +37,7 @@ export class GridTextField {
 
         this.active = false;
         this.visible = false;
+        this.dropdownActive = false;
 
         const element = document.createElement('div');
         element.style.width = '0px';
@@ -752,5 +762,126 @@ export class GridTextField {
         if (this.mouseupHandler) {
             window.removeEventListener('mouseup', this.mouseupHandler);
         }
+    }
+
+    /**
+     * 参照データキャッシュとドロップダウンコンポーネントを設定
+     */
+    setReferenceComponents(cache: ReferenceDataCache, dropdown: GridDropdownInput, tableData: EditorTableData): void {
+        this.referenceDataCache = cache;
+        this.dropdownInput = dropdown;
+        this.tableData = tableData;
+    }
+
+    /**
+     * 現在のフォーカス列が参照列かどうかを判定し、参照先テーブル名を返す
+     */
+    private getReferenceTableName(): string | undefined {
+        if (!this.tableData) return undefined;
+
+        const focus = this.selection.getFocus();
+        // column=0は行ヘッダーなので、データ列は1から始まる
+        const columnIndex = focus.column - 1;
+
+        if (columnIndex < 0 || columnIndex >= this.tableData.header.length) {
+            return undefined;
+        }
+
+        const reference = this.tableData.header[columnIndex].reference;
+        if (!reference) return undefined;
+
+        // "テーブル名.列名" からテーブル名部分を抽出
+        const dotIndex = reference.indexOf('.');
+        if (dotIndex === -1) {
+            return reference;
+        }
+        return reference.substring(0, dotIndex);
+    }
+
+    /**
+     * 参照列の場合にドロップダウンを表示してセル編集モードを開始
+     */
+    async enableCellEditModeWithDropdown(): Promise<boolean> {
+        if (!this.referenceDataCache || !this.dropdownInput) {
+            return false;
+        }
+
+        const referenceTable = this.getReferenceTableName();
+        if (!referenceTable) {
+            return false;
+        }
+
+        try {
+            // 参照テーブルデータを取得
+            const refData = await this.referenceDataCache.get(referenceTable);
+
+            // 表示列がない場合は通常入力を使用
+            if (!this.referenceDataCache.hasDisplayColumn(refData)) {
+                return false;
+            }
+
+            // アイテムが空の場合も通常入力を使用
+            if (refData.items.length === 0) {
+                return false;
+            }
+
+            // セルの位置を取得
+            const target = getTarget(this.table, this.selection);
+            const tableRect = this.table.element.getBoundingClientRect();
+            const cellRect = target.cell.getBoundingClientRect();
+            const rect = new DOMRect(
+                cellRect.left - tableRect.left - 1,
+                cellRect.top - tableRect.top,
+                cellRect.width + 1,
+                cellRect.height
+            );
+
+            const currentValue = target.cell.textContent ?? '';
+
+            // ドロップダウンを表示
+            this.dropdownInput.show(rect, refData.items, currentValue);
+            this.dropdownActive = true;
+
+            return true;
+        } catch (e) {
+            console.warn(`Failed to load reference data for ${referenceTable}`, e);
+            return false;
+        }
+    }
+
+    /**
+     * ドロップダウンからの選択を確定
+     */
+    submitDropdownSelection(id: string): void {
+        if (!this.dropdownActive) return;
+
+        const target = getTarget(this.table, this.selection);
+        const focus = this.selection.getFocus();
+        const oldValue = target.cell.textContent ?? '';
+
+        // 履歴に追加
+        const copyRange = this.selection.getCopyRange();
+        this.history.pushSingleChange(focus.row, focus.column, oldValue, id, copyRange);
+
+        target.cell.textContent = id;
+
+        this.dropdownActive = false;
+
+        // 下のセルに移動
+        moveCellDownWithinSelection(this.table, this.selection);
+    }
+
+    /**
+     * ドロップダウンをキャンセル
+     */
+    cancelDropdown(): void {
+        this.dropdownActive = false;
+    }
+
+    /**
+     * ドロップダウンがアクティブかどうか
+     */
+    isDropdownActive(): boolean {
+        return this.dropdownActive;
     }
 }

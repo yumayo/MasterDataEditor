@@ -1,6 +1,10 @@
 {
   "include": ["src"],
   "compilerOptions": {
+    /* JSON Import */
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

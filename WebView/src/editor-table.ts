@@ -603,7 +603,13 @@ export class EditorTable {
         EditorTable.applyCellWidth(cell, width);
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
-            enableCellEditMode(table, textField, selection, true);
+            // 参照列の場合はドロップダウンを表示
+            textField.enableCellEditModeWithDropdown().then((handled) => {
+                if (!handled) {
+                    // ドロップダウンで処理されなかった場合は通常の編集モード
+                    enableCellEditMode(table, textField, selection, true);
+                }
+            });
         });
         cell.addEventListener('mousedown', (e) => {
             const position = EditorTable.getCellPosition(cell, table.element);
