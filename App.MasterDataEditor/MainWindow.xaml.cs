@@ -26,6 +26,7 @@ public partial class MainWindow : Window
 
 	private async Task InitializeWebView2handler()
 	{
-		_webView2Handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2);
+		var consoleLogPath = AppEnvironment.GetRequired("MASTER_DATA_EDITOR_CONSOLE_LOG_PATH");
+		_webView2Handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
 	}
 }
