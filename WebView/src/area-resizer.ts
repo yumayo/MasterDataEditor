@@ -173,15 +173,14 @@ export class AreaResizer {
             this.isResizingColumn = true;
             this.resizingColumnIndex = columnIndex;
             this.resizeStartX = e.clientX;
-            const width = columnHeaderCell.offsetWidth;
+            const width = Number.parseFloat(columnHeaderCell.style.width);
             this.resizeStartWidth = width;
             // 元の幅を保存（Undo用）- セルのスタイルから取得
-            this.resizeColumnOldWidth = columnHeaderCell.style.width || DEFAULT_COLUMN_WIDTH;
+            this.resizeColumnOldWidth = columnHeaderCell.style.width;
 
             // ガイドラインを表示（縦線）
-            const rect = columnHeaderCell.getBoundingClientRect();
             const editorRect = this.editorElement.getBoundingClientRect();
-            this.resizeColumnStartLeft = rect.right - editorRect.left + this.editorElement.scrollLeft;
+            this.resizeColumnStartLeft = e.clientX - editorRect.left + this.editorElement.scrollLeft;
             this.resizeGuideline.style.display = 'block';
             this.resizeGuideline.style.left = this.resizeColumnStartLeft + 'px';
             this.resizeGuideline.style.top = '0';
@@ -200,15 +199,14 @@ export class AreaResizer {
             this.isResizingRow = true;
             this.resizingRowIndex = rowIndex;
             this.resizeStartY = e.clientY;
-            const height = rowHeaderCell.offsetHeight;
+            const height = Number.parseFloat(rowHeaderCell.style.height);
             this.resizeStartHeight = height;
             // 元の高さを保存（Undo用）- セルのスタイルから取得
-            this.resizeRowOldHeight = rowHeaderCell.style.height || DEFAULT_ROW_HEIGHT;
+            this.resizeRowOldHeight = rowHeaderCell.style.height;
 
             // ガイドラインを表示（横線）
-            const rect = rowHeaderCell.getBoundingClientRect();
             const editorRect = this.editorElement.getBoundingClientRect();
-            this.resizeRowStartTop = rect.bottom - editorRect.top + this.editorElement.scrollTop;
+            this.resizeRowStartTop = e.clientY - editorRect.top + this.editorElement.scrollTop;
             this.resizeGuideline.style.display = 'block';
             this.resizeGuideline.style.top = this.resizeRowStartTop + 'px';
             this.resizeGuideline.style.left = '0';
