@@ -317,30 +317,35 @@ export class GridTextField {
             }
 
             if (keyboardEvent.key === 'ArrowRight') {
+                keyboardEvent.preventDefault();
                 if (keyboardEvent.shiftKey) {
                     extendSelectionCell(this.table, this.selection, 1, 0);
                 } else {
                     moveCell(this.table, this.selection, 1, 0);
                 }
             } else if (keyboardEvent.key === 'ArrowLeft') {
+                keyboardEvent.preventDefault();
                 if (keyboardEvent.shiftKey) {
                     extendSelectionCell(this.table, this.selection, -1, 0);
                 } else {
                     moveCell(this.table, this.selection, -1, 0);
                 }
             } else if (keyboardEvent.key === 'ArrowUp') {
+                keyboardEvent.preventDefault();
                 if (keyboardEvent.shiftKey) {
                     extendSelectionCell(this.table, this.selection, 0, -1);
                 } else {
                     moveCell(this.table, this.selection, 0, -1);
                 }
             } else if (keyboardEvent.key === 'ArrowDown') {
+                keyboardEvent.preventDefault();
                 if (keyboardEvent.shiftKey) {
                     extendSelectionCell(this.table, this.selection, 0, 1);
                 } else {
                     moveCell(this.table, this.selection, 0, 1);
                 }
             } else if (keyboardEvent.key === 'Enter') {
+                keyboardEvent.preventDefault();
                 if (keyboardEvent.shiftKey) {
                     moveCellUpWithinSelection(this.table, this.selection);
                 } else {
