@@ -18,9 +18,17 @@ export class Selection {
 
     element: HTMLElement;
 
-    private focusColumnBackground: HTMLElement;
+    /** フォーカスセルの上の領域（選択範囲の全幅） */
+    private topBackground: HTMLElement;
 
-    private otherColumnsBackground: HTMLElement;
+    /** フォーカスセルの下の領域（選択範囲の全幅） */
+    private bottomBackground: HTMLElement;
+
+    /** フォーカスセルの左の領域（フォーカス行のみ） */
+    private leftBackground: HTMLElement;
+
+    /** フォーカスセルの右の領域（フォーカス行のみ） */
+    private rightBackground: HTMLElement;
 
     copyBorderElement: HTMLElement;
 
@@ -69,15 +77,26 @@ export class Selection {
         element.classList.add('selection');
         this.element = element;
 
-        const focusColumnBackground = document.createElement('div');
-        focusColumnBackground.classList.add('selection-background');
-        this.focusColumnBackground = focusColumnBackground;
-        this.element.appendChild(focusColumnBackground);
+        // 4つの背景要素を作成（フォーカスセルを囲む上・下・左・右の領域）
+        const topBackground = document.createElement('div');
+        topBackground.classList.add('selection-background');
+        this.topBackground = topBackground;
+        this.element.appendChild(topBackground);
 
-        const otherColumnsBackground = document.createElement('div');
-        otherColumnsBackground.classList.add('selection-background');
-        this.otherColumnsBackground = otherColumnsBackground;
-        this.element.appendChild(otherColumnsBackground);
+        const bottomBackground = document.createElement('div');
+        bottomBackground.classList.add('selection-background');
+        this.bottomBackground = bottomBackground;
+        this.element.appendChild(bottomBackground);
+
+        const leftBackground = document.createElement('div');
+        leftBackground.classList.add('selection-background');
+        this.leftBackground = leftBackground;
+        this.element.appendChild(leftBackground);
+
+        const rightBackground = document.createElement('div');
+        rightBackground.classList.add('selection-background');
+        this.rightBackground = rightBackground;
+        this.element.appendChild(rightBackground);
 
         // コピー範囲表示用の要素を作成
         const copyBorderElement = document.createElement('div');
@@ -268,8 +287,9 @@ export class Selection {
     }
 
     /**
-     * フォーカスを移動して選択範囲を拡張する（絶対座標用）
+     * 選択範囲を拡張する（絶対座標用）
      * マウス操作による範囲選択は絶対座標的なものです。
+     * フォーカスは移動しません（選択開始位置に固定）。
      */
     extendSelection(row: number, column: number): void {
         const endRow = Math.max(1, row);
@@ -279,13 +299,13 @@ export class Selection {
             endRow: endRow,
             endColumn: endColumn
         };
-        this.focus = { row: endRow, column: endColumn };
         this.updateRenderer();
     }
 
     /**
-     * フォーカスを移動して選択範囲を拡張する（相対座標用）
+     * 選択範囲を拡張する（相対座標用）
      * 矢印キーは相対的に範囲を操作します。
+     * フォーカスは移動しません（選択開始位置に固定）。
      * @param x 列方向のオフセット
      * @param y 行方向のオフセット
      * @param maxRow 最大行インデックス（テーブルの行数-1）
@@ -302,7 +322,6 @@ export class Selection {
             endRow: endRow,
             endColumn: endColumn
         };
-        this.focus = { row: endRow, column: endColumn };
         this.updateRenderer();
         this.scrollCellIntoView(endRow, endColumn);
     }
@@ -676,10 +695,6 @@ export class Selection {
     }
 
     private updateBackgroundElements(startRect: DOMRect, endRect: DOMRect, focusRect: DOMRect): void {
-        // フォーカスの位置判定はセル座標で行う（浮動小数点誤差を避ける）
-        const isFocusTop = this.focus.row <= this.range.endRow;
-        const isFocusLeft = this.focus.column <= this.range.endColumn;
-
         // 座標計算は最後にまとめて整数化する
         const focusLeftPx = Math.floor(focusRect.left - startRect.left);
         const focusTopPx = Math.floor(focusRect.top - startRect.top);
@@ -690,63 +705,41 @@ export class Selection {
 
         // 単一セルの場合は背景を非表示
         if (this.isSingleCell()) {
-            this.focusColumnBackground.style.display = 'none';
-            this.otherColumnsBackground.style.display = 'none';
+            this.hideBackgroundElements();
             return;
         }
 
-        this.focusColumnBackground.style.display = 'block';
-        this.otherColumnsBackground.style.display = 'block';
+        const topHeight = focusTopPx;
+        const bottomTop = focusTopPx + focusHeight;
+        const bottomHeight = totalHeight - bottomTop;
+        const leftWidth = focusLeftPx;
+        const rightLeft = focusLeftPx + focusWidth;
+        const rightWidth = totalWidth - rightLeft;
 
-        if (isFocusTop && isFocusLeft) {
-            // フォーカスが左上
-            // focusColumn: フォーカスの下から最下部まで（フォーカス列）
-            this.focusColumnBackground.style.left = '0px';
-            this.focusColumnBackground.style.top = focusHeight + 'px';
-            this.focusColumnBackground.style.width = focusWidth + 'px';
-            this.focusColumnBackground.style.height = (totalHeight - focusHeight) + 'px';
-            // otherColumns: フォーカスの右隣から右下まで
-            this.otherColumnsBackground.style.left = focusWidth + 'px';
-            this.otherColumnsBackground.style.top = '0px';
-            this.otherColumnsBackground.style.width = (totalWidth - focusWidth) + 'px';
-            this.otherColumnsBackground.style.height = totalHeight + 'px';
-        } else if (isFocusTop && !isFocusLeft) {
-            // フォーカスが右上
-            // focusColumn: フォーカスの下から最下部まで（フォーカス列）
-            this.focusColumnBackground.style.left = focusLeftPx + 'px';
-            this.focusColumnBackground.style.top = focusHeight + 'px';
-            this.focusColumnBackground.style.width = focusWidth + 'px';
-            this.focusColumnBackground.style.height = (totalHeight - focusHeight) + 'px';
-            // otherColumns: 左端からフォーカスの左隣まで
-            this.otherColumnsBackground.style.left = '0px';
-            this.otherColumnsBackground.style.top = '0px';
-            this.otherColumnsBackground.style.width = focusLeftPx + 'px';
-            this.otherColumnsBackground.style.height = totalHeight + 'px';
-        } else if (!isFocusTop && isFocusLeft) {
-            // フォーカスが左下
-            // focusColumn: 最上部からフォーカスの上まで（フォーカス列）
-            this.focusColumnBackground.style.left = '0px';
-            this.focusColumnBackground.style.top = '0px';
-            this.focusColumnBackground.style.width = focusWidth + 'px';
-            this.focusColumnBackground.style.height = focusTopPx + 'px';
-            // otherColumns: フォーカスの右隣から右下まで
-            this.otherColumnsBackground.style.left = focusWidth + 'px';
-            this.otherColumnsBackground.style.top = '0px';
-            this.otherColumnsBackground.style.width = (totalWidth - focusWidth) + 'px';
-            this.otherColumnsBackground.style.height = totalHeight + 'px';
-        } else {
-            // フォーカスが右下
-            // focusColumn: 最上部からフォーカスの上まで（フォーカス列）
-            this.focusColumnBackground.style.left = focusLeftPx + 'px';
-            this.focusColumnBackground.style.top = '0px';
-            this.focusColumnBackground.style.width = focusWidth + 'px';
-            this.focusColumnBackground.style.height = focusTopPx + 'px';
-            // otherColumns: 左端からフォーカスの左隣まで
-            this.otherColumnsBackground.style.left = '0px';
-            this.otherColumnsBackground.style.top = '0px';
-            this.otherColumnsBackground.style.width = focusLeftPx + 'px';
-            this.otherColumnsBackground.style.height = totalHeight + 'px';
+        this.updateBackgroundElement(this.topBackground, 0, 0, totalWidth, topHeight);
+        this.updateBackgroundElement(this.bottomBackground, 0, bottomTop, totalWidth, bottomHeight);
+        this.updateBackgroundElement(this.leftBackground, 0, focusTopPx, leftWidth, focusHeight);
+        this.updateBackgroundElement(this.rightBackground, rightLeft, focusTopPx, rightWidth, focusHeight);
+    }
+
+    private updateBackgroundElement(element: HTMLElement, left: number, top: number, width: number, height: number): void {
+        if (width <= 0 || height <= 0) {
+            element.style.display = 'none';
+            return;
         }
+
+        element.style.display = 'block';
+        element.style.left = left + 'px';
+        element.style.top = top + 'px';
+        element.style.width = width + 'px';
+        element.style.height = height + 'px';
+    }
+
+    private hideBackgroundElements(): void {
+        this.topBackground.style.display = 'none';
+        this.bottomBackground.style.display = 'none';
+        this.leftBackground.style.display = 'none';
+        this.rightBackground.style.display = 'none';
     }
 
     private hideRenderer(): void {
