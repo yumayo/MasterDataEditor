@@ -88,8 +88,8 @@ export class GridDropdownInput {
             this.selectedIndex = currentIndex;
         }
 
-        // フィルタを適用
-        this.filterItems('');
+        // フィルタを適用（初期表示時は選択を維持）
+        this.filterItems('', true);
 
         // 表示
         this.element.classList.add('visible');
@@ -145,7 +145,7 @@ export class GridDropdownInput {
      */
     private onInput(): void {
         const filterText = this.inputElement.textContent ?? '';
-        this.filterItems(filterText);
+        this.filterItems(filterText, false);
     }
 
     /**
@@ -197,17 +197,19 @@ export class GridDropdownInput {
      */
     private onFocusout(): void {
         console.log('[dropdown] onFocusout', { visible: this.visible, activeElement: document.activeElement });
-        // フォーカスアウト時は確定
+        // フォーカスアウト時はキャンセル（他のセルをクリックした場合など）
         if (this.visible) {
-            console.log('[dropdown] confirming selection due to focusout');
-            this.confirmSelection();
+            console.log('[dropdown] canceling due to focusout');
+            this.cancel();
         }
     }
 
     /**
      * 項目をフィルタリングする
+     * @param filterText フィルタ文字列
+     * @param preserveSelection trueの場合、選択インデックスを維持する（初期表示時用）
      */
-    private filterItems(filterText: string): void {
+    private filterItems(filterText: string, preserveSelection: boolean): void {
         const lowerFilter = filterText.toLowerCase();
 
         if (filterText === '') {
@@ -219,8 +221,10 @@ export class GridDropdownInput {
             });
         }
 
-        // 選択インデックスをリセット
-        this.selectedIndex = 0;
+        // 選択インデックスをリセット（preserveSelectionがfalseの場合のみ）
+        if (!preserveSelection) {
+            this.selectedIndex = 0;
+        }
 
         // ドロップダウンを更新
         this.renderDropdown();

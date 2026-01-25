@@ -40,7 +40,7 @@
 
 /* ドロップダウン項目 */
 .grid-dropdown-item {
-    padding: 4px 8px;
+    padding: 2px 8px;
     cursor: pointer;
     white-space: nowrap;
     font-size: 13px;
@@ -48,11 +48,15 @@
 }
 
 .grid-dropdown-item:hover {
-    background-color: var(--selection-color);
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 .grid-dropdown-item.selected {
-    background-color: var(--selection-color);
+    background-color: #264f78;
+}
+
+.grid-dropdown-item.selected:hover {
+    background-color: #264f78;
 }
 
 /* 項目のID表示 */
