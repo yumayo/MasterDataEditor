@@ -157,8 +157,13 @@ export class ReferenceDataCache {
         const items: ReferenceItem[] = [];
         for (const row of csv.body) {
             const id = row[idColumnIndex];
-            // 表示列がない場合はidを表示テキストとして使用
-            const displayText = displayColumnIndex !== -1 ? row[displayColumnIndex] : id;
+            // idが空の行はスキップ
+            if (id === undefined || id === '') {
+                continue;
+            }
+            // 表示列がない場合、または表示列の値が空の場合はidを表示テキストとして使用
+            const rawDisplayText = displayColumnIndex !== -1 ? row[displayColumnIndex] : id;
+            const displayText = (rawDisplayText !== undefined && rawDisplayText !== '') ? rawDisplayText : id;
             items.push({ id, displayText });
         }
 
