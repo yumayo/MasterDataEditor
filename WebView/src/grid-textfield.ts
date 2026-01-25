@@ -562,7 +562,7 @@ export class GridTextField {
         // 幅と高さを設定
         this.element.style.width = width + 'px';
         this.element.style.height = cellRect.height + 'px';
-        this.element.style.lineHeight = (cellRect.height - 2) + 'px'; // border分を引く
+        // lineHeightはテキスト1行分の高さに固定（セルの高さに依存させない）
     }
 
     /**

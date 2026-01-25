@@ -8,6 +8,9 @@
     /* エディターなので小さめのフォントにします。 */
     font-size: 13px;
 
+    /* テキストの行の高さを固定（セルの高さに依存させない） */
+    line-height: 18px;
+
     color: var(--font-color);
 
     position: absolute;
