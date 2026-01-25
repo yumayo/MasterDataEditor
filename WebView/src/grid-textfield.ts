@@ -56,7 +56,7 @@ export class GridTextField {
             e.stopPropagation();
 
             const anchor = this.selection.getAnchor();
-            this.selection.startFill(anchor.row, anchor.column);
+            this.selection.startFill(anchor.row, anchor.column, e.clientX, e.clientY);
         });
 
         // フィルハンドルのダブルクリック
@@ -75,7 +75,7 @@ export class GridTextField {
             if (target.classList.contains('editor-table-cell')) {
                 const position = EditorTable.getCellPosition(target, this.table.element);
                 if (position) {
-                    this.selection.updateFill(position.row, position.column);
+                    this.selection.updateFill(position.row, position.column, e.clientX, e.clientY);
                 }
             }
         });

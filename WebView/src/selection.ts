@@ -56,6 +56,10 @@ export class Selection {
 
     private fillTarget: CellPosition;
 
+    private fillStartMousePosition: { x: number; y: number };
+
+    private fillCurrentMousePosition: { x: number; y: number };
+
     private scrollBinding: ScrollViewportController;
 
     constructor(tableElement: HTMLElement, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
@@ -70,6 +74,8 @@ export class Selection {
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
+        this.fillStartMousePosition = { x: 0, y: 0 };
+        this.fillCurrentMousePosition = { x: 0, y: 0 };
         this.scrollBinding = scrollBinding;
 
         // 選択範囲表示用の要素を作成
@@ -801,15 +807,18 @@ export class Selection {
         return this.fillHandle;
     }
 
-    startFill(row: number, column: number): void {
+    startFill(row: number, column: number, mouseX: number, mouseY: number): void {
         this.filling = true;
         this.fillTarget = { row, column };
+        this.fillStartMousePosition = { x: mouseX, y: mouseY };
+        this.fillCurrentMousePosition = { x: mouseX, y: mouseY };
     }
 
-    updateFill(row: number, column: number): void {
+    updateFill(row: number, column: number, mouseX: number, mouseY: number): void {
         if (!this.filling) return;
 
         this.fillTarget = { row, column };
+        this.fillCurrentMousePosition = { x: mouseX, y: mouseY };
         this.updateFillPreview();
     }
 
@@ -824,6 +833,7 @@ export class Selection {
 
     /**
      * フィルの方向と範囲を取得
+     * 斜めにドラッグした場合は45度を基準に、マウスのピクセル移動量で縦方向か横方向かを判定する
      */
     getFillInfo(): { direction: FillDirection; sourceRange: CellRange; targetRange: CellRange; count: number } | undefined {
         const selectionRange = this.getSelectionRange();
@@ -832,51 +842,87 @@ export class Selection {
         const targetRow = this.fillTarget.row;
         const targetColumn = this.fillTarget.column;
 
-        // フィル方向と数を決定
+        // セル位置の変化量を計算
+        const rowDelta = targetRow > endRow
+            ? targetRow - endRow
+            : targetRow < startRow
+                ? startRow - targetRow
+                : 0;
+        const columnDelta = targetColumn > endColumn
+            ? targetColumn - endColumn
+            : targetColumn < startColumn
+                ? startColumn - targetColumn
+                : 0;
+
+        // セル位置に変化がない場合は早期リターン
+        if (rowDelta === 0 && columnDelta === 0) {
+            return undefined;
+        }
+
+        // 縦横どちらの方向にフィルするか決定
+        let useVertical = false;
+        let useHorizontal = false;
+
+        if (rowDelta > 0 && columnDelta > 0) {
+            // 斜めにドラッグした場合は45度を基準に、マウスのピクセル移動量で判定
+            const mouseDx = Math.abs(this.fillCurrentMousePosition.x - this.fillStartMousePosition.x);
+            const mouseDy = Math.abs(this.fillCurrentMousePosition.y - this.fillStartMousePosition.y);
+            useVertical = mouseDy >= mouseDx;
+            useHorizontal = mouseDx > mouseDy;
+        } else if (rowDelta > 0) {
+            useVertical = true;
+        } else if (columnDelta > 0) {
+            useHorizontal = true;
+        }
+
         let direction: FillDirection;
         let count: number;
         let targetRange: CellRange;
 
-        if (targetRow > endRow && targetColumn >= startColumn && targetColumn <= endColumn) {
-            // 下方向
-            direction = 'down';
-            count = targetRow - endRow;
-            targetRange = {
-                startRow: endRow + 1,
-                startColumn: startColumn,
-                endRow: targetRow,
-                endColumn: endColumn
-            };
-        } else if (targetRow < startRow && targetColumn >= startColumn && targetColumn <= endColumn) {
-            // 上方向
-            direction = 'up';
-            count = startRow - targetRow;
-            targetRange = {
-                startRow: targetRow,
-                startColumn: startColumn,
-                endRow: startRow - 1,
-                endColumn: endColumn
-            };
-        } else if (targetColumn > endColumn && targetRow >= startRow && targetRow <= endRow) {
-            // 右方向
-            direction = 'right';
-            count = targetColumn - endColumn;
-            targetRange = {
-                startRow: startRow,
-                startColumn: endColumn + 1,
-                endRow: endRow,
-                endColumn: targetColumn
-            };
-        } else if (targetColumn < startColumn && targetRow >= startRow && targetRow <= endRow) {
-            // 左方向
-            direction = 'left';
-            count = startColumn - targetColumn;
-            targetRange = {
-                startRow: startRow,
-                startColumn: targetColumn,
-                endRow: endRow,
-                endColumn: startColumn - 1
-            };
+        if (useVertical) {
+            if (targetRow > endRow) {
+                // 下方向
+                direction = 'down';
+                count = targetRow - endRow;
+                targetRange = {
+                    startRow: endRow + 1,
+                    startColumn: startColumn,
+                    endRow: targetRow,
+                    endColumn: endColumn
+                };
+            } else {
+                // 上方向
+                direction = 'up';
+                count = startRow - targetRow;
+                targetRange = {
+                    startRow: targetRow,
+                    startColumn: startColumn,
+                    endRow: startRow - 1,
+                    endColumn: endColumn
+                };
+            }
+        } else if (useHorizontal) {
+            if (targetColumn > endColumn) {
+                // 右方向
+                direction = 'right';
+                count = targetColumn - endColumn;
+                targetRange = {
+                    startRow: startRow,
+                    startColumn: endColumn + 1,
+                    endRow: endRow,
+                    endColumn: targetColumn
+                };
+            } else {
+                // 左方向
+                direction = 'left';
+                count = startColumn - targetColumn;
+                targetRange = {
+                    startRow: startRow,
+                    startColumn: targetColumn,
+                    endRow: endRow,
+                    endColumn: startColumn - 1
+                };
+            }
         } else {
             return undefined;
         }
