@@ -61,6 +61,8 @@ export class GridDropdownInput {
      * ドロップダウンを表示する
      */
     show(rect: DOMRect, items: ReferenceItem[], currentValue: string): void {
+        console.log('[dropdown] show called', { currentValue, itemCount: items.length });
+
         this.items = items;
         this.visible = true;
         this.selectedIndex = 0;
@@ -73,7 +75,8 @@ export class GridDropdownInput {
         this.inputElement.style.height = rect.height + 'px';
         this.inputElement.style.lineHeight = rect.height + 'px';
 
-        // ドロップダウンの最小幅を入力フィールドと同じにする
+        // ドロップダウンリストを入力フィールドの下に表示
+        this.dropdownElement.style.top = rect.height + 'px';
         this.dropdownElement.style.minWidth = rect.width + 'px';
 
         // 現在の値を設定
@@ -92,7 +95,9 @@ export class GridDropdownInput {
         this.element.classList.add('visible');
 
         // フォーカスを設定
+        console.log('[dropdown] setting focus to inputElement');
         this.inputElement.focus({preventScroll: true});
+        console.log('[dropdown] activeElement after focus:', document.activeElement);
 
         // カーソルを末尾に移動
         this.moveCursorToEnd();
@@ -147,8 +152,16 @@ export class GridDropdownInput {
      * キーボードイベント
      */
     private onKeydown(e: KeyboardEvent): void {
+        console.log('[dropdown] onKeydown', {
+            key: e.key,
+            code: e.code,
+            isComposing: e.isComposing,
+            visible: this.visible
+        });
+
         // IME変換中は何もしない
         if (e.isComposing) {
+            console.log('[dropdown] IME変換中のためスキップ');
             return;
         }
 
@@ -163,14 +176,17 @@ export class GridDropdownInput {
                 break;
             case 'Enter':
                 e.preventDefault();
+                console.log('[dropdown] Enter pressed, confirming selection');
                 this.confirmSelection();
                 break;
             case 'Tab':
                 e.preventDefault();
+                console.log('[dropdown] Tab pressed, confirming selection');
                 this.confirmSelection();
                 break;
             case 'Escape':
                 e.preventDefault();
+                console.log('[dropdown] Escape pressed, canceling');
                 this.cancel();
                 break;
         }
@@ -180,8 +196,10 @@ export class GridDropdownInput {
      * フォーカスアウトイベント
      */
     private onFocusout(): void {
+        console.log('[dropdown] onFocusout', { visible: this.visible, activeElement: document.activeElement });
         // フォーカスアウト時は確定
         if (this.visible) {
+            console.log('[dropdown] confirming selection due to focusout');
             this.confirmSelection();
         }
     }

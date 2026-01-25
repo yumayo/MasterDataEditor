@@ -200,10 +200,24 @@ export class GridTextField {
     }
 
     onFocusout() {
+        console.log('[textfield] onFocusout', {
+            active: this.active,
+            dropdownActive: this.dropdownActive,
+            visible: this.visible,
+            activeElement: document.activeElement
+        });
+
         if (!this.active) return;
+
+        // ドロップダウンがアクティブな場合はフォーカスを奪い返さない
+        if (this.dropdownActive) {
+            console.log('[textfield] dropdownActive=true, not reclaiming focus');
+            return;
+        }
 
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
+        console.log('[textfield] reclaiming focus');
         this.element.focus({ preventScroll: true });
 
         // すでに非表示なら何もしないです。
@@ -838,9 +852,9 @@ export class GridTextField {
 
             const currentValue = target.cell.textContent ?? '';
 
-            // ドロップダウンを表示
-            this.dropdownInput.show(rect, refData.items, currentValue);
+            // ドロップダウンを表示（show内でfocusが移るため、先にdropdownActiveをtrueにする）
             this.dropdownActive = true;
+            this.dropdownInput.show(rect, refData.items, currentValue);
 
             return true;
         } catch (e) {
@@ -867,6 +881,9 @@ export class GridTextField {
 
         this.dropdownActive = false;
 
+        // フォーカスを戻す
+        this.element.focus({ preventScroll: true });
+
         // 下のセルに移動
         moveCellDownWithinSelection(this.table, this.selection);
     }
@@ -876,6 +893,9 @@ export class GridTextField {
      */
     cancelDropdown(): void {
         this.dropdownActive = false;
+
+        // フォーカスを戻す
+        this.element.focus({ preventScroll: true });
     }
 
     /**
