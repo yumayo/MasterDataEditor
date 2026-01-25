@@ -8,14 +8,14 @@ export class EditorTableDataColumn {
 
     comment: string | undefined;
 
-    references: string[] | undefined;
+    reference: string | undefined;
 
-    constructor(key: number, name: string, type: string, comment: string | undefined, references: string[] | undefined) {
+    constructor(key: number, name: string, type: string, comment: string | undefined, reference: string | undefined) {
         this.key = key;
         this.name = name;
         this.type = type;
         this.comment = comment;
-        this.references = references;
+        this.reference = reference;
     }
 
     serialize() {
@@ -24,7 +24,7 @@ export class EditorTableDataColumn {
             name: this.name,
             type: this.type,
             comment: this.comment,
-            references: this.references
+            reference: this.reference
         }
     }
 }

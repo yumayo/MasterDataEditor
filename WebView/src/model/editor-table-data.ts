@@ -29,7 +29,7 @@ export class EditorTableData {
         const columns = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
-            columns.push(new EditorTableDataColumn(column.key, column.name, column.type, column.comment, column.references));
+            columns.push(new EditorTableDataColumn(column.key, column.name, column.type, column.comment, column.reference));
         }
 
         const body = csv.body;
