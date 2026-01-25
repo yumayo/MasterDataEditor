@@ -272,11 +272,14 @@ export class Selection {
      * マウス操作による範囲選択は絶対座標的なものです。
      */
     extendSelection(row: number, column: number): void {
+        const endRow = Math.max(1, row);
+        const endColumn = Math.max(1, column);
         this.range = {
             ...this.range,
-            endRow: Math.max(1, row),
-            endColumn: Math.max(1, column)
+            endRow: endRow,
+            endColumn: endColumn
         };
+        this.focus = { row: endRow, column: endColumn };
         this.updateRenderer();
     }
 
@@ -292,13 +295,16 @@ export class Selection {
         const nextEndRow = this.range.endRow + y;
         const nextEndColumn = this.range.endColumn + x;
 
+        const endRow = Math.max(1, Math.min(nextEndRow, maxRow));
+        const endColumn = Math.max(1, Math.min(nextEndColumn, maxColumn));
         this.range = {
             ...this.range,
-            endRow: Math.max(1, Math.min(nextEndRow, maxRow)),
-            endColumn: Math.max(1, Math.min(nextEndColumn, maxColumn))
+            endRow: endRow,
+            endColumn: endColumn
         };
+        this.focus = { row: endRow, column: endColumn };
         this.updateRenderer();
-        this.scrollCellIntoView(this.range.endRow, this.range.endColumn);
+        this.scrollCellIntoView(endRow, endColumn);
     }
 
     isSelecting(): boolean {
@@ -564,6 +570,20 @@ export class Selection {
 
         let nextScrollTop = this.scrollBinding.getScrollTop();
         let nextScrollLeft = this.scrollBinding.getScrollLeft();
+        console.log('[scroll] before', {
+            row,
+            column,
+            scrollTop: nextScrollTop,
+            scrollLeft: nextScrollLeft,
+            visibleTop,
+            visibleBottom,
+            visibleLeft,
+            visibleRight,
+            targetTop: targetRect.top,
+            targetBottom: targetRect.bottom,
+            targetLeft: targetRect.left,
+            targetRight: targetRect.right
+        });
 
         if (targetRect.top < visibleTop) {
             nextScrollTop += targetRect.top - visibleTop;
@@ -578,11 +598,25 @@ export class Selection {
         }
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
+            console.log('[scroll] apply', {
+                row,
+                column,
+                nextScrollTop,
+                nextScrollLeft
+            });
             this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
 
             // ブラウザの慣性スクロール等により次フレームでスクロール位置が上書きされる場合があるため再適用
             const scrollBinding = this.scrollBinding;
             window.requestAnimationFrame(() => {
+                console.log('[scroll] raf', {
+                    row,
+                    column,
+                    expectedScrollTop: nextScrollTop,
+                    expectedScrollLeft: nextScrollLeft,
+                    actualScrollTop: scrollBinding.getScrollTop(),
+                    actualScrollLeft: scrollBinding.getScrollLeft()
+                });
                 if (scrollBinding.getScrollTop() !== nextScrollTop || scrollBinding.getScrollLeft() !== nextScrollLeft) {
                     scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
                 }

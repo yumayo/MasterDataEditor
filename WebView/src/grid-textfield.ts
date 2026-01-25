@@ -212,6 +212,15 @@ export class GridTextField {
 
         if (!this.active) return;
 
+        console.log('[input] keydown', {
+            key: keyboardEvent.key,
+            code: keyboardEvent.code,
+            shiftKey: keyboardEvent.shiftKey,
+            ctrlKey: keyboardEvent.ctrlKey,
+            metaKey: keyboardEvent.metaKey
+        });
+        this.table.stopAutoScrollForInput();
+
         if (this.visible) {
 
             // IMEの入力中であれば決定しないです。
