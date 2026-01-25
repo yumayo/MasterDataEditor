@@ -20,9 +20,9 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
     const cellRect = target.cell.getBoundingClientRect();
     const rect = new DOMRect(
         cellRect.left - tableRect.left - 1,
-        cellRect.top - tableRect.top - 1,
-        cellRect.width - 1,
-        cellRect.height - 1
+        cellRect.top - tableRect.top,
+        cellRect.width + 1,
+        cellRect.height
     );
 
     const cellText = target.cell.textContent ?? '';

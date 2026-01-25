@@ -11,6 +11,8 @@
     color: var(--font-color);
 
     position: absolute;
+
+    box-sizing: border-box;
 }
 
 .grid-textfield-active {

@@ -519,6 +519,8 @@ export class GridTextField {
         this.visible = false;
         this.element.textContent = null;
         this.element.style.width = '0px';
+        this.element.style.height = '';
+        this.element.style.lineHeight = '';
         this.element.style.top = '-99999px';
         this.element.style.left = '-99999px';
         this.element.appendChild(document.createElement('br'));
@@ -534,6 +536,7 @@ export class GridTextField {
         const target = getTarget(this.table, this.selection);
         if (!target) return;
 
+        const cellRect = target.cell.getBoundingClientRect();
         const textFieldWidth = Utility.getTextWidth(textContent, 'normal 13px sans-serif');
 
         // 自分自身を探す。
@@ -545,17 +548,21 @@ export class GridTextField {
         }
 
         // 自分から右側にあるセルを結合する。
-        let width = - 1 - 1 - 6 - 6; // borderの1pxとpaddingの6px
-        width += 1; // ←なぜか必要な1px
+        // box-sizing: border-boxなので、セルの幅をそのまま使用
+        // テキスト幅との比較では、パディング(12px)とボーダー(2px)を考慮
+        let width = 0;
         for (; i < target.row.children.length; ++i) {
             const elm = target.row.children[i];
             width += elm.getBoundingClientRect().width;
-            if (textFieldWidth < width) {
+            if (textFieldWidth < width - 14) {
                 break;
             }
         }
 
-        this.resize(width);
+        // 幅と高さを設定
+        this.element.style.width = width + 'px';
+        this.element.style.height = cellRect.height + 'px';
+        this.element.style.lineHeight = (cellRect.height - 2) + 'px'; // border分を引く
     }
 
     /**
