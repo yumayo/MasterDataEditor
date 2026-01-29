@@ -1,5 +1,7 @@
 import { Command, CellChangeCommand, CellChange, DeleteColumnCommand, DeleteRowCommand, InsertColumnCommand, InsertRowCommand } from "./command";
 import { CellRange } from "./selection";
+import { EditorTable } from "./editor-table";
+import { TabButton } from "./tab-button";
 
 /**
  * savedIndexの特殊値
@@ -47,7 +49,8 @@ export class History {
     private currentIndex: number;
     private readonly maxHistorySize: number;
     private tableElement: HTMLElement;
-    private onChangeCallback: (() => void) | undefined;
+    private editorTable: EditorTable;
+    private tabButton: TabButton;
     /**
      * 保存時点のインデックス
      * SAVED_INDEX_INITIALは初期状態（ファイルから読み込んだ直後、未編集状態）
@@ -55,29 +58,21 @@ export class History {
      */
     private savedIndex: SavedIndex;
 
-    constructor(tableElement: HTMLElement, maxHistorySize: number) {
+    constructor(tableElement: HTMLElement, editorTable: EditorTable, tabButton: TabButton, maxHistorySize: number) {
         this.history = [];
         this.currentIndex = -1;
         this.maxHistorySize = maxHistorySize;
         this.tableElement = tableElement;
-        this.onChangeCallback = undefined;
+        this.editorTable = editorTable;
+        this.tabButton = tabButton;
         this.savedIndex = SAVED_INDEX_INITIAL;
-    }
-
-    /**
-     * 変更時コールバックを設定
-     */
-    setOnChangeCallback(callback: () => void): void {
-        this.onChangeCallback = callback;
     }
 
     /**
      * 変更通知を発火
      */
     private notifyChange(): void {
-        if (this.onChangeCallback) {
-            this.onChangeCallback();
-        }
+        this.tabButton.setDirty(this.isDirty());
     }
 
     /**
@@ -174,7 +169,8 @@ export class History {
             this.tableElement,
             meaningfulChanges,
             action.range,
-            action.copyRange
+            action.copyRange,
+            this.editorTable
         );
 
         // 既に実行済みなのでpushCommandを使用

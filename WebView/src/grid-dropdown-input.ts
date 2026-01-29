@@ -253,17 +253,18 @@ export class GridDropdownInput {
                 itemElement.classList.add('selected');
             }
 
-            // 表示テキスト
-            const displaySpan = document.createElement('span');
-            displaySpan.textContent = item.displayText;
-            itemElement.appendChild(displaySpan);
+            // IDを先に表示
+            const idSpan = document.createElement('span');
+            idSpan.classList.add('grid-dropdown-item-id');
+            idSpan.textContent = item.id;
+            itemElement.appendChild(idSpan);
 
-            // IDが表示テキストと異なる場合はIDも表示
+            // IDが表示テキストと異なる場合は名前も表示
             if (item.id !== item.displayText) {
-                const idSpan = document.createElement('span');
-                idSpan.classList.add('grid-dropdown-item-id');
-                idSpan.textContent = `(${item.id})`;
-                itemElement.appendChild(idSpan);
+                const displaySpan = document.createElement('span');
+                displaySpan.classList.add('grid-dropdown-item-name');
+                displaySpan.textContent = item.displayText;
+                itemElement.appendChild(displaySpan);
             }
 
             // クリックイベント

@@ -152,7 +152,7 @@ export class Tab {
         }
 
         // 新しいタブ状態を作成
-        this.createTabState(name);
+        this.createTabState(name, tabButton);
     }
 
     /**
@@ -181,7 +181,7 @@ export class Tab {
     /**
      * 新しいタブ状態を作成
      */
-    private createTabState(name: string): void {
+    private createTabState(name: string, tabButton: TabButton): void {
         // タブの名前から同名のマスターデータを取り出してきます。
         readFileAsync("schema/" + name + ".json").then((text) => {
 
@@ -200,8 +200,11 @@ export class Tab {
                 wrapperElement.dataset.tabName = name;
                 this.editor.element.appendChild(wrapperElement);
 
+                // 参照データキャッシュを作成
+                const referenceDataCache = new ReferenceDataCache();
+
                 // EditorTableを作成
-                const editorTable = new EditorTable(name, tableData);
+                const editorTable = new EditorTable(name, tableData, referenceDataCache);
                 wrapperElement.appendChild(editorTable.element);
 
                 // Selectionを作成
@@ -214,31 +217,14 @@ export class Tab {
                 wrapperElement.appendChild(selection.fillPreviewElement);
 
                 // 履歴管理（最大1000件）
-                const history = new History(editorTable.element, 1000);
-
-                // 履歴変更時にタブのdirty状態を更新
-                const tabButton = this.tabButtons.find(x => x.name === name);
-                if (tabButton) {
-                    history.setOnChangeCallback(() => {
-                        tabButton.setDirty(history.isDirty());
-                    });
-                }
+                const history = new History(editorTable.element, editorTable, tabButton, 1000);
 
                 // GridTextFieldを作成
                 const textField = new GridTextField(editorTable, selection, history);
                 wrapperElement.appendChild(textField.element);
 
-                // 保存完了時に履歴を保存済みとしてマーク
-                // markSaved()がnotifyChange()を呼び、onChangeCallbackでdirty状態が更新される
-                textField.setOnSaveCallback(() => {
-                    history.markSaved();
-                });
-
                 // AreaResizerを作成
                 const areaResizer = new AreaResizer(wrapperElement, history, selection);
-
-                // 参照データキャッシュを作成
-                const referenceDataCache = new ReferenceDataCache();
 
                 // 参照先テーブルを事前読み込み
                 // referenceは "テーブル名.列名" の形式なので、テーブル名部分を抽出
@@ -252,7 +238,12 @@ export class Tab {
                 // 重複を除去
                 const uniqueReferenceTables = Array.from(new Set(referenceTables));
                 if (uniqueReferenceTables.length > 0) {
-                    referenceDataCache.preload(uniqueReferenceTables);
+                    // preloadが完了したら参照ヒントを更新
+                    Promise.all(uniqueReferenceTables.map(t => referenceDataCache.get(t))).then(() => {
+                        editorTable.updateReferenceHints();
+                    }).catch(error => {
+                        console.warn('Failed to preload reference tables:', error);
+                    });
                 }
 
                 // ドロップダウン入力コンポーネントを作成

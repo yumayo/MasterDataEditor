@@ -21,7 +21,6 @@ export class GridTextField {
     readonly history: History;
 
     private mouseupHandler: (() => void) | undefined;
-    private onSaveCallback: (() => void) | undefined;
 
     // 参照列用のコンポーネント
     private referenceDataCache: ReferenceDataCache | undefined;
@@ -33,7 +32,6 @@ export class GridTextField {
         this.table = table;
         this.selection = selection;
         this.history = history;
-        this.onSaveCallback = undefined;
 
         this.active = false;
         this.visible = false;
@@ -277,16 +275,8 @@ export class GridTextField {
             // Ctrl+S: 保存
             if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
                 keyboardEvent.preventDefault();
-                console.log('[DEBUG] Ctrl+S pressed, calling saveTableData');
                 saveTableData(this.table).then(() => {
-                    console.log('[DEBUG] saveTableData.then() called');
-                    console.log('[DEBUG] onSaveCallback is:', this.onSaveCallback);
-                    if (this.onSaveCallback) {
-                        console.log('[DEBUG] calling onSaveCallback');
-                        this.onSaveCallback();
-                    }
-                }).catch((error) => {
-                    console.error('[DEBUG] saveTableData failed:', error);
+                    this.history.markSaved();
                 });
                 return;
             }
@@ -505,7 +495,7 @@ export class GridTextField {
 
                 const destCell = destRowElement.children[destColumn] as HTMLElement;
 
-                const oldValue = destCell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(destCell);
                 const newValue = sourceData[r][c];
 
                 changes.push({
@@ -515,7 +505,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                destCell.textContent = newValue;
+                this.table.setCellValue(destCell, newValue, destColumn - 1);
             }
         }
 
@@ -637,7 +627,7 @@ export class GridTextField {
 
                 const destCell = destRowElement.children[destColumn] as HTMLElement;
 
-                const oldValue = destCell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(destCell);
                 const newValue = sourceData[r][c];
 
                 changes.push({
@@ -647,7 +637,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                destCell.textContent = newValue;
+                this.table.setCellValue(destCell, newValue, destColumn - 1);
             }
         }
 
@@ -694,7 +684,7 @@ export class GridTextField {
                 const destCell = destRowElement.children[destColumn] as HTMLElement;
                 const srcColumnIndex = c % copyColumnCount;
 
-                const oldValue = destCell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(destCell);
                 const newValue = sourceData[srcRowIndex][srcColumnIndex];
 
                 changes.push({
@@ -704,7 +694,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                destCell.textContent = newValue;
+                this.table.setCellValue(destCell, newValue, destColumn - 1);
             }
         }
 
@@ -750,13 +740,6 @@ export class GridTextField {
         } else {
             this.pasteNormal(sourceData, copyRange);
         }
-    }
-
-    /**
-     * 保存完了時コールバックを設定
-     */
-    setOnSaveCallback(callback: () => void): void {
-        this.onSaveCallback = callback;
     }
 
     /**
@@ -850,7 +833,7 @@ export class GridTextField {
                 cellRect.height
             );
 
-            const currentValue = target.cell.textContent ?? '';
+            const currentValue = EditorTable.getCellValue(target.cell);
 
             // ドロップダウンを表示（show内でfocusが移るため、先にdropdownActiveをtrueにする）
             this.dropdownActive = true;
@@ -871,13 +854,13 @@ export class GridTextField {
 
         const target = getTarget(this.table, this.selection);
         const focus = this.selection.getFocus();
-        const oldValue = target.cell.textContent ?? '';
+        const oldValue = EditorTable.getCellValue(target.cell);
 
         // 履歴に追加
         const copyRange = this.selection.getCopyRange();
         this.history.pushSingleChange(focus.row, focus.column, oldValue, id, copyRange);
 
-        target.cell.textContent = id;
+        this.table.setCellValue(target.cell, id, focus.column - 1);
 
         this.dropdownActive = false;
 

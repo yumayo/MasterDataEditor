@@ -142,3 +142,11 @@
     right: 0;
     width: 100%;
 }
+
+/* 参照列のヒント表示 */
+.cell-reference-hint {
+    color: var(--text-muted-color, #888);
+    margin-left: 4px;
+    font-size: 0.9em;
+    opacity: 0.7;
+}

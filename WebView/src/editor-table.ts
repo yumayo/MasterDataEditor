@@ -9,6 +9,7 @@ import {AreaResizer} from "./area-resizer";
 import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
+import {ReferenceDataCache} from "./reference-data-cache";
 
 export class EditorTable {
     readonly tableName: string;
@@ -21,13 +22,46 @@ export class EditorTable {
     private selectionDragController!: SelectionDragController;
     private scrollBinding!: ScrollViewportController;
     private lastScrollLeft = -1;
+    private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(tableName: string, tableData: EditorTableData) {
+    constructor(tableName: string, tableData: EditorTableData, referenceDataCache: ReferenceDataCache) {
 
         this.tableData = tableData;
         this.tableName = tableName;
+        this.referenceDataCache = referenceDataCache;
 
         this.element = document.createElement('div');
+    }
+
+    /**
+     * 参照データのpreload完了後にセルの参照ヒントを更新する
+     */
+    updateReferenceHints(): void {
+        // 全データ行のセルを更新
+        for (let rowIndex = 1; rowIndex < this.element.children.length; rowIndex++) {
+            const row = this.element.children[rowIndex] as HTMLElement;
+            // 列ヘッダーは除く（column=0が行ヘッダー、column=1以降がデータセル）
+            for (let colIndex = 1; colIndex < row.children.length; colIndex++) {
+                const cell = row.children[colIndex] as HTMLElement;
+                const dataColumnIndex = colIndex - 1;
+                const value = EditorTable.getCellValue(cell);
+                this.setCellValue(cell, value, dataColumnIndex);
+            }
+        }
+    }
+
+    /**
+     * 指定した列のすべてのセルの参照ヒントを更新する
+     */
+    updateColumnReferenceHints(columnIndex: number): void {
+        for (let rowIndex = 1; rowIndex < this.element.children.length; rowIndex++) {
+            const row = this.element.children[rowIndex] as HTMLElement;
+            const cell = row.children[columnIndex + 1] as HTMLElement;
+            if (cell) {
+                const value = EditorTable.getCellValue(cell);
+                this.setCellValue(cell, value, columnIndex);
+            }
+        }
     }
     
     setup(
@@ -919,5 +953,68 @@ export class EditorTable {
         cell.style.minHeight = height;
         cell.style.maxHeight = height;
         cell.style.lineHeight = height;
+    }
+
+    /**
+     * セルの値を取得する（参照ヒントを除外）
+     */
+    static getCellValue(cell: HTMLElement): string {
+        // .cell-value 要素があればそこから取得
+        const valueElement = cell.querySelector('.cell-value');
+        if (valueElement) {
+            return valueElement.textContent ?? '';
+        }
+        // .cell-reference-hint 要素があれば、最初のテキストノードから取得
+        const hintElement = cell.querySelector('.cell-reference-hint');
+        if (hintElement) {
+            for (const node of Array.from(cell.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    return node.textContent ?? '';
+                }
+            }
+            return '';
+        }
+        // そうでなければ textContent をそのまま返す
+        return cell.textContent ?? '';
+    }
+
+    /**
+     * セルの値を設定する（参照ヒント付き）
+     * @param cell セル要素
+     * @param value セルの値
+     * @param dataColumnIndex データ列のインデックス（0始まり）
+     */
+    setCellValue(cell: HTMLElement, value: string, dataColumnIndex: number): void {
+        // 既存の参照ヒントを削除
+        const existingHint = cell.querySelector('.cell-reference-hint');
+        if (existingHint) {
+            existingHint.remove();
+        }
+
+        // 参照列かどうかを判定
+        const column = this.tableData.header[dataColumnIndex];
+        if (!column || !column.reference) {
+            // 参照列でなければ通常のテキストコンテンツを設定
+            cell.textContent = value;
+            return;
+        }
+
+        // 参照テーブル名を抽出
+        const dotIndex = column.reference.indexOf('.');
+        const tableName = dotIndex === -1 ? column.reference : column.reference.substring(0, dotIndex);
+
+        // 参照先の表示テキストを取得
+        const displayText = this.referenceDataCache.getDisplayTextById(tableName, value);
+
+        // 値を設定
+        cell.textContent = value;
+
+        // 参照ヒントを追加（表示テキストがある場合のみ）
+        if (displayText) {
+            const hintSpan = document.createElement('span');
+            hintSpan.classList.add('cell-reference-hint');
+            hintSpan.textContent = displayText;
+            cell.appendChild(hintSpan);
+        }
     }
 }

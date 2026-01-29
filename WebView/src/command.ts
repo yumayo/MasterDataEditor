@@ -1,5 +1,5 @@
 import { CellRange } from "./selection";
-import type { EditorTable } from "./editor-table";
+import { EditorTable } from "./editor-table";
 import type { GridTextField } from "./grid-textfield";
 import type { Selection } from "./selection";
 import type { ContextMenu } from "./context-menu";
@@ -53,6 +53,7 @@ export interface HistoryResult {
  */
 export class CellChangeCommand implements Command {
     private tableElement: HTMLElement;
+    private editorTable: EditorTable | undefined;
     private changes: CellChange[];
     private range: CellRange;
     private copyRange: CellRange;
@@ -61,9 +62,11 @@ export class CellChangeCommand implements Command {
         tableElement: HTMLElement,
         changes: CellChange[],
         range: CellRange,
-        copyRange: CellRange
+        copyRange: CellRange,
+        editorTable?: EditorTable
     ) {
         this.tableElement = tableElement;
+        this.editorTable = editorTable;
         this.changes = changes;
         this.range = range;
         this.copyRange = copyRange;
@@ -110,7 +113,12 @@ export class CellChangeCommand implements Command {
         const cell = rowElement.children[column] as HTMLElement;
         if (!cell) return;
 
-        cell.textContent = value;
+        // EditorTableが設定されている場合は参照ヒント付きで更新
+        if (this.editorTable) {
+            this.editorTable.setCellValue(cell, value, column - 1);
+        } else {
+            cell.textContent = value;
+        }
     }
 }
 

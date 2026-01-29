@@ -25,7 +25,7 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
         cellRect.height
     );
 
-    const cellText = target.cell.textContent ?? '';
+    const cellText = EditorTable.getCellValue(target.cell);
     textField.show(rect, cellText, preserveContent);
 }
 
@@ -33,13 +33,13 @@ export function submitText(table: EditorTable, textField: GridTextField, selecti
     const target = getTarget(table, selection);
     const focus = selection.getFocus();
 
-    const oldValue = target.cell.textContent ?? '';
+    const oldValue = EditorTable.getCellValue(target.cell);
 
     // 履歴に追加（現在のコピー範囲も保存）
     const copyRange = selection.getCopyRange();
     history.pushSingleChange(focus.row, focus.column, oldValue, text, copyRange);
 
-    target.cell.textContent = text;
+    table.setCellValue(target.cell, text, focus.column - 1);
 
     textField.hide();
 }
@@ -57,7 +57,7 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
 
         for (let c = range.startColumn; c <= range.endColumn; c++) {
             const cell = rowElement.children[c] as HTMLElement;
-            const oldValue = cell.textContent ?? '';
+            const oldValue = EditorTable.getCellValue(cell);
 
             if (oldValue !== '') {
                 changes.push({
@@ -66,7 +66,7 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
                     oldValue: oldValue,
                     newValue: ''
                 });
-                cell.textContent = '';
+                table.setCellValue(cell, '', c - 1);
             }
         }
     }
@@ -276,7 +276,7 @@ export function applyFillSeries(
         const rowValues: string[] = [];
         for (let c = sourceStartColumn; c <= sourceEndColumn; c++) {
             const cell = rowElement.children[c] as HTMLElement;
-            rowValues.push(cell.textContent ?? '');
+            rowValues.push(EditorTable.getCellValue(cell));
         }
         sourceValues.push(rowValues);
     }
@@ -294,10 +294,10 @@ export function applyFillSeries(
             const rowElement = table.element.children[targetRow] as HTMLElement;
             for (let c = targetStartColumn; c <= targetEndColumn; c++) {
                 const cell = rowElement.children[c] as HTMLElement;
-                const oldValue = cell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(cell);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                cell.textContent = newValue;
+                table.setCellValue(cell, newValue, c - 1);
             }
         }
     } else if (direction === 'up') {
@@ -306,10 +306,10 @@ export function applyFillSeries(
             const rowElement = table.element.children[targetRow] as HTMLElement;
             for (let c = targetStartColumn; c <= targetEndColumn; c++) {
                 const cell = rowElement.children[c] as HTMLElement;
-                const oldValue = cell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(cell);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                cell.textContent = newValue;
+                table.setCellValue(cell, newValue, c - 1);
             }
         }
     } else if (direction === 'right') {
@@ -319,10 +319,10 @@ export function applyFillSeries(
             for (let i = 0; i < count; i++) {
                 const targetCol = targetStartColumn + i;
                 const cell = rowElement.children[targetCol] as HTMLElement;
-                const oldValue = cell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(cell);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                cell.textContent = newValue;
+                table.setCellValue(cell, newValue, targetCol - 1);
             }
         }
     } else if (direction === 'left') {
@@ -332,10 +332,10 @@ export function applyFillSeries(
             for (let i = 0; i < count; i++) {
                 const targetCol = targetEndColumn - i;
                 const cell = rowElement.children[targetCol] as HTMLElement;
-                const oldValue = cell.textContent ?? '';
+                const oldValue = EditorTable.getCellValue(cell);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                cell.textContent = newValue;
+                table.setCellValue(cell, newValue, targetCol - 1);
             }
         }
     }
@@ -397,7 +397,7 @@ function extractTableData(table: EditorTable): { header: string[]; body: string[
         // 列0は行ヘッダーなのでスキップ
         for (let c = 1; c < row.children.length; c++) {
             const cell = row.children[c] as HTMLElement;
-            rowData.push(cell.textContent ?? '');
+            rowData.push(EditorTable.getCellValue(cell));
         }
 
         // 最初のセルが空でない行のみ追加（データがある行のみ保存）

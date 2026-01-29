@@ -196,4 +196,31 @@ export class ReferenceDataCache {
     hasDisplayColumn(data: ReferenceTableData): boolean {
         return data.displayColumnName !== '';
     }
+
+    /**
+     * キャッシュから同期的にテーブルデータを取得する
+     * キャッシュにない場合は undefined を返す
+     */
+    getSync(tableName: string): ReferenceTableData | undefined {
+        return this.cache.get(tableName);
+    }
+
+    /**
+     * IDから表示テキストを取得する
+     * @param tableName テーブル名
+     * @param id 検索するID
+     * @returns 表示テキスト（見つからない場合は undefined）
+     */
+    getDisplayTextById(tableName: string, id: string): string | undefined {
+        const data = this.cache.get(tableName);
+        if (!data) return undefined;
+
+        const item = data.items.find(item => item.id === id);
+        if (!item) return undefined;
+
+        // displayText と id が同じ場合はヒントを表示しない
+        if (item.displayText === item.id) return undefined;
+
+        return item.displayText;
+    }
 }
