@@ -69,6 +69,14 @@ export class History {
     }
 
     /**
+     * テーブル要素を設定する（ファクトリ関数から呼び出される）
+     * EditorTableの相互参照を解決するために使用
+     */
+    initializeTableElement(tableElement: HTMLElement): void {
+        this.tableElement = tableElement;
+    }
+
+    /**
      * 変更通知を発火
      */
     private notifyChange(): void {

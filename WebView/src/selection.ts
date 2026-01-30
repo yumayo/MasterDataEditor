@@ -71,12 +71,12 @@ export class Selection {
         this.selectingRow = false;
         this.tableElement = tableElement;
         this.editorElement = editorElement;
+        this.scrollBinding = scrollBinding;
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.filling = false;
         this.fillTarget = { row: 0, column: 0 };
         this.fillStartMousePosition = { x: 0, y: 0 };
         this.fillCurrentMousePosition = { x: 0, y: 0 };
-        this.scrollBinding = scrollBinding;
 
         // 選択範囲表示用の要素を作成
         const element = document.createElement('div');
@@ -118,6 +118,14 @@ export class Selection {
         this.fillHandle = document.createElement('div');
         this.fillHandle.classList.add('fill-handle');
         this.editorElement.appendChild(this.fillHandle);
+    }
+
+    /**
+     * テーブル要素を設定する（ファクトリ関数から呼び出される）
+     * EditorTableの相互参照を解決するために使用
+     */
+    initializeTableElement(tableElement: HTMLElement): void {
+        this.tableElement = tableElement;
     }
 
     /**

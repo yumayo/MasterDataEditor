@@ -1,9 +1,5 @@
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
-import type { GridTextField } from "./grid-textfield";
-import type { Selection } from "./selection";
-import type { ContextMenu } from "./context-menu";
-import type { History } from "./history";
 
 /**
  * Undo/Redo可能なコマンドのインターフェース
@@ -129,29 +125,14 @@ export class CellChangeCommand implements Command {
 export class InsertColumnCommand implements Command {
     private editorTable: EditorTable;
     private columnIndex: number;
-    private textField: GridTextField;
-    private selection: Selection;
-    private contextMenu: ContextMenu;
-    private history: History;
 
-    constructor(
-        editorTable: EditorTable,
-        columnIndex: number,
-        textField: GridTextField,
-        selection: Selection,
-        contextMenu: ContextMenu,
-        history: History
-    ) {
+    constructor(editorTable: EditorTable, columnIndex: number) {
         this.editorTable = editorTable;
         this.columnIndex = columnIndex;
-        this.textField = textField;
-        this.selection = selection;
-        this.contextMenu = contextMenu;
-        this.history = history;
     }
 
     execute(): void {
-        this.editorTable.insertColumnInternal(this.columnIndex, this.textField, this.selection, this.contextMenu, this.history);
+        this.editorTable.insertColumnInternal(this.columnIndex);
     }
 
     undo(): void {
@@ -178,29 +159,14 @@ export class InsertColumnCommand implements Command {
 export class InsertRowCommand implements Command {
     private editorTable: EditorTable;
     private rowIndex: number;
-    private textField: GridTextField;
-    private selection: Selection;
-    private contextMenu: ContextMenu;
-    private history: History;
 
-    constructor(
-        editorTable: EditorTable,
-        rowIndex: number,
-        textField: GridTextField,
-        selection: Selection,
-        contextMenu: ContextMenu,
-        history: History
-    ) {
+    constructor(editorTable: EditorTable, rowIndex: number) {
         this.editorTable = editorTable;
         this.rowIndex = rowIndex;
-        this.textField = textField;
-        this.selection = selection;
-        this.contextMenu = contextMenu;
-        this.history = history;
     }
 
     execute(): void {
-        this.editorTable.insertRowInternal(this.rowIndex, this.textField, this.selection, this.contextMenu, this.history);
+        this.editorTable.insertRowInternal(this.rowIndex);
     }
 
     undo(): void {
@@ -303,28 +269,13 @@ export class RowHeightCommand implements Command {
 export class DeleteColumnCommand implements Command {
     private editorTable: EditorTable;
     private columnIndex: number;
-    private textField: GridTextField;
-    private selection: Selection;
-    private contextMenu: ContextMenu;
-    private history: History;
     private deletedHeaderValue: string;
     private deletedCellValues: string[];
     private deletedWidth: string;
 
-    constructor(
-        editorTable: EditorTable,
-        columnIndex: number,
-        textField: GridTextField,
-        selection: Selection,
-        contextMenu: ContextMenu,
-        history: History
-    ) {
+    constructor(editorTable: EditorTable, columnIndex: number) {
         this.editorTable = editorTable;
         this.columnIndex = columnIndex;
-        this.textField = textField;
-        this.selection = selection;
-        this.contextMenu = contextMenu;
-        this.history = history;
         this.deletedHeaderValue = '';
         this.deletedCellValues = [];
         this.deletedWidth = '';
@@ -367,7 +318,7 @@ export class DeleteColumnCommand implements Command {
 
     undo(): void {
         // 列を挿入
-        this.editorTable.insertColumnInternal(this.columnIndex, this.textField, this.selection, this.contextMenu, this.history);
+        this.editorTable.insertColumnInternal(this.columnIndex);
 
         const tableElement = this.editorTable.element;
 
@@ -423,27 +374,12 @@ export class DeleteColumnCommand implements Command {
 export class DeleteRowCommand implements Command {
     private editorTable: EditorTable;
     private rowIndex: number;
-    private textField: GridTextField;
-    private selection: Selection;
-    private contextMenu: ContextMenu;
-    private history: History;
     private deletedCellValues: string[];
     private deletedHeight: string;
 
-    constructor(
-        editorTable: EditorTable,
-        rowIndex: number,
-        textField: GridTextField,
-        selection: Selection,
-        contextMenu: ContextMenu,
-        history: History
-    ) {
+    constructor(editorTable: EditorTable, rowIndex: number) {
         this.editorTable = editorTable;
         this.rowIndex = rowIndex;
-        this.textField = textField;
-        this.selection = selection;
-        this.contextMenu = contextMenu;
-        this.history = history;
         this.deletedCellValues = [];
         this.deletedHeight = '';
     }
@@ -472,7 +408,7 @@ export class DeleteRowCommand implements Command {
 
     undo(): void {
         // 行を挿入
-        this.editorTable.insertRowInternal(this.rowIndex, this.textField, this.selection, this.contextMenu, this.history);
+        this.editorTable.insertRowInternal(this.rowIndex);
 
         // セル値を復元
         const tableElement = this.editorTable.element;

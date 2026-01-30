@@ -50,12 +50,13 @@ export class GridTextField {
         this.element.addEventListener('keydown', this.onKeydown.bind(this));
         this.element.addEventListener('input', this.onInput.bind(this));
         this.element.addEventListener('paste', this.onPaste.bind(this));
-
-        // フィルハンドルのイベント登録
-        this.setupFillHandle();
     }
 
-    private setupFillHandle(): void {
+    /**
+     * フィルハンドルのイベントを登録する
+     * EditorTable.element が利用可能になった後に呼び出す
+     */
+    initialize(): void {
         const fillHandle = this.selection.getFillHandle();
 
         // フィルハンドルのドラッグ開始

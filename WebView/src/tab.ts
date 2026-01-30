@@ -27,6 +27,14 @@ export interface TabState {
     dropdownInput: GridDropdownInput;
 }
 
+interface EditorTableFactoryResult {
+    editorTable: EditorTable;
+    selection: Selection;
+    textField: GridTextField;
+    history: History;
+    areaResizer: AreaResizer;
+}
+
 /**
  * VSCodeやGoogleChromeのタブと同じものです。
  */
@@ -203,28 +211,19 @@ export class Tab {
                 // 参照データキャッシュを作成
                 const referenceDataCache = new ReferenceDataCache();
 
-                // EditorTableを作成
-                const editorTable = new EditorTable(name, tableData, referenceDataCache);
-                wrapperElement.appendChild(editorTable.element);
-
-                // Selectionを作成
-                const scrollController = new ScrollViewportController(this.editor.element, () => {
-                    editorTable.onScroll();
-                });
-                const selection = new Selection(editorTable.element, wrapperElement, scrollController);
-                wrapperElement.appendChild(selection.element);
-                wrapperElement.appendChild(selection.copyBorderElement);
-                wrapperElement.appendChild(selection.fillPreviewElement);
-
-                // 履歴管理（最大1000件）
-                const history = new History(editorTable.element, editorTable, tabButton, 1000);
-
-                // GridTextFieldを作成
-                const textField = new GridTextField(editorTable, selection, history);
-                wrapperElement.appendChild(textField.element);
-
-                // AreaResizerを作成
-                const areaResizer = new AreaResizer(wrapperElement, history, selection);
+                // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
+                const editorTableFactoryResult = this.createEditorTable(
+                    name,
+                    tableData,
+                    referenceDataCache,
+                    wrapperElement,
+                    tabButton
+                );
+                const editorTable = editorTableFactoryResult.editorTable;
+                const selection = editorTableFactoryResult.selection;
+                const textField = editorTableFactoryResult.textField;
+                const history = editorTableFactoryResult.history;
+                const areaResizer = editorTableFactoryResult.areaResizer;
 
                 // 参照先テーブルを事前読み込み
                 // referenceは "テーブル名.列名" の形式なので、テーブル名部分を抽出
@@ -259,12 +258,6 @@ export class Tab {
                     }
                 );
 
-                // EditorTableをセットアップ
-                editorTable.setup(textField, selection, this.contextMenu, history, areaResizer, scrollController);
-
-                // AreaResizerにEditorTableを設定（循環参照を避けるため、setup後に設定）
-                areaResizer.setEditorTable(editorTable);
-
                 // GridTextFieldに参照データキャッシュとドロップダウンを設定
                 textField.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
 
@@ -291,6 +284,81 @@ export class Tab {
             });
 
         });
+    }
+
+    /**
+     * EditorTableと関連オブジェクトをファクトリ関数で生成
+     * 相互参照を解決するために Object.assign + Object.setPrototypeOf を使用
+     */
+    private createEditorTable(
+        name: string,
+        tableData: EditorTableData,
+        referenceDataCache: ReferenceDataCache,
+        wrapperElement: HTMLElement,
+        tabButton: TabButton
+    ): EditorTableFactoryResult {
+        // 相互参照を解決するため、一時的な空オブジェクトを作成
+        const editorTable = {} as EditorTable;
+
+        // ScrollViewportController を作成（editorTable.onScroll を参照）
+        const scrollController = new ScrollViewportController(this.editor.element, () => {
+            editorTable.onScroll();
+        });
+
+        // EditorTable.element を先に作成するため、一時的なelementを作成
+        const tempElement = document.createElement('div');
+
+        // Selection を作成（EditorTable.element が必要）
+        const selection = new Selection(tempElement, wrapperElement, scrollController);
+
+        // History を作成（EditorTable が必要）
+        const history = new History(tempElement, editorTable, tabButton, 1000);
+
+        // GridTextField を作成（EditorTable, Selection, History が必要）
+        const textField = new GridTextField(editorTable, selection, history);
+
+        // AreaResizer を作成（History, Selection が必要）
+        const areaResizer = new AreaResizer(wrapperElement, history, selection);
+
+        // 本物の EditorTable インスタンスを作成
+        const realEditorTable = new EditorTable(
+            name,
+            tableData,
+            referenceDataCache,
+            textField,
+            selection,
+            this.contextMenu,
+            history,
+            areaResizer,
+            scrollController
+        );
+
+        // editorTable に本物のインスタンスの内容をコピー
+        Object.assign(editorTable, realEditorTable);
+        Object.setPrototypeOf(editorTable, EditorTable.prototype);
+
+        // Selection, History の tableElement を本物の element に置き換え
+        // 一時的な tempElement を渡していたが、実際のテーブル要素に更新する
+        selection.initializeTableElement(editorTable.element);
+        history.initializeTableElement(editorTable.element);
+
+        // DOM要素を追加
+        wrapperElement.appendChild(editorTable.element);
+        wrapperElement.appendChild(selection.element);
+        wrapperElement.appendChild(selection.copyBorderElement);
+        wrapperElement.appendChild(selection.fillPreviewElement);
+        wrapperElement.appendChild(textField.element);
+
+        // AreaResizer に EditorTable を設定
+        areaResizer.setEditorTable(editorTable);
+
+        // DOM要素を構築
+        editorTable.initialize();
+
+        // GridTextField のフィルハンドルを初期化（EditorTable.element が利用可能になった後）
+        textField.initialize();
+
+        return {editorTable, selection, textField, history, areaResizer};
     }
 
     /**

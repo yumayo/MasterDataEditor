@@ -13,24 +13,48 @@ import {ReferenceDataCache} from "./reference-data-cache";
 
 export class EditorTable {
     readonly tableName: string;
-    readonly tableData: EditorTableData;
+    private readonly tableData: EditorTableData;
 
     readonly element: HTMLElement;
 
-    private selection!: Selection;
-    private areaResizer!: AreaResizer;
-    private selectionDragController!: SelectionDragController;
-    private scrollBinding!: ScrollViewportController;
+    private readonly selection: Selection;
+    private readonly areaResizer: AreaResizer;
+    private readonly textField: GridTextField;
+    private readonly contextMenu: ContextMenu;
+    private readonly history: History;
+    private readonly selectionDragController: SelectionDragController;
+    private readonly scrollBinding: ScrollViewportController;
     private lastScrollLeft = -1;
     private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(tableName: string, tableData: EditorTableData, referenceDataCache: ReferenceDataCache) {
-
+    constructor(
+        tableName: string,
+        tableData: EditorTableData,
+        referenceDataCache: ReferenceDataCache,
+        textField: GridTextField,
+        selection: Selection,
+        contextMenu: ContextMenu,
+        history: History,
+        areaResizer: AreaResizer,
+        scrollBinding: ScrollViewportController
+    ) {
         this.tableData = tableData;
         this.tableName = tableName;
         this.referenceDataCache = referenceDataCache;
+        this.textField = textField;
+        this.selection = selection;
+        this.contextMenu = contextMenu;
+        this.history = history;
+        this.areaResizer = areaResizer;
+        this.scrollBinding = scrollBinding;
 
         this.element = document.createElement('div');
+
+        this.selectionDragController = new SelectionDragController(
+            this.element,
+            selection,
+            scrollBinding
+        );
     }
 
     /**
@@ -64,25 +88,11 @@ export class EditorTable {
         }
     }
     
-    setup(
-        textField: GridTextField,
-        selection: Selection,
-        contextMenu: ContextMenu,
-        history: History,
-        areaResizer: AreaResizer,
-        scrollBinding: ScrollViewportController
-    ) {
-
-        // インスタンス変数に保存
-        this.selection = selection;
-        this.areaResizer = areaResizer;
-        this.scrollBinding = scrollBinding;
-        this.selectionDragController = new SelectionDragController(
-            this.element,
-            selection,
-            scrollBinding
-        );
-
+    /**
+     * DOM要素を構築し、イベントリスナーを登録する
+     * ファクトリ関数から呼び出される
+     */
+    initialize(): void {
         this.element.classList.add('editor-table');
 
         {
@@ -94,9 +104,9 @@ export class EditorTable {
 
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', () => {
-                textField.submitText();
-                textField.hide();
-                selection.selectAll();
+                this.textField.submitText();
+                this.textField.hide();
+                this.selection.selectAll();
             });
 
             cells.push(cornerCell);
@@ -114,21 +124,21 @@ export class EditorTable {
 
                 // 列ヘッダークリックで列全体を選択
                 columnHeaderCell.addEventListener('mousedown', (e) => {
-                    textField.submitText();
-                    textField.hide();
+                    this.textField.submitText();
+                    this.textField.hide();
 
                     // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
                     const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + 1;
 
                     if (e.shiftKey) {
                         // Shift+クリック: 現在のアンカーから連続選択
-                        selection.extendToColumn(clickedColumnIndex);
+                        this.selection.extendToColumn(clickedColumnIndex);
                     } else if (e.ctrlKey || e.metaKey) {
                         // Ctrl+クリック: 列を追加選択
-                        selection.addColumn(clickedColumnIndex);
+                        this.selection.addColumn(clickedColumnIndex);
                     } else {
                         // 通常クリック: 列全体を選択
-                        selection.selectColumn(clickedColumnIndex);
+                        this.selection.selectColumn(clickedColumnIndex);
                     }
                 });
 
@@ -138,23 +148,23 @@ export class EditorTable {
                     e.stopPropagation();
                     // DOM上の実際の位置から列インデックスを取得
                     const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
-                    contextMenu.show(e.clientX, e.clientY, [
+                    this.contextMenu.show(e.clientX, e.clientY, [
                         {
                             label: '左に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                                this.insertColumn(contextMenuColumnIndex);
                             }
                         },
                         {
                             label: '右に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
+                                this.insertColumn(contextMenuColumnIndex + 1);
                             }
                         },
                         {
                             label: '列を削除',
                             action: () => {
-                                this.removeColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                                this.removeColumn(contextMenuColumnIndex);
                             }
                         }
                     ]);
@@ -176,21 +186,21 @@ export class EditorTable {
         // 行ヘッダークリック用のハンドラ作成関数
         const createRowHeaderClickHandler = (rowHeaderCell: HTMLElement) => {
             return (e: MouseEvent) => {
-                textField.submitText();
-                textField.hide();
+                this.textField.submitText();
+                this.textField.hide();
 
                 // DOM上の実際の位置から行インデックスを取得
                 const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
 
                 if (e.shiftKey) {
                     // Shift+クリック: 現在のアンカーから連続選択
-                    selection.extendToRow(clickedRowIndex);
+                    this.selection.extendToRow(clickedRowIndex);
                 } else if (e.ctrlKey || e.metaKey) {
                     // Ctrl+クリック: 行を追加選択
-                    selection.addRow(clickedRowIndex);
+                    this.selection.addRow(clickedRowIndex);
                 } else {
                     // 通常クリック: 行全体を選択
-                    selection.selectRow(clickedRowIndex);
+                    this.selection.selectRow(clickedRowIndex);
                 }
             };
         };
@@ -202,23 +212,23 @@ export class EditorTable {
                 e.stopPropagation();
                 // DOM上の実際の位置から行インデックスを取得
                 const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-                contextMenu.show(e.clientX, e.clientY, [
+                this.contextMenu.show(e.clientX, e.clientY, [
                     {
                         label: '上に行を挿入',
                         action: () => {
-                            this.insertRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                            this.insertRow(contextMenuRowIndex);
                         }
                     },
                     {
                         label: '下に行を挿入',
                         action: () => {
-                            this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
+                            this.insertRow(contextMenuRowIndex + 1);
                         }
                     },
                     {
                         label: '行を削除',
                         action: () => {
-                            this.removeRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                            this.removeRow(contextMenuRowIndex);
                         }
                     }
                 ]);
@@ -233,7 +243,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, this.tableData.body[i].values[j], j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const cell = EditorTable.createCell(this, this.tableData.body[i].values[j], j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -249,7 +259,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, textField, selection, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const cell = EditorTable.createCell(this, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -261,18 +271,11 @@ export class EditorTable {
     /**
      * 列挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public insertColumn(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        const command = new InsertColumnCommand(
-            this,
-            columnIndex,
-            textField,
-            selection,
-            contextMenu,
-            history
-        );
-        const copyRange = selection.getCopyRange();
-        const anchor = selection.getAnchor();
-        history.executeCommand(command, {
+    public insertColumn(columnIndex: number): void {
+        const command = new InsertColumnCommand(this, columnIndex);
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
             startRow: anchor.row,
             startColumn: anchor.column,
             endRow: anchor.row,
@@ -283,7 +286,7 @@ export class EditorTable {
     /**
      * 列挿入の内部実装（Commandから呼び出される）
      */
-    public insertColumnInternal(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+    public insertColumnInternal(columnIndex: number): void {
         // 各行に新しいセルを挿入
         for (let currentRowIndex = 0; currentRowIndex < this.element.children.length; ++currentRowIndex) {
             const row = this.element.children[currentRowIndex] as HTMLElement;
@@ -314,18 +317,18 @@ export class EditorTable {
 
                 // 列ヘッダークリックで列全体を選択
                 newHeaderCell.addEventListener('mousedown', (e) => {
-                    textField.submitText();
-                    textField.hide();
+                    this.textField.submitText();
+                    this.textField.hide();
 
                     // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
                     const clickedColumnIndex = parseInt(newHeaderCell.dataset.col!) + 1;
 
                     if (e.shiftKey) {
-                        selection.extendToColumn(clickedColumnIndex);
+                        this.selection.extendToColumn(clickedColumnIndex);
                     } else if (e.ctrlKey || e.metaKey) {
-                        selection.addColumn(clickedColumnIndex);
+                        this.selection.addColumn(clickedColumnIndex);
                     } else {
-                        selection.selectColumn(clickedColumnIndex);
+                        this.selection.selectColumn(clickedColumnIndex);
                     }
                 });
 
@@ -335,23 +338,23 @@ export class EditorTable {
                     e.stopPropagation();
                     // DOM上の実際の位置から列インデックスを取得
                     const contextMenuColumnIndex = parseInt(newHeaderCell.dataset.col!);
-                    contextMenu.show(e.clientX, e.clientY, [
+                    this.contextMenu.show(e.clientX, e.clientY, [
                         {
                             label: '左に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                                this.insertColumn(contextMenuColumnIndex);
                             }
                         },
                         {
                             label: '右に列を挿入',
                             action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1, textField, selection, contextMenu, history);
+                                this.insertColumn(contextMenuColumnIndex + 1);
                             }
                         },
                         {
                             label: '列を削除',
                             action: () => {
-                                this.removeColumn(contextMenuColumnIndex, textField, selection, contextMenu, history);
+                                this.removeColumn(contextMenuColumnIndex);
                             }
                         }
                     ]);
@@ -413,7 +416,7 @@ export class EditorTable {
                 }
             } else {
                 // 通常の行: 行の高さは既存のセルから取得
-                const newCell = EditorTable.createCell(this, textField, selection, '', columnIndex, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const newCell = EditorTable.createCell(this, '', columnIndex, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newCell, insertBefore);
 
@@ -426,26 +429,19 @@ export class EditorTable {
         }
 
         // コピー範囲をクリア（列構造が変わったため）
-        selection.clearCopyRange();
+        this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize();
     }
 
     /**
      * 行挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public insertRow(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        const command = new InsertRowCommand(
-            this,
-            rowIndex,
-            textField,
-            selection,
-            contextMenu,
-            history
-        );
-        const copyRange = selection.getCopyRange();
-        const anchor = selection.getAnchor();
-        history.executeCommand(command, {
+    public insertRow(rowIndex: number): void {
+        const command = new InsertRowCommand(this, rowIndex);
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
             startRow: anchor.row,
             startColumn: anchor.column,
             endRow: anchor.row,
@@ -456,7 +452,7 @@ export class EditorTable {
     /**
      * 行挿入の内部実装（Commandから呼び出される）
      */
-    public insertRowInternal(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
+    public insertRowInternal(rowIndex: number): void {
         // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
         const columnHeaderRow = this.element.children[0];
         const columnCount = columnHeaderRow.children.length - 1;
@@ -473,18 +469,18 @@ export class EditorTable {
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
-            textField.submitText();
-            textField.hide();
+            this.textField.submitText();
+            this.textField.hide();
 
             // DOM上の実際の位置から行インデックスを取得
             const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
 
             if (e.shiftKey) {
-                selection.extendToRow(clickedRowIndex);
+                this.selection.extendToRow(clickedRowIndex);
             } else if (e.ctrlKey || e.metaKey) {
-                selection.addRow(clickedRowIndex);
+                this.selection.addRow(clickedRowIndex);
             } else {
-                selection.selectRow(clickedRowIndex);
+                this.selection.selectRow(clickedRowIndex);
             }
         });
 
@@ -494,23 +490,23 @@ export class EditorTable {
             e.stopPropagation();
             // DOM上の実際の位置から行インデックスを取得
             const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-            contextMenu.show(e.clientX, e.clientY, [
+            this.contextMenu.show(e.clientX, e.clientY, [
                 {
                     label: '上に行を挿入',
                     action: () => {
-                        this.insertRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                        this.insertRow(contextMenuRowIndex);
                     }
                 },
                 {
                     label: '下に行を挿入',
                     action: () => {
-                        this.insertRow(contextMenuRowIndex + 1, textField, selection, contextMenu, history);
+                        this.insertRow(contextMenuRowIndex + 1);
                     }
                 },
                 {
                     label: '行を削除',
                     action: () => {
-                        this.removeRow(contextMenuRowIndex, textField, selection, contextMenu, history);
+                        this.removeRow(contextMenuRowIndex);
                     }
                 }
             ]);
@@ -526,7 +522,7 @@ export class EditorTable {
 
         // データセルを作成（列幅は列ヘッダーから取得）
         for (let j = 0; j < columnCount; ++j) {
-            const cell = EditorTable.createCell(this, textField, selection, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+            const cell = EditorTable.createCell(this, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
             cells.push(cell);
         }
 
@@ -568,26 +564,19 @@ export class EditorTable {
         }
 
         // コピー範囲をクリア（行構造が変わったため）
-        selection.clearCopyRange();
+        this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize();
     }
 
     /**
      * 列削除の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public removeColumn(columnIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        const command = new DeleteColumnCommand(
-            this,
-            columnIndex,
-            textField,
-            selection,
-            contextMenu,
-            history
-        );
-        const copyRange = selection.getCopyRange();
-        const anchor = selection.getAnchor();
-        history.executeCommand(command, {
+    public removeColumn(columnIndex: number): void {
+        const command = new DeleteColumnCommand(this, columnIndex);
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
             startRow: anchor.row,
             startColumn: anchor.column,
             endRow: anchor.row,
@@ -598,18 +587,11 @@ export class EditorTable {
     /**
      * 行削除の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public removeRow(rowIndex: number, textField: GridTextField, selection: Selection, contextMenu: ContextMenu, history: History): void {
-        const command = new DeleteRowCommand(
-            this,
-            rowIndex,
-            textField,
-            selection,
-            contextMenu,
-            history
-        );
-        const copyRange = selection.getCopyRange();
-        const anchor = selection.getAnchor();
-        history.executeCommand(command, {
+    public removeRow(rowIndex: number): void {
+        const command = new DeleteRowCommand(this, rowIndex);
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
             startRow: anchor.row,
             startColumn: anchor.column,
             endRow: anchor.row,
@@ -629,7 +611,7 @@ export class EditorTable {
         return row;
     }
 
-    private static createCell(table: EditorTable, textField: GridTextField, selection: Selection, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
+    private static createCell(table: EditorTable, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');
         cell.dataset.col = String(columnIndex);
@@ -638,10 +620,10 @@ export class EditorTable {
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
             // 参照列の場合はドロップダウンを表示
-            textField.enableCellEditModeWithDropdown().then((handled) => {
+            table.textField.enableCellEditModeWithDropdown().then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
-                    enableCellEditMode(table, textField, selection, true);
+                    enableCellEditMode(table, table.textField, table.selection, true);
                 }
             });
         });
@@ -649,15 +631,15 @@ export class EditorTable {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
 
-            textField.submitText();
-            textField.hide();
+            table.textField.submitText();
+            table.textField.hide();
 
             if (e.shiftKey) {
                 // Shift+クリック: 現在のアンカーから連続選択
-                selection.extendSelection(position.row, position.column);
+                table.selection.extendSelection(position.row, position.column);
             } else {
                 // 通常クリック: セルを選択
-                selection.start(position.row, position.column);
+                table.selection.start(position.row, position.column);
             }
         });
         cell.textContent = value as any;
