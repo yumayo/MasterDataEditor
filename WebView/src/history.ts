@@ -48,7 +48,6 @@ export class History {
     private history: HistoryEntry[];
     private currentIndex: number;
     private readonly maxHistorySize: number;
-    private tableElement: HTMLElement;
     private editorTable: EditorTable;
     private tabButton: TabButton;
     /**
@@ -58,22 +57,13 @@ export class History {
      */
     private savedIndex: SavedIndex;
 
-    constructor(tableElement: HTMLElement, editorTable: EditorTable, tabButton: TabButton, maxHistorySize: number) {
+    constructor(editorTable: EditorTable, tabButton: TabButton, maxHistorySize: number) {
         this.history = [];
         this.currentIndex = -1;
         this.maxHistorySize = maxHistorySize;
-        this.tableElement = tableElement;
         this.editorTable = editorTable;
         this.tabButton = tabButton;
         this.savedIndex = SAVED_INDEX_INITIAL;
-    }
-
-    /**
-     * テーブル要素を設定する（ファクトリ関数から呼び出される）
-     * EditorTableの相互参照を解決するために使用
-     */
-    initializeTableElement(tableElement: HTMLElement): void {
-        this.tableElement = tableElement;
     }
 
     /**
@@ -174,11 +164,10 @@ export class History {
         if (meaningfulChanges.length === 0) return;
 
         const command = new CellChangeCommand(
-            this.tableElement,
+            this.editorTable,
             meaningfulChanges,
             action.range,
-            action.copyRange,
-            this.editorTable
+            action.copyRange
         );
 
         // 既に実行済みなのでpushCommandを使用
@@ -291,13 +280,6 @@ export class History {
      */
     isDirty(): boolean {
         return this.currentIndex !== this.savedIndex;
-    }
-
-    /**
-     * テーブル要素を取得
-     */
-    getTableElement(): HTMLElement {
-        return this.tableElement;
     }
 
     /**

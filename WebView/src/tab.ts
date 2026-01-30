@@ -312,7 +312,7 @@ export class Tab {
         const selection = new Selection(tempElement, wrapperElement, scrollController);
 
         // History を作成（EditorTable が必要）
-        const history = new History(tempElement, editorTable, tabButton, 1000);
+        const history = new History(editorTable, tabButton, 1000);
 
         // GridTextField を作成（EditorTable, Selection, History が必要）
         const textField = new GridTextField(editorTable, selection, history);
@@ -337,10 +337,9 @@ export class Tab {
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
-        // Selection, History の tableElement を本物の element に置き換え
+        // Selection の tableElement を本物の element に置き換え
         // 一時的な tempElement を渡していたが、実際のテーブル要素に更新する
         selection.initializeTableElement(editorTable.element);
-        history.initializeTableElement(editorTable.element);
 
         // DOM要素を追加
         wrapperElement.appendChild(editorTable.element);

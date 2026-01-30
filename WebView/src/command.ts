@@ -48,20 +48,17 @@ export interface HistoryResult {
  * セルの値を変更するコマンド
  */
 export class CellChangeCommand implements Command {
-    private tableElement: HTMLElement;
-    private editorTable: EditorTable | undefined;
+    private editorTable: EditorTable;
     private changes: CellChange[];
     private range: CellRange;
     private copyRange: CellRange;
 
     constructor(
-        tableElement: HTMLElement,
+        editorTable: EditorTable,
         changes: CellChange[],
         range: CellRange,
-        copyRange: CellRange,
-        editorTable?: EditorTable
+        copyRange: CellRange
     ) {
-        this.tableElement = tableElement;
         this.editorTable = editorTable;
         this.changes = changes;
         this.range = range;
@@ -103,18 +100,7 @@ export class CellChangeCommand implements Command {
     }
 
     private setCellValue(row: number, column: number, value: string): void {
-        const rowElement = this.tableElement.children[row] as HTMLElement;
-        if (!rowElement) return;
-
-        const cell = rowElement.children[column] as HTMLElement;
-        if (!cell) return;
-
-        // EditorTableが設定されている場合は参照ヒント付きで更新
-        if (this.editorTable) {
-            this.editorTable.setCellValue(cell, value, column - 1);
-        } else {
-            cell.textContent = value;
-        }
+        this.editorTable.setCellValueAt(row, column, value);
     }
 }
 
@@ -282,31 +268,16 @@ export class DeleteColumnCommand implements Command {
     }
 
     execute(): void {
-        const tableElement = this.editorTable.element;
         this.deletedCellValues = [];
 
-        // 列ヘッダー行のセル値を保存
-        const headerRow = tableElement.children[0] as HTMLElement;
-        const headerCell = headerRow.children[this.columnIndex + 1] as HTMLElement;
-        if (headerCell) {
-            // 列ヘッダーセルはTEXT_NODEとしてテキストを持つ可能性がある
-            let label = '';
-            for (const node of Array.from(headerCell.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    label = node.textContent || '';
-                    break;
-                }
-            }
-            this.deletedHeaderValue = label;
-        }
+        // 列ヘッダーの値を保存
+        this.deletedHeaderValue = this.editorTable.getColumnHeaderValue(this.columnIndex);
 
         // 各行から削除する列のセル値を保存（列ヘッダー行を除く）
-        for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
-            const row = tableElement.children[rowIdx] as HTMLElement;
-            const cell = row.children[this.columnIndex + 1] as HTMLElement;
-            if (cell) {
-                this.deletedCellValues.push(cell.textContent || '');
-            }
+        const rowCount = this.editorTable.getRowCount();
+        for (let rowIdx = 1; rowIdx < rowCount; ++rowIdx) {
+            const value = this.editorTable.getCellValueAt(rowIdx, this.columnIndex + 1);
+            this.deletedCellValues.push(value);
         }
 
         // 列幅を保存（セルのスタイルから取得）
@@ -320,33 +291,13 @@ export class DeleteColumnCommand implements Command {
         // 列を挿入
         this.editorTable.insertColumnInternal(this.columnIndex);
 
-        const tableElement = this.editorTable.element;
-
         // 列ヘッダーの値を復元
-        const headerRow = tableElement.children[0] as HTMLElement;
-        const headerCell = headerRow.children[this.columnIndex + 1] as HTMLElement;
-        if (headerCell) {
-            // 既存のTEXT_NODEを探して更新、なければ追加
-            let textNodeFound = false;
-            for (const node of Array.from(headerCell.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    node.textContent = this.deletedHeaderValue;
-                    textNodeFound = true;
-                    break;
-                }
-            }
-            if (!textNodeFound) {
-                headerCell.insertBefore(document.createTextNode(this.deletedHeaderValue), headerCell.firstChild);
-            }
-        }
+        this.editorTable.setColumnHeaderValue(this.columnIndex, this.deletedHeaderValue);
 
         // セル値を復元
-        for (let rowIdx = 1; rowIdx < tableElement.children.length; ++rowIdx) {
-            const row = tableElement.children[rowIdx] as HTMLElement;
-            const cell = row.children[this.columnIndex + 1] as HTMLElement;
-            if (cell && this.deletedCellValues[rowIdx - 1] !== undefined) {
-                cell.textContent = this.deletedCellValues[rowIdx - 1];
-            }
+        const rowCount = this.editorTable.getRowCount();
+        for (let rowIdx = 1; rowIdx < rowCount; ++rowIdx) {
+            this.editorTable.setCellValueAt(rowIdx, this.columnIndex + 1, this.deletedCellValues[rowIdx - 1]);
         }
 
         // 列幅を復元（全セルに適用）
@@ -385,22 +336,17 @@ export class DeleteRowCommand implements Command {
     }
 
     execute(): void {
-        const tableElement = this.editorTable.element;
         this.deletedCellValues = [];
 
         // 削除する行のセル値を保存（行ヘッダーセルを除く）
-        const row = tableElement.children[this.rowIndex] as HTMLElement;
-        if (row) {
-            for (let colIdx = 1; colIdx < row.children.length; ++colIdx) {
-                const cell = row.children[colIdx] as HTMLElement;
-                if (cell) {
-                    this.deletedCellValues.push(cell.textContent || '');
-                }
-            }
-
-            // 行高を保存（セルのスタイルから取得）
-            this.deletedHeight = this.editorTable.getRowHeight(this.rowIndex);
+        const columnCount = this.editorTable.getColumnCount();
+        for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
+            const value = this.editorTable.getCellValueAt(this.rowIndex, colIdx + 1);
+            this.deletedCellValues.push(value);
         }
+
+        // 行高を保存（セルのスタイルから取得）
+        this.deletedHeight = this.editorTable.getRowHeight(this.rowIndex);
 
         // 行を削除
         this.editorTable.deleteRow(this.rowIndex);
@@ -411,19 +357,13 @@ export class DeleteRowCommand implements Command {
         this.editorTable.insertRowInternal(this.rowIndex);
 
         // セル値を復元
-        const tableElement = this.editorTable.element;
-        const row = tableElement.children[this.rowIndex] as HTMLElement;
-        if (row) {
-            for (let colIdx = 1; colIdx < row.children.length; ++colIdx) {
-                const cell = row.children[colIdx] as HTMLElement;
-                if (cell && this.deletedCellValues[colIdx - 1] !== undefined) {
-                    cell.textContent = this.deletedCellValues[colIdx - 1];
-                }
-            }
-
-            // 行高を復元（全セルに適用）
-            this.editorTable.setRowHeight(this.rowIndex, this.deletedHeight);
+        const columnCount = this.editorTable.getColumnCount();
+        for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
+            this.editorTable.setCellValueAt(this.rowIndex, colIdx + 1, this.deletedCellValues[colIdx]);
         }
+
+        // 行高を復元（全セルに適用）
+        this.editorTable.setRowHeight(this.rowIndex, this.deletedHeight);
     }
 
     redo(): void {

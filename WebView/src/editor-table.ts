@@ -961,6 +961,36 @@ export class EditorTable {
     }
 
     /**
+     * 座標からセル要素を取得する
+     * @param row 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
+     * @returns セル要素。存在しない場合はnullを投げる
+     */
+    private getCell(row: number, column: number): HTMLElement {
+        const rowElement = this.element.children[row] as HTMLElement;
+        if (!rowElement) {
+            throw new Error(`行が見つかりません: row=${row}`);
+        }
+        const cell = rowElement.children[column] as HTMLElement;
+        if (!cell) {
+            throw new Error(`セルが見つかりません: row=${row}, column=${column}`);
+        }
+        return cell;
+    }
+
+    /**
+     * 座標でセルの値を設定する（参照ヒント付き）
+     * @param row 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
+     * @param value セルの値
+     */
+    setCellValueAt(row: number, column: number, value: string): void {
+        const cell = this.getCell(row, column);
+        const dataColumnIndex = column - 1;
+        this.setCellValue(cell, value, dataColumnIndex);
+    }
+
+    /**
      * セルの値を設定する（参照ヒント付き）
      * @param cell セル要素
      * @param value セルの値
@@ -998,5 +1028,64 @@ export class EditorTable {
             hintSpan.textContent = displayText;
             cell.appendChild(hintSpan);
         }
+    }
+
+    /**
+     * 行数を取得する（列ヘッダー行を含む）
+     */
+    getRowCount(): number {
+        return this.element.children.length;
+    }
+
+    /**
+     * 列数を取得する（行ヘッダーセルを除く）
+     */
+    getColumnCount(): number {
+        const headerRow = this.element.children[0];
+        return headerRow.children.length - 1;
+    }
+
+    /**
+     * 座標でセルの値を取得する（参照ヒントを除外）
+     * @param row 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
+     */
+    getCellValueAt(row: number, column: number): string {
+        const cell = this.getCell(row, column);
+        return EditorTable.getCellValue(cell);
+    }
+
+    /**
+     * 列ヘッダーの値を取得する
+     * @param columnIndex 列インデックス（0始まり、行ヘッダーセルを除く）
+     */
+    getColumnHeaderValue(columnIndex: number): string {
+        const headerRow = this.element.children[0] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        // 列ヘッダーセルはTEXT_NODEとしてテキストを持つ（リサイズハンドル等の子要素がある）
+        for (const node of Array.from(headerCell.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                return node.textContent ?? '';
+            }
+        }
+        return '';
+    }
+
+    /**
+     * 列ヘッダーの値を設定する
+     * @param columnIndex 列インデックス（0始まり、行ヘッダーセルを除く）
+     * @param value 設定する値
+     */
+    setColumnHeaderValue(columnIndex: number, value: string): void {
+        const headerRow = this.element.children[0] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        // 既存のTEXT_NODEを探して更新、なければ追加
+        for (const node of Array.from(headerCell.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent = value;
+                return;
+            }
+        }
+        headerCell.insertBefore(document.createTextNode(value), headerCell.firstChild);
     }
 }
