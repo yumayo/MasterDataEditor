@@ -266,6 +266,16 @@ export class EditorTable {
             this.element.appendChild(row);
         }
 
+        // フィル中のマウス移動イベント
+        this.element.addEventListener('mousemove', (e) => {
+            const target = e.target as HTMLElement;
+            if (target.classList.contains('editor-table-cell')) {
+                const position = this.getCellPositionFromElement(target);
+                if (position) {
+                    this.selection.updateFill(position.row, position.column, e.clientX, e.clientY);
+                }
+            }
+        });
     }
 
     /**
@@ -1087,5 +1097,39 @@ export class EditorTable {
             }
         }
         headerCell.insertBefore(document.createTextNode(value), headerCell.firstChild);
+    }
+
+    /**
+     * テーブル要素にイベントリスナーを追加する
+     */
+    addTableEventListener<K extends keyof HTMLElementEventMap>(
+        type: K,
+        listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => void
+    ): void {
+        this.element.addEventListener(type, listener);
+    }
+
+    /**
+     * テーブル要素のBoundingClientRectを取得する
+     */
+    getTableBoundingClientRect(): DOMRect {
+        return this.element.getBoundingClientRect();
+    }
+
+    /**
+     * セル要素から位置を取得する
+     * @param cell セル要素
+     * @returns セル位置。見つからない場合はnull
+     */
+    getCellPositionFromElement(cell: HTMLElement): CellPosition | null {
+        return EditorTable.getCellPosition(cell, this.element);
+    }
+
+    /**
+     * 行ヘッダーを含む全列数を取得する
+     */
+    getTotalColumnCount(): number {
+        const headerRow = this.element.children[0];
+        return headerRow.children.length;
     }
 }

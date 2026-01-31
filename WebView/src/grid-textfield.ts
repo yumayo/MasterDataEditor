@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Utility} from "./utility";
-import {getTarget, moveCell, submitText, enableCellEditMode, applyFillSeries, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection, saveTableData} from "./editor-actions";
+import {getTarget, moveCell, submitText, enableCellEditMode, extendSelectionCell, clearSelectionRange, moveCellDownWithinSelection, moveCellUpWithinSelection, moveCellRightWithinSelection, moveCellLeftWithinSelection, saveTableData} from "./editor-actions";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
 import {CellChange} from "./command";
@@ -19,8 +19,6 @@ export class GridTextField {
     readonly table: EditorTable;
     readonly selection: Selection;
     readonly history: History;
-
-    private mouseupHandler: (() => void) | undefined;
 
     // 参照列用のコンポーネント
     private referenceDataCache: ReferenceDataCache | undefined;
@@ -50,105 +48,6 @@ export class GridTextField {
         this.element.addEventListener('keydown', this.onKeydown.bind(this));
         this.element.addEventListener('input', this.onInput.bind(this));
         this.element.addEventListener('paste', this.onPaste.bind(this));
-    }
-
-    /**
-     * フィルハンドルのイベントを登録する
-     * EditorTable.element が利用可能になった後に呼び出す
-     */
-    initialize(): void {
-        const fillHandle = this.selection.getFillHandle();
-
-        // フィルハンドルのドラッグ開始
-        fillHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const anchor = this.selection.getAnchor();
-            this.selection.startFill(anchor.row, anchor.column, e.clientX, e.clientY);
-        });
-
-        // フィルハンドルのダブルクリック
-        fillHandle.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            this.fillToMaxRow();
-        });
-
-        // テーブル上でのマウス移動（フィル中）
-        this.table.element.addEventListener('mousemove', (e) => {
-            if (!this.selection.isFilling()) return;
-
-            const target = e.target as HTMLElement;
-            if (target.classList.contains('editor-table-cell')) {
-                const position = EditorTable.getCellPosition(target, this.table.element);
-                if (position) {
-                    this.selection.updateFill(position.row, position.column, e.clientX, e.clientY);
-                }
-            }
-        });
-
-        // グローバルイベントハンドラーを定義（activate/deactivateで登録・解除）
-        this.mouseupHandler = () => {
-            if (!this.selection.isFilling()) return;
-
-            const fillInfo = this.selection.getFillInfo();
-            this.selection.endFill();
-
-            if (fillInfo) {
-                applyFillSeries(
-                    this.table,
-                    this.selection,
-                    this.history,
-                    fillInfo.direction,
-                    fillInfo.sourceRange.startRow,
-                    fillInfo.sourceRange.startColumn,
-                    fillInfo.sourceRange.endRow,
-                    fillInfo.sourceRange.endColumn,
-                    fillInfo.targetRange.startRow,
-                    fillInfo.targetRange.startColumn,
-                    fillInfo.targetRange.endRow,
-                    fillInfo.targetRange.endColumn,
-                    fillInfo.count
-                );
-            }
-        };
-    }
-
-    /**
-     * ダブルクリックでデータ領域の最大行までフィル
-     */
-    private fillToMaxRow(): void {
-        const maxDataRow = this.selection.getMaxDataRow();
-        const anchor = this.selection.getAnchor();
-        const focus = this.selection.getFocus();
-
-        const startRow = Math.min(anchor.row, focus.row);
-        const endRow = Math.max(anchor.row, focus.row);
-        const startColumn = Math.min(anchor.column, focus.column);
-        const endColumn = Math.max(anchor.column, focus.column);
-
-        // 現在の選択範囲の最下行よりも下にデータがある場合のみフィル
-        if (maxDataRow > endRow) {
-            const count = maxDataRow - endRow;
-
-            applyFillSeries(
-                this.table,
-                this.selection,
-                this.history,
-                'down',
-                startRow,
-                startColumn,
-                endRow,
-                endColumn,
-                endRow + 1,
-                startColumn,
-                maxDataRow,
-                endColumn,
-                count
-            );
-        }
     }
 
     enable() {
@@ -434,11 +333,9 @@ export class GridTextField {
         const rows: string[] = [];
 
         for (let r = copyRange.startRow; r <= copyRange.endRow; r++) {
-            const rowElement = this.table.element.children[r] as HTMLElement;
             const cells: string[] = [];
             for (let c = copyRange.startColumn; c <= copyRange.endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                cells.push(cell.textContent ?? '');
+                cells.push(this.table.getCellValueAt(r, c));
             }
             rows.push(cells.join('\t'));
         }
@@ -476,8 +373,8 @@ export class GridTextField {
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
 
-        const tableRowCount = this.table.element.children.length;
-        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+        const tableRowCount = this.table.getRowCount();
+        const tableColumnCount = this.table.getTotalColumnCount();
 
         const changes: CellChange[] = [];
 
@@ -488,15 +385,11 @@ export class GridTextField {
             const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
 
-            const destRowElement = this.table.element.children[destRow] as HTMLElement;
-
             for (let c = 0; c < copyColumnCount; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
 
-                const destCell = destRowElement.children[destColumn] as HTMLElement;
-
-                const oldValue = EditorTable.getCellValue(destCell);
+                const oldValue = this.table.getCellValueAt(destRow, destColumn);
                 const newValue = sourceData[r][c];
 
                 changes.push({
@@ -506,7 +399,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                this.table.setCellValue(destCell, newValue, destColumn - 1);
+                this.table.setCellValueAt(destRow, destColumn, newValue);
             }
         }
 
@@ -589,11 +482,9 @@ export class GridTextField {
 
         const sourceData: string[][] = [];
         for (let r = 0; r < copyRowCount; r++) {
-            const srcRowElement = this.table.element.children[copyRange.startRow + r] as HTMLElement;
             const rowData: string[] = [];
             for (let c = 0; c < copyColumnCount; c++) {
-                const srcCell = srcRowElement.children[copyRange.startColumn + c] as HTMLElement;
-                rowData.push(srcCell.textContent ?? '');
+                rowData.push(this.table.getCellValueAt(copyRange.startRow + r, copyRange.startColumn + c));
             }
             sourceData.push(rowData);
         }
@@ -608,8 +499,8 @@ export class GridTextField {
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
 
-        const tableRowCount = this.table.element.children.length;
-        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+        const tableRowCount = this.table.getRowCount();
+        const tableColumnCount = this.table.getTotalColumnCount();
 
         const changes: CellChange[] = [];
 
@@ -620,15 +511,11 @@ export class GridTextField {
             const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
 
-            const destRowElement = this.table.element.children[destRow] as HTMLElement;
-
             for (let c = 0; c < copyColumnCount; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
 
-                const destCell = destRowElement.children[destColumn] as HTMLElement;
-
-                const oldValue = EditorTable.getCellValue(destCell);
+                const oldValue = this.table.getCellValueAt(destRow, destColumn);
                 const newValue = sourceData[r][c];
 
                 changes.push({
@@ -638,7 +525,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                this.table.setCellValue(destCell, newValue, destColumn - 1);
+                this.table.setCellValueAt(destRow, destColumn, newValue);
             }
         }
 
@@ -663,8 +550,8 @@ export class GridTextField {
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
 
-        const tableRowCount = this.table.element.children.length;
-        const tableColumnCount = (this.table.element.children[0] as HTMLElement).children.length;
+        const tableRowCount = this.table.getRowCount();
+        const tableColumnCount = this.table.getTotalColumnCount();
 
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
         const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
@@ -675,17 +562,15 @@ export class GridTextField {
             const destRow = selectionRange.startRow + r;
             if (destRow >= tableRowCount) break;
 
-            const destRowElement = this.table.element.children[destRow] as HTMLElement;
             const srcRowIndex = r % copyRowCount;
 
             for (let c = 0; c < selectionColumnCount; c++) {
                 const destColumn = selectionRange.startColumn + c;
                 if (destColumn >= tableColumnCount) break;
 
-                const destCell = destRowElement.children[destColumn] as HTMLElement;
                 const srcColumnIndex = c % copyColumnCount;
 
-                const oldValue = EditorTable.getCellValue(destCell);
+                const oldValue = this.table.getCellValueAt(destRow, destColumn);
                 const newValue = sourceData[srcRowIndex][srcColumnIndex];
 
                 changes.push({
@@ -695,7 +580,7 @@ export class GridTextField {
                     newValue: newValue
                 });
 
-                this.table.setCellValue(destCell, newValue, destColumn - 1);
+                this.table.setCellValueAt(destRow, destColumn, newValue);
             }
         }
 
@@ -744,22 +629,10 @@ export class GridTextField {
     }
 
     /**
-     * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
-     */
-    activate(): void {
-        if (this.mouseupHandler) {
-            window.addEventListener('mouseup', this.mouseupHandler);
-        }
-    }
-
-    /**
-     * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
+     * タブが非アクティブになったときに呼び出される
      */
     deactivate(): void {
         this.active = false;
-        if (this.mouseupHandler) {
-            window.removeEventListener('mouseup', this.mouseupHandler);
-        }
     }
 
     /**
@@ -825,7 +698,7 @@ export class GridTextField {
 
             // セルの位置を取得
             const target = getTarget(this.table, this.selection);
-            const tableRect = this.table.element.getBoundingClientRect();
+            const tableRect = this.table.getTableBoundingClientRect();
             const cellRect = target.cell.getBoundingClientRect();
             const rect = new DOMRect(
                 cellRect.left - tableRect.left - 1,

@@ -12,6 +12,7 @@ import {ContextMenu} from "./context-menu";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
+import {FillController} from "./fill-controller";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -22,6 +23,7 @@ export interface TabState {
     textField: GridTextField;
     history: History;
     areaResizer: AreaResizer;
+    fillController: FillController;
     wrapperElement: HTMLElement;
     referenceDataCache: ReferenceDataCache;
     dropdownInput: GridDropdownInput;
@@ -33,6 +35,7 @@ interface EditorTableFactoryResult {
     textField: GridTextField;
     history: History;
     areaResizer: AreaResizer;
+    fillController: FillController;
 }
 
 /**
@@ -113,6 +116,7 @@ export class Tab {
             // グローバルイベントリスナーを解除
             state.editorTable.deactivate();
             state.areaResizer.deactivate();
+            state.fillController.deactivate();
             state.textField.deactivate();
 
             // DOMを削除
@@ -170,6 +174,7 @@ export class Tab {
         state.wrapperElement.style.display = 'none';
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
+        state.fillController.deactivate();
         state.textField.deactivate();
     }
 
@@ -180,7 +185,7 @@ export class Tab {
         state.wrapperElement.style.display = '';
         state.editorTable.activate();
         state.areaResizer.activate();
-        state.textField.activate();
+        state.fillController.activate();
 
         // テキストフィールドを有効化（IME対応）
         state.textField.enable();
@@ -224,6 +229,7 @@ export class Tab {
                 const textField = editorTableFactoryResult.textField;
                 const history = editorTableFactoryResult.history;
                 const areaResizer = editorTableFactoryResult.areaResizer;
+                const fillController = editorTableFactoryResult.fillController;
 
                 // 参照先テーブルを事前読み込み
                 // referenceは "テーブル名.列名" の形式なので、テーブル名部分を抽出
@@ -272,6 +278,7 @@ export class Tab {
                     textField,
                     history,
                     areaResizer,
+                    fillController,
                     wrapperElement,
                     referenceDataCache,
                     dropdownInput
@@ -337,6 +344,9 @@ export class Tab {
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
+        // FillController を作成（EditorTable, Selection, History が必要）
+        const fillController = new FillController(editorTable, selection, history);
+
         // Selection の tableElement を本物の element に置き換え
         // 一時的な tempElement を渡していたが、実際のテーブル要素に更新する
         selection.initializeTableElement(editorTable.element);
@@ -354,10 +364,10 @@ export class Tab {
         // DOM要素を構築
         editorTable.initialize();
 
-        // GridTextField のフィルハンドルを初期化（EditorTable.element が利用可能になった後）
-        textField.initialize();
+        // FillController のイベントを初期化（EditorTable.element が利用可能になった後）
+        fillController.initialize();
 
-        return {editorTable, selection, textField, history, areaResizer};
+        return {editorTable, selection, textField, history, areaResizer, fillController};
     }
 
     /**
