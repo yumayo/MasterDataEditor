@@ -1100,13 +1100,41 @@ export class EditorTable {
     }
 
     /**
-     * テーブル要素にイベントリスナーを追加する
+     * 指定座標のセルのBoundingClientRectを取得する
+     * @param row 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
      */
-    addTableEventListener<K extends keyof HTMLElementEventMap>(
-        type: K,
-        listener: (this: HTMLElement, ev: HTMLElementEventMap[K]) => void
-    ): void {
-        this.element.addEventListener(type, listener);
+    getCellRectAt(row: number, column: number): DOMRect {
+        const cell = this.getCell(row, column);
+        return cell.getBoundingClientRect();
+    }
+
+    /**
+     * テキストフィールドの幅を計算する
+     * 指定セルから右方向にセルの幅を合算し、テキスト幅が収まる幅を返す
+     * @param row 行インデックス
+     * @param column 列インデックス
+     * @param textWidth テキストの幅（ピクセル）
+     * @returns 計算された幅とセルの高さ
+     */
+    calculateTextFieldWidth(row: number, column: number, textWidth: number): { width: number; cellHeight: number } {
+        const rowElement = this.element.children[row] as HTMLElement;
+        const startCell = rowElement.children[column] as HTMLElement;
+        const cellHeight = startCell.getBoundingClientRect().height;
+
+        // 自分から右側にあるセルを結合する
+        // box-sizing: border-boxなので、セルの幅をそのまま使用
+        // テキスト幅との比較では、パディング(12px)とボーダー(2px)を考慮
+        let width = 0;
+        for (let i = column; i < rowElement.children.length; i++) {
+            const cell = rowElement.children[i] as HTMLElement;
+            width += cell.getBoundingClientRect().width;
+            if (textWidth < width - 14) {
+                break;
+            }
+        }
+
+        return { width, cellHeight };
     }
 
     /**

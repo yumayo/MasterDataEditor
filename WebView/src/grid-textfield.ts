@@ -440,36 +440,14 @@ export class GridTextField {
     }
 
     resizeTextField(textContent: string) {
-
-        const target = getTarget(this.table, this.selection);
-        if (!target) return;
-
-        const cellRect = target.cell.getBoundingClientRect();
+        const focus = this.selection.getFocus();
         const textFieldWidth = Utility.getTextWidth(textContent, 'normal 13px sans-serif');
 
-        // 自分自身を探す。
-        let i = 0;
-        for (; i < target.row.children.length; ++i) {
-            if (target.cell === target.row.children[i]) {
-                break;
-            }
-        }
-
-        // 自分から右側にあるセルを結合する。
-        // box-sizing: border-boxなので、セルの幅をそのまま使用
-        // テキスト幅との比較では、パディング(12px)とボーダー(2px)を考慮
-        let width = 0;
-        for (; i < target.row.children.length; ++i) {
-            const elm = target.row.children[i];
-            width += elm.getBoundingClientRect().width;
-            if (textFieldWidth < width - 14) {
-                break;
-            }
-        }
+        const { width, cellHeight } = this.table.calculateTextFieldWidth(focus.row, focus.column, textFieldWidth);
 
         // 幅と高さを設定
         this.element.style.width = width + 'px';
-        this.element.style.height = cellRect.height + 'px';
+        this.element.style.height = cellHeight + 'px';
         // lineHeightはテキスト1行分の高さに固定（セルの高さに依存させない）
     }
 
@@ -699,7 +677,7 @@ export class GridTextField {
             // セルの位置を取得
             const target = getTarget(this.table, this.selection);
             const tableRect = this.table.getTableBoundingClientRect();
-            const cellRect = target.cell.getBoundingClientRect();
+            const cellRect = target.cellRect;
             const rect = new DOMRect(
                 cellRect.left - tableRect.left - 1,
                 cellRect.top - tableRect.top,
@@ -707,7 +685,7 @@ export class GridTextField {
                 cellRect.height
             );
 
-            const currentValue = EditorTable.getCellValue(target.cell);
+            const currentValue = target.cellValue;
 
             // ドロップダウンを表示（show内でfocusが移るため、先にdropdownActiveをtrueにする）
             this.dropdownActive = true;
@@ -727,14 +705,12 @@ export class GridTextField {
         if (!this.dropdownActive) return;
 
         const target = getTarget(this.table, this.selection);
-        const focus = this.selection.getFocus();
-        const oldValue = EditorTable.getCellValue(target.cell);
 
         // 履歴に追加
         const copyRange = this.selection.getCopyRange();
-        this.history.pushSingleChange(focus.row, focus.column, oldValue, id, copyRange);
+        this.history.pushSingleChange(target.row, target.column, target.cellValue, id, copyRange);
 
-        this.table.setCellValue(target.cell, id, focus.column - 1);
+        this.table.setCellValueAt(target.row, target.column, id);
 
         this.dropdownActive = false;
 

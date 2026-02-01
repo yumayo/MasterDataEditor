@@ -7,17 +7,23 @@ import {generateSeriesData} from "./fill-series";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
 
+/**
+ * フォーカスセルの情報を取得する
+ */
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
-    const row = table.element.children[focus.row] as HTMLElement;
-    const cell = row.children[focus.column] as HTMLElement;
-    return {row: row, cell: cell};
+    return {
+        row: focus.row,
+        column: focus.column,
+        cellRect: table.getCellRectAt(focus.row, focus.column),
+        cellValue: table.getCellValueAt(focus.row, focus.column)
+    };
 }
 
 export function enableCellEditMode(table: EditorTable, textField: GridTextField, selection: Selection, preserveContent: boolean) {
     const target = getTarget(table, selection);
-    const tableRect = table.element.getBoundingClientRect();
-    const cellRect = target.cell.getBoundingClientRect();
+    const tableRect = table.getTableBoundingClientRect();
+    const cellRect = target.cellRect;
     const rect = new DOMRect(
         cellRect.left - tableRect.left - 1,
         cellRect.top - tableRect.top,
@@ -25,21 +31,17 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
         cellRect.height
     );
 
-    const cellText = EditorTable.getCellValue(target.cell);
-    textField.show(rect, cellText, preserveContent);
+    textField.show(rect, target.cellValue, preserveContent);
 }
 
 export function submitText(table: EditorTable, textField: GridTextField, selection: Selection, text: string, history: History) {
     const target = getTarget(table, selection);
-    const focus = selection.getFocus();
-
-    const oldValue = EditorTable.getCellValue(target.cell);
 
     // 履歴に追加（現在のコピー範囲も保存）
     const copyRange = selection.getCopyRange();
-    history.pushSingleChange(focus.row, focus.column, oldValue, text, copyRange);
+    history.pushSingleChange(target.row, target.column, target.cellValue, text, copyRange);
 
-    table.setCellValue(target.cell, text, focus.column - 1);
+    table.setCellValueAt(target.row, target.column, text);
 
     textField.hide();
 }
@@ -53,11 +55,8 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
     const changes: CellChange[] = [];
 
     for (let r = range.startRow; r <= range.endRow; r++) {
-        const rowElement = table.element.children[r] as HTMLElement;
-
         for (let c = range.startColumn; c <= range.endColumn; c++) {
-            const cell = rowElement.children[c] as HTMLElement;
-            const oldValue = EditorTable.getCellValue(cell);
+            const oldValue = table.getCellValueAt(r, c);
 
             if (oldValue !== '') {
                 changes.push({
@@ -66,7 +65,7 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
                     oldValue: oldValue,
                     newValue: ''
                 });
-                table.setCellValue(cell, '', c - 1);
+                table.setCellValueAt(r, c, '');
             }
         }
     }
@@ -90,10 +89,10 @@ export function clearSelectionRange(table: EditorTable, selection: Selection, hi
 export function moveCell(table: EditorTable, selection: Selection, x: number, y: number) {
     console.trace(`${x}, ${y}`);
 
-    const rowLength = table.element.children.length;
+    const rowLength = table.getRowCount();
     if (rowLength === 0) return;
 
-    const columnLength = (table.element.children[0] as HTMLElement).children.length;
+    const columnLength = table.getTotalColumnCount();
     if (columnLength === 0) return;
 
     const focus = selection.getFocus();
@@ -107,10 +106,10 @@ export function moveCell(table: EditorTable, selection: Selection, x: number, y:
 }
 
 export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {
-    const rowLength = table.element.children.length;
+    const rowLength = table.getRowCount();
     if (rowLength === 0) return;
 
-    const columnLength = (table.element.children[0] as HTMLElement).children.length;
+    const columnLength = table.getTotalColumnCount();
     if (columnLength === 0) return;
 
     const maxRow = rowLength - 1;
@@ -272,11 +271,9 @@ export function applyFillSeries(
     // ソースデータを取得
     const sourceValues: string[][] = [];
     for (let r = sourceStartRow; r <= sourceEndRow; r++) {
-        const rowElement = table.element.children[r] as HTMLElement;
         const rowValues: string[] = [];
         for (let c = sourceStartColumn; c <= sourceEndColumn; c++) {
-            const cell = rowElement.children[c] as HTMLElement;
-            rowValues.push(EditorTable.getCellValue(cell));
+            rowValues.push(table.getCellValueAt(r, c));
         }
         sourceValues.push(rowValues);
     }
@@ -291,51 +288,43 @@ export function applyFillSeries(
     if (direction === 'down') {
         for (let i = 0; i < count; i++) {
             const targetRow = targetStartRow + i;
-            const rowElement = table.element.children[targetRow] as HTMLElement;
             for (let c = targetStartColumn; c <= targetEndColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                const oldValue = EditorTable.getCellValue(cell);
+                const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.setCellValue(cell, newValue, c - 1);
+                table.setCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'up') {
         for (let i = 0; i < count; i++) {
             const targetRow = targetEndRow - i;
-            const rowElement = table.element.children[targetRow] as HTMLElement;
             for (let c = targetStartColumn; c <= targetEndColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                const oldValue = EditorTable.getCellValue(cell);
+                const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.setCellValue(cell, newValue, c - 1);
+                table.setCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'right') {
         for (let r = targetStartRow; r <= targetEndRow; r++) {
-            const rowElement = table.element.children[r] as HTMLElement;
             const generatedRow = generatedData[r - targetStartRow];
             for (let i = 0; i < count; i++) {
                 const targetCol = targetStartColumn + i;
-                const cell = rowElement.children[targetCol] as HTMLElement;
-                const oldValue = EditorTable.getCellValue(cell);
+                const oldValue = table.getCellValueAt(r, targetCol);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.setCellValue(cell, newValue, targetCol - 1);
+                table.setCellValueAt(r, targetCol, newValue);
             }
         }
     } else if (direction === 'left') {
         for (let r = targetStartRow; r <= targetEndRow; r++) {
-            const rowElement = table.element.children[r] as HTMLElement;
             const generatedRow = generatedData[r - targetStartRow];
             for (let i = 0; i < count; i++) {
                 const targetCol = targetEndColumn - i;
-                const cell = rowElement.children[targetCol] as HTMLElement;
-                const oldValue = EditorTable.getCellValue(cell);
+                const oldValue = table.getCellValueAt(r, targetCol);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.setCellValue(cell, newValue, targetCol - 1);
+                table.setCellValueAt(r, targetCol, newValue);
             }
         }
     }
@@ -373,31 +362,21 @@ function extractTableData(table: EditorTable): { header: string[]; body: string[
     const header: string[] = [];
     const body: string[][] = [];
 
-    // 行0は列ヘッダー行
-    const headerRow = table.element.children[0] as HTMLElement;
-    // 列0はコーナーセルなのでスキップ
-    for (let c = 1; c < headerRow.children.length; c++) {
-        const cell = headerRow.children[c] as HTMLElement;
-        // textContentを取得（リサイズハンドルなどの子要素を含まないようにテキストノードのみ）
-        let text = '';
-        for (const node of Array.from(cell.childNodes)) {
-            if (node.nodeType === Node.TEXT_NODE) {
-                text = node.textContent ?? '';
-                break;
-            }
-        }
-        header.push(text);
+    const columnCount = table.getColumnCount();
+    const rowCount = table.getRowCount();
+
+    // 列ヘッダーを取得
+    for (let c = 0; c < columnCount; c++) {
+        header.push(table.getColumnHeaderValue(c));
     }
 
     // 行1以降がデータ行
-    for (let r = 1; r < table.element.children.length; r++) {
-        const row = table.element.children[r] as HTMLElement;
+    for (let r = 1; r < rowCount; r++) {
         const rowData: string[] = [];
 
-        // 列0は行ヘッダーなのでスキップ
-        for (let c = 1; c < row.children.length; c++) {
-            const cell = row.children[c] as HTMLElement;
-            rowData.push(EditorTable.getCellValue(cell));
+        // 列0は行ヘッダーなのでスキップ（column=1から開始）
+        for (let c = 1; c <= columnCount; c++) {
+            rowData.push(table.getCellValueAt(r, c));
         }
 
         // 最初のセルが空でない行のみ追加（データがある行のみ保存）
