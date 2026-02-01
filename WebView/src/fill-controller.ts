@@ -80,7 +80,7 @@ export class FillController {
      * ダブルクリックでデータ領域の最大行までフィル
      */
     private fillToMaxRow(): void {
-        const maxDataRow = this.selection.getMaxDataRow();
+        const maxDataRow = this.table.getMaxDataRow();
         const anchor = this.selection.getAnchor();
         const focus = this.selection.getFocus();
 

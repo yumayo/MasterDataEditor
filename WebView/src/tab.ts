@@ -312,11 +312,8 @@ export class Tab {
             editorTable.onScroll();
         });
 
-        // EditorTable.element を先に作成するため、一時的なelementを作成
-        const tempElement = document.createElement('div');
-
-        // Selection を作成（EditorTable.element が必要）
-        const selection = new Selection(tempElement, wrapperElement, scrollController);
+        // Selection を作成（editorTable への参照をコンストラクタで渡す）
+        const selection = new Selection(editorTable, wrapperElement, scrollController);
 
         // History を作成（EditorTable が必要）
         const history = new History(editorTable, tabButton, 1000);
@@ -347,12 +344,8 @@ export class Tab {
         // FillController を作成（EditorTable, Selection, History が必要）
         const fillController = new FillController(editorTable, selection, history);
 
-        // Selection の tableElement を本物の element に置き換え
-        // 一時的な tempElement を渡していたが、実際のテーブル要素に更新する
-        selection.initializeTableElement(editorTable.element);
-
         // DOM要素を追加
-        wrapperElement.appendChild(editorTable.element);
+        editorTable.appendTo(wrapperElement);
         wrapperElement.appendChild(selection.element);
         wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
@@ -364,7 +357,7 @@ export class Tab {
         // DOM要素を構築
         editorTable.initialize();
 
-        // FillController のイベントを初期化（EditorTable.element が利用可能になった後）
+        // FillController のイベントを初期化（EditorTable が初期化された後）
         fillController.initialize();
 
         return {editorTable, selection, textField, history, areaResizer, fillController};

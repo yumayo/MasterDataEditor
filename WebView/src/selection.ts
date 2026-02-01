@@ -1,4 +1,5 @@
 import {ScrollViewportController} from "./scroll-viewport-controller";
+import type {EditorTable} from "./editor-table";
 
 export interface CellPosition {
     row: number;
@@ -44,7 +45,7 @@ export class Selection {
 
     private selectingRow: boolean;
 
-    private tableElement: HTMLElement;
+    private editorTable: EditorTable;
 
     private editorElement: HTMLElement;
 
@@ -62,14 +63,14 @@ export class Selection {
 
     private scrollBinding: ScrollViewportController;
 
-    constructor(tableElement: HTMLElement, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
+    constructor(editorTable: EditorTable, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
         this.focus = { row: 1, column: 1 }; // constructor 初期設定
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
-        this.tableElement = tableElement;
+        this.editorTable = editorTable;
         this.editorElement = editorElement;
         this.scrollBinding = scrollBinding;
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
@@ -118,14 +119,6 @@ export class Selection {
         this.fillHandle = document.createElement('div');
         this.fillHandle.classList.add('fill-handle');
         this.editorElement.appendChild(this.fillHandle);
-    }
-
-    /**
-     * テーブル要素を設定する（ファクトリ関数から呼び出される）
-     * EditorTableの相互参照を解決するために使用
-     */
-    initializeTableElement(tableElement: HTMLElement): void {
-        this.tableElement = tableElement;
     }
 
     /**
@@ -180,7 +173,7 @@ export class Selection {
      */
     selectColumn(column: number): void {
         console.log('[selectColumn] column:', column);
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
         this.range = { startRow: 1, startColumn: column, endRow: rowCount - 1, endColumn: column };
@@ -198,9 +191,7 @@ export class Selection {
         console.log('[selectRow] row:', row);
         if (row < 1) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        if (!firstRow) return;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
         this.range = { startRow: row, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
@@ -216,7 +207,7 @@ export class Selection {
      */
     extendToColumn(column: number): void {
         console.log('[extendToColumn] column:', column);
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
         // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
@@ -231,9 +222,7 @@ export class Selection {
         console.log('[extendToRow] row:', row);
         if (row < 1) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        if (!firstRow) return;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
         // アンカー（startRow）を保持したまま、endRowを新しい行に拡張
@@ -245,11 +234,10 @@ export class Selection {
      * 全セルを選択する（左上コーナークリック時）
      */
     selectAll(): void {
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
         this.range = { startRow: 1, startColumn: 1, endRow: rowCount - 1, endColumn: columnCount - 1 };
@@ -265,7 +253,7 @@ export class Selection {
      */
     addColumn(column: number): void {
         console.log('[addColumn] column:', column);
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
         // 新しい選択範囲を計算（列を含めるように拡張）
@@ -285,9 +273,7 @@ export class Selection {
         console.log('[addRow] row:', row);
         if (row < 1) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        if (!firstRow) return;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
         // 新しい選択範囲を計算（行を含めるように拡張）
@@ -360,11 +346,10 @@ export class Selection {
         if (!this.selectingColumn) return;
         if (column < 1) return;
 
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
         if (column >= columnCount) return;
 
@@ -380,12 +365,11 @@ export class Selection {
         if (!this.selectingRow) return;
         if (row < 1) return;
 
-        const rowCount = this.tableElement.children.length;
+        const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
         if (row >= rowCount) return;
 
-        const firstRow = this.tableElement.children[0] as HTMLElement;
-        const columnCount = firstRow.children.length;
+        const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
         this.range = { ...this.range, endRow: row };
@@ -442,13 +426,10 @@ export class Selection {
         const rows: string[] = [];
 
         for (let r = startRow; r <= endRow; r++) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
-
             const cells: string[] = [];
             for (let c = startColumn; c <= endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                cells.push(cell.textContent ?? '');
+                const value = this.editorTable.getCellValueAt(r, c);
+                cells.push(value);
             }
             rows.push(cells.join('\t'));
         }
@@ -458,13 +439,10 @@ export class Selection {
         // HTML形式も作成（Excelやスプレッドシートでより良い形式で貼り付けられる）
         const htmlRows: string[] = [];
         for (let r = startRow; r <= endRow; r++) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
-
             const htmlCells: string[] = [];
             for (let c = startColumn; c <= endColumn; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                const content = this.escapeHtml(cell.textContent ?? '');
+                const value = this.editorTable.getCellValueAt(r, c);
+                const content = this.escapeHtml(value);
                 htmlCells.push(`<td>${content}</td>`);
             }
             htmlRows.push(`<tr>${htmlCells.join('')}</tr>`);
@@ -519,18 +497,15 @@ export class Selection {
 
         const { startRow, startColumn, endRow, endColumn } = this.copyRange;
 
-        const tableRect = this.tableElement.getBoundingClientRect();
+        const tableRect = this.editorTable.getTableBoundingClientRect();
 
-        const startCell = this.tableElement.children[startRow]?.children[startColumn] as HTMLElement | undefined;
-        const endCell = this.tableElement.children[endRow]?.children[endColumn] as HTMLElement | undefined;
+        const startRect = this.editorTable.getCellRectOrNull(startRow, startColumn);
+        const endRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
 
-        if (!startCell || !endCell) {
+        if (!startRect || !endRect) {
             this.hideCopyBorder();
             return;
         }
-
-        const startRect = startCell.getBoundingClientRect();
-        const endRect = endCell.getBoundingClientRect();
 
         const left = Math.round(startRect.left - tableRect.left - 1);
         const top = Math.round(startRect.top - tableRect.top - 1);
@@ -548,20 +523,16 @@ export class Selection {
         const selectionRange = this.getSelectionRange();
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
-        const tableRect = this.tableElement.getBoundingClientRect();
+        const tableRect = this.editorTable.getTableBoundingClientRect();
 
-        const startCell = this.tableElement.children[startRow]?.children[startColumn] as HTMLElement | undefined;
-        const endCell = this.tableElement.children[endRow]?.children[endColumn] as HTMLElement | undefined;
-        const focusCell = this.tableElement.children[this.focus.row]?.children[this.focus.column] as HTMLElement | undefined;
+        const startRect = this.editorTable.getCellRectOrNull(startRow, startColumn);
+        const endRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
+        const focusRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
 
-        if (!startCell || !endCell || !focusCell) {
+        if (!startRect || !endRect || !focusRect) {
             this.hideRenderer();
             return;
         }
-
-        const startRect = startCell.getBoundingClientRect();
-        const endRect = endCell.getBoundingClientRect();
-        const focusRect = focusCell.getBoundingClientRect();
 
         const left = Math.round(startRect.left - tableRect.left - 1);
         const top = Math.round(startRect.top - tableRect.top - 1);
@@ -580,7 +551,7 @@ export class Selection {
         this.updateFillHandlePosition();
 
         // ヘッダーの選択状態を更新
-        this.updateHeaderSelection(selectionRange);
+        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
     }
 
     private scrollFocusIntoView(): void {
@@ -588,12 +559,11 @@ export class Selection {
     }
 
     private scrollCellIntoView(row: number, column: number): void {
-        const targetCell = this.tableElement.children[row]?.children[column] as HTMLElement | undefined;
-        if (!targetCell) return;
+        const targetRect = this.editorTable.getCellRectOrNull(row, column);
+        if (!targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
-        const targetRect = targetCell.getBoundingClientRect();
-        const headerHeight = this.getHeaderHeight();
-        const rowHeaderWidth = this.getRowHeaderWidth();
+        const headerHeight = this.editorTable.getFirstRowHeight();
+        const rowHeaderWidth = this.editorTable.getRowHeaderWidth();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
 
         const visibleTop = containerRect.top + headerHeight;
@@ -657,19 +627,6 @@ export class Selection {
         }
     }
 
-    private getHeaderHeight(): number {
-        const headerRow = this.tableElement.children[0] as HTMLElement | undefined;
-        if (!headerRow) return 0;
-        return headerRow.getBoundingClientRect().height;
-    }
-
-    private getRowHeaderWidth(): number {
-        const headerRow = this.tableElement.children[0] as HTMLElement | undefined;
-        const cornerCell = headerRow?.children[0] as HTMLElement | undefined;
-        if (!cornerCell) return 0;
-        return cornerCell.getBoundingClientRect().width;
-    }
-
     /**
      * リサイズ後に描画領域を更新する（area-resizerから呼び出される）
      */
@@ -693,14 +650,10 @@ export class Selection {
         const endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;
 
-        const rowElement = this.tableElement.children[endRow] as HTMLElement;
-        if (!rowElement) return;
-
-        const cell = rowElement.children[endColumn] as HTMLElement;
-        if (!cell) return;
+        const cellRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
+        if (!cellRect) return;
 
         // セルの右下にフィルハンドルを配置
-        const cellRect = cell.getBoundingClientRect();
         const editorRect = this.editorElement.getBoundingClientRect();
 
         this.fillHandle.style.left = (cellRect.right - editorRect.left + this.editorElement.scrollLeft - 4) + 'px';
@@ -761,50 +714,6 @@ export class Selection {
         this.element.style.top = '-99999px';
         this.element.style.width = '0px';
         this.element.style.height = '0px';
-    }
-
-    /**
-     * 選択範囲に基づいてヘッダーの選択状態を更新する
-     */
-    private updateHeaderSelection(selectionRange: CellRange): void {
-        const { startRow, startColumn, endRow, endColumn } = selectionRange;
-
-        // 列ヘッダー行を取得
-        const columnHeaderRow = this.tableElement.children[0] as HTMLElement;
-
-        // すべての列ヘッダーから選択状態を解除
-        for (let i = 1; i < columnHeaderRow.children.length; i++) {
-            const headerCell = columnHeaderRow.children[i] as HTMLElement;
-            headerCell.classList.remove('selected');
-        }
-
-        // すべての行ヘッダーから選択状態を解除
-        for (let i = 1; i < this.tableElement.children.length; i++) {
-            const row = this.tableElement.children[i] as HTMLElement;
-            const rowHeader = row.children[0] as HTMLElement;
-            if (rowHeader.classList.contains('editor-table-row-header')) {
-                rowHeader.classList.remove('selected');
-            }
-        }
-
-        // 選択範囲に含まれる列ヘッダーに選択状態を追加
-        for (let col = startColumn; col <= endColumn; col++) {
-            const headerCell = columnHeaderRow.children[col] as HTMLElement;
-            if (headerCell) {
-                headerCell.classList.add('selected');
-            }
-        }
-
-        // 選択範囲に含まれる行ヘッダーに選択状態を追加
-        for (let row = startRow; row <= endRow; row++) {
-            const rowElement = this.tableElement.children[row] as HTMLElement;
-            if (rowElement) {
-                const rowHeader = rowElement.children[0] as HTMLElement;
-                if (rowHeader.classList.contains('editor-table-row-header')) {
-                    rowHeader.classList.add('selected');
-                }
-            }
-        }
     }
 
     private hideCopyBorder(): void {
@@ -952,18 +861,15 @@ export class Selection {
 
         const { targetRange } = fillInfo;
 
-        const tableRect = this.tableElement.getBoundingClientRect();
+        const tableRect = this.editorTable.getTableBoundingClientRect();
 
-        const startCell = this.tableElement.children[targetRange.startRow]?.children[targetRange.startColumn] as HTMLElement | undefined;
-        const endCell = this.tableElement.children[targetRange.endRow]?.children[targetRange.endColumn] as HTMLElement | undefined;
+        const startRect = this.editorTable.getCellRectOrNull(targetRange.startRow, targetRange.startColumn);
+        const endRect = this.editorTable.getCellRectOrNull(targetRange.endRow, targetRange.endColumn);
 
-        if (!startCell || !endCell) {
+        if (!startRect || !endRect) {
             this.clearFillPreview();
             return;
         }
-
-        const startRect = startCell.getBoundingClientRect();
-        const endRect = endCell.getBoundingClientRect();
 
         const left = Math.round(startRect.left - tableRect.left - 1);
         const top = Math.round(startRect.top - tableRect.top - 1);
@@ -979,36 +885,5 @@ export class Selection {
 
     private clearFillPreview(): void {
         this.fillPreviewElement.style.display = 'none';
-    }
-
-    /**
-     * データ領域の最大行を取得（データが入力されている最後の行）
-     */
-    getMaxDataRow(): number {
-        let maxRow = 0;
-
-        // データ行の開始は行インデックス6から（ヘッダー5行 + 列ヘッダー1行）
-        const dataStartRow = 6;
-
-        for (let r = this.tableElement.children.length - 1; r >= dataStartRow; r--) {
-            const rowElement = this.tableElement.children[r] as HTMLElement;
-            if (!rowElement) continue;
-
-            let hasData = false;
-            for (let c = 1; c < rowElement.children.length; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                if (cell && cell.textContent && cell.textContent.trim() !== '') {
-                    hasData = true;
-                    break;
-                }
-            }
-
-            if (hasData) {
-                maxRow = r;
-                break;
-            }
-        }
-
-        return maxRow;
     }
 }

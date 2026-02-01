@@ -15,7 +15,7 @@ export class EditorTable {
     readonly tableName: string;
     private readonly tableData: EditorTableData;
 
-    readonly element: HTMLElement;
+    private readonly element: HTMLElement;
 
     private readonly selection: Selection;
     private readonly areaResizer: AreaResizer;
@@ -88,6 +88,14 @@ export class EditorTable {
         }
     }
     
+    /**
+     * テーブル要素を親要素に追加する
+     * @param parent 親要素
+     */
+    appendTo(parent: HTMLElement): void {
+        parent.appendChild(this.element);
+    }
+
     /**
      * DOM要素を構築し、イベントリスナーを登録する
      * ファクトリ関数から呼び出される
@@ -1159,5 +1167,114 @@ export class EditorTable {
     getTotalColumnCount(): number {
         const headerRow = this.element.children[0];
         return headerRow.children.length;
+    }
+
+    /**
+     * 座標でセルのBoundingClientRectを取得する（存在しない場合はnull）
+     * @param row 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
+     */
+    getCellRectOrNull(row: number, column: number): DOMRect | null {
+        const rowElement = this.element.children[row] as HTMLElement | undefined;
+        if (!rowElement) return null;
+        const cell = rowElement.children[column] as HTMLElement | undefined;
+        if (!cell) return null;
+        return cell.getBoundingClientRect();
+    }
+
+    /**
+     * 列ヘッダー行の高さを取得する
+     */
+    getFirstRowHeight(): number {
+        const headerRow = this.element.children[0] as HTMLElement | undefined;
+        if (!headerRow) return 0;
+        return headerRow.getBoundingClientRect().height;
+    }
+
+    /**
+     * 行ヘッダー（コーナーセル）の幅を取得する
+     */
+    getRowHeaderWidth(): number {
+        const headerRow = this.element.children[0] as HTMLElement | undefined;
+        const cornerCell = headerRow?.children[0] as HTMLElement | undefined;
+        if (!cornerCell) return 0;
+        return cornerCell.getBoundingClientRect().width;
+    }
+
+    /**
+     * ヘッダーの選択状態を更新する
+     * @param startRow 選択範囲の開始行
+     * @param startColumn 選択範囲の開始列
+     * @param endRow 選択範囲の終了行
+     * @param endColumn 選択範囲の終了列
+     */
+    updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+        // 列ヘッダー行を取得
+        const columnHeaderRow = this.element.children[0] as HTMLElement;
+
+        // すべての列ヘッダーから選択状態を解除
+        for (let i = 1; i < columnHeaderRow.children.length; i++) {
+            const headerCell = columnHeaderRow.children[i] as HTMLElement;
+            headerCell.classList.remove('selected');
+        }
+
+        // すべての行ヘッダーから選択状態を解除
+        for (let i = 1; i < this.element.children.length; i++) {
+            const row = this.element.children[i] as HTMLElement;
+            const rowHeader = row.children[0] as HTMLElement;
+            if (rowHeader.classList.contains('editor-table-row-header')) {
+                rowHeader.classList.remove('selected');
+            }
+        }
+
+        // 選択範囲に含まれる列ヘッダーに選択状態を追加
+        for (let col = startColumn; col <= endColumn; col++) {
+            const headerCell = columnHeaderRow.children[col] as HTMLElement;
+            if (headerCell) {
+                headerCell.classList.add('selected');
+            }
+        }
+
+        // 選択範囲に含まれる行ヘッダーに選択状態を追加
+        for (let row = startRow; row <= endRow; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            if (rowElement) {
+                const rowHeader = rowElement.children[0] as HTMLElement;
+                if (rowHeader.classList.contains('editor-table-row-header')) {
+                    rowHeader.classList.add('selected');
+                }
+            }
+        }
+    }
+
+    /**
+     * データ領域の最大行を取得（データが入力されている最後の行）
+     * row=0は列ヘッダーなので、データ行はrow=1から開始
+     */
+    getMaxDataRow(): number {
+        // row=0は列ヘッダー、データ行はrow=1から
+        const dataStartRow = 1;
+        let maxRow = 0;
+
+        for (let r = this.element.children.length - 1; r >= dataStartRow; r--) {
+            const rowElement = this.element.children[r] as HTMLElement;
+            if (!rowElement) continue;
+
+            let hasData = false;
+            for (let c = 1; c < rowElement.children.length; c++) {
+                const cell = rowElement.children[c] as HTMLElement;
+                if (cell && cell.textContent && cell.textContent.trim() !== '') {
+                    hasData = true;
+                    break;
+                }
+            }
+
+            if (hasData) {
+                maxRow = r;
+                break;
+            }
+        }
+
+        return maxRow;
     }
 }
