@@ -253,8 +253,10 @@ export class Tab {
                 }
 
                 // ドロップダウン入力コンポーネントを作成
+                // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
                 const dropdownInput = new GridDropdownInput(
                     wrapperElement,
+                    editorTableHandler.element,
                     (id: string) => {
                         // 選択確定時のコールバック
                         editorTableHandler.submitDropdownSelection(id);

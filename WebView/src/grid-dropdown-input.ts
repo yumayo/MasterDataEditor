@@ -12,10 +12,13 @@ export type DropdownCancelCallback = () => void;
 
 /**
  * 参照列用のドロップダウン付き入力コンポーネント
+ *
+ * 入力フィールドは EditorTableHandler.element を使用し、
+ * ドロップダウンリストのみを管理する
  */
 export class GridDropdownInput {
     readonly element: HTMLElement;
-    private inputElement: HTMLElement;
+    private readonly inputElement: HTMLElement;
     private dropdownElement: HTMLElement;
 
     private items: ReferenceItem[];
@@ -26,7 +29,12 @@ export class GridDropdownInput {
     private onSelect: DropdownSelectCallback;
     private onCancel: DropdownCancelCallback;
 
-    constructor(parentElement: HTMLElement, onSelect: DropdownSelectCallback, onCancel: DropdownCancelCallback) {
+    constructor(
+        parentElement: HTMLElement,
+        inputElement: HTMLElement,
+        onSelect: DropdownSelectCallback,
+        onCancel: DropdownCancelCallback
+    ) {
         this.items = [];
         this.filteredItems = [];
         this.selectedIndex = 0;
@@ -34,31 +42,24 @@ export class GridDropdownInput {
         this.onSelect = onSelect;
         this.onCancel = onCancel;
 
-        // コンテナ要素
+        // EditorTableHandler.element への参照を保持
+        this.inputElement = inputElement;
+
+        // コンテナ要素（ドロップダウンリストの位置決め用）
         this.element = document.createElement('div');
         this.element.classList.add('grid-dropdown');
-
-        // 入力フィールド
-        this.inputElement = document.createElement('div');
-        this.inputElement.classList.add('grid-dropdown-input');
-        this.inputElement.setAttribute('contenteditable', 'true');
-        this.element.appendChild(this.inputElement);
 
         // ドロップダウンリスト
         this.dropdownElement = document.createElement('div');
         this.dropdownElement.classList.add('grid-dropdown-list');
         this.element.appendChild(this.dropdownElement);
 
-        // イベントリスナー
-        this.inputElement.addEventListener('input', this.onInput.bind(this));
-        this.inputElement.addEventListener('keydown', this.onKeydown.bind(this));
-        this.inputElement.addEventListener('focusout', this.onFocusout.bind(this));
-
         parentElement.appendChild(this.element);
     }
 
     /**
      * ドロップダウンを表示する
+     * 入力フィールドの表示は呼び出し側（EditorTableHandler）が行う
      */
     show(rect: DOMRect, items: ReferenceItem[], currentValue: string): void {
         console.log('[dropdown] show called', { currentValue, itemCount: items.length });
@@ -67,20 +68,10 @@ export class GridDropdownInput {
         this.visible = true;
         this.selectedIndex = 0;
 
-        // 位置とサイズを設定
+        // ドロップダウンリストの位置を設定（入力フィールドの下に表示）
         this.element.style.left = rect.left + 'px';
-        this.element.style.top = rect.top + 'px';
-
-        this.inputElement.style.width = rect.width + 'px';
-        this.inputElement.style.height = rect.height + 'px';
-        this.inputElement.style.lineHeight = rect.height + 'px';
-
-        // ドロップダウンリストを入力フィールドの下に表示
-        this.dropdownElement.style.top = rect.height + 'px';
+        this.element.style.top = (rect.top + rect.height) + 'px';
         this.dropdownElement.style.minWidth = rect.width + 'px';
-
-        // 現在の値を設定
-        this.inputElement.textContent = currentValue;
 
         // 現在の値に基づいて初期選択を設定
         const currentIndex = items.findIndex(item => item.id === currentValue);
@@ -93,14 +84,6 @@ export class GridDropdownInput {
 
         // 表示
         this.element.classList.add('visible');
-
-        // フォーカスを設定
-        console.log('[dropdown] setting focus to inputElement');
-        this.inputElement.focus({preventScroll: true});
-        console.log('[dropdown] activeElement after focus:', document.activeElement);
-
-        // カーソルを末尾に移動
-        this.moveCursorToEnd();
     }
 
     /**
@@ -109,7 +92,6 @@ export class GridDropdownInput {
     hide(): void {
         this.visible = false;
         this.element.classList.remove('visible');
-        this.inputElement.textContent = '';
         this.dropdownElement.innerHTML = '';
     }
 
@@ -122,6 +104,7 @@ export class GridDropdownInput {
 
     /**
      * 現在選択されているアイテムのIDを取得
+     * フィルタ結果が空の場合は入力フィールドのテキストを返す
      */
     getSelectedId(): string {
         if (this.filteredItems.length === 0) {
@@ -134,74 +117,45 @@ export class GridDropdownInput {
     }
 
     /**
-     * 入力フィールドのテキストを取得
+     * 入力テキストが変更された時に呼び出す（EditorTableHandler.onInputから）
      */
-    getInputText(): string {
-        return this.inputElement.textContent ?? '';
-    }
-
-    /**
-     * 入力イベント
-     */
-    private onInput(): void {
-        const filterText = this.inputElement.textContent ?? '';
+    onInputChanged(filterText: string): void {
         this.filterItems(filterText, false);
     }
 
     /**
-     * キーボードイベント
+     * 矢印キーで選択を移動
      */
-    private onKeydown(e: KeyboardEvent): void {
-        console.log('[dropdown] onKeydown', {
-            key: e.key,
-            code: e.code,
-            isComposing: e.isComposing,
-            visible: this.visible
-        });
+    moveSelection(delta: number): void {
+        if (this.filteredItems.length === 0) return;
 
-        // IME変換中は何もしない
-        if (e.isComposing) {
-            console.log('[dropdown] IME変換中のためスキップ');
-            return;
+        this.selectedIndex += delta;
+
+        // 範囲内に収める
+        if (this.selectedIndex < 0) {
+            this.selectedIndex = this.filteredItems.length - 1;
+        } else if (this.selectedIndex >= this.filteredItems.length) {
+            this.selectedIndex = 0;
         }
 
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                this.moveSelection(1);
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                this.moveSelection(-1);
-                break;
-            case 'Enter':
-                e.preventDefault();
-                console.log('[dropdown] Enter pressed, confirming selection');
-                this.confirmSelection();
-                break;
-            case 'Tab':
-                e.preventDefault();
-                console.log('[dropdown] Tab pressed, confirming selection');
-                this.confirmSelection();
-                break;
-            case 'Escape':
-                e.preventDefault();
-                console.log('[dropdown] Escape pressed, canceling');
-                this.cancel();
-                break;
-        }
+        this.renderDropdown();
     }
 
     /**
-     * フォーカスアウトイベント
+     * 選択を確定する
      */
-    private onFocusout(): void {
-        console.log('[dropdown] onFocusout', { visible: this.visible, activeElement: document.activeElement });
-        // フォーカスアウト時はキャンセル（他のセルをクリックした場合など）
-        if (this.visible) {
-            console.log('[dropdown] canceling due to focusout');
-            this.cancel();
-        }
+    confirmSelection(): void {
+        const id = this.getSelectedId();
+        this.hide();
+        this.onSelect(id);
+    }
+
+    /**
+     * キャンセルする
+     */
+    cancel(): void {
+        this.hide();
+        this.onCancel();
     }
 
     /**
@@ -282,64 +236,12 @@ export class GridDropdownInput {
     }
 
     /**
-     * 選択を移動する
-     */
-    private moveSelection(delta: number): void {
-        if (this.filteredItems.length === 0) return;
-
-        this.selectedIndex += delta;
-
-        // 範囲内に収める
-        if (this.selectedIndex < 0) {
-            this.selectedIndex = this.filteredItems.length - 1;
-        } else if (this.selectedIndex >= this.filteredItems.length) {
-            this.selectedIndex = 0;
-        }
-
-        this.renderDropdown();
-    }
-
-    /**
      * 選択項目をスクロールして表示
      */
     private scrollToSelected(): void {
         const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
         if (selectedElement) {
             selectedElement.scrollIntoView({block: 'nearest'});
-        }
-    }
-
-    /**
-     * 選択を確定する
-     */
-    private confirmSelection(): void {
-        const id = this.getSelectedId();
-        this.hide();
-        this.onSelect(id);
-    }
-
-    /**
-     * キャンセルする
-     */
-    private cancel(): void {
-        this.hide();
-        this.onCancel();
-    }
-
-    /**
-     * カーソルを末尾に移動
-     */
-    private moveCursorToEnd(): void {
-        const text = this.inputElement.textContent ?? '';
-        if (text.length > 0) {
-            const range = document.createRange();
-            range.selectNodeContents(this.inputElement);
-            range.collapse(false);
-            const selection = window.getSelection();
-            if (selection) {
-                selection.removeAllRanges();
-                selection.addRange(range);
-            }
         }
     }
 }

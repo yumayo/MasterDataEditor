@@ -15,7 +15,6 @@ import {
     moveCellRightWithinSelection,
     moveCellLeftWithinSelection,
     saveTableData,
-    enableCellEditMode,
     getTarget
 } from "./editor-actions";
 
@@ -127,7 +126,19 @@ export class EditorTableHandler {
      */
     enableCellEditMode(preserveContent: boolean): void {
         if (!this.textField) return;
-        enableCellEditMode(this.table, this.textField, this.selection, preserveContent);
+
+        const target = getTarget(this.table, this.selection);
+        const tableRect = this.table.getTableBoundingClientRect();
+        const cellRect = target.cellRect;
+        const rect = new DOMRect(
+            cellRect.left - tableRect.left - 1,
+            cellRect.top - tableRect.top,
+            cellRect.width + 1,
+            cellRect.height
+        );
+
+        this.textField.show(rect, target.cellValue, preserveContent);
+        
         this.visible = true;
     }
 
@@ -144,10 +155,10 @@ export class EditorTableHandler {
 
         if (!this.active) return;
 
-        // ドロップダウンがアクティブな場合はフォーカスを奪い返さない
-        if (this.dropdownActive) {
-            console.log('[handler] dropdownActive=true, not reclaiming focus');
-            return;
+        // ドロップダウンがアクティブな場合はキャンセルして非表示にする
+        if (this.dropdownActive && this.dropdownInput) {
+            console.log('[handler] dropdownActive=true, cancelling dropdown');
+            this.dropdownInput.cancel();
         }
 
         // アクティブ中はセルを常に有効にし続けます。
@@ -165,12 +176,25 @@ export class EditorTableHandler {
     }
 
     /**
-     * 入力イベント時の処理（リサイズ）
+     * 入力イベント時の処理（リサイズとドロップダウンフィルタリング）
      */
     private onInput(): void {
         if (!this.active) return;
+
+        const text = this.element.textContent ?? '';
+
+        // ドロップダウンがアクティブな場合はフィルタリング
+        if (this.dropdownActive && this.dropdownInput) {
+            this.dropdownInput.onInputChanged(text);
+            // テキストフィールドのリサイズも行う
+            if (this.textField) {
+                this.textField.resizeTextField(text);
+            }
+            return;
+        }
+
         if (!this.textField) return;
-        this.textField.resizeTextField(this.element.textContent ?? '');
+        this.textField.resizeTextField(text);
     }
 
     /**
@@ -190,6 +214,12 @@ export class EditorTableHandler {
             metaKey: keyboardEvent.metaKey
         });
         this.table.stopAutoScrollForInput();
+
+        // ドロップダウンがアクティブな場合
+        if (this.dropdownActive) {
+            this.handleDropdownKeydown(keyboardEvent);
+            return;
+        }
 
         if (this.visible) {
             this.handleEditModeKeydown(keyboardEvent);
@@ -229,6 +259,41 @@ export class EditorTableHandler {
         if (keyboardEvent.key === 'Escape') {
             keyboardEvent.preventDefault();
             this.hide();
+        }
+    }
+
+    /**
+     * ドロップダウン表示中のキー処理
+     */
+    private handleDropdownKeydown(keyboardEvent: KeyboardEvent): void {
+        if (!this.dropdownInput) return;
+
+        // IME変換中は何もしない
+        if (keyboardEvent.isComposing) {
+            return;
+        }
+
+        switch (keyboardEvent.key) {
+            case 'ArrowDown':
+                keyboardEvent.preventDefault();
+                this.dropdownInput.moveSelection(1);
+                break;
+            case 'ArrowUp':
+                keyboardEvent.preventDefault();
+                this.dropdownInput.moveSelection(-1);
+                break;
+            case 'Enter':
+                keyboardEvent.preventDefault();
+                this.dropdownInput.confirmSelection();
+                break;
+            case 'Tab':
+                keyboardEvent.preventDefault();
+                this.dropdownInput.confirmSelection();
+                break;
+            case 'Escape':
+                keyboardEvent.preventDefault();
+                this.dropdownInput.cancel();
+                break;
         }
     }
 
@@ -366,8 +431,13 @@ export class EditorTableHandler {
         // 文字入力による編集モード開始
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (!this.textField) return;
-            enableCellEditMode(this.table, this.textField, this.selection, false);
-            this.visible = true;
+            // 参照列の場合はドロップダウンを表示
+            this.enableCellEditModeWithDropdownAsync(false).then((handled) => {
+                if (!handled) {
+                    // ドロップダウンで処理されなかった場合は通常の編集モード
+                    this.enableCellEditMode(false);
+                }
+            });
             return;
         }
     }
@@ -727,9 +797,10 @@ export class EditorTableHandler {
 
     /**
      * 参照列の場合にドロップダウンを表示してセル編集モードを開始
+     * @param preserveContent trueの場合、セルの内容を保持する（ダブルクリック時）
      */
-    async enableCellEditModeWithDropdownAsync(): Promise<boolean> {
-        if (!this.referenceDataCache || !this.dropdownInput) {
+    async enableCellEditModeWithDropdownAsync(preserveContent: boolean): Promise<boolean> {
+        if (!this.referenceDataCache || !this.dropdownInput || !this.textField) {
             return false;
         }
 
@@ -763,11 +834,16 @@ export class EditorTableHandler {
                 cellRect.height
             );
 
-            const currentValue = target.cellValue;
+            // preserveContent=falseの場合（キー入力）はセル内容を初期化する（通常のセル編集と同様）
+            const initialValue = preserveContent ? target.cellValue : '';
 
-            // ドロップダウンを表示（show内でfocusが移るため、先にdropdownActiveをtrueにする）
+            // 入力フィールドを表示（GridTextFieldを使用）
+            this.textField.show(rect, initialValue, preserveContent);
+            this.visible = true;
             this.dropdownActive = true;
-            this.dropdownInput.show(rect, refData.items, currentValue);
+
+            // ドロップダウンリストを表示
+            this.dropdownInput.show(rect, refData.items, initialValue);
 
             return true;
         } catch (e) {
@@ -792,8 +868,8 @@ export class EditorTableHandler {
 
         this.dropdownActive = false;
 
-        // フォーカスを戻す
-        this.element.focus({ preventScroll: true });
+        // 入力フィールドを非表示
+        this.hide();
 
         // 下のセルに移動
         moveCellDownWithinSelection(this.table, this.selection);
@@ -805,8 +881,8 @@ export class EditorTableHandler {
     cancelDropdown(): void {
         this.dropdownActive = false;
 
-        // フォーカスを戻す
-        this.element.focus({ preventScroll: true });
+        // 入力フィールドを非表示
+        this.hide();
     }
 
     /**

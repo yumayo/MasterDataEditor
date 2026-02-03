@@ -1,5 +1,4 @@
 import {EditorTable} from "./editor-table";
-import {GridTextField} from "./grid-textfield";
 import {Selection, FillDirection} from "./selection";
 import {History} from "./history";
 import {CellChange} from "./command";
@@ -18,20 +17,6 @@ export function getTarget(table: EditorTable, selection: Selection) {
         cellRect: table.getCellRectAt(focus.row, focus.column),
         cellValue: table.getCellValueAt(focus.row, focus.column)
     };
-}
-
-export function enableCellEditMode(table: EditorTable, textField: GridTextField, selection: Selection, preserveContent: boolean) {
-    const target = getTarget(table, selection);
-    const tableRect = table.getTableBoundingClientRect();
-    const cellRect = target.cellRect;
-    const rect = new DOMRect(
-        cellRect.left - tableRect.left - 1,
-        cellRect.top - tableRect.top,
-        cellRect.width + 1,
-        cellRect.height
-    );
-
-    textField.show(rect, target.cellValue, preserveContent);
 }
 
 /**

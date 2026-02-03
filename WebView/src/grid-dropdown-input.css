@@ -1,4 +1,5 @@
-/* ドロップダウン入力コンポーネント */
+/* ドロップダウンコンポーネント（リスト部分のみ） */
+/* 入力フィールドは grid-textfield を使用 */
 .grid-dropdown {
     position: absolute;
     z-index: 100;
@@ -9,25 +10,10 @@
     display: block;
 }
 
-/* 入力フィールド */
-.grid-dropdown-input {
-    position: absolute;
-    box-sizing: border-box;
-    padding: 0 6px;
-    font-size: 13px;
-    font-family: sans-serif;
-    background-color: var(--background-color);
-    border: 2px solid var(--selection-border-color);
-    outline: none;
-    overflow: hidden;
-    white-space: nowrap;
-    line-height: 24px;
-}
-
 /* ドロップダウンリスト */
 .grid-dropdown-list {
     position: absolute;
-    top: 100%;
+    top: 0;
     left: 0;
     min-width: 100%;
     max-height: 200px;

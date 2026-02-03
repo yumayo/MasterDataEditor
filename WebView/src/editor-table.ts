@@ -632,7 +632,7 @@ export class EditorTable {
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
             // 参照列の場合はドロップダウンを表示
-            table.handler.enableCellEditModeWithDropdownAsync().then((handled) => {
+            table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
                     table.handler.enableCellEditMode(true);
