@@ -1,7 +1,6 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection, CellPosition} from "./selection";
-import {enableCellEditMode} from "./editor-actions";
-import {GridTextField} from "./grid-textfield";
+import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "./context-menu";
 import {History} from "./history";
 import {InsertColumnCommand, InsertRowCommand, DeleteColumnCommand, DeleteRowCommand} from "./command";
@@ -19,7 +18,7 @@ export class EditorTable {
 
     private readonly selection: Selection;
     private readonly areaResizer: AreaResizer;
-    private readonly textField: GridTextField;
+    private readonly handler: EditorTableHandler;
     private readonly contextMenu: ContextMenu;
     private readonly history: History;
     private readonly selectionDragController: SelectionDragController;
@@ -31,7 +30,7 @@ export class EditorTable {
         tableName: string,
         tableData: EditorTableData,
         referenceDataCache: ReferenceDataCache,
-        textField: GridTextField,
+        handler: EditorTableHandler,
         selection: Selection,
         contextMenu: ContextMenu,
         history: History,
@@ -41,7 +40,7 @@ export class EditorTable {
         this.tableData = tableData;
         this.tableName = tableName;
         this.referenceDataCache = referenceDataCache;
-        this.textField = textField;
+        this.handler = handler;
         this.selection = selection;
         this.contextMenu = contextMenu;
         this.history = history;
@@ -112,8 +111,7 @@ export class EditorTable {
 
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', () => {
-                this.textField.submitText();
-                this.textField.hide();
+                this.handler.submitAndHide();
                 this.selection.selectAll();
             });
 
@@ -132,8 +130,7 @@ export class EditorTable {
 
                 // 列ヘッダークリックで列全体を選択
                 columnHeaderCell.addEventListener('mousedown', (e) => {
-                    this.textField.submitText();
-                    this.textField.hide();
+                    this.handler.submitAndHide();
 
                     // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
                     const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + 1;
@@ -194,8 +191,7 @@ export class EditorTable {
         // 行ヘッダークリック用のハンドラ作成関数
         const createRowHeaderClickHandler = (rowHeaderCell: HTMLElement) => {
             return (e: MouseEvent) => {
-                this.textField.submitText();
-                this.textField.hide();
+                this.handler.submitAndHide();
 
                 // DOM上の実際の位置から行インデックスを取得
                 const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
@@ -335,8 +331,7 @@ export class EditorTable {
 
                 // 列ヘッダークリックで列全体を選択
                 newHeaderCell.addEventListener('mousedown', (e) => {
-                    this.textField.submitText();
-                    this.textField.hide();
+                    this.handler.submitAndHide();
 
                     // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
                     const clickedColumnIndex = parseInt(newHeaderCell.dataset.col!) + 1;
@@ -487,8 +482,7 @@ export class EditorTable {
 
         // 行ヘッダークリックで行全体を選択
         rowHeaderCell.addEventListener('mousedown', (e) => {
-            this.textField.submitText();
-            this.textField.hide();
+            this.handler.submitAndHide();
 
             // DOM上の実際の位置から行インデックスを取得
             const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
@@ -638,10 +632,10 @@ export class EditorTable {
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
             // 参照列の場合はドロップダウンを表示
-            table.textField.enableCellEditModeWithDropdown().then((handled) => {
+            table.handler.enableCellEditModeWithDropdownAsync().then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
-                    enableCellEditMode(table, table.textField, table.selection, true);
+                    table.handler.enableCellEditMode(true);
                 }
             });
         });
@@ -649,8 +643,7 @@ export class EditorTable {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
 
-            table.textField.submitText();
-            table.textField.hide();
+            table.handler.submitAndHide();
 
             if (e.shiftKey) {
                 // Shift+クリック: 現在のアンカーから連続選択

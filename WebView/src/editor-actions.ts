@@ -34,18 +34,6 @@ export function enableCellEditMode(table: EditorTable, textField: GridTextField,
     textField.show(rect, target.cellValue, preserveContent);
 }
 
-export function submitText(table: EditorTable, textField: GridTextField, selection: Selection, text: string, history: History) {
-    const target = getTarget(table, selection);
-
-    // 履歴に追加（現在のコピー範囲も保存）
-    const copyRange = selection.getCopyRange();
-    history.pushSingleChange(target.row, target.column, target.cellValue, text, copyRange);
-
-    table.setCellValueAt(target.row, target.column, text);
-
-    textField.hide();
-}
-
 /**
  * 選択範囲内のすべてのセルを空にする
  */

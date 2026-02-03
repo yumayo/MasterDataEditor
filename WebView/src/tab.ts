@@ -13,6 +13,7 @@ import {ScrollViewportController} from "./scroll-viewport-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {FillController} from "./fill-controller";
+import {EditorTableHandler} from "./editor-table-handler";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -20,7 +21,7 @@ import {FillController} from "./fill-controller";
 export interface TabState {
     editorTable: EditorTable;
     selection: Selection;
-    textField: GridTextField;
+    editorTableHandler: EditorTableHandler;
     history: History;
     areaResizer: AreaResizer;
     fillController: FillController;
@@ -32,7 +33,7 @@ export interface TabState {
 interface EditorTableFactoryResult {
     editorTable: EditorTable;
     selection: Selection;
-    textField: GridTextField;
+    editorTableHandler: EditorTableHandler;
     history: History;
     areaResizer: AreaResizer;
     fillController: FillController;
@@ -117,7 +118,7 @@ export class Tab {
             state.editorTable.deactivate();
             state.areaResizer.deactivate();
             state.fillController.deactivate();
-            state.textField.deactivate();
+            state.editorTableHandler.deactivate();
 
             // DOMを削除
             state.wrapperElement.remove();
@@ -175,7 +176,7 @@ export class Tab {
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
         state.fillController.deactivate();
-        state.textField.deactivate();
+        state.editorTableHandler.deactivate();
     }
 
     /**
@@ -187,8 +188,8 @@ export class Tab {
         state.areaResizer.activate();
         state.fillController.activate();
 
-        // テキストフィールドを有効化（IME対応）
-        state.textField.enable();
+        // EditorTableHandler を有効化（IME対応）
+        state.editorTableHandler.enable();
     }
 
     /**
@@ -226,7 +227,7 @@ export class Tab {
                 );
                 const editorTable = editorTableFactoryResult.editorTable;
                 const selection = editorTableFactoryResult.selection;
-                const textField = editorTableFactoryResult.textField;
+                const editorTableHandler = editorTableFactoryResult.editorTableHandler;
                 const history = editorTableFactoryResult.history;
                 const areaResizer = editorTableFactoryResult.areaResizer;
                 const fillController = editorTableFactoryResult.fillController;
@@ -256,16 +257,16 @@ export class Tab {
                     wrapperElement,
                     (id: string) => {
                         // 選択確定時のコールバック
-                        textField.submitDropdownSelection(id);
+                        editorTableHandler.submitDropdownSelection(id);
                     },
                     () => {
                         // キャンセル時のコールバック
-                        textField.cancelDropdown();
+                        editorTableHandler.cancelDropdown();
                     }
                 );
 
-                // GridTextFieldに参照データキャッシュとドロップダウンを設定
-                textField.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
+                // EditorTableHandler に参照データキャッシュとドロップダウンを設定
+                editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
 
                 // 初期選択をA1（row=1, column=1）に設定
                 selection.setRange(1, 1, 1, 1);
@@ -275,7 +276,7 @@ export class Tab {
                 const state: TabState = {
                     editorTable,
                     selection,
-                    textField,
+                    editorTableHandler,
                     history,
                     areaResizer,
                     fillController,
@@ -318,8 +319,14 @@ export class Tab {
         // History を作成（EditorTable が必要）
         const history = new History(editorTable, tabButton, 1000);
 
-        // GridTextField を作成（EditorTable, Selection, History が必要）
-        const textField = new GridTextField(editorTable, selection, history);
+        // EditorTableHandler を作成（element を所有し、全イベントを管理）
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
+
+        // GridTextField を作成（EditorTableHandler の element を使用）
+        const textField = new GridTextField(editorTableHandler.element, editorTable, selection);
+
+        // EditorTableHandler に GridTextField を設定（循環依存解決）
+        editorTableHandler.setTextField(textField);
 
         // AreaResizer を作成（History, Selection が必要）
         const areaResizer = new AreaResizer(wrapperElement, history, selection);
@@ -329,7 +336,7 @@ export class Tab {
             name,
             tableData,
             referenceDataCache,
-            textField,
+            editorTableHandler,
             selection,
             this.contextMenu,
             history,
@@ -349,7 +356,7 @@ export class Tab {
         wrapperElement.appendChild(selection.element);
         wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
-        wrapperElement.appendChild(textField.element);
+        wrapperElement.appendChild(editorTableHandler.element);
 
         // AreaResizer に EditorTable を設定
         areaResizer.setEditorTable(editorTable);
@@ -360,7 +367,7 @@ export class Tab {
         // FillController のイベントを初期化（EditorTable が初期化された後）
         fillController.initialize();
 
-        return {editorTable, selection, textField, history, areaResizer, fillController};
+        return {editorTable, selection, editorTableHandler, history, areaResizer, fillController};
     }
 
     /**
