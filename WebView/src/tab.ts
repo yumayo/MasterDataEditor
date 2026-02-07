@@ -14,6 +14,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
+import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -233,19 +234,44 @@ export class Tab {
                 const fillController = editorTableFactoryResult.fillController;
 
                 // 参照先テーブルを事前読み込み
-                // referenceは "テーブル名.列名" の形式なので、テーブル名部分を抽出
-                const referenceTables = tableData.header
-                    .map(col => col.reference)
-                    .filter((ref): ref is string => ref !== undefined)
-                    .map(ref => {
-                        const dotIndex = ref.indexOf('.');
-                        return dotIndex === -1 ? ref : ref.substring(0, dotIndex);
-                    });
+                // 単純参照と動的参照の両方に対応
+                const referenceTables: string[] = [];
+                const dynamicReferenceIntermediateTables: string[] = [];
+
+                for (const col of tableData.header) {
+                    if (!col.reference) continue;
+
+                    const expr = parseReferenceExpression(col.reference);
+                    if (isDynamicReference(expr)) {
+                        // 動的参照の場合: 中間テーブル（フィルタテーブル）をfullDataとして読み込み対象に追加
+                        dynamicReferenceIntermediateTables.push(expr.filter.tableName);
+                        // 注意: 最終的な参照先テーブルは実行時に動的に決まるため、ここではpreloadしない
+                    } else {
+                        // 単純参照の場合: テーブル名を抽出
+                        referenceTables.push(expr.tableName);
+                    }
+                }
+
                 // 重複を除去
                 const uniqueReferenceTables = Array.from(new Set(referenceTables));
-                if (uniqueReferenceTables.length > 0) {
+                const uniqueIntermediateTables = Array.from(new Set(dynamicReferenceIntermediateTables));
+
+                // preloadを開始
+                const preloadPromises: Promise<unknown>[] = [];
+
+                // 単純参照のテーブルを読み込み
+                for (const tableName of uniqueReferenceTables) {
+                    preloadPromises.push(referenceDataCache.get(tableName));
+                }
+
+                // 動的参照の中間テーブルを全カラムデータとして読み込み
+                for (const tableName of uniqueIntermediateTables) {
+                    preloadPromises.push(referenceDataCache.getFullDataAsync(tableName));
+                }
+
+                if (preloadPromises.length > 0) {
                     // preloadが完了したら参照ヒントを更新
-                    Promise.all(uniqueReferenceTables.map(t => referenceDataCache.get(t))).then(() => {
+                    Promise.all(preloadPromises).then(() => {
                         editorTable.updateReferenceHints();
                     }).catch(error => {
                         console.warn('Failed to preload reference tables:', error);

@@ -7,6 +7,11 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
 import {
+    parseReferenceExpression,
+    isDynamicReference,
+    DynamicReference
+} from "./reference-expression";
+import {
     moveCell,
     extendSelectionCell,
     clearSelectionRange,
@@ -17,6 +22,14 @@ import {
     saveTableData,
     getTarget
 } from "./editor-actions";
+
+/**
+ * 参照解決の結果
+ */
+interface ResolvedReference {
+    tableName: string;
+    columnName: string;
+}
 
 /**
  * EditorTable の入力イベントを一元管理するクラス
@@ -771,10 +784,11 @@ export class EditorTableHandler {
     }
 
     /**
-     * 現在のフォーカス列が参照列かどうかを判定し、参照先テーブル名を返す
+     * 現在のフォーカス列の参照を解決する（動的参照対応）
+     * @returns 解決した参照情報、または参照列でない場合は undefined
      */
-    private getReferenceTableName(): string | undefined {
-        if (!this.tableData) return undefined;
+    private async resolveReferenceAsync(): Promise<ResolvedReference | undefined> {
+        if (!this.tableData || !this.referenceDataCache) return undefined;
 
         const focus = this.selection.getFocus();
         // column=0は行ヘッダーなので、データ列は1から始まる
@@ -787,12 +801,74 @@ export class EditorTableHandler {
         const reference = this.tableData.header[columnIndex].reference;
         if (!reference) return undefined;
 
-        // "テーブル名.列名" からテーブル名部分を抽出
-        const dotIndex = reference.indexOf('.');
-        if (dotIndex === -1) {
-            return reference;
+        const expr = parseReferenceExpression(reference);
+
+        if (!isDynamicReference(expr)) {
+            // 単純参照の場合
+            return {
+                tableName: expr.tableName,
+                columnName: expr.columnName
+            };
         }
-        return reference.substring(0, dotIndex);
+
+        // 動的参照の場合
+        return this.resolveDynamicReferenceAsync(expr, focus.row);
+    }
+
+    /**
+     * 動的参照を解決する
+     * @param expr 動的参照式
+     * @param rowIndex 現在の行インデックス
+     * @returns 解決した参照情報、または解決できない場合は undefined
+     */
+    private async resolveDynamicReferenceAsync(expr: DynamicReference, rowIndex: number): Promise<ResolvedReference | undefined> {
+        if (!this.tableData || !this.referenceDataCache) return undefined;
+
+        // 1. 同一行の指定カラムの値を取得
+        const valueColumnIndex = this.tableData.header.findIndex(col => col.name === expr.filter.valueColumn);
+        if (valueColumnIndex === -1) {
+            console.warn(`Dynamic reference: column '${expr.filter.valueColumn}' not found in table header`);
+            return undefined;
+        }
+
+        // column=0は行ヘッダーなので、データ列インデックスに+1する
+        const cellValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
+        if (cellValue === '') {
+            // 値が空の場合は参照を解決できない
+            return undefined;
+        }
+
+        // 2. フィルタテーブルの全データを取得
+        const fullData = await this.referenceDataCache.getFullDataAsync(expr.filter.tableName);
+        if (fullData.rows.size === 0) {
+            console.warn(`Dynamic reference: table '${expr.filter.tableName}' has no data`);
+            return undefined;
+        }
+
+        // 3. フィルタ列で値を検索し、lookupColumn の値を取得
+        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
+        if (lookupColumnIndex === -1) {
+            console.warn(`Dynamic reference: column '${expr.lookupColumn}' not found in table '${expr.filter.tableName}'`);
+            return undefined;
+        }
+
+        const row = fullData.rows.get(cellValue);
+        if (!row) {
+            console.warn(`Dynamic reference: id '${cellValue}' not found in table '${expr.filter.tableName}'`);
+            return undefined;
+        }
+
+        const targetTableName = row[lookupColumnIndex];
+        if (!targetTableName || targetTableName === '') {
+            console.warn(`Dynamic reference: column '${expr.lookupColumn}' is empty for id '${cellValue}'`);
+            return undefined;
+        }
+
+        // 4. 解決した参照を返す
+        return {
+            tableName: targetTableName,
+            columnName: expr.targetColumn
+        };
     }
 
     /**
@@ -804,14 +880,15 @@ export class EditorTableHandler {
             return false;
         }
 
-        const referenceTable = this.getReferenceTableName();
-        if (!referenceTable) {
+        // 参照を解決（動的参照対応）
+        const resolvedReference = await this.resolveReferenceAsync();
+        if (!resolvedReference) {
             return false;
         }
 
         try {
             // 参照テーブルデータを取得
-            const refData = await this.referenceDataCache.get(referenceTable);
+            const refData = await this.referenceDataCache.get(resolvedReference.tableName);
 
             // 表示列がない場合は通常入力を使用
             if (!this.referenceDataCache.hasDisplayColumn(refData)) {
@@ -847,7 +924,7 @@ export class EditorTableHandler {
 
             return true;
         } catch (e) {
-            console.warn(`Failed to load reference data for ${referenceTable}`, e);
+            console.warn(`Failed to load reference data for ${resolvedReference.tableName}`, e);
             return false;
         }
     }

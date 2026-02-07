@@ -9,6 +9,7 @@ import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
+import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
 
 export class EditorTable {
     readonly tableName: string;
@@ -68,7 +69,7 @@ export class EditorTable {
                 const cell = row.children[colIndex] as HTMLElement;
                 const dataColumnIndex = colIndex - 1;
                 const value = EditorTable.getCellValue(cell);
-                this.setCellValue(cell, value, dataColumnIndex);
+                this.setCellValue(cell, value, dataColumnIndex, rowIndex);
             }
         }
     }
@@ -82,7 +83,7 @@ export class EditorTable {
             const cell = row.children[columnIndex + 1] as HTMLElement;
             if (cell) {
                 const value = EditorTable.getCellValue(cell);
-                this.setCellValue(cell, value, columnIndex);
+                this.setCellValue(cell, value, columnIndex, rowIndex);
             }
         }
     }
@@ -998,7 +999,7 @@ export class EditorTable {
     setCellValueAt(row: number, column: number, value: string): void {
         const cell = this.getCell(row, column);
         const dataColumnIndex = column - 1;
-        this.setCellValue(cell, value, dataColumnIndex);
+        this.setCellValue(cell, value, dataColumnIndex, row);
     }
 
     /**
@@ -1006,8 +1007,9 @@ export class EditorTable {
      * @param cell セル要素
      * @param value セルの値
      * @param dataColumnIndex データ列のインデックス（0始まり）
+     * @param rowIndex 行インデックス（動的参照の解決に使用、省略時は参照ヒントなし）
      */
-    setCellValue(cell: HTMLElement, value: string, dataColumnIndex: number): void {
+    setCellValue(cell: HTMLElement, value: string, dataColumnIndex: number, rowIndex?: number): void {
         // 既存の参照ヒントを削除
         const existingHint = cell.querySelector('.cell-reference-hint');
         if (existingHint) {
@@ -1022,15 +1024,22 @@ export class EditorTable {
             return;
         }
 
-        // 参照テーブル名を抽出
-        const dotIndex = column.reference.indexOf('.');
-        const tableName = dotIndex === -1 ? column.reference : column.reference.substring(0, dotIndex);
-
-        // 参照先の表示テキストを取得
-        const displayText = this.referenceDataCache.getDisplayTextById(tableName, value);
-
         // 値を設定
         cell.textContent = value;
+
+        // 参照式をパース
+        const expr = parseReferenceExpression(column.reference);
+
+        if (isDynamicReference(expr)) {
+            // 動的参照の場合: 非同期で参照ヒントを更新
+            if (rowIndex !== undefined) {
+                this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex);
+            }
+            return;
+        }
+
+        // 単純参照の場合: 同期的に参照ヒントを取得
+        const displayText = this.referenceDataCache.getDisplayTextById(expr.tableName, value);
 
         // 参照ヒントを追加（表示テキストがある場合のみ）
         if (displayText) {
@@ -1039,6 +1048,73 @@ export class EditorTable {
             hintSpan.textContent = displayText;
             cell.appendChild(hintSpan);
         }
+    }
+
+    /**
+     * 動的参照の参照ヒントを非同期で更新する
+     */
+    private updateDynamicReferenceHintAsync(
+        cell: HTMLElement,
+        value: string,
+        expr: ReturnType<typeof parseReferenceExpression>,
+        rowIndex: number
+    ): void {
+        if (!isDynamicReference(expr)) return;
+
+        // 同一行の指定カラムの値を取得
+        const valueColumnIndex = this.tableData.header.findIndex(col => col.name === expr.filter.valueColumn);
+        if (valueColumnIndex === -1) return;
+
+        // column=0は行ヘッダーなので、データ列インデックスに+1する
+        const filterValue = this.getCellValueAt(rowIndex, valueColumnIndex + 1);
+        if (filterValue === '') return;
+
+        // フィルタテーブルからテーブル名を取得
+        this.referenceDataCache.getFullDataAsync(expr.filter.tableName).then(fullData => {
+            const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
+            if (lookupColumnIndex === -1) return;
+
+            const row = fullData.rows.get(filterValue);
+            if (!row) return;
+
+            const targetTableName = row[lookupColumnIndex];
+            if (!targetTableName || targetTableName === '') return;
+
+            // 参照先テーブルの表示テキストを取得
+            const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
+            if (!displayText) {
+                // キャッシュにない場合は非同期で取得
+                this.referenceDataCache.get(targetTableName).then(() => {
+                    const resolvedDisplayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
+                    if (resolvedDisplayText) {
+                        this.appendReferenceHint(cell, resolvedDisplayText);
+                    }
+                }).catch(() => {
+                    // 取得失敗時は何もしない
+                });
+                return;
+            }
+
+            this.appendReferenceHint(cell, displayText);
+        }).catch(() => {
+            // 取得失敗時は何もしない
+        });
+    }
+
+    /**
+     * セルに参照ヒントを追加する（既存のヒントは削除）
+     */
+    private appendReferenceHint(cell: HTMLElement, displayText: string): void {
+        // 既存の参照ヒントを削除
+        const existingHint = cell.querySelector('.cell-reference-hint');
+        if (existingHint) {
+            existingHint.remove();
+        }
+
+        const hintSpan = document.createElement('span');
+        hintSpan.classList.add('cell-reference-hint');
+        hintSpan.textContent = displayText;
+        cell.appendChild(hintSpan);
     }
 
     /**

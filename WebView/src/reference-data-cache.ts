@@ -19,6 +19,17 @@ export interface ReferenceTableData {
     displayColumnName: string;  // 表示に使用している列名
 }
 
+/**
+ * 参照テーブルの全カラムデータを保持する（動的参照用）
+ */
+export interface ReferenceTableFullData {
+    tableName: string;
+    header: string[];               // 全カラム名
+    rows: Map<string, string[]>;    // id → 全カラム値
+    displayColumnName: string;
+    displayColumnIndex: number;
+}
+
 
 /**
  * 参照テーブルデータのキャッシュを管理するクラス
@@ -27,9 +38,15 @@ export class ReferenceDataCache {
     private cache: Map<string, ReferenceTableData>;
     private loadingPromises: Map<string, Promise<ReferenceTableData>>;
 
+    // 動的参照用の全カラムデータキャッシュ
+    private fullDataCache: Map<string, ReferenceTableFullData>;
+    private fullDataLoadingPromises: Map<string, Promise<ReferenceTableFullData>>;
+
     constructor() {
         this.cache = new Map();
         this.loadingPromises = new Map();
+        this.fullDataCache = new Map();
+        this.fullDataLoadingPromises = new Map();
     }
 
     /**
@@ -79,6 +96,7 @@ export class ReferenceDataCache {
      */
     clear(): void {
         this.cache.clear();
+        this.fullDataCache.clear();
     }
 
     /**
@@ -222,5 +240,155 @@ export class ReferenceDataCache {
         if (item.displayText === item.id) return undefined;
 
         return item.displayText;
+    }
+
+    /**
+     * 指定したテーブルの全カラムデータを取得する（動的参照用）
+     * キャッシュがあればそれを返し、なければ読み込む
+     */
+    async getFullDataAsync(tableName: string): Promise<ReferenceTableFullData> {
+        // キャッシュがあればそれを返す
+        const cached = this.fullDataCache.get(tableName);
+        if (cached) {
+            return cached;
+        }
+
+        // すでに読み込み中であれば、そのPromiseを返す
+        const loadingPromise = this.fullDataLoadingPromises.get(tableName);
+        if (loadingPromise) {
+            return loadingPromise;
+        }
+
+        // 新しく読み込みを開始
+        const promise = this.loadFullDataAsync(tableName);
+        this.fullDataLoadingPromises.set(tableName, promise);
+
+        try {
+            const data = await promise;
+            this.fullDataCache.set(tableName, data);
+            return data;
+        } finally {
+            this.fullDataLoadingPromises.delete(tableName);
+        }
+    }
+
+    /**
+     * テーブルの全カラムデータを読み込む
+     */
+    private async loadFullDataAsync(tableName: string): Promise<ReferenceTableFullData> {
+        // スキーマを読み込む
+        const schemaText = await readFileAsync(`schema/${tableName}.json`);
+
+        // スキーマが空の場合は空のデータを返す
+        if (!schemaText || schemaText.trim() === '') {
+            console.warn(`Reference table schema is empty: ${tableName}`);
+            return {
+                tableName,
+                header: [],
+                rows: new Map(),
+                displayColumnName: '',
+                displayColumnIndex: -1
+            };
+        }
+
+        let schema;
+        try {
+            schema = JSON.parse(schemaText);
+        } catch (e) {
+            console.warn(`Failed to parse reference table schema: ${tableName}`, e);
+            return {
+                tableName,
+                header: [],
+                rows: new Map(),
+                displayColumnName: '',
+                displayColumnIndex: -1
+            };
+        }
+
+        // スキーマにheaderがない場合
+        if (!schema.header || !Array.isArray(schema.header)) {
+            console.warn(`Reference table schema has no header: ${tableName}`);
+            return {
+                tableName,
+                header: [],
+                rows: new Map(),
+                displayColumnName: '',
+                displayColumnIndex: -1
+            };
+        }
+
+        // CSVを読み込む
+        const csvText = await readFileAsync(`data/${tableName}.csv`);
+
+        // CSVが空の場合は空のデータを返す
+        if (!csvText || csvText.trim() === '') {
+            console.warn(`Reference table CSV is empty: ${tableName}`);
+            return {
+                tableName,
+                header: [],
+                rows: new Map(),
+                displayColumnName: '',
+                displayColumnIndex: -1
+            };
+        }
+
+        const csv = new Csv();
+        csv.load(csvText);
+
+        // 表示列を決定する
+        const displayColumnName = this.determineDisplayColumn(schema.header);
+        const displayColumnIndex = csv.header.indexOf(displayColumnName);
+
+        // 主キー列のインデックスを取得
+        const idColumnIndex = csv.header.indexOf(config.primaryKeyColumnName);
+
+        // 行データをMapに格納
+        const rows = new Map<string, string[]>();
+        if (idColumnIndex !== -1) {
+            for (const row of csv.body) {
+                const id = row[idColumnIndex];
+                // idが空の行はスキップ
+                if (id === undefined || id === '') {
+                    continue;
+                }
+                rows.set(id, row);
+            }
+        }
+
+        return {
+            tableName,
+            header: csv.header,
+            rows,
+            displayColumnName,
+            displayColumnIndex
+        };
+    }
+
+    /**
+     * 指定テーブルの指定IDの指定カラムの値を取得する（動的参照用）
+     * キャッシュがない場合は undefined を返す（同期的取得のため）
+     * @param tableName テーブル名
+     * @param id 検索するID
+     * @param columnName 取得するカラム名
+     * @returns カラムの値（見つからない場合は undefined）
+     */
+    getColumnValue(tableName: string, id: string, columnName: string): string | undefined {
+        const fullData = this.fullDataCache.get(tableName);
+        if (!fullData) return undefined;
+
+        const row = fullData.rows.get(id);
+        if (!row) return undefined;
+
+        const columnIndex = fullData.header.indexOf(columnName);
+        if (columnIndex === -1) return undefined;
+
+        return row[columnIndex];
+    }
+
+    /**
+     * 指定テーブルの全カラムデータがキャッシュされているか確認する
+     */
+    hasFullData(tableName: string): boolean {
+        return this.fullDataCache.has(tableName);
     }
 }
