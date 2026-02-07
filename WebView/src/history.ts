@@ -1,4 +1,14 @@
-import { Command, CellChangeCommand, CellChange, DeleteColumnCommand, DeleteRowCommand, InsertColumnCommand, InsertRowCommand } from "./command";
+import {
+    Command,
+    CellChangeCommand,
+    CellChange,
+    DeleteColumnCommand,
+    DeleteRowCommand,
+    DeleteRowsCommand,
+    InsertColumnCommand,
+    InsertRowCommand,
+    InsertRowsCommand
+} from "./command";
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
 import { TabButton } from "./tab-button";
@@ -234,7 +244,9 @@ export class History {
             entry.command instanceof DeleteColumnCommand ||
             entry.command instanceof DeleteRowCommand ||
             entry.command instanceof InsertColumnCommand ||
-            entry.command instanceof InsertRowCommand;
+            entry.command instanceof InsertRowCommand ||
+            entry.command instanceof InsertRowsCommand ||
+            entry.command instanceof DeleteRowsCommand;
         const redoCopyRange = shouldClearCopyRange
             ? { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 }
             : entry.copyRange;

@@ -173,6 +173,128 @@ export class InsertRowCommand implements Command {
 }
 
 /**
+ * 複数行を挿入するコマンド
+ */
+export class InsertRowsCommand implements Command {
+    private editorTable: EditorTable;
+    private rowIndex: number;
+    private count: number;
+
+    constructor(
+        editorTable: EditorTable,
+        rowIndex: number,
+        count: number
+    ) {
+        this.editorTable = editorTable;
+        this.rowIndex = rowIndex;
+        this.count = count;
+    }
+
+    execute(): void {
+        for (let i = 0; i < this.count; ++i) {
+            this.editorTable.insertRowInternal(
+                this.rowIndex
+            );
+        }
+    }
+
+    undo(): void {
+        // 常にrowIndexの行を削除
+        // （上の行が消えて次が繰り上がる）
+        for (let i = 0; i < this.count; ++i) {
+            this.editorTable.deleteRow(this.rowIndex);
+        }
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `InsertRows: `
+            + `${this.count} rows `
+            + `at ${this.rowIndex}`;
+    }
+
+    getRowIndex(): number {
+        return this.rowIndex;
+    }
+
+    getCount(): number {
+        return this.count;
+    }
+}
+
+/**
+ * 複数行を削除するコマンド
+ * DeleteRowCommandを内部で再利用する
+ * Compositeパターン
+ */
+export class DeleteRowsCommand implements Command {
+    private editorTable: EditorTable;
+    private startRowIndex: number;
+    private count: number;
+    private deleteCommands: DeleteRowCommand[];
+
+    constructor(
+        editorTable: EditorTable,
+        startRowIndex: number,
+        count: number
+    ) {
+        this.editorTable = editorTable;
+        this.startRowIndex = startRowIndex;
+        this.count = count;
+        this.deleteCommands = [];
+    }
+
+    execute(): void {
+        this.deleteCommands = [];
+        // 下から上へ削除（インデックスのずれを防止）
+        for (
+            let i = this.count - 1;
+            i >= 0;
+            --i
+        ) {
+            const command = new DeleteRowCommand(
+                this.editorTable,
+                this.startRowIndex + i
+            );
+            command.execute();
+            this.deleteCommands.push(command);
+        }
+    }
+
+    undo(): void {
+        // 逆順でundo（上から下へ復元）
+        for (
+            let i = this.deleteCommands.length - 1;
+            i >= 0;
+            --i
+        ) {
+            this.deleteCommands[i].undo();
+        }
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `DeleteRows: `
+            + `${this.count} rows `
+            + `at ${this.startRowIndex}`;
+    }
+
+    getRowIndex(): number {
+        return this.startRowIndex;
+    }
+
+    getCount(): number {
+        return this.count;
+    }
+}
+
+/**
  * 列幅を変更するコマンド
  */
 export class ColumnWidthCommand implements Command {

@@ -3,7 +3,15 @@ import {Selection, CellPosition} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "./context-menu";
 import {History} from "./history";
-import {InsertColumnCommand, InsertRowCommand, DeleteColumnCommand, DeleteRowCommand} from "./command";
+import {
+    Command,
+    InsertColumnCommand,
+    InsertRowCommand,
+    InsertRowsCommand,
+    DeleteColumnCommand,
+    DeleteRowCommand,
+    DeleteRowsCommand
+} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -189,61 +197,10 @@ export class EditorTable {
             this.element.appendChild(columnHeaderRow);
         }
 
-        // 行ヘッダークリック用のハンドラ作成関数
-        const createRowHeaderClickHandler = (rowHeaderCell: HTMLElement) => {
-            return (e: MouseEvent) => {
-                this.handler.submitAndHide();
-
-                // DOM上の実際の位置から行インデックスを取得
-                const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-
-                if (e.shiftKey) {
-                    // Shift+クリック: 現在のアンカーから連続選択
-                    this.selection.extendToRow(clickedRowIndex);
-                } else if (e.ctrlKey || e.metaKey) {
-                    // Ctrl+クリック: 行を追加選択
-                    this.selection.addRow(clickedRowIndex);
-                } else {
-                    // 通常クリック: 行全体を選択
-                    this.selection.selectRow(clickedRowIndex);
-                }
-            };
-        };
-
-        // 行ヘッダー右クリック用のハンドラ作成関数
-        const createRowHeaderContextMenuHandler = (rowHeaderCell: HTMLElement) => {
-            return (e: MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                // DOM上の実際の位置から行インデックスを取得
-                const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-                this.contextMenu.show(e.clientX, e.clientY, [
-                    {
-                        label: '上に行を挿入',
-                        action: () => {
-                            this.insertRow(contextMenuRowIndex);
-                        }
-                    },
-                    {
-                        label: '下に行を挿入',
-                        action: () => {
-                            this.insertRow(contextMenuRowIndex + 1);
-                        }
-                    },
-                    {
-                        label: '行を削除',
-                        action: () => {
-                            this.removeRow(contextMenuRowIndex);
-                        }
-                    }
-                ]);
-            };
-        };
-
         for (let i = 0; i < this.tableData.body.length; ++i) {
             const cells = [];
             const rowIndex = i;
-            const rowHeaderCell = this.createRowHeaderCell(String(i + 1), i, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell(String(i + 1), i);
 
             cells.push(rowHeaderCell);
 
@@ -259,7 +216,7 @@ export class EditorTable {
             const cells = [];
             // 行ヘッダー (続き)
             const rowIndex = this.tableData.body.length + i;
-            const rowHeaderCell = this.createRowHeaderCell(String(this.tableData.body.length + i + 1), this.tableData.body.length + i, createRowHeaderClickHandler, createRowHeaderContextMenuHandler);
+            const rowHeaderCell = this.createRowHeaderCell(String(this.tableData.body.length + i + 1), this.tableData.body.length + i);
 
             cells.push(rowHeaderCell);
 
@@ -449,18 +406,11 @@ export class EditorTable {
     }
 
     /**
-     * 行挿入の公開メソッド（Commandを使用してhistoryに追加）
+     * 行挿入の公開メソッド
+     * （Commandを使用してhistoryに追加）
      */
     public insertRow(rowIndex: number): void {
-        const command = new InsertRowCommand(this, rowIndex);
-        const copyRange = this.selection.getCopyRange();
-        const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.insertRows(rowIndex, 1);
     }
 
     /**
@@ -475,62 +425,10 @@ export class EditorTable {
         const cells: HTMLElement[] = [];
 
         // 行ヘッダーを作成
-        const rowHeaderCell = document.createElement('div');
-        rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
-        rowHeaderCell.textContent = String(rowIndex);
-        rowHeaderCell.dataset.rowIndex = String(rowIndex - 1);
-        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
-
-        // 行ヘッダークリックで行全体を選択
-        rowHeaderCell.addEventListener('mousedown', (e) => {
-            this.handler.submitAndHide();
-
-            // DOM上の実際の位置から行インデックスを取得
-            const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-
-            if (e.shiftKey) {
-                this.selection.extendToRow(clickedRowIndex);
-            } else if (e.ctrlKey || e.metaKey) {
-                this.selection.addRow(clickedRowIndex);
-            } else {
-                this.selection.selectRow(clickedRowIndex);
-            }
-        });
-
-        // 行ヘッダー右クリックでコンテキストメニューを表示
-        rowHeaderCell.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // DOM上の実際の位置から行インデックスを取得
-            const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-            this.contextMenu.show(e.clientX, e.clientY, [
-                {
-                    label: '上に行を挿入',
-                    action: () => {
-                        this.insertRow(contextMenuRowIndex);
-                    }
-                },
-                {
-                    label: '下に行を挿入',
-                    action: () => {
-                        this.insertRow(contextMenuRowIndex + 1);
-                    }
-                },
-                {
-                    label: '行を削除',
-                    action: () => {
-                        this.removeRow(contextMenuRowIndex);
-                    }
-                }
-            ]);
-        });
-
-        // リサイズハンドルを追加
-        const resizeHandle = document.createElement('div');
-        resizeHandle.classList.add('row-resize-handle');
-        this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex);
-        rowHeaderCell.appendChild(resizeHandle);
-
+        const rowHeaderCell =
+            this.createRowHeaderCell(
+                String(rowIndex), rowIndex - 1
+            );
         cells.push(rowHeaderCell);
 
         // データセルを作成（列幅は列ヘッダーから取得）
@@ -598,11 +496,60 @@ export class EditorTable {
     }
 
     /**
-     * 行削除の公開メソッド（Commandを使用してhistoryに追加）
+     * 行削除の公開メソッド
+     * （Commandを使用してhistoryに追加）
      */
     public removeRow(rowIndex: number): void {
-        const command = new DeleteRowCommand(this, rowIndex);
-        const copyRange = this.selection.getCopyRange();
+        this.removeRows(rowIndex, 1);
+    }
+
+    /**
+     * 複数行挿入の公開メソッド
+     * （Commandを使用してhistoryに追加）
+     */
+    public insertRows(
+        rowIndex: number,
+        count: number
+    ): void {
+        let command: Command =
+            new InsertRowCommand(this, rowIndex);
+        if (count > 1) {
+            command = new InsertRowsCommand(
+                this, rowIndex, count
+            );
+        }
+
+        const copyRange =
+            this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
+    }
+
+    /**
+     * 複数行削除の公開メソッド
+     * （Commandを使用してhistoryに追加）
+     */
+    public removeRows(
+        startRowIndex: number,
+        count: number
+    ): void {
+        let command: Command =
+            new DeleteRowCommand(
+                this, startRowIndex
+            );
+        if (count > 1) {
+            command = new DeleteRowsCommand(
+                this, startRowIndex, count
+            );
+        }
+
+        const copyRange =
+            this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
         this.history.executeCommand(command, {
             startRow: anchor.row,
@@ -680,30 +627,178 @@ export class EditorTable {
         return {row, column};
     }
 
+    /**
+     * 行ヘッダーのクリックハンドラを生成する
+     * 右クリック時に選択範囲内であれば選択を保持する
+     */
+    private createRowHeaderClickHandler(
+        rowHeaderCell: HTMLElement
+    ): (e: MouseEvent) => void {
+        return (e: MouseEvent) => {
+            // 左クリック以外は無視
+            if (e.button !== 0) {
+                return;
+            }
+
+            this.handler.submitAndHide();
+
+            const clickedRowIndex = parseInt(
+                rowHeaderCell.dataset.rowIndex!
+            ) + 1;
+
+            if (e.shiftKey) {
+                this.selection.extendToRow(
+                    clickedRowIndex
+                );
+            } else if (e.ctrlKey || e.metaKey) {
+                this.selection.addRow(clickedRowIndex);
+            } else {
+                this.selection.selectRow(
+                    clickedRowIndex
+                );
+            }
+        };
+    }
+
+    /**
+     * 行ヘッダーのコンテキストメニューハンドラ
+     * 複数行選択時は選択行数分の挿入・削除に対応
+     */
+    private createRowHeaderContextMenuHandler(
+        rowHeaderCell: HTMLElement
+    ): (e: MouseEvent) => void {
+        return (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const contextMenuRowIndex = parseInt(
+                rowHeaderCell.dataset.rowIndex!
+            ) + 1;
+
+            // 選択範囲を取得
+            const selRange =
+                this.selection.getSelectionRange();
+
+            // 行全体が選択されているか判定
+            // （カラム範囲がテーブル全幅か確認）
+            const lastColumn =
+                this.getTotalColumnCount() - 1;
+            const isRowSelection =
+                selRange.startColumn === 1
+                && selRange.endColumn === lastColumn;
+
+            // 右クリックした行が選択範囲内か判定
+            const isInSelection =
+                contextMenuRowIndex
+                    >= selRange.startRow
+                && contextMenuRowIndex
+                    <= selRange.endRow;
+
+            // 行全体選択かつ範囲内の場合のみ
+            // 複数行操作とする
+            const useSelectedRows =
+                isRowSelection && isInSelection;
+
+            // 複数行選択時の行数を計算
+            const rowCount = useSelectedRows
+                ? selRange.endRow
+                    - selRange.startRow + 1
+                : 1;
+            const startRow = useSelectedRows
+                ? selRange.startRow
+                : contextMenuRowIndex;
+            const endRow = useSelectedRows
+                ? selRange.endRow
+                : contextMenuRowIndex;
+
+            // 選択範囲外の右クリック時は
+            // 対象行を選択する
+            if (!useSelectedRows) {
+                this.selection.selectRow(
+                    contextMenuRowIndex
+                );
+            }
+
+            // ラベルを行数に応じて変更
+            const insertAboveLabel = rowCount > 1
+                ? `上に${rowCount}行を挿入`
+                : '上に行を挿入';
+            const insertBelowLabel = rowCount > 1
+                ? `下に${rowCount}行を挿入`
+                : '下に行を挿入';
+            const deleteLabel = rowCount > 1
+                ? `${rowCount}行を削除`
+                : '行を削除';
+
+            this.contextMenu.show(
+                e.clientX, e.clientY, [
+                {
+                    label: insertAboveLabel,
+                    action: () => {
+                        this.insertRows(
+                            startRow, rowCount
+                        );
+                    }
+                },
+                {
+                    label: insertBelowLabel,
+                    action: () => {
+                        this.insertRows(
+                            endRow + 1, rowCount
+                        );
+                    }
+                },
+                {
+                    label: deleteLabel,
+                    action: () => {
+                        this.removeRows(
+                            startRow, rowCount
+                        );
+                    }
+                }
+            ]);
+        };
+    }
+
     private createRowHeaderCell(
         text: string,
-        rowIndex: number,
-        createClickHandler: (cell: HTMLElement) => (e: MouseEvent) => void,
-        createContextMenuHandler: (cell: HTMLElement) => (e: MouseEvent) => void
+        rowIndex: number
     ): HTMLElement {
-        const rowHeaderCell = document.createElement('div');
-        rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+        const rowHeaderCell =
+            document.createElement('div');
+        rowHeaderCell.classList.add(
+            'editor-table-cell',
+            'editor-table-row-header'
+        );
         rowHeaderCell.textContent = text;
-        rowHeaderCell.dataset.rowIndex = String(rowIndex);
-        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
+        rowHeaderCell.dataset.rowIndex =
+            String(rowIndex);
+        EditorTable.applyCellHeight(
+            rowHeaderCell, DEFAULT_ROW_HEIGHT
+        );
 
         // 行ヘッダークリックで行全体を選択
-        rowHeaderCell.addEventListener('mousedown', (e) => {
-            // リサイズハンドルからのイベントは処理しない（stopPropagationされる）
-            createClickHandler(rowHeaderCell)(e);
-        });
+        rowHeaderCell.addEventListener(
+            'mousedown',
+            this.createRowHeaderClickHandler(
+                rowHeaderCell
+            )
+        );
 
-        // 行ヘッダー右クリックでコンテキストメニューを表示
-        rowHeaderCell.addEventListener('contextmenu', createContextMenuHandler(rowHeaderCell));
+        // 行ヘッダー右クリックでコンテキストメニュー
+        rowHeaderCell.addEventListener(
+            'contextmenu',
+            this.createRowHeaderContextMenuHandler(
+                rowHeaderCell
+            )
+        );
 
-        const resizeHandle = document.createElement('div');
+        const resizeHandle =
+            document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
-        this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);
+        this.areaResizer.setupRowResizeHandle(
+            resizeHandle, rowHeaderCell, rowIndex + 1
+        );
         rowHeaderCell.appendChild(resizeHandle);
 
         return rowHeaderCell;
