@@ -24,7 +24,25 @@ export async function findFilesAsync(directory: string): Promise<File[]> {
     return postMessageAsync<File[]>('find_files', { directory });
 }
 
+/**
+ * リクエストキュー
+ * WebView2のメッセージAPIにはリクエストIDがないため、
+ * 同じ種類のリクエストが同時に飛ぶとレスポンスが取り違えられる。
+ * リクエストを直列化することでこの問題を回避する。
+ */
+let requestQueue: Promise<unknown> = Promise.resolve();
+
 async function postMessageAsync<T>(
+    apiName: string,
+    requestData: Record<string, unknown>
+): Promise<T> {
+    const result: Promise<T> = requestQueue.then(() => sendRequest<T>(apiName, requestData));
+    // エラーが発生してもキューを停止させない
+    requestQueue = result.then(() => {}, () => {});
+    return result;
+}
+
+function sendRequest<T>(
     apiName: string,
     requestData: Record<string, unknown>
 ): Promise<T> {
@@ -37,7 +55,6 @@ async function postMessageAsync<T>(
         const responseHandler = (event: MessageEvent) => {
             try {
                 const responseData = JSON.parse(event.data);
-                console.log(`[DEBUG] ${apiName} received:`, responseData);
                 // 関係のないメッセージは無視して待ち続ける
                 if (!responseData || responseData.type !== `${apiName}_response`) {
                     return;
@@ -51,7 +68,7 @@ async function postMessageAsync<T>(
                 } else {
                     reject(new Error((responseData.error as string) || `${apiName} failed`));
                 }
-                
+
             } catch (error) {
                 clearTimeout(timeout);
                 window.chrome.webview.removeEventListener('message', responseHandler);

@@ -1000,6 +1000,9 @@ export class EditorTable {
         const cell = this.getCell(row, column);
         const dataColumnIndex = column - 1;
         this.setCellValue(cell, value, dataColumnIndex, row);
+
+        // 変更された列に依存する動的参照列のヒントを再評価する（二段リスト対応）
+        this.updateDependentColumnsInRow(row, dataColumnIndex);
     }
 
     /**
@@ -1007,9 +1010,9 @@ export class EditorTable {
      * @param cell セル要素
      * @param value セルの値
      * @param dataColumnIndex データ列のインデックス（0始まり）
-     * @param rowIndex 行インデックス（動的参照の解決に使用、省略時は参照ヒントなし）
+     * @param rowIndex 行インデックス（動的参照の解決に使用）
      */
-    setCellValue(cell: HTMLElement, value: string, dataColumnIndex: number, rowIndex?: number): void {
+    setCellValue(cell: HTMLElement, value: string, dataColumnIndex: number, rowIndex: number): void {
         // 既存の参照ヒントを削除
         const existingHint = cell.querySelector('.cell-reference-hint');
         if (existingHint) {
@@ -1032,9 +1035,7 @@ export class EditorTable {
 
         if (isDynamicReference(expr)) {
             // 動的参照の場合: 非同期で参照ヒントを更新
-            if (rowIndex !== undefined) {
-                this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex);
-            }
+            this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex);
             return;
         }
 
@@ -1074,11 +1075,12 @@ export class EditorTable {
             const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
             if (lookupColumnIndex === -1) return;
 
-            const row = fullData.rows.get(filterValue);
+            // filterColumn で行を検索（主キー以外のカラムにも対応）
+            const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
             if (!row) return;
 
             const targetTableName = row[lookupColumnIndex];
-            if (!targetTableName || targetTableName === '') return;
+            if (targetTableName === '') return;
 
             // 参照先テーブルの表示テキストを取得
             const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
@@ -1115,6 +1117,36 @@ export class EditorTable {
         hintSpan.classList.add('cell-reference-hint');
         hintSpan.textContent = displayText;
         cell.appendChild(hintSpan);
+    }
+
+    /**
+     * 変更された列に依存する動的参照列のヒントを同一行内で再評価する
+     * Excelの二段リストと同様に、親列の変更で子列の参照先を切り替える
+     */
+    private updateDependentColumnsInRow(rowIndex: number, changedDataColumnIndex: number): void {
+        const changedColumnName = this.tableData.header[changedDataColumnIndex]?.name;
+        if (!changedColumnName) return;
+
+        const rowElement = this.element.children[rowIndex] as HTMLElement;
+        for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
+            if (colIdx === changedDataColumnIndex) continue;
+
+            const column = this.tableData.header[colIdx];
+            if (!column.reference) continue;
+
+            const expr = parseReferenceExpression(column.reference);
+            if (!isDynamicReference(expr)) continue;
+
+            // この動的参照が変更された列を参照元としているか確認
+            if (expr.filter.valueColumn !== changedColumnName) continue;
+
+            // 依存しているセルのヒントを再評価する
+            const cell = rowElement.children[colIdx + 1] as HTMLElement;
+            if (cell) {
+                const cellValue = EditorTable.getCellValue(cell);
+                this.setCellValue(cell, cellValue, colIdx, rowIndex);
+            }
+        }
     }
 
     /**

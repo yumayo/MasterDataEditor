@@ -845,22 +845,22 @@ export class EditorTableHandler {
             return undefined;
         }
 
-        // 3. フィルタ列で値を検索し、lookupColumn の値を取得
+        // 3. フィルタ列（filterColumn）で値を検索し、lookupColumn の値を取得
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
         if (lookupColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' not found in table '${expr.filter.tableName}'`);
             return undefined;
         }
 
-        const row = fullData.rows.get(cellValue);
+        const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, cellValue);
         if (!row) {
-            console.warn(`Dynamic reference: id '${cellValue}' not found in table '${expr.filter.tableName}'`);
+            console.warn(`Dynamic reference: value '${cellValue}' not found in column '${expr.filter.filterColumn}' of table '${expr.filter.tableName}'`);
             return undefined;
         }
 
         const targetTableName = row[lookupColumnIndex];
-        if (!targetTableName || targetTableName === '') {
-            console.warn(`Dynamic reference: column '${expr.lookupColumn}' is empty for id '${cellValue}'`);
+        if (targetTableName === '') {
+            console.warn(`Dynamic reference: column '${expr.lookupColumn}' is empty for '${expr.filter.filterColumn}'='${cellValue}'`);
             return undefined;
         }
 
@@ -890,12 +890,7 @@ export class EditorTableHandler {
             // 参照テーブルデータを取得
             const refData = await this.referenceDataCache.get(resolvedReference.tableName);
 
-            // 表示列がない場合は通常入力を使用
-            if (!this.referenceDataCache.hasDisplayColumn(refData)) {
-                return false;
-            }
-
-            // アイテムが空の場合も通常入力を使用
+            // アイテムが空の場合は通常入力を使用
             if (refData.items.length === 0) {
                 return false;
             }

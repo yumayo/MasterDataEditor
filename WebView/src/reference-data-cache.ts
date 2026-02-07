@@ -1,6 +1,7 @@
 import {readFileAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
+import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
  * 参照テーブルの1項目を表す
@@ -183,6 +184,31 @@ export class ReferenceDataCache {
             const rawDisplayText = displayColumnIndex !== -1 ? row[displayColumnIndex] : id;
             const displayText = (rawDisplayText !== undefined && rawDisplayText !== '') ? rawDisplayText : id;
             items.push({ id, displayText });
+        }
+
+        // id列のスキーマ定義に参照がある場合、参照先テーブルから表示テキストを再帰的に解決する
+        const idColumnSchemaEntry = schema.header.find(
+            (h: {name: string; reference?: string}) => h.name === config.primaryKeyColumnName
+        );
+        if (idColumnSchemaEntry && idColumnSchemaEntry.reference) {
+            const refExpr = parseReferenceExpression(idColumnSchemaEntry.reference);
+            // 単純参照かつ循環参照でない場合のみ解決する
+            if (isSimpleReference(refExpr) && !this.loadingPromises.has(refExpr.tableName)) {
+                try {
+                    const refData = await this.get(refExpr.tableName);
+                    for (const item of items) {
+                        // 表示テキストがIDと同じ（有意な表示列がない）場合のみ参照先で解決する
+                        if (item.displayText === item.id) {
+                            const refItem = refData.items.find(ri => ri.id === item.id);
+                            if (refItem && refItem.displayText !== refItem.id) {
+                                item.displayText = refItem.displayText;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[ref-cache] Failed to resolve reference chain for ${tableName}`, e);
+                }
+            }
         }
 
         return {
@@ -390,5 +416,33 @@ export class ReferenceDataCache {
      */
     hasFullData(tableName: string): boolean {
         return this.fullDataCache.has(tableName);
+    }
+
+    /**
+     * 全カラムデータから指定カラムの値で行を検索する
+     * @param fullData 検索対象の全カラムデータ
+     * @param columnName 検索するカラム名
+     * @param value 検索する値
+     * @returns マッチした行の全カラム値、見つからない場合は undefined
+     */
+    findRowByColumn(fullData: ReferenceTableFullData, columnName: string, value: string): string[] | undefined {
+        const columnIndex = fullData.header.indexOf(columnName);
+        if (columnIndex === -1) return undefined;
+
+        // 主キー列の場合はMap lookupで高速に検索
+        const idColumnIndex = fullData.header.indexOf(config.primaryKeyColumnName);
+        if (columnIndex === idColumnIndex) {
+            return fullData.rows.get(value);
+        }
+
+        // その他の列は線形検索
+        let result: string[] | undefined;
+        fullData.rows.forEach((row) => {
+            if (result) return;
+            if (row[columnIndex] === value) {
+                result = row;
+            }
+        });
+        return result;
     }
 }
