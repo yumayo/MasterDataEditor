@@ -139,6 +139,61 @@ export class InsertColumnCommand implements Command {
 }
 
 /**
+ * 複数列を挿入するコマンド
+ */
+export class InsertColumnsCommand implements Command {
+    private editorTable: EditorTable;
+    private columnIndex: number;
+    private count: number;
+
+    constructor(
+        editorTable: EditorTable,
+        columnIndex: number,
+        count: number
+    ) {
+        this.editorTable = editorTable;
+        this.columnIndex = columnIndex;
+        this.count = count;
+    }
+
+    execute(): void {
+        for (let i = 0; i < this.count; ++i) {
+            this.editorTable.insertColumnInternal(
+                this.columnIndex
+            );
+        }
+    }
+
+    undo(): void {
+        // 常にcolumnIndexの列を削除
+        // （左の列が消えて次が繰り上がる）
+        for (let i = 0; i < this.count; ++i) {
+            this.editorTable.deleteColumn(
+                this.columnIndex
+            );
+        }
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `InsertColumns: `
+            + `${this.count} columns `
+            + `at ${this.columnIndex}`;
+    }
+
+    getColumnIndex(): number {
+        return this.columnIndex;
+    }
+
+    getCount(): number {
+        return this.count;
+    }
+}
+
+/**
  * 行を挿入するコマンド
  * insertRow/deleteRowメソッドを呼び出す形で実装
  */
@@ -287,6 +342,75 @@ export class DeleteRowsCommand implements Command {
 
     getRowIndex(): number {
         return this.startRowIndex;
+    }
+
+    getCount(): number {
+        return this.count;
+    }
+}
+
+/**
+ * 複数列を削除するコマンド
+ * DeleteColumnCommandを内部で再利用する
+ * Compositeパターン
+ */
+export class DeleteColumnsCommand implements Command {
+    private editorTable: EditorTable;
+    private startColumnIndex: number;
+    private count: number;
+    private deleteCommands: DeleteColumnCommand[];
+
+    constructor(
+        editorTable: EditorTable,
+        startColumnIndex: number,
+        count: number
+    ) {
+        this.editorTable = editorTable;
+        this.startColumnIndex = startColumnIndex;
+        this.count = count;
+        this.deleteCommands = [];
+    }
+
+    execute(): void {
+        this.deleteCommands = [];
+        // 右から左へ削除（インデックスのずれを防止）
+        for (
+            let i = this.count - 1;
+            i >= 0;
+            --i
+        ) {
+            const command = new DeleteColumnCommand(
+                this.editorTable,
+                this.startColumnIndex + i
+            );
+            command.execute();
+            this.deleteCommands.push(command);
+        }
+    }
+
+    undo(): void {
+        // 逆順でundo（左から右へ復元）
+        for (
+            let i = this.deleteCommands.length - 1;
+            i >= 0;
+            --i
+        ) {
+            this.deleteCommands[i].undo();
+        }
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `DeleteColumns: `
+            + `${this.count} columns `
+            + `at ${this.startColumnIndex}`;
+    }
+
+    getColumnIndex(): number {
+        return this.startColumnIndex;
     }
 
     getCount(): number {

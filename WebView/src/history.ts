@@ -3,9 +3,11 @@ import {
     CellChangeCommand,
     CellChange,
     DeleteColumnCommand,
+    DeleteColumnsCommand,
     DeleteRowCommand,
     DeleteRowsCommand,
     InsertColumnCommand,
+    InsertColumnsCommand,
     InsertRowCommand,
     InsertRowsCommand
 } from "./command";
@@ -242,8 +244,10 @@ export class History {
 
         const shouldClearCopyRange =
             entry.command instanceof DeleteColumnCommand ||
+            entry.command instanceof DeleteColumnsCommand ||
             entry.command instanceof DeleteRowCommand ||
             entry.command instanceof InsertColumnCommand ||
+            entry.command instanceof InsertColumnsCommand ||
             entry.command instanceof InsertRowCommand ||
             entry.command instanceof InsertRowsCommand ||
             entry.command instanceof DeleteRowsCommand;

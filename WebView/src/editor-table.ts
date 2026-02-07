@@ -6,9 +6,11 @@ import {History} from "./history";
 import {
     Command,
     InsertColumnCommand,
+    InsertColumnsCommand,
     InsertRowCommand,
     InsertRowsCommand,
     DeleteColumnCommand,
+    DeleteColumnsCommand,
     DeleteRowCommand,
     DeleteRowsCommand
 } from "./command";
@@ -128,68 +130,11 @@ export class EditorTable {
 
             // 列ヘッダー (A, B, C, ...)
             for (let i = 0; i < this.tableData.header.length; ++i) {
-                const columnHeaderCell = document.createElement('div');
-                columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
-                columnHeaderCell.textContent = this.tableData.header[i].name;
-                columnHeaderCell.dataset.columnIndex = String(i);
-                columnHeaderCell.dataset.col = String(i);
-                // 幅と高さを直接設定
-                EditorTable.applyCellWidth(columnHeaderCell, DEFAULT_COLUMN_WIDTH);
-                EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
-
-                // 列ヘッダークリックで列全体を選択
-                columnHeaderCell.addEventListener('mousedown', (e) => {
-                    this.handler.submitAndHide();
-
-                    // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
-                    const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + 1;
-
-                    if (e.shiftKey) {
-                        // Shift+クリック: 現在のアンカーから連続選択
-                        this.selection.extendToColumn(clickedColumnIndex);
-                    } else if (e.ctrlKey || e.metaKey) {
-                        // Ctrl+クリック: 列を追加選択
-                        this.selection.addColumn(clickedColumnIndex);
-                    } else {
-                        // 通常クリック: 列全体を選択
-                        this.selection.selectColumn(clickedColumnIndex);
-                    }
-                });
-
-                // 列ヘッダー右クリックでコンテキストメニューを表示
-                columnHeaderCell.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // DOM上の実際の位置から列インデックスを取得
-                    const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
-                    this.contextMenu.show(e.clientX, e.clientY, [
-                        {
-                            label: '左に列を挿入',
-                            action: () => {
-                                this.insertColumn(contextMenuColumnIndex);
-                            }
-                        },
-                        {
-                            label: '右に列を挿入',
-                            action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1);
-                            }
-                        },
-                        {
-                            label: '列を削除',
-                            action: () => {
-                                this.removeColumn(contextMenuColumnIndex);
-                            }
-                        }
-                    ]);
-                });
-
-                // リサイズハンドルを追加
-                const resizeHandle = document.createElement('div');
-                resizeHandle.classList.add('column-resize-handle');
-                this.areaResizer.setupColumnResizeHandle(resizeHandle, columnHeaderCell, i);
-                columnHeaderCell.appendChild(resizeHandle);
-
+                const columnHeaderCell =
+                    this.createColumnHeaderCell(
+                        this.tableData.header[i].name,
+                        i
+                    );
                 cells.push(columnHeaderCell);
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
@@ -244,15 +189,7 @@ export class EditorTable {
      * 列挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
     public insertColumn(columnIndex: number): void {
-        const command = new InsertColumnCommand(this, columnIndex);
-        const copyRange = this.selection.getCopyRange();
-        const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.insertColumns(columnIndex, 1);
     }
 
     /**
@@ -279,63 +216,11 @@ export class EditorTable {
                     existingLabels.push(label);
                 }
 
-                const newHeaderCell = document.createElement('div');
-                newHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
-                newHeaderCell.dataset.columnIndex = String(columnIndex);
-                newHeaderCell.dataset.col = String(columnIndex);
-                // 幅と高さを直接設定
-                EditorTable.applyCellWidth(newHeaderCell, DEFAULT_COLUMN_WIDTH);
-                EditorTable.applyCellHeight(newHeaderCell, DEFAULT_ROW_HEIGHT);
-
-                // 列ヘッダークリックで列全体を選択
-                newHeaderCell.addEventListener('mousedown', (e) => {
-                    this.handler.submitAndHide();
-
-                    // DOM上の実際の位置から列インデックスを取得（列0は行ヘッダーなので+1）
-                    const clickedColumnIndex = parseInt(newHeaderCell.dataset.col!) + 1;
-
-                    if (e.shiftKey) {
-                        this.selection.extendToColumn(clickedColumnIndex);
-                    } else if (e.ctrlKey || e.metaKey) {
-                        this.selection.addColumn(clickedColumnIndex);
-                    } else {
-                        this.selection.selectColumn(clickedColumnIndex);
-                    }
-                });
-
-                // 列ヘッダー右クリックでコンテキストメニューを表示
-                newHeaderCell.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    // DOM上の実際の位置から列インデックスを取得
-                    const contextMenuColumnIndex = parseInt(newHeaderCell.dataset.col!);
-                    this.contextMenu.show(e.clientX, e.clientY, [
-                        {
-                            label: '左に列を挿入',
-                            action: () => {
-                                this.insertColumn(contextMenuColumnIndex);
-                            }
-                        },
-                        {
-                            label: '右に列を挿入',
-                            action: () => {
-                                this.insertColumn(contextMenuColumnIndex + 1);
-                            }
-                        },
-                        {
-                            label: '列を削除',
-                            action: () => {
-                                this.removeColumn(contextMenuColumnIndex);
-                            }
-                        }
-                    ]);
-                });
-
-                // リサイズハンドルを追加
-                const resizeHandle = document.createElement('div');
-                resizeHandle.classList.add('column-resize-handle');
-                this.areaResizer.setupColumnResizeHandle(resizeHandle, newHeaderCell, columnIndex);
-                newHeaderCell.appendChild(resizeHandle);
+                const newHeaderCell =
+                    this.createColumnHeaderCell(
+                        '',
+                        columnIndex
+                    );
 
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
@@ -484,8 +369,69 @@ export class EditorTable {
      * 列削除の公開メソッド（Commandを使用してhistoryに追加）
      */
     public removeColumn(columnIndex: number): void {
-        const command = new DeleteColumnCommand(this, columnIndex);
+        this.removeColumns(columnIndex, 1);
+    }
+
+    /**
+     * 複数列挿入の公開メソッド
+     * （Commandを使用してhistoryに追加）
+     */
+    public insertColumns(
+        columnIndex: number,
+        count: number
+    ): void {
+        let command: Command =
+            new InsertColumnCommand(this, columnIndex);
+        if (count > 1) {
+            command = new InsertColumnsCommand(
+                this, columnIndex, count
+            );
+        }
+
         const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        this.history.executeCommand(command, {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        }, copyRange);
+    }
+
+    /**
+     * 複数列削除の公開メソッド
+     * （Commandを使用してhistoryに追加）
+     */
+    public removeColumns(
+        startColumnIndex: number,
+        count: number
+    ): void {
+        const columnCount = this.getColumnCount();
+        const maxCountFromStart =
+            columnCount - startColumnIndex;
+        const maxCountForKeepOne =
+            columnCount - 1;
+        const effectiveCount = Math.min(
+            count,
+            maxCountFromStart,
+            maxCountForKeepOne
+        );
+        if (effectiveCount <= 0) {
+            return;
+        }
+
+        let command: Command =
+            new DeleteColumnCommand(
+                this, startColumnIndex
+            );
+        if (effectiveCount > 1) {
+            command = new DeleteColumnsCommand(
+                this, startColumnIndex, effectiveCount
+            );
+        }
+
+        const copyRange =
+            this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
         this.history.executeCommand(command, {
             startRow: anchor.row,
@@ -625,6 +571,197 @@ export class EditorTable {
         if (column === -1) return null;
 
         return {row, column};
+    }
+
+    /**
+     * 列ヘッダーのクリックハンドラを生成する
+     */
+    private createColumnHeaderClickHandler(
+        columnHeaderCell: HTMLElement
+    ): (e: MouseEvent) => void {
+        return (e: MouseEvent) => {
+            // 左クリック以外は無視
+            if (e.button !== 0) {
+                return;
+            }
+
+            this.handler.submitAndHide();
+
+            const clickedColumnIndex = parseInt(
+                columnHeaderCell.dataset.col!
+            ) + 1;
+
+            if (e.shiftKey) {
+                this.selection.extendToColumn(
+                    clickedColumnIndex
+                );
+            } else if (e.ctrlKey || e.metaKey) {
+                this.selection.addColumn(
+                    clickedColumnIndex
+                );
+            } else {
+                this.selection.selectColumn(
+                    clickedColumnIndex
+                );
+            }
+        };
+    }
+
+    /**
+     * 列ヘッダーのコンテキストメニューハンドラ
+     * 複数列選択時は選択列数分の挿入・削除に対応
+     */
+    private createColumnHeaderContextMenuHandler(
+        columnHeaderCell: HTMLElement
+    ): (e: MouseEvent) => void {
+        return (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const contextMenuColumnIndex = parseInt(
+                columnHeaderCell.dataset.col!
+            );
+            const contextMenuSelectionColumnIndex =
+                contextMenuColumnIndex + 1;
+
+            // 選択範囲を取得
+            const selRange =
+                this.selection.getSelectionRange();
+
+            // 列全体が選択されているか判定
+            // （行範囲がテーブル全高さか確認）
+            const lastRow = this.getRowCount() - 1;
+            const isColumnSelection =
+                selRange.startRow === 1
+                && selRange.endRow === lastRow;
+
+            // 右クリックした列が選択範囲内か判定
+            const isInSelection =
+                contextMenuSelectionColumnIndex
+                    >= selRange.startColumn
+                && contextMenuSelectionColumnIndex
+                    <= selRange.endColumn;
+
+            // 列全体選択かつ範囲内の場合のみ
+            // 複数列操作とする
+            const useSelectedColumns =
+                isColumnSelection && isInSelection;
+
+            // 複数列選択時の列情報を計算
+            const columnCount = useSelectedColumns
+                ? selRange.endColumn
+                    - selRange.startColumn + 1
+                : 1;
+            const startColumnIndex =
+                useSelectedColumns
+                ? selRange.startColumn - 1
+                : contextMenuColumnIndex;
+            const endColumnIndex =
+                useSelectedColumns
+                ? selRange.endColumn - 1
+                : contextMenuColumnIndex;
+
+            // 選択範囲外の右クリック時は
+            // 対象列を選択する
+            if (!useSelectedColumns) {
+                this.selection.selectColumn(
+                    contextMenuSelectionColumnIndex
+                );
+            }
+
+            // ラベルを列数に応じて変更
+            const insertLeftLabel = columnCount > 1
+                ? `左に${columnCount}列を挿入`
+                : '左に列を挿入';
+            const insertRightLabel = columnCount > 1
+                ? `右に${columnCount}列を挿入`
+                : '右に列を挿入';
+            const deleteLabel = columnCount > 1
+                ? `${columnCount}列を削除`
+                : '列を削除';
+
+            this.contextMenu.show(
+                e.clientX, e.clientY, [
+                {
+                    label: insertLeftLabel,
+                    action: () => {
+                        this.insertColumns(
+                            startColumnIndex,
+                            columnCount
+                        );
+                    }
+                },
+                {
+                    label: insertRightLabel,
+                    action: () => {
+                        this.insertColumns(
+                            endColumnIndex + 1,
+                            columnCount
+                        );
+                    }
+                },
+                {
+                    label: deleteLabel,
+                    action: () => {
+                        this.removeColumns(
+                            startColumnIndex,
+                            columnCount
+                        );
+                    }
+                }
+            ]);
+        };
+    }
+
+    private createColumnHeaderCell(
+        text: string,
+        columnIndex: number
+    ): HTMLElement {
+        const columnHeaderCell =
+            document.createElement('div');
+        columnHeaderCell.classList.add(
+            'editor-table-cell',
+            'editor-table-column-header'
+        );
+        columnHeaderCell.textContent = text;
+        columnHeaderCell.dataset.columnIndex =
+            String(columnIndex);
+        columnHeaderCell.dataset.col =
+            String(columnIndex);
+        EditorTable.applyCellWidth(
+            columnHeaderCell, DEFAULT_COLUMN_WIDTH
+        );
+        EditorTable.applyCellHeight(
+            columnHeaderCell, DEFAULT_ROW_HEIGHT
+        );
+
+        // 列ヘッダークリックで列全体を選択
+        columnHeaderCell.addEventListener(
+            'mousedown',
+            this.createColumnHeaderClickHandler(
+                columnHeaderCell
+            )
+        );
+
+        // 列ヘッダー右クリックでコンテキストメニュー
+        columnHeaderCell.addEventListener(
+            'contextmenu',
+            this.createColumnHeaderContextMenuHandler(
+                columnHeaderCell
+            )
+        );
+
+        const resizeHandle =
+            document.createElement('div');
+        resizeHandle.classList.add('column-resize-handle');
+        this.areaResizer.setupColumnResizeHandle(
+            resizeHandle,
+            columnHeaderCell,
+            columnIndex
+        );
+        columnHeaderCell.appendChild(resizeHandle);
+
+        return columnHeaderCell;
     }
 
     /**
