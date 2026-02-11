@@ -1,4 +1,4 @@
-FROM node:22-bookworm
+FROM node:24-bookworm
 
 WORKDIR /app/WebView
 
@@ -18,4 +18,9 @@ RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' \
 COPY WebView/e2e/fixtures/config.json \
     /app/WebView/src/config.json
 
-ENTRYPOINT ["npx", "playwright"]
+# テスト実行サーバーを配置
+COPY docker/playwright/server.mts /app/server.mts
+
+EXPOSE 3000
+
+ENTRYPOINT ["node", "/app/server.mts"]

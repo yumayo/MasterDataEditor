@@ -4,7 +4,6 @@ services:
       context: .
       dockerfile: docker/playwright/Dockerfile
     working_dir: /app/WebView
-    network_mode: none
     volumes:
       # ソースコード（読み取り専用）
       # src/ 配下のCSS・TSファイルはすべて含まれる
@@ -20,3 +19,9 @@ services:
       - ./WebView/e2e/:/app/WebView/e2e/
       # テスト結果出力
       - ./WebView/test-results/:/app/WebView/test-results/
+    networks:
+      - yumayo-ai
+
+networks:
+  yumayo-ai:
+    external: true
