@@ -331,7 +331,7 @@ export function applyFillSeries(
  * @param table EditorTable
  * @returns ヘッダー配列とボディ配列
  */
-function extractTableData(table: EditorTable): { header: string[]; body: string[][] } {
+export function extractTableData(table: EditorTable): { header: string[]; body: string[][] } {
     const header: string[] = [];
     const body: string[][] = [];
 
@@ -374,7 +374,7 @@ function extractTableData(table: EditorTable): { header: string[]; body: string[
  * @param tableData テーブルから抽出したデータ
  * @returns マージされたCSV
  */
-function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; body: string[][] }): Csv {
+export function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; body: string[][] }): Csv {
     const resultCsv = new Csv();
 
     // 既存CSVのヘッダーをベースに、新しい列を追加

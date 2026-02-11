@@ -5,6 +5,25 @@ export interface ContextMenuItem {
     action: ContextMenuItemAction;
 }
 
+/** セパレーター */
+export interface ContextMenuSeparator {
+    separator: true;
+}
+
+/** メニューエントリ（項目またはセパレーター） */
+export type ContextMenuEntry =
+    ContextMenuItem | ContextMenuSeparator;
+
+/**
+ * セパレーターかどうかを判定する
+ */
+function isSeparator(
+    entry: ContextMenuEntry
+): entry is ContextMenuSeparator {
+    return 'separator' in entry
+        && entry.separator === true;
+}
+
 export class ContextMenu {
     readonly element: HTMLElement;
 
@@ -25,10 +44,24 @@ export class ContextMenu {
         });
     }
 
-    show(x: number, y: number, items: ContextMenuItem[]): void {
+    show(
+        x: number,
+        y: number,
+        items: ContextMenuEntry[]
+    ): void {
         this.element.innerHTML = '';
 
         for (const item of items) {
+            if (isSeparator(item)) {
+                const sep =
+                    document.createElement('div');
+                sep.classList.add(
+                    'context-menu-separator'
+                );
+                this.element.appendChild(sep);
+                continue;
+            }
+
             const menuItem = document.createElement('div');
             menuItem.classList.add('context-menu-item');
             menuItem.textContent = item.label;

@@ -62,6 +62,11 @@ export class EditorTableHandler {
     private tableData: EditorTableData | undefined;
     private dropdownActive: boolean;
 
+    /** ビュー用保存コールバック */
+    private saveCallback:
+        ((table: EditorTable) => Promise<void>)
+        | undefined;
+
     private readonly boundOnKeydown: (e: KeyboardEvent) => void;
     private readonly boundOnFocusout: () => void;
     private readonly boundOnPaste: (e: ClipboardEvent) => void;
@@ -79,6 +84,7 @@ export class EditorTableHandler {
         this.active = false;
         this.visible = false;
         this.dropdownActive = false;
+        this.saveCallback = undefined;
 
         // contenteditable element を作成
         const element = document.createElement('div');
@@ -132,6 +138,18 @@ export class EditorTableHandler {
         this.referenceDataCache = cache;
         this.dropdownInput = dropdown;
         this.tableData = tableData;
+    }
+
+    /**
+     * 保存コールバックを設定
+     * ビュータブで使用し、Ctrl+Sで呼ばれる
+     */
+    setSaveCallback(
+        callback: (
+            table: EditorTable
+        ) => Promise<void>
+    ): void {
+        this.saveCallback = callback;
     }
 
     /**
@@ -317,9 +335,19 @@ export class EditorTableHandler {
         // Ctrl+S: 保存
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
-            saveTableData(this.table).then(() => {
-                this.history.markSaved();
-            });
+            if (this.saveCallback) {
+                this.saveCallback(
+                    this.table
+                ).then(() => {
+                    this.history.markSaved();
+                });
+            } else {
+                saveTableData(
+                    this.table
+                ).then(() => {
+                    this.history.markSaved();
+                });
+            }
             return;
         }
 

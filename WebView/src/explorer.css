@@ -28,3 +28,9 @@
 [data-theme="dark"] .explorer-directory-name:hover {
     background-color: rgba(255, 255, 255, 0.05);
 }
+
+/* ビューファイルのスタイル */
+.explorer-view-file {
+    color: var(--text-muted-color, #666);
+    font-style: italic;
+}

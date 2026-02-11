@@ -150,3 +150,19 @@
     font-size: 0.9em;
     opacity: 0.7;
 }
+
+/* 結合列ヘッダーのスタイル（視覚的に区別） */
+.editor-table-joined-column-header {
+    background-color: var(--background-color);
+    background-image: linear-gradient(
+        rgba(100, 180, 100, 0.15),
+        rgba(100, 180, 100, 0.15)
+    );
+}
+
+.editor-table-joined-column-header.selected {
+    background-image: linear-gradient(
+        rgba(0, 120, 215, 0.3),
+        rgba(0, 120, 215, 0.3)
+    );
+}

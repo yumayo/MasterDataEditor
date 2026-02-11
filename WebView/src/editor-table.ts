@@ -1,7 +1,13 @@
-import {EditorTableData} from "./model/editor-table-data";
-import {Selection, CellPosition} from "./selection";
-import {EditorTableHandler} from "./editor-table-handler";
-import {ContextMenu} from "./context-menu";
+import {EditorTableData} from
+    "./model/editor-table-data";
+import {Selection, CellPosition} from
+    "./selection";
+import {EditorTableHandler} from
+    "./editor-table-handler";
+import {
+    ContextMenu,
+    ContextMenuEntry
+} from "./context-menu";
 import {History} from "./history";
 import {
     Command,
@@ -15,11 +21,52 @@ import {
     DeleteRowsCommand
 } from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
-import {ScrollViewportController} from "./scroll-viewport-controller";
-import {SelectionDragController} from "./selection-drag-controller";
-import {ReferenceDataCache} from "./reference-data-cache";
-import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
+import {
+    DEFAULT_COLUMN_WIDTH,
+    DEFAULT_ROW_HEIGHT
+} from "./constant";
+import {ScrollViewportController} from
+    "./scroll-viewport-controller";
+import {SelectionDragController} from
+    "./selection-drag-controller";
+import {ReferenceDataCache} from
+    "./reference-data-cache";
+import {
+    parseReferenceExpression,
+    isDynamicReference
+} from "./reference-expression";
+import {ViewDefinition} from
+    "./model/view-definition";
+import {ViewColumnMapping} from
+    "./model/view-column-mapping";
+
+/**
+ * 利用可能なJoin対象の情報
+ */
+export interface AvailableJoinTarget {
+    /** 参照元列名 */
+    sourceColumnName: string;
+    /** 結合先テーブル名 */
+    targetTableName: string;
+    /** 結合先キー列名 */
+    targetColumnName: string;
+}
+
+/**
+ * ビューコンテキスト
+ * ビュータブでのみ設定される
+ */
+export interface ViewContext {
+    viewDefinition: ViewDefinition;
+    columnMappings: ViewColumnMapping[];
+    availableJoinTargets:
+        AvailableJoinTarget[];
+    onJoinAsync: (
+        targetTable: string,
+        sourceColumn: string,
+        afterColumnIndex: number
+    ) => Promise<void>;
+}
 
 export class EditorTable {
     readonly tableName: string;
@@ -36,6 +83,10 @@ export class EditorTable {
     private readonly scrollBinding: ScrollViewportController;
     private lastScrollLeft = -1;
     private readonly referenceDataCache: ReferenceDataCache;
+
+    /** ビューコンテキスト（ビュータブのみ） */
+    private viewContext:
+        ViewContext | undefined;
 
     constructor(
         tableName: string,
@@ -65,6 +116,46 @@ export class EditorTable {
             selection,
             scrollBinding
         );
+        this.viewContext = undefined;
+    }
+
+    /**
+     * ビューコンテキストを設定する
+     */
+    setViewContext(context: ViewContext): void {
+        this.viewContext = context;
+    }
+
+    /**
+     * テーブルデータを取得する
+     */
+    getTableData(): EditorTableData {
+        return this.tableData;
+    }
+
+    /**
+     * Selection を取得する
+     */
+    getSelection(): Selection {
+        return this.selection;
+    }
+
+    /**
+     * 列ヘッダーにCSSクラスを追加する
+     */
+    addColumnHeaderClass(
+        columnIndex: number,
+        className: string
+    ): void {
+        const headerRow =
+            this.element.children[0];
+        const headerCell =
+            headerRow.children[
+                columnIndex + 1
+            ] as HTMLElement;
+        if (headerCell) {
+            headerCell.classList.add(className);
+        }
     }
 
     /**
@@ -680,8 +771,8 @@ export class EditorTable {
                 ? `${columnCount}列を削除`
                 : '列を削除';
 
-            this.contextMenu.show(
-                e.clientX, e.clientY, [
+            const menuItems:
+                ContextMenuEntry[] = [
                 {
                     label: insertLeftLabel,
                     action: () => {
@@ -709,8 +800,81 @@ export class EditorTable {
                         );
                     }
                 }
-            ]);
+            ];
+
+            // ビューコンテキストがある場合
+            // Join項目を追加
+            if (this.viewContext) {
+                const joinItems =
+                    this.buildJoinMenuItems(
+                        contextMenuColumnIndex
+                    );
+                if (joinItems.length > 0) {
+                    menuItems.push(
+                        { separator: true }
+                    );
+                    for (
+                        const item of joinItems
+                    ) {
+                        menuItems.push(item);
+                    }
+                }
+            }
+
+            this.contextMenu.show(
+                e.clientX,
+                e.clientY,
+                menuItems
+            );
         };
+    }
+
+    /**
+     * Join用メニュー項目を構築する
+     * 既にJoin済みのテーブルは除外する
+     */
+    private buildJoinMenuItems(
+        columnIndex: number
+    ): ContextMenuEntry[] {
+        if (!this.viewContext) return [];
+
+        const items: ContextMenuEntry[] = [];
+        const joinedTables = new Set(
+            this.viewContext.viewDefinition.joins
+                .map(j => j.targetTable)
+        );
+
+        for (
+            const target
+            of this.viewContext
+                .availableJoinTargets
+        ) {
+            // 既にJoin済みなら表示しない
+            if (
+                joinedTables.has(
+                    target.targetTableName
+                )
+            ) {
+                continue;
+            }
+
+            items.push({
+                label: 'Join: '
+                    + target.targetTableName
+                    + ' (via '
+                    + target.sourceColumnName
+                    + ')',
+                action: () => {
+                    this.viewContext!.onJoinAsync(
+                        target.targetTableName,
+                        target.sourceColumnName,
+                        columnIndex
+                    );
+                },
+            });
+        }
+
+        return items;
     }
 
     private createColumnHeaderCell(
