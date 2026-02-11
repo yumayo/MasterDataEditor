@@ -1,0 +1,22 @@
+services:
+  playwright:
+    build:
+      context: .
+      dockerfile: docker/playwright/Dockerfile
+    working_dir: /app/WebView
+    network_mode: none
+    volumes:
+      # ソースコード（読み取り専用）
+      # src/ 配下のCSS・TSファイルはすべて含まれる
+      - ./WebView/src/:/app/WebView/src/:ro
+      - ./WebView/index.html:/app/WebView/index.html:ro
+      - ./WebView/index.css:/app/WebView/index.css:ro
+      - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
+      - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
+      # テスト用config.json（src/config.jsonはgitignoreされているため）
+      - ./WebView/e2e/fixtures/config.json:/app/WebView/src/config.json:ro
+      # Playwright設定・テストファイル
+      - ./WebView/playwright.config.ts:/app/WebView/playwright.config.ts:ro
+      - ./WebView/e2e/:/app/WebView/e2e/
+      # テスト結果出力
+      - ./WebView/test-results/:/app/WebView/test-results/

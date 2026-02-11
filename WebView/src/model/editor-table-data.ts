@@ -12,7 +12,11 @@ export class EditorTableData {
 
     body: EditorTableDataRow[];
 
-    constructor(description: string, primaryKey: string, header: EditorTableDataColumn[], body: EditorTableDataRow[]) {
+    constructor(
+        description: string, primaryKey: string,
+        header: EditorTableDataColumn[],
+        body: EditorTableDataRow[]
+    ) {
         this.description = description;
         this.primaryKey = primaryKey;
         this.header = header;
@@ -26,20 +30,44 @@ export class EditorTableData {
         const primaryKey = json['primary_key'];
 
         const header = json['header'];
-        const columns = [];
+        const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
-            columns.push(new EditorTableDataColumn(column.key, column.name, column.type, column.comment, column.reference));
+            columns.push(new EditorTableDataColumn(
+                column.key, column.name, column.type,
+                column.comment, column.reference
+            ));
+        }
+
+        // スキーマの各列がCSVの何番目の列に対応するかのマッピングを構築する
+        // CSVにはスキーマにない列が含まれる場合があるため、名前で照合する
+        const columnMapping: number[] = [];
+        for (const col of columns) {
+            const csvIndex = csv.header.indexOf(col.name);
+            columnMapping.push(csvIndex);
         }
 
         const body = csv.body;
-        const rows = [];
+        const rows: EditorTableDataRow[] = [];
         for (let i = 0; i < body.length; ++i) {
-            const row = body[i];
-            rows.push(new EditorTableDataRow(row));
+            const csvRow = body[i];
+            // スキーマの列順に並べ替えた値を作成
+            const mappedValues: string[] = [];
+            for (const csvIndex of columnMapping) {
+                if (csvIndex !== -1 && csvIndex < csvRow.length) {
+                    mappedValues.push(csvRow[csvIndex]);
+                } else {
+                    mappedValues.push('');
+                }
+            }
+            rows.push(
+                new EditorTableDataRow(mappedValues)
+            );
         }
 
-        return new EditorTableData(description, primaryKey, columns, rows);
+        return new EditorTableData(
+            description, primaryKey, columns, rows
+        );
     }
 
     serialize() {

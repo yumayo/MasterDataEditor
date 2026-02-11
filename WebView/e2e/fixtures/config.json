@@ -1,0 +1,4 @@
+{
+  "referenceDisplayColumnPriority": ["ja", "id"],
+  "primaryKeyColumnName": "id"
+}
