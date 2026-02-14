@@ -1,6 +1,7 @@
 import {readFileAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
+import {EditorTable} from "./editor-table";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
@@ -43,11 +44,53 @@ export class ReferenceDataCache {
     private fullDataCache: Map<string, ReferenceTableFullData>;
     private fullDataLoadingPromises: Map<string, Promise<ReferenceTableFullData>>;
 
-    constructor() {
+    /** タブで開かれているEditorTableの参照（インメモリデータ優先取得用） */
+    private readonly openEditorTables: Map<string, EditorTable>;
+
+    constructor(openEditorTables: Map<string, EditorTable>) {
         this.cache = new Map();
         this.loadingPromises = new Map();
         this.fullDataCache = new Map();
         this.fullDataLoadingPromises = new Map();
+        this.openEditorTables = openEditorTables;
+    }
+
+    /**
+     * タブで開かれているテーブルのインメモリデータからCsvを構築する
+     * DOMから現在の値を読み取るため、未保存の編集内容も反映される
+     * 開かれていなければ結果なしを返す
+     */
+    private getInMemoryCsv(tableName: string): Csv | false {
+        const editorTable = this.openEditorTables.get(tableName);
+        if (!editorTable) return false;
+
+        const columnCount = editorTable.getColumnCount();
+        const rowCount = editorTable.getRowCount();
+
+        const csv = new Csv();
+
+        // 列ヘッダーをDOMから取得
+        const header: string[] = [];
+        for (let c = 0; c < columnCount; c++) {
+            header.push(editorTable.getColumnHeaderValue(c));
+        }
+        csv.header = header;
+
+        // データ行をDOMから取得（セル編集はDOMのみ更新されるため）
+        const body: string[][] = [];
+        for (let r = 1; r < rowCount; r++) {
+            const rowData: string[] = [];
+            for (let c = 1; c <= columnCount; c++) {
+                rowData.push(editorTable.getCellValueAt(r, c));
+            }
+            if (rowData.length > 0 && rowData[0] !== '') {
+                body.push(rowData);
+            } else {
+                break;
+            }
+        }
+        csv.body = body;
+        return csv;
     }
 
     /**
@@ -139,21 +182,26 @@ export class ReferenceDataCache {
             };
         }
 
-        // CSVを読み込む
-        const csvText = await readFileAsync(`data/${tableName}.csv`);
+        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
+        const inMemoryCsv = this.getInMemoryCsv(tableName);
+        let csv: Csv;
+        if (inMemoryCsv !== false) {
+            csv = inMemoryCsv;
+        } else {
+            const csvText = await readFileAsync(`data/${tableName}.csv`);
 
-        // CSVが空の場合は空のデータを返す
-        if (!csvText || csvText.trim() === '') {
-            console.warn(`Reference table CSV is empty: ${tableName}`);
-            return {
-                tableName,
-                items: [],
-                displayColumnName: ''
-            };
+            if (!csvText || csvText.trim() === '') {
+                console.warn(`Reference table CSV is empty: ${tableName}`);
+                return {
+                    tableName,
+                    items: [],
+                    displayColumnName: ''
+                };
+            }
+
+            csv = new Csv();
+            csv.load(csvText);
         }
-
-        const csv = new Csv();
-        csv.load(csvText);
 
         // 表示列を決定する
         const displayColumnName = this.determineDisplayColumn(schema.header);
@@ -343,23 +391,28 @@ export class ReferenceDataCache {
             };
         }
 
-        // CSVを読み込む
-        const csvText = await readFileAsync(`data/${tableName}.csv`);
+        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
+        const inMemoryCsv = this.getInMemoryCsv(tableName);
+        let csv: Csv;
+        if (inMemoryCsv !== false) {
+            csv = inMemoryCsv;
+        } else {
+            const csvText = await readFileAsync(`data/${tableName}.csv`);
 
-        // CSVが空の場合は空のデータを返す
-        if (!csvText || csvText.trim() === '') {
-            console.warn(`Reference table CSV is empty: ${tableName}`);
-            return {
-                tableName,
-                header: [],
-                rows: new Map(),
-                displayColumnName: '',
-                displayColumnIndex: -1
-            };
+            if (!csvText || csvText.trim() === '') {
+                console.warn(`Reference table CSV is empty: ${tableName}`);
+                return {
+                    tableName,
+                    header: [],
+                    rows: new Map(),
+                    displayColumnName: '',
+                    displayColumnIndex: -1
+                };
+            }
+
+            csv = new Csv();
+            csv.load(csvText);
         }
-
-        const csv = new Csv();
-        csv.load(csvText);
 
         // 表示列を決定する
         const displayColumnName = this.determineDisplayColumn(schema.header);

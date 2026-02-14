@@ -124,6 +124,9 @@ export class Tab {
     private addViewCallback:
         ((viewName: string) => void) | undefined;
 
+    /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
+    private readonly openEditorTables: Map<string, EditorTable>;
+
     constructor(editor: Editor) {
         this.editor = editor;
         this.element = document.getElementById('tab-content')!;
@@ -133,6 +136,7 @@ export class Tab {
         this.contextMenu = new ContextMenu(editor.element);
         this.draggingTabName = undefined;
         this.addViewCallback = undefined;
+        this.openEditorTables = new Map();
     }
 
     /**
@@ -206,6 +210,9 @@ export class Tab {
 
             // 状態を削除
             this.tabStates.delete(name);
+
+            // 開いているテーブルのマップから削除
+            this.openEditorTables.delete(name);
         }
 
         // アクティブタブが削除された場合はクリア
@@ -242,6 +249,12 @@ export class Tab {
         if (existingState) {
             this.activateTabState(existingState);
             this.activeTabName = name;
+
+            // 他タブでインメモリデータが編集された
+            // 可能性があるため、参照ヒントを再更新する
+            this.refreshReferenceHints(
+                name, existingState
+            );
             return;
         }
 
@@ -301,8 +314,8 @@ export class Tab {
                 wrapperElement.dataset.tabName = name;
                 this.editor.element.appendChild(wrapperElement);
 
-                // 参照データキャッシュを作成
-                const referenceDataCache = new ReferenceDataCache();
+                // 参照データキャッシュを作成（インメモリデータ優先取得用にマップを渡す）
+                const referenceDataCache = new ReferenceDataCache(this.openEditorTables);
 
                 // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
                 const editorTableFactoryResult = this.createEditorTable(
@@ -318,6 +331,9 @@ export class Tab {
                 const history = editorTableFactoryResult.history;
                 const areaResizer = editorTableFactoryResult.areaResizer;
                 const fillController = editorTableFactoryResult.fillController;
+
+                // 開いているテーブルのマップに登録
+                this.openEditorTables.set(name, editorTable);
 
                 // 参照先テーブルを事前読み込み
                 // 単純参照と動的参照の両方に対応
@@ -364,8 +380,8 @@ export class Tab {
                     });
                 }
 
-                // 逆参照を並行して解決
-                const reverseResolver = new ReverseReferenceResolver();
+                // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
+                const reverseResolver = new ReverseReferenceResolver(this.openEditorTables);
                 reverseResolver.resolveAsync(name).then(reverseMap => {
                     editorTable.updateReverseReferenceHints(reverseMap);
                 }).catch(error => {
@@ -523,9 +539,9 @@ export class Tab {
                             wrapperElement
                         );
 
-                    // 参照データキャッシュを作成
+                    // 参照データキャッシュを作成（インメモリデータ優先取得用にマップを渡す）
                     const referenceDataCache =
-                        new ReferenceDataCache();
+                        new ReferenceDataCache(this.openEditorTables);
 
                     // EditorTable生成
                     const factoryResult =
@@ -551,6 +567,9 @@ export class Tab {
                     const fillController =
                         factoryResult
                             .fillController;
+
+                    // 開いているテーブルのマップに登録
+                    this.openEditorTables.set(name, editorTable);
 
                     // ビューコンテキストを設定
                     this.setupViewContext(
@@ -781,6 +800,52 @@ export class Tab {
             endRow: anchor.row,
             endColumn: anchor.column,
         }, copyRange);
+    }
+
+    /**
+     * タブ切り替え時に参照ヒントを再更新する
+     *
+     * 他タブでインメモリデータが編集されている
+     * 可能性があるため、キャッシュをクリアして
+     * 参照データを再読み込みする
+     */
+    private refreshReferenceHints(
+        name: string,
+        state: TabState
+    ): void {
+        // キャッシュをクリアして最新の
+        // インメモリデータから再読み込みさせる
+        state.referenceDataCache.clear();
+
+        // 参照テーブルを再読み込み
+        const tableData =
+            state.editorTable.getTableData();
+        this.preloadReferenceTables(
+            tableData,
+            state.referenceDataCache,
+            state.editorTable
+        );
+
+        // 通常タブの場合は逆参照も再解決する
+        if (state.kind === 'normal') {
+            const reverseResolver =
+                new ReverseReferenceResolver(
+                    this.openEditorTables
+                );
+            reverseResolver.resolveAsync(name)
+                .then(reverseMap => {
+                    state.editorTable
+                        .updateReverseReferenceHints(
+                            reverseMap
+                        );
+                }).catch(error => {
+                    console.warn(
+                        'Failed to refresh'
+                        + ' reverse references:',
+                        error
+                    );
+                });
+        }
     }
 
     /**

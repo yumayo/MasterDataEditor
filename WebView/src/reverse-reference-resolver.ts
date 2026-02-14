@@ -1,6 +1,7 @@
 import {findFilesAsync, readFileAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
+import {EditorTable} from "./editor-table";
 import {
     parseReferenceExpression,
     isSimpleReference
@@ -32,6 +33,51 @@ export type ReverseReferenceMap =
  * 発見し、PK値ごとにグループ化したマップを構築する。
  */
 export class ReverseReferenceResolver {
+
+    /** タブで開かれているEditorTableの参照（インメモリデータ優先取得用） */
+    private readonly openEditorTables: Map<string, EditorTable>;
+
+    constructor(openEditorTables: Map<string, EditorTable>) {
+        this.openEditorTables = openEditorTables;
+    }
+
+    /**
+     * タブで開かれているテーブルのインメモリデータからCsvを構築する
+     * DOMから現在の値を読み取るため、未保存の編集内容も反映される
+     * 開かれていなければ結果なしを返す
+     */
+    private getInMemoryCsv(tableName: string): Csv | false {
+        const editorTable = this.openEditorTables.get(tableName);
+        if (!editorTable) return false;
+
+        const columnCount = editorTable.getColumnCount();
+        const rowCount = editorTable.getRowCount();
+
+        const csv = new Csv();
+
+        // 列ヘッダーをDOMから取得
+        const header: string[] = [];
+        for (let c = 0; c < columnCount; c++) {
+            header.push(editorTable.getColumnHeaderValue(c));
+        }
+        csv.header = header;
+
+        // データ行をDOMから取得（セル編集はDOMのみ更新されるため）
+        const body: string[][] = [];
+        for (let r = 1; r < rowCount; r++) {
+            const rowData: string[] = [];
+            for (let c = 1; c <= columnCount; c++) {
+                rowData.push(editorTable.getCellValueAt(r, c));
+            }
+            if (rowData.length > 0 && rowData[0] !== '') {
+                body.push(rowData);
+            } else {
+                break;
+            }
+        }
+        csv.body = body;
+        return csv;
+    }
 
     /**
      * 指定テーブルを参照している全子テーブルを走査し、
@@ -116,12 +162,18 @@ export class ReverseReferenceResolver {
 
         if (fkColumns.length === 0) return;
 
-        // CSVを読み込む
-        const csvText = await readFileAsync(
-            `data/${childTableName}.csv`
-        );
-        const csv = new Csv();
-        csv.load(csvText);
+        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
+        const inMemoryCsv = this.getInMemoryCsv(childTableName);
+        let csv: Csv;
+        if (inMemoryCsv !== false) {
+            csv = inMemoryCsv;
+        } else {
+            const csvText = await readFileAsync(
+                `data/${childTableName}.csv`
+            );
+            csv = new Csv();
+            csv.load(csvText);
+        }
 
         // FK列のインデックスを解決
         for (const fk of fkColumns) {
