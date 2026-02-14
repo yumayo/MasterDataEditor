@@ -35,10 +35,15 @@ import {
     parseReferenceExpression,
     isDynamicReference
 } from "./reference-expression";
+import {
+    ReverseReferenceMap,
+    formatReverseReferenceHint
+} from "./reverse-reference-resolver";
 import {ViewDefinition} from
     "./model/view-definition";
 import {ViewColumnMapping} from
     "./model/view-column-mapping";
+import {config} from "./config";
 
 /**
  * 利用可能なJoin対象の情報
@@ -88,6 +93,10 @@ export class EditorTable {
     private viewContext:
         ViewContext | undefined;
 
+    /** 逆参照マップ（PK値→逆参照エントリ配列） */
+    private reverseReferenceMap:
+        ReverseReferenceMap | undefined;
+
     constructor(
         tableName: string,
         tableData: EditorTableData,
@@ -117,6 +126,7 @@ export class EditorTable {
             scrollBinding
         );
         this.viewContext = undefined;
+        this.reverseReferenceMap = undefined;
     }
 
     /**
@@ -172,6 +182,35 @@ export class EditorTable {
                 const value = EditorTable.getCellValue(cell);
                 this.setCellValue(cell, value, dataColumnIndex, rowIndex);
             }
+        }
+    }
+
+    /**
+     * 逆参照ヒントを更新する
+     * ReverseReferenceResolver の結果を受け取り、
+     * PK列のセルに逆参照ヒントspanを追加する
+     */
+    updateReverseReferenceHints(
+        map: ReverseReferenceMap
+    ): void {
+        this.reverseReferenceMap = map;
+
+        // PK列のインデックスを取得
+        const pkColumnIndex =
+            this.tableData.header.findIndex(
+                col => col.name
+                    === config.primaryKeyColumnName
+            );
+        if (pkColumnIndex === -1) return;
+
+        // 全データ行のPK列セルに逆参照ヒントを追加
+        for (let rowIndex = 1; rowIndex < this.element.children.length; rowIndex++) {
+            const row = this.element.children[rowIndex] as HTMLElement;
+            const cell = row.children[pkColumnIndex + 1] as HTMLElement;
+            if (!cell) continue;
+
+            const pkValue = EditorTable.getCellValue(cell);
+            this.applyReverseReferenceHint(cell, pkValue);
         }
     }
 
@@ -1354,8 +1393,10 @@ export class EditorTable {
         if (valueElement) {
             return valueElement.textContent ?? '';
         }
-        // .cell-reference-hint 要素があれば、最初のテキストノードから取得
-        const hintElement = cell.querySelector('.cell-reference-hint');
+        // ヒント要素（参照・逆参照）があれば、最初のテキストノードから取得
+        const hintElement = cell.querySelector(
+            '.cell-reference-hint, .cell-reverse-reference-hint'
+        );
         if (hintElement) {
             for (const node of Array.from(cell.childNodes)) {
                 if (node.nodeType === Node.TEXT_NODE) {
@@ -1415,11 +1456,25 @@ export class EditorTable {
             existingHint.remove();
         }
 
+        // 既存の逆参照ヒントを削除
+        const existingReverseHint = cell.querySelector('.cell-reverse-reference-hint');
+        if (existingReverseHint) {
+            existingReverseHint.remove();
+        }
+
         // 参照列かどうかを判定
         const column = this.tableData.header[dataColumnIndex];
         if (!column || !column.reference) {
             // 参照列でなければ通常のテキストコンテンツを設定
             cell.textContent = value;
+
+            // PK列の場合は逆参照ヒントを再適用
+            if (column
+                && column.name === config.primaryKeyColumnName) {
+                this.applyReverseReferenceHint(
+                    cell, value
+                );
+            }
             return;
         }
 
@@ -1512,6 +1567,41 @@ export class EditorTable {
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reference-hint');
         hintSpan.textContent = displayText;
+        cell.appendChild(hintSpan);
+    }
+
+    /**
+     * セルに逆参照ヒントを適用する
+     * 逆参照マップにエントリがあればヒントspanを追加し、
+     * なければ既存のヒントを削除する
+     */
+    private applyReverseReferenceHint(
+        cell: HTMLElement,
+        pkValue: string
+    ): void {
+        // 既存の逆参照ヒントを削除
+        const existing = cell.querySelector(
+            '.cell-reverse-reference-hint'
+        );
+        if (existing) {
+            existing.remove();
+        }
+
+        if (!this.reverseReferenceMap) return;
+        if (pkValue === '') return;
+
+        const entries =
+            this.reverseReferenceMap.get(pkValue);
+        if (!entries || entries.length === 0) return;
+
+        const hintText =
+            formatReverseReferenceHint(entries);
+        const hintSpan =
+            document.createElement('span');
+        hintSpan.classList.add(
+            'cell-reverse-reference-hint'
+        );
+        hintSpan.textContent = hintText;
         cell.appendChild(hintSpan);
     }
 

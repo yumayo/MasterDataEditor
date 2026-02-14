@@ -36,6 +36,8 @@ import {
 } from "./view-table-data-builder";
 import {saveViewDataAsync} from
     "./view-save-splitter";
+import {ReverseReferenceResolver} from
+    "./reverse-reference-resolver";
 
 /**
  * タブごとの状態を保持する基底インターフェース
@@ -361,6 +363,14 @@ export class Tab {
                         console.warn('Failed to preload reference tables:', error);
                     });
                 }
+
+                // 逆参照を並行して解決
+                const reverseResolver = new ReverseReferenceResolver();
+                reverseResolver.resolveAsync(name).then(reverseMap => {
+                    editorTable.updateReverseReferenceHints(reverseMap);
+                }).catch(error => {
+                    console.warn('Failed to resolve reverse references:', error);
+                });
 
                 // ドロップダウン入力コンポーネントを作成
                 // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
