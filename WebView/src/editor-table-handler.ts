@@ -22,6 +22,7 @@ import {
     saveTableData,
     getTarget
 } from "./editor-actions";
+import {config} from "./config";
 
 /**
  * 参照解決の結果
@@ -909,7 +910,30 @@ export class EditorTableHandler {
         }
 
         // 参照を解決（動的参照対応）
-        const resolvedReference = await this.resolveReferenceAsync();
+        let resolvedReference =
+            await this.resolveReferenceAsync();
+
+        // 明示的な参照がない場合、
+        // 逆参照されているPK列かチェック
+        if (!resolvedReference && this.tableData) {
+            const focus = this.selection.getFocus();
+            const columnIndex = focus.column - 1;
+            if (columnIndex >= 0
+                && columnIndex
+                    < this.tableData.header.length
+                && this.tableData.header[columnIndex]
+                    .name === config.primaryKeyColumnName
+                && this.table
+                    .hasReverseReferences()) {
+                resolvedReference = {
+                    tableName:
+                        this.table.tableName,
+                    columnName:
+                        config.primaryKeyColumnName,
+                };
+            }
+        }
+
         if (!resolvedReference) {
             return false;
         }

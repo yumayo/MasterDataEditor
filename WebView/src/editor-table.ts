@@ -186,6 +186,14 @@ export class EditorTable {
     }
 
     /**
+     * 逆参照マップにエントリが存在するか判定する
+     */
+    hasReverseReferences(): boolean {
+        if (!this.reverseReferenceMap) return false;
+        return this.reverseReferenceMap.size > 0;
+    }
+
+    /**
      * 逆参照ヒントを更新する
      * ReverseReferenceResolver の結果を受け取り、
      * PK列のセルに逆参照ヒントspanを追加する

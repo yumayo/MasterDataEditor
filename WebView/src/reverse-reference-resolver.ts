@@ -4,7 +4,9 @@ import {Csv} from "./csv";
 import {EditorTable} from "./editor-table";
 import {
     parseReferenceExpression,
-    isSimpleReference
+    isSimpleReference,
+    isDynamicReference,
+    DynamicReference
 } from "./reference-expression";
 
 /**
@@ -119,6 +121,55 @@ export class ReverseReferenceResolver {
     }
 
     /**
+     * テーブル名からCsvを読み込む
+     * タブで開かれていればインメモリデータを優先、
+     * なければCSVファイルから読み込む
+     */
+    private async loadCsvAsync(
+        tableName: string
+    ): Promise<Csv | false> {
+        const inMemoryCsv =
+            this.getInMemoryCsv(tableName);
+        if (inMemoryCsv !== false) return inMemoryCsv;
+        try {
+            const csvText = await readFileAsync(
+                `data/${tableName}.csv`
+            );
+            const csv = new Csv();
+            csv.load(csvText);
+            return csv;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * グループ化された逆参照情報をマップにマージする
+     */
+    private mergeGroups(
+        groups: Map<string, string[]>,
+        childTableName: string,
+        map: ReverseReferenceMap
+    ): void {
+        groups.forEach(
+            (displayTexts, parentPkValue) => {
+                let entries =
+                    map.get(parentPkValue);
+                if (!entries) {
+                    entries = [];
+                    map.set(
+                        parentPkValue, entries
+                    );
+                }
+                entries.push({
+                    childTableName,
+                    displayTexts,
+                });
+            }
+        );
+    }
+
+    /**
      * 子テーブル1つを処理し、逆参照マップにマージする
      */
     private async processChildTableAsync(
@@ -136,17 +187,24 @@ export class ReverseReferenceResolver {
             return;
         }
 
+        const headerDefs = schema.header as Array<{
+            name: string;
+            reference?: string;
+        }>;
+
         // parentTableName を参照しているFK列を探す
         const fkColumns: Array<{
             columnName: string;
             index: number;
         }> = [];
-        for (
-            const col of schema.header as Array<{
-                name: string;
-                reference?: string;
-            }>
-        ) {
+
+        // 動的参照式を収集する
+        const dynamicRefExprs: Array<{
+            colName: string;
+            expr: DynamicReference;
+        }> = [];
+
+        for (const col of headerDefs) {
             if (!col.reference) continue;
             const expr =
                 parseReferenceExpression(col.reference);
@@ -157,23 +215,85 @@ export class ReverseReferenceResolver {
                     columnName: col.name,
                     index: -1, // CSVヘッダーで後から解決
                 });
+            } else if (isDynamicReference(expr)) {
+                dynamicRefExprs.push({
+                    colName: col.name,
+                    expr,
+                });
             }
         }
 
-        if (fkColumns.length === 0) return;
+        // 動的参照の中間テーブルを解決し、
+        // parentTableName を参照している動的FK列を特定する
+        const dynamicFkColumns: Array<{
+            columnName: string;
+            index: number;
+            valueColumnName: string;
+            valueColumnIndex: number;
+            matchingFilterValues: Set<string>;
+        }> = [];
 
-        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
-        const inMemoryCsv = this.getInMemoryCsv(childTableName);
-        let csv: Csv;
-        if (inMemoryCsv !== false) {
-            csv = inMemoryCsv;
-        } else {
-            const csvText = await readFileAsync(
-                `data/${childTableName}.csv`
-            );
-            csv = new Csv();
-            csv.load(csvText);
+        for (const { colName, expr }
+            of dynamicRefExprs) {
+            const intermediateCsv =
+                await this.loadCsvAsync(
+                    expr.filter.tableName
+                );
+            if (intermediateCsv === false) continue;
+
+            const lookupIdx =
+                intermediateCsv.header.indexOf(
+                    expr.lookupColumn
+                );
+            const filterIdx =
+                intermediateCsv.header.indexOf(
+                    expr.filter.filterColumn
+                );
+            if (lookupIdx === -1
+                || filterIdx === -1) {
+                continue;
+            }
+
+            // lookupColumn の値が parentTableName と
+            // 一致する行の filterColumn 値を収集する
+            const matchingFilterValues =
+                new Set<string>();
+            for (const row
+                of intermediateCsv.body) {
+                if (row[lookupIdx]
+                    === parentTableName) {
+                    const filterVal =
+                        row[filterIdx];
+                    if (filterVal !== '') {
+                        matchingFilterValues.add(
+                            filterVal
+                        );
+                    }
+                }
+            }
+            if (matchingFilterValues.size === 0) {
+                continue;
+            }
+
+            dynamicFkColumns.push({
+                columnName: colName,
+                index: -1,
+                valueColumnName:
+                    expr.filter.valueColumn,
+                valueColumnIndex: -1,
+                matchingFilterValues,
+            });
         }
+
+        if (fkColumns.length === 0
+            && dynamicFkColumns.length === 0) {
+            return;
+        }
+
+        // 子テーブルのCSVを読み込む
+        const csv =
+            await this.loadCsvAsync(childTableName);
+        if (csv === false) return;
 
         // FK列のインデックスを解決
         for (const fk of fkColumns) {
@@ -181,32 +301,41 @@ export class ReverseReferenceResolver {
                 csv.header.indexOf(fk.columnName);
         }
 
+        // 動的FK列のインデックスを解決
+        for (const dynFk of dynamicFkColumns) {
+            dynFk.index =
+                csv.header.indexOf(
+                    dynFk.columnName
+                );
+            dynFk.valueColumnIndex =
+                csv.header.indexOf(
+                    dynFk.valueColumnName
+                );
+        }
+
         // 表示列を決定
-        // referenceDisplayColumnPriority に該当する列がない
-        // テーブルは逆参照ヒントの対象外とする
+        // 該当する列がない場合は空文字を使い、
+        // テーブル名(件数) 形式で表示する
         const displayColumnIndex =
             this.determineDisplayColumnIndex(
                 schema.header, csv.header
             );
-        if (displayColumnIndex === -1) return;
 
-        // FK値でグループ化し、表示テキストを収集
+        // 単純参照: FK値でグループ化し、表示テキストを収集
         for (const fk of fkColumns) {
             if (fk.index === -1) continue;
 
-            // FK値 → 表示テキスト配列
             const groups =
                 new Map<string, string[]>();
 
             for (const row of csv.body) {
                 const fkValue = row[fk.index];
-                if (fkValue === ''
-                    || fkValue === undefined) {
-                    continue;
-                }
+                if (fkValue === '') continue;
 
                 const displayText =
-                    row[displayColumnIndex] ?? '';
+                    displayColumnIndex !== -1
+                        ? row[displayColumnIndex] ?? ''
+                        : '';
 
                 let list = groups.get(fkValue);
                 if (!list) {
@@ -216,22 +345,48 @@ export class ReverseReferenceResolver {
                 list.push(displayText);
             }
 
-            // マップにマージ
-            groups.forEach(
-                (displayTexts, parentPkValue) => {
-                    let entries =
-                        map.get(parentPkValue);
-                    if (!entries) {
-                        entries = [];
-                        map.set(
-                            parentPkValue, entries
-                        );
-                    }
-                    entries.push({
-                        childTableName,
-                        displayTexts,
-                    });
+            this.mergeGroups(
+                groups, childTableName, map
+            );
+        }
+
+        // 動的参照: フィルタ値にマッチする行のみ
+        // グループ化し、表示テキストを収集
+        for (const dynFk of dynamicFkColumns) {
+            if (dynFk.index === -1
+                || dynFk.valueColumnIndex === -1) {
+                continue;
+            }
+
+            const groups =
+                new Map<string, string[]>();
+
+            for (const row of csv.body) {
+                const valueColumnValue =
+                    row[dynFk.valueColumnIndex];
+                if (!dynFk.matchingFilterValues
+                    .has(valueColumnValue)) {
+                    continue;
                 }
+
+                const fkValue = row[dynFk.index];
+                if (fkValue === '') continue;
+
+                const displayText =
+                    displayColumnIndex !== -1
+                        ? row[displayColumnIndex] ?? ''
+                        : '';
+
+                let list = groups.get(fkValue);
+                if (!list) {
+                    list = [];
+                    groups.set(fkValue, list);
+                }
+                list.push(displayText);
+            }
+
+            this.mergeGroups(
+                groups, childTableName, map
             );
         }
     }

@@ -1,4 +1,4 @@
-import {readFileAsync} from "./api";
+import {readFileAsync, findFilesAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
 import {EditorTable} from "./editor-table";
@@ -259,11 +259,124 @@ export class ReferenceDataCache {
             }
         }
 
+        // 有意な表示テキストがない場合、
+        // 逆参照チェーンで表示テキストを解決する
+        // 例: weapon(idのみ) → weapon_name(id→weapon.id, ja)
+        const needsReverseChain =
+            items.length > 0
+            && items.every(
+                item => item.displayText === item.id
+            );
+        if (needsReverseChain) {
+            await this.resolveReverseReferenceChainAsync(
+                tableName, items
+            );
+        }
+
         return {
             tableName,
             items,
             displayColumnName
         };
+    }
+
+    /**
+     * 逆参照チェーンで表示テキストを解決する
+     *
+     * 対象テーブルに表示列がない場合、
+     * id列で対象テーブルを参照している子テーブルを探し、
+     * その子テーブルの表示列の値を使用する
+     */
+    private async resolveReverseReferenceChainAsync(
+        tableName: string,
+        items: ReferenceItem[]
+    ): Promise<void> {
+        const schemaFiles =
+            await findFilesAsync("schema");
+
+        for (const file of schemaFiles) {
+            if (file.type !== 'file') continue;
+            if (!file.name.endsWith('.json')) continue;
+
+            const childTableName =
+                file.name.replace('.json', '');
+            if (childTableName === tableName) continue;
+
+            try {
+                const schemaText = await readFileAsync(
+                    `schema/${childTableName}.json`
+                );
+                const childSchema = JSON.parse(
+                    schemaText
+                );
+                if (!childSchema.header
+                    || !Array.isArray(
+                        childSchema.header
+                    )) {
+                    continue;
+                }
+
+                // id列がこのテーブルを参照しているか
+                const idEntry =
+                    childSchema.header.find(
+                        (h: {
+                            name: string;
+                            reference?: string;
+                        }) =>
+                            h.name
+                            === config
+                                .primaryKeyColumnName
+                    );
+                if (!idEntry
+                    || !idEntry.reference) {
+                    continue;
+                }
+
+                const refExpr =
+                    parseReferenceExpression(
+                        idEntry.reference
+                    );
+                if (!isSimpleReference(refExpr)
+                    || refExpr.tableName
+                        !== tableName) {
+                    continue;
+                }
+
+                // 子テーブルに表示列があるか
+                const displayCol =
+                    this.determineDisplayColumn(
+                        childSchema.header
+                    );
+                if (displayCol === '') continue;
+
+                // 子テーブルのデータを読み込み、
+                // 表示テキストを解決する
+                const childData =
+                    await this.get(childTableName);
+
+                for (const item of items) {
+                    if (item.displayText
+                        !== item.id) {
+                        continue;
+                    }
+                    const childItem =
+                        childData.items.find(
+                            ci => ci.id === item.id
+                        );
+                    if (childItem
+                        && childItem.displayText
+                            !== childItem.id) {
+                        item.displayText =
+                            childItem.displayText;
+                    }
+                }
+
+                // 解決できたら終了
+                break;
+            } catch {
+                continue;
+            }
+        }
     }
 
     /**
