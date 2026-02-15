@@ -11,12 +11,13 @@ RUN npm install
 RUN npx playwright install --with-deps chromium
 
 # Vite dev serverが参照する環境変数を設定
-RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' \
-    > /app/.env
+RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' > /app/.env
 
 # テスト用config.jsonを配置
-COPY WebView/e2e/fixtures/config.json \
-    /app/WebView/src/config.json
+COPY WebView/e2e/fixtures/config.json /app/WebView/src/config.json
+
+# テスト結果用のディレクトリを作成しておきます。
+RUN mkdir -p ./test-results
 
 # テスト実行サーバーを配置
 COPY docker/playwright/server.mts /app/server.mts

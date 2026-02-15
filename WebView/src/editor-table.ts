@@ -1653,13 +1653,54 @@ export class EditorTable {
     /**
      * 表示列の値が変更されたとき、同一行の参照列ヒントを更新する
      *
-     * 逆参照チェーンで解決された参照ヒントは、このテーブルの表示列の値に依存する。
-     * 表示列の値が変更されたらキャッシュを更新し、参照列のヒントを再描画する。
+     * 2つのケースに対応する:
+     * 1. ビューJOIN列: JOIN元テーブルの表示列が編集されたとき、
+     *    同じテーブルを参照するFK列のヒントを更新する
+     * 2. 通常テーブル（逆参照チェーン）: 表示列の値が変更されたとき、
+     *    逆参照チェーンで解決されたヒントを更新する
      */
     private updateReferenceHintsOnDisplayColumnChange(rowIndex: number, changedDataColumnIndex: number, newValue: string): void {
         const changedColumn = this.tableData.header[changedDataColumnIndex];
         if (!changedColumn) return;
 
+        // ビューのJOIN列の場合: JOIN元テーブルのキャッシュを更新し、同テーブル参照列のヒントを再描画
+        if (this.viewContext) {
+            const mapping = this.viewContext.columnMappings[changedDataColumnIndex];
+            if (mapping.isJoinedColumn) {
+                // JOINされた列の実際の列名が表示列でなければスキップ
+                if (!config.referenceDisplayColumnPriority.includes(mapping.sourceColumnName)) return;
+
+                // JOINキーの値を取得（どのキャッシュエントリを更新するか特定するため）
+                const baseKeyColumnIndex = this.viewContext.columnMappings.findIndex(
+                    m => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
+                );
+                if (baseKeyColumnIndex === -1) return;
+                const joinKeyValue = this.getCellValueAt(rowIndex, baseKeyColumnIndex + 1);
+                if (joinKeyValue === '') return;
+
+                // JOIN元テーブルのキャッシュを更新
+                this.referenceDataCache.updateDisplayText(mapping.tableName, joinKeyValue, newValue);
+
+                // 同じテーブルを参照するFK列のヒントを再描画
+                const rowElement = this.element.children[rowIndex] as HTMLElement;
+                for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
+                    if (colIdx === changedDataColumnIndex) continue;
+                    const column = this.tableData.header[colIdx];
+                    if (!column.reference) continue;
+                    const expr = parseReferenceExpression(column.reference);
+                    if (!isSimpleReference(expr)) continue;
+                    if (expr.tableName !== mapping.tableName) continue;
+                    const cell = rowElement.children[colIdx + 1] as HTMLElement;
+                    if (!cell) continue;
+                    const fkValue = EditorTable.getCellValue(cell);
+                    if (fkValue === '') continue;
+                    this.setCellValue(cell, fkValue, colIdx, rowIndex);
+                }
+                return;
+            }
+        }
+
+        // 通常テーブル（およびビューのベーステーブル列）: 逆参照チェーン対応
         // 変更された列が表示列でなければスキップ
         if (!config.referenceDisplayColumnPriority.includes(changedColumn.name)) return;
 

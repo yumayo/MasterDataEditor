@@ -785,3 +785,119 @@ test.describe('表示列編集時の参照ヒント同期更新', () => {
         await expect(hint0).toHaveText('勇者');
     });
 });
+
+// -------------------------------------------------------
+// ビューJOIN列の表示列編集時に参照ヒントが更新されるテスト
+// -------------------------------------------------------
+test.describe('ビューJOIN列編集時の参照ヒント同期更新', () => {
+    /**
+     * テストデータ:
+     * reward_table: id(PK), ja（表示列あり）
+     * quest: id(PK), clear_table_id(FK→reward_table.id), bonus_table_id(FK→reward_table.id)
+     * view_quest: questベース、clear_table_idでreward_tableをJOIN
+     *
+     * ビュー列:
+     *   col0: id, col1: clear_table_id, col2: reward_table.ja(JOIN列), col3: bonus_table_id
+     *
+     * quest行: id=1, clear_table_id=1, bonus_table_id=1
+     *   → clear_table_id, bonus_table_id ともに reward_table id=1 を参照
+     *   → 参照ヒントは "初回報酬"
+     *
+     * reward_table.ja(col2) を編集したとき、
+     * bonus_table_id(col3) の参照ヒントが即座に更新されること。
+     */
+    function createViewQuestFs(): MockFileSystem {
+        return {
+            "schema/reward_table.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "ja", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/reward_table.csv": [
+                "id,ja",
+                "1,初回報酬",
+                "2,連続報酬",
+            ].join("\n"),
+            "schema/quest.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "clear_table_id", type: "int", reference: "reward_table.id" },
+                    { key: 2, name: "bonus_table_id", type: "int", reference: "reward_table.id" },
+                ],
+                primary_key: "id",
+            }),
+            "data/quest.csv": [
+                "id,clear_table_id,bonus_table_id",
+                "1,1,1",
+            ].join("\n"),
+            "view/view_quest.json": JSON.stringify({
+                name: "view_quest",
+                baseTable: "quest",
+                joins: [
+                    {
+                        sourceColumn: "clear_table_id",
+                        targetTable: "reward_table",
+                        targetColumn: "id",
+                        insertAfterViewColumnIndex: 1,
+                    },
+                ],
+            }),
+        };
+    }
+
+    /**
+     * ビュータブを開き、テーブルのLocatorを返す
+     */
+    async function openViewAsync(page: Page, viewName: string): Promise<Locator> {
+        const explorer = page.locator('#explorer');
+        await explorer.getByText(viewName, { exact: true }).click();
+        const table = page.locator(
+            '.tab-wrapper:not([style*="display: none"]) .editor-table'
+        );
+        await expect(table).toBeVisible();
+        return table;
+    }
+
+    test('JOIN列の表示列を編集すると同一行のFK列参照ヒントが即座に更新されること', async ({ page }) => {
+        await installMockApiAsync(page, createViewQuestFs());
+        await page.goto('/');
+
+        const table = await openViewAsync(page, 'view_quest');
+
+        // ビュー列: id(0), clear_table_id(1), reward_table.ja(2), bonus_table_id(3)
+        // bonus_table_id=1 → reward_table id=1 の参照ヒント "初回報酬"
+        const bonusHint = getReferenceHint(table, 0, 3);
+        await expect(bonusHint).toBeVisible();
+        await expect(bonusHint).toHaveText('初回報酬');
+
+        // reward_table.ja(col2) を編集: "初回報酬" → "特別報酬"
+        await editCellAsync(page, table, 0, 2, '特別報酬');
+
+        // bonus_table_id の参照ヒントが即座に更新されること
+        await expect(bonusHint).toHaveText('特別報酬');
+    });
+
+    test('Undoすると参照ヒントが元の値に戻ること', async ({ page }) => {
+        await installMockApiAsync(page, createViewQuestFs());
+        await page.goto('/');
+
+        const table = await openViewAsync(page, 'view_quest');
+
+        // 参照ヒントが表示されるまで待機
+        const bonusHint = getReferenceHint(table, 0, 3);
+        await expect(bonusHint).toBeVisible();
+        await expect(bonusHint).toHaveText('初回報酬');
+
+        // reward_table.ja を編集
+        await editCellAsync(page, table, 0, 2, '特別報酬');
+        await expect(bonusHint).toHaveText('特別報酬');
+
+        // Undo
+        await page.keyboard.press('Control+z');
+
+        // 参照ヒントが元の値に戻ること
+        await expect(bonusHint).toHaveText('初回報酬');
+    });
+});
