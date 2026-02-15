@@ -42,3 +42,18 @@
     pointer-events: none;
     display: none;
 }
+
+/* 操作拒否時の震え＋赤フィードバック */
+@keyframes reject-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+}
+
+.selection-rejected {
+    animation: reject-shake 0.3s ease-in-out;
+    border-color: rgba(220, 38, 38, 0.8) !important;
+    background-color: rgba(220, 38, 38, 0.15) !important;
+}

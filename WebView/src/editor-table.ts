@@ -11,6 +11,7 @@ import {
 import {History} from "./history";
 import {
     Command,
+    CellChange,
     InsertColumnCommand,
     InsertColumnsCommand,
     InsertRowCommand,
@@ -1840,6 +1841,85 @@ export class EditorTable {
                 }
             }
         }
+    }
+
+    /**
+     * 結合列の編集時に、同一JOINキーを持つ他の行の値を連動更新する
+     *
+     * JOINビューでは同じ結合テーブルの行が複数のビュー行に展開されるため、
+     * 1つのセルを編集したら同じJOINキーを持つ全行の同列を更新する必要がある。
+     *
+     * @param editedRow 編集された行
+     * @param editedColumn 編集された列（0始まり、行ヘッダー含む）
+     * @param newValue 新しい値
+     * @returns 連動更新された他行のセル変更リスト（Undo/Redo用）
+     */
+    synchronizeJoinedColumnValues(editedRow: number, editedColumn: number, newValue: string): CellChange[] {
+        if (!this.viewContext) return [];
+
+        const dataColumnIndex = editedColumn - 1;
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.viewContext.columnMappings.length) return [];
+
+        const mapping = this.viewContext.columnMappings[dataColumnIndex];
+        if (!mapping.isJoinedColumn) return [];
+
+        // 編集行のベーステーブル側のキー列からJOINキー値を取得
+        const baseKeyColumnIndex = this.viewContext.columnMappings.findIndex(
+            (m) => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
+        );
+        if (baseKeyColumnIndex === -1) return [];
+
+        const joinKeyValue = this.getCellValueAt(editedRow, baseKeyColumnIndex + 1);
+        if (joinKeyValue === '') return [];
+
+        // 全行を走査し、同じJOINキー値を持つ行の同列を更新
+        const changes: CellChange[] = [];
+        const rowCount = this.getRowCount();
+        for (let r = 1; r < rowCount; r++) {
+            if (r === editedRow) continue;
+
+            const rowKeyValue = this.getCellValueAt(r, baseKeyColumnIndex + 1);
+            if (rowKeyValue !== joinKeyValue) continue;
+
+            const oldValue = this.getCellValueAt(r, editedColumn);
+            if (oldValue === newValue) continue;
+
+            changes.push({ row: r, column: editedColumn, oldValue, newValue });
+            this.setCellValueAt(r, editedColumn, newValue);
+        }
+
+        return changes;
+    }
+
+    /**
+     * 指定された列範囲に結合列が含まれるかを判定する
+     *
+     * @param startColumn 開始列（0始まり、行ヘッダー含む）
+     * @param endColumn 終了列（0始まり、行ヘッダー含む）
+     * @returns 結合列が含まれる場合はtrue
+     */
+    containsJoinedColumn(startColumn: number, endColumn: number): boolean {
+        if (!this.viewContext) return false;
+
+        for (let c = startColumn; c <= endColumn; c++) {
+            const dataColumnIndex = c - 1;
+            if (dataColumnIndex < 0 || dataColumnIndex >= this.viewContext.columnMappings.length) continue;
+            if (this.viewContext.columnMappings[dataColumnIndex].isJoinedColumn) return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 選択範囲に操作拒否のフィードバックアニメーションを表示する
+     * 結合列への不正な操作（ペースト/削除/フィル）を視覚的に拒否する
+     */
+    showRejectionFeedback(): void {
+        const selectionElement = this.selection.element;
+        selectionElement.classList.add('selection-rejected');
+        selectionElement.addEventListener('animationend', () => {
+            selectionElement.classList.remove('selection-rejected');
+        }, { once: true });
     }
 
     /**

@@ -32,6 +32,12 @@ export class FillController {
             this.selection.endFill();
 
             if (fillInfo) {
+                // 結合列を含む場合はフィルを拒否
+                if (this.table.containsJoinedColumn(fillInfo.sourceRange.startColumn, fillInfo.sourceRange.endColumn)) {
+                    this.table.showRejectionFeedback();
+                    return;
+                }
+
                 applyFillSeries(
                     this.table,
                     this.selection,
@@ -88,6 +94,12 @@ export class FillController {
         const endRow = Math.max(anchor.row, focus.row);
         const startColumn = Math.min(anchor.column, focus.column);
         const endColumn = Math.max(anchor.column, focus.column);
+
+        // 結合列を含む場合はフィルを拒否
+        if (this.table.containsJoinedColumn(startColumn, endColumn)) {
+            this.table.showRejectionFeedback();
+            return;
+        }
 
         // 現在の選択範囲の最下行よりも下にデータがある場合のみフィル
         if (maxDataRow > endRow) {

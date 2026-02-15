@@ -117,6 +117,9 @@ export async function installMockApiAsync(
             /**
              * リクエストを処理してレスポンスを返す
              */
+            // テストからMockFileSystemを参照可能にする（readMockFileAsync経由でアクセス）
+            (window as unknown as { __mockFs: MockFileSystem }).__mockFs = fs;
+
             function handleRequest(message: string): void {
                 const request = JSON.parse(message);
                 const type = request.type as string;
@@ -196,5 +199,15 @@ export async function installMockApiAsync(
             };
         },
         fileSystem,
+    );
+}
+
+/**
+ * モックファイルシステムからファイル内容を取得する
+ * テストで保存結果を検証するために使用する
+ */
+export async function readMockFileAsync(page: Page, path: string): Promise<string> {
+    return page.evaluate(
+        (p) => (window as unknown as { __mockFs: { [key: string]: string } }).__mockFs[p], path
     );
 }

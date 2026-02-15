@@ -466,6 +466,12 @@ export class EditorTableHandler {
 
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
+            // 結合列を含む場合は削除を拒否
+            const deleteRange = this.selection.getSelectionRange();
+            if (this.table.containsJoinedColumn(deleteRange.startColumn, deleteRange.endColumn)) {
+                this.table.showRejectionFeedback();
+                return;
+            }
             clearSelectionRange(this.table, this.selection, this.history);
             return;
         }
@@ -492,10 +498,20 @@ export class EditorTableHandler {
 
         const target = getTarget(this.table, this.selection);
         const text = this.element.textContent ?? '';
-
-        // 履歴に追加（現在のコピー範囲も保存）
         const copyRange = this.selection.getCopyRange();
-        this.history.pushSingleChange(target.row, target.column, target.cellValue, text, copyRange);
+
+        // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
+        const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, text);
+
+        // 全変更を1つのCommandに含める（Undo/Redo対応）
+        const allChanges: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: text }];
+        for (const lc of linkedChanges) { allChanges.push(lc); }
+
+        this.history.push({
+            changes: allChanges,
+            range: { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column },
+            copyRange,
+        });
 
         this.table.setCellValueAt(target.row, target.column, text);
     }
@@ -533,6 +549,13 @@ export class EditorTableHandler {
         if (this.visible) return;
 
         event.preventDefault();
+
+        // 結合列を含む場合はペーストを拒否
+        const selRange = this.selection.getSelectionRange();
+        if (this.table.containsJoinedColumn(selRange.startColumn, selRange.endColumn)) {
+            this.table.showRejectionFeedback();
+            return;
+        }
 
         const clipboardData = event.clipboardData;
         if (!clipboardData) return;
@@ -983,10 +1006,20 @@ export class EditorTableHandler {
         if (!this.dropdownActive) return;
 
         const target = getTarget(this.table, this.selection);
-
-        // 履歴に追加
         const copyRange = this.selection.getCopyRange();
-        this.history.pushSingleChange(target.row, target.column, target.cellValue, id, copyRange);
+
+        // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
+        const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, id);
+
+        // 全変更を1つのCommandに含める（Undo/Redo対応）
+        const allChanges: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: id }];
+        for (const lc of linkedChanges) { allChanges.push(lc); }
+
+        this.history.push({
+            changes: allChanges,
+            range: { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column },
+            copyRange,
+        });
 
         this.table.setCellValueAt(target.row, target.column, id);
 
