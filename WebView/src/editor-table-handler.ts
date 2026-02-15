@@ -20,6 +20,7 @@ import {
     moveCellRightWithinSelection,
     moveCellLeftWithinSelection,
     saveTableData,
+    saveSchemaDataAsync,
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
@@ -343,9 +344,10 @@ export class EditorTableHandler {
                     this.history.markSaved();
                 });
             } else {
-                saveTableData(
-                    this.table
-                ).then(() => {
+                Promise.all([
+                    saveTableData(this.table),
+                    saveSchemaDataAsync(this.table)
+                ]).then(() => {
                     this.history.markSaved();
                 });
             }

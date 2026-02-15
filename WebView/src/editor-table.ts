@@ -275,7 +275,8 @@ export class EditorTable {
                 const columnHeaderCell =
                     this.createColumnHeaderCell(
                         this.tableData.header[i].name,
-                        i
+                        i,
+                        this.tableData.header[i].width
                     );
                 cells.push(columnHeaderCell);
             }
@@ -292,7 +293,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, this.tableData.body[i].values[j], j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const cell = EditorTable.createCell(this, this.tableData.body[i].values[j], j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -308,7 +309,7 @@ export class EditorTable {
             cells.push(rowHeaderCell);
 
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const cell = EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT);
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
@@ -361,7 +362,8 @@ export class EditorTable {
                 const newHeaderCell =
                     this.createColumnHeaderCell(
                         '',
-                        columnIndex
+                        columnIndex,
+                        DEFAULT_COLUMN_WIDTH
                     );
 
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
@@ -933,7 +935,8 @@ export class EditorTable {
 
     private createColumnHeaderCell(
         text: string,
-        columnIndex: number
+        columnIndex: number,
+        width: string
     ): HTMLElement {
         const columnHeaderCell =
             document.createElement('div');
@@ -947,7 +950,7 @@ export class EditorTable {
         columnHeaderCell.dataset.col =
             String(columnIndex);
         EditorTable.applyCellWidth(
-            columnHeaderCell, DEFAULT_COLUMN_WIDTH
+            columnHeaderCell, width
         );
         EditorTable.applyCellHeight(
             columnHeaderCell, DEFAULT_ROW_HEIGHT
@@ -1343,6 +1346,18 @@ export class EditorTable {
         const columnHeaderRow = this.element.children[0];
         const headerCell = columnHeaderRow.children[columnIndex + 1] as HTMLElement;
         return headerCell.style.width || DEFAULT_COLUMN_WIDTH;
+    }
+
+    /**
+     * 全列の幅を配列で取得する
+     */
+    getColumnWidths(): string[] {
+        const widths: string[] = [];
+        const columnCount = this.getColumnCount();
+        for (let i = 0; i < columnCount; i++) {
+            widths.push(this.getColumnWidth(i));
+        }
+        return widths;
     }
 
     /**

@@ -73,7 +73,8 @@ export function buildViewTableData(
                 col.name,
                 col.type,
                 col.comment,
-                col.reference
+                col.reference,
+                col.width
             )
         );
         columnMappings.push({
@@ -125,7 +126,7 @@ export function buildViewTableData(
             newColumns.push(
                 new EditorTableDataColumn(
                     col.key, join.targetTable + '.' + col.name,
-                    col.type, col.comment, col.reference
+                    col.type, col.comment, col.reference, col.width
                 )
             );
             newMappings.push({

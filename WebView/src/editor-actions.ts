@@ -419,6 +419,28 @@ export function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; bo
 }
 
 /**
+ * スキーマJSONに列幅を保存する
+ * 既存JSONを読み込んでwidthフィールドだけ更新することで、
+ * serialize()では保持できないフィールド（unique_key, index等）を破壊しない
+ */
+export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
+    const tableName = table.tableName;
+    const schemaPath = `schema/${tableName}.json`;
+
+    const existingSchemaText = await readFileAsync(schemaPath);
+    const existingSchema = JSON.parse(existingSchemaText);
+
+    // 現在のDOM列幅を取得してヘッダーに反映
+    const columnWidths = table.getColumnWidths();
+    const header = existingSchema['header'];
+    for (let i = 0; i < header.length && i < columnWidths.length; i++) {
+        header[i].width = parseInt(columnWidths[i]);
+    }
+
+    await writeFileAsync(schemaPath, JSON.stringify(existingSchema, null, 4));
+}
+
+/**
  * テーブルデータをCSVファイルに保存する（既存CSVとマージ）
  * @param table EditorTable
  */

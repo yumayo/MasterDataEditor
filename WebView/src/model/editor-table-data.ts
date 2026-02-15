@@ -1,6 +1,7 @@
 import {EditorTableDataRow} from "./editor-table-data-row";
 import {EditorTableDataColumn} from "./editor-table-data-column";
 import {Csv} from "../csv";
+import {DEFAULT_COLUMN_WIDTH} from "../constant";
 
 export class EditorTableData {
 
@@ -35,7 +36,7 @@ export class EditorTableData {
             const column = header[i];
             columns.push(new EditorTableDataColumn(
                 column.key, column.name, column.type,
-                column.comment, column.reference
+                column.comment, column.reference, column.width ? `${column.width}px` : DEFAULT_COLUMN_WIDTH
             ));
         }
 
