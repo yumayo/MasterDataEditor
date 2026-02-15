@@ -199,6 +199,9 @@ export class Tab {
         // タブ状態のクリーンアップ
         const state = this.tabStates.get(name);
         if (state) {
+            // 未保存の変更があるかを閉じる前に確認
+            const wasDirty = state.history.isDirty();
+
             // グローバルイベントリスナーを解除
             state.editorTable.deactivate();
             state.areaResizer.deactivate();
@@ -213,6 +216,23 @@ export class Tab {
 
             // 開いているテーブルのマップから削除
             this.openEditorTables.delete(name);
+
+            // 未保存のタブを閉じた場合、アクティブタブの
+            // 参照ヒントをCSVから再読み込みする
+            if (wasDirty
+                && this.activeTabName
+                && this.activeTabName !== name) {
+                const activeState =
+                    this.tabStates.get(
+                        this.activeTabName
+                    );
+                if (activeState) {
+                    this.refreshReferenceHints(
+                        this.activeTabName,
+                        activeState
+                    );
+                }
+            }
         }
 
         // アクティブタブが削除された場合はクリア
