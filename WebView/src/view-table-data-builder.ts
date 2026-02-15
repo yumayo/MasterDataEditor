@@ -25,6 +25,8 @@ export interface ViewTableBuildResult {
     compositeTableData: EditorTableData;
     /** ビュー列とソーステーブル列のマッピング */
     columnMappings: ViewColumnMapping[];
+    /** 結合テーブルのキーマップ（テーブル名 → キー値 → 行全体の値） */
+    joinTableKeyMaps: Map<string, Map<string, string[]>>;
 }
 
 /**
@@ -256,5 +258,6 @@ export function buildViewTableData(
     return {
         compositeTableData,
         columnMappings,
+        joinTableKeyMaps: keyMaps,
     };
 }

@@ -538,6 +538,8 @@ export class Tab {
                             .compositeTableData;
                     const columnMappings =
                         buildResult.columnMappings;
+                    const joinTableKeyMaps =
+                        buildResult.joinTableKeyMaps;
 
                     // ラッパー要素を作成
                     const wrapperElement =
@@ -591,6 +593,7 @@ export class Tab {
                         editorTable,
                         viewDefinition,
                         columnMappings,
+                        joinTableKeyMaps,
                         baseTableData,
                         history
                     );
@@ -707,6 +710,7 @@ export class Tab {
         editorTable: EditorTable,
         viewDefinition: ViewDefinition,
         columnMappings: ViewColumnMapping[],
+        joinTableKeyMaps: Map<string, Map<string, string[]>>,
         baseTableData: EditorTableData,
         history: History
     ): void {
@@ -730,6 +734,7 @@ export class Tab {
             viewDefinition,
             columnMappings,
             availableJoinTargets,
+            joinTableKeyMaps,
             onJoinAsync: (
                 targetTable: string,
                 sourceColumn: string,

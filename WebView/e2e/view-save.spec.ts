@@ -407,5 +407,72 @@ test.describe(
                 await expect(selection).toHaveClass(/selection-rejected/);
             },
         );
+
+        test(
+            'FK列変更時にJOIN列が'
+            + '新しい参照先の値に同期されること',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page, createFileSystem()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(
+                    page, 'view_chara'
+                );
+
+                // 初期状態: row0 skill_id=1, skill.value=3
+                // row0のskill_idを「3」に変更
+                await editCellAsync(page, table, 0, 1, '3');
+
+                // row0のskill.valueを「4」に変更（JOIN列を直接編集）
+                await editCellAsync(page, table, 0, 2, '4');
+
+                // row0のskill_idを「1」に戻す
+                await editCellAsync(page, table, 0, 1, '1');
+
+                // row0のskill.valueがskill_id=1の値「3」に同期されること
+                // （row1がskill_id=1でskill.value=3を持つため、そこからコピー）
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
+
+                // row1のskill.valueは「3」のまま変わらないこと
+                await expect(getDataCell(table, 1, 2)).toHaveText('3');
+            },
+        );
+
+        test(
+            'FK列変更のUndo/Redoで'
+            + 'JOIN列も正しく復元されること',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page, createFileSystem()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(
+                    page, 'view_chara'
+                );
+
+                // 初期状態: row0 skill_id=1, skill.value=3
+                await expect(getDataCell(table, 0, 1)).toHaveText('1');
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
+
+                // row0のskill_idを「3」に変更
+                await editCellAsync(page, table, 0, 1, '3');
+
+                // skill_id=3に対応するskill.value=10に同期されること
+                await expect(getDataCell(table, 0, 2)).toHaveText('10');
+
+                // Undo: skill_id=1に戻り、skill.value=3に戻ること
+                await page.keyboard.press('Control+z');
+                await expect(getDataCell(table, 0, 1)).toHaveText('1');
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
+
+                // Redo: skill_id=3に戻り、skill.value=10に戻ること
+                await page.keyboard.press('Control+y');
+                await expect(getDataCell(table, 0, 1)).toHaveText('3');
+                await expect(getDataCell(table, 0, 2)).toHaveText('10');
+            },
+        );
     },
 );
