@@ -600,6 +600,13 @@ export class Tab {
                         history
                     );
 
+                    // ファイルから読み込んだビューのJOIN列ヘッダーに背景色を適用
+                    for (let i = 0; i < columnMappings.length; i++) {
+                        if (columnMappings[i].isJoinedColumn) {
+                            editorTable.addColumnHeaderClass(i, 'editor-table-joined-column-header');
+                        }
+                    }
+
                     // ビュー用の保存コールバック
                     editorTableHandler
                         .setSaveCallback(

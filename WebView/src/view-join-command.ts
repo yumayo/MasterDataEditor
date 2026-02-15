@@ -58,118 +58,79 @@ export class ViewJoinCommand implements Command {
     }
 
     execute(): void {
-        const colCount =
-            this.joinTableData.header.length;
+        // 結合キー列のインデックスを特定
+        const keyColumnIndex = this.joinTableData.header.findIndex(
+            col => col.name === this.targetColumn
+        );
+
+        // キー列を除外した列数
+        const colCount = this.joinTableData.header.length - 1;
         this.insertedColumnCount = colCount;
 
         // 挿入位置（afterColumnIndexの右側）
-        const insertPos =
-            this.afterColumnIndex + 1;
+        const insertPos = this.afterColumnIndex + 1;
 
         // 列を挿入（空列を挿入後にデータを設定）
         for (let i = 0; i < colCount; i++) {
-            this.editorTable.insertColumnInternal(
-                insertPos
-            );
+            this.editorTable.insertColumnInternal(insertPos);
         }
 
-        // ヘッダーを設定
-        for (let i = 0; i < colCount; i++) {
-            const col =
-                this.joinTableData.header[i];
-            const headerName =
-                this.targetTable + '.' + col.name;
-            this.editorTable
-                .setColumnHeaderValue(
-                    insertPos + i,
-                    headerName
-                );
+        // ヘッダーを設定（キー列をスキップ）
+        let viewColOffset = 0;
+        for (let i = 0; i < this.joinTableData.header.length; i++) {
+            if (i === keyColumnIndex) continue;
+            const col = this.joinTableData.header[i];
+            const headerName = this.targetTable + '.' + col.name;
+            this.editorTable.setColumnHeaderValue(insertPos + viewColOffset, headerName);
+            viewColOffset++;
         }
 
         // キー値→行データのMapを構築
-        const keyColumnIndex =
-            this.joinTableData.header.findIndex(
-                col =>
-                    col.name
-                    === this.targetColumn
-            );
-
-        const keyMap = new Map<
-            string, string[]
-        >();
+        const keyMap = new Map<string, string[]>();
         if (keyColumnIndex >= 0) {
-            for (
-                const row
-                of this.joinTableData.body
-            ) {
-                const keyVal =
-                    row.values[keyColumnIndex];
+            for (const row of this.joinTableData.body) {
+                const keyVal = row.values[keyColumnIndex];
                 if (keyVal !== '') {
-                    keyMap.set(
-                        keyVal, row.values
-                    );
+                    keyMap.set(keyVal, row.values);
                 }
             }
         }
 
         // ベーステーブルの参照元列インデックスを取得
-        const sourceColIdx =
-            this.findSourceColumnIndex();
+        const sourceColIdx = this.findSourceColumnIndex();
 
         // セル値を設定
-        const rowCount =
-            this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getRowCount();
         for (let r = 1; r < rowCount; r++) {
-            // ベーステーブルの参照元列の値を取得
             let keyValue = '';
             if (sourceColIdx >= 0) {
-                keyValue =
-                    this.editorTable
-                        .getCellValueAt(
-                            r,
-                            sourceColIdx + 1
-                        );
+                keyValue = this.editorTable.getCellValueAt(r, sourceColIdx + 1);
             }
-
-            const joinedRow =
-                keyMap.get(keyValue);
-
-            for (let i = 0; i < colCount; i++) {
-                const value = joinedRow
-                    ? joinedRow[i]
-                    : '';
-                // insertPos+iがデータ列Index
-                // column = insertPos + i + 1
-                this.editorTable.setCellValueAt(
-                    r,
-                    insertPos + i + 1,
-                    value
-                );
+            const joinedRow = keyMap.get(keyValue);
+            let offset = 0;
+            for (let i = 0; i < this.joinTableData.header.length; i++) {
+                if (i === keyColumnIndex) continue;
+                const value = joinedRow ? joinedRow[i] : '';
+                this.editorTable.setCellValueAt(r, insertPos + offset + 1, value);
+                offset++;
             }
         }
 
-        // columnMappingsを更新
-        const newMappings:
-            ViewColumnMapping[] = [];
-        for (let i = 0; i < colCount; i++) {
-            const col =
-                this.joinTableData.header[i];
+        // columnMappingsを更新（キー列をスキップ）
+        const newMappings: ViewColumnMapping[] = [];
+        for (let i = 0; i < this.joinTableData.header.length; i++) {
+            if (i === keyColumnIndex) continue;
+            const col = this.joinTableData.header[i];
             newMappings.push({
                 tableName: this.targetTable,
                 sourceColumnIndex: i,
                 sourceColumnName: col.name,
                 isJoinedColumn: true,
-                joinKeyColumn:
-                    this.targetColumn,
-                baseKeyColumn:
-                    this.sourceColumn,
+                joinKeyColumn: this.targetColumn,
+                baseKeyColumn: this.sourceColumn,
             });
         }
-        this.columnMappings.splice(
-            insertPos,
-            0,
-            ...newMappings
-        );
+        this.columnMappings.splice(insertPos, 0, ...newMappings);
 
         // viewDefinitionにjoinを追加
         const joinDef: ViewJoinDefinition = {

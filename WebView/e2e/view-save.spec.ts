@@ -96,11 +96,11 @@ async function selectCellAsync(
  * skill: id=1(value=3), id=2(value=5), id=3(value=10)
  * view_chara: charaベース、skillをskill_idでJOIN
  *
- * ビュー表示イメージ:
- * | chara.id | chara.skill_id | skill.id | skill.value |
- * |    1     |       1        |    1     |      3      |
- * |    2     |       1        |    1     |      3      |
- * |    3     |       2        |    2     |      5      |
+ * ビュー表示イメージ（結合キー列skill.idは非表示）:
+ * | chara.id | chara.skill_id | skill.value |
+ * |    1     |       1        |      3      |
+ * |    2     |       1        |      3      |
+ * |    3     |       2        |      5      |
  */
 function createFileSystem(): MockFileSystem {
     return {
@@ -165,34 +165,25 @@ test.describe(
                     page, 'view_chara'
                 );
 
-                // ビュー列: chara.id(0), chara.skill_id(1), skill.id(2), skill.value(3)
+                // ビュー列: chara.id(0), chara.skill_id(1), skill.value(2)
                 // row0: chara.id=1のskill.valueを「4」に変更
                 await editCellAsync(
-                    page, table, 0, 3, '4'
+                    page, table, 0, 2, '4'
                 );
 
                 // row0のskill.valueが4になっていること
-                const row0Value = getDataCell(
-                    table, 0, 3
-                );
-                await expect(row0Value)
-                    .toHaveText('4');
+                const row0Value = getDataCell(table, 0, 2);
+                await expect(row0Value).toHaveText('4');
 
                 // row1のskill.valueも4に連動更新されること
                 // （chara.id=2もskill_id=1を参照）
-                const row1Value = getDataCell(
-                    table, 1, 3
-                );
-                await expect(row1Value)
-                    .toHaveText('4');
+                const row1Value = getDataCell(table, 1, 2);
+                await expect(row1Value).toHaveText('4');
 
                 // row2のskill.valueは変わらないこと
                 // （chara.id=3はskill_id=2を参照）
-                const row2Value = getDataCell(
-                    table, 2, 3
-                );
-                await expect(row2Value)
-                    .toHaveText('5');
+                const row2Value = getDataCell(table, 2, 2);
+                await expect(row2Value).toHaveText('5');
             },
         );
 
@@ -210,39 +201,21 @@ test.describe(
                 );
 
                 // row0のskill.valueを「4」に変更
-                await editCellAsync(
-                    page, table, 0, 3, '4'
-                );
+                await editCellAsync(page, table, 0, 2, '4');
 
                 // 連動更新されていることを確認
-                await expect(
-                    getDataCell(table, 0, 3)
-                ).toHaveText('4');
-                await expect(
-                    getDataCell(table, 1, 3)
-                ).toHaveText('4');
+                await expect(getDataCell(table, 0, 2)).toHaveText('4');
+                await expect(getDataCell(table, 1, 2)).toHaveText('4');
 
                 // Undo: 両行が元の値「3」に戻ること
-                await page.keyboard.press(
-                    'Control+z'
-                );
-                await expect(
-                    getDataCell(table, 0, 3)
-                ).toHaveText('3');
-                await expect(
-                    getDataCell(table, 1, 3)
-                ).toHaveText('3');
+                await page.keyboard.press('Control+z');
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
+                await expect(getDataCell(table, 1, 2)).toHaveText('3');
 
                 // Redo: 両行が「4」に戻ること
-                await page.keyboard.press(
-                    'Control+y'
-                );
-                await expect(
-                    getDataCell(table, 0, 3)
-                ).toHaveText('4');
-                await expect(
-                    getDataCell(table, 1, 3)
-                ).toHaveText('4');
+                await page.keyboard.press('Control+y');
+                await expect(getDataCell(table, 0, 2)).toHaveText('4');
+                await expect(getDataCell(table, 1, 2)).toHaveText('4');
             },
         );
 
@@ -260,14 +233,10 @@ test.describe(
                 );
 
                 // row0のskill.valueを「4」に変更
-                await editCellAsync(
-                    page, table, 0, 3, '4'
-                );
+                await editCellAsync(page, table, 0, 2, '4');
 
                 // Ctrl+Sで保存
-                await page.keyboard.press(
-                    'Control+s'
-                );
+                await page.keyboard.press('Control+s');
 
                 // 保存完了を待つ
                 await page.waitForTimeout(500);
@@ -294,14 +263,10 @@ test.describe(
                 );
 
                 // row0のskill.valueを「4」に変更
-                await editCellAsync(
-                    page, table, 0, 3, '4'
-                );
+                await editCellAsync(page, table, 0, 2, '4');
 
                 // Ctrl+Sで保存
-                await page.keyboard.press(
-                    'Control+s'
-                );
+                await page.keyboard.press('Control+s');
 
                 await page.waitForTimeout(500);
 
@@ -351,6 +316,41 @@ test.describe(
         );
 
         test(
+            'ビューファイル読み込み時にJOIN列ヘッダーの背景色が適用されること',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page, createFileSystem()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(
+                    page, 'view_chara'
+                );
+
+                // ヘッダー行から列ヘッダーセルを取得
+                const headerRow = table.locator(
+                    '.editor-table-column-header-row'
+                );
+                const columnHeaders = headerRow.locator(
+                    '.editor-table-column-header'
+                );
+
+                // JOIN列（skill.value, index=2）にCSSクラスが付与されていること
+                await expect(columnHeaders.nth(2)).toHaveClass(
+                    /editor-table-joined-column-header/
+                );
+
+                // ベーステーブル列にはCSSクラスが付与されていないこと
+                await expect(columnHeaders.nth(0)).not.toHaveClass(
+                    /editor-table-joined-column-header/
+                );
+                await expect(columnHeaders.nth(1)).not.toHaveClass(
+                    /editor-table-joined-column-header/
+                );
+            },
+        );
+
+        test(
             '結合列へのペーストが拒否され'
             + '震えアニメーションが表示されること',
             async ({ page }) => {
@@ -364,32 +364,19 @@ test.describe(
                 );
 
                 // 非結合列（chara.id）をコピー
-                await selectCellAsync(
-                    page, table, 0, 0
-                );
-                await page.keyboard.press(
-                    'Control+c'
-                );
+                await selectCellAsync(page, table, 0, 0);
+                await page.keyboard.press('Control+c');
 
-                // 結合列（skill.id）を選択してペースト
-                await selectCellAsync(
-                    page, table, 0, 2
-                );
-                await page.keyboard.press(
-                    'Control+v'
-                );
+                // 結合列（skill.value）を選択してペースト
+                await selectCellAsync(page, table, 0, 2);
+                await page.keyboard.press('Control+v');
 
                 // 値が変わっていないこと
-                await expect(
-                    getDataCell(table, 0, 2)
-                ).toHaveText('1');
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
 
                 // 震えアニメーションが表示されること
-                const selection = page.locator(
-                    '.selection'
-                );
-                await expect(selection)
-                    .toHaveClass(/selection-rejected/);
+                const selection = page.locator('.selection');
+                await expect(selection).toHaveClass(/selection-rejected/);
             },
         );
 
@@ -407,27 +394,17 @@ test.describe(
                 );
 
                 // 結合列（skill.value）を選択
-                await selectCellAsync(
-                    page, table, 0, 3
-                );
-                const valueBefore = await getDataCell(
-                    table, 0, 3
-                ).textContent();
+                await selectCellAsync(page, table, 0, 2);
 
                 // Delete押下
                 await page.keyboard.press('Delete');
 
-                // 値が変わっていないこと
-                await expect(
-                    getDataCell(table, 0, 3)
-                ).toHaveText(valueBefore!);
+                // 値が変わっていないこと（skill.value初期値は'3'）
+                await expect(getDataCell(table, 0, 2)).toHaveText('3');
 
                 // 震えアニメーションが表示されること
-                const selection = page.locator(
-                    '.selection'
-                );
-                await expect(selection)
-                    .toHaveClass(/selection-rejected/);
+                const selection = page.locator('.selection');
+                await expect(selection).toHaveClass(/selection-rejected/);
             },
         );
     },

@@ -116,20 +116,14 @@ export function buildViewTableData(
         const newMappings:
             ViewColumnMapping[] = [];
 
-        for (
-            let i = 0;
-            i < joinTable.header.length;
-            i++
-        ) {
+        for (let i = 0; i < joinTable.header.length; i++) {
             const col = joinTable.header[i];
+            // 結合キー列はベーステーブルのFK列と同じ値を持つため非表示にする
+            if (col.name === join.targetColumn) continue;
             newColumns.push(
                 new EditorTableDataColumn(
-                    col.key,
-                    join.targetTable
-                        + '.' + col.name,
-                    col.type,
-                    col.comment,
-                    col.reference
+                    col.key, join.targetTable + '.' + col.name,
+                    col.type, col.comment, col.reference
                 )
             );
             newMappings.push({
@@ -155,7 +149,7 @@ export function buildViewTableData(
             targetTable: join.targetTable,
             targetColumn: join.targetColumn,
             sourceColumn: join.sourceColumn,
-            columnCount: joinTable.header.length,
+            columnCount: joinTable.header.length - 1,
         });
     }
 
@@ -229,14 +223,14 @@ export function buildViewTableData(
             );
             if (!joinTable) continue;
 
-            for (
-                let i = 0;
-                i < joinTable.header.length;
-                i++
-            ) {
-                joinedValues.push(
-                    joinedRow ? joinedRow[i] : ''
-                );
+            // 結合キー列のインデックスを特定
+            const keyColIdx = joinTable.header.findIndex(
+                col => col.name === info.targetColumn
+            );
+            for (let i = 0; i < joinTable.header.length; i++) {
+                // 結合キー列はスキップ
+                if (i === keyColIdx) continue;
+                joinedValues.push(joinedRow ? joinedRow[i] : '');
             }
             rowValues.splice(
                 info.insertPosition,

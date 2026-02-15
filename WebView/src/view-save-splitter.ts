@@ -142,6 +142,22 @@ export async function saveViewDataAsync(
         // 結合テーブルの場合、同一キー値の重複行を排除するためのSet
         const seenKeys = new Set<string>();
 
+        // 結合テーブルでキー列が非表示の場合、ベーステーブルのFK列からキー値を取得するための準備
+        let fkViewColumnIndex = -1;
+        if (isJoinedTable) {
+            const baseKeyCol = columns[0].mapping.baseKeyColumn;
+            for (let i = 0; i < columnMappings.length; i++) {
+                const m = columnMappings[i];
+                if (!m.isJoinedColumn && m.sourceColumnName === baseKeyCol) {
+                    fkViewColumnIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // キー列が非表示の場合に復元するキー値のリスト
+        const restoredKeyValues: string[] = [];
+
         for (let r = 1; r < rowCount; r++) {
             const rowData: string[] = [];
             for (const col of columns) {
@@ -154,12 +170,21 @@ export async function saveViewDataAsync(
                 const keyColMapping = columns.find(
                     (c) => c.mapping.sourceColumnName === c.mapping.joinKeyColumn
                 );
+                let keyValue = '';
                 if (keyColMapping) {
+                    // キー列がビューに表示されている場合
                     const keyIdx = columns.indexOf(keyColMapping);
-                    const keyValue = rowData[keyIdx];
-                    if (keyValue === '') continue;
-                    if (seenKeys.has(keyValue)) continue;
-                    seenKeys.add(keyValue);
+                    keyValue = rowData[keyIdx];
+                } else if (fkViewColumnIndex >= 0) {
+                    // キー列が非表示の場合、ベーステーブルのFK列から取得
+                    keyValue = table.getCellValueAt(r, fkViewColumnIndex + 1);
+                }
+                if (keyValue === '') continue;
+                if (seenKeys.has(keyValue)) continue;
+                seenKeys.add(keyValue);
+                // キー列が非表示の場合、後で復元するためにキー値を記録
+                if (!keyColMapping) {
+                    restoredKeyValues.push(keyValue);
                 }
             }
 
@@ -173,6 +198,14 @@ export async function saveViewDataAsync(
 
         // 結合テーブルのキー列名を取得
         const joinKeyColumn = isJoinedTable ? (columns[0].mapping.joinKeyColumn) : '';
+
+        // 結合テーブルでキー列が非表示の場合、FK列の値からキー列を復元
+        if (isJoinedTable && !header.includes(joinKeyColumn) && restoredKeyValues.length > 0) {
+            header.unshift(joinKeyColumn);
+            for (let i = 0; i < body.length; i++) {
+                body[i].unshift(restoredKeyValues[i]);
+            }
+        }
 
         splitDataList.push({ tableName, header, body, isJoinedTable, joinKeyColumn });
     }
