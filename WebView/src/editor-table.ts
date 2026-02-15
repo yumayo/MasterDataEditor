@@ -810,6 +810,9 @@ export class EditorTable {
                     contextMenuSelectionColumnIndex
                 );
             }
+            // コンテキストメニュー表示はドラグ操作ではないため、
+            // ドラグ状態フラグをリセットする
+            this.selection.end();
 
             // ラベルを列数に応じて変更
             const insertLeftLabel = columnCount > 1
@@ -1070,6 +1073,9 @@ export class EditorTable {
                     contextMenuRowIndex
                 );
             }
+            // コンテキストメニュー表示はドラグ操作ではないため、
+            // ドラグ状態フラグをリセットする
+            this.selection.end();
 
             // ラベルを行数に応じて変更
             const insertAboveLabel = rowCount > 1
