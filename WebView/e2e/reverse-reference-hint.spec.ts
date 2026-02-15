@@ -44,14 +44,37 @@ function getReverseReferenceHint(
 }
 
 /**
+ * 指定した行・列のデータセルを返す
+ * rowIndex: 0始まり（ヘッダー行を除く）
+ * colIndex: 0始まり（行ヘッダーを除く）
+ */
+function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
+    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
+}
+
+/**
  * 指定した行・列の参照ヒント要素のLocatorを返す
  * rowIndex: 0始まり（ヘッダー行を除く）
  * colIndex: 0始まり（行ヘッダーを除く）
  */
 function getReferenceHint(table: Locator, rowIndex: number, colIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
-    const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
-    return cell.locator('.cell-reference-hint');
+    return getDataCell(table, rowIndex, colIndex).locator('.cell-reference-hint');
+}
+
+/**
+ * セルの値を編集する
+ * ダブルクリックで編集モードに入り、
+ * 全選択→新しい値を入力→Enterで確定
+ */
+async function editCellAsync(page: Page, table: Locator, rowIndex: number, colIndex: number, newValue: string): Promise<void> {
+    const cell = getDataCell(table, rowIndex, colIndex);
+    await cell.dblclick();
+    const editField = page.locator('.grid-textfield-active');
+    await expect(editField).toBeVisible();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.insertText(newValue);
+    await page.keyboard.press('Enter');
 }
 
 // -------------------------------------------------------
@@ -673,4 +696,92 @@ test.describe('ビュータブでの逆参照ヒント表示', () => {
             ).not.toBeVisible();
         },
     );
+});
+
+// -------------------------------------------------------
+// 表示列編集時に参照ヒントが即座に更新されるテスト
+// -------------------------------------------------------
+test.describe('表示列編集時の参照ヒント同期更新', () => {
+    /**
+     * テストデータ:
+     * chara: id(PK) のみ（表示列なし）
+     * chara_name: id(PK, FK→chara.id), ja
+     *
+     * chara_name.id は chara.id を参照するが、
+     * chara に表示列がないため逆参照チェーンにより
+     * chara_name.ja の値が参照ヒントとして表示される。
+     * chara_name.ja を編集したとき、
+     * chara_name.id の参照ヒントが即座に更新されること。
+     */
+    function createFs(): MockFileSystem {
+        return {
+            "schema/chara.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara.csv": [
+                "id",
+                "1",
+                "2",
+            ].join("\n"),
+            "schema/chara_name.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int", reference: "chara.id" },
+                    { key: 1, name: "ja", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara_name.csv": [
+                "id,ja",
+                "1,勇者",
+                "2,魔法使い",
+            ].join("\n"),
+        };
+    }
+
+    test('表示列を編集すると同一行の参照ヒントが即座に更新されること', async ({ page }) => {
+        await installMockApiAsync(page, createFs());
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara_name');
+
+        // 逆参照チェーンで解決された参照ヒントが表示されるまで待機
+        // id列(colIndex=0) に chara テーブルの逆参照チェーンヒントが表示される
+        const hint0 = getReferenceHint(table, 0, 0);
+        await expect(hint0).toBeVisible();
+        await expect(hint0).toHaveText('勇者');
+
+        // ja列(colIndex=1) を編集: "勇者" → "英雄"
+        await editCellAsync(page, table, 0, 1, '英雄');
+
+        // id列の参照ヒントが即座に更新されること
+        await expect(hint0).toHaveText('英雄');
+
+        // 2行目のヒントは変更されていないこと
+        await expect(getReferenceHint(table, 1, 0)).toHaveText('魔法使い');
+    });
+
+    test('Undoすると参照ヒントが元の値に戻ること', async ({ page }) => {
+        await installMockApiAsync(page, createFs());
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara_name');
+
+        // 参照ヒントが表示されるまで待機
+        const hint0 = getReferenceHint(table, 0, 0);
+        await expect(hint0).toBeVisible();
+        await expect(hint0).toHaveText('勇者');
+
+        // ja列を編集: "勇者" → "英雄"
+        await editCellAsync(page, table, 0, 1, '英雄');
+        await expect(hint0).toHaveText('英雄');
+
+        // Undo
+        await page.keyboard.press('Control+z');
+
+        // 参照ヒントが元の値に戻ること
+        await expect(hint0).toHaveText('勇者');
+    });
 });

@@ -34,7 +34,8 @@ import {ReferenceDataCache} from
     "./reference-data-cache";
 import {
     parseReferenceExpression,
-    isDynamicReference
+    isDynamicReference,
+    isSimpleReference
 } from "./reference-expression";
 import {
     ReverseReferenceMap,
@@ -1451,6 +1452,9 @@ export class EditorTable {
 
         // 変更された列に依存する動的参照列のヒントを再評価する（二段リスト対応）
         this.updateDependentColumnsInRow(row, dataColumnIndex);
+
+        // 表示列の変更時に同一行の参照ヒントを同期更新する（逆参照チェーン対応）
+        this.updateReferenceHintsOnDisplayColumnChange(row, dataColumnIndex, value);
     }
 
     /**
@@ -1643,6 +1647,44 @@ export class EditorTable {
                 const cellValue = EditorTable.getCellValue(cell);
                 this.setCellValue(cell, cellValue, colIdx, rowIndex);
             }
+        }
+    }
+
+    /**
+     * 表示列の値が変更されたとき、同一行の参照列ヒントを更新する
+     *
+     * 逆参照チェーンで解決された参照ヒントは、このテーブルの表示列の値に依存する。
+     * 表示列の値が変更されたらキャッシュを更新し、参照列のヒントを再描画する。
+     */
+    private updateReferenceHintsOnDisplayColumnChange(rowIndex: number, changedDataColumnIndex: number, newValue: string): void {
+        const changedColumn = this.tableData.header[changedDataColumnIndex];
+        if (!changedColumn) return;
+
+        // 変更された列が表示列でなければスキップ
+        if (!config.referenceDisplayColumnPriority.includes(changedColumn.name)) return;
+
+        const rowElement = this.element.children[rowIndex] as HTMLElement;
+        for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
+            if (colIdx === changedDataColumnIndex) continue;
+
+            const column = this.tableData.header[colIdx];
+            if (!column.reference) continue;
+
+            const expr = parseReferenceExpression(column.reference);
+            if (!isSimpleReference(expr)) continue;
+
+            // 参照先テーブルが自身の表示列を持つ場合は逆参照チェーン不使用なのでスキップ
+            const refData = this.referenceDataCache.getSync(expr.tableName);
+            if (!refData || refData.displayColumnName !== '') continue;
+
+            const cell = rowElement.children[colIdx + 1] as HTMLElement;
+            if (!cell) continue;
+            const fkValue = EditorTable.getCellValue(cell);
+            if (fkValue === '') continue;
+
+            // キャッシュを更新し、ヒントを再描画
+            this.referenceDataCache.updateDisplayText(expr.tableName, fkValue, newValue);
+            this.setCellValue(cell, fkValue, colIdx, rowIndex);
         }
     }
 

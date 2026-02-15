@@ -411,6 +411,20 @@ export class ReferenceDataCache {
     }
 
     /**
+     * キャッシュ内の指定テーブル・指定IDの表示テキストを更新する
+     * 逆参照チェーンで解決された表示テキストを即座に反映するために使用
+     *
+     * 呼び出し元でキャッシュの存在とIDの有効性を事前検証済みである前提
+     */
+    updateDisplayText(tableName: string, id: string, newDisplayText: string): void {
+        const data = this.cache.get(tableName);
+        if (!data) throw new Error(`キャッシュにテーブルが存在しません: ${tableName}`);
+        const item = data.items.find(item => item.id === id);
+        if (!item) throw new Error(`キャッシュにIDが存在しません: tableName=${tableName}, id=${id}`);
+        item.displayText = newDisplayText;
+    }
+
+    /**
      * IDから表示テキストを取得する
      * @param tableName テーブル名
      * @param id 検索するID
