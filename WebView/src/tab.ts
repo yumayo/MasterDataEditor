@@ -36,8 +36,11 @@ import {
 } from "./view-table-data-builder";
 import {saveViewDataAsync} from
     "./view-save-splitter";
-import {ReverseReferenceResolver} from
-    "./reverse-reference-resolver";
+import {
+    ReverseReferenceEntry,
+    ReverseReferenceResolver
+} from "./reverse-reference-resolver";
+import {Sidebar} from "./sidebar";
 
 /**
  * タブごとの状態を保持する基底インターフェース
@@ -121,13 +124,20 @@ export class Tab {
     private draggingTabName: string | undefined;
 
     /** ビューをExplorerに追加するコールバック */
-    private addViewCallback:
-        ((viewName: string) => void) | undefined;
+    private readonly addViewCallback:
+        (viewName: string) => void;
+
+    /** 参照箇所を表示するサイドバー */
+    private readonly sidebar: Sidebar;
 
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
-    constructor(editor: Editor) {
+    constructor(
+        editor: Editor,
+        addViewCallback: (viewName: string) => void,
+        sidebar: Sidebar
+    ) {
         this.editor = editor;
         this.element = document.getElementById('tab-content')!;
         this.tabButtons = [];
@@ -135,26 +145,21 @@ export class Tab {
         this.activeTabName = undefined;
         this.contextMenu = new ContextMenu(editor.element);
         this.draggingTabName = undefined;
-        this.addViewCallback = undefined;
+        this.addViewCallback = addViewCallback;
+        this.sidebar = sidebar;
         this.openEditorTables = new Map();
     }
 
-    /**
-     * ビューをExplorerに追加するコールバックを設定
-     */
-    setAddViewCallback(
-        callback: (viewName: string) => void
-    ): void {
-        this.addViewCallback = callback;
+    /** 参照箇所をサイドバーに表示する */
+    showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
+        this.sidebar.showReferences(pkValue, entries);
     }
 
     /**
      * ビューをExplorerに追加する
      */
     addViewToExplorer(viewName: string): void {
-        if (this.addViewCallback) {
-            this.addViewCallback(viewName);
-        }
+        this.addViewCallback(viewName);
     }
 
     /**
@@ -1007,7 +1012,8 @@ export class Tab {
             this.contextMenu,
             history,
             areaResizer,
-            scrollController
+            scrollController,
+            this
         );
 
         // editorTable に本物のインスタンスの内容をコピー

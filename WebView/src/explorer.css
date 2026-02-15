@@ -4,7 +4,7 @@
     color: var(--font-color);
     width: 300px;
     height: 100vh;
-    overflow-y: scroll;
+    display: flex;
 
     user-select: none;
 }
@@ -31,6 +31,6 @@
 
 /* ビューファイルのスタイル */
 .explorer-view-file {
-    color: var(--text-muted-color, #666);
+    color: #666;
     font-style: italic;
 }

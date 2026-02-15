@@ -38,9 +38,11 @@ import {
     isSimpleReference
 } from "./reference-expression";
 import {
+    ReverseReferenceEntry,
     ReverseReferenceMap,
     formatReverseReferenceHint
 } from "./reverse-reference-resolver";
+import {Tab} from "./tab";
 import {ViewDefinition} from
     "./model/view-definition";
 import {ViewColumnMapping} from
@@ -101,6 +103,9 @@ export class EditorTable {
     private reverseReferenceMap:
         ReverseReferenceMap | undefined;
 
+    /** 参照箇所の表示を委譲するタブ */
+    private readonly tab: Tab;
+
     constructor(
         tableName: string,
         tableData: EditorTableData,
@@ -110,7 +115,8 @@ export class EditorTable {
         contextMenu: ContextMenu,
         history: History,
         areaResizer: AreaResizer,
-        scrollBinding: ScrollViewportController
+        scrollBinding: ScrollViewportController,
+        tab: Tab
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -121,6 +127,7 @@ export class EditorTable {
         this.history = history;
         this.areaResizer = areaResizer;
         this.scrollBinding = scrollBinding;
+        this.tab = tab;
 
         this.element = document.createElement('div');
 
@@ -195,6 +202,27 @@ export class EditorTable {
     hasReverseReferences(): boolean {
         if (!this.reverseReferenceMap) return false;
         return this.reverseReferenceMap.size > 0;
+    }
+
+    /**
+     * PK値から逆参照エントリを取得する
+     * Map.get()の戻り値がundefined許容のため ?? で空配列に変換
+     */
+    getReverseReferenceEntries(pkValue: string): ReverseReferenceEntry[] {
+        if (!this.reverseReferenceMap) return [];
+        return this.reverseReferenceMap.get(pkValue) ?? [];
+    }
+
+    /**
+     * 行のPK値を取得する
+     * @param rowIndex 行インデックス（0始まり、列ヘッダー行を含む）
+     */
+    getRowPkValue(rowIndex: number): string {
+        const pkColumnIndex = this.tableData.header.findIndex(
+            col => col.name === config.primaryKeyColumnName
+        );
+        if (pkColumnIndex === -1) return '';
+        return this.getCellValueAt(rowIndex, pkColumnIndex + 1);
     }
 
     /**
@@ -690,6 +718,27 @@ export class EditorTable {
                 // 通常クリック: セルを選択
                 table.selection.start(position.row, position.column);
             }
+        });
+        cell.addEventListener('contextmenu', (e) => {
+            const position = EditorTable.getCellPosition(cell, table.element);
+            if (!position) return;
+            const pkValue = table.getRowPkValue(position.row);
+            if (pkValue === '') return;
+            const entries = table.getReverseReferenceEntries(pkValue);
+            if (entries.length === 0) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // ドラグ状態をリセット
+            table.selection.end();
+
+            table.contextMenu.show(e.clientX, e.clientY, [{
+                label: '参照箇所を表示',
+                action: () => {
+                    table.tab.showReferences(pkValue, entries);
+                },
+            }]);
         });
         cell.textContent = value as any;
         return cell;
@@ -1632,6 +1681,8 @@ export class EditorTable {
 
         const hintText =
             formatReverseReferenceHint(entries);
+        if (hintText === '') return;
+
         const hintSpan =
             document.createElement('span');
         hintSpan.classList.add(

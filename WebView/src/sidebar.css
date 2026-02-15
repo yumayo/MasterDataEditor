@@ -1,0 +1,107 @@
+/* アクティビティバー */
+.activity-bar {
+    width: 48px;
+    min-width: 48px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: var(--background-color);
+    border-right: 1px solid rgba(128, 128, 128, 0.3);
+    padding-top: 4px;
+}
+
+.activity-bar-item {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.5;
+    color: var(--font-color);
+}
+
+.activity-bar-item:hover {
+    opacity: 0.8;
+}
+
+.activity-bar-item-active {
+    opacity: 1;
+    border-left: 2px solid var(--font-color);
+}
+
+/* サイドバーコンテンツ */
+.sidebar-content {
+    flex: 1;
+    overflow-y: auto;
+    min-width: 0;
+}
+
+/* サイドバーパネル */
+.sidebar-panel {
+    display: none;
+}
+
+.sidebar-panel-active {
+    display: block;
+}
+
+/* REFERENCESパネル */
+.references-panel-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--font-color);
+    opacity: 0.7;
+}
+
+.references-panel-pk-label {
+    padding: 4px 12px 8px;
+    font-size: 13px;
+    color: var(--font-color);
+    font-weight: 500;
+}
+
+.references-panel-content {
+    padding: 0;
+}
+
+/* フォルダヘッダー */
+.references-folder-header {
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--font-color);
+    user-select: none;
+}
+
+.references-folder-header:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .references-folder-header:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* フォルダ内容 */
+.references-folder-content {
+    padding-left: 12px;
+}
+
+/* 行アイテム */
+.references-row {
+    padding: 2px 12px;
+    font-size: 13px;
+    color: var(--font-color);
+    opacity: 0.8;
+}
+
+.references-row:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .references-row:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}

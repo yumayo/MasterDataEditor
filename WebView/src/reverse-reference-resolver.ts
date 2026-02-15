@@ -414,12 +414,11 @@ export class ReverseReferenceResolver {
 }
 
 /**
- * 逆参照マップからセルに表示するヒントテキストを生成する
+ * 逆参照マップからセルにインライン表示するヒントテキストを生成する
  *
  * 表示仕様:
- * - 1件: "← 子の表示名"
- * - 2件以上: "← テーブル名(件数)"
- * - 複数テーブル: カンマ区切り
+ * - 1件かつ表示テキストがある場合のみインライン表示
+ * - 2件以上、または表示テキストなし → スキップ（REFERENCESパネルで閲覧）
  *
  * @param entries PK値に対応する逆参照エントリ配列
  */
@@ -427,19 +426,11 @@ export function formatReverseReferenceHint(
     entries: ReverseReferenceEntry[]
 ): string {
     const parts: string[] = [];
-
     for (const entry of entries) {
-        const count = entry.displayTexts.length;
-        if (count === 1 && entry.displayTexts[0] !== '') {
-            // 1件かつ表示テキストがある場合: 表示名を使う
+        if (entry.displayTexts.length === 1 && entry.displayTexts[0] !== '') {
             parts.push(entry.displayTexts[0]);
-        } else {
-            // 2件以上、または表示テキストが空: テーブル名(件数)
-            parts.push(
-                `${entry.childTableName}(${count})`
-            );
         }
+        // 2件以上、表示テキストなし → スキップ（REFERENCESパネルで閲覧）
     }
-
     return parts.join(', ');
 }

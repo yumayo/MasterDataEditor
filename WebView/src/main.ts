@@ -1,27 +1,35 @@
 import {findFilesAsync} from "./api";
-import {Explorer} from "./explorer";
+import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
+import {ExplorerDirectory} from "./explorer-directory";
 
 (async () => {
     const editor = new Editor();
-    const tab = new Tab(editor);
     const contextMenu = new ContextMenu(
         editor.element
     );
-    const explorer = new Explorer(
-        tab, contextMenu
+
+    // Tab → Sidebar の循環依存を Object.assign パターンで解決する
+    const sidebar = {} as Sidebar;
+    let viewDirectory: ExplorerDirectory;
+
+    const tab = new Tab(
+        editor,
+        (viewName) => { viewDirectory.appendViewFile(viewName); },
+        sidebar
     );
 
-    // ビューをExplorerに追加するコールバック
-    // ExplorerDirectoryの参照を後から設定する
-    let viewDirectory =
-        explorer.appendDirectory('ビュー');
+    const realSidebar = new Sidebar(
+        document.getElementById('explorer')!,
+        tab,
+        contextMenu
+    );
+    Object.assign(sidebar, realSidebar);
+    Object.setPrototypeOf(sidebar, Sidebar.prototype);
 
-    tab.setAddViewCallback((viewName: string) => {
-        viewDirectory.appendViewFile(viewName);
-    });
+    viewDirectory = sidebar.appendDirectory('ビュー');
 
     // スキーマファイルを読み込み
     const files = await findFilesAsync("schema");
@@ -31,7 +39,7 @@ import {ContextMenu} from "./context-menu";
             .split('.')
             .slice(0, -1)
             .join('.');
-        explorer.appendFile(tableName);
+        sidebar.appendFile(tableName);
     }
 
     // ビューファイルを読み込み

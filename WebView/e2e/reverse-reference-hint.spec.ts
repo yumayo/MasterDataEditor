@@ -157,8 +157,8 @@ test.describe('逆参照ヒントの表示', () => {
     });
 
     test(
-        '複数テーブルから参照されるPK値に'
-        + '逆参照ヒントが表示されること',
+        '1件かつ表示名ありのエントリのみ'
+        + 'インライン表示されること',
         async ({ page }) => {
             const table =
                 await openTableAsync(page, 'parent');
@@ -169,16 +169,15 @@ test.describe('逆参照ヒントの表示', () => {
                 getReverseReferenceHint(table, 0, 0);
             await expect(firstHint).toBeVisible();
 
-            // id=1: child_a(1件)+child_b(3件)
-            // → "スキルA, child_b(3)"
+            // id=1: child_a(1件, "スキルA") → インライン表示
+            //   child_b(3件) → スキップ（REFERENCESパネル）
             await expect(firstHint)
-                .toHaveText('スキルA, child_b(3)');
+                .toHaveText('スキルA');
 
-            // id=2: child_b(2件)
-            // → "child_b(2)"
+            // id=2: child_b(2件) → インライン表示なし
             await expect(
                 getReverseReferenceHint(table, 1, 0)
-            ).toHaveText('child_b(2)');
+            ).not.toBeVisible();
 
             // id=3: 逆参照なし → ヒント非表示
             await expect(
@@ -338,17 +337,19 @@ test.describe('動的参照の逆参照ヒント表示', () => {
             await expect(hint0).toBeVisible();
 
             // weapon id=1:
-            //   weapon_name(1件, ja=剣) + test(1件)
+            //   weapon_name(1件, ja=剣) → インライン表示
+            //   test(1件, 表示名なし) → スキップ
             await expect(hint0)
-                .toHaveText('剣, test(1)');
+                .toHaveText('剣');
 
             // weapon id=2:
-            //   weapon_name(1件, ja=槍) + test(1件)
+            //   weapon_name(1件, ja=槍) → インライン表示
+            //   test(1件, 表示名なし) → スキップ
             const hint1 =
                 getReverseReferenceHint(table, 1, 0);
             await expect(hint1).toBeVisible();
             await expect(hint1)
-                .toHaveText('槍, test(1)');
+                .toHaveText('槍');
         },
     );
 
@@ -367,17 +368,19 @@ test.describe('動的参照の逆参照ヒント表示', () => {
             await expect(hint0).toBeVisible();
 
             // armor id=1:
-            //   armor_name(1件, ja=盾) + test(1件)
+            //   armor_name(1件, ja=盾) → インライン表示
+            //   test(1件, 表示名なし) → スキップ
             await expect(hint0)
-                .toHaveText('盾, test(1)');
+                .toHaveText('盾');
 
             // armor id=2:
-            //   armor_name(1件, ja=兜) + test(1件)
+            //   armor_name(1件, ja=兜) → インライン表示
+            //   test(1件, 表示名なし) → スキップ
             const hint1 =
                 getReverseReferenceHint(table, 1, 0);
             await expect(hint1).toBeVisible();
             await expect(hint1)
-                .toHaveText('兜, test(1)');
+                .toHaveText('兜');
         },
     );
 
@@ -482,14 +485,14 @@ test.describe('動的参照の逆参照ヒント表示', () => {
 
 test.describe('逆参照ヒントの表示形式', () => {
     test(
-        '表示列がある子テーブルは表示テキスト、'
-        + 'ない子テーブルはテーブル名(件数)で表示されること',
+        '1件かつ表示名ありのみインライン表示され、'
+        + '複数件や表示名なしはスキップされること',
         async ({ page }) => {
             // parent テーブル: id, ja
             // child_with_ja: id, parent_id(→parent.id), ja
-            //   → ja列あり → 表示テキスト使用
+            //   → 1件かつ表示テキストあり → インライン表示
             // child_without_ja: id, parent_id(→parent.id), code
-            //   → ja列なし → テーブル名(件数)形式
+            //   → 2件 → スキップ（REFERENCESパネル）
             const fs: MockFileSystem = {
                 "schema/parent.json": JSON.stringify({
                     header: [
@@ -570,14 +573,13 @@ test.describe('逆参照ヒントの表示形式', () => {
             const table =
                 await openTableAsync(page, 'parent');
 
-            // child_with_ja は表示テキスト "スキルA"
-            // child_without_ja は ja列がないため
-            // テーブル名(件数) 形式 "child_without_ja(2)"
+            // child_with_ja(1件, "スキルA") → インライン表示
+            // child_without_ja(2件) → スキップ
             const hint =
                 getReverseReferenceHint(table, 0, 0);
             await expect(hint).toBeVisible();
             await expect(hint).toHaveText(
-                'スキルA, child_without_ja(2)'
+                'スキルA'
             );
         },
     );
