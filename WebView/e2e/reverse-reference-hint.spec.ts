@@ -559,3 +559,118 @@ test.describe('逆参照ヒントの表示形式', () => {
         },
     );
 });
+
+// -------------------------------------------------------
+// ビュータブでの逆参照ヒントのテスト
+// -------------------------------------------------------
+test.describe('ビュータブでの逆参照ヒント表示', () => {
+    /**
+     * テストデータ:
+     * chara: id(PK), skill_id(→skill.id)
+     * skill: id(PK), value
+     * chara_name: id(PK), chara_id(→chara.id), ja
+     * view_chara: charaベース、skillをJOIN
+     *
+     * chara.id=1 → chara_name に ja="勇者" の1件
+     * chara.id=2 → chara_name に ja="魔法使い" の1件
+     * chara.id=3 → 逆参照なし
+     */
+    function createViewFs(): MockFileSystem {
+        return {
+            "schema/chara.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "skill_id", type: "int", reference: "skill.id" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara.csv": [
+                "id,skill_id",
+                "1,1",
+                "2,1",
+                "3,2",
+            ].join("\n"),
+            "schema/skill.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "value", type: "int" },
+                ],
+                primary_key: "id",
+            }),
+            "data/skill.csv": [
+                "id,value",
+                "1,3",
+                "2,5",
+                "3,10",
+            ].join("\n"),
+            "schema/chara_name.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "chara_id", type: "int", reference: "chara.id" },
+                    { key: 2, name: "ja", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara_name.csv": [
+                "id,chara_id,ja",
+                "1,1,勇者",
+                "2,2,魔法使い",
+            ].join("\n"),
+            "view/view_chara.json": JSON.stringify({
+                name: "view_chara",
+                baseTable: "chara",
+                joins: [
+                    {
+                        sourceColumn: "skill_id",
+                        targetTable: "skill",
+                        targetColumn: "id",
+                        insertAfterViewColumnIndex: 1,
+                    },
+                ],
+            }),
+        };
+    }
+
+    test(
+        'ビュータブのPK列に逆参照ヒントが'
+        + '表示されること',
+        async ({ page }) => {
+            await installMockApiAsync(
+                page, createViewFs()
+            );
+            await page.goto('/');
+
+            // view_charaを開く
+            const explorer = page.locator('#explorer');
+            await explorer
+                .getByText('view_chara', { exact: true })
+                .click();
+            const table = page.locator(
+                '.tab-wrapper'
+                + ':not([style*="display: none"])'
+                + ' .editor-table'
+            );
+            await expect(table).toBeVisible();
+
+            // ビュー列: chara.id(0), chara.skill_id(1), skill.value(2)
+            // 逆参照ヒントは非同期で解決されるため待機
+            const firstHint =
+                getReverseReferenceHint(table, 0, 0);
+            await expect(firstHint).toBeVisible();
+
+            // chara.id=1: chara_name(1件, ja=勇者)
+            await expect(firstHint)
+                .toHaveText('勇者');
+
+            // chara.id=2: chara_name(1件, ja=魔法使い)
+            await expect(
+                getReverseReferenceHint(table, 1, 0)
+            ).toHaveText('魔法使い');
+
+            // chara.id=3: 逆参照なし → ヒント非表示
+            await expect(
+                getReverseReferenceHint(table, 2, 0)
+            ).not.toBeVisible();
+        },
+    );
+});

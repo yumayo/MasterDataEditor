@@ -401,12 +401,7 @@ export class Tab {
                 }
 
                 // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
-                const reverseResolver = new ReverseReferenceResolver(this.openEditorTables);
-                reverseResolver.resolveAsync(name).then(reverseMap => {
-                    editorTable.updateReverseReferenceHints(reverseMap);
-                }).catch(error => {
-                    console.warn('Failed to resolve reverse references:', error);
-                });
+                this.resolveReverseReferencesAsync(name, editorTable);
 
                 // ドロップダウン入力コンポーネントを作成
                 // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
@@ -643,6 +638,11 @@ export class Tab {
                         editorTable
                     );
 
+                    // 逆参照を並行して解決（ベーステーブル名で解決する）
+                    this.resolveReverseReferencesAsync(
+                        baseTable, editorTable
+                    );
+
                     // ドロップダウン入力を作成
                     const dropdownInput =
                         new GridDropdownInput(
@@ -853,26 +853,39 @@ export class Tab {
             state.editorTable
         );
 
-        // 通常タブの場合は逆参照も再解決する
-        if (state.kind === 'normal') {
-            const reverseResolver =
-                new ReverseReferenceResolver(
-                    this.openEditorTables
-                );
-            reverseResolver.resolveAsync(name)
-                .then(reverseMap => {
-                    state.editorTable
-                        .updateReverseReferenceHints(
-                            reverseMap
-                        );
-                }).catch(error => {
-                    console.warn(
-                        'Failed to refresh'
-                        + ' reverse references:',
-                        error
+        // 逆参照を再解決する（ビュータブはベーステーブル名で解決する）
+        const reverseTableName = state.kind === 'view'
+            ? state.viewDefinition.baseTable
+            : name;
+        this.resolveReverseReferencesAsync(
+            reverseTableName, state.editorTable
+        );
+    }
+
+    /**
+     * 逆参照を非同期で解決し、ヒントを更新する
+     */
+    private resolveReverseReferencesAsync(
+        tableName: string,
+        editorTable: EditorTable
+    ): void {
+        const resolver =
+            new ReverseReferenceResolver(
+                this.openEditorTables
+            );
+        resolver.resolveAsync(tableName)
+            .then(reverseMap => {
+                editorTable
+                    .updateReverseReferenceHints(
+                        reverseMap
                     );
-                });
-        }
+            }).catch(error => {
+                console.warn(
+                    'Failed to resolve'
+                    + ' reverse references:',
+                    error
+                );
+            });
     }
 
     /**
