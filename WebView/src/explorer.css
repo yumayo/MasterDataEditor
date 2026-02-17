@@ -16,21 +16,3 @@
 [data-theme="dark"] .explorer-file:hover {
     background-color: rgba(255, 255, 255, 0.05);
 }
-
-.explorer-directory {
-
-}
-
-.explorer-directory-name:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .explorer-directory-name:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-/* ビューファイルのスタイル */
-.explorer-view-file {
-    color: #666;
-    font-style: italic;
-}

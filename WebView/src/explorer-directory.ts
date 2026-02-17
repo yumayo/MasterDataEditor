@@ -47,38 +47,4 @@ export class ExplorerDirectory {
             viewFile.element
         );
     }
-
-    appendDirectory(name: string) {
-        const directory =
-            document.createElement('div');
-        directory.classList.add(
-            'explorer-directory'
-        );
-
-        const directoryName =
-            document.createElement('div');
-        directoryName.classList.add(
-            'explorer-directory-name'
-        );
-        directoryName.setAttribute(
-            'style',
-            'padding-left: '
-                + this.depth * 16 + 'px'
-        );
-        directoryName.textContent = name;
-
-        directory.appendChild(directoryName);
-
-        const ul = document.createElement('div');
-        directory.appendChild(ul);
-
-        this.element.appendChild(directory);
-
-        return new ExplorerDirectory(
-            this.tab,
-            this.contextMenu,
-            ul,
-            this.depth + 1
-        );
-    }
 }

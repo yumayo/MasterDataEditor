@@ -3,19 +3,20 @@ import {Tab} from "./tab";
 import {ContextMenu} from "./context-menu";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
+import {ViewsPanel} from "./views-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 
 /**
  * サイドバー
  * アクティビティバー（48px） + サイドバーコンテンツ（252px）の2分割構成
- * ファイルエクスプローラーとREFERENCESパネルを切り替え表示する
+ * ファイルエクスプローラー・VIEWSパネル・REFERENCESパネルを切り替え表示する
  */
 export class Sidebar {
     private readonly activityBar: ActivityBar;
     private readonly filesPanel: HTMLElement;
+    private readonly viewsPanel: ViewsPanel;
     private readonly referencesPanel: ReferencesPanel;
     private readonly directory: ExplorerDirectory;
-    private readonly viewDirectory: ExplorerDirectory;
 
     constructor(
         explorerElement: HTMLElement,
@@ -36,24 +37,26 @@ export class Sidebar {
         // ファイルパネル
         this.filesPanel = document.createElement('div');
         this.filesPanel.classList.add('sidebar-panel', 'sidebar-panel-active');
+        const filesPanelHeader = document.createElement('div');
+        filesPanelHeader.classList.add('sidebar-panel-header');
+        filesPanelHeader.textContent = 'EXPLORER';
+        this.filesPanel.appendChild(filesPanelHeader);
         sidebarContent.appendChild(this.filesPanel);
+
+        // VIEWSパネル
+        this.viewsPanel = new ViewsPanel(tab, contextMenu);
+        this.viewsPanel.appendTo(sidebarContent);
 
         // REFERENCESパネル
         this.referencesPanel = new ReferencesPanel(tab);
         this.referencesPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
-        this.directory = new ExplorerDirectory(
-            tab, contextMenu, this.filesPanel, 1
-        );
-
-        // ビューディレクトリを作成
-        this.viewDirectory = this.directory.appendDirectory('ビュー');
+        this.directory = new ExplorerDirectory(tab, contextMenu, this.filesPanel, 1);
     }
 
     /**
      * ファイルを追加する
-     * viewDirectory の知識をカプセル化する
      */
     appendFile(name: string): void {
         this.directory.appendFile(name, this);
@@ -63,7 +66,7 @@ export class Sidebar {
      * ビューファイルを追加する
      */
     appendViewFile(name: string): void {
-        this.viewDirectory.appendViewFile(name);
+        this.viewsPanel.appendViewFile(name);
     }
 
     /**
@@ -78,13 +81,18 @@ export class Sidebar {
 
     /**
      * パネルを切り替える
+     * 全パネルを非表示にしてから選択パネルのみ表示する
      */
     private switchPanel(item: ActivityBarItem): void {
+        this.filesPanel.classList.remove('sidebar-panel-active');
+        this.viewsPanel.hide();
+        this.referencesPanel.hide();
+
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');
-            this.referencesPanel.hide();
+        } else if (item === 'views') {
+            this.viewsPanel.show();
         } else {
-            this.filesPanel.classList.remove('sidebar-panel-active');
             this.referencesPanel.show();
         }
     }

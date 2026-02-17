@@ -19,7 +19,7 @@ test(
 
         await expect(explorer.getByText('test')).toBeVisible();
 
-        // ビューディレクトリが表示される
-        await expect(explorer.getByText('ビュー')).toBeVisible();
+        // アクティビティバーにビューパネルボタンが存在する
+        await expect(explorer.locator('[data-panel="views"]')).toBeVisible();
     },
 );

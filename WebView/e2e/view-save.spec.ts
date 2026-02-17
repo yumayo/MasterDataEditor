@@ -15,6 +15,10 @@ async function openTableAsync(
     tableName: string,
 ): Promise<Locator> {
     const explorer = page.locator('#explorer');
+    // ビューファイルはVIEWSパネルに表示されるため、パネルを切り替える
+    if (tableName.startsWith('view_')) {
+        await explorer.locator('[data-panel="views"]').click();
+    }
     await explorer
         .getByText(tableName, { exact: true })
         .click();

@@ -17,7 +17,7 @@ export class ReferencesPanel {
         this.element.classList.add('sidebar-panel', 'references-panel');
 
         const headerElement = document.createElement('div');
-        headerElement.classList.add('references-panel-header');
+        headerElement.classList.add('sidebar-panel-header');
         headerElement.textContent = 'REFERENCES';
         this.element.appendChild(headerElement);
 

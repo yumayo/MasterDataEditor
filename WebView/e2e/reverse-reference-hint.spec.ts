@@ -665,8 +665,9 @@ test.describe('ビュータブでの逆参照ヒント表示', () => {
             );
             await page.goto('/');
 
-            // view_charaを開く
+            // ビューパネルに切り替えてからview_charaを開く
             const explorer = page.locator('#explorer');
+            await explorer.locator('[data-panel="views"]').click();
             await explorer
                 .getByText('view_chara', { exact: true })
                 .click();
@@ -854,6 +855,8 @@ test.describe('ビューJOIN列編集時の参照ヒント同期更新', () => {
      */
     async function openViewAsync(page: Page, viewName: string): Promise<Locator> {
         const explorer = page.locator('#explorer');
+        // ビューパネルに切り替える
+        await explorer.locator('[data-panel="views"]').click();
         await explorer.getByText(viewName, { exact: true }).click();
         const table = page.locator(
             '.tab-wrapper:not([style*="display: none"]) .editor-table'

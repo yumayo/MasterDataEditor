@@ -23,10 +23,7 @@ export class ExplorerViewFile {
 
         const li = document.createElement('div');
         li.textContent = name;
-        li.classList.add(
-            'explorer-file',
-            'explorer-view-file'
-        );
+        li.classList.add('explorer-file');
         li.setAttribute(
             'style',
             'padding-left: '
