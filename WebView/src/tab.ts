@@ -54,6 +54,10 @@ interface BaseTabState {
     wrapperElement: HTMLElement;
     referenceDataCache: ReferenceDataCache;
     dropdownInput: GridDropdownInput;
+    /** タブ非アクティブ時に保存された水平スクロール位置 */
+    savedScrollLeft: number;
+    /** タブ非アクティブ時に保存された垂直スクロール位置 */
+    savedScrollTop: number;
 }
 
 /**
@@ -316,6 +320,9 @@ export class Tab {
      * タブ状態を非アクティブ化（DOMを非表示にしてイベントリスナーを解除）
      */
     private deactivateTabState(state: TabState): void {
+        // スクロール位置をwrapperが表示されている間に保存する
+        state.savedScrollLeft = this.editor.element.scrollLeft;
+        state.savedScrollTop = this.editor.element.scrollTop;
         state.wrapperElement.style.display = 'none';
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
@@ -328,6 +335,9 @@ export class Tab {
      */
     private activateTabState(state: TabState): void {
         state.wrapperElement.style.display = '';
+        // スクロール位置をイベントリスナー登録前に復元する
+        this.editor.element.scrollLeft = state.savedScrollLeft;
+        this.editor.element.scrollTop = state.savedScrollTop;
         state.editorTable.activate();
         state.areaResizer.activate();
         state.fillController.activate();
@@ -460,7 +470,9 @@ export class Tab {
                     fillController,
                     wrapperElement,
                     referenceDataCache,
-                    dropdownInput
+                    dropdownInput,
+                    savedScrollLeft: 0,
+                    savedScrollTop: 0
                 };
                 this.tabStates.set(name, state);
 
@@ -721,6 +733,8 @@ export class Tab {
                         dropdownInput,
                         viewDefinition,
                         columnMappings,
+                        savedScrollLeft: 0,
+                        savedScrollTop: 0
                     };
                     this.tabStates.set(
                         name, state
