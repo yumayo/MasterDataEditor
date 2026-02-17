@@ -1,4 +1,5 @@
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
+import {Tab} from "./tab";
 
 /**
  * REFERENCESパネル
@@ -8,8 +9,10 @@ export class ReferencesPanel {
     private readonly element: HTMLElement;
     private readonly pkLabelElement: HTMLElement;
     private readonly contentElement: HTMLElement;
+    private readonly tab: Tab;
 
-    constructor() {
+    constructor(tab: Tab) {
+        this.tab = tab;
         this.element = document.createElement('div');
         this.element.classList.add('sidebar-panel', 'references-panel');
 
@@ -71,16 +74,19 @@ export class ReferencesPanel {
 
         const header = document.createElement('div');
         header.classList.add('references-folder-header');
-        const count = entry.displayTexts.length;
+        const count = entry.rows.length;
         header.textContent = `▼ ${entry.childTableName} (${count}件)`;
 
         const content = document.createElement('div');
         content.classList.add('references-folder-content');
 
-        for (const text of entry.displayTexts) {
+        for (const refRow of entry.rows) {
             const row = document.createElement('div');
             row.classList.add('references-row');
-            row.textContent = text !== '' ? text : '(表示名なし)';
+            row.textContent = refRow.displayText !== '' ? refRow.displayText : 'id:' + refRow.pkValue;
+            row.addEventListener('click', () => {
+                this.tab.navigateToTableRow(entry.childTableName, refRow.pkValue);
+            });
             content.appendChild(row);
         }
 

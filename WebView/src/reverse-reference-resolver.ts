@@ -10,14 +10,24 @@ import {
 } from "./reference-expression";
 
 /**
+ * 逆参照の子行1つ分の情報
+ */
+export interface ReverseReferenceRow {
+    /** 子行のPK値 */
+    pkValue: string;
+    /** 子行の表示テキスト（表示列がない場合は空文字列） */
+    displayText: string;
+}
+
+/**
  * 逆参照の1エントリ
  * あるPK値を参照している子テーブル1つ分の情報
  */
 export interface ReverseReferenceEntry {
     /** 子テーブル名 */
     childTableName: string;
-    /** 子行の表示テキスト一覧 */
-    displayTexts: string[];
+    /** 子行の情報一覧 */
+    rows: ReverseReferenceRow[];
 }
 
 /**
@@ -147,12 +157,12 @@ export class ReverseReferenceResolver {
      * グループ化された逆参照情報をマップにマージする
      */
     private mergeGroups(
-        groups: Map<string, string[]>,
+        groups: Map<string, ReverseReferenceRow[]>,
         childTableName: string,
         map: ReverseReferenceMap
     ): void {
         groups.forEach(
-            (displayTexts, parentPkValue) => {
+            (rows, parentPkValue) => {
                 let entries =
                     map.get(parentPkValue);
                 if (!entries) {
@@ -163,7 +173,7 @@ export class ReverseReferenceResolver {
                 }
                 entries.push({
                     childTableName,
-                    displayTexts,
+                    rows,
                 });
             }
         );
@@ -321,12 +331,18 @@ export class ReverseReferenceResolver {
                 schema.header, csv.header
             );
 
-        // 単純参照: FK値でグループ化し、表示テキストを収集
+        // PK列のインデックスを取得
+        const pkColumnIndex =
+            csv.header.indexOf(
+                config.primaryKeyColumnName
+            );
+
+        // 単純参照: FK値でグループ化し、表示テキストとPK値を収集
         for (const fk of fkColumns) {
             if (fk.index === -1) continue;
 
             const groups =
-                new Map<string, string[]>();
+                new Map<string, ReverseReferenceRow[]>();
 
             for (const row of csv.body) {
                 const fkValue = row[fk.index];
@@ -334,7 +350,11 @@ export class ReverseReferenceResolver {
 
                 const displayText =
                     displayColumnIndex !== -1
-                        ? row[displayColumnIndex] ?? ''
+                        ? row[displayColumnIndex]
+                        : '';
+                const pkValue =
+                    pkColumnIndex !== -1
+                        ? row[pkColumnIndex]
                         : '';
 
                 let list = groups.get(fkValue);
@@ -342,7 +362,7 @@ export class ReverseReferenceResolver {
                     list = [];
                     groups.set(fkValue, list);
                 }
-                list.push(displayText);
+                list.push({ pkValue, displayText });
             }
 
             this.mergeGroups(
@@ -351,7 +371,7 @@ export class ReverseReferenceResolver {
         }
 
         // 動的参照: フィルタ値にマッチする行のみ
-        // グループ化し、表示テキストを収集
+        // グループ化し、表示テキストとPK値を収集
         for (const dynFk of dynamicFkColumns) {
             if (dynFk.index === -1
                 || dynFk.valueColumnIndex === -1) {
@@ -359,7 +379,7 @@ export class ReverseReferenceResolver {
             }
 
             const groups =
-                new Map<string, string[]>();
+                new Map<string, ReverseReferenceRow[]>();
 
             for (const row of csv.body) {
                 const valueColumnValue =
@@ -374,7 +394,11 @@ export class ReverseReferenceResolver {
 
                 const displayText =
                     displayColumnIndex !== -1
-                        ? row[displayColumnIndex] ?? ''
+                        ? row[displayColumnIndex]
+                        : '';
+                const pkValue =
+                    pkColumnIndex !== -1
+                        ? row[pkColumnIndex]
                         : '';
 
                 let list = groups.get(fkValue);
@@ -382,7 +406,7 @@ export class ReverseReferenceResolver {
                     list = [];
                     groups.set(fkValue, list);
                 }
-                list.push(displayText);
+                list.push({ pkValue, displayText });
             }
 
             this.mergeGroups(
@@ -427,8 +451,8 @@ export function formatReverseReferenceHint(
 ): string {
     const parts: string[] = [];
     for (const entry of entries) {
-        if (entry.displayTexts.length === 1 && entry.displayTexts[0] !== '') {
-            parts.push(entry.displayTexts[0]);
+        if (entry.rows.length === 1 && entry.rows[0].displayText !== '') {
+            parts.push(entry.rows[0].displayText);
         }
         // 2件以上、表示テキストなし → スキップ（REFERENCESパネルで閲覧）
     }

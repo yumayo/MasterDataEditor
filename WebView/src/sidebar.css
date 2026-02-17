@@ -96,6 +96,7 @@
     font-size: 13px;
     color: var(--font-color);
     opacity: 0.8;
+    cursor: pointer;
 }
 
 .references-row:hover {

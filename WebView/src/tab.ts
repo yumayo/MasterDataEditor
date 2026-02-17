@@ -133,6 +133,9 @@ export class Tab {
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
+    /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
+    private pendingNavigationPkValue: string;
+
     constructor(
         editor: Editor,
         addViewCallback: (viewName: string) => void,
@@ -148,11 +151,46 @@ export class Tab {
         this.addViewCallback = addViewCallback;
         this.sidebar = sidebar;
         this.openEditorTables = new Map();
+        this.pendingNavigationPkValue = '';
     }
 
     /** 参照箇所をサイドバーに表示する */
     showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
         this.sidebar.showReferences(pkValue, entries);
+    }
+
+    /**
+     * REFERENCESパネルから子テーブルの特定行へナビゲーションする
+     * 既にタブが開かれていればそのタブをアクティブにして行を選択し、
+     * 開かれていなければタブを新規作成して読み込み完了後に行を選択する
+     */
+    navigateToTableRow(tableName: string, pkValue: string): void {
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            // 既存タブをアクティブにして行を選択
+            this.enableTabButton(tableName);
+            this.navigateToRow(existingState, pkValue);
+            return;
+        }
+        // タブが未作成の場合: pendingNavigationPkValue を設定して新規タブを開く
+        this.pendingNavigationPkValue = pkValue;
+        const tabButton = this.append(tableName);
+        tabButton.click();
+    }
+
+    /**
+     * EditorTableの全行を走査し、PK値が一致する行を選択状態にする
+     */
+    private navigateToRow(state: TabState, pkValue: string): void {
+        const editorTable = state.editorTable;
+        const rowCount = editorTable.getRowCount();
+        for (let r = 1; r < rowCount; r++) {
+            if (editorTable.getRowPkValue(r) === pkValue) {
+                state.selection.setRange(r, 1, r, 1);
+                state.selection.move(r, 1);
+                return;
+            }
+        }
     }
 
     /**
@@ -448,6 +486,12 @@ export class Tab {
                 // アクティブ化
                 this.activateTabState(state);
                 this.activeTabName = name;
+
+                // pendingNavigationがあれば行を選択する
+                if (this.pendingNavigationPkValue !== '') {
+                    this.navigateToRow(state, this.pendingNavigationPkValue);
+                    this.pendingNavigationPkValue = '';
+                }
             });
 
         });
@@ -703,6 +747,12 @@ export class Tab {
 
                     this.activateTabState(state);
                     this.activeTabName = name;
+
+                    // pendingNavigationがあれば行を選択する
+                    if (this.pendingNavigationPkValue !== '') {
+                        this.navigateToRow(state, this.pendingNavigationPkValue);
+                        this.pendingNavigationPkValue = '';
+                    }
                 });
             });
         });

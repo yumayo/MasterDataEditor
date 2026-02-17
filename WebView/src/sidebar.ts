@@ -38,7 +38,7 @@ export class Sidebar {
         sidebarContent.appendChild(this.filesPanel);
 
         // REFERENCESパネル
-        this.referencesPanel = new ReferencesPanel();
+        this.referencesPanel = new ReferencesPanel(tab);
         this.referencesPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
