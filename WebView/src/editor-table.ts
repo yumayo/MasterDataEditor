@@ -42,7 +42,7 @@ import {
     ReverseReferenceMap,
     formatReverseReferenceHint
 } from "./reverse-reference-resolver";
-import {Tab} from "./tab";
+import {Sidebar} from "./sidebar";
 import {ViewDefinition} from
     "./model/view-definition";
 import {ViewColumnMapping} from
@@ -103,8 +103,8 @@ export class EditorTable {
     private reverseReferenceMap:
         ReverseReferenceMap | undefined;
 
-    /** 参照箇所の表示を委譲するタブ */
-    private readonly tab: Tab;
+    /** 参照箇所を表示するサイドバー */
+    private readonly sidebar: Sidebar;
 
     constructor(
         tableName: string,
@@ -116,7 +116,7 @@ export class EditorTable {
         history: History,
         areaResizer: AreaResizer,
         scrollBinding: ScrollViewportController,
-        tab: Tab
+        sidebar: Sidebar
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -127,7 +127,7 @@ export class EditorTable {
         this.history = history;
         this.areaResizer = areaResizer;
         this.scrollBinding = scrollBinding;
-        this.tab = tab;
+        this.sidebar = sidebar;
 
         this.element = document.createElement('div');
 
@@ -736,7 +736,7 @@ export class EditorTable {
             table.contextMenu.show(e.clientX, e.clientY, [{
                 label: '参照箇所を表示',
                 action: () => {
-                    table.tab.showReferences(pkValue, entries);
+                    table.sidebar.showReferences(pkValue, entries);
                 },
             }]);
         });

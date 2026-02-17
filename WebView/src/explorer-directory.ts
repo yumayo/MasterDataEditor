@@ -3,14 +3,15 @@ import {ExplorerFile} from "./explorer-file";
 import {ExplorerViewFile} from
     "./explorer-view-file";
 import {ContextMenu} from "./context-menu";
+import {Sidebar} from "./sidebar";
 
 export class ExplorerDirectory {
 
-    readonly tab: Tab;
-    readonly contextMenu: ContextMenu;
+    private readonly tab: Tab;
+    private readonly contextMenu: ContextMenu;
 
-    readonly element: HTMLElement;
-    readonly depth: number;
+    private readonly element: HTMLElement;
+    private readonly depth: number;
 
     constructor(
         tab: Tab,
@@ -25,10 +26,11 @@ export class ExplorerDirectory {
         this.depth = depth;
     }
 
-    appendFile(name: string) {
+    appendFile(name: string, sidebar: Sidebar) {
         const file = new ExplorerFile(
             this.tab,
             this.contextMenu,
+            sidebar,
             name,
             this.depth + 1
         );

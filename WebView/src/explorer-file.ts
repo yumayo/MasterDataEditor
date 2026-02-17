@@ -5,11 +5,13 @@ import {
     serializeViewDefinition,
     ViewDefinition
 } from "./model/view-definition";
+import {Sidebar} from "./sidebar";
 
 export class ExplorerFile {
 
-    readonly tab: Tab;
-    readonly contextMenu: ContextMenu;
+    private readonly tab: Tab;
+    private readonly contextMenu: ContextMenu;
+    private readonly sidebar: Sidebar;
 
     readonly name: string;
     readonly depth: number;
@@ -18,11 +20,13 @@ export class ExplorerFile {
     constructor(
         tab: Tab,
         contextMenu: ContextMenu,
+        sidebar: Sidebar,
         name: string,
         depth: number
     ) {
         this.tab = tab;
         this.contextMenu = contextMenu;
+        this.sidebar = sidebar;
         this.name = name;
         this.depth = depth;
 
@@ -95,7 +99,7 @@ export class ExplorerFile {
             json
         ).then(() => {
             // Explorerのビューディレクトリに追加
-            this.tab.addViewToExplorer(viewName);
+            this.sidebar.appendViewFile(viewName);
 
             // タブを開く
             const tabButton = this.tab.append(

@@ -3,7 +3,6 @@ import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
-import {ExplorerDirectory} from "./explorer-directory";
 
 (async () => {
     const editor = new Editor();
@@ -13,11 +12,9 @@ import {ExplorerDirectory} from "./explorer-directory";
 
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
-    let viewDirectory: ExplorerDirectory;
 
     const tab = new Tab(
         editor,
-        (viewName) => { viewDirectory.appendViewFile(viewName); },
         sidebar
     );
 
@@ -28,8 +25,6 @@ import {ExplorerDirectory} from "./explorer-directory";
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
-
-    viewDirectory = sidebar.appendDirectory('ビュー');
 
     // スキーマファイルを読み込み
     const files = await findFilesAsync("schema");
@@ -58,7 +53,7 @@ import {ExplorerDirectory} from "./explorer-directory";
                 .split('.')
                 .slice(0, -1)
                 .join('.');
-            viewDirectory.appendViewFile(
+            sidebar.appendViewFile(
                 viewName
             );
         }

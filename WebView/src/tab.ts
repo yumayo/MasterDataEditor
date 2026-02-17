@@ -37,7 +37,6 @@ import {
 import {saveViewDataAsync} from
     "./view-save-splitter";
 import {
-    ReverseReferenceEntry,
     ReverseReferenceResolver
 } from "./reverse-reference-resolver";
 import {Sidebar} from "./sidebar";
@@ -123,10 +122,6 @@ export class Tab {
     /** ドラッグ中のタブ名（ドラッグアンドドロップ用） */
     private draggingTabName: string | undefined;
 
-    /** ビューをExplorerに追加するコールバック */
-    private readonly addViewCallback:
-        (viewName: string) => void;
-
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
 
@@ -138,7 +133,6 @@ export class Tab {
 
     constructor(
         editor: Editor,
-        addViewCallback: (viewName: string) => void,
         sidebar: Sidebar
     ) {
         this.editor = editor;
@@ -148,15 +142,9 @@ export class Tab {
         this.activeTabName = undefined;
         this.contextMenu = new ContextMenu(editor.element);
         this.draggingTabName = undefined;
-        this.addViewCallback = addViewCallback;
         this.sidebar = sidebar;
         this.openEditorTables = new Map();
         this.pendingNavigationPkValue = '';
-    }
-
-    /** 参照箇所をサイドバーに表示する */
-    showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
-        this.sidebar.showReferences(pkValue, entries);
     }
 
     /**
@@ -191,13 +179,6 @@ export class Tab {
                 return;
             }
         }
-    }
-
-    /**
-     * ビューをExplorerに追加する
-     */
-    addViewToExplorer(viewName: string): void {
-        this.addViewCallback(viewName);
     }
 
     /**
@@ -1063,7 +1044,7 @@ export class Tab {
             history,
             areaResizer,
             scrollController,
-            this
+            this.sidebar
         );
 
         // editorTable に本物のインスタンスの内容をコピー

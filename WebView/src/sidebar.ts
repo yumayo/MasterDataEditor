@@ -15,6 +15,7 @@ export class Sidebar {
     private readonly filesPanel: HTMLElement;
     private readonly referencesPanel: ReferencesPanel;
     private readonly directory: ExplorerDirectory;
+    private readonly viewDirectory: ExplorerDirectory;
 
     constructor(
         explorerElement: HTMLElement,
@@ -45,20 +46,24 @@ export class Sidebar {
         this.directory = new ExplorerDirectory(
             tab, contextMenu, this.filesPanel, 1
         );
+
+        // ビューディレクトリを作成
+        this.viewDirectory = this.directory.appendDirectory('ビュー');
     }
 
     /**
      * ファイルを追加する
+     * viewDirectory の知識をカプセル化する
      */
     appendFile(name: string): void {
-        this.directory.appendFile(name);
+        this.directory.appendFile(name, this);
     }
 
     /**
-     * ディレクトリを追加する
+     * ビューファイルを追加する
      */
-    appendDirectory(name: string): ExplorerDirectory {
-        return this.directory.appendDirectory(name);
+    appendViewFile(name: string): void {
+        this.viewDirectory.appendViewFile(name);
     }
 
     /**
