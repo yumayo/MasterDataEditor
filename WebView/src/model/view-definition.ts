@@ -11,6 +11,8 @@ export interface ViewJoinDefinition {
     targetColumn: string;
     /** 挿入位置（ビュー上の列インデックス） */
     insertAfterViewColumnIndex: number;
+    /** チェーンJOINのソーステーブル名（空文字列=ベーステーブルからの直接JOIN） */
+    sourceTable: string;
 }
 
 /**
@@ -37,16 +39,11 @@ export function parseViewDefinition(
     const parsedJoins: ViewJoinDefinition[] = [];
     for (const join of joins) {
         parsedJoins.push({
-            sourceColumn:
-                join['sourceColumn'] as string,
-            targetTable:
-                join['targetTable'] as string,
-            targetColumn:
-                join['targetColumn'] as string,
-            insertAfterViewColumnIndex:
-                join[
-                    'insertAfterViewColumnIndex'
-                ] as number,
+            sourceColumn: join['sourceColumn'] as string,
+            targetTable: join['targetTable'] as string,
+            targetColumn: join['targetColumn'] as string,
+            insertAfterViewColumnIndex: join['insertAfterViewColumnIndex'] as number,
+            sourceTable: 'sourceTable' in join ? join['sourceTable'] as string : '',
         });
     }
     return {

@@ -30,6 +30,8 @@ import {
 } from "./model/view-definition";
 import {ViewColumnMapping} from
     "./model/view-column-mapping";
+import {ViewRowMetadata} from
+    "./model/view-row-metadata";
 import {
     buildViewTableData,
     JoinedTableLoadedData
@@ -74,6 +76,7 @@ interface ViewTabState extends BaseTabState {
     kind: 'view';
     viewDefinition: ViewDefinition;
     columnMappings: ViewColumnMapping[];
+    rowMetadata: ViewRowMetadata[];
 }
 
 /**
@@ -636,6 +639,7 @@ export class Tab {
                         viewDefinition,
                         columnMappings,
                         joinTableKeyMaps,
+                        buildResult.rowMetadata,
                         baseTableData,
                         history
                     );
@@ -666,12 +670,10 @@ export class Tab {
                                         .resolve();
                                 }
                                 return saveViewDataAsync(
-                                    state
-                                        .editorTable,
-                                    state
-                                        .columnMappings,
-                                    state
-                                        .viewDefinition
+                                    state.editorTable,
+                                    state.columnMappings,
+                                    state.viewDefinition,
+                                    state.rowMetadata
                                 );
                             }
                         );
@@ -733,8 +735,9 @@ export class Tab {
                         dropdownInput,
                         viewDefinition,
                         columnMappings,
+                        rowMetadata: buildResult.rowMetadata,
                         savedScrollLeft: 0,
-                        savedScrollTop: 0
+                        savedScrollTop: 0,
                     };
                     this.tabStates.set(
                         name, state
@@ -760,17 +763,15 @@ export class Tab {
         editorTable: EditorTable,
         viewDefinition: ViewDefinition,
         columnMappings: ViewColumnMapping[],
-        joinTableKeyMaps: Map<string, Map<string, string[]>>,
+        joinTableKeyMaps: Map<string, Map<string, string[][]>>,
+        rowMetadata: ViewRowMetadata[],
         baseTableData: EditorTableData,
         history: History
     ): void {
-        // ベーステーブルのreferenceを持つ列から
-        // 利用可能なJoin対象を抽出
-        const availableJoinTargets:
-            AvailableJoinTarget[] = [];
+        // ベーステーブルのreferenceを持つ列から利用可能なJoin対象を抽出
+        const availableJoinTargets: AvailableJoinTarget[] = [];
         for (const col of baseTableData.header) {
             if (!col.reference) continue;
-            // 単純参照のみJoin対象とする
             const parts = col.reference.split('.');
             if (parts.length !== 2) continue;
             availableJoinTargets.push({
@@ -781,25 +782,12 @@ export class Tab {
         }
 
         editorTable.setViewContext({
-            viewDefinition,
-            columnMappings,
-            availableJoinTargets,
-            joinTableKeyMaps,
-            onJoinAsync: (
-                targetTable: string,
-                sourceColumn: string,
-                afterColumnIndex: number
-            ) => {
-                return this
-                    .executeJoinAsync(
-                        editorTable,
-                        viewDefinition,
-                        columnMappings,
-                        history,
-                        targetTable,
-                        sourceColumn,
-                        afterColumnIndex
-                    );
+            viewDefinition, columnMappings, availableJoinTargets, joinTableKeyMaps, rowMetadata,
+            onJoinAsync: (targetTable: string, sourceColumn: string, afterColumnIndex: number) => {
+                return this.executeJoinAsync(
+                    editorTable, viewDefinition, columnMappings, history,
+                    targetTable, sourceColumn, afterColumnIndex
+                );
             },
         });
     }

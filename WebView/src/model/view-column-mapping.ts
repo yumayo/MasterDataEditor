@@ -15,4 +15,6 @@ export interface ViewColumnMapping {
     joinKeyColumn: string;
     /** ベーステーブルのキー列名（結合列のみ） */
     baseKeyColumn: string;
+    /** JOINレベル（0=ベーステーブル、1=第1レベルJOIN、2=第2レベルJOIN...） */
+    joinLevel: number;
 }

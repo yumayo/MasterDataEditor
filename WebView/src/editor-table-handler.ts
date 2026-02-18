@@ -160,6 +160,13 @@ export class EditorTableHandler {
     enableCellEditMode(preserveContent: boolean): void {
         if (!this.textField) return;
 
+        // パディングセルへの編集を拒否
+        const anchor = this.selection.getAnchor();
+        if (this.table.isPaddingCell(anchor.row, anchor.column)) {
+            this.table.showRejectionFeedback();
+            return;
+        }
+
         const target = getTarget(this.table, this.selection);
         const tableRect = this.table.getTableBoundingClientRect();
         const cellRect = target.cellRect;
@@ -468,9 +475,11 @@ export class EditorTableHandler {
 
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
-            // 結合列を含む場合は削除を拒否
+            // 結合列またはパディングセルを含む場合は削除を拒否
             const deleteRange = this.selection.getSelectionRange();
-            if (this.table.containsJoinedColumn(deleteRange.startColumn, deleteRange.endColumn)) {
+            if (this.table.containsReadOnlyCell(
+                deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn
+            )) {
                 this.table.showRejectionFeedback();
                 return;
             }
@@ -481,6 +490,12 @@ export class EditorTableHandler {
         // 文字入力による編集モード開始
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (!this.textField) return;
+            // パディングセルへの入力を拒否
+            const anchor = this.selection.getAnchor();
+            if (this.table.isPaddingCell(anchor.row, anchor.column)) {
+                this.table.showRejectionFeedback();
+                return;
+            }
             // 参照列の場合はドロップダウンを表示
             this.enableCellEditModeWithDropdownAsync(false).then((handled) => {
                 if (!handled) {
@@ -552,9 +567,11 @@ export class EditorTableHandler {
 
         event.preventDefault();
 
-        // 結合列を含む場合はペーストを拒否
+        // 結合列またはパディングセルを含む場合はペーストを拒否
         const selRange = this.selection.getSelectionRange();
-        if (this.table.containsJoinedColumn(selRange.startColumn, selRange.endColumn)) {
+        if (this.table.containsReadOnlyCell(
+            selRange.startRow, selRange.startColumn, selRange.endRow, selRange.endColumn
+        )) {
             this.table.showRejectionFeedback();
             return;
         }
@@ -934,9 +951,15 @@ export class EditorTableHandler {
             return false;
         }
 
+        // パディングセルへの編集を拒否
+        const anchor = this.selection.getAnchor();
+        if (this.table.isPaddingCell(anchor.row, anchor.column)) {
+            this.table.showRejectionFeedback();
+            return true;
+        }
+
         // 参照を解決（動的参照対応）
-        let resolvedReference =
-            await this.resolveReferenceAsync();
+        let resolvedReference = await this.resolveReferenceAsync();
 
         // 明示的な参照がない場合、
         // 逆参照されているPK列かチェック

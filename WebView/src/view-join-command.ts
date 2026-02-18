@@ -128,6 +128,7 @@ export class ViewJoinCommand implements Command {
                 isJoinedColumn: true,
                 joinKeyColumn: this.targetColumn,
                 baseKeyColumn: this.sourceColumn,
+                joinLevel: 1, // UIからの動的JOINは常にベーステーブルからの直接JOIN（レベル1）のみ対応
             });
         }
         this.columnMappings.splice(insertPos, 0, ...newMappings);
@@ -137,8 +138,8 @@ export class ViewJoinCommand implements Command {
             sourceColumn: this.sourceColumn,
             targetTable: this.targetTable,
             targetColumn: this.targetColumn,
-            insertAfterViewColumnIndex:
-                this.afterColumnIndex,
+            insertAfterViewColumnIndex: this.afterColumnIndex,
+            sourceTable: '',
         };
         this.savedJoinDef = joinDef;
         this.viewDefinition.joins.push(joinDef);

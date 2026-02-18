@@ -47,6 +47,8 @@ import {ViewDefinition} from
     "./model/view-definition";
 import {ViewColumnMapping} from
     "./model/view-column-mapping";
+import {ViewRowMetadata} from
+    "./model/view-row-metadata";
 import {config} from "./config";
 
 /**
@@ -68,15 +70,12 @@ export interface AvailableJoinTarget {
 export interface ViewContext {
     viewDefinition: ViewDefinition;
     columnMappings: ViewColumnMapping[];
-    availableJoinTargets:
-        AvailableJoinTarget[];
-    /** 結合テーブルのキーマップ（テーブル名 → キー値 → 行全体の値） */
-    joinTableKeyMaps: Map<string, Map<string, string[]>>;
-    onJoinAsync: (
-        targetTable: string,
-        sourceColumn: string,
-        afterColumnIndex: number
-    ) => Promise<void>;
+    availableJoinTargets: AvailableJoinTarget[];
+    /** 結合テーブルのキーマップ（テーブル名 → キー値 → 行の配列） */
+    joinTableKeyMaps: Map<string, Map<string, string[][]>>;
+    /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
+    rowMetadata: ViewRowMetadata[];
+    onJoinAsync: (targetTable: string, sourceColumn: string, afterColumnIndex: number) => Promise<void>;
 }
 
 export class EditorTable {
@@ -145,6 +144,131 @@ export class EditorTable {
      */
     setViewContext(context: ViewContext): void {
         this.viewContext = context;
+        this.applyViewRowStyles();
+    }
+
+    /**
+     * 1:n展開のパディングセル・グループリーダー行のスタイルを適用する
+     * setViewContext()後に呼び出される
+     */
+    private applyViewRowStyles(): void {
+        if (!this.viewContext) return;
+        const rowMetadata = this.viewContext.rowMetadata;
+        const columnMappings = this.viewContext.columnMappings;
+
+        for (let metaIdx = 0; metaIdx < rowMetadata.length; metaIdx++) {
+            const meta = rowMetadata[metaIdx];
+            const domRowIndex = metaIdx + 1;
+            const rowElement = this.element.children[domRowIndex] as HTMLElement;
+            if (!rowElement) continue;
+
+            // グループリーダー行の判定（全レベルでgroupPosition=0かつベース行が変わる場合）
+            const isBaseGroupLeader = meta.groupInfos.length === 0
+                || meta.groupInfos.every(g => g.groupPosition === 0);
+            if (isBaseGroupLeader && metaIdx > 0) {
+                const prevMeta = rowMetadata[metaIdx - 1];
+                if (prevMeta.baseRowIndex !== meta.baseRowIndex) {
+                    rowElement.classList.add('view-group-leader-row');
+                }
+            }
+
+            // パディングセルにCSSクラスを付与し、テキストを空にする
+            for (let colIdx = 0; colIdx < meta.paddingColumns.length; colIdx++) {
+                if (!meta.paddingColumns[colIdx]) continue;
+                const cellElement = rowElement.children[colIdx + 1] as HTMLElement;
+                if (!cellElement) continue;
+                cellElement.classList.add('view-padding-cell');
+                cellElement.textContent = '';
+            }
+
+            // 折りたたみトグルの配置
+            // 各JOINレベルのソース列でグループリーダー（groupPosition=0）かつグループサイズ>1の場合にトグルを表示
+            for (const groupInfo of meta.groupInfos) {
+                if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
+
+                // ソース列を特定（このgroupInfoのtargetTableに対応するJOINのソース列）
+                const joinDef = this.viewContext.viewDefinition.joins.find(
+                    j => j.targetTable === groupInfo.sourceTable
+                );
+                if (!joinDef) continue;
+
+                // composite上のソース列インデックスを検索
+                const sourceTableName = joinDef.sourceTable === ''
+                    ? this.viewContext.viewDefinition.baseTable : joinDef.sourceTable;
+                const sourceColIdx = columnMappings.findIndex(
+                    m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
+                );
+                if (sourceColIdx < 0) continue;
+
+                const cellElement = rowElement.children[sourceColIdx + 1] as HTMLElement;
+                if (!cellElement) continue;
+
+                const toggle = document.createElement('span');
+                toggle.classList.add('view-collapse-toggle');
+                toggle.textContent = '▼';
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleCollapseGroup(metaIdx, groupInfo.sourceTable, toggle);
+                });
+                cellElement.insertBefore(toggle, cellElement.firstChild);
+            }
+        }
+    }
+
+    /**
+     * グループの折りたたみ/展開をトグルする
+     * 表示状態の変更のみでデータ変更を伴わないため、Undo/Redo対象外
+     */
+    private toggleCollapseGroup(leaderMetaIndex: number, targetTable: string, toggle: HTMLElement): void {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const rowMetadata = this.viewContext.rowMetadata;
+        const leaderMeta = rowMetadata[leaderMetaIndex];
+
+        // このグループのgroupInfoを特定
+        const groupInfoIndex = leaderMeta.groupInfos.findIndex(g => g.sourceTable === targetTable);
+        if (groupInfoIndex === -1) return;
+
+        const isCollapsed = toggle.textContent === '▶';
+
+        if (isCollapsed) {
+            // 展開: 子行を表示する
+            toggle.textContent = '▼';
+            this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, true);
+        } else {
+            // 折りたたみ: 子行を非表示にする
+            toggle.textContent = '▶';
+            this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, false);
+        }
+    }
+
+    /**
+     * グループの子行の表示/非表示を設定する
+     */
+    private setGroupRowsVisibility(
+        leaderMetaIndex: number, targetTable: string, groupInfoIndex: number, visible: boolean
+    ): void {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const rowMetadata = this.viewContext.rowMetadata;
+        const leaderMeta = rowMetadata[leaderMetaIndex];
+        const leaderGroupInfo = leaderMeta.groupInfos[groupInfoIndex];
+
+        // リーダー行以降の同一グループの行を探す
+        for (let i = leaderMetaIndex + 1; i < rowMetadata.length; i++) {
+            const meta = rowMetadata[i];
+            // ベース行が変わったらグループ終了
+            if (meta.baseRowIndex !== leaderMeta.baseRowIndex) break;
+
+            // このレベルのgroupInfoが同じキー値を持つか判定
+            if (groupInfoIndex >= meta.groupInfos.length) break;
+            const groupInfo = meta.groupInfos[groupInfoIndex];
+            if (groupInfo.sourceTable !== targetTable) break;
+            if (groupInfo.sourceKeyValue !== leaderGroupInfo.sourceKeyValue) break;
+
+            const domRowIndex = i + 1;
+            const rowElement = this.element.children[domRowIndex] as HTMLElement;
+            if (!rowElement) continue;
+            rowElement.style.display = visible ? '' : 'none';
+        }
     }
 
     /**
@@ -697,6 +821,12 @@ export class EditorTable {
         EditorTable.applyCellWidth(cell, width);
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
+            // パディングセルへの編集を拒否
+            const pos = EditorTable.getCellPosition(cell, table.element);
+            if (pos && table.isPaddingCell(pos.row, pos.column)) {
+                table.showRejectionFeedback();
+                return;
+            }
             // 参照列の場合はドロップダウンを表示
             table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
                 if (!handled) {
@@ -2075,9 +2205,9 @@ export class EditorTable {
             const m = columnMappings[joinedDataIndex];
             const keyMap = viewContext.joinTableKeyMaps.get(m.tableName);
             if (!keyMap) return '';
-            const joinRow = keyMap.get(newValue);
-            if (!joinRow) return '';
-            return joinRow[m.sourceColumnIndex];
+            const joinRows = keyMap.get(newValue);
+            if (!joinRows || joinRows.length === 0) return '';
+            return joinRows[0][m.sourceColumnIndex];
         });
     }
 
@@ -2117,6 +2247,46 @@ export class EditorTable {
         }
 
         return false;
+    }
+
+    /**
+     * 指定セルがパディングセルかどうかを判定する
+     * パディングセルは1:n展開で生成された重複データを非表示にしたセル
+     *
+     * @param row 行番号（1始まり、データ行）
+     * @param column 列番号（0始まり、行ヘッダー含む）
+     * @returns パディングセルの場合はtrue
+     */
+    isPaddingCell(row: number, column: number): boolean {
+        if (!this.viewContext) return false;
+        if (column === 0) return false;
+        const metadataIndex = row - 1;
+        const rowMetadata = this.viewContext.rowMetadata;
+        if (metadataIndex < 0 || metadataIndex >= rowMetadata.length) return false;
+        const dataColumnIndex = column - 1;
+        if (dataColumnIndex < 0 || dataColumnIndex >= rowMetadata[metadataIndex].paddingColumns.length) return false;
+        return rowMetadata[metadataIndex].paddingColumns[dataColumnIndex];
+    }
+
+    /**
+     * 指定範囲にパディングセルが含まれるかを判定する
+     */
+    containsPaddingCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        if (!this.viewContext) return false;
+        for (let r = startRow; r <= endRow; r++) {
+            for (let c = startColumn; c <= endColumn; c++) {
+                if (this.isPaddingCell(r, c)) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 指定範囲に編集不可セル（結合列またはパディングセル）が含まれるかを判定する
+     */
+    containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.containsJoinedColumn(startColumn, endColumn)
+            || this.containsPaddingCell(startRow, startColumn, endRow, endColumn);
     }
 
     /**

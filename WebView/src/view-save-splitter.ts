@@ -1,5 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {ViewColumnMapping} from "./model/view-column-mapping";
+import {ViewRowMetadata} from "./model/view-row-metadata";
 import {ViewDefinition, serializeViewDefinition} from "./model/view-definition";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
@@ -23,10 +24,6 @@ interface TableSplitData {
  *
  * 既存CSVの全行を保持しつつ、ビューで編集された行のみ上書きする。
  * これにより、ビューに表示されない行（未参照のレコード）が消失しない。
- *
- * @param existingCsv 既存のCSVデータ
- * @param splitData ビューから抽出した分離データ
- * @returns マージ済みCSV
  */
 function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
     const resultCsv = new Csv();
@@ -49,7 +46,6 @@ function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
     resultCsv.header = mergedHeader;
 
     // 既存CSVのボディからキー値が空でない有効行のみを抽出する
-    // Csv.load() は末尾改行を空行として取り込むため、ここで除外する
     const keyColumnName = splitData.joinKeyColumn;
     const existingKeyIndex = existingCsv.header.indexOf(keyColumnName);
     const validExistingRows: string[][] = [];
@@ -80,11 +76,10 @@ function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
     const splitKeyIndex = splitData.header.indexOf(keyColumnName);
     for (let r = 0; r < splitData.body.length; r++) {
         const keyValue = splitKeyIndex !== -1 ? splitData.body[r][splitKeyIndex] : '';
-        const existingRowIndex = existingRowMap.get(keyValue);
-        if (existingRowIndex !== undefined) {
-            // 既存行を上書き（ビューに含まれる列のみ）
+        if (existingRowMap.has(keyValue)) {
+            const rowIdx = existingRowMap.get(keyValue) as number;
             for (let c = 0; c < splitData.header.length; c++) {
-                mergedBody[existingRowIndex][splitToMergedIndex[c]] = splitData.body[r][c];
+                mergedBody[rowIdx][splitToMergedIndex[c]] = splitData.body[r][c];
             }
         }
     }
@@ -96,32 +91,23 @@ function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
 /**
  * ビューのデータを各テーブルに分離して保存する
  *
- * アルゴリズム:
- * 1. EditorTableの全セル値を取得
- * 2. columnMappingsでテーブルごとに列をグループ化
- * 3. テーブルごとにヘッダーと行データを抽出
- * 4. 結合テーブル: キー値が空の行はスキップ、同一キー値の重複行を排除
- * 5. 各テーブルの既存CSVとマージして保存
- *    - ベーステーブル: 列マージ（従来通り）
- *    - 結合テーブル: プライマリキーベースの行マージ（未参照行を保護）
- * 6. ビュー定義JSONも保存
+ * 1:n展開対応: パディング行を考慮してベーステーブルと結合テーブルのデータを正しく抽出する。
+ * - ベーステーブル: パディング行（展開で複製された行）はスキップし、グループリーダー行のみ抽出
+ * - 結合テーブル: 該当列がパディングでない行のみ抽出し、同一キー値の重複を排除
  */
 export async function saveViewDataAsync(
     table: EditorTable,
     columnMappings: ViewColumnMapping[],
-    viewDefinition: ViewDefinition
+    viewDefinition: ViewDefinition,
+    rowMetadata: ViewRowMetadata[]
 ): Promise<void> {
 
     // テーブル名ごとに列をグループ化
     const tableGroups = new Map<string, { viewColumnIndex: number; mapping: ViewColumnMapping }[]>();
-
     for (let i = 0; i < columnMappings.length; i++) {
         const mapping = columnMappings[i];
         let group = tableGroups.get(mapping.tableName);
-        if (!group) {
-            group = [];
-            tableGroups.set(mapping.tableName, group);
-        }
+        if (!group) { group = []; tableGroups.set(mapping.tableName, group); }
         group.push({ viewColumnIndex: i, mapping });
     }
 
@@ -159,44 +145,65 @@ export async function saveViewDataAsync(
         const restoredKeyValues: string[] = [];
 
         for (let r = 1; r < rowCount; r++) {
+            const metaIndex = r - 1;
+
+            // 1:n展開のパディング判定
+            if (metaIndex < rowMetadata.length) {
+                const meta = rowMetadata[metaIndex];
+                // ベーステーブル: パディング行（展開で複製された行）はスキップ
+                if (!isJoinedTable && meta.paddingColumns.length > 0) {
+                    const firstBaseColIdx = columns[0].viewColumnIndex;
+                    if (meta.paddingColumns[firstBaseColIdx]) continue;
+                }
+                // 結合テーブル: 該当テーブルの列がパディングの行はスキップ
+                if (isJoinedTable && meta.paddingColumns.length > 0) {
+                    const firstJoinColIdx = columns[0].viewColumnIndex;
+                    if (meta.paddingColumns[firstJoinColIdx]) continue;
+                }
+            }
+
             const rowData: string[] = [];
             for (const col of columns) {
-                // viewColumnIndex は0始まり、column=0は行ヘッダーなので+1
                 rowData.push(table.getCellValueAt(r, col.viewColumnIndex + 1));
             }
 
-            // 結合テーブルの場合、キー値が空の行はスキップし、重複行を排除
+            // 結合テーブルの場合、全列が空の行はスキップし、行全体の複合キーで重複を排除
             if (isJoinedTable) {
-                const keyColMapping = columns.find(
-                    (c) => c.mapping.sourceColumnName === c.mapping.joinKeyColumn
-                );
-                let keyValue = '';
-                if (keyColMapping) {
-                    // キー列がビューに表示されている場合
-                    const keyIdx = columns.indexOf(keyColMapping);
-                    keyValue = rowData[keyIdx];
-                } else if (fkViewColumnIndex >= 0) {
-                    // キー列が非表示の場合、ベーステーブルのFK列から取得
-                    keyValue = table.getCellValueAt(r, fkViewColumnIndex + 1);
-                }
-                if (keyValue === '') continue;
-                if (seenKeys.has(keyValue)) continue;
-                seenKeys.add(keyValue);
-                // キー列が非表示の場合、後で復元するためにキー値を記録
+                // 全列が空ならデータなし（LEFT JOINで未マッチ）としてスキップ
+                if (rowData.every(v => v === '')) continue;
+
+                // 行全体の複合キーで重複排除（1:nでは同一join keyに複数行があるため）
+                const compositeKey = rowData.join('\t');
+                if (seenKeys.has(compositeKey)) continue;
+                seenKeys.add(compositeKey);
+
+                // キー列が非表示の場合、FK列またはメタデータからキー値を復元
+                const keyColMapping = columns.find(c => c.mapping.sourceColumnName === c.mapping.joinKeyColumn);
                 if (!keyColMapping) {
-                    restoredKeyValues.push(keyValue);
+                    let restoreKeyValue = '';
+                    if (fkViewColumnIndex >= 0) {
+                        restoreKeyValue = table.getCellValueAt(r, fkViewColumnIndex + 1);
+                    }
+                    // パディング行ではFK列が空なので、メタデータのsourceKeyValueから取得
+                    if (restoreKeyValue === '' && metaIndex < rowMetadata.length) {
+                        const meta = rowMetadata[metaIndex];
+                        for (const info of meta.groupInfos) {
+                            if (info.sourceTable === tableName) {
+                                restoreKeyValue = info.sourceKeyValue;
+                                break;
+                            }
+                        }
+                    }
+                    restoredKeyValues.push(restoreKeyValue);
                 }
             }
 
             // ベーステーブル: 最初のセルが空なら終了
-            if (!isJoinedTable && rowData.length > 0 && rowData[0] === '') {
-                break;
-            }
+            if (!isJoinedTable && rowData.length > 0 && rowData[0] === '') break;
 
             body.push(rowData);
         }
 
-        // 結合テーブルのキー列名を取得
         const joinKeyColumn = isJoinedTable ? (columns[0].mapping.joinKeyColumn) : '';
 
         // 結合テーブルでキー列が非表示の場合、FK列の値からキー列を復元
@@ -215,35 +222,24 @@ export async function saveViewDataAsync(
 
     for (const splitData of splitDataList) {
         const csvPath = 'data/' + splitData.tableName + '.csv';
-
         const savePromise = readFileAsync(csvPath).then((existingCsvContents) => {
             const existingCsv = new Csv();
             existingCsv.load(existingCsvContents);
-
-            // 結合テーブルはプライマリキーベースの行マージ、ベーステーブルは列マージ
             const mergedCsv = splitData.isJoinedTable
                 ? mergeJoinedTableCsv(existingCsv, splitData)
                 : mergeCsvData(existingCsv, { header: splitData.header, body: splitData.body });
-
             return writeFileAsync(csvPath, mergedCsv.toString());
         }).catch(() => {
-            // ファイルが存在しない場合は新規CSVとして保存
             const newCsv = new Csv();
             newCsv.header = splitData.header;
             newCsv.body = splitData.body;
             return writeFileAsync(csvPath, newCsv.toString());
         });
-
         savePromises.push(savePromise);
     }
 
     // ビュー定義JSONも保存
-    savePromises.push(
-        writeFileAsync(
-            'view/' + viewDefinition.name + '.json',
-            serializeViewDefinition(viewDefinition)
-        )
-    );
+    savePromises.push(writeFileAsync('view/' + viewDefinition.name + '.json', serializeViewDefinition(viewDefinition)));
 
     await Promise.all(savePromises);
     console.log('Saved view: ' + viewDefinition.name);

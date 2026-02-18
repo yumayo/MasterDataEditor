@@ -32,8 +32,11 @@ export class FillController {
             this.selection.endFill();
 
             if (fillInfo) {
-                // 結合列を含む場合はフィルを拒否
-                if (this.table.containsJoinedColumn(fillInfo.sourceRange.startColumn, fillInfo.sourceRange.endColumn)) {
+                // 結合列またはパディングセルを含む場合はフィルを拒否
+                if (this.table.containsReadOnlyCell(
+                    fillInfo.sourceRange.startRow, fillInfo.sourceRange.startColumn,
+                    fillInfo.sourceRange.endRow, fillInfo.sourceRange.endColumn
+                )) {
                     this.table.showRejectionFeedback();
                     return;
                 }
@@ -95,8 +98,8 @@ export class FillController {
         const startColumn = Math.min(anchor.column, focus.column);
         const endColumn = Math.max(anchor.column, focus.column);
 
-        // 結合列を含む場合はフィルを拒否
-        if (this.table.containsJoinedColumn(startColumn, endColumn)) {
+        // 結合列またはパディングセルを含む場合はフィルを拒否
+        if (this.table.containsReadOnlyCell(startRow, startColumn, endRow, endColumn)) {
             this.table.showRejectionFeedback();
             return;
         }
