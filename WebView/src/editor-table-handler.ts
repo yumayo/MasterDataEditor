@@ -517,6 +517,14 @@ export class EditorTableHandler {
         const text = this.element.textContent ?? '';
         const copyRange = this.selection.getCopyRange();
 
+        // FK列の編集で1:n展開の行数が変わる場合はビュー行を再構築する
+        if (this.table.needsViewRowRestructure(target.row, target.column, text)) {
+            const command = this.table.buildAndExecuteViewRowRestructure(target.row, target.column, text);
+            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
+            this.history.pushCommand(command, range, copyRange);
+            return;
+        }
+
         // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
         const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, text);
 

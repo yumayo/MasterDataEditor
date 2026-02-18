@@ -208,29 +208,7 @@ export function buildViewTableData(
     }
 
     // --- Phase 2: JoinExpandInfo構築 ---
-    const joinExpandInfos: JoinExpandInfo[] = [];
-    for (const join of viewDefinition.joins) {
-        const level = joinLevels.get(join) as number;
-        const sourceIdx = findSourceCompositeIndex(join, viewDefinition.baseTable, viewDefinition.joins, columnMappings);
-        const range = findJoinColumnRange(join, columnMappings);
-        if (sourceIdx >= 0 && range.start >= 0) {
-            joinExpandInfos.push({
-                sourceCompositeIndex: sourceIdx, targetTable: join.targetTable,
-                compositeColumnStart: range.start, compositeColumnEnd: range.end,
-                rawSourceIndices: range.rawIndices, joinLevel: level,
-            });
-        }
-    }
-    joinExpandInfos.sort((a, b) => a.joinLevel - b.joinLevel);
-
-    // レベルでグループ化
-    const expandInfosByLevel = new Map<number, JoinExpandInfo[]>();
-    for (const info of joinExpandInfos) {
-        let group = expandInfosByLevel.get(info.joinLevel);
-        if (!group) { group = []; expandInfosByLevel.set(info.joinLevel, group); }
-        group.push(info);
-    }
-    const maxLevel = joinExpandInfos.length > 0 ? Math.max(...joinExpandInfos.map(j => j.joinLevel)) : 0;
+    const { expandInfosByLevel, maxLevel } = buildJoinExpandInfos(viewDefinition, joinLevels, columnMappings);
 
     // --- Phase 3: 1:nキーマップ構築 ---
     const keyMaps = new Map<string, Map<string, string[][]>>();
@@ -267,27 +245,8 @@ export function buildViewTableData(
             }
         }
 
-        let currentRows: ExpandingRow[] = [{
-            values: initialValues, padding: new Array<boolean>(totalColumns).fill(false), groupInfos: [],
-        }];
-
-        // レベルごとにJOINを適用して行を展開
-        for (let level = 1; level <= maxLevel; level++) {
-            const infosAtLevel = expandInfosByLevel.get(level);
-            if (!infosAtLevel) continue;
-            const nextRows: ExpandingRow[] = [];
-
-            for (const row of currentRows) {
-                let expandedFromRow: ExpandingRow[] = [row];
-                for (const info of infosAtLevel) {
-                    expandedFromRow = expandSingleJoin(expandedFromRow, info, keyMaps, columnMappings, totalColumns, level);
-                }
-                nextRows.push(...expandedFromRow);
-            }
-            currentRows = nextRows;
-        }
-
-        for (const row of currentRows) {
+        const expandedRows = expandBaseRow(initialValues, expandInfosByLevel, maxLevel, keyMaps, columnMappings, totalColumns);
+        for (const row of expandedRows) {
             compositeBody.push(new EditorTableDataRow(row.values));
             rowMetadata.push({ baseRowIndex: baseRowIdx, groupInfos: row.groupInfos, paddingColumns: row.padding });
         }
@@ -301,11 +260,66 @@ export function buildViewTableData(
 }
 
 /**
- * 単一JOINに対して行リストを展開する
- * マッチ0件: LEFT JOINとして空値を保持
- * マッチ1件: 値を設定（行数は変化しない）
- * マッチN件: 行をN倍に展開し、2行目以降に適切なパディングを設定
+ * JoinExpandInfoの構築とレベルグループ化を行う
+ * buildViewTableDataとrebuildExpandedRowsForBaseRowの共通処理
  */
+function buildJoinExpandInfos(
+    viewDefinition: ViewDefinition,
+    joinLevels: Map<ViewJoinDefinition, number>,
+    columnMappings: ViewColumnMapping[]
+): { expandInfosByLevel: Map<number, JoinExpandInfo[]>; maxLevel: number } {
+    const joinExpandInfos: JoinExpandInfo[] = [];
+    for (const join of viewDefinition.joins) {
+        const level = joinLevels.get(join) as number;
+        const sourceIdx = findSourceCompositeIndex(join, viewDefinition.baseTable, viewDefinition.joins, columnMappings);
+        const range = findJoinColumnRange(join, columnMappings);
+        if (sourceIdx >= 0 && range.start >= 0) {
+            joinExpandInfos.push({
+                sourceCompositeIndex: sourceIdx, targetTable: join.targetTable,
+                compositeColumnStart: range.start, compositeColumnEnd: range.end,
+                rawSourceIndices: range.rawIndices, joinLevel: level,
+            });
+        }
+    }
+    joinExpandInfos.sort((a, b) => a.joinLevel - b.joinLevel);
+    const expandInfosByLevel = new Map<number, JoinExpandInfo[]>();
+    for (const info of joinExpandInfos) {
+        let group = expandInfosByLevel.get(info.joinLevel);
+        if (!group) { group = []; expandInfosByLevel.set(info.joinLevel, group); }
+        group.push(info);
+    }
+    const maxLevel = joinExpandInfos.length > 0 ? Math.max(...joinExpandInfos.map(j => j.joinLevel)) : 0;
+    return { expandInfosByLevel, maxLevel };
+}
+
+/**
+ * 単一ベース行の値からJOIN展開を行い、展開済み行リストを返す
+ * buildViewTableDataとrebuildExpandedRowsForBaseRowの共通処理
+ */
+function expandBaseRow(
+    initialValues: string[], expandInfosByLevel: Map<number, JoinExpandInfo[]>,
+    maxLevel: number, keyMaps: Map<string, Map<string, string[][]>>,
+    columnMappings: ViewColumnMapping[], totalColumns: number
+): ExpandedRowResult[] {
+    let currentRows: ExpandingRow[] = [{
+        values: [...initialValues], padding: new Array<boolean>(totalColumns).fill(false), groupInfos: [],
+    }];
+    for (let level = 1; level <= maxLevel; level++) {
+        const infosAtLevel = expandInfosByLevel.get(level);
+        if (!infosAtLevel) continue;
+        const nextRows: ExpandingRow[] = [];
+        for (const row of currentRows) {
+            let expandedFromRow: ExpandingRow[] = [row];
+            for (const info of infosAtLevel) {
+                expandedFromRow = expandSingleJoin(expandedFromRow, info, keyMaps, columnMappings, totalColumns, level);
+            }
+            nextRows.push(...expandedFromRow);
+        }
+        currentRows = nextRows;
+    }
+    return currentRows.map(row => ({ values: row.values, padding: row.padding, groupInfos: row.groupInfos }));
+}
+
 function expandSingleJoin(
     rows: ExpandingRow[], info: JoinExpandInfo,
     keyMaps: Map<string, Map<string, string[][]>>,
@@ -353,4 +367,33 @@ function expandSingleJoin(
         }
     }
     return result;
+}
+
+/**
+ * 単一ベース行のJOIN展開結果
+ */
+export interface ExpandedRowResult {
+    values: string[];
+    padding: boolean[];
+    groupInfos: ViewRowGroupInfo[];
+}
+
+/**
+ * 単一ベース行のJOIN展開を再計算する
+ * FK値変更時に行数を動的に更新するために使用される
+ *
+ * @param baseColumnValues ベーステーブル列のみ値が入り、JOIN列は空文字の配列（totalColumns長）
+ * @param columnMappings ビュー列マッピング
+ * @param viewDefinition ビュー定義
+ * @param keyMaps 結合テーブルのキーマップ
+ * @returns 展開された行データの配列
+ */
+export function rebuildExpandedRowsForBaseRow(
+    baseColumnValues: string[], columnMappings: ViewColumnMapping[],
+    viewDefinition: ViewDefinition, keyMaps: Map<string, Map<string, string[][]>>
+): ExpandedRowResult[] {
+    const joinLevels = resolveJoinLevels(viewDefinition);
+    const { expandInfosByLevel, maxLevel } = buildJoinExpandInfos(viewDefinition, joinLevels, columnMappings);
+    const totalColumns = columnMappings.length;
+    return expandBaseRow(baseColumnValues, expandInfosByLevel, maxLevel, keyMaps, columnMappings, totalColumns);
 }

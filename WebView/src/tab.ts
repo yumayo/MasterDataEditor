@@ -887,6 +887,15 @@ export class Tab {
         // インメモリデータから再読み込みさせる
         state.referenceDataCache.clear();
 
+        // ビュータブの場合: 結合テーブルの最新データで
+        // キーマップを再構築し、行数差分を反映する
+        if (state.kind === 'view') {
+            state.editorTable.rebuildJoinTableKeyMaps(
+                this.openEditorTables
+            );
+            state.editorTable.refreshViewRows();
+        }
+
         // 参照テーブルを再読み込み
         const tableData =
             state.editorTable.getTableData();

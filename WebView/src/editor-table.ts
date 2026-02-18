@@ -50,6 +50,12 @@ import {ViewColumnMapping} from
 import {ViewRowMetadata} from
     "./model/view-row-metadata";
 import {config} from "./config";
+import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from
+    "./view-table-data-builder";
+import {
+    ViewRowRestructureCommand,
+    SavedViewRowState
+} from "./view-row-restructure-command";
 
 /**
  * 利用可能なJoin対象の情報
@@ -153,66 +159,7 @@ export class EditorTable {
      */
     private applyViewRowStyles(): void {
         if (!this.viewContext) return;
-        const rowMetadata = this.viewContext.rowMetadata;
-        const columnMappings = this.viewContext.columnMappings;
-
-        for (let metaIdx = 0; metaIdx < rowMetadata.length; metaIdx++) {
-            const meta = rowMetadata[metaIdx];
-            const domRowIndex = metaIdx + 1;
-            const rowElement = this.element.children[domRowIndex] as HTMLElement;
-            if (!rowElement) continue;
-
-            // グループリーダー行の判定（全レベルでgroupPosition=0かつベース行が変わる場合）
-            const isBaseGroupLeader = meta.groupInfos.length === 0
-                || meta.groupInfos.every(g => g.groupPosition === 0);
-            if (isBaseGroupLeader && metaIdx > 0) {
-                const prevMeta = rowMetadata[metaIdx - 1];
-                if (prevMeta.baseRowIndex !== meta.baseRowIndex) {
-                    rowElement.classList.add('view-group-leader-row');
-                }
-            }
-
-            // パディングセルにCSSクラスを付与し、テキストを空にする
-            for (let colIdx = 0; colIdx < meta.paddingColumns.length; colIdx++) {
-                if (!meta.paddingColumns[colIdx]) continue;
-                const cellElement = rowElement.children[colIdx + 1] as HTMLElement;
-                if (!cellElement) continue;
-                cellElement.classList.add('view-padding-cell');
-                cellElement.textContent = '';
-            }
-
-            // 折りたたみトグルの配置
-            // 各JOINレベルのソース列でグループリーダー（groupPosition=0）かつグループサイズ>1の場合にトグルを表示
-            for (const groupInfo of meta.groupInfos) {
-                if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
-
-                // ソース列を特定（このgroupInfoのtargetTableに対応するJOINのソース列）
-                const joinDef = this.viewContext.viewDefinition.joins.find(
-                    j => j.targetTable === groupInfo.sourceTable
-                );
-                if (!joinDef) continue;
-
-                // composite上のソース列インデックスを検索
-                const sourceTableName = joinDef.sourceTable === ''
-                    ? this.viewContext.viewDefinition.baseTable : joinDef.sourceTable;
-                const sourceColIdx = columnMappings.findIndex(
-                    m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
-                );
-                if (sourceColIdx < 0) continue;
-
-                const cellElement = rowElement.children[sourceColIdx + 1] as HTMLElement;
-                if (!cellElement) continue;
-
-                const toggle = document.createElement('span');
-                toggle.classList.add('view-collapse-toggle');
-                toggle.textContent = '▼';
-                toggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.toggleCollapseGroup(metaIdx, groupInfo.sourceTable, toggle);
-                });
-                cellElement.insertBefore(toggle, cellElement.firstChild);
-            }
-        }
+        this.applyViewRowStylesForRange(0, this.viewContext.rowMetadata.length, true);
     }
 
     /**
@@ -1597,7 +1544,7 @@ export class EditorTable {
     }
 
     /**
-     * セルの値を取得する（参照ヒントを除外）
+     * セルの値を取得する（参照ヒント・折りたたみトグルを除外）
      */
     static getCellValue(cell: HTMLElement): string {
         // .cell-value 要素があればそこから取得
@@ -1605,17 +1552,18 @@ export class EditorTable {
         if (valueElement) {
             return valueElement.textContent ?? '';
         }
-        // ヒント要素（参照・逆参照）があれば、最初のテキストノードから取得
-        const hintElement = cell.querySelector(
-            '.cell-reference-hint, .cell-reverse-reference-hint'
+        // ヒント要素やトグル要素がある場合、直下のテキストノードのみを結合して返す
+        const hasChildElements = cell.querySelector(
+            '.cell-reference-hint, .cell-reverse-reference-hint, .view-collapse-toggle'
         );
-        if (hintElement) {
+        if (hasChildElements) {
+            let text = '';
             for (const node of Array.from(cell.childNodes)) {
                 if (node.nodeType === Node.TEXT_NODE) {
-                    return node.textContent ?? '';
+                    text += node.textContent ?? '';
                 }
             }
-            return '';
+            return text;
         }
         // そうでなければ textContent をそのまま返す
         return cell.textContent ?? '';
@@ -1677,6 +1625,10 @@ export class EditorTable {
             existingReverseHint.remove();
         }
 
+        // 折りたたみトグルを一時的に退避（textContent設定で消えないようにする）
+        const toggle = cell.querySelector('.view-collapse-toggle');
+        if (toggle) toggle.remove();
+
         // 参照列かどうかを判定
         const column = this.tableData.header[dataColumnIndex];
         if (!column || !column.reference) {
@@ -1690,6 +1642,8 @@ export class EditorTable {
                     cell, value
                 );
             }
+            // トグルを復元
+            if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
 
@@ -1702,6 +1656,7 @@ export class EditorTable {
         if (isDynamicReference(expr)) {
             // 動的参照の場合: 非同期で参照ヒントを更新
             this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex);
+            if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
 
@@ -1715,6 +1670,8 @@ export class EditorTable {
             hintSpan.textContent = displayText;
             cell.appendChild(hintSpan);
         }
+        // トグルを復元
+        if (toggle) cell.insertBefore(toggle, cell.firstChild);
     }
 
     /**
@@ -2330,5 +2287,420 @@ export class EditorTable {
         }
 
         return maxRow;
+    }
+
+    // ---------------------------------------------------------
+    // ビュー行の動的再構築（FK値変更時の1:n展開行数更新）
+    // ---------------------------------------------------------
+
+    /**
+     * 編集されたセルがビューのJOINソース列であり、行数が変わるかを判定する
+     *
+     * @param editedRow DOM行インデックス（1始まり）
+     * @param editedColumn DOM列インデックス（0始まり、行ヘッダー含む）
+     * @param newValue 新しいFK値
+     * @returns 行数が変わる場合はtrue
+     */
+    needsViewRowRestructure(editedRow: number, editedColumn: number, newValue: string): boolean {
+        if (!this.viewContext) return false;
+        const dataColumnIndex = editedColumn - 1;
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.viewContext.columnMappings.length) return false;
+        const mapping = this.viewContext.columnMappings[dataColumnIndex];
+        // JOIN列やパディングセルの編集は対象外
+        if (mapping.isJoinedColumn) return false;
+        // このベーステーブル列がJOINのソース列か判定
+        const joinDef = this.viewContext.viewDefinition.joins.find(j => {
+            const sourceTable = j.sourceTable === '' ? this.viewContext!.viewDefinition.baseTable : j.sourceTable;
+            return sourceTable === mapping.tableName && j.sourceColumn === mapping.sourceColumnName;
+        });
+        if (!joinDef) return false;
+        // 旧FK値と新FK値のマッチ行数を比較
+        const keyMap = this.viewContext.joinTableKeyMaps.get(joinDef.targetTable);
+        const oldValue = this.getCellValueAt(editedRow, editedColumn);
+        const oldMatchCount = (keyMap && keyMap.has(oldValue)) ? (keyMap.get(oldValue) as string[][]).length : 0;
+        const newMatchCount = (keyMap && keyMap.has(newValue)) ? (keyMap.get(newValue) as string[][]).length : 0;
+        // 0件の場合はLEFT JOINで1行（空行）になるため実質1扱い
+        const effectiveOld = Math.max(oldMatchCount, 1);
+        const effectiveNew = Math.max(newMatchCount, 1);
+        return effectiveOld !== effectiveNew;
+    }
+
+    /**
+     * FK値変更に伴うビュー行の再構築を実行し、Undo/Redo用のCommandを返す
+     *
+     * @param editedRow DOM行インデックス（1始まり）
+     * @param editedColumn DOM列インデックス（0始まり、行ヘッダー含む）
+     * @param newValue 変更後のFK値
+     * @returns 履歴に追加するCommand
+     */
+    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string): Command {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const viewContext = this.viewContext;
+        const columnMappings = viewContext.columnMappings;
+        const dataColumnIndex = editedColumn - 1;
+        const metaIndex = editedRow - 1;
+        const baseRowIndex = viewContext.rowMetadata[metaIndex].baseRowIndex;
+
+        // このベース行に属するメタデータ範囲を特定
+        let metaStart = metaIndex;
+        let metaEnd = metaIndex + 1;
+        // 前方に同じbaseRowIndexの行を検索
+        while (metaStart > 0 && viewContext.rowMetadata[metaStart - 1].baseRowIndex === baseRowIndex) {
+            metaStart--;
+        }
+        // 後方に同じbaseRowIndexの行を検索
+        while (metaEnd < viewContext.rowMetadata.length && viewContext.rowMetadata[metaEnd].baseRowIndex === baseRowIndex) {
+            metaEnd++;
+        }
+
+        // 古い行を保存（DOMからデタッチ）
+        // メタデータはsplice前にコピーするため、インデックスは先頭からずらして取得
+        const domStartIndex = metaStart + 1;
+        const oldRows: SavedViewRowState[] = [];
+        for (let i = 0; i < metaEnd - metaStart; i++) {
+            const domRow = this.element.children[domStartIndex] as HTMLElement;
+            oldRows.push({ domRow, metadata: viewContext.rowMetadata[metaStart + i] });
+            domRow.remove();
+        }
+        viewContext.rowMetadata.splice(metaStart, metaEnd - metaStart);
+
+        // ベーステーブル列の値を構築（変更されたFK値を反映）
+        const totalColumns = columnMappings.length;
+        const baseColumnValues: string[] = new Array(totalColumns).fill('');
+        const leaderDomRow = oldRows[0].domRow;
+        for (let i = 0; i < totalColumns; i++) {
+            if (i === dataColumnIndex) {
+                baseColumnValues[i] = newValue;
+            } else if (columnMappings[i].joinLevel === 0) {
+                const cell = leaderDomRow.children[i + 1] as HTMLElement;
+                baseColumnValues[i] = EditorTable.getCellValue(cell);
+            }
+        }
+
+        // 新しい展開行データを計算
+        const expandedRows = rebuildExpandedRowsForBaseRow(
+            baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
+        );
+
+        // 新しいDOM行を作成して挿入
+        const newRows = this.buildAndInsertExpandedViewRows(metaStart, baseRowIndex, expandedRows);
+        this.selection.clearCopyRange();
+        this.selection.updateRendererAfterResize();
+
+        return new ViewRowRestructureCommand(this, oldRows, newRows, metaStart);
+    }
+
+    /**
+     * ビュー行を入れ替える（Command.execute/undo/redoから呼ばれる）
+     *
+     * @param metaStartIndex メタデータ開始インデックス
+     * @param removeCount 削除する行数
+     * @param insertRows 挿入する行の状態配列
+     */
+    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const domStartIndex = metaStartIndex + 1;
+
+        // DOMから行を削除
+        for (let i = 0; i < removeCount; i++) {
+            const row = this.element.children[domStartIndex];
+            if (row) row.remove();
+        }
+        this.viewContext.rowMetadata.splice(metaStartIndex, removeCount);
+
+        // 新しい行をDOMに挿入（参照ノードは挿入前に一度だけ取得し、insertBeforeで順序を維持）
+        if (domStartIndex < this.element.children.length) {
+            const referenceNode = this.element.children[domStartIndex] as HTMLElement;
+            for (const row of insertRows) {
+                this.element.insertBefore(row.domRow, referenceNode);
+            }
+        } else {
+            for (const row of insertRows) {
+                this.element.appendChild(row.domRow);
+            }
+        }
+        this.viewContext.rowMetadata.splice(metaStartIndex, 0, ...insertRows.map(r => r.metadata));
+
+        // 行番号を更新
+        this.renumberRowsFrom(domStartIndex);
+
+        // ビュースタイルを再適用
+        this.applyViewRowStylesForRange(metaStartIndex, metaStartIndex + insertRows.length, false);
+
+        // 選択範囲をクリア
+        this.selection.clearCopyRange();
+        this.selection.updateRendererAfterResize();
+    }
+
+    /**
+     * 展開行データからDOM行を作成してテーブルに挿入する
+     * buildAndExecuteViewRowRestructureとrefreshViewRowsの共通処理
+     *
+     * @param metaStart メタデータの挿入開始インデックス
+     * @param baseRowIndex ベーステーブルの行インデックス
+     * @param expandedRows 展開行データの配列
+     * @returns 作成された行状態の配列（Undo用）
+     */
+    private buildAndInsertExpandedViewRows(
+        metaStart: number, baseRowIndex: number, expandedRows: ExpandedRowResult[]
+    ): SavedViewRowState[] {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const columnWidths = this.getColumnWidths();
+        const domStartIndex = metaStart + 1;
+        const referenceNode = domStartIndex < this.element.children.length
+            ? this.element.children[domStartIndex] as HTMLElement : false as const;
+        const newRows: SavedViewRowState[] = [];
+        for (let i = 0; i < expandedRows.length; i++) {
+            const expanded = expandedRows[i];
+            const domRow = this.createViewDataRow(domStartIndex + i, expanded.values, columnWidths);
+            if (referenceNode) {
+                this.element.insertBefore(domRow, referenceNode);
+            } else {
+                this.element.appendChild(domRow);
+            }
+            const metadata: ViewRowMetadata = {
+                baseRowIndex, groupInfos: expanded.groupInfos, paddingColumns: expanded.padding,
+            };
+            newRows.push({ domRow, metadata });
+        }
+        this.viewContext.rowMetadata.splice(metaStart, 0, ...newRows.map(r => r.metadata));
+        this.renumberRowsFrom(domStartIndex);
+        this.applyViewRowStylesForRange(metaStart, metaStart + newRows.length, true);
+        return newRows;
+    }
+
+    /**
+     * ビュー行のDOM要素を作成する
+     * イベントハンドラ付きのセルを含む完全な行要素を返す
+     */
+    private createViewDataRow(rowIndex: number, values: string[], columnWidths: string[]): HTMLElement {
+        const cells: HTMLElement[] = [];
+        const rowHeader = this.createRowHeaderCell(String(rowIndex), rowIndex - 1);
+        cells.push(rowHeader);
+        for (let j = 0; j < values.length; j++) {
+            const width = j < columnWidths.length ? columnWidths[j] : DEFAULT_COLUMN_WIDTH;
+            const cell = EditorTable.createCell(this, values[j], j, width, DEFAULT_ROW_HEIGHT);
+            cells.push(cell);
+        }
+        return EditorTable.createRow(cells, rowIndex);
+    }
+
+    /**
+     * 指定DOM位置以降の全行の行番号を再設定する
+     */
+    private renumberRowsFrom(startDomIndex: number): void {
+        for (let i = startDomIndex; i < this.element.children.length; i++) {
+            const row = this.element.children[i] as HTMLElement;
+            row.dataset.row = String(i);
+            const header = row.children[0] as HTMLElement;
+            if (!header.classList.contains('editor-table-row-header')) continue;
+            // テキストノードを更新
+            const existingTextNode = Array.from(header.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+            if (existingTextNode) {
+                existingTextNode.textContent = String(i);
+            } else {
+                header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+            }
+            header.dataset.rowIndex = String(i - 1);
+            // リサイズハンドルのイベントハンドラを再設定
+            const existingHandle = header.querySelector('.row-resize-handle');
+            if (existingHandle) existingHandle.remove();
+            const newHandle = document.createElement('div');
+            newHandle.classList.add('row-resize-handle');
+            this.areaResizer.setupRowResizeHandle(newHandle, header, i);
+            header.appendChild(newHandle);
+        }
+    }
+
+    /**
+     * 指定メタデータ範囲のビュー行スタイルを適用する
+     * パディング・グループリーダー・折りたたみトグルを設定する
+     */
+    private applyViewRowStylesForRange(startMetaIdx: number, endMetaIdx: number, applyPadding: boolean): void {
+        if (!this.viewContext) return;
+        const rowMetadata = this.viewContext.rowMetadata;
+        const columnMappings = this.viewContext.columnMappings;
+
+        for (let metaIdx = startMetaIdx; metaIdx < endMetaIdx; metaIdx++) {
+            const meta = rowMetadata[metaIdx];
+            const domRowIndex = metaIdx + 1;
+            const rowElement = this.element.children[domRowIndex] as HTMLElement;
+            if (!rowElement) continue;
+
+            // パディングセルのスタイル適用（初期レンダリング時のみ）
+            if (applyPadding) {
+                for (let colIdx = 0; colIdx < meta.paddingColumns.length; colIdx++) {
+                    if (!meta.paddingColumns[colIdx]) continue;
+                    const cellElement = rowElement.children[colIdx + 1] as HTMLElement;
+                    if (!cellElement) continue;
+                    cellElement.classList.add('view-padding-cell');
+                    cellElement.textContent = '';
+                }
+            }
+
+            // グループリーダー行の判定
+            const isBaseGroupLeader = meta.groupInfos.length === 0
+                || meta.groupInfos.every(g => g.groupPosition === 0);
+            if (isBaseGroupLeader && metaIdx > 0) {
+                const prevMeta = rowMetadata[metaIdx - 1];
+                if (prevMeta.baseRowIndex !== meta.baseRowIndex) {
+                    rowElement.classList.add('view-group-leader-row');
+                }
+            }
+
+            // 折りたたみトグルの配置
+            for (const groupInfo of meta.groupInfos) {
+                if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
+                const joinDef = this.viewContext.viewDefinition.joins.find(j => j.targetTable === groupInfo.sourceTable);
+                if (!joinDef) continue;
+                const sourceTableName = joinDef.sourceTable === ''
+                    ? this.viewContext.viewDefinition.baseTable : joinDef.sourceTable;
+                const sourceColIdx = columnMappings.findIndex(
+                    m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
+                );
+                if (sourceColIdx < 0) continue;
+                const cellElement = rowElement.children[sourceColIdx + 1] as HTMLElement;
+                if (!cellElement) continue;
+                // 既存のトグルがあれば除去（重複防止）
+                const existingToggle = cellElement.querySelector('.view-collapse-toggle');
+                if (existingToggle) existingToggle.remove();
+                const toggle = document.createElement('span');
+                toggle.classList.add('view-collapse-toggle');
+                toggle.textContent = '▼';
+                toggle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                });
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleCollapseGroup(metaIdx, groupInfo.sourceTable, toggle);
+                });
+                cellElement.insertBefore(toggle, cellElement.firstChild);
+            }
+        }
+    }
+
+    /**
+     * ビューコンテキストのjoinTableKeyMapsを再構築する
+     * タブ切替時に結合テーブルの最新データを反映するために使用する
+     *
+     * @param openEditorTables 開かれているEditorTableの参照マップ
+     */
+    rebuildJoinTableKeyMaps(openEditorTables: Map<string, EditorTable>): void {
+        if (!this.viewContext) return;
+        const viewDefinition = this.viewContext.viewDefinition;
+        const newKeyMaps = new Map<string, Map<string, string[][]>>();
+
+        for (const join of viewDefinition.joins) {
+            const editorTable = openEditorTables.get(join.targetTable);
+            if (!editorTable) {
+                // テーブルが開かれていない場合は既存のキーマップを保持
+                const existing = this.viewContext.joinTableKeyMaps.get(join.targetTable);
+                if (existing) newKeyMaps.set(join.targetTable, existing);
+                continue;
+            }
+            // DOMからデータを読み取ってキーマップを再構築
+            const columnCount = editorTable.getColumnCount();
+            const rowCount = editorTable.getRowCount();
+            // ターゲット列のインデックスを特定
+            let keyColumnIndex = -1;
+            for (let c = 0; c < columnCount; c++) {
+                if (editorTable.getColumnHeaderValue(c) === join.targetColumn) {
+                    keyColumnIndex = c;
+                    break;
+                }
+            }
+            if (keyColumnIndex === -1) continue;
+            const keyMap = new Map<string, string[][]>();
+            for (let r = 1; r < rowCount; r++) {
+                const keyValue = editorTable.getCellValueAt(r, keyColumnIndex + 1);
+                if (keyValue === '') continue;
+                const rowValues: string[] = [];
+                for (let c = 0; c < columnCount; c++) {
+                    rowValues.push(editorTable.getCellValueAt(r, c + 1));
+                }
+                let rows = keyMap.get(keyValue);
+                if (!rows) { rows = []; keyMap.set(keyValue, rows); }
+                rows.push(rowValues);
+            }
+            newKeyMaps.set(join.targetTable, keyMap);
+        }
+
+        this.viewContext.joinTableKeyMaps = newKeyMaps;
+    }
+
+    /**
+     * ビュー全体の行再構築を行う（タブ切替時用）
+     * 各ベース行の展開行数が変わっていれば再構築する
+     * Undo対象外（外部変更の反映）
+     */
+    refreshViewRows(): void {
+        if (!this.viewContext) return;
+        const viewContext = this.viewContext;
+        const columnMappings = viewContext.columnMappings;
+        const rowMetadata = viewContext.rowMetadata;
+
+        // 各ベース行のグループをスキャンして、展開行数の差分を検出
+        let metaIdx = 0;
+        while (metaIdx < rowMetadata.length) {
+            const baseRowIndex = rowMetadata[metaIdx].baseRowIndex;
+            const metaStart = metaIdx;
+            // このベース行のグループ終端を検索
+            while (metaIdx < rowMetadata.length && rowMetadata[metaIdx].baseRowIndex === baseRowIndex) {
+                metaIdx++;
+            }
+            const metaEnd = metaIdx;
+            const currentCount = metaEnd - metaStart;
+
+            // リーダー行のベーステーブル列値を取得
+            const leaderDomIndex = metaStart + 1;
+            const leaderDomRow = this.element.children[leaderDomIndex] as HTMLElement;
+            if (!leaderDomRow) continue;
+            const totalColumns = columnMappings.length;
+            const baseColumnValues: string[] = new Array(totalColumns).fill('');
+            for (let i = 0; i < totalColumns; i++) {
+                if (columnMappings[i].joinLevel === 0) {
+                    const cell = leaderDomRow.children[i + 1] as HTMLElement;
+                    if (cell) baseColumnValues[i] = EditorTable.getCellValue(cell);
+                }
+            }
+
+            // 新しい展開行数を計算
+            const expandedRows = rebuildExpandedRowsForBaseRow(
+                baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
+            );
+
+            if (expandedRows.length === currentCount) {
+                // 行数が同じでも値が変わっている可能性があるので、JOIN列の値を更新
+                for (let i = 0; i < currentCount; i++) {
+                    const domRow = this.element.children[metaStart + 1 + i] as HTMLElement;
+                    for (let colIdx = 0; colIdx < totalColumns; colIdx++) {
+                        if (!columnMappings[colIdx].isJoinedColumn) continue;
+                        const cell = domRow.children[colIdx + 1] as HTMLElement;
+                        if (!cell) continue;
+                        if (rowMetadata[metaStart + i].paddingColumns[colIdx]) continue;
+                        const newVal = expandedRows[i].values[colIdx];
+                        const oldVal = EditorTable.getCellValue(cell);
+                        if (oldVal !== newVal) this.setCellValueAt(metaStart + 1 + i, colIdx + 1, newVal);
+                    }
+                }
+                continue;
+            }
+
+            // 行数が異なる場合: 再構築
+            const domStartIndex = metaStart + 1;
+            for (let i = 0; i < currentCount; i++) {
+                const row = this.element.children[domStartIndex];
+                if (row) row.remove();
+            }
+            rowMetadata.splice(metaStart, currentCount);
+            this.buildAndInsertExpandedViewRows(metaStart, baseRowIndex, expandedRows);
+
+            // metaIdxを再調整（挿入した行数分）
+            metaIdx = metaStart + expandedRows.length;
+        }
+
+        this.selection.clearCopyRange();
+        this.selection.updateRendererAfterResize();
     }
 }

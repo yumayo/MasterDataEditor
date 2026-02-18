@@ -13,6 +13,8 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const explorer = page.locator('#explorer');
     if (tableName.startsWith('view_')) {
         await explorer.locator('[data-panel="views"]').click();
+    } else {
+        await explorer.locator('[data-panel="files"]').click();
     }
     await explorer.getByText(tableName, { exact: true }).click();
     const table = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
@@ -349,5 +351,137 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
         await expect(getDataCell(table, 2, 3)).toHaveText('Hard');
         await expect(getDataCell(table, 2, 5)).toHaveText('Potion');
+    });
+
+    // ---------------------------------------------------------
+    // FK値変更時の行数更新テスト
+    // ---------------------------------------------------------
+
+    test('source列の値変更で1:2→1:1になったとき行が減ること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認: 行0=Gold, 行1=Gem(パディング), 行2=SideQuest/Potion
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // quest.id=1のセル（行0, col0）を "2" に変更
+        // → quest_rewardでgroup_id=2にマッチする行はid=3(Potion)のみ → 1行に減少
+        await editCellAsync(page, table, 0, 0, '2');
+
+        // 行0: quest.id=2, MainQuest, qr.id=3, Potion（group_id=2の1件マッチ）
+        await expect(getDataCell(table, 0, 0)).toHaveText('2');
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 2)).toHaveText('3');
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+
+        // 行1: 旧row2のSideQuestが繰り上がっている
+        await expect(getDataCell(table, 1, 0)).toHaveText('2');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 1, 2)).toHaveText('3');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Potion');
+
+        // 行2は空（旧パディング行のGemが消えた）
+        await expect(getDataCell(table, 2, 0)).toHaveText('');
+        await expect(getDataCell(table, 2, 3)).toHaveText('');
+    });
+
+    test('source列の値変更で1:1→1:2になったとき行が増えること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認: 行2=SideQuest, quest.id=2
+        await expect(getDataCell(table, 2, 0)).toHaveText('2');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // quest.id=2のセル（行2, col0）を "1" に変更
+        // → quest_rewardでgroup_id=1にマッチする行はid=1(Gold),id=2(Gem) → 2行に増加
+        await editCellAsync(page, table, 2, 0, '1');
+
+        // 行2: quest.id=1, SideQuest, qr.id=1, Gold（group_id=1の1件目）
+        // トグル文字▼が含まれる可能性があるため正規表現を使用
+        await expect(getDataCell(table, 2, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 2, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 2, 3)).toHaveText('Gold');
+
+        // 行3: パディング行、qr.id=2, Gem（group_id=1の2件目）
+        await expect(getDataCell(table, 3, 0)).toHaveText('');
+        await expect(getDataCell(table, 3, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 3, 2)).toHaveText('2');
+        await expect(getDataCell(table, 3, 3)).toHaveText('Gem');
+    });
+
+    test('行数変更のUndo/Redoが正しく動作すること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態: 行0=Gold, 行1=Gem(パディング), 行2=SideQuest
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // quest.id=1を "2" に変更（2展開行→1展開行に減少）
+        await editCellAsync(page, table, 0, 0, '2');
+
+        // 変更後: 行0=Potion, 行1=SideQuest
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+        // 行2は空になっている
+        await expect(getDataCell(table, 2, 1)).toHaveText('');
+
+        // Undo → 元の3データ行に戻る
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 0, 0)).toHaveText(/1/);
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // Redo → 再度減少状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 2, 1)).toHaveText('');
+    });
+
+    test('ベーステーブル側の編集がビュータブに反映されること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+
+        // まずview_questを開く（quest.id=1は2行展開: Gold, Gem）
+        const viewTable = await openTableAsync(page, 'view_quest');
+        await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('Gem');
+
+        // quest_rewardタブを開く
+        const rewardTable = await openTableAsync(page, 'quest_reward');
+
+        // id=2のgroup_idを 1→2 に変更（col1がgroup_id）
+        // quest_reward: id=1,group_id=1,Gold / id=2,group_id=2(変更),Gem / id=3,group_id=2,Potion
+        await editCellAsync(page, rewardTable, 1, 1, '2');
+
+        // view_questタブに戻る
+        const explorer = page.locator('#explorer');
+        await explorer.locator('[data-panel="views"]').click();
+        await explorer.getByText('view_quest', { exact: true }).click();
+
+        const refreshedTable = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
+        await expect(refreshedTable).toBeVisible();
+
+        // quest.id=1の展開行が2行→1行に減少（group_id=1はid=1のGoldのみ）
+        await expect(getDataCell(refreshedTable, 0, 0)).toHaveText(/1/);
+        await expect(getDataCell(refreshedTable, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(refreshedTable, 0, 3)).toHaveText('Gold');
+
+        // quest.id=2の展開行が1行→2行に増加（group_id=2はid=2のGemとid=3のPotion）
+        // トグル文字▼が含まれる可能性があるため正規表現を使用
+        await expect(getDataCell(refreshedTable, 1, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(refreshedTable, 1, 1)).toHaveText('SideQuest');
+        // パディング行が追加されている
+        await expect(getDataCell(refreshedTable, 2, 0)).toHaveText('');
+        await expect(getDataCell(refreshedTable, 2, 0)).toHaveClass(/view-padding-cell/);
     });
 });
