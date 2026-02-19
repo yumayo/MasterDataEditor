@@ -4,7 +4,9 @@ import {ContextMenu} from "./context-menu";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
 import {ViewsPanel} from "./views-panel";
+import {SearchPanel} from "./search-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
+import {EditorTable} from "./editor-table";
 
 /**
  * サイドバー
@@ -16,12 +18,14 @@ export class Sidebar {
     private readonly filesPanel: HTMLElement;
     private readonly viewsPanel: ViewsPanel;
     private readonly referencesPanel: ReferencesPanel;
+    private readonly searchPanel: SearchPanel;
     private readonly directory: ExplorerDirectory;
 
     constructor(
         explorerElement: HTMLElement,
         tab: Tab,
-        contextMenu: ContextMenu
+        contextMenu: ContextMenu,
+        openEditorTables: Map<string, EditorTable>
     ) {
         // アクティビティバー
         this.activityBar = new ActivityBar((item: ActivityBarItem) => {
@@ -50,6 +54,10 @@ export class Sidebar {
         // REFERENCESパネル
         this.referencesPanel = new ReferencesPanel(tab);
         this.referencesPanel.appendTo(sidebarContent);
+
+        // SEARCHパネル
+        this.searchPanel = new SearchPanel(tab, openEditorTables);
+        this.searchPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, contextMenu, this.filesPanel, 1);
@@ -80,20 +88,29 @@ export class Sidebar {
     }
 
     /**
-     * パネルを切り替える
-     * 全パネルを非表示にしてから選択パネルのみ表示する
+     * SEARCHパネルをアクティブにしてフォーカスする
+     * Ctrl+Shift+F から呼ばれる
      */
+    activateSearchPanel(): void {
+        this.activityBar.activateItem('search');
+        this.switchPanel('search');
+        this.searchPanel.focus();
+    }
+
     private switchPanel(item: ActivityBarItem): void {
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.viewsPanel.hide();
         this.referencesPanel.hide();
+        this.searchPanel.hide();
 
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');
         } else if (item === 'views') {
             this.viewsPanel.show();
-        } else {
+        } else if (item === 'references') {
             this.referencesPanel.show();
+        } else {
+            this.searchPanel.show();
         }
     }
 }

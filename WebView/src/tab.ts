@@ -138,6 +138,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
+    /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
+    private pendingNavigationColumnIndex: number;
+
     constructor(
         editor: Editor,
         sidebar: Sidebar
@@ -152,6 +155,14 @@ export class Tab {
         this.sidebar = sidebar;
         this.openEditorTables = new Map();
         this.pendingNavigationPkValue = '';
+        this.pendingNavigationColumnIndex = -1;
+    }
+
+    /**
+     * タブで開かれているEditorTableの参照マップを取得する
+     */
+    getOpenEditorTables(): Map<string, EditorTable> {
+        return this.openEditorTables;
     }
 
     /**
@@ -174,6 +185,24 @@ export class Tab {
     }
 
     /**
+     * 検索パネルからテーブルの特定セルへナビゲーションする
+     * navigateToTableRow と同様だが、特定の列にフォーカスする
+     */
+    navigateToTableCell(tableName: string, pkValue: string, columnIndex: number): void {
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            this.enableTabButton(tableName);
+            this.navigateToCell(existingState, pkValue, columnIndex);
+            return;
+        }
+        // タブが未作成の場合: pendingNavigationを設定して新規タブを開く
+        this.pendingNavigationPkValue = pkValue;
+        this.pendingNavigationColumnIndex = columnIndex;
+        const tabButton = this.append(tableName);
+        tabButton.click();
+    }
+
+    /**
      * EditorTableの全行を走査し、PK値が一致する行を選択状態にする
      */
     private navigateToRow(state: TabState, pkValue: string): void {
@@ -186,6 +215,39 @@ export class Tab {
                 return;
             }
         }
+    }
+
+    /**
+     * EditorTableの全行を走査し、PK値が一致する行の特定列を選択状態にする
+     */
+    private navigateToCell(state: TabState, pkValue: string, columnIndex: number): void {
+        const editorTable = state.editorTable;
+        const rowCount = editorTable.getRowCount();
+        // columnIndex はCSVの0始まり列 → DOM上は column + 1
+        const col = columnIndex + 1;
+        for (let r = 1; r < rowCount; r++) {
+            if (editorTable.getRowPkValue(r) === pkValue) {
+                state.selection.setRange(r, col, r, col);
+                state.selection.move(r, col);
+                return;
+            }
+        }
+    }
+
+    /**
+     * タブ読み込み完了後のpendingNavigationを消費する
+     * navigateToTableRow / navigateToTableCell で設定された
+     * 保留ナビゲーションを実行し、フィールドをリセットする
+     */
+    private consumePendingNavigation(state: TabState): void {
+        if (this.pendingNavigationPkValue === '') return;
+        if (this.pendingNavigationColumnIndex !== -1) {
+            this.navigateToCell(state, this.pendingNavigationPkValue, this.pendingNavigationColumnIndex);
+            this.pendingNavigationColumnIndex = -1;
+        } else {
+            this.navigateToRow(state, this.pendingNavigationPkValue);
+        }
+        this.pendingNavigationPkValue = '';
     }
 
     /**
@@ -483,11 +545,7 @@ export class Tab {
                 this.activateTabState(state);
                 this.activeTabName = name;
 
-                // pendingNavigationがあれば行を選択する
-                if (this.pendingNavigationPkValue !== '') {
-                    this.navigateToRow(state, this.pendingNavigationPkValue);
-                    this.pendingNavigationPkValue = '';
-                }
+                this.consumePendingNavigation(state);
             });
 
         });
@@ -746,11 +804,7 @@ export class Tab {
                     this.activateTabState(state);
                     this.activeTabName = name;
 
-                    // pendingNavigationがあれば行を選択する
-                    if (this.pendingNavigationPkValue !== '') {
-                        this.navigateToRow(state, this.pendingNavigationPkValue);
-                        this.pendingNavigationPkValue = '';
-                    }
+                    this.consumePendingNavigation(state);
                 });
             });
         });

@@ -70,7 +70,7 @@ export class EditorTableHandler {
         | undefined;
 
     private readonly boundOnKeydown: (e: KeyboardEvent) => void;
-    private readonly boundOnFocusout: () => void;
+    private readonly boundOnFocusout: (e: FocusEvent) => void;
     private readonly boundOnPaste: (e: ClipboardEvent) => void;
 
     constructor(
@@ -185,12 +185,12 @@ export class EditorTableHandler {
     /**
      * フォーカスアウト時の処理
      */
-    private onFocusout(): void {
+    private onFocusout(event: FocusEvent): void {
         console.log('[handler] onFocusout', {
             active: this.active,
             dropdownActive: this.dropdownActive,
             visible: this.visible,
-            activeElement: document.activeElement
+            relatedTarget: event.relatedTarget
         });
 
         if (!this.active) return;
@@ -199,6 +199,18 @@ export class EditorTableHandler {
         if (this.dropdownActive && this.dropdownInput) {
             console.log('[handler] dropdownActive=true, cancelling dropdown');
             this.dropdownInput.cancel();
+        }
+
+        // フォーカス先がHTMLInputElement/HTMLTextAreaElementの場合は
+        // 意図的な移動なのでフォーカスを奪わない（検索パネル等の入力フィールド用）
+        const focusTarget = event.relatedTarget;
+        if (focusTarget instanceof HTMLInputElement || focusTarget instanceof HTMLTextAreaElement) {
+            console.log('[handler] focus moved to input element, not reclaiming');
+            if (this.visible) {
+                this.submitText();
+                this.hide();
+            }
+            return;
         }
 
         // アクティブ中はセルを常に有効にし続けます。
@@ -488,6 +500,8 @@ export class EditorTableHandler {
         }
 
         // 文字入力による編集モード開始
+        // Ctrl/Meta+キーの組み合わせはショートカットなので編集モードを開始しない
+        if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (!this.textField) return;
             // パディングセルへの入力を拒否

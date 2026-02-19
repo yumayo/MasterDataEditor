@@ -1,0 +1,91 @@
+/* 検索パネルコントロール */
+.search-panel-controls {
+    padding: 4px 12px 8px;
+}
+
+/* 入力行 */
+.search-panel-input-row {
+    display: flex;
+}
+
+.search-panel-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    font-size: 13px;
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    border-radius: 2px;
+    background-color: var(--background-color);
+    color: var(--font-color);
+    outline: none;
+}
+
+.search-panel-input:focus {
+    border-color: #528bff;
+}
+
+/* オプションボタン行 */
+.search-panel-options {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.search-option-button {
+    padding: 2px 6px;
+    font-size: 11px;
+    font-family: monospace;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--font-color);
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.search-option-button:hover {
+    opacity: 0.9;
+}
+
+.search-option-active {
+    opacity: 1;
+    background-color: rgba(82, 139, 255, 0.3);
+    border-color: #528bff;
+}
+
+/* 検索結果 */
+.search-panel-results {
+    overflow-y: auto;
+    max-height: calc(100vh - 160px);
+}
+
+.search-result-item {
+    padding: 4px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.search-result-item:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .search-result-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.search-result-location {
+    font-size: 11px;
+    color: var(--font-color);
+    opacity: 0.6;
+}
+
+.search-result-value {
+    font-size: 13px;
+    color: var(--font-color);
+}
+
+.search-result-reference-hint {
+    font-size: 11px;
+    color: #528bff;
+    opacity: 0.8;
+}
