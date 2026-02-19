@@ -89,6 +89,7 @@ export class ExplorerFile {
             name: viewName,
             baseTable: this.name,
             joins: [],
+            columns: [],
         };
         const json = serializeViewDefinition(
             viewDefinition

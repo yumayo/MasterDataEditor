@@ -56,6 +56,8 @@ import {
     ViewRowRestructureCommand,
     SavedViewRowState
 } from "./view-row-restructure-command";
+import {ViewHideColumnCommand} from
+    "./view-hide-column-command";
 
 /**
  * 利用可能なJoin対象の情報
@@ -82,6 +84,8 @@ export interface ViewContext {
     /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
     rowMetadata: ViewRowMetadata[];
     onJoinAsync: (targetTable: string, sourceColumn: string, afterColumnIndex: number) => Promise<void>;
+    /** 非表示列を再表示するコールバック（ビュータブの再構築を行う） */
+    onShowHiddenColumn: (tableName: string, columnName: string) => void;
 }
 
 export class EditorTable {
@@ -987,8 +991,28 @@ export class EditorTable {
             ];
 
             // ビューコンテキストがある場合
-            // Join項目を追加
             if (this.viewContext) {
+                // 列を非表示メニュー
+                menuItems.push({ separator: true });
+                menuItems.push({
+                    label: '列を非表示',
+                    action: () => {
+                        this.hideViewColumn(contextMenuColumnIndex);
+                    },
+                });
+
+                // 非表示列を表示メニュー（非表示列がある場合のみ）
+                const hiddenCols = this.viewContext.viewDefinition.columns.filter(c => c.hidden);
+                for (const col of hiddenCols) {
+                    menuItems.push({
+                        label: '表示: ' + col.tableName + '.' + col.columnName,
+                        action: () => {
+                            this.showHiddenViewColumn(col.tableName, col.columnName);
+                        },
+                    });
+                }
+
+                // Join項目を追加
                 const joinItems =
                     this.buildJoinMenuItems(
                         contextMenuColumnIndex
@@ -1059,6 +1083,32 @@ export class EditorTable {
         }
 
         return items;
+    }
+
+    /**
+     * ビュー列を非表示にする（ViewHideColumnCommandを実行）
+     */
+    private hideViewColumn(columnIndex: number): void {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        const command = new ViewHideColumnCommand(
+            this, this.viewContext.viewDefinition,
+            this.viewContext.columnMappings, this.viewContext.rowMetadata,
+            columnIndex
+        );
+        const anchor = this.selection.getAnchor();
+        const copyRange = this.selection.getCopyRange();
+        this.history.executeCommand(command, {
+            startRow: anchor.row, startColumn: anchor.column,
+            endRow: anchor.row, endColumn: anchor.column,
+        }, copyRange);
+    }
+
+    /**
+     * 非表示列を再表示する（viewDefinition.columnsのhiddenをfalseに変更してビューを再構築）
+     */
+    private showHiddenViewColumn(tableName: string, columnName: string): void {
+        if (!this.viewContext) throw new Error('viewContextが未設定');
+        this.viewContext.onShowHiddenColumn(tableName, columnName);
     }
 
     private createColumnHeaderCell(

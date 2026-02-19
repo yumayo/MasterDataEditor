@@ -1,7 +1,7 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {EditorTableDataColumn} from "./model/editor-table-data-column";
 import {EditorTableDataRow} from "./model/editor-table-data-row";
-import {ViewDefinition, ViewJoinDefinition} from "./model/view-definition";
+import {ViewDefinition, ViewJoinDefinition, ViewColumnConfig} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
 import {ViewRowMetadata, ViewRowGroupInfo} from "./model/view-row-metadata";
 
@@ -396,4 +396,103 @@ export function rebuildExpandedRowsForBaseRow(
     const { expandInfosByLevel, maxLevel } = buildJoinExpandInfos(viewDefinition, joinLevels, columnMappings);
     const totalColumns = columnMappings.length;
     return expandBaseRow(baseColumnValues, expandInfosByLevel, maxLevel, keyMaps, columnMappings, totalColumns);
+}
+
+/**
+ * ビュー定義の列設定をビルド結果に適用する
+ * 非表示列をフィルタし、列幅のオーバーライドを適用する
+ *
+ * columns に存在しない列はデフォルト幅・可視として扱い、
+ * 新規追加された列が自動的に表示される。
+ */
+export function applyViewColumnConfig(
+    buildResult: ViewTableBuildResult,
+    columns: ViewColumnConfig[]
+): ViewTableBuildResult {
+    if (columns.length === 0) return buildResult;
+
+    // 非表示列のセットを構築（"tableName.columnName" → hidden）
+    const hiddenSet = new Set<string>();
+    // 幅オーバーライドのマップ（"tableName.columnName" → width）
+    const widthMap = new Map<string, number>();
+    for (const col of columns) {
+        const key = col.tableName + '.' + col.columnName;
+        if (col.hidden) {
+            hiddenSet.add(key);
+        }
+        widthMap.set(key, col.width);
+    }
+
+    // 除去対象列のインデックスを特定
+    const keepIndices: number[] = [];
+    const originalMappings = buildResult.columnMappings;
+    for (let i = 0; i < originalMappings.length; i++) {
+        const m = originalMappings[i];
+        const key = m.tableName + '.' + m.sourceColumnName;
+        if (!hiddenSet.has(key)) {
+            keepIndices.push(i);
+        }
+    }
+
+    // 列マッピングをフィルタ
+    const filteredMappings: ViewColumnMapping[] = [];
+    for (const idx of keepIndices) {
+        filteredMappings.push(originalMappings[idx]);
+    }
+
+    // ヘッダーをフィルタし、幅オーバーライドを適用
+    const originalHeader = buildResult.compositeTableData.header;
+    const filteredHeader: EditorTableDataColumn[] = [];
+    for (const idx of keepIndices) {
+        const col = originalHeader[idx];
+        const m = originalMappings[idx];
+        const key = m.tableName + '.' + m.sourceColumnName;
+        if (widthMap.has(key)) {
+            const overrideWidth = widthMap.get(key) as number;
+            filteredHeader.push(new EditorTableDataColumn(
+                col.key, col.name, col.type, col.comment, col.reference, overrideWidth + 'px'
+            ));
+        } else {
+            filteredHeader.push(col);
+        }
+    }
+
+    // 各行のvaluesとpaddingColumnsをフィルタ
+    const originalBody = buildResult.compositeTableData.body;
+    const originalMetadata = buildResult.rowMetadata;
+    const filteredBody: EditorTableDataRow[] = [];
+    const filteredMetadata: ViewRowMetadata[] = [];
+    for (let r = 0; r < originalBody.length; r++) {
+        const row = originalBody[r];
+        const filteredValues: string[] = [];
+        for (const idx of keepIndices) {
+            filteredValues.push(row.values[idx]);
+        }
+        filteredBody.push(new EditorTableDataRow(filteredValues));
+
+        const meta = originalMetadata[r];
+        const filteredPadding: boolean[] = [];
+        for (const idx of keepIndices) {
+            filteredPadding.push(meta.paddingColumns[idx]);
+        }
+        filteredMetadata.push({
+            baseRowIndex: meta.baseRowIndex,
+            groupInfos: meta.groupInfos,
+            paddingColumns: filteredPadding,
+        });
+    }
+
+    const filteredTableData = new EditorTableData(
+        buildResult.compositeTableData.description,
+        buildResult.compositeTableData.primaryKey,
+        filteredHeader,
+        filteredBody
+    );
+
+    return {
+        compositeTableData: filteredTableData,
+        columnMappings: filteredMappings,
+        joinTableKeyMaps: buildResult.joinTableKeyMaps,
+        rowMetadata: filteredMetadata,
+    };
 }

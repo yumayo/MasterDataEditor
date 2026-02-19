@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {ViewColumnMapping} from "./model/view-column-mapping";
 import {ViewRowMetadata} from "./model/view-row-metadata";
-import {ViewDefinition, serializeViewDefinition} from "./model/view-definition";
+import {ViewDefinition, ViewColumnConfig, serializeViewDefinition} from "./model/view-definition";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
 import {mergeCsvData} from "./editor-actions";
@@ -243,4 +243,39 @@ export async function saveViewDataAsync(
 
     await Promise.all(savePromises);
     console.log('Saved view: ' + viewDefinition.name);
+}
+
+/**
+ * 保存前にDOMの現在の列幅を viewDefinition.columns に反映する
+ * 可視列は現在のDOM幅で更新し、非表示列は既存configを保持する
+ */
+export function updateViewColumnConfigs(
+    table: EditorTable,
+    columnMappings: ViewColumnMapping[],
+    viewDefinition: ViewDefinition
+): void {
+    const columnWidths = table.getColumnWidths();
+    const newColumns: ViewColumnConfig[] = [];
+
+    // 可視列: 現在のDOM幅で構築
+    for (let i = 0; i < columnMappings.length; i++) {
+        newColumns.push({
+            tableName: columnMappings[i].tableName,
+            columnName: columnMappings[i].sourceColumnName,
+            width: parseInt(columnWidths[i]),
+            hidden: false,
+        });
+    }
+
+    // 非表示列: 既存configを保持
+    for (const existing of viewDefinition.columns) {
+        if (existing.hidden) {
+            newColumns.push(existing);
+        }
+    }
+
+    viewDefinition.columns.length = 0;
+    for (const col of newColumns) {
+        viewDefinition.columns.push(col);
+    }
 }

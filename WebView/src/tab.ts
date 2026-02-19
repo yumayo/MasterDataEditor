@@ -34,9 +34,10 @@ import {ViewRowMetadata} from
     "./model/view-row-metadata";
 import {
     buildViewTableData,
-    JoinedTableLoadedData
+    JoinedTableLoadedData,
+    applyViewColumnConfig
 } from "./view-table-data-builder";
-import {saveViewDataAsync} from
+import {saveViewDataAsync, updateViewColumnConfigs} from
     "./view-save-splitter";
 import {
     ReverseReferenceResolver
@@ -374,7 +375,7 @@ export class Tab {
         // 新しいタブ状態を作成
         if (name.startsWith('view:')) {
             this.createViewTabState(
-                name, tabButton
+                name, tabButton, 'load_from_file'
             );
         } else {
             this.createTabState(name, tabButton);
@@ -556,20 +557,24 @@ export class Tab {
      * view:プレフィックス付きのタブ名から
      * ビュー定義を読み込み、複数テーブルを結合する
      */
+    /**
+     * ビュータブの状態を作成する
+     * preloadedViewDefinition が渡された場合はファイル読み込みを迂回してメモリ上の定義を使う
+     */
     private createViewTabState(
         name: string,
-        tabButton: TabButton
+        tabButton: TabButton,
+        preloadedViewDefinition: ViewDefinition | 'load_from_file'
     ): void {
         // "view:view_chara" から "view_chara" を抽出
         const viewName = name.substring(5);
 
-        readFileAsync(
-            'view/' + viewName + '.json'
-        ).then((viewJson) => {
-            const viewDefinition =
-                parseViewDefinition(
-                    JSON.parse(viewJson)
-                );
+        const viewDefPromise = preloadedViewDefinition !== 'load_from_file'
+            ? Promise.resolve(preloadedViewDefinition)
+            : readFileAsync('view/' + viewName + '.json')
+                .then((viewJson) => parseViewDefinition(JSON.parse(viewJson)));
+
+        viewDefPromise.then((viewDefinition) => {
             const baseTable =
                 viewDefinition.baseTable;
 
@@ -629,12 +634,18 @@ export class Tab {
                 Promise.all(joinPromises).then(
                     (joinedTables) => {
                     // ビューテーブルデータを構築
-                    const buildResult =
+                    const rawBuildResult =
                         buildViewTableData(
                             baseTableData,
                             joinedTables,
                             viewDefinition
                         );
+
+                    // 列設定（幅オーバーライド・非表示列フィルタ）を適用
+                    const buildResult = applyViewColumnConfig(
+                        rawBuildResult,
+                        viewDefinition.columns
+                    );
 
                     const compositeTableData =
                         buildResult
@@ -693,6 +704,7 @@ export class Tab {
 
                     // ビューコンテキストを設定
                     this.setupViewContext(
+                        name,
                         editorTable,
                         viewDefinition,
                         columnMappings,
@@ -727,6 +739,12 @@ export class Tab {
                                     return Promise
                                         .resolve();
                                 }
+                                // 保存前に列幅をViewDefinitionに反映
+                                updateViewColumnConfigs(
+                                    state.editorTable,
+                                    state.columnMappings,
+                                    state.viewDefinition
+                                );
                                 return saveViewDataAsync(
                                     state.editorTable,
                                     state.columnMappings,
@@ -814,6 +832,7 @@ export class Tab {
      * ビューコンテキストを設定する
      */
     private setupViewContext(
+        name: string,
         editorTable: EditorTable,
         viewDefinition: ViewDefinition,
         columnMappings: ViewColumnMapping[],
@@ -842,6 +861,9 @@ export class Tab {
                     editorTable, viewDefinition, columnMappings, history,
                     targetTable, sourceColumn, afterColumnIndex
                 );
+            },
+            onShowHiddenColumn: (tableName: string, columnName: string) => {
+                this.showHiddenViewColumn(name, tableName, columnName);
             },
         });
     }
@@ -924,6 +946,66 @@ export class Tab {
             endRow: anchor.row,
             endColumn: anchor.column,
         }, copyRange);
+    }
+
+    /**
+     * 非表示列を再表示する
+     * viewDefinition.columns の hidden を false に変更し、ビュータブを再構築する
+     */
+    private showHiddenViewColumn(
+        name: string,
+        tableName: string,
+        columnName: string
+    ): void {
+        const state = this.tabStates.get(name);
+        if (!state || state.kind !== 'view') return;
+
+        // viewDefinition.columns の該当エントリを hidden:false で置換
+        const colIndex = state.viewDefinition.columns.findIndex(
+            c => c.tableName === tableName && c.columnName === columnName && c.hidden
+        );
+        if (colIndex >= 0) {
+            const old = state.viewDefinition.columns[colIndex];
+            state.viewDefinition.columns.splice(colIndex, 1, {
+                tableName: old.tableName,
+                columnName: old.columnName,
+                width: old.width,
+                hidden: false,
+            });
+        }
+
+        // ビュータブを再構築
+        this.rebuildViewTab(name);
+    }
+
+    /**
+     * ビュータブを再構築する
+     * 現在のViewDefinitionを保持したまま、タブを再作成する
+     */
+    private rebuildViewTab(name: string): void {
+        const state = this.tabStates.get(name);
+        if (!state || state.kind !== 'view') return;
+
+        const viewDefinition = state.viewDefinition;
+
+        // 現在の列幅をViewDefinitionに反映
+        updateViewColumnConfigs(state.editorTable, state.columnMappings, viewDefinition);
+
+        // 現在のタブ状態をクリーンアップ
+        state.editorTable.deactivate();
+        state.areaResizer.deactivate();
+        state.fillController.deactivate();
+        state.editorTableHandler.deactivate();
+        state.wrapperElement.remove();
+        this.tabStates.delete(name);
+        this.openEditorTables.delete(name);
+
+        const tabButton = this.tabButtons.find(x => x.name === name);
+        if (!tabButton) return;
+
+        // ファイル読み込みを迂回し、メモリ上のviewDefinitionを引数として渡す
+        this.activeTabName = name;
+        this.createViewTabState(name, tabButton, viewDefinition);
     }
 
     /**

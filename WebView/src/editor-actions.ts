@@ -398,13 +398,21 @@ export function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; bo
     resultCsv.header = mergedHeader;
 
     // ボディデータをマージ
+    // 既存CSVの列で新データに含まれない列（ビューの非表示列等）は既存値を保持する
     const mergedBody: string[][] = [];
     for (let r = 0; r < tableData.body.length; r++) {
         const tableRow = tableData.body[r];
         // マージ後のヘッダーの長さで空行を初期化
         const mergedRow: string[] = new Array(mergedHeader.length).fill('');
 
-        // テーブルのデータを対応する列に配置
+        // 既存CSVに対応する行がある場合、まず既存値でベースを作る
+        if (r < existingCsv.body.length) {
+            for (let c = 0; c < existingCsv.header.length && c < existingCsv.body[r].length; c++) {
+                mergedRow[c] = existingCsv.body[r][c];
+            }
+        }
+
+        // テーブルのデータを対応する列に配置（既存値を上書き）
         for (let c = 0; c < tableRow.length; c++) {
             const mergedIndex = tableToMergedIndex[c];
             mergedRow[mergedIndex] = tableRow[c];
