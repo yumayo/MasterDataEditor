@@ -186,6 +186,8 @@ export class EditorTable {
             toggle.textContent = '▶';
             this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, false);
         }
+        // 行の表示/非表示が変わったので選択範囲の描画を再計算する
+        this.selection.updateRendererAfterResize();
     }
 
     /**
@@ -2574,6 +2576,10 @@ export class EditorTable {
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.toggleCollapseGroup(metaIdx, groupInfo.sourceTable, toggle);
+                });
+                toggle.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
                 });
                 cellElement.insertBefore(toggle, cellElement.firstChild);
             }

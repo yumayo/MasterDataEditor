@@ -484,4 +484,40 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(refreshedTable, 2, 0)).toHaveText('');
         await expect(getDataCell(refreshedTable, 2, 0)).toHaveClass(/view-padding-cell/);
     });
+
+    test('折りたたみ後にカーソル表示位置が再計算されること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 行2（SideQuest行）のセルをクリックしてカーソルを移動
+        await selectCellAsync(page, table, 2, 1);
+
+        // 折りたたみ前のカーソル位置を記録
+        const selection = page.locator('.selection').first();
+        const topBefore = await selection.evaluate(el => parseFloat(el.style.top));
+
+        // 行0のグループを折りたたむ → 行1（Gemパディング行）が非表示になる
+        const toggle = table.locator('.view-collapse-toggle').first();
+        await toggle.click();
+        await expect(toggle).toHaveText('▶');
+
+        // カーソル位置が上に移動していること（非表示行分だけtopが減少）
+        const topAfter = await selection.evaluate(el => parseFloat(el.style.top));
+        expect(topAfter).toBeLessThan(topBefore);
+    });
+
+    test('折りたたみトグルのダブルクリックで編集モードに入らないこと', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 折りたたみトグルをダブルクリック
+        const toggle = table.locator('.view-collapse-toggle').first();
+        await toggle.dblclick();
+
+        // 編集モードのテキストフィールドが表示されないことを確認
+        const editField = page.locator('.grid-textfield-active');
+        await expect(editField).not.toBeVisible();
+    });
 });
