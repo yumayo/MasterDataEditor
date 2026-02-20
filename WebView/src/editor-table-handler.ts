@@ -2,7 +2,7 @@ import {EditorTable} from "./editor-table";
 import {GridTextField} from "./grid-textfield";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
-import {CellChange} from "./command";
+import {CellChange, CellChangeCommand, CompositeCommand, Command} from "./command";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
@@ -669,53 +669,8 @@ export class EditorTableHandler {
      * 解析したクリップボードデータをテーブルに貼り付ける
      */
     private pasteFromClipboardData(sourceData: string[][]): void {
-        const anchor = this.selection.getAnchor();
         const copyRange = this.selection.getCopyRange();
-        const copyRowCount = sourceData.length;
-        const copyColumnCount = sourceData[0].length;
-
-        const tableRowCount = this.table.getRowCount();
-        const tableColumnCount = this.table.getTotalColumnCount();
-
-        const changes: CellChange[] = [];
-
-        const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
-        const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
-
-        for (let r = 0; r < copyRowCount; r++) {
-            const destRow = anchor.row + r;
-            if (destRow >= tableRowCount) break;
-
-            for (let c = 0; c < copyColumnCount; c++) {
-                const destColumn = anchor.column + c;
-                if (destColumn >= tableColumnCount) break;
-
-                const oldValue = this.table.getCellValueAt(destRow, destColumn);
-                const newValue = sourceData[r][c];
-
-                changes.push({
-                    row: destRow,
-                    column: destColumn,
-                    oldValue: oldValue,
-                    newValue: newValue
-                });
-
-                this.table.setCellValueAt(destRow, destColumn, newValue);
-            }
-        }
-
-        this.history.push({
-            changes: changes,
-            range: {
-                startRow: anchor.row,
-                startColumn: anchor.column,
-                endRow: pasteEndRow,
-                endColumn: pasteEndColumn
-            },
-            copyRange: copyRange
-        });
-
-        this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
+        this.pasteNormal(sourceData, copyRange);
     }
 
     /**
@@ -743,49 +698,22 @@ export class EditorTableHandler {
         const anchor = this.selection.getAnchor();
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
-
         const tableRowCount = this.table.getRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
-
-        const changes: CellChange[] = [];
-
         const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
         const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
-
+        const changes: CellChange[] = [];
         for (let r = 0; r < copyRowCount; r++) {
             const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
-
             for (let c = 0; c < copyColumnCount; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
-
-                const oldValue = this.table.getCellValueAt(destRow, destColumn);
-                const newValue = sourceData[r][c];
-
-                changes.push({
-                    row: destRow,
-                    column: destColumn,
-                    oldValue: oldValue,
-                    newValue: newValue
-                });
-
-                this.table.setCellValueAt(destRow, destColumn, newValue);
+                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[r][c] });
             }
         }
-
-        this.history.push({
-            changes: changes,
-            range: {
-                startRow: anchor.row,
-                startColumn: anchor.column,
-                endRow: pasteEndRow,
-                endColumn: pasteEndColumn
-            },
-            copyRange: copyRange
-        });
-
-        this.selection.setRange(anchor.row, anchor.column, pasteEndRow, pasteEndColumn);
+        const pasteRange = { startRow: anchor.row, startColumn: anchor.column, endRow: pasteEndRow, endColumn: pasteEndColumn };
+        this.applyPasteChanges(changes, pasteRange, copyRange);
     }
 
     /**
@@ -794,53 +722,23 @@ export class EditorTableHandler {
     private pasteWithFill(sourceData: string[][], selectionRange: CellRange, copyRange: CellRange): void {
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
-
         const tableRowCount = this.table.getRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
-
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
         const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
-
         const changes: CellChange[] = [];
-
         for (let r = 0; r < selectionRowCount; r++) {
             const destRow = selectionRange.startRow + r;
             if (destRow >= tableRowCount) break;
-
             const srcRowIndex = r % copyRowCount;
-
             for (let c = 0; c < selectionColumnCount; c++) {
                 const destColumn = selectionRange.startColumn + c;
                 if (destColumn >= tableColumnCount) break;
-
                 const srcColumnIndex = c % copyColumnCount;
-
-                const oldValue = this.table.getCellValueAt(destRow, destColumn);
-                const newValue = sourceData[srcRowIndex][srcColumnIndex];
-
-                changes.push({
-                    row: destRow,
-                    column: destColumn,
-                    oldValue: oldValue,
-                    newValue: newValue
-                });
-
-                this.table.setCellValueAt(destRow, destColumn, newValue);
+                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[srcRowIndex][srcColumnIndex] });
             }
         }
-
-        this.history.push({
-            changes: changes,
-            range: selectionRange,
-            copyRange: copyRange
-        });
-
-        this.selection.setRange(
-            selectionRange.startRow,
-            selectionRange.startColumn,
-            selectionRange.endRow,
-            selectionRange.endColumn
-        );
+        this.applyPasteChanges(changes, selectionRange, copyRange);
     }
 
     /**
@@ -874,6 +772,104 @@ export class EditorTableHandler {
         } else {
             this.pasteNormal(sourceData, copyRange);
         }
+    }
+
+    /**
+     * ペースト変更を適用する共通メソッド
+     * ビューコンテキストの有無に応じてFK再構築を判定・実行する
+     */
+    private applyPasteChanges(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
+        if (!this.table.hasViewContext()) {
+            this.applySimplePaste(changes, pasteRange, copyRange);
+            return;
+        }
+        // FK再構築が必要な変更を事前判定（setCellValueAt前にoldValueを参照するため）
+        const restructureRows = new Map<number, CellChange>();
+        for (const change of changes) {
+            if (this.table.needsViewRowRestructure(change.row, change.column, change.newValue)) {
+                restructureRows.set(change.row, change);
+            }
+        }
+        if (restructureRows.size === 0) {
+            this.applyPasteWithSync(changes, pasteRange, copyRange);
+            return;
+        }
+        this.applyPasteWithRestructure(changes, restructureRows, pasteRange, copyRange);
+    }
+
+    /**
+     * 通常テーブル用のペースト適用（ビューコンテキストなし）
+     */
+    private applySimplePaste(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
+        for (const change of changes) this.table.setCellValueAt(change.row, change.column, change.newValue);
+        this.history.push({ changes, range: pasteRange, copyRange });
+        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
+    }
+
+    /**
+     * ビュー内ペースト（FK再構築不要）
+     * FK値変更で結合列の値を連動更新する
+     */
+    private applyPasteWithSync(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
+        const allChanges: CellChange[] = [];
+        for (const change of changes) {
+            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
+            allChanges.push(change);
+            for (const lc of linkedChanges) allChanges.push(lc);
+            this.table.setCellValueAt(change.row, change.column, change.newValue);
+        }
+        this.history.push({ changes: allChanges, range: pasteRange, copyRange });
+        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
+    }
+
+    /**
+     * ビュー内ペースト（FK再構築あり）
+     *
+     * 処理順:
+     * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
+     * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
+     * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
+     * 4. CompositeCommand(CellChangeCommand + ViewRowRestructureCommands)をhistoryに追加
+     */
+    private applyPasteWithRestructure(
+        changes: CellChange[], restructureRows: Map<number, CellChange>,
+        pasteRange: CellRange, copyRange: CellRange
+    ): void {
+        // 1. 非再構築行の変更を適用
+        const nonRestructureChanges: CellChange[] = [];
+        for (const change of changes) {
+            if (restructureRows.has(change.row)) continue;
+            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
+            nonRestructureChanges.push(change);
+            for (const lc of linkedChanges) nonRestructureChanges.push(lc);
+            this.table.setCellValueAt(change.row, change.column, change.newValue);
+        }
+        // 2. 再構築行の非FK変更を先にDOMに書く（restructureがDOMから値を読むため）
+        for (const change of changes) {
+            if (!restructureRows.has(change.row)) continue;
+            if (restructureRows.get(change.row) === change) continue;
+            nonRestructureChanges.push(change);
+            this.table.setCellValueAt(change.row, change.column, change.newValue);
+        }
+        // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
+        const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
+        const restructureCommands: Command[] = [];
+        for (const [row, fkChange] of sortedFkChanges) {
+            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
+        }
+        // CompositeCommand内ではexecute順（上→下）に並べ替え
+        restructureCommands.reverse();
+        // 4. CompositeCommandを構築してhistoryに追加
+        const subCommands: Command[] = [];
+        const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
+        if (meaningfulChanges.length > 0) {
+            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, pasteRange, copyRange));
+        }
+        for (const cmd of restructureCommands) subCommands.push(cmd);
+        if (subCommands.length > 0) {
+            this.history.pushCommand(new CompositeCommand(subCommands), pasteRange, copyRange);
+        }
+        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
     }
 
     /**

@@ -726,4 +726,108 @@ test.describe('1:n展開ビュー', () => {
         const editField = page.locator('.grid-textfield-active');
         await expect(editField).not.toBeVisible();
     });
+
+    // ---------------------------------------------------------
+    // ペーストによるFK値変更時の行再構築テスト
+    // ---------------------------------------------------------
+
+    test('FK列のペーストで1:2→1:1にビュー行が再構築されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認:
+        // Row 0: quest.id=1, MainQuest, qr.id=1, Gold (1:2展開)
+        // Row 1: [pad], [pad], qr.id=2, Gem
+        // Row 2: quest.id=2, SideQuest, qr.id=3, Potion (1:1)
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // quest.id=2（行2, col0）のセルをコピー
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+c');
+
+        // quest.id=1（行0, col0）のセルに貼り付け → 1:2 → 1:1に減少
+        await selectCellAsync(page, table, 0, 0);
+        await page.keyboard.press('Control+v');
+
+        // 行0: quest.id=2, MainQuest, qr.id=3, Potion (group_id=2の1件マッチ)
+        await expect(getDataCell(table, 0, 0)).toHaveText('2');
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 2)).toHaveText('3');
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+
+        // 行1: SideQuestが繰り上がっている
+        await expect(getDataCell(table, 1, 0)).toHaveText('2');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
+
+    test('FK列のペーストで1:1→1:2にビュー行が再構築され折りたたみトグルが表示されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // quest.id=1（行0, col0）のセルをコピー
+        await selectCellAsync(page, table, 0, 0);
+        await page.keyboard.press('Control+c');
+
+        // quest.id=2（行2, col0）のセルに貼り付け → 1:1 → 1:2に増加
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+v');
+
+        // 行2: quest.id=1, SideQuest, qr.id=1, Gold (group_id=1の1件目)
+        // トグル文字▼が含まれる可能性があるため正規表現を使用
+        await expect(getDataCell(table, 2, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 2, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 2, 3)).toHaveText('Gold');
+
+        // 行3: パディング行、qr.id=2, Gem (group_id=1の2件目)
+        await expect(getDataCell(table, 3, 0)).toHaveText('');
+        await expect(getDataCell(table, 3, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 3, 2)).toHaveText('2');
+        await expect(getDataCell(table, 3, 3)).toHaveText('Gem');
+
+        // 折りたたみトグルが表示されていること
+        const toggles = table.locator('.view-collapse-toggle');
+        // 行0（元から1:2）と行2（ペーストで1:2）の2つ
+        await expect(toggles).toHaveCount(2);
+    });
+
+    test('FK列のペースト後のUndo/Redoが正しく動作すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態: Row0=Gold, Row1=Gem(padding), Row2=SideQuest
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // quest.id=2をコピー → quest.id=1に貼り付け（1:2→1:1）
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+c');
+        await selectCellAsync(page, table, 0, 0);
+        await page.keyboard.press('Control+v');
+
+        // 変更後: Row0=Potion, Row1=SideQuest
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+
+        // Undo → 元の状態に戻る
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 0, 0)).toHaveText(/1/);
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // Redo → 再度変更状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
 });

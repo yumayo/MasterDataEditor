@@ -2346,6 +2346,14 @@ export class EditorTable {
     // ---------------------------------------------------------
 
     /**
+     * ビューコンテキストが設定されているかを返す
+     * ビュータブの場合のみtrueを返す
+     */
+    hasViewContext(): boolean {
+        return this.viewContext !== undefined;
+    }
+
+    /**
      * 編集されたセルがビューのJOINソース列であり、行数が変わるかを判定する
      *
      * @param editedRow DOM行インデックス（1始まり）

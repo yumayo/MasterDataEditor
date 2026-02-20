@@ -105,6 +105,37 @@ export class CellChangeCommand implements Command {
 }
 
 /**
+ * 複数のコマンドを順序付きで管理するCompositeコマンド
+ *
+ * execute/redoは登録順、undoは逆順で実行する。
+ * ペースト時のCellChangeCommand + ViewRowRestructureCommand統合など、
+ * 異種コマンドの原子的なUndo/Redoに使用する。
+ */
+export class CompositeCommand implements Command {
+    private readonly commands: Command[];
+
+    constructor(commands: Command[]) {
+        this.commands = commands;
+    }
+
+    execute(): void {
+        for (const cmd of this.commands) cmd.execute();
+    }
+
+    undo(): void {
+        for (let i = this.commands.length - 1; i >= 0; i--) this.commands[i].undo();
+    }
+
+    redo(): void {
+        for (const cmd of this.commands) cmd.redo();
+    }
+
+    getDescription(): string {
+        return `Composite: ${this.commands.map(c => c.getDescription()).join(', ')}`;
+    }
+}
+
+/**
  * 列を挿入するコマンド
  * insertColumn/deleteColumnメソッドを呼び出す形で実装
  */
