@@ -3,6 +3,7 @@ import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
+import {SidebarResizer} from "./sidebar-resizer";
 
 (async () => {
     const editor = new Editor();
@@ -13,14 +14,21 @@ import {ContextMenu} from "./context-menu";
 
     const tab = new Tab(editor, sidebar);
 
+    const explorerElement = document.getElementById('explorer')!;
+    const tabElement = document.getElementById('tab')!;
+    const editorElement = document.getElementById('editor')!;
+
     const realSidebar = new Sidebar(
-        document.getElementById('explorer')!,
+        explorerElement,
         tab,
         contextMenu,
         tab.getOpenEditorTables()
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
+
+    // サイドバーリサイズ機能を初期化
+    new SidebarResizer(explorerElement, tabElement, editorElement);
 
     // Ctrl+Shift+F で検索パネルをアクティブにする
     document.addEventListener('keydown', (e: KeyboardEvent) => {
