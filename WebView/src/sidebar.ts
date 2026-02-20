@@ -7,28 +7,41 @@ import {ViewsPanel} from "./views-panel";
 import {SearchPanel} from "./search-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
+import {Editor} from "./editor";
+import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
 
 /**
  * サイドバー
  * アクティビティバー（48px） + サイドバーコンテンツ（252px）の2分割構成
  * ファイルエクスプローラー・VIEWSパネル・REFERENCESパネルを切り替え表示する
+ * 右端のドラッグハンドルでリサイズ可能
  */
 export class Sidebar {
     private readonly explorerElement: HTMLElement;
+    private readonly tab: Tab;
+    private readonly editor: Editor;
     private readonly activityBar: ActivityBar;
     private readonly filesPanel: HTMLElement;
     private readonly viewsPanel: ViewsPanel;
     private readonly referencesPanel: ReferencesPanel;
     private readonly searchPanel: SearchPanel;
     private readonly directory: ExplorerDirectory;
+    private isDragging: boolean = false;
+    private dragStartX: number = 0;
+    private dragStartWidth: number = 0;
+    private dragStartCursor: string = '';
 
     constructor(
         explorerElement: HTMLElement,
         tab: Tab,
+        editor: Editor,
         contextMenu: ContextMenu,
         openEditorTables: Map<string, EditorTable>
     ) {
         this.explorerElement = explorerElement;
+        this.tab = tab;
+        this.editor = editor;
+
         // アクティビティバー
         this.activityBar = new ActivityBar((item: ActivityBarItem) => {
             this.switchPanel(item);
@@ -63,6 +76,39 @@ export class Sidebar {
 
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, contextMenu, this.filesPanel, 1);
+
+        // リサイズハンドルを作成しサイドバーに追加
+        const handleElement = document.createElement('div');
+        handleElement.classList.add('sidebar-resize-handle');
+        explorerElement.appendChild(handleElement);
+
+        // 初期幅を適用
+        this.applyWidth(DEFAULT_SIDEBAR_WIDTH);
+
+        // ドラッグ開始
+        handleElement.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            this.isDragging = true;
+            this.dragStartX = e.clientX;
+            this.dragStartWidth = this.explorerElement.getBoundingClientRect().width;
+            this.dragStartCursor = document.body.style.cursor;
+            document.body.style.cursor = 'col-resize';
+        });
+
+        // ドラッグ中の幅更新
+        window.addEventListener('mousemove', (e: MouseEvent) => {
+            if (!this.isDragging) return;
+            const deltaX = e.clientX - this.dragStartX;
+            const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, this.dragStartWidth + deltaX));
+            this.applyWidth(newWidth);
+        });
+
+        // ドラッグ終了
+        window.addEventListener('mouseup', () => {
+            if (!this.isDragging) return;
+            this.isDragging = false;
+            document.body.style.cursor = this.dragStartCursor;
+        });
     }
 
     /**
@@ -116,18 +162,10 @@ export class Sidebar {
         }
     }
 
-    /** サイドバー幅に応じてエクスプローラー要素の幅を更新する */
-    applySidebarWidth(sidebarWidth: number): void {
-        this.explorerElement.style.width = sidebarWidth + 'px';
-    }
-
-    /** リサイズハンドル要素をサイドバーに追加する */
-    appendResizeHandle(handleElement: HTMLElement): void {
-        this.explorerElement.appendChild(handleElement);
-    }
-
-    /** サイドバーの現在の幅を取得する */
-    getWidth(): number {
-        return this.explorerElement.getBoundingClientRect().width;
+    /** 指定幅をサイドバー・タブ・エディターに一括適用する */
+    private applyWidth(width: number): void {
+        this.explorerElement.style.width = width + 'px';
+        this.tab.applySidebarWidth(width);
+        this.editor.applySidebarWidth(width);
     }
 }
