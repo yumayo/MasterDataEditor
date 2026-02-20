@@ -2369,12 +2369,15 @@ export class EditorTable {
         // 旧FK値と新FK値のマッチ行数を比較
         const keyMap = this.viewContext.joinTableKeyMaps.get(joinDef.targetTable);
         const oldValue = this.getCellValueAt(editedRow, editedColumn);
+        // 値が同じなら変更なし
+        if (oldValue === newValue) return false;
         const oldMatchCount = (keyMap && keyMap.has(oldValue)) ? (keyMap.get(oldValue) as string[][]).length : 0;
         const newMatchCount = (keyMap && keyMap.has(newValue)) ? (keyMap.get(newValue) as string[][]).length : 0;
         // 0件の場合はLEFT JOINで1行（空行）になるため実質1扱い
         const effectiveOld = Math.max(oldMatchCount, 1);
         const effectiveNew = Math.max(newMatchCount, 1);
-        return effectiveOld !== effectiveNew;
+        // 行数変化時は再構築が必要。行数が同じでも展開が2行以上の場合、FK値が変わればパディング行の内容が変わるため再構築が必要
+        return effectiveOld !== effectiveNew || effectiveOld > 1;
     }
 
     /**

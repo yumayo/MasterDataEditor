@@ -1055,6 +1055,17 @@ export class EditorTableHandler {
         const target = getTarget(this.table, this.selection);
         const copyRange = this.selection.getCopyRange();
 
+        // FK列の編集で1:n展開の行数が変わる場合はビュー行を再構築する
+        if (this.table.needsViewRowRestructure(target.row, target.column, id)) {
+            const command = this.table.buildAndExecuteViewRowRestructure(target.row, target.column, id);
+            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
+            this.history.pushCommand(command, range, copyRange);
+            this.dropdownActive = false;
+            this.hide();
+            moveCellDownWithinSelection(this.table, this.selection);
+            return;
+        }
+
         // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
         const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, id);
 

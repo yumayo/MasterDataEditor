@@ -98,6 +98,63 @@ function createOneToManyFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * ドロップダウンFK変更テスト用データ:
+ * reward_group: id=1,GroupA / id=2,GroupB / id=3,GroupC
+ * quest: id=1,name=MainQuest,reward_group_id=1 / id=2,name=SideQuest,reward_group_id=2
+ *   ※ reward_group_id列にreference:"reward_group.id"を設定（ドロップダウン表示用）
+ * quest_reward: id=1,group_id=1,item=Gold / id=2,group_id=1,item=Gem / id=3,group_id=2,item=Potion
+ *
+ * view_quest: questベース、quest_rewardをquest.reward_group_id → quest_reward.group_idでJOIN
+ *
+ * 期待されるビュー表示:
+ * | quest.id | quest.name | quest.reward_group_id | quest_reward.id | quest_reward.item |
+ * |    1     | MainQuest  |          1            |       1         |      Gold         |
+ * |  [pad]   |   [pad]    |        [pad]          |       2         |      Gem          |
+ * |    2     | SideQuest  |          2            |       3         |      Potion       |
+ */
+function createDropdownFkTestFileSystem(): MockFileSystem {
+    return {
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "reward_group_id", type: "int", reference: "reward_group.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": ["id,name,reward_group_id", "1,MainQuest,1", "2,SideQuest,2"].join("\n"),
+        "schema/reward_group.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/reward_group.csv": ["id,name", "1,GroupA", "2,GroupB", "3,GroupC"].join("\n"),
+        "schema/quest_reward.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "group_id", type: "int" },
+                { key: 2, name: "item", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest_reward.csv": ["id,group_id,item", "1,1,Gold", "2,1,Gem", "3,2,Potion"].join("\n"),
+        "view/view_quest.json": JSON.stringify({
+            name: "view_quest",
+            baseTable: "quest",
+            joins: [{
+                sourceColumn: "reward_group_id",
+                targetTable: "quest_reward",
+                targetColumn: "group_id",
+                insertAfterViewColumnIndex: 2,
+                sourceTable: "",
+            }],
+        }),
+    };
+}
+
 // -------------------------------------------------------
 // 1:n展開のテスト
 // -------------------------------------------------------
@@ -505,6 +562,155 @@ test.describe('1:n展開ビュー', () => {
         // カーソル位置が上に移動していること（非表示行分だけtopが減少）
         const topAfter = await selection.evaluate(el => parseFloat(el.style.top));
         expect(topAfter).toBeLessThan(topBefore);
+    });
+
+    // ---------------------------------------------------------
+    // ドロップダウン経由のFK値変更テスト
+    // ---------------------------------------------------------
+
+    test('ドロップダウン経由のFK値変更で1:n展開行数が更新されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(0), quest.name(1), quest.reward_group_id(2), quest_reward.id(3), quest_reward.item(4)
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, 1, Gold (reward_group_id=1 → 2 matches)
+        // Row 1: [pad], [pad], [pad], 2, Gem
+        // Row 2: 2, SideQuest, 2, 3, Potion (reward_group_id=2 → 1 match)
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // reward_group_id=1のセル（行0, col2）をダブルクリックしてドロップダウンを開く
+        const fkCell = getDataCell(table, 0, 2);
+        await fkCell.dblclick();
+
+        // ドロップダウンが表示されるまで待機
+        const dropdown = page.locator('.grid-dropdown-list');
+        await expect(dropdown).toBeVisible();
+
+        // "2" のアイテムをクリックして選択（reward_group_id=2にするとquest_reward match数が1件に減少）
+        const targetItem = dropdown.locator('.grid-dropdown-item').filter({
+            has: page.locator('.grid-dropdown-item-id', { hasText: /^2$/ })
+        });
+        await targetItem.click();
+
+        // 行0: 1, MainQuest, 2, 3, Potion (reward_group_id=2 → 1 match)
+        await expect(getDataCell(table, 0, 2)).toHaveText('2');
+        await expect(getDataCell(table, 0, 3)).toHaveText('3');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Potion');
+
+        // 行1: SideQuest行が繰り上がっている（パディング行が消えた）
+        await expect(getDataCell(table, 1, 0)).toHaveText('2');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
+
+    test('ドロップダウン経由のFK値変更のUndo/Redoが正しく動作すること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態: 行0=Gold, 行1=Gem(パディング), 行2=SideQuest
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // ドロップダウンでreward_group_id=1→2に変更（2行展開→1行展開に減少）
+        const fkCell = getDataCell(table, 0, 2);
+        await fkCell.dblclick();
+        const dropdown = page.locator('.grid-dropdown-list');
+        await expect(dropdown).toBeVisible();
+        const targetItem = dropdown.locator('.grid-dropdown-item').filter({
+            has: page.locator('.grid-dropdown-item-id', { hasText: /^2$/ })
+        });
+        await targetItem.click();
+
+        // 変更後: 行0=Potion, 行1=SideQuest
+        await expect(getDataCell(table, 0, 4)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+
+        // Undo → 元の3データ行に戻る
+        await page.keyboard.press('Control+z');
+        // トグル文字▼が含まれる可能性があるため正規表現を使用
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // Redo → 再度減少状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Potion');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
+
+    // ---------------------------------------------------------
+    // 同マッチ数でFK値変更時のパディング行更新テスト
+    // ---------------------------------------------------------
+
+    test('同マッチ数でFK値変更時にパディング行の内容が更新されること', async ({ page }) => {
+        // group_id=1に2件(Gold,Gem)、group_id=3に2件(Shield,Scroll)
+        const fs: MockFileSystem = {
+            "schema/quest.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "name", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/quest.csv": ["id,name", "1,MainQuest", "3,SideQuest"].join("\n"),
+            "schema/quest_reward.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "group_id", type: "int" },
+                    { key: 2, name: "item", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/quest_reward.csv": ["id,group_id,item", "1,1,Gold", "2,1,Gem", "3,3,Shield", "4,3,Scroll"].join("\n"),
+            "view/view_quest.json": JSON.stringify({
+                name: "view_quest",
+                baseTable: "quest",
+                joins: [{
+                    sourceColumn: "id",
+                    targetTable: "quest_reward",
+                    targetColumn: "group_id",
+                    insertAfterViewColumnIndex: 1,
+                    sourceTable: "",
+                }],
+            }),
+        };
+
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(0), quest.name(1), quest_reward.id(2), quest_reward.item(3)
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, Gold
+        // Row 1: [pad], [pad], 2, Gem
+        // Row 2: 3, SideQuest, 3, Shield
+        // Row 3: [pad], [pad], 4, Scroll
+        await expect(getDataCell(table, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 3)).toHaveText('Shield');
+        await expect(getDataCell(table, 3, 3)).toHaveText('Scroll');
+
+        // quest.id=1のセル（行0, col0）を "3" に変更
+        // → group_id=3にマッチする2件(Shield,Scroll)に切り替わるが、行数は2のまま
+        await editCellAsync(page, table, 0, 0, '3');
+
+        // 行0: 3, MainQuest, 3, Shield（group_id=3の1件目）
+        // トグル文字▼がJOINソース列（col0）に含まれる可能性があるため正規表現を使用
+        await expect(getDataCell(table, 0, 0)).toHaveText(/^▼?3$/);
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 2)).toHaveText('3');
+        await expect(getDataCell(table, 0, 3)).toHaveText('Shield');
+
+        // 行1: パディング行、quest_reward.id=4, Scroll（group_id=3の2件目）
+        await expect(getDataCell(table, 1, 0)).toHaveText('');
+        await expect(getDataCell(table, 1, 2)).toHaveText('4');
+        await expect(getDataCell(table, 1, 3)).toHaveText('Scroll');
     });
 
     test('折りたたみトグルのダブルクリックで編集モードに入らないこと', async ({ page }) => {
