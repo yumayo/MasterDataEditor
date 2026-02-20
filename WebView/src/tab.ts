@@ -133,6 +133,9 @@ export class Tab {
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
 
+    /** タブバー要素（サイドバー幅連動用） */
+    private readonly tabElement: HTMLElement;
+
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
@@ -144,19 +147,29 @@ export class Tab {
 
     constructor(
         editor: Editor,
-        sidebar: Sidebar
+        sidebar: Sidebar,
+        tabContentElement: HTMLElement,
+        tabElement: HTMLElement
     ) {
         this.editor = editor;
-        this.element = document.getElementById('tab-content')!;
+        this.element = tabContentElement;
         this.tabButtons = [];
         this.tabStates = new Map();
         this.activeTabName = undefined;
         this.contextMenu = new ContextMenu(editor.element);
         this.draggingTabName = undefined;
         this.sidebar = sidebar;
+        this.tabElement = tabElement;
         this.openEditorTables = new Map();
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
+    }
+
+    /** サイドバー幅に応じてタブバーの位置と幅を更新する */
+    applySidebarWidth(sidebarWidth: number): void {
+        const widthPx = sidebarWidth + 'px';
+        this.tabElement.style.left = widthPx;
+        this.tabElement.style.width = 'calc(100vw - ' + widthPx + ')';
     }
 
     /**

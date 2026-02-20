@@ -14,6 +14,7 @@ import {EditorTable} from "./editor-table";
  * ファイルエクスプローラー・VIEWSパネル・REFERENCESパネルを切り替え表示する
  */
 export class Sidebar {
+    private readonly explorerElement: HTMLElement;
     private readonly activityBar: ActivityBar;
     private readonly filesPanel: HTMLElement;
     private readonly viewsPanel: ViewsPanel;
@@ -27,6 +28,7 @@ export class Sidebar {
         contextMenu: ContextMenu,
         openEditorTables: Map<string, EditorTable>
     ) {
+        this.explorerElement = explorerElement;
         // アクティビティバー
         this.activityBar = new ActivityBar((item: ActivityBarItem) => {
             this.switchPanel(item);
@@ -112,5 +114,20 @@ export class Sidebar {
         } else {
             this.searchPanel.show();
         }
+    }
+
+    /** サイドバー幅に応じてエクスプローラー要素の幅を更新する */
+    applySidebarWidth(sidebarWidth: number): void {
+        this.explorerElement.style.width = sidebarWidth + 'px';
+    }
+
+    /** リサイズハンドル要素をサイドバーに追加する */
+    appendResizeHandle(handleElement: HTMLElement): void {
+        this.explorerElement.appendChild(handleElement);
+    }
+
+    /** サイドバーの現在の幅を取得する */
+    getWidth(): number {
+        return this.explorerElement.getBoundingClientRect().width;
     }
 }

@@ -6,17 +6,19 @@ import {ContextMenu} from "./context-menu";
 import {SidebarResizer} from "./sidebar-resizer";
 
 (async () => {
-    const editor = new Editor();
-    const contextMenu = new ContextMenu(editor.element);
+    // DOM要素を先頭で一括取得する
+    const explorerElement = document.getElementById('explorer')!;
+    const tabElement = document.getElementById('tab')!;
+    const tabContentElement = document.getElementById('tab-content')!;
+    const editorElement = document.getElementById('editor')!;
+
+    const editor = new Editor(editorElement);
+    const contextMenu = new ContextMenu(editorElement);
 
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
 
-    const tab = new Tab(editor, sidebar);
-
-    const explorerElement = document.getElementById('explorer')!;
-    const tabElement = document.getElementById('tab')!;
-    const editorElement = document.getElementById('editor')!;
+    const tab = new Tab(editor, sidebar, tabContentElement, tabElement);
 
     const realSidebar = new Sidebar(
         explorerElement,
@@ -27,8 +29,8 @@ import {SidebarResizer} from "./sidebar-resizer";
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
 
-    // サイドバーリサイズ機能を初期化
-    new SidebarResizer(explorerElement, tabElement, editorElement);
+    // サイドバーリサイズ機能を初期化（Sidebar実体化後に生成）
+    new SidebarResizer(sidebar, tab, editor);
 
     // Ctrl+Shift+F で検索パネルをアクティブにする
     document.addEventListener('keydown', (e: KeyboardEvent) => {
