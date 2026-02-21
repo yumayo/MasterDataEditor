@@ -202,6 +202,57 @@ function createThreeBaseRowFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 5ベース行テストデータ（メタデータ範囲外ペーストのバグ再現用）:
+ * quest: id=1,Quest1,group_id=1 / id=2,Quest2,group_id=1 / id=3,Quest3,group_id=2 / id=4,Quest4,group_id=3 / id=5,Quest5,group_id=空
+ * quest_reward: group_id=1に2件(Gold,Gem), group_id=2に1件(Potion), group_id=3に1件(Sword)
+ *
+ * view_quest: questベース、quest_rewardをquest.group_id → quest_reward.group_idでJOIN
+ *
+ * 期待されるビュー表示:
+ * | quest.id | quest.name | quest.group_id | quest_reward.id | quest_reward.item |
+ * |    1     | Quest1     |       1        |       1         |      Gold         |  ← リーダー（1:2）
+ * |  [pad]   |   [pad]    |     [pad]      |       2         |      Gem          |  ← パディング
+ * |    2     | Quest2     |       1        |       1         |      Gold         |  ← リーダー（1:2）
+ * |  [pad]   |   [pad]    |     [pad]      |       2         |      Gem          |  ← パディング
+ * |    3     | Quest3     |       2        |       3         |      Potion       |  ← 1:1
+ * |    4     | Quest4     |       3        |       4         |      Sword        |  ← 1:1
+ * |    5     | Quest5     |                |                 |                   |  ← LEFT JOIN空
+ */
+function createFiveBaseRowFileSystem(): MockFileSystem {
+    return {
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "group_id", type: "int" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": ["id,name,group_id", "1,Quest1,1", "2,Quest2,1", "3,Quest3,2", "4,Quest4,3", "5,Quest5,"].join("\n"),
+        "schema/quest_reward.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "group_id", type: "int" },
+                { key: 2, name: "item", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest_reward.csv": ["id,group_id,item", "1,1,Gold", "2,1,Gem", "3,2,Potion", "4,3,Sword"].join("\n"),
+        "view/view_quest.json": JSON.stringify({
+            name: "view_quest",
+            baseTable: "quest",
+            joins: [{
+                sourceColumn: "group_id",
+                targetTable: "quest_reward",
+                targetColumn: "group_id",
+                insertAfterViewColumnIndex: 2,
+                sourceTable: "",
+            }],
+        }),
+    };
+}
+
 // -------------------------------------------------------
 // 1:n展開のテスト
 // -------------------------------------------------------
@@ -979,5 +1030,99 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
         await expect(getDataCell(table, 2, 2)).toHaveText('3');
         await expect(getDataCell(table, 2, 3)).toHaveText('Potion');
+    });
+
+    // ---------------------------------------------------------
+    // メタデータ範囲外への複数リーダーペーストテスト
+    // ---------------------------------------------------------
+
+    test('最終データ行への複数リーダーペーストで4行に展開されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(0), quest.name(1), quest.group_id(2), quest_reward.id(3), quest_reward.item(4)
+        // 初期状態:
+        // Row 0: 1, Quest1, 1, 1, Gold (1:2リーダー)
+        // Row 1: [pad], [pad], [pad], 2, Gem (パディング)
+        // Row 2: 2, Quest2, 1, 1, Gold (1:2リーダー)
+        // Row 3: [pad], [pad], [pad], 2, Gem (パディング)
+        // Row 4: 3, Quest3, 2, 3, Potion (1:1)
+        // Row 5: 4, Quest4, 3, 4, Sword (1:1)
+        // Row 6: 5, Quest5, , , (LEFT JOIN空)
+        await expect(getDataCell(table, 6, 0)).toHaveText('5');
+        await expect(getDataCell(table, 6, 1)).toHaveText('Quest5');
+
+        // row0-3（2リーダー+2パディング）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 3, 4).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row6（最終データ行）にペースト
+        await selectCellAsync(page, table, 6, 0);
+        await page.keyboard.press('Control+v');
+
+        // row6-9の4行が生成される（各リーダーがgroup_id=1で1:2展開）
+        // Row 6: quest.id=1, Quest1, group_id=1, qr.id=1, Gold
+        await expect(getDataCell(table, 6, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 6, 1)).toHaveText('Quest1');
+        await expect(getDataCell(table, 6, 3)).toHaveText('1');
+        await expect(getDataCell(table, 6, 4)).toHaveText('Gold');
+
+        // Row 7: パディング
+        await expect(getDataCell(table, 7, 0)).toHaveText('');
+        await expect(getDataCell(table, 7, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 7, 3)).toHaveText('2');
+        await expect(getDataCell(table, 7, 4)).toHaveText('Gem');
+
+        // Row 8: quest.id=2, Quest2, group_id=1, qr.id=1, Gold
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('Quest2');
+        await expect(getDataCell(table, 8, 3)).toHaveText('1');
+        await expect(getDataCell(table, 8, 4)).toHaveText('Gold');
+
+        // Row 9: パディング
+        await expect(getDataCell(table, 9, 0)).toHaveText('');
+        await expect(getDataCell(table, 9, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 9, 3)).toHaveText('2');
+        await expect(getDataCell(table, 9, 4)).toHaveText('Gem');
+    });
+
+    test('最終データ行への複数リーダーペーストのUndo/Redoが正しく動作すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // row0-3（2リーダー+2パディング）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 3, 4).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row6（最終データ行）にペースト
+        await selectCellAsync(page, table, 6, 0);
+        await page.keyboard.press('Control+v');
+
+        // ペースト後: 4行に展開されていること
+        await expect(getDataCell(table, 6, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 6, 1)).toHaveText('Quest1');
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('Quest2');
+
+        // Undo → 元のレイアウトに戻る
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 6, 0)).toHaveText('5');
+        await expect(getDataCell(table, 6, 1)).toHaveText('Quest5');
+        // Row 7以降は空行に戻る
+        await expect(getDataCell(table, 7, 0)).toHaveText('');
+        await expect(getDataCell(table, 7, 1)).toHaveText('');
+
+        // Redo → 再度4行ペースト状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 6, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 6, 1)).toHaveText('Quest1');
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('Quest2');
     });
 });

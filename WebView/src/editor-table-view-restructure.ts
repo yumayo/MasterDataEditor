@@ -4,7 +4,7 @@ import {Selection} from "./selection";
 import {AreaResizer} from "./area-resizer";
 import {Command} from "./command";
 import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
-import {ViewRowMetadata} from "./model/view-row-metadata";
+import {ViewRowMetadata, ViewRowGroupInfo} from "./model/view-row-metadata";
 import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from "./view-table-data-builder";
 import {ViewRowRestructureCommand, SavedViewRowState} from "./view-row-restructure-command";
 
@@ -80,6 +80,10 @@ export class EditorTableViewRestructure {
         const columnMappings = viewContext.columnMappings;
         const dataColumnIndex = editedColumn - 1;
         const metaIndex = editedRow - 1;
+        // メタデータ範囲外の行（ペーストで空行にデータが書き込まれた場合）は専用メソッドへ委譲
+        if (metaIndex >= viewContext.rowMetadata.length) {
+            return this.restructureNewBaseRow(editedColumn, newValue, metaIndex);
+        }
         const baseRowIndex = viewContext.rowMetadata[metaIndex].baseRowIndex;
         // このベース行に属するメタデータ範囲を特定
         let metaStart = metaIndex;
@@ -122,6 +126,57 @@ export class EditorTableViewRestructure {
         this.selection.clearCopyRange();
         this.selection.updateRendererAfterResize();
         return new ViewRowRestructureCommand(this.table, oldRows, newRows, metaStart);
+    }
+
+    /**
+     * メタデータ範囲外の行（新規ベース行）をFK値に基づいて再構築する
+     * ペーストで空行にデータが書き込まれた後、FK値変更に伴い展開行を生成する
+     */
+    private restructureNewBaseRow(
+        editedColumn: number, newValue: string, metaIndex: number
+    ): Command {
+        const viewContext = this.view.getViewContext();
+        const tableElement = this.table.getTableElement();
+        const columnMappings = viewContext.columnMappings;
+        const dataColumnIndex = editedColumn - 1;
+        const baseRowIndex = metaIndex;
+        // 現在のDOM行を保存（デタッチ）
+        const domStartIndex = metaIndex + 1;
+        const domRow = tableElement.children[domStartIndex] as HTMLElement;
+        // 新規行用の仮メタデータを生成（Undo復元用）
+        const syntheticGroupInfos: ViewRowGroupInfo[] = [];
+        for (const join of viewContext.viewDefinition.joins) {
+            syntheticGroupInfos.push({
+                groupPosition: 0, groupSize: 1,
+                sourceTable: join.targetTable, sourceKeyValue: '',
+            });
+        }
+        const oldMetadata: ViewRowMetadata = {
+            baseRowIndex,
+            groupInfos: syntheticGroupInfos,
+            paddingColumns: new Array(columnMappings.length).fill(false),
+        };
+        const oldRows: SavedViewRowState[] = [{ domRow, metadata: oldMetadata }];
+        domRow.remove();
+        // ベーステーブル列の値を構築（変更されたFK値を反映）
+        const totalColumns = columnMappings.length;
+        const baseColumnValues: string[] = new Array(totalColumns).fill('');
+        for (let i = 0; i < totalColumns; i++) {
+            if (i === dataColumnIndex) {
+                baseColumnValues[i] = newValue;
+            } else if (columnMappings[i].joinLevel === 0) {
+                const cell = domRow.children[i + 1] as HTMLElement;
+                baseColumnValues[i] = EditorTable.getCellValue(cell);
+            }
+        }
+        // 新しい展開行データを計算・挿入
+        const expandedRows = rebuildExpandedRowsForBaseRow(
+            baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
+        );
+        const newRows = this.buildAndInsertExpandedViewRows(metaIndex, baseRowIndex, expandedRows);
+        this.selection.clearCopyRange();
+        this.selection.updateRendererAfterResize();
+        return new ViewRowRestructureCommand(this.table, oldRows, newRows, metaIndex);
     }
 
     /**

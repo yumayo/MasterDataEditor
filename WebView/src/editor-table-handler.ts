@@ -720,7 +720,9 @@ export class EditorTableHandler {
                 }
             }
         }
-        const effectiveRowCount = filteredSource.length;
+        const effectiveRowCount = isInternalViewPaste
+            ? Math.min(filteredSource.length, destLeaderRows.length)
+            : filteredSource.length;
         const columnCount = filteredSource[0].length;
         const changes: CellChange[] = [];
         for (let r = 0; r < effectiveRowCount; r++) {
@@ -883,9 +885,10 @@ export class EditorTableHandler {
         for (const [row, fkChange] of sortedFkChanges) {
             restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
         }
-        // CompositeCommand内ではexecute順（上→下）に並べ替え
-        restructureCommands.reverse();
         // 4. CompositeCommandを構築してhistoryに追加
+        // restructureCommandsは降順（行番号が大きい順）で実行済み
+        // CompositeCommandのredo（正順）で降順のまま実行すれば、後の行から処理されるためインデックスずれが発生しない
+        // undo（逆順）では昇順実行となり同様に安全
         const subCommands: Command[] = [];
         const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
         if (meaningfulChanges.length > 0) {
