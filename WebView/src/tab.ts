@@ -916,6 +916,9 @@ export class Tab {
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
+        // 分割先モジュールを生成・注入（Object.assign後なのでeditorTableは完全に初期化済み）
+        editorTable.initializeModules();
+
         // FillController を作成（EditorTable, Selection, History が必要）
         const fillController = new FillController(editorTable, selection, history);
 
