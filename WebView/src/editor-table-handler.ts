@@ -693,25 +693,51 @@ export class EditorTableHandler {
 
     /**
      * 通常のペースト：アンカー位置からコピー範囲と同じサイズでペースト
+     * ビューコンテキストがある場合、リーダー行のみ抽出してリーダー同士でマッピングする
      */
     private pasteNormal(sourceData: string[][], copyRange: CellRange): void {
         const anchor = this.selection.getAnchor();
-        const copyRowCount = sourceData.length;
-        const copyColumnCount = sourceData[0].length;
         const tableRowCount = this.table.getRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
-        const pasteEndRow = Math.min(anchor.row + copyRowCount - 1, tableRowCount - 1);
-        const pasteEndColumn = Math.min(anchor.column + copyColumnCount - 1, tableColumnCount - 1);
-        const changes: CellChange[] = [];
-        for (let r = 0; r < copyRowCount; r++) {
-            const destRow = anchor.row + r;
-            if (destRow >= tableRowCount) break;
-            for (let c = 0; c < copyColumnCount; c++) {
-                const destColumn = anchor.column + c;
-                if (destColumn >= tableColumnCount) break;
-                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[r][c] });
+        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
+        // データ行は1始まりのため、startRow >= 1 で内部コピーと判定（外部クリップボードの場合は-1）
+        const isInternalViewPaste = this.table.hasViewContext() && copyRange.startRow >= 1 && copyRowCount === sourceData.length;
+        // ビューコンテキストがあり内部コピーの場合、リーダー行のみ抽出してリーダー同士でマッピングする
+        let filteredSource = sourceData;
+        const destLeaderRows: number[] = [];
+        if (isInternalViewPaste) {
+            // ソースデータからリーダー行のみ抽出（パディング行はFK再構築で自動生成される）
+            filteredSource = [];
+            for (let r = 0; r < sourceData.length; r++) {
+                if (this.table.isViewLeaderRow(copyRange.startRow + r)) {
+                    filteredSource.push(sourceData[r]);
+                }
+            }
+            // 宛先のリーダー行を必要数収集（パディング行をスキップ）
+            for (let row = anchor.row; row < tableRowCount && destLeaderRows.length < filteredSource.length; row++) {
+                if (this.table.isViewLeaderRow(row)) {
+                    destLeaderRows.push(row);
+                }
             }
         }
+        const effectiveRowCount = filteredSource.length;
+        const columnCount = filteredSource[0].length;
+        const changes: CellChange[] = [];
+        for (let r = 0; r < effectiveRowCount; r++) {
+            const destRow = isInternalViewPaste ? destLeaderRows[r] : anchor.row + r;
+            if (destRow >= tableRowCount) break;
+            for (let c = 0; c < columnCount; c++) {
+                const destColumn = anchor.column + c;
+                if (destColumn >= tableColumnCount) break;
+                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: filteredSource[r][c] });
+            }
+        }
+        // ペースト範囲の終端行を算出
+        const lastDestRow = isInternalViewPaste && destLeaderRows.length > 0
+            ? destLeaderRows[Math.min(effectiveRowCount, destLeaderRows.length) - 1]
+            : anchor.row + effectiveRowCount - 1;
+        const pasteEndRow = Math.min(lastDestRow, tableRowCount - 1);
+        const pasteEndColumn = Math.min(anchor.column + columnCount - 1, tableColumnCount - 1);
         const pasteRange = { startRow: anchor.row, startColumn: anchor.column, endRow: pasteEndRow, endColumn: pasteEndColumn };
         this.applyPasteChanges(changes, pasteRange, copyRange);
     }

@@ -2259,6 +2259,23 @@ export class EditorTable {
     }
 
     /**
+     * 指定行がビューグループのリーダー行（先頭行）かどうかを判定する
+     * 1:n展開で複数行に展開されたグループの最初の行がリーダー行
+     * ビューコンテキストがない場合はすべての行がリーダー扱い
+     *
+     * @param row 行番号（1始まり、データ行）
+     * @returns リーダー行の場合はtrue
+     */
+    isViewLeaderRow(row: number): boolean {
+        if (!this.viewContext) return true;
+        const metaIndex = row - 1;
+        if (metaIndex <= 0) return true;
+        if (metaIndex >= this.viewContext.rowMetadata.length) return true;
+        return this.viewContext.rowMetadata[metaIndex].baseRowIndex
+            !== this.viewContext.rowMetadata[metaIndex - 1].baseRowIndex;
+    }
+
+    /**
      * 指定セルがパディングセルかどうかを判定する
      * パディングセルは1:n展開で生成された重複データを非表示にしたセル
      *

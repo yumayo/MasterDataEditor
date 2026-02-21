@@ -155,6 +155,53 @@ function createDropdownFkTestFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 3ベース行テストデータ（複数ビュー行ペーストのテスト用）:
+ * quest: id=1,MainQuest / id=2,SideQuest / id=3,ExtraQuest
+ * quest_reward: id=1,group_id=1,Gold / id=2,group_id=1,Gem / id=3,group_id=2,Potion / id=4,group_id=3,Sword
+ *
+ * view_quest: questベース、quest_rewardをquest.id → quest_reward.group_idでJOIN
+ *
+ * 期待されるビュー表示:
+ * | quest.id | quest.name | quest_reward.id | quest_reward.item |
+ * |    1     | MainQuest  |       1         |      Gold         |  ← リーダー行（1:2）
+ * |  [pad]   |   [pad]    |       2         |      Gem          |  ← パディング
+ * |    2     | SideQuest  |       3         |      Potion       |  ← 1:1
+ * |    3     | ExtraQuest |       4         |      Sword        |  ← 1:1
+ */
+function createThreeBaseRowFileSystem(): MockFileSystem {
+    return {
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": ["id,name", "1,MainQuest", "2,SideQuest", "3,ExtraQuest"].join("\n"),
+        "schema/quest_reward.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "group_id", type: "int" },
+                { key: 2, name: "item", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest_reward.csv": ["id,group_id,item", "1,1,Gold", "2,1,Gem", "3,2,Potion", "4,3,Sword"].join("\n"),
+        "view/view_quest.json": JSON.stringify({
+            name: "view_quest",
+            baseTable: "quest",
+            joins: [{
+                sourceColumn: "id",
+                targetTable: "quest_reward",
+                targetColumn: "group_id",
+                insertAfterViewColumnIndex: 1,
+                sourceTable: "",
+            }],
+        }),
+    };
+}
+
 // -------------------------------------------------------
 // 1:n展開のテスト
 // -------------------------------------------------------
@@ -829,5 +876,108 @@ test.describe('1:n展開ビュー', () => {
         await page.keyboard.press('Control+y');
         await expect(getDataCell(table, 0, 3)).toHaveText('Potion');
         await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
+
+    // ---------------------------------------------------------
+    // 複数ビュー行ペーストでパディング行データが漏洩しないテスト
+    // ---------------------------------------------------------
+
+    test('複数ビュー行ペーストで次のベース行が破壊されないこと', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createThreeBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, Gold (1:2リーダー)
+        // Row 1: [pad], [pad], 2, Gem (パディング)
+        // Row 2: 2, SideQuest, 3, Potion (1:1)
+        // Row 3: 3, ExtraQuest, 4, Sword (1:1)
+        await expect(getDataCell(table, 3, 0)).toHaveText('3');
+        await expect(getDataCell(table, 3, 1)).toHaveText('ExtraQuest');
+
+        // row0-1（リーダー+パディング）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 3).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row2にペースト
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+v');
+
+        // row2のquest.idが1に変更されFKリストラクチャで1:2展開
+        // ExtraQuestはrow4に移動するが、データは破壊されていないこと
+        await expect(getDataCell(table, 4, 0)).toHaveText('3');
+        await expect(getDataCell(table, 4, 1)).toHaveText('ExtraQuest');
+        await expect(getDataCell(table, 4, 2)).toHaveText('4');
+        await expect(getDataCell(table, 4, 3)).toHaveText('Sword');
+    });
+
+    test('複数ビュー行ペースト後のUndo/Redoが正しく動作すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createThreeBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態: Row3=ExtraQuest
+        await expect(getDataCell(table, 3, 1)).toHaveText('ExtraQuest');
+
+        // row0-1を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 3).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row2にペースト
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+v');
+
+        // ペースト後: ExtraQuestはrow4に移動
+        await expect(getDataCell(table, 4, 0)).toHaveText('3');
+        await expect(getDataCell(table, 4, 1)).toHaveText('ExtraQuest');
+
+        // Undo → 元の4行レイアウトに戻る
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 2, 0)).toHaveText('2');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 3, 0)).toHaveText('3');
+        await expect(getDataCell(table, 3, 1)).toHaveText('ExtraQuest');
+
+        // Redo → 再度ペースト状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 4, 0)).toHaveText('3');
+        await expect(getDataCell(table, 4, 1)).toHaveText('ExtraQuest');
+    });
+
+    test('最終行への複数ビュー行ペーストでテーブル境界を超えないこと', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createThreeBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, Gold (1:2リーダー)
+        // Row 1: [pad], [pad], 2, Gem (パディング)
+        // Row 2: 2, SideQuest, 3, Potion (1:1)
+        // Row 3: 3, ExtraQuest, 4, Sword (1:1)
+
+        // row0-1（リーダー+パディング）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 3).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // 最終行（row3）にペースト
+        await selectCellAsync(page, table, 3, 0);
+        await page.keyboard.press('Control+v');
+
+        // row3のquest.idが1に変更されFKリストラクチャで1:2展開
+        // リーダーデータのみペーストされ、パディングデータは漏洩しない
+        await expect(getDataCell(table, 3, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 3, 1)).toHaveText('MainQuest');
+
+        // row2（SideQuest）は変更されていないこと
+        await expect(getDataCell(table, 2, 0)).toHaveText('2');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 2, 2)).toHaveText('3');
+        await expect(getDataCell(table, 2, 3)).toHaveText('Potion');
     });
 });
