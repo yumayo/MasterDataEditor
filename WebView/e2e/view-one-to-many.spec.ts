@@ -1087,6 +1087,12 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 9, 0)).toHaveClass(/view-padding-cell/);
         await expect(getDataCell(table, 9, 3)).toHaveText('2');
         await expect(getDataCell(table, 9, 4)).toHaveText('Gem');
+
+        // 選択範囲が4行分に拡張されていることを確認（コピーしてクリップボードの行数をチェック）
+        await page.keyboard.press('Control+c');
+        const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+        const clipboardLines = clipboardText.trim().split('\n');
+        expect(clipboardLines.length).toBe(4);
     });
 
     test('最終データ行への複数リーダーペーストのUndo/Redoが正しく動作すること', async ({ page, context }) => {

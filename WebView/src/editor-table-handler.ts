@@ -880,11 +880,19 @@ export class EditorTableHandler {
             this.table.setCellValueAt(change.row, change.column, change.newValue);
         }
         // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
+        const rowCountBefore = this.table.getRowCount();
         const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
         const restructureCommands: Command[] = [];
         for (const [row, fkChange] of sortedFkChanges) {
             restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
         }
+        // VRRによる行数変化をペースト範囲に反映（1:1→1:2展開で行が増える等）
+        const rowDelta = this.table.getRowCount() - rowCountBefore;
+        const adjustedEndRow = Math.max(pasteRange.startRow, pasteRange.endRow + rowDelta);
+        const adjustedPasteRange: CellRange = {
+            startRow: pasteRange.startRow, startColumn: pasteRange.startColumn,
+            endRow: adjustedEndRow, endColumn: pasteRange.endColumn,
+        };
         // 4. CompositeCommandを構築してhistoryに追加
         // restructureCommandsは降順（行番号が大きい順）で実行済み
         // CompositeCommandのredo（正順）で降順のまま実行すれば、後の行から処理されるためインデックスずれが発生しない
@@ -896,9 +904,9 @@ export class EditorTableHandler {
         }
         for (const cmd of restructureCommands) subCommands.push(cmd);
         if (subCommands.length > 0) {
-            this.history.pushCommand(new CompositeCommand(subCommands), pasteRange, copyRange);
+            this.history.pushCommand(new CompositeCommand(subCommands), adjustedPasteRange, copyRange);
         }
-        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
+        this.selection.setRange(adjustedPasteRange.startRow, adjustedPasteRange.startColumn, adjustedPasteRange.endRow, adjustedPasteRange.endColumn);
     }
 
     /**
