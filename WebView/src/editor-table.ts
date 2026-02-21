@@ -1,63 +1,24 @@
-import {EditorTableData} from
-    "./model/editor-table-data";
-import {Selection, CellPosition} from
-    "./selection";
-import {EditorTableHandler} from
-    "./editor-table-handler";
-import {
-    ContextMenu,
-    ContextMenuEntry
-} from "./context-menu";
+import {EditorTableData} from "./model/editor-table-data";
+import {Selection, CellPosition} from "./selection";
+import {EditorTableHandler} from "./editor-table-handler";
+import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
-import {
-    Command,
-    CellChange,
-    InsertColumnCommand,
-    InsertColumnsCommand,
-    InsertRowCommand,
-    InsertRowsCommand,
-    DeleteColumnCommand,
-    DeleteColumnsCommand,
-    DeleteRowCommand,
-    DeleteRowsCommand
-} from "./command";
+import {Command, CellChange, InsertColumnCommand, InsertColumnsCommand, InsertRowCommand, InsertRowsCommand, DeleteColumnCommand, DeleteColumnsCommand, DeleteRowCommand, DeleteRowsCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {
-    DEFAULT_COLUMN_WIDTH,
-    DEFAULT_ROW_HEIGHT
-} from "./constant";
-import {ScrollViewportController} from
-    "./scroll-viewport-controller";
-import {SelectionDragController} from
-    "./selection-drag-controller";
-import {ReferenceDataCache} from
-    "./reference-data-cache";
-import {
-    parseReferenceExpression,
-    isDynamicReference,
-    isSimpleReference
-} from "./reference-expression";
-import {
-    ReverseReferenceEntry,
-    ReverseReferenceMap,
-    formatReverseReferenceHint
-} from "./reverse-reference-resolver";
+import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
+import {ScrollViewportController} from "./scroll-viewport-controller";
+import {SelectionDragController} from "./selection-drag-controller";
+import {ReferenceDataCache} from "./reference-data-cache";
+import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
+import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
 import {Sidebar} from "./sidebar";
-import {ViewDefinition} from
-    "./model/view-definition";
-import {ViewColumnMapping} from
-    "./model/view-column-mapping";
-import {ViewRowMetadata} from
-    "./model/view-row-metadata";
+import {ViewDefinition} from "./model/view-definition";
+import {ViewColumnMapping} from "./model/view-column-mapping";
+import {ViewRowMetadata} from "./model/view-row-metadata";
 import {config} from "./config";
-import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from
-    "./view-table-data-builder";
-import {
-    ViewRowRestructureCommand,
-    SavedViewRowState
-} from "./view-row-restructure-command";
-import {ViewHideColumnCommand} from
-    "./view-hide-column-command";
+import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from "./view-table-data-builder";
+import {ViewRowRestructureCommand, SavedViewRowState} from "./view-row-restructure-command";
+import {ViewHideColumnCommand} from "./view-hide-column-command";
 
 /**
  * 利用可能なJoin対象の情報
@@ -105,12 +66,9 @@ export class EditorTable {
     private readonly referenceDataCache: ReferenceDataCache;
 
     /** ビューコンテキスト（ビュータブのみ） */
-    private viewContext:
-        ViewContext | undefined;
-
+    private viewContext: ViewContext | undefined;
     /** 逆参照マップ（PK値→逆参照エントリ配列） */
-    private reverseReferenceMap:
-        ReverseReferenceMap | undefined;
+    private reverseReferenceMap: ReverseReferenceMap | undefined;
 
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
@@ -241,16 +199,9 @@ export class EditorTable {
     /**
      * 列ヘッダーにCSSクラスを追加する
      */
-    addColumnHeaderClass(
-        columnIndex: number,
-        className: string
-    ): void {
-        const headerRow =
-            this.element.children[0];
-        const headerCell =
-            headerRow.children[
-                columnIndex + 1
-            ] as HTMLElement;
+    addColumnHeaderClass(columnIndex: number, className: string): void {
+        const headerRow = this.element.children[0];
+        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
         if (headerCell) {
             headerCell.classList.add(className);
         }
@@ -304,20 +255,12 @@ export class EditorTable {
 
     /**
      * 逆参照ヒントを更新する
-     * ReverseReferenceResolver の結果を受け取り、
-     * PK列のセルに逆参照ヒントspanを追加する
+     * ReverseReferenceResolver の結果を受け取り、PK列のセルに逆参照ヒントspanを追加する
      */
-    updateReverseReferenceHints(
-        map: ReverseReferenceMap
-    ): void {
+    updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reverseReferenceMap = map;
-
         // PK列のインデックスを取得
-        const pkColumnIndex =
-            this.tableData.header.findIndex(
-                col => col.name
-                    === config.primaryKeyColumnName
-            );
+        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === config.primaryKeyColumnName);
         if (pkColumnIndex === -1) return;
 
         // 全データ行のPK列セルに逆参照ヒントを追加
@@ -377,12 +320,7 @@ export class EditorTable {
 
             // 列ヘッダー (A, B, C, ...)
             for (let i = 0; i < this.tableData.header.length; ++i) {
-                const columnHeaderCell =
-                    this.createColumnHeaderCell(
-                        this.tableData.header[i].name,
-                        i,
-                        this.tableData.header[i].width
-                    );
+                const columnHeaderCell = this.createColumnHeaderCell(this.tableData.header[i].name, i, this.tableData.header[i].width);
                 cells.push(columnHeaderCell);
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
@@ -464,12 +402,7 @@ export class EditorTable {
                     existingLabels.push(label);
                 }
 
-                const newHeaderCell =
-                    this.createColumnHeaderCell(
-                        '',
-                        columnIndex,
-                        DEFAULT_COLUMN_WIDTH
-                    );
+                const newHeaderCell = this.createColumnHeaderCell('', columnIndex, DEFAULT_COLUMN_WIDTH);
 
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
@@ -540,8 +473,7 @@ export class EditorTable {
     }
 
     /**
-     * 行挿入の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 行挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
     public insertRow(rowIndex: number): void {
         this.insertRows(rowIndex, 1);
@@ -559,10 +491,7 @@ export class EditorTable {
         const cells: HTMLElement[] = [];
 
         // 行ヘッダーを作成
-        const rowHeaderCell =
-            this.createRowHeaderCell(
-                String(rowIndex), rowIndex - 1
-            );
+        const rowHeaderCell = this.createRowHeaderCell(String(rowIndex), rowIndex - 1);
         cells.push(rowHeaderCell);
 
         // データセルを作成（列幅は列ヘッダーから取得）
@@ -622,136 +551,67 @@ export class EditorTable {
     }
 
     /**
-     * 複数列挿入の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 複数列挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public insertColumns(
-        columnIndex: number,
-        count: number
-    ): void {
-        let command: Command =
-            new InsertColumnCommand(this, columnIndex);
+    public insertColumns(columnIndex: number, count: number): void {
+        let command: Command = new InsertColumnCommand(this, columnIndex);
         if (count > 1) {
-            command = new InsertColumnsCommand(
-                this, columnIndex, count
-            );
+            command = new InsertColumnsCommand(this, columnIndex, count);
         }
-
         const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
     }
 
     /**
-     * 複数列削除の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 複数列削除の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public removeColumns(
-        startColumnIndex: number,
-        count: number
-    ): void {
+    public removeColumns(startColumnIndex: number, count: number): void {
         const columnCount = this.getColumnCount();
-        const maxCountFromStart =
-            columnCount - startColumnIndex;
-        const maxCountForKeepOne =
-            columnCount - 1;
-        const effectiveCount = Math.min(
-            count,
-            maxCountFromStart,
-            maxCountForKeepOne
-        );
-        if (effectiveCount <= 0) {
-            return;
-        }
-
-        let command: Command =
-            new DeleteColumnCommand(
-                this, startColumnIndex
-            );
+        const maxCountFromStart = columnCount - startColumnIndex;
+        const maxCountForKeepOne = columnCount - 1;
+        const effectiveCount = Math.min(count, maxCountFromStart, maxCountForKeepOne);
+        if (effectiveCount <= 0) return;
+        let command: Command = new DeleteColumnCommand(this, startColumnIndex);
         if (effectiveCount > 1) {
-            command = new DeleteColumnsCommand(
-                this, startColumnIndex, effectiveCount
-            );
+            command = new DeleteColumnsCommand(this, startColumnIndex, effectiveCount);
         }
-
-        const copyRange =
-            this.selection.getCopyRange();
+        const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
     }
 
     /**
-     * 行削除の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 行削除の公開メソッド（Commandを使用してhistoryに追加）
      */
     public removeRow(rowIndex: number): void {
         this.removeRows(rowIndex, 1);
     }
 
     /**
-     * 複数行挿入の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 複数行挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public insertRows(
-        rowIndex: number,
-        count: number
-    ): void {
-        let command: Command =
-            new InsertRowCommand(this, rowIndex);
+    public insertRows(rowIndex: number, count: number): void {
+        let command: Command = new InsertRowCommand(this, rowIndex);
         if (count > 1) {
-            command = new InsertRowsCommand(
-                this, rowIndex, count
-            );
+            command = new InsertRowsCommand(this, rowIndex, count);
         }
-
-        const copyRange =
-            this.selection.getCopyRange();
+        const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
     }
 
     /**
-     * 複数行削除の公開メソッド
-     * （Commandを使用してhistoryに追加）
+     * 複数行削除の公開メソッド（Commandを使用してhistoryに追加）
      */
-    public removeRows(
-        startRowIndex: number,
-        count: number
-    ): void {
-        let command: Command =
-            new DeleteRowCommand(
-                this, startRowIndex
-            );
+    public removeRows(startRowIndex: number, count: number): void {
+        let command: Command = new DeleteRowCommand(this, startRowIndex);
         if (count > 1) {
-            command = new DeleteRowsCommand(
-                this, startRowIndex, count
-            );
+            command = new DeleteRowsCommand(this, startRowIndex, count);
         }
-
-        const copyRange =
-            this.selection.getCopyRange();
+        const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
-        this.history.executeCommand(command, {
-            startRow: anchor.row,
-            startColumn: anchor.column,
-            endRow: anchor.row,
-            endColumn: anchor.column
-        }, copyRange);
+        this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
     }
 
     private static createRow(cells: HTMLElement[], rowIndex?: number) {
@@ -852,33 +712,18 @@ export class EditorTable {
     /**
      * 列ヘッダーのクリックハンドラを生成する
      */
-    private createColumnHeaderClickHandler(
-        columnHeaderCell: HTMLElement
-    ): (e: MouseEvent) => void {
+    private createColumnHeaderClickHandler(columnHeaderCell: HTMLElement): (e: MouseEvent) => void {
         return (e: MouseEvent) => {
             // 左クリック以外は無視
-            if (e.button !== 0) {
-                return;
-            }
-
+            if (e.button !== 0) return;
             this.handler.submitAndHide();
-
-            const clickedColumnIndex = parseInt(
-                columnHeaderCell.dataset.col!
-            ) + 1;
-
+            const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + 1;
             if (e.shiftKey) {
-                this.selection.extendToColumn(
-                    clickedColumnIndex
-                );
+                this.selection.extendToColumn(clickedColumnIndex);
             } else if (e.ctrlKey || e.metaKey) {
-                this.selection.addColumn(
-                    clickedColumnIndex
-                );
+                this.selection.addColumn(clickedColumnIndex);
             } else {
-                this.selection.selectColumn(
-                    clickedColumnIndex
-                );
+                this.selection.selectColumn(clickedColumnIndex);
             }
         };
     }
@@ -887,107 +732,40 @@ export class EditorTable {
      * 列ヘッダーのコンテキストメニューハンドラ
      * 複数列選択時は選択列数分の挿入・削除に対応
      */
-    private createColumnHeaderContextMenuHandler(
-        columnHeaderCell: HTMLElement
-    ): (e: MouseEvent) => void {
+    private createColumnHeaderContextMenuHandler(columnHeaderCell: HTMLElement): (e: MouseEvent) => void {
         return (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-
-            const contextMenuColumnIndex = parseInt(
-                columnHeaderCell.dataset.col!
-            );
-            const contextMenuSelectionColumnIndex =
-                contextMenuColumnIndex + 1;
-
+            const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
+            const contextMenuSelectionColumnIndex = contextMenuColumnIndex + 1;
             // 選択範囲を取得
-            const selRange =
-                this.selection.getSelectionRange();
-
-            // 列全体が選択されているか判定
-            // （行範囲がテーブル全高さか確認）
+            const selRange = this.selection.getSelectionRange();
+            // 列全体が選択されているか判定（行範囲がテーブル全高さか確認）
             const lastRow = this.getRowCount() - 1;
-            const isColumnSelection =
-                selRange.startRow === 1
-                && selRange.endRow === lastRow;
-
+            const isColumnSelection = selRange.startRow === 1 && selRange.endRow === lastRow;
             // 右クリックした列が選択範囲内か判定
-            const isInSelection =
-                contextMenuSelectionColumnIndex
-                    >= selRange.startColumn
-                && contextMenuSelectionColumnIndex
-                    <= selRange.endColumn;
-
-            // 列全体選択かつ範囲内の場合のみ
-            // 複数列操作とする
-            const useSelectedColumns =
-                isColumnSelection && isInSelection;
-
+            const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn
+                && contextMenuSelectionColumnIndex <= selRange.endColumn;
+            // 列全体選択かつ範囲内の場合のみ複数列操作とする
+            const useSelectedColumns = isColumnSelection && isInSelection;
             // 複数列選択時の列情報を計算
-            const columnCount = useSelectedColumns
-                ? selRange.endColumn
-                    - selRange.startColumn + 1
-                : 1;
-            const startColumnIndex =
-                useSelectedColumns
-                ? selRange.startColumn - 1
-                : contextMenuColumnIndex;
-            const endColumnIndex =
-                useSelectedColumns
-                ? selRange.endColumn - 1
-                : contextMenuColumnIndex;
-
-            // 選択範囲外の右クリック時は
-            // 対象列を選択する
+            const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
+            const startColumnIndex = useSelectedColumns ? selRange.startColumn - 1 : contextMenuColumnIndex;
+            const endColumnIndex = useSelectedColumns ? selRange.endColumn - 1 : contextMenuColumnIndex;
+            // 選択範囲外の右クリック時は対象列を選択する
             if (!useSelectedColumns) {
-                this.selection.selectColumn(
-                    contextMenuSelectionColumnIndex
-                );
+                this.selection.selectColumn(contextMenuSelectionColumnIndex);
             }
-            // コンテキストメニュー表示はドラグ操作ではないため、
-            // ドラグ状態フラグをリセットする
+            // コンテキストメニュー表示はドラグ操作ではないため、ドラグ状態フラグをリセットする
             this.selection.end();
-
             // ラベルを列数に応じて変更
-            const insertLeftLabel = columnCount > 1
-                ? `左に${columnCount}列を挿入`
-                : '左に列を挿入';
-            const insertRightLabel = columnCount > 1
-                ? `右に${columnCount}列を挿入`
-                : '右に列を挿入';
-            const deleteLabel = columnCount > 1
-                ? `${columnCount}列を削除`
-                : '列を削除';
-
-            const menuItems:
-                ContextMenuEntry[] = [
-                {
-                    label: insertLeftLabel,
-                    action: () => {
-                        this.insertColumns(
-                            startColumnIndex,
-                            columnCount
-                        );
-                    }
-                },
-                {
-                    label: insertRightLabel,
-                    action: () => {
-                        this.insertColumns(
-                            endColumnIndex + 1,
-                            columnCount
-                        );
-                    }
-                },
-                {
-                    label: deleteLabel,
-                    action: () => {
-                        this.removeColumns(
-                            startColumnIndex,
-                            columnCount
-                        );
-                    }
-                }
+            const insertLeftLabel = columnCount > 1 ? `左に${columnCount}列を挿入` : '左に列を挿入';
+            const insertRightLabel = columnCount > 1 ? `右に${columnCount}列を挿入` : '右に列を挿入';
+            const deleteLabel = columnCount > 1 ? `${columnCount}列を削除` : '列を削除';
+            const menuItems: ContextMenuEntry[] = [
+                {label: insertLeftLabel, action: () => { this.insertColumns(startColumnIndex, columnCount); }},
+                {label: insertRightLabel, action: () => { this.insertColumns(endColumnIndex + 1, columnCount); }},
+                {label: deleteLabel, action: () => { this.removeColumns(startColumnIndex, columnCount); }},
             ];
 
             // ビューコンテキストがある場合
@@ -1013,27 +791,16 @@ export class EditorTable {
                 }
 
                 // Join項目を追加
-                const joinItems =
-                    this.buildJoinMenuItems(
-                        contextMenuColumnIndex
-                    );
+                const joinItems = this.buildJoinMenuItems(contextMenuColumnIndex);
                 if (joinItems.length > 0) {
-                    menuItems.push(
-                        { separator: true }
-                    );
-                    for (
-                        const item of joinItems
-                    ) {
+                    menuItems.push({separator: true});
+                    for (const item of joinItems) {
                         menuItems.push(item);
                     }
                 }
             }
 
-            this.contextMenu.show(
-                e.clientX,
-                e.clientY,
-                menuItems
-            );
+            this.contextMenu.show(e.clientX, e.clientY, menuItems);
         };
     }
 
@@ -1041,47 +808,18 @@ export class EditorTable {
      * Join用メニュー項目を構築する
      * 既にJoin済みのテーブルは除外する
      */
-    private buildJoinMenuItems(
-        columnIndex: number
-    ): ContextMenuEntry[] {
+    private buildJoinMenuItems(columnIndex: number): ContextMenuEntry[] {
         if (!this.viewContext) return [];
-
         const items: ContextMenuEntry[] = [];
-        const joinedTables = new Set(
-            this.viewContext.viewDefinition.joins
-                .map(j => j.targetTable)
-        );
-
-        for (
-            const target
-            of this.viewContext
-                .availableJoinTargets
-        ) {
+        const joinedTables = new Set(this.viewContext.viewDefinition.joins.map(j => j.targetTable));
+        for (const target of this.viewContext.availableJoinTargets) {
             // 既にJoin済みなら表示しない
-            if (
-                joinedTables.has(
-                    target.targetTableName
-                )
-            ) {
-                continue;
-            }
-
+            if (joinedTables.has(target.targetTableName)) continue;
             items.push({
-                label: 'Join: '
-                    + target.targetTableName
-                    + ' (via '
-                    + target.sourceColumnName
-                    + ')',
-                action: () => {
-                    this.viewContext!.onJoinAsync(
-                        target.targetTableName,
-                        target.sourceColumnName,
-                        columnIndex
-                    );
-                },
+                label: 'Join: ' + target.targetTableName + ' (via ' + target.sourceColumnName + ')',
+                action: () => { this.viewContext!.onJoinAsync(target.targetTableName, target.sourceColumnName, columnIndex); },
             });
         }
-
         return items;
     }
 
@@ -1111,55 +849,22 @@ export class EditorTable {
         this.viewContext.onShowHiddenColumn(tableName, columnName);
     }
 
-    private createColumnHeaderCell(
-        text: string,
-        columnIndex: number,
-        width: string
-    ): HTMLElement {
-        const columnHeaderCell =
-            document.createElement('div');
-        columnHeaderCell.classList.add(
-            'editor-table-cell',
-            'editor-table-column-header'
-        );
+    private createColumnHeaderCell(text: string, columnIndex: number, width: string): HTMLElement {
+        const columnHeaderCell = document.createElement('div');
+        columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
         columnHeaderCell.textContent = text;
-        columnHeaderCell.dataset.columnIndex =
-            String(columnIndex);
-        columnHeaderCell.dataset.col =
-            String(columnIndex);
-        EditorTable.applyCellWidth(
-            columnHeaderCell, width
-        );
-        EditorTable.applyCellHeight(
-            columnHeaderCell, DEFAULT_ROW_HEIGHT
-        );
-
+        columnHeaderCell.dataset.columnIndex = String(columnIndex);
+        columnHeaderCell.dataset.col = String(columnIndex);
+        EditorTable.applyCellWidth(columnHeaderCell, width);
+        EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
         // 列ヘッダークリックで列全体を選択
-        columnHeaderCell.addEventListener(
-            'mousedown',
-            this.createColumnHeaderClickHandler(
-                columnHeaderCell
-            )
-        );
-
+        columnHeaderCell.addEventListener('mousedown', this.createColumnHeaderClickHandler(columnHeaderCell));
         // 列ヘッダー右クリックでコンテキストメニュー
-        columnHeaderCell.addEventListener(
-            'contextmenu',
-            this.createColumnHeaderContextMenuHandler(
-                columnHeaderCell
-            )
-        );
-
-        const resizeHandle =
-            document.createElement('div');
+        columnHeaderCell.addEventListener('contextmenu', this.createColumnHeaderContextMenuHandler(columnHeaderCell));
+        const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('column-resize-handle');
-        this.areaResizer.setupColumnResizeHandle(
-            resizeHandle,
-            columnHeaderCell,
-            columnIndex
-        );
+        this.areaResizer.setupColumnResizeHandle(resizeHandle, columnHeaderCell, columnIndex);
         columnHeaderCell.appendChild(resizeHandle);
-
         return columnHeaderCell;
     }
 
@@ -1167,31 +872,18 @@ export class EditorTable {
      * 行ヘッダーのクリックハンドラを生成する
      * 右クリック時に選択範囲内であれば選択を保持する
      */
-    private createRowHeaderClickHandler(
-        rowHeaderCell: HTMLElement
-    ): (e: MouseEvent) => void {
+    private createRowHeaderClickHandler(rowHeaderCell: HTMLElement): (e: MouseEvent) => void {
         return (e: MouseEvent) => {
             // 左クリック以外は無視
-            if (e.button !== 0) {
-                return;
-            }
-
+            if (e.button !== 0) return;
             this.handler.submitAndHide();
-
-            const clickedRowIndex = parseInt(
-                rowHeaderCell.dataset.rowIndex!
-            ) + 1;
-
+            const clickedRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
             if (e.shiftKey) {
-                this.selection.extendToRow(
-                    clickedRowIndex
-                );
+                this.selection.extendToRow(clickedRowIndex);
             } else if (e.ctrlKey || e.metaKey) {
                 this.selection.addRow(clickedRowIndex);
             } else {
-                this.selection.selectRow(
-                    clickedRowIndex
-                );
+                this.selection.selectRow(clickedRowIndex);
             }
         };
     }
@@ -1200,146 +892,56 @@ export class EditorTable {
      * 行ヘッダーのコンテキストメニューハンドラ
      * 複数行選択時は選択行数分の挿入・削除に対応
      */
-    private createRowHeaderContextMenuHandler(
-        rowHeaderCell: HTMLElement
-    ): (e: MouseEvent) => void {
+    private createRowHeaderContextMenuHandler(rowHeaderCell: HTMLElement): (e: MouseEvent) => void {
         return (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-
-            const contextMenuRowIndex = parseInt(
-                rowHeaderCell.dataset.rowIndex!
-            ) + 1;
-
+            const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
             // 選択範囲を取得
-            const selRange =
-                this.selection.getSelectionRange();
-
-            // 行全体が選択されているか判定
-            // （カラム範囲がテーブル全幅か確認）
-            const lastColumn =
-                this.getTotalColumnCount() - 1;
-            const isRowSelection =
-                selRange.startColumn === 1
-                && selRange.endColumn === lastColumn;
-
+            const selRange = this.selection.getSelectionRange();
+            // 行全体が選択されているか判定（カラム範囲がテーブル全幅か確認）
+            const lastColumn = this.getTotalColumnCount() - 1;
+            const isRowSelection = selRange.startColumn === 1 && selRange.endColumn === lastColumn;
             // 右クリックした行が選択範囲内か判定
-            const isInSelection =
-                contextMenuRowIndex
-                    >= selRange.startRow
-                && contextMenuRowIndex
-                    <= selRange.endRow;
-
-            // 行全体選択かつ範囲内の場合のみ
-            // 複数行操作とする
-            const useSelectedRows =
-                isRowSelection && isInSelection;
-
+            const isInSelection = contextMenuRowIndex >= selRange.startRow && contextMenuRowIndex <= selRange.endRow;
+            // 行全体選択かつ範囲内の場合のみ複数行操作とする
+            const useSelectedRows = isRowSelection && isInSelection;
             // 複数行選択時の行数を計算
-            const rowCount = useSelectedRows
-                ? selRange.endRow
-                    - selRange.startRow + 1
-                : 1;
-            const startRow = useSelectedRows
-                ? selRange.startRow
-                : contextMenuRowIndex;
-            const endRow = useSelectedRows
-                ? selRange.endRow
-                : contextMenuRowIndex;
-
-            // 選択範囲外の右クリック時は
-            // 対象行を選択する
+            const rowCount = useSelectedRows ? selRange.endRow - selRange.startRow + 1 : 1;
+            const startRow = useSelectedRows ? selRange.startRow : contextMenuRowIndex;
+            const endRow = useSelectedRows ? selRange.endRow : contextMenuRowIndex;
+            // 選択範囲外の右クリック時は対象行を選択する
             if (!useSelectedRows) {
-                this.selection.selectRow(
-                    contextMenuRowIndex
-                );
+                this.selection.selectRow(contextMenuRowIndex);
             }
-            // コンテキストメニュー表示はドラグ操作ではないため、
-            // ドラグ状態フラグをリセットする
+            // コンテキストメニュー表示はドラグ操作ではないため、ドラグ状態フラグをリセットする
             this.selection.end();
-
             // ラベルを行数に応じて変更
-            const insertAboveLabel = rowCount > 1
-                ? `上に${rowCount}行を挿入`
-                : '上に行を挿入';
-            const insertBelowLabel = rowCount > 1
-                ? `下に${rowCount}行を挿入`
-                : '下に行を挿入';
-            const deleteLabel = rowCount > 1
-                ? `${rowCount}行を削除`
-                : '行を削除';
-
-            this.contextMenu.show(
-                e.clientX, e.clientY, [
-                {
-                    label: insertAboveLabel,
-                    action: () => {
-                        this.insertRows(
-                            startRow, rowCount
-                        );
-                    }
-                },
-                {
-                    label: insertBelowLabel,
-                    action: () => {
-                        this.insertRows(
-                            endRow + 1, rowCount
-                        );
-                    }
-                },
-                {
-                    label: deleteLabel,
-                    action: () => {
-                        this.removeRows(
-                            startRow, rowCount
-                        );
-                    }
-                }
+            const insertAboveLabel = rowCount > 1 ? `上に${rowCount}行を挿入` : '上に行を挿入';
+            const insertBelowLabel = rowCount > 1 ? `下に${rowCount}行を挿入` : '下に行を挿入';
+            const deleteLabel = rowCount > 1 ? `${rowCount}行を削除` : '行を削除';
+            this.contextMenu.show(e.clientX, e.clientY, [
+                {label: insertAboveLabel, action: () => { this.insertRows(startRow, rowCount); }},
+                {label: insertBelowLabel, action: () => { this.insertRows(endRow + 1, rowCount); }},
+                {label: deleteLabel, action: () => { this.removeRows(startRow, rowCount); }},
             ]);
         };
     }
 
-    private createRowHeaderCell(
-        text: string,
-        rowIndex: number
-    ): HTMLElement {
-        const rowHeaderCell =
-            document.createElement('div');
-        rowHeaderCell.classList.add(
-            'editor-table-cell',
-            'editor-table-row-header'
-        );
+    private createRowHeaderCell(text: string, rowIndex: number): HTMLElement {
+        const rowHeaderCell = document.createElement('div');
+        rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
         rowHeaderCell.textContent = text;
-        rowHeaderCell.dataset.rowIndex =
-            String(rowIndex);
-        EditorTable.applyCellHeight(
-            rowHeaderCell, DEFAULT_ROW_HEIGHT
-        );
-
+        rowHeaderCell.dataset.rowIndex = String(rowIndex);
+        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
         // 行ヘッダークリックで行全体を選択
-        rowHeaderCell.addEventListener(
-            'mousedown',
-            this.createRowHeaderClickHandler(
-                rowHeaderCell
-            )
-        );
-
+        rowHeaderCell.addEventListener('mousedown', this.createRowHeaderClickHandler(rowHeaderCell));
         // 行ヘッダー右クリックでコンテキストメニュー
-        rowHeaderCell.addEventListener(
-            'contextmenu',
-            this.createRowHeaderContextMenuHandler(
-                rowHeaderCell
-            )
-        );
-
-        const resizeHandle =
-            document.createElement('div');
+        rowHeaderCell.addEventListener('contextmenu', this.createRowHeaderContextMenuHandler(rowHeaderCell));
+        const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
-        this.areaResizer.setupRowResizeHandle(
-            resizeHandle, rowHeaderCell, rowIndex + 1
-        );
+        this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);
         rowHeaderCell.appendChild(resizeHandle);
-
         return rowHeaderCell;
     }
 
@@ -1688,11 +1290,8 @@ export class EditorTable {
             cell.textContent = value;
 
             // PK列の場合は逆参照ヒントを再適用
-            if (column
-                && column.name === config.primaryKeyColumnName) {
-                this.applyReverseReferenceHint(
-                    cell, value
-                );
+            if (column && column.name === config.primaryKeyColumnName) {
+                this.applyReverseReferenceHint(cell, value);
             }
             // トグルを復元
             if (toggle) cell.insertBefore(toggle, cell.firstChild);
@@ -1729,12 +1328,7 @@ export class EditorTable {
     /**
      * 動的参照の参照ヒントを非同期で更新する
      */
-    private updateDynamicReferenceHintAsync(
-        cell: HTMLElement,
-        value: string,
-        expr: ReturnType<typeof parseReferenceExpression>,
-        rowIndex: number
-    ): void {
+    private updateDynamicReferenceHintAsync(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number): void {
         if (!isDynamicReference(expr)) return;
 
         // 同一行の指定カラムの値を取得
@@ -1796,37 +1390,20 @@ export class EditorTable {
 
     /**
      * セルに逆参照ヒントを適用する
-     * 逆参照マップにエントリがあればヒントspanを追加し、
-     * なければ既存のヒントを削除する
+     * 逆参照マップにエントリがあればヒントspanを追加し、なければ既存のヒントを削除する
      */
-    private applyReverseReferenceHint(
-        cell: HTMLElement,
-        pkValue: string
-    ): void {
+    private applyReverseReferenceHint(cell: HTMLElement, pkValue: string): void {
         // 既存の逆参照ヒントを削除
-        const existing = cell.querySelector(
-            '.cell-reverse-reference-hint'
-        );
-        if (existing) {
-            existing.remove();
-        }
-
+        const existing = cell.querySelector('.cell-reverse-reference-hint');
+        if (existing) existing.remove();
         if (!this.reverseReferenceMap) return;
         if (pkValue === '') return;
-
-        const entries =
-            this.reverseReferenceMap.get(pkValue);
+        const entries = this.reverseReferenceMap.get(pkValue);
         if (!entries || entries.length === 0) return;
-
-        const hintText =
-            formatReverseReferenceHint(entries);
+        const hintText = formatReverseReferenceHint(entries);
         if (hintText === '') return;
-
-        const hintSpan =
-            document.createElement('span');
-        hintSpan.classList.add(
-            'cell-reverse-reference-hint'
-        );
+        const hintSpan = document.createElement('span');
+        hintSpan.classList.add('cell-reverse-reference-hint');
         hintSpan.textContent = hintText;
         cell.appendChild(hintSpan);
     }
