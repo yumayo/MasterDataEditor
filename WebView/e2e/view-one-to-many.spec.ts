@@ -1131,4 +1131,41 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?2$/);
         await expect(getDataCell(table, 8, 1)).toHaveText('Quest2');
     });
+
+    // ---------------------------------------------------------
+    // FK同値ペーストの回帰防止テスト
+    // ---------------------------------------------------------
+
+    test('FK同値ペーストでビュー展開行数が維持されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態:
+        // Row 0: 1, Quest1, 1, 1, Gold (1:2)
+        // Row 1: [pad], [pad], [pad], 2, Gem
+        // Row 2: 2, Quest2, 1, 1, Gold (1:2)
+        // Row 3: [pad], [pad], [pad], 2, Gem
+        // Row 4: 3, Quest3, 2, 3, Potion (1:1)
+        // Row 5: 4, Quest4, 3, 4, Sword (1:1)
+        // Row 6: 5, Quest5, , , (LEFT JOIN空)
+
+        // Row0のgroup_id列("1")をコピー
+        await selectCellAsync(page, table, 0, 2);
+        await page.keyboard.press('Control+c');
+
+        // Row2のgroup_id列にペースト（old=1, new=1 → FK同値）
+        await selectCellAsync(page, table, 2, 2);
+        await page.keyboard.press('Control+v');
+
+        // Row2はgroup_id=1のまま、2行展開が維持されること
+        await expect(getDataCell(table, 2, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 2, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 3, 4)).toHaveText('Gem');
+
+        // Row4以降も崩れていないこと
+        await expect(getDataCell(table, 4, 0)).toHaveText('3');
+        await expect(getDataCell(table, 4, 1)).toHaveText('Quest3');
+    });
 });

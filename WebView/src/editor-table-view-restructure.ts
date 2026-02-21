@@ -31,6 +31,19 @@ export class EditorTableViewRestructure {
     }
 
     /**
+     * 指定メタデータインデックスが属するベース行のメタデータ範囲を返す
+     */
+    private findBaseRowMetaRange(metaIndex: number): { metaStart: number; metaEnd: number } {
+        const viewContext = this.view.getViewContext();
+        const baseRowIndex = viewContext.rowMetadata[metaIndex].baseRowIndex;
+        let metaStart = metaIndex;
+        while (metaStart > 0 && viewContext.rowMetadata[metaStart - 1].baseRowIndex === baseRowIndex) metaStart--;
+        let metaEnd = metaIndex + 1;
+        while (metaEnd < viewContext.rowMetadata.length && viewContext.rowMetadata[metaEnd].baseRowIndex === baseRowIndex) metaEnd++;
+        return { metaStart, metaEnd };
+    }
+
+    /**
      * 編集されたセルがビューのJOINソース列であり、行数が変わるかを判定する
      *
      * @param editedRow DOM行インデックス（1始まり）
@@ -55,10 +68,23 @@ export class EditorTableViewRestructure {
         // 旧FK値と新FK値のマッチ行数を比較
         const keyMap = viewContext.joinTableKeyMaps.get(joinDef.targetTable);
         const oldValue = this.table.getCellValueAt(editedRow, editedColumn);
-        // 値が同じなら変更なし
-        if (oldValue === newValue) return false;
-        const oldMatchCount = (keyMap && keyMap.has(oldValue)) ? (keyMap.get(oldValue) as string[][]).length : 0;
-        const newMatchCount = (keyMap && keyMap.has(newValue)) ? (keyMap.get(newValue) as string[][]).length : 0;
+        if (oldValue === newValue) {
+            // FK値が同じでも現在のDOM展開行数がキーマップと一致しない場合は再構築が必要
+            // （参照先テーブル更新後にビューが更新されていない場合などの不整合を修正する）
+            const metaIndex = editedRow - 1;
+            if (metaIndex < 0 || metaIndex >= viewContext.rowMetadata.length) return false;
+            const { metaStart, metaEnd } = this.findBaseRowMetaRange(metaIndex);
+            const currentCount = metaEnd - metaStart;
+            const entries = keyMap ? keyMap.get(newValue) : false as const;
+            const matchCount = entries ? entries.length : 0;
+            const effectiveCurrent = Math.max(currentCount, 1);
+            const effectiveExpected = Math.max(matchCount, 1);
+            return effectiveCurrent !== effectiveExpected;
+        }
+        const oldEntries = keyMap ? keyMap.get(oldValue) : false as const;
+        const oldMatchCount = oldEntries ? oldEntries.length : 0;
+        const newEntries = keyMap ? keyMap.get(newValue) : false as const;
+        const newMatchCount = newEntries ? newEntries.length : 0;
         // 0件の場合はLEFT JOINで1行（空行）になるため実質1扱い
         const effectiveOld = Math.max(oldMatchCount, 1);
         const effectiveNew = Math.max(newMatchCount, 1);
@@ -86,16 +112,7 @@ export class EditorTableViewRestructure {
         }
         const baseRowIndex = viewContext.rowMetadata[metaIndex].baseRowIndex;
         // このベース行に属するメタデータ範囲を特定
-        let metaStart = metaIndex;
-        let metaEnd = metaIndex + 1;
-        // 前方に同じbaseRowIndexの行を検索
-        while (metaStart > 0 && viewContext.rowMetadata[metaStart - 1].baseRowIndex === baseRowIndex) {
-            metaStart--;
-        }
-        // 後方に同じbaseRowIndexの行を検索
-        while (metaEnd < viewContext.rowMetadata.length && viewContext.rowMetadata[metaEnd].baseRowIndex === baseRowIndex) {
-            metaEnd++;
-        }
+        const { metaStart, metaEnd } = this.findBaseRowMetaRange(metaIndex);
         // 古い行を保存（DOMからデタッチ）
         const domStartIndex = metaStart + 1;
         const oldRows: SavedViewRowState[] = [];
