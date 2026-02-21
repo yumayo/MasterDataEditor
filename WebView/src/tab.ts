@@ -14,14 +14,13 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
-import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
-import {ViewDefinition, parseViewDefinition} from "./model/view-definition";
+import {ViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
 import {ViewRowMetadata} from "./model/view-row-metadata";
-import {buildViewTableData, JoinedTableLoadedData, applyViewColumnConfig} from "./view-table-data-builder";
-import {saveViewDataAsync, updateViewColumnConfigs} from "./view-save-splitter";
-import {ReverseReferenceResolver} from "./reverse-reference-resolver";
 import {Sidebar} from "./sidebar";
+import {TabDragDrop} from "./tab-drag-drop";
+import {TabReference} from "./tab-reference";
+import {TabView} from "./tab-view";
 
 /**
  * タブごとの状態を保持する基底インターフェース
@@ -64,19 +63,7 @@ interface ViewTabState extends BaseTabState {
  */
 export type TabState = NormalTabState | ViewTabState;
 
-/**
- * 利用可能なJoin対象の情報
- */
-interface AvailableJoinTarget {
-    /** 参照元列名 */
-    sourceColumnName: string;
-    /** 結合先テーブル名 */
-    targetTableName: string;
-    /** 結合先キー列名 */
-    targetColumnName: string;
-}
-
-interface EditorTableFactoryResult {
+export interface EditorTableFactoryResult {
     editorTable: EditorTable;
     selection: Selection;
     editorTableHandler: EditorTableHandler;
@@ -100,13 +87,19 @@ export class Tab {
     private tabStates: Map<string, TabState>;
 
     /** 現在アクティブなタブ名 */
-    private activeTabName: string | undefined;
+    private activeTabName: string | false;
 
     /** コンテキストメニュー（全タブで共有） */
     private contextMenu: ContextMenu;
 
-    /** ドラッグ中のタブ名（ドラッグアンドドロップ用） */
-    private draggingTabName: string | undefined;
+    /** ドラッグアンドドロップモジュール */
+    dragDrop!: TabDragDrop;
+
+    /** 参照データ管理モジュール */
+    reference!: TabReference;
+
+    /** ビュータブ管理モジュール */
+    viewModule!: TabView;
 
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
@@ -128,14 +121,23 @@ export class Tab {
         this.element = tabContentElement;
         this.tabButtons = [];
         this.tabStates = new Map();
-        this.activeTabName = undefined;
+        this.activeTabName = false;
         this.contextMenu = new ContextMenu(editor.element);
-        this.draggingTabName = undefined;
         this.sidebar = sidebar;
         this.tabElement = tabElement;
         this.openEditorTables = new Map();
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
+        this.initializeModules();
+    }
+
+    /**
+     * サブモジュールを生成・注入する
+     */
+    private initializeModules(): void {
+        this.dragDrop = new TabDragDrop(this);
+        this.reference = new TabReference(this);
+        this.viewModule = new TabView(this);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -150,6 +152,49 @@ export class Tab {
      */
     getOpenEditorTables(): Map<string, EditorTable> {
         return this.openEditorTables;
+    }
+
+    /**
+     * タブボタン配列を取得する（サブモジュール用）
+     */
+    getTabButtons(): TabButton[] {
+        return this.tabButtons;
+    }
+
+    /**
+     * タブバー要素を取得する（サブモジュール用）
+     */
+    getTabBarElement(): HTMLElement {
+        return this.element;
+    }
+
+    /**
+     * タブ状態マップを取得する（サブモジュール用）
+     */
+    getTabStates(): Map<string, TabState> {
+        return this.tabStates;
+    }
+
+    /**
+     * Editorインスタンスを取得する（サブモジュール用）
+     */
+    getEditor(): Editor {
+        return this.editor;
+    }
+
+    /**
+     * 現在アクティブなタブ名を取得する（サブモジュール用）
+     */
+    getActiveTabName(): string | false {
+        if (!this.activeTabName) return false;
+        return this.activeTabName;
+    }
+
+    /**
+     * アクティブタブ名を設定する（サブモジュール用）
+     */
+    setActiveTabNameInternal(name: string): void {
+        this.activeTabName = name;
     }
 
     /**
@@ -226,7 +271,7 @@ export class Tab {
      * navigateToTableRow / navigateToTableCell で設定された
      * 保留ナビゲーションを実行し、フィールドをリセットする
      */
-    private consumePendingNavigation(state: TabState): void {
+    consumePendingNavigation(state: TabState): void {
         if (this.pendingNavigationPkValue === '') return;
         if (this.pendingNavigationColumnIndex !== -1) {
             this.navigateToCell(state, this.pendingNavigationPkValue, this.pendingNavigationColumnIndex);
@@ -258,15 +303,15 @@ export class Tab {
         return tabButton;
     }
 
-    findNextTabButton(name: string) {
+    findNextTabButton(name: string): TabButton | false {
         const index = this.tabButtons.findIndex(x => x.name === name);
-        if (index === -1 || index >= this.tabButtons.length - 1) return undefined;
+        if (index === -1 || index >= this.tabButtons.length - 1) return false;
         return this.tabButtons[index + 1];
     }
 
-    findPrevTabButton(name: string) {
+    findPrevTabButton(name: string): TabButton | false {
         const index = this.tabButtons.findIndex(x => x.name === name);
-        if (index <= 0) return undefined;
+        if (index <= 0) return false;
         return this.tabButtons[index - 1];
     }
 
@@ -301,14 +346,14 @@ export class Tab {
             if (wasDirty && this.activeTabName && this.activeTabName !== name) {
                 const activeState = this.tabStates.get(this.activeTabName);
                 if (activeState) {
-                    this.refreshReferenceHints(this.activeTabName, activeState);
+                    this.reference.refreshReferenceHints(this.activeTabName, activeState);
                 }
             }
         }
 
         // アクティブタブが削除された場合はクリア
         if (this.activeTabName === name) {
-            this.activeTabName = undefined;
+            this.activeTabName = false;
         }
     }
 
@@ -342,13 +387,13 @@ export class Tab {
             this.activeTabName = name;
 
             // 他タブでインメモリデータが編集された可能性があるため、参照ヒントを再更新する
-            this.refreshReferenceHints(name, existingState);
+            this.reference.refreshReferenceHints(name, existingState);
             return;
         }
 
         // 新しいタブ状態を作成
         if (name.startsWith('view:')) {
-            this.createViewTabState(name, tabButton, 'load_from_file');
+            this.viewModule.createViewTabState(name, tabButton, 'load_from_file');
         } else {
             this.createTabState(name, tabButton);
         }
@@ -371,7 +416,7 @@ export class Tab {
     /**
      * タブ状態をアクティブ化（DOMを表示してイベントリスナーを登録）
      */
-    private activateTabState(state: TabState): void {
+    activateTabState(state: TabState): void {
         state.wrapperElement.style.display = '';
         // スクロール位置をイベントリスナー登録前に復元する
         this.editor.element.scrollLeft = state.savedScrollLeft;
@@ -424,52 +469,10 @@ export class Tab {
                 this.openEditorTables.set(name, editorTable);
 
                 // 参照先テーブルを事前読み込み
-                // 単純参照と動的参照の両方に対応
-                const referenceTables: string[] = [];
-                const dynamicReferenceIntermediateTables: string[] = [];
-
-                for (const col of tableData.header) {
-                    if (!col.reference) continue;
-
-                    const expr = parseReferenceExpression(col.reference);
-                    if (isDynamicReference(expr)) {
-                        // 動的参照の場合: 中間テーブル（フィルタテーブル）をfullDataとして読み込み対象に追加
-                        dynamicReferenceIntermediateTables.push(expr.filter.tableName);
-                        // 注意: 最終的な参照先テーブルは実行時に動的に決まるため、ここではpreloadしない
-                    } else {
-                        // 単純参照の場合: テーブル名を抽出
-                        referenceTables.push(expr.tableName);
-                    }
-                }
-
-                // 重複を除去
-                const uniqueReferenceTables = Array.from(new Set(referenceTables));
-                const uniqueIntermediateTables = Array.from(new Set(dynamicReferenceIntermediateTables));
-
-                // preloadを開始
-                const preloadPromises: Promise<unknown>[] = [];
-
-                // 単純参照のテーブルを読み込み
-                for (const tableName of uniqueReferenceTables) {
-                    preloadPromises.push(referenceDataCache.get(tableName));
-                }
-
-                // 動的参照の中間テーブルを全カラムデータとして読み込み
-                for (const tableName of uniqueIntermediateTables) {
-                    preloadPromises.push(referenceDataCache.getFullDataAsync(tableName));
-                }
-
-                if (preloadPromises.length > 0) {
-                    // preloadが完了したら参照ヒントを更新
-                    Promise.all(preloadPromises).then(() => {
-                        editorTable.updateReferenceHints();
-                    }).catch(error => {
-                        console.warn('Failed to preload reference tables:', error);
-                    });
-                }
+                this.reference.preloadReferenceTables(tableData, referenceDataCache, editorTable);
 
                 // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
-                this.resolveReverseReferencesAsync(name, editorTable);
+                this.reference.resolveReverseReferencesAsync(name, editorTable);
 
                 // ドロップダウン入力コンポーネントを作成
                 // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
@@ -521,361 +524,10 @@ export class Tab {
     }
 
     /**
-     * ビュータブの状態を作成する
-     * preloadedViewDefinition が渡された場合はファイル読み込みを迂回してメモリ上の定義を使う
-     */
-    private createViewTabState(
-        name: string, tabButton: TabButton, preloadedViewDefinition: ViewDefinition | 'load_from_file'
-    ): void {
-        // "view:view_chara" から "view_chara" を抽出
-        const viewName = name.substring(5);
-
-        const viewDefPromise = preloadedViewDefinition !== 'load_from_file'
-            ? Promise.resolve(preloadedViewDefinition)
-            : readFileAsync('view/' + viewName + '.json').then((viewJson) => parseViewDefinition(JSON.parse(viewJson)));
-
-        viewDefPromise.then((viewDefinition) => {
-            const baseTable = viewDefinition.baseTable;
-
-            // ベーステーブルを読み込み
-            Promise.all([
-                readFileAsync('schema/' + baseTable + '.json'),
-                readFileAsync('data/' + baseTable + '.csv'),
-            ]).then(([schemaText, csvText]) => {
-                const json = JSON.parse(schemaText);
-                const csv = new Csv();
-                csv.load(csvText);
-                const baseTableData = EditorTableData.parse(json, csv);
-
-                // 結合テーブルを読み込み
-                const joinPromises: Promise<JoinedTableLoadedData>[] = [];
-                for (const join of viewDefinition.joins) {
-                    const p = Promise.all([
-                        readFileAsync('schema/' + join.targetTable + '.json'),
-                        readFileAsync('data/' + join.targetTable + '.csv'),
-                    ]).then(([sText, cText]) => {
-                        const sJson = JSON.parse(sText);
-                        const sCsv = new Csv();
-                        sCsv.load(cText);
-                        const td = EditorTableData.parse(sJson, sCsv);
-                        return {tableName: join.targetTable, tableData: td} as JoinedTableLoadedData;
-                    });
-                    joinPromises.push(p);
-                }
-
-                Promise.all(joinPromises).then((joinedTables) => {
-                    // ビューテーブルデータを構築
-                    const rawBuildResult = buildViewTableData(baseTableData, joinedTables, viewDefinition);
-
-                    // 列設定（幅オーバーライド・非表示列フィルタ）を適用
-                    const buildResult = applyViewColumnConfig(rawBuildResult, viewDefinition.columns);
-                    const compositeTableData = buildResult.compositeTableData;
-                    const columnMappings = buildResult.columnMappings;
-                    const joinTableKeyMaps = buildResult.joinTableKeyMaps;
-
-                    // ラッパー要素を作成
-                    const wrapperElement = document.createElement('div');
-                    wrapperElement.classList.add('tab-wrapper');
-                    wrapperElement.dataset.tabName = name;
-                    this.editor.element.appendChild(wrapperElement);
-
-                    // 参照データキャッシュを作成（インメモリデータ優先取得用にマップを渡す）
-                    const referenceDataCache = new ReferenceDataCache(this.openEditorTables);
-
-                    // EditorTable生成
-                    const factoryResult = this.createEditorTable(
-                        name, compositeTableData, referenceDataCache, wrapperElement, tabButton
-                    );
-                    const editorTable = factoryResult.editorTable;
-                    const selection = factoryResult.selection;
-                    const editorTableHandler = factoryResult.editorTableHandler;
-                    const history = factoryResult.history;
-                    const areaResizer = factoryResult.areaResizer;
-                    const fillController = factoryResult.fillController;
-
-                    // 開いているテーブルのマップに登録
-                    this.openEditorTables.set(name, editorTable);
-
-                    // ビューコンテキストを設定
-                    this.setupViewContext(
-                        name, editorTable, viewDefinition, columnMappings,
-                        joinTableKeyMaps, buildResult.rowMetadata, baseTableData, history
-                    );
-
-                    // ファイルから読み込んだビューのJOIN列ヘッダーに背景色を適用
-                    for (let i = 0; i < columnMappings.length; i++) {
-                        if (columnMappings[i].isJoinedColumn) {
-                            editorTable.addColumnHeaderClass(i, 'editor-table-joined-column-header');
-                        }
-                    }
-
-                    // ビュー用の保存コールバック
-                    editorTableHandler.setSaveCallback((_table: EditorTable) => {
-                        const state = this.tabStates.get(name);
-                        if (!state || state.kind !== 'view') return Promise.resolve();
-                        // 保存前に列幅をViewDefinitionに反映
-                        updateViewColumnConfigs(state.editorTable, state.columnMappings, state.viewDefinition);
-                        return saveViewDataAsync(
-                            state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata
-                        );
-                    });
-
-                    // 参照先テーブルをpreload
-                    this.preloadReferenceTables(compositeTableData, referenceDataCache, editorTable);
-
-                    // 逆参照を並行して解決（ベーステーブル名で解決する）
-                    this.resolveReverseReferencesAsync(baseTable, editorTable);
-
-                    // ドロップダウン入力を作成
-                    const dropdownInput = new GridDropdownInput(
-                        wrapperElement,
-                        editorTableHandler.element,
-                        (id: string) => { editorTableHandler.submitDropdownSelection(id); },
-                        () => { editorTableHandler.cancelDropdown(); }
-                    );
-
-                    editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, compositeTableData);
-
-                    // 初期選択
-                    selection.setRange(1, 1, 1, 1);
-                    selection.move(1, 1);
-
-                    // タブ状態を保存
-                    const state: ViewTabState = {
-                        kind: 'view',
-                        editorTable, selection, editorTableHandler, history,
-                        areaResizer, fillController, wrapperElement,
-                        referenceDataCache, dropdownInput, viewDefinition,
-                        columnMappings, rowMetadata: buildResult.rowMetadata,
-                        savedScrollLeft: 0, savedScrollTop: 0,
-                    };
-                    this.tabStates.set(name, state);
-
-                    this.activateTabState(state);
-                    this.activeTabName = name;
-
-                    this.consumePendingNavigation(state);
-                });
-            });
-        });
-    }
-
-    /**
-     * ビューコンテキストを設定する
-     */
-    private setupViewContext(
-        name: string, editorTable: EditorTable, viewDefinition: ViewDefinition,
-        columnMappings: ViewColumnMapping[], joinTableKeyMaps: Map<string, Map<string, string[][]>>,
-        rowMetadata: ViewRowMetadata[], baseTableData: EditorTableData, history: History
-    ): void {
-        // ベーステーブルのreferenceを持つ列から利用可能なJoin対象を抽出
-        const availableJoinTargets: AvailableJoinTarget[] = [];
-        for (const col of baseTableData.header) {
-            if (!col.reference) continue;
-            const parts = col.reference.split('.');
-            if (parts.length !== 2) continue;
-            availableJoinTargets.push({
-                sourceColumnName: col.name,
-                targetTableName: parts[0],
-                targetColumnName: parts[1],
-            });
-        }
-
-        editorTable.setViewContext({
-            viewDefinition, columnMappings, availableJoinTargets, joinTableKeyMaps, rowMetadata,
-            onJoinAsync: (targetTable: string, sourceColumn: string, afterColumnIndex: number) => {
-                return this.executeJoinAsync(
-                    editorTable, viewDefinition, columnMappings, history,
-                    targetTable, sourceColumn, afterColumnIndex
-                );
-            },
-            onShowHiddenColumn: (tableName: string, columnName: string) => {
-                this.showHiddenViewColumn(name, tableName, columnName);
-            },
-        });
-    }
-
-    /**
-     * Join操作を実行する
-     */
-    private async executeJoinAsync(
-        editorTable: EditorTable, viewDefinition: ViewDefinition,
-        columnMappings: ViewColumnMapping[], history: History,
-        targetTable: string, sourceColumn: string, afterColumnIndex: number
-    ): Promise<void> {
-        // 結合先テーブルを読み込み
-        const [schemaText, csvText] = await Promise.all([
-            readFileAsync('schema/' + targetTable + '.json'),
-            readFileAsync('data/' + targetTable + '.csv'),
-        ]);
-
-        const json = JSON.parse(schemaText);
-        const csv = new Csv();
-        csv.load(csvText);
-        const joinTableData = EditorTableData.parse(json, csv);
-
-        // Join定義を追加
-        // referenceからtargetColumnを取得
-        const targetColumn = joinTableData.header.length > 0 ? joinTableData.header[0].name : 'id';
-        // referenceのtargetColumnを使う
-        const baseCol = editorTable.getTableData().header.find(c => c.name === sourceColumn);
-        let actualTargetColumn = targetColumn;
-        if (baseCol && baseCol.reference) {
-            const parts = baseCol.reference.split('.');
-            if (parts.length === 2) {
-                actualTargetColumn = parts[1];
-            }
-        }
-
-        // ViewJoinCommandを使用
-        const {ViewJoinCommand} = await import("./view-join-command");
-        const command = new ViewJoinCommand(
-            editorTable, viewDefinition, columnMappings, joinTableData,
-            targetTable, sourceColumn, actualTargetColumn, afterColumnIndex
-        );
-
-        const anchor = editorTable.getSelection().getAnchor();
-        const copyRange = editorTable.getSelection().getCopyRange();
-        history.executeCommand(command, {
-            startRow: anchor.row, startColumn: anchor.column,
-            endRow: anchor.row, endColumn: anchor.column,
-        }, copyRange);
-    }
-
-    /**
-     * 非表示列を再表示する
-     * viewDefinition.columns の hidden を false に変更し、ビュータブを再構築する
-     */
-    private showHiddenViewColumn(name: string, tableName: string, columnName: string): void {
-        const state = this.tabStates.get(name);
-        if (!state || state.kind !== 'view') return;
-
-        // viewDefinition.columns の該当エントリを hidden:false で置換
-        const colIndex = state.viewDefinition.columns.findIndex(
-            c => c.tableName === tableName && c.columnName === columnName && c.hidden
-        );
-        if (colIndex >= 0) {
-            const old = state.viewDefinition.columns[colIndex];
-            state.viewDefinition.columns.splice(colIndex, 1, {
-                tableName: old.tableName, columnName: old.columnName,
-                width: old.width, hidden: false,
-            });
-        }
-
-        // ビュータブを再構築
-        this.rebuildViewTab(name);
-    }
-
-    /**
-     * ビュータブを再構築する
-     * 現在のViewDefinitionを保持したまま、タブを再作成する
-     */
-    private rebuildViewTab(name: string): void {
-        const state = this.tabStates.get(name);
-        if (!state || state.kind !== 'view') return;
-
-        const viewDefinition = state.viewDefinition;
-
-        // 現在の列幅をViewDefinitionに反映
-        updateViewColumnConfigs(state.editorTable, state.columnMappings, viewDefinition);
-
-        // 現在のタブ状態をクリーンアップ
-        state.editorTable.deactivate();
-        state.areaResizer.deactivate();
-        state.fillController.deactivate();
-        state.editorTableHandler.deactivate();
-        state.wrapperElement.remove();
-        this.tabStates.delete(name);
-        this.openEditorTables.delete(name);
-
-        const tabButton = this.tabButtons.find(x => x.name === name);
-        if (!tabButton) return;
-
-        // ファイル読み込みを迂回し、メモリ上のviewDefinitionを引数として渡す
-        this.activeTabName = name;
-        this.createViewTabState(name, tabButton, viewDefinition);
-    }
-
-    /**
-     * タブ切り替え時に参照ヒントを再更新する
-     * 他タブでインメモリデータが編集されている可能性があるため、
-     * キャッシュをクリアして参照データを再読み込みする
-     */
-    private refreshReferenceHints(name: string, state: TabState): void {
-        // キャッシュをクリアして最新のインメモリデータから再読み込みさせる
-        state.referenceDataCache.clear();
-
-        // ビュータブの場合: 結合テーブルの最新データでキーマップを再構築し、行数差分を反映する
-        if (state.kind === 'view') {
-            state.editorTable.rebuildJoinTableKeyMaps(this.openEditorTables);
-            state.editorTable.refreshViewRows();
-        }
-
-        // 参照テーブルを再読み込み
-        const tableData = state.editorTable.getTableData();
-        this.preloadReferenceTables(tableData, state.referenceDataCache, state.editorTable);
-
-        // 逆参照を再解決する（ビュータブはベーステーブル名で解決する）
-        const reverseTableName = state.kind === 'view' ? state.viewDefinition.baseTable : name;
-        this.resolveReverseReferencesAsync(reverseTableName, state.editorTable);
-    }
-
-    /**
-     * 逆参照を非同期で解決し、ヒントを更新する
-     */
-    private resolveReverseReferencesAsync(tableName: string, editorTable: EditorTable): void {
-        const resolver = new ReverseReferenceResolver(this.openEditorTables);
-        resolver.resolveAsync(tableName).then(reverseMap => {
-            editorTable.updateReverseReferenceHints(reverseMap);
-        }).catch(error => {
-            console.warn('Failed to resolve reverse references:', error);
-        });
-    }
-
-    /**
-     * 参照先テーブルを事前読み込みする
-     */
-    private preloadReferenceTables(
-        tableData: EditorTableData, referenceDataCache: ReferenceDataCache, editorTable: EditorTable
-    ): void {
-        const referenceTables: string[] = [];
-        const dynamicIntermediateTables: string[] = [];
-
-        for (const col of tableData.header) {
-            if (!col.reference) continue;
-            const expr = parseReferenceExpression(col.reference);
-            if (isDynamicReference(expr)) {
-                dynamicIntermediateTables.push(expr.filter.tableName);
-            } else {
-                referenceTables.push(expr.tableName);
-            }
-        }
-
-        const uniqueRef = Array.from(new Set(referenceTables));
-        const uniqueInter = Array.from(new Set(dynamicIntermediateTables));
-
-        const promises: Promise<unknown>[] = [];
-        for (const tn of uniqueRef) {
-            promises.push(referenceDataCache.get(tn));
-        }
-        for (const tn of uniqueInter) {
-            promises.push(referenceDataCache.getFullDataAsync(tn));
-        }
-
-        if (promises.length > 0) {
-            Promise.all(promises).then(() => {
-                editorTable.updateReferenceHints();
-            }).catch(error => {
-                console.warn('Failed to preload:', error);
-            });
-        }
-    }
-
-    /**
      * EditorTableと関連オブジェクトをファクトリ関数で生成
      * 相互参照を解決するために Object.assign + Object.setPrototypeOf を使用
      */
-    private createEditorTable(
+    createEditorTable(
         name: string, tableData: EditorTableData, referenceDataCache: ReferenceDataCache,
         wrapperElement: HTMLElement, tabButton: TabButton
     ): EditorTableFactoryResult {
@@ -944,130 +596,42 @@ export class Tab {
     /**
      * 現在アクティブなタブの状態を取得
      */
-    getActiveTabState(): TabState | undefined {
-        if (!this.activeTabName) return undefined;
-        return this.tabStates.get(this.activeTabName);
+    getActiveTabState(): TabState | false {
+        if (!this.activeTabName) return false;
+        const state = this.tabStates.get(this.activeTabName);
+        if (!state) return false;
+        return state;
     }
 
-    /**
-     * タブを移動する（ドラッグアンドドロップ用）
-     * @param fromName 移動元のタブ名
-     * @param toName 移動先のタブ名
-     * @param insertBefore trueなら移動先タブの前に挿入、falseなら後に挿入
-     */
+    // =========================================================================
+    // TabDragDrop ファサード
+    // =========================================================================
+
     moveTabButton(fromName: string, toName: string, insertBefore: boolean): void {
-        const fromIndex = this.tabButtons.findIndex(x => x.name === fromName);
-        const toIndex = this.tabButtons.findIndex(x => x.name === toName);
-
-        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
-            return;
-        }
-
-        const fromTabButton = this.tabButtons[fromIndex];
-        const toTabButton = this.tabButtons[toIndex];
-
-        // 配列から削除
-        this.tabButtons.splice(fromIndex, 1);
-
-        // 新しい位置を計算（削除後のインデックス）
-        let newIndex = this.tabButtons.findIndex(x => x.name === toName);
-        if (!insertBefore) {
-            newIndex = newIndex + 1;
-        }
-
-        // 配列に挿入
-        this.tabButtons.splice(newIndex, 0, fromTabButton);
-
-        // DOMを更新
-        if (insertBefore) {
-            this.element.insertBefore(fromTabButton.element, toTabButton.element);
-        } else {
-            // 移動先タブの次の要素の前に挿入（次の要素がなければ末尾に追加）
-            const nextSibling = toTabButton.element.nextSibling;
-            if (nextSibling) {
-                this.element.insertBefore(fromTabButton.element, nextSibling);
-            } else {
-                this.element.appendChild(fromTabButton.element);
-            }
-        }
+        this.dragDrop.moveTabButton(fromName, toName, insertBefore);
     }
 
-    /**
-     * 全タブのドロップインジケーターをクリア
-     */
     clearDropIndicators(): void {
-        this.tabButtons.forEach(tabButton => {
-            tabButton.element.classList.remove('tab-button-drop-left', 'tab-button-drop-right');
-        });
+        this.dragDrop.clearDropIndicators();
     }
 
-    /**
-     * ドラッグ中のタブ名を設定
-     */
     setDraggingTabName(name: string): void {
-        this.draggingTabName = name;
+        this.dragDrop.setDraggingTabName(name);
     }
 
-    /**
-     * ドラッグ中のタブ名を取得
-     */
-    getDraggingTabName(): string | undefined {
-        return this.draggingTabName;
+    getDraggingTabName(): string | false {
+        return this.dragDrop.getDraggingTabName();
     }
 
-    /**
-     * ドラッグ中のタブ名をクリア
-     */
     clearDraggingTabName(): void {
-        this.draggingTabName = undefined;
+        this.dragDrop.clearDraggingTabName();
     }
 
-    /**
-     * ドロップインジケーターを更新
-     */
     updateDropIndicator(clientX: number): void {
-        this.clearDropIndicators();
-
-        for (const tabButton of this.tabButtons) {
-            // ドラッグ中のタブはスキップ
-            if (tabButton.name === this.draggingTabName) {
-                continue;
-            }
-
-            const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right) {
-                const midX = rect.left + rect.width / 2;
-                if (clientX < midX) {
-                    tabButton.element.classList.add('tab-button-drop-left');
-                } else {
-                    tabButton.element.classList.add('tab-button-drop-right');
-                }
-                break;
-            }
-        }
+        this.dragDrop.updateDropIndicator(clientX);
     }
 
-    /**
-     * タブをドロップ
-     */
     dropTab(clientX: number): void {
-        if (!this.draggingTabName) {
-            return;
-        }
-
-        for (const tabButton of this.tabButtons) {
-            // ドラッグ中のタブはスキップ
-            if (tabButton.name === this.draggingTabName) {
-                continue;
-            }
-
-            const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right) {
-                const midX = rect.left + rect.width / 2;
-                const insertBefore = clientX < midX;
-                this.moveTabButton(this.draggingTabName, tabButton.name, insertBefore);
-                break;
-            }
-        }
+        this.dragDrop.dropTab(clientX);
     }
 }
