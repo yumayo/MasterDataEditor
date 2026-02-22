@@ -1507,4 +1507,71 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 4, 0)).toHaveText('3');
         await expect(getDataCell(table, 4, 1)).toHaveText('1');
     });
+
+    // ---------------------------------------------------------
+    // toggleCollapseGroup 事前条件チェックのテスト
+    // ---------------------------------------------------------
+
+    test('折りたたみトグルのdata-rowが範囲外のとき例外が発生すること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 折りたたみトグルが表示されている状態を確認
+        const toggle = table.locator('.view-collapse-toggle').first();
+        await expect(toggle).toBeVisible();
+        await expect(toggle).toHaveText('▼');
+
+        // pageerrorイベントでブラウザ側のエラーをキャッチする
+        const errors: Error[] = [];
+        page.on('pageerror', (error) => {
+            errors.push(error);
+        });
+
+        // トグルが属する行要素のdata-rowを範囲外の値に書き換える
+        await toggle.evaluate((el) => {
+            const row = el.closest('[data-row]') as HTMLElement;
+            row.dataset.row = '99999';
+        });
+
+        // トグルをクリックして範囲外アクセスを引き起こす
+        await toggle.click();
+        // エラーが非同期で到達するのを待つ
+        await page.waitForTimeout(200);
+
+        // 事前条件違反の明示的エラーメッセージを含むことを検証する
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toContain('leaderMetaIndex');
+    });
+
+    test('折りたたみトグルのdata-target-tableが不正なとき例外が発生すること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 折りたたみトグルが表示されている状態を確認
+        const toggle = table.locator('.view-collapse-toggle').first();
+        await expect(toggle).toBeVisible();
+        await expect(toggle).toHaveText('▼');
+
+        // pageerrorイベントでブラウザ側のエラーをキャッチする
+        const errors: Error[] = [];
+        page.on('pageerror', (error) => {
+            errors.push(error);
+        });
+
+        // トグルのdata-target-table属性を存在しないテーブル名に書き換える
+        await toggle.evaluate((el) => {
+            el.setAttribute('data-target-table', 'nonexistent_table');
+        });
+
+        // トグルをクリックして不正なtargetTableでの呼び出しを引き起こす
+        await toggle.click();
+        // エラーが非同期で到達するのを待つ
+        await page.waitForTimeout(200);
+
+        // 事前条件違反の明示的エラーメッセージを含むことを検証する
+        expect(errors.length).toBe(1);
+        expect(errors[0].message).toContain('targetTable');
+    });
 });

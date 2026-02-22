@@ -74,6 +74,7 @@ export class EditorTableViewStyle {
                 const toggle = document.createElement('span');
                 toggle.classList.add('view-collapse-toggle');
                 toggle.textContent = '▼';
+                toggle.dataset.targetTable = groupInfo.sourceTable;
                 toggle.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
@@ -81,7 +82,8 @@ export class EditorTableViewStyle {
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const currentMetaIdx = Number((toggle.closest('[data-row]') as HTMLElement).dataset.row) - 1;
-                    this.toggleCollapseGroup(currentMetaIdx, groupInfo.sourceTable, toggle);
+                    const currentTargetTable = toggle.dataset.targetTable!;
+                    this.toggleCollapseGroup(currentMetaIdx, currentTargetTable, toggle);
                 });
                 toggle.addEventListener('dblclick', (e) => {
                     e.stopPropagation();
@@ -99,10 +101,17 @@ export class EditorTableViewStyle {
     private toggleCollapseGroup(leaderMetaIndex: number, targetTable: string, toggle: HTMLElement): void {
         const viewContext = this.view.getViewContext();
         const rowMetadata = viewContext.rowMetadata;
+        // 事前条件: メタデータインデックスの範囲チェック
+        if (leaderMetaIndex < 0 || leaderMetaIndex >= rowMetadata.length) {
+            throw new Error(`トグルのメタデータインデックスが範囲外です: leaderMetaIndex=${leaderMetaIndex} (有効範囲: 0-${rowMetadata.length - 1})`);
+        }
         const leaderMeta = rowMetadata[leaderMetaIndex];
         // このグループのgroupInfoを特定
         const groupInfoIndex = leaderMeta.groupInfos.findIndex(g => g.sourceTable === targetTable);
-        if (groupInfoIndex === -1) return;
+        // 事前条件: 対象テーブルがグループ情報に存在すること
+        if (groupInfoIndex === -1) {
+            throw new Error(`トグルの対象テーブルがグループ情報に見つかりません: targetTable=${targetTable}, metaIndex=${leaderMetaIndex}`);
+        }
         const isCollapsed = toggle.textContent === '▶';
         if (isCollapsed) {
             // 展開: 子行を表示する
