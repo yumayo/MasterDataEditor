@@ -496,7 +496,12 @@ export class EditorTableHandler {
                 this.table.showRejectionFeedback();
                 return;
             }
-            clearSelectionRange(this.table, this.selection, this.history);
+            // ビューコンテキストがある場合はFK再構築とJOIN列同期を含むクリアを実行
+            if (this.table.hasViewContext()) {
+                this.clearViewSelectionRange();
+            } else {
+                clearSelectionRange(this.table, this.selection, this.history);
+            }
             return;
         }
 
@@ -921,6 +926,111 @@ export class EditorTableHandler {
             this.history.pushCommand(new CompositeCommand(subCommands), adjustedPasteRange, copyRange);
         }
         this.selection.setRange(adjustedPasteRange.startRow, adjustedPasteRange.startColumn, adjustedPasteRange.endRow, adjustedPasteRange.endColumn);
+    }
+
+    /**
+     * ビューコンテキストありの選択範囲クリア
+     * FK再構築とJOIN列同期を含む
+     */
+    private clearViewSelectionRange(): void {
+        const range = this.selection.getSelectionRange();
+        const copyRange = this.selection.getCopyRange();
+        // 変更セル(oldValue !== '')を収集
+        const changes: CellChange[] = [];
+        for (let r = range.startRow; r <= range.endRow; r++) {
+            for (let c = range.startColumn; c <= range.endColumn; c++) {
+                const oldValue = this.table.getCellValueAt(r, c);
+                if (oldValue !== '') {
+                    changes.push({ row: r, column: c, oldValue, newValue: '' });
+                }
+            }
+        }
+        if (changes.length === 0) return;
+        // FK再構築が必要な変更を事前判定
+        const restructureRows = new Map<number, CellChange>();
+        for (const change of changes) {
+            if (this.table.needsViewRowRestructure(change.row, change.column, '')) {
+                restructureRows.set(change.row, change);
+            }
+        }
+        if (restructureRows.size === 0) {
+            this.clearViewWithSync(changes, range, copyRange);
+            return;
+        }
+        this.clearViewWithRestructure(changes, restructureRows, range, copyRange);
+    }
+
+    /**
+     * ビュー内クリア（FK再構築不要）
+     * FK値変更で結合列の値を連動更新する
+     */
+    private clearViewWithSync(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
+        const allChanges: CellChange[] = [];
+        for (const change of changes) {
+            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, '');
+            allChanges.push(change);
+            for (const lc of linkedChanges) allChanges.push(lc);
+            this.table.setCellValueAt(change.row, change.column, '');
+        }
+        this.history.push({ changes: allChanges, range, copyRange });
+    }
+
+    /**
+     * ビュー内クリア（FK再構築あり）
+     *
+     * 処理順:
+     * 0. メタデータ範囲外へのクリア時はダミーメタデータを事前追加
+     * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
+     * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
+     * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
+     * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
+     */
+    private clearViewWithRestructure(
+        changes: CellChange[], restructureRows: Map<number, CellChange>,
+        range: CellRange, copyRange: CellRange
+    ): void {
+        // 0. クリア先の最大行がメタデータ範囲外ならダミーメタデータを追加
+        let maxDestRow = 0;
+        for (const change of changes) {
+            if (change.row > maxDestRow) maxDestRow = change.row;
+        }
+        const metadataExpansionCmd = this.table.hasViewContext()
+            ? createMetadataExpansionCommand(this.table, maxDestRow)
+            : false as const;
+        if (metadataExpansionCmd) metadataExpansionCmd.execute();
+        // 1. 非再構築行の変更を適用
+        const nonRestructureChanges: CellChange[] = [];
+        for (const change of changes) {
+            if (restructureRows.has(change.row)) continue;
+            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, '');
+            nonRestructureChanges.push(change);
+            for (const lc of linkedChanges) nonRestructureChanges.push(lc);
+            this.table.setCellValueAt(change.row, change.column, '');
+        }
+        // 2. 再構築行の非FK変更を先にDOMに書く（restructureがDOMから値を読むため）
+        for (const change of changes) {
+            if (!restructureRows.has(change.row)) continue;
+            if (restructureRows.get(change.row) === change) continue;
+            nonRestructureChanges.push(change);
+            this.table.setCellValueAt(change.row, change.column, '');
+        }
+        // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
+        const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
+        const restructureCommands: Command[] = [];
+        for (const [row, fkChange] of sortedFkChanges) {
+            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
+        }
+        // 4. CompositeCommandを構築してhistoryに追加
+        const subCommands: Command[] = [];
+        if (metadataExpansionCmd) subCommands.push(metadataExpansionCmd);
+        const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
+        if (meaningfulChanges.length > 0) {
+            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
+        }
+        for (const cmd of restructureCommands) subCommands.push(cmd);
+        if (subCommands.length > 0) {
+            this.history.pushCommand(new CompositeCommand(subCommands), range, copyRange);
+        }
     }
 
     /**

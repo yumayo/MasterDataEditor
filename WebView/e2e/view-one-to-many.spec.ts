@@ -1287,6 +1287,103 @@ test.describe('1:n展開ビュー', () => {
     });
 
     // ---------------------------------------------------------
+    // FK列のDeleteキー削除テスト
+    // ---------------------------------------------------------
+
+    test('FK列のDeleteキー削除で展開行が再構築されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(col0), quest.name(col1), quest.reward_group_id(col2), quest_reward.id(col3), quest_reward.item(col4)
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, 1, Gold (reward_group_id=1 → 2 matches, リーダー行)
+        // Row 1: [pad], [pad], [pad], 2, Gem (パディング行)
+        // Row 2: 2, SideQuest, 2, 3, Potion (1:1)
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+
+        // 行0に折りたたみトグル(▼)が存在すること
+        const togglesBefore = table.locator('.view-collapse-toggle');
+        await expect(togglesBefore).toHaveCount(1);
+        await expect(togglesBefore.first()).toHaveText('▼');
+
+        // 行0のreward_group_id列（col2）をクリックして選択
+        await selectCellAsync(page, table, 0, 2);
+
+        // Deleteキーを押下
+        await page.keyboard.press('Delete');
+
+        // reward_group_id列が空になること（行0, col2）
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+
+        // 展開行が1行に縮小すること（Gemの行が消え、1:0になる）
+        // JOIN列（quest_reward.id=col3, quest_reward.item=col4）が空になること
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+
+        // ▼トグルが消滅すること（展開行が1行のみなのでトグル不要）
+        const togglesAfter = table.locator('.view-collapse-toggle');
+        await expect(togglesAfter).toHaveCount(0);
+
+        // 行1: SideQuestが繰り上がっていること（パディング行が消えた）
+        await expect(getDataCell(table, 1, 0)).toHaveText('2');
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 1, 2)).toHaveText('2');
+        await expect(getDataCell(table, 1, 3)).toHaveText('3');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Potion');
+    });
+
+    test('FK列のDeleteキー削除のUndo/Redoが正しく動作すること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認:
+        // Row 0: 1, MainQuest, 1, 1, Gold (reward_group_id=1 → 2 matches, リーダー行)
+        // Row 1: [pad], [pad], [pad], 2, Gem (パディング行)
+        // Row 2: 2, SideQuest, 2, 3, Potion (1:1)
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(1);
+
+        // 行0のreward_group_id列（col2）をクリックして選択
+        await selectCellAsync(page, table, 0, 2);
+
+        // Deleteキーを押下
+        await page.keyboard.press('Delete');
+
+        // 削除後の状態確認
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(0);
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+
+        // Undo → 元の状態に復元されること
+        await page.keyboard.press('Control+z');
+        // reward_group_id=1に復元（トグル文字▼が含まれる可能性がある）
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        // 2行展開に戻る（行0にGold、行1にGem）
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        // ▼トグルが復活すること
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(1);
+        // 行2にSideQuestが戻っていること
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+
+        // Redo → 削除後の状態に戻ること
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(0);
+        await expect(getDataCell(table, 1, 1)).toHaveText('SideQuest');
+    });
+
+    // ---------------------------------------------------------
     // FK同値ペーストの回帰防止テスト
     // ---------------------------------------------------------
 
