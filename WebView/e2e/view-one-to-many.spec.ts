@@ -1158,6 +1158,134 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 8, 1)).toHaveText('2');
     });
 
+    test('全行コピーの末尾空行ペーストで8行に展開されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態（8行）:
+        // Row 0: 1, 1, 3, 1, 1, 1, 1  (quest.id=1, 1:2リーダー, group_id=1)
+        // Row 1: [pad],,,, 2, 2, 2     (パディング)
+        // Row 2: 2, 2, 1, 1, 1, 1, 1  (quest.id=2, 1:2リーダー, group_id=1)
+        // Row 3: [pad],,,, 2, 2, 2     (パディング)
+        // Row 4: 3, 1, 3, 2, 3, 1, 2  (quest.id=3, 1:1, group_id=2)
+        // Row 5: 4, 1, 3, 3, 4, 2, 5  (quest.id=4, 1:1, group_id=3)
+        // Row 6: 5, 1, 1, 1, 1, 1, 1  (quest.id=5, 1:2リーダー, group_id=1)
+        // Row 7: [pad],,,, 2, 2, 2     (パディング)
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（メタデータ範囲外の空行）にペースト
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // 元のrow0-7が変更されていないことを確認
+        await expect(getDataCell(table, 0, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 6, 0)).toHaveText('5');
+
+        // Row 8: quest.id=1 (1:2リーダー)
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('1');
+        await expect(getDataCell(table, 8, 4)).toHaveText('1');
+        await expect(getDataCell(table, 8, 5)).toHaveText('1');
+
+        // Row 9: パディング
+        await expect(getDataCell(table, 9, 0)).toHaveText('');
+        await expect(getDataCell(table, 9, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 9, 4)).toHaveText('2');
+        await expect(getDataCell(table, 9, 5)).toHaveText('2');
+
+        // Row 10: quest.id=2 (1:2リーダー)
+        await expect(getDataCell(table, 10, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 10, 1)).toHaveText('2');
+        await expect(getDataCell(table, 10, 4)).toHaveText('1');
+        await expect(getDataCell(table, 10, 5)).toHaveText('1');
+
+        // Row 11: パディング
+        await expect(getDataCell(table, 11, 0)).toHaveText('');
+        await expect(getDataCell(table, 11, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 11, 4)).toHaveText('2');
+        await expect(getDataCell(table, 11, 5)).toHaveText('2');
+
+        // Row 12: quest.id=3 (1:1)
+        await expect(getDataCell(table, 12, 0)).toHaveText('3');
+        await expect(getDataCell(table, 12, 1)).toHaveText('1');
+        await expect(getDataCell(table, 12, 3)).toHaveText('2');
+        await expect(getDataCell(table, 12, 4)).toHaveText('3');
+        await expect(getDataCell(table, 12, 5)).toHaveText('1');
+
+        // Row 13: quest.id=4 (1:1)
+        await expect(getDataCell(table, 13, 0)).toHaveText('4');
+        await expect(getDataCell(table, 13, 1)).toHaveText('1');
+        await expect(getDataCell(table, 13, 3)).toHaveText('3');
+        await expect(getDataCell(table, 13, 4)).toHaveText('4');
+        await expect(getDataCell(table, 13, 5)).toHaveText('2');
+
+        // Row 14: quest.id=5 (1:2リーダー)
+        await expect(getDataCell(table, 14, 0)).toHaveText(/^▼?5$/);
+        await expect(getDataCell(table, 14, 1)).toHaveText('1');
+        await expect(getDataCell(table, 14, 4)).toHaveText('1');
+        await expect(getDataCell(table, 14, 5)).toHaveText('1');
+
+        // Row 15: パディング
+        await expect(getDataCell(table, 15, 0)).toHaveText('');
+        await expect(getDataCell(table, 15, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(table, 15, 4)).toHaveText('2');
+        await expect(getDataCell(table, 15, 5)).toHaveText('2');
+
+        // 選択範囲が8行分に拡張されていることを確認
+        await page.keyboard.press('Control+c');
+        const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+        const clipboardLines = clipboardText.trim().split('\n');
+        expect(clipboardLines.length).toBe(8);
+    });
+
+    test('全行コピーの末尾空行ペーストのUndo/Redoが正しく動作すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（メタデータ範囲外の空行）にペースト
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // ペースト後: 8行に展開されていること（代表セルを確認）
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('1');
+        await expect(getDataCell(table, 10, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 10, 1)).toHaveText('2');
+        await expect(getDataCell(table, 12, 0)).toHaveText('3');
+        await expect(getDataCell(table, 14, 0)).toHaveText(/^▼?5$/);
+
+        // Undo → row8以降が空に戻る
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 8, 0)).toHaveText('');
+        await expect(getDataCell(table, 8, 1)).toHaveText('');
+        await expect(getDataCell(table, 10, 0)).toHaveText('');
+        // 元のrow0-7は変更されていないこと
+        await expect(getDataCell(table, 0, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 6, 0)).toHaveText('5');
+
+        // Redo → 再度8行ペースト状態に
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 8, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 8, 1)).toHaveText('1');
+        await expect(getDataCell(table, 10, 0)).toHaveText(/^▼?2$/);
+        await expect(getDataCell(table, 10, 1)).toHaveText('2');
+        await expect(getDataCell(table, 12, 0)).toHaveText('3');
+        await expect(getDataCell(table, 14, 0)).toHaveText(/^▼?5$/);
+    });
+
     // ---------------------------------------------------------
     // FK同値ペーストの回帰防止テスト
     // ---------------------------------------------------------

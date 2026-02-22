@@ -3,6 +3,7 @@ import {GridTextField} from "./grid-textfield";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, Command} from "./command";
+import {createMetadataExpansionCommand} from "./view-row-restructure-command";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
@@ -854,15 +855,26 @@ export class EditorTableHandler {
      * ビュー内ペースト（FK再構築あり）
      *
      * 処理順:
+     * 0. メタデータ範囲外へのペースト時はダミーメタデータを事前追加
      * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
      * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
      * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
-     * 4. CompositeCommand(CellChangeCommand + ViewRowRestructureCommands)をhistoryに追加
+     * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
      */
     private applyPasteWithRestructure(
         changes: CellChange[], restructureRows: Map<number, CellChange>,
         pasteRange: CellRange, copyRange: CellRange
     ): void {
+        // 0. ペースト先の最大行がメタデータ範囲外ならダミーメタデータを追加
+        //    FK再構築時にメタデータ配列とDOM行の1:1対応を保つために必要
+        let maxDestRow = 0;
+        for (const change of changes) {
+            if (change.row > maxDestRow) maxDestRow = change.row;
+        }
+        const metadataExpansionCmd = this.table.hasViewContext()
+            ? createMetadataExpansionCommand(this.table, maxDestRow)
+            : false as const;
+        if (metadataExpansionCmd) metadataExpansionCmd.execute();
         // 1. 非再構築行の変更を適用
         const nonRestructureChanges: CellChange[] = [];
         for (const change of changes) {
@@ -898,6 +910,8 @@ export class EditorTableHandler {
         // CompositeCommandのredo（正順）で降順のまま実行すれば、後の行から処理されるためインデックスずれが発生しない
         // undo（逆順）では昇順実行となり同様に安全
         const subCommands: Command[] = [];
+        // MetadataExpansionCommandはCompositeの先頭（redo時に最初に実行、undo時に最後に実行）
+        if (metadataExpansionCmd) subCommands.push(metadataExpansionCmd);
         const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
         if (meaningfulChanges.length > 0) {
             subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, pasteRange, copyRange));

@@ -760,8 +760,8 @@ export class EditorTable {
     }
 
     /** ビュー行を入れ替える（Command.execute/undo/redoから呼ばれる） */
-    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
-        this.view.replaceViewRows(metaStartIndex, removeCount, insertRows);
+    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[], domStartIndex: number): void {
+        this.view.replaceViewRows(metaStartIndex, removeCount, insertRows, domStartIndex);
     }
 
     /** 結合列の編集時に同一JOINキーを持つ他の行の値を連動更新する */
