@@ -15,7 +15,6 @@ import {
 import {
     moveCell,
     extendSelectionCell,
-    clearSelectionRange,
     moveCellDownWithinSelection,
     moveCellUpWithinSelection,
     moveCellRightWithinSelection,
@@ -496,11 +495,15 @@ export class EditorTableHandler {
                 this.table.showRejectionFeedback();
                 return;
             }
-            // ビューコンテキストがある場合はFK再構築とJOIN列同期を含むクリアを実行
-            if (this.table.hasViewContext()) {
-                this.clearViewSelectionRange();
-            } else {
-                clearSelectionRange(this.table, this.selection, this.history);
+            const changes: CellChange[] = [];
+            for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
+                for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
+                    const oldValue = this.table.getCellValueAt(r, c);
+                    if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
+                }
+            }
+            if (changes.length > 0) {
+                this.applyViewAwareCellChanges(changes, deleteRange, this.selection.getCopyRange());
             }
             return;
         }
@@ -532,33 +535,11 @@ export class EditorTableHandler {
      */
     private submitText(): void {
         if (!this.visible) return;
-
         const target = getTarget(this.table, this.selection);
         const text = this.element.textContent ?? '';
-        const copyRange = this.selection.getCopyRange();
-
-        // FK列の編集で1:n展開の行数が変わる場合はビュー行を再構築する
-        if (this.table.needsViewRowRestructure(target.row, target.column, text)) {
-            const command = this.table.buildAndExecuteViewRowRestructure(target.row, target.column, text);
-            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
-            this.history.pushCommand(command, range, copyRange);
-            return;
-        }
-
-        // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
-        const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, text);
-
-        // 全変更を1つのCommandに含める（Undo/Redo対応）
-        const allChanges: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: text }];
-        for (const lc of linkedChanges) { allChanges.push(lc); }
-
-        this.history.push({
-            changes: allChanges,
-            range: { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column },
-            copyRange,
-        });
-
-        this.table.setCellValueAt(target.row, target.column, text);
+        const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
+        const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: text }];
+        this.applyViewAwareCellChanges(changes, range, this.selection.getCopyRange());
     }
 
     /**
@@ -810,12 +791,25 @@ export class EditorTableHandler {
 
     /**
      * ペースト変更を適用する共通メソッド
-     * ビューコンテキストの有無に応じてFK再構築を判定・実行する
+     * applyViewAwareCellChangesの戻り値で選択範囲を更新する
      */
     private applyPasteChanges(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
+        const adjustedRange = this.applyViewAwareCellChanges(changes, pasteRange, copyRange);
+        this.selection.setRange(adjustedRange.startRow, adjustedRange.startColumn, adjustedRange.endRow, adjustedRange.endColumn);
+    }
+
+    /**
+     * セル値変更の共通入口メソッド
+     * ビューコンテキストの有無に応じてFK再構築/JOIN列同期を自動判定し、
+     * 適切な処理を実行する。selection.setRange()は呼ばない（呼び出し元の責任）。
+     * @returns 調整済みのセル範囲（FK再構築による行数変化を反映）
+     */
+    private applyViewAwareCellChanges(changes: CellChange[], range: CellRange, copyRange: CellRange): CellRange {
+        // ビューコンテキストがない場合: 単純にセル値を適用して履歴に追加
         if (!this.table.hasViewContext()) {
-            this.applySimplePaste(changes, pasteRange, copyRange);
-            return;
+            for (const change of changes) this.table.setCellValueAt(change.row, change.column, change.newValue);
+            this.history.push({ changes, range, copyRange });
+            return range;
         }
         // FK再構築が必要な変更を事前判定（setCellValueAt前にoldValueを参照するため）
         const restructureRows = new Map<number, CellChange>();
@@ -825,26 +819,18 @@ export class EditorTableHandler {
             }
         }
         if (restructureRows.size === 0) {
-            this.applyPasteWithSync(changes, pasteRange, copyRange);
-            return;
+            this.applyViewChangesWithSync(changes, range, copyRange);
+            return range;
         }
-        this.applyPasteWithRestructure(changes, restructureRows, pasteRange, copyRange);
+        return this.applyViewChangesWithRestructure(changes, restructureRows, range, copyRange);
     }
 
     /**
-     * 通常テーブル用のペースト適用（ビューコンテキストなし）
+     * ビュー内変更（FK再構築不要）
+     * 各changeに対してJOIN列連動変更を収集し、主変更と合わせて適用・履歴に記録する。
+     * selection.setRange()は呼ばない（呼び出し元の責任）。
      */
-    private applySimplePaste(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
-        for (const change of changes) this.table.setCellValueAt(change.row, change.column, change.newValue);
-        this.history.push({ changes, range: pasteRange, copyRange });
-        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
-    }
-
-    /**
-     * ビュー内ペースト（FK再構築不要）
-     * FK値変更で結合列の値を連動更新する
-     */
-    private applyPasteWithSync(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
+    private applyViewChangesWithSync(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
         const allChanges: CellChange[] = [];
         for (const change of changes) {
             const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
@@ -852,25 +838,26 @@ export class EditorTableHandler {
             for (const lc of linkedChanges) allChanges.push(lc);
             this.table.setCellValueAt(change.row, change.column, change.newValue);
         }
-        this.history.push({ changes: allChanges, range: pasteRange, copyRange });
-        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
+        this.history.push({ changes: allChanges, range, copyRange });
     }
 
     /**
-     * ビュー内ペースト（FK再構築あり）
+     * ビュー内変更（FK再構築あり）
+     * selection.setRange()は呼ばない（呼び出し元の責任）。
      *
      * 処理順:
-     * 0. メタデータ範囲外へのペースト時はダミーメタデータを事前追加
+     * 0. メタデータ範囲外への変更時はダミーメタデータを事前追加
      * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
      * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
      * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
      * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
+     * @returns 調整済みのセル範囲（FK再構築による行数変化を反映）
      */
-    private applyPasteWithRestructure(
+    private applyViewChangesWithRestructure(
         changes: CellChange[], restructureRows: Map<number, CellChange>,
-        pasteRange: CellRange, copyRange: CellRange
-    ): void {
-        // 0. ペースト先の最大行がメタデータ範囲外ならダミーメタデータを追加
+        range: CellRange, copyRange: CellRange
+    ): CellRange {
+        // 0. 変更先の最大行がメタデータ範囲外ならダミーメタデータを追加
         //    FK再構築時にメタデータ配列とDOM行の1:1対応を保つために必要
         let maxDestRow = 0;
         for (const change of changes) {
@@ -903,12 +890,12 @@ export class EditorTableHandler {
         for (const [row, fkChange] of sortedFkChanges) {
             restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
         }
-        // VRRによる行数変化をペースト範囲に反映（1:1→1:2展開で行が増える等）
+        // VRRによる行数変化を範囲に反映（1:1→1:2展開で行が増える等）
         const rowDelta = this.table.getRowCount() - rowCountBefore;
-        const adjustedEndRow = Math.max(pasteRange.startRow, pasteRange.endRow + rowDelta);
-        const adjustedPasteRange: CellRange = {
-            startRow: pasteRange.startRow, startColumn: pasteRange.startColumn,
-            endRow: adjustedEndRow, endColumn: pasteRange.endColumn,
+        const adjustedEndRow = Math.max(range.startRow, range.endRow + rowDelta);
+        const adjustedRange: CellRange = {
+            startRow: range.startRow, startColumn: range.startColumn,
+            endRow: adjustedEndRow, endColumn: range.endColumn,
         };
         // 4. CompositeCommandを構築してhistoryに追加
         // restructureCommandsは降順（行番号が大きい順）で実行済み
@@ -919,118 +906,13 @@ export class EditorTableHandler {
         if (metadataExpansionCmd) subCommands.push(metadataExpansionCmd);
         const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
         if (meaningfulChanges.length > 0) {
-            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, pasteRange, copyRange));
-        }
-        for (const cmd of restructureCommands) subCommands.push(cmd);
-        if (subCommands.length > 0) {
-            this.history.pushCommand(new CompositeCommand(subCommands), adjustedPasteRange, copyRange);
-        }
-        this.selection.setRange(adjustedPasteRange.startRow, adjustedPasteRange.startColumn, adjustedPasteRange.endRow, adjustedPasteRange.endColumn);
-    }
-
-    /**
-     * ビューコンテキストありの選択範囲クリア
-     * FK再構築とJOIN列同期を含む
-     */
-    private clearViewSelectionRange(): void {
-        const range = this.selection.getSelectionRange();
-        const copyRange = this.selection.getCopyRange();
-        // 変更セル(oldValue !== '')を収集
-        const changes: CellChange[] = [];
-        for (let r = range.startRow; r <= range.endRow; r++) {
-            for (let c = range.startColumn; c <= range.endColumn; c++) {
-                const oldValue = this.table.getCellValueAt(r, c);
-                if (oldValue !== '') {
-                    changes.push({ row: r, column: c, oldValue, newValue: '' });
-                }
-            }
-        }
-        if (changes.length === 0) return;
-        // FK再構築が必要な変更を事前判定
-        const restructureRows = new Map<number, CellChange>();
-        for (const change of changes) {
-            if (this.table.needsViewRowRestructure(change.row, change.column, '')) {
-                restructureRows.set(change.row, change);
-            }
-        }
-        if (restructureRows.size === 0) {
-            this.clearViewWithSync(changes, range, copyRange);
-            return;
-        }
-        this.clearViewWithRestructure(changes, restructureRows, range, copyRange);
-    }
-
-    /**
-     * ビュー内クリア（FK再構築不要）
-     * FK値変更で結合列の値を連動更新する
-     */
-    private clearViewWithSync(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
-        const allChanges: CellChange[] = [];
-        for (const change of changes) {
-            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, '');
-            allChanges.push(change);
-            for (const lc of linkedChanges) allChanges.push(lc);
-            this.table.setCellValueAt(change.row, change.column, '');
-        }
-        this.history.push({ changes: allChanges, range, copyRange });
-    }
-
-    /**
-     * ビュー内クリア（FK再構築あり）
-     *
-     * 処理順:
-     * 0. メタデータ範囲外へのクリア時はダミーメタデータを事前追加
-     * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
-     * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
-     * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
-     * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
-     */
-    private clearViewWithRestructure(
-        changes: CellChange[], restructureRows: Map<number, CellChange>,
-        range: CellRange, copyRange: CellRange
-    ): void {
-        // 0. クリア先の最大行がメタデータ範囲外ならダミーメタデータを追加
-        let maxDestRow = 0;
-        for (const change of changes) {
-            if (change.row > maxDestRow) maxDestRow = change.row;
-        }
-        const metadataExpansionCmd = this.table.hasViewContext()
-            ? createMetadataExpansionCommand(this.table, maxDestRow)
-            : false as const;
-        if (metadataExpansionCmd) metadataExpansionCmd.execute();
-        // 1. 非再構築行の変更を適用
-        const nonRestructureChanges: CellChange[] = [];
-        for (const change of changes) {
-            if (restructureRows.has(change.row)) continue;
-            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, '');
-            nonRestructureChanges.push(change);
-            for (const lc of linkedChanges) nonRestructureChanges.push(lc);
-            this.table.setCellValueAt(change.row, change.column, '');
-        }
-        // 2. 再構築行の非FK変更を先にDOMに書く（restructureがDOMから値を読むため）
-        for (const change of changes) {
-            if (!restructureRows.has(change.row)) continue;
-            if (restructureRows.get(change.row) === change) continue;
-            nonRestructureChanges.push(change);
-            this.table.setCellValueAt(change.row, change.column, '');
-        }
-        // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
-        const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
-        const restructureCommands: Command[] = [];
-        for (const [row, fkChange] of sortedFkChanges) {
-            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
-        }
-        // 4. CompositeCommandを構築してhistoryに追加
-        const subCommands: Command[] = [];
-        if (metadataExpansionCmd) subCommands.push(metadataExpansionCmd);
-        const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
-        if (meaningfulChanges.length > 0) {
             subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
         }
         for (const cmd of restructureCommands) subCommands.push(cmd);
         if (subCommands.length > 0) {
-            this.history.pushCommand(new CompositeCommand(subCommands), range, copyRange);
+            this.history.pushCommand(new CompositeCommand(subCommands), adjustedRange, copyRange);
         }
+        return adjustedRange;
     }
 
     /**
@@ -1208,42 +1090,12 @@ export class EditorTableHandler {
      */
     submitDropdownSelection(id: string): void {
         if (!this.dropdownActive) return;
-
         const target = getTarget(this.table, this.selection);
-        const copyRange = this.selection.getCopyRange();
-
-        // FK列の編集で1:n展開の行数が変わる場合はビュー行を再構築する
-        if (this.table.needsViewRowRestructure(target.row, target.column, id)) {
-            const command = this.table.buildAndExecuteViewRowRestructure(target.row, target.column, id);
-            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
-            this.history.pushCommand(command, range, copyRange);
-            this.dropdownActive = false;
-            this.hide();
-            moveCellDownWithinSelection(this.table, this.selection);
-            return;
-        }
-
-        // 連動更新を先に収集（setCellValueAt前にoldValueを取得するため）
-        const linkedChanges = this.table.synchronizeJoinedColumnValues(target.row, target.column, id);
-
-        // 全変更を1つのCommandに含める（Undo/Redo対応）
-        const allChanges: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: id }];
-        for (const lc of linkedChanges) { allChanges.push(lc); }
-
-        this.history.push({
-            changes: allChanges,
-            range: { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column },
-            copyRange,
-        });
-
-        this.table.setCellValueAt(target.row, target.column, id);
-
+        const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
+        const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: id }];
+        this.applyViewAwareCellChanges(changes, range, this.selection.getCopyRange());
         this.dropdownActive = false;
-
-        // 入力フィールドを非表示
         this.hide();
-
-        // 下のセルに移動
         moveCellDownWithinSelection(this.table, this.selection);
     }
 

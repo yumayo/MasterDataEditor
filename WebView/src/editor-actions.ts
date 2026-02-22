@@ -20,39 +20,6 @@ export function getTarget(table: EditorTable, selection: Selection) {
 }
 
 /**
- * 選択範囲内のすべてのセルを空にする
- */
-export function clearSelectionRange(table: EditorTable, selection: Selection, history: History): void {
-    const range = selection.getSelectionRange();
-    const copyRange = selection.getCopyRange();
-    const changes: CellChange[] = [];
-
-    for (let r = range.startRow; r <= range.endRow; r++) {
-        for (let c = range.startColumn; c <= range.endColumn; c++) {
-            const oldValue = table.getCellValueAt(r, c);
-
-            if (oldValue !== '') {
-                changes.push({
-                    row: r,
-                    column: c,
-                    oldValue: oldValue,
-                    newValue: ''
-                });
-                table.setCellValueAt(r, c, '');
-            }
-        }
-    }
-
-    if (changes.length > 0) {
-        history.push({
-            changes: changes,
-            range: range,
-            copyRange: copyRange
-        });
-    }
-}
-
-/**
  * 範囲選択を解除し、セルを相対座標分移動します。
  * @param table
  * @param selection
