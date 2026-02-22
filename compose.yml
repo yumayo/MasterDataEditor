@@ -17,8 +17,6 @@ services:
       # Playwright設定・テストファイル
       - ./WebView/playwright.config.ts:/app/WebView/playwright.config.ts:ro
       - ./WebView/e2e/:/app/WebView/e2e/
-      # テスト結果出力
-      - ./WebView/test-results/:/app/WebView/test-results/
     networks:
       - yumayo-ai
 
