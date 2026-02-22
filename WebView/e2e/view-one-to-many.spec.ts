@@ -1384,6 +1384,93 @@ test.describe('1:n展開ビュー', () => {
     });
 
     // ---------------------------------------------------------
+    // 複数FKグループペースト後のトグル動作テスト
+    // ---------------------------------------------------------
+
+    test('複数FKグループペースト後にすべてのトグルが機能すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態（8行）:
+        // Row 0: quest.id=1, quest_reward_group_id=1 (1:2リーダー) → トグルあり
+        // Row 1: パディング
+        // Row 2: quest.id=2, quest_reward_group_id=1 (1:2リーダー) → トグルあり
+        // Row 3: パディング
+        // Row 4: quest.id=3, quest_reward_group_id=2 (1:1)
+        // Row 5: quest.id=4, quest_reward_group_id=3 (1:1)
+        // Row 6: quest.id=5, quest_reward_group_id=1 (1:2リーダー) → トグルあり
+        // Row 7: パディング
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（メタデータ範囲外の空行）にペースト
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // ペースト後のトグル数が6であること（元の3つ + ペーストで追加された3つ）
+        const toggles = table.locator('.view-collapse-toggle');
+        await expect(toggles).toHaveCount(6);
+
+        // Row 10のトグルをクリック → ▶に変わり、Row 11が display: none になること
+        const row10 = table.locator('.editor-table-row').nth(10 + 1);
+        const toggle10 = row10.locator('.view-collapse-toggle');
+        await expect(toggle10).toHaveText('▼');
+        await toggle10.click();
+        await expect(toggle10).toHaveText('▶');
+        const row11 = table.locator('.editor-table-row').nth(11 + 1);
+        await expect(row11).toHaveCSS('display', 'none');
+
+        // Row 14のトグルをクリック → ▶に変わり、Row 15が display: none になること
+        const row14 = table.locator('.editor-table-row').nth(14 + 1);
+        const toggle14 = row14.locator('.view-collapse-toggle');
+        await expect(toggle14).toHaveText('▼');
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▶');
+        const row15 = table.locator('.editor-table-row').nth(15 + 1);
+        await expect(row15).toHaveCSS('display', 'none');
+    });
+
+    test('複数FKグループペースト後のUndo/Redoでもトグルが機能すること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（メタデータ範囲外の空行）にペースト
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // Undo
+        await page.keyboard.press('Control+z');
+
+        // Redo
+        await page.keyboard.press('Control+y');
+
+        // Redo後のトグル数が6であること
+        const toggles = table.locator('.view-collapse-toggle');
+        await expect(toggles).toHaveCount(6);
+
+        // Row 10のトグルをクリック → ▶に変わり、Row 11が display: none になること
+        const row10 = table.locator('.editor-table-row').nth(10 + 1);
+        const toggle10 = row10.locator('.view-collapse-toggle');
+        await expect(toggle10).toHaveText('▼');
+        await toggle10.click();
+        await expect(toggle10).toHaveText('▶');
+        const row11 = table.locator('.editor-table-row').nth(11 + 1);
+        await expect(row11).toHaveCSS('display', 'none');
+    });
+
+    // ---------------------------------------------------------
     // FK同値ペーストの回帰防止テスト
     // ---------------------------------------------------------
 

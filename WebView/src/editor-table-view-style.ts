@@ -80,7 +80,8 @@ export class EditorTableViewStyle {
                 });
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.toggleCollapseGroup(metaIdx, groupInfo.sourceTable, toggle);
+                    const currentMetaIdx = Number((toggle.closest('[data-row]') as HTMLElement).dataset.row) - 1;
+                    this.toggleCollapseGroup(currentMetaIdx, groupInfo.sourceTable, toggle);
                 });
                 toggle.addEventListener('dblclick', (e) => {
                     e.stopPropagation();

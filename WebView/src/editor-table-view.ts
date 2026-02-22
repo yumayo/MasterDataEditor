@@ -44,6 +44,8 @@ export class EditorTableView {
      */
     setViewContext(context: ViewContext): void {
         this.viewContext = context;
+        // 初期テーブル構築ではdata-rowが0始まりのため、DOM位置と一致するよう再番号付け
+        this.restructure.renumberRowsFrom(1);
         this.style.applyViewRowStylesForRange(0, context.rowMetadata.length, true);
     }
 
