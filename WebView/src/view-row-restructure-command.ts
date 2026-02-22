@@ -20,35 +20,32 @@ export interface SavedViewRowState {
  * 古い展開行と新しい展開行をDOM要素ごと保存し、
  * execute/undo/redoで入れ替えることで完全な状態復元を実現する。
  *
- * メタデータ範囲外の新規行再構築では、DOM挿入位置とメタデータ挿入位置が異なる。
- * domStartIndex を別途保持し、replaceViewRows にDOM位置を明示的に渡す。
+ * MetadataExpansionCommandによるダミーメタデータ拡張後は、
+ * domStartIndex = metaStartIndex + 1 の前提が常に成立するため、
+ * DOM位置はreplaceViewRows内部で計算する。
  */
 export class ViewRowRestructureCommand implements Command {
     private readonly editorTable: EditorTable;
     private readonly oldRows: SavedViewRowState[];
     private readonly newRows: SavedViewRowState[];
     private readonly metaStartIndex: number;
-    /** DOM挿入開始位置（メタデータ位置と異なる場合に使用） */
-    private readonly domStartIndex: number;
 
     constructor(
         editorTable: EditorTable, oldRows: SavedViewRowState[],
-        newRows: SavedViewRowState[], metaStartIndex: number,
-        domStartIndex: number
+        newRows: SavedViewRowState[], metaStartIndex: number
     ) {
         this.editorTable = editorTable;
         this.oldRows = oldRows;
         this.newRows = newRows;
         this.metaStartIndex = metaStartIndex;
-        this.domStartIndex = domStartIndex;
     }
 
     execute(): void {
-        this.editorTable.replaceViewRows(this.metaStartIndex, this.oldRows.length, this.newRows, this.domStartIndex);
+        this.editorTable.replaceViewRows(this.metaStartIndex, this.oldRows.length, this.newRows);
     }
 
     undo(): void {
-        this.editorTable.replaceViewRows(this.metaStartIndex, this.newRows.length, this.oldRows, this.domStartIndex);
+        this.editorTable.replaceViewRows(this.metaStartIndex, this.newRows.length, this.oldRows);
     }
 
     redo(): void {
@@ -56,7 +53,7 @@ export class ViewRowRestructureCommand implements Command {
     }
 
     getDescription(): string {
-        return `ViewRowRestructure: ${this.oldRows.length} -> ${this.newRows.length} rows at meta[${this.metaStartIndex}] dom[${this.domStartIndex}]`;
+        return `ViewRowRestructure: ${this.oldRows.length} -> ${this.newRows.length} rows at meta[${this.metaStartIndex}]`;
     }
 }
 

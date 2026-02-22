@@ -80,8 +80,8 @@ export class EditorTableView {
         return this.restructure.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue);
     }
 
-    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[], domStartIndex: number): void {
-        this.restructure.replaceViewRows(metaStartIndex, removeCount, insertRows, domStartIndex);
+    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
+        this.restructure.replaceViewRows(metaStartIndex, removeCount, insertRows);
     }
 
     renumberRowsFrom(startDomIndex: number): void {

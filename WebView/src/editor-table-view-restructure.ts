@@ -2,11 +2,11 @@ import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
 import {AreaResizer} from "./area-resizer";
-import {Command} from "./command";
+import {Command, CompositeCommand} from "./command";
 import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
-import {ViewRowMetadata, ViewRowGroupInfo} from "./model/view-row-metadata";
+import {ViewRowMetadata} from "./model/view-row-metadata";
 import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from "./view-table-data-builder";
-import {ViewRowRestructureCommand, SavedViewRowState} from "./view-row-restructure-command";
+import {ViewRowRestructureCommand, SavedViewRowState, createMetadataExpansionCommand} from "./view-row-restructure-command";
 
 /**
  * ビュー行構築モジュール
@@ -106,10 +106,14 @@ export class EditorTableViewRestructure {
         const columnMappings = viewContext.columnMappings;
         const dataColumnIndex = editedColumn - 1;
         const metaIndex = editedRow - 1;
-        // メタデータ範囲外の行（ペーストで空行にデータが書き込まれた場合）は専用メソッドへ委譲
-        if (metaIndex >= viewContext.rowMetadata.length) {
-            return this.restructureNewBaseRow(editedColumn, newValue, metaIndex);
-        }
+        // メタデータ範囲外の行の場合、ダミーメタデータで拡張する
+        // ペースト時はHandler側のMetadataExpansionCommandで事前拡張済みのため到達しない
+        // 単一セル編集やドロップダウン選択時にここに到達する
+        const expansionCmd = metaIndex >= viewContext.rowMetadata.length
+            ? createMetadataExpansionCommand(this.table, editedRow)
+            : false as const;
+        if (expansionCmd) expansionCmd.execute();
+        // ここから先は常にメタデータ範囲内として処理する（通常パス）
         const baseRowIndex = viewContext.rowMetadata[metaIndex].baseRowIndex;
         // このベース行に属するメタデータ範囲を特定
         const { metaStart, metaEnd } = this.findBaseRowMetaRange(metaIndex);
@@ -138,76 +142,15 @@ export class EditorTableViewRestructure {
         const expandedRows = rebuildExpandedRowsForBaseRow(
             baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
         );
-        // 新しいDOM行を作成して挿入（メタデータ範囲内ではDOM位置=metaStart+1、メタデータ位置=metaStart）
-        const newRows = this.buildAndInsertExpandedViewRows(metaStart + 1, metaStart, baseRowIndex, expandedRows);
+        // 新しいDOM行を作成して挿入
+        const newRows = this.buildAndInsertExpandedViewRows(metaStart, baseRowIndex, expandedRows);
         this.selection.clearCopyRange();
         this.selection.updateRendererAfterResize();
-        return new ViewRowRestructureCommand(this.table, oldRows, newRows, metaStart, metaStart + 1);
-    }
-
-    /**
-     * メタデータ範囲外の行（新規ベース行）をFK値に基づいて再構築する
-     * ペーストで空行にデータが書き込まれた後、FK値変更に伴い展開行を生成する
-     *
-     * メタデータ範囲外の行ではDOM位置（metaIndex+1）とメタデータ挿入位置（配列末尾）が
-     * 一致しないため、buildAndInsertExpandedViewRowsにそれぞれ独立した位置を渡す
-     */
-    private restructureNewBaseRow(
-        editedColumn: number, newValue: string, metaIndex: number
-    ): Command {
-        const viewContext = this.view.getViewContext();
-        const tableElement = this.table.getTableElement();
-        const columnMappings = viewContext.columnMappings;
-        const dataColumnIndex = editedColumn - 1;
-        const baseRowIndex = metaIndex;
-        // 現在のDOM行を保存（デタッチ）
-        const domStartIndex = metaIndex + 1;
-        const domRow = tableElement.children[domStartIndex] as HTMLElement;
-        // 新規行用の仮メタデータを生成（Undo復元用）
-        const syntheticGroupInfos: ViewRowGroupInfo[] = [];
-        for (const join of viewContext.viewDefinition.joins) {
-            syntheticGroupInfos.push({
-                groupPosition: 0, groupSize: 1,
-                sourceTable: join.targetTable, sourceKeyValue: '',
-            });
+        const restructureCmd = new ViewRowRestructureCommand(this.table, oldRows, newRows, metaStart);
+        if (expansionCmd) {
+            return new CompositeCommand([expansionCmd, restructureCmd]);
         }
-        const oldMetadata: ViewRowMetadata = {
-            baseRowIndex,
-            groupInfos: syntheticGroupInfos,
-            paddingColumns: new Array(columnMappings.length).fill(false),
-        };
-        const oldRows: SavedViewRowState[] = [{ domRow, metadata: oldMetadata }];
-        domRow.remove();
-        // ベーステーブル列の値を構築（変更されたFK値を反映）
-        const totalColumns = columnMappings.length;
-        const baseColumnValues: string[] = new Array(totalColumns).fill('');
-        for (let i = 0; i < totalColumns; i++) {
-            if (i === dataColumnIndex) {
-                baseColumnValues[i] = newValue;
-            } else if (columnMappings[i].joinLevel === 0) {
-                const cell = domRow.children[i + 1] as HTMLElement;
-                baseColumnValues[i] = EditorTable.getCellValue(cell);
-            }
-        }
-        // 新しい展開行データを計算
-        const expandedRows = rebuildExpandedRowsForBaseRow(
-            baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
-        );
-        // MetadataExpansionCommandでダミーメタデータが事前追加済みのため、
-        // rowMetadata.lengthはダミーを含む値になる。FK再構築が降順で実行され
-        // 各行がメタデータ末尾に追加されても、replaceViewRowsのundo/redoは
-        // metaStartIndexで正確に位置を指定するため、順序の不整合は発生しない。
-        // メタデータは配列末尾に追加し、DOM行はmetaIndex+1の位置に挿入する
-        // （MetadataExpansionCommand適用後のrowMetadata.lengthが正しい挿入位置となり、
-        //   applyViewRowStylesForRangeに正しいインデックスを渡すため明示的に末尾を使う）
-        const metaInsertIndex = viewContext.rowMetadata.length;
-        const newRows = this.buildAndInsertExpandedViewRows(
-            domStartIndex, metaInsertIndex, baseRowIndex, expandedRows
-        );
-        this.selection.clearCopyRange();
-        this.selection.updateRendererAfterResize();
-        // DOM位置とメタデータ位置を別々に保持してUndo/Redoに渡す
-        return new ViewRowRestructureCommand(this.table, oldRows, newRows, metaInsertIndex, domStartIndex);
+        return restructureCmd;
     }
 
     /**
@@ -216,9 +159,9 @@ export class EditorTableViewRestructure {
      * @param metaStartIndex メタデータ開始インデックス
      * @param removeCount 削除する行数
      * @param insertRows 挿入する行の状態配列
-     * @param domStartIndex DOM行の開始インデックス（メタデータ範囲外の再構築で使用）
      */
-    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[], domStartIndex: number): void {
+    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
+        const domStartIndex = metaStartIndex + 1;
         const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
         // DOMから行を削除
@@ -250,18 +193,18 @@ export class EditorTableViewRestructure {
 
     /**
      * 展開行データからDOM行を作成してテーブルに挿入する
-     * buildAndExecuteViewRowRestructure、restructureNewBaseRow、refreshViewRowsの共通処理
+     * buildAndExecuteViewRowRestructureとrefreshViewRowsの共通処理
      *
-     * @param domStartIndex DOM行の挿入開始位置（1始まり）
-     * @param metaInsertIndex メタデータの挿入開始インデックス
+     * @param metaStart メタデータの挿入開始インデックス（DOM位置はmetaStart+1で計算）
      * @param baseRowIndex ベーステーブルの行インデックス
      * @param expandedRows 展開行データの配列
      * @returns 作成された行状態の配列（Undo用）
      */
     private buildAndInsertExpandedViewRows(
-        domStartIndex: number, metaInsertIndex: number,
-        baseRowIndex: number, expandedRows: ExpandedRowResult[]
+        metaStart: number, baseRowIndex: number, expandedRows: ExpandedRowResult[]
     ): SavedViewRowState[] {
+        const domStartIndex = metaStart + 1;
+        const metaInsertIndex = metaStart;
         const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
         const columnWidths = this.table.getColumnWidths();
@@ -435,7 +378,7 @@ export class EditorTableViewRestructure {
                 if (row) row.remove();
             }
             rowMetadata.splice(metaStart, currentCount);
-            this.buildAndInsertExpandedViewRows(metaStart + 1, metaStart, baseRowIndex, expandedRows);
+            this.buildAndInsertExpandedViewRows(metaStart, baseRowIndex, expandedRows);
             // metaIdxを再調整（挿入した行数分）
             metaIdx = metaStart + expandedRows.length;
         }
