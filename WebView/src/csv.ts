@@ -10,9 +10,13 @@ export class Csv {
 
     load(csvFileContents: string) {
 
-        csvFileContents = csvFileContents.replace('\r', '');
+        csvFileContents = csvFileContents.replaceAll('\r', '');
 
         const lines = csvFileContents.split('\n');
+        // toString()が付与する末尾改行による空要素を除去
+        if (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
+        }
         if (lines.length > 0) {
             this.header = lines[0].split(',');
         }

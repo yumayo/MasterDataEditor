@@ -66,7 +66,7 @@ function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
     const mergedBody: string[][] = [];
     for (let r = 0; r < validExistingRows.length; r++) {
         const mergedRow: string[] = new Array(mergedHeader.length).fill('');
-        for (let c = 0; c < existingCsv.header.length; c++) {
+        for (let c = 0; c < existingCsv.header.length && c < validExistingRows[r].length; c++) {
             mergedRow[c] = validExistingRows[r][c];
         }
         mergedBody.push(mergedRow);

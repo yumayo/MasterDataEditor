@@ -467,6 +467,51 @@ test.describe('1:n展開ビュー', () => {
         expect(rewardCsv).not.toContain('Gem');
     });
 
+    test('保存時に未変更の結合テーブルCSV末尾に空行が挿入されないこと', async ({ page }) => {
+        // バグ再現条件: 1回目の保存でCsv.toString()が末尾に\nを付与し、
+        // 2回目の保存時にreadFileAsync→Csv.load()でsplit('\n')すると
+        // 末尾\nの分だけ空文字列要素['']がbodyに追加されファントム行が生じる。
+        // つまり2回保存しないとバグは再現しない。
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // --- 1回目の保存: ベーステーブル（quest）のnameを編集 ---
+        await editCellAsync(page, table, 0, 1, 'ModifiedQuest');
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+
+        // 1回目の保存結果を確認（この時点ではquest_rewardはヘッダー+3データ行）
+        const firstSaveCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
+        const firstSaveLines = firstSaveCsv.split('\n');
+        // toString()が付与する正常な末尾改行による空文字列の最終要素を除いてカウント
+        const firstSaveLineCount = firstSaveLines[firstSaveLines.length - 1] === '' ? firstSaveLines.length - 1 : firstSaveLines.length;
+        expect(firstSaveLineCount).toBe(4); // ヘッダー + 3データ行
+
+        // --- 2回目の保存: ベーステーブルの別の値を編集 ---
+        await editCellAsync(page, table, 2, 1, 'ModifiedSideQuest');
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+
+        // 2回目の保存後のquest_reward.csvを読み取る
+        const secondSaveCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
+        const secondSaveLines = secondSaveCsv.split('\n');
+        // toString()が付与する正常な末尾改行による空文字列の最終要素を除いてカウント
+        const secondSaveLineCount = secondSaveLines[secondSaveLines.length - 1] === '' ? secondSaveLines.length - 1 : secondSaveLines.length;
+
+        // 全フィールドが空のファントム行（カンマのみの行）が含まれないことを検証
+        // 末尾改行による最終空文字列は除外して検査する
+        const contentLines = secondSaveLines.slice(0, secondSaveLineCount);
+        for (const line of contentLines) {
+            const fields = line.split(',');
+            const allEmpty = fields.every((f: string) => f.trim() === '');
+            expect(allEmpty).toBe(false);
+        }
+
+        // 元のquest_reward.csvの有効行数（ヘッダー+3データ行=4行）と保存後の有効行数が一致すること
+        expect(secondSaveLineCount).toBe(4);
+    });
+
     test('1:1JOINとの共存（同一ビュー内に1:1と1:nが混在するケース）', async ({ page }) => {
         // 1:1のskill参照と1:nのquest_rewardが混在するビューを作成
         const fs: MockFileSystem = {
