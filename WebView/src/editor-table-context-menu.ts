@@ -189,9 +189,14 @@ export class EditorTableContextMenu {
         for (const target of viewContext.availableJoinTargets) {
             // 既にJoin済みなら表示しない
             if (joinedTables.has(target.targetTableName)) continue;
+            const label = target.isReverse
+                ? 'Join: ' + target.targetTableName + ' (reverse: ' + target.targetColumnName + ')'
+                : 'Join: ' + target.targetTableName + ' (via ' + target.sourceColumnName + ')';
             items.push({
-                label: 'Join: ' + target.targetTableName + ' (via ' + target.sourceColumnName + ')',
-                action: () => { this.table.getViewContext().onJoinAsync(target.targetTableName, target.sourceColumnName, columnIndex); },
+                label,
+                action: () => {
+                    this.table.getViewContext().onJoinAsync(target, columnIndex);
+                },
             });
         }
         return items;

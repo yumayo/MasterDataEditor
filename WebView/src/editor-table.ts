@@ -30,6 +30,8 @@ export interface AvailableJoinTarget {
     targetTableName: string;
     /** 結合先キー列名 */
     targetColumnName: string;
+    /** 逆参照JOINかどうか */
+    isReverse: boolean;
 }
 
 /**
@@ -44,7 +46,7 @@ export interface ViewContext {
     joinTableKeyMaps: Map<string, Map<string, string[][]>>;
     /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
     rowMetadata: ViewRowMetadata[];
-    onJoinAsync: (targetTable: string, sourceColumn: string, afterColumnIndex: number) => Promise<void>;
+    onJoinAsync: (target: AvailableJoinTarget, afterColumnIndex: number) => Promise<void>;
     /** 非表示列を再表示するコールバック（ビュータブの再構築を行う） */
     onShowHiddenColumn: (tableName: string, columnName: string) => void;
 }
