@@ -1649,4 +1649,47 @@ test.describe('1:n展開ビュー', () => {
             expect(clipboardLines.length).toBe(7);
         }).toPass({ timeout: 3000 });
     });
+
+    test('展開で折りたたみ時に縮小された選択範囲が復元されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（空行）にペースト → row8-15の8行に展開される
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // Row 14のトグル（▼）をクリックして折りたたむ → Row 15が非表示になる
+        const row14 = table.locator('.editor-table-row').nth(14 + 1);
+        const toggle14 = row14.locator('.view-collapse-toggle');
+        await expect(toggle14).toHaveText('▼');
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▶');
+
+        // 折りたたみ後: 選択範囲がrow8-14に縮小されていること
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(7);
+        }).toPass({ timeout: 3000 });
+
+        // 同じトグルをクリックして展開 → Row 15が再表示される
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▼');
+
+        // 展開後: 選択範囲がrow8-15の8行に復元されること
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(8);
+        }).toPass({ timeout: 3000 });
+    });
 });

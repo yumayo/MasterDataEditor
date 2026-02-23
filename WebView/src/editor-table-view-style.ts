@@ -117,6 +117,27 @@ export class EditorTableViewStyle {
             // 展開: 子行を表示する
             toggle.textContent = '▼';
             this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, true);
+            // 折りたたみ時に縮小した選択範囲を復元する
+            const childCount = leaderMeta.groupInfos[groupInfoIndex].groupSize - 1;
+            if (childCount > 0) {
+                const firstChildDomRow = leaderMetaIndex + 2;
+                const lastChildDomRow = leaderMetaIndex + 1 + childCount;
+                const range = this.selection.getSelectionRange();
+                let startRow = range.startRow;
+                let endRow = range.endRow;
+                let adjusted = false;
+                if (endRow === firstChildDomRow - 1) {
+                    endRow = lastChildDomRow;
+                    adjusted = true;
+                }
+                if (startRow === lastChildDomRow + 1) {
+                    startRow = firstChildDomRow;
+                    adjusted = true;
+                }
+                if (adjusted) {
+                    this.selection.setRange(startRow, range.startColumn, endRow, range.endColumn);
+                }
+            }
         } else {
             // 折りたたみ: 子行を非表示にする
             toggle.textContent = '▶';
