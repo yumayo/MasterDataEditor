@@ -3,6 +3,7 @@ import {config} from "./config";
 import {Csv} from "./csv";
 import {EditorTable} from "./editor-table";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {readReverseReferencePriority} from "./reverse-reference-resolver";
 
 /**
  * 参照テーブルの1項目を表す
@@ -294,6 +295,12 @@ export class ReferenceDataCache {
         const schemaFiles =
             await findFilesAsync("schema");
 
+        // 全候補を収集し、最高優先度の子テーブルを選択する
+        const candidates: Array<{
+            childTableName: string;
+            priority: number;
+        }> = [];
+
         for (const file of schemaFiles) {
             if (file.type !== 'file') continue;
             if (!file.name.endsWith('.json')) continue;
@@ -349,32 +356,45 @@ export class ReferenceDataCache {
                     );
                 if (displayCol === '') continue;
 
-                // 子テーブルのデータを読み込み、
-                // 表示テキストを解決する
-                const childData =
-                    await this.get(childTableName);
+                // スキーマから逆参照の表示優先度を読み取る
+                const priority = readReverseReferencePriority(childSchema);
 
-                for (const item of items) {
-                    if (item.displayText
-                        !== item.id) {
-                        continue;
-                    }
-                    const childItem =
-                        childData.items.find(
-                            ci => ci.id === item.id
-                        );
-                    if (childItem
-                        && childItem.displayText
-                            !== childItem.id) {
-                        item.displayText =
-                            childItem.displayText;
-                    }
-                }
-
-                // 解決できたら終了
-                break;
+                candidates.push({
+                    childTableName,
+                    priority,
+                });
             } catch {
                 continue;
+            }
+        }
+
+        if (candidates.length === 0) return;
+
+        // 最小の priority（最高優先度）を持つ候補を選択する
+        let best = candidates[0];
+        for (let i = 1; i < candidates.length; i++) {
+            if (candidates[i].priority < best.priority) {
+                best = candidates[i];
+            }
+        }
+
+        // 最高優先度の子テーブルのデータを読み込み、表示テキストを解決する
+        const childData =
+            await this.get(best.childTableName);
+
+        for (const item of items) {
+            if (item.displayText !== item.id) {
+                continue;
+            }
+            const childItem =
+                childData.items.find(
+                    ci => ci.id === item.id
+                );
+            if (childItem
+                && childItem.displayText
+                    !== childItem.id) {
+                item.displayText =
+                    childItem.displayText;
             }
         }
     }

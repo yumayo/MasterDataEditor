@@ -28,6 +28,8 @@ export interface ReverseReferenceEntry {
     childTableName: string;
     /** 子行の情報一覧 */
     rows: ReverseReferenceRow[];
+    /** 逆参照の表示優先度（小さいほど高優先、未設定は Number.MAX_SAFE_INTEGER） */
+    priority: number;
 }
 
 /**
@@ -159,6 +161,7 @@ export class ReverseReferenceResolver {
     private mergeGroups(
         groups: Map<string, ReverseReferenceRow[]>,
         childTableName: string,
+        priority: number,
         map: ReverseReferenceMap
     ): void {
         groups.forEach(
@@ -174,6 +177,7 @@ export class ReverseReferenceResolver {
                 entries.push({
                     childTableName,
                     rows,
+                    priority,
                 });
             }
         );
@@ -196,6 +200,9 @@ export class ReverseReferenceResolver {
             || !Array.isArray(schema.header)) {
             return;
         }
+
+        // スキーマから逆参照の表示優先度を読み取る
+        const priority = readReverseReferencePriority(schema);
 
         const headerDefs = schema.header as Array<{
             name: string;
@@ -366,7 +373,7 @@ export class ReverseReferenceResolver {
             }
 
             this.mergeGroups(
-                groups, childTableName, map
+                groups, childTableName, priority, map
             );
         }
 
@@ -410,7 +417,7 @@ export class ReverseReferenceResolver {
             }
 
             this.mergeGroups(
-                groups, childTableName, map
+                groups, childTableName, priority, map
             );
         }
     }
@@ -438,6 +445,16 @@ export class ReverseReferenceResolver {
 }
 
 /**
+ * スキーマオブジェクトから逆参照の表示優先度を読み取る
+ * 未設定の場合は最低優先度（Number.MAX_SAFE_INTEGER）を返す
+ */
+export function readReverseReferencePriority(schema: Record<string, unknown>): number {
+    return typeof schema.reverseReferencePriority === 'number'
+        ? schema.reverseReferencePriority
+        : Number.MAX_SAFE_INTEGER;
+}
+
+/**
  * 逆参照マップからセルにインライン表示するヒントテキストを生成する
  *
  * 表示仕様:
@@ -449,12 +466,30 @@ export class ReverseReferenceResolver {
 export function formatReverseReferenceHint(
     entries: ReverseReferenceEntry[]
 ): string {
-    const parts: string[] = [];
+    // 表示条件を満たすエントリを抽出（1件かつ表示テキストあり）
+    const displayable: ReverseReferenceEntry[] = [];
     for (const entry of entries) {
         if (entry.rows.length === 1 && entry.rows[0].displayText !== '') {
-            parts.push(entry.rows[0].displayText);
+            displayable.push(entry);
         }
         // 2件以上、表示テキストなし → スキップ（REFERENCESパネルで閲覧）
+    }
+    if (displayable.length === 0) return '';
+
+    // 最小の priority（最高優先度）を特定する
+    let minPriority = displayable[0].priority;
+    for (let i = 1; i < displayable.length; i++) {
+        if (displayable[i].priority < minPriority) {
+            minPriority = displayable[i].priority;
+        }
+    }
+
+    // 最高優先度のエントリのみ表示テキストに含める
+    const parts: string[] = [];
+    for (const entry of displayable) {
+        if (entry.priority === minPriority) {
+            parts.push(entry.rows[0].displayText);
+        }
     }
     return parts.join(', ');
 }

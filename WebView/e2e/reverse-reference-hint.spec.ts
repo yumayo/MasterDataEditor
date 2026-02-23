@@ -906,3 +906,274 @@ test.describe('ビューJOIN列編集時の参照ヒント同期更新', () => {
         await expect(bonusHint).toHaveText('初回報酬');
     });
 });
+
+// -------------------------------------------------------
+// 逆参照の表示優先度テスト
+// -------------------------------------------------------
+test.describe('逆参照の表示優先度', () => {
+    test(
+        '優先度に基づくフィルタリング: '
+        + '最高優先度のエントリのみインライン表示されること',
+        async ({ page }) => {
+            // parent: id列のみ
+            // child_high: reverseReferencePriority=1, parent.id を参照, ja列あり
+            // child_low: reverseReferencePriority=2, parent.id を参照, ja列あり
+            // parent.id=1 をそれぞれ1件ずつ参照
+            const fs: MockFileSystem = {
+                "schema/parent.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/parent.csv": [
+                    "id",
+                    "1",
+                ].join("\n"),
+                "schema/child_high.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 1,
+                }),
+                "data/child_high.csv": [
+                    "id,parent_id,ja",
+                    "1,1,高優先の名前",
+                ].join("\n"),
+                "schema/child_low.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 2,
+                }),
+                "data/child_low.csv": [
+                    "id,parent_id,ja",
+                    "1,1,低優先の説明",
+                ].join("\n"),
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'parent');
+
+            // 逆参照ヒントが表示されるまで待機
+            const hint = getReverseReferenceHint(table, 0, 0);
+            await expect(hint).toBeVisible();
+
+            // 優先度1の child_high の ja 値のみ表示されること
+            // 優先度2の child_low の ja 値は表示されないこと
+            await expect(hint).toHaveText('高優先の名前');
+        },
+    );
+
+    test(
+        '優先度未設定は最低優先: '
+        + '優先度設定済みのエントリのみ表示されること',
+        async ({ page }) => {
+            // parent: id列のみ
+            // child_priority: reverseReferencePriority=1, parent.id を参照, ja列あり
+            // child_none: reverseReferencePriority 未設定, parent.id を参照, ja列あり
+            const fs: MockFileSystem = {
+                "schema/parent.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/parent.csv": [
+                    "id",
+                    "1",
+                ].join("\n"),
+                "schema/child_priority.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 1,
+                }),
+                "data/child_priority.csv": [
+                    "id,parent_id,ja",
+                    "1,1,優先あり名前",
+                ].join("\n"),
+                "schema/child_none.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/child_none.csv": [
+                    "id,parent_id,ja",
+                    "1,1,未設定名前",
+                ].join("\n"),
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'parent');
+
+            // 逆参照ヒントが表示されるまで待機
+            const hint = getReverseReferenceHint(table, 0, 0);
+            await expect(hint).toBeVisible();
+
+            // reverseReferencePriority=1 の child_priority の ja 値のみ表示
+            // reverseReferencePriority 未設定の child_none は最低優先で除外
+            await expect(hint).toHaveText('優先あり名前');
+        },
+    );
+
+    test(
+        '同一優先度は両方表示: '
+        + '同じ優先度を持つエントリが全てカンマ区切りで表示されること',
+        async ({ page }) => {
+            // parent: id列のみ
+            // child_a: reverseReferencePriority=1, parent.id を参照, ja列あり
+            // child_b: reverseReferencePriority=1, parent.id を参照, ja列あり
+            const fs: MockFileSystem = {
+                "schema/parent.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/parent.csv": [
+                    "id",
+                    "1",
+                ].join("\n"),
+                "schema/child_a.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 1,
+                }),
+                "data/child_a.csv": [
+                    "id,parent_id,ja",
+                    "1,1,名前A",
+                ].join("\n"),
+                "schema/child_b.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 1,
+                }),
+                "data/child_b.csv": [
+                    "id,parent_id,ja",
+                    "1,1,名前B",
+                ].join("\n"),
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'parent');
+
+            // 逆参照ヒントが表示されるまで待機
+            const hint = getReverseReferenceHint(table, 0, 0);
+            await expect(hint).toBeVisible();
+
+            // 同一優先度（reverseReferencePriority=1）の child_a, child_b
+            // 両方の ja 値がカンマ区切りで表示されること
+            // エントリの列挙順が不定のため、どちらの並び順でも許容する
+            await expect(hint).toHaveText(
+                /^(名前A, 名前B|名前B, 名前A)$/
+            );
+        },
+    );
+
+    test(
+        '逆参照チェーンでの優先度: '
+        + 'FK列の参照ヒントが最高優先度の子テーブルで解決されること',
+        async ({ page }) => {
+            // parent: id のみ（表示列なし）
+            //   → 逆参照チェーンで表示テキストを解決する
+            // aaa_child_low: id(PK, FK→parent.id), ja
+            //   → reverseReferencePriority=2
+            //   → アルファベット順で先に列挙される（現実装では先にbreakされる）
+            // zzz_child_high: id(PK, FK→parent.id), ja
+            //   → reverseReferencePriority=1
+            //   → 優先度ベースの選択により、こちらが選ばれるべき
+            // other: id, parent_id(FK→parent.id)
+            //   → other を開いて parent_id 列の参照ヒントを確認
+            const fs: MockFileSystem = {
+                "schema/parent.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/parent.csv": [
+                    "id",
+                    "1",
+                    "2",
+                ].join("\n"),
+                "schema/aaa_child_low.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int", reference: "parent.id" },
+                        { key: 1, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 2,
+                }),
+                "data/aaa_child_low.csv": [
+                    "id,ja",
+                    "1,低優先テキスト",
+                    "2,低優先テキスト2",
+                ].join("\n"),
+                "schema/zzz_child_high.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int", reference: "parent.id" },
+                        { key: 1, name: "ja", type: "string" },
+                    ],
+                    primary_key: "id",
+                    reverseReferencePriority: 1,
+                }),
+                "data/zzz_child_high.csv": [
+                    "id,ja",
+                    "1,高優先テキスト",
+                    "2,高優先テキスト2",
+                ].join("\n"),
+                "schema/other.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                    ],
+                    primary_key: "id",
+                }),
+                "data/other.csv": [
+                    "id,parent_id",
+                    "1,1",
+                    "2,2",
+                ].join("\n"),
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'other');
+
+            // parent_id 列（colIndex=1）の参照ヒント
+            // parent テーブルに表示列がないため、逆参照チェーンで解決される
+            // reverseReferencePriority=1 の zzz_child_high が選択されるべき
+            const hint0 = getReferenceHint(table, 0, 1);
+            await expect(hint0).toBeVisible();
+            await expect(hint0).toHaveText('高優先テキスト');
+
+            const hint1 = getReferenceHint(table, 1, 1);
+            await expect(hint1).toBeVisible();
+            await expect(hint1).toHaveText('高優先テキスト2');
+        },
+    );
+});
