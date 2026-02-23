@@ -1574,4 +1574,79 @@ test.describe('1:n展開ビュー', () => {
         expect(errors.length).toBe(1);
         expect(errors[0].message).toContain('targetTable');
     });
+
+    // ---------------------------------------------------------
+    // 折りたたみ後の選択範囲調整テスト
+    // ---------------------------------------------------------
+
+    test('折りたたみで選択範囲下端が非表示行に含まれる場合、選択範囲が縮小されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態（8行）:
+        // Row 0: quest.id=1 (1:2リーダー) → トグルあり
+        // Row 1: パディング
+        // Row 2: quest.id=2 (1:2リーダー) → トグルあり
+        // Row 3: パディング
+        // Row 4: quest.id=3 (1:1)
+        // Row 5: quest.id=4 (1:1)
+        // Row 6: quest.id=5 (1:2リーダー) → トグルあり
+        // Row 7: パディング
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（空行）にペースト → row8-15の8行に展開される
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // ペースト後の状態:
+        // Row 8: quest.id=1 (1:2リーダー) → トグルあり
+        // Row 9: パディング
+        // Row 10: quest.id=2 (1:2リーダー) → トグルあり
+        // Row 11: パディング
+        // Row 12: quest.id=3 (1:1)
+        // Row 13: quest.id=4 (1:1)
+        // Row 14: quest.id=5 (1:2リーダー) → トグルあり
+        // Row 15: パディング
+        // 選択範囲: row8-15
+
+        // Row 14のトグル（▼）をクリックして折りたたむ → Row 15が非表示になる
+        const row14 = table.locator('.editor-table-row').nth(14 + 1);
+        const toggle14 = row14.locator('.view-collapse-toggle');
+        await expect(toggle14).toHaveText('▼');
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▶');
+
+        // 選択範囲がrow8-14に縮小されること
+        // 検証1: 選択枠（.selection）のwidthとheightが正の値であること
+        const selection = page.locator('.selection').first();
+        const selectionWidth = await selection.evaluate(el => parseFloat(el.style.width));
+        const selectionHeight = await selection.evaluate(el => parseFloat(el.style.height));
+        expect(selectionWidth).toBeGreaterThan(0);
+        expect(selectionHeight).toBeGreaterThan(0);
+
+        // 検証2: 選択範囲の背景要素がdisplay: noneでないこと
+        const backgrounds = page.locator('.selection-background');
+        const bgCount = await backgrounds.count();
+        let visibleBgCount = 0;
+        for (let i = 0; i < bgCount; i++) {
+            const display = await backgrounds.nth(i).evaluate(el => el.style.display);
+            if (display !== 'none') visibleBgCount++;
+        }
+        expect(visibleBgCount).toBeGreaterThan(0);
+
+        // 検証3: コピーしてクリップボード行数で選択範囲のサイズを間接検証
+        // 折りたたみ後は row8-14 の7行分が選択されているべき
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(7);
+        }).toPass({ timeout: 3000 });
+    });
 });

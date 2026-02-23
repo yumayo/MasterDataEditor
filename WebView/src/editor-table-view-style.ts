@@ -121,6 +121,32 @@ export class EditorTableViewStyle {
             // 折りたたみ: 子行を非表示にする
             toggle.textContent = '▶';
             this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, false);
+            // 非表示になった行と選択範囲が重なる場合、選択範囲を縮小する
+            const childCount = leaderMeta.groupInfos[groupInfoIndex].groupSize - 1;
+            if (childCount > 0) {
+                const firstHiddenDomRow = leaderMetaIndex + 2;
+                const lastHiddenDomRow = leaderMetaIndex + 1 + childCount;
+                const range = this.selection.getSelectionRange();
+                let startRow = range.startRow;
+                let endRow = range.endRow;
+                let adjusted = false;
+                if (endRow >= firstHiddenDomRow && endRow <= lastHiddenDomRow) {
+                    endRow = firstHiddenDomRow - 1;
+                    adjusted = true;
+                }
+                if (startRow >= firstHiddenDomRow && startRow <= lastHiddenDomRow) {
+                    startRow = lastHiddenDomRow + 1;
+                    adjusted = true;
+                }
+                if (adjusted) {
+                    if (startRow > endRow) {
+                        const leaderDomRow = leaderMetaIndex + 1;
+                        startRow = leaderDomRow;
+                        endRow = leaderDomRow;
+                    }
+                    this.selection.setRange(startRow, range.startColumn, endRow, range.endColumn);
+                }
+            }
         }
         // 行の表示/非表示が変わったので選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
