@@ -950,20 +950,21 @@ export class EditorTableHandler {
         }
 
         // 動的参照の場合
-        return this.resolveDynamicReferenceAsync(expr, focus.row);
+        return this.resolveDynamicReferenceAsync(expr, focus.row, columnIndex);
     }
 
     /**
      * 動的参照を解決する
      * @param expr 動的参照式
      * @param rowIndex 現在の行インデックス
+     * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
      * @returns 解決した参照情報、または解決できない場合は undefined
      */
-    private async resolveDynamicReferenceAsync(expr: DynamicReference, rowIndex: number): Promise<ResolvedReference | undefined> {
+    private async resolveDynamicReferenceAsync(expr: DynamicReference, rowIndex: number, currentDataColumnIndex: number): Promise<ResolvedReference | undefined> {
         if (!this.tableData || !this.referenceDataCache) return undefined;
 
-        // 1. 同一行の指定カラムの値を取得
-        const valueColumnIndex = this.tableData.header.findIndex(col => col.name === expr.filter.valueColumn);
+        // 1. 同一行の指定カラムの値を取得（ビューの合成ヘッダーではプレフィックス付きのためresolveで解決）
+        const valueColumnIndex = this.table.resolveValueColumnIndex(expr.filter.valueColumn, currentDataColumnIndex);
         if (valueColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.filter.valueColumn}' not found in table header`);
             return undefined;

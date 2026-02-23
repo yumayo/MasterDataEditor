@@ -261,10 +261,11 @@ export class EditorTableReference {
     /**
      * 動的参照のvalueColumn名から合成ヘッダー上の列インデックスを解決する
      * 通常テーブルはヘッダーの直接名前一致、ビューはcolumnMappingsで同一テーブル内を検索する
+     * EditorTableHandlerからも使用されるため公開する
      * @param valueColumnName 動的参照式のvalueColumn名（素の列名）
      * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
      */
-    private resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
+    resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
         if (!this.table.hasViewContext()) {
             // 通常テーブル: ヘッダーの直接名前一致で解決する
             return this.tableData.header.findIndex(col => col.name === valueColumnName);

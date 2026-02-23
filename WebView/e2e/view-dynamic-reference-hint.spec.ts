@@ -228,4 +228,46 @@ test.describe('ビューテーブルの動的参照ヒント表示', () => {
             await expect(getReferenceHint(table, 0, 6)).toHaveText('ポーション');
         },
     );
+
+    test(
+        'JOIN列の動的参照セルをダブルクリックするとドロップダウンが表示されること',
+        async ({ page }) => {
+            const table = await openViewTableAsync(page, 'view_quest');
+            // 動的参照ヒントが表示されるまで待機（参照データのプリロード完了を確認）
+            const row0Hint = getReferenceHint(table, 0, 6);
+            await expect(row0Hint).toBeVisible({ timeout: 10000 });
+            await expect(row0Hint).toHaveText('勇者');
+            // quest_reward.reward_record_id列（colIndex=6）のRow0をダブルクリック
+            // Row0: reward_table_id=1 → charaテーブルのドロップダウンが開くべき
+            const dynamicRefCell = getDataCell(table, 0, 6);
+            await dynamicRefCell.dblclick();
+            // ドロップダウンが表示されること
+            const dropdown = page.locator('.grid-dropdown-list');
+            await expect(dropdown).toBeVisible();
+            // charaテーブルの全レコード（勇者、魔法使い、戦士）が選択肢に含まれること
+            const items = dropdown.locator('.grid-dropdown-item');
+            await expect(items).toHaveCount(3);
+        },
+    );
+
+    test(
+        'ベーステーブル列の動的参照セルをダブルクリックするとドロップダウンが表示されること（回帰テスト）',
+        async ({ page }) => {
+            const table = await openViewTableAsync(page, 'view_quest');
+            // 動的参照ヒントが表示されるまで待機
+            const row0Hint = getReferenceHint(table, 0, 3);
+            await expect(row0Hint).toBeVisible({ timeout: 10000 });
+            await expect(row0Hint).toHaveText('戦士');
+            // first_clear_reward_record_id列（colIndex=3）のRow0をダブルクリック
+            // Row0: first_clear_reward_table_id=1 → charaテーブルのドロップダウンが開くべき
+            const dynamicRefCell = getDataCell(table, 0, 3);
+            await dynamicRefCell.dblclick();
+            // ドロップダウンが表示されること
+            const dropdown = page.locator('.grid-dropdown-list');
+            await expect(dropdown).toBeVisible();
+            // charaテーブルの全レコード（勇者、魔法使い、戦士）が選択肢に含まれること
+            const items = dropdown.locator('.grid-dropdown-item');
+            await expect(items).toHaveCount(3);
+        },
+    );
 });

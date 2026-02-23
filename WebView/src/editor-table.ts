@@ -700,6 +700,14 @@ export class EditorTable {
         return this.reference.getRowPkValue(rowIndex);
     }
 
+    /**
+     * 動的参照のvalueColumn名から合成ヘッダー上の列インデックスを解決する
+     * 通常テーブルはヘッダーの直接名前一致、ビューはcolumnMappingsで同一テーブル内を検索する
+     */
+    resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
+        return this.reference.resolveValueColumnIndex(valueColumnName, currentDataColumnIndex);
+    }
+
     // =========================================================================
     // ファサード: EditorTableView
     // =========================================================================
