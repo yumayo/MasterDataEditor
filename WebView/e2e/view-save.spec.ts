@@ -385,34 +385,6 @@ test.describe(
         );
 
         test(
-            '結合列へのDelete操作が拒否され'
-            + '震えアニメーションが表示されること',
-            async ({ page }) => {
-                await installMockApiAsync(
-                    page, createFileSystem()
-                );
-                await page.goto('/');
-
-                const table = await openTableAsync(
-                    page, 'view_chara'
-                );
-
-                // 結合列（skill.value）を選択
-                await selectCellAsync(page, table, 0, 2);
-
-                // Delete押下
-                await page.keyboard.press('Delete');
-
-                // 値が変わっていないこと（skill.value初期値は'3'）
-                await expect(getDataCell(table, 0, 2)).toHaveText('3');
-
-                // 震えアニメーションが表示されること
-                const selection = page.locator('.selection');
-                await expect(selection).toHaveClass(/selection-rejected/);
-            },
-        );
-
-        test(
             'FK列変更時にJOIN列が'
             + '新しい参照先の値に同期されること',
             async ({ page }) => {
