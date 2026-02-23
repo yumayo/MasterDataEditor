@@ -122,6 +122,10 @@ export class EditorTableView {
         return this.inspector.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
     }
 
+    isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
+        return this.inspector.isSelectionCoveringCompleteGroups(startRow, endRow);
+    }
+
     containsJoinedColumn(startColumn: number, endColumn: number): boolean {
         return this.inspector.containsJoinedColumn(startColumn, endColumn);
     }

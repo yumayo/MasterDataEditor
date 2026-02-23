@@ -67,6 +67,36 @@ export class EditorTableViewInspector {
     }
 
     /**
+     * 選択範囲が完全なFKグループ単位で構成されているかを判定する
+     * 選択範囲内の各行について、その行が属するFKグループの全行が選択範囲に含まれていなければfalseを返す。
+     */
+    isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
+        if (!this.view.hasViewContext()) return false;
+        const viewContext = this.view.getViewContext();
+        const rowMetadata = viewContext.rowMetadata;
+        for (let domRow = startRow; domRow <= endRow; domRow++) {
+            const metaIndex = domRow - 1;
+            // メタデータ範囲外の行はビュー非対象の空行なのでスキップ
+            if (metaIndex < 0 || metaIndex >= rowMetadata.length) continue;
+            const meta = rowMetadata[metaIndex];
+            for (const groupInfo of meta.groupInfos) {
+                if (groupInfo.groupSize <= 1) continue;
+                // グループの先頭と末尾のメタインデックス
+                const groupStartMeta = metaIndex - groupInfo.groupPosition;
+                const groupEndMeta = groupStartMeta + groupInfo.groupSize - 1;
+                // DOM行番号に変換（metaIndex + 1 = domRow）
+                const groupStartDomRow = groupStartMeta + 1;
+                const groupEndDomRow = groupEndMeta + 1;
+                // グループの全行が選択範囲内にあるか
+                if (groupStartDomRow < startRow || groupEndDomRow > endRow) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
      * 指定された列範囲に結合列が含まれるかを判定する
      */
     containsJoinedColumn(startColumn: number, endColumn: number): boolean {

@@ -1692,4 +1692,127 @@ test.describe('1:n展開ビュー', () => {
             expect(clipboardLines.length).toBe(8);
         }).toPass({ timeout: 3000 });
     });
+
+    // ---------------------------------------------------------
+    // FKグループ完全選択時のDeleteキー許可テスト
+    // ---------------------------------------------------------
+
+    test('完全なFKグループ全体を選択してDeleteすると許可されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認
+        await expect(getDataCell(table, 0, 0)).toHaveText('1');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+
+        // 行0-1を全列選択（complete group: リーダー＋子行）
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 4).click({ modifiers: ['Shift'] });
+
+        // Delete押下
+        await page.keyboard.press('Delete');
+
+        // 全セルがクリアされることを検証（パディングセルはスキップされるがデータセルはクリア）
+        // quest.id, quest.name がクリア
+        await expect(getDataCell(table, 0, 0)).toHaveText('');
+        await expect(getDataCell(table, 0, 1)).toHaveText('');
+        // reward_group_id がクリアされビューが再構築される
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        // quest_reward列もクリア
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+    });
+
+    test('完全なFKグループと通常行を含む選択でDeleteが許可されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 行0-2を全列選択（complete group + normal row）
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 2, 4).click({ modifiers: ['Shift'] });
+
+        // Delete押下
+        await page.keyboard.press('Delete');
+
+        // 全データがクリアされること
+        await expect(getDataCell(table, 0, 0)).toHaveText('');
+        await expect(getDataCell(table, 0, 1)).toHaveText('');
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        await expect(getDataCell(table, 1, 0)).toHaveText('');
+        await expect(getDataCell(table, 1, 1)).toHaveText('');
+    });
+
+    test('FKグループのリーダー行のみの選択でDeleteが拒否されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 行0のみを全列選択（リーダーのみ、子行なし→不完全グループ）
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 0, 4).click({ modifiers: ['Shift'] });
+
+        // Delete押下
+        await page.keyboard.press('Delete');
+
+        // 拒否されて値が変わらないことを検証
+        await expect(getDataCell(table, 0, 0)).toHaveText('1');
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+    });
+
+    test('FK列のみの範囲選択で完全グループならDeleteが許可されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // FK source列(col2)〜結合列(col4)を行0-1で選択
+        await selectCellAsync(page, table, 0, 2);
+        await getDataCell(table, 1, 4).click({ modifiers: ['Shift'] });
+
+        // Delete押下
+        await page.keyboard.press('Delete');
+
+        // FK source列がクリアされビューが再構築
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+    });
+
+    test('完全FKグループ選択Delete後のUndo/Redoが正しく動作すること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態
+        await expect(getDataCell(table, 0, 0)).toHaveText('1');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(1);
+
+        // 行0-1を全列選択してDelete
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 4).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Delete');
+
+        // Delete後確認
+        await expect(getDataCell(table, 0, 0)).toHaveText('');
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+
+        // Undo → 元の状態に復元
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 0, 0)).toHaveText('1');
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(table.locator('.view-collapse-toggle')).toHaveCount(1);
+
+        // Redo → 再度削除状態
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 0)).toHaveText('');
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+    });
 });

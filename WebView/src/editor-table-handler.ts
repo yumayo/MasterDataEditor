@@ -487,17 +487,23 @@ export class EditorTableHandler {
 
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
-            // 結合列またはパディングセルを含む場合は削除を拒否
             const deleteRange = this.selection.getSelectionRange();
-            if (this.table.containsReadOnlyCell(
+            const hasReadOnlyCell = this.table.containsReadOnlyCell(
                 deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn
-            )) {
-                this.table.showRejectionFeedback();
-                return;
+            );
+            if (hasReadOnlyCell) {
+                // FKグループが完全に含まれていなければ拒否
+                if (!this.table.isSelectionCoveringCompleteGroups(deleteRange.startRow, deleteRange.endRow)) {
+                    this.table.showRejectionFeedback();
+                    return;
+                }
             }
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
+                    // パディングセルはスキップ（変更不要）
+                    // 結合列セルはapplyViewAwareCellChanges内でFK値クリアに連動して自動更新される
+                    if (hasReadOnlyCell && this.table.isPaddingCell(r, c)) continue;
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
                 }

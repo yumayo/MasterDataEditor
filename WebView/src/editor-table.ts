@@ -739,6 +739,11 @@ export class EditorTable {
         return this.view.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
     }
 
+    /** 選択範囲が完全なFKグループ単位で構成されているかを判定する */
+    isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
+        return this.view.isSelectionCoveringCompleteGroups(startRow, endRow);
+    }
+
     /** 指定された列範囲に結合列が含まれるかを判定する */
     containsJoinedColumn(startColumn: number, endColumn: number): boolean {
         return this.view.containsJoinedColumn(startColumn, endColumn);
