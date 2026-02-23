@@ -84,7 +84,7 @@ export class EditorTableReference {
         const expr = parseReferenceExpression(column.reference);
         if (isDynamicReference(expr)) {
             // 動的参照の場合: 非同期で参照ヒントを更新
-            this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex);
+            this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex, dataColumnIndex);
             if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
@@ -186,10 +186,10 @@ export class EditorTableReference {
     /**
      * 動的参照の参照ヒントを非同期で更新する
      */
-    private updateDynamicReferenceHintAsync(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number): void {
+    private updateDynamicReferenceHintAsync(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number, dataColumnIndex: number): void {
         if (!isDynamicReference(expr)) return;
-        // 同一行の指定カラムの値を取得
-        const valueColumnIndex = this.tableData.header.findIndex(col => col.name === expr.filter.valueColumn);
+        // 同一行の指定カラムの値を取得（ビューの合成ヘッダーではプレフィックス付きのためresolveで解決）
+        const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
         if (valueColumnIndex === -1) return;
         // column=0は行ヘッダーなので、データ列インデックスに+1する
         const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
@@ -259,12 +259,32 @@ export class EditorTableReference {
     }
 
     /**
+     * 動的参照のvalueColumn名から合成ヘッダー上の列インデックスを解決する
+     * 通常テーブルはヘッダーの直接名前一致、ビューはcolumnMappingsで同一テーブル内を検索する
+     * @param valueColumnName 動的参照式のvalueColumn名（素の列名）
+     * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
+     */
+    private resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
+        if (!this.table.hasViewContext()) {
+            // 通常テーブル: ヘッダーの直接名前一致で解決する
+            return this.tableData.header.findIndex(col => col.name === valueColumnName);
+        }
+        // ビュー: columnMappingsで同一テーブル内のsourceColumnNameを検索する
+        // columnMappingsはベーステーブル列もJOIN列も全て含んでいるため、このパスだけで解決できる
+        const viewContext = this.table.getViewContext();
+        const currentMapping = viewContext.columnMappings[currentDataColumnIndex];
+        for (let i = 0; i < viewContext.columnMappings.length; i++) {
+            const m = viewContext.columnMappings[i];
+            if (m.tableName === currentMapping.tableName && m.sourceColumnName === valueColumnName) return i;
+        }
+        return -1;
+    }
+
+    /**
      * 変更された列に依存する動的参照列のヒントを同一行内で再評価する
      * Excelの二段リストと同様に、親列の変更で子列の参照先を切り替える
      */
     private updateDependentColumnsInRow(rowIndex: number, changedDataColumnIndex: number): void {
-        const changedColumnName = this.tableData.header[changedDataColumnIndex]?.name;
-        if (!changedColumnName) return;
         const tableElement = this.table.getTableElement();
         const rowElement = tableElement.children[rowIndex] as HTMLElement;
         for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
@@ -273,8 +293,8 @@ export class EditorTableReference {
             if (!column.reference) continue;
             const expr = parseReferenceExpression(column.reference);
             if (!isDynamicReference(expr)) continue;
-            // この動的参照が変更された列を参照元としているか確認
-            if (expr.filter.valueColumn !== changedColumnName) continue;
+            // この動的参照が変更された列を参照元としているか確認（ビューの合成ヘッダー名にも対応）
+            if (this.resolveValueColumnIndex(expr.filter.valueColumn, colIdx) !== changedDataColumnIndex) continue;
             // 依存しているセルのヒントを再評価する
             const cell = rowElement.children[colIdx + 1] as HTMLElement;
             if (cell) {
