@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(npx playwright*)"
+    ]
+  },
+  "spinnerTipsEnabled": false,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/prepend-plan-header.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
