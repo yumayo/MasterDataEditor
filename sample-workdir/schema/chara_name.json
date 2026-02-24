@@ -1,0 +1,20 @@
+{
+    "description": "キャラ名マスタ",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "reference": "chara.id",
+            "width": 197
+        },
+        {
+            "key": 2,
+            "name": "ja",
+            "type": "string",
+            "comment": "名前(日本語)",
+            "width": 196
+        }
+    ]
+}

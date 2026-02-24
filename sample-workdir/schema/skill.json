@@ -1,0 +1,28 @@
+{
+    "description": "スキルマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "value",
+            "type": "int",
+            "comment": "スキル効果量",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "skill_value_type_id",
+            "type": "int",
+            "comment": "スキル効果量のタイプ",
+            "reference": "skill_value_type.id",
+            "width": 246
+        }
+    ],
+    "primary_key": "id"
+}

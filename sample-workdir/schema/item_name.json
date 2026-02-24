@@ -1,0 +1,27 @@
+{
+    "description": "アイテム名マスタ",
+    "reverseReferencePriority": 1,
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "reference": "item.id",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "enum",
+            "type": "enum",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "ja",
+            "type": "string",
+            "comment": "名前(日本語)",
+            "width": 256
+        }
+    ]
+}

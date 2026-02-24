@@ -17,16 +17,8 @@ public class Logger
 
 	public static void Setup()
 	{
-		var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-		var instanceLabel = AppEnvironment.GetRequired("MASTER_DATA_EDITOR_INSTANCE_LABEL");
-		var appFolder = Path.Combine(appDataPath, "yumayo", $"App.MasterDataEditor.{instanceLabel}");
-		Directory.CreateDirectory(appFolder);
-
-		var logDirectory = Path.Combine(appFolder, "log");
-		Directory.CreateDirectory(logDirectory);
-
-		var logName = "App.MasterDataEditor.log";
-		var path = Path.Join(logDirectory, logName);
+		var path = AppEnvironment.GetServerLogPath();
+		Directory.CreateDirectory(AppEnvironment.GetDirectoryName(path));
 
 		var streamWriter = File.AppendText(path);
 		var textWriterSynchronized = TextWriter.Synchronized(streamWriter);

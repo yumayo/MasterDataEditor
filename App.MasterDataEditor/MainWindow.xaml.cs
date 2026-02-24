@@ -15,8 +15,7 @@ public partial class MainWindow : Window
 	{
 		InitializeComponent();
 
-		var instanceLabel = AppEnvironment.GetRequired("MASTER_DATA_EDITOR_INSTANCE_LABEL");
-		Title = $"マスターデータエディター({instanceLabel})";
+		Title = $"マスターデータ入力支援ツール";
 
 		Logger.Info("Starting MainWindow service initialization");
 		Application.Current.Dispatcher.InvokeAsync(InitializeWebView2handler);
@@ -26,7 +25,7 @@ public partial class MainWindow : Window
 
 	private async Task InitializeWebView2handler()
 	{
-		var consoleLogPath = AppEnvironment.GetRequired("MASTER_DATA_EDITOR_CONSOLE_LOG_PATH");
+		var consoleLogPath = AppEnvironment.GetConsoleLogPath();
 		_webView2Handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
 	}
 }

@@ -431,5 +431,3 @@ FodyWeavers.xsd
 # MasterDataEditor
 #===============================================================================
 .env
-WebView/src/config.json
-WebView/test-results/

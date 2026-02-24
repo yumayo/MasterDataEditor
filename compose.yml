@@ -21,5 +21,6 @@ services:
       - yumayo-ai
 
 networks:
+  # https://github.com/yumayo/ai-container でインストールしたネットワークが必要です。
   yumayo-ai:
     external: true

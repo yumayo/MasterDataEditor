@@ -1,0 +1,6 @@
+id,recover_stamina,recover_hp,attack,defence,speed,skill_id,selling_price
+1,,,1,0,0,,5
+2,,,0,0,0,,10
+3,,,0,0,0,,1
+4,,,3,0,0,,100
+5,,,5,0,0,,150

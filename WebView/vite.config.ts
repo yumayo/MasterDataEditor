@@ -13,11 +13,13 @@ function removeModuleType(): Plugin {
     }
 }
 
-function getRequiredDevPort(): number {
+function getDevPort(): number {
     const rawPort = env.MASTER_DATA_EDITOR_DEV_PORT
+    // NOTE: ガイドラインよりも実行のしやすさを優先するため特別にフォールバックを許可
+    if (!rawPort) return 5173
     const devPort = Number.parseInt(rawPort, 10)
     if (!Number.isFinite(devPort)) {
-        throw new Error('Environment variable "MASTER_DATA_EDITOR_DEV_PORT" is required and must be a valid integer.')
+        throw new Error('Environment variable "MASTER_DATA_EDITOR_DEV_PORT" must be a valid integer.')
     }
 
     return devPort
@@ -46,7 +48,7 @@ if (process.env.NODE_ENV === 'production') {
         }
     }
 } else {
-    const devPort = getRequiredDevPort()
+    const devPort = getDevPort()
     config = {
         base: './',
         server: {

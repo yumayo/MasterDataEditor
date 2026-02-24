@@ -1,0 +1,18 @@
+{
+    "description": "スキル名マスタ",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "reference": "skill.id"
+        },
+        {
+            "key": 1,
+            "name": "ja",
+            "type": "string",
+            "comment": "名前(日本語)"
+        }
+    ]
+}

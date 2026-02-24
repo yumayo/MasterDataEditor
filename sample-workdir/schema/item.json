@@ -1,0 +1,41 @@
+{
+    "description": "アイテムマスタ",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 257
+        },
+        {
+            "key": 3,
+            "name": "attack",
+            "type": "int",
+            "comment": "攻撃値",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "defence",
+            "type": "int",
+            "comment": "防御値",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "speed",
+            "type": "int",
+            "comment": "すばやさ値",
+            "width": 100
+        },
+        {
+            "key": 7,
+            "name": "selling_price",
+            "type": "int",
+            "comment": "売価",
+            "width": 100
+        }
+    ],
+    "primary_key": "id"
+}

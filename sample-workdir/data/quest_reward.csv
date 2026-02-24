@@ -1,0 +1,5 @@
+id,group_id,reward_table_id,reward_record_id
+1,1,1,1
+2,1,2,2
+3,2,1,2
+4,3,2,5

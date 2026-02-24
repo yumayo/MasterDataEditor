@@ -1,0 +1,63 @@
+{
+    "description": "キャラマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 199
+        },
+        {
+            "key": 1,
+            "name": "recover_stamina",
+            "type": "int",
+            "comment": "スタミナ回復量",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "recover_hp",
+            "type": "int",
+            "comment": "HP回復量",
+            "width": 100
+        },
+        {
+            "key": 3,
+            "name": "attack",
+            "type": "int",
+            "comment": "攻撃力",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "defence",
+            "type": "int",
+            "comment": "防御力",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "speed",
+            "type": "int",
+            "comment": "速度",
+            "width": 100
+        },
+        {
+            "key": 6,
+            "name": "skill_id",
+            "type": "int",
+            "comment": "スキルID",
+            "reference": "skill.id",
+            "width": 100
+        },
+        {
+            "key": 7,
+            "name": "selling_price",
+            "type": "int",
+            "comment": "売却価格",
+            "width": 100
+        }
+    ],
+    "primary_key": "id"
+}

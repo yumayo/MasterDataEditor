@@ -1,0 +1,5 @@
+{
+    "name": "view_item",
+    "baseTable": "item",
+    "joins": []
+}

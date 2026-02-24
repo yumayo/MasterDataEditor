@@ -73,7 +73,7 @@ public class WebView2Handler
 			await webView2.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}");
 
 #if DEBUG
-			var devPort = AppEnvironment.GetRequiredInt("MASTER_DATA_EDITOR_DEV_PORT");
+			var devPort = AppEnvironment.GetDevPort();
 			var devUri = new Uri($"http://localhost:{devPort}");
 			webView2.CoreWebView2.Navigate(devUri.ToString());
 #else

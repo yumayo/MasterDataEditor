@@ -1,0 +1,12 @@
+{
+    "name": "view_chara",
+    "baseTable": "chara",
+    "joins": [
+        {
+            "sourceColumn": "skill_id",
+            "targetTable": "skill",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 6
+        }
+    ]
+}

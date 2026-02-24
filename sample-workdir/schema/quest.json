@@ -1,0 +1,37 @@
+{
+    "description": "クエストマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 106
+        },
+        {
+            "key": 1,
+            "name": "first_clear_reward_table_id",
+            "type": "int",
+            "comment": "初回報酬テーブルID",
+            "reference": "table.id",
+            "width": 183
+        },
+        {
+            "key": 2,
+            "name": "first_clear_reward_record_id",
+            "type": "int",
+            "comment": "初回報酬レコードID",
+            "reference": "$(table.id == $first_clear_reward_table_id).master.id",
+            "width": 224
+        },
+        {
+            "key": 3,
+            "name": "quest_reward_group_id",
+            "type": "int",
+            "comment": "クエスト報酬グループID",
+            "reference": "quest_reward.group_id",
+            "width": 185
+        }
+    ],
+    "primary_key": "id"
+}

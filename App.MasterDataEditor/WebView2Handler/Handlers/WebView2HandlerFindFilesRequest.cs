@@ -37,10 +37,9 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-				var appFolder = Path.Combine(appDataPath, "yumayo", "App.MasterDataEditor");
-				Directory.CreateDirectory(appFolder);
-				var dirPath = Path.Combine(appFolder, directory);
+				var workDir = AppEnvironment.GetWorkDir();
+				Directory.CreateDirectory(workDir);
+				var dirPath = Path.Combine(workDir, directory);
 
 				var files = new List<object>();
 				var dirs = new List<object>();

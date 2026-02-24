@@ -1,0 +1,50 @@
+{
+    "name": "view_item_name",
+    "baseTable": "item_name",
+    "joins": [
+        {
+            "sourceColumn": "id",
+            "targetTable": "item",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 0,
+            "sourceTable": ""
+        }
+    ],
+    "columns": [
+        {
+            "tableName": "item_name",
+            "columnName": "id",
+            "width": 174
+        },
+        {
+            "tableName": "item",
+            "columnName": "attack",
+            "width": 100
+        },
+        {
+            "tableName": "item",
+            "columnName": "defence",
+            "width": 100
+        },
+        {
+            "tableName": "item",
+            "columnName": "speed",
+            "width": 100
+        },
+        {
+            "tableName": "item",
+            "columnName": "selling_price",
+            "width": 100
+        },
+        {
+            "tableName": "item_name",
+            "columnName": "enum",
+            "width": 100
+        },
+        {
+            "tableName": "item_name",
+            "columnName": "ja",
+            "width": 256
+        }
+    ]
+}

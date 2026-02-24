@@ -1,0 +1,75 @@
+{
+    "name": "view_quest",
+    "baseTable": "quest",
+    "joins": [
+        {
+            "sourceColumn": "first_clear_reward_table_id",
+            "targetTable": "table",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 3,
+            "sourceTable": ""
+        },
+        {
+            "sourceColumn": "quest_reward_group_id",
+            "targetTable": "quest_reward",
+            "targetColumn": "group_id",
+            "insertAfterViewColumnIndex": 3,
+            "sourceTable": ""
+        }
+    ],
+    "columns": [
+        {
+            "tableName": "quest",
+            "columnName": "id",
+            "width": 58
+        },
+        {
+            "tableName": "quest",
+            "columnName": "first_clear_reward_table_id",
+            "width": 183
+        },
+        {
+            "tableName": "quest",
+            "columnName": "first_clear_reward_record_id",
+            "width": 210
+        },
+        {
+            "tableName": "quest",
+            "columnName": "quest_reward_group_id",
+            "width": 175
+        },
+        {
+            "tableName": "quest_reward",
+            "columnName": "id",
+            "width": 106
+        },
+        {
+            "tableName": "quest_reward",
+            "columnName": "reward_table_id",
+            "width": 222
+        },
+        {
+            "tableName": "quest_reward",
+            "columnName": "reward_record_id",
+            "width": 248
+        },
+        {
+            "tableName": "table",
+            "columnName": "master",
+            "width": 100,
+            "hidden": true
+        },
+        {
+            "tableName": "table",
+            "columnName": "comment",
+            "width": 100,
+            "hidden": true
+        },
+        {
+            "tableName": "table",
+            "columnName": "enum",
+            "width": 100,
+            "hidden": true
+        }
+    ]
+}

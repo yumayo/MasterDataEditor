@@ -1,0 +1,21 @@
+{
+    "description": "アイテム説明マスタ",
+    "reverseReferencePriority": 2,
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "reference": "item.id",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "ja",
+            "type": "string",
+            "comment": "名前(日本語)",
+            "width": 294
+        }
+    ]
+}

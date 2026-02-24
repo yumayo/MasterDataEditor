@@ -1,0 +1,21 @@
+{
+    "description": "スキル数値のタイプ",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID"
+        },
+        {
+            "key": 1,
+            "name": "enum",
+            "type": "enum"
+        },
+        {
+            "key": 2,
+            "name": "comment",
+            "type": "string"
+        }
+    ]
+}
