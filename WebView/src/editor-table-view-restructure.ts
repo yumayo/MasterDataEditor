@@ -3,7 +3,7 @@ import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
 import {AreaResizer} from "./area-resizer";
 import {Command, CompositeCommand} from "./command";
-import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
+import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {ViewRowMetadata} from "./model/view-row-metadata";
 import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from "./view-table-data-builder";
 import {ViewRowRestructureCommand, SavedViewRowState, createMetadataExpansionCommand} from "./view-row-restructure-command";
@@ -239,7 +239,10 @@ export class EditorTableViewRestructure {
         const rowHeader = this.table.structure.createRowHeaderCell(String(rowIndex), rowIndex - 1);
         cells.push(rowHeader);
         for (let j = 0; j < values.length; j++) {
-            const width = j < columnWidths.length ? columnWidths[j] : DEFAULT_COLUMN_WIDTH;
+            if (j >= columnWidths.length) {
+                throw new Error(`columnWidths の長さ(${columnWidths.length})が values の長さ(${values.length})より短いです`);
+            }
+            const width = columnWidths[j];
             const cell = EditorTable.createCell(this.table, values[j], j, width, DEFAULT_ROW_HEIGHT);
             cells.push(cell);
         }

@@ -8,6 +8,15 @@ export const DEFAULT_COLUMN_WIDTH = '100px';
 /** デフォルトの行高さ */
 export const DEFAULT_ROW_HEIGHT = '20px';
 
+/** 列ヘッダーのフォント指定（CSSの body { font-size: 13px; font-family: sans-serif; } と .editor-table-column-header { font-weight: bold; } に対応） */
+export const COLUMN_HEADER_FONT = 'bold 13px sans-serif';
+
+/** セル水平方向の余白（パディング左右12px + リサイズハンドル5px） */
+export const CELL_HORIZONTAL_EXTRA = 17;
+
+/** 最小列幅(px) */
+export const MIN_COLUMN_WIDTH_PX = 50;
+
 /**
  * サイドバー幅の定数
  */

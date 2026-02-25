@@ -5,7 +5,7 @@ import {ContextMenu} from "./context-menu";
 import {History} from "./history";
 import {Command, CellChange} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
+import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
@@ -483,7 +483,10 @@ export class EditorTable {
     getColumnWidth(columnIndex: number): string {
         const columnHeaderRow = this.element.children[0];
         const headerCell = columnHeaderRow.children[columnIndex + 1] as HTMLElement;
-        return headerCell.style.width || DEFAULT_COLUMN_WIDTH;
+        if (headerCell.style.width === '') {
+            throw new Error(`列ヘッダーセル(columnIndex=${columnIndex})にwidthが設定されていません`);
+        }
+        return headerCell.style.width;
     }
 
     /**

@@ -3,7 +3,8 @@ import {Selection} from "./selection";
 import {History} from "./history";
 import {Command, InsertColumnCommand, InsertColumnsCommand, InsertRowCommand, InsertRowsCommand, DeleteColumnCommand, DeleteColumnsCommand, DeleteRowCommand, DeleteRowsCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT} from "./constant";
+import {DEFAULT_ROW_HEIGHT} from "./constant";
+import {Utility} from "./utility";
 
 /**
  * テーブル構造操作モジュール
@@ -69,7 +70,7 @@ export class EditorTableStructure {
                     }
                     existingLabels.push(label);
                 }
-                const newHeaderCell = this.createColumnHeaderCell('', columnIndex, DEFAULT_COLUMN_WIDTH);
+                const newHeaderCell = this.createColumnHeaderCell('', columnIndex, Utility.calculateColumnWidth(''));
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newHeaderCell, insertBefore);
@@ -111,7 +112,7 @@ export class EditorTableStructure {
                 }
             } else {
                 // 通常の行: 行の高さは既存のセルから取得
-                const newCell = EditorTable.createCell(this.table, '', columnIndex, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+                const newCell = EditorTable.createCell(this.table, '', columnIndex, Utility.calculateColumnWidth(''), DEFAULT_ROW_HEIGHT);
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newCell, insertBefore);
                 // 後続のセルのdata-colを更新
@@ -162,7 +163,7 @@ export class EditorTableStructure {
         cells.push(rowHeaderCell);
         // データセルを作成（列幅は列ヘッダーから取得）
         for (let j = 0; j < columnCount; ++j) {
-            const cell = EditorTable.createCell(this.table, '', j, DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT);
+            const cell = EditorTable.createCell(this.table, '', j, this.table.getColumnWidth(j), DEFAULT_ROW_HEIGHT);
             cells.push(cell);
         }
         const newRow = EditorTable.createRow(cells, rowIndex);

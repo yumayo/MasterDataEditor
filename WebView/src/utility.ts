@@ -1,3 +1,5 @@
+import {COLUMN_HEADER_FONT, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
+
 export class Utility {
 
     static canvas: HTMLCanvasElement = document.createElement("canvas");
@@ -22,6 +24,14 @@ export class Utility {
         context.font = font;
         const metrics = context.measureText(text);
         return metrics.width;
+    }
+
+    /** カラム名に応じた列幅を計算する */
+    static calculateColumnWidth(columnName: string): string {
+        const textWidth = Utility.getTextWidth(columnName, COLUMN_HEADER_FONT);
+        const totalWidth = Math.ceil(textWidth) + CELL_HORIZONTAL_EXTRA;
+        const width = Math.max(totalWidth, MIN_COLUMN_WIDTH_PX);
+        return `${width}px`;
     }
 
     static getCssStyle(element: HTMLElement, prop: string) {
