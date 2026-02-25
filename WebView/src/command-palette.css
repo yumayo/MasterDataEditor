@@ -1,0 +1,86 @@
+/* コマンドパレットのオーバーレイ（背景遮蔽） */
+.command-palette-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* visibleクラス付与時にflexで中央配置 */
+.command-palette-overlay.visible {
+    display: flex;
+    justify-content: center;
+}
+
+/* コマンドパレット本体 */
+.command-palette {
+    width: 500px;
+    margin-top: 15vh;
+    height: fit-content;
+    background: var(--background-color);
+    border-radius: 6px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* 検索入力欄 */
+.command-palette-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    background: var(--background-color);
+    color: var(--font-color);
+    border: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    font-size: 14px;
+    outline: none;
+}
+
+/* 候補リスト */
+.command-palette-list {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+/* リスト項目 */
+.command-palette-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: var(--font-color);
+}
+
+.command-palette-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* 選択中の項目 */
+.command-palette-item.selected {
+    background: #264f78;
+    color: #ffffff;
+}
+
+/* 項目名 */
+.command-palette-item-name {
+    flex: 1;
+}
+
+/* 種別ラベル */
+.command-palette-item-kind {
+    font-size: 12px;
+    opacity: 0.6;
+    margin-left: 8px;
+}
+
+/* 該当なしメッセージ */
+.command-palette-empty {
+    padding: 16px 14px;
+    color: var(--font-color);
+    opacity: 0.5;
+    text-align: center;
+}

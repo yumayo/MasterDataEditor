@@ -3,6 +3,7 @@ import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
+import {CommandPalette} from "./command-palette";
 
 (async () => {
     // DOM要素を先頭で一括取得する
@@ -29,11 +30,18 @@ import {ContextMenu} from "./context-menu";
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
 
-    // Ctrl+Shift+F で検索パネルをアクティブにする
+    // コマンドパレットを初期化（タブへの密結合）
+    const commandPalette = new CommandPalette(tab, document.body);
+
+    // グローバルキーボードショートカットを登録
     document.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.ctrlKey && e.shiftKey && e.key === 'F') {
             e.preventDefault();
             sidebar.activateSearchPanel();
+        }
+        if (e.ctrlKey && !e.shiftKey && e.key === 'p') {
+            e.preventDefault();
+            commandPalette.show();
         }
     });
 
@@ -43,6 +51,7 @@ import {ContextMenu} from "./context-menu";
         const file = files[i];
         const tableName = file.name.split('.').slice(0, -1).join('.');
         sidebar.appendFile(tableName);
+        commandPalette.registerTable(tableName);
     }
 
     // ビューファイルを読み込み
@@ -53,6 +62,7 @@ import {ContextMenu} from "./context-menu";
             if (file.type !== 'file') continue;
             const viewName = file.name.split('.').slice(0, -1).join('.');
             sidebar.appendViewFile(viewName);
+            commandPalette.registerView(viewName);
         }
     } catch {
         // viewディレクトリが存在しない場合は無視
