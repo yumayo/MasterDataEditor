@@ -1429,6 +1429,96 @@ test.describe('1:n展開ビュー', () => {
     });
 
     // ---------------------------------------------------------
+    // 1:1行のFK列Deleteテスト（パディング行データ漏洩バグ検証）
+    // ---------------------------------------------------------
+
+    test('1:1行のFK列をDeleteで空にするとJOIN列が空になること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(col0), quest.name(col1), quest.reward_group_id(col2), quest_reward.id(col3), quest_reward.item(col4)
+        // 初期状態:
+        // Row 0: 1, MainQuest, 1, 1, Gold (reward_group_id=1 → 2 matches, リーダー行)
+        // Row 1: [pad], [pad], [pad], 2, Gem (パディング行)
+        // Row 2: 2, SideQuest, 2, 3, Potion (1:1行)
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 3)).toHaveText('1');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('2');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+        await expect(getDataCell(table, 2, 0)).toHaveText('2');
+        await expect(getDataCell(table, 2, 1)).toHaveText('SideQuest');
+        await expect(getDataCell(table, 2, 2)).toHaveText('2');
+        await expect(getDataCell(table, 2, 3)).toHaveText('3');
+        await expect(getDataCell(table, 2, 4)).toHaveText('Potion');
+
+        // Row 2（1:1行）のreward_group_id列（col2）をクリックして選択
+        await selectCellAsync(page, table, 2, 2);
+
+        // Deleteキーを押下
+        await page.keyboard.press('Delete');
+
+        // Row 2のreward_group_id列が空になること
+        await expect(getDataCell(table, 2, 2)).toHaveText('');
+
+        // Row 2のJOIN列（quest_reward.id, quest_reward.item）が空になること
+        // バグ: パディング行のデータ("2", "Gem")が漏洩してしまう
+        await expect(getDataCell(table, 2, 3)).toHaveText('');
+        await expect(getDataCell(table, 2, 4)).toHaveText('');
+
+        // Row 0, Row 1の表示が変わらないこと（副作用がないこと）
+        await expect(getDataCell(table, 0, 0)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 3)).toHaveText('1');
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 3)).toHaveText('2');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+    });
+
+    test('1:1行のFK列Delete後のUndo/Redoが正しく動作すること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態確認:
+        // Row 0: 1, MainQuest, 1, 1, Gold (リーダー行)
+        // Row 1: [pad], [pad], [pad], 2, Gem (パディング行)
+        // Row 2: 2, SideQuest, 2, 3, Potion (1:1行)
+        await expect(getDataCell(table, 2, 2)).toHaveText('2');
+        await expect(getDataCell(table, 2, 3)).toHaveText('3');
+        await expect(getDataCell(table, 2, 4)).toHaveText('Potion');
+
+        // Row 2（1:1行）のreward_group_id列（col2）をクリックして選択
+        await selectCellAsync(page, table, 2, 2);
+
+        // Deleteキーを押下
+        await page.keyboard.press('Delete');
+
+        // 削除後の状態確認
+        await expect(getDataCell(table, 2, 2)).toHaveText('');
+        await expect(getDataCell(table, 2, 3)).toHaveText('');
+        await expect(getDataCell(table, 2, 4)).toHaveText('');
+
+        // Undo → 元の状態に復元されること
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 2, 2)).toHaveText('2');
+        await expect(getDataCell(table, 2, 3)).toHaveText('3');
+        await expect(getDataCell(table, 2, 4)).toHaveText('Potion');
+        // Row 0, Row 1も元のまま
+        await expect(getDataCell(table, 0, 2)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
+
+        // Redo → 削除後の状態に戻ること
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 2, 2)).toHaveText('');
+        await expect(getDataCell(table, 2, 3)).toHaveText('');
+        await expect(getDataCell(table, 2, 4)).toHaveText('');
+    });
+
+    // ---------------------------------------------------------
     // 複数FKグループペースト後のトグル動作テスト
     // ---------------------------------------------------------
 

@@ -69,6 +69,10 @@ export class EditorTableViewSync {
         const rowCount = this.table.getRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (r === editedRow) continue;
+            // パディング行のFK列は見かけ上空だが実際のFK値ではないのでスキップ
+            const metaIndex = r - 1;
+            if (metaIndex < viewContext.rowMetadata.length
+                && viewContext.rowMetadata[metaIndex].paddingColumns[dataColumnIndex]) continue;
             if (this.table.getCellValueAt(r, fkColumn) === newValue) {
                 return this.applyJoinedColumnValues(editedRow, joinedColumnIndices, (joinedDataIndex) => {
                     return this.table.getCellValueAt(r, joinedDataIndex + 1);
