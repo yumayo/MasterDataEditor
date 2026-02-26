@@ -332,6 +332,8 @@ export class EditorTableReference {
                 if (baseKeyColumnIndex === -1) return;
                 const joinKeyValue = this.table.getCellValueAt(rowIndex, baseKeyColumnIndex + 1);
                 if (joinKeyValue === '') return;
+                // JOIN元テーブルがキャッシュに存在しない場合はスキップ（逆参照JOINのテーブルはFK列から参照されないためキャッシュ対象外）
+                if (!this.referenceDataCache.getSync(mapping.tableName)) return;
                 // JOIN元テーブルのキャッシュを更新
                 this.referenceDataCache.updateDisplayText(mapping.tableName, joinKeyValue, newValue);
                 // 同じテーブルを参照するFK列のヒントを再描画

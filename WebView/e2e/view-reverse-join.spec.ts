@@ -84,6 +84,78 @@ function createReverseJoinFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 逆参照テーブルの列名にreferenceDisplayColumnPriority（"ja"）を含むフィクスチャ
+ *
+ * weapon: id=1,name=Sword / id=2,name=Shield
+ * weapon_name: id=1,weapon_id=1,lang=en,ja=剣 / id=2,weapon_id=1,lang=fr,ja=Sword / id=3,weapon_id=2,lang=en,ja=盾
+ *
+ * weapon_nameのweapon_idがweapon.idを参照（逆参照）
+ * 逆参照JOIN後のビュー表示:
+ * | weapon.id | weapon_name.id | weapon_name.lang | weapon_name.ja | weapon.name |
+ * |     1     |       1        |       en         |      剣        |    Sword    |  リーダー行（1:2）
+ * |   [pad]   |       2        |       fr         |     Sword      |   [pad]     |  パディング
+ * |     2     |       3        |       en         |      盾        |   Shield    |  1:1
+ *
+ * ja列はreferenceDisplayColumnPriorityに含まれるため、
+ * 編集時にReferenceDataCache.updateDisplayTextが呼ばれ、
+ * 逆参照テーブルがキャッシュ未登録であるバグが再現する
+ */
+function createReverseJoinWithDisplayColumnFileSystem(): MockFileSystem {
+    return {
+        "schema/weapon.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/weapon.csv": ["id,name", "1,Sword", "2,Shield"].join("\n"),
+        "schema/weapon_name.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "weapon_id", type: "int", reference: "weapon.id" },
+                { key: 2, name: "lang", type: "string" },
+                { key: 3, name: "ja", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/weapon_name.csv": ["id,weapon_id,lang,ja", "1,1,en,剣", "2,1,fr,Sword", "3,2,en,盾"].join("\n"),
+        "view/view_weapon.json": JSON.stringify({
+            name: "view_weapon",
+            baseTable: "weapon",
+            joins: [],
+        }),
+    };
+}
+
+/**
+ * 逆参照JOINを実行し、JOIN完了まで待機する
+ * 列ヘッダーを右クリック → 逆参照JOINメニューをクリック → セル値で完了を確認
+ */
+async function executeReverseJoinAsync(page: Page, table: Locator): Promise<void> {
+    const header = getColumnHeader(table, 0);
+    await header.click({ button: 'right' });
+    const menu = page.locator('.context-menu');
+    await menu.getByText('Join: weapon_name (reverse: weapon_id)').click();
+    // rebuildViewTabによるDOM再構築完了を待機（weapon_name.ja列の値で確認）
+    await expect(getDataCell(table, 0, 3)).toHaveText('剣');
+}
+
+/**
+ * セルの値を編集する
+ * ダブルクリックで編集モードに入り、全選択→新しい値を入力→Enterで確定
+ */
+async function editCellAsync(page: Page, table: Locator, rowIndex: number, colIndex: number, newValue: string): Promise<void> {
+    const cell = getDataCell(table, rowIndex, colIndex);
+    await cell.dblclick();
+    const editField = page.locator('.grid-textfield-active');
+    await expect(editField).toBeVisible();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.insertText(newValue);
+    await page.keyboard.press('Enter');
+}
+
 // -------------------------------------------------------
 // 逆参照JOINのテスト
 // -------------------------------------------------------
@@ -169,5 +241,41 @@ test.describe('逆参照JOIN（子テーブルからのJOIN）', () => {
 
         // weapon_nameの逆参照JOIN項目が表示されないこと
         await expect(menuAfterJoin.getByText('Join: weapon_name (reverse: weapon_id)')).toHaveCount(0);
+    });
+});
+
+// -------------------------------------------------------
+// 逆参照JOINされた表示列の編集テスト
+// -------------------------------------------------------
+test.describe('逆参照JOINされた表示列の編集', () => {
+
+    test('逆参照JOINされた列（表示列）を編集してもエラーが発生しないこと', async ({ page }) => {
+        await installMockApiAsync(page, createReverseJoinWithDisplayColumnFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_weapon');
+
+        // 逆参照JOINを実行し完了を待機
+        await executeReverseJoinAsync(page, table);
+
+        // pageerrorイベントでブラウザ側のJavaScriptエラーをキャッチする
+        const errors: Error[] = [];
+        page.on('pageerror', (error) => {
+            errors.push(error);
+        });
+
+        // JOIN後のビュー列: weapon.id(0), weapon_name.id(1), weapon_name.lang(2), weapon_name.ja(3), weapon.name(4)
+        // weapon_name.ja列（colIndex=3）はreferenceDisplayColumnPriorityに含まれる表示列
+        // この列を編集するとReferenceDataCache.updateDisplayTextが呼ばれ、
+        // 逆参照テーブル（weapon_name）がキャッシュ未登録のためエラーがスローされるバグの再現
+        await editCellAsync(page, table, 0, 3, '刀');
+
+        // 編集操作後にエラーが非同期で到達するのを待つ
+        await page.waitForTimeout(300);
+
+        // JavaScriptエラーが発生していないこと（バグ修正前は「キャッシュにテーブルが存在しません」がスローされる）
+        expect(errors.length).toBe(0);
+
+        // 編集後のセルに新しい値が表示されていること
+        await expect(getDataCell(table, 0, 3)).toHaveText('刀');
     });
 });
