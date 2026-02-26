@@ -6,7 +6,72 @@
             "sourceColumn": "skill_id",
             "targetTable": "skill",
             "targetColumn": "id",
-            "insertAfterViewColumnIndex": 6
+            "insertAfterViewColumnIndex": 6,
+            "sourceTable": ""
+        },
+        {
+            "sourceColumn": "id",
+            "targetTable": "chara_name",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 0,
+            "sourceTable": ""
+        }
+    ],
+    "columns": [
+        {
+            "tableName": "chara",
+            "columnName": "id",
+            "width": 199
+        },
+        {
+            "tableName": "chara_name",
+            "columnName": "ja",
+            "width": 196
+        },
+        {
+            "tableName": "chara",
+            "columnName": "recover_stamina",
+            "width": 100
+        },
+        {
+            "tableName": "chara",
+            "columnName": "recover_hp",
+            "width": 100
+        },
+        {
+            "tableName": "chara",
+            "columnName": "attack",
+            "width": 100
+        },
+        {
+            "tableName": "chara",
+            "columnName": "defence",
+            "width": 100
+        },
+        {
+            "tableName": "chara",
+            "columnName": "speed",
+            "width": 100
+        },
+        {
+            "tableName": "chara",
+            "columnName": "skill_id",
+            "width": 100
+        },
+        {
+            "tableName": "skill",
+            "columnName": "value",
+            "width": 100
+        },
+        {
+            "tableName": "skill",
+            "columnName": "skill_value_type_id",
+            "width": 246
+        },
+        {
+            "tableName": "chara",
+            "columnName": "selling_price",
+            "width": 100
         }
     ]
 }
