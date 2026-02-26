@@ -1950,4 +1950,106 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 0, 0)).toHaveText('');
         await expect(getDataCell(table, 0, 2)).toHaveText('');
     });
+
+    // ---------------------------------------------------------
+    // 1:n FK列Delete時の参照ヒント消失バグ検証
+    // ---------------------------------------------------------
+
+    // tableスキーマにja列を追加したファイルシステム（ランタイムconfig.referenceDisplayColumnPriorityが["ja"]のため参照ヒント表示に必要）
+    function createFiveBaseRowWithJaFileSystem(): MockFileSystem {
+        return {
+            ...createFiveBaseRowFileSystem(),
+            "schema/table.json": JSON.stringify({
+                description: "テーブルリスト",
+                header: [
+                    { key: 0, name: "id", type: "int", comment: "ID" },
+                    { key: 1, name: "enum", type: "enum" },
+                    { key: 2, name: "ja", type: "string" },
+                    { key: 3, name: "comment", type: "string" },
+                    { key: 4, name: "master", type: "string" },
+                ],
+            }),
+            "data/table.csv": ["id,enum,ja,comment,master", "1,chara,キャラ,キャラ,chara", "2,item,アイテム,アイテム,item"].join("\n"),
+        };
+    }
+
+    test('1:n FK列をDeleteで空にした後、同行の他のFK列の参照ヒントが保持されること', async ({ page }) => {
+        await installMockApiAsync(page, createFiveBaseRowWithJaFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // ビュー列: quest.id(col0), quest.first_clear_reward_table_id(col1), quest.first_clear_reward_record_id(col2),
+        //           quest.quest_reward_group_id(col3), quest_reward.id(col4), quest_reward.reward_table_id(col5), quest_reward.reward_record_id(col6)
+        // 初期状態:
+        // Row 0: 1, 1(キャラ), 3, ▼1, 1, 1, 1  (quest.id=1, 1:2リーダー, group_id=1)
+        // Row 1: [pad],,,, 2, 2, 2              (パディング)
+
+        // Row 0のcol1(first_clear_reward_table_id)に参照ヒント「キャラ」が表示されていることを確認
+        const col1Hint = getDataCell(table, 0, 1).locator('.cell-reference-hint');
+        await expect(col1Hint).toBeVisible({ timeout: 10000 });
+        await expect(col1Hint).toHaveText('キャラ');
+
+        // Row 0のcol3(quest_reward_group_id)を選択してDeleteキー押下
+        await selectCellAsync(page, table, 0, 3);
+        await page.keyboard.press('Delete');
+
+        // Row 0のcol3(quest_reward_group_id)が空になること
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+
+        // Row 0のJOIN列(col4〜col6)が空になること（1:n展開が0件になるため）
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+        await expect(getDataCell(table, 0, 5)).toHaveText('');
+        await expect(getDataCell(table, 0, 6)).toHaveText('');
+
+        // Row 0のcol1(first_clear_reward_table_id)の参照ヒント「キャラ」がまだ存在すること
+        // バグ: 行再構築(restructure)で古いDOM行が破棄され新しいDOM行が作成される際に参照ヒントが消失する
+        const col1HintAfterDelete = getDataCell(table, 0, 1).locator('.cell-reference-hint');
+        await expect(col1HintAfterDelete).toBeVisible();
+        await expect(col1HintAfterDelete).toHaveText('キャラ');
+    });
+
+    test('1:n FK列Delete後のUndo/Redoで参照ヒントが正しく復元されること', async ({ page }) => {
+        await installMockApiAsync(page, createFiveBaseRowWithJaFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期状態: Row 0のcol1に参照ヒント「キャラ」が存在すること
+        const col1HintInitial = getDataCell(table, 0, 1).locator('.cell-reference-hint');
+        await expect(col1HintInitial).toBeVisible({ timeout: 10000 });
+        await expect(col1HintInitial).toHaveText('キャラ');
+
+        // Row 0のcol3(quest_reward_group_id)を選択してDeleteキー押下
+        await selectCellAsync(page, table, 0, 3);
+        await page.keyboard.press('Delete');
+
+        // Delete後: col3とJOIN列が空になること
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+        await expect(getDataCell(table, 0, 5)).toHaveText('');
+        await expect(getDataCell(table, 0, 6)).toHaveText('');
+
+        // Undo → col3とJOIN列が復元されること（col5はtable.id参照のため参照ヒント付き）
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 0, 3)).toHaveText(/^▼?1$/);
+        await expect(getDataCell(table, 0, 4)).toHaveText('1');
+        await expect(getDataCell(table, 0, 5)).toHaveText(/^1/);
+        await expect(getDataCell(table, 0, 6)).toHaveText(/^1/);
+
+        // Undo後もcol1の参照ヒントが保持されていること
+        const col1HintAfterUndo = getDataCell(table, 0, 1).locator('.cell-reference-hint');
+        await expect(col1HintAfterUndo).toBeVisible();
+        await expect(col1HintAfterUndo).toHaveText('キャラ');
+
+        // Redo → col3とJOIN列が空になること
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
+        await expect(getDataCell(table, 0, 5)).toHaveText('');
+        await expect(getDataCell(table, 0, 6)).toHaveText('');
+
+        // Redo後もcol1の参照ヒントが保持されていること
+        const col1HintAfterRedo = getDataCell(table, 0, 1).locator('.cell-reference-hint');
+        await expect(col1HintAfterRedo).toBeVisible();
+        await expect(col1HintAfterRedo).toHaveText('キャラ');
+    });
 });

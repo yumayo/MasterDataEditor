@@ -186,6 +186,8 @@ export class EditorTableViewRestructure {
         this.renumberRowsFrom(domStartIndex);
         // ビュースタイルを再適用
         this.view.applyViewRowStylesForRange(metaStartIndex, metaStartIndex + insertRows.length, false);
+        // 挿入されたDOM行に参照ヒントを適用する（Undo/Redoで復元された行にはヒントが消失しているため）
+        this.table.updateReferenceHintsForRows(metaStartIndex + 1, metaStartIndex + 1 + insertRows.length);
         // 選択範囲をクリア
         this.selection.clearCopyRange();
         this.selection.updateRendererAfterResize();
@@ -227,6 +229,8 @@ export class EditorTableViewRestructure {
         viewContext.rowMetadata.splice(metaInsertIndex, 0, ...newRows.map(r => r.metadata));
         this.renumberRowsFrom(domStartIndex);
         this.view.applyViewRowStylesForRange(metaInsertIndex, metaInsertIndex + newRows.length, true);
+        // 新しいDOM行に参照ヒントを適用する（行再構築で作り直されたセルにはヒントがないため）
+        this.table.updateReferenceHintsForRows(domStartIndex, domStartIndex + newRows.length);
         return newRows;
     }
 

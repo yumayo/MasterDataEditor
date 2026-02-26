@@ -680,6 +680,11 @@ export class EditorTable {
         this.reference.updateReferenceHints();
     }
 
+    /** 指定DOM行範囲のセルの参照ヒントを更新する */
+    updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
+        this.reference.updateReferenceHintsForRows(startDomRow, endDomRow);
+    }
+
     /** 指定した列のすべてのセルの参照ヒントを更新する */
     updateColumnReferenceHints(columnIndex: number): void {
         this.reference.updateColumnReferenceHints(columnIndex);

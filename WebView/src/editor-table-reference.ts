@@ -105,11 +105,20 @@ export class EditorTableReference {
      * 参照データのpreload完了後にセルの参照ヒントを更新する
      */
     updateReferenceHints(): void {
+        this.updateReferenceHintsForRows(1, this.table.getTableElement().children.length);
+    }
+
+    /**
+     * 指定DOM行範囲のセルの参照ヒントを更新する
+     * 行再構築で新しく作成されたDOM行に対して参照ヒントを適用する
+     * @param startDomRow DOM行の開始インデックス（含む）
+     * @param endDomRow DOM行の終了インデックス（含まない）
+     */
+    updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
         const tableElement = this.table.getTableElement();
-        // 全データ行のセルを更新
-        for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
+        for (let rowIndex = startDomRow; rowIndex < endDomRow; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
-            // 列ヘッダーは除く（column=0が行ヘッダー、column=1以降がデータセル）
+            if (!row) throw new Error(`DOM行が見つかりません: rowIndex=${rowIndex}`);
             for (let colIndex = 1; colIndex < row.children.length; colIndex++) {
                 const cell = row.children[colIndex] as HTMLElement;
                 const dataColumnIndex = colIndex - 1;
