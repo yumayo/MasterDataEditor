@@ -1,0 +1,41 @@
+{
+    "description": "パフォーマンステスト用グループマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "group_id",
+            "type": "int",
+            "comment": "グループID",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "label",
+            "type": "string",
+            "comment": "ラベル",
+            "width": 150
+        },
+        {
+            "key": 3,
+            "name": "score",
+            "type": "int",
+            "comment": "スコア",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "rank",
+            "type": "string",
+            "comment": "ランク",
+            "width": 100
+        }
+    ],
+    "primary_key": "id"
+}

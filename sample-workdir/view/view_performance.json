@@ -1,0 +1,13 @@
+{
+    "name": "view_performance",
+    "baseTable": "performance",
+    "joins": [
+        {
+            "sourceColumn": "group_id",
+            "targetTable": "performance_group",
+            "targetColumn": "group_id",
+            "insertAfterViewColumnIndex": 1,
+            "sourceTable": ""
+        }
+    ]
+}

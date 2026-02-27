@@ -1,0 +1,49 @@
+{
+    "description": "パフォーマンステスト用マスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "group_id",
+            "type": "int",
+            "comment": "グループID",
+            "reference": "performance_group.group_id",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "name",
+            "type": "string",
+            "comment": "名前",
+            "width": 150
+        },
+        {
+            "key": 3,
+            "name": "value1",
+            "type": "int",
+            "comment": "値1",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "value2",
+            "type": "int",
+            "comment": "値2",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "value3",
+            "type": "int",
+            "comment": "値3",
+            "width": 100
+        }
+    ],
+    "primary_key": "id"
+}
