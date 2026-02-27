@@ -108,6 +108,25 @@ export class EditorTableViewInspector {
         return true;
     }
 
+    /** 単一セル編集のガード（文字入力・ダブルクリック・ドロップダウン） */
+    isCellEditBlocked(row: number, column: number): boolean {
+        return this.isPaddingCell(row, column);
+    }
+
+    /** 範囲編集のガード（Paste・Fill） */
+    isRangeEditBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
+    }
+
+    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
+        const hasPaddingRow = this.containsPaddingRow(startRow, endRow);
+        if (hasPaddingRow && !this.isSelectionCoveringCompleteGroups(startRow, endRow)) {
+            return { blocked: true, hasPaddingRow };
+        }
+        return { blocked: false, hasPaddingRow };
+    }
+
     /**
      * 指定された列範囲に結合列が含まれるかを判定する
      */

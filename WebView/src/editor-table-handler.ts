@@ -160,9 +160,9 @@ export class EditorTableHandler {
     enableCellEditMode(preserveContent: boolean): void {
         if (!this.textField) return;
 
-        // パディングセルへの編集を拒否
+        // 単一セル編集ガード（パディングセルへの編集を拒否）
         const anchor = this.selection.getAnchor();
-        if (this.table.isPaddingCell(anchor.row, anchor.column)) {
+        if (this.table.isCellEditBlocked(anchor.row, anchor.column)) {
             this.table.showRejectionFeedback();
             return;
         }
@@ -488,21 +488,17 @@ export class EditorTableHandler {
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
             const deleteRange = this.selection.getSelectionRange();
-            // パディング行（非リーダー行）が選択範囲に含まれるかを判定
-            // パディング行のJOIN列セル（paddingColumns=false）も含めて検出するためcontainsPaddingRowを使用
-            const hasPaddingRow = this.table.containsPaddingRow(deleteRange.startRow, deleteRange.endRow);
-            if (hasPaddingRow) {
-                // パディング行を含む場合のみFKグループ完全包含チェックが必要
-                if (!this.table.isSelectionCoveringCompleteGroups(deleteRange.startRow, deleteRange.endRow)) {
-                    this.table.showRejectionFeedback();
-                    return;
-                }
+            // Delete操作ガード（パディング行 + FKグループ完全性チェック）
+            const deleteGuard = this.table.isDeleteBlocked(deleteRange.startRow, deleteRange.endRow);
+            if (deleteGuard.blocked) {
+                this.table.showRejectionFeedback();
+                return;
             }
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
                 // パディング行（非リーダー行）のセルはすべてスキップ
                 // ベーステーブル列（paddingColumns=true）は変更不要、JOIN列はFK再構築で自動管理される
-                if (hasPaddingRow && !this.table.isViewLeaderRow(r)) continue;
+                if (deleteGuard.hasPaddingRow && !this.table.isViewLeaderRow(r)) continue;
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
@@ -519,13 +515,7 @@ export class EditorTableHandler {
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (!this.textField) return;
-            // パディングセルへの入力を拒否
-            const anchor = this.selection.getAnchor();
-            if (this.table.isPaddingCell(anchor.row, anchor.column)) {
-                this.table.showRejectionFeedback();
-                return;
-            }
-            // 参照列の場合はドロップダウンを表示
+            // 参照列の場合はドロップダウンを表示（isCellEditBlockedガードは各編集メソッド内で実行）
             this.enableCellEditModeWithDropdownAsync(false).then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
@@ -582,9 +572,9 @@ export class EditorTableHandler {
 
         event.preventDefault();
 
-        // 結合列またはパディングセルを含む場合はペーストを拒否
+        // 範囲編集ガード（結合列またはパディングセルを含む場合はペーストを拒否）
         const selRange = this.selection.getSelectionRange();
-        if (this.table.containsReadOnlyCell(
+        if (this.table.isRangeEditBlocked(
             selRange.startRow, selRange.startColumn, selRange.endRow, selRange.endColumn
         )) {
             this.table.showRejectionFeedback();
@@ -1019,9 +1009,9 @@ export class EditorTableHandler {
             return false;
         }
 
-        // パディングセルへの編集を拒否
+        // 単一セル編集ガード（パディングセルへの編集を拒否）
         const anchor = this.selection.getAnchor();
-        if (this.table.isPaddingCell(anchor.row, anchor.column)) {
+        if (this.table.isCellEditBlocked(anchor.row, anchor.column)) {
             this.table.showRejectionFeedback();
             return true;
         }

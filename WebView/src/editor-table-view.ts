@@ -135,6 +135,21 @@ export class EditorTableView {
         return this.inspector.isSelectionCoveringCompleteGroups(startRow, endRow);
     }
 
+    /** 単一セル編集のガード（文字入力・ダブルクリック・ドロップダウン） */
+    isCellEditBlocked(row: number, column: number): boolean {
+        return this.inspector.isCellEditBlocked(row, column);
+    }
+
+    /** 範囲編集のガード（Paste・Fill） */
+    isRangeEditBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.inspector.isRangeEditBlocked(startRow, startColumn, endRow, endColumn);
+    }
+
+    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
+        return this.inspector.isDeleteBlocked(startRow, endRow);
+    }
+
     containsJoinedColumn(startColumn: number, endColumn: number): boolean {
         return this.inspector.containsJoinedColumn(startColumn, endColumn);
     }

@@ -32,8 +32,8 @@ export class FillController {
             this.selection.endFill();
 
             if (fillInfo) {
-                // 結合列またはパディングセルを含む場合はフィルを拒否
-                if (this.table.containsReadOnlyCell(
+                // 範囲編集ガード（結合列またはパディングセルを含む場合はフィルを拒否）
+                if (this.table.isRangeEditBlocked(
                     fillInfo.sourceRange.startRow, fillInfo.sourceRange.startColumn,
                     fillInfo.sourceRange.endRow, fillInfo.sourceRange.endColumn
                 )) {
@@ -98,8 +98,8 @@ export class FillController {
         const startColumn = Math.min(anchor.column, focus.column);
         const endColumn = Math.max(anchor.column, focus.column);
 
-        // 結合列またはパディングセルを含む場合はフィルを拒否
-        if (this.table.containsReadOnlyCell(startRow, startColumn, endRow, endColumn)) {
+        // 範囲編集ガード（結合列またはパディングセルを含む場合はフィルを拒否）
+        if (this.table.isRangeEditBlocked(startRow, startColumn, endRow, endColumn)) {
             this.table.showRejectionFeedback();
             return;
         }

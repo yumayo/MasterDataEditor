@@ -2093,4 +2093,78 @@ test.describe('1:n展開ビュー', () => {
         await expect(col1HintAfterRedo).toHaveText('キャラ');
     });
 
+    // ---------------------------------------------------------
+    // セル編集ガード条件の一元管理（isCellEditBlocked / isRangeEditBlocked / isDeleteBlocked）
+    // ---------------------------------------------------------
+
+    test('パディングセルでの文字入力がisCellEditBlockedにより拒否されること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // パディングセル（行1, col0: quest.id列のパディング）を選択
+        await selectCellAsync(page, table, 1, 0);
+
+        // 文字キー入力で編集モード開始を試みる
+        await page.keyboard.press('a');
+
+        // テキストフィールドが表示されないことを確認（編集モードに入れない）
+        const editField = page.locator('.grid-textfield-active');
+        await expect(editField).not.toBeVisible();
+
+        // パディングセルの値が空のままであることを確認
+        await expect(getDataCell(table, 1, 0)).toHaveText('');
+    });
+
+    test('パディングセルを含む範囲へのペーストがisRangeEditBlockedにより拒否されること', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 非パディングセルの値をコピーしてクリップボードに載せる
+        await selectCellAsync(page, table, 2, 0);
+        await page.keyboard.press('Control+c');
+
+        // パディングセルを含む範囲を選択（行0,col0 → 行1,col1でShift+クリック）
+        // 行0: リーダー行、行1: パディング行 — 範囲にパディングセルが含まれる
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 1, 1).click({ modifiers: ['Shift'] });
+
+        // ペースト前の値を記録
+        const row0Col0Before = await getDataCell(table, 0, 0).textContent();
+        const row0Col1Before = await getDataCell(table, 0, 1).textContent();
+
+        // ペースト
+        await page.keyboard.press('Control+v');
+
+        // パディングセルを含む範囲なので全セルの値が変更されないこと
+        await expect(getDataCell(table, 0, 0)).toHaveText(row0Col0Before!);
+        await expect(getDataCell(table, 0, 1)).toHaveText(row0Col1Before!);
+        await expect(getDataCell(table, 1, 0)).toHaveText('');
+        await expect(getDataCell(table, 1, 1)).toHaveText('');
+    });
+
+    test('不完全なFKグループ選択でのDelete操作がisDeleteBlockedにより拒否されること', async ({ page }) => {
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // パディング行のみを選択（行1: パディング行の結合テーブル列セル）
+        // 行1,col3(quest_reward.id) → 行1,col4(quest_reward.item) を範囲選択
+        await selectCellAsync(page, table, 1, 3);
+        await getDataCell(table, 1, 4).click({ modifiers: ['Shift'] });
+
+        // Delete前の値を記録
+        const col3Before = await getDataCell(table, 1, 3).textContent();
+        const col4Before = await getDataCell(table, 1, 4).textContent();
+
+        // Deleteキーを押す
+        await page.keyboard.press('Delete');
+
+        // 不完全なFKグループ選択（パディング行のみ、リーダー行なし）なので操作が拒否される
+        await expect(getDataCell(table, 1, 3)).toHaveText(col3Before!);
+        await expect(getDataCell(table, 1, 4)).toHaveText(col4Before!);
+    });
+
 });

@@ -291,13 +291,7 @@ export class EditorTable {
         EditorTable.applyCellWidth(cell, width);
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
-            // パディングセルへの編集を拒否
-            const pos = EditorTable.getCellPosition(cell, table.element);
-            if (pos && table.isPaddingCell(pos.row, pos.column)) {
-                table.showRejectionFeedback();
-                return;
-            }
-            // 参照列の場合はドロップダウンを表示
+            // 参照列の場合はドロップダウンを表示（isCellEditBlockedガードは各編集メソッド内で実行）
             table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
@@ -774,6 +768,21 @@ export class EditorTable {
     /** 選択範囲が完全なFKグループ単位で構成されているかを判定する */
     isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
         return this.view.isSelectionCoveringCompleteGroups(startRow, endRow);
+    }
+
+    /** 単一セル編集のガード（文字入力・ダブルクリック・ドロップダウン） */
+    isCellEditBlocked(row: number, column: number): boolean {
+        return this.view.isCellEditBlocked(row, column);
+    }
+
+    /** 範囲編集のガード（Paste・Fill） */
+    isRangeEditBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.view.isRangeEditBlocked(startRow, startColumn, endRow, endColumn);
+    }
+
+    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
+        return this.view.isDeleteBlocked(startRow, endRow);
     }
 
     /** 指定された列範囲に結合列が含まれるかを判定する */
