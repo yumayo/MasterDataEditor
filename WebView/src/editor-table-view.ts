@@ -123,10 +123,6 @@ export class EditorTableView {
         return this.inspector.containsPaddingCell(startRow, startColumn, endRow, endColumn);
     }
 
-    containsPaddingRow(startRow: number, endRow: number): boolean {
-        return this.inspector.containsPaddingRow(startRow, endRow);
-    }
-
     containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
         return this.inspector.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
     }
@@ -145,9 +141,9 @@ export class EditorTableView {
         return this.inspector.isRangeEditBlocked(startRow, startColumn, endRow, endColumn);
     }
 
-    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
-    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
-        return this.inspector.isDeleteBlocked(startRow, endRow);
+    /** Delete操作のガード（パディングセル + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.inspector.isDeleteBlocked(startRow, startColumn, endRow, endColumn);
     }
 
     containsJoinedColumn(startColumn: number, endColumn: number): boolean {

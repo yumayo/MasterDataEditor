@@ -755,11 +755,6 @@ export class EditorTable {
         return this.view.containsPaddingCell(startRow, startColumn, endRow, endColumn);
     }
 
-    /** 指定範囲にパディング行（非リーダー行）が含まれるかを判定する */
-    containsPaddingRow(startRow: number, endRow: number): boolean {
-        return this.view.containsPaddingRow(startRow, endRow);
-    }
-
     /** 指定範囲に編集不可セルが含まれるかを判定する */
     containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
         return this.view.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
@@ -780,9 +775,9 @@ export class EditorTable {
         return this.view.isRangeEditBlocked(startRow, startColumn, endRow, endColumn);
     }
 
-    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
-    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
-        return this.view.isDeleteBlocked(startRow, endRow);
+    /** Delete操作のガード（パディングセル + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        return this.view.isDeleteBlocked(startRow, startColumn, endRow, endColumn);
     }
 
     /** 指定された列範囲に結合列が含まれるかを判定する */

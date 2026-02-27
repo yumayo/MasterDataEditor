@@ -405,22 +405,23 @@ test.describe('1:n展開ビュー', () => {
         await expect(targetCell).toHaveText('');
     });
 
-    test('パディング行の結合テーブル列セルへのDelete操作が拒否されること', async ({ page }) => {
-        // パディング行のセルはreadOnlyなのでDeleteは拒否されるべき
+    test('パディング行の結合テーブル列セルへのDelete操作が許可されること', async ({ page }) => {
+        // パディング行であっても結合テーブル列セル（paddingColumns=false）はDeleteで値をクリアできるべき
         await installMockApiAsync(page, createDropdownFkTestFileSystem());
         await page.goto('/');
         const table = await openTableAsync(page, 'view_quest');
 
         // パディング行（row 1）の結合テーブル列セル quest_reward.item（col 4）を選択
+        // DropdownFkビュー: row0=[1,MainQuest,1,1,Gold], row1=[pad,pad,pad,2,Gem], row2=[2,SideQuest,2,3,Potion]
         const targetCell = getDataCell(table, 1, 4);
-        const beforeValue = await targetCell.textContent();
+        await expect(targetCell).toHaveText('Gem');
         await selectCellAsync(page, table, 1, 4);
 
         // Deleteキーを押す
         await page.keyboard.press('Delete');
 
-        // パディングセルを含むのでFKグループ完全包含チェックにより操作が拒否される
-        await expect(targetCell).toHaveText(beforeValue!);
+        // 結合テーブル列セルはパディングセルではないのでDelete操作が許可され、値がクリアされる
+        await expect(targetCell).toHaveText('');
     });
 
     test('非パディングセル（結合テーブルの実データ行）が編集可能なこと', async ({ page }) => {
@@ -2145,26 +2146,102 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 1, 1)).toHaveText('');
     });
 
-    test('不完全なFKグループ選択でのDelete操作がisDeleteBlockedにより拒否されること', async ({ page }) => {
+    test('パディング行の結合テーブル列のみのDelete操作が許可されること', async ({ page }) => {
         await installMockApiAsync(page, createDropdownFkTestFileSystem());
         await page.goto('/');
         const table = await openTableAsync(page, 'view_quest');
 
         // パディング行のみを選択（行1: パディング行の結合テーブル列セル）
+        // DropdownFkビュー: row0=[1,MainQuest,1,1,Gold], row1=[pad,pad,pad,2,Gem], row2=[2,SideQuest,2,3,Potion]
         // 行1,col3(quest_reward.id) → 行1,col4(quest_reward.item) を範囲選択
         await selectCellAsync(page, table, 1, 3);
         await getDataCell(table, 1, 4).click({ modifiers: ['Shift'] });
 
-        // Delete前の値を記録
-        const col3Before = await getDataCell(table, 1, 3).textContent();
-        const col4Before = await getDataCell(table, 1, 4).textContent();
+        // Delete前の値を確認
+        await expect(getDataCell(table, 1, 3)).toHaveText('2');
+        await expect(getDataCell(table, 1, 4)).toHaveText('Gem');
 
         // Deleteキーを押す
         await page.keyboard.press('Delete');
 
-        // 不完全なFKグループ選択（パディング行のみ、リーダー行なし）なので操作が拒否される
-        await expect(getDataCell(table, 1, 3)).toHaveText(col3Before!);
-        await expect(getDataCell(table, 1, 4)).toHaveText(col4Before!);
+        // 結合テーブル列のみの選択なのでDelete操作が許可され、値がクリアされる
+        await expect(getDataCell(table, 1, 3)).toHaveText('');
+        await expect(getDataCell(table, 1, 4)).toHaveText('');
+    });
+
+    test('パディング行の結合列Delete時に同一レコードを表示する他のパディング行も連動クリアされること', async ({ page }) => {
+        // 5ベース行データ: quest_reward_group_id=1を持つベース行が3行(row0,row2,row6)あり、
+        // それぞれのパディング行(row1,row3,row7)が同じquest_rewardレコード(id=2)を表示する。
+        // パディング行の結合テーブル列をDeleteでクリアしたとき、同一レコードを表示する
+        // 他のパディング行の同列も連動してクリアされるべき。
+        //
+        // ビュー行レイアウト:
+        // Row 0: [1, 1, 3, 1, 1, 1, 1]   ← リーダー(quest_reward_group_id=1, 2件マッチ)
+        // Row 1: [pad, pad, pad, pad, 2, 2, 2]  ← パディング
+        // Row 2: [2, 2, 1, 1, 1, 1, 1]   ← リーダー(quest_reward_group_id=1, 2件マッチ)
+        // Row 3: [pad, pad, pad, pad, 2, 2, 2]  ← パディング
+        // Row 4: [3, 1, 3, 2, 3, 1, 2]   ← リーダー(1件)
+        // Row 5: [4, 1, 3, 3, 4, 2, 5]   ← リーダー(1件)
+        // Row 6: [5, 1, 1, 1, 1, 1, 1]   ← リーダー(quest_reward_group_id=1, 2件マッチ)
+        // Row 7: [pad, pad, pad, pad, 2, 2, 2]  ← パディング
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期値を確認: row1,row3,row7のcol5(quest_reward.reward_table_id)は全て「2」
+        await expect(getDataCell(table, 1, 5)).toHaveText('2');
+        await expect(getDataCell(table, 3, 5)).toHaveText('2');
+        await expect(getDataCell(table, 7, 5)).toHaveText('2');
+
+        // row1のcol5を選択してDeleteでクリア
+        await selectCellAsync(page, table, 1, 5);
+        await page.keyboard.press('Delete');
+
+        // row1のcol5がクリアされること
+        await expect(getDataCell(table, 1, 5)).toHaveText('');
+
+        // 同一レコード(quest_reward.id=2)を表示するrow3,row7のcol5も連動クリアされること
+        await expect(getDataCell(table, 3, 5)).toHaveText('');
+        await expect(getDataCell(table, 7, 5)).toHaveText('');
+    });
+
+    test('パディング行の結合列Delete後のUndo/Redoが正しく動作すること', async ({ page }) => {
+        // パディング行の結合テーブル列セルをDeleteでクリアした後、
+        // Ctrl+Zで元に戻り、Ctrl+Yで再度クリアされることを検証する。
+        // 連動した他のパディング行の値もUndo/Redoで正しく復元されること。
+        //
+        // ビュー行レイアウト（5ベース行データ）:
+        // Row 1,3,7: パディング行（quest_reward.id=2のレコード）
+        // col5(quest_reward.reward_table_id) = 「2」
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // 初期値を確認
+        await expect(getDataCell(table, 1, 5)).toHaveText('2');
+        await expect(getDataCell(table, 3, 5)).toHaveText('2');
+        await expect(getDataCell(table, 7, 5)).toHaveText('2');
+
+        // row1のcol5を選択してDeleteでクリア
+        await selectCellAsync(page, table, 1, 5);
+        await page.keyboard.press('Delete');
+
+        // クリアされたことを確認
+        await expect(getDataCell(table, 1, 5)).toHaveText('');
+        await expect(getDataCell(table, 3, 5)).toHaveText('');
+        await expect(getDataCell(table, 7, 5)).toHaveText('');
+
+        // Ctrl+Z (Undo): 元の値に戻ること
+        await page.keyboard.press('Control+z');
+        await expect(getDataCell(table, 1, 5)).toHaveText('2');
+        await expect(getDataCell(table, 3, 5)).toHaveText('2');
+        await expect(getDataCell(table, 7, 5)).toHaveText('2');
+
+        // Ctrl+Y (Redo): 再度クリアされること
+        await page.keyboard.press('Control+y');
+        await expect(getDataCell(table, 1, 5)).toHaveText('');
+        await expect(getDataCell(table, 3, 5)).toHaveText('');
+        await expect(getDataCell(table, 7, 5)).toHaveText('');
     });
 
 });

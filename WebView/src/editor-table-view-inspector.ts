@@ -59,18 +59,6 @@ export class EditorTableViewInspector {
     }
 
     /**
-     * 指定範囲にパディング行（非リーダー行）が含まれるかを判定する
-     * containsPaddingCellとの違い: パディング行のJOIN列セル（paddingColumns=false）も検出する
-     */
-    containsPaddingRow(startRow: number, endRow: number): boolean {
-        if (!this.view.hasViewContext()) return false;
-        for (let r = startRow; r <= endRow; r++) {
-            if (!this.isViewLeaderRow(r)) return true;
-        }
-        return false;
-    }
-
-    /**
      * 指定範囲に編集不可セル（結合列またはパディングセル）が含まれるかを判定する
      */
     containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
@@ -118,13 +106,10 @@ export class EditorTableViewInspector {
         return this.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
     }
 
-    /** Delete操作のガード（パディング行 + FKグループ完全性チェック） */
-    isDeleteBlocked(startRow: number, endRow: number): { blocked: boolean; hasPaddingRow: boolean } {
-        const hasPaddingRow = this.containsPaddingRow(startRow, endRow);
-        if (hasPaddingRow && !this.isSelectionCoveringCompleteGroups(startRow, endRow)) {
-            return { blocked: true, hasPaddingRow };
-        }
-        return { blocked: false, hasPaddingRow };
+    /** Delete操作のガード（パディングセル + FKグループ完全性チェック） */
+    isDeleteBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
+        const hasPaddingCell = this.containsPaddingCell(startRow, startColumn, endRow, endColumn);
+        return hasPaddingCell && !this.isSelectionCoveringCompleteGroups(startRow, endRow);
     }
 
     /**

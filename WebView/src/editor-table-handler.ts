@@ -488,18 +488,16 @@ export class EditorTableHandler {
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
             const deleteRange = this.selection.getSelectionRange();
-            // Delete操作ガード（パディング行 + FKグループ完全性チェック）
-            const deleteGuard = this.table.isDeleteBlocked(deleteRange.startRow, deleteRange.endRow);
-            if (deleteGuard.blocked) {
+            // Delete操作ガード（パディングセル + FKグループ完全性チェック）
+            if (this.table.isDeleteBlocked(deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn)) {
                 this.table.showRejectionFeedback();
                 return;
             }
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
-                // パディング行（非リーダー行）のセルはすべてスキップ
-                // ベーステーブル列（paddingColumns=true）は変更不要、JOIN列はFK再構築で自動管理される
-                if (deleteGuard.hasPaddingRow && !this.table.isViewLeaderRow(r)) continue;
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
+                    // パディングセルのみスキップ（結合テーブル列セルはpaddingColumns=falseなので通過する）
+                    if (this.table.isPaddingCell(r, c)) continue;
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
                 }

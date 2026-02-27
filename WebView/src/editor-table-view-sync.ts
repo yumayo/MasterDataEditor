@@ -38,6 +38,13 @@ export class EditorTableViewSync {
                 (m) => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
             );
             if (baseKeyColumnIndex === -1) return [];
+            // FK列がパディングセルの場合: メタデータベースで同一レコードの他行を連動更新
+            const metaIndex = editedRow - 1;
+            const isFkColumnPadding = metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length
+                && viewContext.rowMetadata[metaIndex].paddingColumns[baseKeyColumnIndex];
+            if (isFkColumnPadding) {
+                return this.synchronizePaddingRowJoinedColumn(editedRow, editedColumn, newValue, mapping.tableName);
+            }
             const joinKeyValue = this.table.getCellValueAt(editedRow, baseKeyColumnIndex + 1);
             if (joinKeyValue === '') return [];
             const changes: CellChange[] = [];
@@ -88,6 +95,42 @@ export class EditorTableViewSync {
             if (!joinRows || joinRows.length === 0) return '';
             return joinRows[0][m.sourceColumnIndex];
         });
+    }
+
+    /**
+     * パディング行の結合列編集時にメタデータベースで同一レコードの他行を連動更新する
+     *
+     * パディング行のFK列はパディングセルでDOM上空文字列のため、通常のFK値マッチングが使えない。
+     * 代わりにメタデータのgroupInfosからsourceTableとsourceKeyValue・groupPositionを使い、
+     * 同一レコードを表示する他の行を特定して連動更新する。
+     */
+    private synchronizePaddingRowJoinedColumn(
+        editedRow: number, editedColumn: number, newValue: string, tableName: string
+    ): CellChange[] {
+        const viewContext = this.view.getViewContext();
+        const rowMetadata = viewContext.rowMetadata;
+        const editedMetaIndex = editedRow - 1;
+        if (editedMetaIndex < 0 || editedMetaIndex >= rowMetadata.length) return [];
+        const editedMeta = rowMetadata[editedMetaIndex];
+        // mapping.tableNameでマッチするgroupInfoを特定
+        const editedGroupInfo = editedMeta.groupInfos.find(g => g.sourceTable === tableName);
+        if (!editedGroupInfo) return [];
+        const changes: CellChange[] = [];
+        // 全行をスキャンし、同一sourceTable・sourceKeyValue・groupPositionの行を連動更新
+        for (let metaIdx = 0; metaIdx < rowMetadata.length; metaIdx++) {
+            const domRow = metaIdx + 1;
+            if (domRow === editedRow) continue;
+            const meta = rowMetadata[metaIdx];
+            const groupInfo = meta.groupInfos.find(g => g.sourceTable === tableName);
+            if (!groupInfo) continue;
+            if (groupInfo.sourceKeyValue !== editedGroupInfo.sourceKeyValue) continue;
+            if (groupInfo.groupPosition !== editedGroupInfo.groupPosition) continue;
+            const oldValue = this.table.getCellValueAt(domRow, editedColumn);
+            if (oldValue === newValue) continue;
+            changes.push({ row: domRow, column: editedColumn, oldValue, newValue });
+            this.table.setCellValueAt(domRow, editedColumn, newValue);
+        }
+        return changes;
     }
 
     /**
