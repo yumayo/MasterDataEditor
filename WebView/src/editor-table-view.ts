@@ -123,6 +123,10 @@ export class EditorTableView {
         return this.inspector.containsPaddingCell(startRow, startColumn, endRow, endColumn);
     }
 
+    containsPaddingRow(startRow: number, endRow: number): boolean {
+        return this.inspector.containsPaddingRow(startRow, endRow);
+    }
+
     containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
         return this.inspector.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
     }

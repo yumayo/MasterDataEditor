@@ -488,11 +488,11 @@ export class EditorTableHandler {
         // Deleteキー
         if (keyboardEvent.key === 'Delete') {
             const deleteRange = this.selection.getSelectionRange();
-            const hasReadOnlyCell = this.table.containsReadOnlyCell(
-                deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn
-            );
-            if (hasReadOnlyCell) {
-                // FKグループが完全に含まれていなければ拒否
+            // パディング行（非リーダー行）が選択範囲に含まれるかを判定
+            // パディング行のJOIN列セル（paddingColumns=false）も含めて検出するためcontainsPaddingRowを使用
+            const hasPaddingRow = this.table.containsPaddingRow(deleteRange.startRow, deleteRange.endRow);
+            if (hasPaddingRow) {
+                // パディング行を含む場合のみFKグループ完全包含チェックが必要
                 if (!this.table.isSelectionCoveringCompleteGroups(deleteRange.startRow, deleteRange.endRow)) {
                     this.table.showRejectionFeedback();
                     return;
@@ -500,10 +500,10 @@ export class EditorTableHandler {
             }
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
+                // パディング行（非リーダー行）のセルはすべてスキップ
+                // ベーステーブル列（paddingColumns=true）は変更不要、JOIN列はFK再構築で自動管理される
+                if (hasPaddingRow && !this.table.isViewLeaderRow(r)) continue;
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
-                    // パディングセルはスキップ（変更不要）
-                    // 結合列セルはapplyViewAwareCellChanges内でFK値クリアに連動して自動更新される
-                    if (hasReadOnlyCell && this.table.isPaddingCell(r, c)) continue;
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
                 }

@@ -387,6 +387,42 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 1, 2)).toHaveText(beforeValue!);
     });
 
+    test('結合テーブル列のリーダー行セルへのDelete操作が許可されること', async ({ page }) => {
+        // 結合テーブル列（isJoinedColumn=true）であってもパディングでなければDeleteで値をクリアできるべき
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // リーダー行（row 0）の結合テーブル列セル quest_reward.item（col 4）を選択
+        const targetCell = getDataCell(table, 0, 4);
+        await expect(targetCell).toHaveText('Gold');
+        await selectCellAsync(page, table, 0, 4);
+
+        // Deleteキーを押す
+        await page.keyboard.press('Delete');
+
+        // 値がクリアされること（操作が許可されること）
+        await expect(targetCell).toHaveText('');
+    });
+
+    test('パディング行の結合テーブル列セルへのDelete操作が拒否されること', async ({ page }) => {
+        // パディング行のセルはreadOnlyなのでDeleteは拒否されるべき
+        await installMockApiAsync(page, createDropdownFkTestFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // パディング行（row 1）の結合テーブル列セル quest_reward.item（col 4）を選択
+        const targetCell = getDataCell(table, 1, 4);
+        const beforeValue = await targetCell.textContent();
+        await selectCellAsync(page, table, 1, 4);
+
+        // Deleteキーを押す
+        await page.keyboard.press('Delete');
+
+        // パディングセルを含むのでFKグループ完全包含チェックにより操作が拒否される
+        await expect(targetCell).toHaveText(beforeValue!);
+    });
+
     test('非パディングセル（結合テーブルの実データ行）が編集可能なこと', async ({ page }) => {
         await installMockApiAsync(page, createOneToManyFileSystem());
         await page.goto('/');
@@ -1880,22 +1916,26 @@ test.describe('1:n展開ビュー', () => {
         await expect(getDataCell(table, 1, 1)).toHaveText('');
     });
 
-    test('FKグループのリーダー行のみの選択でDeleteが拒否されること', async ({ page }) => {
+    test('FKグループのリーダー行のみの選択でDeleteが許可されること', async ({ page }) => {
         await installMockApiAsync(page, createDropdownFkTestFileSystem());
         await page.goto('/');
         const table = await openTableAsync(page, 'view_quest');
 
-        // 行0のみを全列選択（リーダーのみ、子行なし→不完全グループ）
+        // 行0のみを全列選択（リーダー行のみ、パディングセルを含まないためDelete許可）
         await selectCellAsync(page, table, 0, 0);
         await getDataCell(table, 0, 4).click({ modifiers: ['Shift'] });
 
         // Delete押下
         await page.keyboard.press('Delete');
 
-        // 拒否されて値が変わらないことを検証
-        await expect(getDataCell(table, 0, 0)).toHaveText('1');
-        await expect(getDataCell(table, 0, 1)).toHaveText('MainQuest');
-        await expect(getDataCell(table, 0, 4)).toHaveText('Gold');
+        // リーダー行の全セルがクリアされることを検証
+        // quest.id, quest.name がクリア
+        await expect(getDataCell(table, 0, 0)).toHaveText('');
+        await expect(getDataCell(table, 0, 1)).toHaveText('');
+        // reward_group_id がクリアされFK再構築により結合テーブル列も連動してクリア
+        await expect(getDataCell(table, 0, 2)).toHaveText('');
+        await expect(getDataCell(table, 0, 3)).toHaveText('');
+        await expect(getDataCell(table, 0, 4)).toHaveText('');
     });
 
     test('FK列のみの範囲選択で完全グループならDeleteが許可されること', async ({ page }) => {

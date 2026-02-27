@@ -59,6 +59,18 @@ export class EditorTableViewInspector {
     }
 
     /**
+     * 指定範囲にパディング行（非リーダー行）が含まれるかを判定する
+     * containsPaddingCellとの違い: パディング行のJOIN列セル（paddingColumns=false）も検出する
+     */
+    containsPaddingRow(startRow: number, endRow: number): boolean {
+        if (!this.view.hasViewContext()) return false;
+        for (let r = startRow; r <= endRow; r++) {
+            if (!this.isViewLeaderRow(r)) return true;
+        }
+        return false;
+    }
+
+    /**
      * 指定範囲に編集不可セル（結合列またはパディングセル）が含まれるかを判定する
      */
     containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
