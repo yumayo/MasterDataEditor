@@ -182,12 +182,8 @@ export class EditorTableViewRestructure {
             }
         }
         viewContext.rowMetadata.splice(metaStartIndex, 0, ...insertRows.map(r => r.metadata));
-        // 行番号を更新
-        this.renumberRowsFrom(domStartIndex);
-        // ビュースタイルを再適用
-        this.view.applyViewRowStylesForRange(metaStartIndex, metaStartIndex + insertRows.length, false);
-        // 挿入されたDOM行に参照ヒントを適用する（Undo/Redoで復元された行にはヒントが消失しているため）
-        this.table.updateReferenceHintsForRows(metaStartIndex + 1, metaStartIndex + 1 + insertRows.length);
+        // ビュー行挿入後の後処理を実行する（Undo/Redoで復元された行にはヒントが消失しているため）
+        this.finalizeInsertedViewRows(metaStartIndex, insertRows.length, false);
         // 選択範囲をクリア
         this.selection.clearCopyRange();
         this.selection.updateRendererAfterResize();
@@ -227,10 +223,8 @@ export class EditorTableViewRestructure {
             newRows.push({ domRow, metadata });
         }
         viewContext.rowMetadata.splice(metaInsertIndex, 0, ...newRows.map(r => r.metadata));
-        this.renumberRowsFrom(domStartIndex);
-        this.view.applyViewRowStylesForRange(metaInsertIndex, metaInsertIndex + newRows.length, true);
-        // 新しいDOM行に参照ヒントを適用する（行再構築で作り直されたセルにはヒントがないため）
-        this.table.updateReferenceHintsForRows(domStartIndex, domStartIndex + newRows.length);
+        // ビュー行挿入後の後処理を実行する（行再構築で作り直されたセルにはヒントがないため）
+        this.finalizeInsertedViewRows(metaInsertIndex, newRows.length, true);
         return newRows;
     }
 
@@ -251,6 +245,27 @@ export class EditorTableViewRestructure {
             cells.push(cell);
         }
         return EditorTable.createRow(cells, rowIndex);
+    }
+
+    /**
+     * ビュー行のDOM挿入後に必要な後処理を一括実行する
+     *
+     * 以下の3ステップを規定の順序で実行する:
+     * 1. 行番号の再付番 (renumberRowsFrom)
+     * 2. ビュー行スタイルの適用 (applyViewRowStylesForRange)
+     * 3. 参照ヒントの適用 (updateReferenceHintsForRows)
+     *
+     * 将来新しい後処理ステップが追加される場合はこのメソッドに追記する。
+     *
+     * @param metaStartIndex 挿入された行のメタデータ開始インデックス
+     * @param insertedCount 挿入された行数
+     * @param applyPadding パディングセルのスタイルを適用するか（新規作成時true、復元時false）
+     */
+    private finalizeInsertedViewRows(metaStartIndex: number, insertedCount: number, applyPadding: boolean): void {
+        const domStartIndex = metaStartIndex + 1;
+        this.renumberRowsFrom(domStartIndex);
+        this.view.applyViewRowStylesForRange(metaStartIndex, metaStartIndex + insertedCount, applyPadding);
+        this.table.updateReferenceHintsForRows(domStartIndex, domStartIndex + insertedCount);
     }
 
     /**

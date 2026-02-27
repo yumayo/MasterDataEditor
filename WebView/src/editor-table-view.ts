@@ -41,6 +41,11 @@ export class EditorTableView {
 
     /**
      * ビューコンテキストを設定する
+     *
+     * 初期描画パスで使用される。行番号の再付番とビュー行スタイルを適用する。
+     * 参照ヒントはこの時点では参照データキャッシュが未構築のため適用されない。
+     * 呼び出し元が TabReference.preloadReferenceTables() 完了後に
+     * updateReferenceHints() を呼び出す責務を持つ。
      */
     setViewContext(context: ViewContext): void {
         this.viewContext = context;

@@ -275,6 +275,15 @@ export class EditorTable {
         return row;
     }
 
+    /**
+     * セルのDOM要素を作成する
+     *
+     * textContentに値を設定し、イベントリスナーを登録した状態のセル要素を返す。
+     * 参照ヒント(.cell-reference-hint)はこのメソッドでは適用されない。
+     *
+     * 初期描画パス: TabReference.preloadReferenceTables() 完了後に updateReferenceHints() で一括適用
+     * ビュー行作成パス: 行挿入後に updateReferenceHintsForRows() で適用
+     */
     static createCell(table: EditorTable, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
         const cell = document.createElement('div');
         cell.classList.add('editor-table-cell');

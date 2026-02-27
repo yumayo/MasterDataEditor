@@ -2052,4 +2052,5 @@ test.describe('1:n展開ビュー', () => {
         await expect(col1HintAfterRedo).toBeVisible();
         await expect(col1HintAfterRedo).toHaveText('キャラ');
     });
+
 });
