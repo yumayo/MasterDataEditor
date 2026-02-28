@@ -1177,3 +1177,166 @@ test.describe('逆参照の表示優先度', () => {
         },
     );
 });
+
+// -------------------------------------------------------
+// ビューJOIN列（逆参照）の表示列編集時に
+// PK列の逆参照ヒントが即座に更新されるテスト
+// -------------------------------------------------------
+test.describe('ビューJOIN列編集時の逆参照ヒント同期更新', () => {
+    /**
+     * テストデータ:
+     * chara: id(PK) のみ
+     * chara_name: id(PK, FK→chara.id), ja
+     * view_chara: charaベース、chara_nameをid→idで逆参照JOIN
+     *
+     * chara.id=1 → chara_name(1件, ja=うーぱーるーぱー)
+     *
+     * ビュー列構成（逆参照JOINでtargetColumn=idがスキップされる）:
+     *   col0: chara.id
+     *   col1: chara_name.ja
+     *
+     * view_charaのchara_name.ja（col1）を編集したとき、
+     * chara.id（col0）の逆参照ヒントが即座に更新されること。
+     */
+    function createReverseJoinHintFs(): MockFileSystem {
+        return {
+            "schema/chara.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara.csv": [
+                "id",
+                "1",
+            ].join("\n"),
+            "schema/chara_name.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int", reference: "chara.id" },
+                    { key: 1, name: "ja", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/chara_name.csv": [
+                "id,ja",
+                "1,うーぱーるーぱー",
+            ].join("\n"),
+            "view/view_chara.json": JSON.stringify({
+                name: "view_chara",
+                baseTable: "chara",
+                joins: [
+                    {
+                        sourceColumn: "id",
+                        targetTable: "chara_name",
+                        targetColumn: "id",
+                        insertAfterViewColumnIndex: 0,
+                        sourceTable: "",
+                    },
+                ],
+            }),
+        };
+    }
+
+    /**
+     * ビュータブを開き、テーブルのLocatorを返す
+     */
+    async function openViewAsync(page: Page, viewName: string): Promise<Locator> {
+        const explorer = page.locator('#explorer');
+        await explorer.locator('[data-panel="views"]').click();
+        await explorer.getByText(viewName, { exact: true }).click();
+        const table = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
+        await expect(table).toBeVisible();
+        return table;
+    }
+
+    test('ビューJOIN列の表示列を編集するとPK列の逆参照ヒントが即座に更新されること', async ({ page }) => {
+        await installMockApiAsync(page, createReverseJoinHintFs());
+        await page.goto('/');
+
+        const table = await openViewAsync(page, 'view_chara');
+
+        // ビュー列: chara.id(0), chara_name.ja(1)
+        // chara.id=1 の逆参照ヒント: chara_name(1件, ja=うーぱーるーぱー)
+        const hint = getReverseReferenceHint(table, 0, 0);
+        await expect(hint).toBeVisible();
+        await expect(hint).toHaveText('うーぱーるーぱー');
+
+        // chara_name.ja（col1）を編集: "うーぱーるーぱー" → "うーぱー"
+        await editCellAsync(page, table, 0, 1, 'うーぱー');
+
+        // PK列（col0）の逆参照ヒントが即座に更新されること
+        await expect(hint).toHaveText('うーぱー');
+    });
+
+    test('Undoすると逆参照ヒントが元の値に戻ること', async ({ page }) => {
+        await installMockApiAsync(page, createReverseJoinHintFs());
+        await page.goto('/');
+
+        const table = await openViewAsync(page, 'view_chara');
+
+        // 逆参照ヒントが表示されるまで待機
+        const hint = getReverseReferenceHint(table, 0, 0);
+        await expect(hint).toBeVisible();
+        await expect(hint).toHaveText('うーぱーるーぱー');
+
+        // chara_name.ja（col1）を編集: "うーぱーるーぱー" → "うーぱー"
+        await editCellAsync(page, table, 0, 1, 'うーぱー');
+        await expect(hint).toHaveText('うーぱー');
+
+        // Undo
+        await page.keyboard.press('Control+z');
+
+        // 逆参照ヒントが元の値に戻ること
+        await expect(hint).toHaveText('うーぱーるーぱー');
+    });
+
+    test('chara、chara_nameタブも開いた状態で編集し、タブ切替後に各タブのヒントが正しいこと', async ({ page }) => {
+        await installMockApiAsync(page, createReverseJoinHintFs());
+        await page.goto('/');
+
+        // charaテーブルを開く（初回なのでopenTableAsyncをそのまま使用）
+        const charaTable = await openTableAsync(page, 'chara');
+        // chara.id=1 の逆参照ヒント: chara_name(1件, ja=うーぱーるーぱー)
+        const charaHint = getReverseReferenceHint(charaTable, 0, 0);
+        await expect(charaHint).toBeVisible();
+        await expect(charaHint).toHaveText('うーぱーるーぱー');
+
+        // chara_nameテーブルを開く（複数テーブルが存在するためタブクリックで開く）
+        const explorer = page.locator('#explorer');
+        await explorer.getByText('chara_name', { exact: true }).click();
+        await page.locator('.editor-table').last().waitFor({ state: 'visible' });
+        const charaNameTable = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
+        // chara_name.id列（col0）の参照ヒント: chara テーブルには表示列がないため
+        // 逆参照チェーンで chara_name.ja の値が参照ヒントとして表示される
+        const charaNameHint = getReferenceHint(charaNameTable, 0, 0);
+        await expect(charaNameHint).toBeVisible();
+        await expect(charaNameHint).toHaveText('うーぱーるーぱー');
+
+        // view_charaを開く
+        const viewTable = await openViewAsync(page, 'view_chara');
+        // ビュー列: chara.id(0), chara_name.ja(1)
+        const viewHint = getReverseReferenceHint(viewTable, 0, 0);
+        await expect(viewHint).toBeVisible();
+        await expect(viewHint).toHaveText('うーぱーるーぱー');
+
+        // ビューのchara_name.ja（col1）を編集: "うーぱーるーぱー" → "うーぱー"
+        await editCellAsync(page, viewTable, 0, 1, 'うーぱー');
+
+        // ビューのPK列の逆参照ヒントが即座に更新されること
+        await expect(viewHint).toHaveText('うーぱー');
+
+        // charaタブに切り替えてヒントが更新されていること
+        await page.locator('#tab-content').getByText('chara', { exact: true }).click();
+        const refreshedCharaTable = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
+        const refreshedCharaHint = getReverseReferenceHint(refreshedCharaTable, 0, 0);
+        await expect(refreshedCharaHint).toBeVisible();
+        await expect(refreshedCharaHint).toHaveText('うーぱー');
+
+        // chara_nameタブに切り替えてヒントが更新されていること
+        await page.locator('#tab-content').getByText('chara_name', { exact: true }).click();
+        const refreshedCharaNameTable = page.locator('.tab-wrapper:not([style*="display: none"]) .editor-table');
+        const refreshedCharaNameHint = getReferenceHint(refreshedCharaNameTable, 0, 0);
+        await expect(refreshedCharaNameHint).toBeVisible();
+        await expect(refreshedCharaNameHint).toHaveText('うーぱー');
+    });
+});

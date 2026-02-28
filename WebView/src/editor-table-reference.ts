@@ -341,24 +341,44 @@ export class EditorTableReference {
                 if (baseKeyColumnIndex === -1) return;
                 const joinKeyValue = this.table.getCellValueAt(rowIndex, baseKeyColumnIndex + 1);
                 if (joinKeyValue === '') return;
-                // JOIN元テーブルがキャッシュに存在しない場合はスキップ（逆参照JOINのテーブルはFK列から参照されないためキャッシュ対象外）
-                if (!this.referenceDataCache.getSync(mapping.tableName)) return;
-                // JOIN元テーブルのキャッシュを更新
-                this.referenceDataCache.updateDisplayText(mapping.tableName, joinKeyValue, newValue);
-                // 同じテーブルを参照するFK列のヒントを再描画
                 const rowElement = tableElement.children[rowIndex] as HTMLElement;
-                for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
-                    if (colIdx === changedDataColumnIndex) continue;
-                    const column = this.tableData.header[colIdx];
-                    if (!column.reference) continue;
-                    const expr = parseReferenceExpression(column.reference);
-                    if (!isSimpleReference(expr)) continue;
-                    if (expr.tableName !== mapping.tableName) continue;
-                    const cell = rowElement.children[colIdx + 1] as HTMLElement;
-                    if (!cell) continue;
-                    const fkValue = EditorTable.getCellValue(cell);
-                    if (fkValue === '') continue;
-                    this.setCellValue(cell, fkValue, colIdx, rowIndex);
+                // Case 1: FK列の参照ヒント更新（キャッシュがある場合のみ）
+                const refCache = this.referenceDataCache.getSync(mapping.tableName);
+                if (refCache) {
+                    this.referenceDataCache.updateDisplayText(mapping.tableName, joinKeyValue, newValue);
+                    // 同じテーブルを参照するFK列のヒントを再描画
+                    for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
+                        if (colIdx === changedDataColumnIndex) continue;
+                        const column = this.tableData.header[colIdx];
+                        if (!column.reference) continue;
+                        const expr = parseReferenceExpression(column.reference);
+                        if (!isSimpleReference(expr)) continue;
+                        if (expr.tableName !== mapping.tableName) continue;
+                        const cell = rowElement.children[colIdx + 1] as HTMLElement;
+                        if (!cell) continue;
+                        const fkValue = EditorTable.getCellValue(cell);
+                        if (fkValue === '') continue;
+                        this.setCellValue(cell, fkValue, colIdx, rowIndex);
+                    }
+                }
+                // Case 2: PK列の逆参照ヒント更新（逆参照JOINパターン）
+                if (mapping.baseKeyColumn === config.primaryKeyColumnName && this.reverseReferenceMap) {
+                    const entries = this.reverseReferenceMap.get(joinKeyValue);
+                    if (entries) {
+                        const meta = viewContext.rowMetadata[rowIndex - 1];
+                        const groupInfo = meta.groupInfos.find(g => g.sourceTable === mapping.tableName);
+                        if (groupInfo) {
+                            const groupPosition = groupInfo.groupPosition;
+                            // 自テーブルの逆参照ヒントを更新（PK列のDOM再描画も含む）
+                            this.updateReverseReferenceDisplayText(joinKeyValue, mapping.tableName, groupPosition, newValue);
+                            // ベーステーブルが開かれている場合も逆参照ヒントを更新
+                            const baseTableName = viewContext.viewDefinition.baseTable;
+                            const baseEditorTable = viewContext.openEditorTables.get(baseTableName);
+                            if (baseEditorTable) {
+                                baseEditorTable.updateReverseReferenceDisplayText(joinKeyValue, mapping.tableName, groupPosition, newValue);
+                            }
+                        }
+                    }
                 }
                 return;
             }
@@ -383,6 +403,30 @@ export class EditorTableReference {
             // キャッシュを更新し、ヒントを再描画
             this.referenceDataCache.updateDisplayText(expr.tableName, fkValue, newValue);
             this.setCellValue(cell, fkValue, colIdx, rowIndex);
+        }
+    }
+
+    /** 逆参照マップの表示テキストを更新し、PK列のヒントを再描画する（他テーブルからの伝搬用） */
+    updateReverseReferenceDisplayText(pkValue: string, childTableName: string, groupPosition: number, newDisplayText: string): void {
+        if (!this.reverseReferenceMap) return;
+        const entries = this.reverseReferenceMap.get(pkValue);
+        if (!entries) return;
+        for (const entry of entries) {
+            if (entry.childTableName !== childTableName) continue;
+            if (groupPosition < entry.rows.length) {
+                entry.rows[groupPosition].displayText = newDisplayText;
+            }
+        }
+        // PK列のセルにヒントを再適用
+        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === config.primaryKeyColumnName);
+        if (pkColumnIndex === -1) return;
+        const tableElement = this.table.getTableElement();
+        for (let r = 1; r < tableElement.children.length; r++) {
+            const cell = (tableElement.children[r] as HTMLElement).children[pkColumnIndex + 1] as HTMLElement;
+            if (!cell) continue;
+            if (EditorTable.getCellValue(cell) === pkValue) {
+                this.applyReverseReferenceHint(cell, pkValue);
+            }
         }
     }
 }

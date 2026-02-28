@@ -707,6 +707,11 @@ export class EditorTable {
         this.reference.updateReverseReferenceHints(map);
     }
 
+    /** 逆参照ヒントの表示テキストを更新する（他テーブルからの伝搬用） */
+    updateReverseReferenceDisplayText(pkValue: string, childTableName: string, groupPosition: number, newDisplayText: string): void {
+        this.reference.updateReverseReferenceDisplayText(pkValue, childTableName, groupPosition, newDisplayText);
+    }
+
     /** 逆参照マップにエントリが存在するか判定する */
     hasReverseReferences(): boolean {
         return this.reference.hasReverseReferences();
