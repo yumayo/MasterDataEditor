@@ -67,16 +67,22 @@ export class CellChangeCommand implements Command {
 
     execute(): void {
         for (const change of this.changes) {
-            this.setCellValue(change.row, change.column, change.newValue);
+            this.editorTable.updateCellValueAt(change.row, change.column, change.newValue);
         }
+        this.editorTable.propagateToSourceTable(this.changes);
     }
 
     undo(): void {
         // 逆順で元に戻す
         for (let i = this.changes.length - 1; i >= 0; i--) {
             const change = this.changes[i];
-            this.setCellValue(change.row, change.column, change.oldValue);
+            this.editorTable.updateCellValueAt(change.row, change.column, change.oldValue);
         }
+        // undo用の変更リスト（oldValueとnewValueを反転）でソーステーブルに伝搬
+        const undoChanges: CellChange[] = this.changes.map(c => ({
+            row: c.row, column: c.column, oldValue: c.newValue, newValue: c.oldValue,
+        }));
+        this.editorTable.propagateToSourceTable(undoChanges);
     }
 
     redo(): void {
@@ -97,10 +103,6 @@ export class CellChangeCommand implements Command {
 
     getChanges(): CellChange[] {
         return this.changes;
-    }
-
-    private setCellValue(row: number, column: number, value: string): void {
-        this.editorTable.setCellValueAt(row, column, value);
     }
 }
 
@@ -574,7 +576,7 @@ export class DeleteColumnCommand implements Command {
         // セル値を復元
         const rowCount = this.editorTable.getRowCount();
         for (let rowIdx = 1; rowIdx < rowCount; ++rowIdx) {
-            this.editorTable.setCellValueAt(rowIdx, this.columnIndex + 1, this.deletedCellValues[rowIdx - 1]);
+            this.editorTable.updateCellValueAt(rowIdx, this.columnIndex + 1, this.deletedCellValues[rowIdx - 1]);
         }
 
         // 列幅を復元（全セルに適用）
@@ -636,7 +638,7 @@ export class DeleteRowCommand implements Command {
         // セル値を復元
         const columnCount = this.editorTable.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
-            this.editorTable.setCellValueAt(this.rowIndex, colIdx + 1, this.deletedCellValues[colIdx]);
+            this.editorTable.updateCellValueAt(this.rowIndex, colIdx + 1, this.deletedCellValues[colIdx]);
         }
 
         // 行高を復元（全セルに適用）

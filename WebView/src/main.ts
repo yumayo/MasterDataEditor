@@ -33,6 +33,16 @@ import {CommandPalette} from "./command-palette";
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
 
+    // テスト用: window.editorを公開（activeEditorTableへのアクセスを提供）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).editor = {
+        get activeEditorTable() {
+            const state = tab.getActiveTabState();
+            if (!state) return false;
+            return state.editorTable;
+        },
+    };
+
     // グローバルキーボードショートカットを登録
     document.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.ctrlKey && e.shiftKey && e.key === 'F') {

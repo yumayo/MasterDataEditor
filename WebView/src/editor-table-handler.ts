@@ -801,11 +801,12 @@ export class EditorTableHandler {
     private applyViewAwareCellChanges(changes: CellChange[], range: CellRange, copyRange: CellRange): CellRange {
         // ビューコンテキストがない場合: 単純にセル値を適用して履歴に追加
         if (!this.table.hasViewContext()) {
-            for (const change of changes) this.table.setCellValueAt(change.row, change.column, change.newValue);
+            for (const change of changes) this.table.updateCellValueAt(change.row, change.column, change.newValue);
+            this.table.propagateToSourceTable(changes);
             this.history.push({ changes, range, copyRange });
             return range;
         }
-        // FK再構築が必要な変更を事前判定（setCellValueAt前にoldValueを参照するため）
+        // FK再構築が必要な変更を事前判定（updateCellValueAt前にoldValueを参照するため）
         const restructureRows = new Map<number, CellChange>();
         for (const change of changes) {
             if (this.table.needsViewRowRestructure(change.row, change.column, change.newValue)) {
@@ -830,8 +831,9 @@ export class EditorTableHandler {
             const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
             allChanges.push(change);
             for (const lc of linkedChanges) allChanges.push(lc);
-            this.table.setCellValueAt(change.row, change.column, change.newValue);
+            this.table.updateCellValueAt(change.row, change.column, change.newValue);
         }
+        this.table.propagateToSourceTable(allChanges);
         this.history.push({ changes: allChanges, range, copyRange });
     }
 
@@ -841,7 +843,7 @@ export class EditorTableHandler {
      *
      * 処理順:
      * 0. メタデータ範囲外への変更時はダミーメタデータを事前追加
-     * 1. 非再構築行の変更を適用（setCellValueAt + synchronize）
+     * 1. 非再構築行の変更を適用（updateCellValueAt + synchronize）
      * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
      * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
      * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
@@ -868,15 +870,16 @@ export class EditorTableHandler {
             const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
             nonRestructureChanges.push(change);
             for (const lc of linkedChanges) nonRestructureChanges.push(lc);
-            this.table.setCellValueAt(change.row, change.column, change.newValue);
+            this.table.updateCellValueAt(change.row, change.column, change.newValue);
         }
         // 2. 再構築行の非FK変更を先にDOMに書く（restructureがDOMから値を読むため）
         for (const change of changes) {
             if (!restructureRows.has(change.row)) continue;
             if (restructureRows.get(change.row) === change) continue;
             nonRestructureChanges.push(change);
-            this.table.setCellValueAt(change.row, change.column, change.newValue);
+            this.table.updateCellValueAt(change.row, change.column, change.newValue);
         }
+        this.table.propagateToSourceTable(nonRestructureChanges);
         // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
         const rowCountBefore = this.table.getRowCount();
         const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);

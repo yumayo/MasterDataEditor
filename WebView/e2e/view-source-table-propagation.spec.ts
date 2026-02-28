@@ -222,3 +222,96 @@ test.describe(
         );
     },
 );
+
+// -------------------------------------------------------
+// setCellValueAtパイプライン化: updateCellValueAt / propagateToSourceTable テスト
+// updateCellValueAt: DOM更新 + 参照ヒントのみ（伝搬なし）
+// propagateToSourceTable: 変更リストをまとめてソーステーブルに伝搬
+// -------------------------------------------------------
+test.describe(
+    'setCellValueAtパイプライン化',
+    () => {
+        test(
+            'updateCellValueAtはDOMのみ更新しソーステーブルに伝搬しない',
+            async ({ page }) => {
+                await installMockApiAsync(page, createFileSystem());
+                await page.goto('/');
+
+                // quest_rewardを先に開いてEditorTableを作成しておく
+                const rewardTable = await openTableAsync(page, 'quest_reward');
+                // quest_reward初期状態: row0のitem列=Gold
+                await expect(getDataCell(rewardTable, 0, 2)).toHaveText('Gold');
+
+                // view_questを開く
+                const viewTable = await openTableAsync(page, 'view_quest');
+                // ビュー列: quest.id(0), quest.name(1), quest_reward.id(2), quest_reward.item(3)
+                // row0: 1, MainQuest, 1, Gold
+                await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+
+                // updateCellValueAtでDOMのみ更新（ソーステーブルへの伝搬は行わない）
+                // row=1（ヘッダー含む）, column=4（行ヘッダー含む）= quest_reward.item列の最初のデータ行
+                await page.evaluate(() => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const editor = (window as any).editor;
+                    editor.activeEditorTable.updateCellValueAt(1, 4, 'TestValue');
+                });
+
+                // ビューのDOMは更新されていること
+                await expect(getDataCell(viewTable, 0, 3)).toHaveText('TestValue');
+
+                // quest_rewardタブに切り替え
+                const refreshedRewardTable = await openTableAsync(page, 'quest_reward');
+
+                // ソーステーブルには伝搬されていないこと（Goldのまま）
+                await expect(getDataCell(refreshedRewardTable, 0, 2)).toHaveText('Gold');
+                // 他の行も変更されていないこと
+                await expect(getDataCell(refreshedRewardTable, 1, 2)).toHaveText('Gem');
+                await expect(getDataCell(refreshedRewardTable, 2, 2)).toHaveText('Potion');
+            },
+        );
+
+        test(
+            'propagateToSourceTableがソーステーブルに変更を伝搬する',
+            async ({ page }) => {
+                await installMockApiAsync(page, createFileSystem());
+                await page.goto('/');
+
+                // quest_rewardを先に開いてEditorTableを作成しておく
+                const rewardTable = await openTableAsync(page, 'quest_reward');
+                await expect(getDataCell(rewardTable, 0, 2)).toHaveText('Gold');
+
+                // view_questを開く
+                const viewTable = await openTableAsync(page, 'view_quest');
+                await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+
+                // updateCellValueAtでDOMのみ更新し、その後propagateToSourceTableで伝搬する
+                await page.evaluate(() => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const editor = (window as any).editor;
+                    const table = editor.activeEditorTable;
+                    // まずDOMだけ更新（伝搬なし）
+                    table.updateCellValueAt(1, 4, 'Diamond');
+                    // 変更リストをまとめてソーステーブルに伝搬
+                    table.propagateToSourceTable([{
+                        row: 1,
+                        column: 4,
+                        oldValue: 'Gold',
+                        newValue: 'Diamond',
+                    }]);
+                });
+
+                // ビューのDOMは更新されていること
+                await expect(getDataCell(viewTable, 0, 3)).toHaveText('Diamond');
+
+                // quest_rewardタブに切り替え
+                const refreshedRewardTable = await openTableAsync(page, 'quest_reward');
+
+                // ソーステーブルに伝搬されていること
+                await expect(getDataCell(refreshedRewardTable, 0, 2)).toHaveText('Diamond');
+                // 他の行は変更されていないこと
+                await expect(getDataCell(refreshedRewardTable, 1, 2)).toHaveText('Gem');
+                await expect(getDataCell(refreshedRewardTable, 2, 2)).toHaveText('Potion');
+            },
+        );
+    },
+);

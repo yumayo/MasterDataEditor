@@ -388,7 +388,7 @@ export class EditorTableViewRestructure {
                         if (rowMetadata[metaStart + i].paddingColumns[colIdx]) continue;
                         const newVal = expandedRows[i].values[colIdx];
                         const oldVal = EditorTable.getCellValue(cell);
-                        if (oldVal !== newVal) this.table.setCellValueAt(metaStart + 1 + i, colIdx + 1, newVal);
+                        if (oldVal !== newVal) this.table.updateCellValueAt(metaStart + 1 + i, colIdx + 1, newVal);
                     }
                 }
                 continue;

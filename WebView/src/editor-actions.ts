@@ -232,7 +232,7 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.setCellValueAt(targetRow, c, newValue);
+                table.updateCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'up') {
@@ -242,7 +242,7 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.setCellValueAt(targetRow, c, newValue);
+                table.updateCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'right') {
@@ -253,7 +253,7 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(r, targetCol);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.setCellValueAt(r, targetCol, newValue);
+                table.updateCellValueAt(r, targetCol, newValue);
             }
         }
     } else if (direction === 'left') {
@@ -264,10 +264,13 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(r, targetCol);
                 const newValue = generatedRow[i];
                 changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.setCellValueAt(r, targetCol, newValue);
+                table.updateCellValueAt(r, targetCol, newValue);
             }
         }
     }
+
+    // ソーステーブルに伝搬
+    table.propagateToSourceTable(changes);
 
     // 選択範囲を更新（ソース + ターゲット）
     const newStartRow = Math.min(sourceStartRow, targetStartRow);

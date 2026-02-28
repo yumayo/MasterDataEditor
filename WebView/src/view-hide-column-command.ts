@@ -113,7 +113,7 @@ export class ViewHideColumnCommand implements Command {
         // セル値を復元
         const rowCount = this.editorTable.getRowCount();
         for (let r = 1; r < rowCount; r++) {
-            this.editorTable.setCellValueAt(r, this.columnIndex + 1, this.savedCellValues[r - 1]);
+            this.editorTable.updateCellValueAt(r, this.columnIndex + 1, this.savedCellValues[r - 1]);
         }
 
         // JOIN列ヘッダーのCSSクラスを復元

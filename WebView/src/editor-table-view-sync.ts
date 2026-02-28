@@ -57,7 +57,7 @@ export class EditorTableViewSync {
                 const oldValue = this.table.getCellValueAt(r, editedColumn);
                 if (oldValue === newValue) continue;
                 changes.push({ row: r, column: editedColumn, oldValue, newValue });
-                this.table.setCellValueAt(r, editedColumn, newValue);
+                this.table.updateCellValueAt(r, editedColumn, newValue);
             }
             return changes;
         }
@@ -129,7 +129,7 @@ export class EditorTableViewSync {
             const oldValue = this.table.getCellValueAt(domRow, editedColumn);
             if (oldValue === newValue) continue;
             changes.push({ row: domRow, column: editedColumn, oldValue, newValue });
-            this.table.setCellValueAt(domRow, editedColumn, newValue);
+            this.table.updateCellValueAt(domRow, editedColumn, newValue);
         }
         return changes;
     }
@@ -148,7 +148,7 @@ export class EditorTableViewSync {
             const oldValue = this.table.getCellValueAt(editedRow, joinedColumn);
             if (oldValue === newValue) continue;
             changes.push({ row: editedRow, column: joinedColumn, oldValue, newValue });
-            this.table.setCellValueAt(editedRow, joinedColumn, newValue);
+            this.table.updateCellValueAt(editedRow, joinedColumn, newValue);
         }
         return changes;
     }
@@ -161,7 +161,7 @@ export class EditorTableViewSync {
      * タブ切替時のrebuildJoinTableKeyMapsがソーステーブルDOMから最新値を読み取れるようにする。
      *
      * 再帰防止: ソーステーブルは通常テーブルでViewContextを持たないため、
-     * ソーステーブルのsetCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
+     * ソーステーブルのupdateCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
      * hasViewContext()チェックで即returnする。
      */
     propagateJoinedColumnToSourceTable(row: number, column: number, value: string): void {
@@ -193,7 +193,7 @@ export class EditorTableViewSync {
                 if (sourceEditorTable.getCellValueAt(r, keyColumnIndex) !== groupInfo.sourceKeyValue) continue;
                 if (matchCount === groupInfo.groupPosition) {
                     const sourceColumn = this.findSourceTableColumn(sourceEditorTable, mapping.sourceColumnName);
-                    sourceEditorTable.setCellValueAt(r, sourceColumn, value);
+                    sourceEditorTable.updateCellValueAt(r, sourceColumn, value);
                     break;
                 }
                 matchCount++;

@@ -111,7 +111,7 @@ export class ViewJoinCommand implements Command {
             for (let i = 0; i < this.joinTableData.header.length; i++) {
                 if (i === keyColumnIndex) continue;
                 const value = joinedRow ? joinedRow[i] : '';
-                this.editorTable.setCellValueAt(r, insertPos + offset + 1, value);
+                this.editorTable.updateCellValueAt(r, insertPos + offset + 1, value);
                 offset++;
             }
         }

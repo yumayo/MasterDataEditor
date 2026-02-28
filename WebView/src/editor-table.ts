@@ -675,10 +675,16 @@ export class EditorTable {
     // ファサード: EditorTableReference
     // =========================================================================
 
-    /** 座標でセルの値を設定する（参照ヒント付き、ビュー結合列はソーステーブルにも伝搬） */
-    setCellValueAt(row: number, column: number, value: string): void {
+    /** 座標でセルのDOMと参照ヒントのみ更新する（ソーステーブルへの伝搬は行わない） */
+    updateCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
-        this.view.propagateJoinedColumnToSourceTable(row, column, value);
+    }
+
+    /** 変更リストをまとめてソーステーブルに伝搬する */
+    propagateToSourceTable(changes: CellChange[]): void {
+        for (const change of changes) {
+            this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue);
+        }
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
