@@ -4,6 +4,7 @@ import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
 import {CommandPalette} from "./command-palette";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 (async () => {
     // DOM要素を先頭で一括取得する
@@ -15,10 +16,13 @@ import {CommandPalette} from "./command-palette";
     const editor = new Editor(editorElement);
     const contextMenu = new ContextMenu(editorElement);
 
+    // テーブルデータの中央ストア（アプリケーション全体で1つ）
+    const store = new InMemoryTableStore();
+
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
 
-    const tab = new Tab(editor, sidebar, tabContentElement, tabElement);
+    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store);
 
     const realSidebar = new Sidebar(
         explorerElement,

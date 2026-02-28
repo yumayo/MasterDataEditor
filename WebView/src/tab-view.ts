@@ -12,6 +12,8 @@ import {ViewRowMetadata} from "./model/view-row-metadata";
 import {buildViewTableData, JoinedTableLoadedData, applyViewColumnConfig} from "./view-table-data-builder";
 import {saveViewDataAsync, updateViewColumnConfigs} from "./view-save-splitter";
 import {History} from "./history";
+import {InMemoryTableStore} from "./in-memory-table-store";
+import {TabReference} from "./tab-reference";
 
 /**
  * ビュータブ管理モジュール
@@ -25,9 +27,13 @@ import {History} from "./history";
  */
 export class TabView {
     private readonly tab: Tab;
+    private readonly store: InMemoryTableStore;
+    private readonly reference: TabReference;
 
-    constructor(tab: Tab) {
+    constructor(tab: Tab, store: InMemoryTableStore, reference: TabReference) {
         this.tab = tab;
+        this.store = store;
+        this.reference = reference;
     }
 
     /**
@@ -113,15 +119,15 @@ export class TabView {
                     this.tab.getEditor().element.appendChild(wrapperElement);
 
                     // ベーステーブルとJOINテーブルを中央ストアに登録
-                    this.tab.getStore().registerTable(baseTable, csv.header, csv.body);
+                    this.store.registerTable(baseTable, csv.header, csv.body);
                     for (const jt of joinedTables) {
                         const jtHeader = jt.tableData.header.map(h => h.name);
                         const jtBody = jt.tableData.body.map(r => r.values);
-                        this.tab.getStore().registerTable(jt.tableName, jtHeader, jtBody);
+                        this.store.registerTable(jt.tableName, jtHeader, jtBody);
                     }
 
                     // 参照データキャッシュを作成（中央ストア経由でインメモリデータを取得する）
-                    const referenceDataCache = new ReferenceDataCache(this.tab.getStore());
+                    const referenceDataCache = new ReferenceDataCache(this.store);
 
                     // EditorTable生成
                     const factoryResult = this.tab.createEditorTable(
@@ -164,10 +170,10 @@ export class TabView {
                     });
 
                     // 参照先テーブルをpreload
-                    this.tab.reference.preloadReferenceTables(compositeTableData, referenceDataCache, editorTable);
+                    this.reference.preloadReferenceTables(compositeTableData, referenceDataCache, editorTable);
 
                     // 逆参照を並行して解決（ベーステーブル名で解決する）
-                    this.tab.reference.resolveReverseReferencesAsync(baseTable, editorTable);
+                    this.reference.resolveReverseReferencesAsync(baseTable, editorTable);
 
                     // ドロップダウン入力を作成
                     const dropdownInput = new GridDropdownInput(
@@ -343,9 +349,9 @@ export class TabView {
         updateViewColumnConfigs(state.editorTable, state.columnMappings, viewDefinition);
 
         // 中央ストアからベーステーブルとJOINテーブルを解除
-        this.tab.getStore().unregisterTable(viewDefinition.baseTable);
+        this.store.unregisterTable(viewDefinition.baseTable);
         for (const join of viewDefinition.joins) {
-            this.tab.getStore().unregisterTable(join.targetTable);
+            this.store.unregisterTable(join.targetTable);
         }
 
         // 現在のタブ状態をクリーンアップ

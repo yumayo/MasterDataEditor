@@ -4,6 +4,7 @@ import {EditorTableData} from "./model/editor-table-data";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
 import {ReverseReferenceResolver} from "./reverse-reference-resolver";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * タブ参照データ管理モジュール
@@ -15,9 +16,11 @@ import {ReverseReferenceResolver} from "./reverse-reference-resolver";
  */
 export class TabReference {
     private readonly tab: Tab;
+    private readonly store: InMemoryTableStore;
 
-    constructor(tab: Tab) {
+    constructor(tab: Tab, store: InMemoryTableStore) {
         this.tab = tab;
+        this.store = store;
     }
 
     /**
@@ -48,7 +51,7 @@ export class TabReference {
      * 逆参照を非同期で解決し、ヒントを更新する
      */
     resolveReverseReferencesAsync(tableName: string, editorTable: EditorTable): void {
-        const resolver = new ReverseReferenceResolver(this.tab.getStore());
+        const resolver = new ReverseReferenceResolver(this.store);
         resolver.resolveAsync(tableName).then(reverseMap => {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {

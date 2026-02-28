@@ -94,13 +94,13 @@ export class Tab {
     private contextMenu: ContextMenu;
 
     /** ドラッグアンドドロップモジュール */
-    dragDrop!: TabDragDrop;
+    private readonly dragDrop: TabDragDrop;
 
     /** 参照データ管理モジュール */
-    reference!: TabReference;
+    private readonly reference: TabReference;
 
     /** ビュータブ管理モジュール */
-    viewModule!: TabView;
+    private readonly viewModule: TabView;
 
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
@@ -120,7 +120,7 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
     private pendingNavigationColumnIndex: number;
 
-    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement) {
+    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore) {
         this.editor = editor;
         this.element = tabContentElement;
         this.tabButtons = [];
@@ -130,19 +130,12 @@ export class Tab {
         this.sidebar = sidebar;
         this.tabElement = tabElement;
         this.openEditorTables = new Map();
-        this.store = new InMemoryTableStore();
+        this.store = store;
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
-        this.initializeModules();
-    }
-
-    /**
-     * サブモジュールを生成・注入する
-     */
-    private initializeModules(): void {
         this.dragDrop = new TabDragDrop(this);
-        this.reference = new TabReference(this);
-        this.viewModule = new TabView(this);
+        this.reference = new TabReference(this, this.store);
+        this.viewModule = new TabView(this, this.store, this.reference);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -159,12 +152,6 @@ export class Tab {
         return this.openEditorTables;
     }
 
-    /**
-     * テーブルデータの中央ストアを取得する
-     */
-    getStore(): InMemoryTableStore {
-        return this.store;
-    }
 
     /**
      * タブボタン配列を取得する（サブモジュール用）
