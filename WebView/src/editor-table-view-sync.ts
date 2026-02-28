@@ -7,6 +7,7 @@ import {CellChange} from "./command";
  *
  * 責務:
  * - JOIN列の値同期（FK列・結合列の編集時に他行の値を連動更新）
+ * - ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬
  */
 export class EditorTableViewSync {
     private readonly view: EditorTableView;
@@ -150,5 +151,74 @@ export class EditorTableViewSync {
             this.table.setCellValueAt(editedRow, joinedColumn, newValue);
         }
         return changes;
+    }
+
+    /**
+     * ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬する
+     *
+     * ビューで結合列が編集されたとき、対応するソーステーブルのDOMセルと
+     * joinTableKeyMapsのインメモリデータを更新する。
+     * タブ切替時のrebuildJoinTableKeyMapsがソーステーブルDOMから最新値を読み取れるようにする。
+     *
+     * 再帰防止: ソーステーブルは通常テーブルでViewContextを持たないため、
+     * ソーステーブルのsetCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
+     * hasViewContext()チェックで即returnする。
+     */
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string): void {
+        const viewContext = this.view.getViewContext();
+        const dataColumnIndex = column - 1;
+        if (dataColumnIndex < 0 || dataColumnIndex >= viewContext.columnMappings.length) {
+            throw new Error(`到達不可能: dataColumnIndex=${dataColumnIndex}はcolumnMappingsの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
+        }
+        const mapping = viewContext.columnMappings[dataColumnIndex];
+        // 結合列でなければ伝搬不要
+        if (!mapping.isJoinedColumn) return;
+        // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
+        const sourceEditorTable = viewContext.openEditorTables.get(mapping.tableName);
+        // メタデータからsourceKeyValueとgroupPositionを取得
+        const metaIndex = row - 1;
+        if (metaIndex < 0 || metaIndex >= viewContext.rowMetadata.length) {
+            throw new Error(`到達不可能: metaIndex=${metaIndex}はrowMetadataの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
+        }
+        const meta = viewContext.rowMetadata[metaIndex];
+        const groupInfo = meta.groupInfos.find(g => g.sourceTable === mapping.tableName);
+        if (!groupInfo) return;
+        // ソーステーブルのDOMセルを更新（テーブルが開かれている場合のみ）
+        if (sourceEditorTable) {
+            // キー列とグループ位置で対象行を特定
+            const keyColumnIndex = this.findSourceTableColumn(sourceEditorTable, mapping.joinKeyColumn);
+            const rowCount = sourceEditorTable.getRowCount();
+            let matchCount = 0;
+            for (let r = 1; r < rowCount; r++) {
+                if (sourceEditorTable.getCellValueAt(r, keyColumnIndex) !== groupInfo.sourceKeyValue) continue;
+                if (matchCount === groupInfo.groupPosition) {
+                    const sourceColumn = this.findSourceTableColumn(sourceEditorTable, mapping.sourceColumnName);
+                    sourceEditorTable.setCellValueAt(r, sourceColumn, value);
+                    break;
+                }
+                matchCount++;
+            }
+        }
+        // joinTableKeyMapsのインメモリデータを更新（ソーステーブルが開かれていなくても実行する）
+        const keyMap = viewContext.joinTableKeyMaps.get(mapping.tableName);
+        if (!keyMap) return;
+        const joinRows = keyMap.get(groupInfo.sourceKeyValue);
+        if (!joinRows) return;
+        if (groupInfo.groupPosition < joinRows.length) {
+            joinRows[groupInfo.groupPosition][mapping.sourceColumnIndex] = value;
+        }
+    }
+
+    /**
+     * ソーステーブル内で列名が一致する列インデックスを探す
+     * @returns DOM列インデックス（1始まり、行ヘッダーを含む）
+     * @throws ビュー構築済みなら対応する列は必ず存在するはず。見つからない場合はバグ。
+     */
+    private findSourceTableColumn(sourceTable: EditorTable, columnName: string): number {
+        const columnCount = sourceTable.getColumnCount();
+        for (let c = 0; c < columnCount; c++) {
+            if (sourceTable.getColumnHeaderValue(c) === columnName) return c + 1;
+        }
+        throw new Error(`到達不可能: ソーステーブルに列'${columnName}'が見つかりません。ビュー構築済みなら必ず存在するはずです。`);
     }
 }

@@ -109,6 +109,12 @@ export class EditorTableView {
         return this.sync.synchronizeJoinedColumnValues(editedRow, editedColumn, newValue);
     }
 
+    /** ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬する */
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string): void {
+        if (!this.hasViewContext()) return;
+        this.sync.propagateJoinedColumnToSourceTable(row, column, value);
+    }
+
     // --- Inspector委譲 ---
 
     isViewLeaderRow(row: number): boolean {

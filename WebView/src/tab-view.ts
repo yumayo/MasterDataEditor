@@ -223,6 +223,7 @@ export class TabView {
 
         editorTable.setViewContext({
             viewDefinition, columnMappings, availableJoinTargets, joinTableKeyMaps, rowMetadata,
+            openEditorTables: this.tab.getOpenEditorTables(),
             onJoinAsync: async (target: AvailableJoinTarget, afterColumnIndex: number) => {
                 if (target.isReverse) {
                     // 逆参照JOINを実行: viewDefinitionにJOIN定義を追加してビュー全体を再構築する

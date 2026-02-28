@@ -46,6 +46,8 @@ export interface ViewContext {
     joinTableKeyMaps: Map<string, Map<string, string[][]>>;
     /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
     rowMetadata: ViewRowMetadata[];
+    /** 開いているEditorTableのマップ（ソーステーブル伝搬用） */
+    openEditorTables: Map<string, EditorTable>;
     onJoinAsync: (target: AvailableJoinTarget, afterColumnIndex: number) => Promise<void>;
     /** 非表示列を再表示するコールバック（ビュータブの再構築を行う） */
     onShowHiddenColumn: (tableName: string, columnName: string) => void;
@@ -673,9 +675,10 @@ export class EditorTable {
     // ファサード: EditorTableReference
     // =========================================================================
 
-    /** 座標でセルの値を設定する（参照ヒント付き） */
+    /** 座標でセルの値を設定する（参照ヒント付き、ビュー結合列はソーステーブルにも伝搬） */
     setCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
+        this.view.propagateJoinedColumnToSourceTable(row, column, value);
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
