@@ -29,11 +29,13 @@ export class TabView {
     private readonly tab: Tab;
     private readonly store: InMemoryTableStore;
     private readonly reference: TabReference;
+    private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(tab: Tab, store: InMemoryTableStore, reference: TabReference) {
+    constructor(tab: Tab, store: InMemoryTableStore, reference: TabReference, referenceDataCache: ReferenceDataCache) {
         this.tab = tab;
         this.store = store;
         this.reference = reference;
+        this.referenceDataCache = referenceDataCache;
     }
 
     /**
@@ -126,12 +128,9 @@ export class TabView {
                         this.store.registerTable(jt.tableName, jtHeader, jtBody);
                     }
 
-                    // 参照データキャッシュを作成（中央ストア経由でインメモリデータを取得する）
-                    const referenceDataCache = new ReferenceDataCache(this.store);
-
                     // EditorTable生成
                     const factoryResult = this.tab.createEditorTable(
-                        name, compositeTableData, referenceDataCache, wrapperElement, tabButton
+                        name, compositeTableData, wrapperElement, tabButton
                     );
                     const editorTable = factoryResult.editorTable;
                     const selection = factoryResult.selection;
@@ -170,7 +169,7 @@ export class TabView {
                     });
 
                     // 参照先テーブルをpreload
-                    this.reference.preloadReferenceTables(compositeTableData, referenceDataCache, editorTable);
+                    this.reference.preloadReferenceTables(compositeTableData, editorTable);
 
                     // 逆参照を並行して解決（ベーステーブル名で解決する）
                     this.reference.resolveReverseReferencesAsync(baseTable, editorTable);
@@ -183,7 +182,7 @@ export class TabView {
                         () => { editorTableHandler.cancelDropdown(); }
                     );
 
-                    editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, compositeTableData);
+                    editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, compositeTableData);
 
                     // 初期選択
                     selection.setRange(1, 1, 1, 1);
@@ -194,7 +193,7 @@ export class TabView {
                         kind: 'view',
                         editorTable, selection, editorTableHandler, history,
                         areaResizer, fillController, wrapperElement,
-                        referenceDataCache, dropdownInput, viewDefinition,
+                        dropdownInput, viewDefinition,
                         columnMappings, rowMetadata: buildResult.rowMetadata,
                         savedScrollLeft: 0, savedScrollTop: 0,
                     };

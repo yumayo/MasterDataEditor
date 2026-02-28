@@ -34,7 +34,6 @@ interface BaseTabState {
     areaResizer: AreaResizer;
     fillController: FillController;
     wrapperElement: HTMLElement;
-    referenceDataCache: ReferenceDataCache;
     dropdownInput: GridDropdownInput;
     /** タブ非アクティブ時に保存された水平スクロール位置 */
     savedScrollLeft: number;
@@ -114,13 +113,16 @@ export class Tab {
     /** テーブルデータの中央ストア（CSVデータの一元管理用） */
     private readonly store: InMemoryTableStore;
 
+    /** 参照データキャッシュ（全タブで共有） */
+    private readonly referenceDataCache: ReferenceDataCache;
+
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
     /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
     private pendingNavigationColumnIndex: number;
 
-    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore) {
+    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
         this.tabButtons = [];
@@ -131,11 +133,12 @@ export class Tab {
         this.tabElement = tabElement;
         this.openEditorTables = new Map();
         this.store = store;
+        this.referenceDataCache = referenceDataCache;
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
         this.dragDrop = new TabDragDrop(this);
-        this.reference = new TabReference(this, this.store);
-        this.viewModule = new TabView(this, this.store, this.reference);
+        this.reference = new TabReference(this, this.store, this.referenceDataCache);
+        this.viewModule = new TabView(this, this.store, this.reference, this.referenceDataCache);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -464,12 +467,9 @@ export class Tab {
                 wrapperElement.dataset.tabName = name;
                 this.editor.element.appendChild(wrapperElement);
 
-                // 参照データキャッシュを作成（中央ストア経由でインメモリデータを取得する）
-                const referenceDataCache = new ReferenceDataCache(this.store);
-
                 // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
                 const editorTableFactoryResult = this.createEditorTable(
-                    name, tableData, referenceDataCache, wrapperElement, tabButton
+                    name, tableData, wrapperElement, tabButton
                 );
                 const editorTable = editorTableFactoryResult.editorTable;
                 const selection = editorTableFactoryResult.selection;
@@ -482,7 +482,7 @@ export class Tab {
                 this.openEditorTables.set(name, editorTable);
 
                 // 参照先テーブルを事前読み込み
-                this.reference.preloadReferenceTables(tableData, referenceDataCache, editorTable);
+                this.reference.preloadReferenceTables(tableData, editorTable);
 
                 // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
                 this.reference.resolveReverseReferencesAsync(name, editorTable);
@@ -503,7 +503,7 @@ export class Tab {
                 );
 
                 // EditorTableHandler に参照データキャッシュとドロップダウンを設定
-                editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
+                editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
                 // 初期選択をA1（row=1, column=1）に設定
                 selection.setRange(1, 1, 1, 1);
@@ -519,7 +519,6 @@ export class Tab {
                     areaResizer,
                     fillController,
                     wrapperElement,
-                    referenceDataCache,
                     dropdownInput,
                     savedScrollLeft: 0,
                     savedScrollTop: 0
@@ -541,7 +540,7 @@ export class Tab {
      * 相互参照を解決するために Object.assign + Object.setPrototypeOf を使用
      */
     createEditorTable(
-        name: string, tableData: EditorTableData, referenceDataCache: ReferenceDataCache,
+        name: string, tableData: EditorTableData,
         wrapperElement: HTMLElement, tabButton: TabButton
     ): EditorTableFactoryResult {
         // 相互参照を解決するため、一時的な空オブジェクトを作成
@@ -572,7 +571,7 @@ export class Tab {
 
         // 本物の EditorTable インスタンスを作成
         const realEditorTable = new EditorTable(
-            name, tableData, referenceDataCache, this.store, editorTableHandler,
+            name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
             scrollController, this.sidebar
         );

@@ -5,6 +5,7 @@ import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
 import {CommandPalette} from "./command-palette";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {ReferenceDataCache} from "./reference-data-cache";
 
 (async () => {
     // DOM要素を先頭で一括取得する
@@ -19,10 +20,13 @@ import {InMemoryTableStore} from "./in-memory-table-store";
     // テーブルデータの中央ストア（アプリケーション全体で1つ）
     const store = new InMemoryTableStore();
 
+    // 参照データキャッシュ（アプリケーション全体で1つ、中央ストア経由でインメモリデータを取得する）
+    const referenceDataCache = new ReferenceDataCache(store);
+
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
 
-    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store);
+    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache);
 
     const realSidebar = new Sidebar(
         explorerElement,

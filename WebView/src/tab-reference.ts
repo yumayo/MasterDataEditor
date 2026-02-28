@@ -17,10 +17,12 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 export class TabReference {
     private readonly tab: Tab;
     private readonly store: InMemoryTableStore;
+    private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(tab: Tab, store: InMemoryTableStore) {
+    constructor(tab: Tab, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.tab = tab;
         this.store = store;
+        this.referenceDataCache = referenceDataCache;
     }
 
     /**
@@ -30,7 +32,7 @@ export class TabReference {
      */
     refreshReferenceHints(name: string, state: TabState): void {
         // キャッシュをクリアして最新のインメモリデータから再読み込みさせる
-        state.referenceDataCache.clear();
+        this.referenceDataCache.clear();
 
         // ビュータブの場合: 結合テーブルの最新データでキーマップを再構築し、行数差分を反映する
         if (state.kind === 'view') {
@@ -40,7 +42,7 @@ export class TabReference {
 
         // 参照テーブルを再読み込み
         const tableData = state.editorTable.getTableData();
-        this.preloadReferenceTables(tableData, state.referenceDataCache, state.editorTable);
+        this.preloadReferenceTables(tableData, state.editorTable);
 
         // 逆参照を再解決する（ビュータブはベーステーブル名で解決する）
         const reverseTableName = state.kind === 'view' ? state.viewDefinition.baseTable : name;
@@ -62,9 +64,7 @@ export class TabReference {
     /**
      * 参照先テーブルを事前読み込みする
      */
-    preloadReferenceTables(
-        tableData: EditorTableData, referenceDataCache: ReferenceDataCache, editorTable: EditorTable
-    ): void {
+    preloadReferenceTables(tableData: EditorTableData, editorTable: EditorTable): void {
         const referenceTables: string[] = [];
         const dynamicIntermediateTables: string[] = [];
 
@@ -83,10 +83,10 @@ export class TabReference {
 
         const promises: Promise<unknown>[] = [];
         for (const tn of uniqueRef) {
-            promises.push(referenceDataCache.get(tn));
+            promises.push(this.referenceDataCache.get(tn));
         }
         for (const tn of uniqueInter) {
-            promises.push(referenceDataCache.getFullDataAsync(tn));
+            promises.push(this.referenceDataCache.getFullDataAsync(tn));
         }
 
         if (promises.length > 0) {
