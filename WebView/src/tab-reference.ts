@@ -27,13 +27,12 @@ export class TabReference {
 
     /**
      * タブ切り替え時に参照ヒントを再更新する
-     * 他タブでインメモリデータが編集されている可能性があるため、
-     * キャッシュをクリアして参照データを再読み込みする
+     * セル編集時にキャッシュが即時更新されるため全クリアは不要。
+     * Storeから削除されたテーブル（未保存タブ閉じ等）のみキャッシュを除去し、CSVから再読み込みさせる。
      */
     refreshReferenceHints(name: string, state: TabState): void {
-        // キャッシュをクリアして最新のインメモリデータから再読み込みさせる
-        this.referenceDataCache.clear();
-
+        // Storeから削除されたテーブルのキャッシュを除去する
+        this.referenceDataCache.evictEntriesNotInStore();
         // ビュータブの場合: 結合テーブルの最新データでキーマップを再構築し、行数差分を反映する
         if (state.kind === 'view') {
             state.editorTable.rebuildJoinTableKeyMaps(this.tab.getOpenEditorTables());

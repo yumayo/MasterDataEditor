@@ -2,6 +2,8 @@ import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
 import {CellChange} from "./command";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {ReferenceDataCache} from "./reference-data-cache";
+import {config} from "./config";
 
 /**
  * ビュー行同期モジュール
@@ -14,11 +16,13 @@ export class EditorTableViewSync {
     private readonly view: EditorTableView;
     private readonly table: EditorTable;
     private readonly store: InMemoryTableStore;
+    private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(view: EditorTableView, table: EditorTable, store: InMemoryTableStore) {
+    constructor(view: EditorTableView, table: EditorTable, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.view = view;
         this.table = table;
         this.store = store;
+        this.referenceDataCache = referenceDataCache;
     }
 
     /**
@@ -174,13 +178,16 @@ export class EditorTableViewSync {
             throw new Error(`到達不可能: dataColumnIndex=${dataColumnIndex}はcolumnMappingsの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
         }
         const mapping = viewContext.columnMappings[dataColumnIndex];
-        // ベース列の場合: ソーステーブルDOMへの伝搬は不要だが、ストアは更新する
+        // ベース列の場合: ソーステーブルDOMへの伝搬は不要だが、ストアとfullDataCacheは更新する
         if (!mapping.isJoinedColumn) {
             const baseTable = viewContext.viewDefinition.baseTable;
             const metaIndex = row - 1;
             if (metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length) {
                 const meta = viewContext.rowMetadata[metaIndex];
                 this.store.updateCellValue(baseTable, meta.baseRowIndex, mapping.sourceColumnIndex, value);
+                // 動的参照用のfullDataCacheも同期する
+                const id = this.table.getRowPkValue(row);
+                this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
             }
             return;
         }
@@ -223,6 +230,10 @@ export class EditorTableViewSync {
                     if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
                     if (matchCount === groupInfo.groupPosition) {
                         this.store.updateCellValue(mapping.tableName, r, mapping.sourceColumnIndex, value);
+                        // 動的参照用のfullDataCacheも同期する（PK列からID値を取得）
+                        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+                        if (pkColIdx === -1) throw new Error(`到達不可能: テーブル'${mapping.tableName}'にPK列'${config.primaryKeyColumnName}'が存在しません`);
+                        this.referenceDataCache.updateFullDataCell(mapping.tableName, storeRows[r][pkColIdx], mapping.sourceColumnIndex, value);
                         break;
                     }
                     matchCount++;

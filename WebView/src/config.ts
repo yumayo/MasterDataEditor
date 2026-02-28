@@ -1,4 +1,4 @@
-import configJson from './config.json';
+import configJson from './config.json' with { type: 'json' };
 
 /**
  * マスターデータエディターの設定

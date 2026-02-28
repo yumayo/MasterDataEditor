@@ -98,12 +98,14 @@ export class ReferenceDataCache {
         }
     }
 
-    /**
-     * キャッシュをクリアする
-     */
-    clear(): void {
-        this.cache.clear();
-        this.fullDataCache.clear();
+    /** Storeから削除されたテーブルのキャッシュエントリを除去する */
+    evictEntriesNotInStore(): void {
+        for (const tableName of this.cache.keys()) {
+            if (!this.store.hasTable(tableName)) this.cache.delete(tableName);
+        }
+        for (const tableName of this.fullDataCache.keys()) {
+            if (!this.store.hasTable(tableName)) this.fullDataCache.delete(tableName);
+        }
     }
 
     /**
@@ -399,6 +401,31 @@ export class ReferenceDataCache {
         const item = data.items.find(item => item.id === id);
         if (!item) throw new Error(`キャッシュにIDが存在しません: tableName=${tableName}, id=${id}`);
         item.displayText = newDisplayText;
+    }
+
+    /** セル編集時にfullDataCacheとcache両方のキャッシュを即時更新する */
+    updateFullDataCell(tableName: string, id: string, columnIndex: number, value: string): void {
+        // fullDataCacheの更新
+        const fullData = this.fullDataCache.get(tableName);
+        if (fullData) {
+            const row = fullData.rows.get(id);
+            if (row) row[columnIndex] = value;
+        }
+        // cacheのdisplayText更新（表示列が編集された場合のみ）
+        const data = this.cache.get(tableName);
+        if (!data) return;
+        let displayColumnIndex: number;
+        if (fullData) {
+            displayColumnIndex = fullData.displayColumnIndex;
+        } else {
+            const header = this.store.getHeader(tableName);
+            if (header === false) return;
+            displayColumnIndex = header.indexOf(data.displayColumnName);
+        }
+        if (columnIndex !== displayColumnIndex) return;
+        const item = data.items.find(item => item.id === id);
+        if (!item) return;
+        item.displayText = value;
     }
 
     /**

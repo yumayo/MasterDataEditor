@@ -128,7 +128,7 @@ export class EditorTable {
      */
     initializeModules(): void {
         this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache);
-        this.view = new EditorTableView(this, this.selection, this.areaResizer, this.store);
+        this.view = new EditorTableView(this, this.selection, this.areaResizer, this.store, this.referenceDataCache);
         this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu, this.history);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
     }
@@ -686,12 +686,15 @@ export class EditorTable {
     /** 座標でセルのDOMと参照ヒントのみ更新する（ソーステーブルへの伝搬は行わない） */
     updateCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
-        // 通常タブの場合のみ中央ストアを同期する
+        // 通常タブの場合のみ中央ストアとfullDataCacheを同期する
         // ビュータブはpropagateJoinedColumnToSourceTableでソーステーブルのStoreを更新する
         if (!this.view.hasViewContext()) {
             // row: DOMの行インデックス（1始まり）、column: DOMの列インデックス（1始まり、行ヘッダー含む）
             // Store は 0始まりの行・列インデックスを使うため変換する
             this.store.updateCellValue(this.tableName, row - 1, column - 1, value);
+            // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
+            const id = this.reference.getRowPkValue(row);
+            this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
         }
     }
 
