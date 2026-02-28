@@ -232,7 +232,7 @@ test.describe('ビュー列幅の永続化', () => {
     );
 
     test(
-        'columnsフィールドなしでもデフォルト幅で正常表示されること',
+        'columnsフィールドなしでもカラム名に基づく幅で正常表示されること',
         async ({ page }) => {
             await installMockApiAsync(
                 page, createFileSystemWithoutColumns()
@@ -243,7 +243,7 @@ test.describe('ビュー列幅の永続化', () => {
                 page, 'view_chara'
             );
 
-            // 全列がデフォルト幅（100px）で表示される
+            // 全列がカラム名に基づく幅（MIN_COLUMN_WIDTH_PX以上）で表示される
             const headerRow = table.locator(
                 '.editor-table-column-header-row'
             );
@@ -252,7 +252,11 @@ test.describe('ビュー列幅の永続化', () => {
             );
             const count = await columnHeaders.count();
             for (let i = 0; i < count; i++) {
-                await expect(columnHeaders.nth(i)).toHaveCSS('width', '100px');
+                const widthStr = await columnHeaders.nth(i).evaluate(
+                    el => getComputedStyle(el).width
+                );
+                const widthPx = parseFloat(widthStr);
+                expect(widthPx).toBeGreaterThanOrEqual(50);
             }
         },
     );
