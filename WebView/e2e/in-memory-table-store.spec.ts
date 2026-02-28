@@ -182,6 +182,25 @@ test.describe('セル更新', () => {
         if (rows === false) return;
         expect(rows[2][0]).toBe('42');
     });
+
+    test('存在しない行インデックスへのupdateCellValueがエラーを起こさない', () => {
+        const store = new InMemoryTableStore();
+        const { header, body } = createTestTable();
+        store.registerTable('enemies', header, body);
+        // 行数3のテーブルに対して行インデックス10を指定してもエラーにならない
+        expect(() => store.updateCellValue('enemies', 10, 0, 'value')).not.toThrow();
+        // 負のインデックスでもエラーにならない
+        expect(() => store.updateCellValue('enemies', -1, 0, 'value')).not.toThrow();
+        // 既存データが破壊されていないことを確認
+        const rows = store.getRows('enemies');
+        expect(rows).not.toBe(false);
+        if (rows === false) return;
+        expect(rows).toEqual([
+            ['1', 'item_a', '100'],
+            ['2', 'item_b', '200'],
+            ['3', 'item_c', '300'],
+        ]);
+    });
 });
 
 // =====================================================

@@ -70,10 +70,12 @@ export class InMemoryTableStore {
         return this.rows.get(tableName)!;
     }
 
-    /** セル更新 */
+    /** セル更新（テーブル未登録・行インデックス範囲外の場合は何もしない） */
     updateCellValue(tableName: string, rowIndex: number, columnIndex: number, value: string): void {
         if (!this.rows.has(tableName)) return;
-        this.rows.get(tableName)![rowIndex][columnIndex] = value;
+        const tableRows = this.rows.get(tableName)!;
+        if (rowIndex < 0 || rowIndex >= tableRows.length) return;
+        tableRows[rowIndex][columnIndex] = value;
     }
 
     /** 全行置換 */

@@ -1,6 +1,7 @@
 import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
 import {CellChange} from "./command";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * ビュー行同期モジュール
@@ -12,10 +13,12 @@ import {CellChange} from "./command";
 export class EditorTableViewSync {
     private readonly view: EditorTableView;
     private readonly table: EditorTable;
+    private readonly store: InMemoryTableStore;
 
-    constructor(view: EditorTableView, table: EditorTable) {
+    constructor(view: EditorTableView, table: EditorTable, store: InMemoryTableStore) {
         this.view = view;
         this.table = table;
+        this.store = store;
     }
 
     /**
@@ -171,8 +174,20 @@ export class EditorTableViewSync {
             throw new Error(`到達不可能: dataColumnIndex=${dataColumnIndex}はcolumnMappingsの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
         }
         const mapping = viewContext.columnMappings[dataColumnIndex];
-        // 結合列でなければ伝搬不要
-        if (!mapping.isJoinedColumn) return;
+        // ベース列の場合: ソーステーブルDOMへの伝搬は不要だが、ストアは更新する
+        if (!mapping.isJoinedColumn) {
+            const baseTable = viewContext.viewDefinition.baseTable;
+            const metaIndex = row - 1;
+            if (metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length) {
+                const meta = viewContext.rowMetadata[metaIndex];
+                // baseRowIndexがStoreの行数範囲外の場合はStore更新をスキップする
+                const storeRows = this.store.getRows(baseTable);
+                if (storeRows !== false && meta.baseRowIndex >= 0 && meta.baseRowIndex < storeRows.length) {
+                    this.store.updateCellValue(baseTable, meta.baseRowIndex, mapping.sourceColumnIndex, value);
+                }
+            }
+            return;
+        }
         // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
         const sourceEditorTable = viewContext.openEditorTables.get(mapping.tableName);
         // メタデータからsourceKeyValueとgroupPositionを取得
@@ -184,6 +199,7 @@ export class EditorTableViewSync {
         const groupInfo = meta.groupInfos.find(g => g.sourceTable === mapping.tableName);
         if (!groupInfo) return;
         // ソーステーブルのDOMセルを更新（テーブルが開かれている場合のみ）
+        // ソーステーブルのupdateCellValueAt内で通常タブ用のStore同期が自動実行される
         if (sourceEditorTable) {
             // キー列とグループ位置で対象行を特定
             const keyColumnIndex = this.findSourceTableColumn(sourceEditorTable, mapping.joinKeyColumn);
@@ -197,6 +213,25 @@ export class EditorTableViewSync {
                     break;
                 }
                 matchCount++;
+            }
+        } else {
+            // ソーステーブルが開かれていない場合、中央ストアを直接更新する
+            // ビュータブがJOINテーブルをStore登録しているため、Storeにデータが存在する
+            const storeHeader = this.store.getHeader(mapping.tableName);
+            const storeRows = this.store.getRows(mapping.tableName);
+            if (storeHeader !== false && storeRows !== false) {
+                const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
+                if (keyColIdx !== -1) {
+                    let matchCount = 0;
+                    for (let r = 0; r < storeRows.length; r++) {
+                        if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
+                        if (matchCount === groupInfo.groupPosition) {
+                            this.store.updateCellValue(mapping.tableName, r, mapping.sourceColumnIndex, value);
+                            break;
+                        }
+                        matchCount++;
+                    }
+                }
             }
         }
         // joinTableKeyMapsのインメモリデータを更新（ソーステーブルが開かれていなくても実行する）
