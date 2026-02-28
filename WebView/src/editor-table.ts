@@ -19,6 +19,7 @@ import {EditorTableReference} from "./editor-table-reference";
 import {EditorTableView} from "./editor-table-view";
 import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * 利用可能なJoin対象の情報
@@ -75,6 +76,8 @@ export class EditorTable {
     private readonly scrollBinding: ScrollViewportController;
     private lastScrollLeft = -1;
     private readonly referenceDataCache: ReferenceDataCache;
+    /** テーブルデータの中央ストア（セル編集の同期用） */
+    private readonly store: InMemoryTableStore;
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
 
@@ -91,6 +94,7 @@ export class EditorTable {
         tableName: string,
         tableData: EditorTableData,
         referenceDataCache: ReferenceDataCache,
+        store: InMemoryTableStore,
         handler: EditorTableHandler,
         selection: Selection,
         contextMenu: ContextMenu,
@@ -102,6 +106,7 @@ export class EditorTable {
         this.tableData = tableData;
         this.tableName = tableName;
         this.referenceDataCache = referenceDataCache;
+        this.store = store;
         this.handler = handler;
         this.selection = selection;
         this.contextMenu = contextMenu;
@@ -123,7 +128,7 @@ export class EditorTable {
      */
     initializeModules(): void {
         this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache);
-        this.view = new EditorTableView(this, this.selection, this.areaResizer);
+        this.view = new EditorTableView(this, this.selection, this.areaResizer, this.store);
         this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu, this.history);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
     }
@@ -137,6 +142,9 @@ export class EditorTable {
 
     /** 内部モジュール用: テーブルデータを取得する */
     getTableData(): EditorTableData { return this.tableData; }
+
+    /** 内部モジュール用: 中央ストアを取得する */
+    getStore(): InMemoryTableStore { return this.store; }
 
     /** 内部モジュール用: Selection を取得する */
     getSelection(): Selection { return this.selection; }
@@ -678,6 +686,13 @@ export class EditorTable {
     /** 座標でセルのDOMと参照ヒントのみ更新する（ソーステーブルへの伝搬は行わない） */
     updateCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
+        // 通常タブの場合のみ中央ストアを同期する
+        // ビュータブはpropagateJoinedColumnToSourceTableでソーステーブルのStoreを更新する
+        if (!this.view.hasViewContext()) {
+            // row: DOMの行インデックス（1始まり）、column: DOMの列インデックス（1始まり、行ヘッダー含む）
+            // Store は 0始まりの行・列インデックスを使うため変換する
+            this.store.updateCellValue(this.tableName, row - 1, column - 1, value);
+        }
     }
 
     /** 変更リストをまとめてソーステーブルに伝搬する */

@@ -90,9 +90,11 @@ export class InMemoryTableStore {
         this.rows.get(tableName)!.push(values);
     }
 
-    /** 行削除 */
+    /** 行削除（テーブル未登録・行インデックス範囲外の場合は何もしない） */
     removeRow(tableName: string, rowIndex: number): void {
         if (!this.rows.has(tableName)) return;
-        this.rows.get(tableName)!.splice(rowIndex, 1);
+        const tableRows = this.rows.get(tableName)!;
+        if (rowIndex < 0 || rowIndex >= tableRows.length) return;
+        tableRows.splice(rowIndex, 1);
     }
 }

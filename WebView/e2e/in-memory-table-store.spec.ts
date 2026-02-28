@@ -248,4 +248,23 @@ test.describe('行操作', () => {
         expect(rows.length).toBe(2);
         expect(rows).toEqual(newRows);
     });
+
+    test('存在しない行インデックスへのremoveRowがエラーを起こさない', () => {
+        const store = new InMemoryTableStore();
+        const { header, body } = createTestTable();
+        store.registerTable('enemies', header, body);
+        // 行数3のテーブルに対して範囲外インデックスを指定してもエラーにならない
+        expect(() => store.removeRow('enemies', 10)).not.toThrow();
+        // 負のインデックスでもエラーにならず、データが破壊されない
+        expect(() => store.removeRow('enemies', -1)).not.toThrow();
+        // 既存データが破壊されていないことを確認
+        const rows = store.getRows('enemies');
+        expect(rows).not.toBe(false);
+        if (rows === false) return;
+        expect(rows).toEqual([
+            ['1', 'item_a', '100'],
+            ['2', 'item_b', '200'],
+            ['3', 'item_c', '300'],
+        ]);
+    });
 });

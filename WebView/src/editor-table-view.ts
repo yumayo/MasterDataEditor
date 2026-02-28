@@ -6,6 +6,7 @@ import {EditorTableViewStyle} from "./editor-table-view-style";
 import {EditorTableViewRestructure} from "./editor-table-view-restructure";
 import {EditorTableViewSync} from "./editor-table-view-sync";
 import {EditorTableViewInspector} from "./editor-table-view-inspector";
+import {InMemoryTableStore} from "./in-memory-table-store";
 import {SavedViewRowState} from "./view-row-restructure-command";
 
 /**
@@ -29,11 +30,11 @@ export class EditorTableView {
     /** ビューコンテキスト（ビュータブのみ） */
     private viewContext: ViewContext | false;
 
-    constructor(table: EditorTable, selection: Selection, areaResizer: AreaResizer) {
+    constructor(table: EditorTable, selection: Selection, areaResizer: AreaResizer, store: InMemoryTableStore) {
         this.viewContext = false;
         this.style = new EditorTableViewStyle(this, table, selection);
         this.restructure = new EditorTableViewRestructure(this, table, selection, areaResizer);
-        this.sync = new EditorTableViewSync(this, table);
+        this.sync = new EditorTableViewSync(this, table, store);
         this.inspector = new EditorTableViewInspector(this, table);
     }
 

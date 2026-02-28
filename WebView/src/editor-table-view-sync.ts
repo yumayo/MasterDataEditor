@@ -180,11 +180,7 @@ export class EditorTableViewSync {
             const metaIndex = row - 1;
             if (metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length) {
                 const meta = viewContext.rowMetadata[metaIndex];
-                // baseRowIndexがStoreの行数範囲外の場合はStore更新をスキップする
-                const storeRows = this.store.getRows(baseTable);
-                if (storeRows !== false && meta.baseRowIndex >= 0 && meta.baseRowIndex < storeRows.length) {
-                    this.store.updateCellValue(baseTable, meta.baseRowIndex, mapping.sourceColumnIndex, value);
-                }
+                this.store.updateCellValue(baseTable, meta.baseRowIndex, mapping.sourceColumnIndex, value);
             }
             return;
         }
@@ -216,21 +212,20 @@ export class EditorTableViewSync {
             }
         } else {
             // ソーステーブルが開かれていない場合、中央ストアを直接更新する
-            // ビュータブがJOINテーブルをStore登録しているため、Storeにデータが存在する
+            // ビュータブがJOINテーブルをStore登録しているため、Storeにデータが必ず存在する
             const storeHeader = this.store.getHeader(mapping.tableName);
             const storeRows = this.store.getRows(mapping.tableName);
-            if (storeHeader !== false && storeRows !== false) {
-                const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
-                if (keyColIdx !== -1) {
-                    let matchCount = 0;
-                    for (let r = 0; r < storeRows.length; r++) {
-                        if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
-                        if (matchCount === groupInfo.groupPosition) {
-                            this.store.updateCellValue(mapping.tableName, r, mapping.sourceColumnIndex, value);
-                            break;
-                        }
-                        matchCount++;
+            if (storeHeader === false || storeRows === false) throw new Error('到達不可能: JOINテーブルがStoreに登録されていません');
+            const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
+            if (keyColIdx !== -1) {
+                let matchCount = 0;
+                for (let r = 0; r < storeRows.length; r++) {
+                    if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
+                    if (matchCount === groupInfo.groupPosition) {
+                        this.store.updateCellValue(mapping.tableName, r, mapping.sourceColumnIndex, value);
+                        break;
                     }
+                    matchCount++;
                 }
             }
         }
