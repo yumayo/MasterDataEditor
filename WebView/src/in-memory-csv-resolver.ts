@@ -43,18 +43,16 @@ export function resolveInMemoryCsv(openEditorTables: Map<string, EditorTable>, t
         return csv;
     }
     // 2. ビュータブのjoinTableKeyMapsからソーステーブルを検索
-    let result: Csv | false = false;
-    openEditorTables.forEach((editorTable) => {
-        if (result !== false) return;
-        if (!editorTable.hasViewContext()) return;
+    for (const [, editorTable] of openEditorTables) {
+        if (!editorTable.hasViewContext()) continue;
         const viewContext = editorTable.getViewContext();
         const keyMap = viewContext.joinTableKeyMaps.get(tableName);
-        if (!keyMap) return;
+        if (!keyMap) continue;
         // columnMappingsからJOINテーブルの完全なヘッダーを復元する
         // columnMappingsにはJOINキー列が除外されているため、
         // 抜けているsourceColumnIndexをjoinKeyColumnの名前で埋める
         const header = rebuildJoinTableHeader(viewContext.columnMappings, tableName);
-        if (header.length === 0) return;
+        if (header.length === 0) continue;
         // キーマップの全行をフラットに展開してCSVのbodyにする
         const csv = new Csv();
         csv.header = header;
@@ -65,9 +63,9 @@ export function resolveInMemoryCsv(openEditorTables: Map<string, EditorTable>, t
             }
         });
         csv.body = body;
-        result = csv;
-    });
-    return result;
+        return csv;
+    }
+    return false;
 }
 
 /**
@@ -96,9 +94,8 @@ function rebuildJoinTableHeader(columnMappings: ViewColumnMapping[], tableName: 
     if (maxIndex < 0) return [];
     const header: string[] = [];
     for (let i = 0; i <= maxIndex; i++) {
-        const name = indexToName.get(i);
-        if (name !== undefined) {
-            header.push(name);
+        if (indexToName.has(i)) {
+            header.push(indexToName.get(i)!);
         } else {
             header.push(joinKeyColumnName);
         }
