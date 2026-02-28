@@ -1,8 +1,7 @@
 import {findFilesAsync, readFileAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
-import {EditorTable} from "./editor-table";
-import {resolveInMemoryCsv} from "./in-memory-csv-resolver";
+import {InMemoryTableStore} from "./in-memory-table-store";
 import {
     parseReferenceExpression,
     isSimpleReference,
@@ -49,20 +48,11 @@ export type ReverseReferenceMap =
  */
 export class ReverseReferenceResolver {
 
-    /** タブで開かれているEditorTableの参照（インメモリデータ優先取得用） */
-    private readonly openEditorTables: Map<string, EditorTable>;
+    /** テーブルデータの中央ストア（インメモリデータ優先取得用） */
+    private readonly store: InMemoryTableStore;
 
-    constructor(openEditorTables: Map<string, EditorTable>) {
-        this.openEditorTables = openEditorTables;
-    }
-
-    /**
-     * タブで開かれているテーブルのインメモリデータからCsvを構築する
-     * 直接開かれたテーブルに加え、ビュータブのJOINテーブルも検索する
-     * 開かれていなければ結果なしを返す
-     */
-    private getInMemoryCsv(tableName: string): Csv | false {
-        return resolveInMemoryCsv(this.openEditorTables, tableName);
+    constructor(store: InMemoryTableStore) {
+        this.store = store;
     }
 
     /**
@@ -113,7 +103,7 @@ export class ReverseReferenceResolver {
         tableName: string
     ): Promise<Csv | false> {
         const inMemoryCsv =
-            this.getInMemoryCsv(tableName);
+            this.store.getCsv(tableName);
         if (inMemoryCsv !== false) return inMemoryCsv;
         try {
             const csvText = await readFileAsync(

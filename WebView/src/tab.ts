@@ -21,6 +21,7 @@ import {Sidebar} from "./sidebar";
 import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
 import {TabView} from "./tab-view";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * タブごとの状態を保持する基底インターフェース
@@ -110,6 +111,9 @@ export class Tab {
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
+    /** テーブルデータの中央ストア（CSVデータの一元管理用） */
+    private readonly store: InMemoryTableStore;
+
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
@@ -126,6 +130,7 @@ export class Tab {
         this.sidebar = sidebar;
         this.tabElement = tabElement;
         this.openEditorTables = new Map();
+        this.store = new InMemoryTableStore();
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
         this.initializeModules();
@@ -152,6 +157,13 @@ export class Tab {
      */
     getOpenEditorTables(): Map<string, EditorTable> {
         return this.openEditorTables;
+    }
+
+    /**
+     * テーブルデータの中央ストアを取得する
+     */
+    getStore(): InMemoryTableStore {
+        return this.store;
     }
 
     /**
@@ -342,6 +354,17 @@ export class Tab {
             // 開いているテーブルのマップから削除
             this.openEditorTables.delete(name);
 
+            // 中央ストアからテーブルデータを解除
+            if (state.kind === 'view') {
+                // ビュータブはベーステーブルとJOINテーブルを個別に解除する
+                this.store.unregisterTable(state.viewDefinition.baseTable);
+                for (const join of state.viewDefinition.joins) {
+                    this.store.unregisterTable(join.targetTable);
+                }
+            } else {
+                this.store.unregisterTable(name);
+            }
+
             // 未保存のタブを閉じた場合、アクティブタブの参照ヒントをCSVから再読み込みする
             if (wasDirty && this.activeTabName && this.activeTabName !== name) {
                 const activeState = this.tabStates.get(this.activeTabName);
@@ -445,14 +468,17 @@ export class Tab {
 
                 const tableData = EditorTableData.parse(json, csv);
 
+                // 中央ストアにテーブルデータを登録
+                this.store.registerTable(name, csv.header, csv.body);
+
                 // ラッパー要素を作成（このタブのDOM全体を包む）
                 const wrapperElement = document.createElement('div');
                 wrapperElement.classList.add('tab-wrapper');
                 wrapperElement.dataset.tabName = name;
                 this.editor.element.appendChild(wrapperElement);
 
-                // 参照データキャッシュを作成（インメモリデータ優先取得用にマップを渡す）
-                const referenceDataCache = new ReferenceDataCache(this.openEditorTables);
+                // 参照データキャッシュを作成（中央ストア経由でインメモリデータを取得する）
+                const referenceDataCache = new ReferenceDataCache(this.store);
 
                 // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
                 const editorTableFactoryResult = this.createEditorTable(
@@ -559,7 +585,7 @@ export class Tab {
 
         // 本物の EditorTable インスタンスを作成
         const realEditorTable = new EditorTable(
-            name, tableData, referenceDataCache, editorTableHandler,
+            name, tableData, referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
             scrollController, this.sidebar
         );

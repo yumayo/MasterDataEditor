@@ -112,8 +112,16 @@ export class TabView {
                     wrapperElement.dataset.tabName = name;
                     this.tab.getEditor().element.appendChild(wrapperElement);
 
-                    // 参照データキャッシュを作成（インメモリデータ優先取得用にマップを渡す）
-                    const referenceDataCache = new ReferenceDataCache(this.tab.getOpenEditorTables());
+                    // ベーステーブルとJOINテーブルを中央ストアに登録
+                    this.tab.getStore().registerTable(baseTable, csv.header, csv.body);
+                    for (const jt of joinedTables) {
+                        const jtHeader = jt.tableData.header.map(h => h.name);
+                        const jtBody = jt.tableData.body.map(r => r.values);
+                        this.tab.getStore().registerTable(jt.tableName, jtHeader, jtBody);
+                    }
+
+                    // 参照データキャッシュを作成（中央ストア経由でインメモリデータを取得する）
+                    const referenceDataCache = new ReferenceDataCache(this.tab.getStore());
 
                     // EditorTable生成
                     const factoryResult = this.tab.createEditorTable(
@@ -333,6 +341,12 @@ export class TabView {
 
         // 現在の列幅をViewDefinitionに反映
         updateViewColumnConfigs(state.editorTable, state.columnMappings, viewDefinition);
+
+        // 中央ストアからベーステーブルとJOINテーブルを解除
+        this.tab.getStore().unregisterTable(viewDefinition.baseTable);
+        for (const join of viewDefinition.joins) {
+            this.tab.getStore().unregisterTable(join.targetTable);
+        }
 
         // 現在のタブ状態をクリーンアップ
         state.editorTable.deactivate();

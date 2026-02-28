@@ -1,8 +1,7 @@
 import {readFileAsync, findFilesAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
-import {EditorTable} from "./editor-table";
-import {resolveInMemoryCsv} from "./in-memory-csv-resolver";
+import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {readReverseReferencePriority} from "./reverse-reference-resolver";
 
@@ -46,24 +45,15 @@ export class ReferenceDataCache {
     private fullDataCache: Map<string, ReferenceTableFullData>;
     private fullDataLoadingPromises: Map<string, Promise<ReferenceTableFullData>>;
 
-    /** タブで開かれているEditorTableの参照（インメモリデータ優先取得用） */
-    private readonly openEditorTables: Map<string, EditorTable>;
+    /** テーブルデータの中央ストア（インメモリデータ優先取得用） */
+    private readonly store: InMemoryTableStore;
 
-    constructor(openEditorTables: Map<string, EditorTable>) {
+    constructor(store: InMemoryTableStore) {
         this.cache = new Map();
         this.loadingPromises = new Map();
         this.fullDataCache = new Map();
         this.fullDataLoadingPromises = new Map();
-        this.openEditorTables = openEditorTables;
-    }
-
-    /**
-     * タブで開かれているテーブルのインメモリデータからCsvを構築する
-     * 直接開かれたテーブルに加え、ビュータブのJOINテーブルも検索する
-     * 開かれていなければ結果なしを返す
-     */
-    private getInMemoryCsv(tableName: string): Csv | false {
-        return resolveInMemoryCsv(this.openEditorTables, tableName);
+        this.store = store;
     }
 
     /**
@@ -156,7 +146,7 @@ export class ReferenceDataCache {
         }
 
         // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
-        const inMemoryCsv = this.getInMemoryCsv(tableName);
+        const inMemoryCsv = this.store.getCsv(tableName);
         let csv: Csv;
         if (inMemoryCsv !== false) {
             csv = inMemoryCsv;
@@ -506,7 +496,7 @@ export class ReferenceDataCache {
         }
 
         // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
-        const inMemoryCsv = this.getInMemoryCsv(tableName);
+        const inMemoryCsv = this.store.getCsv(tableName);
         let csv: Csv;
         if (inMemoryCsv !== false) {
             csv = inMemoryCsv;
