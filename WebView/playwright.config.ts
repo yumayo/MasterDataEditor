@@ -22,6 +22,5 @@ export default defineConfig({
         command: 'npx vite --host',
         url: 'http://localhost:5173',
         reuseExistingServer: !process.env.CI,
-        env: {PLAYWRIGHT_TEST: '1'},
     },
 });
