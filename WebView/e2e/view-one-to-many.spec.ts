@@ -1822,7 +1822,7 @@ test.describe('1:n展開ビュー', () => {
         }).toPass({ timeout: 3000 });
     });
 
-    test('展開しても折りたたみ時に縮小された選択範囲は復元されないこと', async ({ page, context }) => {
+    test('展開すると折りたたみ時に縮小された選択範囲が復元されること', async ({ page, context }) => {
         await context.grantPermissions(['clipboard-read', 'clipboard-write']);
         await installMockApiAsync(page, createFiveBaseRowFileSystem());
         await page.goto('/');
@@ -1856,12 +1856,12 @@ test.describe('1:n展開ビュー', () => {
         await toggle14.click();
         await expect(toggle14).toHaveText('▼');
 
-        // 展開後: 選択範囲はrow8-14の7行のまま（復元されないこと）
+        // 展開後: 選択範囲がrow8-15の8行に復元されること
         await page.keyboard.press('Control+c');
         await expect(async () => {
             const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
             const clipboardLines = clipboardText.trim().split('\n');
-            expect(clipboardLines.length).toBe(7);
+            expect(clipboardLines.length).toBe(8);
         }).toPass({ timeout: 3000 });
     });
 
@@ -1897,6 +1897,58 @@ test.describe('1:n展開ビュー', () => {
         await expect(toggle0).toHaveText('▼');
 
         // 展開後もコピーして1行であること（選択範囲が広がっていないこと）
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(1);
+        }).toPass({ timeout: 3000 });
+    });
+
+    test('ユーザーが折りたたみ中に選択範囲を変更した場合、展開時に復元されないこと', async ({ page, context }) => {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await installMockApiAsync(page, createFiveBaseRowFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // row0-7（全8行）を範囲選択してコピー
+        await selectCellAsync(page, table, 0, 0);
+        await getDataCell(table, 7, 6).click({ modifiers: ['Shift'] });
+        await page.keyboard.press('Control+c');
+
+        // row8（空行）にペースト → row8-15の8行に展開される
+        await selectCellAsync(page, table, 8, 0);
+        await page.keyboard.press('Control+v');
+
+        // Row 14のトグル（▼）をクリックして折りたたむ → Row 15が非表示になる
+        const row14 = table.locator('.editor-table-row').nth(14 + 1);
+        const toggle14 = row14.locator('.view-collapse-toggle');
+        await expect(toggle14).toHaveText('▼');
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▶');
+
+        // 折りたたみ後: 選択範囲がrow8-14に縮小されていること
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(7);
+        }).toPass({ timeout: 3000 });
+
+        // 折りたたみ中にユーザーが選択範囲を変更する
+        await selectCellAsync(page, table, 0, 0);
+        await page.keyboard.press('Control+c');
+        await expect(async () => {
+            const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+            const clipboardLines = clipboardText.trim().split('\n');
+            expect(clipboardLines.length).toBe(1);
+        }).toPass({ timeout: 3000 });
+
+        // 同じトグルをクリックして展開
+        await toggle14.click();
+        await expect(toggle14).toHaveText('▼');
+
+        // 展開後: 選択範囲はユーザーが変更した1行のまま（復元されないこと）
         await page.keyboard.press('Control+c');
         await expect(async () => {
             const clipboardText = await page.evaluate(() => navigator.clipboard.readText());

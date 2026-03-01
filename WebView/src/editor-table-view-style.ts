@@ -1,6 +1,6 @@
 import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
-import {Selection} from "./selection";
+import {Selection, CellRange} from "./selection";
 
 /**
  * ビュー行スタイルモジュール
@@ -14,6 +14,8 @@ export class EditorTableViewStyle {
     private readonly view: EditorTableView;
     private readonly table: EditorTable;
     private readonly selection: Selection;
+    /** 折りたたみ時に縮小された選択範囲を保存するMap（展開時の復元用） */
+    private readonly savedSelectionRanges: Map<string, { original: CellRange; collapsed: CellRange }> = new Map();
 
     constructor(view: EditorTableView, table: EditorTable, selection: Selection) {
         this.view = view;
@@ -113,10 +115,23 @@ export class EditorTableViewStyle {
             throw new Error(`トグルの対象テーブルがグループ情報に見つかりません: targetTable=${targetTable}, metaIndex=${leaderMetaIndex}`);
         }
         const isCollapsed = toggle.textContent === '▶';
+        const key = `${leaderMetaIndex}_${targetTable}`;
         if (isCollapsed) {
             // 展開: 子行を表示する
             toggle.textContent = '▼';
             this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, true);
+            // 折りたたみ時に縮小された選択範囲がそのままであれば復元する
+            const saved = this.savedSelectionRanges.get(key);
+            if (saved) {
+                const current = this.selection.getSelectionRange();
+                if (current.startRow === saved.collapsed.startRow
+                    && current.startColumn === saved.collapsed.startColumn
+                    && current.endRow === saved.collapsed.endRow
+                    && current.endColumn === saved.collapsed.endColumn) {
+                    this.selection.setRange(saved.original.startRow, saved.original.startColumn, saved.original.endRow, saved.original.endColumn);
+                }
+                this.savedSelectionRanges.delete(key);
+            }
         } else {
             // 折りたたみ: 子行を非表示にする
             toggle.textContent = '▶';
@@ -144,6 +159,11 @@ export class EditorTableViewStyle {
                         startRow = leaderDomRow;
                         endRow = leaderDomRow;
                     }
+                    // 縮小前の選択範囲と縮小後の選択範囲を保存（展開時の復元用）
+                    this.savedSelectionRanges.set(key, {
+                        original: { startRow: range.startRow, startColumn: range.startColumn, endRow: range.endRow, endColumn: range.endColumn },
+                        collapsed: { startRow, startColumn: range.startColumn, endRow, endColumn: range.endColumn }
+                    });
                     this.selection.setRange(startRow, range.startColumn, endRow, range.endColumn);
                 }
             }
