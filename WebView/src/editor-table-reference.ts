@@ -84,8 +84,8 @@ export class EditorTableReference {
         // 参照式をパース
         const expr = parseReferenceExpression(column.reference);
         if (isDynamicReference(expr)) {
-            // 動的参照の場合: 非同期で参照ヒントを更新
-            this.updateDynamicReferenceHintAsync(cell, value, expr, rowIndex, dataColumnIndex);
+            // 動的参照の場合: 同期的に参照ヒントを更新
+            this.updateDynamicReferenceHint(cell, value, expr, rowIndex, dataColumnIndex);
             if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
@@ -194,9 +194,11 @@ export class EditorTableReference {
     }
 
     /**
-     * 動的参照の参照ヒントを非同期で更新する
+     * 動的参照の参照ヒントを同期的に更新する
+     * preloadReferenceTables() 完了後はキャッシュ済みのため同期アクセスで十分
+     * キャッシュ未ヒット時はヒントを表示しない（プリロード完了後に updateReferenceHints() で再適用される）
      */
-    private updateDynamicReferenceHintAsync(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number, dataColumnIndex: number): void {
+    private updateDynamicReferenceHint(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number, dataColumnIndex: number): void {
         if (!isDynamicReference(expr)) return;
         // 同一行の指定カラムの値を取得（ビューの合成ヘッダーではプレフィックス付きのためresolveで解決）
         const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
@@ -204,33 +206,20 @@ export class EditorTableReference {
         // column=0は行ヘッダーなので、データ列インデックスに+1する
         const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
         if (filterValue === '') return;
-        // フィルタテーブルからテーブル名を取得
-        this.referenceDataCache.getFullDataAsync(expr.filter.tableName).then(fullData => {
-            const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
-            if (lookupColumnIndex === -1) return;
-            // filterColumn で行を検索（主キー以外のカラムにも対応）
-            const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
-            if (!row) return;
-            const targetTableName = row[lookupColumnIndex];
-            if (targetTableName === '') return;
-            // 参照先テーブルの表示テキストを取得
-            const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
-            if (!displayText) {
-                // キャッシュにない場合は非同期で取得
-                this.referenceDataCache.get(targetTableName).then(() => {
-                    const resolvedDisplayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
-                    if (resolvedDisplayText) {
-                        this.appendReferenceHint(cell, resolvedDisplayText);
-                    }
-                }).catch(() => {
-                    // 取得失敗時は何もしない
-                });
-                return;
-            }
-            this.appendReferenceHint(cell, displayText);
-        }).catch(() => {
-            // 取得失敗時は何もしない
-        });
+        // フィルタテーブルの全データを同期的に取得
+        const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
+        if (fullData === false) return;
+        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
+        if (lookupColumnIndex === -1) return;
+        // filterColumn で行を検索（主キー以外のカラムにも対応）
+        const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
+        if (!row) return;
+        const targetTableName = row[lookupColumnIndex];
+        if (targetTableName === '') return;
+        // 参照先テーブルの表示テキストを同期的に取得
+        const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
+        if (!displayText) return;
+        this.appendReferenceHint(cell, displayText);
     }
 
     /**

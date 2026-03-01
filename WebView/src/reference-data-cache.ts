@@ -603,6 +603,14 @@ export class ReferenceDataCache {
     }
 
     /**
+     * キャッシュから同期的に全カラムデータを取得する
+     * preloadReferenceTables() 完了後はキャッシュ済みのため同期アクセスで十分
+     */
+    getFullDataSync(tableName: string): ReferenceTableFullData | false {
+        return this.fullDataCache.get(tableName) ?? false;
+    }
+
+    /**
      * 全カラムデータから指定カラムの値で行を検索する
      * @param fullData 検索対象の全カラムデータ
      * @param columnName 検索するカラム名

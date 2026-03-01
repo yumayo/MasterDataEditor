@@ -62,34 +62,58 @@ export class TabReference {
 
     /**
      * 参照先テーブルを事前読み込みする
+     * 動的参照の場合は中間テーブルをロード後、lookupColumnの値から参照先テーブル名を解決してプリロードする
      */
     preloadReferenceTables(tableData: EditorTableData, editorTable: EditorTable): void {
         const referenceTables: string[] = [];
-        const dynamicIntermediateTables: string[] = [];
+        // 動的参照の中間テーブル名とlookupColumn名のペア
+        const dynamicLookups: Array<{ filterTableName: string; lookupColumn: string }> = [];
 
         for (const col of tableData.header) {
             if (!col.reference) continue;
             const expr = parseReferenceExpression(col.reference);
             if (isDynamicReference(expr)) {
-                dynamicIntermediateTables.push(expr.filter.tableName);
+                dynamicLookups.push({ filterTableName: expr.filter.tableName, lookupColumn: expr.lookupColumn });
             } else {
                 referenceTables.push(expr.tableName);
             }
         }
 
         const uniqueRef = Array.from(new Set(referenceTables));
-        const uniqueInter = Array.from(new Set(dynamicIntermediateTables));
-
-        const promises: Promise<unknown>[] = [];
+        const simplePromises: Promise<unknown>[] = [];
         for (const tn of uniqueRef) {
-            promises.push(this.referenceDataCache.get(tn));
-        }
-        for (const tn of uniqueInter) {
-            promises.push(this.referenceDataCache.getFullDataAsync(tn));
+            simplePromises.push(this.referenceDataCache.get(tn));
         }
 
-        if (promises.length > 0) {
-            Promise.all(promises).then(() => {
+        // 動的参照: 中間テーブルをロード後、参照先テーブル名を解決してプリロードする
+        const uniqueIntermediate = Array.from(new Set(dynamicLookups.map(d => d.filterTableName)));
+        const dynamicPromises: Promise<unknown>[] = [];
+        for (const intermediateName of uniqueIntermediate) {
+            const promise = this.referenceDataCache.getFullDataAsync(intermediateName).then(fullData => {
+                // 中間テーブルのlookupColumn値から全参照先テーブル名を収集する
+                const targetTableNames = new Set<string>();
+                for (const lookup of dynamicLookups) {
+                    if (lookup.filterTableName !== intermediateName) continue;
+                    const lookupColumnIndex = fullData.header.indexOf(lookup.lookupColumn);
+                    if (lookupColumnIndex === -1) continue;
+                    fullData.rows.forEach(row => {
+                        const targetName = row[lookupColumnIndex];
+                        if (targetName !== '') targetTableNames.add(targetName);
+                    });
+                }
+                // 参照先テーブルをプリロード（存在しないテーブルの失敗は無視する）
+                const targetPromises: Promise<unknown>[] = [];
+                targetTableNames.forEach(targetName => {
+                    targetPromises.push(this.referenceDataCache.get(targetName).catch(() => {}));
+                });
+                return Promise.all(targetPromises);
+            });
+            dynamicPromises.push(promise);
+        }
+
+        const allPromises = [...simplePromises, ...dynamicPromises];
+        if (allPromises.length > 0) {
+            Promise.all(allPromises).then(() => {
                 editorTable.updateReferenceHints();
             }).catch(error => {
                 console.warn('Failed to preload:', error);
