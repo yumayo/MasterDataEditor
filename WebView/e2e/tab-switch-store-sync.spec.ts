@@ -200,3 +200,68 @@ test.describe(
         );
     },
 );
+
+// -------------------------------------------------------
+// 通常タブでの編集 → ビュータブ切替時のストア→DOM同期テスト
+// 通常タブでベース列やFK列を編集した後、ビュータブに切替えた際に
+// ビューのDOMがストアの最新値に同期されることを検証する
+// -------------------------------------------------------
+test.describe(
+    '通常タブ編集→ビュータブ切替時のストア→DOM同期',
+    () => {
+        test(
+            '通常タブでベース列を編集後、ビュータブに切替えるとベース列のDOMが更新されること',
+            async ({ page }) => {
+                await installMockApiAsync(page, createFileSystem());
+                await page.goto('/');
+
+                // 1. view_enemyを先に開く（ビューDOMの初期状態を確認）
+                const viewTable = await openTableAsync(page, 'view_enemy');
+                // ビュー列: enemy.id(0), enemy.name(1), enemy.dropItemId(2), item.name(3)
+                await expect(getDataCell(viewTable, 0, 1)).toHaveText('Goblin');
+                await expect(getDataCell(viewTable, 1, 1)).toHaveText('Dragon');
+
+                // 2. enemyテーブル（通常タブ）に切替えてベース列を編集
+                const enemyTable = await openTableAsync(page, 'enemy');
+                await editCellAsync(page, enemyTable, 0, 1, 'GoblinKing');
+                await expect(getDataCell(enemyTable, 0, 1)).toHaveText('GoblinKing');
+
+                // 3. view_enemyタブに戻る
+                const refreshedViewTable = await openTableAsync(page, 'view_enemy');
+
+                // 4. ビューのベース列がストアの最新値に更新されていること
+                await expect(getDataCell(refreshedViewTable, 0, 1)).toHaveText('GoblinKing');
+                // 編集していない行は変更されていないこと
+                await expect(getDataCell(refreshedViewTable, 1, 1)).toHaveText('Dragon');
+            },
+        );
+
+        test(
+            '通常タブでFK列を編集後、ビュータブに切替えるとFK列とJOIN展開が更新されること',
+            async ({ page }) => {
+                await installMockApiAsync(page, createFileSystem());
+                await page.goto('/');
+
+                // 1. view_enemyを先に開く
+                const viewTable = await openTableAsync(page, 'view_enemy');
+                // 初期状態: row0のFK=1→item.name=Sword, row1のFK=2→item.name=Shield
+                await expect(getDataCell(viewTable, 0, 2)).toHaveText('1');
+                await expect(getDataCell(viewTable, 0, 3)).toHaveText('Sword');
+
+                // 2. enemyテーブル（通常タブ）に切替えてFK列（dropItemId）を編集
+                // 1行目のdropItemIdを1→2に変更（item id=2はShield）
+                const enemyTable = await openTableAsync(page, 'enemy');
+                await editCellAsync(page, enemyTable, 0, 2, '2');
+                await expect(getDataCell(enemyTable, 0, 2)).toHaveText('2');
+
+                // 3. view_enemyタブに戻る
+                const refreshedViewTable = await openTableAsync(page, 'view_enemy');
+
+                // 4. ビューのFK列が最新値に更新されていること
+                await expect(getDataCell(refreshedViewTable, 0, 2)).toHaveText('2');
+                // JOIN展開もFK値に応じて更新されていること（id=2→Shield）
+                await expect(getDataCell(refreshedViewTable, 0, 3)).toHaveText('Shield');
+            },
+        );
+    },
+);

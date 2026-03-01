@@ -4,6 +4,7 @@ import {Selection} from "./selection";
 import {AreaResizer} from "./area-resizer";
 import {Command, CompositeCommand} from "./command";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
+import {InMemoryTableStore} from "./in-memory-table-store";
 import {ViewRowMetadata} from "./model/view-row-metadata";
 import {rebuildExpandedRowsForBaseRow, ExpandedRowResult} from "./view-table-data-builder";
 import {ViewRowRestructureCommand, SavedViewRowState, createMetadataExpansionCommand} from "./view-row-restructure-command";
@@ -22,12 +23,14 @@ export class EditorTableViewRestructure {
     private readonly table: EditorTable;
     private readonly selection: Selection;
     private readonly areaResizer: AreaResizer;
+    private readonly store: InMemoryTableStore;
 
-    constructor(view: EditorTableView, table: EditorTable, selection: Selection, areaResizer: AreaResizer) {
+    constructor(view: EditorTableView, table: EditorTable, selection: Selection, areaResizer: AreaResizer, store: InMemoryTableStore) {
         this.view = view;
         this.table = table;
         this.selection = selection;
         this.areaResizer = areaResizer;
+        this.store = store;
     }
 
     /**
@@ -350,27 +353,28 @@ export class EditorTableViewRestructure {
         const tableElement = this.table.getTableElement();
         const columnMappings = viewContext.columnMappings;
         const rowMetadata = viewContext.rowMetadata;
+        // ベーステーブルの行データをストアから取得（DOMではなくSSOTから読む）
+        const baseTable = viewContext.viewDefinition.baseTable;
+        const storeRows = this.store.getRows(baseTable);
+        if (storeRows === false) return;
         // 各ベース行のグループをスキャンして、展開行数の差分を検出
         let metaIdx = 0;
         while (metaIdx < rowMetadata.length) {
             const baseRowIndex = rowMetadata[metaIdx].baseRowIndex;
             const metaStart = metaIdx;
             // このベース行のグループ終端を検索
-            while (metaIdx < rowMetadata.length && rowMetadata[metaIdx].baseRowIndex === baseRowIndex) {
-                metaIdx++;
-            }
+            while (metaIdx < rowMetadata.length && rowMetadata[metaIdx].baseRowIndex === baseRowIndex) metaIdx++;
             const metaEnd = metaIdx;
             const currentCount = metaEnd - metaStart;
-            // リーダー行のベーステーブル列値を取得
-            const leaderDomIndex = metaStart + 1;
-            const leaderDomRow = tableElement.children[leaderDomIndex] as HTMLElement;
-            if (!leaderDomRow) continue;
+            // ベーステーブル列の値をストアから取得（タブ切替後もSSOTに同期）
             const totalColumns = columnMappings.length;
             const baseColumnValues: string[] = new Array(totalColumns).fill('');
-            for (let i = 0; i < totalColumns; i++) {
-                if (columnMappings[i].joinLevel === 0) {
-                    const cell = leaderDomRow.children[i + 1] as HTMLElement;
-                    if (cell) baseColumnValues[i] = EditorTable.getCellValue(cell);
+            if (baseRowIndex < storeRows.length) {
+                const storeRow = storeRows[baseRowIndex];
+                for (let i = 0; i < totalColumns; i++) {
+                    if (columnMappings[i].joinLevel === 0) {
+                        baseColumnValues[i] = storeRow[columnMappings[i].sourceColumnIndex];
+                    }
                 }
             }
             // 新しい展開行数を計算
@@ -378,13 +382,13 @@ export class EditorTableViewRestructure {
                 baseColumnValues, columnMappings, viewContext.viewDefinition, viewContext.joinTableKeyMaps
             );
             if (expandedRows.length === currentCount) {
-                // 行数が同じでも値が変わっている可能性があるので、JOIN列の値を更新
+                // 行数が同じでも値が変わっている可能性があるので、全列の値を差分更新
                 for (let i = 0; i < currentCount; i++) {
                     const domRow = tableElement.children[metaStart + 1 + i] as HTMLElement;
                     for (let colIdx = 0; colIdx < totalColumns; colIdx++) {
-                        if (!columnMappings[colIdx].isJoinedColumn) continue;
                         const cell = domRow.children[colIdx + 1] as HTMLElement;
                         if (!cell) continue;
+                        // パディング行のベース列はスキップ（値が空であるべき）
                         if (rowMetadata[metaStart + i].paddingColumns[colIdx]) continue;
                         const newVal = expandedRows[i].values[colIdx];
                         const oldVal = EditorTable.getCellValue(cell);

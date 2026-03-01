@@ -34,7 +34,7 @@ export class EditorTableView {
     constructor(table: EditorTable, selection: Selection, areaResizer: AreaResizer, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.viewContext = false;
         this.style = new EditorTableViewStyle(this, table, selection);
-        this.restructure = new EditorTableViewRestructure(this, table, selection, areaResizer);
+        this.restructure = new EditorTableViewRestructure(this, table, selection, areaResizer, store);
         this.sync = new EditorTableViewSync(this, table, store, referenceDataCache);
         this.inspector = new EditorTableViewInspector(this, table);
     }
