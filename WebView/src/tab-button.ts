@@ -24,6 +24,7 @@ export class TabButton {
         this.element.textContent = name;
 
         this.element.addEventListener('click', this.onClick.bind(this));
+        this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
 
         // マウスイベントでドラッグアンドドロップを実装（WebView2対応）
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
@@ -70,9 +71,15 @@ export class TabButton {
     }
 
     private onClick() {
-
         // 自分自身がクリックされた場合は自分を有効状態にします。
         this.tab.enableTabButton(this.name);
+    }
+
+    /** 中クリック（ホイールクリック）でタブを閉じる */
+    private onAuxClick(ev: MouseEvent) {
+        if (ev.button !== 1) return;
+        ev.preventDefault();
+        this.tab.closeTab(this.name);
     }
 
     private onClickCloseButton(ev: MouseEvent) {
@@ -127,6 +134,12 @@ export class TabButton {
     private onMouseDown(ev: MouseEvent) {
         // 閉じるボタンのクリックは除外
         if ((ev.target as HTMLElement).classList.contains('tab-button-close')) {
+            return;
+        }
+
+        // 中クリックのデフォルト動作（オートスクロール）を防止
+        if (ev.button === 1) {
+            ev.preventDefault();
             return;
         }
 
