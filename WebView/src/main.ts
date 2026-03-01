@@ -15,7 +15,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
     const editorElement = document.getElementById('editor')!;
 
     const editor = new Editor(editorElement);
-    const contextMenu = new ContextMenu(editorElement);
+    const contextMenu = new ContextMenu();
 
     // テーブルデータの中央ストア（アプリケーション全体で1つ）
     const store = new InMemoryTableStore();

@@ -127,7 +127,7 @@ export class Tab {
         this.tabButtons = [];
         this.tabStates = new Map();
         this.activeTabName = false;
-        this.contextMenu = new ContextMenu(editor.element);
+        this.contextMenu = new ContextMenu();
         this.sidebar = sidebar;
         this.tabElement = tabElement;
         this.openEditorTables = new Map();

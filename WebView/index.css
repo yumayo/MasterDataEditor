@@ -12,6 +12,9 @@ body {
     --font-color: #21252b;
     --background-color: #ffffff;
     --background-sub-color: #f3f3f3;
+    --border-color: rgb(128, 128, 128);
+    --selection-color: #007fd4;
+    --selection-font-color: #ffffff;
     --scroll-bar-background-color: rgba(0, 0, 0, 0.2);
 }
 

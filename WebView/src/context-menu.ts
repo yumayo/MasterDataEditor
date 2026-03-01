@@ -26,19 +26,40 @@ function isSeparator(
 
 export class ContextMenu {
     readonly element: HTMLElement;
+    private readonly overlay: HTMLElement;
 
-    constructor(parentElement: HTMLElement) {
+    constructor() {
+        // オーバーレイ: メニュー表示中に背面の操作をすべてブロックする
+        this.overlay = document.createElement('div');
+        this.overlay.classList.add('context-menu-overlay');
+        document.body.appendChild(this.overlay);
+
         this.element = document.createElement('div');
         this.element.classList.add('context-menu');
-        parentElement.appendChild(this.element);
+        document.body.appendChild(this.element);
 
-        window.addEventListener('click', () => {
+        // オーバーレイのクリック・右クリックでメニューを閉じる
+        this.overlay.addEventListener('click', (e) => {
+            e.stopPropagation();
             this.hide();
         });
+        this.overlay.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.hide();
+            // オーバーレイの下にある要素にcontextmenuイベントを再送する
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            if (target) {
+                target.dispatchEvent(new MouseEvent('contextmenu', {
+                    bubbles: true, clientX: e.clientX, clientY: e.clientY,
+                    button: 2, buttons: 2,
+                }));
+            }
+        });
 
-        window.addEventListener('contextmenu', (e) => {
-            const target = e.target as HTMLElement;
-            if (!this.element.contains(target)) {
+        // Escキーでメニューを閉じる
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
                 this.hide();
             }
         });
@@ -75,6 +96,7 @@ export class ContextMenu {
 
         this.element.style.left = x + 'px';
         this.element.style.top = y + 'px';
+        this.overlay.classList.add('visible');
         this.element.classList.add('visible');
 
         const rect = this.element.getBoundingClientRect();
@@ -87,6 +109,7 @@ export class ContextMenu {
     }
 
     hide(): void {
+        this.overlay.classList.remove('visible');
         this.element.classList.remove('visible');
     }
 }
