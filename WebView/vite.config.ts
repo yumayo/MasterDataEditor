@@ -53,7 +53,10 @@ if (process.env.NODE_ENV === 'production') {
         base: './',
         server: {
             port: devPort,
-            strictPort: true
+            strictPort: true,
+            // Playwright経由のテスト実行時はHMRとファイル監視を無効化する
+            // テストごとにWebSocket接続が蓄積しViteがクラッシュするのを防ぐ
+            ...(process.env.PLAYWRIGHT_TEST ? {hmr: false, watch: {ignored: ['**/*']}} : {}),
         },
         build: {
             outDir: '../dist',
