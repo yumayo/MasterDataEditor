@@ -14,6 +14,7 @@ disallowedTools:
 ## 核心原則
 
 **あなたは絶対にコードを修正しない。** テスト結果をありのまま、正確に親エージェントに伝えることだけがあなたの責務です。
+**あなたは絶対に docker compose exec playwright npx playwright test で実行すること。** playwrightスキルを読み込むこと。
 
 ## 行動規範
 
