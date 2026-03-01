@@ -36,12 +36,17 @@
         {
             "tableName": "shop_product",
             "columnName": "id",
-            "width": 80
+            "width": 124
         },
         {
             "tableName": "shop_product",
-            "columnName": "item_id",
-            "width": 100
+            "columnName": "table_id",
+            "width": 120
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "record_id",
+            "width": 120
         },
         {
             "tableName": "shop_product",
@@ -55,11 +60,6 @@
         },
         {
             "tableName": "item",
-            "columnName": "id",
-            "width": 80
-        },
-        {
-            "tableName": "item",
             "columnName": "attack",
             "width": 80
         },
@@ -67,6 +67,11 @@
             "tableName": "item",
             "columnName": "defence",
             "width": 80
+        },
+        {
+            "tableName": "item",
+            "columnName": "speed",
+            "width": 100
         },
         {
             "tableName": "item",
