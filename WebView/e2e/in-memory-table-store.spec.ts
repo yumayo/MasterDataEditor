@@ -153,8 +153,8 @@ test.describe('セル更新', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // 行0,列1のセル("item_a")を"item_x"に更新
-        store.updateCellValue('enemies', 0, 1, 'item_x');
+        // PK値'1'の行のname列を"item_x"に更新
+        store.updateCellValue('enemies', '1', 'name', 'item_x');
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);
         if (rows === false) return;
@@ -165,7 +165,8 @@ test.describe('セル更新', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        store.updateCellValue('enemies', 1, 2, '999');
+        // PK値'2'の行のvalue列を"999"に更新
+        store.updateCellValue('enemies', '2', 'value', '999');
         const csv = store.getCsv('enemies');
         expect(csv).not.toBe(false);
         if (csv === false) return;
@@ -176,21 +177,22 @@ test.describe('セル更新', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        store.updateCellValue('enemies', 2, 0, '42');
+        // PK値'3'の行のid列（PK列自体）を"42"に更新
+        store.updateCellValue('enemies', '3', 'id', '42');
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);
         if (rows === false) return;
         expect(rows[2][0]).toBe('42');
     });
 
-    test('存在しない行インデックスへのupdateCellValueがエラーを起こさない', () => {
+    test('存在しないPK値へのupdateCellValueがエラーを起こさない', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // 行数3のテーブルに対して行インデックス10を指定してもエラーにならない
-        expect(() => store.updateCellValue('enemies', 10, 0, 'value')).not.toThrow();
-        // 負のインデックスでもエラーにならない
-        expect(() => store.updateCellValue('enemies', -1, 0, 'value')).not.toThrow();
+        // 存在しないPK値を指定してもエラーにならない
+        expect(() => store.updateCellValue('enemies', 'nonexistent', 'name', 'value')).not.toThrow();
+        // 存在しない列名を指定してもエラーにならない
+        expect(() => store.updateCellValue('enemies', '1', 'nonexistent_column', 'value')).not.toThrow();
         // 既存データが破壊されていないことを確認
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);

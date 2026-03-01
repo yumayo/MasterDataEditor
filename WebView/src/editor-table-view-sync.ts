@@ -183,10 +183,9 @@ export class EditorTableViewSync {
             const baseTable = viewContext.viewDefinition.baseTable;
             const metaIndex = row - 1;
             if (metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length) {
-                const meta = viewContext.rowMetadata[metaIndex];
-                this.store.updateCellValue(baseTable, meta.baseRowIndex, mapping.sourceColumnIndex, value);
-                // 動的参照用のfullDataCacheも同期する
                 const id = this.table.getRowPkValue(row);
+                this.store.updateCellValue(baseTable, id, mapping.sourceColumnName, value);
+                // 動的参照用のfullDataCacheも同期する
                 this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
             }
             return;
@@ -229,11 +228,12 @@ export class EditorTableViewSync {
                 for (let r = 0; r < storeRows.length; r++) {
                     if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
                     if (matchCount === groupInfo.groupPosition) {
-                        this.store.updateCellValue(mapping.tableName, r, mapping.sourceColumnIndex, value);
-                        // 動的参照用のfullDataCacheも同期する（PK列からID値を取得）
                         const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
                         if (pkColIdx === -1) throw new Error(`到達不可能: テーブル'${mapping.tableName}'にPK列'${config.primaryKeyColumnName}'が存在しません`);
-                        this.referenceDataCache.updateFullDataCell(mapping.tableName, storeRows[r][pkColIdx], mapping.sourceColumnIndex, value);
+                        const pkValue = storeRows[r][pkColIdx];
+                        this.store.updateCellValue(mapping.tableName, pkValue, mapping.sourceColumnName, value);
+                        // 動的参照用のfullDataCacheも同期する
+                        this.referenceDataCache.updateFullDataCell(mapping.tableName, pkValue, mapping.sourceColumnIndex, value);
                         break;
                     }
                     matchCount++;

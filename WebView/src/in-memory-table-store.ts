@@ -1,5 +1,6 @@
 import {Csv} from "./csv";
 import {readFileAsync} from "./api";
+import {config} from "./config";
 
 /**
  * テーブルデータの中央ストア
@@ -84,12 +85,21 @@ export class InMemoryTableStore {
         return this.rows.get(tableName)!;
     }
 
-    /** セル更新（テーブル未登録・行インデックス範囲外の場合は何もしない） */
-    updateCellValue(tableName: string, rowIndex: number, columnIndex: number, value: string): void {
+    /** セル更新（主キー値＋列名で対象セルを特定する。テーブル未登録・PK不一致・列名不一致の場合は何もしない） */
+    updateCellValue(tableName: string, pkValue: string, columnName: string, value: string): void {
         if (!this.rows.has(tableName)) return;
+        const header = this.headers.get(tableName)!;
+        const columnIndex = header.indexOf(columnName);
+        if (columnIndex === -1) return;
+        const pkColumnIndex = header.indexOf(config.primaryKeyColumnName);
+        if (pkColumnIndex === -1) return;
         const tableRows = this.rows.get(tableName)!;
-        if (rowIndex < 0 || rowIndex >= tableRows.length) return;
-        tableRows[rowIndex][columnIndex] = value;
+        for (let i = 0; i < tableRows.length; i++) {
+            if (tableRows[i][pkColumnIndex] === pkValue) {
+                tableRows[i][columnIndex] = value;
+                return;
+            }
+        }
     }
 
     /** 全行置換 */

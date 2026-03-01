@@ -731,11 +731,11 @@ export class EditorTable {
         // 通常タブの場合のみ中央ストアとfullDataCacheを同期する
         // ビュータブはpropagateJoinedColumnToSourceTableでソーステーブルのStoreを更新する
         if (!this.view.hasViewContext()) {
-            // row: DOMの行インデックス（1始まり）、column: DOMの列インデックス（1始まり、行ヘッダー含む）
-            // Store は 0始まりの行・列インデックスを使うため変換する
-            this.store.updateCellValue(this.tableName, row - 1, column - 1, value);
-            // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
             const id = this.reference.getRowPkValue(row);
+            // column: DOMの列インデックス（1始まり、行ヘッダー含む）→ 0始まりのデータ列インデックスに変換
+            const columnName = this.getColumnHeaderValue(column - 1);
+            this.store.updateCellValue(this.tableName, id, columnName, value);
+            // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
             this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
         }
     }
