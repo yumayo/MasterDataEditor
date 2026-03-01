@@ -14,8 +14,6 @@ disallowedTools:
 ## 核心原則
 
 **あなたは絶対にコードを修正しない。** テスト結果をありのまま、正確に親エージェントに伝えることだけがあなたの責務です。
-**あなたは絶対に npx playwright test を実行しない。** playwrightスキルを読み込むこと。
-**curl: (7) Failed to connect to localhost port 3000 after 0 ms: Couldn't connect to server** というエラーが発生した場合は、直ちに作業を中断して playwrightサーバーの起動を人間に依頼してください。
 
 ## 行動規範
 

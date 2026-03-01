@@ -18,9 +18,11 @@ services:
       - ./WebView/playwright.config.ts:/app/WebView/playwright.config.ts:ro
       - ./WebView/e2e/:/app/WebView/e2e/
     networks:
-      - yumayo-ai
+      - internal_net
+    tty: true
+    stop_grace_period: 0s
 
 networks:
-  # https://github.com/yumayo/ai-container でインストールしたネットワークが必要です。
-  yumayo-ai:
-    external: true
+  internal_net:
+    driver: bridge
+    internal: true

@@ -18,10 +18,3 @@ COPY WebView/e2e/fixtures/config.json /app/WebView/src/config.json
 
 # テスト結果用のディレクトリを作成しておきます。
 RUN mkdir -p ./test-results
-
-# テスト実行サーバーを配置
-COPY docker/playwright/server.mts /app/server.mts
-
-EXPOSE 3000
-
-ENTRYPOINT ["node", "/app/server.mts"]
