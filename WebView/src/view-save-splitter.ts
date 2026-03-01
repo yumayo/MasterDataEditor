@@ -6,6 +6,7 @@ import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
 import {mergeCsvData} from "./editor-actions";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {config} from "./config";
 
 /**
  * テーブルごとの分離データ
@@ -47,11 +48,15 @@ function mergeJoinedTableCsv(existingCsv: Csv, splitData: TableSplitData): Csv {
     resultCsv.header = mergedHeader;
 
     // 既存CSVのボディからキー値が空でない有効行のみを抽出する
+    // PK列が空の行もスキップする（ビューでJOIN列を全クリアした場合、StoreのPK列も空に更新されている）
     const keyColumnName = splitData.joinKeyColumn;
     const existingKeyIndex = existingCsv.header.indexOf(keyColumnName);
+    const existingPkIndex = existingCsv.header.indexOf(config.primaryKeyColumnName);
+    if (existingPkIndex === -1) throw new Error(`到達不可能: テーブルにPK列'${config.primaryKeyColumnName}'が存在しません`);
     const validExistingRows: string[][] = [];
     for (let r = 0; r < existingCsv.body.length; r++) {
         if (existingKeyIndex !== -1 && existingCsv.body[r][existingKeyIndex] === '') continue;
+        if (existingCsv.body[r][existingPkIndex] === '') continue;
         validExistingRows.push(existingCsv.body[r]);
     }
 
