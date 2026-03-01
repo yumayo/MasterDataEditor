@@ -52,6 +52,8 @@ export interface ViewContext {
     onJoinAsync: (target: AvailableJoinTarget, afterColumnIndex: number) => Promise<void>;
     /** 非表示列を再表示するコールバック（ビュータブの再構築を行う） */
     onShowHiddenColumn: (tableName: string, columnName: string) => void;
+    /** JOINを解除するコールバック（ビュータブの再構築を行う） */
+    onRemoveJoin: (targetTable: string) => void;
 }
 
 /**

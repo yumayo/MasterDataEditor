@@ -105,6 +105,14 @@ export class EditorTableContextMenu {
                         },
                     });
                 }
+                // JOIN解除項目を追加
+                const removeJoinItems = this.buildRemoveJoinMenuItems();
+                if (removeJoinItems.length > 0) {
+                    menuItems.push({separator: true});
+                    for (const item of removeJoinItems) {
+                        menuItems.push(item);
+                    }
+                }
                 // Join項目を追加
                 const joinItems = this.buildJoinMenuItems(contextMenuColumnIndex);
                 if (joinItems.length > 0) {
@@ -218,6 +226,25 @@ export class EditorTableContextMenu {
             startRow: anchor.row, startColumn: anchor.column,
             endRow: anchor.row, endColumn: anchor.column,
         }, copyRange);
+    }
+
+    /**
+     * JOIN解除用メニュー項目を構築する
+     * 現在JOINされているテーブルごとに「JOINを解除」メニューを生成する
+     */
+    private buildRemoveJoinMenuItems(): ContextMenuEntry[] {
+        if (!this.table.hasViewContext()) return [];
+        const viewContext = this.table.getViewContext();
+        const items: ContextMenuEntry[] = [];
+        for (const join of viewContext.viewDefinition.joins) {
+            items.push({
+                label: 'JOINを解除: ' + join.targetTable,
+                action: () => {
+                    viewContext.onRemoveJoin(join.targetTable);
+                },
+            });
+        }
+        return items;
     }
 
     /**

@@ -235,6 +235,9 @@ export class TabView {
             onShowHiddenColumn: (tableName: string, columnName: string) => {
                 this.showHiddenViewColumn(name, tableName, columnName);
             },
+            onRemoveJoin: (targetTable: string) => {
+                this.removeJoin(name, targetTable);
+            },
         });
     }
 
@@ -300,6 +303,28 @@ export class TabView {
                 width: old.width, hidden: false,
             });
         }
+
+        // ビュータブを再構築
+        this.rebuildViewTab(name);
+    }
+
+    /**
+     * JOINを解除する
+     * viewDefinition.joinsから該当JOIN定義を削除し、
+     * 関連する列設定もviewDefinition.columnsから除去した上でビュータブを再構築する
+     */
+    removeJoin(name: string, targetTable: string): void {
+        const tabStates = this.tab.getTabStates();
+        const state = tabStates.get(name);
+        if (!state || state.kind !== 'view') return;
+
+        // viewDefinition.joinsから対象テーブルのJOIN定義を削除
+        const joinIndex = state.viewDefinition.joins.findIndex(j => j.targetTable === targetTable);
+        if (joinIndex < 0) return;
+        state.viewDefinition.joins.splice(joinIndex, 1);
+
+        // viewDefinition.columnsから対象テーブルの列設定を削除
+        state.viewDefinition.columns = state.viewDefinition.columns.filter(c => c.tableName !== targetTable);
 
         // ビュータブを再構築
         this.rebuildViewTab(name);
