@@ -143,8 +143,7 @@ export class TabView {
                 // 保存前に列幅をViewDefinitionに反映
                 updateViewColumnConfigs(state.editorTable, state.columnMappings, state.viewDefinition);
                 return saveViewDataAsync(
-                    state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata,
-                    this.store
+                    state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata
                 );
             });
 

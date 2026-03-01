@@ -2,7 +2,6 @@ import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
 import {History} from "./history";
 import {Command, InsertColumnCommand, InsertColumnsCommand, InsertRowCommand, InsertRowsCommand, DeleteColumnCommand, DeleteColumnsCommand, DeleteRowCommand, DeleteRowsCommand} from "./command";
-import {DeleteViewRowCommand, DeleteViewRowsCommand} from "./delete-view-row-command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {Utility} from "./utility";
@@ -241,20 +240,11 @@ export class EditorTableStructure {
 
     /**
      * 複数行削除の公開メソッド（Commandを使用してhistoryに追加）
-     * ビュータブの場合はrowMetadataとInMemoryTableStoreの同期削除を行うビュー専用コマンドを使用する
      */
     removeRows(startRowIndex: number, count: number): void {
-        let command: Command;
-        if (this.table.hasViewContext()) {
-            // ビュータブ: rowMetadata同期・InMemoryTableStore伝搬を含むビュー専用コマンド
-            command = count > 1
-                ? new DeleteViewRowsCommand(this.table, startRowIndex, count)
-                : new DeleteViewRowCommand(this.table, startRowIndex);
-        } else {
-            // 通常テーブル: 従来のDOM行削除コマンド
-            command = count > 1
-                ? new DeleteRowsCommand(this.table, startRowIndex, count)
-                : new DeleteRowCommand(this.table, startRowIndex);
+        let command: Command = new DeleteRowCommand(this.table, startRowIndex);
+        if (count > 1) {
+            command = new DeleteRowsCommand(this.table, startRowIndex, count);
         }
         const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
