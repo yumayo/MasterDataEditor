@@ -13,7 +13,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
-import {ViewDefinition} from "./model/view-definition";
+import {ViewDefinition, parseViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
 import {ViewRowMetadata} from "./model/view-row-metadata";
 import {Sidebar} from "./sidebar";
@@ -406,7 +406,11 @@ export class Tab {
 
         // 新しいタブ状態を作成
         if (name.startsWith('view:')) {
-            this.viewModule.createViewTabState(name, tabButton, 'load_from_file');
+            const viewName = name.substring(5);
+            readFileAsync('view/' + viewName + '.json').then((viewJson) => {
+                const viewDefinition = parseViewDefinition(JSON.parse(viewJson));
+                this.viewModule.createViewTabState(name, tabButton, viewDefinition);
+            });
         } else {
             this.createTabState(name, tabButton);
         }
