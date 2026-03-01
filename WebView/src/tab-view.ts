@@ -39,8 +39,9 @@ export class TabView {
 
     /**
      * ビュータブの状態を作成する
+     * @param startDirty trueの場合、作成直後のHistoryをdirty状態にする（rebuildViewTab経由での再構築時）
      */
-    createViewTabState(name: string, tabButton: TabButton, viewDefinition: ViewDefinition): void {
+    createViewTabState(name: string, tabButton: TabButton, viewDefinition: ViewDefinition, startDirty: boolean): void {
         const baseTable = viewDefinition.baseTable;
 
         // ベーステーブルのスキーマを読み込み（CSVは中央ストア経由）
@@ -114,6 +115,11 @@ export class TabView {
 
             // 開いているテーブルのマップに登録
             this.tab.getOpenEditorTables().set(name, editorTable);
+
+            // rebuildViewTab経由の再構築時はviewDefinitionが変更済みなのでdirty状態で開始する
+            if (startDirty) {
+                history.markDirty();
+            }
 
             // ビューコンテキストを設定（逆参照は事前検出済みのため同期実行）
             this.setupViewContext(
@@ -332,6 +338,6 @@ export class TabView {
         if (!tabButton) return;
 
         this.tab.setActiveTabNameInternal(name);
-        this.createViewTabState(name, tabButton, viewDefinition);
+        this.createViewTabState(name, tabButton, viewDefinition, true);
     }
 }

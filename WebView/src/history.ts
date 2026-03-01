@@ -291,6 +291,16 @@ export class History {
     }
 
     /**
+     * 強制的にdirty状態にする
+     * rebuildViewTab等でHistoryがリセットされた後、
+     * viewDefinitionの変更を反映するために使用する
+     */
+    markDirty(): void {
+        this.savedIndex = SAVED_INDEX_LOST;
+        this.notifyChange();
+    }
+
+    /**
      * 未保存の変更があるかどうか
      * @returns true: 保存時点から変更がある（dirty）, false: 保存時点と同じ（clean）
      */

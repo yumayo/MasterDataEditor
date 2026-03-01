@@ -409,7 +409,7 @@ export class Tab {
             const viewName = name.substring(5);
             readFileAsync('view/' + viewName + '.json').then((viewJson) => {
                 const viewDefinition = parseViewDefinition(JSON.parse(viewJson));
-                this.viewModule.createViewTabState(name, tabButton, viewDefinition);
+                this.viewModule.createViewTabState(name, tabButton, viewDefinition, false);
             });
         } else {
             this.createTabState(name, tabButton);
