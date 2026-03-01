@@ -126,6 +126,13 @@ export class Sidebar {
     }
 
     /**
+     * 指定名のビューが存在するか判定する
+     */
+    hasViewFile(name: string): boolean {
+        return this.viewsPanel.hasView(name);
+    }
+
+    /**
      * REFERENCESパネルに逆参照エントリを表示する
      * アクティビティバーをREFERENCESに切り替える
      */

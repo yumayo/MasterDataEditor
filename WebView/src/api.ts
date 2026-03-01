@@ -18,6 +18,13 @@ interface File {
 }
 
 /**
+ * ファイルを削除する（汎用API）
+ */
+export async function deleteFileAsync(filename: string): Promise<void> {
+    return postMessageAsync('delete_file', { filename });
+}
+
+/**
  * 指定したディレクトリ以下のファイル一覧を列挙する
  */
 export async function findFilesAsync(directory: string): Promise<File[]> {

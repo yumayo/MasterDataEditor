@@ -81,32 +81,41 @@ export class ExplorerFile {
 
     /**
      * ビューを作成して保存・タブを開く
+     * 同名のビューが既に存在する場合は _1, _2 ... のサフィックスを付与する
      */
-    private createViewAsync() {
-        const viewName =
-            'view_' + this.name;
+    private async createViewAsync() {
+        const baseName = 'view_' + this.name;
+        const viewName = this.resolveUniqueViewName(baseName);
         const viewDefinition: ViewDefinition = {
             name: viewName,
             baseTable: this.name,
             joins: [],
             columns: [],
         };
-        const json = serializeViewDefinition(
-            viewDefinition
-        );
+        const json = serializeViewDefinition(viewDefinition);
 
-        writeFileAsync(
-            'view/' + viewName + '.json',
-            json
-        ).then(() => {
-            // Explorerのビューディレクトリに追加
-            this.sidebar.appendViewFile(viewName);
+        await writeFileAsync('view/' + viewName + '.json', json);
 
-            // タブを開く
-            const tabButton = this.tab.append(
-                'view:' + viewName
-            );
-            tabButton.click();
-        });
+        // Explorerのビューディレクトリに追加
+        this.sidebar.appendViewFile(viewName);
+
+        // タブを開く
+        const tabButton = this.tab.append('view:' + viewName);
+        tabButton.click();
+    }
+
+    /**
+     * 既存のビューファイルと重複しない名前を生成する
+     * 例: view_item が存在 → view_item_1、view_item_1 も存在 → view_item_2
+     */
+    private resolveUniqueViewName(baseName: string): string {
+        if (!this.sidebar.hasViewFile(baseName)) {
+            return baseName;
+        }
+        let suffix = 1;
+        while (this.sidebar.hasViewFile(baseName + '_' + suffix)) {
+            ++suffix;
+        }
+        return baseName + '_' + suffix;
     }
 }

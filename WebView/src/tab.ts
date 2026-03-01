@@ -304,6 +304,26 @@ export class Tab {
         return tabButton;
     }
 
+    /**
+     * 指定名のタブを閉じる
+     * タブが開かれていない場合は何もしない
+     */
+    closeTab(name: string): void {
+        const tabButton = this.tabButtons.find(x => x.name === name);
+        if (!tabButton) return;
+
+        const wasActive = tabButton.element.classList.contains('tab-button-active');
+        const prev = this.findPrevTabButton(name);
+        const next = this.findNextTabButton(name);
+
+        this.removeTabButton(name);
+        tabButton.element.remove();
+
+        if (!wasActive) return;
+        if (next) { this.enableTabButton(next.name); return; }
+        if (prev) { this.enableTabButton(prev.name); return; }
+    }
+
     findNextTabButton(name: string): TabButton | false {
         const index = this.tabButtons.findIndex(x => x.name === name);
         if (index === -1 || index >= this.tabButtons.length - 1) return false;

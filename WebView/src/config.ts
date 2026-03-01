@@ -14,6 +14,11 @@ export interface Config {
      * 主キー列の列名
      */
     primaryKeyColumnName: string;
+
+    /**
+     * ソート等で使用するロケール
+     */
+    locale: string;
 }
 
 /**

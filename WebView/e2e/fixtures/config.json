@@ -1,4 +1,5 @@
 {
   "referenceDisplayColumnPriority": ["ja"],
-  "primaryKeyColumnName": "id"
+  "primaryKeyColumnName": "id",
+  "locale": "ja"
 }

@@ -168,6 +168,10 @@ public class WebView2Handler
 							SendMessageToWebView(WebView2HandlerFindFilesRequest.Invoke(root));
 							break;
 
+						case "delete_file_request":
+							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root));
+							break;
+
 						default:
 							Logger.Info($"未知のメッセージタイプ: {messageType}");
 							break;

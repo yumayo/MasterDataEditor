@@ -42,6 +42,13 @@ export class ViewsPanel {
     }
 
     /**
+     * 指定名のビューが存在するか判定する
+     */
+    hasView(name: string): boolean {
+        return this.directory.hasViewFile(name);
+    }
+
+    /**
      * パネルを表示する
      */
     show(): void {
