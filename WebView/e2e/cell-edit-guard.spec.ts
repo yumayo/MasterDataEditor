@@ -257,4 +257,19 @@ test.describe('isDeleteBlocked - Delete操作ガード', () => {
         // 値がクリアされること
         await expect(getDataCell(table, 2, 3)).toHaveText('');
     });
+
+    test('BackspaceキーでもDeleteキーと同様にセル内容が削除されること', async ({ page }) => {
+        await installMockApiAsync(page, createOneToManyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_quest');
+
+        // リーダー行の結合テーブルセル（行2, 列3 = quest_reward.item）を選択
+        await selectCellAsync(page, table, 2, 3);
+
+        // Backspace
+        await page.keyboard.press('Backspace');
+
+        // 値がクリアされること
+        await expect(getDataCell(table, 2, 3)).toHaveText('');
+    });
 });

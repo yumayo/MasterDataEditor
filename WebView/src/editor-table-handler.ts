@@ -485,8 +485,8 @@ export class EditorTableHandler {
             return;
         }
 
-        // Deleteキー
-        if (keyboardEvent.key === 'Delete') {
+        // DeleteキーまたはBackspaceキー
+        if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             const deleteRange = this.selection.getSelectionRange();
             // Delete操作ガード（パディングセル + FKグループ完全性チェック）
             if (this.table.isDeleteBlocked(deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn)) {
