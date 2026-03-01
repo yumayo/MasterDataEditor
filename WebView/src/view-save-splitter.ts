@@ -5,6 +5,7 @@ import {ViewDefinition, ViewColumnConfig, serializeViewDefinition} from "./model
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
 import {mergeCsvData} from "./editor-actions";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * テーブルごとの分離データ
@@ -99,7 +100,8 @@ export async function saveViewDataAsync(
     table: EditorTable,
     columnMappings: ViewColumnMapping[],
     viewDefinition: ViewDefinition,
-    rowMetadata: ViewRowMetadata[]
+    rowMetadata: ViewRowMetadata[],
+    store: InMemoryTableStore
 ): Promise<void> {
 
     // テーブル名ごとに列をグループ化
@@ -222,12 +224,26 @@ export async function saveViewDataAsync(
 
     for (const splitData of splitDataList) {
         const csvPath = 'data/' + splitData.tableName + '.csv';
+        // 結合テーブルはInMemoryTableStoreから既存CSVを取得する
+        // 行削除がStoreに反映済みなので、削除された行が正しく除外される
+        if (splitData.isJoinedTable) {
+            const storeCsv = store.getCsv(splitData.tableName);
+            if (storeCsv !== false) {
+                const mergedCsv = mergeJoinedTableCsv(storeCsv, splitData);
+                savePromises.push(writeFileAsync(csvPath, mergedCsv.toString()));
+            } else {
+                const newCsv = new Csv();
+                newCsv.header = splitData.header;
+                newCsv.body = splitData.body;
+                savePromises.push(writeFileAsync(csvPath, newCsv.toString()));
+            }
+            continue;
+        }
+        // ベーステーブルはファイルから既存CSVを読み込んでマージ
         const savePromise = readFileAsync(csvPath).then((existingCsvContents) => {
             const existingCsv = new Csv();
             existingCsv.load(existingCsvContents);
-            const mergedCsv = splitData.isJoinedTable
-                ? mergeJoinedTableCsv(existingCsv, splitData)
-                : mergeCsvData(existingCsv, { header: splitData.header, body: splitData.body });
+            const mergedCsv = mergeCsvData(existingCsv, { header: splitData.header, body: splitData.body });
             return writeFileAsync(csvPath, mergedCsv.toString());
         }).catch(() => {
             const newCsv = new Csv();
