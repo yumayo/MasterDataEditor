@@ -397,7 +397,8 @@ export class Tab {
         if (existingState) {
             this.activateTabState(existingState);
             this.activeTabName = name;
-
+            // 他タブでストアが変更されたセルのDOMを同期する
+            existingState.editorTable.reloadCellsFromStore();
             // 他タブでインメモリデータが編集された可能性があるため、参照ヒントを再更新する
             this.reference.refreshReferenceHints(name, existingState);
             return;

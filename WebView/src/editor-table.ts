@@ -679,6 +679,46 @@ export class EditorTable {
         }, { once: true });
     }
 
+    /**
+     * ストアからセルデータを再読み込みし、DOMの値と差分があるセルのみ更新する
+     * タブ切替時に呼び出され、他タブでストアが変更されたセルのDOMを同期する
+     */
+    reloadCellsFromStore(): void {
+        // ビュータブはrefreshViewRows()で既に対応済みのためスキップ
+        if (this.view.hasViewContext()) return;
+
+        const storeRows = this.store.getRows(this.tableName);
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeRows === false || storeHeader === false) return;
+
+        // DOMの列ヘッダー名 → ストアの列インデックスのマッピングを構築
+        const domColumnCount = this.getColumnCount();
+        const storeColumnIndices: number[] = [];
+        for (let domCol = 0; domCol < domColumnCount; domCol++) {
+            const headerName = this.getColumnHeaderValue(domCol);
+            storeColumnIndices.push(storeHeader.indexOf(headerName));
+        }
+
+        for (let storeRow = 0; storeRow < storeRows.length; storeRow++) {
+            const domRow = storeRow + 1; // DOMは1始まり（列ヘッダー行がある）
+            if (domRow >= this.getRowCount()) break;
+
+            const storeRowData = storeRows[storeRow];
+
+            for (let domCol = 0; domCol < domColumnCount; domCol++) {
+                const storeColIdx = storeColumnIndices[domCol];
+                if (storeColIdx === -1) continue;
+                const storeValue = storeColIdx < storeRowData.length ? storeRowData[storeColIdx] : '';
+                const domValue = this.getCellValueAt(domRow, domCol + 1);
+
+                if (domValue !== storeValue) {
+                    const cell = this.getCell(domRow, domCol + 1);
+                    this.reference.setCellValue(cell, storeValue, domCol, domRow);
+                }
+            }
+        }
+    }
+
     // =========================================================================
     // ファサード: EditorTableReference
     // =========================================================================
