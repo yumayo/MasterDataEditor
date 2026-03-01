@@ -1,7 +1,6 @@
 import {Tab, TabState} from "./tab";
 import {TabButton} from "./tab-button";
 import {EditorTableData} from "./model/editor-table-data";
-import {Csv} from "./csv";
 import {readFileAsync, findFilesAsync} from "./api";
 import {EditorTable, AvailableJoinTarget} from "./editor-table";
 import {ReferenceDataCache} from "./reference-data-cache";
@@ -55,155 +54,139 @@ export class TabView {
         viewDefPromise.then((viewDefinition) => {
             const baseTable = viewDefinition.baseTable;
 
-            // ベーステーブルを読み込み
-            Promise.all([
-                readFileAsync('schema/' + baseTable + '.json'),
-                readFileAsync('data/' + baseTable + '.csv'),
-            ]).then(([schemaText, csvText]) => {
+            // ベーステーブルのスキーマを読み込み（CSVは中央ストア経由）
+            readFileAsync('schema/' + baseTable + '.json').then(async (schemaText) => {
                 const json = JSON.parse(schemaText);
-                const csv = new Csv();
-                csv.load(csvText);
+                const csv = await this.store.registerTableAsync(baseTable);
                 const baseTableData = EditorTableData.parse(json, csv);
 
                 // 結合テーブルを読み込み
                 const joinPromises: Promise<JoinedTableLoadedData>[] = [];
                 for (const join of viewDefinition.joins) {
-                    const p = Promise.all([
-                        readFileAsync('schema/' + join.targetTable + '.json'),
-                        readFileAsync('data/' + join.targetTable + '.csv'),
-                    ]).then(([sText, cText]) => {
+                    const p = readFileAsync('schema/' + join.targetTable + '.json').then(async (sText) => {
                         const sJson = JSON.parse(sText);
-                        const sCsv = new Csv();
-                        sCsv.load(cText);
+                        const sCsv = await this.store.registerTableAsync(join.targetTable);
                         const td = EditorTableData.parse(sJson, sCsv);
                         return {tableName: join.targetTable, tableData: td} as JoinedTableLoadedData;
                     });
                     joinPromises.push(p);
                 }
 
-                Promise.all(joinPromises).then(async (joinedTables) => {
-                    // ビューテーブルデータを構築
-                    const rawBuildResult = buildViewTableData(baseTableData, joinedTables, viewDefinition);
+                const joinedTables = await Promise.all(joinPromises);
 
-                    // 列設定（幅オーバーライド・非表示列フィルタ）を適用
-                    const buildResult = applyViewColumnConfig(rawBuildResult, viewDefinition.columns);
-                    const compositeTableData = buildResult.compositeTableData;
-                    const columnMappings = buildResult.columnMappings;
-                    const joinTableKeyMaps = buildResult.joinTableKeyMaps;
+                // ビューテーブルデータを構築
+                const rawBuildResult = buildViewTableData(baseTableData, joinedTables, viewDefinition);
 
-                    // 逆参照JOIN対象を検出（EditorTable生成前に非同期処理を完了させる）
-                    const reverseJoinTargets: AvailableJoinTarget[] = [];
-                    const schemaFiles = await findFilesAsync('schema');
-                    for (const file of schemaFiles) {
-                        if (file.type !== 'file' || !file.name.endsWith('.json')) continue;
-                        const childTableName = file.name.replace('.json', '');
-                        if (childTableName === viewDefinition.baseTable) continue;
-                        const childSchemaText = await readFileAsync('schema/' + childTableName + '.json');
-                        const childSchema = JSON.parse(childSchemaText);
-                        for (const col of childSchema.header) {
-                            if (!col.reference) continue;
-                            const refParts = col.reference.split('.');
-                            if (refParts.length !== 2) continue;
-                            if (refParts[0] !== viewDefinition.baseTable) continue;
-                            reverseJoinTargets.push({
-                                sourceColumnName: refParts[1],
-                                targetTableName: childTableName,
-                                targetColumnName: col.name,
-                                isReverse: true,
-                            });
-                        }
+                // 列設定（幅オーバーライド・非表示列フィルタ）を適用
+                const buildResult = applyViewColumnConfig(rawBuildResult, viewDefinition.columns);
+                const compositeTableData = buildResult.compositeTableData;
+                const columnMappings = buildResult.columnMappings;
+                const joinTableKeyMaps = buildResult.joinTableKeyMaps;
+
+                // 逆参照JOIN対象を検出（EditorTable生成前に非同期処理を完了させる）
+                const reverseJoinTargets: AvailableJoinTarget[] = [];
+                const schemaFiles = await findFilesAsync('schema');
+                for (const file of schemaFiles) {
+                    if (file.type !== 'file' || !file.name.endsWith('.json')) continue;
+                    const childTableName = file.name.replace('.json', '');
+                    if (childTableName === viewDefinition.baseTable) continue;
+                    const childSchemaText = await readFileAsync('schema/' + childTableName + '.json');
+                    const childSchema = JSON.parse(childSchemaText);
+                    for (const col of childSchema.header) {
+                        if (!col.reference) continue;
+                        const refParts = col.reference.split('.');
+                        if (refParts.length !== 2) continue;
+                        if (refParts[0] !== viewDefinition.baseTable) continue;
+                        reverseJoinTargets.push({
+                            sourceColumnName: refParts[1],
+                            targetTableName: childTableName,
+                            targetColumnName: col.name,
+                            isReverse: true,
+                        });
                     }
+                }
 
-                    // ラッパー要素を作成
-                    const wrapperElement = document.createElement('div');
-                    wrapperElement.classList.add('tab-wrapper');
-                    wrapperElement.dataset.tabName = name;
-                    this.tab.getEditor().element.appendChild(wrapperElement);
+                // ラッパー要素を作成
+                const wrapperElement = document.createElement('div');
+                wrapperElement.classList.add('tab-wrapper');
+                wrapperElement.dataset.tabName = name;
+                this.tab.getEditor().element.appendChild(wrapperElement);
 
-                    // ベーステーブルとJOINテーブルを中央ストアに登録
-                    this.store.registerTable(baseTable, csv.header, csv.body);
-                    for (const jt of joinedTables) {
-                        const jtHeader = jt.tableData.header.map(h => h.name);
-                        const jtBody = jt.tableData.body.map(r => r.values);
-                        this.store.registerTable(jt.tableName, jtHeader, jtBody);
+                // EditorTable生成
+                const factoryResult = this.tab.createEditorTable(
+                    name, compositeTableData, wrapperElement, tabButton
+                );
+                const editorTable = factoryResult.editorTable;
+                const selection = factoryResult.selection;
+                const editorTableHandler = factoryResult.editorTableHandler;
+                const history = factoryResult.history;
+                const areaResizer = factoryResult.areaResizer;
+                const fillController = factoryResult.fillController;
+
+                // 開いているテーブルのマップに登録
+                this.tab.getOpenEditorTables().set(name, editorTable);
+
+                // ビューコンテキストを設定（逆参照は事前検出済みのため同期実行）
+                this.setupViewContext(
+                    name, editorTable, viewDefinition, columnMappings,
+                    joinTableKeyMaps, buildResult.rowMetadata, baseTableData, history,
+                    reverseJoinTargets
+                );
+
+                // ファイルから読み込んだビューのJOIN列ヘッダーに背景色を適用
+                for (let i = 0; i < columnMappings.length; i++) {
+                    if (columnMappings[i].isJoinedColumn) {
+                        editorTable.addColumnHeaderClass(i, 'editor-table-joined-column-header');
                     }
+                }
 
-                    // EditorTable生成
-                    const factoryResult = this.tab.createEditorTable(
-                        name, compositeTableData, wrapperElement, tabButton
+                // ビュー用の保存コールバック
+                const tabStates = this.tab.getTabStates();
+                editorTableHandler.setSaveCallback((_table: EditorTable) => {
+                    const state = tabStates.get(name);
+                    if (!state || state.kind !== 'view') return Promise.resolve();
+                    // 保存前に列幅をViewDefinitionに反映
+                    updateViewColumnConfigs(state.editorTable, state.columnMappings, state.viewDefinition);
+                    return saveViewDataAsync(
+                        state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata
                     );
-                    const editorTable = factoryResult.editorTable;
-                    const selection = factoryResult.selection;
-                    const editorTableHandler = factoryResult.editorTableHandler;
-                    const history = factoryResult.history;
-                    const areaResizer = factoryResult.areaResizer;
-                    const fillController = factoryResult.fillController;
-
-                    // 開いているテーブルのマップに登録
-                    this.tab.getOpenEditorTables().set(name, editorTable);
-
-                    // ビューコンテキストを設定（逆参照は事前検出済みのため同期実行）
-                    this.setupViewContext(
-                        name, editorTable, viewDefinition, columnMappings,
-                        joinTableKeyMaps, buildResult.rowMetadata, baseTableData, history,
-                        reverseJoinTargets
-                    );
-
-                    // ファイルから読み込んだビューのJOIN列ヘッダーに背景色を適用
-                    for (let i = 0; i < columnMappings.length; i++) {
-                        if (columnMappings[i].isJoinedColumn) {
-                            editorTable.addColumnHeaderClass(i, 'editor-table-joined-column-header');
-                        }
-                    }
-
-                    // ビュー用の保存コールバック
-                    const tabStates = this.tab.getTabStates();
-                    editorTableHandler.setSaveCallback((_table: EditorTable) => {
-                        const state = tabStates.get(name);
-                        if (!state || state.kind !== 'view') return Promise.resolve();
-                        // 保存前に列幅をViewDefinitionに反映
-                        updateViewColumnConfigs(state.editorTable, state.columnMappings, state.viewDefinition);
-                        return saveViewDataAsync(
-                            state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata
-                        );
-                    });
-
-                    // 参照先テーブルをpreload
-                    this.reference.preloadReferenceTables(compositeTableData, editorTable);
-
-                    // 逆参照を並行して解決（ベーステーブル名で解決する）
-                    this.reference.resolveReverseReferencesAsync(baseTable, editorTable);
-
-                    // ドロップダウン入力を作成
-                    const dropdownInput = new GridDropdownInput(
-                        wrapperElement,
-                        editorTableHandler.element,
-                        (id: string) => { editorTableHandler.submitDropdownSelection(id); },
-                        () => { editorTableHandler.cancelDropdown(); }
-                    );
-
-                    editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, compositeTableData);
-
-                    // 初期選択
-                    selection.setRange(1, 1, 1, 1);
-                    selection.move(1, 1);
-
-                    // タブ状態を保存
-                    const state: TabState = {
-                        kind: 'view',
-                        editorTable, selection, editorTableHandler, history,
-                        areaResizer, fillController, wrapperElement,
-                        dropdownInput, viewDefinition,
-                        columnMappings, rowMetadata: buildResult.rowMetadata,
-                        savedScrollLeft: 0, savedScrollTop: 0,
-                    };
-                    tabStates.set(name, state);
-
-                    this.tab.activateTabState(state);
-                    this.tab.setActiveTabNameInternal(name);
-
-                    this.tab.consumePendingNavigation(state);
                 });
+
+                // 参照先テーブルをpreload
+                this.reference.preloadReferenceTables(compositeTableData, editorTable);
+
+                // 逆参照を並行して解決（ベーステーブル名で解決する）
+                this.reference.resolveReverseReferencesAsync(baseTable, editorTable);
+
+                // ドロップダウン入力を作成
+                const dropdownInput = new GridDropdownInput(
+                    wrapperElement,
+                    editorTableHandler.element,
+                    (id: string) => { editorTableHandler.submitDropdownSelection(id); },
+                    () => { editorTableHandler.cancelDropdown(); }
+                );
+
+                editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, compositeTableData);
+
+                // 初期選択
+                selection.setRange(1, 1, 1, 1);
+                selection.move(1, 1);
+
+                // タブ状態を保存
+                const state: TabState = {
+                    kind: 'view',
+                    editorTable, selection, editorTableHandler, history,
+                    areaResizer, fillController, wrapperElement,
+                    dropdownInput, viewDefinition,
+                    columnMappings, rowMetadata: buildResult.rowMetadata,
+                    savedScrollLeft: 0, savedScrollTop: 0,
+                };
+                tabStates.set(name, state);
+
+                this.tab.activateTabState(state);
+                this.tab.setActiveTabNameInternal(name);
+
+                this.tab.consumePendingNavigation(state);
             });
         });
     }
@@ -269,15 +252,10 @@ export class TabView {
         columnMappings: ViewColumnMapping[], history: History,
         targetTable: string, sourceColumn: string, afterColumnIndex: number
     ): Promise<void> {
-        // 結合先テーブルを読み込み
-        const [schemaText, csvText] = await Promise.all([
-            readFileAsync('schema/' + targetTable + '.json'),
-            readFileAsync('data/' + targetTable + '.csv'),
-        ]);
-
+        // 結合先テーブルを読み込み（CSVは中央ストア経由）
+        const schemaText = await readFileAsync('schema/' + targetTable + '.json');
         const json = JSON.parse(schemaText);
-        const csv = new Csv();
-        csv.load(csvText);
+        const csv = await this.store.registerTableAsync(targetTable);
         const joinTableData = EditorTableData.parse(json, csv);
 
         // Join定義を追加

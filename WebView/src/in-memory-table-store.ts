@@ -1,4 +1,5 @@
 import {Csv} from "./csv";
+import {readFileAsync} from "./api";
 
 /**
  * テーブルデータの中央ストア
@@ -18,7 +19,7 @@ export class InMemoryTableStore {
         this.refCounts = new Map();
     }
 
-    /** テーブル登録（refCount++、既存なら参照カウントのみ増やす） */
+    /** テーブル登録（テスト・外部データ注入用の同期API） */
     registerTable(tableName: string, header: string[], body: string[][]): void {
         if (this.refCounts.has(tableName)) {
             // 既存テーブル: 参照カウントのみ増加、データは保持
@@ -28,6 +29,19 @@ export class InMemoryTableStore {
         this.headers.set(tableName, header);
         this.rows.set(tableName, body);
         this.refCounts.set(tableName, 1);
+    }
+
+    /** テーブル登録（ファイルから読み込み、キャッシュ済みなら参照カウントのみ増やす） */
+    async registerTableAsync(tableName: string): Promise<Csv> {
+        if (this.refCounts.has(tableName)) {
+            this.refCounts.set(tableName, this.refCounts.get(tableName)! + 1);
+            return this.getCsv(tableName) as Csv;
+        }
+        const csvText = await readFileAsync('data/' + tableName + '.csv');
+        const csv = new Csv();
+        csv.load(csvText);
+        this.registerTable(tableName, csv.header, csv.body);
+        return csv;
     }
 
     /** 参照カウント減少、0になったら削除 */

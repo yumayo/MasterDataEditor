@@ -1,5 +1,4 @@
 import {EditorTableData} from "./model/editor-table-data";
-import {Csv} from "./csv";
 import {TabButton} from "./tab-button";
 import {readFileAsync} from "./api";
 import {Editor} from "./editor";
@@ -447,91 +446,82 @@ export class Tab {
      */
     private createTabState(name: string, tabButton: TabButton): void {
         // タブの名前から同名のマスターデータを取り出してきます。
-        readFileAsync("schema/" + name + ".json").then((text) => {
+        readFileAsync("schema/" + name + ".json").then(async (text) => {
+            const json = JSON.parse(text);
 
-            readFileAsync("data/" + name + ".csv").then((csvFileContents) => {
+            // 中央ストアにCSVを読み込み・登録
+            const csv = await this.store.registerTableAsync(name);
+            const tableData = EditorTableData.parse(json, csv);
 
-                const json = JSON.parse(text);
+            // ラッパー要素を作成（このタブのDOM全体を包む）
+            const wrapperElement = document.createElement('div');
+            wrapperElement.classList.add('tab-wrapper');
+            wrapperElement.dataset.tabName = name;
+            this.editor.element.appendChild(wrapperElement);
 
-                const csv = new Csv();
-                csv.load(csvFileContents);
+            // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
+            const editorTableFactoryResult = this.createEditorTable(
+                name, tableData, wrapperElement, tabButton
+            );
+            const editorTable = editorTableFactoryResult.editorTable;
+            const selection = editorTableFactoryResult.selection;
+            const editorTableHandler = editorTableFactoryResult.editorTableHandler;
+            const history = editorTableFactoryResult.history;
+            const areaResizer = editorTableFactoryResult.areaResizer;
+            const fillController = editorTableFactoryResult.fillController;
 
-                const tableData = EditorTableData.parse(json, csv);
+            // 開いているテーブルのマップに登録
+            this.openEditorTables.set(name, editorTable);
 
-                // 中央ストアにテーブルデータを登録
-                this.store.registerTable(name, csv.header, csv.body);
+            // 参照先テーブルを事前読み込み
+            this.reference.preloadReferenceTables(tableData, editorTable);
 
-                // ラッパー要素を作成（このタブのDOM全体を包む）
-                const wrapperElement = document.createElement('div');
-                wrapperElement.classList.add('tab-wrapper');
-                wrapperElement.dataset.tabName = name;
-                this.editor.element.appendChild(wrapperElement);
+            // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
+            this.reference.resolveReverseReferencesAsync(name, editorTable);
 
-                // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
-                const editorTableFactoryResult = this.createEditorTable(
-                    name, tableData, wrapperElement, tabButton
-                );
-                const editorTable = editorTableFactoryResult.editorTable;
-                const selection = editorTableFactoryResult.selection;
-                const editorTableHandler = editorTableFactoryResult.editorTableHandler;
-                const history = editorTableFactoryResult.history;
-                const areaResizer = editorTableFactoryResult.areaResizer;
-                const fillController = editorTableFactoryResult.fillController;
+            // ドロップダウン入力コンポーネントを作成
+            // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
+            const dropdownInput = new GridDropdownInput(
+                wrapperElement,
+                editorTableHandler.element,
+                (id: string) => {
+                    // 選択確定時のコールバック
+                    editorTableHandler.submitDropdownSelection(id);
+                },
+                () => {
+                    // キャンセル時のコールバック
+                    editorTableHandler.cancelDropdown();
+                }
+            );
 
-                // 開いているテーブルのマップに登録
-                this.openEditorTables.set(name, editorTable);
+            // EditorTableHandler に参照データキャッシュとドロップダウンを設定
+            editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
-                // 参照先テーブルを事前読み込み
-                this.reference.preloadReferenceTables(tableData, editorTable);
+            // 初期選択をA1（row=1, column=1）に設定
+            selection.setRange(1, 1, 1, 1);
+            selection.move(1, 1);
 
-                // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
-                this.reference.resolveReverseReferencesAsync(name, editorTable);
+            // タブ状態を保存
+            const state: NormalTabState = {
+                kind: 'normal',
+                editorTable,
+                selection,
+                editorTableHandler,
+                history,
+                areaResizer,
+                fillController,
+                wrapperElement,
+                dropdownInput,
+                savedScrollLeft: 0,
+                savedScrollTop: 0
+            };
+            this.tabStates.set(name, state);
 
-                // ドロップダウン入力コンポーネントを作成
-                // 入力フィールドは EditorTableHandler.element を共有し、IME対応を統一
-                const dropdownInput = new GridDropdownInput(
-                    wrapperElement,
-                    editorTableHandler.element,
-                    (id: string) => {
-                        // 選択確定時のコールバック
-                        editorTableHandler.submitDropdownSelection(id);
-                    },
-                    () => {
-                        // キャンセル時のコールバック
-                        editorTableHandler.cancelDropdown();
-                    }
-                );
+            // アクティブ化
+            this.activateTabState(state);
+            this.activeTabName = name;
 
-                // EditorTableHandler に参照データキャッシュとドロップダウンを設定
-                editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
-
-                // 初期選択をA1（row=1, column=1）に設定
-                selection.setRange(1, 1, 1, 1);
-                selection.move(1, 1);
-
-                // タブ状態を保存
-                const state: NormalTabState = {
-                    kind: 'normal',
-                    editorTable,
-                    selection,
-                    editorTableHandler,
-                    history,
-                    areaResizer,
-                    fillController,
-                    wrapperElement,
-                    dropdownInput,
-                    savedScrollLeft: 0,
-                    savedScrollTop: 0
-                };
-                this.tabStates.set(name, state);
-
-                // アクティブ化
-                this.activateTabState(state);
-                this.activeTabName = name;
-
-                this.consumePendingNavigation(state);
-            });
-
+            this.consumePendingNavigation(state);
         });
     }
 
