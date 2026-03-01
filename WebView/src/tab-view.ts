@@ -142,10 +142,7 @@ export class TabView {
                 if (!state || state.kind !== 'view') return Promise.resolve();
                 // 保存前に列幅をViewDefinitionに反映
                 updateViewColumnConfigs(state.editorTable, state.columnMappings, state.viewDefinition);
-                return saveViewDataAsync(
-                    state.editorTable, state.columnMappings, state.viewDefinition, state.rowMetadata,
-                    this.store
-                );
+                return saveViewDataAsync(state.viewDefinition, this.store);
             });
 
             // 参照先テーブルをpreload
