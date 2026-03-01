@@ -121,4 +121,27 @@ export class InMemoryTableStore {
         if (rowIndex < 0 || rowIndex >= tableRows.length) return;
         tableRows.splice(rowIndex, 1);
     }
+
+    /** 主キー値で行を削除し、削除された行データと元のインデックスを返す */
+    removeRowByPk(tableName: string, pkValue: string): { rowData: string[]; rowIndex: number } | false {
+        if (!this.rows.has(tableName)) return false;
+        const header = this.headers.get(tableName)!;
+        const pkColumnIndex = header.indexOf(config.primaryKeyColumnName);
+        if (pkColumnIndex === -1) return false;
+        const tableRows = this.rows.get(tableName)!;
+        for (let i = 0; i < tableRows.length; i++) {
+            if (tableRows[i][pkColumnIndex] === pkValue) {
+                const rowData = tableRows.splice(i, 1)[0];
+                return { rowData, rowIndex: i };
+            }
+        }
+        return false;
+    }
+
+    /** 指定インデックスに行を挿入する */
+    insertRowAt(tableName: string, rowIndex: number, values: string[]): void {
+        if (!this.rows.has(tableName)) return;
+        const tableRows = this.rows.get(tableName)!;
+        tableRows.splice(rowIndex, 0, values);
+    }
 }
