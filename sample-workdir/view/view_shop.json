@@ -1,0 +1,77 @@
+{
+    "name": "view_shop",
+    "baseTable": "shop",
+    "joins": [
+        {
+            "sourceColumn": "shop_product_group_id",
+            "targetTable": "shop_product",
+            "targetColumn": "group_id",
+            "insertAfterViewColumnIndex": 2,
+            "sourceTable": ""
+        },
+        {
+            "sourceColumn": "item_id",
+            "targetTable": "item",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 7,
+            "sourceTable": "shop_product"
+        }
+    ],
+    "columns": [
+        {
+            "tableName": "shop",
+            "columnName": "id",
+            "width": 60
+        },
+        {
+            "tableName": "shop",
+            "columnName": "name",
+            "width": 120
+        },
+        {
+            "tableName": "shop",
+            "columnName": "shop_product_group_id",
+            "width": 160
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "id",
+            "width": 80
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "item_id",
+            "width": 100
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "price",
+            "width": 100
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "sort_order",
+            "width": 80
+        },
+        {
+            "tableName": "item",
+            "columnName": "id",
+            "width": 80
+        },
+        {
+            "tableName": "item",
+            "columnName": "attack",
+            "width": 80
+        },
+        {
+            "tableName": "item",
+            "columnName": "defence",
+            "width": 80
+        },
+        {
+            "tableName": "item",
+            "columnName": "selling_price",
+            "width": 80
+        }
+    ]
+}

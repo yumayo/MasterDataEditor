@@ -1,0 +1,28 @@
+{
+    "description": "ショップマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "name",
+            "type": "string",
+            "comment": "ショップ名",
+            "width": 150
+        },
+        {
+            "key": 2,
+            "name": "shop_product_group_id",
+            "type": "int",
+            "comment": "商品グループID",
+            "reference": "shop_product.group_id",
+            "width": 160
+        }
+    ],
+    "primary_key": "id"
+}

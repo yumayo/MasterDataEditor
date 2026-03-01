@@ -1,0 +1,42 @@
+{
+    "description": "ショップ商品マスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 100
+        },
+        {
+            "key": 1,
+            "name": "group_id",
+            "type": "int",
+            "comment": "グループID",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "item_id",
+            "type": "int",
+            "comment": "アイテムID",
+            "reference": "item.id",
+            "width": 120
+        },
+        {
+            "key": 3,
+            "name": "price",
+            "type": "int",
+            "comment": "販売価格",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "sort_order",
+            "type": "int",
+            "comment": "表示順",
+            "width": 100
+        }
+    ],
+    "primary_key": "id"
+}

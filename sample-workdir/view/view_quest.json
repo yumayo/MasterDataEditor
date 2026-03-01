@@ -3,13 +3,6 @@
     "baseTable": "quest",
     "joins": [
         {
-            "sourceColumn": "first_clear_reward_table_id",
-            "targetTable": "table",
-            "targetColumn": "id",
-            "insertAfterViewColumnIndex": 3,
-            "sourceTable": ""
-        },
-        {
             "sourceColumn": "quest_reward_group_id",
             "targetTable": "quest_reward",
             "targetColumn": "group_id",
@@ -52,24 +45,6 @@
             "tableName": "quest_reward",
             "columnName": "reward_record_id",
             "width": 248
-        },
-        {
-            "tableName": "table",
-            "columnName": "master",
-            "width": 100,
-            "hidden": true
-        },
-        {
-            "tableName": "table",
-            "columnName": "comment",
-            "width": 100,
-            "hidden": true
-        },
-        {
-            "tableName": "table",
-            "columnName": "enum",
-            "width": 100,
-            "hidden": true
         }
     ]
 }

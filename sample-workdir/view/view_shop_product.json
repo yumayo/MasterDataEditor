@@ -1,0 +1,60 @@
+{
+    "name": "view_shop_product",
+    "baseTable": "shop_product",
+    "joins": [
+        {
+            "sourceColumn": "item_id",
+            "targetTable": "item",
+            "targetColumn": "id",
+            "insertAfterViewColumnIndex": 2,
+            "sourceTable": ""
+        }
+    ],
+    "columns": [
+        {
+            "tableName": "shop_product",
+            "columnName": "id",
+            "width": 100
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "group_id",
+            "width": 100
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "item_id",
+            "width": 120
+        },
+        {
+            "tableName": "item",
+            "columnName": "attack",
+            "width": 50
+        },
+        {
+            "tableName": "item",
+            "columnName": "defence",
+            "width": 50
+        },
+        {
+            "tableName": "item",
+            "columnName": "speed",
+            "width": 50
+        },
+        {
+            "tableName": "item",
+            "columnName": "selling_price",
+            "width": 50
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "price",
+            "width": 100
+        },
+        {
+            "tableName": "shop_product",
+            "columnName": "sort_order",
+            "width": 100
+        }
+    ]
+}
