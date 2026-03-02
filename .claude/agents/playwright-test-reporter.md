@@ -25,7 +25,7 @@ docker compose exec -T playwright sh -c "npx playwright test 2>&1; echo EXIT_COD
 
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test
+docker compose exec -T playwright npx playwright test --workers=1 --reporter=list 2>&1; echo "exit $?"
 ```
 
 ## 特定のテストのみ実行する
@@ -42,7 +42,7 @@ docker compose exec -T playwright sh -c "npx playwright test column-insert 2>&1;
 
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test column-insert
+docker compose exec -T playwright npx playwright test column-insert --workers=1 --reporter=list 2>&1; echo "exit $?"
 ```
 
 ## 核心原則
