@@ -14,8 +14,6 @@ export class EditorTableViewStyle {
     private readonly view: EditorTableView;
     private readonly table: EditorTable;
     private readonly selection: Selection;
-    /** 折りたたみ時に縮小された選択範囲を保存するMap（展開時の復元用） */
-    private readonly savedSelectionRanges: Map<string, { original: CellRange; collapsed: CellRange }> = new Map();
 
     constructor(view: EditorTableView, table: EditorTable, selection: Selection) {
         this.view = view;
@@ -32,7 +30,6 @@ export class EditorTableViewStyle {
         const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
         const rowMetadata = viewContext.rowMetadata;
-        const columnMappings = viewContext.columnMappings;
         for (let metaIdx = startMetaIdx; metaIdx < endMetaIdx; metaIdx++) {
             const meta = rowMetadata[metaIdx];
             const domRowIndex = metaIdx + 1;
@@ -60,15 +57,9 @@ export class EditorTableViewStyle {
             // 折りたたみトグルの配置
             for (const groupInfo of meta.groupInfos) {
                 if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
-                const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === groupInfo.sourceTable);
-                if (!joinDef) continue;
-                const sourceTableName = joinDef.sourceTable === ''
-                    ? viewContext.viewDefinition.baseTable : joinDef.sourceTable;
-                const sourceColIdx = columnMappings.findIndex(
-                    m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
-                );
-                if (sourceColIdx < 0) continue;
-                const cellElement = rowElement.children[sourceColIdx + 1] as HTMLElement;
+                const fkColumnIndex = this.findFkColumnIndex(groupInfo.sourceTable);
+                if (fkColumnIndex < 0) continue;
+                const cellElement = rowElement.children[fkColumnIndex + 1] as HTMLElement;
                 if (!cellElement) continue;
                 // 既存のトグルがあれば除去（重複防止）
                 const existingToggle = cellElement.querySelector('.view-collapse-toggle');
@@ -83,9 +74,10 @@ export class EditorTableViewStyle {
                 });
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const currentMetaIdx = Number((toggle.closest('[data-row]') as HTMLElement).dataset.row) - 1;
+                    // data-rowをそのままDOM行インデックスとして使用（rowMetadata非依存）
+                    const currentDomRowIndex = Number((toggle.closest('[data-row]') as HTMLElement).dataset.row);
                     const currentTargetTable = toggle.dataset.targetTable!;
-                    this.toggleCollapseGroup(currentMetaIdx, currentTargetTable, toggle);
+                    this.toggleCollapseGroup(currentDomRowIndex, currentTargetTable, toggle);
                 });
                 toggle.addEventListener('dblclick', (e) => {
                     e.stopPropagation();
@@ -97,50 +89,80 @@ export class EditorTableViewStyle {
     }
 
     /**
-     * グループの折りたたみ/展開をトグルする
+     * targetTableからFK列のcompositeインデックスを返す
+     * applyViewRowStylesForRangeとtoggleCollapseGroupの両方で使用する共通ロジック
+     */
+    private findFkColumnIndex(targetTable: string): number {
+        const viewContext = this.view.getViewContext();
+        const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === targetTable);
+        if (!joinDef) return -1;
+        const sourceTableName = joinDef.sourceTable === ''
+            ? viewContext.viewDefinition.baseTable : joinDef.sourceTable;
+        return viewContext.columnMappings.findIndex(
+            m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
+        );
+    }
+
+    /**
+     * グループの折りたたみ/展開をトグルする（ステートレス: rowMetadata非依存）
      * 表示状態の変更のみでデータ変更を伴わないため、Undo/Redo対象外
      */
-    private toggleCollapseGroup(leaderMetaIndex: number, targetTable: string, toggle: HTMLElement): void {
-        const viewContext = this.view.getViewContext();
-        const rowMetadata = viewContext.rowMetadata;
-        // 事前条件: メタデータインデックスの範囲チェック
-        if (leaderMetaIndex < 0 || leaderMetaIndex >= rowMetadata.length) {
-            throw new Error(`トグルのメタデータインデックスが範囲外です: leaderMetaIndex=${leaderMetaIndex} (有効範囲: 0-${rowMetadata.length - 1})`);
+    private toggleCollapseGroup(leaderDomRowIndex: number, targetTable: string, toggle: HTMLElement): void {
+        const tableElement = this.table.getTableElement();
+        // 事前条件: DOM行インデックスの範囲チェック
+        if (leaderDomRowIndex < 1 || leaderDomRowIndex >= tableElement.children.length) {
+            throw new Error(`トグルのDOM行インデックスが範囲外です: ${leaderDomRowIndex}`);
         }
-        const leaderMeta = rowMetadata[leaderMetaIndex];
-        // このグループのgroupInfoを特定
-        const groupInfoIndex = leaderMeta.groupInfos.findIndex(g => g.sourceTable === targetTable);
-        // 事前条件: 対象テーブルがグループ情報に存在すること
-        if (groupInfoIndex === -1) {
-            throw new Error(`トグルの対象テーブルがグループ情報に見つかりません: targetTable=${targetTable}, metaIndex=${leaderMetaIndex}`);
+        // FK列のcompositeインデックスをViewDefinitionから算出（ステートレス）
+        const fkColumnIndex = this.findFkColumnIndex(targetTable);
+        if (fkColumnIndex < 0) {
+            throw new Error(`トグルの対象テーブルのFK列が見つかりません: targetTable=${targetTable}`);
+        }
+        // FK列のDOMセルインデックス（行ヘッダー分+1）
+        const fkCellDomIndex = fkColumnIndex + 1;
+        // 子行数をDOMから算出（view-padding-cellクラスの有無で判定）
+        let childCount = 0;
+        for (let domRow = leaderDomRowIndex + 1; domRow < tableElement.children.length; domRow++) {
+            const rowElement = tableElement.children[domRow] as HTMLElement;
+            const fkCell = rowElement.children[fkCellDomIndex] as HTMLElement;
+            if (!fkCell.classList.contains('view-padding-cell')) break;
+            childCount++;
         }
         const isCollapsed = toggle.textContent === '▶';
-        const key = `${leaderMetaIndex}_${targetTable}`;
         if (isCollapsed) {
             // 展開: 子行を表示する
             toggle.textContent = '▼';
-            this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, true);
+            for (let i = 1; i <= childCount; i++) {
+                const rowElement = tableElement.children[leaderDomRowIndex + i] as HTMLElement;
+                rowElement.style.display = '';
+            }
             // 折りたたみ時に縮小された選択範囲がそのままであれば復元する
-            const saved = this.savedSelectionRanges.get(key);
-            if (saved) {
+            const savedOriginal = toggle.dataset.savedOriginal;
+            const savedCollapsed = toggle.dataset.savedCollapsed;
+            if (savedOriginal && savedCollapsed) {
+                const original = this.parseCellRangeFromDataAttr(savedOriginal);
+                const collapsed = this.parseCellRangeFromDataAttr(savedCollapsed);
                 const current = this.selection.getSelectionRange();
-                if (current.startRow === saved.collapsed.startRow
-                    && current.startColumn === saved.collapsed.startColumn
-                    && current.endRow === saved.collapsed.endRow
-                    && current.endColumn === saved.collapsed.endColumn) {
-                    this.selection.setRange(saved.original.startRow, saved.original.startColumn, saved.original.endRow, saved.original.endColumn);
+                if (current.startRow === collapsed.startRow
+                    && current.startColumn === collapsed.startColumn
+                    && current.endRow === collapsed.endRow
+                    && current.endColumn === collapsed.endColumn) {
+                    this.selection.setRange(original.startRow, original.startColumn, original.endRow, original.endColumn);
                 }
-                this.savedSelectionRanges.delete(key);
+                toggle.removeAttribute('data-saved-original');
+                toggle.removeAttribute('data-saved-collapsed');
             }
         } else {
             // 折りたたみ: 子行を非表示にする
             toggle.textContent = '▶';
-            this.setGroupRowsVisibility(leaderMetaIndex, targetTable, groupInfoIndex, false);
+            for (let i = 1; i <= childCount; i++) {
+                const rowElement = tableElement.children[leaderDomRowIndex + i] as HTMLElement;
+                rowElement.style.display = 'none';
+            }
             // 非表示になった行と選択範囲が重なる場合、選択範囲を縮小する
-            const childCount = leaderMeta.groupInfos[groupInfoIndex].groupSize - 1;
             if (childCount > 0) {
-                const firstHiddenDomRow = leaderMetaIndex + 2;
-                const lastHiddenDomRow = leaderMetaIndex + 1 + childCount;
+                const firstHiddenDomRow = leaderDomRowIndex + 1;
+                const lastHiddenDomRow = leaderDomRowIndex + childCount;
                 const range = this.selection.getSelectionRange();
                 let startRow = range.startRow;
                 let endRow = range.endRow;
@@ -155,15 +177,12 @@ export class EditorTableViewStyle {
                 }
                 if (adjusted) {
                     if (startRow > endRow) {
-                        const leaderDomRow = leaderMetaIndex + 1;
-                        startRow = leaderDomRow;
-                        endRow = leaderDomRow;
+                        startRow = leaderDomRowIndex;
+                        endRow = leaderDomRowIndex;
                     }
-                    // 縮小前の選択範囲と縮小後の選択範囲を保存（展開時の復元用）
-                    this.savedSelectionRanges.set(key, {
-                        original: { startRow: range.startRow, startColumn: range.startColumn, endRow: range.endRow, endColumn: range.endColumn },
-                        collapsed: { startRow, startColumn: range.startColumn, endRow, endColumn: range.endColumn }
-                    });
+                    // 縮小前の選択範囲と縮小後の選択範囲をtoggleのdata属性に保存（展開時の復元用）
+                    toggle.dataset.savedOriginal = `${range.startRow},${range.startColumn},${range.endRow},${range.endColumn}`;
+                    toggle.dataset.savedCollapsed = `${startRow},${range.startColumn},${endRow},${range.endColumn}`;
                     this.selection.setRange(startRow, range.startColumn, endRow, range.endColumn);
                 }
             }
@@ -173,30 +192,11 @@ export class EditorTableViewStyle {
     }
 
     /**
-     * グループの子行の表示/非表示を設定する
+     * data属性のカンマ区切り文字列をCellRangeに変換する
+     * toggleCollapseGroupの展開・折りたたみ両方で使用する共通パーサー
      */
-    private setGroupRowsVisibility(
-        leaderMetaIndex: number, targetTable: string, groupInfoIndex: number, visible: boolean
-    ): void {
-        const viewContext = this.view.getViewContext();
-        const tableElement = this.table.getTableElement();
-        const rowMetadata = viewContext.rowMetadata;
-        const leaderMeta = rowMetadata[leaderMetaIndex];
-        const leaderGroupInfo = leaderMeta.groupInfos[groupInfoIndex];
-        // リーダー行以降の同一グループの行を探す
-        for (let i = leaderMetaIndex + 1; i < rowMetadata.length; i++) {
-            const meta = rowMetadata[i];
-            // ベース行が変わったらグループ終了
-            if (meta.baseRowIndex !== leaderMeta.baseRowIndex) break;
-            // このレベルのgroupInfoが同じキー値を持つか判定
-            if (groupInfoIndex >= meta.groupInfos.length) break;
-            const groupInfo = meta.groupInfos[groupInfoIndex];
-            if (groupInfo.sourceTable !== targetTable) break;
-            if (groupInfo.sourceKeyValue !== leaderGroupInfo.sourceKeyValue) break;
-            const domRowIndex = i + 1;
-            const rowElement = tableElement.children[domRowIndex] as HTMLElement;
-            if (!rowElement) continue;
-            rowElement.style.display = visible ? '' : 'none';
-        }
+    private parseCellRangeFromDataAttr(value: string): CellRange {
+        const parts = value.split(',').map(Number);
+        return { startRow: parts[0], startColumn: parts[1], endRow: parts[2], endColumn: parts[3] };
     }
 }

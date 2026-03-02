@@ -1713,7 +1713,7 @@ test.describe('1:n展開ビュー', () => {
 
         // 事前条件違反の明示的エラーメッセージを含むことを検証する
         expect(errors.length).toBe(1);
-        expect(errors[0].message).toContain('leaderMetaIndex');
+        expect(errors[0].message).toContain('トグルのDOM行インデックスが範囲外です: 99999');
     });
 
     test('折りたたみトグルのdata-target-tableが不正なとき例外が発生すること', async ({ page }) => {
@@ -1744,7 +1744,7 @@ test.describe('1:n展開ビュー', () => {
 
         // 事前条件違反の明示的エラーメッセージを含むことを検証する
         expect(errors.length).toBe(1);
-        expect(errors[0].message).toContain('targetTable');
+        expect(errors[0].message).toContain('トグルの対象テーブルのFK列が見つかりません: targetTable=nonexistent_table');
     });
 
     // ---------------------------------------------------------
