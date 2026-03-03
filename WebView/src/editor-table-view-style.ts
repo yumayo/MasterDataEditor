@@ -120,12 +120,12 @@ export class EditorTableViewStyle {
         }
         // FK列のDOMセルインデックス（行ヘッダー分+1）
         const fkCellDomIndex = fkColumnIndex + 1;
-        // 子行数をDOMから算出（view-padding-cellクラスの有無で判定）
+        // 子行数をDOMから算出（同一列を下に走査し、セルに値が入っている行の手前までをグループとする）
         let childCount = 0;
         for (let domRow = leaderDomRowIndex + 1; domRow < tableElement.children.length; domRow++) {
             const rowElement = tableElement.children[domRow] as HTMLElement;
             const fkCell = rowElement.children[fkCellDomIndex] as HTMLElement;
-            if (!fkCell.classList.contains('view-padding-cell')) break;
+            if (fkCell.textContent !== '') break;
             childCount++;
         }
         const isCollapsed = toggle.textContent === '▶';

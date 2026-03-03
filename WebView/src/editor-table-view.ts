@@ -112,9 +112,9 @@ export class EditorTableView {
     }
 
     /** ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬する */
-    propagateJoinedColumnToSourceTable(row: number, column: number, value: string): void {
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): void {
         if (!this.hasViewContext()) return;
-        this.sync.propagateJoinedColumnToSourceTable(row, column, value);
+        this.sync.propagateJoinedColumnToSourceTable(row, column, value, oldValue);
     }
 
     // --- Inspector委譲 ---

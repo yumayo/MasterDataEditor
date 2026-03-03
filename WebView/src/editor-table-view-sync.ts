@@ -46,20 +46,17 @@ export class EditorTableViewSync {
                 (m) => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
             );
             if (baseKeyColumnIndex === -1) return [];
-            // FK列がパディングセルの場合: メタデータベースで同一レコードの他行を連動更新
-            const metaIndex = editedRow - 1;
-            const isFkColumnPadding = metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length
-                && viewContext.rowMetadata[metaIndex].paddingColumns[baseKeyColumnIndex];
-            if (isFkColumnPadding) {
-                return this.synchronizePaddingRowJoinedColumn(editedRow, editedColumn, newValue, mapping.tableName);
+            const fkDomColumn = baseKeyColumnIndex + 1;
+            // FK列のセル値を取得（空の場合は上方向に走査してグループリーダーのFK値を見つける）
+            const joinKeyValue = this.table.getCellValueAt(editedRow, fkDomColumn);
+            if (joinKeyValue === '') {
+                return this.synchronizeGroupChildJoinedColumn(editedRow, editedColumn, newValue, fkDomColumn);
             }
-            const joinKeyValue = this.table.getCellValueAt(editedRow, baseKeyColumnIndex + 1);
-            if (joinKeyValue === '') return [];
             const changes: CellChange[] = [];
             const rowCount = this.table.getRowCount();
             for (let r = 1; r < rowCount; r++) {
                 if (r === editedRow) continue;
-                const rowKeyValue = this.table.getCellValueAt(r, baseKeyColumnIndex + 1);
+                const rowKeyValue = this.table.getCellValueAt(r, fkDomColumn);
                 if (rowKeyValue !== joinKeyValue) continue;
                 const oldValue = this.table.getCellValueAt(r, editedColumn);
                 if (oldValue === newValue) continue;
@@ -84,11 +81,10 @@ export class EditorTableViewSync {
         const rowCount = this.table.getRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (r === editedRow) continue;
-            // パディング行のFK列は見かけ上空だが実際のFK値ではないのでスキップ
-            const metaIndex = r - 1;
-            if (metaIndex < viewContext.rowMetadata.length
-                && viewContext.rowMetadata[metaIndex].paddingColumns[dataColumnIndex]) continue;
-            if (this.table.getCellValueAt(r, fkColumn) === newValue) {
+            // 同一列のセルに値が入っていない行はスキップ（パディング行のFK列は空文字列）
+            const fkValue = this.table.getCellValueAt(r, fkColumn);
+            if (fkValue === '') continue;
+            if (fkValue === newValue) {
                 return this.applyJoinedColumnValues(editedRow, joinedColumnIndices, (joinedDataIndex) => {
                     return this.table.getCellValueAt(r, joinedDataIndex + 1);
                 });
@@ -106,37 +102,31 @@ export class EditorTableViewSync {
     }
 
     /**
-     * パディング行の結合列編集時にメタデータベースで同一レコードの他行を連動更新する
-     *
-     * パディング行のFK列はパディングセルでDOM上空文字列のため、通常のFK値マッチングが使えない。
-     * 代わりにメタデータのgroupInfosからsourceTableとsourceKeyValue・groupPositionを使い、
-     * 同一レコードを表示する他の行を特定して連動更新する。
+     * FK列が空の行（グループの子行・新規追加行）でJOIN列が編集された場合の同期処理
+     * DOM上方向に走査してグループリーダーのFK値を取得し、
+     * 同一FK値・同一グループ位置の他行を連動更新する
      */
-    private synchronizePaddingRowJoinedColumn(
-        editedRow: number, editedColumn: number, newValue: string, tableName: string
+    private synchronizeGroupChildJoinedColumn(
+        editedRow: number, editedColumn: number, newValue: string, fkDomColumn: number
     ): CellChange[] {
-        const viewContext = this.view.getViewContext();
-        const rowMetadata = viewContext.rowMetadata;
-        const editedMetaIndex = editedRow - 1;
-        if (editedMetaIndex < 0 || editedMetaIndex >= rowMetadata.length) return [];
-        const editedMeta = rowMetadata[editedMetaIndex];
-        // mapping.tableNameでマッチするgroupInfoを特定
-        const editedGroupInfo = editedMeta.groupInfos.find(g => g.sourceTable === tableName);
-        if (!editedGroupInfo) return [];
+        // 上方向に走査してグループリーダーのFK値とグループ内位置を算出
+        const leader = this.findGroupLeaderByLookingUp(editedRow, fkDomColumn);
+        if (leader.fkValue === '') return [];
+        // 全行を1パスでスキャンし、同一FK値・同一グループ位置の行を連動更新
         const changes: CellChange[] = [];
-        // 全行をスキャンし、同一sourceTable・sourceKeyValue・groupPositionの行を連動更新
-        for (let metaIdx = 0; metaIdx < rowMetadata.length; metaIdx++) {
-            const domRow = metaIdx + 1;
-            if (domRow === editedRow) continue;
-            const meta = rowMetadata[metaIdx];
-            const groupInfo = meta.groupInfos.find(g => g.sourceTable === tableName);
-            if (!groupInfo) continue;
-            if (groupInfo.sourceKeyValue !== editedGroupInfo.sourceKeyValue) continue;
-            if (groupInfo.groupPosition !== editedGroupInfo.groupPosition) continue;
-            const oldValue = this.table.getCellValueAt(domRow, editedColumn);
+        const rowCount = this.table.getRowCount();
+        let currentLeaderValue = '';
+        let currentLeaderRow = 0;
+        for (let r = 1; r < rowCount; r++) {
+            const cellValue = this.table.getCellValueAt(r, fkDomColumn);
+            if (cellValue !== '') { currentLeaderValue = cellValue; currentLeaderRow = r; }
+            if (r === editedRow) continue;
+            if (currentLeaderValue !== leader.fkValue) continue;
+            if (r - currentLeaderRow !== leader.groupPosition) continue;
+            const oldValue = this.table.getCellValueAt(r, editedColumn);
             if (oldValue === newValue) continue;
-            changes.push({ row: domRow, column: editedColumn, oldValue, newValue });
-            this.table.updateCellValueAt(domRow, editedColumn, newValue);
+            changes.push({ row: r, column: editedColumn, oldValue, newValue });
+            this.table.updateCellValueAt(r, editedColumn, newValue);
         }
         return changes;
     }
@@ -171,45 +161,81 @@ export class EditorTableViewSync {
      * ソーステーブルのupdateCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
      * hasViewContext()チェックで即returnする。
      */
-    propagateJoinedColumnToSourceTable(row: number, column: number, value: string): void {
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): void {
         const viewContext = this.view.getViewContext();
         const dataColumnIndex = column - 1;
         if (dataColumnIndex < 0 || dataColumnIndex >= viewContext.columnMappings.length) {
             throw new Error(`到達不可能: dataColumnIndex=${dataColumnIndex}はcolumnMappingsの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
         }
         const mapping = viewContext.columnMappings[dataColumnIndex];
-        // ベース列の場合: ソーステーブルDOMへの伝搬は不要だが、ストアとfullDataCacheは更新する
+        // ベース列の場合: Lazy Store挿入ロジック付きでストアとfullDataCacheを更新する
         if (!mapping.isJoinedColumn) {
             const baseTable = viewContext.viewDefinition.baseTable;
-            const metaIndex = row - 1;
-            if (metaIndex >= 0 && metaIndex < viewContext.rowMetadata.length) {
-                const id = this.table.getRowPkValue(row);
-                this.store.updateCellValue(baseTable, id, mapping.sourceColumnName, value);
-                // 動的参照用のfullDataCacheも同期する
-                this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
+            const id = this.table.getRowPkValue(row);
+            const isPkColumn = mapping.sourceColumnName === config.primaryKeyColumnName;
+            if (id === '') {
+                // PK空: UndoによるPKクリア時にStore行を除去
+                if (isPkColumn && oldValue !== '') {
+                    this.store.removeRowByPk(baseTable, oldValue);
+                }
+                return;
             }
+            // PK非空: Store更新を試行
+            if (this.store.updateCellValue(baseTable, id, mapping.sourceColumnName, value)) {
+                // 成功: 既存Store行が更新された
+                const domRow = this.table.getTableElement().children[row] as HTMLElement;
+                if (isPkColumn) domRow.dataset.lastSyncedPk = id;
+            } else if (isPkColumn) {
+                // PK列が設定されたがStore行が未存在 → DOMスナップショットからStore行を生成
+                const domRow = this.table.getTableElement().children[row] as HTMLElement;
+                // 新規行はInsertViewRowCommand.execute()でdataset.lastSyncedPk=''を設定済み
+                // 既存行はこのパスに到達しない（Store行が存在するためupdateCellValueがtrueを返す）
+                const lastSyncedPk = domRow.dataset.lastSyncedPk as string;
+                if (lastSyncedPk !== '') {
+                    this.store.removeRowByPk(baseTable, lastSyncedPk);
+                }
+                // DOMの全列値からベーステーブルのStore行を生成してappend
+                const header = this.store.getHeader(baseTable);
+                if (header === false) throw new Error('到達不可能: ベーステーブルのヘッダーが存在しない');
+                const newRow: string[] = new Array(header.length).fill('');
+                for (let i = 0; i < viewContext.columnMappings.length; i++) {
+                    const m = viewContext.columnMappings[i];
+                    if (m.tableName !== baseTable || m.isJoinedColumn) continue;
+                    const headerIdx = header.indexOf(m.sourceColumnName);
+                    if (headerIdx === -1) continue;
+                    newRow[headerIdx] = this.table.getCellValueAt(row, i + 1);
+                }
+                this.store.appendRow(baseTable, newRow);
+                domRow.dataset.lastSyncedPk = id;
+            }
+            this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
             return;
         }
+        // FK列のDOM列インデックスを算出し、FK値とグループ位置をDOMから取得する
+        const fkColumnIndex = viewContext.columnMappings.findIndex(
+            m => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
+        );
+        if (fkColumnIndex === -1) throw new Error('到達不可能: FK列が見つかりません');
+        const fkDomColumn = fkColumnIndex + 1;
+        let fkValue = this.table.getCellValueAt(row, fkDomColumn);
+        let groupPosition = 0;
+        if (fkValue === '') {
+            const leader = this.findGroupLeaderByLookingUp(row, fkDomColumn);
+            fkValue = leader.fkValue;
+            groupPosition = leader.groupPosition;
+        }
+        if (fkValue === '') return;
         // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
         const sourceEditorTable = viewContext.openEditorTables.get(mapping.tableName);
-        // メタデータからsourceKeyValueとgroupPositionを取得
-        const metaIndex = row - 1;
-        if (metaIndex < 0 || metaIndex >= viewContext.rowMetadata.length) {
-            throw new Error(`到達不可能: metaIndex=${metaIndex}はrowMetadataの範囲外です。ビュー構築済みなら必ず範囲内のはずです。`);
-        }
-        const meta = viewContext.rowMetadata[metaIndex];
-        const groupInfo = meta.groupInfos.find(g => g.sourceTable === mapping.tableName);
-        if (!groupInfo) return;
         // ソーステーブルのDOMセルを更新（テーブルが開かれている場合のみ）
         // ソーステーブルのupdateCellValueAt内で通常タブ用のStore同期が自動実行される
         if (sourceEditorTable) {
-            // キー列とグループ位置で対象行を特定
             const keyColumnIndex = this.findSourceTableColumn(sourceEditorTable, mapping.joinKeyColumn);
             const rowCount = sourceEditorTable.getRowCount();
             let matchCount = 0;
             for (let r = 1; r < rowCount; r++) {
-                if (sourceEditorTable.getCellValueAt(r, keyColumnIndex) !== groupInfo.sourceKeyValue) continue;
-                if (matchCount === groupInfo.groupPosition) {
+                if (sourceEditorTable.getCellValueAt(r, keyColumnIndex) !== fkValue) continue;
+                if (matchCount === groupPosition) {
                     const sourceColumn = this.findSourceTableColumn(sourceEditorTable, mapping.sourceColumnName);
                     sourceEditorTable.updateCellValueAt(r, sourceColumn, value);
                     break;
@@ -218,7 +244,6 @@ export class EditorTableViewSync {
             }
         } else {
             // ソーステーブルが開かれていない場合、中央ストアを直接更新する
-            // ビュータブがJOINテーブルをStore登録しているため、Storeにデータが必ず存在する
             const storeHeader = this.store.getHeader(mapping.tableName);
             const storeRows = this.store.getRows(mapping.tableName);
             if (storeHeader === false || storeRows === false) throw new Error('到達不可能: JOINテーブルがStoreに登録されていません');
@@ -226,13 +251,12 @@ export class EditorTableViewSync {
             if (keyColIdx !== -1) {
                 let matchCount = 0;
                 for (let r = 0; r < storeRows.length; r++) {
-                    if (storeRows[r][keyColIdx] !== groupInfo.sourceKeyValue) continue;
-                    if (matchCount === groupInfo.groupPosition) {
+                    if (storeRows[r][keyColIdx] !== fkValue) continue;
+                    if (matchCount === groupPosition) {
                         const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
                         if (pkColIdx === -1) throw new Error(`到達不可能: テーブル'${mapping.tableName}'にPK列'${config.primaryKeyColumnName}'が存在しません`);
                         const pkValue = storeRows[r][pkColIdx];
                         this.store.updateCellValue(mapping.tableName, pkValue, mapping.sourceColumnName, value);
-                        // 動的参照用のfullDataCacheも同期する
                         this.referenceDataCache.updateFullDataCell(mapping.tableName, pkValue, mapping.sourceColumnIndex, value);
                         break;
                     }
@@ -242,12 +266,24 @@ export class EditorTableViewSync {
         }
         // joinTableKeyMapsのインメモリデータを更新（ソーステーブルが開かれていなくても実行する）
         const keyMap = viewContext.joinTableKeyMaps.get(mapping.tableName);
-        if (!keyMap) return;
-        const joinRows = keyMap.get(groupInfo.sourceKeyValue);
+        if (!keyMap) throw new Error('到達不可能: キーマップが存在しません');
+        const joinRows = keyMap.get(fkValue);
         if (!joinRows) return;
-        if (groupInfo.groupPosition < joinRows.length) {
-            joinRows[groupInfo.groupPosition][mapping.sourceColumnIndex] = value;
+        if (groupPosition < joinRows.length) {
+            joinRows[groupPosition][mapping.sourceColumnIndex] = value;
         }
+    }
+
+    /**
+     * DOM上で上方向に走査し、グループリーダーのFK値とグループ内位置を返す
+     * synchronizeGroupChildJoinedColumnとpropagateJoinedColumnToSourceTableの両方で使用する
+     */
+    private findGroupLeaderByLookingUp(domRow: number, fkDomColumn: number): { fkValue: string; groupPosition: number } {
+        for (let r = domRow - 1; r >= 1; r--) {
+            const cellValue = this.table.getCellValueAt(r, fkDomColumn);
+            if (cellValue !== '') return { fkValue: cellValue, groupPosition: domRow - r };
+        }
+        return { fkValue: '', groupPosition: 0 };
     }
 
     /**

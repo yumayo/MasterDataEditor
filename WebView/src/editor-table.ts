@@ -743,7 +743,7 @@ export class EditorTable {
     /** 変更リストをまとめてソーステーブルに伝搬する */
     propagateToSourceTable(changes: CellChange[]): void {
         for (const change of changes) {
-            this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue);
+            this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue, change.oldValue);
         }
     }
 
@@ -798,6 +798,11 @@ export class EditorTable {
     // =========================================================================
     // ファサード: EditorTableView
     // =========================================================================
+
+    /** ビュー行のスタイルを指定範囲に適用する */
+    applyViewRowStylesForRange(startMetaIndex: number, endMetaIndex: number, applyPadding: boolean): void {
+        this.view.applyViewRowStylesForRange(startMetaIndex, endMetaIndex, applyPadding);
+    }
 
     /** ビューコンテキストを設定する */
     setViewContext(context: ViewContext): void {

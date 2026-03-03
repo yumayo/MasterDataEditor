@@ -85,21 +85,22 @@ export class InMemoryTableStore {
         return this.rows.get(tableName)!;
     }
 
-    /** セル更新（主キー値＋列名で対象セルを特定する。テーブル未登録・PK不一致・列名不一致の場合は何もしない） */
-    updateCellValue(tableName: string, pkValue: string, columnName: string, value: string): void {
-        if (!this.rows.has(tableName)) return;
+    /** セル更新（主キー値＋列名で対象セルを特定する）。行が見つかり更新した場合true、未発見の場合false */
+    updateCellValue(tableName: string, pkValue: string, columnName: string, value: string): boolean {
+        if (!this.rows.has(tableName)) return false;
         const header = this.headers.get(tableName)!;
         const columnIndex = header.indexOf(columnName);
-        if (columnIndex === -1) return;
+        if (columnIndex === -1) return false;
         const pkColumnIndex = header.indexOf(config.primaryKeyColumnName);
-        if (pkColumnIndex === -1) return;
+        if (pkColumnIndex === -1) return false;
         const tableRows = this.rows.get(tableName)!;
         for (let i = 0; i < tableRows.length; i++) {
             if (tableRows[i][pkColumnIndex] === pkValue) {
                 tableRows[i][columnIndex] = value;
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     /** 全行置換 */

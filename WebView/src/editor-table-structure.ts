@@ -3,6 +3,7 @@ import {Selection} from "./selection";
 import {History} from "./history";
 import {Command, InsertColumnCommand, InsertColumnsCommand, InsertRowCommand, InsertRowsCommand, DeleteColumnCommand, DeleteColumnsCommand, DeleteRowCommand, DeleteRowsCommand} from "./command";
 import {DeleteViewRowCommand, DeleteViewRowsCommand} from "./delete-view-row-command";
+import {InsertViewRowCommand, InsertViewRowsCommand} from "./insert-view-row-command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {Utility} from "./utility";
@@ -140,9 +141,17 @@ export class EditorTableStructure {
      * 複数行挿入の公開メソッド（Commandを使用してhistoryに追加）
      */
     insertRows(rowIndex: number, count: number): void {
-        let command: Command = new InsertRowCommand(this.table, rowIndex);
-        if (count > 1) {
-            command = new InsertRowsCommand(this.table, rowIndex, count);
+        let command: Command;
+        if (this.table.hasViewContext()) {
+            // ビュータブ: rowMetadata同期を含むビュー専用コマンド
+            command = count > 1
+                ? new InsertViewRowsCommand(this.table, rowIndex, count)
+                : new InsertViewRowCommand(this.table, rowIndex);
+        } else {
+            // 通常テーブル: 従来のDOM行挿入コマンド
+            command = count > 1
+                ? new InsertRowsCommand(this.table, rowIndex, count)
+                : new InsertRowCommand(this.table, rowIndex);
         }
         const copyRange = this.selection.getCopyRange();
         const anchor = this.selection.getAnchor();
