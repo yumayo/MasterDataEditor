@@ -15,7 +15,6 @@ import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ViewDefinition, parseViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
-import {ViewRowMetadata} from "./model/view-row-metadata";
 import {Sidebar} from "./sidebar";
 import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
@@ -54,7 +53,6 @@ interface ViewTabState extends BaseTabState {
     kind: 'view';
     viewDefinition: ViewDefinition;
     columnMappings: ViewColumnMapping[];
-    rowMetadata: ViewRowMetadata[];
 }
 
 /**

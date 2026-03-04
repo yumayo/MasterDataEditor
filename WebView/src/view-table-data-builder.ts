@@ -4,6 +4,7 @@ import {EditorTableDataRow} from "./model/editor-table-data-row";
 import {ViewDefinition, ViewJoinDefinition, ViewColumnConfig} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
 import {ViewRowMetadata, ViewRowGroupInfo} from "./model/view-row-metadata";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * Join対象のテーブルデータ
@@ -21,9 +22,14 @@ export interface ViewTableBuildResult {
     compositeTableData: EditorTableData;
     /** ビュー列とソーステーブル列のマッピング */
     columnMappings: ViewColumnMapping[];
-    /** 結合テーブルのキーマップ（テーブル名 → キー値 → 行の配列） */
-    joinTableKeyMaps: Map<string, Map<string, string[][]>>;
-    /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
+}
+
+/**
+ * ビューテーブル初期構築結果（DOM属性設定用の行メタデータ付き）
+ * buildViewTableDataが返し、tab-view.tsでDOM行にメタデータを設定するために使用される
+ */
+export interface ViewTableBuildResultWithRowInfo extends ViewTableBuildResult {
+    /** 各行のメタデータ（初期DOM構築時のみ使用） */
     rowMetadata: ViewRowMetadata[];
 }
 
@@ -142,6 +148,19 @@ function findJoinColumnRange(
 }
 
 /**
+ * ViewDefinitionの全JOINに対するキーマップを一括構築する
+ * store.buildKeyMapを各JOIN定義に対して呼び、テーブル名をキーとしたMapにまとめて返す
+ */
+export function buildAllKeyMaps(store: InMemoryTableStore, viewDefinition: ViewDefinition): Map<string, Map<string, string[][]>> {
+    const result = new Map<string, Map<string, string[][]>>();
+    for (const join of viewDefinition.joins) {
+        const keyMap = store.buildKeyMap(join.targetTable, join.targetColumn);
+        result.set(join.targetTable, keyMap);
+    }
+    return result;
+}
+
+/**
  * ベーステーブルとJoin対象テーブルを結合して合成EditorTableDataを構築する
  *
  * 1:n展開対応: 同一キーに複数行がマッチする場合、行を展開して全子行を表示する。
@@ -155,8 +174,9 @@ function findJoinColumnRange(
 export function buildViewTableData(
     baseTableData: EditorTableData,
     joinedTables: JoinedTableLoadedData[],
-    viewDefinition: ViewDefinition
-): ViewTableBuildResult {
+    viewDefinition: ViewDefinition,
+    store: InMemoryTableStore
+): ViewTableBuildResultWithRowInfo {
 
     const tableMap = new Map<string, EditorTableData>();
     for (const jt of joinedTables) {
@@ -210,23 +230,8 @@ export function buildViewTableData(
     // --- Phase 2: JoinExpandInfo構築 ---
     const { expandInfosByLevel, maxLevel } = buildJoinExpandInfos(viewDefinition, joinLevels, columnMappings);
 
-    // --- Phase 3: 1:nキーマップ構築 ---
-    const keyMaps = new Map<string, Map<string, string[][]>>();
-    for (const join of viewDefinition.joins) {
-        const joinTable = tableMap.get(join.targetTable);
-        if (!joinTable) continue;
-        const keyColumnIndex = joinTable.header.findIndex(col => col.name === join.targetColumn);
-        if (keyColumnIndex === -1) continue;
-        const keyMap = new Map<string, string[][]>();
-        for (const row of joinTable.body) {
-            const keyValue = row.values[keyColumnIndex];
-            if (keyValue === '') continue;
-            let rows = keyMap.get(keyValue);
-            if (!rows) { rows = []; keyMap.set(keyValue, rows); }
-            rows.push(row.values);
-        }
-        keyMaps.set(join.targetTable, keyMap);
-    }
+    // --- Phase 3: 1:nキーマップ構築（Storeベース） ---
+    const keyMaps = buildAllKeyMaps(store, viewDefinition);
 
     // --- Phase 4: 行展開 ---
     const totalColumns = columnMappings.length;
@@ -256,7 +261,7 @@ export function buildViewTableData(
         baseTableData.description, baseTableData.primaryKey, compositeHeader, compositeBody
     );
 
-    return { compositeTableData, columnMappings, joinTableKeyMaps: keyMaps, rowMetadata };
+    return { compositeTableData, columnMappings, rowMetadata };
 }
 
 /**
@@ -406,9 +411,9 @@ export function rebuildExpandedRowsForBaseRow(
  * 新規追加された列が自動的に表示される。
  */
 export function applyViewColumnConfig(
-    buildResult: ViewTableBuildResult,
+    buildResult: ViewTableBuildResultWithRowInfo,
     columns: ViewColumnConfig[]
-): ViewTableBuildResult {
+): ViewTableBuildResultWithRowInfo {
     if (columns.length === 0) return buildResult;
 
     // 非表示列のセットを構築（"tableName.columnName" → hidden）
@@ -492,7 +497,6 @@ export function applyViewColumnConfig(
     return {
         compositeTableData: filteredTableData,
         columnMappings: filteredMappings,
-        joinTableKeyMaps: buildResult.joinTableKeyMaps,
         rowMetadata: filteredMetadata,
     };
 }

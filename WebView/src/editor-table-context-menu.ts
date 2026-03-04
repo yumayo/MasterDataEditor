@@ -217,8 +217,7 @@ export class EditorTableContextMenu {
         const viewContext = this.table.getViewContext();
         const command = new ViewHideColumnCommand(
             this.table, viewContext.viewDefinition,
-            viewContext.columnMappings, viewContext.rowMetadata,
-            columnIndex
+            viewContext.columnMappings, columnIndex
         );
         const anchor = this.selection.getAnchor();
         const copyRange = this.selection.getCopyRange();

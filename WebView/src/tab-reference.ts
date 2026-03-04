@@ -33,9 +33,8 @@ export class TabReference {
     refreshReferenceHints(name: string, state: TabState): void {
         // Storeから削除されたテーブルのキャッシュを除去する
         this.referenceDataCache.evictEntriesNotInStore();
-        // ビュータブの場合: 結合テーブルの最新データでキーマップを再構築し、行数差分を反映する
+        // ビュータブの場合: Storeから最新キーマップを都度構築して行数差分を反映する
         if (state.kind === 'view') {
-            state.editorTable.rebuildJoinTableKeyMaps(this.tab.getOpenEditorTables());
             state.editorTable.refreshViewRows();
         }
 

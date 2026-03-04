@@ -1,6 +1,7 @@
 import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
 import {Selection, CellRange} from "./selection";
+import {getBaseRowIndex, getGroupInfos} from "./model/view-row-metadata";
 
 /**
  * ビュー行スタイルモジュール
@@ -27,35 +28,40 @@ export class EditorTableViewStyle {
      */
     applyViewRowStylesForRange(startMetaIdx: number, endMetaIdx: number, applyPadding: boolean): void {
         if (!this.view.hasViewContext()) return;
-        const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
-        const rowMetadata = viewContext.rowMetadata;
         for (let metaIdx = startMetaIdx; metaIdx < endMetaIdx; metaIdx++) {
-            const meta = rowMetadata[metaIdx];
             const domRowIndex = metaIdx + 1;
             const rowElement = tableElement.children[domRowIndex] as HTMLElement;
             if (!rowElement) continue;
+            // DOM属性がない行（空行）はスキップする（getGroupInfosの不正呼び出しを防止）
+            if (!rowElement.hasAttribute('data-base-row-index')) continue;
+            const baseRowIdx = getBaseRowIndex(rowElement);
+            const groupInfos = getGroupInfos(rowElement);
             // パディングセルのスタイル適用（初期レンダリング時のみ）
+            // paddingはDOM行のセルにview-padding-cellクラスとして設定済み、
+            // ここではbuildAndInsertExpandedViewRowsでまだ設定されていない初期構築時に適用する
             if (applyPadding) {
-                for (let colIdx = 0; colIdx < meta.paddingColumns.length; colIdx++) {
-                    if (!meta.paddingColumns[colIdx]) continue;
+                // パディング情報はExpandedRowResultのpadding配列からDOM生成時に設定される
+                // ここではview-padding-cellクラスが付与されたセルのtextContentをクリアする
+                for (let colIdx = 0; colIdx < rowElement.children.length - 1; colIdx++) {
                     const cellElement = rowElement.children[colIdx + 1] as HTMLElement;
                     if (!cellElement) continue;
-                    cellElement.classList.add('view-padding-cell');
-                    cellElement.textContent = '';
+                    if (cellElement.classList.contains('view-padding-cell')) {
+                        cellElement.textContent = '';
+                    }
                 }
             }
-            // グループリーダー行の判定
-            const isBaseGroupLeader = meta.groupInfos.length === 0
-                || meta.groupInfos.every(g => g.groupPosition === 0);
+            // グループリーダー行の判定（DOM属性ベース）
+            const isBaseGroupLeader = groupInfos.length === 0
+                || groupInfos.every(g => g.groupPosition === 0);
             if (isBaseGroupLeader && metaIdx > 0) {
-                const prevMeta = rowMetadata[metaIdx - 1];
-                if (prevMeta.baseRowIndex !== meta.baseRowIndex) {
+                const prevRowElement = tableElement.children[metaIdx] as HTMLElement;
+                if (prevRowElement && getBaseRowIndex(prevRowElement) !== baseRowIdx) {
                     rowElement.classList.add('view-group-leader-row');
                 }
             }
             // 折りたたみトグルの配置
-            for (const groupInfo of meta.groupInfos) {
+            for (const groupInfo of groupInfos) {
                 if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
                 const fkColumnIndex = this.findFkColumnIndex(groupInfo.sourceTable);
                 if (fkColumnIndex < 0) continue;
@@ -74,7 +80,7 @@ export class EditorTableViewStyle {
                 });
                 toggle.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    // data-rowをそのままDOM行インデックスとして使用（rowMetadata非依存）
+                    // data-rowをそのままDOM行インデックスとして使用（DOM属性ベース）
                     const currentDomRowIndex = Number((toggle.closest('[data-row]') as HTMLElement).dataset.row);
                     const currentTargetTable = toggle.dataset.targetTable!;
                     this.toggleCollapseGroup(currentDomRowIndex, currentTargetTable, toggle);
@@ -104,7 +110,7 @@ export class EditorTableViewStyle {
     }
 
     /**
-     * グループの折りたたみ/展開をトグルする（ステートレス: rowMetadata非依存）
+     * グループの折りたたみ/展開をトグルする（ステートレス: DOM属性ベース）
      * 表示状態の変更のみでデータ変更を伴わないため、Undo/Redo対象外
      */
     private toggleCollapseGroup(leaderDomRowIndex: number, targetTable: string, toggle: HTMLElement): void {

@@ -133,7 +133,7 @@ test.describe(
         );
 
         test(
-            'ビューの結合列編集がjoinTableKeyMapsに反映されること'
+            'ビューの結合列編集がStoreに反映されること'
             + '（タブ切替後もビューの値が維持される）',
             async ({ page }) => {
                 await installMockApiAsync(page, createFileSystem());
@@ -150,15 +150,13 @@ test.describe(
                 await editCellAsync(page, viewTable, 0, 3, 'Diamond');
                 await expect(getDataCell(viewTable, 0, 3)).toHaveText('Diamond');
 
-                // quest_rewardタブに切り替え（rebuildJoinTableKeyMapsが呼ばれる）
+                // quest_rewardタブに切り替え
                 await openTableAsync(page, 'quest_reward');
 
-                // view_questタブに戻る（refreshViewRowsがjoinTableKeyMapsを使って再構築）
+                // view_questタブに戻る（refreshViewRowsがStoreから都度キーマップを構築して再構築）
                 const refreshedViewTable = await openTableAsync(page, 'view_quest');
 
-                // joinTableKeyMapsが正しく更新されていれば、編集した値が維持されるはず
-                // バグがある場合、rebuildJoinTableKeyMapsがソーステーブルの古いDOMを読み、
-                // refreshViewRowsが古い値（Gold）で上書きしてしまう
+                // Storeが正しく更新されていれば、編集した値が維持されるはず
                 await expect(getDataCell(refreshedViewTable, 0, 3)).toHaveText('Diamond');
                 await expect(getDataCell(refreshedViewTable, 1, 3)).toHaveText('Gem');
                 await expect(getDataCell(refreshedViewTable, 2, 3)).toHaveText('Potion');

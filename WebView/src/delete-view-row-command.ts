@@ -18,19 +18,19 @@ interface DeletedStoreRow {
  * ビュー行削除コマンド
  *
  * ビュータブでの行削除を処理する。通常テーブルの行削除とは異なり、
- * DOM行の削除に加えてrowMetadataの同期更新とInMemoryTableStoreからの
- * 対応行削除を行う。
+ * DOM行の削除に加えてInMemoryTableStoreからの対応行削除を行う。
+ * メタデータはDOM属性(data-base-row-index, data-group-infos)として保持される。
  *
  * - パディング行の削除: 結合テーブルの該当レコード1件を削除
  * - リーダー行の削除: ベーステーブルの1行と結合テーブルの対応レコードを削除
  *
- * replaceViewRowsを利用してDOM行とrowMetadataを一括管理する。
+ * replaceViewRowsを利用してDOM行を一括管理する。
  */
 export class DeleteViewRowCommand implements Command {
     private readonly editorTable: EditorTable;
     private readonly metaIndex: number;
     private readonly store: InMemoryTableStore;
-    /** 削除された行の状態（DOM要素+メタデータ）。execute後に設定される */
+    /** 削除された行の状態（DOM要素）。execute後に設定される */
     private savedRow: SavedViewRowState | false;
     /** InMemoryTableStoreから削除された行データ（Undo復元用） */
     private deletedStoreRows: DeletedStoreRow[];
@@ -48,11 +48,10 @@ export class DeleteViewRowCommand implements Command {
         const viewContext = this.editorTable.getViewContext();
         const tableElement = this.editorTable.getTableElement();
         const domIndex = this.metaIndex + 1;
-        // DOM行をデタッチして保存
+        // DOM行をデタッチして保存（DOM属性にメタデータが保持されるためdomRowのみで十分）
         const domRow = tableElement.children[domIndex] as HTMLElement;
-        const metadata = viewContext.rowMetadata[this.metaIndex];
-        this.savedRow = { domRow, metadata };
-        // replaceViewRowsで1行削除・0行挿入（rowMetadata同期・行番号再設定を含む）
+        this.savedRow = { domRow };
+        // replaceViewRowsで1行削除・0行挿入（行番号再設定を含む）
         this.editorTable.replaceViewRows(this.metaIndex, 1, []);
         // InMemoryTableStoreから対応する行を削除
         // 各テーブルのPK列を探してPK値を取得し、Storeから該当行を削除する
@@ -62,12 +61,12 @@ export class DeleteViewRowCommand implements Command {
         for (let colIdx = 0; colIdx < columnMappings.length; ++colIdx) {
             const mapping = columnMappings[colIdx];
             if (deletedTables.has(mapping.tableName)) continue;
-            // パディング列はデータがないのでスキップ
-            if (metadata.paddingColumns[colIdx]) continue;
+            // パディングセルはデータがないのでスキップ（DOMのCSSクラスで判定）
+            const cell = domRow.children[colIdx + 1] as HTMLElement;
+            if (cell.classList.contains('view-padding-cell')) continue;
             // PK列以外はスキップ
             if (mapping.sourceColumnName !== config.primaryKeyColumnName) continue;
-            // DOM行からPK値を取得（colIdx+1は行ヘッダー分のオフセット）
-            const cell = domRow.children[colIdx + 1] as HTMLElement;
+            // DOM行からPK値を取得
             const pkValue = EditorTable.getCellValue(cell);
             if (pkValue === '') continue;
             const result = this.store.removeRowByPk(mapping.tableName, pkValue);
@@ -88,7 +87,7 @@ export class DeleteViewRowCommand implements Command {
             const deleted = this.deletedStoreRows[i];
             this.store.insertRowAt(deleted.tableName, deleted.rowIndex, deleted.rowData);
         }
-        // replaceViewRowsで0行削除・1行挿入（DOM行とrowMetadataを復元）
+        // replaceViewRowsで0行削除・1行挿入（DOM行を復元、メタデータはDOM属性で自動復元）
         this.editorTable.replaceViewRows(this.metaIndex, 0, [this.savedRow]);
     }
 

@@ -145,4 +145,22 @@ export class InMemoryTableStore {
         const tableRows = this.rows.get(tableName)!;
         tableRows.splice(rowIndex, 0, values);
     }
+
+    /** 指定キー列の値で行をグループ化したMapを構築する */
+    buildKeyMap(tableName: string, keyColumnName: string): Map<string, string[][]> {
+        const result = new Map<string, string[][]>();
+        if (!this.headers.has(tableName)) return result;
+        const header = this.headers.get(tableName)!;
+        const keyColumnIndex = header.indexOf(keyColumnName);
+        if (keyColumnIndex === -1) return result;
+        const tableRows = this.rows.get(tableName)!;
+        for (const row of tableRows) {
+            const keyValue = row[keyColumnIndex];
+            if (keyValue === '') continue;
+            let group = result.get(keyValue);
+            if (!group) { group = []; result.set(keyValue, group); }
+            group.push(row);
+        }
+        return result;
+    }
 }

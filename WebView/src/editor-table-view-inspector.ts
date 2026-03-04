@@ -1,5 +1,6 @@
 import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
+import {getBaseRowIndex, getGroupInfos} from "./model/view-row-metadata";
 
 /**
  * ビュー行検査モジュール
@@ -19,30 +20,32 @@ export class EditorTableViewInspector {
 
     /**
      * 指定行がビューグループのリーダー行（先頭行）かどうかを判定する
+     * DOM行のdata-base-row-index属性を前行と比較して判定する
      */
     isViewLeaderRow(row: number): boolean {
         if (!this.view.hasViewContext()) return true;
-        const viewContext = this.view.getViewContext();
-        const metaIndex = row - 1;
-        if (metaIndex <= 0) return true;
-        if (metaIndex >= viewContext.rowMetadata.length) return true;
-        return viewContext.rowMetadata[metaIndex].baseRowIndex
-            !== viewContext.rowMetadata[metaIndex - 1].baseRowIndex;
+        const tableElement = this.table.getTableElement();
+        if (row <= 1) return true;
+        const currentRow = tableElement.children[row] as HTMLElement;
+        if (!currentRow || !currentRow.hasAttribute('data-base-row-index')) return true;
+        const prevRow = tableElement.children[row - 1] as HTMLElement;
+        if (!prevRow || !prevRow.hasAttribute('data-base-row-index')) return true;
+        return getBaseRowIndex(currentRow) !== getBaseRowIndex(prevRow);
     }
 
     /**
      * 指定セルがパディングセルかどうかを判定する
+     * DOMのCSSクラスview-padding-cellで判定する
      */
     isPaddingCell(row: number, column: number): boolean {
         if (!this.view.hasViewContext()) return false;
         if (column === 0) return false;
-        const viewContext = this.view.getViewContext();
-        const metadataIndex = row - 1;
-        const rowMetadata = viewContext.rowMetadata;
-        if (metadataIndex < 0 || metadataIndex >= rowMetadata.length) return false;
-        const dataColumnIndex = column - 1;
-        if (dataColumnIndex < 0 || dataColumnIndex >= rowMetadata[metadataIndex].paddingColumns.length) return false;
-        return rowMetadata[metadataIndex].paddingColumns[dataColumnIndex];
+        const tableElement = this.table.getTableElement();
+        const rowElement = tableElement.children[row] as HTMLElement;
+        if (!rowElement) return false;
+        const cell = rowElement.children[column] as HTMLElement;
+        if (!cell) return false;
+        return cell.classList.contains('view-padding-cell');
     }
 
     /**
@@ -69,24 +72,21 @@ export class EditorTableViewInspector {
     /**
      * 選択範囲が完全なFKグループ単位で構成されているかを判定する
      * 選択範囲内の各行について、その行が属するFKグループの全行が選択範囲に含まれていなければfalseを返す。
+     * DOM行のdata-base-row-indexとdata-group-infos属性から判定する。
      */
     isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
         if (!this.view.hasViewContext()) return false;
-        const viewContext = this.view.getViewContext();
-        const rowMetadata = viewContext.rowMetadata;
+        const tableElement = this.table.getTableElement();
         for (let domRow = startRow; domRow <= endRow; domRow++) {
-            const metaIndex = domRow - 1;
-            // メタデータ範囲外の行はビュー非対象の空行なのでスキップ
-            if (metaIndex < 0 || metaIndex >= rowMetadata.length) continue;
-            const meta = rowMetadata[metaIndex];
-            for (const groupInfo of meta.groupInfos) {
+            const rowElement = tableElement.children[domRow] as HTMLElement;
+            // DOM属性を持たない行はビュー非対象の空行なのでスキップ
+            if (!rowElement || !rowElement.hasAttribute('data-base-row-index')) continue;
+            const rowGroupInfos = getGroupInfos(rowElement);
+            for (const groupInfo of rowGroupInfos) {
                 if (groupInfo.groupSize <= 1) continue;
-                // グループの先頭と末尾のメタインデックス
-                const groupStartMeta = metaIndex - groupInfo.groupPosition;
-                const groupEndMeta = groupStartMeta + groupInfo.groupSize - 1;
-                // DOM行番号に変換（metaIndex + 1 = domRow）
-                const groupStartDomRow = groupStartMeta + 1;
-                const groupEndDomRow = groupEndMeta + 1;
+                // グループの先頭と末尾のDOM行を算出
+                const groupStartDomRow = domRow - groupInfo.groupPosition;
+                const groupEndDomRow = groupStartDomRow + groupInfo.groupSize - 1;
                 // グループの全行が選択範囲内にあるか
                 if (groupStartDomRow < startRow || groupEndDomRow > endRow) {
                     return false;

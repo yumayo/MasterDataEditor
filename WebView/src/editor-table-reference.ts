@@ -1,6 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {EditorTableData} from "./model/editor-table-data";
 import {ViewColumnMapping} from "./model/view-column-mapping";
+import {getGroupInfos} from "./model/view-row-metadata";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
@@ -395,8 +396,13 @@ export class EditorTableReference {
         const entries = this.reverseReferenceMap.get(ctx.joinKeyValue);
         if (!entries) return;
         const viewContext = this.table.getViewContext();
-        const meta = viewContext.rowMetadata[ctx.rowIndex - 1];
-        const groupInfo = meta.groupInfos.find(g => g.sourceTable === mapping.tableName);
+        // DOM行からgroupInfosを取得（DOMがSSOT）
+        const tableElement = this.table.getTableElement();
+        const domRow = tableElement.children[ctx.rowIndex] as HTMLElement;
+        // メタデータ属性がない行（空行）では逆参照ヒントの更新は不要
+        if (!domRow.hasAttribute('data-group-infos')) return;
+        const domGroupInfos = getGroupInfos(domRow);
+        const groupInfo = domGroupInfos.find(g => g.sourceTable === mapping.tableName);
         if (!groupInfo) return;
         const groupPosition = groupInfo.groupPosition;
         // 自テーブルの逆参照ヒントを更新（PK列のDOM再描画も含む）

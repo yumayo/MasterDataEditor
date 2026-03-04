@@ -13,7 +13,6 @@ import {ReverseReferenceEntry, ReverseReferenceMap} from "./reverse-reference-re
 import {Sidebar} from "./sidebar";
 import {ViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
-import {ViewRowMetadata} from "./model/view-row-metadata";
 import {SavedViewRowState} from "./view-row-restructure-command";
 import {EditorTableReference} from "./editor-table-reference";
 import {EditorTableView} from "./editor-table-view";
@@ -43,10 +42,6 @@ export interface ViewContext {
     viewDefinition: ViewDefinition;
     columnMappings: ViewColumnMapping[];
     availableJoinTargets: AvailableJoinTarget[];
-    /** 結合テーブルのキーマップ（テーブル名 → キー値 → 行の配列） */
-    joinTableKeyMaps: Map<string, Map<string, string[][]>>;
-    /** 各行のメタデータ（1:n展開のパディング・グループ情報） */
-    rowMetadata: ViewRowMetadata[];
     /** 開いているEditorTableのマップ（ソーステーブル伝搬用） */
     openEditorTables: Map<string, EditorTable>;
     onJoinAsync: (target: AvailableJoinTarget, afterColumnIndex: number) => Promise<void>;
@@ -875,8 +870,8 @@ export class EditorTable {
     }
 
     /** FK値変更に伴うビュー行の再構築を実行する */
-    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string): Command {
-        return this.view.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue);
+    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string, keyMaps: Map<string, Map<string, string[][]>>): Command {
+        return this.view.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue, keyMaps);
     }
 
     /** ビュー行を入れ替える（Command.execute/undo/redoから呼ばれる） */
@@ -887,11 +882,6 @@ export class EditorTable {
     /** 結合列の編集時に同一JOINキーを持つ他の行の値を連動更新する */
     synchronizeJoinedColumnValues(editedRow: number, editedColumn: number, newValue: string): CellChange[] {
         return this.view.synchronizeJoinedColumnValues(editedRow, editedColumn, newValue);
-    }
-
-    /** ビューコンテキストのjoinTableKeyMapsを再構築する */
-    rebuildJoinTableKeyMaps(openEditorTables: Map<string, EditorTable>): void {
-        this.view.rebuildJoinTableKeyMaps(openEditorTables);
     }
 
     /** ビュー全体の行再構築を行う */

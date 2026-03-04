@@ -7,7 +7,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {ViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
-import {ViewRowMetadata} from "./model/view-row-metadata";
+import {setViewRowMetadata} from "./model/view-row-metadata";
 import {buildViewTableData, JoinedTableLoadedData, applyViewColumnConfig} from "./view-table-data-builder";
 import {saveViewDataAsync, updateViewColumnConfigs} from "./view-save-splitter";
 import {History} from "./history";
@@ -65,13 +65,12 @@ export class TabView {
             const joinedTables = await Promise.all(joinPromises);
 
             // ビューテーブルデータを構築
-            const rawBuildResult = buildViewTableData(baseTableData, joinedTables, viewDefinition);
+            const rawBuildResult = buildViewTableData(baseTableData, joinedTables, viewDefinition, this.store);
 
             // 列設定（幅オーバーライド・非表示列フィルタ）を適用
             const buildResult = applyViewColumnConfig(rawBuildResult, viewDefinition.columns);
             const compositeTableData = buildResult.compositeTableData;
             const columnMappings = buildResult.columnMappings;
-            const joinTableKeyMaps = buildResult.joinTableKeyMaps;
 
             // 逆参照JOIN対象を検出（EditorTable生成前に非同期処理を完了させる）
             const reverseJoinTargets: AvailableJoinTarget[] = [];
@@ -121,11 +120,32 @@ export class TabView {
                 history.markDirty();
             }
 
+            // 初期構築されたDOM行にビューメタデータをDOM属性として設定する
+            // EditorTable.initialize()ではメタデータ未設定のため、ここで設定する
+            {
+                const tableElement = editorTable.getTableElement();
+                const rowMetadata = buildResult.rowMetadata;
+                for (let i = 0; i < rowMetadata.length; i++) {
+                    const domRow = tableElement.children[i + 1] as HTMLElement;
+                    if (!domRow) continue;
+                    const meta = rowMetadata[i];
+                    setViewRowMetadata(domRow, meta.baseRowIndex, meta.groupInfos);
+                    // パディングセルにCSSクラスを設定（DOMがSSOT）
+                    for (let colIdx = 0; colIdx < meta.paddingColumns.length; colIdx++) {
+                        if (!meta.paddingColumns[colIdx]) continue;
+                        const cell = domRow.children[colIdx + 1] as HTMLElement;
+                        if (cell) {
+                            cell.classList.add('view-padding-cell');
+                            cell.textContent = '';
+                        }
+                    }
+                }
+            }
+
             // ビューコンテキストを設定（逆参照は事前検出済みのため同期実行）
             this.setupViewContext(
                 name, editorTable, viewDefinition, columnMappings,
-                joinTableKeyMaps, buildResult.rowMetadata, baseTableData, history,
-                reverseJoinTargets
+                baseTableData, history, reverseJoinTargets
             );
 
             // JOIN列ヘッダーに背景色を適用
@@ -171,7 +191,7 @@ export class TabView {
                 editorTable, selection, editorTableHandler, history,
                 areaResizer, fillController, wrapperElement,
                 dropdownInput, viewDefinition,
-                columnMappings, rowMetadata: buildResult.rowMetadata,
+                columnMappings,
                 savedScrollLeft: 0, savedScrollTop: 0,
             };
             tabStates.set(name, state);
@@ -189,8 +209,8 @@ export class TabView {
      */
     private setupViewContext(
         name: string, editorTable: EditorTable, viewDefinition: ViewDefinition,
-        columnMappings: ViewColumnMapping[], joinTableKeyMaps: Map<string, Map<string, string[][]>>,
-        rowMetadata: ViewRowMetadata[], baseTableData: EditorTableData, history: History,
+        columnMappings: ViewColumnMapping[],
+        baseTableData: EditorTableData, history: History,
         reverseJoinTargets: AvailableJoinTarget[]
     ): void {
         // ベーステーブルのreferenceを持つ列から利用可能な順参照Join対象を抽出
@@ -210,7 +230,7 @@ export class TabView {
         availableJoinTargets.push(...reverseJoinTargets);
 
         editorTable.setViewContext({
-            viewDefinition, columnMappings, availableJoinTargets, joinTableKeyMaps, rowMetadata,
+            viewDefinition, columnMappings, availableJoinTargets,
             openEditorTables: this.tab.getOpenEditorTables(),
             onJoinAsync: async (target: AvailableJoinTarget, afterColumnIndex: number) => {
                 if (target.isReverse) {

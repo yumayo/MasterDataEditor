@@ -270,3 +270,43 @@ test.describe('行操作', () => {
         ]);
     });
 });
+
+// =====================================================
+// 6. buildKeyMap（キー列によるグループ化マップ構築）
+// =====================================================
+test.describe('buildKeyMap', () => {
+    test('指定キー列の値で行がグループ化される', () => {
+        const store = new InMemoryTableStore();
+        store.registerTable('Skills', ['EnemyId', 'SkillName', 'Power'], [
+            ['E001', 'Fire', '10'],
+            ['E001', 'Ice', '20'],
+            ['E002', 'Thunder', '30'],
+        ]);
+        const keyMap = store.buildKeyMap('Skills', 'EnemyId');
+        // E001には2行、E002には1行がグループ化される
+        expect(keyMap.size).toBe(2);
+        expect(keyMap.get('E001')).toEqual([
+            ['E001', 'Fire', '10'],
+            ['E001', 'Ice', '20'],
+        ]);
+        expect(keyMap.get('E002')).toEqual([
+            ['E002', 'Thunder', '30'],
+        ]);
+    });
+
+    test('存在しない列名の場合は空のMapを返す', () => {
+        const store = new InMemoryTableStore();
+        store.registerTable('Skills', ['EnemyId', 'SkillName', 'Power'], [
+            ['E001', 'Fire', '10'],
+        ]);
+        const keyMap = store.buildKeyMap('Skills', 'NonExistent');
+        expect(keyMap.size).toBe(0);
+    });
+
+    test('テーブルのrowsが空の場合は空のMapを返す', () => {
+        const store = new InMemoryTableStore();
+        store.registerTable('Skills', ['EnemyId', 'SkillName', 'Power'], []);
+        const keyMap = store.buildKeyMap('Skills', 'EnemyId');
+        expect(keyMap.size).toBe(0);
+    });
+});

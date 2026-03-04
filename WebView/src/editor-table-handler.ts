@@ -3,7 +3,6 @@ import {GridTextField} from "./grid-textfield";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, Command} from "./command";
-import {createMetadataExpansionCommand} from "./view-row-restructure-command";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
@@ -24,6 +23,7 @@ import {
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
+import {buildAllKeyMaps} from "./view-table-data-builder";
 
 /**
  * 参照解決の結果
@@ -853,16 +853,6 @@ export class EditorTableHandler {
         changes: CellChange[], restructureRows: Map<number, CellChange>,
         range: CellRange, copyRange: CellRange
     ): CellRange {
-        // 0. 変更先の最大行がメタデータ範囲外ならダミーメタデータを追加
-        //    FK再構築時にメタデータ配列とDOM行の1:1対応を保つために必要
-        let maxDestRow = 0;
-        for (const change of changes) {
-            if (change.row > maxDestRow) maxDestRow = change.row;
-        }
-        const metadataExpansionCmd = this.table.hasViewContext()
-            ? createMetadataExpansionCommand(this.table, maxDestRow)
-            : false as const;
-        if (metadataExpansionCmd) metadataExpansionCmd.execute();
         // 1. 非再構築行の変更を適用
         const nonRestructureChanges: CellChange[] = [];
         for (const change of changes) {
@@ -879,13 +869,17 @@ export class EditorTableHandler {
             nonRestructureChanges.push(change);
             this.table.updateCellValueAt(change.row, change.column, change.newValue);
         }
+        // 2.5. propagateToSourceTableの前にキーマップスナップショットを構築
+        //      propagateToSourceTableがJOINテーブルのStoreに新行をappendするため、
+        //      その後にbuildAllKeyMapsを呼ぶと重複行を含む誤ったキーマップが構築される
+        const keyMaps = buildAllKeyMaps(this.table.getStore(), this.table.getViewContext().viewDefinition);
         this.table.propagateToSourceTable(nonRestructureChanges);
         // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
         const rowCountBefore = this.table.getRowCount();
         const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
         const restructureCommands: Command[] = [];
         for (const [row, fkChange] of sortedFkChanges) {
-            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue));
+            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue, keyMaps));
         }
         // VRRによる行数変化を範囲に反映（1:1→1:2展開で行が増える等）
         const rowDelta = this.table.getRowCount() - rowCountBefore;
@@ -899,8 +893,6 @@ export class EditorTableHandler {
         // CompositeCommandのredo（正順）で降順のまま実行すれば、後の行から処理されるためインデックスずれが発生しない
         // undo（逆順）では昇順実行となり同様に安全
         const subCommands: Command[] = [];
-        // MetadataExpansionCommandはCompositeの先頭（redo時に最初に実行、undo時に最後に実行）
-        if (metadataExpansionCmd) subCommands.push(metadataExpansionCmd);
         const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
         if (meaningfulChanges.length > 0) {
             subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));

@@ -2,21 +2,19 @@ import {Command} from "./command";
 import {EditorTable} from "./editor-table";
 import {ViewDefinition, ViewColumnConfig} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
-import {ViewRowMetadata} from "./model/view-row-metadata";
 
 /**
  * ビュー列を非表示にするCommand（Undo/Redo対応）
  *
- * execute: 対象列をDOMから削除し、columnMappingsとrowMetadataを更新、
+ * execute: 対象列をDOMから削除し、columnMappingsを更新、
  *          viewDefinition.columnsにhidden:trueエントリを追加
- * undo: 列を復元し、columnMappingsとrowMetadataを復元、
+ * undo: 列を復元し、columnMappingsを復元、
  *       viewDefinition.columnsからhidden:trueエントリを削除
  */
 export class ViewHideColumnCommand implements Command {
     private readonly editorTable: EditorTable;
     private readonly viewDefinition: ViewDefinition;
     private readonly columnMappings: ViewColumnMapping[];
-    private readonly rowMetadata: ViewRowMetadata[];
     private readonly columnIndex: number;
 
     /** 保存したマッピング（undo復元用） */
@@ -27,7 +25,7 @@ export class ViewHideColumnCommand implements Command {
     private savedWidth: string;
     /** 保存した全行のセル値（undo復元用） */
     private savedCellValues: string[];
-    /** 保存した各行のパディングフラグ（undo復元用） */
+    /** 保存した各行のパディングフラグ（undo復元用、DOMのCSSクラスから取得） */
     private savedPaddingFlags: boolean[];
     /** JOIN列ヘッダーのCSSクラス有無（undo復元用） */
     private savedIsJoinedHeader: boolean;
@@ -38,13 +36,11 @@ export class ViewHideColumnCommand implements Command {
         editorTable: EditorTable,
         viewDefinition: ViewDefinition,
         columnMappings: ViewColumnMapping[],
-        rowMetadata: ViewRowMetadata[],
         columnIndex: number
     ) {
         this.editorTable = editorTable;
         this.viewDefinition = viewDefinition;
         this.columnMappings = columnMappings;
-        this.rowMetadata = rowMetadata;
         this.columnIndex = columnIndex;
 
         // 列情報を保存
@@ -53,18 +49,16 @@ export class ViewHideColumnCommand implements Command {
         this.savedWidth = editorTable.getColumnWidth(columnIndex);
         this.savedIsJoinedHeader = this.savedMapping.isJoinedColumn;
 
-        // 全行のセル値とパディングフラグを保存
+        // 全行のセル値とパディングフラグを保存（DOMのCSSクラスから取得）
+        const tableElement = editorTable.getTableElement();
         const rowCount = editorTable.getRowCount();
         this.savedCellValues = [];
         this.savedPaddingFlags = [];
         for (let r = 1; r < rowCount; r++) {
             this.savedCellValues.push(editorTable.getCellValueAt(r, this.columnIndex + 1));
-            const metaIndex = r - 1;
-            if (metaIndex < rowMetadata.length) {
-                this.savedPaddingFlags.push(rowMetadata[metaIndex].paddingColumns[columnIndex]);
-            } else {
-                this.savedPaddingFlags.push(false);
-            }
+            const rowElement = tableElement.children[r] as HTMLElement;
+            const cell = rowElement.children[this.columnIndex + 1] as HTMLElement;
+            this.savedPaddingFlags.push(cell.classList.contains('view-padding-cell'));
         }
 
         // hiddenエントリを構築
@@ -85,13 +79,6 @@ export class ViewHideColumnCommand implements Command {
 
         // columnMappingsから削除
         this.columnMappings.splice(this.columnIndex, 1);
-
-        // rowMetadataの各行のpaddingColumnsから該当インデックスを削除
-        for (const meta of this.rowMetadata) {
-            if (meta.paddingColumns.length > this.columnIndex) {
-                meta.paddingColumns.splice(this.columnIndex, 1);
-            }
-        }
     }
 
     undo(): void {
@@ -110,10 +97,17 @@ export class ViewHideColumnCommand implements Command {
         // 列幅を復元
         this.editorTable.setColumnWidth(this.columnIndex, this.savedWidth);
 
-        // セル値を復元
+        // セル値を復元し、パディングフラグをCSSクラスとして復元
         const rowCount = this.editorTable.getRowCount();
+        const tableElement = this.editorTable.getTableElement();
         for (let r = 1; r < rowCount; r++) {
             this.editorTable.updateCellValueAt(r, this.columnIndex + 1, this.savedCellValues[r - 1]);
+            if (r - 1 < this.savedPaddingFlags.length && this.savedPaddingFlags[r - 1]) {
+                const rowElement = tableElement.children[r] as HTMLElement;
+                const cell = rowElement.children[this.columnIndex + 1] as HTMLElement;
+                cell.classList.add('view-padding-cell');
+                cell.textContent = '';
+            }
         }
 
         // JOIN列ヘッダーのCSSクラスを復元
@@ -123,13 +117,6 @@ export class ViewHideColumnCommand implements Command {
 
         // columnMappingsを復元
         this.columnMappings.splice(this.columnIndex, 0, this.savedMapping);
-
-        // rowMetadataのpaddingColumnsを復元
-        for (let i = 0; i < this.rowMetadata.length; i++) {
-            const meta = this.rowMetadata[i];
-            const paddingValue = i < this.savedPaddingFlags.length ? this.savedPaddingFlags[i] : false;
-            meta.paddingColumns.splice(this.columnIndex, 0, paddingValue);
-        }
     }
 
     redo(): void {

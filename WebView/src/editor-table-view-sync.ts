@@ -10,7 +10,7 @@ import {config} from "./config";
  *
  * 責務:
  * - JOIN列の値同期（FK列・結合列の編集時に他行の値を連動更新）
- * - ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬
+ * - ビュー結合列の編集をソーステーブルのDOMとStoreに伝搬
  */
 export class EditorTableViewSync {
     private readonly view: EditorTableView;
@@ -90,11 +90,10 @@ export class EditorTableViewSync {
                 });
             }
         }
-        // 戦略2: ドナー行がない場合、結合テーブルのキーマップから直接ルックアップ
+        // 戦略2: ドナー行がない場合、Storeからキーマップを都度構築してルックアップ
         return this.applyJoinedColumnValues(editedRow, joinedColumnIndices, (joinedDataIndex) => {
             const m = columnMappings[joinedDataIndex];
-            const keyMap = viewContext.joinTableKeyMaps.get(m.tableName);
-            if (!keyMap) return '';
+            const keyMap = this.store.buildKeyMap(m.tableName, m.joinKeyColumn);
             const joinRows = keyMap.get(newValue);
             if (!joinRows || joinRows.length === 0) return '';
             return joinRows[0][m.sourceColumnIndex];
@@ -151,11 +150,10 @@ export class EditorTableViewSync {
     }
 
     /**
-     * ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬する
+     * ビュー結合列の編集をソーステーブルのDOMとStoreに伝搬する
      *
      * ビューで結合列が編集されたとき、対応するソーステーブルのDOMセルと
-     * joinTableKeyMapsのインメモリデータを更新する。
-     * タブ切替時のrebuildJoinTableKeyMapsがソーステーブルDOMから最新値を読み取れるようにする。
+     * 中央ストアのデータを更新する。
      *
      * 再帰防止: ソーステーブルは通常テーブルでViewContextを持たないため、
      * ソーステーブルのupdateCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
@@ -303,14 +301,7 @@ export class EditorTableViewSync {
                 }
             }
         }
-        // joinTableKeyMapsのインメモリデータを更新（ソーステーブルが開かれていなくても実行する）
-        const keyMap = viewContext.joinTableKeyMaps.get(mapping.tableName);
-        if (!keyMap) throw new Error('到達不可能: キーマップが存在しません');
-        const joinRows = keyMap.get(fkValue);
-        if (!joinRows) return;
-        if (groupPosition < joinRows.length) {
-            joinRows[groupPosition][mapping.sourceColumnIndex] = value;
-        }
+        // Storeは同メソッド内で既に更新済みのため、buildKeyMapで最新のキーマップが取得できる
     }
 
     /**

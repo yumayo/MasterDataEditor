@@ -19,11 +19,12 @@ import {SavedViewRowState} from "./view-row-restructure-command";
  *
  * 実処理は以下のサブモジュールに委譲する:
  * - EditorTableViewStyle: パディング・グループリーダー・折りたたみトグルのスタイル適用
- * - EditorTableViewRestructure: ビュー行の構築・再構築・DOM操作・キーマップ再構築
+ * - EditorTableViewRestructure: ビュー行の構築・再構築・DOM操作
  * - EditorTableViewSync: JOIN列の値同期
  * - EditorTableViewInspector: セル・行の検査判定
  */
 export class EditorTableView {
+    private readonly table: EditorTable;
     private readonly style: EditorTableViewStyle;
     private readonly restructure: EditorTableViewRestructure;
     private readonly sync: EditorTableViewSync;
@@ -32,6 +33,7 @@ export class EditorTableView {
     private viewContext: ViewContext | false;
 
     constructor(table: EditorTable, selection: Selection, areaResizer: AreaResizer, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
+        this.table = table;
         this.viewContext = false;
         this.style = new EditorTableViewStyle(this, table, selection);
         this.restructure = new EditorTableViewRestructure(this, table, selection, areaResizer, store);
@@ -53,7 +55,15 @@ export class EditorTableView {
         this.viewContext = context;
         // 初期テーブル構築ではdata-rowが0始まりのため、DOM位置と一致するよう再番号付け
         this.restructure.renumberRowsFrom(1);
-        this.style.applyViewRowStylesForRange(0, context.rowMetadata.length, true);
+        // ビュー行スタイルを適用（data-base-row-index属性が設定されたデータ行のみ対象）
+        // 空行にはDOM属性が設定されていないため、属性の有無でデータ行の終端を判定する
+        const tableElement = this.table.getTableElement();
+        let dataRowCount = 0;
+        for (let i = 1; i < tableElement.children.length; i++) {
+            if (!(tableElement.children[i] as HTMLElement).hasAttribute('data-base-row-index')) break;
+            dataRowCount++;
+        }
+        this.style.applyViewRowStylesForRange(0, dataRowCount, true);
     }
 
     /**
@@ -85,8 +95,8 @@ export class EditorTableView {
         return this.restructure.needsViewRowRestructure(editedRow, editedColumn, newValue);
     }
 
-    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string): Command {
-        return this.restructure.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue);
+    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string, keyMaps: Map<string, Map<string, string[][]>>): Command {
+        return this.restructure.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue, keyMaps);
     }
 
     replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
@@ -101,17 +111,13 @@ export class EditorTableView {
         this.restructure.refreshViewRows();
     }
 
-    rebuildJoinTableKeyMaps(openEditorTables: Map<string, EditorTable>): void {
-        this.restructure.rebuildJoinTableKeyMaps(openEditorTables);
-    }
-
     // --- Sync委譲 ---
 
     synchronizeJoinedColumnValues(editedRow: number, editedColumn: number, newValue: string): CellChange[] {
         return this.sync.synchronizeJoinedColumnValues(editedRow, editedColumn, newValue);
     }
 
-    /** ビュー結合列の編集をソーステーブルのDOMとjoinTableKeyMapsに伝搬する */
+    /** ビュー結合列の編集をソーステーブルのDOMとStoreに伝搬する */
     propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): void {
         if (!this.hasViewContext()) return;
         this.sync.propagateJoinedColumnToSourceTable(row, column, value, oldValue);
