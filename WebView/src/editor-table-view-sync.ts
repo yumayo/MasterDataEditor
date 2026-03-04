@@ -211,6 +211,8 @@ export class EditorTableViewSync {
             this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
             return;
         }
+        // JOINテーブルのPK列判定（Lazy Store挿入のトリガー）
+        const isJoinPkColumn = mapping.sourceColumnName === config.primaryKeyColumnName;
         // FK列のDOM列インデックスを算出し、FK値とグループ位置をDOMから取得する
         const fkColumnIndex = viewContext.columnMappings.findIndex(
             m => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
@@ -223,6 +225,13 @@ export class EditorTableViewSync {
             const leader = this.findGroupLeaderByLookingUp(row, fkDomColumn);
             fkValue = leader.fkValue;
             groupPosition = leader.groupPosition;
+        }
+        // JOINテーブルPK列のUndoによるクリア時: Store行を除去して早期リターン
+        if (isJoinPkColumn && value === '' && oldValue !== '') {
+            this.store.removeRowByPk(mapping.tableName, oldValue);
+            const domRowEl = this.table.getTableElement().children[row] as HTMLElement;
+            domRowEl.dataset['lastSyncedJoinPk_' + mapping.tableName] = '';
+            return;
         }
         if (fkValue === '') return;
         // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
@@ -250,6 +259,7 @@ export class EditorTableViewSync {
             const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
             if (keyColIdx !== -1) {
                 let matchCount = 0;
+                let storeUpdateSucceeded = false;
                 for (let r = 0; r < storeRows.length; r++) {
                     if (storeRows[r][keyColIdx] !== fkValue) continue;
                     if (matchCount === groupPosition) {
@@ -258,9 +268,38 @@ export class EditorTableViewSync {
                         const pkValue = storeRows[r][pkColIdx];
                         this.store.updateCellValue(mapping.tableName, pkValue, mapping.sourceColumnName, value);
                         this.referenceDataCache.updateFullDataCell(mapping.tableName, pkValue, mapping.sourceColumnIndex, value);
+                        storeUpdateSucceeded = true;
                         break;
                     }
                     matchCount++;
+                }
+                // JOINテーブルPK列が設定されたがStore行が未存在 → DOMスナップショットからStore行を生成
+                if (!storeUpdateSucceeded && isJoinPkColumn) {
+                    const domRowElement = this.table.getTableElement().children[row] as HTMLElement;
+                    const datasetKey = 'lastSyncedJoinPk_' + mapping.tableName;
+                    // PK変更時: 旧Store行を除去（datasetキーが存在し、かつ空文字列でない場合）
+                    if (datasetKey in domRowElement.dataset && domRowElement.dataset[datasetKey] !== '') {
+                        this.store.removeRowByPk(mapping.tableName, domRowElement.dataset[datasetKey] as string);
+                    }
+                    // DOMの全列値からJOINテーブルのStore行を生成
+                    const newJoinRow: string[] = new Array(storeHeader.length).fill('');
+                    // FK列（joinKeyColumn）にベーステーブルのPK値を設定
+                    const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === mapping.tableName);
+                    if (!joinDef) throw new Error(`到達不可能: JOINテーブル'${mapping.tableName}'のjoin定義が見つかりません`);
+                    const fkHeaderIdx = storeHeader.indexOf(joinDef.targetColumn);
+                    if (fkHeaderIdx !== -1) newJoinRow[fkHeaderIdx] = fkValue;
+                    // DOMスナップショットからJOIN列値を収集
+                    for (let ci = 0; ci < viewContext.columnMappings.length; ci++) {
+                        const cm = viewContext.columnMappings[ci];
+                        if (cm.tableName !== mapping.tableName || !cm.isJoinedColumn || cm.baseKeyColumn !== mapping.baseKeyColumn) continue;
+                        const hdrIdx = storeHeader.indexOf(cm.sourceColumnName);
+                        if (hdrIdx === -1) continue;
+                        newJoinRow[hdrIdx] = this.table.getCellValueAt(row, ci + 1);
+                    }
+                    this.store.appendRow(mapping.tableName, newJoinRow);
+                    // PK値を追跡（次回のPK変更時に旧Store行を除去するため）
+                    const pkHdrIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+                    if (pkHdrIdx !== -1) domRowElement.dataset[datasetKey] = newJoinRow[pkHdrIdx];
                 }
             }
         }
@@ -298,4 +337,5 @@ export class EditorTableViewSync {
         }
         throw new Error(`到達不可能: ソーステーブルに列'${columnName}'が見つかりません。ビュー構築済みなら必ず存在するはずです。`);
     }
+
 }

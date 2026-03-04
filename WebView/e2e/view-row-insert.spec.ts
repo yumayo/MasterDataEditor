@@ -258,6 +258,51 @@ test.describe('ビュータブでの行挿入', () => {
         expect(afterRedoRowCount).toBe(initialRowCount + 1);
     });
 
+    test('行挿入→ベース列とJOIN列を編集→保存でshop_product.csvにも新規行が含まれること', async ({ page }) => {
+        await installMockApiAsync(page, createViewShopFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_shop');
+
+        // 初期状態の確認
+        await expect(getDataCell(table, 3, 0)).toHaveText('2');
+        await expect(getDataCell(table, 3, 1)).toHaveText('道具屋');
+
+        // 道具屋リーダー行（row 3）の下に行を挿入
+        await rightClickRowHeaderAsync(table, 3);
+        await clickContextMenuItemAsync(page, '下に行を挿入');
+
+        // 挿入行はrow 4の位置
+        // ベーステーブル列を編集: shop.id（column 0）に "999"、shop.name（column 1）に "テスト店"
+        await editCellAsync(page, table, 4, 0, '999');
+        await editCellAsync(page, table, 4, 1, 'テスト店');
+
+        // JOINテーブル列を編集: shop_product.id（column 2）に "99"、shop_product.product_name（column 3）に "伝説の剣"
+        await editCellAsync(page, table, 4, 2, '99');
+        await editCellAsync(page, table, 4, 3, '伝説の剣');
+
+        // 保存（Ctrl+S）
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+
+        // shop.csvの検証: 新規行 "999,テスト店" が含まれること
+        const shopCsv = await readMockFileAsync(page, 'data/shop.csv');
+        const shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(shopLines.length).toBe(4); // ヘッダー + 3データ行（id=1,2,999）
+        expect(shopCsv).toContain('999,テスト店');
+
+        // shop_product.csvの検証: 新規行 "99,999,伝説の剣" が含まれること
+        // shop_idはベーステーブルのPK "999" がFK列として自動設定される
+        const shopProductCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        const shopProductLines = shopProductCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(shopProductLines.length).toBe(6); // ヘッダー + 5データ行（既存4行 + 新規1行）
+        expect(shopProductCsv).toContain('1,1,鋭い剣');
+        expect(shopProductCsv).toContain('2,1,頑丈な盾');
+        expect(shopProductCsv).toContain('3,1,尖ったかま');
+        expect(shopProductCsv).toContain('4,2,回復薬');
+        expect(shopProductCsv).toContain('99,999,伝説の剣');
+    });
+
     test('PK設定後のUndoでStore行が除去されること', async ({ page }) => {
         await installMockApiAsync(page, createViewShopFileSystem());
         await page.goto('/');
