@@ -799,42 +799,22 @@ export class EditorTableHandler {
      * @returns 調整済みのセル範囲（FK再構築による行数変化を反映）
      */
     private applyViewAwareCellChanges(changes: CellChange[], range: CellRange, copyRange: CellRange): CellRange {
-        // ビューコンテキストがない場合: 単純にセル値を適用して履歴に追加
-        if (!this.table.hasViewContext()) {
-            for (const change of changes) this.table.updateCellValueAt(change.row, change.column, change.newValue);
-            this.table.propagateToSourceTable(changes);
-            this.history.push({ changes, range, copyRange });
-            return range;
-        }
-        // FK再構築が必要な変更を事前判定（updateCellValueAt前にoldValueを参照するため）
-        const restructureRows = new Map<number, CellChange>();
-        for (const change of changes) {
-            if (this.table.needsViewRowRestructure(change.row, change.column, change.newValue)) {
-                restructureRows.set(change.row, change);
+        // ビューコンテキストがある場合はFK再構築の必要性を事前判定
+        if (this.table.hasViewContext()) {
+            const restructureRows = new Map<number, CellChange>();
+            for (const change of changes) {
+                if (this.table.needsViewRowRestructure(change.row, change.column, change.newValue)) {
+                    restructureRows.set(change.row, change);
+                }
+            }
+            if (restructureRows.size > 0) {
+                return this.applyViewChangesWithRestructure(changes, restructureRows, range, copyRange);
             }
         }
-        if (restructureRows.size === 0) {
-            this.applyViewChangesWithSync(changes, range, copyRange);
-            return range;
-        }
-        return this.applyViewChangesWithRestructure(changes, restructureRows, range, copyRange);
-    }
-
-    /**
-     * ビュー内変更（FK再構築不要）
-     * 各changeに対してJOIN列連動変更を収集し、主変更と合わせて適用・履歴に記録する。
-     * selection.setRange()は呼ばない（呼び出し元の責任）。
-     */
-    private applyViewChangesWithSync(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
-        const allChanges: CellChange[] = [];
-        for (const change of changes) {
-            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
-            allChanges.push(change);
-            for (const lc of linkedChanges) allChanges.push(lc);
-            this.table.updateCellValueAt(change.row, change.column, change.newValue);
-        }
-        this.table.propagateToSourceTable(allChanges);
+        // 非ビュータブまたはFK再構築不要: applyCellChangesで統一処理
+        const allChanges = this.table.applyCellChanges(changes);
         this.history.push({ changes: allChanges, range, copyRange });
+        return range;
     }
 
     /**

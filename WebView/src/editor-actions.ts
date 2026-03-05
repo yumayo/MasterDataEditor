@@ -221,10 +221,8 @@ export function applyFillSeries(
     // 連続データを生成
     const generatedData = generateSeriesData(sourceValues, direction, count);
 
-    // 履歴用の変更リスト
+    // 変更リストを収集（読み取りフェーズ: oldValueをDOMから取得）
     const changes: CellChange[] = [];
-
-    // 生成したデータをセルに適用
     if (direction === 'down') {
         for (let i = 0; i < count; i++) {
             const targetRow = targetStartRow + i;
@@ -232,7 +230,6 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.updateCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'up') {
@@ -242,7 +239,6 @@ export function applyFillSeries(
                 const oldValue = table.getCellValueAt(targetRow, c);
                 const newValue = generatedData[i][c - targetStartColumn];
                 changes.push({ row: targetRow, column: c, oldValue, newValue });
-                table.updateCellValueAt(targetRow, c, newValue);
             }
         }
     } else if (direction === 'right') {
@@ -251,9 +247,7 @@ export function applyFillSeries(
             for (let i = 0; i < count; i++) {
                 const targetCol = targetStartColumn + i;
                 const oldValue = table.getCellValueAt(r, targetCol);
-                const newValue = generatedRow[i];
-                changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.updateCellValueAt(r, targetCol, newValue);
+                changes.push({ row: r, column: targetCol, oldValue, newValue: generatedRow[i] });
             }
         }
     } else if (direction === 'left') {
@@ -262,15 +256,12 @@ export function applyFillSeries(
             for (let i = 0; i < count; i++) {
                 const targetCol = targetEndColumn - i;
                 const oldValue = table.getCellValueAt(r, targetCol);
-                const newValue = generatedRow[i];
-                changes.push({ row: r, column: targetCol, oldValue, newValue });
-                table.updateCellValueAt(r, targetCol, newValue);
+                changes.push({ row: r, column: targetCol, oldValue, newValue: generatedRow[i] });
             }
         }
     }
-
-    // ソーステーブルに伝搬
-    table.propagateToSourceTable(changes);
+    // 書き込みフェーズ: DOM更新 + ソーステーブル伝搬を一括実行
+    table.replayCellChanges(changes);
 
     // 選択範囲を更新（ソース + ターゲット）
     const newStartRow = Math.min(sourceStartRow, targetStartRow);

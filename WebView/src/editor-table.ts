@@ -725,6 +725,36 @@ export class EditorTable {
         }
     }
 
+    /**
+     * ユーザー編集時のセル変更を適用する（JOIN列連動 + DOM更新 + ソーステーブル伝搬）
+     * ビュータブではJOIN列の連動更新を含む全変更リストを返す
+     */
+    applyCellChanges(changes: CellChange[]): CellChange[] {
+        if (!this.view.hasViewContext()) {
+            for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
+            this.propagateToSourceTable(changes);
+            return changes;
+        }
+        const allChanges: CellChange[] = [];
+        for (const change of changes) {
+            const linkedChanges = this.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
+            allChanges.push(change);
+            for (const lc of linkedChanges) allChanges.push(lc);
+            this.updateCellValueAt(change.row, change.column, change.newValue);
+        }
+        this.propagateToSourceTable(allChanges);
+        return allChanges;
+    }
+
+    /**
+     * 変更リストをDOMに再適用しソーステーブルに伝搬する（Undo/Redo/Fill用）
+     * JOIN列連動計算は行わず、引数のchangesをそのまま適用する
+     */
+    replayCellChanges(changes: CellChange[]): void {
+        for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
+        this.propagateToSourceTable(changes);
+    }
+
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
     updateReferenceHints(): void {
         this.reference.updateReferenceHints();

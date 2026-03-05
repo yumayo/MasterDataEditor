@@ -66,23 +66,17 @@ export class CellChangeCommand implements Command {
     }
 
     execute(): void {
-        for (const change of this.changes) {
-            this.editorTable.updateCellValueAt(change.row, change.column, change.newValue);
-        }
-        this.editorTable.propagateToSourceTable(this.changes);
+        this.editorTable.replayCellChanges(this.changes);
     }
 
     undo(): void {
-        // 逆順で元に戻す
+        // 逆順で元に戻す（oldValueとnewValueを反転した変更リストを構築）
+        const undoChanges: CellChange[] = [];
         for (let i = this.changes.length - 1; i >= 0; i--) {
-            const change = this.changes[i];
-            this.editorTable.updateCellValueAt(change.row, change.column, change.oldValue);
+            const c = this.changes[i];
+            undoChanges.push({ row: c.row, column: c.column, oldValue: c.newValue, newValue: c.oldValue });
         }
-        // undo用の変更リスト（oldValueとnewValueを反転）でソーステーブルに伝搬
-        const undoChanges: CellChange[] = this.changes.map(c => ({
-            row: c.row, column: c.column, oldValue: c.newValue, newValue: c.oldValue,
-        }));
-        this.editorTable.propagateToSourceTable(undoChanges);
+        this.editorTable.replayCellChanges(undoChanges);
     }
 
     redo(): void {
