@@ -4,6 +4,7 @@ import {CellChange} from "./command";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {config} from "./config";
+import {findGroupLeader} from "./view-group-query";
 
 /**
  * ビュー行同期モジュール
@@ -109,7 +110,7 @@ export class EditorTableViewSync {
         editedRow: number, editedColumn: number, newValue: string, fkDomColumn: number
     ): CellChange[] {
         // 上方向に走査してグループリーダーのFK値とグループ内位置を算出
-        const leader = this.findGroupLeaderByLookingUp(editedRow, fkDomColumn);
+        const leader = findGroupLeader(this.table.getTableElement(), editedRow, fkDomColumn);
         if (leader.fkValue === '') return [];
         // 全行を1パスでスキャンし、同一FK値・同一グループ位置の行を連動更新
         const changes: CellChange[] = [];
@@ -220,7 +221,7 @@ export class EditorTableViewSync {
         let fkValue = this.table.getCellValueAt(row, fkDomColumn);
         let groupPosition = 0;
         if (fkValue === '') {
-            const leader = this.findGroupLeaderByLookingUp(row, fkDomColumn);
+            const leader = findGroupLeader(this.table.getTableElement(), row, fkDomColumn);
             fkValue = leader.fkValue;
             groupPosition = leader.groupPosition;
         }
@@ -302,18 +303,6 @@ export class EditorTableViewSync {
             }
         }
         // Storeは同メソッド内で既に更新済みのため、buildKeyMapで最新のキーマップが取得できる
-    }
-
-    /**
-     * DOM上で上方向に走査し、グループリーダーのFK値とグループ内位置を返す
-     * synchronizeGroupChildJoinedColumnとpropagateJoinedColumnToSourceTableの両方で使用する
-     */
-    private findGroupLeaderByLookingUp(domRow: number, fkDomColumn: number): { fkValue: string; groupPosition: number } {
-        for (let r = domRow - 1; r >= 1; r--) {
-            const cellValue = this.table.getCellValueAt(r, fkDomColumn);
-            if (cellValue !== '') return { fkValue: cellValue, groupPosition: domRow - r };
-        }
-        return { fkValue: '', groupPosition: 0 };
     }
 
     /**

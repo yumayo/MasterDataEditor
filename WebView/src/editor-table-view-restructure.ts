@@ -8,6 +8,7 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {setViewRowMetadata, getBaseRowIndex} from "./model/view-row-metadata";
 import {rebuildExpandedRowsForBaseRow, buildAllKeyMaps, ExpandedRowResult} from "./view-table-data-builder";
 import {ViewRowRestructureCommand, SavedViewRowState} from "./view-row-restructure-command";
+import {findGroupRange} from "./view-group-query";
 
 /**
  * ビュー行構築モジュール
@@ -30,30 +31,6 @@ export class EditorTableViewRestructure {
         this.selection = selection;
         this.areaResizer = areaResizer;
         this.store = store;
-    }
-
-    /**
-     * 指定DOM行インデックス(1始まり)が属するベース行のメタデータ範囲を返す
-     * DOM行のdata-base-row-index属性を走査して同一ベース行のグループを特定する
-     */
-    private findBaseRowMetaRange(metaIndex: number): { metaStart: number; metaEnd: number } {
-        const tableElement = this.table.getTableElement();
-        const domIndex = metaIndex + 1;
-        const domRow = tableElement.children[domIndex] as HTMLElement;
-        const baseRowIdx = getBaseRowIndex(domRow);
-        let metaStart = metaIndex;
-        while (metaStart > 0) {
-            const prevDomRow = tableElement.children[metaStart] as HTMLElement;
-            if (!prevDomRow.hasAttribute('data-base-row-index') || getBaseRowIndex(prevDomRow) !== baseRowIdx) break;
-            metaStart--;
-        }
-        let metaEnd = metaIndex + 1;
-        while (metaEnd + 1 < tableElement.children.length) {
-            const nextDomRow = tableElement.children[metaEnd + 1] as HTMLElement;
-            if (!nextDomRow.hasAttribute('data-base-row-index') || getBaseRowIndex(nextDomRow) !== baseRowIdx) break;
-            metaEnd++;
-        }
-        return { metaStart, metaEnd };
     }
 
     /**
@@ -88,7 +65,7 @@ export class EditorTableViewRestructure {
             const domRow = tableElement.children[editedRow] as HTMLElement;
             if (!domRow || !domRow.hasAttribute('data-base-row-index')) return false;
             const metaIndex = editedRow - 1;
-            const { metaStart, metaEnd } = this.findBaseRowMetaRange(metaIndex);
+            const { metaStart, metaEnd } = findGroupRange(this.table.getTableElement(), metaIndex);
             const currentCount = metaEnd - metaStart;
             const entries = keyMap.get(newValue);
             const matchCount = entries ? entries.length : 0;
@@ -136,7 +113,7 @@ export class EditorTableViewRestructure {
         // DOM属性からベース行インデックスを取得
         const baseRowIndex = getBaseRowIndex(currentDomRow);
         // このベース行に属するメタデータ範囲を特定（DOM走査ベース）
-        const { metaStart, metaEnd } = this.findBaseRowMetaRange(metaIndex);
+        const { metaStart, metaEnd } = findGroupRange(this.table.getTableElement(), metaIndex);
         // 古い行を保存（DOMからデタッチ）
         const domStartIndex = metaStart + 1;
         const oldRows: SavedViewRowState[] = [];

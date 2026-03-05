@@ -1,6 +1,7 @@
 import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
-import {getBaseRowIndex, getGroupInfos} from "./model/view-row-metadata";
+import {getGroupInfos} from "./model/view-row-metadata";
+import {isGroupLeaderRow} from "./view-group-query";
 
 /**
  * ビュー行検査モジュール
@@ -20,17 +21,11 @@ export class EditorTableViewInspector {
 
     /**
      * 指定行がビューグループのリーダー行（先頭行）かどうかを判定する
-     * DOM行のdata-base-row-index属性を前行と比較して判定する
+     * ビューコンテキストがない場合は常にtrue
      */
     isViewLeaderRow(row: number): boolean {
         if (!this.view.hasViewContext()) return true;
-        const tableElement = this.table.getTableElement();
-        if (row <= 1) return true;
-        const currentRow = tableElement.children[row] as HTMLElement;
-        if (!currentRow || !currentRow.hasAttribute('data-base-row-index')) return true;
-        const prevRow = tableElement.children[row - 1] as HTMLElement;
-        if (!prevRow || !prevRow.hasAttribute('data-base-row-index')) return true;
-        return getBaseRowIndex(currentRow) !== getBaseRowIndex(prevRow);
+        return isGroupLeaderRow(this.table.getTableElement(), row);
     }
 
     /**

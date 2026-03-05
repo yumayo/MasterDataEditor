@@ -19,6 +19,7 @@ import {EditorTableView} from "./editor-table-view";
 import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {readCellValue} from "./view-group-query";
 
 /**
  * 利用可能なJoin対象の情報
@@ -360,28 +361,10 @@ export class EditorTable {
 
     /**
      * セルの値を取得する（参照ヒント・折りたたみトグルを除外）
+     * 実装はview-group-query.tsのreadCellValueに委譲する
      */
     static getCellValue(cell: HTMLElement): string {
-        // .cell-value 要素があればそこから取得
-        const valueElement = cell.querySelector('.cell-value');
-        if (valueElement) {
-            return valueElement.textContent ?? '';
-        }
-        // ヒント要素やトグル要素がある場合、直下のテキストノードのみを結合して返す
-        const hasChildElements = cell.querySelector(
-            '.cell-reference-hint, .cell-reverse-reference-hint, .view-collapse-toggle'
-        );
-        if (hasChildElements) {
-            let text = '';
-            for (const node of Array.from(cell.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    text += node.textContent ?? '';
-                }
-            }
-            return text;
-        }
-        // そうでなければ textContent をそのまま返す
-        return cell.textContent ?? '';
+        return readCellValue(cell);
     }
 
     /**

@@ -2,6 +2,7 @@ import {EditorTableView} from "./editor-table-view";
 import {EditorTable} from "./editor-table";
 import {Selection, CellRange} from "./selection";
 import {getBaseRowIndex, getGroupInfos} from "./model/view-row-metadata";
+import {findFkColumnIndex, countGroupChildren} from "./view-group-query";
 
 /**
  * ビュー行スタイルモジュール
@@ -28,6 +29,7 @@ export class EditorTableViewStyle {
      */
     applyViewRowStylesForRange(startMetaIdx: number, endMetaIdx: number, applyPadding: boolean): void {
         if (!this.view.hasViewContext()) return;
+        const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
         for (let metaIdx = startMetaIdx; metaIdx < endMetaIdx; metaIdx++) {
             const domRowIndex = metaIdx + 1;
@@ -63,9 +65,9 @@ export class EditorTableViewStyle {
             // 折りたたみトグルの配置
             for (const groupInfo of groupInfos) {
                 if (groupInfo.groupPosition !== 0 || groupInfo.groupSize <= 1) continue;
-                const fkColumnIndex = this.findFkColumnIndex(groupInfo.sourceTable);
-                if (fkColumnIndex < 0) continue;
-                const cellElement = rowElement.children[fkColumnIndex + 1] as HTMLElement;
+                const fkColIdx = findFkColumnIndex(viewContext.viewDefinition, viewContext.columnMappings, groupInfo.sourceTable);
+                if (fkColIdx < 0) continue;
+                const cellElement = rowElement.children[fkColIdx + 1] as HTMLElement;
                 if (!cellElement) continue;
                 // 既存のトグルがあれば除去（重複防止）
                 const existingToggle = cellElement.querySelector('.view-collapse-toggle');
@@ -95,45 +97,25 @@ export class EditorTableViewStyle {
     }
 
     /**
-     * targetTableからFK列のcompositeインデックスを返す
-     * applyViewRowStylesForRangeとtoggleCollapseGroupの両方で使用する共通ロジック
-     */
-    private findFkColumnIndex(targetTable: string): number {
-        const viewContext = this.view.getViewContext();
-        const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === targetTable);
-        if (!joinDef) return -1;
-        const sourceTableName = joinDef.sourceTable === ''
-            ? viewContext.viewDefinition.baseTable : joinDef.sourceTable;
-        return viewContext.columnMappings.findIndex(
-            m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
-        );
-    }
-
-    /**
      * グループの折りたたみ/展開をトグルする（ステートレス: DOM属性ベース）
      * 表示状態の変更のみでデータ変更を伴わないため、Undo/Redo対象外
      */
     private toggleCollapseGroup(leaderDomRowIndex: number, targetTable: string, toggle: HTMLElement): void {
+        const viewContext = this.view.getViewContext();
         const tableElement = this.table.getTableElement();
         // 事前条件: DOM行インデックスの範囲チェック
         if (leaderDomRowIndex < 1 || leaderDomRowIndex >= tableElement.children.length) {
             throw new Error(`トグルのDOM行インデックスが範囲外です: ${leaderDomRowIndex}`);
         }
         // FK列のcompositeインデックスをViewDefinitionから算出（ステートレス）
-        const fkColumnIndex = this.findFkColumnIndex(targetTable);
-        if (fkColumnIndex < 0) {
+        const fkColIdx = findFkColumnIndex(viewContext.viewDefinition, viewContext.columnMappings, targetTable);
+        if (fkColIdx < 0) {
             throw new Error(`トグルの対象テーブルのFK列が見つかりません: targetTable=${targetTable}`);
         }
         // FK列のDOMセルインデックス（行ヘッダー分+1）
-        const fkCellDomIndex = fkColumnIndex + 1;
-        // 子行数をDOMから算出（同一列を下に走査し、セルに値が入っている行の手前までをグループとする）
-        let childCount = 0;
-        for (let domRow = leaderDomRowIndex + 1; domRow < tableElement.children.length; domRow++) {
-            const rowElement = tableElement.children[domRow] as HTMLElement;
-            const fkCell = rowElement.children[fkCellDomIndex] as HTMLElement;
-            if (fkCell.textContent !== '') break;
-            childCount++;
-        }
+        const fkCellDomIndex = fkColIdx + 1;
+        // 子行数をDOMから算出（view-group-queryに委譲）
+        const childCount = countGroupChildren(tableElement, leaderDomRowIndex, fkCellDomIndex);
         const isCollapsed = toggle.textContent === '▶';
         if (isCollapsed) {
             // 展開: 子行を表示する
