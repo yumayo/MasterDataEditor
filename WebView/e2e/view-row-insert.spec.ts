@@ -350,4 +350,84 @@ test.describe('ビュータブでの行挿入', () => {
         expect(shopCsvAfterUndo).toContain('2,道具屋');
         expect(shopCsvAfterUndo).not.toContain('999');
     });
+
+    test('グループ内に行挿入するとベース列がパディングになりJOIN列が編集可能であること', async ({ page }) => {
+        await installMockApiAsync(page, createViewShopFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_shop');
+
+        // 初期状態: row0=リーダー, row1=頑丈な盾, row2=尖ったかま, row3=道具屋
+        const initialRowCount = await getDataRowCountAsync(table);
+
+        // row 1（頑丈な盾、グループ内の子行）の下に行を挿入
+        await rightClickRowHeaderAsync(table, 1);
+        await clickContextMenuItemAsync(page, '下に行を挿入');
+
+        // 行数が+1になること
+        const afterInsertRowCount = await getDataRowCountAsync(table);
+        expect(afterInsertRowCount).toBe(initialRowCount + 1);
+
+        // 挿入された行（row 2）のベース列がパディングセルであること
+        const basePkCell = getDataCell(table, 2, 0);
+        await expect(basePkCell).toHaveClass(/view-padding-cell/);
+        const baseNameCell = getDataCell(table, 2, 1);
+        await expect(baseNameCell).toHaveClass(/view-padding-cell/);
+
+        // 挿入された行のJOIN列（product.id）はパディングではないこと
+        const joinPkCell = getDataCell(table, 2, 2);
+        await expect(joinPkCell).not.toHaveClass(/view-padding-cell/);
+    });
+
+    test('グループ内に行挿入→JOIN列PK設定→保存でFK値が正しく設定されること', async ({ page }) => {
+        await installMockApiAsync(page, createViewShopFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_shop');
+
+        // row 1（頑丈な盾）の下に行を挿入
+        await rightClickRowHeaderAsync(table, 1);
+        await clickContextMenuItemAsync(page, '下に行を挿入');
+
+        // 挿入された行（row 2）のJOIN列を編集
+        await editCellAsync(page, table, 2, 2, '99');
+        await editCellAsync(page, table, 2, 3, '新商品');
+
+        // 保存
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+
+        // shop_product.csvの検証: 新商品がshop_id=1で保存されること
+        const shopProductCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        expect(shopProductCsv).toContain('99,1,新商品');
+    });
+
+    test('グループ内行挿入のUndo/Redoが正しく動くこと', async ({ page }) => {
+        await installMockApiAsync(page, createViewShopFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'view_shop');
+
+        const initialRowCount = await getDataRowCountAsync(table);
+
+        // row 1（頑丈な盾）の下にグループ内行挿入
+        await rightClickRowHeaderAsync(table, 1);
+        await clickContextMenuItemAsync(page, '下に行を挿入');
+        expect(await getDataRowCountAsync(table)).toBe(initialRowCount + 1);
+
+        // Undo
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+z');
+        expect(await getDataRowCountAsync(table)).toBe(initialRowCount);
+
+        // 元のデータが復元されていること
+        await expect(getDataCell(table, 1, 3)).toHaveText('頑丈な盾');
+        await expect(getDataCell(table, 2, 3)).toHaveText('尖ったかま');
+
+        // Redo
+        await page.keyboard.press('Control+y');
+        expect(await getDataRowCountAsync(table)).toBe(initialRowCount + 1);
+
+        // ベース列がパディングのまま復元されること
+        const basePkCell = getDataCell(table, 2, 0);
+        await expect(basePkCell).toHaveClass(/view-padding-cell/);
+    });
 });

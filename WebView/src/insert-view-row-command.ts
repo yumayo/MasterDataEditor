@@ -1,7 +1,7 @@
 import {Command} from "./command";
 import {EditorTable} from "./editor-table";
 import {SavedViewRowState} from "./view-row-restructure-command";
-import {ViewRowGroupInfo, setViewRowMetadata} from "./model/view-row-metadata";
+import {ViewRowGroupInfo, setViewRowMetadata, getBaseRowIndex, getGroupInfos} from "./model/view-row-metadata";
 
 /**
  * ビュー行挿入コマンド
@@ -10,6 +10,10 @@ import {ViewRowGroupInfo, setViewRowMetadata} from "./model/view-row-metadata";
  * DOM行の挿入に加えてDOM属性へのメタデータ設定を行う。
  * InMemoryTableStoreへの行追加はLazy Store挿入戦略により、
  * PK列に値が設定された時点でpropagateJoinedColumnToSourceTableが担う。
+ *
+ * グループ内挿入: 挿入位置の前後の行が同じbaseRowIndexを持つ場合、
+ * ベーステーブル列をパディングセルにし、JOIN列のみ編集可能にする。
+ * グループ境界挿入: 新しいベース行として挿入する（従来動作）。
  *
  * execute: insertRowInternalでDOM行を作成し、DOM属性にメタデータを設定
  * undo: replaceViewRowsで行を削除
@@ -23,20 +27,45 @@ export class InsertViewRowCommand implements Command {
     private savedRow: SavedViewRowState | false;
     /** 挿入するグループ情報 */
     private readonly groupInfos: ViewRowGroupInfo[];
+    /** グループ内挿入かどうか */
+    private readonly isWithinGroup: boolean;
+    /** 設定するbaseRowIndex（グループ内: グループのbaseRowIndex、境界: metaIndex） */
+    private readonly baseRowIndex: number;
 
     constructor(editorTable: EditorTable, rowIndex: number) {
         this.editorTable = editorTable;
-        // DOM行インデックスからメタデータインデックスへ変換（ヘッダー行分を引く）
         this.metaIndex = rowIndex - 1;
         this.rowIndex = rowIndex;
         this.savedRow = false;
-        // 新規行のグループ情報を構築
         const viewContext = editorTable.getViewContext();
         const joins = viewContext.viewDefinition.joins;
-        this.groupInfos = joins.map(j => ({
-            groupPosition: 0, groupSize: 1,
-            sourceTable: j.targetTable, sourceKeyValue: '',
-        }));
+        const tableElement = editorTable.getTableElement();
+        // グループ内挿入の判定: 挿入位置の前後の行が同じbaseRowIndexを持つか
+        const rowAbove = tableElement.children[rowIndex - 1] as HTMLElement;
+        const rowAtInsert = tableElement.children[rowIndex] as HTMLElement;
+        const aboveHasMeta = rowAbove && rowAbove.hasAttribute('data-base-row-index');
+        const atInsertHasMeta = rowAtInsert && rowAtInsert.hasAttribute('data-base-row-index');
+        if (aboveHasMeta && atInsertHasMeta && getBaseRowIndex(rowAbove) === getBaseRowIndex(rowAtInsert)) {
+            // グループ内挿入: 前後の行が同じグループに属する
+            this.isWithinGroup = true;
+            this.baseRowIndex = getBaseRowIndex(rowAbove);
+            // グループ情報を隣接行から継承（sourceKeyValue等を保持）
+            const neighborGroupInfos = getGroupInfos(rowAbove);
+            this.groupInfos = neighborGroupInfos.map(g => ({
+                groupPosition: g.groupPosition + 1,
+                groupSize: g.groupSize,
+                sourceTable: g.sourceTable,
+                sourceKeyValue: g.sourceKeyValue,
+            }));
+        } else {
+            // グループ境界挿入: 新しいベース行
+            this.isWithinGroup = false;
+            this.baseRowIndex = this.metaIndex;
+            this.groupInfos = joins.map(j => ({
+                groupPosition: 0, groupSize: 1,
+                sourceTable: j.targetTable, sourceKeyValue: '',
+            }));
+        }
     }
 
     execute(): void {
@@ -46,8 +75,18 @@ export class InsertViewRowCommand implements Command {
         const domRow = this.editorTable.getTableElement().children[this.rowIndex] as HTMLElement;
         domRow.dataset.lastSyncedPk = '';
         // DOM属性にメタデータを設定（DOMがSSOT）
-        setViewRowMetadata(domRow, this.metaIndex, this.groupInfos);
-        // ビュー行スタイルを適用（パディング指定なし: 新規行は全列が非パディング）
+        setViewRowMetadata(domRow, this.baseRowIndex, this.groupInfos);
+        if (this.isWithinGroup) {
+            // グループ内挿入: ベーステーブル列（joinLevel=0）をパディングセルにする
+            const columnMappings = this.editorTable.getViewContext().columnMappings;
+            for (let colIdx = 0; colIdx < columnMappings.length; colIdx++) {
+                if (columnMappings[colIdx].joinLevel !== 0) continue;
+                const cell = domRow.children[colIdx + 1] as HTMLElement;
+                cell.classList.add('view-padding-cell');
+                cell.textContent = '';
+            }
+        }
+        // ビュー行スタイルを適用
         this.editorTable.view.applyViewRowStylesForRange(this.metaIndex, this.metaIndex + 1, false);
     }
 
