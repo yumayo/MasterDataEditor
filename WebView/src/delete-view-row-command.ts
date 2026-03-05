@@ -52,7 +52,7 @@ export class DeleteViewRowCommand implements Command {
         const domRow = tableElement.children[domIndex] as HTMLElement;
         this.savedRow = { domRow };
         // replaceViewRowsで1行削除・0行挿入（行番号再設定を含む）
-        this.editorTable.replaceViewRows(this.metaIndex, 1, []);
+        this.editorTable.view.replaceViewRows(this.metaIndex, 1, []);
         // InMemoryTableStoreから対応する行を削除
         // 各テーブルのPK列を探してPK値を取得し、Storeから該当行を削除する
         this.deletedStoreRows = [];
@@ -88,7 +88,7 @@ export class DeleteViewRowCommand implements Command {
             this.store.insertRowAt(deleted.tableName, deleted.rowIndex, deleted.rowData);
         }
         // replaceViewRowsで0行削除・1行挿入（DOM行を復元、メタデータはDOM属性で自動復元）
-        this.editorTable.replaceViewRows(this.metaIndex, 0, [this.savedRow]);
+        this.editorTable.view.replaceViewRows(this.metaIndex, 0, [this.savedRow]);
     }
 
     redo(): void {

@@ -3,7 +3,7 @@ import {Selection, CellPosition} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "./context-menu";
 import {History} from "./history";
-import {Command, CellChange} from "./command";
+import {CellChange} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -13,7 +13,6 @@ import {ReverseReferenceEntry, ReverseReferenceMap} from "./reverse-reference-re
 import {Sidebar} from "./sidebar";
 import {ViewDefinition} from "./model/view-definition";
 import {ViewColumnMapping} from "./model/view-column-mapping";
-import {SavedViewRowState} from "./view-row-restructure-command";
 import {EditorTableReference} from "./editor-table-reference";
 import {EditorTableView} from "./editor-table-view";
 import {EditorTableContextMenu} from "./editor-table-context-menu";
@@ -737,7 +736,7 @@ export class EditorTable {
         }
         const allChanges: CellChange[] = [];
         for (const change of changes) {
-            const linkedChanges = this.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
+            const linkedChanges = this.view.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
             allChanges.push(change);
             for (const lc of linkedChanges) allChanges.push(lc);
             this.updateCellValueAt(change.row, change.column, change.newValue);
@@ -804,18 +803,8 @@ export class EditorTable {
     }
 
     // =========================================================================
-    // ファサード: EditorTableView
+    // ファサード: EditorTableView（頻出メソッドのみ残置）
     // =========================================================================
-
-    /** ビュー行のスタイルを指定範囲に適用する */
-    applyViewRowStylesForRange(startMetaIndex: number, endMetaIndex: number, applyPadding: boolean): void {
-        this.view.applyViewRowStylesForRange(startMetaIndex, endMetaIndex, applyPadding);
-    }
-
-    /** ビューコンテキストを設定する */
-    setViewContext(context: ViewContext): void {
-        this.view.setViewContext(context);
-    }
 
     /** ビューコンテキストが設定されているかを返す */
     hasViewContext(): boolean {
@@ -825,81 +814,6 @@ export class EditorTable {
     /** ビューコンテキストを取得する */
     getViewContext(): ViewContext {
         return this.view.getViewContext();
-    }
-
-    /** 指定行がビューグループのリーダー行かどうかを判定する */
-    isViewLeaderRow(row: number): boolean {
-        return this.view.isViewLeaderRow(row);
-    }
-
-    /** 指定セルがパディングセルかどうかを判定する */
-    isPaddingCell(row: number, column: number): boolean {
-        return this.view.isPaddingCell(row, column);
-    }
-
-    /** 指定範囲にパディングセルが含まれるかを判定する */
-    containsPaddingCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
-        return this.view.containsPaddingCell(startRow, startColumn, endRow, endColumn);
-    }
-
-    /** 指定範囲に編集不可セルが含まれるかを判定する */
-    containsReadOnlyCell(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
-        return this.view.containsReadOnlyCell(startRow, startColumn, endRow, endColumn);
-    }
-
-    /** 選択範囲が完全なFKグループ単位で構成されているかを判定する */
-    isSelectionCoveringCompleteGroups(startRow: number, endRow: number): boolean {
-        return this.view.isSelectionCoveringCompleteGroups(startRow, endRow);
-    }
-
-    /** 単一セル編集のガード（文字入力・ダブルクリック・ドロップダウン） */
-    isCellEditBlocked(row: number, column: number): boolean {
-        return this.view.isCellEditBlocked(row, column);
-    }
-
-    /** 範囲編集のガード（Paste・Fill） */
-    isRangeEditBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
-        return this.view.isRangeEditBlocked(startRow, startColumn, endRow, endColumn);
-    }
-
-    /** Delete操作のガード（パディングセル + FKグループ完全性チェック） */
-    isDeleteBlocked(startRow: number, startColumn: number, endRow: number, endColumn: number): boolean {
-        return this.view.isDeleteBlocked(startRow, startColumn, endRow, endColumn);
-    }
-
-    /** 指定された列範囲に結合列が含まれるかを判定する */
-    containsJoinedColumn(startColumn: number, endColumn: number): boolean {
-        return this.view.containsJoinedColumn(startColumn, endColumn);
-    }
-
-    /** データ領域の最大行を取得 */
-    getMaxDataRow(): number {
-        return this.view.getMaxDataRow();
-    }
-
-    /** FK値変更で行数が変わるかを判定する */
-    needsViewRowRestructure(editedRow: number, editedColumn: number, newValue: string): boolean {
-        return this.view.needsViewRowRestructure(editedRow, editedColumn, newValue);
-    }
-
-    /** FK値変更に伴うビュー行の再構築を実行する */
-    buildAndExecuteViewRowRestructure(editedRow: number, editedColumn: number, newValue: string, keyMaps: Map<string, Map<string, string[][]>>): Command {
-        return this.view.buildAndExecuteViewRowRestructure(editedRow, editedColumn, newValue, keyMaps);
-    }
-
-    /** ビュー行を入れ替える（Command.execute/undo/redoから呼ばれる） */
-    replaceViewRows(metaStartIndex: number, removeCount: number, insertRows: SavedViewRowState[]): void {
-        this.view.replaceViewRows(metaStartIndex, removeCount, insertRows);
-    }
-
-    /** 結合列の編集時に同一JOINキーを持つ他の行の値を連動更新する */
-    synchronizeJoinedColumnValues(editedRow: number, editedColumn: number, newValue: string): CellChange[] {
-        return this.view.synchronizeJoinedColumnValues(editedRow, editedColumn, newValue);
-    }
-
-    /** ビュー全体の行再構築を行う */
-    refreshViewRows(): void {
-        this.view.refreshViewRows();
     }
 
     // =========================================================================

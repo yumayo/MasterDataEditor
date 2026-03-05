@@ -35,7 +35,7 @@ export class TabReference {
         this.referenceDataCache.evictEntriesNotInStore();
         // ビュータブの場合: Storeから最新キーマップを都度構築して行数差分を反映する
         if (state.kind === 'view') {
-            state.editorTable.refreshViewRows();
+            state.editorTable.view.refreshViewRows();
         }
 
         // 参照テーブルを再読み込み

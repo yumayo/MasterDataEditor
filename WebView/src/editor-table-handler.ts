@@ -162,7 +162,7 @@ export class EditorTableHandler {
 
         // 単一セル編集ガード（パディングセルへの編集を拒否）
         const anchor = this.selection.getAnchor();
-        if (this.table.isCellEditBlocked(anchor.row, anchor.column)) {
+        if (this.table.view.isCellEditBlocked(anchor.row, anchor.column)) {
             this.table.showRejectionFeedback();
             return;
         }
@@ -489,7 +489,7 @@ export class EditorTableHandler {
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             const deleteRange = this.selection.getSelectionRange();
             // Delete操作ガード（パディングセル + FKグループ完全性チェック）
-            if (this.table.isDeleteBlocked(deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn)) {
+            if (this.table.view.isDeleteBlocked(deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn)) {
                 this.table.showRejectionFeedback();
                 return;
             }
@@ -497,7 +497,7 @@ export class EditorTableHandler {
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
                     // パディングセルのみスキップ（結合テーブル列セルはpaddingColumns=falseなので通過する）
-                    if (this.table.isPaddingCell(r, c)) continue;
+                    if (this.table.view.isPaddingCell(r, c)) continue;
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
                 }
@@ -572,7 +572,7 @@ export class EditorTableHandler {
 
         // 範囲編集ガード（結合列またはパディングセルを含む場合はペーストを拒否）
         const selRange = this.selection.getSelectionRange();
-        if (this.table.isRangeEditBlocked(
+        if (this.table.view.isRangeEditBlocked(
             selRange.startRow, selRange.startColumn, selRange.endRow, selRange.endColumn
         )) {
             this.table.showRejectionFeedback();
@@ -690,13 +690,13 @@ export class EditorTableHandler {
             // ソースデータからリーダー行のみ抽出（パディング行はFK再構築で自動生成される）
             filteredSource = [];
             for (let r = 0; r < sourceData.length; r++) {
-                if (this.table.isViewLeaderRow(copyRange.startRow + r)) {
+                if (this.table.view.isViewLeaderRow(copyRange.startRow + r)) {
                     filteredSource.push(sourceData[r]);
                 }
             }
             // 宛先のリーダー行を必要数収集（パディング行をスキップ）
             for (let row = anchor.row; row < tableRowCount && destLeaderRows.length < filteredSource.length; row++) {
-                if (this.table.isViewLeaderRow(row)) {
+                if (this.table.view.isViewLeaderRow(row)) {
                     destLeaderRows.push(row);
                 }
             }
@@ -803,7 +803,7 @@ export class EditorTableHandler {
         if (this.table.hasViewContext()) {
             const restructureRows = new Map<number, CellChange>();
             for (const change of changes) {
-                if (this.table.needsViewRowRestructure(change.row, change.column, change.newValue)) {
+                if (this.table.view.needsViewRowRestructure(change.row, change.column, change.newValue)) {
                     restructureRows.set(change.row, change);
                 }
             }
@@ -837,7 +837,7 @@ export class EditorTableHandler {
         const nonRestructureChanges: CellChange[] = [];
         for (const change of changes) {
             if (restructureRows.has(change.row)) continue;
-            const linkedChanges = this.table.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
+            const linkedChanges = this.table.view.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
             nonRestructureChanges.push(change);
             for (const lc of linkedChanges) nonRestructureChanges.push(lc);
             this.table.updateCellValueAt(change.row, change.column, change.newValue);
@@ -859,7 +859,7 @@ export class EditorTableHandler {
         const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
         const restructureCommands: Command[] = [];
         for (const [row, fkChange] of sortedFkChanges) {
-            restructureCommands.push(this.table.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue, keyMaps));
+            restructureCommands.push(this.table.view.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue, keyMaps));
         }
         // VRRによる行数変化を範囲に反映（1:1→1:2展開で行が増える等）
         const rowDelta = this.table.getRowCount() - rowCountBefore;
@@ -984,7 +984,7 @@ export class EditorTableHandler {
 
         // 単一セル編集ガード（パディングセルへの編集を拒否）
         const anchor = this.selection.getAnchor();
-        if (this.table.isCellEditBlocked(anchor.row, anchor.column)) {
+        if (this.table.view.isCellEditBlocked(anchor.row, anchor.column)) {
             this.table.showRejectionFeedback();
             return true;
         }

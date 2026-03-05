@@ -229,7 +229,7 @@ export class TabView {
         // 逆参照JOIN対象を追加（事前検出済み）
         availableJoinTargets.push(...reverseJoinTargets);
 
-        editorTable.setViewContext({
+        editorTable.view.setViewContext({
             viewDefinition, columnMappings, availableJoinTargets,
             openEditorTables: this.tab.getOpenEditorTables(),
             onJoinAsync: async (target: AvailableJoinTarget, afterColumnIndex: number) => {

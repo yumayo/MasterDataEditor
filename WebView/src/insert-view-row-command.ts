@@ -48,7 +48,7 @@ export class InsertViewRowCommand implements Command {
         // DOM属性にメタデータを設定（DOMがSSOT）
         setViewRowMetadata(domRow, this.metaIndex, this.groupInfos);
         // ビュー行スタイルを適用（パディング指定なし: 新規行は全列が非パディング）
-        this.editorTable.applyViewRowStylesForRange(this.metaIndex, this.metaIndex + 1, false);
+        this.editorTable.view.applyViewRowStylesForRange(this.metaIndex, this.metaIndex + 1, false);
     }
 
     undo(): void {
@@ -57,7 +57,7 @@ export class InsertViewRowCommand implements Command {
         const domRow = tableElement.children[this.rowIndex] as HTMLElement;
         this.savedRow = { domRow };
         // replaceViewRowsで1行削除・0行挿入（行番号再設定を含む）
-        this.editorTable.replaceViewRows(this.metaIndex, 1, []);
+        this.editorTable.view.replaceViewRows(this.metaIndex, 1, []);
     }
 
     redo(): void {
@@ -66,7 +66,7 @@ export class InsertViewRowCommand implements Command {
             return;
         }
         // replaceViewRowsで0行削除・1行挿入（DOM行を復元、メタデータはDOM属性で自動復元）
-        this.editorTable.replaceViewRows(this.metaIndex, 0, [this.savedRow]);
+        this.editorTable.view.replaceViewRows(this.metaIndex, 0, [this.savedRow]);
     }
 
     getDescription(): string {

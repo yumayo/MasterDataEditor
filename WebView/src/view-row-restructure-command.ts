@@ -36,11 +36,11 @@ export class ViewRowRestructureCommand implements Command {
     }
 
     execute(): void {
-        this.editorTable.replaceViewRows(this.metaStartIndex, this.oldRows.length, this.newRows);
+        this.editorTable.view.replaceViewRows(this.metaStartIndex, this.oldRows.length, this.newRows);
     }
 
     undo(): void {
-        this.editorTable.replaceViewRows(this.metaStartIndex, this.newRows.length, this.oldRows);
+        this.editorTable.view.replaceViewRows(this.metaStartIndex, this.newRows.length, this.oldRows);
     }
 
     redo(): void {
