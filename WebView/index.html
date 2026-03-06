@@ -18,12 +18,16 @@
     <link rel="stylesheet" href="src/search-panel.css">
     <link rel="stylesheet" href="src/sidebar-resizer.css">
     <link rel="stylesheet" href="src/command-palette.css">
+    <link rel="stylesheet" href="src/toolbar.css">
 </head>
 <body data-theme="dark">
 <div id="explorer" class="explorer">
 </div>
 <div id="tab" class="tab">
-    <ul id="tab-content" class="tab-list"></ul>
+    <div class="tab-scroll-area">
+        <ul id="tab-content" class="tab-list"></ul>
+    </div>
+    <div id="toolbar" class="toolbar"></div>
 </div>
 <div id="editor" class="editor">
 </div>

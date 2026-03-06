@@ -15,14 +15,22 @@
     margin: 0;
     border-bottom: 1px solid rgba(128, 128, 128, 0.3);
 
-    /* 横スクロールのみです。 */
-    overflow-x: scroll;
-    overflow-y: hidden;
+    /* タブリストとツールバーを横並びにする */
+    display: flex;
+    overflow: hidden;
 
     user-select: none;
 }
 
-.tab::-webkit-scrollbar {
+/* タブボタンのスクロール領域 */
+.tab-scroll-area {
+    flex: 1;
+    min-width: 0;
+    overflow-x: scroll;
+    overflow-y: hidden;
+}
+
+.tab-scroll-area::-webkit-scrollbar {
     height: 4px;
 }
 

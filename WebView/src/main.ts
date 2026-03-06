@@ -4,6 +4,7 @@ import {Tab} from "./tab";
 import {Editor} from "./editor";
 import {ContextMenu} from "./context-menu";
 import {CommandPalette} from "./command-palette";
+import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
 
@@ -37,6 +38,10 @@ import {ReferenceDataCache} from "./reference-data-cache";
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
+
+    // ツールバーを初期化（タブへの密結合）
+    const toolbarElement = document.getElementById('toolbar')!;
+    const toolbar = new Toolbar(toolbarElement, tab);
 
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
