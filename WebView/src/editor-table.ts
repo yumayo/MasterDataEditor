@@ -717,18 +717,41 @@ export class EditorTable {
         }
     }
 
-    /** 変更リストをまとめてソーステーブルに伝搬する */
-    propagateToSourceTable(changes: CellChange[]): void {
+    /**
+     * 変更リストをまとめてソーステーブルに伝搬する
+     * @returns JOINテーブルのStore行が空行から追加された場合にtrue
+     */
+    propagateToSourceTable(changes: CellChange[]): boolean {
+        let joinStoreRowAdded = false;
         for (const change of changes) {
-            this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue, change.oldValue);
+            if (this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue, change.oldValue)) {
+                joinStoreRowAdded = true;
+            }
         }
+        return joinStoreRowAdded;
+    }
+
+    /** Lazy挿入によるグループ展開が必要かのフラグ（applyViewAwareCellChangesが消費する） */
+    private joinStoreRowAddedFlag = false;
+
+    /**
+     * Lazy挿入フラグを消費して返す（一度読んだらfalseにリセット）
+     * applyViewAwareCellChangesからのみ呼ばれる
+     */
+    consumeJoinStoreRowAdded(): boolean {
+        const result = this.joinStoreRowAddedFlag;
+        this.joinStoreRowAddedFlag = false;
+        return result;
     }
 
     /**
      * ユーザー編集時のセル変更を適用する（JOIN列連動 + DOM更新 + ソーステーブル伝搬）
      * ビュータブではJOIN列の連動更新を含む全変更リストを返す
+     * Lazy挿入が発生した場合、joinStoreRowAddedFlagをセットする
+     * （グループ展開はapplyViewAwareCellChangesがCommandパターンで実行する）
      */
     applyCellChanges(changes: CellChange[]): CellChange[] {
+        this.joinStoreRowAddedFlag = false;
         if (!this.view.hasViewContext()) {
             for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
             this.propagateToSourceTable(changes);
@@ -741,7 +764,7 @@ export class EditorTable {
             for (const lc of linkedChanges) allChanges.push(lc);
             this.updateCellValueAt(change.row, change.column, change.newValue);
         }
-        this.propagateToSourceTable(allChanges);
+        this.joinStoreRowAddedFlag = this.propagateToSourceTable(allChanges);
         return allChanges;
     }
 

@@ -159,8 +159,11 @@ export class EditorTableViewSync {
      * 再帰防止: ソーステーブルは通常テーブルでViewContextを持たないため、
      * ソーステーブルのupdateCellValueAtが呼ばれても、EditorTableView.propagateJoinedColumnToSourceTable内の
      * hasViewContext()チェックで即returnする。
+     *
+     * @returns JOINテーブルのStore行が追加または除去された場合にtrue
+     *          （呼び出し元がrefreshViewRowsで全グループを再構築する判定に使う）
      */
-    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): void {
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): boolean {
         const viewContext = this.view.getViewContext();
         const dataColumnIndex = column - 1;
         if (dataColumnIndex < 0 || dataColumnIndex >= viewContext.columnMappings.length) {
@@ -177,7 +180,7 @@ export class EditorTableViewSync {
                 if (isPkColumn && oldValue !== '') {
                     this.store.removeRowByPk(baseTable, oldValue);
                 }
-                return;
+                return false;
             }
             // PK非空: Store更新を試行
             if (this.store.updateCellValue(baseTable, id, mapping.sourceColumnName, value)) {
@@ -208,7 +211,7 @@ export class EditorTableViewSync {
                 domRow.dataset.lastSyncedPk = id;
             }
             this.referenceDataCache.updateFullDataCell(baseTable, id, mapping.sourceColumnIndex, value);
-            return;
+            return false;
         }
         // JOINテーブルのPK列判定（Lazy Store挿入のトリガー）
         const isJoinPkColumn = mapping.sourceColumnName === config.primaryKeyColumnName;
@@ -226,13 +229,14 @@ export class EditorTableViewSync {
             groupPosition = leader.groupPosition;
         }
         // JOINテーブルPK列のUndoによるクリア時: Store行を除去して早期リターン
+        // グループ縮小はViewRowRestructureCommandのundoで処理されるため、ここではfalseを返す
         if (isJoinPkColumn && value === '' && oldValue !== '') {
             this.store.removeRowByPk(mapping.tableName, oldValue);
             const domRowEl = this.table.getTableElement().children[row] as HTMLElement;
             domRowEl.dataset['lastSyncedJoinPk_' + mapping.tableName] = '';
-            return;
+            return false;
         }
-        if (fkValue === '') return;
+        if (fkValue === '') return false;
         // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
         const sourceEditorTable = viewContext.openEditorTables.get(mapping.tableName);
         // ソーステーブルのDOMセルを更新（テーブルが開かれている場合のみ）
@@ -250,59 +254,61 @@ export class EditorTableViewSync {
                 }
                 matchCount++;
             }
-        } else {
-            // ソーステーブルが開かれていない場合、中央ストアを直接更新する
-            const storeHeader = this.store.getHeader(mapping.tableName);
-            const storeRows = this.store.getRows(mapping.tableName);
-            if (storeHeader === false || storeRows === false) throw new Error('到達不可能: JOINテーブルがStoreに登録されていません');
-            const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
-            if (keyColIdx !== -1) {
-                let matchCount = 0;
-                let storeUpdateSucceeded = false;
-                for (let r = 0; r < storeRows.length; r++) {
-                    if (storeRows[r][keyColIdx] !== fkValue) continue;
-                    if (matchCount === groupPosition) {
-                        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
-                        if (pkColIdx === -1) throw new Error(`到達不可能: テーブル'${mapping.tableName}'にPK列'${config.primaryKeyColumnName}'が存在しません`);
-                        const pkValue = storeRows[r][pkColIdx];
-                        this.store.updateCellValue(mapping.tableName, pkValue, mapping.sourceColumnName, value);
-                        this.referenceDataCache.updateFullDataCell(mapping.tableName, pkValue, mapping.sourceColumnIndex, value);
-                        storeUpdateSucceeded = true;
-                        break;
-                    }
-                    matchCount++;
-                }
-                // JOINテーブルPK列が設定されたがStore行が未存在 → DOMスナップショットからStore行を生成
-                if (!storeUpdateSucceeded && isJoinPkColumn) {
-                    const domRowElement = this.table.getTableElement().children[row] as HTMLElement;
-                    const datasetKey = 'lastSyncedJoinPk_' + mapping.tableName;
-                    // PK変更時: 旧Store行を除去（datasetキーが存在し、かつ空文字列でない場合）
-                    if (datasetKey in domRowElement.dataset && domRowElement.dataset[datasetKey] !== '') {
-                        this.store.removeRowByPk(mapping.tableName, domRowElement.dataset[datasetKey] as string);
-                    }
-                    // DOMの全列値からJOINテーブルのStore行を生成
-                    const newJoinRow: string[] = new Array(storeHeader.length).fill('');
-                    // FK列（joinKeyColumn）にベーステーブルのPK値を設定
-                    const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === mapping.tableName);
-                    if (!joinDef) throw new Error(`到達不可能: JOINテーブル'${mapping.tableName}'のjoin定義が見つかりません`);
-                    const fkHeaderIdx = storeHeader.indexOf(joinDef.targetColumn);
-                    if (fkHeaderIdx !== -1) newJoinRow[fkHeaderIdx] = fkValue;
-                    // DOMスナップショットからJOIN列値を収集
-                    for (let ci = 0; ci < viewContext.columnMappings.length; ci++) {
-                        const cm = viewContext.columnMappings[ci];
-                        if (cm.tableName !== mapping.tableName || !cm.isJoinedColumn || cm.baseKeyColumn !== mapping.baseKeyColumn) continue;
-                        const hdrIdx = storeHeader.indexOf(cm.sourceColumnName);
-                        if (hdrIdx === -1) continue;
-                        newJoinRow[hdrIdx] = this.table.getCellValueAt(row, ci + 1);
-                    }
-                    this.store.appendRow(mapping.tableName, newJoinRow);
-                    // PK値を追跡（次回のPK変更時に旧Store行を除去するため）
-                    const pkHdrIdx = storeHeader.indexOf(config.primaryKeyColumnName);
-                    if (pkHdrIdx !== -1) domRowElement.dataset[datasetKey] = newJoinRow[pkHdrIdx];
-                }
-            }
+            return false;
         }
-        // Storeは同メソッド内で既に更新済みのため、buildKeyMapで最新のキーマップが取得できる
+        // ソーステーブルが開かれていない場合、中央ストアを直接更新する
+        const storeHeader = this.store.getHeader(mapping.tableName);
+        const storeRows = this.store.getRows(mapping.tableName);
+        if (storeHeader === false || storeRows === false) throw new Error('到達不可能: JOINテーブルがStoreに登録されていません');
+        const keyColIdx = storeHeader.indexOf(mapping.joinKeyColumn);
+        if (keyColIdx === -1) return false;
+        let matchCount = 0;
+        let storeUpdateSucceeded = false;
+        for (let r = 0; r < storeRows.length; r++) {
+            if (storeRows[r][keyColIdx] !== fkValue) continue;
+            if (matchCount === groupPosition) {
+                const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+                if (pkColIdx === -1) throw new Error(`到達不可能: テーブル'${mapping.tableName}'にPK列'${config.primaryKeyColumnName}'が存在しません`);
+                const pkValue = storeRows[r][pkColIdx];
+                this.store.updateCellValue(mapping.tableName, pkValue, mapping.sourceColumnName, value);
+                this.referenceDataCache.updateFullDataCell(mapping.tableName, pkValue, mapping.sourceColumnIndex, value);
+                storeUpdateSucceeded = true;
+                break;
+            }
+            matchCount++;
+        }
+        // JOINテーブルPK列が設定されたがStore行が未存在 → DOMスナップショットからStore行を生成
+        if (!storeUpdateSucceeded && isJoinPkColumn) {
+            const domRowElement = this.table.getTableElement().children[row] as HTMLElement;
+            const datasetKey = 'lastSyncedJoinPk_' + mapping.tableName;
+            // PK変更時: 旧Store行を除去（datasetキーが存在し、かつ空文字列でない場合）
+            if (datasetKey in domRowElement.dataset && domRowElement.dataset[datasetKey] !== '') {
+                this.store.removeRowByPk(mapping.tableName, domRowElement.dataset[datasetKey] as string);
+            }
+            // DOMの全列値からJOINテーブルのStore行を生成
+            const newJoinRow: string[] = new Array(storeHeader.length).fill('');
+            // FK列（joinKeyColumn）にベーステーブルのPK値を設定
+            const joinDef = viewContext.viewDefinition.joins.find(j => j.targetTable === mapping.tableName);
+            if (!joinDef) throw new Error(`到達不可能: JOINテーブル'${mapping.tableName}'のjoin定義が見つかりません`);
+            const fkHeaderIdx = storeHeader.indexOf(joinDef.targetColumn);
+            if (fkHeaderIdx !== -1) newJoinRow[fkHeaderIdx] = fkValue;
+            // DOMスナップショットからJOIN列値を収集
+            for (let ci = 0; ci < viewContext.columnMappings.length; ci++) {
+                const cm = viewContext.columnMappings[ci];
+                if (cm.tableName !== mapping.tableName || !cm.isJoinedColumn || cm.baseKeyColumn !== mapping.baseKeyColumn) continue;
+                const hdrIdx = storeHeader.indexOf(cm.sourceColumnName);
+                if (hdrIdx === -1) continue;
+                newJoinRow[hdrIdx] = this.table.getCellValueAt(row, ci + 1);
+            }
+            this.store.appendRow(mapping.tableName, newJoinRow);
+            // PK値を追跡（次回のPK変更時に旧Store行を除去するため）
+            const pkHdrIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+            if (pkHdrIdx !== -1) domRowElement.dataset[datasetKey] = newJoinRow[pkHdrIdx];
+            // 空行からのLazy挿入のみtrueを返す（データ行のPK変更では返さない）
+            // applyViewAwareCellChangesがこのフラグを見てグループ展開Commandを構築する
+            return !domRowElement.hasAttribute('data-base-row-index');
+        }
+        return false;
     }
 
     /**

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { Page, Locator } from '@playwright/test';
 import {
     installMockApiAsync,
+    readMockFileAsync,
     MockFileSystem,
 } from './fixtures/mock-api';
 
@@ -313,3 +314,241 @@ test.describe(
         );
     },
 );
+
+// -------------------------------------------------------
+// 空行編集時のグループ境界チェックテスト
+// デフォルト100行のうちデータ行以降の空行にJOIN列を編集しても、
+// 遠いグループのFK値を不正に継承せず、既存データを破壊しないことを検証する
+// -------------------------------------------------------
+test.describe('空行のJOIN列編集がグループ境界を越えないこと', () => {
+    test('空行の非PK JOIN列を編集しても既存データが変更されず保存時にも不正行が生成されないこと', async ({ page }) => {
+        await installMockApiAsync(page, createFileSystem());
+        await page.goto('/');
+        // view_questを開く
+        // ビュー列: quest.id(0), quest.name(1), quest_reward.id(2), quest_reward.item(3)
+        // row0: 1, MainQuest, 1, Gold  ← リーダー行
+        // row1: [pad], [pad], 2, Gem   ← パディング行
+        // row2: 2, SideQuest, 3, Potion ← リーダー行
+        // row3〜: 空行（data-base-row-index属性なし）
+        const viewTable = await openTableAsync(page, 'view_quest');
+        await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('Potion');
+        // 空行（row 10）の非PK JOIN列（quest_reward.item）を編集
+        // findGroupLeaderはFK値"2"とgroupPosition=8を返すが、
+        // Store内にgroupPosition=8に対応する行が存在しないため伝搬されない
+        await editCellAsync(page, viewTable, 10, 3, '不正な値');
+        // 既存のデータ行が変更されていないこと
+        await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('Potion');
+        // 保存して不正なStore行が生成されていないことを検証
+        const firstCell = viewTable.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)');
+        await firstCell.click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        const rewardCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
+        const rewardLines = rewardCsv.split('\n').filter((l: string) => l.trim() !== '');
+        // ヘッダー + 3データ行（元のデータのみ）= 4行
+        expect(rewardLines.length).toBe(4);
+        expect(rewardCsv).toContain('1,1,Gold');
+        expect(rewardCsv).toContain('2,1,Gem');
+        expect(rewardCsv).toContain('3,2,Potion');
+        expect(rewardCsv).not.toContain('不正な値');
+    });
+
+    test('空行のJOIN PK列を編集するとグループが展開しStore行が追加されること', async ({ page }) => {
+        await installMockApiAsync(page, createFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_quest');
+        await expect(getDataCell(viewTable, 0, 2)).toHaveText('1');
+        await expect(getDataCell(viewTable, 1, 2)).toHaveText('2');
+        await expect(getDataCell(viewTable, 2, 2)).toHaveText('3');
+        // 空行（row 3）のJOIN PK列（quest_reward.id）に"4"を入力
+        // findGroupLeaderがquest.id=2（group_id=2）を見つけ、Lazy Store挿入が発生する
+        // その後refreshViewRowsで全グループが再構築される
+        await editCellAsync(page, viewTable, 3, 2, '4');
+        // SideQuestのグループが1行→2行に展開されること
+        await expect(getDataCell(viewTable, 0, 2)).toHaveText('1');
+        await expect(getDataCell(viewTable, 1, 2)).toHaveText('2');
+        await expect(getDataCell(viewTable, 2, 2)).toHaveText('3');
+        await expect(getDataCell(viewTable, 3, 2)).toHaveText('4');
+        // 既存データが破壊されていないこと
+        await expect(getDataCell(viewTable, 0, 3)).toHaveText('Gold');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('Gem');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('Potion');
+        // 保存してStore行が正しく追加されていることを検証
+        const firstCell = viewTable.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)');
+        await firstCell.click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        const rewardCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
+        const rewardLines = rewardCsv.split('\n').filter((l: string) => l.trim() !== '');
+        // ヘッダー + 4データ行（元の3行 + 新規1行）= 5行
+        expect(rewardLines.length).toBe(5);
+        expect(rewardCsv).toContain('1,1,Gold');
+        expect(rewardCsv).toContain('2,1,Gem');
+        expect(rewardCsv).toContain('3,2,Potion');
+        expect(rewardCsv).toContain('4,2,');
+    });
+});
+
+// -------------------------------------------------------
+// 同一FK値を持つ複数グループの同時展開テスト
+// JOINテーブルに新しい行が追加されたとき、同じFK値で展開された
+// 全てのベース行グループが自動的に展開されることを検証する
+// -------------------------------------------------------
+test.describe('同一FK値を持つ複数グループの同時展開', () => {
+    /**
+     * テストデータ:
+     * shop: id=1,name=WeaponShop,group_id=1 / id=2,name=ItemShop,group_id=2 / id=3,name=SecretShop,group_id=1
+     * shop_product: id=1,group_id=1,item=Sword / id=2,group_id=1,item=Shield / id=3,group_id=2,item=Potion
+     *
+     * view_shop: shopベース、shop_productをshop.group_id → shop_product.group_idでJOIN
+     *
+     * 期待されるビュー表示:
+     * | shop.id | shop.name   | shop.group_id | shop_product.id | shop_product.item |
+     * |    1    | WeaponShop  |      1        |       1         |      Sword        |  ← group_id=1
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |
+     * |    2    | ItemShop    |      2        |       3         |      Potion       |  ← group_id=2
+     * |    3    | SecretShop  |      1        |       1         |      Sword        |  ← group_id=1
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |
+     */
+    function createShopFileSystem(): MockFileSystem {
+        return {
+            "schema/shop.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "name", type: "string" },
+                    { key: 2, name: "group_id", type: "int" },
+                ],
+                primary_key: "id",
+            }),
+            "data/shop.csv": ["id,name,group_id", "1,WeaponShop,1", "2,ItemShop,2", "3,SecretShop,1"].join("\n"),
+            "schema/shop_product.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "group_id", type: "int" },
+                    { key: 2, name: "item", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/shop_product.csv": ["id,group_id,item", "1,1,Sword", "2,1,Shield", "3,2,Potion"].join("\n"),
+            "view/view_shop.json": JSON.stringify({
+                name: "view_shop",
+                baseTable: "shop",
+                joins: [{
+                    sourceColumn: "group_id",
+                    targetTable: "shop_product",
+                    targetColumn: "group_id",
+                    insertAfterViewColumnIndex: 2,
+                    sourceTable: "",
+                }],
+            }),
+        };
+    }
+
+    test('グループ内に行挿入後、非PK JOIN列を編集すると同一FK値の他グループにも同期されること', async ({ page }) => {
+        await installMockApiAsync(page, createShopFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_shop');
+        // 初期状態を確認
+        // ビュー列: shop.id(0), shop.name(1), shop.group_id(2), shop_product.id(3), shop_product.item(4)
+        // row0: 1, WeaponShop, 1, 1, Sword   ← group_id=1リーダー
+        // row1: [pad], [pad], [pad], 2, Shield ← group_id=1子行
+        // row2: 2, ItemShop, 2, 3, Potion     ← group_id=2リーダー
+        // row3: 3, SecretShop, 1, 1, Sword    ← group_id=1リーダー（別ベース行）
+        // row4: [pad], [pad], [pad], 2, Shield ← group_id=1子行
+        await expect(getDataCell(viewTable, 0, 0)).toHaveText('1');
+        await expect(getDataCell(viewTable, 0, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('Shield');
+        await expect(getDataCell(viewTable, 2, 0)).toHaveText('2');
+        await expect(getDataCell(viewTable, 3, 0)).toHaveText('3');
+        await expect(getDataCell(viewTable, 4, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 4, 4)).toHaveText('Shield');
+        // WeaponShop リーダー行（row0, Sword）の下（= SwordとShieldのグループ中間）に行を挿入
+        // グループ中間挿入: 前後が同一グループ（baseRowIndex=0）なのでisWithinGroup=true
+        const rowHeader = viewTable.locator('.editor-table-row-header').nth(0);
+        await rowHeader.click({ button: 'right' });
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
+        // 挿入後（グループ中間挿入）:
+        // row0: 1, WeaponShop, 1, 1, Sword
+        // row1: [pad], [pad], [pad], (empty), (empty) ← WeaponShop側の挿入行（groupPosition=1）
+        // row2: [pad], [pad], [pad], 2, Shield        ← もとのrow1（groupPosition=2に更新されず1のまま）
+        // row3: 2, ItemShop, 2, 3, Potion
+        // row4: 3, SecretShop, 1, 1, Sword
+        // row5: [pad], [pad], [pad], (empty), (empty) ← SecretShop側の同期挿入行（groupPosition=1）
+        // row6: [pad], [pad], [pad], 2, Shield        ← もとのrow4
+        // 挿入されたWeaponShop新行（row1）の非PK JOIN列（shop_product.item, col4）を編集
+        await editCellAsync(page, viewTable, 1, 4, 'テスト商品');
+        // エラーが発生せず値が設定されること
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('テスト商品');
+        // SecretShopグループにも同期挿入行（row5）が存在し、同一位置（groupPosition=1）の行が連動更新されること
+        // SecretShopもgroup_id=1なので、同一FK値・同一グループ位置の行が同期されるべき
+        await expect(getDataCell(viewTable, 5, 4)).toHaveText('テスト商品');
+    });
+
+    test('新しいJOIN行を追加すると同じFK値を持つ全グループが同時に展開されること', async ({ page }) => {
+        await installMockApiAsync(page, createShopFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_shop');
+        // 初期状態を確認
+        // ビュー列: shop.id(0), shop.name(1), shop.group_id(2), shop_product.id(3), shop_product.item(4)
+        // row0: 1, WeaponShop, 1, 1, Sword   ← group_id=1リーダー
+        // row1: [pad], [pad], [pad], 2, Shield ← group_id=1子行
+        // row2: 2, ItemShop, 2, 3, Potion     ← group_id=2リーダー
+        // row3: 3, SecretShop, 1, 1, Sword    ← group_id=1リーダー（別ベース行）
+        // row4: [pad], [pad], [pad], 2, Shield ← group_id=1子行
+        await expect(getDataCell(viewTable, 0, 0)).toHaveText('1');
+        await expect(getDataCell(viewTable, 0, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('Shield');
+        await expect(getDataCell(viewTable, 2, 0)).toHaveText('2');
+        await expect(getDataCell(viewTable, 2, 4)).toHaveText('Potion');
+        await expect(getDataCell(viewTable, 3, 0)).toHaveText('3');
+        await expect(getDataCell(viewTable, 3, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 4, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 4, 4)).toHaveText('Shield');
+        // 空行（row 5）のJOIN PK列（shop_product.id）に"4"を入力
+        // SecretShopのグループ(group_id=1)に合流し、Lazy Store挿入 → refreshViewRows
+        await editCellAsync(page, viewTable, 5, 3, '4');
+        // 同じgroup_id=1を持つ全グループが2行→3行に展開されること
+        // row0: 1, WeaponShop, 1, 1, Sword
+        // row1: [pad], [pad], [pad], 2, Shield
+        // row2: [pad], [pad], [pad], 4, ""     ← 新規展開行（WeaponShop側）
+        // row3: 2, ItemShop, 2, 3, Potion       ← group_id=2（変化なし）
+        // row4: 3, SecretShop, 1, 1, Sword
+        // row5: [pad], [pad], [pad], 2, Shield
+        // row6: [pad], [pad], [pad], 4, ""     ← 新規展開行（SecretShop側）
+        // WeaponShopグループ（group_id=1）: 2→3行
+        await expect(getDataCell(viewTable, 0, 0)).toHaveText('1');
+        await expect(getDataCell(viewTable, 0, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('Shield');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('4');
+        // ItemShopグループ（group_id=2）: 変化なし
+        await expect(getDataCell(viewTable, 3, 0)).toHaveText('2');
+        await expect(getDataCell(viewTable, 3, 4)).toHaveText('Potion');
+        // SecretShopグループ（group_id=1）: 2→3行
+        await expect(getDataCell(viewTable, 4, 0)).toHaveText('3');
+        await expect(getDataCell(viewTable, 4, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 5, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 5, 4)).toHaveText('Shield');
+        await expect(getDataCell(viewTable, 6, 3)).toHaveText('4');
+        // 保存してStore行が正しく追加されていることを検証
+        const firstCell = viewTable.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)');
+        await firstCell.click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        const productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        const productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
+        // ヘッダー + 4データ行（元の3行 + 新規1行）= 5行
+        expect(productLines.length).toBe(5);
+        expect(productCsv).toContain('1,1,Sword');
+        expect(productCsv).toContain('2,1,Shield');
+        expect(productCsv).toContain('3,2,Potion');
+        expect(productCsv).toContain('4,1,');
+    });
+});

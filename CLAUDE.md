@@ -24,6 +24,22 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 
 # ルール
 
+## すべてにおいてこのルールを適応せよ
+
+まず、**orchestrator** スキルを読んでください。
+
+あなたは **orchestrator** スキルを使用して、エージェントを活用してください。これが何より重要で、しないとトークンが制限に達しcompactionしなければならないことが多々あります。
+
+不具合の調査は、**bug-diagnosis-coordinator** エージェントに任せること。
+
+実装は、**typescript-tdd-developer** エージェントに任せること。
+
+テストの確認は、**playwright-test-reporter** エージェントに任せること。
+
+コードレビューは、**fix-scope-auditor** エージェント、**adversarial-code-reviewer** エージェント、**code-reviewer** エージェントに並列で任せること。
+
+コミットは、**commit** スキルを使用すること。
+
 ## AI あなたを矯正するうえでの重要なアドバイス
 
 実装を開始するときは、一回待ってください。

@@ -117,10 +117,11 @@ export class EditorTableView {
         return this.sync.synchronizeJoinedColumnValues(editedRow, editedColumn, newValue);
     }
 
-    /** ビュー結合列の編集をソーステーブルのDOMとStoreに伝搬する */
-    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): void {
-        if (!this.hasViewContext()) return;
-        this.sync.propagateJoinedColumnToSourceTable(row, column, value, oldValue);
+    /** ビュー結合列の編集をソーステーブルのDOMとStoreに伝搬する
+     *  @returns JOINテーブルのStore行が追加または除去された場合にtrue */
+    propagateJoinedColumnToSourceTable(row: number, column: number, value: string, oldValue: string): boolean {
+        if (!this.hasViewContext()) return false;
+        return this.sync.propagateJoinedColumnToSourceTable(row, column, value, oldValue);
     }
 
     // --- Inspector委譲 ---

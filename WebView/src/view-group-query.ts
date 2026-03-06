@@ -34,13 +34,31 @@ export function readCellValue(cell: HTMLElement): string {
 
 /**
  * DOM上で上方向に走査し、グループリーダーのFK値とグループ内位置を返す
- * FK列が空の行（パディング行）から、FK値が入っているリーダー行を探す
+ * FK列が空の行（パディング行・空行）から、FK値が入っているリーダー行を探す
+ *
+ * 開始行にdata-base-row-indexがある場合: その値をグループ境界として同一グループ内を走査
+ * 開始行にdata-base-row-indexがない場合（空行）: 上方の空行を飛ばし、
+ *   最初にdata-base-row-indexを持つ行のグループに合流して走査を継続する
+ * いずれの場合もグループ境界（異なるbaseRowIndex）を越えない
  */
 export function findGroupLeader(
     tableElement: HTMLElement, domRow: number, fkDomColumn: number
 ): { fkValue: string; groupPosition: number } {
+    const currentRow = tableElement.children[domRow] as HTMLElement;
+    // 開始行がデータ行ならそのbaseRowIndexをグループ境界とする
+    // 空行なら走査中に最初のデータ行で境界を確定する
+    let groupBaseRowIndex: number | false = currentRow.hasAttribute('data-base-row-index')
+        ? getBaseRowIndex(currentRow) : false;
     for (let r = domRow - 1; r >= 1; r--) {
         const rowElement = tableElement.children[r] as HTMLElement;
+        if (!rowElement.hasAttribute('data-base-row-index')) continue;
+        const rowBase = getBaseRowIndex(rowElement);
+        if (groupBaseRowIndex === false) {
+            // 空行から走査して最初のデータ行に到達: このグループに合流
+            groupBaseRowIndex = rowBase;
+        } else if (rowBase !== groupBaseRowIndex) {
+            break;
+        }
         const cell = rowElement.children[fkDomColumn] as HTMLElement;
         const cellValue = readCellValue(cell);
         if (cellValue !== '') return { fkValue: cellValue, groupPosition: domRow - r };
@@ -116,4 +134,37 @@ export function findFkColumnIndex(
     return columnMappings.findIndex(
         m => m.tableName === sourceTableName && m.sourceColumnName === joinDef.sourceColumn
     );
+}
+
+/**
+ * 同じFK値を持つ全グループのリーダー行DOMインデックスを昇順で返す
+ *
+ * ビューテーブルでは同じFKソース値（例: group_id=1）を持つ複数のベース行がある。
+ * グループ内挿入時に同一FK値の他グループを全て特定するために使用する。
+ *
+ * @param tableElement テーブルのDOM要素
+ * @param fkDomColumn FK列のDOMインデックス（1始まり、行ヘッダーを含む）
+ * @param fkValue 検索するFK値
+ * @param excludeLeaderDomRow 除外するリーダー行のDOMインデックス（主挿入対象グループを除外）
+ * @returns リーダー行のDOMインデックスの昇順配列
+ */
+export function findAllGroupLeadersByFkValue(
+    tableElement: HTMLElement, fkDomColumn: number, fkValue: string, excludeLeaderDomRow: number
+): number[] {
+    const leaderDomRows: number[] = [];
+    for (let r = 1; r < tableElement.children.length; r++) {
+        const rowElement = tableElement.children[r] as HTMLElement;
+        // data-base-row-index属性がない行はデータ行でないため走査を終了
+        // ビューテーブルではデータ行が連続して並び、空行はその後方にまとまる構造なので
+        // データ行が途切れたら残りを走査する必要はない
+        if (!rowElement.hasAttribute('data-base-row-index')) break;
+        const cell = rowElement.children[fkDomColumn] as HTMLElement;
+        const cellValue = readCellValue(cell);
+        // FK列が空の行はグループの子行（リーダーではない）のためスキップ
+        if (cellValue !== fkValue) continue;
+        // 主挿入対象グループのリーダー行は除外
+        if (r === excludeLeaderDomRow) continue;
+        leaderDomRows.push(r);
+    }
+    return leaderDomRows;
 }

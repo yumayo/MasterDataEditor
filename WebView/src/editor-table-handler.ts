@@ -24,6 +24,8 @@ import {
 } from "./editor-actions";
 import {config} from "./config";
 import {buildAllKeyMaps} from "./view-table-data-builder";
+import {getBaseRowIndex} from "./model/view-row-metadata";
+import {findFkColumnIndex} from "./view-group-query";
 
 /**
  * 参照解決の結果
@@ -813,8 +815,101 @@ export class EditorTableHandler {
         }
         // 非ビュータブまたはFK再構築不要: applyCellChangesで統一処理
         const allChanges = this.table.applyCellChanges(changes);
+        // Lazy挿入が発生した場合: 空行からのJOIN PK入力で全グループを展開する
+        if (this.table.consumeJoinStoreRowAdded()) {
+            return this.expandGroupsAfterLazyInsertion(allChanges, range, copyRange);
+        }
         this.history.push({ changes: allChanges, range, copyRange });
         return range;
+    }
+
+    /**
+     * Lazy Store挿入後のグループ展開処理
+     *
+     * 空行のJOIN PK列に値が入力されStoreに新行が追加された後、
+     * 同一FK値を持つ全グループのDOM展開行数を再計算し、
+     * 不一致があるグループをViewRowRestructureCommandで再構築する。
+     *
+     * CellChangeCommand + ViewRowRestructureCommands をCompositeCommandにまとめ、
+     * Undo時は逆順で: グループ縮小 → セル値復元 → Store行除去 が実行される。
+     */
+    private expandGroupsAfterLazyInsertion(
+        allChanges: CellChange[], range: CellRange, copyRange: CellRange
+    ): CellRange {
+        const viewContext = this.table.getViewContext();
+        const tableElement = this.table.getTableElement();
+        // Lazy挿入後のキーマップを構築（Storeには新行が追加済み）
+        const keyMaps = buildAllKeyMaps(this.table.getStore(), viewContext.viewDefinition);
+        // 全データ行を走査し、グループ行数の不一致を検出する
+        // needsViewRowRestructureはFK列の「値は同じだがDOM行数とStore行数が異なる」ケースを検出する
+        const groupsToExpand: Array<{ leaderDomRow: number; fkDomColumn: number; fkValue: string }> = [];
+        let domIdx = 1;
+        while (domIdx < tableElement.children.length) {
+            const domRow = tableElement.children[domIdx] as HTMLElement;
+            if (!domRow.hasAttribute('data-base-row-index')) break;
+            const baseRowIndex = getBaseRowIndex(domRow);
+            // 各JOINのFK列をチェック
+            for (const join of viewContext.viewDefinition.joins) {
+                const fkDataCol = findFkColumnIndex(viewContext.viewDefinition, viewContext.columnMappings, join.targetTable);
+                if (fkDataCol === -1) continue;
+                const fkDomCol = fkDataCol + 1;
+                const fkValue = this.table.getCellValueAt(domIdx, fkDomCol);
+                if (fkValue === '') continue;
+                if (this.table.view.needsViewRowRestructure(domIdx, fkDomCol, fkValue)) {
+                    groupsToExpand.push({ leaderDomRow: domIdx, fkDomColumn: fkDomCol, fkValue });
+                }
+            }
+            // グループ終端まで飛ばす
+            domIdx++;
+            while (domIdx < tableElement.children.length) {
+                const nextRow = tableElement.children[domIdx] as HTMLElement;
+                if (!nextRow.hasAttribute('data-base-row-index') || getBaseRowIndex(nextRow) !== baseRowIndex) break;
+                domIdx++;
+            }
+        }
+        if (groupsToExpand.length === 0) {
+            this.history.push({ changes: allChanges, range, copyRange });
+            return range;
+        }
+        // 下から上の順で再構築（インデックスずれ防止）
+        const rowCountBefore = this.table.getRowCount();
+        groupsToExpand.sort((a, b) => b.leaderDomRow - a.leaderDomRow);
+        const restructureCommands: Command[] = [];
+        for (const group of groupsToExpand) {
+            restructureCommands.push(
+                this.table.view.buildAndExecuteViewRowRestructure(
+                    group.leaderDomRow, group.fkDomColumn, group.fkValue, keyMaps
+                )
+            );
+        }
+        // 空行に残った値をクリア（データはStoreに吸収済み、グループ再構築で正しい行に反映される）
+        for (const change of allChanges) {
+            if (change.row >= tableElement.children.length) continue;
+            const row = tableElement.children[change.row] as HTMLElement;
+            if (row && !row.hasAttribute('data-base-row-index')) {
+                for (let i = 1; i < row.children.length; i++) {
+                    const cell = row.children[i] as HTMLElement;
+                    if (cell.textContent !== '') cell.textContent = '';
+                }
+            }
+        }
+        // CompositeCommand: CellChangeCommand + ViewRowRestructureCommands
+        const rowDelta = this.table.getRowCount() - rowCountBefore;
+        const adjustedEndRow = Math.max(range.startRow, range.endRow + rowDelta);
+        const adjustedRange: CellRange = {
+            startRow: range.startRow, startColumn: range.startColumn,
+            endRow: adjustedEndRow, endColumn: range.endColumn,
+        };
+        const subCommands: Command[] = [];
+        const meaningfulChanges = allChanges.filter(c => c.oldValue !== c.newValue);
+        if (meaningfulChanges.length > 0) {
+            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
+        }
+        for (const cmd of restructureCommands) subCommands.push(cmd);
+        if (subCommands.length > 0) {
+            this.history.pushCommand(new CompositeCommand(subCommands), adjustedRange, copyRange);
+        }
+        return adjustedRange;
     }
 
     /**
@@ -992,23 +1087,21 @@ export class EditorTableHandler {
         // 参照を解決（動的参照対応）
         let resolvedReference = await this.resolveReferenceAsync();
 
-        // 明示的な参照がない場合、
-        // 逆参照されているPK列かチェック
+        // 明示的な参照がない場合、逆参照されているPK列かチェック
         if (!resolvedReference && this.tableData) {
             const focus = this.selection.getFocus();
             const columnIndex = focus.column - 1;
             if (columnIndex >= 0
-                && columnIndex
-                    < this.tableData.header.length
-                && this.tableData.header[columnIndex]
-                    .name === config.primaryKeyColumnName
-                && this.table
-                    .hasReverseReferences()) {
+                && columnIndex < this.tableData.header.length
+                && this.tableData.header[columnIndex].name === config.primaryKeyColumnName
+                && this.table.hasReverseReferences()) {
+                // ビュータブではベーステーブル名を使用する（viewのtableNameはビュー名であり参照テーブルとして無効）
+                const pkTableName = this.table.hasViewContext()
+                    ? this.table.getViewContext().viewDefinition.baseTable
+                    : this.table.tableName;
                 resolvedReference = {
-                    tableName:
-                        this.table.tableName,
-                    columnName:
-                        config.primaryKeyColumnName,
+                    tableName: pkTableName,
+                    columnName: config.primaryKeyColumnName,
                 };
             }
         }
