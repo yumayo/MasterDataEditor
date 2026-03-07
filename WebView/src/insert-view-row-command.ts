@@ -31,8 +31,10 @@ export class InsertViewRowCommand implements Command {
     private readonly rowIndex: number;
     private readonly metaIndex: number;
     /**
-     * execute()完了後の主行の実際のDOMインデックス
-     * execute()前の兄弟グループ挿入によってrowIndexがずれた場合に更新される
+     * execute()完了後の主行のDOMインデックス
+     * execute()で前方兄弟グループへ同期挿入するとrowIndexからずれるため追跡する。
+     * 用途: undo()の兄弟行削除時にfindAllGroupLeadersByFkValueでの主グループ除外に使用。
+     * 注意: 兄弟行を全て削除した後の主行位置には使えない（陳腐化するため metaIndex + 1 を使う）。
      */
     private actualRowIndex: number;
     /** 挿入した主行の状態（undo後に保存される） */
@@ -194,7 +196,8 @@ export class InsertViewRowCommand implements Command {
                 if (fkColumnDataIndex !== -1) {
                     const fkDomColumn = fkColumnDataIndex + 1;
                     const groupPosition = this.groupInfos[0].groupPosition;
-                    // actualRowIndex: execute()後に前の兄弟グループ挿入でずれた主行の正確な位置
+                    // undo()開始時点のDOMはexecute()完了直後と同一の形状なのでactualRowIndexは有効。
+                    // ただし兄弟行を削除するとDOMが変化するため、削除後の主行キャプチャにはmetaIndex + 1を使う。
                     const mainLeaderDomRow = this.actualRowIndex - groupPosition;
                     const siblingLeaderDomRows = findAllGroupLeadersByFkValue(tableElement, fkDomColumn, fkValue, mainLeaderDomRow);
                     // 降順で削除（後ろのグループから）
@@ -211,10 +214,11 @@ export class InsertViewRowCommand implements Command {
             }
         }
         // 主行をデタッチして保存（redo用）
-        // 兄弟削除後もactualRowIndexは主行の正しいDOMインデックスを指す
-        // （降順削除で後ろの兄弟から削除→actualRowIndex以降の兄弟を先に削除したが、
-        //   actualRowIndexより前の兄弟は存在しない（execute時にactualRowIndex補正済み））
-        const domRow = tableElement.children[this.actualRowIndex] as HTMLElement;
+        // DOMをSSOTとし、actualRowIndexに依存しない動的な位置特定を行う。
+        // 兄弟行を全て削除した後のDOMでは、主行は元のrowIndex（= metaIndex + 1）の位置に戻っている。
+        // actualRowIndexはexecute()後に前方の兄弟グループ挿入でずれているため、
+        // 前方兄弟を降順の後半（最後に）削除した時点でactualRowIndexは陳腐化している。
+        const domRow = tableElement.children[this.metaIndex + 1] as HTMLElement;
         this.savedRow = { domRow };
         // replaceViewRowsで1行削除・0行挿入（行番号再設定を含む）
         this.editorTable.view.replaceViewRows(this.metaIndex, 1, []);

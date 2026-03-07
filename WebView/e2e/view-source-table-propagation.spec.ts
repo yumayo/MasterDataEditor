@@ -5,6 +5,7 @@ import {
     readMockFileAsync,
     MockFileSystem,
 } from './fixtures/mock-api';
+import { expectTableDataAsync } from './fixtures/test-utils';
 
 /**
  * Explorerでテーブルを開き、アクティブなタブのEditorTableを返す
@@ -575,7 +576,7 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         // row1（WeaponShopグループの末尾子行=Shield行）の行ヘッダーを右クリック → 「下に行を挿入」
         // row1は groupPosition=1（子行）なので、次の行（row2=ItemShop）が別グループのリーダーであっても
         // グループ内挿入として扱い、WeaponShopグループに新行を挿入すべき
-        // バグ: 現状はrowAbove(baseRowIndex=0) !== rowAtInsert(baseRowIndex=1) でグループ境界挿入と判定される
+        // 修正済み: 以前はrowAbove(baseRowIndex=0) !== rowAtInsert(baseRowIndex=1) でグループ境界挿入と誤判定されていた
         const rowHeader = viewTable.locator('.editor-table-row-header').nth(1);
         await rowHeader.click({ button: 'right' });
         const menu = page.locator('.context-menu.visible');
@@ -618,5 +619,150 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         await expect(getDataCell(viewTable, 6, 3)).toHaveText('');
         await expect(getDataCell(viewTable, 6, 4)).toHaveText('');
 
+        // --- Undo ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+z');
+
+        // Undo後: 元の5データ行に復元されること
+        await expectTableDataAsync(viewTable, `
+            1, WeaponShop, 1, 1, Sword
+            ,           ,   , 2, Shield
+            2, ItemShop,  2, 3, Potion
+            3, SecretShop, 1, 1, Sword
+            ,           ,   , 2, Shield
+        `);
+
+        // --- Redo ---
+        await page.keyboard.press('Control+y');
+
+        // Redo後: 再び7行の挿入状態に戻ること
+        await expectTableDataAsync(viewTable, `
+            1, WeaponShop, 1, 1, Sword
+            ,           ,   , 2, Shield
+            ,           ,   ,  ,
+            2, ItemShop,  2, 3, Potion
+            3, SecretShop, 1, 1, Sword
+            ,           ,   , 2, Shield
+            ,           ,   ,  ,
+        `);
+        // Redo後の挿入行がグループ内挿入行（ベース列がパディングセル）であることを確認
+        await expect(getDataCell(viewTable, 2, 0)).toHaveClass(/view-padding-cell/);
+        await expect(getDataCell(viewTable, 6, 0)).toHaveClass(/view-padding-cell/);
+    });
+
+    /**
+     * Undo/Redoバグ再現テスト:
+     * 兄弟グループが主行より前（DOMインデックスが小さい位置）にある場合、
+     * execute時に前方の兄弟グループへ同期挿入すると主行のDOMインデックスが+1ずれる。
+     * undo時にその兄弟行を削除すると主行のDOMインデックスが-1戻るが、
+     * actualRowIndexはexecute完了時の値のまま更新されないため、
+     * savedRowが誤った行要素をキャプチャし、redo時にデータが壊れる。
+     *
+     * テストデータ: SecretShop(id=1, group_id=1)がWeaponShop(id=3, group_id=1)より前に表示される
+     * | shop.id | shop.name   | shop.group_id | shop_product.id | shop_product.item |
+     * |    1    | SecretShop  |      1        |       1         |      Sword        |  ← row0: group_id=1リーダー
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |  ← row1: group_id=1子行
+     * |    2    | ItemShop    |      2        |       3         |      Potion       |  ← row2: group_id=2リーダー
+     * |    3    | WeaponShop  |      1        |       1         |      Sword        |  ← row3: group_id=1リーダー（別ベース行）
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |  ← row4: group_id=1子行
+     */
+    function createShopWithSiblingBeforeFileSystem(): MockFileSystem {
+        return {
+            "schema/shop.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "name", type: "string" },
+                    { key: 2, name: "group_id", type: "int" },
+                ],
+                primary_key: "id",
+            }),
+            "data/shop.csv": ["id,name,group_id", "1,SecretShop,1", "2,ItemShop,2", "3,WeaponShop,1"].join("\n"),
+            "schema/shop_product.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "group_id", type: "int" },
+                    { key: 2, name: "item", type: "string" },
+                ],
+                primary_key: "id",
+            }),
+            "data/shop_product.csv": ["id,group_id,item", "1,1,Sword", "2,1,Shield", "3,2,Potion"].join("\n"),
+            "view/view_shop.json": JSON.stringify({
+                name: "view_shop",
+                baseTable: "shop",
+                joins: [{
+                    sourceColumn: "group_id",
+                    targetTable: "shop_product",
+                    targetColumn: "group_id",
+                    insertAfterViewColumnIndex: 2,
+                    sourceTable: "",
+                }],
+            }),
+        };
+    }
+
+    test('兄弟グループが主行より前にある場合のUndo/Redoが正しく動くこと', async ({ page }) => {
+        await installMockApiAsync(page, createShopWithSiblingBeforeFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_shop');
+
+        // 初期状態（5データ行）
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop,  1, 1, Sword
+            ,            ,   , 2, Shield
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,   , 2, Shield
+        `);
+
+        // row4（WeaponShopグループの末尾子行=Shield行）の行ヘッダーを右クリック → 「下に行を挿入」
+        // WeaponShopグループ末尾への挿入 → グループ内挿入として処理される
+        // 同一FK値(group_id=1)を持つSecretShopグループ（row0-1、主行より前にある）にも同期挿入される
+        const rowHeader = viewTable.locator('.editor-table-row-header').nth(4);
+        await rowHeader.click({ button: 'right' });
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
+
+        // 挿入後（7行）: SecretShop(row2)とWeaponShop(row6)に同期挿入行が追加
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop,  1, 1, Sword
+            ,            ,   , 2, Shield
+            ,            ,   ,  ,
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,   , 2, Shield
+            ,            ,   ,  ,
+        `);
+
+        // --- Undo ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+z');
+
+        // Undo後: 元の5データ行に復元されること
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop,  1, 1, Sword
+            ,            ,   , 2, Shield
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,   , 2, Shield
+        `);
+
+        // --- Redo ---
+        await page.keyboard.press('Control+y');
+
+        // Redo後: 再び7行の挿入状態に戻ること
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop,  1, 1, Sword
+            ,            ,   , 2, Shield
+            ,            ,   ,  ,
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,   , 2, Shield
+            ,            ,   ,  ,
+        `);
+        // Redo後の挿入行がグループ内挿入行（ベース列がパディングセル）であることを確認
+        // 修正済み: 以前はactualRowIndexがundo時に陳腐化し、savedRowが誤った空デフォルト行をキャプチャしていた
+        // 現在はundo()でmetaIndex + 1を使って主行を正確にキャプチャするため、redo時もパディングセルが正しく復元される
+        await expect(getDataCell(viewTable, 6, 0)).toHaveClass(/view-padding-cell/);
     });
 });
