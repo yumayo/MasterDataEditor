@@ -4,30 +4,31 @@
 - Frontend: Vanilla TypeScript (no framework), DOM is SSOT
 - Backend: C#
 - Design: Intentionally tightly coupled, Command pattern for Undo/Redo
-- View system: Base tables + JOIN tables, 1:N expansion creates "groups" of rows
-- Group structure: Leader row (groupPosition=0) + child rows (groupPosition>0), padding cells for base columns on child rows
-- Metadata stored in DOM attributes: `data-base-row-index`, `data-group-infos` (JSON)
+- WebView2 (Microsoft browser control) used for frontend hosting - "view" in WebView2API/api.ts is NOT related to the deleted View feature
 
 ## Key Files
-- `/WebView/src/insert-view-row-command.ts` - View row insertion (group-within vs boundary)
-- `/WebView/src/view-group-query.ts` - Pure functions for DOM group traversal
-- `/WebView/src/editor-table-view-sync.ts` - Propagation of view edits to source tables/Store
-- `/WebView/src/editor-table-handler.ts` - High-level edit handler, Lazy Store insertion + group expansion
-- `/WebView/src/editor-table.ts` - Core table, joinStoreRowAddedFlag for lazy insertion signaling
-- `/WebView/src/model/view-row-metadata.ts` - ViewRowGroupInfo interface, DOM attribute helpers
-- `/WebView/e2e/fixtures/test-utils.ts` - Shared test utilities (getDataCell, expectTableDataAsync)
+- `/WebView/src/editor-table.ts` - Core table
+- `/WebView/src/editor-table-handler.ts` - High-level edit handler
+- `/WebView/src/editor-table-reference.ts` - Reverse reference hints, groupPosition used here is NOT View-related
+- `/WebView/src/history.ts` - Undo/Redo history management
+- `/WebView/src/command.ts` - Command pattern implementations
+- `/WebView/e2e/fixtures/test-utils.ts` - Shared test utilities (getDataCell, expectTableDataAsync, expectCsvAsync)
 
-## Recurring Patterns & Risks
-- **Undo/Redo with sibling sync**: InsertViewRowCommand tracks actualRowIndex offset from sibling insertions. undo() uses findAllGroupLeadersByFkValue dynamically - fragile if DOM state changes between execute/undo.
-- **joinStoreRowAddedFlag**: Mutable flag consumed once - race-condition-like pattern, though single-threaded. Must be consumed before any other operation sets it.
-- **findAllGroupLeadersByFkValue**: Stops at first row without data-base-row-index - assumes data rows are contiguous. If insertions create gaps this breaks.
-- **getGroupInfos parses JSON from DOM**: No validation, `as string` assertion on getAttribute - will throw if attribute missing.
-- **isAboveChildRow (3c7a134)**: `getGroupInfos(rowAbove).some(g => g.groupPosition > 0)` - correct for single-JOIN but may false-positive on multi-JOIN where one level is leader and another is child.
-- **actualRowIndex in undo()**: L198 still uses actualRowIndex for mainLeaderDomRow before sibling deletion. Correct because siblings haven't been deleted yet. After deletion, main row is at metaIndex+1.
+## View Feature Status (as of ded3f74, 2026-03-07)
+- **View feature fully deleted** in commit ded3f74 (20 source files, 15 test files removed)
+- Cleanup fully completed: .view-padding-cell, .view-group-leader-row, .view-collapse-toggle CSS, markDirty() dead code, command.ts/test-utils.ts comment/selector all removed
+- docs/bug-report.md still references View concepts extensively (historical record, acceptable)
+
+## Recurring Review Patterns
+- Cleanup tasks often miss items in the SAME FILE as deleted code (e.g., .view-padding-cell was right below deleted blocks)
+- Comment-only fixes should trigger "is this code still needed?" analysis
+- Dead code detection: when removing a feature, search for methods whose ONLY callers were in the deleted code
 
 ## Review History
 - 2026-03-07 (ea2398b): Reviewed group-end insertion + FK sync. Found undo metaIndex drift, isAboveChildRow false-positive, redo sibling metaIndex fragility.
-- 2026-03-07 (3c7a134+unstaged): Reviewed actualRowIndex stale fix. Core fix correct. actualRowIndex field still needed for undo L198 sibling exclusion. Test coverage added for undo/redo with forward siblings.
+- 2026-03-07 (3c7a134+unstaged): Reviewed actualRowIndex stale fix. Core fix correct.
+- 2026-03-07 (ded3f74+unstaged): Reviewed View cleanup. Found .view-padding-cell CSS residue, markDirty() dead code.
+- 2026-03-07 (ded3f74+unstaged v2): Fix confirmed. All View residue removed. APPROVED.
 
 ## Test Infrastructure Issues
-- Massive copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files. test-utils.ts created but only exports getDataCell and expectTableDataAsync.
+- Massive copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files. test-utils.ts exports getDataCell, expectTableDataAsync, expectCsvAsync.
