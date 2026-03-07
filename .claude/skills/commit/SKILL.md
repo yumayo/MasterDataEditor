@@ -28,3 +28,7 @@ Excelの挙動に合わせ、Shift+矢印キーで選択範囲を拡張しても
 updateBackgroundElement()ヘルパーでDRY原則を適用
 extendSelection/extendSelectionOffsetからthis.focus更新を削除
 ```
+
+## docs/bug-report.md の包含
+
+不具合修正のコミットでは `docs/bug-report.md` が更新されているはずです。コミット対象に含まれていることを確認してください。`git add docs/bug-report.md` を忘れないでください。
