@@ -2,10 +2,9 @@ import { test, expect } from '@playwright/test';
 import { Page, Locator } from '@playwright/test';
 import {
     installMockApiAsync,
-    readMockFileAsync,
     MockFileSystem,
 } from './fixtures/mock-api';
-import { expectTableDataAsync } from './fixtures/test-utils';
+import { expectTableDataAsync, expectCsvAsync } from './fixtures/test-utils';
 
 /**
  * Explorerでテーブルを開き、アクティブなタブのEditorTableを返す
@@ -347,14 +346,12 @@ test.describe('空行のJOIN列編集がグループ境界を越えないこと'
         await firstCell.click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        const rewardCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
-        const rewardLines = rewardCsv.split('\n').filter((l: string) => l.trim() !== '');
-        // ヘッダー + 3データ行（元のデータのみ）= 4行
-        expect(rewardLines.length).toBe(4);
-        expect(rewardCsv).toContain('1,1,Gold');
-        expect(rewardCsv).toContain('2,1,Gem');
-        expect(rewardCsv).toContain('3,2,Potion');
-        expect(rewardCsv).not.toContain('不正な値');
+        await expectCsvAsync(page, 'data/quest_reward.csv', `
+            id, group_id, item
+            1,  1,        Gold
+            2,  1,        Gem
+            3,  2,        Potion
+        `);
     });
 
     test('空行のJOIN PK列を編集するとグループが展開しStore行が追加されること', async ({ page }) => {
@@ -382,14 +379,13 @@ test.describe('空行のJOIN列編集がグループ境界を越えないこと'
         await firstCell.click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        const rewardCsv = await readMockFileAsync(page, 'data/quest_reward.csv');
-        const rewardLines = rewardCsv.split('\n').filter((l: string) => l.trim() !== '');
-        // ヘッダー + 4データ行（元の3行 + 新規1行）= 5行
-        expect(rewardLines.length).toBe(5);
-        expect(rewardCsv).toContain('1,1,Gold');
-        expect(rewardCsv).toContain('2,1,Gem');
-        expect(rewardCsv).toContain('3,2,Potion');
-        expect(rewardCsv).toContain('4,2,');
+        await expectCsvAsync(page, 'data/quest_reward.csv', `
+            id, group_id, item
+            1,  1,        Gold
+            2,  1,        Gem
+            3,  2,        Potion
+            4,  2,
+        `);
     });
 });
 
@@ -495,13 +491,12 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         await firstCell.click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        const productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
-        const productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
-        // ヘッダー + 3データ行（元の3行のみ、PK未設定の挿入行はStore行なし）= 4行
-        expect(productLines.length).toBe(4);
-        expect(productCsv).toContain('1,1,Sword');
-        expect(productCsv).toContain('2,1,Shield');
-        expect(productCsv).toContain('3,2,Potion');
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+        `);
     });
 
     test('新しいJOIN行を追加すると同じFK値を持つ全グループが同時に展開されること', async ({ page }) => {
@@ -556,14 +551,13 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         await firstCell.click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        const productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
-        const productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
-        // ヘッダー + 4データ行（元の3行 + 新規1行）= 5行
-        expect(productLines.length).toBe(5);
-        expect(productCsv).toContain('1,1,Sword');
-        expect(productCsv).toContain('2,1,Shield');
-        expect(productCsv).toContain('3,2,Potion');
-        expect(productCsv).toContain('4,1,');
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+            4,  1,
+        `);
     });
 
     test('グループ末尾への行挿入でも同一FK値グループに同期挿入されること', async ({ page }) => {
@@ -720,11 +714,11 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
 
         // 初期状態（5データ行）
         await expectTableDataAsync(viewTable, `
-            1, SecretShop,  1, 1, Sword
-            ,            ,   , 2, Shield
-            2, ItemShop,   2, 3, Potion
-            3, WeaponShop, 1, 1, Sword
-            ,            ,   , 2, Shield
+            1,  SecretShop,  1, 1,  Sword
+             ,            ,   , 2, Shield
+            2,    ItemShop,  2, 3, Potion
+            3,  WeaponShop,  1, 1,  Sword
+             ,            ,   , 2, Shield
         `);
 
         // row4（WeaponShopグループの末尾子行=Shield行）の行ヘッダーを右クリック → 「下に行を挿入」
@@ -738,13 +732,13 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
 
         // 挿入後（7行）: SecretShop(row2)とWeaponShop(row6)に同期挿入行が追加
         await expectTableDataAsync(viewTable, `
-            1, SecretShop,  1, 1, Sword
-            ,            ,   , 2, Shield
-            ,            ,   ,  ,
-            2, ItemShop,   2, 3, Potion
-            3, WeaponShop, 1, 1, Sword
-            ,            ,   , 2, Shield
-            ,            ,   ,  ,
+            1,  SecretShop,  1, 1,  Sword
+             ,            ,   , 2, Shield
+             ,            ,   ,  ,
+            2,    ItemShop,  2, 3, Potion
+            3,  WeaponShop,  1, 1,  Sword
+             ,            ,   , 2, Shield
+             ,            ,   ,  ,
         `);
 
         // --- 挿入後のCSV保存検証 ---
@@ -752,18 +746,18 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        let shopCsv = await readMockFileAsync(page, 'data/shop.csv');
-        let shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(shopLines.length).toBe(4); // ヘッダー + 3データ行
-        expect(shopCsv).toContain('1,SecretShop,1');
-        expect(shopCsv).toContain('2,ItemShop,2');
-        expect(shopCsv).toContain('3,WeaponShop,1');
-        let productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
-        let productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(productLines.length).toBe(4); // ヘッダー + 3データ行
-        expect(productCsv).toContain('1,1,Sword');
-        expect(productCsv).toContain('2,1,Shield');
-        expect(productCsv).toContain('3,2,Potion');
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id,        name, group_id
+             1,  SecretShop,        1
+             2,    ItemShop,        2
+             3,  WeaponShop,        1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id,   item
+            1,         1,  Sword
+            2,         1, Shield
+            3,         2, Potion
+        `);
 
         // --- Undo ---
         await getDataCell(viewTable, 0, 0).click();
@@ -771,29 +765,29 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
 
         // Undo後: 元の5データ行に復元されること
         await expectTableDataAsync(viewTable, `
-            1, SecretShop,  1, 1, Sword
-            ,            ,   , 2, Shield
-            2, ItemShop,   2, 3, Potion
-            3, WeaponShop, 1, 1, Sword
-            ,            ,   , 2, Shield
+            1,  SecretShop,  1, 1, Sword
+             ,            ,   , 2, Shield
+            2,    ItemShop,  2, 3, Potion
+            3,  WeaponShop,  1, 1, Sword
+             ,            ,   , 2, Shield
         `);
 
         // --- Undo後のCSV保存検証 ---
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        shopCsv = await readMockFileAsync(page, 'data/shop.csv');
-        shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(shopLines.length).toBe(4);
-        expect(shopCsv).toContain('1,SecretShop,1');
-        expect(shopCsv).toContain('2,ItemShop,2');
-        expect(shopCsv).toContain('3,WeaponShop,1');
-        productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
-        productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(productLines.length).toBe(4);
-        expect(productCsv).toContain('1,1,Sword');
-        expect(productCsv).toContain('2,1,Shield');
-        expect(productCsv).toContain('3,2,Potion');
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id,        name,  group_id
+             1,  SecretShop,         1
+             2,    ItemShop,         2
+             3,  WeaponShop,         1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id,   group_id,     item
+             1,          1,    Sword
+             2,          1,   Shield
+             3,          2,   Potion
+        `);
 
         // --- Redo ---
         await page.keyboard.press('Control+y');
@@ -803,8 +797,8 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
             1, SecretShop,  1, 1, Sword
             ,            ,   , 2, Shield
             ,            ,   ,  ,
-            2, ItemShop,   2, 3, Potion
-            3, WeaponShop, 1, 1, Sword
+            2,   ItemShop,  2, 3, Potion
+            3, WeaponShop,  1, 1, Sword
             ,            ,   , 2, Shield
             ,            ,   ,  ,
         `);
@@ -815,17 +809,17 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        shopCsv = await readMockFileAsync(page, 'data/shop.csv');
-        shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(shopLines.length).toBe(4);
-        expect(shopCsv).toContain('1,SecretShop,1');
-        expect(shopCsv).toContain('2,ItemShop,2');
-        expect(shopCsv).toContain('3,WeaponShop,1');
-        productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
-        productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
-        expect(productLines.length).toBe(4);
-        expect(productCsv).toContain('1,1,Sword');
-        expect(productCsv).toContain('2,1,Shield');
-        expect(productCsv).toContain('3,2,Potion');
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id,        name, group_id
+             1,  SecretShop,        1
+             2,    ItemShop,        2
+             3,  WeaponShop,        1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id,   item
+             1,        1,  Sword
+             2,        1, Shield
+             3,        2, Potion
+        `);
     });
 });

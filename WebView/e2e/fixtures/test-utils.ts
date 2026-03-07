@@ -1,4 +1,5 @@
-import { Locator, expect } from '@playwright/test';
+import { Locator, Page, expect } from '@playwright/test';
+import { readMockFileAsync } from './mock-api';
 
 /**
  * 指定した行・列のデータセルを返す
@@ -27,6 +28,34 @@ export function getDataCell(table: Locator, rowIndex: number, colIndex: number):
  * セル値読み取りロジック（プロダクションコードのreadCellValue/view-group-query.tsと同一）:
  * .cell-value要素があればその内容、特殊要素がある場合はテキストノードのみ結合、それ以外はtextContent全体。
  */
+/**
+ * 保存されたCSVファイルの内容を一括検証する
+ *
+ * 使用例:
+ *   await expectCsvAsync(page, 'data/shop_product.csv', `
+ *       id, group_id, item
+ *       1,  1,        Sword
+ *       2,  1,        Shield
+ *       3,  2,        Potion
+ *   `);
+ *
+ * 各セル値は前後の空白をtrimして比較する。
+ * 行数が一致しない場合もエラーとなる。
+ */
+export async function expectCsvAsync(page: Page, filePath: string, expectedCsv: string): Promise<void> {
+    const csv = await readMockFileAsync(page, filePath);
+    const actualLines = csv.split('\n').filter(l => l.trim() !== '');
+    const expectedLines = expectedCsv.split('\n').map(l => l.trim()).filter(l => l !== '');
+    expect(actualLines.length, `${filePath}: 行数が一致しません (actual=${actualLines.length}, expected=${expectedLines.length})`).toBe(expectedLines.length);
+    for (let i = 0; i < expectedLines.length; i++) {
+        const expectedCells = expectedLines[i].split(',').map(c => c.trim());
+        const actualCells = actualLines[i].split(',');
+        for (let c = 0; c < expectedCells.length; c++) {
+            expect(actualCells[c], `${filePath}: line[${i}] col[${c}] expected "${expectedCells[c]}" but got "${actualCells[c]}"`).toBe(expectedCells[c]);
+        }
+    }
+}
+
 export async function expectTableDataAsync(table: Locator, expectedCsv: string): Promise<void> {
     const lines = expectedCsv.split('\n').map(l => l.trim()).filter(l => l !== '');
     for (let row = 0; row < lines.length; row++) {
