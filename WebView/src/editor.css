@@ -9,5 +9,13 @@
     height: calc(100vh - 36px);
     width: calc(100vw - 300px);
 
+    /* overflow: auto から overflow: hidden に変更し、display: flex を追加して2ペイン構成にする */
+    overflow: hidden;
+    display: flex;
+}
+
+.editor-left-pane {
+    flex: 1 1 auto;
     overflow: auto;
+    position: relative;
 }

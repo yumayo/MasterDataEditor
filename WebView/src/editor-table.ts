@@ -15,6 +15,7 @@ import {EditorTableReference} from "./editor-table-reference";
 import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {RelationsPanel} from "./relations-panel";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -48,6 +49,8 @@ export class EditorTable {
     contextMenuHandler!: EditorTableContextMenu;
     /** テーブル構造操作モジュール */
     structure!: EditorTableStructure;
+    /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
+    relationsPanel: RelationsPanel | false;
 
     constructor(
         tableName: string,
@@ -74,6 +77,7 @@ export class EditorTable {
         this.scrollBinding = scrollBinding;
         this.sidebar = sidebar;
         this.element = document.createElement('div');
+        this.relationsPanel = false;
         this.selectionDragController = new SelectionDragController(
             this.element,
             selection,
@@ -682,6 +686,25 @@ export class EditorTable {
     }
 
     // =========================================================================
+    // RelationsPanel 連携
+    // =========================================================================
+
+    /** 行選択が変化したときにRelationsPanelへ通知する（Selectionから呼ばれる） */
+    notifyRowSelectionChanged(rowIndex: number): void {
+        if (this.relationsPanel === false) return;
+        this.relationsPanel.updateForRow(rowIndex);
+    }
+
+    /**
+     * セル値変更後にRelationsPanelを強制再描画する
+     * Selection.forceNotifyRelationsPanel() 経由でlastNotifiedRowをリセットしてから通知する
+     */
+    forceRefreshRelationsPanel(): void {
+        if (this.relationsPanel === false) return;
+        this.selection.forceNotifyRelationsPanel();
+    }
+
+    // =========================================================================
     // ファサード: EditorTableReference
     // =========================================================================
 
@@ -698,17 +721,21 @@ export class EditorTable {
 
     /**
      * ユーザー編集時のセル変更を適用する（DOM更新 + ストア同期）
+     * ループ完了後に1回だけRelationsPanelを更新する（毎セル発火を防止）
      */
     applyCellChanges(changes: CellChange[]): CellChange[] {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
+        this.forceRefreshRelationsPanel();
         return changes;
     }
 
     /**
      * 変更リストをDOMに再適用する（Undo/Redo/Fill用）
+     * ループ完了後に1回だけRelationsPanelを更新する（毎セル発火を防止）
      */
     replayCellChanges(changes: CellChange[]): void {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
+        this.forceRefreshRelationsPanel();
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */

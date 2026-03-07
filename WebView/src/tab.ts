@@ -17,6 +17,7 @@ import {Sidebar} from "./sidebar";
 import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {RelationsPanel} from "./relations-panel";
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -92,6 +93,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
     private pendingNavigationColumnIndex: number;
 
+    /** グローバルなリレーションパネル（全タブで共有、editor.elementの右ペインに配置） */
+    private readonly relationsPanel: RelationsPanel;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -108,6 +112,11 @@ export class Tab {
         this.pendingNavigationColumnIndex = -1;
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.store, this.referenceDataCache);
+
+        // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
+        // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
+        this.relationsPanel = new RelationsPanel(this.referenceDataCache, this.store);
+        this.editor.appendRelationsPanel(this.relationsPanel);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -345,8 +354,9 @@ export class Tab {
             }
         }
 
-        // アクティブタブが削除された場合はクリア
+        // アクティブタブが削除された場合はリレーションパネルの接続を解除してクリアする
         if (this.activeTabName === name) {
+            this.relationsPanel.disconnectEditorTable();
             this.activeTabName = false;
         }
     }
@@ -394,10 +404,11 @@ export class Tab {
      * タブ状態を非アクティブ化（DOMを非表示にしてイベントリスナーを解除）
      */
     private deactivateTabState(state: TabState): void {
-        // スクロール位置をwrapperが表示されている間に保存する
-        state.savedScrollLeft = this.editor.element.scrollLeft;
-        state.savedScrollTop = this.editor.element.scrollTop;
+        // スクロール位置をwrapperが表示されている間に保存する（左ペインのスクロール）
+        this.editor.saveScrollPosition(state);
         state.wrapperElement.style.display = 'none';
+        // グローバルリレーションパネルのEditorTable接続を解除する（relationsPanel内でフィールドもリセットされる）
+        this.relationsPanel.disconnectEditorTable();
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
         state.fillController.deactivate();
@@ -409,9 +420,13 @@ export class Tab {
      */
     activateTabState(state: TabState): void {
         state.wrapperElement.style.display = '';
-        // スクロール位置をイベントリスナー登録前に復元する
-        this.editor.element.scrollLeft = state.savedScrollLeft;
-        this.editor.element.scrollTop = state.savedScrollTop;
+        // グローバルリレーションパネルにアクティブなEditorTableを接続する
+        // connectEditorTable内でEditorTable.relationsPanel フィールドも設定される（相互参照）
+        this.relationsPanel.connectEditorTable(state.editorTable);
+        // タブ切り替え後に同じ行にフォーカスしていてもパネルが更新されるようにリセットする
+        state.selection.resetNotification();
+        // スクロール位置をイベントリスナー登録前に復元する（左ペインのスクロール）
+        this.editor.restoreScrollPosition(state);
         state.editorTable.activate();
         state.areaResizer.activate();
         state.fillController.activate();
@@ -433,10 +448,11 @@ export class Tab {
             const tableData = EditorTableData.parse(json, csv);
 
             // ラッパー要素を作成（このタブのDOM全体を包む）
+            // editor.appendChild は左ペインへのappendに変更された
             const wrapperElement = document.createElement('div');
             wrapperElement.classList.add('tab-wrapper');
             wrapperElement.dataset.tabName = name;
-            this.editor.element.appendChild(wrapperElement);
+            this.editor.appendChild(wrapperElement);
 
             // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
             const editorTableFactoryResult = this.createEditorTable(
@@ -515,7 +531,8 @@ export class Tab {
         const editorTable = {} as EditorTable;
 
         // ScrollViewportController を作成（editorTable.onScroll を参照）
-        const scrollController = new ScrollViewportController(this.editor.element, () => {
+        // スクロール対象は左ペイン（editor.getLeftPaneForScroll()）に変更
+        const scrollController = new ScrollViewportController(this.editor.getLeftPaneForScroll(), () => {
             editorTable.onScroll();
         });
 

@@ -1,0 +1,265 @@
+/* =========================================================================
+   リレーションパネル — 右ペインのスタイル
+   既存のCSS変数（--background-color, --border-color, --font-color 等）を優先して使用する
+   ========================================================================= */
+
+.relations-panel {
+    flex: 0 0 380px;
+    border-left: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--background-sub-color);
+    color: var(--font-color);
+    font-size: 12px;
+}
+
+/* ─── プレースホルダー（行未選択・参照なし） ─── */
+
+.relations-panel-placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--font-color);
+    opacity: 0.4;
+    font-size: 12px;
+    user-select: none;
+}
+
+/* ─── コンテンツ（行選択後） ─── */
+
+.relations-panel-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ─── セクションヘッダー（"RELATIONS" テキスト） ─── */
+
+.relations-panel-section-header {
+    padding: 6px 12px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--font-color);
+    opacity: 0.5;
+    background-color: var(--background-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+/* ─── パンくずリスト ─── */
+
+.relations-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--background-color);
+    flex-shrink: 0;
+    min-height: 28px;
+    gap: 0;
+}
+
+.relations-breadcrumb-sep {
+    color: var(--font-color);
+    opacity: 0.4;
+    margin: 0 4px;
+    font-size: 10px;
+    user-select: none;
+}
+
+.relations-breadcrumb-item {
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #3d6bff;
+    transition: background 0.1s;
+}
+
+.relations-breadcrumb-item:hover {
+    background-color: rgba(61, 107, 255, 0.12);
+}
+
+.relations-breadcrumb-item--active {
+    font-weight: 600;
+    color: var(--font-color);
+    cursor: default;
+}
+
+.relations-breadcrumb-item--active:hover {
+    background-color: transparent;
+}
+
+/* ─── 参照エントリリスト ─── */
+
+.relations-ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.relations-ref-list-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: none;
+    border-left: 2px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--font-color);
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+    transition: background 0.12s;
+    width: 100%;
+}
+
+.relations-ref-list-item:hover {
+    background-color: rgba(61, 107, 255, 0.06);
+}
+
+.relations-ref-list-item--active {
+    background-color: rgba(61, 107, 255, 0.12);
+    color: var(--font-color);
+    border-left-color: #3d6bff;
+}
+
+.relations-ref-list-item--active:hover {
+    background-color: rgba(61, 107, 255, 0.16);
+}
+
+.relations-ref-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.relations-ref-count {
+    font-size: 10px;
+    background-color: var(--background-color);
+    padding: 1px 5px;
+    border-radius: 3px;
+    min-width: 18px;
+    text-align: center;
+    opacity: 0.8;
+}
+
+/* ─── 参照種別タグ ─── */
+
+.relations-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+}
+
+.relations-tag--1n {
+    color: #2dd4bf;
+    background-color: rgba(45, 212, 191, 0.10);
+    border: 1px solid rgba(45, 212, 191, 0.20);
+}
+
+.relations-tag--n1 {
+    color: #a78bfa;
+    background-color: rgba(167, 139, 250, 0.10);
+    border: 1px solid rgba(167, 139, 250, 0.20);
+}
+
+/* ─── テーブルセクション ─── */
+
+.relations-table-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.relations-table-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px 4px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.relations-table-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--font-color);
+}
+
+.relations-table-row-count {
+    margin-left: auto;
+    font-size: 10px;
+    opacity: 0.5;
+}
+
+/* ─── ミニテーブル ─── */
+
+.relations-mini-table-wrapper {
+    flex: 1;
+    overflow: auto;
+}
+
+.relations-mini-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 11px;
+}
+
+.relations-mini-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 4px 8px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--font-color);
+    opacity: 0.6;
+    background-color: var(--background-sub-color);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.relations-mini-table tbody td {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    color: var(--font-color);
+}
+
+.relations-mini-table-row {
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.relations-mini-table-row:hover {
+    background-color: rgba(61, 107, 255, 0.06);
+}
+
+.relations-mini-table-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--font-color);
+    opacity: 0.4;
+    font-size: 11px;
+}
