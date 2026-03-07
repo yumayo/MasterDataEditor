@@ -25,7 +25,7 @@ export function getDataCell(table: Locator, rowIndex: number, colIndex: number):
  * 指定した行数分だけ検証し、それ以降の行は検証しない。
  * セル内のトグル・参照ヒント等の装飾要素は除外してデータ値のみ比較する。
  *
- * セル値読み取りロジック（プロダクションコードのreadCellValue/view-group-query.tsと同一）:
+ * セル値読み取りロジック（プロダクションコードのreadCellValueと同一）:
  * .cell-value要素があればその内容、特殊要素がある場合はテキストノードのみ結合、それ以外はtextContent全体。
  */
 /**
@@ -65,7 +65,7 @@ export async function expectTableDataAsync(table: Locator, expectedCsv: string):
             await expect.poll(() => cell.evaluate(el => {
                 const valueEl = el.querySelector('.cell-value');
                 if (valueEl) return valueEl.textContent!;
-                const hasSpecial = el.querySelector('.cell-reference-hint, .cell-reverse-reference-hint, .view-collapse-toggle');
+                const hasSpecial = el.querySelector('.cell-reference-hint, .cell-reverse-reference-hint');
                 if (hasSpecial) {
                     let t = '';
                     for (const node of Array.from(el.childNodes)) {

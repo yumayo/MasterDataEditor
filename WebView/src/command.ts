@@ -104,8 +104,7 @@ export class CellChangeCommand implements Command {
  * 複数のコマンドを順序付きで管理するCompositeコマンド
  *
  * execute/redoは登録順、undoは逆順で実行する。
- * ペースト時のCellChangeCommand + ViewRowRestructureCommand統合など、
- * 異種コマンドの原子的なUndo/Redoに使用する。
+ * 複数の異種コマンドを原子的なUndo/Redoとして扱うために使用する。
  */
 export class CompositeCommand implements Command {
     private readonly commands: Command[];

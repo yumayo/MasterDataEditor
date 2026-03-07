@@ -174,28 +174,3 @@
         rgba(0, 120, 215, 0.3)
     );
 }
-
-/* グループリーダー行の上辺ボーダー（グループの区切りを視覚化） */
-.view-group-leader-row {
-    border-top: 2px solid rgba(0, 0, 0, 0.15);
-}
-
-/* 折りたたみトグル（ソースカラムセル内に配置） */
-.view-collapse-toggle {
-    cursor: pointer;
-    user-select: none;
-    margin-right: 4px;
-    font-size: 10px;
-    color: #666;
-    display: inline;
-}
-
-.view-collapse-toggle:hover {
-    color: #333;
-}
-
-/* パディングセル（1:n展開で重複データを非表示にしたセル） */
-/* 見た目は通常セルと同じ。編集時の拒否アニメーションで区別する */
-.view-padding-cell {
-    /* 意図的に空: 通常セルと同じ外観 */
-}
