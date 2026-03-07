@@ -551,4 +551,72 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         expect(productCsv).toContain('3,2,Potion');
         expect(productCsv).toContain('4,1,');
     });
+
+    test('グループ末尾への行挿入でも同一FK値グループに同期挿入されること', async ({ page }) => {
+        await installMockApiAsync(page, createShopFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_shop');
+        // 初期状態を確認
+        // ビュー列: shop.id(0), shop.name(1), shop.group_id(2), shop_product.id(3), shop_product.item(4)
+        // row0: 1, WeaponShop, 1, 1, Sword    ← group_id=1リーダー
+        // row1: [pad], [pad], [pad], 2, Shield ← group_id=1子行（WeaponShopグループの末尾）
+        // row2: 2, ItemShop, 2, 3, Potion      ← group_id=2リーダー
+        // row3: 3, SecretShop, 1, 1, Sword     ← group_id=1リーダー（別ベース行）
+        // row4: [pad], [pad], [pad], 2, Shield ← group_id=1子行（SecretShopグループの末尾）
+        await expect(getDataCell(viewTable, 0, 0)).toHaveText('1');
+        await expect(getDataCell(viewTable, 0, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('Shield');
+        await expect(getDataCell(viewTable, 2, 0)).toHaveText('2');
+        await expect(getDataCell(viewTable, 2, 4)).toHaveText('Potion');
+        await expect(getDataCell(viewTable, 3, 0)).toHaveText('3');
+        await expect(getDataCell(viewTable, 4, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 4, 4)).toHaveText('Shield');
+        // row1（WeaponShopグループの末尾子行=Shield行）の行ヘッダーを右クリック → 「下に行を挿入」
+        // row1は groupPosition=1（子行）なので、次の行（row2=ItemShop）が別グループのリーダーであっても
+        // グループ内挿入として扱い、WeaponShopグループに新行を挿入すべき
+        // バグ: 現状はrowAbove(baseRowIndex=0) !== rowAtInsert(baseRowIndex=1) でグループ境界挿入と判定される
+        const rowHeader = viewTable.locator('.editor-table-row-header').nth(1);
+        await rowHeader.click({ button: 'right' });
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
+        // 挿入後の期待状態（7行）:
+        // row0: 1, WeaponShop, 1, 1, Sword          ← WeaponShopリーダー（変化なし）
+        // row1: [pad], [pad], [pad], 2, Shield        ← WeaponShop子行（変化なし）
+        // row2: [pad], [pad], [pad], (empty), (empty) ← WeaponShop挿入行（新規）
+        // row3: 2, ItemShop, 2, 3, Potion             ← ItemShopリーダー（変化なし）
+        // row4: 3, SecretShop, 1, 1, Sword            ← SecretShopリーダー（変化なし）
+        // row5: [pad], [pad], [pad], 2, Shield        ← SecretShop子行（変化なし）
+        // row6: [pad], [pad], [pad], (empty), (empty) ← SecretShop同期挿入行（新規）
+
+        // WeaponShopグループが2行→3行に展開されること
+        await expect(getDataCell(viewTable, 0, 0)).toHaveText('1');
+        await expect(getDataCell(viewTable, 0, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 1, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 1, 4)).toHaveText('Shield');
+        // row2: WeaponShop挿入行（ベーステーブル列はパディング=空、JOIN列も空）
+        await expect(getDataCell(viewTable, 2, 0)).toHaveText('');
+        await expect(getDataCell(viewTable, 2, 1)).toHaveText('');
+        await expect(getDataCell(viewTable, 2, 2)).toHaveText('');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('');
+        await expect(getDataCell(viewTable, 2, 4)).toHaveText('');
+
+        // ItemShopグループは変化なし（1行のまま、row3）
+        await expect(getDataCell(viewTable, 3, 0)).toHaveText('2');
+        await expect(getDataCell(viewTable, 3, 4)).toHaveText('Potion');
+
+        // SecretShopグループが2行→3行に展開されること（同一FK値=1の同期挿入）
+        await expect(getDataCell(viewTable, 4, 0)).toHaveText('3');
+        await expect(getDataCell(viewTable, 4, 4)).toHaveText('Sword');
+        await expect(getDataCell(viewTable, 5, 3)).toHaveText('2');
+        await expect(getDataCell(viewTable, 5, 4)).toHaveText('Shield');
+        // row6: SecretShop同期挿入行（ベーステーブル列はパディング=空、JOIN列も空）
+        await expect(getDataCell(viewTable, 6, 0)).toHaveText('');
+        await expect(getDataCell(viewTable, 6, 1)).toHaveText('');
+        await expect(getDataCell(viewTable, 6, 2)).toHaveText('');
+        await expect(getDataCell(viewTable, 6, 3)).toHaveText('');
+        await expect(getDataCell(viewTable, 6, 4)).toHaveText('');
+
+    });
 });

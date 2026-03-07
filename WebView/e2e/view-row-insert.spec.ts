@@ -148,8 +148,8 @@ test.describe('ビュータブでの行挿入', () => {
         // 初期行数を取得（JOINにより展開されるため絶対値はハードコードしない）
         const initialRowCount = await getDataRowCountAsync(table);
 
-        // 行2（尖ったかま、パディング行）の下に行を挿入
-        await rightClickRowHeaderAsync(table, 2);
+        // 行3（道具屋、リーダー行）の下に行を挿入（リーダー行のgroupPosition=0なのでグループ境界挿入になる）
+        await rightClickRowHeaderAsync(table, 3);
         await clickContextMenuItemAsync(page, '下に行を挿入');
 
         // 挿入後: 初期行数 + 1 になる
@@ -157,11 +157,11 @@ test.describe('ビュータブでの行挿入', () => {
         expect(afterInsertRowCount).toBe(initialRowCount + 1);
 
         // 挿入された行のPK列（shop.id、column 0）に新しいPK値を入力
-        // 挿入行はrow 3の位置（元のrow 3=道具屋リーダーはrow 4に移動）
-        await editCellAsync(page, table, 3, 0, '999');
+        // 挿入行はrow 4の位置（道具屋の下に新規ベース行として挿入）
+        await editCellAsync(page, table, 4, 0, '999');
 
         // Name列（shop.name、column 1）に値を入力
-        await editCellAsync(page, table, 3, 1, 'テスト店');
+        await editCellAsync(page, table, 4, 1, 'テスト店');
 
         // 保存（Ctrl+S）
         await clickFirstCellAsync(table);

@@ -60,13 +60,18 @@ export class InsertViewRowCommand implements Command {
         const viewContext = editorTable.getViewContext();
         const joins = viewContext.viewDefinition.joins;
         const tableElement = editorTable.getTableElement();
-        // グループ内挿入の判定: 挿入位置の前後の行が同じbaseRowIndexを持つか
+        // グループ内挿入の判定:
+        // 1. 前後の行が同じbaseRowIndexを持つ（グループ中間挿入）
+        // 2. OR 前行がグループの子行（groupPosition > 0）（グループ末尾挿入）
+        //    ← editor-table-view-style.tsのグループリーダー判定の逆パターン
         const rowAbove = tableElement.children[rowIndex - 1] as HTMLElement;
         const rowAtInsert = tableElement.children[rowIndex] as HTMLElement;
         const aboveHasMeta = rowAbove && rowAbove.hasAttribute('data-base-row-index');
         const atInsertHasMeta = rowAtInsert && rowAtInsert.hasAttribute('data-base-row-index');
-        if (aboveHasMeta && atInsertHasMeta && getBaseRowIndex(rowAbove) === getBaseRowIndex(rowAtInsert)) {
-            // グループ内挿入: 前後の行が同じグループに属する
+        const isSameGroup = aboveHasMeta && atInsertHasMeta && getBaseRowIndex(rowAbove) === getBaseRowIndex(rowAtInsert);
+        const isAboveChildRow = aboveHasMeta && getGroupInfos(rowAbove).some(g => g.groupPosition > 0);
+        if (isSameGroup || isAboveChildRow) {
+            // グループ内挿入: グループ中間 or グループ末尾
             this.isWithinGroup = true;
             this.baseRowIndex = getBaseRowIndex(rowAbove);
             // グループ情報を直前行から継承（sourceKeyValue等を保持）
