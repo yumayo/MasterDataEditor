@@ -141,6 +141,14 @@ description: 開発、実装、修正と呼ばれる類のもので必ず使用�
   5. ハッシュ置換後、`git add docs/bug-report.md && git commit --amend --no-edit` でコミットに含める
   6. ユーザーに完了を報告する
 
+### フェーズ10: エージェントメモリのコミット
+- コミット完了後、エージェントが更新したメモリファイルをコミットする：
+  1. `git status` で `.claude/agent-memory/` 以下に変更があるか確認する
+  2. 変更がある場合のみ、以下を実行する：
+     - `git add .claude/agent-memory/` でメモリファイルをステージング
+     - コミットメッセージ例: `chore: エージェントメモリを更新 (typescript-tdd-developer, adversarial-code-reviewer)`
+  3. 変更がなければこのフェーズはスキップする
+
 ## サブエージェント途中離脱時のリカバリ手順
 
 サブエージェントがターン数上限等で途中で返ってきた場合、以下の手順でリカバリする：
