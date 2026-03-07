@@ -1,7 +1,5 @@
 import {EditorTable} from "./editor-table";
 import {EditorTableData} from "./model/editor-table-data";
-import {ViewColumnMapping} from "./model/view-column-mapping";
-import {getGroupInfos} from "./model/view-row-metadata";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
@@ -64,9 +62,6 @@ export class EditorTableReference {
         if (existingReverseHint) {
             existingReverseHint.remove();
         }
-        // 折りたたみトグルを一時的に退避（textContent設定で消えないようにする）
-        const toggle = cell.querySelector('.view-collapse-toggle');
-        if (toggle) toggle.remove();
         // 参照列かどうかを判定
         const column = this.tableData.header[dataColumnIndex];
         if (!column || !column.reference) {
@@ -76,8 +71,6 @@ export class EditorTableReference {
             if (column && column.name === config.primaryKeyColumnName) {
                 this.applyReverseReferenceHint(cell, value);
             }
-            // トグルを復元
-            if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
         // 値を設定
@@ -87,7 +80,6 @@ export class EditorTableReference {
         if (isDynamicReference(expr)) {
             // 動的参照の場合: 同期的に参照ヒントを更新
             this.updateDynamicReferenceHint(cell, value, expr, rowIndex, dataColumnIndex);
-            if (toggle) cell.insertBefore(toggle, cell.firstChild);
             return;
         }
         // 単純参照の場合: 同期的に参照ヒントを取得
@@ -99,8 +91,6 @@ export class EditorTableReference {
             hintSpan.textContent = displayText;
             cell.appendChild(hintSpan);
         }
-        // トグルを復元
-        if (toggle) cell.insertBefore(toggle, cell.firstChild);
     }
 
     /**
@@ -201,7 +191,7 @@ export class EditorTableReference {
      */
     private updateDynamicReferenceHint(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number, dataColumnIndex: number): void {
         if (!isDynamicReference(expr)) return;
-        // 同一行の指定カラムの値を取得（ビューの合成ヘッダーではプレフィックス付きのためresolveで解決）
+        // 同一行の指定カラムの値を取得
         const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
         if (valueColumnIndex === -1) return;
         // column=0は行ヘッダーなので、データ列インデックスに+1する
@@ -259,26 +249,13 @@ export class EditorTableReference {
     }
 
     /**
-     * 動的参照のvalueColumn名から合成ヘッダー上の列インデックスを解決する
-     * 通常テーブルはヘッダーの直接名前一致、ビューはcolumnMappingsで同一テーブル内を検索する
-     * EditorTableHandlerからも使用されるため公開する
+     * 動的参照のvalueColumn名からヘッダー上の列インデックスを解決する
+     * ヘッダーの直接名前一致で解決する
      * @param valueColumnName 動的参照式のvalueColumn名（素の列名）
      * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
      */
     resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
-        if (!this.table.hasViewContext()) {
-            // 通常テーブル: ヘッダーの直接名前一致で解決する
-            return this.tableData.header.findIndex(col => col.name === valueColumnName);
-        }
-        // ビュー: columnMappingsで同一テーブル内のsourceColumnNameを検索する
-        // columnMappingsはベーステーブル列もJOIN列も全て含んでいるため、このパスだけで解決できる
-        const viewContext = this.table.getViewContext();
-        const currentMapping = viewContext.columnMappings[currentDataColumnIndex];
-        for (let i = 0; i < viewContext.columnMappings.length; i++) {
-            const m = viewContext.columnMappings[i];
-            if (m.tableName === currentMapping.tableName && m.sourceColumnName === valueColumnName) return i;
-        }
-        return -1;
+        return this.tableData.header.findIndex(col => col.name === valueColumnName);
     }
 
     /**
@@ -294,7 +271,7 @@ export class EditorTableReference {
             if (!column.reference) continue;
             const expr = parseReferenceExpression(column.reference);
             if (!isDynamicReference(expr)) continue;
-            // この動的参照が変更された列を参照元としているか確認（ビューの合成ヘッダー名にも対応）
+            // この動的参照が変更された列を参照元としているか確認
             if (this.resolveValueColumnIndex(expr.filter.valueColumn, colIdx) !== changedDataColumnIndex) continue;
             // 依存しているセルのヒントを再評価する
             const cell = rowElement.children[colIdx + 1] as HTMLElement;
@@ -307,123 +284,17 @@ export class EditorTableReference {
 
     /**
      * 表示列の値が変更されたとき、同一行の参照列ヒントを更新する
-     *
-     * 3つの独立したルールをフラットにディスパッチする:
-     * 1. FK参照ヒント更新: ビューJOIN列の表示列編集時にFK列のヒントを更新
-     * 2. PK逆参照ヒント更新: ビューJOIN列の表示列編集時にPK列の逆参照ヒントを更新
-     * 3. 逆参照チェーンヒント更新: 通常テーブルの表示列編集時に逆参照チェーンのヒントを更新
+     * 逆参照チェーンヒント更新: 通常テーブルの表示列編集時に逆参照チェーンのヒントを更新
      */
     private updateReferenceHintsOnDisplayColumnChange(rowIndex: number, changedDataColumnIndex: number, newValue: string): void {
-        const ctx = this.buildDisplayColumnChangeContext(rowIndex, changedDataColumnIndex, newValue);
-        if (ctx === false) return;
-        this.applyFkReferenceHintRule(ctx);
-        this.applyReverseReferenceHintRule(ctx);
-        this.applyReverseChainHintRule(ctx);
-    }
-
-    /**
-     * 表示列変更時のコンテキストを構築する
-     * 共通前処理（列ガード、ビューJOIN判定、JOINキー値算出）を一括で行い、
-     * 後続のルールメソッドが必要な情報を全て含んだコンテキストを返す
-     * 構築不可能な場合はfalseを返す
-     */
-    private buildDisplayColumnChangeContext(rowIndex: number, changedDataColumnIndex: number, newValue: string): DisplayColumnChangeContext | false {
         const changedColumn = this.tableData.header[changedDataColumnIndex];
-        if (!changedColumn) return false;
+        if (!changedColumn) return;
+        // 表示列でなければ更新不要
+        if (!config.referenceDisplayColumnPriority.includes(changedColumn.name)) return;
         const tableElement = this.table.getTableElement();
         const rowElement = tableElement.children[rowIndex] as HTMLElement;
-        // ビューJOIN列の判定とマッピング取得
-        let isViewJoinedColumn = false;
-        let joinMapping: ViewColumnMapping | false = false;
-        let joinKeyValue = '';
-        if (this.table.hasViewContext()) {
-            const viewContext = this.table.getViewContext();
-            const mapping = viewContext.columnMappings[changedDataColumnIndex];
-            if (mapping.isJoinedColumn) {
-                isViewJoinedColumn = true;
-                if (!config.referenceDisplayColumnPriority.includes(mapping.sourceColumnName)) return false;
-                // JOINキーの値を取得（どのキャッシュエントリを更新するか特定するため）
-                const baseKeyColumnIndex = viewContext.columnMappings.findIndex(
-                    m => m.sourceColumnName === mapping.baseKeyColumn && !m.isJoinedColumn
-                );
-                if (baseKeyColumnIndex === -1) return false;
-                joinKeyValue = this.table.getCellValueAt(rowIndex, baseKeyColumnIndex + 1);
-                if (joinKeyValue === '') return false;
-                joinMapping = mapping;
-            }
-        }
-        // 非JOIN列の場合、表示列でなければ更新不要
-        if (!isViewJoinedColumn) {
-            if (!config.referenceDisplayColumnPriority.includes(changedColumn.name)) return false;
-        }
-        return { rowIndex, changedDataColumnIndex, newValue, rowElement, isViewJoinedColumn, joinMapping, joinKeyValue };
-    }
-
-    /**
-     * Case 1: ビューJOIN列のFK参照ヒント更新ルール
-     * JOIN元テーブルの表示列が編集されたとき、同じテーブルを参照するFK列のヒントを更新する
-     */
-    private applyFkReferenceHintRule(ctx: DisplayColumnChangeContext): void {
-        if (!ctx.isViewJoinedColumn || ctx.joinMapping === false) return;
-        const refCache = this.referenceDataCache.getSync(ctx.joinMapping.tableName);
-        if (!refCache) return;
-        this.referenceDataCache.updateDisplayText(ctx.joinMapping.tableName, ctx.joinKeyValue, ctx.newValue);
-        // 同じテーブルを参照するFK列のヒントを再描画
         for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
-            if (colIdx === ctx.changedDataColumnIndex) continue;
-            const column = this.tableData.header[colIdx];
-            if (!column.reference) continue;
-            const expr = parseReferenceExpression(column.reference);
-            if (!isSimpleReference(expr)) continue;
-            if (expr.tableName !== ctx.joinMapping.tableName) continue;
-            const cell = ctx.rowElement.children[colIdx + 1] as HTMLElement;
-            if (!cell) continue;
-            const fkValue = EditorTable.getCellValue(cell);
-            if (fkValue === '') continue;
-            this.setCellValue(cell, fkValue, colIdx, ctx.rowIndex);
-        }
-    }
-
-    /**
-     * Case 2: ビューJOIN列のPK逆参照ヒント更新ルール
-     * baseKeyColumnがPK列の場合、逆参照マップの表示テキストを更新し、PK列のヒントを再描画する
-     */
-    private applyReverseReferenceHintRule(ctx: DisplayColumnChangeContext): void {
-        if (!ctx.isViewJoinedColumn || ctx.joinMapping === false) return;
-        const mapping = ctx.joinMapping;
-        if (mapping.baseKeyColumn !== config.primaryKeyColumnName) return;
-        if (!this.reverseReferenceMap) return;
-        const entries = this.reverseReferenceMap.get(ctx.joinKeyValue);
-        if (!entries) return;
-        const viewContext = this.table.getViewContext();
-        // DOM行からgroupInfosを取得（DOMがSSOT）
-        const tableElement = this.table.getTableElement();
-        const domRow = tableElement.children[ctx.rowIndex] as HTMLElement;
-        // メタデータ属性がない行（空行）では逆参照ヒントの更新は不要
-        if (!domRow.hasAttribute('data-group-infos')) return;
-        const domGroupInfos = getGroupInfos(domRow);
-        const groupInfo = domGroupInfos.find(g => g.sourceTable === mapping.tableName);
-        if (!groupInfo) return;
-        const groupPosition = groupInfo.groupPosition;
-        // 自テーブルの逆参照ヒントを更新（PK列のDOM再描画も含む）
-        this.updateReverseReferenceDisplayText(ctx.joinKeyValue, mapping.tableName, groupPosition, ctx.newValue);
-        // ベーステーブルが開かれている場合も逆参照ヒントを更新
-        const baseTableName = viewContext.viewDefinition.baseTable;
-        const baseEditorTable = viewContext.openEditorTables.get(baseTableName);
-        if (baseEditorTable) {
-            baseEditorTable.updateReverseReferenceDisplayText(ctx.joinKeyValue, mapping.tableName, groupPosition, ctx.newValue);
-        }
-    }
-
-    /**
-     * Case 3: 通常テーブル（およびビューのベーステーブル列）の逆参照チェーンヒント更新ルール
-     * 表示列の値が変更されたとき、逆参照チェーンで解決されたヒントを更新する
-     * Case 1/2（ビューJOIN列）とは排他的: isViewJoinedColumnがtrueなら実行されない
-     */
-    private applyReverseChainHintRule(ctx: DisplayColumnChangeContext): void {
-        if (ctx.isViewJoinedColumn) return;
-        for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
-            if (colIdx === ctx.changedDataColumnIndex) continue;
+            if (colIdx === changedDataColumnIndex) continue;
             const column = this.tableData.header[colIdx];
             if (!column.reference) continue;
             const expr = parseReferenceExpression(column.reference);
@@ -431,13 +302,13 @@ export class EditorTableReference {
             // 参照先テーブルが自身の表示列を持つ場合は逆参照チェーン不使用なのでスキップ
             const refData = this.referenceDataCache.getSync(expr.tableName);
             if (!refData || refData.displayColumnName !== '') continue;
-            const cell = ctx.rowElement.children[colIdx + 1] as HTMLElement;
+            const cell = rowElement.children[colIdx + 1] as HTMLElement;
             if (!cell) continue;
             const fkValue = EditorTable.getCellValue(cell);
             if (fkValue === '') continue;
             // キャッシュを更新し、ヒントを再描画
-            this.referenceDataCache.updateDisplayText(expr.tableName, fkValue, ctx.newValue);
-            this.setCellValue(cell, fkValue, colIdx, ctx.rowIndex);
+            this.referenceDataCache.updateDisplayText(expr.tableName, fkValue, newValue);
+            this.setCellValue(cell, fkValue, colIdx, rowIndex);
         }
     }
 
@@ -464,15 +335,4 @@ export class EditorTableReference {
             }
         }
     }
-}
-
-/** 表示列変更時のヒント更新コンテキスト（ファイル内部でのみ使用） */
-interface DisplayColumnChangeContext {
-    readonly rowIndex: number;
-    readonly changedDataColumnIndex: number;
-    readonly newValue: string;
-    readonly rowElement: HTMLElement;
-    readonly isViewJoinedColumn: boolean;
-    readonly joinMapping: ViewColumnMapping | false;
-    readonly joinKeyValue: string;
 }

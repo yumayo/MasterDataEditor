@@ -1,4 +1,4 @@
-import {Tab, TabState} from "./tab";
+import {TabState} from "./tab";
 import {EditorTable} from "./editor-table";
 import {EditorTableData} from "./model/editor-table-data";
 import {ReferenceDataCache} from "./reference-data-cache";
@@ -15,12 +15,10 @@ import {InMemoryTableStore} from "./in-memory-table-store";
  * - タブ切り替え時の参照ヒント再更新
  */
 export class TabReference {
-    private readonly tab: Tab;
     private readonly store: InMemoryTableStore;
     private readonly referenceDataCache: ReferenceDataCache;
 
-    constructor(tab: Tab, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
-        this.tab = tab;
+    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.store = store;
         this.referenceDataCache = referenceDataCache;
     }
@@ -33,18 +31,13 @@ export class TabReference {
     refreshReferenceHints(name: string, state: TabState): void {
         // Storeから削除されたテーブルのキャッシュを除去する
         this.referenceDataCache.evictEntriesNotInStore();
-        // ビュータブの場合: Storeから最新キーマップを都度構築して行数差分を反映する
-        if (state.kind === 'view') {
-            state.editorTable.view.refreshViewRows();
-        }
 
         // 参照テーブルを再読み込み
         const tableData = state.editorTable.getTableData();
         this.preloadReferenceTables(tableData, state.editorTable);
 
-        // 逆参照を再解決する（ビュータブはベーステーブル名で解決する）
-        const reverseTableName = state.kind === 'view' ? state.viewDefinition.baseTable : name;
-        this.resolveReverseReferencesAsync(reverseTableName, state.editorTable);
+        // 逆参照を再解決する
+        this.resolveReverseReferencesAsync(name, state.editorTable);
     }
 
     /**

@@ -1,9 +1,7 @@
 import {ExplorerDirectory} from "./explorer-directory";
 import {Tab} from "./tab";
-import {ContextMenu} from "./context-menu";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
-import {ViewsPanel} from "./views-panel";
 import {SearchPanel} from "./search-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
@@ -13,7 +11,7 @@ import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./con
 /**
  * サイドバー
  * アクティビティバー（48px） + サイドバーコンテンツ（252px）の2分割構成
- * ファイルエクスプローラー・VIEWSパネル・REFERENCESパネルを切り替え表示する
+ * ファイルエクスプローラー・REFERENCESパネルを切り替え表示する
  * 右端のドラッグハンドルでリサイズ可能
  */
 export class Sidebar {
@@ -22,7 +20,6 @@ export class Sidebar {
     private readonly editor: Editor;
     private readonly activityBar: ActivityBar;
     private readonly filesPanel: HTMLElement;
-    private readonly viewsPanel: ViewsPanel;
     private readonly referencesPanel: ReferencesPanel;
     private readonly searchPanel: SearchPanel;
     private readonly directory: ExplorerDirectory;
@@ -35,7 +32,6 @@ export class Sidebar {
         explorerElement: HTMLElement,
         tab: Tab,
         editor: Editor,
-        contextMenu: ContextMenu,
         openEditorTables: Map<string, EditorTable>
     ) {
         this.explorerElement = explorerElement;
@@ -62,10 +58,6 @@ export class Sidebar {
         this.filesPanel.appendChild(filesPanelHeader);
         sidebarContent.appendChild(this.filesPanel);
 
-        // VIEWSパネル
-        this.viewsPanel = new ViewsPanel(tab, contextMenu);
-        this.viewsPanel.appendTo(sidebarContent);
-
         // REFERENCESパネル
         this.referencesPanel = new ReferencesPanel(tab);
         this.referencesPanel.appendTo(sidebarContent);
@@ -75,7 +67,7 @@ export class Sidebar {
         this.searchPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
-        this.directory = new ExplorerDirectory(tab, contextMenu, this.filesPanel, 1);
+        this.directory = new ExplorerDirectory(tab, this.filesPanel, 1);
 
         // リサイズハンドルを作成しサイドバーに追加
         const handleElement = document.createElement('div');
@@ -115,21 +107,7 @@ export class Sidebar {
      * ファイルを追加する
      */
     appendFile(name: string): void {
-        this.directory.appendFile(name, this);
-    }
-
-    /**
-     * ビューファイルを追加する
-     */
-    appendViewFile(name: string): void {
-        this.viewsPanel.appendViewFile(name);
-    }
-
-    /**
-     * 指定名のビューが存在するか判定する
-     */
-    hasViewFile(name: string): boolean {
-        return this.viewsPanel.hasView(name);
+        this.directory.appendFile(name);
     }
 
     /**
@@ -154,14 +132,11 @@ export class Sidebar {
 
     private switchPanel(item: ActivityBarItem): void {
         this.filesPanel.classList.remove('sidebar-panel-active');
-        this.viewsPanel.hide();
         this.referencesPanel.hide();
         this.searchPanel.hide();
 
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');
-        } else if (item === 'views') {
-            this.viewsPanel.show();
         } else if (item === 'references') {
             this.referencesPanel.show();
         } else {

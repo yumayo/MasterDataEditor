@@ -13,18 +13,15 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
-import {ViewDefinition, parseViewDefinition} from "./model/view-definition";
-import {ViewColumnMapping} from "./model/view-column-mapping";
 import {Sidebar} from "./sidebar";
 import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
-import {TabView} from "./tab-view";
 import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
- * タブごとの状態を保持する基底インターフェース
+ * タブごとの状態を保持するインターフェース
  */
-interface BaseTabState {
+export interface TabState {
     editorTable: EditorTable;
     selection: Selection;
     editorTableHandler: EditorTableHandler;
@@ -38,27 +35,6 @@ interface BaseTabState {
     /** タブ非アクティブ時に保存された垂直スクロール位置 */
     savedScrollTop: number;
 }
-
-/**
- * 通常テーブルのタブ状態
- */
-interface NormalTabState extends BaseTabState {
-    kind: 'normal';
-}
-
-/**
- * ビューテーブルのタブ状態
- */
-interface ViewTabState extends BaseTabState {
-    kind: 'view';
-    viewDefinition: ViewDefinition;
-    columnMappings: ViewColumnMapping[];
-}
-
-/**
- * タブ状態の判別共用体
- */
-export type TabState = NormalTabState | ViewTabState;
 
 export interface EditorTableFactoryResult {
     editorTable: EditorTable;
@@ -94,9 +70,6 @@ export class Tab {
 
     /** 参照データ管理モジュール */
     private readonly reference: TabReference;
-
-    /** ビュータブ管理モジュール */
-    private readonly viewModule: TabView;
 
     /** 参照箇所を表示するサイドバー */
     private readonly sidebar: Sidebar;
@@ -134,8 +107,7 @@ export class Tab {
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
         this.dragDrop = new TabDragDrop(this);
-        this.reference = new TabReference(this, this.store, this.referenceDataCache);
-        this.viewModule = new TabView(this, this.store, this.reference, this.referenceDataCache);
+        this.reference = new TabReference(this.store, this.referenceDataCache);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -362,15 +334,7 @@ export class Tab {
             this.openEditorTables.delete(name);
 
             // 中央ストアからテーブルデータを解除
-            if (state.kind === 'view') {
-                // ビュータブはベーステーブルとJOINテーブルを個別に解除する
-                this.store.unregisterTable(state.viewDefinition.baseTable);
-                for (const join of state.viewDefinition.joins) {
-                    this.store.unregisterTable(join.targetTable);
-                }
-            } else {
-                this.store.unregisterTable(name);
-            }
+            this.store.unregisterTable(name);
 
             // 未保存のタブを閉じた場合、アクティブタブの参照ヒントをCSVから再読み込みする
             if (wasDirty && this.activeTabName && this.activeTabName !== name) {
@@ -423,15 +387,7 @@ export class Tab {
         }
 
         // 新しいタブ状態を作成
-        if (name.startsWith('view:')) {
-            const viewName = name.substring(5);
-            readFileAsync('view/' + viewName + '.json').then((viewJson) => {
-                const viewDefinition = parseViewDefinition(JSON.parse(viewJson));
-                this.viewModule.createViewTabState(name, tabButton, viewDefinition, false);
-            });
-        } else {
-            this.createTabState(name, tabButton);
-        }
+        this.createTabState(name, tabButton);
     }
 
     /**
@@ -525,8 +481,7 @@ export class Tab {
             selection.move(1, 1);
 
             // タブ状態を保存
-            const state: NormalTabState = {
-                kind: 'normal',
+            const state: TabState = {
                 editorTable,
                 selection,
                 editorTableHandler,

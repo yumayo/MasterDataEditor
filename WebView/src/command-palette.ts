@@ -6,21 +6,12 @@ import {Tab} from "./tab";
 interface CommandPaletteItem {
     displayName: string;
     tabName: string;
-    kind: 'table' | 'view';
 }
-
-/**
- * 種別ラベルのマッピング
- */
-const KIND_LABELS: Record<CommandPaletteItem['kind'], string> = {
-    table: 'Table',
-    view: 'View',
-};
 
 /**
  * コマンドパレット
  *
- * Ctrl+P で表示され、テーブルやビューの名前でファジー検索し、
+ * Ctrl+P で表示され、テーブルの名前でファジー検索し、
  * 選択した項目のタブを開く。VSCode の Ctrl+P と同等の機能。
  */
 export class CommandPalette {
@@ -51,7 +42,7 @@ export class CommandPalette {
         this.inputElement = document.createElement('input');
         this.inputElement.classList.add('command-palette-input');
         this.inputElement.type = 'text';
-        this.inputElement.placeholder = 'テーブル名またはビュー名を入力...';
+        this.inputElement.placeholder = 'テーブル名を入力...';
 
         // 候補リスト
         this.listElement = document.createElement('div');
@@ -104,14 +95,7 @@ export class CommandPalette {
      * テーブルを候補リストに登録する
      */
     registerTable(tableName: string): void {
-        this.items.push({displayName: tableName, tabName: tableName, kind: 'table'});
-    }
-
-    /**
-     * ビューを候補リストに登録する
-     */
-    registerView(viewName: string): void {
-        this.items.push({displayName: viewName, tabName: 'view:' + viewName, kind: 'view'});
+        this.items.push({displayName: tableName, tabName: tableName});
     }
 
     /**
@@ -181,10 +165,6 @@ export class CommandPalette {
             nameElement.classList.add('command-palette-item-name');
             nameElement.textContent = item.displayName;
 
-            const kindElement = document.createElement('span');
-            kindElement.classList.add('command-palette-item-kind');
-            kindElement.textContent = KIND_LABELS[item.kind];
-
             // マウスクリックで項目を確定する（mousedownでblurを防ぎつつ確定処理を実行）
             const clickIndex = i;
             itemElement.addEventListener('mousedown', (e: MouseEvent) => {
@@ -193,7 +173,6 @@ export class CommandPalette {
             });
 
             itemElement.appendChild(nameElement);
-            itemElement.appendChild(kindElement);
             this.listElement.appendChild(itemElement);
         }
     }

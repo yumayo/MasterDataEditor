@@ -18,8 +18,5 @@ test(
         const explorer = page.locator('#explorer');
 
         await expect(explorer.getByText('test')).toBeVisible();
-
-        // アクティビティバーにビューパネルボタンが存在する
-        await expect(explorer.locator('[data-panel="views"]')).toBeVisible();
     },
 );

@@ -2,7 +2,7 @@ import {EditorTable} from "./editor-table";
 import {GridTextField} from "./grid-textfield";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
-import {CellChange, CellChangeCommand, CompositeCommand, Command} from "./command";
+import {CellChange} from "./command";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
@@ -23,9 +23,6 @@ import {
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
-import {buildAllKeyMaps} from "./view-table-data-builder";
-import {getBaseRowIndex} from "./model/view-row-metadata";
-import {findFkColumnIndex} from "./view-group-query";
 
 /**
  * 参照解決の結果
@@ -66,11 +63,6 @@ export class EditorTableHandler {
     private tableData: EditorTableData | undefined;
     private dropdownActive: boolean;
 
-    /** ビュー用保存コールバック */
-    private saveCallback:
-        ((table: EditorTable) => Promise<void>)
-        | undefined;
-
     private readonly boundOnKeydown: (e: KeyboardEvent) => void;
     private readonly boundOnFocusout: (e: FocusEvent) => void;
     private readonly boundOnPaste: (e: ClipboardEvent) => void;
@@ -88,7 +80,6 @@ export class EditorTableHandler {
         this.active = false;
         this.visible = false;
         this.dropdownActive = false;
-        this.saveCallback = undefined;
 
         // contenteditable element を作成
         const element = document.createElement('div');
@@ -145,29 +136,10 @@ export class EditorTableHandler {
     }
 
     /**
-     * 保存コールバックを設定
-     * ビュータブで使用し、Ctrl+Sで呼ばれる
-     */
-    setSaveCallback(
-        callback: (
-            table: EditorTable
-        ) => Promise<void>
-    ): void {
-        this.saveCallback = callback;
-    }
-
-    /**
      * セル編集モードを開始する（外部から呼ばれる用）
      */
     enableCellEditMode(preserveContent: boolean): void {
         if (!this.textField) return;
-
-        // 単一セル編集ガード（パディングセルへの編集を拒否）
-        const anchor = this.selection.getAnchor();
-        if (this.table.view.isCellEditBlocked(anchor.row, anchor.column)) {
-            this.table.showRejectionFeedback();
-            return;
-        }
 
         const target = getTarget(this.table, this.selection);
         const tableRect = this.table.getTableBoundingClientRect();
@@ -358,20 +330,12 @@ export class EditorTableHandler {
         // Ctrl+S: 保存
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
-            if (this.saveCallback) {
-                this.saveCallback(
-                    this.table
-                ).then(() => {
-                    this.history.markSaved();
-                });
-            } else {
-                Promise.all([
-                    saveTableData(this.table),
-                    saveSchemaDataAsync(this.table)
-                ]).then(() => {
-                    this.history.markSaved();
-                });
-            }
+            Promise.all([
+                saveTableData(this.table),
+                saveSchemaDataAsync(this.table)
+            ]).then(() => {
+                this.history.markSaved();
+            });
             return;
         }
 
@@ -490,22 +454,15 @@ export class EditorTableHandler {
         // DeleteキーまたはBackspaceキー
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             const deleteRange = this.selection.getSelectionRange();
-            // Delete操作ガード（パディングセル + FKグループ完全性チェック）
-            if (this.table.view.isDeleteBlocked(deleteRange.startRow, deleteRange.startColumn, deleteRange.endRow, deleteRange.endColumn)) {
-                this.table.showRejectionFeedback();
-                return;
-            }
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
-                    // パディングセルのみスキップ（結合テーブル列セルはpaddingColumns=falseなので通過する）
-                    if (this.table.view.isPaddingCell(r, c)) continue;
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
                 }
             }
             if (changes.length > 0) {
-                this.applyViewAwareCellChanges(changes, deleteRange, this.selection.getCopyRange());
+                this.applyCellChangesWithHistory(changes, deleteRange, this.selection.getCopyRange());
             }
             return;
         }
@@ -515,7 +472,7 @@ export class EditorTableHandler {
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (!this.textField) return;
-            // 参照列の場合はドロップダウンを表示（isCellEditBlockedガードは各編集メソッド内で実行）
+            // 参照列の場合はドロップダウンを表示
             this.enableCellEditModeWithDropdownAsync(false).then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
@@ -535,7 +492,7 @@ export class EditorTableHandler {
         const text = this.element.textContent ?? '';
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: text }];
-        this.applyViewAwareCellChanges(changes, range, this.selection.getCopyRange());
+        this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
     }
 
     /**
@@ -571,15 +528,6 @@ export class EditorTableHandler {
         if (this.visible) return;
 
         event.preventDefault();
-
-        // 範囲編集ガード（結合列またはパディングセルを含む場合はペーストを拒否）
-        const selRange = this.selection.getSelectionRange();
-        if (this.table.view.isRangeEditBlocked(
-            selRange.startRow, selRange.startColumn, selRange.endRow, selRange.endColumn
-        )) {
-            this.table.showRejectionFeedback();
-            return;
-        }
 
         const clipboardData = event.clipboardData;
         if (!clipboardData) return;
@@ -676,52 +624,24 @@ export class EditorTableHandler {
 
     /**
      * 通常のペースト：アンカー位置からコピー範囲と同じサイズでペースト
-     * ビューコンテキストがある場合、リーダー行のみ抽出してリーダー同士でマッピングする
      */
     private pasteNormal(sourceData: string[][], copyRange: CellRange): void {
         const anchor = this.selection.getAnchor();
         const tableRowCount = this.table.getRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
-        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
-        // データ行は1始まりのため、startRow >= 1 で内部コピーと判定（外部クリップボードの場合は-1）
-        const isInternalViewPaste = this.table.hasViewContext() && copyRange.startRow >= 1 && copyRowCount === sourceData.length;
-        // ビューコンテキストがあり内部コピーの場合、リーダー行のみ抽出してリーダー同士でマッピングする
-        let filteredSource = sourceData;
-        const destLeaderRows: number[] = [];
-        if (isInternalViewPaste) {
-            // ソースデータからリーダー行のみ抽出（パディング行はFK再構築で自動生成される）
-            filteredSource = [];
-            for (let r = 0; r < sourceData.length; r++) {
-                if (this.table.view.isViewLeaderRow(copyRange.startRow + r)) {
-                    filteredSource.push(sourceData[r]);
-                }
-            }
-            // 宛先のリーダー行を必要数収集（パディング行をスキップ）
-            for (let row = anchor.row; row < tableRowCount && destLeaderRows.length < filteredSource.length; row++) {
-                if (this.table.view.isViewLeaderRow(row)) {
-                    destLeaderRows.push(row);
-                }
-            }
-        }
-        const effectiveRowCount = isInternalViewPaste
-            ? Math.min(filteredSource.length, destLeaderRows.length)
-            : filteredSource.length;
-        const columnCount = filteredSource[0].length;
+        const rowCount = sourceData.length;
+        const columnCount = sourceData[0].length;
         const changes: CellChange[] = [];
-        for (let r = 0; r < effectiveRowCount; r++) {
-            const destRow = isInternalViewPaste ? destLeaderRows[r] : anchor.row + r;
+        for (let r = 0; r < rowCount; r++) {
+            const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
             for (let c = 0; c < columnCount; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
-                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: filteredSource[r][c] });
+                changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[r][c] });
             }
         }
-        // ペースト範囲の終端行を算出
-        const lastDestRow = isInternalViewPaste && destLeaderRows.length > 0
-            ? destLeaderRows[Math.min(effectiveRowCount, destLeaderRows.length) - 1]
-            : anchor.row + effectiveRowCount - 1;
-        const pasteEndRow = Math.min(lastDestRow, tableRowCount - 1);
+        const pasteEndRow = Math.min(anchor.row + rowCount - 1, tableRowCount - 1);
         const pasteEndColumn = Math.min(anchor.column + columnCount - 1, tableColumnCount - 1);
         const pasteRange = { startRow: anchor.row, startColumn: anchor.column, endRow: pasteEndRow, endColumn: pasteEndColumn };
         this.applyPasteChanges(changes, pasteRange, copyRange);
@@ -786,198 +706,23 @@ export class EditorTableHandler {
     }
 
     /**
-     * ペースト変更を適用する共通メソッド
-     * applyViewAwareCellChangesの戻り値で選択範囲を更新する
+     * ペースト変更を適用し、選択範囲を更新する
      */
     private applyPasteChanges(changes: CellChange[], pasteRange: CellRange, copyRange: CellRange): void {
-        const adjustedRange = this.applyViewAwareCellChanges(changes, pasteRange, copyRange);
-        this.selection.setRange(adjustedRange.startRow, adjustedRange.startColumn, adjustedRange.endRow, adjustedRange.endColumn);
+        this.applyCellChangesWithHistory(changes, pasteRange, copyRange);
+        this.selection.setRange(pasteRange.startRow, pasteRange.startColumn, pasteRange.endRow, pasteRange.endColumn);
     }
 
     /**
-     * セル値変更の共通入口メソッド
-     * ビューコンテキストの有無に応じてFK再構築/JOIN列同期を自動判定し、
-     * 適切な処理を実行する。selection.setRange()は呼ばない（呼び出し元の責任）。
-     * @returns 調整済みのセル範囲（FK再構築による行数変化を反映）
-     */
-    private applyViewAwareCellChanges(changes: CellChange[], range: CellRange, copyRange: CellRange): CellRange {
-        // ビューコンテキストがある場合はFK再構築の必要性を事前判定
-        if (this.table.hasViewContext()) {
-            const restructureRows = new Map<number, CellChange>();
-            for (const change of changes) {
-                if (this.table.view.needsViewRowRestructure(change.row, change.column, change.newValue)) {
-                    restructureRows.set(change.row, change);
-                }
-            }
-            if (restructureRows.size > 0) {
-                return this.applyViewChangesWithRestructure(changes, restructureRows, range, copyRange);
-            }
-        }
-        // 非ビュータブまたはFK再構築不要: applyCellChangesで統一処理
-        const allChanges = this.table.applyCellChanges(changes);
-        // Lazy挿入が発生した場合: 空行からのJOIN PK入力で全グループを展開する
-        if (this.table.consumeJoinStoreRowAdded()) {
-            return this.expandGroupsAfterLazyInsertion(allChanges, range, copyRange);
-        }
-        this.history.push({ changes: allChanges, range, copyRange });
-        return range;
-    }
-
-    /**
-     * Lazy Store挿入後のグループ展開処理
-     *
-     * 空行のJOIN PK列に値が入力されStoreに新行が追加された後、
-     * 同一FK値を持つ全グループのDOM展開行数を再計算し、
-     * 不一致があるグループをViewRowRestructureCommandで再構築する。
-     *
-     * CellChangeCommand + ViewRowRestructureCommands をCompositeCommandにまとめ、
-     * Undo時は逆順で: グループ縮小 → セル値復元 → Store行除去 が実行される。
-     */
-    private expandGroupsAfterLazyInsertion(
-        allChanges: CellChange[], range: CellRange, copyRange: CellRange
-    ): CellRange {
-        const viewContext = this.table.getViewContext();
-        const tableElement = this.table.getTableElement();
-        // Lazy挿入後のキーマップを構築（Storeには新行が追加済み）
-        const keyMaps = buildAllKeyMaps(this.table.getStore(), viewContext.viewDefinition);
-        // 全データ行を走査し、グループ行数の不一致を検出する
-        // needsViewRowRestructureはFK列の「値は同じだがDOM行数とStore行数が異なる」ケースを検出する
-        const groupsToExpand: Array<{ leaderDomRow: number; fkDomColumn: number; fkValue: string }> = [];
-        let domIdx = 1;
-        while (domIdx < tableElement.children.length) {
-            const domRow = tableElement.children[domIdx] as HTMLElement;
-            if (!domRow.hasAttribute('data-base-row-index')) break;
-            const baseRowIndex = getBaseRowIndex(domRow);
-            // 各JOINのFK列をチェック
-            for (const join of viewContext.viewDefinition.joins) {
-                const fkDataCol = findFkColumnIndex(viewContext.viewDefinition, viewContext.columnMappings, join.targetTable);
-                if (fkDataCol === -1) continue;
-                const fkDomCol = fkDataCol + 1;
-                const fkValue = this.table.getCellValueAt(domIdx, fkDomCol);
-                if (fkValue === '') continue;
-                if (this.table.view.needsViewRowRestructure(domIdx, fkDomCol, fkValue)) {
-                    groupsToExpand.push({ leaderDomRow: domIdx, fkDomColumn: fkDomCol, fkValue });
-                }
-            }
-            // グループ終端まで飛ばす
-            domIdx++;
-            while (domIdx < tableElement.children.length) {
-                const nextRow = tableElement.children[domIdx] as HTMLElement;
-                if (!nextRow.hasAttribute('data-base-row-index') || getBaseRowIndex(nextRow) !== baseRowIndex) break;
-                domIdx++;
-            }
-        }
-        if (groupsToExpand.length === 0) {
-            this.history.push({ changes: allChanges, range, copyRange });
-            return range;
-        }
-        // 下から上の順で再構築（インデックスずれ防止）
-        const rowCountBefore = this.table.getRowCount();
-        groupsToExpand.sort((a, b) => b.leaderDomRow - a.leaderDomRow);
-        const restructureCommands: Command[] = [];
-        for (const group of groupsToExpand) {
-            restructureCommands.push(
-                this.table.view.buildAndExecuteViewRowRestructure(
-                    group.leaderDomRow, group.fkDomColumn, group.fkValue, keyMaps
-                )
-            );
-        }
-        // 空行に残った値をクリア（データはStoreに吸収済み、グループ再構築で正しい行に反映される）
-        // グループ再構築で行がシフトしているため、change.rowは陳腐化している。
-        // data-base-row-indexを持たない最初の行を走査してクリーンアップする。
-        clearStaleBlankRows(tableElement);
-        // CompositeCommand: CellChangeCommand + ViewRowRestructureCommands
-        const rowDelta = this.table.getRowCount() - rowCountBefore;
-        const adjustedEndRow = Math.max(range.startRow, range.endRow + rowDelta);
-        const adjustedRange: CellRange = {
-            startRow: range.startRow, startColumn: range.startColumn,
-            endRow: adjustedEndRow, endColumn: range.endColumn,
-        };
-        const subCommands: Command[] = [];
-        const meaningfulChanges = allChanges.filter(c => c.oldValue !== c.newValue);
-        if (meaningfulChanges.length > 0) {
-            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
-        }
-        for (const cmd of restructureCommands) subCommands.push(cmd);
-        // Redo時にもCellChangeCommand→グループ再構築の後で空行クリーンアップが必要
-        subCommands.push({
-            execute(): void { clearStaleBlankRows(tableElement); },
-            undo(): void {},
-            redo(): void { clearStaleBlankRows(tableElement); },
-            getDescription(): string { return 'CleanStaleBlankRows'; },
-        });
-        if (subCommands.length > 0) {
-            this.history.pushCommand(new CompositeCommand(subCommands), adjustedRange, copyRange);
-        }
-        return adjustedRange;
-    }
-
-    /**
-     * ビュー内変更（FK再構築あり）
+     * セル値変更を適用し、履歴に記録する
      * selection.setRange()は呼ばない（呼び出し元の責任）。
-     *
-     * 処理順:
-     * 0. メタデータ範囲外への変更時はダミーメタデータを事前追加
-     * 1. 非再構築行の変更を適用（updateCellValueAt + synchronize）
-     * 2. 再構築行の非FK変更を適用（restructure時にDOM値として読まれる）
-     * 3. FK再構築を下→上の順で実行（インデックスずれ防止）
-     * 4. CompositeCommand(MetadataExpansion + CellChange + ViewRowRestructures)をhistoryに追加
-     * @returns 調整済みのセル範囲（FK再構築による行数変化を反映）
      */
-    private applyViewChangesWithRestructure(
-        changes: CellChange[], restructureRows: Map<number, CellChange>,
-        range: CellRange, copyRange: CellRange
-    ): CellRange {
-        // 1. 非再構築行の変更を適用
-        const nonRestructureChanges: CellChange[] = [];
-        for (const change of changes) {
-            if (restructureRows.has(change.row)) continue;
-            const linkedChanges = this.table.view.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
-            nonRestructureChanges.push(change);
-            for (const lc of linkedChanges) nonRestructureChanges.push(lc);
-            this.table.updateCellValueAt(change.row, change.column, change.newValue);
-        }
-        // 2. 再構築行の非FK変更を先にDOMに書く（restructureがDOMから値を読むため）
-        for (const change of changes) {
-            if (!restructureRows.has(change.row)) continue;
-            if (restructureRows.get(change.row) === change) continue;
-            nonRestructureChanges.push(change);
-            this.table.updateCellValueAt(change.row, change.column, change.newValue);
-        }
-        // 2.5. propagateToSourceTableの前にキーマップスナップショットを構築
-        //      propagateToSourceTableがJOINテーブルのStoreに新行をappendするため、
-        //      その後にbuildAllKeyMapsを呼ぶと重複行を含む誤ったキーマップが構築される
-        const keyMaps = buildAllKeyMaps(this.table.getStore(), this.table.getViewContext().viewDefinition);
-        this.table.propagateToSourceTable(nonRestructureChanges);
-        // 3. FK再構築を行番号降順で実行（下から上へ処理しインデックスずれを防止）
-        const rowCountBefore = this.table.getRowCount();
-        const sortedFkChanges = Array.from(restructureRows.entries()).sort((a, b) => b[0] - a[0]);
-        const restructureCommands: Command[] = [];
-        for (const [row, fkChange] of sortedFkChanges) {
-            restructureCommands.push(this.table.view.buildAndExecuteViewRowRestructure(row, fkChange.column, fkChange.newValue, keyMaps));
-        }
-        // VRRによる行数変化を範囲に反映（1:1→1:2展開で行が増える等）
-        const rowDelta = this.table.getRowCount() - rowCountBefore;
-        const adjustedEndRow = Math.max(range.startRow, range.endRow + rowDelta);
-        const adjustedRange: CellRange = {
-            startRow: range.startRow, startColumn: range.startColumn,
-            endRow: adjustedEndRow, endColumn: range.endColumn,
-        };
-        // 4. CompositeCommandを構築してhistoryに追加
-        // restructureCommandsは降順（行番号が大きい順）で実行済み
-        // CompositeCommandのredo（正順）で降順のまま実行すれば、後の行から処理されるためインデックスずれが発生しない
-        // undo（逆順）では昇順実行となり同様に安全
-        const subCommands: Command[] = [];
-        const meaningfulChanges = nonRestructureChanges.filter(c => c.oldValue !== c.newValue);
-        if (meaningfulChanges.length > 0) {
-            subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
-        }
-        for (const cmd of restructureCommands) subCommands.push(cmd);
-        if (subCommands.length > 0) {
-            this.history.pushCommand(new CompositeCommand(subCommands), adjustedRange, copyRange);
-        }
-        return adjustedRange;
+    private applyCellChangesWithHistory(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
+        const allChanges = this.table.applyCellChanges(changes);
+        this.history.push({ changes: allChanges, range, copyRange });
     }
+
+
 
     /**
      * 現在のフォーカス列の参照を解決する（動的参照対応）
@@ -1077,13 +822,6 @@ export class EditorTableHandler {
             return false;
         }
 
-        // 単一セル編集ガード（パディングセルへの編集を拒否）
-        const anchor = this.selection.getAnchor();
-        if (this.table.view.isCellEditBlocked(anchor.row, anchor.column)) {
-            this.table.showRejectionFeedback();
-            return true;
-        }
-
         // 参照を解決（動的参照対応）
         let resolvedReference = await this.resolveReferenceAsync();
 
@@ -1095,12 +833,8 @@ export class EditorTableHandler {
                 && columnIndex < this.tableData.header.length
                 && this.tableData.header[columnIndex].name === config.primaryKeyColumnName
                 && this.table.hasReverseReferences()) {
-                // ビュータブではベーステーブル名を使用する（viewのtableNameはビュー名であり参照テーブルとして無効）
-                const pkTableName = this.table.hasViewContext()
-                    ? this.table.getViewContext().viewDefinition.baseTable
-                    : this.table.tableName;
                 resolvedReference = {
-                    tableName: pkTableName,
+                    tableName: this.table.tableName,
                     columnName: config.primaryKeyColumnName,
                 };
             }
@@ -1156,7 +890,7 @@ export class EditorTableHandler {
         const target = getTarget(this.table, this.selection);
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: id }];
-        this.applyViewAwareCellChanges(changes, range, this.selection.getCopyRange());
+        this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
         this.dropdownActive = false;
         this.hide();
         moveCellDownWithinSelection(this.table, this.selection);
@@ -1177,23 +911,5 @@ export class EditorTableHandler {
      */
     isDropdownActive(): boolean {
         return this.dropdownActive;
-    }
-}
-
-/**
- * Lazy Store挿入後のグループ再構築で行がシフトした際、
- * 元の空行に残った値をクリアする。
- * data-base-row-indexを持たない最初の行（＝データ行末尾の次の空行）を走査し、
- * セルに値が残っていればクリアする。
- */
-function clearStaleBlankRows(tableElement: HTMLElement): void {
-    for (let r = 1; r < tableElement.children.length; r++) {
-        const row = tableElement.children[r] as HTMLElement;
-        if (row.hasAttribute('data-base-row-index')) continue;
-        for (let i = 1; i < row.children.length; i++) {
-            const cell = row.children[i] as HTMLElement;
-            if (cell.textContent !== '') cell.textContent = '';
-        }
-        break;
     }
 }

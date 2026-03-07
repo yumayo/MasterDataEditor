@@ -32,15 +32,6 @@ export class FillController {
             this.selection.endFill();
 
             if (fillInfo) {
-                // 範囲編集ガード（結合列またはパディングセルを含む場合はフィルを拒否）
-                if (this.table.view.isRangeEditBlocked(
-                    fillInfo.sourceRange.startRow, fillInfo.sourceRange.startColumn,
-                    fillInfo.sourceRange.endRow, fillInfo.sourceRange.endColumn
-                )) {
-                    this.table.showRejectionFeedback();
-                    return;
-                }
-
                 applyFillSeries(
                     this.table,
                     this.selection,
@@ -89,7 +80,7 @@ export class FillController {
      * ダブルクリックでデータ領域の最大行までフィル
      */
     private fillToMaxRow(): void {
-        const maxDataRow = this.table.view.getMaxDataRow();
+        const maxDataRow = this.table.getMaxDataRow();
         const anchor = this.selection.getAnchor();
         const focus = this.selection.getFocus();
 
@@ -97,12 +88,6 @@ export class FillController {
         const endRow = Math.max(anchor.row, focus.row);
         const startColumn = Math.min(anchor.column, focus.column);
         const endColumn = Math.max(anchor.column, focus.column);
-
-        // 範囲編集ガード（結合列またはパディングセルを含む場合はフィルを拒否）
-        if (this.table.view.isRangeEditBlocked(startRow, startColumn, endRow, endColumn)) {
-            this.table.showRejectionFeedback();
-            return;
-        }
 
         // 現在の選択範囲の最下行よりも下にデータがある場合のみフィル
         if (maxDataRow > endRow) {

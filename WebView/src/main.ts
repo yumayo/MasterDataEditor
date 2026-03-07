@@ -2,7 +2,6 @@ import {findFilesAsync} from "./api";
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
-import {ContextMenu} from "./context-menu";
 import {CommandPalette} from "./command-palette";
 import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
@@ -16,7 +15,6 @@ import {ReferenceDataCache} from "./reference-data-cache";
     const editorElement = document.getElementById('editor')!;
 
     const editor = new Editor(editorElement);
-    const contextMenu = new ContextMenu();
 
     // テーブルデータの中央ストア（アプリケーション全体で1つ）
     const store = new InMemoryTableStore();
@@ -33,7 +31,6 @@ import {ReferenceDataCache} from "./reference-data-cache";
         explorerElement,
         tab,
         editor,
-        contextMenu,
         tab.getOpenEditorTables()
     );
     Object.assign(sidebar, realSidebar);
@@ -75,19 +72,5 @@ import {ReferenceDataCache} from "./reference-data-cache";
         const tableName = file.name.split('.').slice(0, -1).join('.');
         sidebar.appendFile(tableName);
         commandPalette.registerTable(tableName);
-    }
-
-    // ビューファイルを読み込み
-    try {
-        const viewFiles = await findFilesAsync("view");
-        for (let i = 0; i < viewFiles.length; ++i) {
-            const file = viewFiles[i];
-            if (file.type !== 'file') continue;
-            const viewName = file.name.split('.').slice(0, -1).join('.');
-            sidebar.appendViewFile(viewName);
-            commandPalette.registerView(viewName);
-        }
-    } catch {
-        // viewディレクトリが存在しない場合は無視
     }
 })();

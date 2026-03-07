@@ -1,8 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
 import {ContextMenu, ContextMenuEntry} from "./context-menu";
-import {History} from "./history";
-import {ViewHideColumnCommand} from "./view-hide-column-command";
 
 /**
  * コンテキストメニュー管理モジュール
@@ -10,20 +8,16 @@ import {ViewHideColumnCommand} from "./view-hide-column-command";
  * 責務:
  * - 列ヘッダーのクリック/右クリックハンドラ
  * - 行ヘッダーのクリック/右クリックハンドラ
- * - Joinメニュー項目の構築
- * - 列の表示/非表示制御
  */
 export class EditorTableContextMenu {
     private readonly table: EditorTable;
     private readonly selection: Selection;
     private readonly contextMenu: ContextMenu;
-    private readonly history: History;
 
-    constructor(table: EditorTable, selection: Selection, contextMenu: ContextMenu, history: History) {
+    constructor(table: EditorTable, selection: Selection, contextMenu: ContextMenu) {
         this.table = table;
         this.selection = selection;
         this.contextMenu = contextMenu;
-        this.history = history;
     }
 
     /**
@@ -84,44 +78,6 @@ export class EditorTableContextMenu {
                 {label: insertRightLabel, action: () => { this.table.insertColumns(endColumnIndex + 1, columnCount); }},
                 {label: deleteLabel, action: () => { this.table.removeColumns(startColumnIndex, columnCount); }},
             ];
-            // ビューコンテキストがある場合
-            if (this.table.hasViewContext()) {
-                const viewContext = this.table.getViewContext();
-                // 列を非表示メニュー
-                menuItems.push({ separator: true });
-                menuItems.push({
-                    label: '列を非表示',
-                    action: () => {
-                        this.hideViewColumn(contextMenuColumnIndex);
-                    },
-                });
-                // 非表示列を表示メニュー（非表示列がある場合のみ）
-                const hiddenCols = viewContext.viewDefinition.columns.filter(c => c.hidden);
-                for (const col of hiddenCols) {
-                    menuItems.push({
-                        label: '表示: ' + col.tableName + '.' + col.columnName,
-                        action: () => {
-                            this.showHiddenViewColumn(col.tableName, col.columnName);
-                        },
-                    });
-                }
-                // JOIN解除項目を追加
-                const removeJoinItems = this.buildRemoveJoinMenuItems();
-                if (removeJoinItems.length > 0) {
-                    menuItems.push({separator: true});
-                    for (const item of removeJoinItems) {
-                        menuItems.push(item);
-                    }
-                }
-                // Join項目を追加
-                const joinItems = this.buildJoinMenuItems(contextMenuColumnIndex);
-                if (joinItems.length > 0) {
-                    menuItems.push({separator: true});
-                    for (const item of joinItems) {
-                        menuItems.push(item);
-                    }
-                }
-            }
             this.contextMenu.show(e.clientX, e.clientY, menuItems);
         };
     }
@@ -183,73 +139,5 @@ export class EditorTableContextMenu {
                 {label: deleteLabel, action: () => { this.table.removeRows(startRow, rowCount); }},
             ]);
         };
-    }
-
-    /**
-     * Join用メニュー項目を構築する
-     * 既にJoin済みのテーブルは除外する
-     */
-    private buildJoinMenuItems(columnIndex: number): ContextMenuEntry[] {
-        if (!this.table.hasViewContext()) return [];
-        const viewContext = this.table.getViewContext();
-        const items: ContextMenuEntry[] = [];
-        const joinedTables = new Set(viewContext.viewDefinition.joins.map(j => j.targetTable));
-        for (const target of viewContext.availableJoinTargets) {
-            // 既にJoin済みなら表示しない
-            if (joinedTables.has(target.targetTableName)) continue;
-            const label = target.isReverse
-                ? 'Join: ' + target.targetTableName + ' (reverse: ' + target.targetColumnName + ')'
-                : 'Join: ' + target.targetTableName + ' (via ' + target.sourceColumnName + ')';
-            items.push({
-                label,
-                action: () => {
-                    this.table.getViewContext().onJoinAsync(target, columnIndex);
-                },
-            });
-        }
-        return items;
-    }
-
-    /**
-     * ビュー列を非表示にする（ViewHideColumnCommandを実行）
-     */
-    private hideViewColumn(columnIndex: number): void {
-        const viewContext = this.table.getViewContext();
-        const command = new ViewHideColumnCommand(
-            this.table, viewContext.viewDefinition,
-            viewContext.columnMappings, columnIndex
-        );
-        const anchor = this.selection.getAnchor();
-        const copyRange = this.selection.getCopyRange();
-        this.history.executeCommand(command, {
-            startRow: anchor.row, startColumn: anchor.column,
-            endRow: anchor.row, endColumn: anchor.column,
-        }, copyRange);
-    }
-
-    /**
-     * JOIN解除用メニュー項目を構築する
-     * 現在JOINされているテーブルごとに「JOINを解除」メニューを生成する
-     */
-    private buildRemoveJoinMenuItems(): ContextMenuEntry[] {
-        if (!this.table.hasViewContext()) return [];
-        const viewContext = this.table.getViewContext();
-        const items: ContextMenuEntry[] = [];
-        for (const join of viewContext.viewDefinition.joins) {
-            items.push({
-                label: 'JOINを解除: ' + join.targetTable,
-                action: () => {
-                    viewContext.onRemoveJoin(join.targetTable);
-                },
-            });
-        }
-        return items;
-    }
-
-    /**
-     * 非表示列を再表示する（viewDefinition.columnsのhiddenをfalseに変更してビューを再構築）
-     */
-    private showHiddenViewColumn(tableName: string, columnName: string): void {
-        this.table.getViewContext().onShowHiddenColumn(tableName, columnName);
     }
 }

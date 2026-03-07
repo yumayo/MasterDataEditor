@@ -11,52 +11,16 @@ import {SelectionDragController} from "./selection-drag-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {ReverseReferenceEntry, ReverseReferenceMap} from "./reverse-reference-resolver";
 import {Sidebar} from "./sidebar";
-import {ViewDefinition} from "./model/view-definition";
-import {ViewColumnMapping} from "./model/view-column-mapping";
 import {EditorTableReference} from "./editor-table-reference";
-import {EditorTableView} from "./editor-table-view";
 import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
-import {readCellValue} from "./view-group-query";
-
-/**
- * 利用可能なJoin対象の情報
- */
-export interface AvailableJoinTarget {
-    /** 参照元列名 */
-    sourceColumnName: string;
-    /** 結合先テーブル名 */
-    targetTableName: string;
-    /** 結合先キー列名 */
-    targetColumnName: string;
-    /** 逆参照JOINかどうか */
-    isReverse: boolean;
-}
-
-/**
- * ビューコンテキスト
- * ビュータブでのみ設定される
- */
-export interface ViewContext {
-    viewDefinition: ViewDefinition;
-    columnMappings: ViewColumnMapping[];
-    availableJoinTargets: AvailableJoinTarget[];
-    /** 開いているEditorTableのマップ（ソーステーブル伝搬用） */
-    openEditorTables: Map<string, EditorTable>;
-    onJoinAsync: (target: AvailableJoinTarget, afterColumnIndex: number) => Promise<void>;
-    /** 非表示列を再表示するコールバック（ビュータブの再構築を行う） */
-    onShowHiddenColumn: (tableName: string, columnName: string) => void;
-    /** JOINを解除するコールバック（ビュータブの再構築を行う） */
-    onRemoveJoin: (targetTable: string) => void;
-}
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
  *
  * 個別の責務は以下のモジュールに委譲する:
  * - EditorTableReference: 参照ヒント管理
- * - EditorTableView: ビュー行管理
  * - EditorTableContextMenu: コンテキストメニュー
  * - EditorTableStructure: 列/行の構造操作
  */
@@ -80,8 +44,6 @@ export class EditorTable {
 
     /** 参照ヒント管理モジュール */
     reference!: EditorTableReference;
-    /** ビュー行管理モジュール */
-    view!: EditorTableView;
     /** コンテキストメニュー管理モジュール */
     contextMenuHandler!: EditorTableContextMenu;
     /** テーブル構造操作モジュール */
@@ -125,8 +87,7 @@ export class EditorTable {
      */
     initializeModules(): void {
         this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache);
-        this.view = new EditorTableView(this, this.selection, this.areaResizer, this.store, this.referenceDataCache);
-        this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu, this.history);
+        this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
     }
 
@@ -289,7 +250,6 @@ export class EditorTable {
      * 参照ヒント(.cell-reference-hint)はこのメソッドでは適用されない。
      *
      * 初期描画パス: TabReference.preloadReferenceTables() 完了後に updateReferenceHints() で一括適用
-     * ビュー行作成パス: 行挿入後に updateReferenceHintsForRows() で適用
      */
     static createCell(table: EditorTable, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
         const cell = document.createElement('div');
@@ -298,7 +258,7 @@ export class EditorTable {
         EditorTable.applyCellWidth(cell, width);
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
-            // 参照列の場合はドロップダウンを表示（isCellEditBlockedガードは各編集メソッド内で実行）
+            // 参照列の場合はドロップダウンを表示
             table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
@@ -359,11 +319,23 @@ export class EditorTable {
     }
 
     /**
-     * セルの値を取得する（参照ヒント・折りたたみトグルを除外）
-     * 実装はview-group-query.tsのreadCellValueに委譲する
+     * セルの値を取得する（参照ヒントを除外）
      */
     static getCellValue(cell: HTMLElement): string {
-        return readCellValue(cell);
+        // .cell-value 要素があればそこから取得
+        const valueElement = cell.querySelector('.cell-value');
+        if (valueElement) return valueElement.textContent ?? '';
+        // ヒント要素がある場合、直下のテキストノードのみを結合して返す
+        const hasChildElements = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint');
+        if (hasChildElements) {
+            let text = '';
+            for (const node of Array.from(cell.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? '';
+            }
+            return text;
+        }
+        // そうでなければ textContent をそのまま返す
+        return cell.textContent ?? '';
     }
 
     /**
@@ -606,6 +578,31 @@ export class EditorTable {
         return cornerCell.getBoundingClientRect().width;
     }
 
+    /**
+     * データ領域の最大行を取得（データが入力されている最後の行）
+     */
+    getMaxDataRow(): number {
+        const dataStartRow = 1;
+        let maxRow = 0;
+        for (let r = this.element.children.length - 1; r >= dataStartRow; r--) {
+            const rowElement = this.element.children[r] as HTMLElement;
+            if (!rowElement) continue;
+            let hasData = false;
+            for (let c = 1; c < rowElement.children.length; c++) {
+                const cell = rowElement.children[c] as HTMLElement;
+                if (cell && cell.textContent && cell.textContent.trim() !== '') {
+                    hasData = true;
+                    break;
+                }
+            }
+            if (hasData) {
+                maxRow = r;
+                break;
+            }
+        }
+        return maxRow;
+    }
+
     // =========================================================================
     // UI
     // =========================================================================
@@ -648,24 +645,10 @@ export class EditorTable {
     }
 
     /**
-     * 選択範囲に操作拒否のフィードバックアニメーションを表示する
-     */
-    showRejectionFeedback(): void {
-        const selectionElement = this.selection.element;
-        selectionElement.classList.add('selection-rejected');
-        selectionElement.addEventListener('animationend', () => {
-            selectionElement.classList.remove('selection-rejected');
-        }, { once: true });
-    }
-
-    /**
      * ストアからセルデータを再読み込みし、DOMの値と差分があるセルのみ更新する
      * タブ切替時に呼び出され、他タブでストアが変更されたセルのDOMを同期する
      */
     reloadCellsFromStore(): void {
-        // ビュータブはrefreshViewRows()で既に対応済みのためスキップ
-        if (this.view.hasViewContext()) return;
-
         const storeRows = this.store.getRows(this.tableName);
         const storeHeader = this.store.getHeader(this.tableName);
         if (storeRows === false || storeHeader === false) return;
@@ -702,79 +685,30 @@ export class EditorTable {
     // ファサード: EditorTableReference
     // =========================================================================
 
-    /** 座標でセルのDOMと参照ヒントのみ更新する（ソーステーブルへの伝搬は行わない） */
+    /** 座標でセルのDOMと参照ヒントのみ更新する */
     updateCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
-        // 通常タブの場合のみ中央ストアとfullDataCacheを同期する
-        // ビュータブはpropagateJoinedColumnToSourceTableでソーステーブルのStoreを更新する
-        if (!this.view.hasViewContext()) {
-            const id = this.reference.getRowPkValue(row);
-            // column: DOMの列インデックス（1始まり、行ヘッダー含む）→ 0始まりのデータ列インデックスに変換
-            const columnName = this.getColumnHeaderValue(column - 1);
-            this.store.updateCellValue(this.tableName, id, columnName, value);
-            // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
-            this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
-        }
+        const id = this.reference.getRowPkValue(row);
+        // column: DOMの列インデックス（1始まり、行ヘッダー含む）→ 0始まりのデータ列インデックスに変換
+        const columnName = this.getColumnHeaderValue(column - 1);
+        this.store.updateCellValue(this.tableName, id, columnName, value);
+        // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
+        this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
     }
 
     /**
-     * 変更リストをまとめてソーステーブルに伝搬する
-     * @returns JOINテーブルのStore行が空行から追加された場合にtrue
-     */
-    propagateToSourceTable(changes: CellChange[]): boolean {
-        let joinStoreRowAdded = false;
-        for (const change of changes) {
-            if (this.view.propagateJoinedColumnToSourceTable(change.row, change.column, change.newValue, change.oldValue)) {
-                joinStoreRowAdded = true;
-            }
-        }
-        return joinStoreRowAdded;
-    }
-
-    /** Lazy挿入によるグループ展開が必要かのフラグ（applyViewAwareCellChangesが消費する） */
-    private joinStoreRowAddedFlag = false;
-
-    /**
-     * Lazy挿入フラグを消費して返す（一度読んだらfalseにリセット）
-     * applyViewAwareCellChangesからのみ呼ばれる
-     */
-    consumeJoinStoreRowAdded(): boolean {
-        const result = this.joinStoreRowAddedFlag;
-        this.joinStoreRowAddedFlag = false;
-        return result;
-    }
-
-    /**
-     * ユーザー編集時のセル変更を適用する（JOIN列連動 + DOM更新 + ソーステーブル伝搬）
-     * ビュータブではJOIN列の連動更新を含む全変更リストを返す
-     * Lazy挿入が発生した場合、joinStoreRowAddedFlagをセットする
-     * （グループ展開はapplyViewAwareCellChangesがCommandパターンで実行する）
+     * ユーザー編集時のセル変更を適用する（DOM更新 + ストア同期）
      */
     applyCellChanges(changes: CellChange[]): CellChange[] {
-        this.joinStoreRowAddedFlag = false;
-        if (!this.view.hasViewContext()) {
-            for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-            this.propagateToSourceTable(changes);
-            return changes;
-        }
-        const allChanges: CellChange[] = [];
-        for (const change of changes) {
-            const linkedChanges = this.view.synchronizeJoinedColumnValues(change.row, change.column, change.newValue);
-            allChanges.push(change);
-            for (const lc of linkedChanges) allChanges.push(lc);
-            this.updateCellValueAt(change.row, change.column, change.newValue);
-        }
-        this.joinStoreRowAddedFlag = this.propagateToSourceTable(allChanges);
-        return allChanges;
+        for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
+        return changes;
     }
 
     /**
-     * 変更リストをDOMに再適用しソーステーブルに伝搬する（Undo/Redo/Fill用）
-     * JOIN列連動計算は行わず、引数のchangesをそのまま適用する
+     * 変更リストをDOMに再適用する（Undo/Redo/Fill用）
      */
     replayCellChanges(changes: CellChange[]): void {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-        this.propagateToSourceTable(changes);
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
@@ -818,25 +752,10 @@ export class EditorTable {
     }
 
     /**
-     * 動的参照のvalueColumn名から合成ヘッダー上の列インデックスを解決する
-     * 通常テーブルはヘッダーの直接名前一致、ビューはcolumnMappingsで同一テーブル内を検索する
+     * 動的参照のvalueColumn名から列インデックスを解決する
      */
     resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
         return this.reference.resolveValueColumnIndex(valueColumnName, currentDataColumnIndex);
-    }
-
-    // =========================================================================
-    // ファサード: EditorTableView（頻出メソッドのみ残置）
-    // =========================================================================
-
-    /** ビューコンテキストが設定されているかを返す */
-    hasViewContext(): boolean {
-        return this.view.hasViewContext();
-    }
-
-    /** ビューコンテキストを取得する */
-    getViewContext(): ViewContext {
-        return this.view.getViewContext();
     }
 
     // =========================================================================

@@ -1,6 +1,5 @@
 import {Tab} from "./tab";
 import {EditorTable} from "./editor-table";
-import {readCellValue} from "./view-group-query";
 
 /**
  * ツールバー — タブバーの右側に配置するツールボタン群
@@ -60,7 +59,7 @@ function buildCsvWithHints(editorTable: EditorTable): string {
         const cellTexts: string[] = [];
         for (let col = 1; col <= columnCount; col++) {
             const cell = editorTable.getCell(row, col);
-            const value = readCellValue(cell);
+            const value = EditorTable.getCellValue(cell);
             const hintElement = cell.querySelector('.cell-reference-hint');
             let output = value;
             if (hintElement && hintElement.textContent) {
