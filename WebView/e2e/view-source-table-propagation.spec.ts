@@ -732,94 +732,261 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
 
         // 挿入後（7行）: SecretShop(row2)とWeaponShop(row6)に同期挿入行が追加
         await expectTableDataAsync(viewTable, `
-            1,  SecretShop,  1, 1,  Sword
-             ,            ,   , 2, Shield
-             ,            ,   ,  ,
-            2,    ItemShop,  2, 3, Potion
-            3,  WeaponShop,  1, 1,  Sword
-             ,            ,   , 2, Shield
-             ,            ,   ,  ,
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  ,  ,
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  ,  ,
         `);
 
-        // --- 挿入後のCSV保存検証 ---
-        // PK未設定の挿入行はStore行が生成されないため、CSVには元データのみが含まれるべき
+        // --- 挿入行にデータを入力 ---
+        // WeaponShop挿入行(row6)のJOIN PK(shop_product.id)に"4"を入力
+        // → Lazy Store挿入で{id:4, group_id:1}が生成される
+        // → synchronizeGroupChildJoinedColumnによりSecretShop挿入行(row2)にもPK=4が同期される
+        await editCellAsync(page, viewTable, 6, 3, '4');
+        await expect(getDataCell(viewTable, 2, 3)).toHaveText('4');
+        // WeaponShop挿入行(row6)のitem列に"Helmet"を入力
+        // → Store行が更新される
+        // → SecretShop挿入行(row2)にもitem=Helmetが同期される
+        await editCellAsync(page, viewTable, 6, 4, 'Helmet');
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+        `);
+
+        // --- データ入力後のCSV保存検証 ---
+        // Store行が追加されているため、shop_product.csvは4行になるべき
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
         await expectCsvAsync(page, 'data/shop.csv', `
-            id,        name, group_id
-             1,  SecretShop,        1
-             2,    ItemShop,        2
-             3,  WeaponShop,        1
+            id, name,       group_id
+            1,  SecretShop, 1
+            2,  ItemShop,   2
+            3,  WeaponShop, 1
         `);
         await expectCsvAsync(page, 'data/shop_product.csv', `
-            id, group_id,   item
-            1,         1,  Sword
-            2,         1, Shield
-            3,         2, Potion
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+            4,  1,        Helmet
         `);
 
-        // --- Undo ---
+        // --- Undo ×3 (item編集 → PK編集 → 行挿入) ---
         await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+z');
+        await page.keyboard.press('Control+z');
         await page.keyboard.press('Control+z');
 
         // Undo後: 元の5データ行に復元されること
         await expectTableDataAsync(viewTable, `
-            1,  SecretShop,  1, 1, Sword
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+        `);
+
+        // --- Undo後のCSV保存検証 ---
+        // Store行が除去され、元の3行に戻るべき
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id, name,       group_id
+            1,  SecretShop, 1
+            2,  ItemShop,   2
+            3,  WeaponShop, 1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+        `);
+
+        // --- Redo ×3 (行挿入 → PK編集 → item編集) ---
+        await page.keyboard.press('Control+y');
+        await page.keyboard.press('Control+y');
+        await page.keyboard.press('Control+y');
+
+        // Redo後: 再び7行のデータ入力済み状態に戻ること
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+        `);
+        // Redo後の挿入行がグループ内挿入行（ベース列がパディングセル）であることを確認
+        await expect(getDataCell(viewTable, 6, 0)).toHaveClass(/view-padding-cell/);
+
+        // --- Redo後のCSV保存検証 ---
+        // Store行が再生成され、4行に戻るべき
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id, name,       group_id
+            1,  SecretShop, 1
+            2,  ItemShop,   2
+            3,  WeaponShop, 1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+            4,  1,        Helmet
+        `);
+    });
+
+    /**
+     * 行挿入なしで空行にデータ追加するテスト:
+     * デフォルトで100行の空白行があるため、行を挿入せずにグループに値を追加できる。
+     * WeaponShopグループ末尾（row4=Shield）の次の空行（row5）にPK=4, item=Helmetを
+     * 直接入力し、CSV保存とUndo/Redoが正しく動くことを検証する。
+     *
+     * テストデータ（createShopWithSiblingBeforeFileSystem）:
+     * | shop.id | shop.name   | shop.group_id | shop_product.id | shop_product.item |
+     * |    1    | SecretShop  |      1        |       1         |      Sword        |  ← row0
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |  ← row1
+     * |    2    | ItemShop    |      2        |       3         |      Potion       |  ← row2
+     * |    3    | WeaponShop  |      1        |       1         |      Sword        |  ← row3
+     * | [pad]   |   [pad]     |    [pad]      |       2         |      Shield       |  ← row4
+     * |         |             |               |                 |                   |  ← row5: 空行
+     */
+    test('行を挿入せず空行に直接データを追加した場合のCSV保存とUndo/Redoが正しく動くこと', async ({ page }) => {
+        await installMockApiAsync(page, createShopWithSiblingBeforeFileSystem());
+        await page.goto('/');
+        const viewTable = await openTableAsync(page, 'view_shop');
+
+        // 初期状態（5データ行）
+        await expectTableDataAsync(viewTable, `
+            1,  SecretShop,  1, 1,  Sword
              ,            ,   , 2, Shield
             2,    ItemShop,  2, 3, Potion
-            3,  WeaponShop,  1, 1, Sword
+            3,  WeaponShop,  1, 1,  Sword
              ,            ,   , 2, Shield
+        `);
+
+        // row5（WeaponShopグループ末尾の次の空行）のshop_product.id(col 3)に"4"を入力
+        // → Lazy Store挿入により shop_product{id:4, group_id:1} が生成される
+        // → 同一FK値(group_id=1)のSecretShopグループにも同期展開される（row2に挿入）
+        // → ビューは5行→7行に展開
+        await editCellAsync(page, viewTable, 5, 3, '4');
+
+        // PK編集直後: SecretShop(row2)に同期行が追加され7行になる
+        // 元のrow5は SecretShop同期行挿入により row6 にシフト
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4,
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4,
+        `);
+        // 一行下（row7）にデータが重複していないこと
+        await expect(getDataCell(viewTable, 7, 3)).toHaveText('');
+
+        // row6（シフト後のWeaponShop空行）のshop_product.item(col 4)に"Helmet"を入力
+        // → Store行が更新される
+        // → SecretShop同期行(row2)にもitem=Helmetが同期される
+        await editCellAsync(page, viewTable, 6, 4, 'Helmet');
+
+        // ビューの状態確認: 両グループの同期行にHelmetが表示される
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+        `);
+        // 一行下（row7）にデータが重複していないこと
+        await expect(getDataCell(viewTable, 7, 3)).toHaveText('');
+        await expect(getDataCell(viewTable, 7, 4)).toHaveText('');
+
+        // --- CSV保存検証 ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        await expectCsvAsync(page, 'data/shop.csv', `
+            id, name,       group_id
+            1,  SecretShop, 1
+            2,  ItemShop,   2
+            3,  WeaponShop, 1
+        `);
+        await expectCsvAsync(page, 'data/shop_product.csv', `
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+            4,  1,        Helmet
+        `);
+
+        // --- Undo ×2 (item編集 → PK編集) ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+z');
+        await page.keyboard.press('Control+z');
+
+        // Undo後: 元の5データ行に復元されること
+        await expectTableDataAsync(viewTable, `
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
         `);
 
         // --- Undo後のCSV保存検証 ---
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        await expectCsvAsync(page, 'data/shop.csv', `
-            id,        name,  group_id
-             1,  SecretShop,         1
-             2,    ItemShop,         2
-             3,  WeaponShop,         1
-        `);
         await expectCsvAsync(page, 'data/shop_product.csv', `
-            id,   group_id,     item
-             1,          1,    Sword
-             2,          1,   Shield
-             3,          2,   Potion
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
         `);
 
-        // --- Redo ---
+        // --- Redo ×2 (PK編集 → item編集) ---
+        await page.keyboard.press('Control+y');
         await page.keyboard.press('Control+y');
 
-        // Redo後: 再び7行の挿入状態に戻ること
+        // Redo後: 再び7行のデータ入力済み状態に戻ること
         await expectTableDataAsync(viewTable, `
-            1, SecretShop,  1, 1, Sword
-            ,            ,   , 2, Shield
-            ,            ,   ,  ,
-            2,   ItemShop,  2, 3, Potion
-            3, WeaponShop,  1, 1, Sword
-            ,            ,   , 2, Shield
-            ,            ,   ,  ,
+            1, SecretShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
+            2, ItemShop,   2, 3, Potion
+            3, WeaponShop, 1, 1, Sword
+            ,            ,  , 2, Shield
+            ,            ,  , 4, Helmet
         `);
-        // Redo後の挿入行がグループ内挿入行（ベース列がパディングセル）であることを確認
-        await expect(getDataCell(viewTable, 6, 0)).toHaveClass(/view-padding-cell/);
 
         // --- Redo後のCSV保存検証 ---
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+s');
         await page.waitForTimeout(500);
-        await expectCsvAsync(page, 'data/shop.csv', `
-            id,        name, group_id
-             1,  SecretShop,        1
-             2,    ItemShop,        2
-             3,  WeaponShop,        1
-        `);
         await expectCsvAsync(page, 'data/shop_product.csv', `
-            id, group_id,   item
-             1,        1,  Sword
-             2,        1, Shield
-             3,        2, Potion
+            id, group_id, item
+            1,  1,        Sword
+            2,  1,        Shield
+            3,  2,        Potion
+            4,  1,        Helmet
         `);
     });
 });

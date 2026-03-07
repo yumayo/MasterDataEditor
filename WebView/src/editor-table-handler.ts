@@ -883,16 +883,9 @@ export class EditorTableHandler {
             );
         }
         // 空行に残った値をクリア（データはStoreに吸収済み、グループ再構築で正しい行に反映される）
-        for (const change of allChanges) {
-            if (change.row >= tableElement.children.length) continue;
-            const row = tableElement.children[change.row] as HTMLElement;
-            if (row && !row.hasAttribute('data-base-row-index')) {
-                for (let i = 1; i < row.children.length; i++) {
-                    const cell = row.children[i] as HTMLElement;
-                    if (cell.textContent !== '') cell.textContent = '';
-                }
-            }
-        }
+        // グループ再構築で行がシフトしているため、change.rowは陳腐化している。
+        // data-base-row-indexを持たない最初の行を走査してクリーンアップする。
+        clearStaleBlankRows(tableElement);
         // CompositeCommand: CellChangeCommand + ViewRowRestructureCommands
         const rowDelta = this.table.getRowCount() - rowCountBefore;
         const adjustedEndRow = Math.max(range.startRow, range.endRow + rowDelta);
@@ -906,6 +899,13 @@ export class EditorTableHandler {
             subCommands.push(new CellChangeCommand(this.table, meaningfulChanges, range, copyRange));
         }
         for (const cmd of restructureCommands) subCommands.push(cmd);
+        // Redo時にもCellChangeCommand→グループ再構築の後で空行クリーンアップが必要
+        subCommands.push({
+            execute(): void { clearStaleBlankRows(tableElement); },
+            undo(): void {},
+            redo(): void { clearStaleBlankRows(tableElement); },
+            getDescription(): string { return 'CleanStaleBlankRows'; },
+        });
         if (subCommands.length > 0) {
             this.history.pushCommand(new CompositeCommand(subCommands), adjustedRange, copyRange);
         }
@@ -1177,5 +1177,23 @@ export class EditorTableHandler {
      */
     isDropdownActive(): boolean {
         return this.dropdownActive;
+    }
+}
+
+/**
+ * Lazy Store挿入後のグループ再構築で行がシフトした際、
+ * 元の空行に残った値をクリアする。
+ * data-base-row-indexを持たない最初の行（＝データ行末尾の次の空行）を走査し、
+ * セルに値が残っていればクリアする。
+ */
+function clearStaleBlankRows(tableElement: HTMLElement): void {
+    for (let r = 1; r < tableElement.children.length; r++) {
+        const row = tableElement.children[r] as HTMLElement;
+        if (row.hasAttribute('data-base-row-index')) continue;
+        for (let i = 1; i < row.children.length; i++) {
+            const cell = row.children[i] as HTMLElement;
+            if (cell.textContent !== '') cell.textContent = '';
+        }
+        break;
     }
 }
