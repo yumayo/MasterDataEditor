@@ -72,8 +72,6 @@ test.describe('RelationsPanel', () => {
     test(
         '右ペインに .relations-panel 要素が存在すること',
         async ({ page }) => {
-            // エディタ右側に relations-panel が存在することを検証
-            // → REDになる（まだ実装されていない）
             const relationsPanel = page.locator('.relations-panel');
             await expect(relationsPanel).toBeVisible();
         },
@@ -83,9 +81,6 @@ test.describe('RelationsPanel', () => {
         'テーブルを開いた初期状態で行未選択のプレースホルダーが表示されること',
         async ({ page }) => {
             await openTableAsync(page, 'quest');
-            // 行が選択されていない状態では「行を選択してください」等の
-            // プレースホルダーが relations-panel 内に表示される
-            // → REDになる（まだ実装されていない）
             const relationsPanel = page.locator('.relations-panel');
             await expect(relationsPanel).toBeVisible();
             await expect(relationsPanel.locator('.relations-panel-placeholder')).toBeVisible();
@@ -96,10 +91,7 @@ test.describe('RelationsPanel', () => {
         '行を選択すると relations-panel 内にコンテンツが表示されること',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
-            // 1行目を選択する
             await selectRowAsync(table, 0);
-            // relations-panel が表示され、選択行のリレーション情報が表示される
-            // → REDになる（まだ実装されていない）
             const relationsPanel = page.locator('.relations-panel');
             await expect(relationsPanel).toBeVisible();
             const content = relationsPanel.locator('.relations-panel-content');
@@ -112,8 +104,6 @@ test.describe('RelationsPanel', () => {
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
             // quest テーブルは enemy を参照している
-            // 行選択後、参照先の enemy テーブル名がパネル内に表示される
-            // → REDになる（まだ実装されていない）
             await selectRowAsync(table, 0);
             const relationsPanel = page.locator('.relations-panel');
             await expect(relationsPanel.locator('.relations-table-title').getByText('enemy', { exact: true })).toBeVisible();
@@ -128,11 +118,153 @@ test.describe('RelationsPanel', () => {
             await selectRowAsync(table, 0);
             const relationsPanel = page.locator('.relations-panel');
             // 2行目（second_quest, enemy_id=2 → ドラゴン）を選択して内容が変わることを確認
-            // → REDになる（まだ実装されていない）
             await selectRowAsync(table, 1);
             await expect(relationsPanel).toBeVisible();
             const content = relationsPanel.locator('.relations-panel-content');
             await expect(content).toBeVisible();
+        },
+    );
+});
+
+// =============================================================================
+// 改善1: パネル幅リサイザー
+// =============================================================================
+
+test.describe('RelationsPanel リサイザー', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createRelationsPanelTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'リサイズハンドルが存在すること',
+        async ({ page }) => {
+            const handle = page.locator('.relations-panel-resize-handle');
+            await expect(handle).toHaveCount(1);
+        },
+    );
+
+    test(
+        'リサイズハンドルをドラッグするとパネル幅が変わること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            // 行選択してパネルにコンテンツを表示させる
+            await selectRowAsync(table, 0);
+            await expect(page.locator('.relations-panel-content')).toBeVisible();
+
+            const handle = page.locator('.relations-panel-resize-handle');
+
+            // ドラッグ前の幅を取得
+            const beforeWidth = await page.evaluate(() => {
+                const el = document.querySelector('.relations-panel');
+                return el ? el.getBoundingClientRect().width : 0;
+            });
+
+            // ハンドルを左に100px ドラッグ（パネルを広げる方向）
+            const handleBox = await handle.boundingBox();
+            if (!handleBox) throw new Error('リサイズハンドルの boundingBox が取得できません');
+            const startX = handleBox.x + handleBox.width / 2;
+            const startY = handleBox.y + handleBox.height / 2;
+            await page.mouse.move(startX, startY);
+            await page.mouse.down();
+            await page.mouse.move(startX - 100, startY);
+            await page.mouse.up();
+
+            // ドラッグ後の幅を取得して変化していることを確認
+            const afterWidth = await page.evaluate(() => {
+                const el = document.querySelector('.relations-panel');
+                return el ? el.getBoundingClientRect().width : 0;
+            });
+
+            expect(afterWidth).not.toBeCloseTo(beforeWidth, -1);
+            // パネルは広がっているはずなので幅が増加していることも確認
+            expect(afterWidth).toBeGreaterThan(beforeWidth);
+        },
+    );
+});
+
+// =============================================================================
+// 改善2: 常に全テーブル表示
+// =============================================================================
+
+test.describe('RelationsPanel 全テーブル常時表示', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createRelationsPanelTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        '行選択時にすべての参照テーブルが常に表示されること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            // quest の1行目を選択（enemy_id=1 → enemy テーブルが参照先）
+            await selectRowAsync(table, 0);
+
+            const sections = page.locator('.relations-table-section');
+            await expect(sections).toHaveCount(1);
+
+            const miniTables = page.locator('.relations-panel .editor-table');
+            await expect(miniTables.first()).toBeVisible();
+        },
+    );
+
+    test(
+        'リスト切り替えボタンが存在しないこと',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            await selectRowAsync(table, 0);
+            await expect(page.locator('.relations-panel-content')).toBeVisible();
+
+            const refList = page.locator('.relations-ref-list');
+            await expect(refList).toHaveCount(0);
+        },
+    );
+});
+
+// =============================================================================
+// 改善3: EditorTable流用
+// =============================================================================
+
+test.describe('RelationsPanel EditorTable流用', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createRelationsPanelTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'リレーションパネル内にeditor-tableクラスの要素が存在すること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            await selectRowAsync(table, 0);
+            await expect(page.locator('.relations-panel-content')).toBeVisible();
+
+            const editorTableInPanel = page.locator('.relations-panel .editor-table');
+            await expect(editorTableInPanel.first()).toBeVisible();
+        },
+    );
+
+    test(
+        'リレーションパネル内のセルをダブルクリックしても編集UIが表示されないこと（読み取り専用）',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            await selectRowAsync(table, 0);
+            await expect(page.locator('.relations-panel-content')).toBeVisible();
+
+            // リレーションパネルのミニEditorTableは読み取り専用（ストア汚染防止）。
+            // dblclick しても grid-textfield-active が表示されないことを確認する。
+            const panelCell = page.locator(
+                '.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
+            ).first();
+            await panelCell.dblclick();
+
+            // 読み取り専用のため編集UIは表示されない
+            const editField = page.locator(
+                '.relations-panel .grid-textfield-active, .relations-panel input'
+            ).first();
+            await expect(editField).not.toBeVisible();
         },
     );
 });

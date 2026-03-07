@@ -47,7 +47,7 @@ interface ResolvedReference {
  */
 export class EditorTableHandler {
 
-    readonly element: HTMLElement;
+    private readonly element: HTMLElement;
 
     private readonly table: EditorTable;
     private readonly selection: Selection;
@@ -56,6 +56,11 @@ export class EditorTableHandler {
 
     private active: boolean;
     private visible: boolean;
+    /**
+     * 読み取り専用フラグ。ミニEditorTableでtrueにする。
+     * trueの場合、セル編集UIの表示とCtrl+S保存を禁止してストア汚染とCSV破壊を防ぐ。
+     */
+    private readOnly: boolean;
 
     // 参照列用のコンポーネント
     private referenceDataCache: ReferenceDataCache | undefined;
@@ -79,6 +84,7 @@ export class EditorTableHandler {
 
         this.active = false;
         this.visible = false;
+        this.readOnly = false;
         this.dropdownActive = false;
 
         // contenteditable element を作成
@@ -120,6 +126,43 @@ export class EditorTableHandler {
     }
 
     /**
+     * 読み取り専用にする（ミニEditorTable用）
+     * セル編集UIの表示を禁止してストア汚染を防ぎ、Ctrl+Sも禁止してCSV破壊を防ぐ
+     */
+    makeReadOnly(): void {
+        this.readOnly = true;
+    }
+
+    /**
+     * contenteditable div を指定コンテナに追加する
+     * element の public 露出を避けるためのメソッド
+     */
+    appendTo(container: HTMLElement): void {
+        container.appendChild(this.element);
+    }
+
+    /**
+     * GridTextField を生成して返す
+     * element の public 露出を避けるため、このメソッド経由で生成する
+     */
+    createGridTextField(container: HTMLElement, table: EditorTable, selection: Selection): GridTextField {
+        return new GridTextField(this.element, container, table, selection);
+    }
+
+    /**
+     * GridDropdownInput を生成して返す
+     * element の public 露出を避けるため、このメソッド経由で生成する
+     */
+    createDropdownInput(container: HTMLElement): GridDropdownInput {
+        return new GridDropdownInput(
+            container,
+            this.element,
+            (id: string) => { this.submitDropdownSelection(id); },
+            () => { this.cancelDropdown(); }
+        );
+    }
+
+    /**
      * GridTextField を設定（循環依存解決のため、コンストラクタ後に設定）
      */
     setTextField(textField: GridTextField): void {
@@ -137,22 +180,31 @@ export class EditorTableHandler {
 
     /**
      * セル編集モードを開始する（外部から呼ばれる用）
+     *
+     * dblclick 経由でミニEditorTableから呼ばれる場合は enable() が呼ばれていないため
+     * ここで active = true にセットする。これによりキーボード操作（Enter/Tab/ESC）が
+     * 正しく機能し、フォーカスアウト時の値確定も動作する。
      */
     enableCellEditMode(preserveContent: boolean): void {
+        // 読み取り専用（ミニEditorTable）では編集UIを表示しない。
+        // ストア汚染を防ぐため編集自体を禁止する。
+        if (this.readOnly) return;
         if (!this.textField) return;
 
+        // enable() を呼ばずに直接編集を開始するパス（ミニEditorTable dblclick）でも
+        // キーボードイベントが機能するように active = true にする
+        this.active = true;
+
         const target = getTarget(this.table, this.selection);
-        const tableRect = this.table.getTableBoundingClientRect();
         const cellRect = target.cellRect;
-        const rect = new DOMRect(
-            cellRect.left - tableRect.left - 1,
-            cellRect.top - tableRect.top,
-            cellRect.width + 1,
-            cellRect.height
-        );
+        // セルのビューポート絶対座標をそのまま渡す。
+        // GridTextField.show() 内で this.element.parentElement の BoundingClientRect を引いて
+        // position:absolute の配置基準要素からの相対座標に変換する。
+        // これによりメインテーブルでも relations-panel 内でも正しく配置できる。
+        const rect = new DOMRect(cellRect.left - 1, cellRect.top, cellRect.width + 1, cellRect.height);
 
         this.textField.show(rect, target.cellValue, preserveContent);
-        
+
         this.visible = true;
     }
 
@@ -327,9 +379,10 @@ export class EditorTableHandler {
      * ナビゲーションモード（編集モードではない）のキー処理
      */
     private handleNavigationKeydown(keyboardEvent: KeyboardEvent): void {
-        // Ctrl+S: 保存
+        // Ctrl+S: 保存（読み取り専用ミニEditorTableでは保存を禁止してCSV破壊を防ぐ）
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
+            if (this.readOnly) return;
             Promise.all([
                 saveTableData(this.table),
                 saveSchemaDataAsync(this.table)
@@ -818,6 +871,8 @@ export class EditorTableHandler {
      * @param preserveContent trueの場合、セルの内容を保持する（ダブルクリック時）
      */
     async enableCellEditModeWithDropdownAsync(preserveContent: boolean): Promise<boolean> {
+        // 読み取り専用（ミニEditorTable）では編集UIを表示しない
+        if (this.readOnly) return false;
         if (!this.referenceDataCache || !this.dropdownInput || !this.textField) {
             return false;
         }
@@ -854,15 +909,10 @@ export class EditorTableHandler {
             }
 
             // セルの位置を取得
+            // ビューポート絶対座標をそのまま渡す（GridTextField.show() 内で補正する）
             const target = getTarget(this.table, this.selection);
-            const tableRect = this.table.getTableBoundingClientRect();
             const cellRect = target.cellRect;
-            const rect = new DOMRect(
-                cellRect.left - tableRect.left - 1,
-                cellRect.top - tableRect.top,
-                cellRect.width + 1,
-                cellRect.height
-            );
+            const rect = new DOMRect(cellRect.left - 1, cellRect.top, cellRect.width + 1, cellRect.height);
 
             // preserveContent=falseの場合（キー入力）はセル内容を初期化する（通常のセル編集と同様）
             const initialValue = preserveContent ? target.cellValue : '';

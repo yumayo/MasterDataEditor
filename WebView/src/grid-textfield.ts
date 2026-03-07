@@ -14,23 +14,33 @@ import {Selection} from "./selection";
 export class GridTextField {
 
     private readonly element: HTMLElement;
+    /** grid-textfield の position:absolute 基準となるコンテナ（position:relative） */
+    private readonly container: HTMLElement;
     private readonly table: EditorTable;
     private readonly selection: Selection;
 
-    constructor(element: HTMLElement, table: EditorTable, selection: Selection) {
+    constructor(element: HTMLElement, container: HTMLElement, table: EditorTable, selection: Selection) {
         this.element = element;
+        this.container = container;
         this.table = table;
         this.selection = selection;
     }
 
     /**
      * テキスト入力フィールドを表示する
+     *
+     * rect はセルのビューポート絶対座標（EditorTableHandler で計算済み）。
+     * grid-textfield は position:absolute なので、コンストラクタで受け取った container の
+     * BoundingClientRect を引いて相対座標に変換する。
+     * これによりメインテーブルでも relations-panel のミニテーブルでも正しく配置できる。
      */
     show(rect: DOMRect, cellText: string, preserveContent: boolean): void {
         this.element.classList.add('grid-textfield-active');
 
-        this.element.style.left = rect.left + 'px';
-        this.element.style.top = rect.top + 'px';
+        // container（position:relative の含有ブロック）基準の相対座標を計算する
+        const containerRect = this.container.getBoundingClientRect();
+        this.element.style.left = (rect.left - containerRect.left) + 'px';
+        this.element.style.top = (rect.top - containerRect.top) + 'px';
 
         if (preserveContent) {
             // ダブルクリック時: セルのテキストをコピーする

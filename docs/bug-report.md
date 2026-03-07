@@ -588,3 +588,45 @@ RelationsPanelのドリルダウン機能において、NavFrameにentriesをコ
 - **ペースト系のE2Eテストでネットワークリクエスト数を検証する。** 100セルペースト時にリクエストが1回のみ発行されることをテストとして明示する。
 
 ---
+
+## 40. [abd3858] — EditorTableHandler.enable() 未呼び出しによるアクティブ状態漏れ
+
+### 不具合原因名
+enable() をバイパスした編集UI開放による active フラグ未設定
+
+### なぜそうなったのか
+ミニEditorTable（RelationsPanelのインライン編集）で `enable()` を呼ばずに `dblclick` イベントハンドラから `enableCellEditMode()` を直接呼ぶ設計にした。`enable()` の内部で `this.active = true` をセットする想定だったが、そのパスを通らないため `active = false` のままとなった。結果として、テキスト入力後のEnterキー確定・ESCキャンセル・Tabキーによる移動が一切動作しなかった。`enableCellEditMode()` 内で `this.active = true` をセットする修正で解決した。
+
+### どうしたら今後は再発しないか
+- **`enableCellEditMode()` を呼ぶ全パスで `active` フラグが適切にセットされることを確認する。** `enable()` 経由以外のパスから編集UIを開く場合は、そのパス内で `active = true` を明示的にセットすること。
+- **編集モード開始の入口を `enable()` に一本化する設計を原則とする。** やむを得ず別パスを追加する場合は、`enable()` が行う副作用（フラグ設定・イベント登録等）を漏れなく再現しているか確認するチェックリストを設ける。
+
+---
+
+## 41. [abd3858] — readOnly の適用範囲不足（ContextMenu未考慮）
+
+### 不具合原因名
+readOnlyガードの入口網羅漏れ（ContextMenu経由の操作が無防備）
+
+### なぜそうなったのか
+`makeReadOnly()` を実装した際、`EditorTableHandler` の `enableCellEditMode` と `Ctrl+S` のキーボードショートカットのみをガードし、`EditorTableContextMenu`（行削除・行挿入・列挿入等）への伝播を漏らした。readOnlyの意図は「ストアを汚染しない」ことだが、コンテキストメニュー経由の行・列操作はガードされておらず、ミニテーブル上で右クリックすることでストアを書き換えられる状態が続いた。
+
+### どうしたら今後は再発しないか
+- **新しいコンテキスト（ミニテーブル等）でEditorTableを使う場合、操作の全入口を列挙してからreadOnlyを適用する。** 入口の列挙：①セル編集UI（`enableCellEditMode`）、②ContextMenu（行削除・挿入・列操作）、③キーボードショートカット（Ctrl+S / Delete / Enter等）。この3カテゴリを必ず網羅すること。
+- **readOnlyフラグの適用テストは「全入口から操作を試みてもストアが変化しない」ことを確認するものとして書く。**
+
+---
+
+## 42. [abd3858] — renderAsync の requestId インクリメント二重管理
+
+### 不具合原因名
+非同期キャンセル用IDのインクリメント責務の分散による二重インクリメント
+
+### なぜそうなったのか
+`renderAsync()` 内部で `++this.currentRequestId` を行っていたため、呼び出し元（`updateForRowAsync`・`drillDownAsync`）が自前でインクリメントすると二重インクリメントとなった。パンくずリストのclickハンドラはインクリメントを漏らしており（内部の `renderAsync` だけに依存）、drillDownAsyncのインクリメントとずれが生じてレースコンディションが発生した。古いリクエストのキャンセル判定が狂い、古い非同期結果でパネルが上書きされるケースが再現した。
+
+### どうしたら今後は再発しないか
+- **`currentRequestId` のインクリメント責務は「新しい非同期処理を開始する全ての公開入口」に限定し、内部実装の `renderAsync()` にはインクリメント責務を持たせない。** `renderAsync` は受け取ったrequestIdと `currentRequestId` を比較するだけに留める。
+- **新しい呼び出し元を追加する際は必ずインクリメントをセットで実装することをコードコメントで明示する。** `// 新しい非同期処理の開始点。必ず ++this.currentRequestId をここで呼ぶこと` のような規約コメントを `currentRequestId` の宣言箇所に残す。
+
+---

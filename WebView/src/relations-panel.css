@@ -12,6 +12,23 @@
     background-color: var(--background-sub-color);
     color: var(--font-color);
     font-size: 12px;
+    position: relative;
+}
+
+/* ─── リサイズハンドル ─── */
+
+.relations-panel-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 10;
+}
+
+.relations-panel-resize-handle:hover {
+    background: var(--focus-border, #007acc);
 }
 
 /* ─── プレースホルダー（行未選択・参照なし） ─── */
@@ -33,7 +50,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
 }
 
 /* ─── セクションヘッダー（"RELATIONS" テキスト） ─── */
@@ -96,65 +113,6 @@
     background-color: transparent;
 }
 
-/* ─── 参照エントリリスト ─── */
-
-.relations-ref-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px 8px;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.relations-ref-list-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border: none;
-    border-left: 2px solid transparent;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--font-color);
-    cursor: pointer;
-    font-size: 12px;
-    text-align: left;
-    transition: background 0.12s;
-    width: 100%;
-}
-
-.relations-ref-list-item:hover {
-    background-color: rgba(61, 107, 255, 0.06);
-}
-
-.relations-ref-list-item--active {
-    background-color: rgba(61, 107, 255, 0.12);
-    color: var(--font-color);
-    border-left-color: #3d6bff;
-}
-
-.relations-ref-list-item--active:hover {
-    background-color: rgba(61, 107, 255, 0.16);
-}
-
-.relations-ref-label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.relations-ref-count {
-    font-size: 10px;
-    background-color: var(--background-color);
-    padding: 1px 5px;
-    border-radius: 3px;
-    min-width: 18px;
-    text-align: center;
-    opacity: 0.8;
-}
-
 /* ─── 参照種別タグ ─── */
 
 .relations-tag {
@@ -179,13 +137,12 @@
     border: 1px solid rgba(167, 139, 250, 0.20);
 }
 
-/* ─── テーブルセクション ─── */
+/* ─── テーブルセクション（全エントリを縦に並べる） ─── */
 
 .relations-table-section {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .relations-table-header {
@@ -209,12 +166,25 @@
     opacity: 0.5;
 }
 
-/* ─── ミニテーブル ─── */
+/* ─── ミニテーブルラッパー（EditorTable / 静的テーブル共通） ─── */
 
 .relations-mini-table-wrapper {
-    flex: 1;
-    overflow: auto;
+    /* grid-textfield（position:absolute）は panelElement（.relations-panel）を基準に配置する。 */
+    /* wrapper は overflow:hidden/auto を持たず、scrollContainer（内側）がスクロールを担う。 */
+    overflow: visible;
+    position: relative;
+    min-height: 40px;
 }
+
+/* ─── ミニテーブルスクロール領域（overflow:auto を wrapper から分離して grid-textfield のクリッピングを防ぐ） ─── */
+
+.relations-mini-table-scroll {
+    overflow: auto;
+    max-height: 200px;
+    position: relative;
+}
+
+/* ─── 静的HTMLテーブル（Tab未接続時のフォールバック） ─── */
 
 .relations-mini-table {
     width: 100%;

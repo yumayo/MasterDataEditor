@@ -45,7 +45,8 @@ function createSearchTestFileSystem(): MockFileSystem {
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const explorer = page.locator('#explorer');
     await explorer.getByText(tableName).click();
-    const table = page.locator('.editor-table');
+    // リレーションパネル内のミニEditorTableと区別するため左ペイン限定で探す
+    const table = page.locator('.editor-left-pane .editor-table');
     await expect(table).toBeVisible();
     return table;
 }
@@ -181,11 +182,11 @@ test.describe('検索パネル', () => {
         await expect(results.first()).toBeVisible();
         // 最初の結果をクリック
         await results.first().click();
-        // テーブルが開かれてエディターテーブルが表示される
-        const table = page.locator('.editor-table');
+        // テーブルが開かれてエディターテーブルが表示される（左ペイン限定で探す）
+        const table = page.locator('.editor-left-pane .editor-table');
         await expect(table).toBeVisible();
-        // セレクション範囲が表示されていること
-        const selection = page.locator('.selection');
+        // セレクション範囲が表示されていること（左ペイン限定で探す）
+        const selection = page.locator('.editor-left-pane .selection');
         await expect(selection).toBeVisible();
     });
 
