@@ -508,6 +508,9 @@ export class RelationsPanel {
             } else {
                 crumb.addEventListener('click', () => {
                     this.navStack = this.navStack.slice(0, i + 1);
+                    // 呼び出し元としての責務: 新しいリクエストを開始する前にIDをインクリメントして
+                    // 進行中の updateForRowAsync / drillDownAsync を無効化する
+                    ++this.currentRequestId;
                     this.renderAsync().catch(err => {
                         console.error('[RelationsPanel] breadcrumb render 失敗:', err);
                     });
