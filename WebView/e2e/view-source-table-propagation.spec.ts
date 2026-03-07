@@ -489,6 +489,19 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
         // SecretShopグループにも同期挿入行（row5）が存在し、同一位置（groupPosition=1）の行が連動更新されること
         // SecretShopもgroup_id=1なので、同一FK値・同一グループ位置の行が同期されるべき
         await expect(getDataCell(viewTable, 5, 4)).toHaveText('テスト商品');
+        // 保存して既存データが破壊されていないことを検証
+        // PK未設定の挿入行はStore行が生成されないため、CSVには元の3行のみが含まれるべき
+        const firstCell = viewTable.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)');
+        await firstCell.click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        const productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        const productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
+        // ヘッダー + 3データ行（元の3行のみ、PK未設定の挿入行はStore行なし）= 4行
+        expect(productLines.length).toBe(4);
+        expect(productCsv).toContain('1,1,Sword');
+        expect(productCsv).toContain('2,1,Shield');
+        expect(productCsv).toContain('3,2,Potion');
     });
 
     test('新しいJOIN行を追加すると同じFK値を持つ全グループが同時に展開されること', async ({ page }) => {
@@ -734,6 +747,24 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
             ,            ,   ,  ,
         `);
 
+        // --- 挿入後のCSV保存検証 ---
+        // PK未設定の挿入行はStore行が生成されないため、CSVには元データのみが含まれるべき
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        let shopCsv = await readMockFileAsync(page, 'data/shop.csv');
+        let shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(shopLines.length).toBe(4); // ヘッダー + 3データ行
+        expect(shopCsv).toContain('1,SecretShop,1');
+        expect(shopCsv).toContain('2,ItemShop,2');
+        expect(shopCsv).toContain('3,WeaponShop,1');
+        let productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        let productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(productLines.length).toBe(4); // ヘッダー + 3データ行
+        expect(productCsv).toContain('1,1,Sword');
+        expect(productCsv).toContain('2,1,Shield');
+        expect(productCsv).toContain('3,2,Potion');
+
         // --- Undo ---
         await getDataCell(viewTable, 0, 0).click();
         await page.keyboard.press('Control+z');
@@ -746,6 +777,23 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
             3, WeaponShop, 1, 1, Sword
             ,            ,   , 2, Shield
         `);
+
+        // --- Undo後のCSV保存検証 ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        shopCsv = await readMockFileAsync(page, 'data/shop.csv');
+        shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(shopLines.length).toBe(4);
+        expect(shopCsv).toContain('1,SecretShop,1');
+        expect(shopCsv).toContain('2,ItemShop,2');
+        expect(shopCsv).toContain('3,WeaponShop,1');
+        productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(productLines.length).toBe(4);
+        expect(productCsv).toContain('1,1,Sword');
+        expect(productCsv).toContain('2,1,Shield');
+        expect(productCsv).toContain('3,2,Potion');
 
         // --- Redo ---
         await page.keyboard.press('Control+y');
@@ -761,8 +809,23 @@ test.describe('同一FK値を持つ複数グループの同時展開', () => {
             ,            ,   ,  ,
         `);
         // Redo後の挿入行がグループ内挿入行（ベース列がパディングセル）であることを確認
-        // 修正済み: 以前はactualRowIndexがundo時に陳腐化し、savedRowが誤った空デフォルト行をキャプチャしていた
-        // 現在はundo()でmetaIndex + 1を使って主行を正確にキャプチャするため、redo時もパディングセルが正しく復元される
         await expect(getDataCell(viewTable, 6, 0)).toHaveClass(/view-padding-cell/);
+
+        // --- Redo後のCSV保存検証 ---
+        await getDataCell(viewTable, 0, 0).click();
+        await page.keyboard.press('Control+s');
+        await page.waitForTimeout(500);
+        shopCsv = await readMockFileAsync(page, 'data/shop.csv');
+        shopLines = shopCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(shopLines.length).toBe(4);
+        expect(shopCsv).toContain('1,SecretShop,1');
+        expect(shopCsv).toContain('2,ItemShop,2');
+        expect(shopCsv).toContain('3,WeaponShop,1');
+        productCsv = await readMockFileAsync(page, 'data/shop_product.csv');
+        productLines = productCsv.split('\n').filter((l: string) => l.trim() !== '');
+        expect(productLines.length).toBe(4);
+        expect(productCsv).toContain('1,1,Sword');
+        expect(productCsv).toContain('2,1,Shield');
+        expect(productCsv).toContain('3,2,Potion');
     });
 });

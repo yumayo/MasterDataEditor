@@ -237,6 +237,22 @@ export class EditorTableViewSync {
             return false;
         }
         if (fkValue === '') return false;
+        // JOINテーブルのPK列が空の行はStore行が存在しないため、
+        // 非PK列の編集ではStoreとソーステーブルへの伝搬をスキップする。
+        // PK列の編集はLazy Store挿入のトリガーなのでスキップしない。
+        // グループ内挿入で追加された新規行はPK未設定のためDOMにのみ値が存在し、
+        // groupPositionベースのStore行検索が既存行を誤って上書きすることを防ぐ。
+        if (!isJoinPkColumn) {
+            const joinPkDataIndex = viewContext.columnMappings.findIndex(
+                m => m.tableName === mapping.tableName
+                  && m.isJoinedColumn
+                  && m.sourceColumnName === config.primaryKeyColumnName
+                  && m.baseKeyColumn === mapping.baseKeyColumn
+            );
+            if (joinPkDataIndex !== -1 && this.table.getCellValueAt(row, joinPkDataIndex + 1) === '') {
+                return false;
+            }
+        }
         // ソーステーブルのEditorTableを取得（開かれていなければDOMへの伝搬はスキップ）
         const sourceEditorTable = viewContext.openEditorTables.get(mapping.tableName);
         // ソーステーブルのDOMセルを更新（テーブルが開かれている場合のみ）
