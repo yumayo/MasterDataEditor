@@ -13,11 +13,14 @@ export class EditorTableContextMenu {
     private readonly table: EditorTable;
     private readonly selection: Selection;
     private readonly contextMenu: ContextMenu;
+    /** 読み取り専用フラグ。trueの場合はコンテキストメニューを表示しない */
+    private readOnly: boolean;
 
     constructor(table: EditorTable, selection: Selection, contextMenu: ContextMenu) {
         this.table = table;
         this.selection = selection;
         this.contextMenu = contextMenu;
+        this.readOnly = false;
     }
 
     /**
@@ -47,6 +50,8 @@ export class EditorTableContextMenu {
         return (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
+            // 読み取り専用の場合はコンテキストメニューを表示しない
+            if (this.readOnly) return;
             const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
             const contextMenuSelectionColumnIndex = contextMenuColumnIndex + 1;
             // 選択範囲を取得
@@ -83,6 +88,15 @@ export class EditorTableContextMenu {
     }
 
     /**
+     * 読み取り専用にする（ミニEditorTable用）
+     * 列・行ヘッダーのコンテキストメニュー（挿入・削除）を封じることでストア汚染を防ぐ。
+     * クリックによる選択操作は引き続き許可する。
+     */
+    makeReadOnly(): void {
+        this.readOnly = true;
+    }
+
+    /**
      * 行ヘッダーのクリックハンドラを生成する
      */
     createRowHeaderClickHandler(rowHeaderCell: HTMLElement): (e: MouseEvent) => void {
@@ -109,6 +123,8 @@ export class EditorTableContextMenu {
         return (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
+            // 読み取り専用の場合はコンテキストメニューを表示しない
+            if (this.readOnly) return;
             const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
             // 選択範囲を取得
             const selRange = this.selection.getSelectionRange();

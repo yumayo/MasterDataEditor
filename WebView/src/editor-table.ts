@@ -52,6 +52,11 @@ export class EditorTable {
     /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
     relationsPanel: RelationsPanel | false;
 
+    /** 空行数（通常は100行、ミニテーブルは0行） */
+    private readonly emptyRowCount: number;
+    /** ルート要素に付与するCSSクラス名（通常は 'editor-table'、ミニテーブルは別クラス） */
+    private readonly rootCssClass: string;
+
     constructor(
         tableName: string,
         tableData: EditorTableData,
@@ -63,7 +68,9 @@ export class EditorTable {
         history: History,
         areaResizer: AreaResizer,
         scrollBinding: ScrollViewportController,
-        sidebar: Sidebar
+        sidebar: Sidebar,
+        emptyRowCount: number,
+        rootCssClass: string
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -76,6 +83,8 @@ export class EditorTable {
         this.areaResizer = areaResizer;
         this.scrollBinding = scrollBinding;
         this.sidebar = sidebar;
+        this.emptyRowCount = emptyRowCount;
+        this.rootCssClass = rootCssClass;
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.selectionDragController = new SelectionDragController(
@@ -130,7 +139,7 @@ export class EditorTable {
      * ファクトリ関数から呼び出される
      */
     initialize(): void {
-        this.element.classList.add('editor-table');
+        this.element.classList.add(this.rootCssClass);
         {
             const cells = [];
             // 左上隅の空セル
@@ -164,7 +173,7 @@ export class EditorTable {
             const row = EditorTable.createRow(cells, rowIndex);
             this.element.appendChild(row);
         }
-        for (let i = 0; i < 100 - this.tableData.body.length; ++i) {
+        for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
             const cells = [];
             const rowIndex = this.tableData.body.length + i;
             const rowHeaderCell = this.structure.createRowHeaderCell(String(this.tableData.body.length + i + 1), this.tableData.body.length + i);
@@ -200,8 +209,18 @@ export class EditorTable {
      * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
      */
     deactivate(): void {
+        this.handler.deactivate();
         this.selectionDragController.deactivate();
         this.scrollBinding.deactivate();
+    }
+
+    /**
+     * 読み取り専用にする（ミニEditorTable用）
+     * セル編集UIの表示を禁止してストア汚染を防ぎ、Ctrl+Sも禁止してCSV破壊を防ぐ
+     */
+    makeReadOnly(): void {
+        this.handler.makeReadOnly();
+        this.contextMenuHandler.makeReadOnly();
     }
 
     // =========================================================================

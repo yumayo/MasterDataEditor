@@ -4,6 +4,7 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {config} from "./config";
 import {readFileAsync, findFilesAsync} from "./api";
+import {Tab} from "./tab";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -29,50 +30,113 @@ interface NavFrame {
     label: string;
     /** 表示するエントリ一覧 */
     entries: RelationEntry[];
-    /** アクティブ（選択中）なエントリインデックス */
-    activeIndex: number;
 }
 
 /**
  * リレーションパネル
  *
- * 選択行の参照先（N:1）と参照元（1:N）を右ペインに表示する。
+ * 選択行の参照先（N:1）と参照元（1:N）を右ペインに常時全表示する。
  * ナビゲーションスタックとパンくずリストによりドリルダウンをサポートする。
+ * 各テーブルは EditorTable として表示し、セル編集が可能。
  *
  * EditorTableへの接続は connectEditorTable()/disconnectEditorTable() で動的に管理する。
- * これによりテーブルが開かれる前からDOMに存在できる。
+ * Tab への参照は connectTab() で設定する（Object.assign パターンで相互参照を解決）。
  */
 export class RelationsPanel {
     private readonly panelElement: HTMLElement;
     private readonly referenceDataCache: ReferenceDataCache;
     private readonly store: InMemoryTableStore;
+    /** パネルの親要素。appendTo() で設定する。リサイズハンドルのドラッグ計算に使用 */
+    private parentElement: HTMLElement | false;
     /** 現在接続中のEditorTable。未接続時はfalse */
     private currentEditorTable: EditorTable | false;
     /** ナビゲーションスタック。空の場合はプレースホルダーを表示 */
     private navStack: NavFrame[];
     /** 非同期レースコンディション防止用リクエストID */
     private currentRequestId: number;
+    /**
+     * ミニEditorTableの生成に使用するTab。
+     * Tab コンストラクタ末尾の connectTab() で必ず設定される。
+     * appendTo()/connectEditorTable() より前に connectTab() が呼ばれる保証はないため
+     * false 初期値を持つが、renderAsync() が呼ばれる時点では必ず設定済みである。
+     */
+    private tab: Tab | false;
+    /** 現在表示中のミニEditorTableインスタンス一覧（再描画前に破棄する） */
+    private miniEditorTables: EditorTable[];
 
     constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
         this.referenceDataCache = referenceDataCache;
         this.store = store;
+        this.parentElement = false;
         this.currentEditorTable = false;
         this.navStack = [];
         this.currentRequestId = 0;
+        this.tab = false;
+        this.miniEditorTables = [];
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
         this.panelElement = panel;
+
+        // リサイズハンドルをパネル先頭に配置する
+        this.panelElement.prepend(this.buildResizeHandle());
 
         // 初期状態: プレースホルダーを表示
         this.renderMessage('行を選択してください');
     }
 
     /**
+     * リサイズハンドルを構築する
+     * mousedown でドラッグを開始し、document の mousemove/mouseup で幅を更新する
+     */
+    private buildResizeHandle(): HTMLElement {
+        const handle = document.createElement('div');
+        handle.classList.add('relations-panel-resize-handle');
+
+        handle.addEventListener('mousedown', (e: MouseEvent) => {
+            // SelectionDragController との競合を防ぐ
+            e.stopPropagation();
+            e.preventDefault();
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            const onMouseMove = (moveEvent: MouseEvent) => {
+                // appendTo() で保存した親要素を参照する。mousedown はappendTo()後にのみ発生するため必ず存在する
+                if (this.parentElement === false) throw new Error('[RelationsPanel] onMouseMove: parentElement が未設定です（appendTo() が呼ばれていません）');
+                const parentRight = this.parentElement.getBoundingClientRect().right;
+                const newWidth = Math.min(600, Math.max(200, parentRight - moveEvent.clientX));
+                this.panelElement.style.flex = `0 0 ${newWidth}px`;
+            };
+
+            const onMouseUp = () => {
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        return handle;
+    }
+
+    /**
      * 親要素にパネルを追加する
+     * リサイズハンドルのドラッグ計算のため親要素を保存する
      */
     appendTo(parent: HTMLElement): void {
+        this.parentElement = parent;
         parent.appendChild(this.panelElement);
+    }
+
+    /**
+     * Tab参照を接続する（Tab コンストラクタ末尾で呼ばれる）
+     * ミニEditorTable生成のファクトリとして使用する
+     */
+    connectTab(tab: Tab): void {
+        this.tab = tab;
     }
 
     /**
@@ -127,9 +191,8 @@ export class RelationsPanel {
         this.navStack = [{
             label: editorTable.tableName,
             entries,
-            activeIndex: 0,
         }];
-        this.render();
+        await this.renderAsync();
     }
 
     /**
@@ -225,9 +288,12 @@ export class RelationsPanel {
         const storeHeader = this.store.getHeader(tableKey);
         const storeRows = this.store.getRows(tableKey);
         const pkColInStore = storeHeader !== false ? storeHeader.indexOf(config.primaryKeyColumnName) : -1;
-        const targetRow = (storeHeader !== false && storeRows !== false && pkColInStore !== -1)
-            ? storeRows.find(r => r[pkColInStore] === pkValue)
-            : false;
+        let targetRow: string[] | false = false;
+        if (storeHeader !== false && storeRows !== false && pkColInStore !== -1) {
+            for (const row of storeRows) {
+                if (row[pkColInStore] === pkValue) { targetRow = row; break; }
+            }
+        }
 
         // N:1（FK参照先）の解決: スキーマのreference式を使ってFK値を取得
         for (let colIdx = 0; colIdx < headerDefs.length; colIdx++) {
@@ -237,8 +303,9 @@ export class RelationsPanel {
             if (!isSimpleReference(expr)) continue;
 
             // storeから対象行のFK値を取得する
-            const fkValue = (targetRow !== false && storeHeader !== false)
-                ? (targetRow[storeHeader.indexOf(col.name)] ?? '')
+            const colIdxInStore = storeHeader !== false ? storeHeader.indexOf(col.name) : -1;
+            const fkValue = (targetRow !== false && colIdxInStore !== -1)
+                ? targetRow[colIdxInStore]
                 : '';
             if (fkValue === '') continue;
 
@@ -317,7 +384,9 @@ export class RelationsPanel {
      * メッセージを表示する（行未選択時・参照なし時）
      */
     private renderMessage(text: string): void {
-        this.panelElement.replaceChildren();
+        this.destroyMiniEditorTables();
+        // リサイズハンドルを除いた全子要素を置き換える
+        this.clearContentArea();
         const placeholder = document.createElement('div');
         placeholder.classList.add('relations-panel-placeholder');
         const span = document.createElement('span');
@@ -327,10 +396,43 @@ export class RelationsPanel {
     }
 
     /**
-     * 現在のナビゲーション状態を描画する
+     * リサイズハンドルを除いたコンテンツ領域をクリアする
      */
-    private render(): void {
-        this.panelElement.replaceChildren();
+    private clearContentArea(): void {
+        const children = Array.from(this.panelElement.children);
+        for (const child of children) {
+            if (!child.classList.contains('relations-panel-resize-handle')) {
+                child.remove();
+            }
+        }
+    }
+
+    /**
+     * 現在表示中のミニEditorTableを破棄する
+     */
+    private destroyMiniEditorTables(): void {
+        for (const miniTable of this.miniEditorTables) {
+            miniTable.deactivate();
+        }
+        this.miniEditorTables = [];
+    }
+
+    /**
+     * 現在のナビゲーション状態を非同期で描画する
+     * 全エントリを縦に並べて常時表示する
+     * EditorTable生成が完了してからDOMに追加するため非同期にする
+     *
+     * await 中に別の updateForRowAsync が割り込んだ場合、requestId の不一致で検出して即リターンする。
+     * これにより新旧の DOM 要素が panelElement 上に並存するレースコンディションを防ぐ。
+     */
+    private async renderAsync(): Promise<void> {
+        // 呼び出し元（updateForRowAsync / drillDownAsync）がすでにインクリメント済みのIDを参照する。
+        // renderAsync() 自身がインクリメントすると requestId の責務が重複し、
+        // 呼び出し元のガードと二重カウントになるため、ここでは現在値を読むだけにする。
+        const requestId = this.currentRequestId;
+
+        this.destroyMiniEditorTables();
+        this.clearContentArea();
 
         if (this.navStack.length === 0) {
             this.renderMessage('行を選択してください');
@@ -352,17 +454,8 @@ export class RelationsPanel {
         sectionHeader.textContent = 'RELATIONS';
         content.appendChild(sectionHeader);
 
-        // 参照エントリリスト
-        const refList = document.createElement('div');
-        refList.classList.add('relations-ref-list');
-        currentFrame.entries.forEach((entry, i) => {
-            refList.appendChild(this.buildRefListItem(entry, i, currentFrame));
-        });
-        content.appendChild(refList);
-
-        // アクティブエントリのミニテーブルセクション
-        const activeEntry = currentFrame.entries[currentFrame.activeIndex];
-        if (activeEntry) {
+        // 全エントリを縦に並べて順次構築する（EditorTable生成を await することで表示タイミングを確定させる）
+        for (const entry of currentFrame.entries) {
             const tableSection = document.createElement('div');
             tableSection.classList.add('relations-table-section');
 
@@ -370,20 +463,25 @@ export class RelationsPanel {
             tableHeader.classList.add('relations-table-header');
             const tableTitle = document.createElement('span');
             tableTitle.classList.add('relations-table-title');
-            tableTitle.textContent = activeEntry.tableKey;
-            const tagEl = this.buildTag(activeEntry.relationType);
+            tableTitle.textContent = entry.tableKey;
+            const tagEl = this.buildTag(entry.relationType);
             const rowCountEl = document.createElement('span');
             rowCountEl.classList.add('relations-table-row-count');
-            rowCountEl.textContent = `${activeEntry.rows.length} rows`;
+            rowCountEl.textContent = `${entry.rows.length} rows`;
             tableHeader.appendChild(tableTitle);
             tableHeader.appendChild(tagEl);
             tableHeader.appendChild(rowCountEl);
             tableSection.appendChild(tableHeader);
 
-            tableSection.appendChild(this.buildMiniTable(activeEntry));
+            const miniTable = await this.buildMiniTableAsync(entry);
+            // await 中に新しいリクエストが来ていた場合は描画を中断する
+            if (requestId !== this.currentRequestId) return;
+            tableSection.appendChild(miniTable);
             content.appendChild(tableSection);
         }
 
+        // 全エントリ構築後も割り込みがなかった場合のみ DOM に追加する
+        if (requestId !== this.currentRequestId) return;
         this.panelElement.appendChild(content);
     }
 
@@ -394,7 +492,8 @@ export class RelationsPanel {
         const breadcrumb = document.createElement('div');
         breadcrumb.classList.add('relations-breadcrumb');
 
-        this.navStack.forEach((frame, i) => {
+        for (let i = 0; i < this.navStack.length; i++) {
+            const frame = this.navStack[i];
             if (i > 0) {
                 const sep = document.createElement('span');
                 sep.classList.add('relations-breadcrumb-sep');
@@ -409,46 +508,16 @@ export class RelationsPanel {
             } else {
                 crumb.addEventListener('click', () => {
                     this.navStack = this.navStack.slice(0, i + 1);
-                    this.render();
+                    this.renderAsync().catch(err => {
+                        console.error('[RelationsPanel] breadcrumb render 失敗:', err);
+                    });
                 });
             }
             crumb.textContent = frame.label;
             breadcrumb.appendChild(crumb);
-        });
-
-        return breadcrumb;
-    }
-
-    /**
-     * 参照エントリのリストアイテムを構築する
-     */
-    private buildRefListItem(entry: RelationEntry, index: number, frame: NavFrame): HTMLElement {
-        const item = document.createElement('button');
-        item.classList.add('relations-ref-list-item');
-        if (index === frame.activeIndex) {
-            item.classList.add('relations-ref-list-item--active');
         }
 
-        const labelEl = document.createElement('span');
-        labelEl.classList.add('relations-ref-label');
-        labelEl.textContent = entry.label;
-
-        const tagEl = this.buildTag(entry.relationType);
-
-        const countEl = document.createElement('span');
-        countEl.classList.add('relations-ref-count');
-        countEl.textContent = String(entry.rows.length);
-
-        item.appendChild(labelEl);
-        item.appendChild(tagEl);
-        item.appendChild(countEl);
-
-        item.addEventListener('click', () => {
-            frame.activeIndex = index;
-            this.render();
-        });
-
-        return item;
+        return breadcrumb;
     }
 
     /**
@@ -463,54 +532,53 @@ export class RelationsPanel {
     }
 
     /**
-     * ミニテーブルを構築する
+     * ミニテーブルを非同期で構築する
+     *
+     * renderAsync() から await することで EditorTable 生成完了後に DOM 追加される。
+     *
+     * DOM 構造:
+     *   panelElement（position:relative）← positioningContainer（grid-textfield の絶対配置基準）
+     *     wrapper（position:relative; overflow:visible）
+     *       scrollContainer（overflow:auto; max-height:200px）
+     *         editor-table, selection 等
+     *     grid-textfield（position:absolute）← panelElement を基準に配置
      */
-    private buildMiniTable(entry: RelationEntry): HTMLElement {
+    private async buildMiniTableAsync(entry: RelationEntry): Promise<HTMLElement> {
         const wrapper = document.createElement('div');
         wrapper.classList.add('relations-mini-table-wrapper');
-
-        const table = document.createElement('table');
-        table.classList.add('relations-mini-table');
-
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        for (const colName of entry.header) {
-            const th = document.createElement('th');
-            th.textContent = colName;
-            headerRow.appendChild(th);
-        }
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        if (entry.rows.length === 0) {
-            const emptyTr = document.createElement('tr');
-            const emptyTd = document.createElement('td');
-            emptyTd.colSpan = entry.header.length;
-            emptyTd.classList.add('relations-mini-table-empty');
-            emptyTd.textContent = 'データなし';
-            emptyTr.appendChild(emptyTd);
-            tbody.appendChild(emptyTr);
-        } else {
-            for (const rowData of entry.rows) {
-                const tr = document.createElement('tr');
-                tr.classList.add('relations-mini-table-row');
-                for (let ci = 0; ci < entry.header.length; ci++) {
-                    const td = document.createElement('td');
-                    td.textContent = rowData[ci];
-                    tr.appendChild(td);
-                }
-                tr.addEventListener('click', () => {
-                    this.drillDownAsync(entry, rowData).catch(err => {
-                        console.error('[RelationsPanel] drillDown 失敗:', err);
-                    });
-                });
-                tbody.appendChild(tr);
-            }
-        }
-        table.appendChild(tbody);
-        wrapper.appendChild(table);
+        await this.buildMiniEditorTableAsync(wrapper, entry);
         return wrapper;
+    }
+
+    /**
+     * EntryのスキーマをファイルからロードしてEditorTableを生成する
+     *
+     * grid-textfield（position:absolute）が overflow:auto のコンテナにクリッピングされるのを防ぐため、
+     * wrapper（overflow:visible）と scrollContainer（overflow:auto）を分離して渡す。
+     * grid-textfield は panelElement（.relations-panel、position:relative）の直接の子として配置する。
+     */
+    private async buildMiniEditorTableAsync(wrapper: HTMLElement, entry: RelationEntry): Promise<void> {
+        const schemaText = await readFileAsync(`schema/${entry.tableKey}.json`);
+        const schemaJson: Record<string, unknown> = JSON.parse(schemaText);
+
+        // スクロール領域は wrapper の内側に作る（overflow:auto はここに閉じ込める）
+        const scrollContainer = document.createElement('div');
+        scrollContainer.classList.add('relations-mini-table-scroll');
+        wrapper.appendChild(scrollContainer);
+
+        // connectTab() は Tab コンストラクタ末尾で必ず呼ばれる。
+        // renderAsync() は connectEditorTable() 経由でしか呼ばれないため tab は必ず設定済み。
+        if (this.tab === false) throw new Error('[RelationsPanel] buildMiniEditorTableAsync: tab が未接続です');
+
+        // scrollContainer: editor-table / selection を配置する overflow:auto のスクロール領域
+        // panelElement: grid-textfield の position:absolute 基準（overflow:visible かつ position:relative）
+        //   → wrapper（overflow:auto）にすると grid-textfield がクリッピングされるためパネル直下に配置する
+        const editorTable = this.tab.createMiniEditorTable(scrollContainer, this.panelElement, entry.tableKey, schemaJson, entry.header, entry.rows);
+        this.miniEditorTables.push(editorTable);
+        // NOTE: click イベントでドリルダウンを登録しない。
+        // click は dblclick の前に2回発火するため drillDownAsync → renderAsync → destroyMiniEditorTables が
+        // 呼ばれ、dblclick ハンドラが実行される前にミニEditorTableが破棄されてしまう。
+        // ドリルダウン機能は将来的に専用UIで実装する。
     }
 
     /**
@@ -556,8 +624,7 @@ export class RelationsPanel {
         this.navStack.push({
             label: `${targetTableKey}#${pkValue}`,
             entries: [selfEntry, ...entries],
-            activeIndex: 0,
         });
-        this.render();
+        await this.renderAsync();
     }
 }
