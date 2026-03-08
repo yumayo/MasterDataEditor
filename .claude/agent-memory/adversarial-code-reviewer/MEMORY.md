@@ -19,6 +19,7 @@
 - `/WebView/src/selection.ts` - Selection and focus management
 - `/WebView/src/tab.ts` - Tab management, EditorTable factory
 - `/WebView/src/editor-actions.ts` - saveTableData/extractTableData/mergeCsvData
+- `/WebView/src/in-memory-table-store.ts` - Central data store + IHistory interface + Dirty management
 
 ## DOM Structure (as of 2026-03-08)
 - `.editor` (flex column)
@@ -34,37 +35,33 @@
 - Dead code detection: when removing a feature, search for methods whose ONLY callers were in the deleted code
 - **Stale panel after cell edit**: FIXED via forceRefreshRelationsPanel chain
 - **Race condition in async panel updates**: FIXED via currentRequestId pattern
-- **Breadcrumb stale closure**: MITIGATED - entry object captured directly (not via array index) in new Editor-level implementation
-- **Dual update path**: removeTabButton updates breadcrumb, then closeTab may call activateTabState which updates again. Non-active tab close relies solely on removeTabButton update.
-- **activateTabState ordering bug**: forceNotifyRelationsPanel() fires BEFORE reloadCellsFromStore() in enableTabButton(). Tab switch shows stale FK data in RelationsPanel.
-- **forceNotifyRelationsPanel lastNotifiedRow leak**: does not set lastNotifiedRow=focus.row after notifying, causing double notification on next updateRenderer()
-- **resetNotification() dead code**: sole caller replaced by forceNotifyRelationsPanel() but method not deleted
-- **e2e locator fragility**: `.editor-table` locator in 4+ e2e files will break when test tables gain FK columns (need `.editor-left-pane .editor-table`)
+- **Breadcrumb stale closure**: MITIGATED
+- **Dual update path**: removeTabButton updates breadcrumb, then closeTab may call activateTabState which updates again
+- **activateTabState ordering bug**: forceNotifyRelationsPanel() fires BEFORE reloadCellsFromStore()
+- **e2e locator fragility**: `.editor-table` locator in 4+ e2e files will break when test tables gain FK columns
+
+## Dirty Management (2026-03-08, unstaged)
+- **IHistory interface** in in-memory-table-store.ts: isDirty(), markSaved(), setTabButtonDirty()
+- **historyRegistry**: Map<string, Set<IHistory>> in InMemoryTableStore tracks all Histories per table
+- **markAllSaved N^2 bug**: markAllSaved iterates Set calling markSaved() → notifyChange() → iterates same Set. O(N^2) with incorrect intermediate dirty states
+- **saveTableDataFromStoreAsync silent failure**: getCsv()===false → warn+return but .then() still calls markAllSaved (dirty reset without actual save)
+- **unregisterTable does NOT clean historyRegistry**: if History.unregister() is missed, stale IHistory refs remain
+- **Parallel array now 4-deep**: miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories (repeated prior concern)
+- **saveTableData missing Async suffix**: existing function is async but lacks Async suffix (inconsistent with new saveTableDataFromStoreAsync)
 
 ## Editable Relations Panel Issues (2026-03-08)
-- **CRITICAL: Ctrl+S data destruction** - makeReadOnly() removed but readOnly=false allows Ctrl+S on miniEditorTable
-- **CRITICAL: autoFill store sync failure** - new row has empty PK so store.updateCellValue() silently fails
-- **CRITICAL: Dirty indicator DOM-only** - no code to toggle visible/invisible
+- **RESOLVED: Dirty indicator** - now managed via History.notifyChange → updateDirtyMark
 - **OPEN: SelectionDragController not activated** - createMiniEditorTable skips editorTable.activate()
 - **OPEN: Handler event listener leak** - destroyMiniEditorTables removes DOM but doesn't remove listeners
-- **Getter/Setter violations**: getAutoFillEntries/setAutoFillEntries, getLeftPaneForScroll (public HTMLElement leak)
+- **Getter/Setter violations**: getStore(), getAutoFillEntries/setAutoFillEntries, getLeftPaneForScroll
 
 ## Breadcrumb Bar (Editor-level, 2026-03-08)
 - Moved from RelationsPanel to Editor class
 - Updated via: activateTabState (tab switch) and removeTabButton (tab close)
-- pushNavigationHistory does NOT update breadcrumb (relies on subsequent navigateToTableRow → activateTabState)
-- getNavigationHistory REMOVED (was getter violation)
-- Anonymous type `{ tableName: string; pkValue: string }` duplicated between editor.ts and tab.ts
-- Editor.connectTab() establishes mutual reference with Tab
-
-## insertRowInternal Design Note
-- insertRowInternal() only modifies DOM, does NOT sync to InMemoryTableStore
-- Consistent with DOM-as-SSOT but causes issues when store is queried
 
 ## Dual Data Source Pattern (store vs referenceDataCache)
 - 1:N resolution: InMemoryTableStore (tab open) vs referenceDataCache (tab closed)
 - **Stale cache risk**: fullDataCache snapshots CSV at load time
-- **Data shape difference**: store.getRows() returns ALL rows; fullData.rows (Map) skips empty-PK
 
 ## Review History
 - 2026-03-07 (ea2398b): group-end insertion + FK sync
@@ -73,13 +70,14 @@
 - 2026-03-08 (mini EditorTable rounds 1-5): Progressive fixes
 - 2026-03-08 (editable relations panel): makeReadOnly REMOVED, Ctrl+S data destruction
 - 2026-03-08 (1:N tab-unloaded fix): Cache fallback. Stale cache risk.
-- 2026-03-08 (breadcrumb Editor-level): Moved from RelationsPanel. Dual update path in removeTabButton.
-- 2026-03-08 (a22b7b3): RelationsPanel initial display fix. forceNotify ordering bug with reloadCellsFromStore.
-- 2026-03-08 (unstaged): ミニテーブル列幅リサイズ修正。複数AreaResizer同時activate問題、並列配列増殖パターン指摘。
+- 2026-03-08 (breadcrumb Editor-level): Moved from RelationsPanel. Dual update path.
+- 2026-03-08 (a22b7b3): RelationsPanel initial display fix.
+- 2026-03-08 (unstaged-resizer): ミニテーブル列幅リサイズ修正。並列配列増殖パターン指摘。
+- 2026-03-08 (unstaged-dirty): Dirty管理追加。markAllSaved N^2問題、保存失敗時dirty誤リセット指摘。
 
 ## Structural Concerns
-- **Parallel array anti-pattern in RelationsPanel**: miniEditorTables/miniFillControllers/miniAreaResizers が個別配列で管理されており、インデックス不整合リスクあり。統合オブジェクト配列に変更すべき。
-- **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。機能的には独立フラグで干渉しないが無駄。
+- **Parallel array anti-pattern in RelationsPanel**: Now 4 arrays (miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories). Must consolidate into single MiniTableEntry[] array.
+- **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。
 
 ## Test Infrastructure Issues
 - Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files.
