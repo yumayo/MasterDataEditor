@@ -25,8 +25,13 @@ interface RelationEntry {
     fkColumnName: string;
     /** 1:Nの場合: 親テーブルのFK値（自動埋め込みする値）。N:1の場合は空文字列 */
     fkValue: string;
-    /** 非表示にする列名の配列（FK列を隠すために使用） */
+    /** 物理除去する列名の配列（1:N: FK列を隠すためにデータ構造から除外） */
     hiddenColumns: string[];
+    /**
+     * CSSで視覚的に非表示にする列名の配列（N:1: PK列などデータ保持が必要な列を隠す）
+     * hiddenColumns と異なりデータ構造上は列が残るため、getRowPkValue() が正常に機能する。
+     */
+    cssHiddenColumns: string[];
 }
 
 /**
@@ -297,7 +302,11 @@ export class RelationsPanel {
                 rows,
                 fkColumnName: '',
                 fkValue: '',
+                // N:1では物理除去しない（PK列を除去するとgetRowPkValue()が壊れるため）
                 hiddenColumns: [],
+                // N:1では参照対象列（expr.columnName、通常はPK列）をCSSで視覚的に非表示にする
+                // データ構造上は列が残るためgetRowPkValue()が正常に機能する
+                cssHiddenColumns: [expr.columnName],
             });
         }
 
@@ -333,7 +342,10 @@ export class RelationsPanel {
                     rows: filteredRows,
                     fkColumnName: fkColName,
                     fkValue: pkValue,
+                    // 1:N: FK列はデータ構造から物理除去する（FK値はヘッダーのコンテキスト表示で補完される）
                     hiddenColumns: hiddenCols,
+                    // 1:N: CSS非表示は不要（PK列は除去しないため）
+                    cssHiddenColumns: [],
                 });
             }
         }
@@ -564,6 +576,11 @@ export class RelationsPanel {
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
         if (entry.fkColumnName !== '' && entry.fkValue !== '') {
             editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);
+        }
+        // N:1エントリのCSS非表示列を適用する（PK列などデータ保持が必要な列を視覚的に隠す）
+        // データ構造上は列が残るためgetRowPkValue()が正常に機能する
+        if (entry.cssHiddenColumns.length > 0) {
+            editorTable.hideColumnsByName(entry.cssHiddenColumns);
         }
         // ミニEditorTableにもRelationsPanelを接続して、セルクリック時の排他制御を有効にする
         editorTable.relationsPanel = this;
