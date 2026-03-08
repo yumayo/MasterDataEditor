@@ -75,6 +75,11 @@
 - 2026-03-08 (1:N tab-unloaded fix): Cache fallback. Stale cache risk.
 - 2026-03-08 (breadcrumb Editor-level): Moved from RelationsPanel. Dual update path in removeTabButton.
 - 2026-03-08 (a22b7b3): RelationsPanel initial display fix. forceNotify ordering bug with reloadCellsFromStore.
+- 2026-03-08 (unstaged): ミニテーブル列幅リサイズ修正。複数AreaResizer同時activate問題、並列配列増殖パターン指摘。
+
+## Structural Concerns
+- **Parallel array anti-pattern in RelationsPanel**: miniEditorTables/miniFillControllers/miniAreaResizers が個別配列で管理されており、インデックス不整合リスクあり。統合オブジェクト配列に変更すべき。
+- **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。機能的には独立フラグで干渉しないが無駄。
 
 ## Test Infrastructure Issues
 - Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files.
