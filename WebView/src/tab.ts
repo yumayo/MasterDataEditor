@@ -707,6 +707,9 @@ export class Tab {
         fillController.initialize();
         fillController.activate();
 
+        // 参照先テーブルを事前読み込みし、完了後に参照ヒントを一括適用する
+        this.reference.preloadReferenceTables(tableData, editorTable);
+
         return {editorTable, fillController};
     }
 

@@ -19,14 +19,13 @@
 }
 
 .grid-textfield-active {
-
     background-color: var(--background-sub-color);
-
     border: 1px solid var(--background-color);
-
     padding: 0 6px;
-
     box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.3);
+    /* RelationsPanel内ではpanelElement直下にappendされるため、
+       overflow-y:autoを持つ.relations-panel-contentのスタッキングコンテキストより手前に描画する */
+    z-index: 50;
 }
 
 [data-theme="dark"] .grid-textfield {

@@ -684,3 +684,31 @@ EditorTableHandlerはメインテーブル専用として設計されており�
 - **ミニEditorTableの `enable()` 呼び出しはフォーカス奪取を引き起こすため、activateHandler()による排他制御を必ず経由させる。** ハンドラの初期状態は非アクティブとし、ユーザーのセルクリック時にのみアクティブ化する。
 
 ---
+
+## 46. [f1c85b8] — リレーションパネルのテキストフィールドがセルの背後に描画される問題を修正
+
+### 不具合原因名
+grid-textfieldのz-index未指定によるスタッキングコンテキスト描画順の逆転
+
+### なぜそうなったのか
+`.grid-textfield-active` に `z-index` が設定されていなかった。メインテーブルでは grid-textfield と EditorTable が同じスクロールコンテナの兄弟要素として配置され、DOM順で grid-textfield が後ろに来るため自然に手前に描画されていた。しかしリレーションパネルでは、grid-textfield は `.relations-panel`（`overflow: hidden`）直下に配置される一方、EditorTable は `.relations-panel-content`（`overflow-y: auto`）の中にある。`overflow-y: auto` がスタッキングコンテキストを形成するため、z-index なしでは `.relations-panel-content` 内の要素が grid-textfield より手前に描画された。
+
+### どうしたら今後は再発しないか
+- **`position: absolute` の要素には `z-index` を明示する。** 親要素の `overflow` プロパティがスタッキングコンテキストを形成するため、DOMの兄弟順に依存した暗黙の描画順は信頼できない。
+- **異なるコンテナ構造で同じUIコンポーネントを再利用する際は、描画順の前提条件を確認する。** メインテーブルで正しく動作していても、リレーションパネルのようにコンテナ構造が異なる環境ではスタッキングコンテキストが変わりうる。
+
+---
+
+## 47. [f1c85b8] — リレーションパネルのミニEditorTableで参照ヒントが初期表示時に表示されない問題を修正
+
+### 不具合原因名
+ミニEditorTable生成時の参照テーブルプリロード呼び出し欠落
+
+### なぜそうなったのか
+メインテーブルの生成パス（`Tab.append()`）では `this.reference.preloadReferenceTables(tableData, editorTable)` を呼び出し、参照先テーブルデータのプリロード完了後に `editorTable.updateReferenceHints()` で参照ヒントを一括適用していた。しかし `Tab.createMiniEditorTable()` ではこの呼び出しが省略されていた。セル編集→Enter確定後にヒントが表示されるのは、`applyCellChanges()` 内の `setCellValue()` → `EditorTableReference.setCellValue()` で個別セルの参照ヒント更新が行われるためであり、初期描画時の一括適用とは別のパスである。
+
+### どうしたら今後は再発しないか
+- **EditorTableの生成パスを新設する際は、既存のメインテーブル生成パス（`Tab.append()`）の後処理を漏れなく再現しているか確認する。** 特に参照ヒント・逆参照ヒント・ドロップダウンの初期化は非同期で遅延実行されるため、同期的な動作確認では見落としやすい。
+- **EditorTable生成後の初期化チェックリスト:** (1) `initializeModules()` (2) `initialize()` (3) `preloadReferenceTables()` (4) `resolveReverseReferencesAsync()` (5) `setReferenceComponents()` — これらが全て呼ばれているか確認する。
+
+---

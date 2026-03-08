@@ -252,8 +252,3 @@
     border-left: 2px solid var(--focus-border, #007acc);
 }
 
-/* ─── 右ペインのミニEditorTableセル背景色（左ペインより若干暗い） ─── */
-
-.relations-panel .editor-table-cell {
-    background-color: var(--background-sub-color);
-}
