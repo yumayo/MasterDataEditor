@@ -36,6 +36,10 @@
 - **Race condition in async panel updates**: FIXED via currentRequestId pattern
 - **Breadcrumb stale closure**: MITIGATED - entry object captured directly (not via array index) in new Editor-level implementation
 - **Dual update path**: removeTabButton updates breadcrumb, then closeTab may call activateTabState which updates again. Non-active tab close relies solely on removeTabButton update.
+- **activateTabState ordering bug**: forceNotifyRelationsPanel() fires BEFORE reloadCellsFromStore() in enableTabButton(). Tab switch shows stale FK data in RelationsPanel.
+- **forceNotifyRelationsPanel lastNotifiedRow leak**: does not set lastNotifiedRow=focus.row after notifying, causing double notification on next updateRenderer()
+- **resetNotification() dead code**: sole caller replaced by forceNotifyRelationsPanel() but method not deleted
+- **e2e locator fragility**: `.editor-table` locator in 4+ e2e files will break when test tables gain FK columns (need `.editor-left-pane .editor-table`)
 
 ## Editable Relations Panel Issues (2026-03-08)
 - **CRITICAL: Ctrl+S data destruction** - makeReadOnly() removed but readOnly=false allows Ctrl+S on miniEditorTable
@@ -70,6 +74,7 @@
 - 2026-03-08 (editable relations panel): makeReadOnly REMOVED, Ctrl+S data destruction
 - 2026-03-08 (1:N tab-unloaded fix): Cache fallback. Stale cache risk.
 - 2026-03-08 (breadcrumb Editor-level): Moved from RelationsPanel. Dual update path in removeTabButton.
+- 2026-03-08 (a22b7b3): RelationsPanel initial display fix. forceNotify ordering bug with reloadCellsFromStore.
 
 ## Test Infrastructure Issues
 - Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files.
