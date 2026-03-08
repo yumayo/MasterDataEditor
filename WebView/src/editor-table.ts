@@ -56,6 +56,11 @@ export class EditorTable {
     private readonly emptyRowCount: number;
     /** ルート要素に付与するCSSクラス名（通常は 'editor-table'、ミニテーブルは別クラス） */
     private readonly rootCssClass: string;
+    /**
+     * ミニEditorTableフラグ。RelationsPanelのミニテーブルとして生成された場合はtrue。
+     * trueの場合、行選択変化をRelationsPanelに通知しない（自分自身の再描画による自己破棄を防止）。
+     */
+    private readonly isMiniTable: boolean;
 
     constructor(
         tableName: string,
@@ -70,7 +75,8 @@ export class EditorTable {
         scrollBinding: ScrollViewportController,
         sidebar: Sidebar,
         emptyRowCount: number,
-        rootCssClass: string
+        rootCssClass: string,
+        isMiniTable: boolean
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -85,6 +91,7 @@ export class EditorTable {
         this.sidebar = sidebar;
         this.emptyRowCount = emptyRowCount;
         this.rootCssClass = rootCssClass;
+        this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.selectionDragController = new SelectionDragController(
@@ -293,6 +300,11 @@ export class EditorTable {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
             table.handler.submitAndHide();
+            // RelationsPanelが接続されている場合: このEditorTableのhandlerをアクティブ化し
+            // 他の全EditorTableのhandlerをdeactivateする（フォーカスの排他制御）
+            if (table.relationsPanel !== false) {
+                table.relationsPanel.activateHandler(table);
+            }
             if (e.shiftKey) {
                 table.selection.extendSelection(position.row, position.column);
             } else {
@@ -711,6 +723,10 @@ export class EditorTable {
     /** 行選択が変化したときにRelationsPanelへ通知する（Selectionから呼ばれる） */
     notifyRowSelectionChanged(rowIndex: number): void {
         if (this.relationsPanel === false) return;
+        // ミニEditorTableはRelationsPanelへの通知を行わない。
+        // ミニテーブルのセルをクリックしたとき行選択変化がRelationsPanelに通知されると
+        // updateForRowAsync → destroyMiniEditorTables で自分自身が破棄されてしまうため。
+        if (this.isMiniTable) return;
         this.relationsPanel.updateForRow(rowIndex);
     }
 

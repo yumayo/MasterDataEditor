@@ -630,3 +630,29 @@ readOnlyガードの入口網羅漏れ（ContextMenu経由の操作が無防備�
 - **新しい呼び出し元を追加する際は必ずインクリメントをセットで実装することをコードコメントで明示する。** `// 新しい非同期処理の開始点。必ず ++this.currentRequestId をここで呼ぶこと` のような規約コメントを `currentRequestId` の宣言箇所に残す。
 
 ---
+
+## 43. [40fd641] — N:1リレーション非PK列参照の表示不具合
+
+### 不具合原因名
+N:1リレーション解決時の非PK列参照フィルタリング欠落
+
+### なぜそうなったのか
+`ReferenceTableFullData.rows` がPK→行のMapとして設計されており、N:1リレーション解決のコードが `fullData.rows.get(fkValue)` によるPKルックアップしか実装していなかった。参照式 `shop_product.group_id` のように非PK列を参照するケースでは、FK値をPKとして扱ってしまい、group_id=1 ではなく id=1 の行1件だけが返される。参照式のcolumnNameがPK以外になるユースケースが設計時に想定されていなかった。
+
+### どうしたら今後は再発しないか
+参照式の解決テストに「非PK列を参照するFK」のケースを必ず含める。`resolveRowsByFkValue()` を共通化して、PK/非PKの分岐を一元管理する。
+
+---
+
+## 44. [40fd641] — リレーションパネルEditorTableのキーボード操作不可
+
+### 不具合原因名
+EditorTableHandlerのフォーカス排他制御の未実装
+
+### なぜそうなったのか
+EditorTableHandlerはメインテーブル専用として設計されており、`onFocusout()` でフォーカスを常に自分に奪い返す仕組みだった。ミニEditorTableは読み取り専用のため `enable()` が呼ばれず `active = false` のままキー入力が無視される。さらに、ミニEditorTableのセルをクリックすると `notifyRowSelectionChanged()` → `updateForRow()` → `destroyMiniEditorTables()` の連鎖でミニEditorTable自身が破棄されていた。「複数のEditorTableが同時に存在し、クリックで操作対象を切り替える」というユースケースが未想定だった。
+
+### どうしたら今後は再発しないか
+フォーカス管理の排他制御を `activateHandler()` で一元管理する。新しいEditorTableを追加する際は必ずフォーカス切替のE2Eテストを書く。ミニテーブルの操作が本体に波及しないよう `isMiniTable` フラグで通知をスキップする。
+
+---

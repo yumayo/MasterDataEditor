@@ -119,6 +119,16 @@ export class EditorTableHandler {
     }
 
     /**
+     * ハンドラーをアクティブ化してフォーカスを取得する
+     * RelationsPanelのactivateHandler()から呼ばれ、排他制御を行う
+     * enable()との違い: 既にactiveでも必ずフォーカスを取得する
+     */
+    activate(): void {
+        this.active = true;
+        this.element.focus({ preventScroll: true });
+    }
+
+    /**
      * ハンドラーを無効化（タブが非アクティブになったとき）
      */
     deactivate(): void {
@@ -232,6 +242,18 @@ export class EditorTableHandler {
         const focusTarget = event.relatedTarget;
         if (focusTarget instanceof HTMLInputElement || focusTarget instanceof HTMLTextAreaElement) {
             console.log('[handler] focus moved to input element, not reclaiming');
+            if (this.visible) {
+                this.submitText();
+                this.hide();
+            }
+            return;
+        }
+
+        // フォーカス先が別のEditorTableのgrid-textfield（contenteditable div）の場合は
+        // フォーカスを奪わない。そのEditorTableのhandlerがactivate()を呼んでアクティブになっているため
+        // こちらはdeactivate()された状態になっており、奪還してもIMEが壊れるだけ。
+        if (focusTarget instanceof HTMLElement && focusTarget.classList.contains('grid-textfield') && focusTarget !== this.element) {
+            console.log('[handler] focus moved to another editor-table handler, not reclaiming');
             if (this.visible) {
                 this.submitText();
                 this.hide();
@@ -504,8 +526,9 @@ export class EditorTableHandler {
             return;
         }
 
-        // DeleteキーまたはBackspaceキー
+        // DeleteキーまたはBackspaceキー（読み取り専用ミニEditorTableでは禁止）
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
+            if (this.readOnly) return;
             const deleteRange = this.selection.getSelectionRange();
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
@@ -576,6 +599,8 @@ export class EditorTableHandler {
      */
     private onPaste(event: ClipboardEvent): void {
         if (!this.active) return;
+        // 読み取り専用ミニEditorTableではペーストを禁止してストア汚染を防ぐ
+        if (this.readOnly) return;
 
         // テキスト入力モード中（visible）は通常のペースト動作を許可
         if (this.visible) return;

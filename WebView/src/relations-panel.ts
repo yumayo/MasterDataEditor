@@ -1,5 +1,5 @@
 import {EditorTable} from "./editor-table";
-import {ReferenceDataCache} from "./reference-data-cache";
+import {ReferenceDataCache, ReferenceTableFullData} from "./reference-data-cache";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {config} from "./config";
@@ -151,14 +151,43 @@ export class RelationsPanel {
     }
 
     /**
+     * 指定されたEditorTableのhandlerをアクティブ化し、他の全handlerをdeactivateする
+     * セルクリック時（mousedown）にEditorTableから呼ばれる排他制御メソッド
+     *
+     * メインEditorTable: currentEditorTable.getHandler()
+     * ミニEditorTable: miniEditorTables[i].getHandler()
+     * の全handlerを対象として排他制御を行う
+     */
+    activateHandler(targetEditorTable: EditorTable): void {
+        // メインEditorTableのhandlerを制御
+        if (this.currentEditorTable !== false && this.currentEditorTable !== targetEditorTable) {
+            this.currentEditorTable.getHandler().deactivate();
+        }
+        // 全ミニEditorTableのhandlerを制御
+        for (const miniTable of this.miniEditorTables) {
+            if (miniTable !== targetEditorTable) {
+                miniTable.getHandler().deactivate();
+            }
+        }
+        // 対象のhandlerをアクティブ化してフォーカスを取得する
+        targetEditorTable.getHandler().activate();
+    }
+
+    /**
      * EditorTableの接続を解除する（タブが非アクティブになったとき）
+     * ミニEditorTableを先に破棄してからrelationsPanelフィールドを解除する。
+     * これにより、ミニテーブルがrelationsPanelを参照したまま宙に浮く状態を防ぐ。
+     * destroyMiniEditorTables() 内のactivate()はdisconnect時には不要だが、
+     * currentEditorTableをfalseにする前に呼ぶことで安全に実行される。
      */
     disconnectEditorTable(): void {
+        this.destroyMiniEditorTables();
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.relationsPanel = false;
         }
         this.currentEditorTable = false;
         this.navStack = [];
+        // currentEditorTableがfalseなのでdestroyMiniEditorTables()は空操作になる
         this.renderMessage('行を選択してください');
     }
 
@@ -196,6 +225,36 @@ export class RelationsPanel {
     }
 
     /**
+     * fullDataのrows（PK→行Map）からfkValueに対応する行を全件収集する
+     *
+     * columnName がPK列と一致する場合はMap.get()で1件ルックアップ（高速）。
+     * columnName がPK列と異なる場合（例: shop_product.group_id）は全エントリを走査して
+     * 該当列の値がfkValueと一致する行を全件返す（N:1でPK以外を参照している場合に複数件になる）。
+     */
+    private resolveRowsByFkValue(
+        fullData: ReferenceTableFullData,
+        columnName: string,
+        fkValue: string
+    ): string[][] {
+        const colIdx = fullData.header.indexOf(columnName);
+        const pkIdx = fullData.header.indexOf(config.primaryKeyColumnName);
+
+        // columnName がPK列と一致 → PKルックアップで1件（高速パス）
+        if (colIdx !== -1 && colIdx === pkIdx) {
+            const row = fullData.rows.get(fkValue);
+            return row ? [row] : [];
+        }
+
+        // columnName がPK列と異なる → 全エントリを線形走査して複数件収集
+        if (colIdx === -1) return [];
+        const matched: string[][] = [];
+        fullData.rows.forEach(row => {
+            if (row[colIdx] === fkValue) matched.push(row);
+        });
+        return matched;
+    }
+
+    /**
      * EditorTableの指定行からリレーションエントリを非同期で解決する
      * fullDataCacheが未ロードの場合は getFullDataAsync() でロードする
      */
@@ -221,8 +280,8 @@ export class RelationsPanel {
                 : await this.referenceDataCache.getFullDataAsync(expr.tableName).catch(() => false as const);
             if (fullData === false) continue;
 
-            const matchedRow = fullData.rows.get(fkValue);
-            const rows: string[][] = matchedRow ? [matchedRow] : [];
+            // columnName がPK列と一致する場合は1件ルックアップ、異なる場合は全件走査
+            const rows = this.resolveRowsByFkValue(fullData, expr.columnName, fkValue);
 
             entries.push({
                 label: col.name,
@@ -316,8 +375,8 @@ export class RelationsPanel {
                 : await this.referenceDataCache.getFullDataAsync(expr.tableName).catch(() => false as const);
             if (fullData === false) continue;
 
-            const matchedRow = fullData.rows.get(fkValue);
-            const rows: string[][] = matchedRow ? [matchedRow] : [];
+            // columnName がPK列と一致する場合は1件ルックアップ、異なる場合は全件走査
+            const rows = this.resolveRowsByFkValue(fullData, expr.columnName, fkValue);
 
             entries.push({
                 label: col.name,
@@ -409,12 +468,20 @@ export class RelationsPanel {
 
     /**
      * 現在表示中のミニEditorTableを破棄する
+     * buildMiniEditorTableAsync() で設定した editorTable.relationsPanel = this と対称的に
+     * relationsPanel = false で接続を解除してから deactivate() する。
+     * 破棄後はメインEditorTableのhandlerをアクティブ化してキーボード操作を復元する
      */
     private destroyMiniEditorTables(): void {
         for (const miniTable of this.miniEditorTables) {
+            miniTable.relationsPanel = false;
             miniTable.deactivate();
         }
         this.miniEditorTables = [];
+        // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
+        if (this.currentEditorTable !== false) {
+            this.currentEditorTable.getHandler().activate();
+        }
     }
 
     /**
@@ -577,6 +644,8 @@ export class RelationsPanel {
         // panelElement: grid-textfield の position:absolute 基準（overflow:visible かつ position:relative）
         //   → wrapper（overflow:auto）にすると grid-textfield がクリッピングされるためパネル直下に配置する
         const editorTable = this.tab.createMiniEditorTable(scrollContainer, this.panelElement, entry.tableKey, schemaJson, entry.header, entry.rows);
+        // ミニEditorTableにもRelationsPanelを接続して、セルクリック時の排他制御を有効にする
+        editorTable.relationsPanel = this;
         this.miniEditorTables.push(editorTable);
         // NOTE: click イベントでドリルダウンを登録しない。
         // click は dblclick の前に2回発火するため drillDownAsync → renderAsync → destroyMiniEditorTables が

@@ -7,7 +7,13 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
  *
  * テーブル構成:
  *   enemy: id, ja（敵名テーブル）
- *   quest: id, name, enemy_id（クエスト。enemy.jaを参照）
+ *   quest: id, name, enemy_id（クエスト。enemy.idをFKとして参照）
+ *
+ * reference: "enemy.id" にする理由:
+ *   resolveRowsByFkValue() は columnName（"id"）で enemy テーブルの行を検索する。
+ *   "enemy.id" ならPKルックアップで fkValue="1" → enemy.id=1 の行が1件正しく返る。
+ *   "enemy.ja" にすると ja 列の値（"スライム"等）と fkValue="1" を比較するため 0 件になり、
+ *   ミニEditorTableが空になってデータセルが存在しない状態になる。
  */
 function createRelationsPanelTestFileSystem(): MockFileSystem {
     return {
@@ -28,7 +34,8 @@ function createRelationsPanelTestFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
-                { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja" },
+                // enemy.id を FK として参照する（RelationsPanel は columnName="id" で PKルックアップ）
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
             primary_key: "id",
         }),
@@ -255,9 +262,11 @@ test.describe('RelationsPanel EditorTable流用', () => {
 
             // リレーションパネルのミニEditorTableは読み取り専用（ストア汚染防止）。
             // dblclick しても grid-textfield-active が表示されないことを確認する。
+            // buildMiniTableAsync は非同期のため、セルが DOM に出現するまで明示的に待機する。
             const panelCell = page.locator(
                 '.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
             ).first();
+            await expect(panelCell).toBeVisible();
             await panelCell.dblclick();
 
             // 読み取り専用のため編集UIは表示されない

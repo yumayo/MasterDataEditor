@@ -551,7 +551,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, 100, 'editor-table'
+            scrollController, this.sidebar, 100, 'editor-table', false
         );
 
         // editorTable に本物のインスタンスの内容をコピー
@@ -637,7 +637,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, 0, 'editor-table'
+            scrollController, this.sidebar, 0, 'editor-table', true
         );
 
         Object.assign(editorTable, realEditorTable);
