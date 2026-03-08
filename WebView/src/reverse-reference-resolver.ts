@@ -30,6 +30,8 @@ export interface ReverseReferenceEntry {
     rows: ReverseReferenceRow[];
     /** 逆参照の表示優先度（小さいほど高優先、未設定は Number.MAX_SAFE_INTEGER） */
     priority: number;
+    /** 子テーブルのFK列名（単純参照の場合のみ設定される。動的参照の場合は空文字列） */
+    childColumnName: string;
 }
 
 /**
@@ -119,11 +121,13 @@ export class ReverseReferenceResolver {
 
     /**
      * グループ化された逆参照情報をマップにマージする
+     * childColumnName: 単純参照のFK列名。動的参照の場合は空文字列を渡す
      */
     private mergeGroups(
         groups: Map<string, ReverseReferenceRow[]>,
         childTableName: string,
         priority: number,
+        childColumnName: string,
         map: ReverseReferenceMap
     ): void {
         groups.forEach(
@@ -140,6 +144,7 @@ export class ReverseReferenceResolver {
                     childTableName,
                     rows,
                     priority,
+                    childColumnName,
                 });
             }
         );
@@ -335,7 +340,7 @@ export class ReverseReferenceResolver {
             }
 
             this.mergeGroups(
-                groups, childTableName, priority, map
+                groups, childTableName, priority, fk.columnName, map
             );
         }
 
@@ -378,8 +383,9 @@ export class ReverseReferenceResolver {
                 list.push({ pkValue, displayText });
             }
 
+            // 動的参照はFK列名を特定できないため空文字列を設定する
             this.mergeGroups(
-                groups, childTableName, priority, map
+                groups, childTableName, priority, '', map
             );
         }
     }

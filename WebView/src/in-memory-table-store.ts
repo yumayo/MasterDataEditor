@@ -103,6 +103,17 @@ export class InMemoryTableStore {
         return false;
     }
 
+    /** セル更新（行インデックス＋列インデックスで対象セルを直接特定する）。行が見つかり更新した場合true、範囲外の場合false */
+    updateCellValueByRowIndex(tableName: string, rowIndex: number, columnIndex: number, value: string): boolean {
+        if (!this.rows.has(tableName)) return false;
+        const tableRows = this.rows.get(tableName)!;
+        if (rowIndex < 0 || rowIndex >= tableRows.length) return false;
+        const row = tableRows[rowIndex];
+        if (columnIndex < 0 || columnIndex >= row.length) return false;
+        row[columnIndex] = value;
+        return true;
+    }
+
     /** 全行置換 */
     replaceAllRows(tableName: string, newRows: string[][]): void {
         if (!this.rows.has(tableName)) return;

@@ -254,14 +254,14 @@ test.describe('RelationsPanel EditorTable流用', () => {
     );
 
     test(
-        'リレーションパネル内のセルをダブルクリックしても編集UIが表示されないこと（読み取り専用）',
+        'リレーションパネル内のセルをダブルクリックすると編集UIが表示されること（編集可能）',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
             await selectRowAsync(table, 0);
             await expect(page.locator('.relations-panel-content')).toBeVisible();
 
-            // リレーションパネルのミニEditorTableは読み取り専用（ストア汚染防止）。
-            // dblclick しても grid-textfield-active が表示されないことを確認する。
+            // Phase 1 仕様変更: ミニEditorTableは編集可能になった（makeReadOnly() 廃止）。
+            // dblclick で grid-textfield-active が表示されることを確認する。
             // buildMiniTableAsync は非同期のため、セルが DOM に出現するまで明示的に待機する。
             const panelCell = page.locator(
                 '.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
@@ -269,11 +269,11 @@ test.describe('RelationsPanel EditorTable流用', () => {
             await expect(panelCell).toBeVisible();
             await panelCell.dblclick();
 
-            // 読み取り専用のため編集UIは表示されない
+            // 編集可能になったため編集UIが表示される
             const editField = page.locator(
                 '.relations-panel .grid-textfield-active, .relations-panel input'
             ).first();
-            await expect(editField).not.toBeVisible();
+            await expect(editField).toBeVisible();
         },
     );
 });

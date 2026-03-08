@@ -234,6 +234,9 @@ export class InsertRowCommand implements Command {
 
     execute(): void {
         this.editorTable.insertRowInternal(this.rowIndex);
+        // FK自動埋め込み: autoFillEntriesに基づいて新規行のFK列を設定する
+        // insertRowInternal()がストアにも空行を挿入済みのため、インデックスベースで正しく更新される
+        this.editorTable.applyAutoFillToRow(this.rowIndex);
     }
 
     undo(): void {
@@ -273,9 +276,9 @@ export class InsertRowsCommand implements Command {
 
     execute(): void {
         for (let i = 0; i < this.count; ++i) {
-            this.editorTable.insertRowInternal(
-                this.rowIndex
-            );
+            this.editorTable.insertRowInternal(this.rowIndex);
+            // FK自動埋め込み: insertRowInternal()がストアにも空行を挿入済みのため、インデックスベースで正しく更新される
+            this.editorTable.applyAutoFillToRow(this.rowIndex);
         }
     }
 

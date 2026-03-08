@@ -656,3 +656,31 @@ EditorTableHandlerはメインテーブル専用として設計されており�
 フォーカス管理の排他制御を `activateHandler()` で一元管理する。新しいEditorTableを追加する際は必ずフォーカス切替のE2Eテストを書く。ミニテーブルの操作が本体に波及しないよう `isMiniTable` フラグで通知をスキップする。
 
 ---
+
+## 45. [af19507] — リレーションパネルの編集可能化（makeReadOnly廃止・FK自動埋め込み・定義ジャンプ・パンくずリスト・認知支援）
+
+### 不具合原因名
+不具合修正ではない（機能追加：リレーションパネルの編集可能化と操作性向上）
+
+### なぜそうなったのか
+リレーションパネル（右ペイン）のミニEditorTableは `makeReadOnly()` で読み取り専用に設定されており、参照先テーブルの閲覧のみが可能だった。ユーザーは参照先データを編集するために都度左ペインでタブを開く必要があり、操作効率が悪かった。また、ドリルダウン機能は `navStack` による独自ナビゲーションで、ブラウザの「戻る」に相当する操作が分かりにくかった。このコミットでは以下の大規模な機能追加・リファクタリングを行った。
+
+**(A) 編集可能化:** `makeReadOnly()` を廃止し、ミニEditorTableでのセル編集・ドロップダウン選択・FillControllerによるドラッグフィルを有効化。ただしCtrl+Sによる保存はミニテーブルでは拒否（`isMiniTableInstance()` チェック）し、フィルタされた部分データがCSV全体を上書きする事故を防止。
+
+**(B) FK自動埋め込み:** 1:Nリレーションで行追加時に外部キー列（例：`enemy_id`）に親行のPK値を自動設定。`EditorTable.autoFillEntries` と `applyAutoFillToRow()` で実現し、`InsertRowCommand`/`InsertRowsCommand` から統一的に呼び出し。`InMemoryTableStore.updateCellValueByRowIndex()` を追加し、PK未設定の新規行でもインデックスベースでストア更新可能に。
+
+**(C) 右→左ペイン即時反映:** ミニEditorTableのセル編集が `notifyMiniTableCellChanged()` 経由で左ペインの参照ヒント・逆参照ヒントを即時更新。
+
+**(D) ドリルダウン→定義ジャンプ:** `navStack` と `drillDownAsync()` を廃止し、Ctrl+Click / F12 による「定義へジャンプ」（`navigateToDefinition()`）に置換。ジャンプ先は左ペインのタブとして開く。パンくずリストはタブのナビゲーション履歴（`Tab.navigationHistory`）に基づいて表示。`currentEntries` フラットリストで全テーブルセクションを常時表示。
+
+**(E) 認知支援:** 1:Nテーブルヘッダーに `fkColumnName=fkValue` のコンテキスト表示、フォーカス中テーブルセクションの左ボーダー強調（`.relations-table-section--active`）、FK列の非表示（`hiddenColumns`）。
+
+**(F) ReverseReferenceResolver拡張:** `ReverseReferenceEntry` に `childColumnName` フィールドを追加し、FK列名をRelationsPanelまで伝播。
+
+### どうしたら今後は再発しないか
+- **readOnly機能を廃止する際は、readOnlyが防いでいた全ての操作パスを列挙し、代替ガードを設ける。** 今回Ctrl+Sの `isMiniTableInstance()` チェックが必要だったように、readOnlyの「暗黙の保護範囲」を明示的に洗い出すこと。
+- **行追加時のFK自動埋め込みはストアとDOMの両方に反映する。** PK未設定の新規行ではPKベースのストア更新が使えないため、インデックスベースの更新メソッドを用意する必要がある。
+- **ドリルダウンのような独自ナビゲーションより、既存のタブナビゲーションを再利用する設計を優先する。** navStackの廃止により、ブラウザライクな「タブで開く」操作に統一され、認知負荷が低減した。
+- **ミニEditorTableの `enable()` 呼び出しはフォーカス奪取を引き起こすため、activateHandler()による排他制御を必ず経由させる。** ハンドラの初期状態は非アクティブとし、ユーザーのセルクリック時にのみアクティブ化する。
+
+---

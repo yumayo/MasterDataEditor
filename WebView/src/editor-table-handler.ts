@@ -401,10 +401,21 @@ export class EditorTableHandler {
      * ナビゲーションモード（編集モードではない）のキー処理
      */
     private handleNavigationKeydown(keyboardEvent: KeyboardEvent): void {
+        // F12: 参照列のFK値から参照先テーブルへ定義ジャンプ
+        if (keyboardEvent.key === 'F12') {
+            keyboardEvent.preventDefault();
+            const focus = this.selection.getFocus();
+            this.table.navigateToDefinition(focus.row, focus.column);
+            return;
+        }
+
         // Ctrl+S: 保存（読み取り専用ミニEditorTableでは保存を禁止してCSV破壊を防ぐ）
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
             if (this.readOnly) return;
+            // ミニEditorTableではCSV保存を禁止する。
+            // FK列が欠落したフィルタ済みデータで全データが上書きされるのを防ぐ。
+            if (this.table.isMiniTableInstance()) return;
             Promise.all([
                 saveTableData(this.table),
                 saveSchemaDataAsync(this.table)

@@ -97,6 +97,9 @@ export class Tab {
     /** グローバルなリレーションパネル（全タブで共有、editor.elementの右ペインに配置） */
     private readonly relationsPanel: RelationsPanel;
 
+    /** 定義へジャンプ時のタブ遷移履歴（パンくずリスト用） */
+    private navigationHistory: Array<{ tableName: string; pkValue: string }>;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -111,6 +114,7 @@ export class Tab {
         this.referenceDataCache = referenceDataCache;
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
+        this.navigationHistory = [];
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.store, this.referenceDataCache);
 
@@ -178,6 +182,31 @@ export class Tab {
      */
     setActiveTabNameInternal(name: string): void {
         this.activeTabName = name;
+    }
+
+    // =========================================================================
+    // タブ遷移履歴（パンくずリスト用）
+    // =========================================================================
+
+    /**
+     * 定義へジャンプ実行時に遷移元の情報をスタックにプッシュする
+     */
+    pushNavigationHistory(tableName: string, pkValue: string): void {
+        this.navigationHistory.push({ tableName, pkValue });
+    }
+
+    /**
+     * 遷移履歴を取得する（RelationsPanelのパンくず描画で使用）
+     */
+    getNavigationHistory(): Array<{ tableName: string; pkValue: string }> {
+        return this.navigationHistory;
+    }
+
+    /**
+     * 指定インデックスで遷移履歴を切り詰める（パンくずクリック時に後続の履歴を破棄）
+     */
+    truncateNavigationHistory(index: number): void {
+        this.navigationHistory = this.navigationHistory.slice(0, index);
     }
 
     /**
@@ -362,6 +391,9 @@ export class Tab {
             this.relationsPanel.disconnectEditorTable();
             this.activeTabName = false;
         }
+
+        // 閉じたタブを含むナビゲーション履歴エントリを除去する（パンくずリストの整合性保持）
+        this.navigationHistory = this.navigationHistory.filter(entry => entry.tableName !== name);
     }
 
     enableTabButton(name: string) {
@@ -587,14 +619,16 @@ export class Tab {
      * リレーションパネル用ミニEditorTableを生成する
      *
      * emptyRowCount=0 でデータ行のみ生成（空行なし）。
-     * AreaResizer/FillController は生成するが activate() は呼ばないため
-     * リサイズ・フィルのドラッグ操作はパネル内では無効になる。
+     * 編集可能モードで生成し、FillControllerも有効化する。
      *
      * scrollContainer: editor-table / selection / areaResizer を配置する overflow:auto のスクロール領域
      * positioningContainer: grid-textfield を配置する position:relative の祖先要素
      *   → overflow:auto のスクロール領域に grid-textfield を入れると position:absolute の要素が
      *      クリッピングされるため、overflow:visible かつ position:relative の外側要素に配置する
      *   → relations-panel.ts では panelElement（.relations-panel）を渡す
+     *
+     * 戻り値: editorTable と fillController のペア。
+     * fillController は RelationsPanel が保持して破棄時に deactivate する。
      */
     createMiniEditorTable(
         scrollContainer: HTMLElement,
@@ -603,7 +637,7 @@ export class Tab {
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
         csvRows: string[][]
-    ): EditorTable {
+    ): {editorTable: EditorTable; fillController: FillController} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
         csv.header = csvHeader;
@@ -658,12 +692,22 @@ export class Tab {
         areaResizer.setEditorTable(editorTable);
         editorTable.initialize();
 
-        // ミニテーブルはストア汚染とCSV破壊を防ぐため読み取り専用にする。
-        // セル編集UIの表示を禁止し（ストア汚染防止）、Ctrl+S保存も禁止する（CSV破壊防止）。
-        // enable() も呼ばないためメインテーブルとのフォーカス競合も発生しない。
-        editorTable.makeReadOnly();
+        // ドロップダウン入力コンポーネントを生成してハンドラーに接続する
+        const dropdownInput = editorTableHandler.createDropdownInput(positioningContainer);
+        editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
-        return editorTable;
+        // ミニEditorTableのhandlerは初期状態では非アクティブとする。
+        // enable()を呼ぶとフォーカスが奪われ、メインEditorTableのCtrl+Z等が
+        // ミニEditorTableのhistoryに届いてしまうため。
+        // ユーザーがセルをクリックしたとき activateHandler() → activate() でアクティブ化する。
+
+        // FillControllerを生成・有効化（フィルハンドルによるドラッグ操作）
+        // deactivate は RelationsPanel.destroyMiniEditorTables() で一括して行う
+        const fillController = new FillController(editorTable, selection, history);
+        fillController.initialize();
+        fillController.activate();
+
+        return {editorTable, fillController};
     }
 
     /**

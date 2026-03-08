@@ -149,6 +149,7 @@ export class EditorTableStructure {
 
     /**
      * 行挿入の内部実装（Commandから呼び出される）
+     * DOMへの行挿入と同時にストアにも空行を挿入してデータ整合性を保つ
      */
     insertRowInternal(rowIndex: number): void {
         const tableElement = this.table.getTableElement();
@@ -168,6 +169,10 @@ export class EditorTableStructure {
         const newRow = EditorTable.createRow(cells, rowIndex);
         const insertBefore = tableElement.children[rowIndex];
         tableElement.insertBefore(newRow, insertBefore);
+        // ストアにも空行を挿入する（rowIndex は列ヘッダー行を含むDOMインデックスのため -1 してストア行インデックスに変換）
+        // これにより autoFillToRow() がストアをインデックスベースで更新できる
+        const storeRowIndex = rowIndex - 1;
+        this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(columnCount).fill(''));
         // 後続の行のdata-rowと行ヘッダーの番号を更新
         for (let i = rowIndex + 1; i < tableElement.children.length; ++i) {
             const row = tableElement.children[i] as HTMLElement;

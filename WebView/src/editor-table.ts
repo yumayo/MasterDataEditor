@@ -16,6 +16,7 @@ import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
+import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -61,6 +62,8 @@ export class EditorTable {
      * trueの場合、行選択変化をRelationsPanelに通知しない（自分自身の再描画による自己破棄を防止）。
      */
     private readonly isMiniTable: boolean;
+    /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
+    private autoFillEntries: Array<{ columnName: string; value: string }>;
 
     constructor(
         tableName: string,
@@ -94,6 +97,7 @@ export class EditorTable {
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
         this.relationsPanel = false;
+        this.autoFillEntries = [];
         this.selectionDragController = new SelectionDragController(
             this.element,
             selection,
@@ -230,6 +234,14 @@ export class EditorTable {
         this.contextMenuHandler.makeReadOnly();
     }
 
+    /**
+     * ミニEditorTableかどうかを判定する（EditorTableHandlerのCtrl+S禁止判定に使用）
+     * RelationsPanelのcreateMinEditorTable()で生成された場合にtrueを返す。
+     */
+    isMiniTableInstance(): boolean {
+        return this.isMiniTable;
+    }
+
     // =========================================================================
     // スクロール
     // =========================================================================
@@ -299,6 +311,12 @@ export class EditorTable {
         cell.addEventListener('mousedown', (e) => {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
+            // Ctrl+クリックで参照先テーブルへ定義ジャンプする
+            if (e.ctrlKey || e.metaKey) {
+                table.navigateToDefinition(position.row, position.column);
+                e.preventDefault();
+                return;
+            }
             table.handler.submitAndHide();
             // RelationsPanelが接続されている場合: このEditorTableのhandlerをアクティブ化し
             // 他の全EditorTableのhandlerをdeactivateする（フォーカスの排他制御）
@@ -717,6 +735,84 @@ export class EditorTable {
     }
 
     // =========================================================================
+    // FK自動埋め込み
+    // =========================================================================
+
+    /**
+     * 行追加時に自動埋め込みするFK列名と値のペアを設定する
+     * 1:Nミニテーブルの buildMiniEditorTableAsync() から呼ばれる
+     */
+    setAutoFillEntries(entries: Array<{ columnName: string; value: string }>): void {
+        this.autoFillEntries = entries;
+    }
+
+    /**
+     * FK自動埋め込み情報を取得する（InsertRowCommand / InsertRowsCommand から参照）
+     */
+    getAutoFillEntries(): Array<{ columnName: string; value: string }> {
+        return this.autoFillEntries;
+    }
+
+    /**
+     * 指定行にautoFillEntriesのFK値を書き込む（InsertRowCommand / InsertRowsCommand から使用）
+     *
+     * insertRowInternal() がストアにも空行を挿入済みであることを前提とする。
+     * DOMセルの更新と、ストアのインデックスベース更新を両方行う。
+     * PK検索（updateCellValueAt）ではなく行インデックスで直接更新するため、
+     * 新規行（PK未入力）でも正しくFK値が書き込まれる。
+     *
+     * @param rowIndex DOMの行インデックス（列ヘッダー行を含む。データ行は1始まり）
+     */
+    applyAutoFillToRow(rowIndex: number): void {
+        // ストア行インデックスはDOMインデックス - 1（列ヘッダー行分）
+        const storeRowIndex = rowIndex - 1;
+        const storeHeader = this.store.getHeader(this.tableName);
+        for (const entry of this.autoFillEntries) {
+            const colCount = this.getColumnCount();
+            for (let c = 0; c < colCount; c++) {
+                if (this.getColumnHeaderValue(c) !== entry.columnName) continue;
+                // DOMセルを更新（参照ヒント適用のためreference.setCellValueAt()を使用）
+                this.reference.setCellValueAt(rowIndex, c + 1, entry.value);
+                // ストアをインデックスベースで更新（PK未入力でも動作する）
+                if (storeHeader !== false) {
+                    const storeColIndex = storeHeader.indexOf(entry.columnName);
+                    if (storeColIndex !== -1) {
+                        this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, entry.value);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // =========================================================================
+    // 定義ジャンプ
+    // =========================================================================
+
+    /**
+     * 参照セルのFK値から参照先テーブルの該当行へジャンプする
+     * Ctrl+クリックまたはF12から呼ばれる。
+     * relationsPanel 経由で Tab.navigateToTableRow() を実行する。
+     *
+     * @param row  DOM行インデックス（0始まり、列ヘッダー行を含む）
+     * @param column DOM列インデックス（1始まり、行ヘッダーが0列目）
+     */
+    navigateToDefinition(row: number, column: number): void {
+        if (this.relationsPanel === false) return;
+        // データ列インデックスに変換（行ヘッダーが0列目のため -1）
+        const dataColIdx = column - 1;
+        if (dataColIdx < 0 || dataColIdx >= this.tableData.header.length) return;
+        const ref = this.tableData.header[dataColIdx].reference;
+        if (!ref) return;
+        const expr = parseReferenceExpression(ref);
+        if (!isSimpleReference(expr)) return;
+        const fkValue = this.getCellValueAt(row, column);
+        if (fkValue === '') return;
+        // RelationsPanel.navigateToDefinition() 経由でジャンプ元を履歴に積んでからTabを切り替える
+        this.relationsPanel.navigateToDefinition(expr.tableName, fkValue);
+    }
+
+    // =========================================================================
     // RelationsPanel 連携
     // =========================================================================
 
@@ -757,20 +853,34 @@ export class EditorTable {
     /**
      * ユーザー編集時のセル変更を適用する（DOM更新 + ストア同期）
      * ループ完了後に1回だけRelationsPanelを更新する（毎セル発火を防止）
+     * ミニEditorTableの場合はパネル全体再構築を避け、参照ヒントのみ更新する
      */
     applyCellChanges(changes: CellChange[]): CellChange[] {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-        this.forceRefreshRelationsPanel();
+        if (this.isMiniTable) {
+            // forceRefreshRelationsPanel() はパネル全体を再構築して編集中のミニEditorTable自身を
+            // 破棄してしまうため、左ペインの参照ヒントのみ更新する
+            if (this.relationsPanel !== false) this.relationsPanel.notifyMiniTableCellChanged();
+        } else {
+            this.forceRefreshRelationsPanel();
+        }
         return changes;
     }
 
     /**
      * 変更リストをDOMに再適用する（Undo/Redo/Fill用）
      * ループ完了後に1回だけRelationsPanelを更新する（毎セル発火を防止）
+     * ミニEditorTableの場合はパネル全体再構築を避け、参照ヒントのみ更新する
      */
     replayCellChanges(changes: CellChange[]): void {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-        this.forceRefreshRelationsPanel();
+        if (this.isMiniTable) {
+            // forceRefreshRelationsPanel() はパネル全体を再構築して編集中のミニEditorTable自身を
+            // 破棄してしまうため、左ペインの参照ヒントのみ更新する
+            if (this.relationsPanel !== false) this.relationsPanel.notifyMiniTableCellChanged();
+        } else {
+            this.forceRefreshRelationsPanel();
+        }
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */

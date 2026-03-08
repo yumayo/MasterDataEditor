@@ -3,8 +3,9 @@ import {ReferenceDataCache, ReferenceTableFullData} from "./reference-data-cache
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {config} from "./config";
-import {readFileAsync, findFilesAsync} from "./api";
+import {readFileAsync} from "./api";
 import {Tab} from "./tab";
+import {FillController} from "./fill-controller";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -20,24 +21,19 @@ interface RelationEntry {
     header: string[];
     /** 表示する行データ（各行は列値の配列） */
     rows: string[][];
-}
-
-/**
- * ナビゲーションスタックの1段分
- */
-interface NavFrame {
-    /** パンくず表示用ラベル */
-    label: string;
-    /** 表示するエントリ一覧 */
-    entries: RelationEntry[];
+    /** 1:Nの場合: 親テーブルのFK列名（子テーブル側の列名）。N:1の場合は空文字列 */
+    fkColumnName: string;
+    /** 1:Nの場合: 親テーブルのFK値（自動埋め込みする値）。N:1の場合は空文字列 */
+    fkValue: string;
+    /** 非表示にする列名の配列（FK列を隠すために使用） */
+    hiddenColumns: string[];
 }
 
 /**
  * リレーションパネル
  *
  * 選択行の参照先（N:1）と参照元（1:N）を右ペインに常時全表示する。
- * ナビゲーションスタックとパンくずリストによりドリルダウンをサポートする。
- * 各テーブルは EditorTable として表示し、セル編集が可能。
+ * 各テーブルは編集可能なミニEditorTableとして表示する。
  *
  * EditorTableへの接続は connectEditorTable()/disconnectEditorTable() で動的に管理する。
  * Tab への参照は connectTab() で設定する（Object.assign パターンで相互参照を解決）。
@@ -50,8 +46,8 @@ export class RelationsPanel {
     private parentElement: HTMLElement | false;
     /** 現在接続中のEditorTable。未接続時はfalse */
     private currentEditorTable: EditorTable | false;
-    /** ナビゲーションスタック。空の場合はプレースホルダーを表示 */
-    private navStack: NavFrame[];
+    /** 現在表示中のリレーションエントリ一覧。空の場合はプレースホルダーを表示 */
+    private currentEntries: RelationEntry[];
     /** 非同期レースコンディション防止用リクエストID */
     private currentRequestId: number;
     /**
@@ -63,16 +59,19 @@ export class RelationsPanel {
     private tab: Tab | false;
     /** 現在表示中のミニEditorTableインスタンス一覧（再描画前に破棄する） */
     private miniEditorTables: EditorTable[];
+    /** 現在表示中のミニEditorTableに対応するFillControllerの一覧（破棄時にdeactivateする） */
+    private miniFillControllers: FillController[];
 
     constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
         this.referenceDataCache = referenceDataCache;
         this.store = store;
         this.parentElement = false;
         this.currentEditorTable = false;
-        this.navStack = [];
+        this.currentEntries = [];
         this.currentRequestId = 0;
         this.tab = false;
         this.miniEditorTables = [];
+        this.miniFillControllers = [];
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -146,7 +145,7 @@ export class RelationsPanel {
     connectEditorTable(editorTable: EditorTable): void {
         this.currentEditorTable = editorTable;
         editorTable.relationsPanel = this;
-        this.navStack = [];
+        this.currentEntries = [];
         this.renderMessage('行を選択してください');
     }
 
@@ -171,6 +170,17 @@ export class RelationsPanel {
         }
         // 対象のhandlerをアクティブ化してフォーカスを取得する
         targetEditorTable.getHandler().activate();
+
+        // フォーカスインジケータ: 全 .relations-table-section から --active を除去し、
+        // 対象がミニEditorTableならそのセクションに --active を付与する
+        const sections = Array.from(this.panelElement.querySelectorAll('.relations-table-section'));
+        for (const section of sections) {
+            section.classList.remove('relations-table-section--active');
+        }
+        const targetIdx = this.miniEditorTables.indexOf(targetEditorTable);
+        if (targetIdx !== -1 && targetIdx < sections.length) {
+            sections[targetIdx].classList.add('relations-table-section--active');
+        }
     }
 
     /**
@@ -186,8 +196,7 @@ export class RelationsPanel {
             this.currentEditorTable.relationsPanel = false;
         }
         this.currentEditorTable = false;
-        this.navStack = [];
-        // currentEditorTableがfalseなのでdestroyMiniEditorTables()は空操作になる
+        this.currentEntries = [];
         this.renderMessage('行を選択してください');
     }
 
@@ -213,14 +222,11 @@ export class RelationsPanel {
         if (requestId !== this.currentRequestId) return;
         if (this.currentEditorTable !== editorTable) return;
         if (entries.length === 0) {
-            this.navStack = [];
+            this.currentEntries = [];
             this.renderMessage('参照なし');
             return;
         }
-        this.navStack = [{
-            label: editorTable.tableName,
-            entries,
-        }];
+        this.currentEntries = entries;
         await this.renderAsync();
     }
 
@@ -289,6 +295,9 @@ export class RelationsPanel {
                 tableKey: expr.tableName,
                 header: fullData.header,
                 rows,
+                fkColumnName: '',
+                fkValue: '',
+                hiddenColumns: [],
             });
         }
 
@@ -312,124 +321,21 @@ export class RelationsPanel {
                     filteredRows = [];
                 }
 
+                // FK列名が特定できている場合（単純参照）はFK列を非表示にする
+                const fkColName = reverseEntry.childColumnName;
+                const hiddenCols = fkColName !== '' ? [fkColName] : [];
+
                 entries.push({
                     label: reverseEntry.childTableName,
                     relationType: '1:N',
                     tableKey: reverseEntry.childTableName,
                     header,
                     rows: filteredRows,
+                    fkColumnName: fkColName,
+                    fkValue: pkValue,
+                    hiddenColumns: hiddenCols,
                 });
             }
-        }
-
-        return entries;
-    }
-
-    /**
-     * storeベースで指定テーブルの指定PK行のリレーションエントリを非同期で解決する
-     * ドリルダウン時に使用する（EditorTableが不要なstoreベースの解決）
-     *
-     * N:1（FK参照先）: スキーマファイルを読み込んでreference式を取得し、referenceDataCacheで解決
-     * 1:N（逆参照）: 全テーブルスキーマを走査し、tableKeyを参照しているFKカラムを持つstoreテーブルを探索
-     */
-    private async resolveEntriesForStoreRowAsync(tableKey: string, pkValue: string): Promise<RelationEntry[]> {
-        const entries: RelationEntry[] = [];
-
-        // スキーマファイルを読み込んで列定義を取得する
-        const schemaText = await readFileAsync(`schema/${tableKey}.json`).catch(() => '');
-        if (schemaText === '') return entries;
-
-        const schema: Record<string, unknown> = JSON.parse(schemaText);
-        const headerDefs = schema.header as Array<{ name: string; reference?: string }>;
-        if (!Array.isArray(headerDefs)) return entries;
-
-        // storeからこのテーブルの行データを取得してPKでフィルタリング
-        const storeHeader = this.store.getHeader(tableKey);
-        const storeRows = this.store.getRows(tableKey);
-        const pkColInStore = storeHeader !== false ? storeHeader.indexOf(config.primaryKeyColumnName) : -1;
-        let targetRow: string[] | false = false;
-        if (storeHeader !== false && storeRows !== false && pkColInStore !== -1) {
-            for (const row of storeRows) {
-                if (row[pkColInStore] === pkValue) { targetRow = row; break; }
-            }
-        }
-
-        // N:1（FK参照先）の解決: スキーマのreference式を使ってFK値を取得
-        for (let colIdx = 0; colIdx < headerDefs.length; colIdx++) {
-            const col = headerDefs[colIdx];
-            if (!col.reference) continue;
-            const expr = parseReferenceExpression(col.reference);
-            if (!isSimpleReference(expr)) continue;
-
-            // storeから対象行のFK値を取得する
-            const colIdxInStore = storeHeader !== false ? storeHeader.indexOf(col.name) : -1;
-            const fkValue = (targetRow !== false && colIdxInStore !== -1)
-                ? targetRow[colIdxInStore]
-                : '';
-            if (fkValue === '') continue;
-
-            // referenceDataCacheからFK参照先テーブルのデータを取得する
-            const syncData = this.referenceDataCache.getFullDataSync(expr.tableName);
-            const fullData = syncData !== false
-                ? syncData
-                : await this.referenceDataCache.getFullDataAsync(expr.tableName).catch(() => false as const);
-            if (fullData === false) continue;
-
-            // columnName がPK列と一致する場合は1件ルックアップ、異なる場合は全件走査
-            const rows = this.resolveRowsByFkValue(fullData, expr.columnName, fkValue);
-
-            entries.push({
-                label: col.name,
-                relationType: 'N:1',
-                tableKey: expr.tableName,
-                header: fullData.header,
-                rows,
-            });
-        }
-
-        // 1:N（逆参照）の解決: 全スキーマを走査してtableKeyを参照している子テーブルを探す
-        const schemaFiles = await findFilesAsync('schema').catch(() => [] as Array<{ name: string; type: 'file' | 'directory' }>);
-        for (const file of schemaFiles) {
-            if (file.type !== 'file' || !file.name.endsWith('.json')) continue;
-            const childTableName = file.name.replace('.json', '');
-            if (childTableName === tableKey) continue;
-
-            // storeに存在しないテーブルは逆参照解決をスキップ
-            const childHeader = this.store.getHeader(childTableName);
-            const childRows = this.store.getRows(childTableName);
-            if (childHeader === false || childRows === false) continue;
-
-            // 子テーブルのスキーマを読み込んでFK列を探す
-            const childSchemaText = await readFileAsync(`schema/${childTableName}.json`).catch(() => '');
-            if (childSchemaText === '') continue;
-            const childSchema: Record<string, unknown> = JSON.parse(childSchemaText);
-            const childHeaderDefs = childSchema.header as Array<{ name: string; reference?: string }>;
-            if (!Array.isArray(childHeaderDefs)) continue;
-
-            // tableKeyを参照しているFK列のインデックスを収集する
-            const fkColIndices: number[] = [];
-            for (const childCol of childHeaderDefs) {
-                if (!childCol.reference) continue;
-                const expr = parseReferenceExpression(childCol.reference);
-                if (isSimpleReference(expr) && expr.tableName === tableKey) {
-                    const idx = childHeader.indexOf(childCol.name);
-                    if (idx !== -1) fkColIndices.push(idx);
-                }
-            }
-            if (fkColIndices.length === 0) continue;
-
-            // FK値がpkValueと一致する行をフィルタリングする
-            const filteredRows = childRows.filter(row =>
-                fkColIndices.some(fkIdx => row[fkIdx] === pkValue)
-            );
-
-            entries.push({
-                label: childTableName,
-                relationType: '1:N',
-                tableKey: childTableName,
-                header: childHeader,
-                rows: filteredRows,
-            });
         }
 
         return entries;
@@ -467,9 +373,10 @@ export class RelationsPanel {
     }
 
     /**
-     * 現在表示中のミニEditorTableを破棄する
+     * 現在表示中のミニEditorTableとFillControllerを破棄する
      * buildMiniEditorTableAsync() で設定した editorTable.relationsPanel = this と対称的に
      * relationsPanel = false で接続を解除してから deactivate() する。
+     * FillControllerのグローバルmouseupリスナーも解除する。
      * 破棄後はメインEditorTableのhandlerをアクティブ化してキーボード操作を復元する
      */
     private destroyMiniEditorTables(): void {
@@ -478,6 +385,10 @@ export class RelationsPanel {
             miniTable.deactivate();
         }
         this.miniEditorTables = [];
+        for (const fillController of this.miniFillControllers) {
+            fillController.deactivate();
+        }
+        this.miniFillControllers = [];
         // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.getHandler().activate();
@@ -485,7 +396,7 @@ export class RelationsPanel {
     }
 
     /**
-     * 現在のナビゲーション状態を非同期で描画する
+     * currentEntries を非同期で描画する
      * 全エントリを縦に並べて常時表示する
      * EditorTable生成が完了してからDOMに追加するため非同期にする
      *
@@ -493,7 +404,7 @@ export class RelationsPanel {
      * これにより新旧の DOM 要素が panelElement 上に並存するレースコンディションを防ぐ。
      */
     private async renderAsync(): Promise<void> {
-        // 呼び出し元（updateForRowAsync / drillDownAsync）がすでにインクリメント済みのIDを参照する。
+        // 呼び出し元（updateForRowAsync）がすでにインクリメント済みのIDを参照する。
         // renderAsync() 自身がインクリメントすると requestId の責務が重複し、
         // 呼び出し元のガードと二重カウントになるため、ここでは現在値を読むだけにする。
         const requestId = this.currentRequestId;
@@ -501,18 +412,20 @@ export class RelationsPanel {
         this.destroyMiniEditorTables();
         this.clearContentArea();
 
-        if (this.navStack.length === 0) {
+        if (this.currentEntries.length === 0) {
             this.renderMessage('行を選択してください');
             return;
         }
 
-        const currentFrame = this.navStack[this.navStack.length - 1];
         const content = document.createElement('div');
         content.classList.add('relations-panel-content');
 
-        // パンくずリスト（2段以上のとき表示）
-        if (this.navStack.length > 1) {
-            content.appendChild(this.buildBreadcrumb());
+        // パンくずリスト（タブ遷移履歴がある場合のみ表示）
+        if (this.tab !== false) {
+            const history = this.tab.getNavigationHistory();
+            if (history.length > 0) {
+                content.appendChild(this.buildBreadcrumb(history));
+            }
         }
 
         // RELATIONS セクションヘッダー
@@ -522,7 +435,7 @@ export class RelationsPanel {
         content.appendChild(sectionHeader);
 
         // 全エントリを縦に並べて順次構築する（EditorTable生成を await することで表示タイミングを確定させる）
-        for (const entry of currentFrame.entries) {
+        for (const entry of this.currentEntries) {
             const tableSection = document.createElement('div');
             tableSection.classList.add('relations-table-section');
 
@@ -537,6 +450,13 @@ export class RelationsPanel {
             rowCountEl.textContent = `${entry.rows.length} rows`;
             tableHeader.appendChild(tableTitle);
             tableHeader.appendChild(tagEl);
+            // 1:Nエントリの場合はFK条件コンテキスト（例: enemy_id=3）を表示する
+            if (entry.relationType === '1:N' && entry.fkColumnName !== '') {
+                const contextEl = document.createElement('span');
+                contextEl.classList.add('relations-table-context');
+                contextEl.textContent = `${entry.fkColumnName}=${entry.fkValue}`;
+                tableHeader.appendChild(contextEl);
+            }
             tableHeader.appendChild(rowCountEl);
             tableSection.appendChild(tableHeader);
 
@@ -550,44 +470,6 @@ export class RelationsPanel {
         // 全エントリ構築後も割り込みがなかった場合のみ DOM に追加する
         if (requestId !== this.currentRequestId) return;
         this.panelElement.appendChild(content);
-    }
-
-    /**
-     * パンくずリストを構築する
-     */
-    private buildBreadcrumb(): HTMLElement {
-        const breadcrumb = document.createElement('div');
-        breadcrumb.classList.add('relations-breadcrumb');
-
-        for (let i = 0; i < this.navStack.length; i++) {
-            const frame = this.navStack[i];
-            if (i > 0) {
-                const sep = document.createElement('span');
-                sep.classList.add('relations-breadcrumb-sep');
-                sep.textContent = '›';
-                breadcrumb.appendChild(sep);
-            }
-            const crumb = document.createElement('span');
-            crumb.classList.add('relations-breadcrumb-item');
-            const isLast = i === this.navStack.length - 1;
-            if (isLast) {
-                crumb.classList.add('relations-breadcrumb-item--active');
-            } else {
-                crumb.addEventListener('click', () => {
-                    this.navStack = this.navStack.slice(0, i + 1);
-                    // 呼び出し元としての責務: 新しいリクエストを開始する前にIDをインクリメントして
-                    // 進行中の updateForRowAsync / drillDownAsync を無効化する
-                    ++this.currentRequestId;
-                    this.renderAsync().catch(err => {
-                        console.error('[RelationsPanel] breadcrumb render 失敗:', err);
-                    });
-                });
-            }
-            crumb.textContent = frame.label;
-            breadcrumb.appendChild(crumb);
-        }
-
-        return breadcrumb;
     }
 
     /**
@@ -626,10 +508,34 @@ export class RelationsPanel {
      * grid-textfield（position:absolute）が overflow:auto のコンテナにクリッピングされるのを防ぐため、
      * wrapper（overflow:visible）と scrollContainer（overflow:auto）を分離して渡す。
      * grid-textfield は panelElement（.relations-panel、position:relative）の直接の子として配置する。
+     *
+     * entry.hiddenColumns に含まれる列はスキーマ・ヘッダー・行データから除外して渡す。
+     * これにより FK列を非表示にしてコンテキスト情報として代わりにヘッダーに表示する。
      */
     private async buildMiniEditorTableAsync(wrapper: HTMLElement, entry: RelationEntry): Promise<void> {
         const schemaText = await readFileAsync(`schema/${entry.tableKey}.json`);
         const schemaJson: Record<string, unknown> = JSON.parse(schemaText);
+
+        // FK列非表示: hiddenColumns に含まれる列をスキーマヘッダーから除外する
+        if (entry.hiddenColumns.length > 0) {
+            const originalHeader = schemaJson.header as Array<{ name: string }>;
+            if (Array.isArray(originalHeader)) {
+                schemaJson.header = originalHeader.filter(col => !entry.hiddenColumns.includes(col.name));
+            }
+        }
+
+        // FK列非表示: hiddenColumns に含まれる列のインデックスをentry.headerから特定する
+        const hiddenIndices = entry.hiddenColumns
+            .map(col => entry.header.indexOf(col))
+            .filter(idx => idx !== -1);
+
+        // FK列を除外したヘッダーと行データを生成する
+        const filteredHeader = hiddenIndices.length > 0
+            ? entry.header.filter((_, i) => !hiddenIndices.includes(i))
+            : entry.header;
+        const filteredRows = hiddenIndices.length > 0
+            ? entry.rows.map(row => row.filter((_, i) => !hiddenIndices.includes(i)))
+            : entry.rows;
 
         // スクロール領域は wrapper の内側に作る（overflow:auto はここに閉じ込める）
         const scrollContainer = document.createElement('div');
@@ -643,60 +549,89 @@ export class RelationsPanel {
         // scrollContainer: editor-table / selection を配置する overflow:auto のスクロール領域
         // panelElement: grid-textfield の position:absolute 基準（overflow:visible かつ position:relative）
         //   → wrapper（overflow:auto）にすると grid-textfield がクリッピングされるためパネル直下に配置する
-        const editorTable = this.tab.createMiniEditorTable(scrollContainer, this.panelElement, entry.tableKey, schemaJson, entry.header, entry.rows);
+        const {editorTable, fillController} = this.tab.createMiniEditorTable(
+            scrollContainer, this.panelElement, entry.tableKey, schemaJson, filteredHeader, filteredRows
+        );
+        // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
+        if (entry.fkColumnName !== '' && entry.fkValue !== '') {
+            editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);
+        }
         // ミニEditorTableにもRelationsPanelを接続して、セルクリック時の排他制御を有効にする
         editorTable.relationsPanel = this;
         this.miniEditorTables.push(editorTable);
-        // NOTE: click イベントでドリルダウンを登録しない。
-        // click は dblclick の前に2回発火するため drillDownAsync → renderAsync → destroyMiniEditorTables が
-        // 呼ばれ、dblclick ハンドラが実行される前にミニEditorTableが破棄されてしまう。
-        // ドリルダウン機能は将来的に専用UIで実装する。
+        this.miniFillControllers.push(fillController);
     }
 
     /**
-     * ミニテーブルの行をクリックしたときにドリルダウンする
-     * クリックされた行が属する entry.tableKey のテーブルデータをstoreから取得し、
-     * resolveEntriesForStoreRowAsync() でリレーションを解決して新しいNavFrameを構築する
+     * ミニEditorTableのセル編集後に左ペインの参照ヒントを再描画する
+     * ミニテーブルの変更によって左ペインのFK参照ヒントが古くなるため更新する。
+     * forceRefreshRelationsPanel() はパネル全体を再構築して編集中のミニEditorTable自身を
+     * 破棄してしまうため、代わりにこのメソッドで参照ヒントのみ更新する。
      */
-    private async drillDownAsync(parentEntry: RelationEntry, clickedRow: string[]): Promise<void> {
-        // レースコンディション防止: 最新リクエスト以外は描画しない
-        const requestId = ++this.currentRequestId;
-        const targetTableKey = parentEntry.tableKey;
+    notifyMiniTableCellChanged(): void {
+        if (this.currentEditorTable === false) return;
+        this.currentEditorTable.updateReferenceHints();
+    }
 
-        // クリックされた行のPK値を取得（parentEntry.headerのPK列位置から取得）
-        const pkColInParent = parentEntry.header.indexOf(config.primaryKeyColumnName);
-        if (pkColInParent === -1) throw new Error(`[RelationsPanel] drillDown: PK列が見つかりません（tableKey=${targetTableKey}）`);
-        const pkValue = clickedRow[pkColInParent];
-        if (pkValue === '') throw new Error(`[RelationsPanel] drillDown: PK値が空です（tableKey=${targetTableKey}）`);
+    /**
+     * 定義へジャンプ: 参照先テーブルの該当行に左ペインのタブで遷移する
+     * EditorTable.navigateToDefinition() から呼ばれる。
+     * ジャンプ元の { tableName, pkValue } を Tab の遷移履歴にプッシュしてからタブを切り替える。
+     */
+    navigateToDefinition(tableName: string, pkValue: string): void {
+        if (this.tab === false) return;
+        if (this.currentEditorTable === false) return;
+        // ジャンプ元の情報を遷移履歴にプッシュする
+        const focusRow = this.currentEditorTable.getSelection().getFocus().row;
+        const currentPkValue = this.currentEditorTable.getRowPkValue(focusRow);
+        this.tab.pushNavigationHistory(this.currentEditorTable.tableName, currentPkValue);
+        // 参照先テーブルの該当行へジャンプする
+        this.tab.navigateToTableRow(tableName, pkValue);
+    }
 
-        // ドリルダウン先テーブルの行データをstoreから取得し、クリックされたPK値でフィルタリング
-        const storeHeader = this.store.getHeader(targetTableKey);
-        const storeRows = this.store.getRows(targetTableKey);
-        if (storeHeader === false || storeRows === false) throw new Error(`[RelationsPanel] drillDown: storeにテーブルが存在しません（tableKey=${targetTableKey}）`);
-        const pkColInStore = storeHeader.indexOf(config.primaryKeyColumnName);
-        if (pkColInStore === -1) throw new Error(`[RelationsPanel] drillDown: storeヘッダーにPK列がありません（tableKey=${targetTableKey}）`);
-        const filteredRows = storeRows.filter(r => r[pkColInStore] === pkValue);
-        if (filteredRows.length === 0) throw new Error(`[RelationsPanel] drillDown: 対象行が見つかりません（tableKey=${targetTableKey}, pk=${pkValue}）`);
+    /**
+     * パンくずリストを構築する（タブ遷移履歴ベース）
+     * history の各エントリをクリック可能なリンクとして並べ、
+     * 末尾に現在のタブ名を太字で追加する。
+     */
+    private buildBreadcrumb(history: Array<{ tableName: string; pkValue: string }>): HTMLElement {
+        const breadcrumb = document.createElement('div');
+        breadcrumb.classList.add('relations-breadcrumb');
 
-        // storeベースでドリルダウン先のリレーションエントリを解決する
-        const entries = await this.resolveEntriesForStoreRowAsync(targetTableKey, pkValue);
+        for (let i = 0; i < history.length; i++) {
+            if (i > 0) {
+                const sep = document.createElement('span');
+                sep.classList.add('relations-breadcrumb-sep');
+                sep.textContent = '›';
+                breadcrumb.appendChild(sep);
+            }
+            const crumb = document.createElement('span');
+            crumb.classList.add('relations-breadcrumb-item');
+            crumb.textContent = history[i].tableName;
+            const idx = i;
+            crumb.addEventListener('click', () => {
+                // buildBreadcrumb() は this.tab !== false の内側でのみ呼ばれるため、
+                // ここで tab === false になることは論理的にあり得ない
+                if (this.tab === false) throw new Error('[RelationsPanel] buildBreadcrumb click: tab が未接続です');
+                // クリックした位置より後の履歴を切り捨ててからジャンプする
+                this.tab.truncateNavigationHistory(idx);
+                this.tab.navigateToTableRow(history[idx].tableName, history[idx].pkValue);
+            });
+            breadcrumb.appendChild(crumb);
+        }
 
-        // 非同期処理中に別のリクエストが来ていた場合は描画しない
-        if (requestId !== this.currentRequestId) return;
+        // 現在のテーブル名を末尾に太字（クリック不可）で表示する
+        if (this.currentEditorTable !== false) {
+            const sep = document.createElement('span');
+            sep.classList.add('relations-breadcrumb-sep');
+            sep.textContent = '›';
+            breadcrumb.appendChild(sep);
+            const currentCrumb = document.createElement('span');
+            currentCrumb.classList.add('relations-breadcrumb-item', 'relations-breadcrumb-item--active');
+            currentCrumb.textContent = this.currentEditorTable.tableName;
+            breadcrumb.appendChild(currentCrumb);
+        }
 
-        // クリックされた行自身をエントリとして先頭に追加する（現在の行を確認できるように）
-        const selfEntry: RelationEntry = {
-            label: targetTableKey,
-            relationType: parentEntry.relationType,
-            tableKey: targetTableKey,
-            header: storeHeader,
-            rows: filteredRows,
-        };
-
-        this.navStack.push({
-            label: `${targetTableKey}#${pkValue}`,
-            entries: [selfEntry, ...entries],
-        });
-        await this.renderAsync();
+        return breadcrumb;
     }
 }
