@@ -40,14 +40,19 @@
 - **activateTabState ordering bug**: forceNotifyRelationsPanel() fires BEFORE reloadCellsFromStore()
 - **e2e locator fragility**: `.editor-table` locator in 4+ e2e files will break when test tables gain FK columns
 
-## Dirty Management (2026-03-08, unstaged)
+## Dirty Management (2026-03-08 -> 2026-03-09)
 - **IHistory interface** in in-memory-table-store.ts: isDirty(), markSaved(), setTabButtonDirty()
 - **historyRegistry**: Map<string, Set<IHistory>> in InMemoryTableStore tracks all Histories per table
-- **markAllSaved N^2 bug**: markAllSaved iterates Set calling markSaved() → notifyChange() → iterates same Set. O(N^2) with incorrect intermediate dirty states
-- **saveTableDataFromStoreAsync silent failure**: getCsv()===false → warn+return but .then() still calls markAllSaved (dirty reset without actual save)
-- **unregisterTable does NOT clean historyRegistry**: if History.unregister() is missed, stale IHistory refs remain
-- **Parallel array now 4-deep**: miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories (repeated prior concern)
-- **saveTableData missing Async suffix**: existing function is async but lacks Async suffix (inconsistent with new saveTableDataFromStoreAsync)
+- **markAllSaved N^2 bug**: FIXED via two-phase markSavedSilent + setTabButtonDirty
+- **Dirty保持パス (unstaged 2026-03-09)**: unregisterTable でDirtyならrefCountsのみ削除しheaders/rowsを保持
+  - CRITICAL: history.unregister()後にhistoryRegistry空→isTableDirty=false、しかしheaders/rows残留→孤立データ
+  - CRITICAL: registerTableAsyncのDirty保持パスがheaders.has()のみ→Cleanな古いデータもCSV再読み込みスキップ
+  - IMPORTANT: Dirty保持データ再利用時、新HistoryはClean初期化→タブDirtyマーク未表示
+- **Parallel array now 5-deep**: miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories/miniTableNames
+- **tab.ts vs relations-panel.ts 順序不整合**: tab.tsはhistory.unregister()→unregisterTable、relations-panel.tsは逆順
+  - r2で確認: tab.tsの順序だとisTableDirtyが常にfalse→Dirty保持パスは到達不能
+- **throw変更の例外安全性**: unregisterTable/unregisterHistoryがthrowになったが、ループ内呼び出し元が例外で中断→リソースリーク
+- **.catch内throw無意味パターン**: .catch((e) => { throw new Error(...); }) は unhandled rejection のまま
 
 ## Editable Relations Panel Issues (2026-03-08)
 - **RESOLVED: Dirty indicator** - now managed via History.notifyChange → updateDirtyMark
@@ -74,9 +79,11 @@
 - 2026-03-08 (a22b7b3): RelationsPanel initial display fix.
 - 2026-03-08 (unstaged-resizer): ミニテーブル列幅リサイズ修正。並列配列増殖パターン指摘。
 - 2026-03-08 (unstaged-dirty): Dirty管理追加。markAllSaved N^2問題、保存失敗時dirty誤リセット指摘。
+- 2026-03-09 (unstaged-dirty-preserve-r1): Dirty保持パス追加。孤立データ・Dirtyマーク未表示・順序不整合指摘。
+- 2026-03-09 (unstaged-dirty-preserve-r2): 修正レビュー。isTableDirty到達不能・.catch内throw無意味・例外安全性欠如指摘。
 
 ## Structural Concerns
-- **Parallel array anti-pattern in RelationsPanel**: Now 4 arrays (miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories). Must consolidate into single MiniTableEntry[] array.
+- **Parallel array anti-pattern in RelationsPanel**: Now 5 arrays (miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories/miniTableNames). Must consolidate into single MiniTableEntry[] array.
 - **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。
 
 ## Test Infrastructure Issues
