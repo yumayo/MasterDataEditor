@@ -812,3 +812,21 @@ Tab.createMiniEditorTable() で AreaResizer.activate() が呼ばれていなか�
 activate()/deactivate() パターンを持つコントローラー（FillController、AreaResizer等）を同一スコープで生成する場合、漏れなく activate() を呼ぶ。ライフサイクル管理が必要なオブジェクトを戻り値に追加した際は、呼び出し側でのdeactivateリスト管理も対称的に追加されているか確認する。チェックリストとして「window.addEventListener を使うクラスの activate/deactivate が全ての生成パスで呼ばれているか」を確認する。
 
 ---
+
+## 55. [ce8da9e] — ミニEditorTableにDirty管理と保存機能を追加
+
+### 不具合原因名
+不具合修正ではない（新機能追加）
+
+### なぜそうなったのか
+ミニEditorTableは当初読み取り専用だったが、編集可能に変更された際にDirty管理と保存機能の対応が漏れた。History-TabButton間の1対1通知アーキテクチャが、同一テーブルの複数箇所編集を想定していなかった。また、N:1参照テーブルはreferenceDataCache経由でデータを取得するためInMemoryTableStoreにデータが登録されておらず、ストア経由の保存ができない問題もあった。
+
+### どうしたら今後は再発しないか
+- 機能追加時に「Dirty管理」「保存」「Undo/Redo連動」の3点をチェックリストとして確認する。
+- テーブルのDirty状態はInMemoryTableStore（SSOT）で一元管理し、個別のUI要素は常にストアの状態を参照するようにする。
+- 同一テーブルを複数のEditorTable（メイン+ミニ）が編集する場合、ストアのhistoryRegistryで全Historyを追跡し、いずれかがdirtyならテーブルもdirtyと判定する設計にする。
+- ミニテーブル構築時にstore.registerTableAsync()でストアにテーブルデータを登録し、破棄時にunregisterTable()でrefCountを減らす対称的なライフサイクル管理を行う。
+- markAllSaved()のような一括操作は二相処理（まず全状態更新→まとめて通知）にして、中間状態で誤ったUI更新が発生しないようにする。
+- 未保存タブ閉じ時にストアにデータが残っている場合（ミニテーブルのrefCount分）、reloadTableDataAsync()でCSV原本に巻き戻す。
+
+---

@@ -5,6 +5,7 @@ import {CellChange} from "./command";
 import {generateSeriesData} from "./fill-series";
 import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
+import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
  * フォーカスセルの情報を取得する
@@ -438,4 +439,26 @@ export async function saveTableData(table: EditorTable): Promise<void> {
     await writeFileAsync(csvPath, mergedCsv.toString());
 
     console.log(`Saved ${csvPath}`);
+}
+
+/**
+ * ストアのデータからCSVを保存する（ミニテーブル用）
+ *
+ * ミニEditorTableはFK列が欠落したフィルタ済みデータのみ保持するため、
+ * extractTableData() 経由での保存はCSVを破壊する可能性がある。
+ * ストアには全列のデータが存在するため、ストアから直接保存することで安全に保存できる。
+ *
+ * @param tableName 保存するテーブル名
+ * @param store InMemoryTableStore（全列データを持つ）
+ */
+export async function saveTableDataFromStoreAsync(tableName: string, store: InMemoryTableStore): Promise<void> {
+    const csvPath = `data/${tableName}.csv`;
+    const csv = store.getCsv(tableName);
+    if (csv === false) {
+        // 呼び出し元（Ctrl+Sハンドラ）の時点でミニテーブルが存在する = ストアへの登録済みが保証されている
+        // ストアに存在しないまま保存が呼ばれたのはバグなので例外で知らせる
+        throw new Error(`[saveTableDataFromStoreAsync] テーブル "${tableName}" がストアに存在しません`);
+    }
+    await writeFileAsync(csvPath, csv.toString());
+    console.log(`Saved ${csvPath} (from store)`);
 }

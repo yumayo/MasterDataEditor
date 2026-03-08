@@ -109,6 +109,17 @@ export class ReferenceDataCache {
     }
 
     /**
+     * 指定テーブルのキャッシュエントリを強制除去する
+     * ストアにデータが残っていても（ミニEditorTableのrefCount分）キャッシュを破棄し、
+     * 次回のget()でストアの最新データから再構築させる
+     * 未保存タブクローズ後のCSV原本への巻き戻しに使用する
+     */
+    evictEntry(tableName: string): void {
+        this.cache.delete(tableName);
+        this.fullDataCache.delete(tableName);
+    }
+
+    /**
      * テーブルデータを読み込む
      */
     private async load(tableName: string): Promise<ReferenceTableData> {

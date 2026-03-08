@@ -188,6 +188,20 @@
     font-size: 11px;
 }
 
+/* ─── Dirtyマーク（ミニテーブル編集中のマーク） ─── */
+
+.relations-table-dirty {
+    display: none;
+    color: var(--font-color);
+    font-size: 10px;
+    margin-left: 2px;
+    opacity: 0.7;
+}
+
+.relations-table-dirty-visible {
+    display: inline;
+}
+
 /* ─── FK条件コンテキスト表示（1:Nエントリのヘッダーに表示: 例 enemy_id=3） ─── */
 
 .relations-table-context {

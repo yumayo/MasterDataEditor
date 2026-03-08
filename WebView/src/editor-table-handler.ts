@@ -20,6 +20,7 @@ import {
     moveCellLeftWithinSelection,
     saveTableData,
     saveSchemaDataAsync,
+    saveTableDataFromStoreAsync,
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
@@ -409,18 +410,36 @@ export class EditorTableHandler {
             return;
         }
 
-        // Ctrl+S: 保存（読み取り専用ミニEditorTableでは保存を禁止してCSV破壊を防ぐ）
+        // Ctrl+S: 保存
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
             if (this.readOnly) return;
-            // ミニEditorTableではCSV保存を禁止する。
-            // FK列が欠落したフィルタ済みデータで全データが上書きされるのを防ぐ。
-            if (this.table.isMiniTableInstance()) return;
+            if (this.table.isMiniTableInstance()) {
+                // ミニEditorTableの場合はストアの全列データからCSVを保存する。
+                // FK列が欠落したフィルタ済みデータで上書きされるのを防ぐため、
+                // DOM経由の保存（extractTableData）ではなくストア経由で保存する。
+                const store = this.table.getStore();
+                saveTableDataFromStoreAsync(this.table.tableName, store).then(() => {
+                    store.markAllSaved(this.table.tableName);
+                    // markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
+                    // RelationsPanelのDirtyマークは呼び出し元で明示的に更新する
+                    if (this.table.relationsPanel !== false) {
+                        this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
+                    }
+                });
+                return;
+            }
             Promise.all([
                 saveTableData(this.table),
                 saveSchemaDataAsync(this.table)
             ]).then(() => {
-                this.history.markSaved();
+                // ストアの全History（ミニテーブル含む）を一括でmarkSavedする。
+                // markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
+                // RelationsPanelのDirtyマークは呼び出し元で明示的に更新する。
+                this.table.getStore().markAllSaved(this.table.tableName);
+                if (this.table.relationsPanel !== false) {
+                    this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
+                }
             });
             return;
         }

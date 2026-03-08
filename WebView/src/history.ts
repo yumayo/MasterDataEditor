@@ -14,6 +14,7 @@ import {
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
 import { TabButton } from "./tab-button";
+import { InMemoryTableStore, IHistory } from "./in-memory-table-store";
 
 /**
  * savedIndexの特殊値
@@ -56,12 +57,14 @@ export interface HistoryResult {
 /**
  * Undo/Redo履歴を管理するクラス（Commandパターン対応）
  */
-export class History {
+export class History implements IHistory {
     private history: HistoryEntry[];
     private currentIndex: number;
     private readonly maxHistorySize: number;
     private editorTable: EditorTable;
     private tabButton: TabButton;
+    private readonly store: InMemoryTableStore;
+    private readonly tableName: string;
     /**
      * 保存時点のインデックス
      * SAVED_INDEX_INITIALは初期状態（ファイルから読み込んだ直後、未編集状態）
@@ -69,20 +72,56 @@ export class History {
      */
     private savedIndex: SavedIndex;
 
-    constructor(editorTable: EditorTable, tabButton: TabButton, maxHistorySize: number) {
+    constructor(editorTable: EditorTable, tabButton: TabButton, store: InMemoryTableStore, tableName: string, maxHistorySize: number) {
         this.history = [];
         this.currentIndex = -1;
         this.maxHistorySize = maxHistorySize;
         this.editorTable = editorTable;
         this.tabButton = tabButton;
+        this.store = store;
+        this.tableName = tableName;
         this.savedIndex = SAVED_INDEX_INITIAL;
+        // ストアにこのHistoryを登録する
+        this.store.registerHistory(this.tableName, this);
+    }
+
+    /**
+     * このHistoryをストアから登録解除する（タブクローズ・ミニテーブル破棄時に呼ぶ）
+     */
+    unregister(): void {
+        this.store.unregisterHistory(this.tableName, this);
+    }
+
+    /**
+     * タブボタンのDirty状態を更新する（ストアからの一括通知用・IHistory実装）
+     */
+    setTabButtonDirty(isDirty: boolean): void {
+        this.tabButton.setDirty(isDirty);
     }
 
     /**
      * 変更通知を発火
+     *
+     * 1. ストアの同テーブル全HistoryのtabButtonを更新（自分を含む、左ペイン・右ペイン全体）
+     * 2. EditorTableが接続されたRelationsPanelのDirtyマークを更新
      */
     private notifyChange(): void {
-        this.tabButton.setDirty(this.isDirty());
+        // ストアから同テーブルの全Historyを取得し、各タブボタンを一括更新する
+        // 自分自身も histories に含まれているため個別呼び出しは不要
+        // コンストラクタで必ず registerHistory() しているため false にはなり得ない
+        const tableIsDirty = this.store.isTableDirty(this.tableName);
+        const histories = this.store.getHistories(this.tableName);
+        if (histories === false) {
+            throw new Error(`[History.notifyChange] テーブル "${this.tableName}" がストアに登録されていません。コンストラクタの registerHistory() が呼ばれていない可能性があります。`);
+        }
+        for (const history of histories) {
+            history.setTabButtonDirty(tableIsDirty);
+        }
+
+        // 接続中のRelationsPanelにDirtyマーク更新を通知する
+        if (this.editorTable.relationsPanel !== false) {
+            this.editorTable.relationsPanel.updateDirtyMark(this.tableName, tableIsDirty);
+        }
     }
 
     /**
@@ -288,6 +327,15 @@ export class History {
     markSaved(): void {
         this.savedIndex = this.currentIndex;
         this.notifyChange();
+    }
+
+    /**
+     * savedIndexを更新するが通知は発火しない（IHistory実装）
+     * markAllSavedの二相処理フェーズ1で使用する。
+     * 全History更新後にsetTabButtonDirty()で一括通知するため、中間状態の誤通知を防ぐ。
+     */
+    markSavedSilent(): void {
+        this.savedIndex = this.currentIndex;
     }
 
     /**

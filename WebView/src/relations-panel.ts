@@ -7,6 +7,7 @@ import {readFileAsync} from "./api";
 import {Tab} from "./tab";
 import {FillController} from "./fill-controller";
 import {AreaResizer} from "./area-resizer";
+import {History} from "./history";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -69,6 +70,10 @@ export class RelationsPanel {
     private miniFillControllers: FillController[];
     /** 現在表示中のミニEditorTableに対応するAreaResizerの一覧（破棄時にdeactivateする） */
     private miniAreaResizers: AreaResizer[];
+    /** 現在表示中のミニEditorTableに対応するHistoryの一覧（破棄時にunregisterする） */
+    private miniHistories: History[];
+    /** 現在表示中のミニEditorTableのテーブル名一覧（破棄時にstoreのunregisterTableを呼ぶ） */
+    private miniTableNames: string[];
 
     constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
         this.referenceDataCache = referenceDataCache;
@@ -81,6 +86,8 @@ export class RelationsPanel {
         this.miniEditorTables = [];
         this.miniFillControllers = [];
         this.miniAreaResizers = [];
+        this.miniHistories = [];
+        this.miniTableNames = [];
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -423,6 +430,16 @@ export class RelationsPanel {
             areaResizer.deactivate();
         }
         this.miniAreaResizers = [];
+        // ミニテーブルの Dirty レジストリ登録解除（Store から History を除去する）
+        for (const history of this.miniHistories) {
+            history.unregister();
+        }
+        this.miniHistories = [];
+        // ミニテーブルのストア参照カウントを減らす（registerTableAsync と対称的な解除）
+        for (const tableName of this.miniTableNames) {
+            this.store.unregisterTable(tableName);
+        }
+        this.miniTableNames = [];
         // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.getHandler().activate();
@@ -474,7 +491,15 @@ export class RelationsPanel {
             const rowCountEl = document.createElement('span');
             rowCountEl.classList.add('relations-table-row-count');
             rowCountEl.textContent = `${entry.rows.length} rows`;
+            // Dirtyマーク要素（初期はストアのDirty状態に合わせる）
+            const dirtyMark = document.createElement('span');
+            dirtyMark.classList.add('relations-table-dirty');
+            dirtyMark.textContent = '●';
+            if (this.store.isTableDirty(entry.tableKey)) {
+                dirtyMark.classList.add('relations-table-dirty-visible');
+            }
             tableHeader.appendChild(tableTitle);
+            tableHeader.appendChild(dirtyMark);
             tableHeader.appendChild(tagEl);
             // 1:Nエントリの場合はFK条件コンテキスト（例: enemy_id=3）を表示する
             if (entry.relationType === '1:N' && entry.fkColumnName !== '') {
@@ -581,10 +606,16 @@ export class RelationsPanel {
         // renderAsync() は connectEditorTable() 経由でしか呼ばれないため tab は必ず設定済み。
         if (this.tab === false) throw new Error('[RelationsPanel] buildMiniEditorTableAsync: tab が未接続です');
 
+        // N:1参照テーブルはタブで開かれていない場合ストアに未登録のため、ここで登録する。
+        // タブ開放済みの場合は参照カウントのみインクリメントされ、データは保持される。
+        // destroyMiniEditorTables() で対称的に unregisterTable() を呼んで参照カウントを戻す。
+        await this.store.registerTableAsync(entry.tableKey);
+        this.miniTableNames.push(entry.tableKey);
+
         // scrollContainer: スクロール担当（overflow:auto）
         // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー、座標基準）
         // wrapper: ドロップダウンの配置先（overflow:visible、クリッピング回避）
-        const {editorTable, fillController, areaResizer} = this.tab.createMiniEditorTable(
+        const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
             scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, filteredHeader, filteredRows
         );
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
@@ -601,6 +632,8 @@ export class RelationsPanel {
         this.miniEditorTables.push(editorTable);
         this.miniFillControllers.push(fillController);
         this.miniAreaResizers.push(areaResizer);
+        // HistoryをminiHistoriesに追加して破棄時にunregister()できるようにする
+        this.miniHistories.push(history);
     }
 
     /**
@@ -612,6 +645,27 @@ export class RelationsPanel {
     notifyMiniTableCellChanged(): void {
         if (this.currentEditorTable === false) return;
         this.currentEditorTable.updateReferenceHints();
+    }
+
+    /**
+     * 指定テーブル名に対応するDirtyマーク要素を更新する
+     * History.notifyChange() からストア経由で呼ばれる。
+     * panelElement内の全 .relations-table-section を走査して、
+     * .relations-table-title が tableName に一致するセクションのDirtyマークを更新する。
+     */
+    updateDirtyMark(tableName: string, isDirty: boolean): void {
+        const sections = Array.from(this.panelElement.querySelectorAll('.relations-table-section'));
+        for (const section of sections) {
+            const titleEl = section.querySelector('.relations-table-title');
+            if (!titleEl || titleEl.textContent !== tableName) continue;
+            const dirtyMarkEl = section.querySelector('.relations-table-dirty');
+            if (!dirtyMarkEl) continue;
+            if (isDirty) {
+                dirtyMarkEl.classList.add('relations-table-dirty-visible');
+            } else {
+                dirtyMarkEl.classList.remove('relations-table-dirty-visible');
+            }
+        }
     }
 
     /**

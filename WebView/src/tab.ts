@@ -362,6 +362,9 @@ export class Tab {
             state.fillController.deactivate();
             state.editorTableHandler.deactivate();
 
+            // HistoryをストアのDirtyレジストリから登録解除する
+            state.history.unregister();
+
             // DOMを削除
             state.wrapperElement.remove();
 
@@ -375,10 +378,25 @@ export class Tab {
             this.store.unregisterTable(name);
 
             // 未保存のタブを閉じた場合、アクティブタブの参照ヒントをCSVから再読み込みする
-            if (wasDirty && this.activeTabName && this.activeTabName !== name) {
-                const activeState = this.tabStates.get(this.activeTabName);
-                if (activeState) {
-                    this.reference.refreshReferenceHints(this.activeTabName, activeState);
+            if (wasDirty) {
+                if (this.store.hasTable(name)) {
+                    // ミニEditorTableのrefCountによりストアにデータが残っている場合：
+                    // CSV原本に巻き戻してからキャッシュを除去し、参照ヒントを再構築する
+                    this.store.reloadTableDataAsync(name).then(() => {
+                        this.referenceDataCache.evictEntry(name);
+                        if (this.activeTabName && this.activeTabName !== name) {
+                            const activeState = this.tabStates.get(this.activeTabName);
+                            if (activeState) {
+                                this.reference.refreshReferenceHints(this.activeTabName, activeState);
+                            }
+                        }
+                    });
+                } else if (this.activeTabName && this.activeTabName !== name) {
+                    // ストアからデータが削除済みの場合はキャッシュ除去のみ行い、参照ヒントを再構築する
+                    const activeState = this.tabStates.get(this.activeTabName);
+                    if (activeState) {
+                        this.reference.refreshReferenceHints(this.activeTabName, activeState);
+                    }
                 }
             }
         }
@@ -574,8 +592,8 @@ export class Tab {
         // Selection を作成（editorTable への参照をコンストラクタで渡す）
         const selection = new Selection(editorTable, wrapperElement, scrollController);
 
-        // History を作成（EditorTable が必要）
-        const history = new History(editorTable, tabButton, 1000);
+        // History を作成（EditorTable・ストア・テーブル名が必要）
+        const history = new History(editorTable, tabButton, this.store, name, 1000);
 
         // EditorTableHandler を作成（element を所有し、全イベントを管理）
         const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
@@ -650,7 +668,7 @@ export class Tab {
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
         csvRows: string[][]
-    ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer} {
+    ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer; history: History} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
         csv.header = csvHeader;
@@ -671,8 +689,9 @@ export class Tab {
         const selection = new Selection(editorTable, wrapperElement, scrollController);
 
         // ダミーTabButton: dirty表示の通知先として使用（DOMには追加しない）
+        // ストア経由の通知で更新されるためDOMへの追加は不要。コンストラクタの型制約上ダミーとして渡す。
         const dummyTabButton = new TabButton(this.editor, this, '[mini]');
-        const history = new History(editorTable, dummyTabButton, 100);
+        const history = new History(editorTable, dummyTabButton, this.store, tableKey, 100);
 
         const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
         const textField = editorTableHandler.createGridTextField(wrapperElement, editorTable, selection);
@@ -726,7 +745,7 @@ export class Tab {
         // 参照先テーブルを事前読み込みし、完了後に参照ヒントを一括適用する
         this.reference.preloadReferenceTables(tableData, editorTable);
 
-        return {editorTable, fillController, areaResizer};
+        return {editorTable, fillController, areaResizer, history};
     }
 
     /**
