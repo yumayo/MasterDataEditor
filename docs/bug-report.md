@@ -799,3 +799,16 @@ activateTabState()でresetNotification()のみ呼び通知未発火
 - フラグリセット系メソッド（`resetNotification`のようなもの）はそれ単独では副作用（通知発火）が起きないことをメソッド名やJSDocで明示し、呼び出し元が不要になったら速やかにデッドコードとして削除する。
 
 ---
+
+## 54. [acb3ad2] — ミニEditorTableで列幅ドラッグリサイズが機能しない問題を修正
+
+### 不具合原因名
+Tab.createMiniEditorTable() で AreaResizer.activate() が呼ばれていなかった
+
+### なぜそうなったのか
+`createMiniEditorTable()` でFillControllerには `activate()` を呼んで戻り値に含め、`destroyMiniEditorTables()` で `deactivate()` する完全なライフサイクル管理が実装されていたが、同じくwindowレベルリスナーを使う AreaResizer には同等の管理が適用されていなかった。AreaResizer は EditorTable のコンストラクタで生成されるのではなく外部から注入される設計のため、activate 責務が Tab 側にあることが見落とされた。左ペインでは Tab.activateTabState() で areaResizer.activate() を呼んでいたが、ミニテーブル生成パスにはその呼び出しがなかった。
+
+### どうしたら今後は再発しないか
+activate()/deactivate() パターンを持つコントローラー（FillController、AreaResizer等）を同一スコープで生成する場合、漏れなく activate() を呼ぶ。ライフサイクル管理が必要なオブジェクトを戻り値に追加した際は、呼び出し側でのdeactivateリスト管理も対称的に追加されているか確認する。チェックリストとして「window.addEventListener を使うクラスの activate/deactivate が全ての生成パスで呼ばれているか」を確認する。
+
+---

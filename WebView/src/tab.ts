@@ -638,8 +638,9 @@ export class Tab {
      *      クリッピングされるため、overflow:visible かつ position:relative の外側要素に配置する
      *   → relations-panel.ts では panelElement（.relations-panel）を渡す
      *
-     * 戻り値: editorTable と fillController のペア。
-     * fillController は RelationsPanel が保持して破棄時に deactivate する。
+     * 戻り値: editorTable・fillController・areaResizer の3点セット。
+     * fillController と areaResizer は RelationsPanel が保持し、破棄時に deactivate する。
+     * areaResizer は activate() 済みで返るため、呼び出し側は deactivate() のみ管理すれば良い。
      */
     createMiniEditorTable(
         scrollContainer: HTMLElement,
@@ -649,7 +650,7 @@ export class Tab {
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
         csvRows: string[][]
-    ): {editorTable: EditorTable; fillController: FillController} {
+    ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
         csv.header = csvHeader;
@@ -718,10 +719,14 @@ export class Tab {
         fillController.initialize();
         fillController.activate();
 
+        // AreaResizerを有効化（列幅ドラッグリサイズ）
+        // deactivate は RelationsPanel.destroyMiniEditorTables() で一括して行う
+        areaResizer.activate();
+
         // 参照先テーブルを事前読み込みし、完了後に参照ヒントを一括適用する
         this.reference.preloadReferenceTables(tableData, editorTable);
 
-        return {editorTable, fillController};
+        return {editorTable, fillController, areaResizer};
     }
 
     /**

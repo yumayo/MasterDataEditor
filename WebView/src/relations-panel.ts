@@ -6,6 +6,7 @@ import {config} from "./config";
 import {readFileAsync} from "./api";
 import {Tab} from "./tab";
 import {FillController} from "./fill-controller";
+import {AreaResizer} from "./area-resizer";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -66,6 +67,8 @@ export class RelationsPanel {
     private miniEditorTables: EditorTable[];
     /** 現在表示中のミニEditorTableに対応するFillControllerの一覧（破棄時にdeactivateする） */
     private miniFillControllers: FillController[];
+    /** 現在表示中のミニEditorTableに対応するAreaResizerの一覧（破棄時にdeactivateする） */
+    private miniAreaResizers: AreaResizer[];
 
     constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
         this.referenceDataCache = referenceDataCache;
@@ -77,6 +80,7 @@ export class RelationsPanel {
         this.tab = false;
         this.miniEditorTables = [];
         this.miniFillControllers = [];
+        this.miniAreaResizers = [];
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -415,6 +419,10 @@ export class RelationsPanel {
             fillController.deactivate();
         }
         this.miniFillControllers = [];
+        for (const areaResizer of this.miniAreaResizers) {
+            areaResizer.deactivate();
+        }
+        this.miniAreaResizers = [];
         // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.getHandler().activate();
@@ -576,7 +584,7 @@ export class RelationsPanel {
         // scrollContainer: スクロール担当（overflow:auto）
         // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー、座標基準）
         // wrapper: ドロップダウンの配置先（overflow:visible、クリッピング回避）
-        const {editorTable, fillController} = this.tab.createMiniEditorTable(
+        const {editorTable, fillController, areaResizer} = this.tab.createMiniEditorTable(
             scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, filteredHeader, filteredRows
         );
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
@@ -592,6 +600,7 @@ export class RelationsPanel {
         editorTable.relationsPanel = this;
         this.miniEditorTables.push(editorTable);
         this.miniFillControllers.push(fillController);
+        this.miniAreaResizers.push(areaResizer);
     }
 
     /**
