@@ -315,9 +315,23 @@ export class RelationsPanel {
         if (pkValue !== '') {
             const reverseEntries = editorTable.getReverseReferenceEntries(pkValue);
             for (const reverseEntry of reverseEntries) {
-                const header = this.store.getHeader(reverseEntry.childTableName);
+                // タブ未オープンのテーブルはストアに存在しないため、キャッシュ経由でデータを取得する
+                const storeHeader = this.store.getHeader(reverseEntry.childTableName);
                 const storeRows = this.store.getRows(reverseEntry.childTableName);
-                if (header === false || storeRows === false) continue;
+                let header: string[];
+                let allRows: string[][];
+                if (storeHeader !== false && storeRows !== false) {
+                    header = storeHeader;
+                    allRows = storeRows;
+                } else {
+                    const syncData = this.referenceDataCache.getFullDataSync(reverseEntry.childTableName);
+                    const fullData = syncData !== false
+                        ? syncData
+                        : await this.referenceDataCache.getFullDataAsync(reverseEntry.childTableName).catch(() => false as const);
+                    if (fullData === false) continue;
+                    header = fullData.header;
+                    allRows = Array.from(fullData.rows.values());
+                }
 
                 // reverseEntry.rows は ReverseReferenceRow[]（pkValue一覧）なので
                 // PKで行データをフィルタリングする
@@ -325,7 +339,7 @@ export class RelationsPanel {
                 let filteredRows: string[][];
                 if (pkColIdx !== -1) {
                     const pkSet = new Set(reverseEntry.rows.map(r => r.pkValue));
-                    filteredRows = storeRows.filter(r => pkSet.has(r[pkColIdx]));
+                    filteredRows = allRows.filter(r => pkSet.has(r[pkColIdx]));
                 } else {
                     filteredRows = [];
                 }

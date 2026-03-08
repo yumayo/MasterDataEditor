@@ -463,3 +463,171 @@ test.describe('バグ3: N:1リレーションのミニテーブルで参照対�
         },
     );
 });
+
+// =============================================================================
+// バグ4: 1:N子テーブルのタブが未開放だと右ペインに1:Nセクションが表示されない問題
+//
+// 根本原因:
+//   resolveEntriesForEditorRowAsync() の1:N解決部（318-320行目）で
+//   this.store.getHeader(childTableName) / this.store.getRows(childTableName) を
+//   呼んでいるが、InMemoryTableStore はタブで開かれたテーブルのみ registerTable()
+//   されるストアのため、タブが開かれていない子テーブルは false を返し continue される。
+//
+// 期待動作:
+//   N:1と同様に getFullDataAsync() を使って子テーブルを非同期ロードし、
+//   子テーブルのタブが開かれていなくても1:Nセクションを表示できるようにする。
+//   ただし1:N側では各行の pkValue フィルタリングが必要なため、
+//   getFullDataAsync() で取得した rows Map から pkSet でフィルタリングする。
+// =============================================================================
+
+/**
+ * バグ4テスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   enemy: id, ja（親テーブル。id=PK列）
+ *   quest: id, name, enemy_id（子テーブル。enemy.id をFKとして参照）
+ *
+ * enemy テーブルのみタブを開き、quest テーブルは開かない。
+ * enemy の行を選択したとき、1:N として quest セクションが表示されることを検証する。
+ *
+ * データ:
+ *   enemy: id=1(スライム), id=2(ドラゴン)
+ *   quest: id=1(first_quest, enemy_id=1), id=2(second_quest, enemy_id=1), id=3(dragon_quest, enemy_id=2)
+ *   → enemy id=1 を選択すると quest が2件（first_quest, second_quest）表示されるはず
+ */
+function createOneToNUnloadedChildFileSystem(): MockFileSystem {
+    return {
+        "schema/enemy.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/enemy.csv": [
+            "id,ja",
+            "1,スライム",
+            "2,ドラゴン",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                // enemy.id を FK として参照する（逆参照: enemy → quest が 1:N）
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": [
+            "id,name,enemy_id",
+            "1,first_quest,1",
+            "2,second_quest,1",
+            "3,dragon_quest,2",
+        ].join("\n"),
+    };
+}
+
+test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペインに1:Nセクションが表示されること', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createOneToNUnloadedChildFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'enemy テーブルのみ開いた状態で enemy の行を選択したとき、' +
+        'quest タブが開かれていなくても右ペインに 1:N セクションとして quest が表示されること',
+        async ({ page }) => {
+            // enemy テーブルを開く（quest テーブルは開かない）
+            const mainTable = await openTableAsync(page, 'enemy');
+
+            // enemy の1行目（id=1, スライム）を選択する
+            await selectRowAsync(mainTable, 0);
+
+            // quest テーブルの1:N セクションが表示されることを直接確認する
+            // .relations-panel-content を経由しない理由:
+            //   バグ修正前は1:Nエントリが全スキップされて entries=[] になり、
+            //   renderMessage() が呼ばれて .relations-panel-content 自体が生成されない。
+            //   waitForRelationsPanelContentAsync を使うとプレースホルダー状態でタイムアウトし、
+            //   失敗の原因が分かりにくくなる。
+            //   quest セクションを直接待機することで「セクションが現れない」という失敗を明示する。
+            //
+            // バグ修正前: store.getHeader('quest') が false を返して continue され、
+            //   セクションが生成されない → このアサーションが失敗して RED になる
+            // バグ修正後: getFullDataAsync() で非同期ロードして1:Nエントリを生成するため GREEN になる
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+        },
+    );
+
+    test(
+        'enemy の1行目（id=1）を選択したとき、1:N セクションに 1:N タグが付いていること',
+        async ({ page }) => {
+            const mainTable = await openTableAsync(page, 'enemy');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+
+            // 1:N タグが表示されていることを確認する
+            await expect(questSection.locator('.relations-tag--1n')).toBeVisible();
+        },
+    );
+
+    test(
+        'enemy の1行目（id=1）を選択したとき、quest の enemy_id=1 の行が2件表示されること',
+        async ({ page }) => {
+            const mainTable = await openTableAsync(page, 'enemy');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+
+            // ミニEditorTableが表示されるまで待機する
+            const miniTable = questSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // ヘッダー行(1) + データ行(2) = 合計3行
+            // enemy_id=1 に対応する行は id=1(first_quest) と id=2(second_quest) の2件
+            const allRows = miniTable.locator('.editor-table-row');
+            await expect(allRows).toHaveCount(3);
+
+            // 行カウント表示も "2 rows" であることを確認する
+            const rowCountEl = questSection.locator('.relations-table-row-count');
+            await expect(rowCountEl).toHaveText('2 rows');
+        },
+    );
+
+    test(
+        'enemy の2行目（id=2）を選択したとき、quest の enemy_id=2 の行が1件表示されること',
+        async ({ page }) => {
+            const mainTable = await openTableAsync(page, 'enemy');
+            await selectRowAsync(mainTable, 1);
+            await waitForRelationsPanelContentAsync(page);
+
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+
+            const miniTable = questSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // ヘッダー行(1) + データ行(1) = 合計2行
+            // enemy_id=2 に対応する行は id=3(dragon_quest) の1件
+            const allRows = miniTable.locator('.editor-table-row');
+            await expect(allRows).toHaveCount(2);
+
+            const rowCountEl = questSection.locator('.relations-table-row-count');
+            await expect(rowCountEl).toHaveText('1 rows');
+        },
+    );
+});
