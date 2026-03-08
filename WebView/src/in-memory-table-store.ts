@@ -56,7 +56,14 @@ export class InMemoryTableStore {
     /** テーブル登録（ファイルから読み込み、キャッシュ済みなら参照カウントのみ増やす） */
     async registerTableAsync(tableName: string): Promise<Csv> {
         if (this.refCounts.has(tableName)) {
+            // 通常パス: 参照カウントが残っている場合はカウントのみ増加してデータを保持する
             this.refCounts.set(tableName, this.refCounts.get(tableName)! + 1);
+            return this.getCsv(tableName) as Csv;
+        }
+        if (this.headers.has(tableName)) {
+            // Dirty保持パス: 参照カウントは0だがDirtyデータが残っている場合は再利用する
+            // unregisterTable でDirty時に refCounts のみ削除してデータを保持したケースに対応する
+            this.refCounts.set(tableName, 1);
             return this.getCsv(tableName) as Csv;
         }
         const csvText = await readFileAsync('data/' + tableName + '.csv');
@@ -72,7 +79,7 @@ export class InMemoryTableStore {
      * CSV原本に巻き戻すために使用する
      */
     async reloadTableDataAsync(tableName: string): Promise<void> {
-        if (!this.refCounts.has(tableName)) return;
+        if (!this.refCounts.has(tableName)) throw new Error('[InMemoryTableStore] reloadTableDataAsync: テーブル "' + tableName + '" は登録されていません');
         const csvText = await readFileAsync('data/' + tableName + '.csv');
         const csv = new Csv();
         csv.load(csvText);
@@ -80,15 +87,21 @@ export class InMemoryTableStore {
         this.rows.set(tableName, csv.body);
     }
 
-    /** 参照カウント減少、0になったら削除 */
+    /** 参照カウント減少、0になったら削除（ただしDirtyデータは保持する） */
     unregisterTable(tableName: string): void {
-        if (!this.refCounts.has(tableName)) return;
+        if (!this.refCounts.has(tableName)) throw new Error('[InMemoryTableStore] unregisterTable: テーブル "' + tableName + '" は登録されていません');
         const next = this.refCounts.get(tableName)! - 1;
         if (next <= 0) {
-            // 参照カウントが0になったら全データ削除
-            this.headers.delete(tableName);
-            this.rows.delete(tableName);
-            this.refCounts.delete(tableName);
+            // Dirty状態のテーブルはデータを保持して refCounts のみ削除する。
+            // registerTableAsync が呼ばれたときに headers.has() で検知して再利用する。
+            // Clean状態であれば従来通り全データを削除する。
+            if (this.isTableDirty(tableName)) {
+                this.refCounts.delete(tableName);
+            } else {
+                this.headers.delete(tableName);
+                this.rows.delete(tableName);
+                this.refCounts.delete(tableName);
+            }
             return;
         }
         this.refCounts.set(tableName, next);
@@ -232,7 +245,7 @@ export class InMemoryTableStore {
      */
     unregisterHistory(tableName: string, history: IHistory): void {
         const set = this.historyRegistry.get(tableName);
-        if (!set) return;
+        if (!set) throw new Error('[InMemoryTableStore] unregisterHistory: テーブル "' + tableName + '" のHistoryレジストリが存在しません');
         set.delete(history);
         if (set.size === 0) this.historyRegistry.delete(tableName);
     }
@@ -260,7 +273,7 @@ export class InMemoryTableStore {
      */
     markAllSaved(tableName: string): void {
         const set = this.historyRegistry.get(tableName);
-        if (!set) return;
+        if (!set) throw new Error('[InMemoryTableStore.markAllSaved] テーブル "' + tableName + '" のHistoryレジストリが存在しません');
         // フェーズ1: 全HistoryのsavedIndexを更新（通知なし）
         for (const history of set) {
             history.markSavedSilent();

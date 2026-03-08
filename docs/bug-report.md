@@ -830,3 +830,16 @@ activate()/deactivate() パターンを持つコントローラー（FillControl
 - 未保存タブ閉じ時にストアにデータが残っている場合（ミニテーブルのrefCount分）、reloadTableDataAsync()でCSV原本に巻き戻す。
 
 ---
+
+## 56. [487e474] — ミニEditorTable編集後にタブを開くとDirtyデータが消失する問題を修正
+
+### 不具合原因名
+参照カウント0によるDirtyデータの物理削除
+
+### なぜそうなったのか
+`InMemoryTableStore.unregisterTable` は参照カウントが0になった時点で無条件にデータ（headers/rows）を物理削除する設計だった。ミニEditorTableがタブで開かれていないテーブル（N:1参照先など）を編集した場合、ミニテーブルが唯一の参照元（refCount=1）となる。タブ切り替え時に `destroyMiniEditorTables` → `unregisterTable` が呼ばれるとrefCountが0になり、Dirty状態（未保存の編集）のデータまで削除されていた。さらに `destroyMiniEditorTables` では `history.unregister()` が `unregisterTable()` より先に呼ばれていたため、unregisterTable時点ではHistoryレジストリが空になりDirty判定自体も不可能だった。その後エクスプローラーからテーブルをタブとして開くと `registerTableAsync` がCSVから再読み込みし、編集済みデータが失われた。
+
+### どうしたら今後は再発しないか
+参照カウント方式のストアでデータを物理削除する際は、Dirty状態（未保存の変更がある）を必ずチェックし、未保存データを保護する仕組みを入れる。また、`unregisterTable` と `history.unregister()` の呼び出し順序は文脈によって異なるべきであることを認識する：ミニテーブル破棄時は「Dirty検出→データ保持」のためunregisterTableを先に、タブ閉じ時は「自分のHistoryを除去→残りのHistoryでDirty判定」のためhistory.unregisterを先に呼ぶ。この順序制約はコメントで明記し、テストケースとして「Dirty状態での参照カウント0」シナリオを含める。
+
+---

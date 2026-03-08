@@ -426,7 +426,7 @@ export class EditorTableHandler {
                     if (this.table.relationsPanel !== false) {
                         this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
                     }
-                });
+                }).catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
                 return;
             }
             Promise.all([
@@ -440,7 +440,7 @@ export class EditorTableHandler {
                 if (this.table.relationsPanel !== false) {
                     this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
                 }
-            });
+            }).catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableData failed: ' + String(e)); });
             return;
         }
 

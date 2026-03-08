@@ -362,8 +362,16 @@ export class Tab {
             state.fillController.deactivate();
             state.editorTableHandler.deactivate();
 
-            // HistoryをストアのDirtyレジストリから登録解除する
+            // HistoryをストアのDirtyレジストリから登録解除する。
+            // destroyMiniEditorTables（unregisterTable → history.unregister()）とは逆順。
+            // タブ閉じ時は自分のHistoryを先に除去することで、isTableDirty() が
+            // 残りのHistory（ミニテーブル等）のみを評価するようにする。
+            // 「タブのみDirty、ミニテーブルなし」→ isTableDirty=false → 全データ削除（正しい）
+            // 「タブもミニテーブルもDirty」→ isTableDirty=true → データ保持 → reloadTableDataAsync（正しい）
             state.history.unregister();
+
+            // 中央ストアからテーブルデータを解除する
+            this.store.unregisterTable(name);
 
             // DOMを削除
             state.wrapperElement.remove();
@@ -373,9 +381,6 @@ export class Tab {
 
             // 開いているテーブルのマップから削除
             this.openEditorTables.delete(name);
-
-            // 中央ストアからテーブルデータを解除
-            this.store.unregisterTable(name);
 
             // 未保存のタブを閉じた場合、アクティブタブの参照ヒントをCSVから再読み込みする
             if (wasDirty) {
@@ -390,7 +395,7 @@ export class Tab {
                                 this.reference.refreshReferenceHints(this.activeTabName, activeState);
                             }
                         }
-                    });
+                    }).catch((e: unknown) => { throw new Error('[Tab] reloadTableDataAsync failed: ' + String(e)); });
                 } else if (this.activeTabName && this.activeTabName !== name) {
                     // ストアからデータが削除済みの場合はキャッシュ除去のみ行い、参照ヒントを再構築する
                     const activeState = this.tabStates.get(this.activeTabName);

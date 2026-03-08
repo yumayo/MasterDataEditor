@@ -430,16 +430,19 @@ export class RelationsPanel {
             areaResizer.deactivate();
         }
         this.miniAreaResizers = [];
+        // ミニテーブルのストア参照カウントを減らす（registerTableAsync と対称的な解除）
+        // unregisterTable は isTableDirty() で Dirty 判定するため、
+        // History が登録されている状態で呼ぶ必要がある。
+        // そのため history.unregister() より先に unregisterTable を呼ぶ。
+        for (const tableName of this.miniTableNames) {
+            this.store.unregisterTable(tableName);
+        }
+        this.miniTableNames = [];
         // ミニテーブルの Dirty レジストリ登録解除（Store から History を除去する）
         for (const history of this.miniHistories) {
             history.unregister();
         }
         this.miniHistories = [];
-        // ミニテーブルのストア参照カウントを減らす（registerTableAsync と対称的な解除）
-        for (const tableName of this.miniTableNames) {
-            this.store.unregisterTable(tableName);
-        }
-        this.miniTableNames = [];
         // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.getHandler().activate();
