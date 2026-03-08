@@ -171,15 +171,15 @@ export class RelationsPanel {
         // 対象のhandlerをアクティブ化してフォーカスを取得する
         targetEditorTable.getHandler().activate();
 
-        // フォーカスインジケータ: 全 .relations-table-section から --active を除去し、
-        // 対象がミニEditorTableならそのセクションに --active を付与する
-        const sections = Array.from(this.panelElement.querySelectorAll('.relations-table-section'));
-        for (const section of sections) {
-            section.classList.remove('relations-table-section--active');
+        // フォーカスインジケータ: 全 .relations-table-header から --active を除去し、
+        // 対象がミニEditorTableならそのヘッダーに --active を付与する
+        const headers = Array.from(this.panelElement.querySelectorAll('.relations-table-header'));
+        for (const header of headers) {
+            header.classList.remove('relations-table-header--active');
         }
         const targetIdx = this.miniEditorTables.indexOf(targetEditorTable);
-        if (targetIdx !== -1 && targetIdx < sections.length) {
-            sections[targetIdx].classList.add('relations-table-section--active');
+        if (targetIdx !== -1 && targetIdx < headers.length) {
+            headers[targetIdx].classList.add('relations-table-header--active');
         }
     }
 
