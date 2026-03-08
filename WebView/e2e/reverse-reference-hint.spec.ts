@@ -14,7 +14,8 @@ async function openTableAsync(
     await explorer
         .getByText(tableName, { exact: true })
         .click();
-    const table = page.locator('.editor-table');
+    // RelationsPanelにもミニEditorTableが表示されるため、左ペインのEditorTableに限定する
+    const table = page.locator('.editor-left-pane .editor-table');
     await expect(table).toBeVisible();
     return table;
 }

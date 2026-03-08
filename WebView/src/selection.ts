@@ -384,16 +384,9 @@ export class Selection {
     }
 
     /**
-     * RelationsPanelの通知履歴をリセットし、次回のupdateRenderer呼び出しで必ず通知が発火するようにする
-     * タブ切り替え時に呼ぶことで、同じ行にフォーカスしていてもパネルが更新される
-     */
-    resetNotification(): void {
-        this.lastNotifiedRow = -1;
-    }
-
-    /**
-     * lastNotifiedRowをリセットしてからfocus行のRelationsPanel通知を強制発火する
-     * セル値変更後に同一行のままパネルを再描画するためEditorTableから呼ばれる
+     * lastNotifiedRowをリセットしてからfocus行のRelationsPanel通知を強制発火する。
+     * - タブ切り替え時・新規オープン時（tab.ts enableTabButton / createTabState から呼ばれる）
+     * - セル値変更後に同一行のままパネルを再描画するとき（editor-table.ts から呼ばれる）
      */
     forceNotifyRelationsPanel(): void {
         this.lastNotifiedRow = -1;

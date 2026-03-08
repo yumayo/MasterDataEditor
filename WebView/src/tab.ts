@@ -434,6 +434,8 @@ export class Tab {
             existingState.editorTable.reloadCellsFromStore();
             // 他タブでインメモリデータが編集された可能性があるため、参照ヒントを再更新する
             this.reference.refreshReferenceHints(name, existingState);
+            // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
+            existingState.selection.forceNotifyRelationsPanel();
             return;
         }
 
@@ -464,8 +466,6 @@ export class Tab {
         // グローバルリレーションパネルにアクティブなEditorTableを接続する
         // connectEditorTable内でEditorTable.relationsPanel フィールドも設定される（相互参照）
         this.relationsPanel.connectEditorTable(state.editorTable);
-        // タブ切り替え後に同じ行にフォーカスしていてもパネルが更新されるようにリセットする
-        state.selection.resetNotification();
         // スクロール位置をイベントリスナー登録前に復元する（左ペインのスクロール）
         this.editor.restoreScrollPosition(state);
         state.editorTable.activate();
@@ -547,6 +547,8 @@ export class Tab {
             // アクティブ化
             this.activateTabState(state);
             this.activeTabName = name;
+            // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
+            state.selection.forceNotifyRelationsPanel();
 
             this.consumePendingNavigation(state);
         });

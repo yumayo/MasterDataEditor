@@ -53,7 +53,8 @@ function createRelationsPanelTestFileSystem(): MockFileSystem {
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const explorer = page.locator('#explorer');
     await explorer.getByText(tableName, { exact: true }).click();
-    const table = page.locator('.editor-table');
+    // RelationsPanelにもミニEditorTableが表示されるため、左ペインのEditorTableに限定する
+    const table = page.locator('.editor-left-pane .editor-table');
     await expect(table).toBeVisible();
     return table;
 }
@@ -85,12 +86,15 @@ test.describe('RelationsPanel', () => {
     );
 
     test(
-        'テーブルを開いた初期状態で行未選択のプレースホルダーが表示されること',
+        'テーブルを開いた初期状態でRelationsPanelにコンテンツが表示されること',
         async ({ page }) => {
+            // activateTabState() の修正により、テーブルを開いた直後から
+            // 最初の行が選択された状態でRelationsPanelにコンテンツが表示される
             await openTableAsync(page, 'quest');
             const relationsPanel = page.locator('.relations-panel');
             await expect(relationsPanel).toBeVisible();
-            await expect(relationsPanel.locator('.relations-panel-placeholder')).toBeVisible();
+            const content = relationsPanel.locator('.relations-panel-content');
+            await expect(content).toBeVisible();
         },
     );
 

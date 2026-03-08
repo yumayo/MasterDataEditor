@@ -784,3 +784,18 @@ N:1エントリ生成時に hiddenColumns（列の非表示指定）が空配列
 N:1と1:Nのように対称的な処理が存在する場合、一方に実装した機能・改善は他方にも同等の対応が必要かを必ず確認する。`InMemoryTableStore` からデータを取得する箇所では、そのテーブルがストアに登録されていない（＝タブ未オープン）ケースを常に考慮し、`referenceDataCache` 等の代替データソースを用意する。
 
 ---
+
+## 53. [25fda4e] — テーブルを開いた直後・タブ切替時にRelationsPanelが表示されない
+
+### 不具合原因名
+activateTabState()でresetNotification()のみ呼び通知未発火
+
+### なぜそうなったのか
+`tab.ts` の `activateTabState()` で `state.selection.resetNotification()` を呼んでいたが、このメソッドは `lastNotifiedRow` を `-1` にリセットするだけで `notifyRowSelectionChanged()` を呼び出さない。タブ切替後・新規オープン後に `updateRenderer()` が呼ばれる機会がなければ、RelationsPanel への通知は一度も発火されないまま描画が放置される。さらに、新規タブ作成時は初期選択（`setRange` + `move`）が `activateTabState()` より前に実行されるため、`relationsPanel` が未接続の状態で `notifyRowSelectionChanged()` が空振りする順序問題が隠れていた。
+
+### どうしたら今後は再発しないか
+- `activateTabState()` のように「表示状態を初期化してから即描画が必要な箇所」では、`resetNotification()` ではなく `forceNotifyRelationsPanel()` を使うことを徹底する。
+- `forceNotifyRelationsPanel()` の呼び出しタイミングは、セルDOMの同期（`reloadCellsFromStore`）や参照ヒント更新（`refreshReferenceHints`）が完了した後に行う。データが確定する前に通知を発火すると古いデータで描画される二次的バグを招く。
+- フラグリセット系メソッド（`resetNotification`のようなもの）はそれ単独では副作用（通知発火）が起きないことをメソッド名やJSDocで明示し、呼び出し元が不要になったら速やかにデッドコードとして削除する。
+
+---
