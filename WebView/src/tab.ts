@@ -632,7 +632,8 @@ export class Tab {
      */
     createMiniEditorTable(
         scrollContainer: HTMLElement,
-        positioningContainer: HTMLElement,
+        wrapperElement: HTMLElement,
+        dropdownContainer: HTMLElement,
         tableKey: string,
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
@@ -647,24 +648,25 @@ export class Tab {
         // 相互参照を解決するため一時的な空オブジェクトを作成（Tab.createEditorTable と同パターン）
         const editorTable = {} as EditorTable;
 
-        // スクロールコントローラはスクロール領域（scrollContainer）をバインド対象にする
+        // 左ペインと同じ構造: scrollContainer（overflow:auto）がスクロールを担当し、
+        // wrapperElement（通常フロー子要素）にEditorTable・Selection・テキストフィールド・ドロップダウンを全配置する。
+        // wrapperElement.getBoundingClientRect() がスクロール量を含むため座標計算が正しくなり、
+        // テキストフィールドはスクロールに追従しつつクリッピングされない。
         const scrollController = new ScrollViewportController(scrollContainer, () => {
             editorTable.onScroll();
         });
 
-        // Selection の editorElement は scrollContainer（セルの位置計算に使われる）
-        const selection = new Selection(editorTable, scrollContainer, scrollController);
+        const selection = new Selection(editorTable, wrapperElement, scrollController);
 
         // ダミーTabButton: dirty表示の通知先として使用（DOMには追加しない）
         const dummyTabButton = new TabButton(this.editor, this, '[mini]');
         const history = new History(editorTable, dummyTabButton, 100);
 
         const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
-        // grid-textfield の絶対配置基準は positioningContainer（overflow:visible）
-        const textField = editorTableHandler.createGridTextField(positioningContainer, editorTable, selection);
+        const textField = editorTableHandler.createGridTextField(wrapperElement, editorTable, selection);
         editorTableHandler.setTextField(textField);
 
-        const areaResizer = new AreaResizer(scrollContainer, history, selection);
+        const areaResizer = new AreaResizer(wrapperElement, history, selection);
 
         // ミニテーブルも 'editor-table' クラスを付与してテストセレクタに対応する
         // search-panel.spec.ts では '.editor-left-pane .editor-table' で左ペインを絞り込むため競合しない
@@ -679,21 +681,19 @@ export class Tab {
 
         editorTable.initializeModules();
 
-        // editor-table / selection / areaResizer はスクロール領域に配置する
-        editorTable.appendTo(scrollContainer);
-        scrollContainer.appendChild(selection.element);
-        scrollContainer.appendChild(selection.copyBorderElement);
-        scrollContainer.appendChild(selection.fillPreviewElement);
-
-        // grid-textfield は positioningContainer（overflow:visible）に配置する
-        // overflow:auto のスクロール領域に入れると position:absolute の要素がクリッピングされるため
-        editorTableHandler.appendTo(positioningContainer);
+        // 左ペインと同じ: 全要素を wrapperElement に配置する
+        editorTable.appendTo(wrapperElement);
+        wrapperElement.appendChild(selection.element);
+        wrapperElement.appendChild(selection.copyBorderElement);
+        wrapperElement.appendChild(selection.fillPreviewElement);
+        editorTableHandler.appendTo(wrapperElement);
 
         areaResizer.setEditorTable(editorTable);
         editorTable.initialize();
 
-        // ドロップダウン入力コンポーネントを生成してハンドラーに接続する
-        const dropdownInput = editorTableHandler.createDropdownInput(positioningContainer);
+        // ドロップダウンは scrollContainer の overflow:auto にクリッピングされないよう
+        // scrollContainer の外側（dropdownContainer）に配置する
+        const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer);
         editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
         // ミニEditorTableのhandlerは初期状態では非アクティブとする。

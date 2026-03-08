@@ -505,9 +505,11 @@ export class RelationsPanel {
     /**
      * EntryのスキーマをファイルからロードしてEditorTableを生成する
      *
-     * grid-textfield（position:absolute）が overflow:auto のコンテナにクリッピングされるのを防ぐため、
-     * wrapper（overflow:visible）と scrollContainer（overflow:auto）を分離して渡す。
-     * grid-textfield は panelElement（.relations-panel、position:relative）の直接の子として配置する。
+     * 左ペインと同じスクロール追従動作にするため、grid-textfield / grid-dropdown の
+     * positioningContainer は scrollContainer（overflow:auto, position:relative）にする。
+     * 左ペインでは .editor-left-pane が overflow:auto かつ position:relative で
+     * テーブルとテキストフィールドの両方を内包し、スクロールに追従する。
+     * 右ペインでも同じ構造にするため scrollContainer を positioningContainer として渡す。
      *
      * entry.hiddenColumns に含まれる列はスキーマ・ヘッダー・行データから除外して渡す。
      * これにより FK列を非表示にしてコンテキスト情報として代わりにヘッダーに表示する。
@@ -537,20 +539,27 @@ export class RelationsPanel {
             ? entry.rows.map(row => row.filter((_, i) => !hiddenIndices.includes(i)))
             : entry.rows;
 
-        // スクロール領域は wrapper の内側に作る（overflow:auto はここに閉じ込める）
+        // 左ペインと同じDOM構造:
+        //   scrollContainer（overflow:auto）→ innerWrapper（通常フロー）→ EditorTable + テキストフィールド + ドロップダウン
+        // 左ペインでは .editor-left-pane（overflow:auto）→ .tab-wrapper（通常フロー）→ 全要素
+        // innerWrapper.getBoundingClientRect() がスクロール量を反映するため座標計算が正しくなり、
+        // テキストフィールドはスクロールに追従しつつ scrollContainer の overflow にクリッピングされない
         const scrollContainer = document.createElement('div');
         scrollContainer.classList.add('relations-mini-table-scroll');
         wrapper.appendChild(scrollContainer);
+
+        const innerWrapper = document.createElement('div');
+        scrollContainer.appendChild(innerWrapper);
 
         // connectTab() は Tab コンストラクタ末尾で必ず呼ばれる。
         // renderAsync() は connectEditorTable() 経由でしか呼ばれないため tab は必ず設定済み。
         if (this.tab === false) throw new Error('[RelationsPanel] buildMiniEditorTableAsync: tab が未接続です');
 
-        // scrollContainer: editor-table / selection を配置する overflow:auto のスクロール領域
-        // panelElement: grid-textfield の position:absolute 基準（overflow:visible かつ position:relative）
-        //   → wrapper（overflow:auto）にすると grid-textfield がクリッピングされるためパネル直下に配置する
+        // scrollContainer: スクロール担当（overflow:auto）
+        // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー、座標基準）
+        // wrapper: ドロップダウンの配置先（overflow:visible、クリッピング回避）
         const {editorTable, fillController} = this.tab.createMiniEditorTable(
-            scrollContainer, this.panelElement, entry.tableKey, schemaJson, filteredHeader, filteredRows
+            scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, filteredHeader, filteredRows
         );
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
         if (entry.fkColumnName !== '' && entry.fkValue !== '') {

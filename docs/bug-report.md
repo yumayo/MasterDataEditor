@@ -712,3 +712,45 @@ grid-textfieldのz-index未指定によるスタッキングコンテキスト�
 - **EditorTable生成後の初期化チェックリスト:** (1) `initializeModules()` (2) `initialize()` (3) `preloadReferenceTables()` (4) `resolveReverseReferencesAsync()` (5) `setReferenceComponents()` — これらが全て呼ばれているか確認する。
 
 ---
+
+## 48. ドロップダウンメニューの表示位置がビューポート座標のままでずれる問題を修正
+
+### 不具合原因名
+GridDropdownInputがビューポート絶対座標をそのままposition:absoluteのleft/topに設定していた
+
+### なぜそうなったのか
+`GridDropdownInput.show()` はセルの `DOMRect`（ビューポート座標）を受け取り、`rect.left` / `rect.top + rect.height` をそのまま `this.element.style.left` / `top` に設定していた。しかし `this.element` は `position: absolute` で親要素（`parentElement`）基準で配置されるため、親要素がビューポートの左上にない場合に座標がずれる。左ペインではスクロールコンテナの位置分だけ右下にオフセットし、右ペインでは親要素が画面右半分にあるためドロップダウンが画面外に表示されていた。`GridTextField.show()` は既に同じ変換（`containerRect` を引く）を実装していたが、`GridDropdownInput` には適用されていなかった。
+
+### どうしたら今後は再発しないか
+- **`position: absolute` の要素に座標を設定する際は、必ず親要素の `getBoundingClientRect()` を引いて相対座標に変換する。** ビューポート座標をそのまま使えるのは `position: fixed` のみ。
+- **同じ座標変換ロジックが複数コンポーネントで必要な場合、一方に実装した時点で他方にも適用されているか確認する。** GridTextFieldとGridDropdownInputは同じコンテナに配置される兄弟コンポーネントであり、座標変換ロジックは同一であるべきだった。
+
+---
+
+## 49. 右ペインのテキストフィールド・ドロップダウンがスクロールに追従しない問題を修正
+
+### 不具合原因名
+右ペインのDOM構造が左ペインと異なり、テキストフィールドがスクロールコンテナの外に配置されていた
+
+### なぜそうなったのか
+左ペインでは `.editor-left-pane`（`overflow: auto`, `position: relative`）→ `.tab-wrapper`（通常フロー）→ EditorTable + テキストフィールド + ドロップダウン という構造で、テキストフィールドは通常フローの `wrapperElement` を `positioningContainer` として座標計算する。`wrapperElement.getBoundingClientRect()` はスクロール量を反映するため、テキストフィールドは自動的にスクロールに追従する。しかし右ペインでは、テキストフィールドを `.relations-panel`（`position: relative`）直下に配置し、EditorTableは `.relations-mini-table-scroll`（`overflow: auto`）内に配置していた。テキストフィールドがスクロールコンテナの外にあるため、スクロールしてもテキストフィールドの位置が固定されたままだった。修正では右ペインのDOM構造を左ペインと同じパターンに統一した。`scrollContainer` → `innerWrapper`（通常フロー）→ EditorTable + テキストフィールド を配置し、ドロップダウンのみ `scrollContainer` の外（`wrapper`, `overflow: visible`）に配置してクリッピングを回避した。また `max-height: 200px` と `overflow: auto` をミニテーブルスクロール領域から削除し、スクロールバーの不要な表示とドロップダウンのクリッピングを同時に解消した。
+
+### どうしたら今後は再発しないか
+- **同じUIコンポーネントを異なるコンテキストで再利用する際は、DOM構造の前提条件を統一する。** 左ペインで機能するDOM構造パターンを右ペインでも再現することで、座標計算・スクロール追従・クリッピング回避が同じ挙動になる。
+- **`overflow: auto` のコンテナ内に `position: absolute` の要素を配置するとクリッピングされることを意識する。** クリッピングを避けるには、absolute要素をoverflowコンテナの外に配置するか、overflowコンテナ自体にabsolute要素を含めない構造にする。
+
+---
+
+## 50. ダークテーマで--border-colorが未オーバーライドのため境界線が濃すぎる問題を修正
+
+### 不具合原因名
+CSS変数 `--border-color` がダークテーマでオーバーライドされておらず、ライトテーマと同じ100%不透明度のグレーがダーク背景上で目立っていた
+
+### なぜそうなったのか
+`:root` で `--border-color: rgb(128, 128, 128)` が定義されていたが、`[data-theme="dark"]` セレクタ内にオーバーライドがなかった。ライトテーマでは白背景（`#ffffff`）に対して `rgb(128,128,128)` のコントラストは適切だが、ダークテーマでは `#282c34` / `#21252b` の暗い背景に対して同じ100%不透明度のグレーが非常に目立つ。サイドバーの `border-right` は `rgba(128,128,128,0.3)` をハードコードして回避していたが、`--border-color` を使用するリレーションパネル内のボーダー（セクションヘッダー、テーブルヘッダー、パンくずリスト）は全て高コントラストのまま表示されていた。修正ではダークテーマに `--border-color: rgba(128, 128, 128, 0.35)` を追加し、リレーションパネルの `border-left` もハードコード値から `var(--border-color)` に戻して統一した。
+
+### どうしたら今後は再発しないか
+- **CSS変数を追加する際は、全テーマ（ライト・ダーク）でオーバーライドが必要か確認する。** 特に色関連の変数は、背景色とのコントラスト比がテーマごとに大きく異なるため、テーマ別の調整が必須。
+- **ハードコードされた色値（`rgba(128,128,128,0.3)` 等）が散在している場合、CSS変数への統一を検討する。** 同じ意図の値が複数箇所にハードコードされていると、テーマ変更時に一括変更できず不整合が生じる。
+
+---

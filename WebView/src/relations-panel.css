@@ -142,7 +142,6 @@
 .relations-table-section {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid var(--border-color);
 }
 
 .relations-table-header {
@@ -179,8 +178,6 @@
 /* ─── ミニテーブルスクロール領域（overflow:auto を wrapper から分離して grid-textfield のクリッピングを防ぐ） ─── */
 
 .relations-mini-table-scroll {
-    overflow: auto;
-    max-height: 200px;
     position: relative;
 }
 

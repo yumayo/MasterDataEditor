@@ -22,6 +22,7 @@ body {
     --font-color: #abb2bf;
     --background-color: #21252b;
     --background-sub-color: #282c34;
+    --border-color: rgba(128, 128, 128, 0.35);
     --scroll-bar-background-color: rgba(255, 255, 255, 0.2);
 }
 

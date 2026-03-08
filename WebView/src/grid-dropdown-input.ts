@@ -19,6 +19,7 @@ export type DropdownCancelCallback = () => void;
 export class GridDropdownInput {
     readonly element: HTMLElement;
     private readonly inputElement: HTMLElement;
+    private readonly parentElement: HTMLElement;
     private dropdownElement: HTMLElement;
 
     private items: ReferenceItem[];
@@ -54,6 +55,7 @@ export class GridDropdownInput {
         this.dropdownElement.classList.add('grid-dropdown-list');
         this.element.appendChild(this.dropdownElement);
 
+        this.parentElement = parentElement;
         parentElement.appendChild(this.element);
     }
 
@@ -68,9 +70,11 @@ export class GridDropdownInput {
         this.visible = true;
         this.selectedIndex = 0;
 
-        // ドロップダウンリストの位置を設定（入力フィールドの下に表示）
-        this.element.style.left = rect.left + 'px';
-        this.element.style.top = (rect.top + rect.height) + 'px';
+        // ビューポート絶対座標をparentElement基準の相対座標に変換する
+        // GridTextField.show() と同じ変換ロジック
+        const containerRect = this.parentElement.getBoundingClientRect();
+        this.element.style.left = (rect.left - containerRect.left) + 'px';
+        this.element.style.top = (rect.top + rect.height - containerRect.top) + 'px';
         this.dropdownElement.style.minWidth = rect.width + 'px';
 
         // 現在の値に基づいて初期選択を設定
