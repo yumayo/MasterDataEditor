@@ -446,14 +446,6 @@ export class RelationsPanel {
         const content = document.createElement('div');
         content.classList.add('relations-panel-content');
 
-        // パンくずリスト（タブ遷移履歴がある場合のみ表示）
-        if (this.tab !== false) {
-            const history = this.tab.getNavigationHistory();
-            if (history.length > 0) {
-                content.appendChild(this.buildBreadcrumb(history));
-            }
-        }
-
         // RELATIONS セクションヘッダー
         const sectionHeader = document.createElement('div');
         sectionHeader.classList.add('relations-panel-section-header');
@@ -619,8 +611,8 @@ export class RelationsPanel {
      * ジャンプ元の { tableName, pkValue } を Tab の遷移履歴にプッシュしてからタブを切り替える。
      */
     navigateToDefinition(tableName: string, pkValue: string): void {
-        if (this.tab === false) return;
-        if (this.currentEditorTable === false) return;
+        if (this.tab === false) throw new Error('[RelationsPanel] navigateToDefinition: tab が未接続です');
+        if (this.currentEditorTable === false) throw new Error('[RelationsPanel] navigateToDefinition: currentEditorTable が未接続です');
         // ジャンプ元の情報を遷移履歴にプッシュする
         const focusRow = this.currentEditorTable.getSelection().getFocus().row;
         const currentPkValue = this.currentEditorTable.getRowPkValue(focusRow);
@@ -629,49 +621,4 @@ export class RelationsPanel {
         this.tab.navigateToTableRow(tableName, pkValue);
     }
 
-    /**
-     * パンくずリストを構築する（タブ遷移履歴ベース）
-     * history の各エントリをクリック可能なリンクとして並べ、
-     * 末尾に現在のタブ名を太字で追加する。
-     */
-    private buildBreadcrumb(history: Array<{ tableName: string; pkValue: string }>): HTMLElement {
-        const breadcrumb = document.createElement('div');
-        breadcrumb.classList.add('relations-breadcrumb');
-
-        for (let i = 0; i < history.length; i++) {
-            if (i > 0) {
-                const sep = document.createElement('span');
-                sep.classList.add('relations-breadcrumb-sep');
-                sep.textContent = '›';
-                breadcrumb.appendChild(sep);
-            }
-            const crumb = document.createElement('span');
-            crumb.classList.add('relations-breadcrumb-item');
-            crumb.textContent = history[i].tableName;
-            const idx = i;
-            crumb.addEventListener('click', () => {
-                // buildBreadcrumb() は this.tab !== false の内側でのみ呼ばれるため、
-                // ここで tab === false になることは論理的にあり得ない
-                if (this.tab === false) throw new Error('[RelationsPanel] buildBreadcrumb click: tab が未接続です');
-                // クリックした位置より後の履歴を切り捨ててからジャンプする
-                this.tab.truncateNavigationHistory(idx);
-                this.tab.navigateToTableRow(history[idx].tableName, history[idx].pkValue);
-            });
-            breadcrumb.appendChild(crumb);
-        }
-
-        // 現在のテーブル名を末尾に太字（クリック不可）で表示する
-        if (this.currentEditorTable !== false) {
-            const sep = document.createElement('span');
-            sep.classList.add('relations-breadcrumb-sep');
-            sep.textContent = '›';
-            breadcrumb.appendChild(sep);
-            const currentCrumb = document.createElement('span');
-            currentCrumb.classList.add('relations-breadcrumb-item', 'relations-breadcrumb-item--active');
-            currentCrumb.textContent = this.currentEditorTable.tableName;
-            breadcrumb.appendChild(currentCrumb);
-        }
-
-        return breadcrumb;
-    }
 }

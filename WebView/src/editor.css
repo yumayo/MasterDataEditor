@@ -9,9 +9,64 @@
     height: calc(100vh - 36px);
     width: calc(100vw - 300px);
 
-    /* overflow: auto から overflow: hidden に変更し、display: flex を追加して2ペイン構成にする */
+    /* パンくずバー（行方向）＋コンテンツ領域（列方向）の縦積みレイアウト */
     overflow: hidden;
     display: flex;
+    flex-direction: column;
+}
+
+/* ─── パンくずバー（Editor レベル。ナビゲーション履歴がないときは非表示） ─── */
+
+.editor-breadcrumb-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--background-color);
+    flex-shrink: 0;
+    min-height: 28px;
+    gap: 0;
+}
+
+.editor-breadcrumb-sep {
+    color: var(--font-color);
+    opacity: 0.4;
+    margin: 0 4px;
+    font-size: 10px;
+    user-select: none;
+}
+
+.editor-breadcrumb-item {
+    font-size: 11px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #3d6bff;
+    transition: background 0.1s;
+}
+
+.editor-breadcrumb-item:hover {
+    background-color: rgba(61, 107, 255, 0.12);
+}
+
+.editor-breadcrumb-item--active {
+    font-weight: 600;
+    color: var(--font-color);
+    cursor: default;
+}
+
+.editor-breadcrumb-item--active:hover {
+    background-color: transparent;
+}
+
+/* ─── コンテンツ領域（左ペイン＋右ペインを横並び） ─── */
+
+.editor-content {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
 }
 
 .editor-left-pane {

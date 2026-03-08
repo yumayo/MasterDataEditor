@@ -469,9 +469,9 @@ test.describe('動的参照の逆参照ヒント表示', () => {
             ).nth(0);
             await pkCell.dblclick();
 
-            // プルダウンが表示されること
+            // プルダウンが表示されること（左ペインのものに限定してstrict mode violationを回避）
             const dropdown = page.locator(
-                '.grid-dropdown-list'
+                '.editor-left-pane .grid-dropdown-list'
             );
             await expect(dropdown).toBeVisible();
 

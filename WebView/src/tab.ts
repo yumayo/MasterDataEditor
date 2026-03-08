@@ -124,6 +124,8 @@ export class Tab {
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
+        // パンくずバークリックのためEditorにTab参照を接続する（相互参照）
+        this.editor.connectTab(this);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -190,20 +192,15 @@ export class Tab {
 
     /**
      * 定義へジャンプ実行時に遷移元の情報をスタックにプッシュする
+     * パンくずバーの更新はジャンプ先タブ切替時の activateTabState で行われる。
      */
     pushNavigationHistory(tableName: string, pkValue: string): void {
         this.navigationHistory.push({ tableName, pkValue });
     }
 
     /**
-     * 遷移履歴を取得する（RelationsPanelのパンくず描画で使用）
-     */
-    getNavigationHistory(): Array<{ tableName: string; pkValue: string }> {
-        return this.navigationHistory;
-    }
-
-    /**
      * 指定インデックスで遷移履歴を切り詰める（パンくずクリック時に後続の履歴を破棄）
+     * 切り詰め後のパンくずバー更新はジャンプ先タブ切替時の activateTabState で行われる。
      */
     truncateNavigationHistory(index: number): void {
         this.navigationHistory = this.navigationHistory.slice(0, index);
@@ -394,6 +391,15 @@ export class Tab {
 
         // 閉じたタブを含むナビゲーション履歴エントリを除去する（パンくずリストの整合性保持）
         this.navigationHistory = this.navigationHistory.filter(entry => entry.tableName !== name);
+        // 非アクティブタブを閉じた場合も履歴からエントリが除去されるため、パンくずバーを再描画する必要がある
+        // （activateTabState は非アクティブタブ閉じ時には呼ばれないため、ここが唯一の更新パスとなる）
+        if (this.activeTabName === false) {
+            this.editor.updateBreadcrumbBar([], '');
+        } else {
+            const activeState = this.tabStates.get(this.activeTabName);
+            if (!activeState) throw new Error('[Tab] removeTabButton: activeTabName "' + this.activeTabName + '" に対応する tabState が存在しません');
+            this.editor.updateBreadcrumbBar(this.navigationHistory, activeState.editorTable.tableName);
+        }
     }
 
     enableTabButton(name: string) {
@@ -468,6 +474,9 @@ export class Tab {
 
         // EditorTableHandler を有効化（IME対応）
         state.editorTableHandler.enable();
+
+        // タブ切り替え後に現在テーブル名でパンくずバーを再描画する
+        this.editor.updateBreadcrumbBar(this.navigationHistory, state.editorTable.tableName);
     }
 
     /**
