@@ -104,7 +104,7 @@ export class RelationsPanel {
                 // appendTo() で保存した親要素を参照する。mousedown はappendTo()後にのみ発生するため必ず存在する
                 if (this.parentElement === false) throw new Error('[RelationsPanel] onMouseMove: parentElement が未設定です（appendTo() が呼ばれていません）');
                 const parentRight = this.parentElement.getBoundingClientRect().right;
-                const newWidth = Math.min(600, Math.max(200, parentRight - moveEvent.clientX));
+                const newWidth = parentRight - moveEvent.clientX;
                 this.panelElement.style.flex = `0 0 ${newWidth}px`;
             };
 
