@@ -42,12 +42,19 @@
 - This is consistent with DOM-as-SSOT design: CSV save uses extractTableData() from DOM
 - But causes issues when store is queried (e.g. updateCellValueAt → store.updateCellValue fails for new rows)
 
+## Dual Data Source Pattern (store vs referenceDataCache)
+- 1:N resolution now has two data paths: InMemoryTableStore (tab open) vs referenceDataCache (tab closed)
+- **Stale cache risk**: fullDataCache snapshots CSV at load time; if tab is later opened and edited, cache is stale
+- **Data shape difference**: store.getRows() returns ALL rows; fullData.rows (Map) skips empty-PK and deduplicates by PK
+- N:1 and 1:N both use identical getFullDataSync→getFullDataAsync fallback pattern (copy-paste)
+
 ## Review History
 - 2026-03-07 (ea2398b): group-end insertion + FK sync
 - 2026-03-07 (ded3f74+unstaged): View cleanup. APPROVED.
 - 2026-03-07 (254635d): RelationsPanel addition. race/staleness FIXED.
 - 2026-03-08 (mini EditorTable rounds 1-5): Progressive fixes, makeReadOnly added then removed
 - 2026-03-08 (editable relations panel): makeReadOnly REMOVED, Ctrl+S data destruction, autoFill store sync, dirty indicator unimplemented
+- 2026-03-08 (1:N tab-unloaded fix): Cache fallback added for unloaded child tables. Stale cache risk, data shape inconsistency between store/cache paths.
 
 ## Test Infrastructure Issues
 - Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files.
