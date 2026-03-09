@@ -28,8 +28,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
  *   quest: id, name, enemy_id（クエスト。enemy.idをFKとして参照）
  *
  * quest の行を選択すると RelationsPanel に N:1 として enemy のミニEditorTable が表示される。
- * N:1の場合、hideColumnsByName() により id 列が display:none になるため、
- * visible な列は ja・en の2列。これによりドラッグで横方向の複数列選択を検証できる。
+ * N:1の場合、すべての列（id, ja, en）が表示される。
+ * これによりドラッグで横方向の複数列選択を検証できる。
  *
  * reference: "enemy.id" にする理由:
  *   resolveRowsByFkValue() は columnName（"id"）で enemy テーブルの行を検索する。
@@ -115,19 +115,17 @@ async function performDragOnMiniTableAsync(page: Page): Promise<DragResult> {
     const miniTable = page.locator('.relations-panel .editor-table').first();
     await expect(miniTable).toBeVisible();
 
-    // ミニEditorTableの visible なデータセルが DOM に出現するまで待機する。
+    // ミニEditorTableのデータセルが DOM に出現するまで待機する。
     // buildMiniTableAsync は非同期（readFileAsync を含む）のため、
     // .relations-panel-content の visible 後もセルがまだ構築中の可能性がある。
-    // hideColumnsByName() で id 列（col=0）が display:none になるため、
-    // ":not([style*='display: none'])" で visible なセルに絞り込む。
     const visibleDataCells = miniTable.locator(VISIBLE_DATA_CELL_SELECTOR);
     await expect(visibleDataCells.first()).toBeVisible();
 
-    // visible なデータセルが2件以上あることを確認（ja列・en列の2セル）
+    // データセルが2件以上あることを確認（id列・ja列の2セル以上）
     const cellCount = await visibleDataCells.count();
     expect(cellCount).toBeGreaterThanOrEqual(2);
 
-    // ドラッグ元セル（ja列）とドラッグ先セル（en列）
+    // ドラッグ元セル（id列）とドラッグ先セル（ja列）
     const startCell = visibleDataCells.nth(0);
     const endCell = visibleDataCells.nth(1);
 
@@ -149,9 +147,9 @@ async function performDragOnMiniTableAsync(page: Page): Promise<DragResult> {
     return { startBox, selectionEl: page.locator('.relations-panel .selection').first() };
 }
 
-// visible なデータセルを絞り込むセレクタ（id列は hideColumnsByName() で非表示のため除外）
+// データセルを絞り込むセレクタ（行ヘッダー・列ヘッダー・コーナーセルを除外）
 const VISIBLE_DATA_CELL_SELECTOR =
-    '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell):not([style*="display: none"])';
+    '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)';
 
 test.describe('ミニEditorTableのマウスドラッグ範囲選択', () => {
     test.beforeEach(async ({ page }) => {

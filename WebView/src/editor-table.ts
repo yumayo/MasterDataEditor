@@ -942,44 +942,6 @@ export class EditorTable {
     }
 
     /**
-     * 指定した列名の列をCSSで視覚的に非表示にする（N:1リレーションのPK列隠蔽に使用）
-     *
-     * データ構造（tableData.header・ストア）は変更しないため、
-     * getRowPkValue() や updateCellValueAt() が引き続き正常に動作する。
-     *
-     * 実装: 列ヘッダー行から列名で対象の列インデックス（1始まり、行ヘッダーが0）を特定し、
-     * テーブルの全行の該当セルに display:none を適用する。
-     * display:table-cell を none にするとテーブルレイアウトが自動再計算され列が消える。
-     */
-    hideColumnsByName(columnNames: string[]): void {
-        const tableElement = this.element;
-        if (tableElement.children.length === 0) return;
-        // 列ヘッダー行（children[0]）から対象列のDOM列インデックス（行ヘッダー含む1始まり）を収集する
-        const headerRow = tableElement.children[0] as HTMLElement;
-        const hiddenDomIndices: number[] = [];
-        for (let domCol = 1; domCol < headerRow.children.length; domCol++) {
-            const headerCell = headerRow.children[domCol] as HTMLElement;
-            // テキストノードのみを連結してヘッダーテキストを取得する（参照ヒントspanを無視）
-            const headerText = Array.from(headerCell.childNodes)
-                .filter(n => n.nodeType === Node.TEXT_NODE)
-                .map(n => String(n.textContent))
-                .join('');
-            if (columnNames.includes(headerText)) {
-                hiddenDomIndices.push(domCol);
-            }
-        }
-        if (hiddenDomIndices.length === 0) return;
-        // 全行（ヘッダー行含む）の該当DOM列インデックスのセルを非表示にする
-        for (let rowIdx = 0; rowIdx < tableElement.children.length; rowIdx++) {
-            const row = tableElement.children[rowIdx] as HTMLElement;
-            for (const domCol of hiddenDomIndices) {
-                const cell = row.children[domCol] as HTMLElement;
-                if (cell) cell.style.display = 'none';
-            }
-        }
-    }
-
-    /**
      * 動的参照のvalueColumn名から列インデックスを解決する
      */
     resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {

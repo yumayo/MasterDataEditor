@@ -186,13 +186,12 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
  *   quest: id, name, enemy_id（クエスト2行。enemy.idをFKとして参照）
  *
  * quest を開いて1行目を選択 → RelationsPanelに enemy の id=1(スライム) 1行が表示される。
- * N:1リレーションでは hideColumnsByName() により id列（参照対象列）が display:none になる。
- * ミニEditorTableには visible な列として ja列・en列の2列が残るため、ArrowRightで列移動を検証できる。
+ * N:1リレーションではすべての列（id, ja, en）が表示されるため、ArrowRightで列移動を検証できる。
  * quest は2行用意しているため、メインテーブルでのArrowDown移動も検証できる。
  *
  * enemy に3列（id, ja, en）用意する理由:
- *   id 列が hideColumnsByName() で非表示になった後も ja→en の ArrowRight 移動を検証するため。
- *   2列（id, ja）だと id 非表示後に visible 列が1列しか残らず ArrowRight で移動先がなくなる。
+ *   id→ja→en のArrowRight移動を検証するために3列必要。
+ *   2列（id, ja）だと最初のセル（id）から1回しか ArrowRight できない。
  *
  * reference: "enemy.id" にする理由:
  *   resolveRowsByFkValue() は columnName（"id"）で enemy テーブルの行を検索する。
@@ -245,8 +244,7 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
         'ArrowRight キーでセル選択が右の列に移動すること',
         async ({ page }) => {
             // questテーブルを開いて1行目を選択 → RelationsPanelにenemyのミニEditorTableが表示される
-            // id列は hideColumnsByName() で非表示になるため、visible 列は ja・en の2列
-            // ja列（左）から en列（右）へ ArrowRight で移動できることを検証する
+            // 全列（id, ja, en）が表示されるため、id列（左端）から ArrowRight で ja→en と移動できることを検証する
             const mainTable = await openTableAsync(page, 'quest');
             await selectRowAsync(mainTable, 0);
             await waitForRelationsPanelContentAsync(page);
@@ -258,26 +256,24 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             const selectionEl = page.locator('.relations-panel .selection').first();
             await expect(selectionEl).toBeVisible();
 
-            // 最初の visible なデータセルが DOM に出現するまで待機してからクリックする。
+            // 最初のデータセルが DOM に出現するまで待機してからクリックする。
             // buildMiniTableAsync は非同期（readFileAsync を含む）のため、
             // .relations-panel-content の visible 後もセルがまだ構築中の可能性がある。
-            // hideColumnsByName() で id 列（col=0）が display:none になるため、
-            // ":not([style*='display: none'])" で visible なセルに絞り込む。
             const firstDataCell = miniTable.locator(
-                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell):not([style*="display: none"])'
+                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
             ).first();
             await expect(firstDataCell).toBeVisible();
             await firstDataCell.click();
 
-            // クリック直後の選択枠のleft値を記録する（id列が非表示のため最初のvisible列=ja列の位置）
+            // クリック直後の選択枠のleft値を記録する
             const initialLeft = await selectionEl.evaluate((el: Element) => {
                 return (el as HTMLElement).style.left;
             });
 
-            // ArrowRight を押して右の列（en列）に移動させる
+            // ArrowRight を押して右の列に移動させる
             await page.keyboard.press('ArrowRight');
 
-            // 選択枠の left 値が変化していることを確認（ja列→en列に移動した証拠）
+            // 選択枠の left 値が変化していることを確認（列移動した証拠）
             // バグ修正前は active=false のため onKeydown() が即 return し、left は変化しなかった
             const afterLeft = await selectionEl.evaluate((el: Element) => {
                 return (el as HTMLElement).style.left;
@@ -296,13 +292,11 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             await selectRowAsync(mainTable, 0);
             await waitForRelationsPanelContentAsync(page);
 
-            // ミニEditorTableの visible なデータセルが DOM に出現するまで待機してからクリックする
-            // hideColumnsByName() で id 列（col=0）が display:none になるため、
-            // ":not([style*='display: none'])" で visible なセルに絞り込む
+            // ミニEditorTableのデータセルが DOM に出現するまで待機してからクリックする
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
             const miniCell = miniTable.locator(
-                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell):not([style*="display: none"])'
+                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
             ).first();
             await expect(miniCell).toBeVisible();
             await miniCell.click();
@@ -329,137 +323,6 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             });
 
             expect(afterTop).not.toBe(beforeTop);
-        },
-    );
-});
-
-// =============================================================================
-// バグ3: N:1リレーションのミニテーブルで参照対象列（PK列）が表示される問題
-//
-// 根本原因:
-//   resolveEntriesForEditorRowAsync() の N:1エントリ生成部（行292-301）で
-//   hiddenColumns: [] が固定のため、参照対象列（expr.columnName, 通常は "id"）が
-//   ミニEditorTable に表示されてしまう。
-//
-// 期待動作:
-//   N:1でも参照対象列（expr.columnName）を hiddenColumns に追加し、
-//   buildMiniEditorTableAsync() の汎用ロジックで非表示にする。
-//   例: quest.enemy_id が enemy.id を参照 → enemy のミニテーブルに "id" 列を表示しない。
-// =============================================================================
-
-/**
- * バグ3テスト用のファイルシステムを生成する
- *
- * テーブル構成:
- *   enemy: id, ja（敵名テーブル。id=PK列）
- *   quest: id, name, enemy_id（クエスト。enemy.id をFKとして参照）
- *
- * quest の行を選択すると RelationsPanel に N:1 として enemy テーブルが表示される。
- * 参照対象列は "id"（expr.columnName）なので、enemy のミニテーブルに "id" 列が
- * 表示されないことを検証する。
- */
-function createN1HiddenColumnFileSystem(): MockFileSystem {
-    return {
-        "schema/enemy.json": JSON.stringify({
-            header: [
-                { key: 0, name: "id", type: "int" },
-                { key: 1, name: "ja", type: "string" },
-            ],
-            primary_key: "id",
-        }),
-        "data/enemy.csv": [
-            "id,ja",
-            "1,スライム",
-            "2,ドラゴン",
-        ].join("\n"),
-        "schema/quest.json": JSON.stringify({
-            header: [
-                { key: 0, name: "id", type: "int" },
-                { key: 1, name: "name", type: "string" },
-                // enemy.id を FK として参照する（参照対象列 = "id"）
-                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
-            ],
-            primary_key: "id",
-        }),
-        "data/quest.csv": [
-            "id,name,enemy_id",
-            "1,first_quest,1",
-            "2,second_quest,2",
-        ].join("\n"),
-    };
-}
-
-test.describe('バグ3: N:1リレーションのミニテーブルで参照対象列（id列）が非表示になること', () => {
-    test.beforeEach(async ({ page }) => {
-        const fs = createN1HiddenColumnFileSystem();
-        await installMockApiAsync(page, fs);
-        await page.goto('/');
-    });
-
-    test(
-        'quest の行を選択したとき、リレーションパネルの enemy ミニテーブルに "id" 列ヘッダーが表示されないこと',
-        async ({ page }) => {
-            // quest テーブルを開いて1行目（first_quest, enemy_id=1）を選択する
-            const mainTable = await openTableAsync(page, 'quest');
-            await selectRowAsync(mainTable, 0);
-
-            // リレーションパネルにコンテンツが表示されるまで待機する
-            await waitForRelationsPanelContentAsync(page);
-
-            // enemy テーブルセクションが存在することを確認する
-            const enemySection = page.locator('.relations-table-section').filter({
-                has: page.locator('.relations-table-title').getByText('enemy', { exact: true }),
-            });
-            await expect(enemySection).toBeVisible();
-
-            // N:1 タグが表示されていることを確認する
-            await expect(enemySection.locator('.relations-tag--n1')).toBeVisible();
-
-            // ミニEditorTableが表示されるまで待機する
-            const miniTable = enemySection.locator('.editor-table');
-            await expect(miniTable).toBeVisible();
-
-            // ミニEditorTable のヘッダー列を取得する
-            // .editor-table-column-header は各列見出しセル
-            // display:none が適用されている列は Playwright の visible 判定から除外されるため、
-            // ":not([style*='display: none'])" セレクタで visible な列ヘッダーのみを対象にする
-            const visibleColumnHeaders = miniTable.locator(
-                '.editor-table-column-header:not([style*="display: none"])'
-            );
-            await expect(visibleColumnHeaders.first()).toBeVisible();
-
-            // visible なヘッダーのテキストのみを収集する（display:none の "id" 列は除外される）
-            const headerTexts = await visibleColumnHeaders.allTextContents();
-
-            // "id" 列が非表示になっているため、visible ヘッダーテキストに "id" が含まれないことを検証する
-            expect(headerTexts).not.toContain('id');
-        },
-    );
-
-    test(
-        '参照対象列（id）が非表示でも残りの列（ja）はミニテーブルに表示されること',
-        async ({ page }) => {
-            // quest テーブルを開いて1行目を選択する
-            const mainTable = await openTableAsync(page, 'quest');
-            await selectRowAsync(mainTable, 0);
-            await waitForRelationsPanelContentAsync(page);
-
-            const enemySection = page.locator('.relations-table-section').filter({
-                has: page.locator('.relations-table-title').getByText('enemy', { exact: true }),
-            });
-            await expect(enemySection).toBeVisible();
-
-            const miniTable = enemySection.locator('.editor-table');
-            await expect(miniTable).toBeVisible();
-
-            // "ja" 列は非表示にならないため、visible なヘッダーに存在することを確認する
-            // display:none が適用されている "id" 列を除外して visible な列ヘッダーのみを対象にする
-            const visibleColumnHeaders = miniTable.locator(
-                '.editor-table-column-header:not([style*="display: none"])'
-            );
-            await expect(visibleColumnHeaders.first()).toBeVisible();
-            const headerTexts = await visibleColumnHeaders.allTextContents();
-            expect(headerTexts).toContain('ja');
         },
     );
 });
@@ -628,6 +491,271 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
 
             const rowCountEl = questSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');
+        },
+    );
+});
+
+// =============================================================================
+// バグ5: N:1ミニテーブルで参照対象列（PK列等）が非表示になっている問題
+//
+// 現在の動作:
+//   resolveEntriesForEditorRowAsync() の N:1エントリ生成部で
+//   cssHiddenColumns: [expr.columnName] が設定され、
+//   buildMiniEditorTableAsync() 内で hideColumnsByName() が呼ばれて
+//   参照対象列（通常は "id"）が display:none になっている。
+//
+// 期待動作（変更後）:
+//   N:1ミニテーブルでも参照対象列を含むすべての列を表示する。
+//   cssHiddenColumns を空にして hideColumnsByName() を呼ばないことで、
+//   すべての列ヘッダーと全セルが visible になる。
+// =============================================================================
+
+/**
+ * バグ5テスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   enemy: id, ja（敵名テーブル。id=PK列）
+ *   quest: id, name, enemy_id（クエスト。enemy.id をFKとして参照）
+ *
+ * quest の行を選択すると RelationsPanel に N:1 として enemy テーブルが表示される。
+ * 参照対象列は "id"（expr.columnName）で、現在は display:none になっている。
+ * 変更後はすべての列（id, ja）が visible になることを検証する。
+ */
+function createN1AllColumnsVisibleFileSystem(): MockFileSystem {
+    return {
+        "schema/enemy.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/enemy.csv": [
+            "id,ja",
+            "1,スライム",
+            "2,ドラゴン",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": [
+            "id,name,enemy_id",
+            "1,first_quest,1",
+            "2,second_quest,2",
+        ].join("\n"),
+    };
+}
+
+test.describe('バグ5: N:1ミニテーブルで参照対象列（PK列）がすべて表示されること', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createN1AllColumnsVisibleFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'quest の行を選択したとき、リレーションパネルの enemy ミニテーブルに "id" 列ヘッダーが表示されること',
+        async ({ page }) => {
+            // quest テーブルを開いて1行目（first_quest, enemy_id=1）を選択する
+            const mainTable = await openTableAsync(page, 'quest');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            // enemy テーブルセクションを特定する
+            const enemySection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('enemy', { exact: true }),
+            });
+            await expect(enemySection).toBeVisible();
+
+            const miniTable = enemySection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // すべての列ヘッダーが display:none なしで表示されていることを確認する。
+            // 変更前は cssHiddenColumns: ["id"] が設定され hideColumnsByName() で
+            // "id" 列に display:none が付与されるため、このアサーションは FAIL する（RED）。
+            // 変更後は cssHiddenColumns が空になり "id" 列も visible になるため GREEN になる。
+            const idHeader = miniTable.locator('.editor-table-column-header').filter({
+                hasText: 'id',
+            });
+            // toBeVisible() は display:none の要素を false とするため、
+            // "id" 列ヘッダーが visible であることをここで検証する
+            await expect(idHeader.first()).toBeVisible();
+        },
+    );
+
+    test(
+        'quest の行を選択したとき、enemy ミニテーブルの "id" 列データセルが表示されていること',
+        async ({ page }) => {
+            const mainTable = await openTableAsync(page, 'quest');
+            // enemy_id=1 → enemy の id=1(スライム) の行が表示される
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            const enemySection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('enemy', { exact: true }),
+            });
+            await expect(enemySection).toBeVisible();
+
+            const miniTable = enemySection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // "id" 列のデータセルが display:none なしで visible であることを確認する。
+            // ヘッダー行（.editor-table-column-header を含む行）を除いたデータ行の id 列セルを取得する。
+            // 変更前は hideColumnsByName() で "id" 列セルも display:none になるため FAIL する（RED）。
+            // 変更後はすべてのセルが visible になるため GREEN になる。
+            //
+            // DOM上の列インデックス: 行ヘッダー(col=0), id列(col=1), ja列(col=2)
+            // データ行の "id" 列セルは .editor-table-row の nth(1)（ヘッダー行除く最初の行）の children[1]
+            const dataRow = miniTable.locator('.editor-table-row').nth(1);
+            await expect(dataRow).toBeVisible();
+            const idCell = dataRow.locator('.editor-table-cell').nth(1);
+            await expect(idCell).toBeVisible();
+            // セルに "1" が表示されていること（enemy.id=1 の値）
+            await expect(idCell).toHaveText('1');
+        },
+    );
+});
+
+// =============================================================================
+// バグ6: 1:NミニテーブルでFK列が物理除去されて表示されない問題
+//
+// 現在の動作:
+//   resolveEntriesForEditorRowAsync() の 1:N エントリ生成部で
+//   hiddenColumns: [fkColName] が設定され、
+//   buildMiniEditorTableAsync() 内でスキーマ・ヘッダー・行データから
+//   FK列が物理除去される。
+//
+// 期待動作（変更後）:
+//   1:NミニテーブルでもFK列を除去せず、すべての列を表示する。
+//   hiddenColumns を空にすることで、FK列のヘッダーと値がミニテーブルに表示される。
+// =============================================================================
+
+/**
+ * バグ6テスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   enemy: id, ja（親テーブル。id=PK列）
+ *   quest: id, name, enemy_id（子テーブル。enemy.id をFKとして参照）
+ *
+ * enemy の行を選択すると RelationsPanel に 1:N として quest テーブルが表示される。
+ * quest の enemy_id 列は現在は物理除去されているが、変更後は表示される。
+ *
+ * データ:
+ *   enemy: id=1(スライム), id=2(ドラゴン)
+ *   quest: id=1(first_quest, enemy_id=1), id=2(second_quest, enemy_id=1), id=3(dragon_quest, enemy_id=2)
+ */
+function createOneToNFkColumnVisibleFileSystem(): MockFileSystem {
+    return {
+        "schema/enemy.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/enemy.csv": [
+            "id,ja",
+            "1,スライム",
+            "2,ドラゴン",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": [
+            "id,name,enemy_id",
+            "1,first_quest,1",
+            "2,second_quest,1",
+            "3,dragon_quest,2",
+        ].join("\n"),
+    };
+}
+
+test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createOneToNFkColumnVisibleFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'enemy の行を選択したとき、quest ミニテーブルに "enemy_id" 列ヘッダーが存在し表示されること',
+        async ({ page }) => {
+            // enemy テーブルを開いて1行目（id=1, スライム）を選択する
+            const mainTable = await openTableAsync(page, 'enemy');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            // quest テーブルセクションを特定する
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+
+            const miniTable = questSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // "enemy_id" 列ヘッダーが存在し visible であることを確認する。
+            // 変更前は hiddenColumns: ["enemy_id"] でスキーマ・ヘッダー・行から物理除去されるため
+            // ヘッダーセルが DOM に存在せず、このアサーションは FAIL する（RED）。
+            // 変更後は hiddenColumns が空になり "enemy_id" 列が DOM に存在して GREEN になる。
+            const enemyIdHeader = miniTable.locator('.editor-table-column-header').filter({
+                hasText: 'enemy_id',
+            });
+            await expect(enemyIdHeader.first()).toBeVisible();
+        },
+    );
+
+    test(
+        'enemy の1行目（id=1）を選択したとき、quest ミニテーブルの "enemy_id" 列に正しいFK値が表示されること',
+        async ({ page }) => {
+            // enemy テーブルを開いて1行目（id=1）を選択する
+            const mainTable = await openTableAsync(page, 'enemy');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            const questSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('quest', { exact: true }),
+            });
+            await expect(questSection).toBeVisible();
+
+            const miniTable = questSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // quest テーブルのヘッダー列から "enemy_id" の列インデックスを取得する。
+            // 変更後は hiddenColumns が空なので quest のフルスキーマ（id, name, enemy_id）が表示される。
+            // DOM上: 行ヘッダー(col=0), id(col=1), name(col=2), enemy_id(col=3)
+            //
+            // 変更前は物理除去によりヘッダーが存在しないため以降のセル検証も FAIL する（RED）。
+            // 変更後は enemy_id 列のデータセルに "1" が入っていることを確認できる（GREEN）。
+            const allHeaders = miniTable.locator('.editor-table-column-header');
+            await expect(allHeaders.first()).toBeVisible();
+            const headerTexts = await allHeaders.allTextContents();
+            // "enemy_id" がヘッダーに含まれることを検証する（物理除去されていないことの確認）
+            expect(headerTexts).toContain('enemy_id');
+
+            // enemy_id 列のデータセルが "1スライム" であることを確認する。
+            // EditorTableはFK列にリバースリファレンスヒント（参照先の表示名）を連結して表示するため、
+            // 物理値 "1"（enemy.id=1）に参照先 enemy.ja="スライム" が連結されて "1スライム" と表示される。
+            // データ行 nth(1)（ヘッダー行を除いた最初のデータ行）の enemy_id 列インデックスでセルを取得する
+            const enemyIdColIndex = headerTexts.indexOf('enemy_id');
+            const firstDataRow = miniTable.locator('.editor-table-row').nth(1);
+            await expect(firstDataRow).toBeVisible();
+            // DOM列インデックス: 行ヘッダー列(children[0]) + データ列(children[1]以降)
+            // headerTexts は列ヘッダーセルのテキスト一覧（行ヘッダーセルは除かれる）
+            // そのため DOM インデックスは enemyIdColIndex + 1（行ヘッダー分オフセット）
+            const enemyIdCell = firstDataRow.locator('.editor-table-cell').nth(enemyIdColIndex + 1);
+            await expect(enemyIdCell).toBeVisible();
+            await expect(enemyIdCell).toHaveText('1スライム');
         },
     );
 });

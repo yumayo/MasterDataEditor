@@ -126,11 +126,9 @@ test.describe('バグ5: ミニEditorTableの列幅リサイズが機能するこ
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            // ミニEditorTable の最初の visible な列ヘッダーセルを取得する
-            // N:1 では hideColumnsByName() により id 列（col=0）が display:none になるため
-            // ":not([style*='display: none'])" で visible なヘッダーに絞る
+            // ミニEditorTable の最初の列ヘッダーセルを取得する
             const visibleColumnHeader = miniTable.locator(
-                '.editor-table-column-header:not([style*="display: none"])'
+                '.editor-table-column-header'
             ).first();
             await expect(visibleColumnHeader).toBeVisible();
 
@@ -188,9 +186,9 @@ test.describe('バグ5: ミニEditorTableの列幅リサイズが機能するこ
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            // visible な列ヘッダーを取得する
+            // 列ヘッダーを取得する
             const visibleColumnHeader = miniTable.locator(
-                '.editor-table-column-header:not([style*="display: none"])'
+                '.editor-table-column-header'
             ).first();
             await expect(visibleColumnHeader).toBeVisible();
 
@@ -220,7 +218,7 @@ test.describe('バグ5: ミニEditorTableの列幅リサイズが機能するこ
             // ミニEditorTableのセルをクリックしてフォーカスをミニテーブルに移す
             // Ctrl+Z を押したとき、ミニEditorTable の History に Undo が届くようにする
             const miniCell = miniTable.locator(
-                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell):not([style*="display: none"])'
+                '.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
             ).first();
             await expect(miniCell).toBeVisible();
             await miniCell.click();
