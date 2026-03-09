@@ -13,6 +13,8 @@ export interface IHistory {
     markSavedSilent(): void;
     /** タブボタンのDirty状態を更新する（ストアからの一括通知用） */
     setTabButtonDirty(isDirty: boolean): void;
+    /** テーブルデータがCSVと異なることを示す初期Dirty状態を設定する（registerHistoryから呼ばれる） */
+    markInitiallyDirty(): void;
 }
 
 /**
@@ -26,6 +28,10 @@ export interface IHistory {
  * いずれかのHistoryがdirtyならテーブルもdirtyと判定する。
  * これにより左ペイン・右ペインの複数箇所から同じテーブルを
  * 編集した場合も唯一の情報源としてDirty状態を管理できる。
+ *
+ * dirtyTableNames: historyRegistryから全Historyが除去された後も
+ * Dirty状態を記憶する補完フィールド。ミニテーブルのHistory破棄後に
+ * 同テーブルをタブで開いた際のDirty状態引き継ぎに使用する。
  */
 export class InMemoryTableStore {
     private readonly headers: Map<string, string[]>;
@@ -33,12 +39,19 @@ export class InMemoryTableStore {
     private readonly refCounts: Map<string, number>;
     /** テーブル名ごとのHistory登録簿（Dirty管理の唯一の情報源） */
     private readonly historyRegistry: Map<string, Set<IHistory>>;
+    /**
+     * Historyが全て除去された後もDirty状態を保持するフラグセット。
+     * unregisterTable でDirtyデータを保持する際に追加される。
+     * markAllSaved(保存完了) または registerHistory(Historyへの引き継ぎ) で除去される。
+     */
+    private readonly dirtyTableNames: Set<string>;
 
     constructor() {
         this.headers = new Map();
         this.rows = new Map();
         this.refCounts = new Map();
         this.historyRegistry = new Map();
+        this.dirtyTableNames = new Set();
     }
 
     /** テーブル登録（テスト・外部データ注入用の同期API） */
@@ -76,7 +89,8 @@ export class InMemoryTableStore {
     /**
      * テーブルデータをCSVから再読み込みする（refCountは維持）
      * 未保存タブクローズ後もミニEditorTableのrefCountにより残っているストアデータを
-     * CSV原本に巻き戻すために使用する
+     * CSV原本に巻き戻すために使用する。
+     * 巻き戻し後は補完Dirty状態もクリアする（CSVが正とする状態に戻るため）。
      */
     async reloadTableDataAsync(tableName: string): Promise<void> {
         if (!this.refCounts.has(tableName)) throw new Error('[InMemoryTableStore] reloadTableDataAsync: テーブル "' + tableName + '" は登録されていません');
@@ -85,6 +99,8 @@ export class InMemoryTableStore {
         csv.load(csvText);
         this.headers.set(tableName, csv.header);
         this.rows.set(tableName, csv.body);
+        // CSV巻き戻し後は補完Dirty状態をクリアする
+        this.dirtyTableNames.delete(tableName);
     }
 
     /** 参照カウント減少、0になったら削除（ただしDirtyデータは保持する） */
@@ -94,9 +110,11 @@ export class InMemoryTableStore {
         if (next <= 0) {
             // Dirty状態のテーブルはデータを保持して refCounts のみ削除する。
             // registerTableAsync が呼ばれたときに headers.has() で検知して再利用する。
-            // Clean状態であれば従来通り全データを削除する。
+            // dirtyTableNames にも記録し、全History除去後もDirty状態を引き継ぐ。
+            // Clean状態であれば従来通り全データを削除し、dirtyTableNames からも除去する。
             if (this.isTableDirty(tableName)) {
                 this.refCounts.delete(tableName);
+                this.dirtyTableNames.add(tableName);
             } else {
                 this.headers.delete(tableName);
                 this.rows.delete(tableName);
@@ -229,7 +247,9 @@ export class InMemoryTableStore {
 
     /**
      * テーブル名にHistoryを登録する（History生成時に呼ぶ）
-     * 同テーブルの複数Historyを追跡して、いずれかがdirtyならテーブルもdirtyと判定する
+     * 同テーブルの複数Historyを追跡して、いずれかがdirtyならテーブルもdirtyと判定する。
+     * dirtyTableNames にDirty状態が残っている場合は History に引き継いで dirtyTableNames から除去する。
+     * これにより Undo による Clean 復帰が可能になる（History ベースの判定に統一される）。
      */
     registerHistory(tableName: string, history: IHistory): void {
         let set = this.historyRegistry.get(tableName);
@@ -238,6 +258,11 @@ export class InMemoryTableStore {
             this.historyRegistry.set(tableName, set);
         }
         set.add(history);
+        // dirtyTableNames のDirty状態を History に引き継ぐ
+        if (this.dirtyTableNames.has(tableName)) {
+            history.markInitiallyDirty();
+            this.dirtyTableNames.delete(tableName);
+        }
     }
 
     /**
@@ -252,15 +277,20 @@ export class InMemoryTableStore {
 
     /**
      * テーブルがdirtyかどうかを判定する
-     * 登録されたHistoryのいずれかがisDirty()を返せばtrueとなる
+     * Historyが登録されている場合はHistory群のisDirty()を優先判定とする（Undoで Clean 復帰が可能）。
+     * Historyが未登録の場合は dirtyTableNames で補完判定する
+     * （ミニテーブルのHistory破棄後・タブで開く前の中間状態を正しく扱うため）。
      */
     isTableDirty(tableName: string): boolean {
         const set = this.historyRegistry.get(tableName);
-        if (!set) return false;
-        for (const history of set) {
-            if (history.isDirty()) return true;
+        if (set) {
+            for (const history of set) {
+                if (history.isDirty()) return true;
+            }
+            return false;
         }
-        return false;
+        // History 未登録の場合は dirtyTableNames で補完判定する
+        return this.dirtyTableNames.has(tableName);
     }
 
     /**
@@ -270,10 +300,13 @@ export class InMemoryTableStore {
      * フェーズ1: 全HistoryのsavedIndexを更新（notifyChange なし）
      * フェーズ2: 全Historyのタブボタンを一括更新（全てclean状態で通知）
      * これにより途中の中間通知で誤ったDirty表示が発生しない。
+     * dirtyTableNames からも除去して補完Dirty状態をクリアする。
      */
     markAllSaved(tableName: string): void {
         const set = this.historyRegistry.get(tableName);
         if (!set) throw new Error('[InMemoryTableStore.markAllSaved] テーブル "' + tableName + '" のHistoryレジストリが存在しません');
+        // 補完Dirty状態をクリアする
+        this.dirtyTableNames.delete(tableName);
         // フェーズ1: 全HistoryのsavedIndexを更新（通知なし）
         for (const history of set) {
             history.markSavedSilent();

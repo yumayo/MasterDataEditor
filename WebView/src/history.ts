@@ -339,6 +339,16 @@ export class History implements IHistory {
     }
 
     /**
+     * テーブルデータがCSVと異なることを示す初期Dirty状態を設定する（IHistory実装）
+     * registerHistory から呼ばれ、dirtyTableNames の Dirty 状態を History に引き継ぐ。
+     * savedIndex を -1（SAVED_INDEX_INITIAL）以外の無効値にすることで
+     * isDirty() が true を返し続け、Undo で currentIndex が戻れば Clean 復帰が可能となる。
+     */
+    markInitiallyDirty(): void {
+        this.savedIndex = SAVED_INDEX_LOST;
+    }
+
+    /**
      * 未保存の変更があるかどうか
      * @returns true: 保存時点から変更がある（dirty）, false: 保存時点と同じ（clean）
      */

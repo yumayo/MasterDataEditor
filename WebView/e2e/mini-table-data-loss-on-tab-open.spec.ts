@@ -281,4 +281,58 @@ test.describe('ミニEditorTableで編集したデータがタブを開くと失
             await expect(allCells.filter({ hasText: 'Sword' })).toBeVisible();
         },
     );
+
+    test(
+        '【タブDirty表示】ミニテーブルで shop_product を編集後、' +
+        'エクスプローラーから shop_product を新規タブで開いたときタブボタンに Dirty マークが付くこと',
+        async ({ page }) => {
+            // 1. shop テーブルをタブで開く
+            const shopTable = await openTableAsync(page, 'shop');
+
+            // 2. shop の1行目（WeaponShop, product_group_id=1）を選択する
+            //    → RelationsPanel に shop_product のミニEditorTable が表示される
+            await selectRowAsync(shopTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            // shop_product テーブルのセクションが表示されていることを確認する
+            const shopProductSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('shop_product', { exact: true }),
+            });
+            await expect(shopProductSection).toBeVisible();
+
+            // ミニEditorTable が表示されるまで待機する
+            const miniTable = shopProductSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // 3. ミニテーブル内の name 列セル（visible nth=1）を編集する
+            //    この時点では shop_product はまだ左ペインのタブとして開かれていない
+            await editMiniTableCellAsync(page, shopProductSection, 'SwordEdited');
+
+            // 編集後にミニテーブルの編集値が反映されていることを確認する
+            const firstDataCell = getMiniTableFirstDataCell(shopProductSection);
+            await expect(firstDataCell).toHaveText('SwordEdited');
+
+            // 4. エクスプローラーから shop_product を新規タブとして開く
+            //    タブ生成時に registerHistory() が呼ばれ、dirtyTableNames の Dirty 状態が
+            //    History の markInitiallyDirty() を通じて引き継がれる
+            await openTableAsync(page, 'shop_product');
+
+            // 5. shop_product のタブボタンに .tab-button-dirty-visible クラスが付与されていることを確認する
+            //
+            // 根本原因（RED になる理由）:
+            //   タブ生成時に History が savedIndex=0, currentIndex=0 で作られるため isDirty()=false。
+            //   InMemoryTableStore.isTableDirty() は別のミニテーブル History が dirty なので true を返すが、
+            //   タブ生成時にそれをチェックしてタブボタンの Dirty 表示を初期化するコードが存在しない。
+            //
+            // 修正後（GREEN になる条件）:
+            //   タブ生成時に InMemoryTableStore.isTableDirty() を確認し、
+            //   true であればタブボタンに setDirty(true) を呼び出す。
+            const shopProductTabButton = page.locator('.tab-button').filter({
+                hasText: 'shop_product',
+            });
+            await expect(shopProductTabButton).toBeVisible();
+            const dirtyIndicator = shopProductTabButton.locator('.tab-button-dirty');
+            await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
+        },
+    );
 });

@@ -570,6 +570,15 @@ export class Tab {
             // アクティブ化
             this.activateTabState(state);
             this.activeTabName = name;
+
+            // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
+            // これにより、ミニテーブルで編集→破棄→タブで開く、という操作でもDirtyマークが表示される。
+            // ミニテーブルのHistory破棄時に isDirty() ならば dirtyTableNames に残るため、
+            // 新しいHistoryが作られた後も isTableDirty() が true を返す。
+            if (this.store.isTableDirty(name)) {
+                tabButton.setDirty(true);
+            }
+
             // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
             state.selection.forceNotifyRelationsPanel();
 

@@ -843,3 +843,16 @@ activate()/deactivate() パターンを持つコントローラー（FillControl
 参照カウント方式のストアでデータを物理削除する際は、Dirty状態（未保存の変更がある）を必ずチェックし、未保存データを保護する仕組みを入れる。また、`unregisterTable` と `history.unregister()` の呼び出し順序は文脈によって異なるべきであることを認識する：ミニテーブル破棄時は「Dirty検出→データ保持」のためunregisterTableを先に、タブ閉じ時は「自分のHistoryを除去→残りのHistoryでDirty判定」のためhistory.unregisterを先に呼ぶ。この順序制約はコメントで明記し、テストケースとして「Dirty状態での参照カウント0」シナリオを含める。
 
 ---
+
+## 57. [6a39d72] — ミニテーブル編集後の新規タブDirtyマーク未表示
+
+### 不具合原因名
+History破棄後のDirty状態引き継ぎ漏れ
+
+### なぜそうなったのか
+ミニテーブル（RelationsPanel）で編集してDirty状態にした後、ミニテーブルが破棄されるとHistoryも一緒に破棄される。その後同テーブルをタブとして新規に開くと、新しいHistoryが `savedIndex=0, currentIndex=0` の Clean 状態で初期化されるため、`isDirty()=false` となりタブボタンにDirtyマークが表示されなかった。InMemoryTableStoreのデータ自体は前回の修正でDirty保持パスにより保持されていたが、Dirty状態の「情報」がHistoryのライフサイクルに依存しており、History破棄と共に失われていた。
+
+### どうしたら今後は再発しないか
+Dirty状態の情報をHistoryのライフサイクルから独立させる。InMemoryTableStoreに `dirtyTableNames: Set<string>` を追加し、`unregisterTable` のDirtyデータ保持時にフラグを記録する。新しいHistoryが `registerHistory` で登録される際に `markInitiallyDirty()` でDirty状態を引き継ぐことで、Historyベースの判定に統一しつつ、Undoによる Clean 復帰も可能にする。UIコンポーネント（EditorTable/History）の寿命とデータ管理の寿命を分離し、状態の引き継ぎメカニズムを設ける設計パターンを採用する。
+
+---
