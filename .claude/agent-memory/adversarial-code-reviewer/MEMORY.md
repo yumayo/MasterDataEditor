@@ -83,4 +83,13 @@
 - **Window listener累積問題**: activate()をN個のミニテーブルに呼ぶとmain+N個のSelectionDragControllerがwindow mousemove/mouseupを同時登録。
 
 ## Test Infrastructure Issues
-- Copy-paste: openTableAsync duplicated across 18+ e2e spec files (as of 2026-03-09).
+- Copy-paste: openTableAsync duplicated across 19+ e2e spec files (as of 2026-03-10). selectRowAsync, waitForRelationsPanelContentAsync also duplicated.
+
+## navigateToDefinition Dual Path (2026-03-10)
+- Two call sites: (a) mousedown Ctrl+click (editor-table.ts L315), (b) F12 key (editor-table-handler.ts L408)
+- Mini table branch added at top of navigateToDefinition, uses getRowPkValue(row) ignoring column param
+- relationsPanel field IS set on mini tables (relations-panel.ts L647)
+- RelationsPanel.navigateToDefinition uses currentEditorTable (left pane) for jump-origin history — correct for mini table case
+
+## Review History (continued)
+- 2026-03-10 (440756e+unstaged): ミニテーブルドリルダウン動作変更 + レースコンディション修正。F12テスト欠落・コピペ19個目・REDコメント残留指摘。
