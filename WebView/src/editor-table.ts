@@ -63,6 +63,13 @@ export class EditorTable {
     private readonly isMiniTable: boolean;
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     private autoFillEntries: Array<{ columnName: string; value: string }>;
+    /**
+     * DOMのデータ行インデックス（0始まり）からストアの行インデックスへのマッピング。
+     * 通常テーブル: storeRowIndices[i] = i（DOM行i+1 → ストア行i）。
+     * ミニテーブル: filteredRows作成時に各filteredRow がストアの何行目かを記録する。
+     * 行挿入・削除時に同期される。
+     */
+    private storeRowIndices: number[];
 
     constructor(
         tableName: string,
@@ -97,6 +104,8 @@ export class EditorTable {
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.autoFillEntries = [];
+        // initialize() で初期化される
+        this.storeRowIndices = [];
         this.selectionDragController = new SelectionDragController(
             this.element,
             selection,
@@ -183,6 +192,8 @@ export class EditorTable {
             const row = EditorTable.createRow(cells, rowIndex);
             this.element.appendChild(row);
         }
+        // 全テーブルで storeRowIndices を初期化する（ミニテーブルは1:Nの場合のみ setStoreRowIndices() で上書き）
+        this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
         for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
             const cells = [];
             const rowIndex = this.tableData.body.length + i;
@@ -722,11 +733,16 @@ export class EditorTable {
             storeColumnIndices.push(storeHeader.indexOf(headerName));
         }
 
-        for (let storeRow = 0; storeRow < storeRows.length; storeRow++) {
-            const domRow = storeRow + 1; // DOMは1始まり（列ヘッダー行がある）
-            if (domRow >= this.getRowCount()) break;
-
-            const storeRowData = storeRows[storeRow];
+        // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行を更新する
+        // 通常テーブルは storeRowIndices[i]=i なので従来と同様の動作となる
+        // ミニテーブルは filteredRows のストアインデックスを正しく参照できる
+        const domRowCount = this.getRowCount();
+        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+            const domRow = domDataRow + 1; // DOMは1始まり（列ヘッダー行がある）
+            if (domRow >= domRowCount) break;
+            const storeRowIndex = this.storeRowIndices[domDataRow];
+            if (storeRowIndex < 0 || storeRowIndex >= storeRows.length) continue;
+            const storeRowData = storeRows[storeRowIndex];
 
             for (let domCol = 0; domCol < domColumnCount; domCol++) {
                 const storeColIdx = storeColumnIndices[domCol];
@@ -755,6 +771,21 @@ export class EditorTable {
     }
 
     /**
+     * DOMデータ行インデックスからストア行インデックスへのマッピングを設定する
+     * ミニテーブルのfilteredRows構築後に buildMiniEditorTableAsync() から呼ばれる。
+     * storeRowIndices[i] = ストア内の実際の行インデックス（0始まり）。
+     */
+    setStoreRowIndices(indices: number[]): void {
+        this.storeRowIndices = indices;
+    }
+
+    /**
+     * storeRowIndices を内部モジュール（EditorTableStructure）から取得するためのアクセサ
+     * 行挿入・削除時に同期するために使用する
+     */
+    getStoreRowIndices(): number[] { return this.storeRowIndices; }
+
+    /**
      * FK自動埋め込み情報を取得する（InsertRowCommand / InsertRowsCommand から参照）
      */
     getAutoFillEntries(): Array<{ columnName: string; value: string }> {
@@ -772,9 +803,13 @@ export class EditorTable {
      * @param rowIndex DOMの行インデックス（列ヘッダー行を含む。データ行は1始まり）
      */
     applyAutoFillToRow(rowIndex: number): void {
-        // ストア行インデックスはDOMインデックス - 1（列ヘッダー行分）
-        const storeRowIndex = rowIndex - 1;
-        const storeHeader = this.store.getHeader(this.tableName);
+        // storeRowIndicesを使ってストア行インデックスを取得する（PK重複時でも正しい行を更新できる）
+        const domDataRowIndex = rowIndex - 1;
+        if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
+        const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+        // 照合失敗（-1）の場合はストア更新不可。DOM更新は継続する。
+        const canUpdateStore = storeRowIndex >= 0;
+        const storeHeader = canUpdateStore ? this.store.getHeader(this.tableName) : false;
         for (const entry of this.autoFillEntries) {
             const colCount = this.getColumnCount();
             for (let c = 0; c < colCount; c++) {
@@ -782,7 +817,7 @@ export class EditorTable {
                 // DOMセルを更新（参照ヒント適用のためreference.setCellValueAt()を使用）
                 this.reference.setCellValueAt(rowIndex, c + 1, entry.value);
                 // ストアをインデックスベースで更新（PK未入力でも動作する）
-                if (storeHeader !== false) {
+                if (canUpdateStore && storeHeader !== false) {
                     const storeColIndex = storeHeader.indexOf(entry.columnName);
                     if (storeColIndex !== -1) {
                         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, entry.value);
@@ -837,14 +872,32 @@ export class EditorTable {
     // ファサード: EditorTableReference
     // =========================================================================
 
-    /** 座標でセルのDOMと参照ヒントのみ更新する */
+    /**
+     * 座標でセルのDOMと参照ヒントを更新し、ストアをインデックスベースで同期する
+     *
+     * row: DOMの行インデックス（1始まり、列ヘッダー行を含む）
+     * column: DOMの列インデックス（1始まり、行ヘッダーを含む）
+     *
+     * PK値ベース検索（旧: updateCellValue）を廃止し、storeRowIndices による
+     * インデックスベースで更新する。PK重複があっても正しい行を更新できる。
+     */
     updateCellValueAt(row: number, column: number, value: string): void {
         this.reference.setCellValueAt(row, column, value);
-        const id = this.reference.getRowPkValue(row);
-        // column: DOMの列インデックス（1始まり、行ヘッダー含む）→ 0始まりのデータ列インデックスに変換
+        // DOMデータ行インデックス（0始まり）= DOM行インデックス - 1（列ヘッダー行分）
+        const domDataRowIndex = row - 1;
+        if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
+        const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+        // データ行外（空行等）・照合失敗（-1）の場合はストア更新をスキップ
+        if (storeRowIndex < 0) return;
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeHeader === false) return;
+        // DOMの列インデックス（1始まり、行ヘッダー含む）→ ストアの列インデックス（0始まり）
         const columnName = this.getColumnHeaderValue(column - 1);
-        this.store.updateCellValue(this.tableName, id, columnName, value);
-        // 動的参照用のfullDataCacheも同期する（キャッシュが存在する場合のみ更新される）
+        const storeColIndex = storeHeader.indexOf(columnName);
+        if (storeColIndex === -1) return;
+        this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
+        // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
+        const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
     }
 

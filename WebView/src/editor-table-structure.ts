@@ -173,6 +173,14 @@ export class EditorTableStructure {
         // これにより autoFillToRow() がストアをインデックスベースで更新できる
         const storeRowIndex = rowIndex - 1;
         this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(columnCount).fill(''));
+        // storeRowIndices にも挿入インデックスを追加し、後続エントリを+1する
+        // 通常テーブル: 単純に storeRowIndex を挿入して後続を+1
+        // ミニテーブル: filteredRows のサブセットなので挿入位置のストアインデックスで同期
+        const indices = this.table.getStoreRowIndices();
+        indices.splice(storeRowIndex, 0, storeRowIndex);
+        for (let i = storeRowIndex + 1; i < indices.length; i++) {
+            indices[i] += 1;
+        }
         // 後続の行のdata-rowと行ヘッダーの番号を更新
         for (let i = rowIndex + 1; i < tableElement.children.length; ++i) {
             const row = tableElement.children[i] as HTMLElement;
@@ -335,6 +343,20 @@ export class EditorTableStructure {
      */
     deleteRow(rowIndex: number): void {
         const tableElement = this.table.getTableElement();
+        // storeRowIndices からも削除する（DOMデータ行インデックス = rowIndex - 1）
+        // 削除後は後続エントリが-1になる必要があるが、ミニテーブルの場合はストア行インデックスは
+        // 他の filteredRows のインデックスなので単純-1では不正確になる。
+        // しかし行削除はストアからも削除されるため、各インデックスはそれぞれずれる。
+        // ここでは削除した storeRowIndex より大きい全エントリを-1して整合を保つ。
+        const domDataRowIndex = rowIndex - 1;
+        const indices = this.table.getStoreRowIndices();
+        if (domDataRowIndex >= 0 && domDataRowIndex < indices.length) {
+            const removedStoreIndex = indices[domDataRowIndex];
+            indices.splice(domDataRowIndex, 1);
+            for (let i = domDataRowIndex; i < indices.length; i++) {
+                if (indices[i] > removedStoreIndex) indices[i] -= 1;
+            }
+        }
         // 指定位置の行を削除
         const rowToRemove = tableElement.children[rowIndex];
         if (rowToRemove) {

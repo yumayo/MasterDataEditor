@@ -27,6 +27,12 @@ interface RelationEntry {
     fkColumnName: string;
     /** 1:Nの場合: 親テーブルのFK値（自動埋め込みする値）。N:1の場合は空文字列 */
     fkValue: string;
+    /**
+     * rows[i] がストアの何行目に対応するかのインデックス配列（0始まり）
+     * 1:Nフィルタリング時に記録し、ミニEditorTableの storeRowIndices として渡す。
+     * N:1はストアの全行を表示するため空配列（通常テーブルと同様 [0,1,...,n-1] として初期化される）。
+     */
+    storeRowIndices: number[];
 }
 
 /**
@@ -306,6 +312,9 @@ export class RelationsPanel {
                 rows,
                 fkColumnName: '',
                 fkValue: '',
+                // N:1はストア全行を表示するため storeRowIndices は不要。
+                // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
+                storeRowIndices: [],
             });
         }
 
@@ -344,14 +353,22 @@ export class RelationsPanel {
                 }
 
                 // reverseEntry.rows は ReverseReferenceRow[]（子テーブルのPK値一覧）なので
-                // 子テーブルのPKで行データをフィルタリングする
+                // 子テーブルのPKで行データをフィルタリングする。
+                // 同時に filteredRows[i] がストアの何行目かのインデックスを記録する。
+                // PK重複時でも正しいストア行を更新できるよう storeRowIndices をミニEditorTableに渡す。
                 const pkColIdx = header.indexOf(config.primaryKeyColumnName);
                 let filteredRows: string[][];
+                let filteredStoreRowIndices: number[];
                 if (pkColIdx !== -1) {
                     const pkSet = new Set(reverseEntry.rows.map(r => r.pkValue));
-                    filteredRows = allRows.filter(r => pkSet.has(r[pkColIdx]));
+                    const filteredWithIndices = allRows
+                        .map((r, i) => ({ row: r, storeIndex: i }))
+                        .filter(({ row }) => pkSet.has(row[pkColIdx]));
+                    filteredRows = filteredWithIndices.map(({ row }) => row);
+                    filteredStoreRowIndices = filteredWithIndices.map(({ storeIndex }) => storeIndex);
                 } else {
                     filteredRows = [];
+                    filteredStoreRowIndices = [];
                 }
 
                 const fkColName = reverseEntry.childColumnName;
@@ -366,6 +383,7 @@ export class RelationsPanel {
                     // fkValue: 逆参照マップのキー（= 参照先列の実際の値）を使う
                     // PK列参照なら pkValue と同じだが、非PK列参照では異なる
                     fkValue: columnValue,
+                    storeRowIndices: filteredStoreRowIndices,
                 });
             }
         }
@@ -594,6 +612,12 @@ export class RelationsPanel {
         const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
             scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows
         );
+        // 全ミニテーブルは initialize() で storeRowIndices = [0, 1, ...] に初期化される。
+        // 1:Nの場合のみ filteredStoreRowIndices で上書きする（フィルタリングされた行のストアインデックス）。
+        // N:1はストア全行をそのまま表示するため initialize() の初期値で正しい。
+        if (entry.relationType === '1:N') {
+            editorTable.setStoreRowIndices(entry.storeRowIndices);
+        }
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
         if (entry.fkColumnName !== '' && entry.fkValue !== '') {
             editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);
