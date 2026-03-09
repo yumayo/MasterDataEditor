@@ -808,6 +808,14 @@ export class EditorTable {
      */
     navigateToDefinition(row: number, column: number): void {
         if (this.relationsPanel === false) return;
+        // ミニテーブルの場合: 参照列の有無に関わらずミニテーブル自身のテーブルへジャンプする
+        if (this.isMiniTable) {
+            const pkValue = this.getRowPkValue(row);
+            if (pkValue === '') return;
+            this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
+            return;
+        }
+        // 通常テーブルの場合: FK参照先テーブルへジャンプする（既存動作）
         // データ列インデックスに変換（行ヘッダーが0列目のため -1）
         const dataColIdx = column - 1;
         if (dataColIdx < 0 || dataColIdx >= this.tableData.header.length) return;
