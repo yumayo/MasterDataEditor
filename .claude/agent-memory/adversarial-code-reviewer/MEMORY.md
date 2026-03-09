@@ -81,6 +81,12 @@
 - 2026-03-08 (unstaged-dirty): Dirty管理追加。markAllSaved N^2問題、保存失敗時dirty誤リセット指摘。
 - 2026-03-09 (unstaged-dirty-preserve-r1): Dirty保持パス追加。孤立データ・Dirtyマーク未表示・順序不整合指摘。
 - 2026-03-09 (unstaged-dirty-preserve-r2): 修正レビュー。isTableDirty到達不能・.catch内throw無意味・例外安全性欠如指摘。
+- 2026-03-09 (08cd3a1): dirtyTableNames補完フラグ追加+タブDirtyマーク初期化。Undo時永久Dirty固着・コメント3箇所不整合指摘。
+
+## dirtyTableNames 補完フラグの問題 (2026-03-09)
+- **CRITICAL: Undo永久Dirty固着**: isTableDirty()がdirtyTableNames.has()を最優先で返すため、Historyが登録されている状態でもdirtyTableNamesが残っていればUndoしてもDirtyが消えない
+- **修正方針**: Historyが存在する場合はHistoryのisDirty()を優先、dirtyTableNamesはHistory全除去時のフォールバックにすべき
+- **コメント不整合3箇所**: L42「unregisterHistoryで追加」→実際はunregisterTableで追加、L43「markTableClean」→メソッド未実装、テストコメントにRED前提記述残留
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: Now 5 arrays (miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories/miniTableNames). Must consolidate into single MiniTableEntry[] array.
