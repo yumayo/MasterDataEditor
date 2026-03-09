@@ -56,7 +56,7 @@
 
 ## Editable Relations Panel Issues (2026-03-08)
 - **RESOLVED: Dirty indicator** - now managed via History.notifyChange → updateDirtyMark
-- **OPEN: SelectionDragController not activated** - createMiniEditorTable skips editorTable.activate()
+- **FIXED: SelectionDragController not activated** - createMiniEditorTable now calls editorTable.activate(). NEW CONCERN: multiple window listeners from N mini tables + main table
 - **OPEN: Handler event listener leak** - destroyMiniEditorTables removes DOM but doesn't remove listeners
 - **Getter/Setter violations**: getStore(), getAutoFillEntries/setAutoFillEntries, getLeftPaneForScroll
 
@@ -82,6 +82,7 @@
 - 2026-03-09 (unstaged-dirty-preserve-r1): Dirty保持パス追加。孤立データ・Dirtyマーク未表示・順序不整合指摘。
 - 2026-03-09 (unstaged-dirty-preserve-r2): 修正レビュー。isTableDirty到達不能・.catch内throw無意味・例外安全性欠如指摘。
 - 2026-03-09 (08cd3a1): dirtyTableNames補完フラグ追加+タブDirtyマーク初期化。Undo時永久Dirty固着・コメント3箇所不整合指摘。
+- 2026-03-09 (unstaged-drag-selection): editorTable.activate()追加。windowリスナー累積・テストコピペ指摘。
 
 ## dirtyTableNames 補完フラグの問題 (2026-03-09)
 - **CRITICAL: Undo永久Dirty固着**: isTableDirty()がdirtyTableNames.has()を最優先で返すため、Historyが登録されている状態でもdirtyTableNamesが残っていればUndoしてもDirtyが消えない
@@ -90,7 +91,8 @@
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: Now 5 arrays (miniEditorTables/miniFillControllers/miniAreaResizers/miniHistories/miniTableNames). Must consolidate into single MiniTableEntry[] array.
-- **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。
+- **Multiple window listeners**: ミニテーブルのAreaResizer全てがwindow mousemove/mouseupを同時登録。SelectionDragControllerも同様（activate()追加後）。
+- **Window listener累積問題**: activate()をN個のミニテーブルに呼ぶと、main+N個のSelectionDragControllerがwindow mousemove/mouseupを同時登録。現状は各自のSelection.isSelecting()ガードで無害だが、end()に副作用追加時に破綻する地雷。
 
 ## Test Infrastructure Issues
-- Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 15+ e2e spec files.
+- Copy-paste: getDataCell, openTableAsync, editCellAsync duplicated across 17+ e2e spec files (openTableAsync confirmed in 17 files as of 2026-03-09).
