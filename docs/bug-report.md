@@ -856,3 +856,16 @@ History破棄後のDirty状態引き継ぎ漏れ
 Dirty状態の情報をHistoryのライフサイクルから独立させる。InMemoryTableStoreに `dirtyTableNames: Set<string>` を追加し、`unregisterTable` のDirtyデータ保持時にフラグを記録する。新しいHistoryが `registerHistory` で登録される際に `markInitiallyDirty()` でDirty状態を引き継ぐことで、Historyベースの判定に統一しつつ、Undoによる Clean 復帰も可能にする。UIコンポーネント（EditorTable/History）の寿命とデータ管理の寿命を分離し、状態の引き継ぎメカニズムを設ける設計パターンを採用する。
 
 ---
+
+## 58. [8b83486] — ミニEditorTable生成時のactivate()未呼び出しによるドラッグ選択不能を修正
+
+### 不具合原因名
+ミニEditorTable の `activate()` 呼び出し漏れ
+
+### なぜそうなったのか
+`Tab.createMiniEditorTable()` は `FillController.activate()` と `AreaResizer.activate()` は呼んでいたが、`EditorTable.activate()`（`SelectionDragController` と `ScrollBinding` の window リスナー登録）の呼び出しが漏れていた。通常タブでは `activateTabState()` 経由で `editorTable.activate()` が呼ばれるが、ミニテーブルはタブのライフサイクルに乗らず独自の初期化フローを持つため、必要な `activate()` が欠落した。#54（AreaResizer.activate()漏れ）と完全に同一の構造パターンであり、#54修正時に同時に検出できたはずだった。
+
+### どうしたら今後は再発しないか
+`createMiniEditorTable()` の初期化フローで activate すべきコンポーネント一覧（fillController / areaResizer / editorTable）をチェックリスト化し、新しいコンポーネント追加時に全生成パスで activate が呼ばれているか確認する。activate/deactivate の対称性を常に検証する。
+
+---

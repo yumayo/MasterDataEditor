@@ -756,6 +756,11 @@ export class Tab {
         // deactivate は RelationsPanel.destroyMiniEditorTables() で一括して行う
         areaResizer.activate();
 
+        // SelectionDragController（window mousemove/mouseup）と ScrollBinding を有効化する
+        // これがないとミニテーブルでマウスドラッグによる範囲選択が機能しない
+        // deactivate は RelationsPanel.destroyMiniEditorTables() で一括して行う
+        editorTable.activate();
+
         // 参照先テーブルを事前読み込みし、完了後に参照ヒントを一括適用する
         this.reference.preloadReferenceTables(tableData, editorTable);
 
