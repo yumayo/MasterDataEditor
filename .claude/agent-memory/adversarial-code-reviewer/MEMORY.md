@@ -34,6 +34,7 @@
 - Cleanup tasks often miss items in the SAME FILE as deleted code
 - Dead code detection: when removing a feature, search for methods whose ONLY callers were in the deleted code
 - **Map key semantics change**: When changing the key meaning of a Map, ALL .get() call sites must be updated (see parentColumnName review 2026-03-09)
+- **CSS selector dependency on removed feature**: When removing CSS display:none logic, grep ALL test files for `:not([style*="display: none"])` selectors AND nth() index assumptions that depended on hidden columns
 
 ## ReverseReferenceMap Key Change (2026-03-09, parentColumnName)
 - **Background**: Map key changed from "PK value" to "parent column value" (e.g. group_id value)
@@ -77,6 +78,7 @@
 - 2026-03-09 (unstaged-drag-selection): editorTable.activate()追加。windowリスナー累積・テストコピペ指摘。
 - 2026-03-09 (parentColumnName-r1): 逆参照マップキー変更。4箇所の.get()未修正・コメント不整合・テスト不足指摘。
 - 2026-03-09 (parentColumnName-r2): 修正レビュー。2/4修正済み。applyReverseReferenceHintがPK編集時に非PKヒント消失・死んだコード残留・コメント3箇所古い指摘。
+- 2026-03-10 (unstaged-hideColumns-removal): hideColumnsByName/hiddenColumns/cssHiddenColumns削除。mini-table-data-loss-on-tab-open.spec.ts修正漏れ（nth(1)セルずれ）・resize spec古セレクタ残留指摘。
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: Now 5 arrays. Must consolidate into single MiniTableEntry[] array.
