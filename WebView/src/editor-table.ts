@@ -16,7 +16,6 @@ import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -311,9 +310,9 @@ export class EditorTable {
         cell.addEventListener('mousedown', (e) => {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
-            // Ctrl+クリックで参照先テーブルへ定義ジャンプする
-            if (e.ctrlKey || e.metaKey) {
-                table.navigateToDefinition(position.row, position.column);
+            // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
+            if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
+                table.navigateToDefinition(position.row);
                 e.preventDefault();
                 return;
             }
@@ -799,34 +798,16 @@ export class EditorTable {
     // =========================================================================
 
     /**
-     * 参照セルのFK値から参照先テーブルの該当行へジャンプする
-     * Ctrl+クリックまたはF12から呼ばれる。
-     * relationsPanel 経由で Tab.navigateToTableRow() を実行する。
-     *
-     * @param row  DOM行インデックス（0始まり、列ヘッダー行を含む）
-     * @param column DOM列インデックス（1始まり、行ヘッダーが0列目）
+     * ミニテーブル専用: Ctrl+クリックまたはF12でミニテーブル自身のテーブルを左ペインで開く。
+     * 呼び出し元（mousedownハンドラ・F12キーハンドラ）でミニテーブル判定済みのため、
+     * ここではrelationsPanelの存在確認とPK値取得のみ行う。
      */
-    navigateToDefinition(row: number, column: number): void {
+    navigateToDefinition(row: number): void {
         if (this.relationsPanel === false) return;
-        // ミニテーブルの場合: 参照列の有無に関わらずミニテーブル自身のテーブルへジャンプする
-        if (this.isMiniTable) {
-            const pkValue = this.getRowPkValue(row);
-            if (pkValue === '') return;
-            this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
-            return;
-        }
-        // 通常テーブルの場合: FK参照先テーブルへジャンプする（既存動作）
-        // データ列インデックスに変換（行ヘッダーが0列目のため -1）
-        const dataColIdx = column - 1;
-        if (dataColIdx < 0 || dataColIdx >= this.tableData.header.length) return;
-        const ref = this.tableData.header[dataColIdx].reference;
-        if (!ref) return;
-        const expr = parseReferenceExpression(ref);
-        if (!isSimpleReference(expr)) return;
-        const fkValue = this.getCellValueAt(row, column);
-        if (fkValue === '') return;
-        // RelationsPanel.navigateToDefinition() 経由でジャンプ元を履歴に積んでからTabを切り替える
-        this.relationsPanel.navigateToDefinition(expr.tableName, fkValue);
+        if (!this.isMiniTable) return;
+        const pkValue = this.getRowPkValue(row);
+        if (pkValue === '') return;
+        this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
     }
 
     // =========================================================================

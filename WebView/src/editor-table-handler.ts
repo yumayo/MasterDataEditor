@@ -402,11 +402,11 @@ export class EditorTableHandler {
      * ナビゲーションモード（編集モードではない）のキー処理
      */
     private handleNavigationKeydown(keyboardEvent: KeyboardEvent): void {
-        // F12: 参照列のFK値から参照先テーブルへ定義ジャンプ
-        if (keyboardEvent.key === 'F12') {
+        // F12: ミニテーブルの場合のみ自テーブルを左ペインで開く（ドリルダウン）
+        if (keyboardEvent.key === 'F12' && this.table.isMiniTableInstance()) {
             keyboardEvent.preventDefault();
             const focus = this.selection.getFocus();
-            this.table.navigateToDefinition(focus.row, focus.column);
+            this.table.navigateToDefinition(focus.row);
             return;
         }
 

@@ -686,17 +686,10 @@ export class RelationsPanel {
 
     /**
      * 定義へジャンプ: 参照先テーブルの該当行に左ペインのタブで遷移する
-     * EditorTable.navigateToDefinition() から呼ばれる。
-     * ジャンプ元の { tableName, pkValue } を Tab の遷移履歴にプッシュしてからタブを切り替える。
+     * EditorTable.navigateToDefinition() から呼ばれる（ミニテーブル専用）。
      */
     navigateToDefinition(tableName: string, pkValue: string): void {
         if (this.tab === false) throw new Error('[RelationsPanel] navigateToDefinition: tab が未接続です');
-        if (this.currentEditorTable === false) throw new Error('[RelationsPanel] navigateToDefinition: currentEditorTable が未接続です');
-        // ジャンプ元の情報を遷移履歴にプッシュする
-        const focusRow = this.currentEditorTable.getSelection().getFocus().row;
-        const currentPkValue = this.currentEditorTable.getRowPkValue(focusRow);
-        this.tab.pushNavigationHistory(this.currentEditorTable.tableName, currentPkValue);
-        // 参照先テーブルの該当行へジャンプする
         this.tab.navigateToTableRow(tableName, pkValue);
     }
 
