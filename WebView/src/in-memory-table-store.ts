@@ -1,6 +1,5 @@
 import {Csv} from "./csv";
 import {readFileAsync} from "./api";
-import {config} from "./config";
 
 /**
  * History の最小インターフェース（循環参照を避けるため型だけ定義）
@@ -151,24 +150,6 @@ export class InMemoryTableStore {
         return this.rows.get(tableName)!;
     }
 
-    /** セル更新（主キー値＋列名で対象セルを特定する）。行が見つかり更新した場合true、未発見の場合false */
-    updateCellValue(tableName: string, pkValue: string, columnName: string, value: string): boolean {
-        if (!this.rows.has(tableName)) return false;
-        const header = this.headers.get(tableName)!;
-        const columnIndex = header.indexOf(columnName);
-        if (columnIndex === -1) return false;
-        const pkColumnIndex = header.indexOf(config.primaryKeyColumnName);
-        if (pkColumnIndex === -1) return false;
-        const tableRows = this.rows.get(tableName)!;
-        for (let i = 0; i < tableRows.length; i++) {
-            if (tableRows[i][pkColumnIndex] === pkValue) {
-                tableRows[i][columnIndex] = value;
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** セル更新（行インデックス＋列インデックスで対象セルを直接特定する）。行が見つかり更新した場合true、範囲外の場合false */
     updateCellValueByRowIndex(tableName: string, rowIndex: number, columnIndex: number, value: string): boolean {
         if (!this.rows.has(tableName)) return false;
@@ -198,22 +179,6 @@ export class InMemoryTableStore {
         const tableRows = this.rows.get(tableName)!;
         if (rowIndex < 0 || rowIndex >= tableRows.length) return;
         tableRows.splice(rowIndex, 1);
-    }
-
-    /** 主キー値で行を削除し、削除された行データと元のインデックスを返す */
-    removeRowByPk(tableName: string, pkValue: string): { rowData: string[]; rowIndex: number } | false {
-        if (!this.rows.has(tableName)) return false;
-        const header = this.headers.get(tableName)!;
-        const pkColumnIndex = header.indexOf(config.primaryKeyColumnName);
-        if (pkColumnIndex === -1) return false;
-        const tableRows = this.rows.get(tableName)!;
-        for (let i = 0; i < tableRows.length; i++) {
-            if (tableRows[i][pkColumnIndex] === pkValue) {
-                const rowData = tableRows.splice(i, 1)[0];
-                return { rowData, rowIndex: i };
-            }
-        }
-        return false;
     }
 
     /** 指定インデックスに行を挿入する */

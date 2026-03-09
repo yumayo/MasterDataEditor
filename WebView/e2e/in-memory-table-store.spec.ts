@@ -149,50 +149,50 @@ test.describe('存在しないテーブル', () => {
 // 4. セル更新
 // =====================================================
 test.describe('セル更新', () => {
-    test('updateCellValueで特定セルの値が更新される', () => {
+    test('updateCellValueByRowIndexで特定セルの値が更新される', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // PK値'1'の行のname列を"item_x"に更新
-        store.updateCellValue('enemies', '1', 'name', 'item_x');
+        // 行インデックス0のname列（列インデックス1）を"item_x"に更新
+        store.updateCellValueByRowIndex('enemies', 0, 1, 'item_x');
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);
         if (rows === false) return;
         expect(rows[0][1]).toBe('item_x');
     });
 
-    test('更新後にgetCsvで取得した値が反映されている', () => {
+    test('updateCellValueByRowIndex更新後にgetCsvで取得した値が反映されている', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // PK値'2'の行のvalue列を"999"に更新
-        store.updateCellValue('enemies', '2', 'value', '999');
+        // 行インデックス1のvalue列（列インデックス2）を"999"に更新
+        store.updateCellValueByRowIndex('enemies', 1, 2, '999');
         const csv = store.getCsv('enemies');
         expect(csv).not.toBe(false);
         if (csv === false) return;
         expect(csv.body[1][2]).toBe('999');
     });
 
-    test('更新後にgetRowsで取得した値が反映されている', () => {
+    test('updateCellValueByRowIndex更新後にgetRowsで取得した値が反映されている', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // PK値'3'の行のid列（PK列自体）を"42"に更新
-        store.updateCellValue('enemies', '3', 'id', '42');
+        // 行インデックス2のid列（列インデックス0）を"42"に更新
+        store.updateCellValueByRowIndex('enemies', 2, 0, '42');
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);
         if (rows === false) return;
         expect(rows[2][0]).toBe('42');
     });
 
-    test('存在しないPK値へのupdateCellValueがエラーを起こさない', () => {
+    test('updateCellValueByRowIndexで範囲外インデックスを指定してもエラーを起こさない', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();
         store.registerTable('enemies', header, body);
-        // 存在しないPK値を指定してもエラーにならない
-        expect(() => store.updateCellValue('enemies', 'nonexistent', 'name', 'value')).not.toThrow();
-        // 存在しない列名を指定してもエラーにならない
-        expect(() => store.updateCellValue('enemies', '1', 'nonexistent_column', 'value')).not.toThrow();
+        // 範囲外の行インデックスを指定してもエラーにならない
+        expect(() => store.updateCellValueByRowIndex('enemies', 99, 0, 'value')).not.toThrow();
+        // 範囲外の列インデックスを指定してもエラーにならない
+        expect(() => store.updateCellValueByRowIndex('enemies', 0, 99, 'value')).not.toThrow();
         // 既存データが破壊されていないことを確認
         const rows = store.getRows('enemies');
         expect(rows).not.toBe(false);
@@ -202,6 +202,25 @@ test.describe('セル更新', () => {
             ['2', 'item_b', '200'],
             ['3', 'item_c', '300'],
         ]);
+    });
+
+    test('PK重複テーブルでupdateCellValueByRowIndexが正しい行を更新する', () => {
+        const store = new InMemoryTableStore();
+        // PK重複テーブル（id=1が2行）
+        store.registerTable('items', ['id', 'name'], [
+            ['1', 'item_a'],
+            ['1', 'item_b'],
+            ['2', 'item_c'],
+        ]);
+        // 行インデックス=1（2行目）のname列を更新する
+        // PKベース検索なら誤って1行目（id=1の最初のヒット）を更新するが、
+        // インデックスベースなら正しく2行目を更新する
+        store.updateCellValueByRowIndex('items', 1, 1, 'item_b_edited');
+        const rows = store.getRows('items');
+        expect(rows).not.toBe(false);
+        if (rows === false) return;
+        expect(rows[0][1]).toBe('item_a');    // 1行目は変化しない
+        expect(rows[1][1]).toBe('item_b_edited');  // 2行目が更新される
     });
 });
 
