@@ -907,9 +907,13 @@ export class EditorTable {
         this.reference.updateColumnReferenceHints(columnIndex);
     }
 
-    /** 逆参照ヒントを更新する */
+    /** 逆参照ヒントを更新する。解決完了後にRelationsPanelも再描画する */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reference.updateReverseReferenceHints(map);
+        // 逆参照マップの非同期解決が完了した時点で、RelationsPanelの1:Nエントリを描画できるようになる。
+        // 初回テーブル展開時は forceNotifyRelationsPanel() が先に走り、逆参照マップが未設定のため
+        // 1:Nエントリが0件になる。ここで再描画することで1:Nも表示される。
+        this.forceRefreshRelationsPanel();
     }
 
     /** 逆参照マップにエントリが存在するか判定する */
