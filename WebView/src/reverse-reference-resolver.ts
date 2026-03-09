@@ -32,12 +32,19 @@ export interface ReverseReferenceEntry {
     priority: number;
     /** 子テーブルのFK列名（単純参照の場合のみ設定される。動的参照の場合は空文字列） */
     childColumnName: string;
+    /**
+     * 参照先の親テーブル列名（逆参照マップのキーに使われた列）
+     * 例: shop.shop_product_group_id が shop_product.group_id を参照する場合は "group_id"
+     * PK列を参照している場合は config.primaryKeyColumnName（通常 "id"）
+     * 動的参照の場合も config.primaryKeyColumnName を設定する
+     */
+    parentColumnName: string;
 }
 
 /**
  * 逆参照マップ
- * キー: 親テーブルのPK値
- * 値: そのPK値を参照しているエントリの配列
+ * キー: 参照先の親テーブル列の値（通常はPK値だが、非PK列を参照している場合はその列の値）
+ * 値: そのキー値に対応するエントリの配列。各エントリは parentColumnName でキー列名を保持する
  */
 export type ReverseReferenceMap =
     Map<string, ReverseReferenceEntry[]>;
@@ -122,22 +129,25 @@ export class ReverseReferenceResolver {
     /**
      * グループ化された逆参照情報をマップにマージする
      * childColumnName: 単純参照のFK列名。動的参照の場合は空文字列を渡す
+     * parentColumnName: 逆参照マップのキーに使った親テーブルの列名
+     *   単純参照では expr.columnName（例: "group_id"）、動的参照では config.primaryKeyColumnName
      */
     private mergeGroups(
         groups: Map<string, ReverseReferenceRow[]>,
         childTableName: string,
         priority: number,
         childColumnName: string,
+        parentColumnName: string,
         map: ReverseReferenceMap
     ): void {
         groups.forEach(
-            (rows, parentPkValue) => {
+            (rows, parentColumnValue) => {
                 let entries =
-                    map.get(parentPkValue);
+                    map.get(parentColumnValue);
                 if (!entries) {
                     entries = [];
                     map.set(
-                        parentPkValue, entries
+                        parentColumnValue, entries
                     );
                 }
                 entries.push({
@@ -145,6 +155,7 @@ export class ReverseReferenceResolver {
                     rows,
                     priority,
                     childColumnName,
+                    parentColumnName,
                 });
             }
         );
@@ -178,8 +189,12 @@ export class ReverseReferenceResolver {
 
         // parentTableName を参照しているFK列を探す
         const fkColumns: Array<{
+            /** 子テーブルのFK列名（例: shop_product_group_id） */
             columnName: string;
+            /** CSVヘッダー上のインデックス。後から解決する */
             index: number;
+            /** 参照先の親テーブル列名（例: group_id）。逆参照マップのキーに使う列 */
+            parentColumnName: string;
         }> = [];
 
         // 動的参照式を収集する
@@ -198,6 +213,7 @@ export class ReverseReferenceResolver {
                 fkColumns.push({
                     columnName: col.name,
                     index: -1, // CSVヘッダーで後から解決
+                    parentColumnName: expr.columnName,
                 });
             } else if (isDynamicReference(expr)) {
                 dynamicRefExprs.push({
@@ -339,8 +355,9 @@ export class ReverseReferenceResolver {
                 list.push({ pkValue, displayText });
             }
 
+            // 単純参照の parentColumnName は expr.columnName（参照先の親テーブル列名）
             this.mergeGroups(
-                groups, childTableName, priority, fk.columnName, map
+                groups, childTableName, priority, fk.columnName, fk.parentColumnName, map
             );
         }
 
@@ -383,9 +400,10 @@ export class ReverseReferenceResolver {
                 list.push({ pkValue, displayText });
             }
 
-            // 動的参照はFK列名を特定できないため空文字列を設定する
+            // 動的参照: FK列名は特定できないため空文字列。
+            // lookupColumn は常に参照先テーブルのPK列を指すため parentColumnName は primaryKeyColumnName
             this.mergeGroups(
-                groups, childTableName, priority, '', map
+                groups, childTableName, priority, '', config.primaryKeyColumnName, map
             );
         }
     }

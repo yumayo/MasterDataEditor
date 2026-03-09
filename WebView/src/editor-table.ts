@@ -332,10 +332,19 @@ export class EditorTable {
         cell.addEventListener('contextmenu', (e) => {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
+            // 全 parentColumnName の列値でエントリを収集する（非PK列参照にも対応）
+            const allEntries: ReverseReferenceEntry[] = [];
+            for (const colName of table.getAllParentColumnNames()) {
+                const colValue = table.getCellValueByColumnName(position.row, colName);
+                if (colValue === '') continue;
+                const entries = table.getReverseReferenceEntries(colValue);
+                for (const entry of entries) {
+                    if (entry.parentColumnName === colName) allEntries.push(entry);
+                }
+            }
+            if (allEntries.length === 0) return;
             const pkValue = table.getRowPkValue(position.row);
             if (pkValue === '') return;
-            const entries = table.getReverseReferenceEntries(pkValue);
-            if (entries.length === 0) return;
             e.preventDefault();
             e.stopPropagation();
             // ドラグ状態をリセット
@@ -343,7 +352,7 @@ export class EditorTable {
             table.contextMenu.show(e.clientX, e.clientY, [{
                 label: '参照箇所を表示',
                 action: () => {
-                    table.sidebar.showReferences(pkValue, entries);
+                    table.sidebar.showReferences(pkValue, allEntries);
                 },
             }]);
         });
@@ -903,19 +912,24 @@ export class EditorTable {
         this.reference.updateReverseReferenceHints(map);
     }
 
-    /** 逆参照ヒントの表示テキストを更新する（他テーブルからの伝搬用） */
-    updateReverseReferenceDisplayText(pkValue: string, childTableName: string, groupPosition: number, newDisplayText: string): void {
-        this.reference.updateReverseReferenceDisplayText(pkValue, childTableName, groupPosition, newDisplayText);
-    }
-
     /** 逆参照マップにエントリが存在するか判定する */
     hasReverseReferences(): boolean {
         return this.reference.hasReverseReferences();
     }
 
-    /** PK値から逆参照エントリを取得する */
-    getReverseReferenceEntries(pkValue: string): ReverseReferenceEntry[] {
-        return this.reference.getReverseReferenceEntries(pkValue);
+    /** 参照先列の値から逆参照エントリを取得する */
+    getReverseReferenceEntries(columnValue: string): ReverseReferenceEntry[] {
+        return this.reference.getReverseReferenceEntries(columnValue);
+    }
+
+    /** 逆参照マップ内で使われている全 parentColumnName の集合を返す */
+    getAllParentColumnNames(): Set<string> {
+        return this.reference.getAllParentColumnNames();
+    }
+
+    /** 指定行の指定列名のセル値を取得する。列が存在しない場合は空文字列を返す */
+    getCellValueByColumnName(rowIndex: number, columnName: string): string {
+        return this.reference.getCellValueByColumnName(rowIndex, columnName);
     }
 
     /** 行のPK値を取得する */

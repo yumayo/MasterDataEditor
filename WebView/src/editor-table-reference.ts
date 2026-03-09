@@ -18,7 +18,7 @@ export class EditorTableReference {
     private readonly table: EditorTable;
     private readonly tableData: EditorTableData;
     private readonly referenceDataCache: ReferenceDataCache;
-    /** 逆参照マップ（PK値→逆参照エントリ配列） */
+    /** 逆参照マップ（参照先列の値→逆参照エントリ配列） */
     private reverseReferenceMap: ReverseReferenceMap | false;
 
     constructor(table: EditorTable, tableData: EditorTableData, referenceDataCache: ReferenceDataCache) {
@@ -67,9 +67,22 @@ export class EditorTableReference {
         if (!column || !column.reference) {
             // 参照列でなければ通常のテキストコンテンツを設定
             cell.textContent = value;
-            // PK列の場合は逆参照ヒントを再適用
+            // PK列の場合は逆参照ヒントを再適用（全parentColumnNameの列値でエントリを収集）
             if (column && column.name === config.primaryKeyColumnName) {
-                this.applyReverseReferenceHint(cell, value);
+                const allEntries: ReverseReferenceEntry[] = [];
+                for (const colName of this.getAllParentColumnNames()) {
+                    const colDataIndex = this.tableData.header.findIndex(h => h.name === colName);
+                    if (colDataIndex === -1) continue;
+                    const colValue = this.table.getCellValueAt(rowIndex, colDataIndex + 1);
+                    if (colValue === '') continue;
+                    if (!this.reverseReferenceMap) continue;
+                    const entries = this.reverseReferenceMap.get(colValue);
+                    if (!entries) continue;
+                    for (const entry of entries) {
+                        if (entry.parentColumnName === colName) allEntries.push(entry);
+                    }
+                }
+                this.applyReverseReferenceHintFromEntries(cell, allEntries);
             }
             return;
         }
@@ -138,20 +151,41 @@ export class EditorTableReference {
     /**
      * 逆参照ヒントを更新する
      * ReverseReferenceResolver の結果を受け取り、PK列のセルに逆参照ヒントspanを追加する
+     * 非PK列参照にも対応するため、全 parentColumnName に対応する列値でマップをルックアップし、
+     * 得られた全エントリをPK列セルに適用する
      */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reverseReferenceMap = map;
         const tableElement = this.table.getTableElement();
-        // PK列のインデックスを取得
+        // PK列のインデックスを取得（ヒントの表示先）
         const pkColumnIndex = this.tableData.header.findIndex(col => col.name === config.primaryKeyColumnName);
         if (pkColumnIndex === -1) return;
-        // 全データ行のPK列セルに逆参照ヒントを追加
+        // 逆参照マップで使われている全 parentColumnName とそのデータ列インデックスを事前計算する
+        const parentColumnIndices = new Map<string, number>();
+        for (const colName of this.getAllParentColumnNames()) {
+            const idx = this.tableData.header.findIndex(col => col.name === colName);
+            if (idx !== -1) parentColumnIndices.set(colName, idx);
+        }
+        // 全データ行のPK列セルに逆参照ヒントを適用する
         for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
-            const cell = row.children[pkColumnIndex + 1] as HTMLElement;
-            if (!cell) continue;
-            const pkValue = EditorTable.getCellValue(cell);
-            this.applyReverseReferenceHint(cell, pkValue);
+            const pkCell = row.children[pkColumnIndex + 1] as HTMLElement;
+            if (!pkCell) continue;
+            // 全 parentColumnName の列値でエントリを収集する
+            const allEntries: ReverseReferenceEntry[] = [];
+            for (const [colName, colIdx] of parentColumnIndices) {
+                const colCell = row.children[colIdx + 1] as HTMLElement;
+                if (!colCell) continue;
+                const colValue = EditorTable.getCellValue(colCell);
+                if (colValue === '') continue;
+                const entries = this.reverseReferenceMap.get(colValue);
+                if (!entries) continue;
+                for (const entry of entries) {
+                    if (entry.parentColumnName === colName) allEntries.push(entry);
+                }
+            }
+            // 収集した全エントリでヒントを表示する
+            this.applyReverseReferenceHintFromEntries(pkCell, allEntries);
         }
     }
 
@@ -164,12 +198,41 @@ export class EditorTableReference {
     }
 
     /**
-     * PK値から逆参照エントリを取得する
+     * 参照先列の値から逆参照エントリを取得する
      * Map.get()の戻り値がundefined許容のため ?? で空配列に変換
      */
-    getReverseReferenceEntries(pkValue: string): ReverseReferenceEntry[] {
+    getReverseReferenceEntries(columnValue: string): ReverseReferenceEntry[] {
         if (!this.reverseReferenceMap) return [];
-        return this.reverseReferenceMap.get(pkValue) ?? [];
+        const entries = this.reverseReferenceMap.get(columnValue);
+        if (!entries) return [];
+        return entries;
+    }
+
+    /**
+     * 逆参照マップ内で使われている全 parentColumnName の集合を返す
+     * relations-panel.ts の1:N解決で「どの列値でルックアップするか」を決定するために使用する
+     */
+    getAllParentColumnNames(): Set<string> {
+        const result = new Set<string>();
+        if (!this.reverseReferenceMap) return result;
+        this.reverseReferenceMap.forEach(entries => {
+            for (const entry of entries) {
+                result.add(entry.parentColumnName);
+            }
+        });
+        return result;
+    }
+
+    /**
+     * 指定行の指定列名のセル値を取得する
+     * 列名はヘッダー定義から検索する。列が存在しない場合は空文字列を返す
+     * @param rowIndex 行インデックス（0始まり、列ヘッダー行を含む）
+     * @param columnName データ列の名前
+     */
+    getCellValueByColumnName(rowIndex: number, columnName: string): string {
+        const dataColumnIndex = this.tableData.header.findIndex(col => col.name === columnName);
+        if (dataColumnIndex === -1) return '';
+        return this.table.getCellValueAt(rowIndex, dataColumnIndex + 1);
     }
 
     /**
@@ -210,18 +273,9 @@ export class EditorTableReference {
         // 参照先テーブルの表示テキストを同期的に取得
         const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
         if (!displayText) return;
-        this.appendReferenceHint(cell, displayText);
-    }
-
-    /**
-     * セルに参照ヒントを追加する（既存のヒントは削除）
-     */
-    private appendReferenceHint(cell: HTMLElement, displayText: string): void {
-        // 既存の参照ヒントを削除
+        // 既存の参照ヒントを削除してから新しいヒントを追加
         const existingHint = cell.querySelector('.cell-reference-hint');
-        if (existingHint) {
-            existingHint.remove();
-        }
+        if (existingHint) existingHint.remove();
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reference-hint');
         hintSpan.textContent = displayText;
@@ -229,17 +283,14 @@ export class EditorTableReference {
     }
 
     /**
-     * セルに逆参照ヒントを適用する
-     * 逆参照マップにエントリがあればヒントspanを追加し、なければ既存のヒントを削除する
+     * エントリ配列を直接受け取りセルに逆参照ヒントを描画する
+     * updateReverseReferenceHints（全行更新）とsetCellValue（PK列編集時のインクリメンタル更新）から呼ばれる
      */
-    private applyReverseReferenceHint(cell: HTMLElement, pkValue: string): void {
+    private applyReverseReferenceHintFromEntries(cell: HTMLElement, entries: ReverseReferenceEntry[]): void {
         // 既存の逆参照ヒントを削除
         const existing = cell.querySelector('.cell-reverse-reference-hint');
         if (existing) existing.remove();
-        if (!this.reverseReferenceMap) return;
-        if (pkValue === '') return;
-        const entries = this.reverseReferenceMap.get(pkValue);
-        if (!entries || entries.length === 0) return;
+        if (entries.length === 0) return;
         const hintText = formatReverseReferenceHint(entries);
         if (hintText === '') return;
         const hintSpan = document.createElement('span');
@@ -312,27 +363,4 @@ export class EditorTableReference {
         }
     }
 
-    /** 逆参照マップの表示テキストを更新し、PK列のヒントを再描画する（他テーブルからの伝搬用） */
-    updateReverseReferenceDisplayText(pkValue: string, childTableName: string, groupPosition: number, newDisplayText: string): void {
-        if (!this.reverseReferenceMap) return;
-        const entries = this.reverseReferenceMap.get(pkValue);
-        if (!entries) return;
-        for (const entry of entries) {
-            if (entry.childTableName !== childTableName) continue;
-            if (groupPosition < entry.rows.length) {
-                entry.rows[groupPosition].displayText = newDisplayText;
-            }
-        }
-        // PK列のセルにヒントを再適用
-        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === config.primaryKeyColumnName);
-        if (pkColumnIndex === -1) return;
-        const tableElement = this.table.getTableElement();
-        for (let r = 1; r < tableElement.children.length; r++) {
-            const cell = (tableElement.children[r] as HTMLElement).children[pkColumnIndex + 1] as HTMLElement;
-            if (!cell) continue;
-            if (EditorTable.getCellValue(cell) === pkValue) {
-                this.applyReverseReferenceHint(cell, pkValue);
-            }
-        }
-    }
 }

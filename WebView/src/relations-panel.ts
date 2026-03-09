@@ -322,10 +322,21 @@ export class RelationsPanel {
         }
 
         // 1:N（逆参照）の解決
-        const pkValue = editorTable.getRowPkValue(rowIndex);
-        if (pkValue !== '') {
-            const reverseEntries = editorTable.getReverseReferenceEntries(pkValue);
-            for (const reverseEntry of reverseEntries) {
+        // 逆参照マップのキーは「参照先列の値」であり、PK値とは限らない。
+        // 例: shop.shop_product_group_id が shop_product.group_id を参照している場合、
+        //     マップのキーは group_id の値であるため、pkValue ではなく group_id の値でルックアップする必要がある。
+        // getAllParentColumnNames() で逆参照マップに使われている全列名を取得し、
+        // 各列名に対応する行の値でルックアップすることで非PK列参照にも対応する。
+        const parentColumnNames = editorTable.getAllParentColumnNames();
+        for (const parentColumnName of parentColumnNames) {
+            const columnValue = editorTable.getCellValueByColumnName(rowIndex, parentColumnName);
+            if (columnValue === '') continue;
+            const reverseEntriesForColumn = editorTable.getReverseReferenceEntries(columnValue);
+            for (const reverseEntry of reverseEntriesForColumn) {
+                // このエントリが現在の parentColumnName に対応するものか確認する
+                // （同一値でキーが衝突している別 parentColumnName のエントリを誤って取り込まない）
+                if (reverseEntry.parentColumnName !== parentColumnName) continue;
+
                 // タブ未オープンのテーブルはストアに存在しないため、キャッシュ経由でデータを取得する
                 const storeHeader = this.store.getHeader(reverseEntry.childTableName);
                 const storeRows = this.store.getRows(reverseEntry.childTableName);
@@ -344,8 +355,8 @@ export class RelationsPanel {
                     allRows = Array.from(fullData.rows.values());
                 }
 
-                // reverseEntry.rows は ReverseReferenceRow[]（pkValue一覧）なので
-                // PKで行データをフィルタリングする
+                // reverseEntry.rows は ReverseReferenceRow[]（子テーブルのPK値一覧）なので
+                // 子テーブルのPKで行データをフィルタリングする
                 const pkColIdx = header.indexOf(config.primaryKeyColumnName);
                 let filteredRows: string[][];
                 if (pkColIdx !== -1) {
@@ -366,7 +377,9 @@ export class RelationsPanel {
                     header,
                     rows: filteredRows,
                     fkColumnName: fkColName,
-                    fkValue: pkValue,
+                    // fkValue: 逆参照マップのキー（= 参照先列の実際の値）を使う
+                    // PK列参照なら pkValue と同じだが、非PK列参照では異なる
+                    fkValue: columnValue,
                     // 1:N: FK列はデータ構造から物理除去する（FK値はヘッダーのコンテキスト表示で補完される）
                     hiddenColumns: hiddenCols,
                     // 1:N: CSS非表示は不要（PK列は除去しないため）
