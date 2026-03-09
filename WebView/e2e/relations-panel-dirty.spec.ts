@@ -26,8 +26,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
  *   quest: id, name, enemy_id（クエスト。enemy.id をFK として参照）
  *
  * quest を開いて行を選択すると RelationsPanel に enemy のミニEditorTable が表示される。
- * N:1 リレーションのため hideColumnsByName() により id 列が display:none になる。
- * visible な列として ja 列だけが残り、セル編集に使用する。
+ * N:1 リレーションですべての列（id, ja）が表示される。
+ * ja 列のセルをダブルクリックして編集に使用する。
  */
 function createDirtyTestFileSystem(): MockFileSystem {
     return {
@@ -92,18 +92,14 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * リレーションパネル内の最初の visible なデータセルを返す
- *
- * N:1 では hideColumnsByName() により id 列（col=0）が display:none になるため、
- * ":not([style*='display: none'])" で visible なセルだけを対象にする。
+ * リレーションパネル内の最初のデータセルを返す
  */
 function getMiniTableFirstDataCell(page: Page): Locator {
     return page.locator(
         '.relations-panel .editor-table .editor-table-cell' +
         ':not(.editor-table-row-header)' +
         ':not(.editor-table-column-header)' +
-        ':not(.editor-table-corner-cell)' +
-        ':not([style*="display: none"])'
+        ':not(.editor-table-corner-cell)'
     ).first();
 }
 

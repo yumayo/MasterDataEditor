@@ -267,10 +267,8 @@ test.describe('RelationsPanel EditorTable流用', () => {
             // Phase 1 仕様変更: ミニEditorTableは編集可能になった（makeReadOnly() 廃止）。
             // dblclick で grid-textfield-active が表示されることを確認する。
             // buildMiniTableAsync は非同期のため、セルが DOM に出現するまで明示的に待機する。
-            // N:1ミニテーブルでは hideColumnsByName() により id 列（col=0）が display:none になるため、
-            // ":not([style*='display: none'])" で visible な最初のセルを選択する。
             const panelCell = page.locator(
-                '.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell):not([style*="display: none"])'
+                '.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)'
             ).first();
             await expect(panelCell).toBeVisible();
             await panelCell.dblclick();

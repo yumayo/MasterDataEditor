@@ -105,27 +105,27 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * リレーションパネル内の指定テーブルセクションにある、visible な2番目のデータセルを返す。
+ * リレーションパネル内の指定テーブルセクションにある、3番目のデータセル（name列）を返す。
  *
- * N:1 では列の並びが id(nth0), group_id(CSS非表示), name(nth1) となるため、
- * nth(0) は PK列の id セルになる。PK列を編集すると updateCellValue でのルックアップが
- * DOMの先行更新により失敗するため、nth(1) の name 列セルを対象にする。
- * ":not([style*='display: none'])" で visible なセルだけを対象にする。
+ * shop_product の列構成: id(nth0), group_id(nth1), name(nth2)
+ * すべての列が表示されるため、nth(2) が name 列のセルになる。
+ * nth(0) は PK列の id セルのため編集対象から外す。
+ * nth(1) は group_id 列のため編集対象から外す。
+ * nth(2) の name 列を対象にする。
  */
 function getMiniTableFirstDataCell(sectionLocator: Locator): Locator {
     return sectionLocator.locator(
         '.editor-table .editor-table-cell' +
         ':not(.editor-table-row-header)' +
         ':not(.editor-table-column-header)' +
-        ':not(.editor-table-corner-cell)' +
-        ':not([style*="display: none"])'
-    ).nth(1);
+        ':not(.editor-table-corner-cell)'
+    ).nth(2);
 }
 
 /**
  * ミニテーブルのセルをダブルクリックして新しい値を入力しEnterで確定する。
  *
- * 1. visible nth(1) のデータセル（name列）をダブルクリックして編集モードに入る
+ * 1. nth(2) のデータセル（name列）をダブルクリックして編集モードに入る
  * 2. 既存の内容を全選択してから新しい値を入力する
  * 3. Enter で確定する
  */
@@ -181,10 +181,10 @@ test.describe('ミニEditorTableで編集したデータがタブを開くと失
             const miniTable = shopProductSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // 3. ミニテーブル内の name 列セル（visible nth=1）を編集する
+            // 3. ミニテーブル内の name 列セル（nth=2）を編集する
             //    group_id=1 に対応する行は Sword(id=1) と Shield(id=2) の2件
-            //    visible セルの並び: nth(0)=id列"1", nth(1)=name列"Sword", nth(2)=id列"2", nth(3)=name列"Shield"
-            //    nth(0) は PK列のため編集すると store 更新が壊れる → nth(1) の name 列を選ぶ
+            //    セルの並び: nth(0)=id列"1", nth(1)=group_id列"1", nth(2)=name列"Sword", nth(3)=id列"2", ...
+            //    nth(0) は PK列のため編集すると store 更新が壊れる → nth(2) の name 列を選ぶ
             const editedValue = 'SwordEdited';
             await editMiniTableCellAsync(page, shopProductSection, editedValue);
 
@@ -304,7 +304,7 @@ test.describe('ミニEditorTableで編集したデータがタブを開くと失
             const miniTable = shopProductSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // 3. ミニテーブル内の name 列セル（visible nth=1）を編集する
+            // 3. ミニテーブル内の name 列セル（nth=2）を編集する
             //    この時点では shop_product はまだ左ペインのタブとして開かれていない
             await editMiniTableCellAsync(page, shopProductSection, 'SwordEdited');
 
