@@ -46,4 +46,57 @@ null/undefined 禁止 → boolean `false` や空文字 `""` をセンチネル�
 `currentRequestId` パターン: 呼び出し元でインクリメント、`renderAsync` 自身はインクリメントしない。
 
 ## Recurring Implementation Mistakes
-(ここに発見した繰り返しミスを記録していく)
+
+### ミニテーブルのストア行インデックス計算ミス（修正済）
+`insertRowInternal` でストアインデックスを計算する際は `storeRowIndices` から引く必要がある。
+- 上に挿入（domDataRowIndex < indices.length）: `storeRowIndex = indices[domDataRowIndex]`
+- 下に挿入（末尾の外）: `storeRowIndex = indices[domDataRowIndex - 1] + 1`
+- `splice` は DOM 位置 `domDataRowIndex` で行い、値は計算した `storeRowIndex` を使う
+- 後続エントリの+1は `indices[i] >= storeRowIndex` の条件でフィルタする（すでに正しい値のものを二重更新しない）
+通常テーブルでは `storeRowIndices[i] = i` なので同じロジックで正しく動作する。
+
+### Command の Do/Undo の非対称実装
+`insertRowInternal` がストアに `insertRowAt` するのに、対応する `deleteRowInternal`（Undo時）が
+`store.removeRow` を呼ばない非対称実装は危険。追加・削除 Command は必ずストアの対応メソッドを
+両方呼ぶこと。
+
+### expectCsvAsync でFK自動入力行を検証する書き方
+ミニテーブルで行追加すると `autoFillEntries` によりFK列に親IDが自動設定される。
+1:Nミニテーブルで行を挿入すると `applyAutoFillToRow()` が呼ばれ、FK列に親行のID値が入る。
+そのため挿入行は「全列空 `,,`」ではなく「FK列だけ埋まった `,2,`」になる。
+テストの期待値は `autoFillEntries` の動作を考慮して書くこと。
+
+例: enemy_id=2 を持つ親行の1:N子テーブル(skill)に行挿入した場合:
+```typescript
+await expectCsvAsync(page, 'data/skill.csv', `
+    id, enemy_id, name
+    1,  1,        slash
+    ,   2,          // ← enemy_id=2 が自動入力される（「,  ,」ではない）
+    2,  2,        thunder
+`);
+```
+
+### ミニテーブルの Ctrl+S 保存の設計（現在の正しい実装）
+ミニテーブルの Ctrl+S は `isMiniTableInstance()` で**ストア経由の保存を行う**（拒否ではない）。
+- `saveTableDataFromStoreAsync(tableName, store)` でストアの全列全行を保存（CSV破壊を防ぐ）
+- 保存後に `store.markAllSaved()` + `relationsPanel.updateDirtyMark(name, false)` でDirty解除
+- ミニテーブルはDOM上にフィルタ済みデータしか持たないがストアは全データを持つため安全
+
+通常テーブルの Ctrl+S も同様に `saveTableDataFromStoreAsync` を使う。
+保存フロー変更時は必ず Dirty マーク解除も合わせて実装すること（`relations-panel-dirty.spec.ts`）。
+
+## e2e テストパターン
+
+### ミニテーブルのコンテキストメニューで行操作
+```typescript
+// ミニテーブルの行ヘッダーを右クリック（rowIndex: 0始まり、データ行）
+const header = miniTable.locator('.editor-table-row-header').nth(rowIndex);
+await header.click({ button: 'right' });
+// コンテキストメニュー項目をクリック
+await page.locator('.context-menu.visible').locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
+```
+
+### タブ名で絞り込んだテーブル取得（strict mode violation 防止）
+```typescript
+const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
+```

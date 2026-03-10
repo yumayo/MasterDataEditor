@@ -18,7 +18,7 @@
 - `/WebView/src/relations-panel.ts` - Relations panel (right pane)
 - `/WebView/src/selection.ts` - Selection and focus management
 - `/WebView/src/tab.ts` - Tab management, EditorTable factory
-- `/WebView/src/editor-actions.ts` - saveTableData/extractTableData/mergeCsvData
+- `/WebView/src/editor-actions.ts` - saveTableDataFromStoreAsync/saveSchemaDataAsync (旧saveTableData/extractTableData/mergeCsvData削除済み)
 - `/WebView/src/in-memory-table-store.ts` - Central data store + IHistory interface + Dirty management
 
 ## DOM Structure (as of 2026-03-08)
@@ -38,17 +38,19 @@
 - **insert/delete対称性**: insertRowInternalがストアを操作するなら、deleteRowも必ずストアを操作すべき。対称操作の片方欠落はbug-report #2パターン
 - **storeRowIndicesミニテーブル不整合**: ミニテーブルのstoreRowIndicesは不連続配列。通常テーブル前提のインデックス計算を適用すると破綻する
 
-## storeRowIndices (2026-03-10)
+## storeRowIndices (2026-03-10, updated)
 - **導入**: PK重複時にupdateCellValueが最初のヒット行を誤更新するバグ修正
 - **設計**: EditorTable.storeRowIndices[] = DOMデータ行i → ストア行インデックス
 - **通常テーブル**: [0,1,2,...] の単純連番。initialize()で初期化
 - **ミニテーブル**: filteredRows構築時の不連続インデックス。setStoreRowIndices()で設定
+- **FIXED**: deleteRowでストアのremoveRow()追加（insertRowAtとの対称性修正）
+- **FIXED**: ミニテーブルでのinsertRowInternalインデックス計算修正（storeRowIndicesベース解決）
 - **OPEN ISSUES**:
-  1. deleteRowでストアのremoveRow()未呼び出し（insertRowAtとの非対称性）
-  2. ミニテーブルでのinsertRowInternalのインデックス計算が不正
-  3. N:1の全列一致比較が重複行で破綻（常に最初のマッチを返す）
-  4. replaceAllRows()後にstoreRowIndicesが陳腐化する
-  5. getter/setter禁止違反（getStoreRowIndices/setStoreRowIndices）
+  1. 0行テーブルへのinsertRowInternalでindices[-1]→NaN（境界値未処理）
+  2. N:1の全列一致比較が重複行で破綻（常に最初のマッチを返す）
+  3. replaceAllRows()後にstoreRowIndicesが陳腐化する
+  4. getter/setter禁止違反（getStoreRowIndices/setStoreRowIndices）
+  5. 同一テーブル名の複数ミニテーブル間でstoreRowIndices陳腐化
 
 ## Dirty Management (2026-03-08 -> 2026-03-09)
 - **IHistory interface** in in-memory-table-store.ts: isDirty(), markSaved(), setTabButtonDirty()
@@ -64,10 +66,13 @@
 - 1:N resolution: InMemoryTableStore (tab open) vs referenceDataCache (tab closed)
 - **Stale cache risk**: fullDataCache snapshots CSV at load time
 
-## Save Paths
-- 通常テーブル: extractTableData (DOM→CSV) + mergeCsvData
-- ミニテーブル: saveTableDataFromStoreAsync (ストア→CSV直接)
-- deleteRowでストア行未削除 → ミニテーブル保存時に削除行が復活する致命的バグ
+## Save Paths (updated 2026-03-10)
+- 通常テーブル・ミニテーブル共通: saveTableDataFromStoreAsync (ストア→CSV直接)
+- 旧saveTableData/extractTableData/mergeCsvData は削除済み
+- deleteRowのストア行削除は修正済み（insertRowInternalと対称化）
+- **OPEN**: 0行テーブルへのinsertRowInternalでindices[-1]→NaN（境界値バグ）
+- **OPEN**: ミニテーブルのDeleteRowCommand.undo()でFK列がストアに復元されない（DOMに表示されない列は退避されない）
+- **OPEN**: 同一テーブル名の複数ミニテーブル間でstoreRowIndicesが陳腐化する
 
 ## Review History
 - 2026-03-07 (ea2398b): group-end insertion + FK sync
@@ -94,7 +99,7 @@
 - **Window listener累積問題**: activate()をN個のミニテーブルに呼ぶとmain+N個のSelectionDragControllerがwindow mousemove/mouseupを同時登録。
 
 ## Test Infrastructure Issues
-- Copy-paste: openTableAsync duplicated across 19+ e2e spec files (as of 2026-03-10). selectRowAsync, waitForRelationsPanelContentAsync also duplicated.
+- Copy-paste: openTableAsync duplicated across 20+ e2e spec files (as of 2026-03-10). selectRowAsync, waitForRelationsPanelContentAsync also duplicated.
 
 ## navigateToDefinition Dual Path (2026-03-10)
 - Two call sites: (a) mousedown Ctrl+click (editor-table.ts L315), (b) F12 key (editor-table-handler.ts L408)
@@ -104,3 +109,4 @@
 
 ## Review History (continued)
 - 2026-03-10 (440756e+unstaged): ミニテーブルドリルダウン動作変更 + レースコンディション修正。F12テスト欠落・コピペ19個目・REDコメント残留指摘。
+- 2026-03-10 (5ecf45f): ミニテーブル行挿入ストア位置バグ修正+deleteRowストア同期+保存パス統一。致命的2件（0行NaN/storeRowIndices陳腐化）、重要3件（Undo FK列消失/空行フィルタ変更/getter違反）。
