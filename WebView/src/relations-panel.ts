@@ -352,14 +352,35 @@ export class RelationsPanel {
                     allRows = Array.from(fullData.rows.values());
                 }
 
-                // reverseEntry.rows は ReverseReferenceRow[]（子テーブルのPK値一覧）なので
-                // 子テーブルのPKで行データをフィルタリングする。
-                // 同時に filteredRows[i] がストアの何行目かのインデックスを記録する。
-                // PK重複時でも正しいストア行を更新できるよう storeRowIndices をミニEditorTableに渡す。
+                // 1:Nのフィルタリング: ストアの最新データから直接フィルタする。
+                // reverseEntry.rows（タブ初期化時のスナップショット）を使うと、
+                // バッファ空行への追加など後からストアに追加された行が除外されるバグが発生する。
+                //
+                // 単純参照（childColumnName が空でない）:
+                //   子テーブルのFK列（childColumnName）の値が columnValue と一致する行を収集する。
+                //   これにより常に最新のストアデータが反映される。
+                //
+                // 動的参照（childColumnName が空文字列）:
+                //   FK列名が特定できないため、reverseEntry.rows のPKセットでフィルタする
+                //   （従来の動作を維持）。
                 const pkColIdx = header.indexOf(config.primaryKeyColumnName);
                 let filteredRows: string[][];
                 let filteredStoreRowIndices: number[];
-                if (pkColIdx !== -1) {
+                if (reverseEntry.childColumnName !== '') {
+                    // 単純参照: ストアのFK列値で直接フィルタ（常に最新データを反映）
+                    const fkColIdx = header.indexOf(reverseEntry.childColumnName);
+                    if (fkColIdx !== -1) {
+                        const filteredWithIndices = allRows
+                            .map((r, i) => ({ row: r, storeIndex: i }))
+                            .filter(({ row }) => row[fkColIdx] === columnValue);
+                        filteredRows = filteredWithIndices.map(({ row }) => row);
+                        filteredStoreRowIndices = filteredWithIndices.map(({ storeIndex }) => storeIndex);
+                    } else {
+                        filteredRows = [];
+                        filteredStoreRowIndices = [];
+                    }
+                } else if (pkColIdx !== -1) {
+                    // 動的参照: reverseEntry.rows のPKセットでフィルタ（従来通り）
                     const pkSet = new Set(reverseEntry.rows.map(r => r.pkValue));
                     const filteredWithIndices = allRows
                         .map((r, i) => ({ row: r, storeIndex: i }))
