@@ -101,6 +101,21 @@ await page.locator('.context-menu.visible').locator('.context-menu-item', { hasT
 const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
 ```
 
+### 非アクティブなタブのDOM要素は visible ではない
+非アクティブなタブは `deactivateTabState()` で `wrapperElement.style.display = 'none'` が設定される。
+そのため非アクティブタブ内の `.editor-table-row-header` は Playwright で `not visible` になりタイムアウトする。
+タブを切り替えてから行を操作するには必ず `openTableAsync`（エクスプローラークリック）を呼ぶこと。
+
+```typescript
+// NG: skill タブがアクティブなまま enemy テーブルの行をクリックしようとする（タイムアウト）
+const enemyTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table`);
+await selectRowAsync(enemyTable, 0); // enemy タブが非アクティブなら not visible でタイムアウト
+
+// OK: エクスプローラーをクリックしてタブを切り替えてから行を選択する
+const enemyTable = await openTableAsync(page, 'enemy');
+await selectRowAsync(enemyTable, 0);
+```
+
 ### expectCsvAsync で空行（挿入した行）を検証する書き方
 通常テーブルへの行挿入では autoFill がないため `insertRowAt(tableName, idx, Array(columnCount).fill(''))` で全列空になる。
 3列テーブル（id,name,value）なら挿入行は `,,` として保存される。
