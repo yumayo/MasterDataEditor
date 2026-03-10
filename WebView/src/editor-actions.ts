@@ -3,7 +3,6 @@ import {Selection, FillDirection} from "./selection";
 import {History} from "./history";
 import {CellChange} from "./command";
 import {generateSeriesData} from "./fill-series";
-import {Csv} from "./csv";
 import {readFileAsync, writeFileAsync} from "./api";
 import {InMemoryTableStore} from "./in-memory-table-store";
 
@@ -289,106 +288,6 @@ export function applyFillSeries(
 }
 
 /**
- * テーブルのDOMからCSVデータを抽出する
- * @param table EditorTable
- * @returns ヘッダー配列とボディ配列
- */
-export function extractTableData(table: EditorTable): { header: string[]; body: string[][] } {
-    const header: string[] = [];
-    const body: string[][] = [];
-
-    const columnCount = table.getColumnCount();
-    const rowCount = table.getRowCount();
-
-    // 列ヘッダーを取得
-    for (let c = 0; c < columnCount; c++) {
-        header.push(table.getColumnHeaderValue(c));
-    }
-
-    // 行1以降がデータ行
-    for (let r = 1; r < rowCount; r++) {
-        const rowData: string[] = [];
-
-        // 列0は行ヘッダーなのでスキップ（column=1から開始）
-        for (let c = 1; c <= columnCount; c++) {
-            rowData.push(table.getCellValueAt(r, c));
-        }
-
-        // 最初のセルが空でない行のみ追加（データがある行のみ保存）
-        if (rowData.length > 0 && rowData[0] !== '') {
-            body.push(rowData);
-        } else {
-            // 空行に到達したら終了
-            break;
-        }
-    }
-
-    return { header, body };
-}
-
-/**
- * 既存CSVとテーブルデータをマージする
- * - 既存CSVのヘッダーを基準にする
- * - テーブルの列が既存CSVにあれば、その位置のデータを上書き
- * - テーブルの列が既存CSVになければ、新しい列として追加
- *
- * @param existingCsv 既存のCSV
- * @param tableData テーブルから抽出したデータ
- * @returns マージされたCSV
- */
-export function mergeCsvData(existingCsv: Csv, tableData: { header: string[]; body: string[][] }): Csv {
-    const resultCsv = new Csv();
-
-    // 既存CSVのヘッダーをベースに、新しい列を追加
-    const mergedHeader: string[] = [...existingCsv.header];
-    const tableToMergedIndex: number[] = [];  // テーブル列 -> マージ後のCSV列のマッピング
-
-    for (let i = 0; i < tableData.header.length; i++) {
-        const columnName = tableData.header[i];
-        const existingIndex = existingCsv.header.indexOf(columnName);
-
-        if (existingIndex !== -1) {
-            // 既存CSVに存在する列
-            tableToMergedIndex.push(existingIndex);
-        } else {
-            // 新しい列を追加
-            tableToMergedIndex.push(mergedHeader.length);
-            mergedHeader.push(columnName);
-        }
-    }
-
-    resultCsv.header = mergedHeader;
-
-    // ボディデータをマージ
-    // 既存CSVの列で新データに含まれない列（ビューの非表示列等）は既存値を保持する
-    const mergedBody: string[][] = [];
-    for (let r = 0; r < tableData.body.length; r++) {
-        const tableRow = tableData.body[r];
-        // マージ後のヘッダーの長さで空行を初期化
-        const mergedRow: string[] = new Array(mergedHeader.length).fill('');
-
-        // 既存CSVに対応する行がある場合、まず既存値でベースを作る
-        if (r < existingCsv.body.length) {
-            for (let c = 0; c < existingCsv.header.length && c < existingCsv.body[r].length; c++) {
-                mergedRow[c] = existingCsv.body[r][c];
-            }
-        }
-
-        // テーブルのデータを対応する列に配置（既存値を上書き）
-        for (let c = 0; c < tableRow.length; c++) {
-            const mergedIndex = tableToMergedIndex[c];
-            mergedRow[mergedIndex] = tableRow[c];
-        }
-
-        mergedBody.push(mergedRow);
-    }
-
-    resultCsv.body = mergedBody;
-
-    return resultCsv;
-}
-
-/**
  * スキーマJSONに列幅を保存する
  * 既存JSONを読み込んでwidthフィールドだけ更新することで、
  * serialize()では保持できないフィールド（unique_key, index等）を破壊しない
@@ -411,45 +310,15 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
 }
 
 /**
- * テーブルデータをCSVファイルに保存する（既存CSVとマージ）
- * @param table EditorTable
- */
-export async function saveTableData(table: EditorTable): Promise<void> {
-    const tableName = table.tableName;
-    const csvPath = `data/${tableName}.csv`;
-
-    // テーブルからデータを抽出
-    const tableData = extractTableData(table);
-
-    // 既存CSVを読み込む
-    let existingCsv = new Csv();
-    try {
-        const existingCsvContents = await readFileAsync(csvPath);
-        existingCsv.load(existingCsvContents);
-    } catch {
-        // ファイルが存在しない場合は空のCSVとして扱う
-        existingCsv.header = [];
-        existingCsv.body = [];
-    }
-
-    // マージ
-    const mergedCsv = mergeCsvData(existingCsv, tableData);
-
-    // 保存
-    await writeFileAsync(csvPath, mergedCsv.toString());
-
-    console.log(`Saved ${csvPath}`);
-}
-
-/**
- * ストアのデータからCSVを保存する（ミニテーブル用）
+ * ストアのデータからCSVを保存する
  *
- * ミニEditorTableはFK列が欠落したフィルタ済みデータのみ保持するため、
- * extractTableData() 経由での保存はCSVを破壊する可能性がある。
- * ストアには全列のデータが存在するため、ストアから直接保存することで安全に保存できる。
+ * ストアはSSOT（信頼できる唯一の情報源）として全行・全列のデータを保持する。
+ * DOM経由の保存（旧: saveTableData）は「最初のセルが空の行で終了」するため、
+ * 行挿入で追加した空行がストア内にある場合にデータが欠落する。
+ * ストアから直接保存することで挿入・削除を含む全変更を正確にCSVに反映できる。
  *
  * @param tableName 保存するテーブル名
- * @param store InMemoryTableStore（全列データを持つ）
+ * @param store InMemoryTableStore（全行全列データを持つ）
  */
 export async function saveTableDataFromStoreAsync(tableName: string, store: InMemoryTableStore): Promise<void> {
     const csvPath = `data/${tableName}.csv`;

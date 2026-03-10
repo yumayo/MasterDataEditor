@@ -334,7 +334,8 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
             // 2行目（id=1, name=fireball）のname列を "fireball_edited" に変更する
             // ストアのインデックス=1（0始まり）に相当する行を編集している
             // PK値='1'は1行目と同じなので、PKベース検索では1行目が更新されるバグが発生する
-            await editMiniTableCellAsync(miniTable, page, 1, 1, 'fireball_edited');
+            // colIndex=2: id(0), enemy_id(1), name(2) — FK列は非表示でないため全列可視
+            await editMiniTableCellAsync(miniTable, page, 1, 2, 'fireball_edited');
 
             // ミニテーブルのCtrl+SはisMiniTableInstance()で拒否されるため、
             // エクスプローラーからskillタブを開いてCtrl+Sで保存する。
@@ -374,7 +375,8 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
             await expect(miniTable.locator('.editor-table-row')).toHaveCount(4);
 
             // 2行目（id=1, name=fireball）のname列を変更する
-            await editMiniTableCellAsync(miniTable, page, 1, 1, 'fireball_edited');
+            // colIndex=2: id(0), enemy_id(1), name(2) — FK列は非表示でないため全列可視
+            await editMiniTableCellAsync(miniTable, page, 1, 2, 'fireball_edited');
 
             // ミニテーブルのCtrl+SはisMiniTableInstance()で拒否されるため、
             // エクスプローラーからskillタブを開いてCtrl+Sで保存する

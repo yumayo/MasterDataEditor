@@ -18,7 +18,6 @@ import {
     moveCellUpWithinSelection,
     moveCellRightWithinSelection,
     moveCellLeftWithinSelection,
-    saveTableData,
     saveSchemaDataAsync,
     saveTableDataFromStoreAsync,
     getTarget
@@ -414,33 +413,24 @@ export class EditorTableHandler {
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
             if (this.readOnly) return;
+            const store = this.table.getStore();
             if (this.table.isMiniTableInstance()) {
                 // ミニEditorTableの場合はストアの全列データからCSVを保存する。
-                // FK列が欠落したフィルタ済みデータで上書きされるのを防ぐため、
-                // DOM経由の保存（extractTableData）ではなくストア経由で保存する。
-                const store = this.table.getStore();
-                saveTableDataFromStoreAsync(this.table.tableName, store).then(() => {
-                    store.markAllSaved(this.table.tableName);
-                    // markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
-                    // RelationsPanelのDirtyマークは呼び出し元で明示的に更新する
-                    if (this.table.relationsPanel !== false) {
-                        this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
-                    }
-                }).catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
+                // DOM上はFK列が欠落したフィルタ済みデータのみ表示しているが、
+                // ストアは全列・全行データを保持しているため、ストア経由で保存すればCSVを破壊しない。
+                saveTableDataFromStoreAsync(this.table.tableName, store)
+                    .then(() => { this.markSavedAndUpdatePanel(); })
+                    .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
                 return;
             }
+            // 通常テーブルの保存: ストアから直接CSVを生成して保存する。
+            // ストアはSSOTとして全行・全列のデータを保持しているため、
+            // 行挿入・削除を含む全変更を正確にCSVに反映できる。
             Promise.all([
-                saveTableData(this.table),
+                saveTableDataFromStoreAsync(this.table.tableName, store),
                 saveSchemaDataAsync(this.table)
-            ]).then(() => {
-                // ストアの全History（ミニテーブル含む）を一括でmarkSavedする。
-                // markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
-                // RelationsPanelのDirtyマークは呼び出し元で明示的に更新する。
-                this.table.getStore().markAllSaved(this.table.tableName);
-                if (this.table.relationsPanel !== false) {
-                    this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
-                }
-            }).catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableData failed: ' + String(e)); });
+            ]).then(() => { this.markSavedAndUpdatePanel(); })
+              .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
             return;
         }
 
@@ -586,6 +576,18 @@ export class EditorTableHandler {
                 }
             });
             return;
+        }
+    }
+
+    /**
+     * 保存完了後の共通後処理: ストアのDirtyフラグをクリアし、RelationsPanelのDirtyマークを更新する。
+     * markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
+     * RelationsPanelのDirtyマークは呼び出し元で明示的に更新する必要がある。
+     */
+    private markSavedAndUpdatePanel(): void {
+        this.table.getStore().markAllSaved(this.table.tableName);
+        if (this.table.relationsPanel !== false) {
+            this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
         }
     }
 
