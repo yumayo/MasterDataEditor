@@ -30,7 +30,32 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 
 あなたは **orchestrator** スキルを使用して、エージェントを活用してください。これが何より重要で、しないとトークンが制限に達しcompactionしなければならないことが多々あります。
 
-不具合の調査は、**bug-diagnosis-coordinator** エージェントに任せること。
+### エージェント一覧
+
+#### ワークフロー系エージェント
+| エージェント名 | 担当 |
+|---|---|
+| **typescript-tdd-developer** | TDDサイクルでの TypeScript 実装全般 |
+| **playwright-test-reporter** | Playwright テスト実行・結果レポート |
+| **fix-scope-auditor** | 修正スコープの妥当性監査（変更範囲が適切か） |
+| **adversarial-code-reviewer** | 敵対的コードレビュー（バグ・脆弱性の発見） |
+| **code-reviewer** | 一般的なコードレビュー |
+
+#### ファイル/クラス担当エージェント
+| エージェント名 | 担当ファイル/クラス |
+|---|---|
+| **editor-table-integrator** | `EditorTable`（editor-table.ts）— テーブルグリッドのファサード |
+| **in-memory-table-store** | `InMemoryTableStore` — メモリ上のテーブルデータストア |
+| **reference-data-specialist** | 参照データ（外部キー参照・逆参照解決） |
+| **relations-panel-owner** | `RelationsPanel`（relations-panel.ts）— 右ペイン関連テーブル表示 |
+| **selection-integrator** | `Selection`（selection.ts）— セル選択状態管理 |
+| **sidebar-panel** | `Sidebar` — サイドバー（EXPLORER/REFERENCES/SEARCH） |
+| **tab-integrator** | `Tab`（tab.ts）— タブ管理・EditorTable生成 |
+| **undo-redo-input-controller** | Undo/Redo・入力制御（Commandパターン） |
+
+### エージェントの使い方
+
+不具合の調査は、TeamCreateでチームを作成し、関連するファイル/クラス担当エージェントをチームメンバーとして参加させること。各担当エージェントが自分の管轄ファイルを調査し、根本原因と対策案を報告する。
 
 実装は、**typescript-tdd-developer** エージェントに任せること。
 
