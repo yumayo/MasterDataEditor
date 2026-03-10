@@ -204,6 +204,8 @@ export class EditorTable {
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
+            // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
+            row.classList.add('editor-table-empty-row');
             this.element.appendChild(row);
         }
         // フィル中のマウス移動イベント
@@ -756,6 +758,70 @@ export class EditorTable {
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // バッファ空行の昇格・降格
+    // =========================================================================
+
+    /**
+     * バッファ空行をストアに昇格する（PromoteBufferRowCommandのexecute用）
+     *
+     * emptyRowCount 領域の行（storeRowIndices 外）に初めてデータが入力されるとき、
+     * ストアに空行を追加して storeRowIndices を拡張し、editor-table-empty-row クラスを除去する。
+     * 呼び出し前に domDataRowIndex が storeRowIndices.length 以上であることを確認すること。
+     *
+     * @param domDataRowIndex DOMデータ行インデックス（0始まり、列ヘッダー行を除く）
+     */
+    promoteBufferRowToStore(domDataRowIndex: number): void {
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeHeader === false) throw new Error('[EditorTable.promoteBufferRowToStore] ストアにテーブルが登録されていません: ' + this.tableName);
+        // ストア行の列数はDOMではなくストアのヘッダー長で決定する。
+        // ミニテーブルはDOM列数がストアのサブセット（FK列を除く）のため getColumnCount() では不正になる。
+        const storeColumnCount = storeHeader.length;
+        // domDataRowIndex が storeRowIndices の末尾を超える場合、間の行も昇格する必要がある。
+        // 例: storeRowIndices=[0,1,2] で domDataRowIndex=5 の場合、3,4,5 を順に追加する。
+        const currentLength = this.storeRowIndices.length;
+        for (let i = currentLength; i <= domDataRowIndex; i++) {
+            // ストアの末尾に空行を追加（getHeader が false でない場合 getRows も必ず存在する）
+            const storeRows = this.store.getRows(this.tableName);
+            if (storeRows === false) throw new Error('[EditorTable.promoteBufferRowToStore] ストア行データが存在しません: ' + this.tableName);
+            const storeRowIndex = storeRows.length;
+            this.store.insertRowAt(this.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
+            this.storeRowIndices.push(storeRowIndex);
+            // DOMの該当行から editor-table-empty-row クラスを除去する（data行として昇格）
+            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            if (domRow) domRow.classList.remove('editor-table-empty-row');
+        }
+    }
+
+    /**
+     * ストア行をバッファ空行に降格する（PromoteBufferRowCommandのundo用）
+     *
+     * 昇格した行を逆操作でストアから削除し、storeRowIndices を縮小し、
+     * editor-table-empty-row クラスを復元する。
+     * 昇格時に追加した末尾行だけを削除する（domDataRowIndex から末尾まで）。
+     *
+     * @param domDataRowIndex DOMデータ行インデックス（0始まり）。この行以降を降格する
+     */
+    demoteStoreRowToBuffer(domDataRowIndex: number): void {
+        // domDataRowIndex 以降の全ての昇格行を末尾から逆順で削除する
+        const currentLength = this.storeRowIndices.length;
+        for (let i = currentLength - 1; i >= domDataRowIndex; i--) {
+            const storeRowIndex = this.storeRowIndices[i];
+            this.store.removeRow(this.tableName, storeRowIndex);
+            this.storeRowIndices.splice(i, 1);
+            // DOMの該当行に editor-table-empty-row クラスを復元する
+            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            if (domRow) domRow.classList.add('editor-table-empty-row');
+        }
+    }
+
+    /**
+     * 指定の domDataRowIndex がバッファ空行（ストア未登録）かどうかを判定する
+     */
+    isBufferRow(domDataRowIndex: number): boolean {
+        return domDataRowIndex >= this.storeRowIndices.length;
     }
 
     // =========================================================================

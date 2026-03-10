@@ -2,7 +2,7 @@ import {EditorTable} from "./editor-table";
 import {GridTextField} from "./grid-textfield";
 import {Selection, CellRange} from "./selection";
 import {History} from "./history";
-import {CellChange} from "./command";
+import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {EditorTableData} from "./model/editor-table-data";
@@ -826,10 +826,47 @@ export class EditorTableHandler {
     /**
      * セル値変更を適用し、履歴に記録する
      * selection.setRange()は呼ばない（呼び出し元の責任）。
+     *
+     * バッファ空行（storeRowIndices の範囲外）への変更が含まれる場合、
+     * 事前にその行をストアに昇格し、PromoteBufferRowCommand + CellChangeCommand の
+     * CompositeCommand として履歴に積む（Undoで正しくストア行を削除できるようにする）。
      */
     private applyCellChangesWithHistory(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
+        // バッファ空行への変更を検出して昇格が必要な行を収集し、昇格コマンドを構築する。
+        // 同一行に対して重複昇格しないよう domDataRowIndex の Set で管理する。
+        // 昇格を実際に行う前に storeRowIndices.length を記録することで Undo 時の対称性を保つ。
+        const promoteCommands: PromoteBufferRowCommand[] = [];
+        const promotedDomDataRowIndices = new Set<number>();
+        for (const change of changes) {
+            const domDataRowIndex = change.row - 1; // DOM行インデックス(1始まり) → DOMデータ行インデックス(0始まり)
+            if (domDataRowIndex >= 0 && this.table.isBufferRow(domDataRowIndex) && !promotedDomDataRowIndices.has(domDataRowIndex)) {
+                // 昇格前の storeRowIndices.length を記録してからコマンドを構築する。
+                // promoteBufferRowToStore は引数の行まで間の行をまとめて昇格するため、
+                // storeRowIndicesLengthBefore = 昇格直前の length = 降格開始インデックスになる。
+                const lengthBefore = this.table.getStoreRowIndices().length;
+                this.table.promoteBufferRowToStore(domDataRowIndex);
+                promoteCommands.push(new PromoteBufferRowCommand(this.table, domDataRowIndex, lengthBefore));
+                promotedDomDataRowIndices.add(domDataRowIndex);
+            }
+        }
+
         const allChanges = this.table.applyCellChanges(changes);
-        this.history.push({ changes: allChanges, range, copyRange });
+
+        // 昇格が発生した場合は CompositeCommand として history に積む
+        // （昇格だけでセル値変更がない場合も昇格コマンド自体をUndoできるよう記録する）
+        if (promoteCommands.length > 0) {
+            const meaningfulChanges = allChanges.filter(c => c.oldValue !== c.newValue);
+            const commands = [
+                ...promoteCommands,
+                ...(meaningfulChanges.length > 0
+                    ? [new CellChangeCommand(this.table, meaningfulChanges, range, copyRange)]
+                    : []),
+            ];
+            const composite = new CompositeCommand(commands);
+            this.history.pushCommand(composite, range, copyRange);
+        } else {
+            this.history.push({ changes: allChanges, range, copyRange });
+        }
     }
 
 

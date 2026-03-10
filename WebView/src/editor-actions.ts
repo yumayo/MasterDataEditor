@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {Selection, FillDirection} from "./selection";
 import {History} from "./history";
-import {CellChange} from "./command";
+import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {generateSeriesData} from "./fill-series";
 import {readFileAsync, writeFileAsync} from "./api";
 import {InMemoryTableStore} from "./in-memory-table-store";
@@ -260,8 +260,25 @@ export function applyFillSeries(
             }
         }
     }
+    // バッファ空行（ストア未登録行）への変更が含まれる場合、昇格処理を行う。
+    // applyCellChangesWithHistory と同じパターン:
+    //   1. 昇格前の storeRowIndices.length を記録
+    //   2. promoteBufferRowToStore を呼んでストアに行を追加
+    //   3. PromoteBufferRowCommand を生成して CompositeCommand として履歴に積む
+    const promoteCommands: PromoteBufferRowCommand[] = [];
+    const promotedDomDataRowIndices = new Set<number>();
+    for (const change of changes) {
+        const domDataRowIndex = change.row - 1; // DOM行インデックス(1始まり) → DOMデータ行インデックス(0始まり)
+        if (domDataRowIndex >= 0 && table.isBufferRow(domDataRowIndex) && !promotedDomDataRowIndices.has(domDataRowIndex)) {
+            const lengthBefore = table.getStoreRowIndices().length;
+            table.promoteBufferRowToStore(domDataRowIndex);
+            promoteCommands.push(new PromoteBufferRowCommand(table, domDataRowIndex, lengthBefore));
+            promotedDomDataRowIndices.add(domDataRowIndex);
+        }
+    }
+
     // 書き込みフェーズ: DOM更新 + ソーステーブル伝搬を一括実行
-    table.replayCellChanges(changes);
+    const allChanges = table.applyCellChanges(changes);
 
     // 選択範囲を更新（ソース + ターゲット）
     const newStartRow = Math.min(sourceStartRow, targetStartRow);
@@ -271,18 +288,27 @@ export function applyFillSeries(
 
     // 履歴に追加（フィル前のソース範囲を保存）
     // Undo時: ソース範囲に戻る
-    // Redo時: changesを含めた範囲が計算される（ソース＋ターゲット）
     const copyRange = selection.getCopyRange();
-    history.push({
-        changes,
-        range: {
-            startRow: sourceStartRow,
-            startColumn: sourceStartColumn,
-            endRow: sourceEndRow,
-            endColumn: sourceEndColumn
-        },
-        copyRange: copyRange
-    });
+    const fillRange = {
+        startRow: sourceStartRow,
+        startColumn: sourceStartColumn,
+        endRow: sourceEndRow,
+        endColumn: sourceEndColumn
+    };
+
+    if (promoteCommands.length > 0) {
+        // バッファ昇格が発生した場合は CompositeCommand として積む
+        const meaningfulChanges = allChanges.filter(c => c.oldValue !== c.newValue);
+        const commands = [
+            ...promoteCommands,
+            ...(meaningfulChanges.length > 0
+                ? [new CellChangeCommand(table, meaningfulChanges, fillRange, copyRange)]
+                : []),
+        ];
+        history.pushCommand(new CompositeCommand(commands), fillRange, copyRange);
+    } else {
+        history.push({ changes: allChanges, range: fillRange, copyRange });
+    }
 
     selection.setRange(newStartRow, newStartColumn, newEndRow, newEndColumn);
 }

@@ -594,6 +594,56 @@ export class DeleteColumnCommand implements Command {
 }
 
 /**
+ * バッファ空行をストアに昇格するコマンド
+ *
+ * 通常テーブルの emptyRowCount 領域（storeRowIndices の範囲外）にデータが入力されたとき、
+ * その行をストアに追加して storeRowIndices を拡張し、editor-table-empty-row クラスを除去する。
+ * Undo時は逆操作（ストアから行削除・storeRowIndices 縮小・クラス復元）を行う。
+ *
+ * execute/undo の対称性:
+ *   promoteBufferRowToStore(N) は storeRowIndices.length が M の状態から呼ばれた場合、
+ *   M..N の範囲を全て昇格する（M <= N）。
+ *   undo では demoteStoreRowToBuffer(M) を呼ぶことで M 以降を全て降格し、
+ *   昇格前の状態に正確に戻す。
+ *   そのため execute 前の storeRowIndices.length（= storeRowIndicesLengthBefore）を記録する。
+ */
+export class PromoteBufferRowCommand implements Command {
+    private readonly editorTable: EditorTable;
+    /** DOMデータ行インデックス（0始まり）＝昇格対象の行（列ヘッダー行を除く） */
+    private readonly domDataRowIndex: number;
+    /**
+     * execute 前の storeRowIndices.length。
+     * undo 時に demoteStoreRowToBuffer へ渡す「降格開始インデックス」として使う。
+     * これにより、複数行を一括昇格した場合でも全行を正確に降格できる。
+     */
+    private readonly storeRowIndicesLengthBefore: number;
+
+    constructor(editorTable: EditorTable, domDataRowIndex: number, storeRowIndicesLengthBefore: number) {
+        this.editorTable = editorTable;
+        this.domDataRowIndex = domDataRowIndex;
+        this.storeRowIndicesLengthBefore = storeRowIndicesLengthBefore;
+    }
+
+    execute(): void {
+        this.editorTable.promoteBufferRowToStore(this.domDataRowIndex);
+    }
+
+    undo(): void {
+        // storeRowIndicesLengthBefore から末尾までを全て降格する。
+        // これにより M..N の範囲で昇格された全行が正確に削除される。
+        this.editorTable.demoteStoreRowToBuffer(this.storeRowIndicesLengthBefore);
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `PromoteBufferRow at domDataRowIndex=${this.domDataRowIndex} (before length=${this.storeRowIndicesLengthBefore})`;
+    }
+}
+
+/**
  * 行を削除するコマンド
  * deleteRow/insertRowInternalメソッドを呼び出す形で実装
  */
