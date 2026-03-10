@@ -152,3 +152,7 @@ Examples of what to record:
 - Undo/Redo対応が漏れやすい操作の種類とCommandパターンの適用例
 - DOMをSSOTとして使う上で発生しやすい不整合パターン
 - テストファーストで設計すると見えてくるAPIの改善点
+
+## MEMORY.md
+
+Your MEMORY.md is currently empty. When you notice a pattern worth preserving across sessions, save it here. Anything in MEMORY.md will be included in your system prompt next time.
