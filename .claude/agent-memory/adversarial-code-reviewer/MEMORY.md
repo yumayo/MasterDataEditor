@@ -107,6 +107,16 @@
 - relationsPanel field IS set on mini tables (relations-panel.ts L647)
 - RelationsPanel.navigateToDefinition uses currentEditorTable (left pane) for jump-origin history — correct for mini table case
 
+## Buffer Row Promotion (2026-03-11)
+- **概念**: 通常テーブルのemptyRowCount=100のバッファ空行にデータ入力時、ストアに昇格する
+- **PromoteBufferRowCommand**: execute→promoteBufferRowToStore, undo→demoteStoreRowToBuffer
+- **applyCellChangesWithHistory**: バッファ行検出→昇格→CompositeCommand(Promote+CellChange)で履歴記録
+- **OPEN: Fill操作パス漏れ**: applyFillSeriesはapplyCellChangesWithHistoryを経由しないため昇格が行われない
+- **OPEN: demote対称性**: PromoteBufferRowCommandが昇格前のstoreRowIndices長を記録しておらず、中間行の降格が非対称
+- **OPEN: DOM列数vsストア列数**: promoteBufferRowToStoreがgetColumnCount()(DOM)を使用。ストアヘッダー長を使うべき
+- **セル値変更の全経路**: (1)キー入力/submitText (2)ペースト (3)Delete/Backspace (4)Fill操作 (5)ドロップダウン選択。(1)(2)(3)(5)はapplyCellChangesWithHistory経由。(4)はapplyFillSeries直接。
+
 ## Review History (continued)
 - 2026-03-10 (440756e+unstaged): ミニテーブルドリルダウン動作変更 + レースコンディション修正。F12テスト欠落・コピペ19個目・REDコメント残留指摘。
 - 2026-03-10 (5ecf45f): ミニテーブル行挿入ストア位置バグ修正+deleteRowストア同期+保存パス統一。致命的2件（0行NaN/storeRowIndices陳腐化）、重要3件（Undo FK列消失/空行フィルタ変更/getter違反）。
+- 2026-03-11 (7cc9daa): バッファ空行昇格(PromoteBufferRowCommand)。致命的1件（Fill操作パス漏れ）、重要4件（Undo対称性/DOM列数/二重実行/テスト不足+コピペ21個目）。

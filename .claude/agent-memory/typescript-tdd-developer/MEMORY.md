@@ -100,3 +100,40 @@ await page.locator('.context-menu.visible').locator('.context-menu-item', { hasT
 ```typescript
 const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
 ```
+
+### expectCsvAsync で空行（挿入した行）を検証する書き方
+通常テーブルへの行挿入では autoFill がないため `insertRowAt(tableName, idx, Array(columnCount).fill(''))` で全列空になる。
+3列テーブル（id,name,value）なら挿入行は `,,` として保存される。
+```typescript
+await expectCsvAsync(page, 'data/item.csv', `
+    id, name,  value
+    1,  sword, 100
+    ,,                // ← 挿入した空行（3列なので ,, = ['','','']）
+    2,  shield, 200
+`);
+```
+
+### セル編集 UI の取得方法
+左ペインのテキストフィールドは `.grid-textfield-active` セレクタで取得する。
+`.editor-left-pane input` はフォールバックとして使えるが、より正確には `.grid-textfield-active`。
+```typescript
+const editField = page.locator('.grid-textfield-active').first();
+await expect(editField).toBeVisible();
+await editField.selectText();
+await editField.type('new value');
+await page.keyboard.press('Enter');
+```
+
+### 通常テーブルの行数カウント（バッファ空行除外）
+通常テーブルには `emptyRowCount=100` のバッファ空行がDOMに存在する（`editor-table-empty-row` クラス付き）。
+`.editor-table-row` を `toHaveCount` で数えるとバッファ行も含まれるため、データ行のみカウントする場合は
+`:not(.editor-table-empty-row)` で除外する。
+```typescript
+// NG: バッファ行97行も含まれて期待値とズレる
+const allRows = itemTable.locator('.editor-table-row');
+
+// OK: バッファ空行（editor-table-empty-row）を除外して実データ行のみカウント
+const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row)');
+await expect(allRows).toHaveCount(5); // ヘッダー(1) + データ(4) = 5
+```
+ミニテーブルは `emptyRowCount=0` なので `.editor-table-row` で全行カウントしても問題なし。
