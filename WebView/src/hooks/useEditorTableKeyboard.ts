@@ -42,23 +42,58 @@ function moveFocus(row: number, column: number): void {
 }
 
 /**
+ * クリップボードテキストを2次元配列にパースする
+ * 末尾の改行を除去し、行をタブ区切りで分割する
+ */
+function parseClipboardText(text: string): string[][] {
+    const trimmed = text.replace(/\r?\n$/, '');
+    return trimmed.split(/\r?\n/).map(line => line.split('\t'));
+}
+
+/**
+ * HTML特殊文字をエスケープする
+ */
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * 選択範囲がソースデータの倍数サイズかどうかを判定する
+ * 倍数ペーストの場合は選択範囲全体にソースデータを繰り返し埋め込む
+ */
+function shouldFillSelection(
+    selectionRows: number, selectionCols: number,
+    sourceRows: number, sourceCols: number
+): boolean {
+    const isRowMultiple = selectionRows >= sourceRows && selectionRows % sourceRows === 0;
+    const isColumnMultiple = selectionCols >= sourceCols && selectionCols % sourceCols === 0;
+    const isLarger = selectionRows > sourceRows || selectionCols > sourceCols;
+    return isRowMultiple && isColumnMultiple && isLarger;
+}
+
+/**
  * EditorTableのキーボードショートカット管理フック
  *
  * - enabled が true のときのみ document.keydown リスナーを登録する
  * - tableName の activeTableName 確認は行わない（enabled で制御するのが呼び出し元の責務）
  *
  * 対応キー:
- *   矢印キー        — フォーカスを上下左右に移動する
+ *   矢印キー        — フォーカスを上下左右に移動する（Shift+矢印で範囲拡張）
  *   Enter          — フォーカスを1行下に移動する
  *   Tab            — フォーカスを1列右に移動する（最終列では折り返さない）
  *   Shift+Tab      — フォーカスを1列左に移動する
- *   Escape         — 選択をフォーカスセルのみにリセットする
+ *   Escape         — 選択をフォーカスセルのみにリセットし、コピー範囲をクリアする
  *   Delete/Backspace — フォーカスセルの値をクリアする（table-store を更新）
- *   Ctrl+C         — 選択範囲をコピー範囲に設定する（selection-store）
+ *   Ctrl+C         — 選択範囲をコピー範囲に設定してクリップボードに書き込む
  *   Ctrl+A         — テーブル全体を選択する
  *   Ctrl+Z         — Undo（history-store 経由）
  *   Ctrl+Y         — Redo（history-store 経由）
- *   Ctrl+V         — ペースト（未実装）
+ *   Ctrl+V         — クリップボードからペーストする
  *   Ctrl+S         — 保存（未実装）
  *   F2             — セル編集開始
  */
@@ -83,7 +118,40 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
             if (e.ctrlKey || e.metaKey) {
                 if (e.key === 'c' || e.key === 'C') {
                     e.preventDefault();
-                    useSelectionStore.getState().setCopyRange(range);
+                    // 選択範囲を正規化する（startRow <= endRow, startColumn <= endColumn）
+                    const normalizedRange: CellRange = {
+                        startRow: Math.min(range.startRow, range.endRow),
+                        startColumn: Math.min(range.startColumn, range.endColumn),
+                        endRow: Math.max(range.startRow, range.endRow),
+                        endColumn: Math.max(range.startColumn, range.endColumn),
+                    };
+                    useSelectionStore.getState().setCopyRange(normalizedRange);
+                    // クリップボードに text/plain と text/html の2形式で書き込む
+                    const rows = useTableStore.getState().getRows(tableName);
+                    if (rows !== false) {
+                        const lines: string[] = [];
+                        const htmlRows: string[] = [];
+                        for (let r = normalizedRange.startRow; r <= normalizedRange.endRow; r++) {
+                            const storeRow = r - 1;
+                            if (storeRow < 0 || storeRow >= rows.length) continue;
+                            const cells: string[] = [];
+                            const htmlCells: string[] = [];
+                            for (let c = normalizedRange.startColumn; c <= normalizedRange.endColumn; c++) {
+                                const value = rows[storeRow][c - 1];
+                                cells.push(value);
+                                htmlCells.push(`<td>${escapeHtml(value)}</td>`);
+                            }
+                            lines.push(cells.join('\t'));
+                            htmlRows.push(`<tr>${htmlCells.join('')}</tr>`);
+                        }
+                        const plainText = lines.join('\n');
+                        const htmlText = `<table>${htmlRows.join('')}</table>`;
+                        const blob = new Blob([htmlText], {type: 'text/html'});
+                        const plainBlob = new Blob([plainText], {type: 'text/plain'});
+                        void navigator.clipboard.write([
+                            new ClipboardItem({'text/html': blob, 'text/plain': plainBlob}),
+                        ]).catch(err => console.error('クリップボードへの書き込みに失敗しました', err));
+                    }
                     return;
                 }
                 if (e.key === 'a' || e.key === 'A') {
@@ -114,9 +182,96 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                     }
                     return;
                 }
-                // Ctrl+V: ペースト — Phase 10で実装
+                // Ctrl+V: クリップボードからペーストする
                 if (e.key === 'v' || e.key === 'V') {
                     e.preventDefault();
+                    void (async () => {
+                        let clipText: string;
+                        try {
+                            clipText = await navigator.clipboard.readText();
+                        } catch (err) {
+                            console.error('クリップボードの読み取りに失敗しました', err);
+                            return;
+                        }
+                        const sourceData = parseClipboardText(clipText);
+                        const sourceRows = sourceData.length;
+                        const sourceCols = sourceData[0].length;
+
+                        const rows = useTableStore.getState().getRows(tableName);
+                        if (rows === false) return;
+
+                        // ペースト先の選択範囲を取得する（ペースト開始はフォーカス or range の左上）
+                        const {range: currentRange, copyRange: currentCopyRange} = useSelectionStore.getState();
+                        const baseRow = Math.min(currentRange.startRow, currentRange.endRow);
+                        const baseCol = Math.min(currentRange.startColumn, currentRange.endColumn);
+                        const selectionRows = Math.abs(currentRange.endRow - currentRange.startRow) + 1;
+                        const selectionCols = Math.abs(currentRange.endColumn - currentRange.startColumn) + 1;
+
+                        const isFill = shouldFillSelection(selectionRows, selectionCols, sourceRows, sourceCols);
+
+                        // ペースト対象のセル変更リストを構築する
+                        interface CellChangeEntry {
+                            rowIndex: number;
+                            colIndex: number;
+                            oldValue: string;
+                            newValue: string;
+                        }
+                        const changes: CellChangeEntry[] = [];
+
+                        if (isFill) {
+                            // 倍数ペースト: 選択範囲全体にソースデータを繰り返し埋め込む
+                            for (let sr = 0; sr < selectionRows; sr++) {
+                                const targetRow = baseRow + sr;
+                                const storeRowIndex = targetRow - 1;
+                                if (storeRowIndex < 0 || storeRowIndex >= rows.length) continue;
+                                for (let sc = 0; sc < selectionCols; sc++) {
+                                    const targetCol = baseCol + sc;
+                                    const storeColIndex = targetCol - 1;
+                                    if (storeColIndex < 0 || storeColIndex >= rows[storeRowIndex].length) continue;
+                                    const newValue = sourceData[sr % sourceRows][sc % sourceCols];
+                                    const oldValue = rows[storeRowIndex][storeColIndex];
+                                    if (oldValue !== newValue) {
+                                        changes.push({rowIndex: storeRowIndex, colIndex: storeColIndex, oldValue, newValue});
+                                    }
+                                }
+                            }
+                        } else {
+                            // 通常ペースト: フォーカス位置を基点にソースデータのサイズだけペーストする
+                            for (let sr = 0; sr < sourceRows; sr++) {
+                                const targetRow = baseRow + sr;
+                                const storeRowIndex = targetRow - 1;
+                                if (storeRowIndex < 0 || storeRowIndex >= rows.length) break;
+                                for (let sc = 0; sc < sourceCols; sc++) {
+                                    const targetCol = baseCol + sc;
+                                    const storeColIndex = targetCol - 1;
+                                    if (storeColIndex < 0 || storeColIndex >= rows[storeRowIndex].length) break;
+                                    const newValue = sourceData[sr][sc];
+                                    const oldValue = rows[storeRowIndex][storeColIndex];
+                                    if (oldValue !== newValue) {
+                                        changes.push({rowIndex: storeRowIndex, colIndex: storeColIndex, oldValue, newValue});
+                                    }
+                                }
+                            }
+                        }
+
+                        if (changes.length === 0) return;
+
+                        // ペースト後の選択範囲を計算する
+                        const pasteRowCount = isFill ? selectionRows : sourceRows;
+                        const pasteColCount = isFill ? selectionCols : sourceCols;
+                        const pasteRange: CellRange = {
+                            startRow: baseRow,
+                            startColumn: baseCol,
+                            endRow: Math.min(baseRow + pasteRowCount - 1, maxRow),
+                            endColumn: Math.min(baseCol + pasteColCount - 1, maxColumn),
+                        };
+
+                        const command = new CellChangeCommand(
+                            changes.map(c => ({tableName, rowIndex: c.rowIndex, colIndex: c.colIndex, oldValue: c.oldValue, newValue: c.newValue}))
+                        );
+                        useHistoryStore.getState().executeCommand(tableName, command, pasteRange, currentCopyRange);
+                        useSelectionStore.getState().select(pasteRange, {row: pasteRange.startRow, column: pasteRange.startColumn});
+                    })();
                     return;
                 }
                 // Ctrl+S: 保存 — Phase 10で実装
@@ -158,25 +313,41 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 return;
             }
 
-            // 矢印キーによるフォーカス移動（行・列の境界でクランプする）
+            // 矢印キーによるフォーカス移動（Shift が押されている場合は範囲拡張）
             if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                moveFocus(Math.max(1, focus.row - 1), focus.column);
+                if (e.shiftKey) {
+                    useSelectionStore.getState().setRange({...range, endRow: Math.max(1, range.endRow - 1)});
+                } else {
+                    moveFocus(Math.max(1, focus.row - 1), focus.column);
+                }
                 return;
             }
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                moveFocus(Math.min(maxRow, focus.row + 1), focus.column);
+                if (e.shiftKey) {
+                    useSelectionStore.getState().setRange({...range, endRow: Math.min(maxRow, range.endRow + 1)});
+                } else {
+                    moveFocus(Math.min(maxRow, focus.row + 1), focus.column);
+                }
                 return;
             }
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                moveFocus(focus.row, Math.max(1, focus.column - 1));
+                if (e.shiftKey) {
+                    useSelectionStore.getState().setRange({...range, endColumn: Math.max(1, range.endColumn - 1)});
+                } else {
+                    moveFocus(focus.row, Math.max(1, focus.column - 1));
+                }
                 return;
             }
             if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                moveFocus(focus.row, Math.min(maxColumn, focus.column + 1));
+                if (e.shiftKey) {
+                    useSelectionStore.getState().setRange({...range, endColumn: Math.min(maxColumn, range.endColumn + 1)});
+                } else {
+                    moveFocus(focus.row, Math.min(maxColumn, focus.column + 1));
+                }
                 return;
             }
 
@@ -198,7 +369,7 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 return;
             }
 
-            // Escape: 選択範囲をフォーカスセルのみにリセットする
+            // Escape: 選択範囲をフォーカスセルのみにリセットし、コピー範囲をクリアする
             if (e.key === 'Escape') {
                 e.preventDefault();
                 const singleRange: CellRange = {
@@ -206,6 +377,7 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                     endRow: focus.row, endColumn: focus.column,
                 };
                 useSelectionStore.getState().setRange(singleRange);
+                useSelectionStore.getState().clearCopyRange();
                 return;
             }
 
