@@ -64,7 +64,10 @@
 
 ## Dual Data Source Pattern (store vs referenceDataCache)
 - 1:N resolution: InMemoryTableStore (tab open) vs referenceDataCache (tab closed)
+- N:1 resolution: ストア優先→キャッシュフォールバック（021a6c2以降）
 - **Stale cache risk**: fullDataCache snapshots CSV at load time
+- **FIXED: resolveTableDataAsync共通化**: N:1/1:Nの「ストア優先→キャッシュフォールバック」を共通メソッドに統合
+- **OPEN: PK高速パス**: find()はO(n)だがコメントに「O(1)相当」と虚偽記載。分岐自体が不要（filterRowsByColumnValue一本化推奨）
 
 ## Save Paths (updated 2026-03-10)
 - 通常テーブル・ミニテーブル共通: saveTableDataFromStoreAsync (ストア→CSV直接)
@@ -120,3 +123,4 @@
 - 2026-03-10 (440756e+unstaged): ミニテーブルドリルダウン動作変更 + レースコンディション修正。F12テスト欠落・コピペ19個目・REDコメント残留指摘。
 - 2026-03-10 (5ecf45f): ミニテーブル行挿入ストア位置バグ修正+deleteRowストア同期+保存パス統一。致命的2件（0行NaN/storeRowIndices陳腐化）、重要3件（Undo FK列消失/空行フィルタ変更/getter違反）。
 - 2026-03-11 (7cc9daa): バッファ空行昇格(PromoteBufferRowCommand)。致命的1件（Fill操作パス漏れ）、重要4件（Undo対称性/DOM列数/二重実行/テスト不足+コピペ21個目）。
+- 2026-03-11 (021a6c2): N:1ストア優先解決。致命的1件（PK高速パス喪失）、重要4件（共通化粒度/コピペ/let乱用/競合リスク）、軽微3件。
