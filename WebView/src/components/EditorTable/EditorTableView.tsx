@@ -1,4 +1,4 @@
-import React, {useRef, useMemo} from 'react';
+import React, {useRef, useMemo, useCallback, useState, useEffect} from 'react';
 import {useStore} from 'zustand';
 import {
     useReactTable,
@@ -8,9 +8,12 @@ import {
 } from '@tanstack/react-table';
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {useTableStore} from '../../stores/table-store';
+import {useSelectionStore} from '../../stores/selection-store';
 import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
+import {SelectionOverlay} from './SelectionOverlay';
+import type {CellRange, CellPosition} from '../../types/selection-types';
 
 /** データ行の下に表示するバッファ空行数 */
 const BUFFER_ROW_COUNT = 100;
@@ -55,8 +58,30 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         const header = useStore(useTableStore, state => state.headers.get(tableName));
         const storeRows = useStore(useTableStore, state => state.rows.get(tableName));
 
+        // selection-store から必要な状態のみ購読する（不要な再レンダリングを防ぐ）
+        const focus = useStore(useSelectionStore, state => state.focus);
+        const selecting = useStore(useSelectionStore, state => state.selecting);
+        const selectingColumn = useStore(useSelectionStore, state => state.selectingColumn);
+        const selectingRow = useStore(useSelectionStore, state => state.selectingRow);
+
         // スクロールコンテナへの内部ref（useVirtualizerに渡す）
         const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+        // テーブル全体のBoundingRect（SelectionOverlayの座標計算基準）
+        const [tableBoundingRect, setTableBoundingRect] = useState<DOMRect | null>(null);
+
+        // ResizeObserver でテーブルサイズ変化を監視してBoundingRectを更新する
+        useEffect(() => {
+            const container = scrollContainerRef.current;
+            if (!container) return;
+
+            const updateRect = () => setTableBoundingRect(container.getBoundingClientRect());
+            updateRect();
+
+            const observer = new ResizeObserver(updateRect);
+            observer.observe(container);
+            return () => observer.disconnect();
+        }, []);
 
         // 仮想化対象の全行データ（データ行 + バッファ空行）を構築する
         const allRows = useMemo<RowData[]>(() => {
@@ -87,22 +112,77 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
 
         // TanStack Table のカラム定義を構築する
         const columnHelper = useMemo(() => createColumnHelper<RowData>(), []);
+
+        // セルの mousedown ハンドラ: selection-store を更新する（columns より前に定義する必要がある）
+        const handleCellMouseDown = useCallback((domRowIndex: number, colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            const row = domRowIndex + 1;
+            const col = colIndex + 1;
+            const store = useSelectionStore.getState();
+            store.setActiveTable(tableName);
+
+            if (e.shiftKey) {
+                // Shift+クリック: フォーカスは変えず範囲の終了位置のみ更新する
+                const currentRange = store.range;
+                store.setRange({
+                    startRow: currentRange.startRow,
+                    startColumn: currentRange.startColumn,
+                    endRow: row,
+                    endColumn: col,
+                });
+            } else {
+                // 通常クリック: フォーカスと選択範囲を単一セルに設定する
+                const pos: CellPosition = {row, column: col};
+                store.select({startRow: row, startColumn: col, endRow: row, endColumn: col}, pos);
+                store.startSelecting();
+            }
+        }, [tableName]);
+
+        // 列ヘッダーの mousedown ハンドラ: 列全体を選択する
+        const handleColumnHeaderMouseDown = useCallback((colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            const totalRows = allRows.filter(r => !r.isBuffer).length;
+            if (totalRows === 0) return;
+            const col = colIndex + 1;
+            const range: CellRange = {startRow: 1, startColumn: col, endRow: totalRows, endColumn: col};
+            const focusPos: CellPosition = {row: 1, column: col};
+            const store = useSelectionStore.getState();
+            store.setActiveTable(tableName);
+            store.select(range, focusPos);
+            store.startSelectingColumn();
+        }, [allRows, tableName]);
+
         const columns = useMemo(() => {
             if (!header) return [];
             return header.map((colName, colIndex) =>
                 columnHelper.accessor(row => row.cells[colIndex] as string, {
                     id: colName,
-                    header: () => <HeaderCell columnName={colName} colIndex={colIndex} />,
-                    cell: info => (
-                        <Cell
-                            value={info.getValue()}
+                    header: () => (
+                        <HeaderCell
+                            columnName={colName}
                             colIndex={colIndex}
-                            className=""
+                            onMouseDown={e => handleColumnHeaderMouseDown(colIndex, e)}
                         />
                     ),
+                    cell: info => {
+                        // フォーカスセルかどうかを計算して Cell に渡す
+                        const rowData = info.row.original;
+                        const isFocused = !rowData.isBuffer
+                            && focus.row === rowData.domRowIndex + 1
+                            && focus.column === colIndex + 1;
+                        return (
+                            <Cell
+                                value={info.getValue()}
+                                colIndex={colIndex}
+                                className=""
+                                isFocused={isFocused}
+                                onMouseDown={e => handleCellMouseDown(rowData.domRowIndex, colIndex, e)}
+                            />
+                        );
+                    },
                 })
             );
-        }, [header, columnHelper]);
+        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleCellMouseDown]);
 
         const table = useReactTable({
             data: allRows,
@@ -117,6 +197,114 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             estimateSize: () => ROW_HEIGHT_PX,
             overscan: 10,
         });
+
+        // フォーカス行が変わったとき、仮想スクロールでその行を表示域に収める
+        useEffect(() => {
+            if (focus.row < 1) return;
+            rowVirtualizer.scrollToIndex(focus.row - 1);
+        }, [focus.row]);
+
+        // ドラッグ選択: window の mousemove/mouseup で範囲更新・終了する
+        useEffect(() => {
+            if (!selecting) return;
+
+            const handleMouseMove = (e: MouseEvent) => {
+                // document.elementsFromPoint でマウス下のセルを特定する
+                const elements = document.elementsFromPoint(e.clientX, e.clientY);
+                const cellEl = elements.find(el => el.classList.contains('editor-table-cell')) as HTMLElement | null;
+                if (!cellEl) return;
+
+                const colAttr = cellEl.getAttribute('data-col');
+                if (!colAttr) return;
+                const col = parseInt(colAttr, 10) + 1;
+
+                // セルの親行要素から data-row 属性で domRowIndex を特定する
+                const rowEl = cellEl.closest('[data-row]') as HTMLElement | null;
+                if (!rowEl) return;
+                const rowAttr = rowEl.getAttribute('data-row');
+                if (!rowAttr) return;
+                const domRowIndex = parseInt(rowAttr, 10);
+                if (isNaN(domRowIndex) || domRowIndex < 0) return;
+                const row = domRowIndex + 1;
+
+                const store = useSelectionStore.getState();
+                if (selectingColumn) {
+                    // 列選択ドラッグ: 列方向のみ範囲を拡張する
+                    const totalRows = allRows.filter(r => !r.isBuffer).length;
+                    const currentRange = store.range;
+                    store.setRange({
+                        startRow: 1,
+                        startColumn: currentRange.startColumn,
+                        endRow: totalRows,
+                        endColumn: col,
+                    });
+                } else if (selectingRow) {
+                    // 行選択ドラッグ: 行方向のみ範囲を拡張する
+                    // useEffect クロージャー内では header が古い参照になりえるため、allRows から列数を算出する
+                    const totalCols = allRows.length > 0 ? allRows[0].cells.length : 1;
+                    const currentRange = store.range;
+                    store.setRange({
+                        startRow: currentRange.startRow,
+                        startColumn: 1,
+                        endRow: row,
+                        endColumn: totalCols,
+                    });
+                } else {
+                    // 通常ドラッグ: フォーカスは固定のまま終了位置のみ更新する
+                    const currentRange = store.range;
+                    store.setRange({
+                        startRow: currentRange.startRow,
+                        startColumn: currentRange.startColumn,
+                        endRow: row,
+                        endColumn: col,
+                    });
+                }
+            };
+
+            const handleMouseUp = () => {
+                useSelectionStore.getState().stopSelecting();
+            };
+
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+            };
+        }, [selecting, selectingColumn, selectingRow, allRows, header]);
+
+        // 仮想スクロール内のセルDOMを特定してBoundingRectを返す関数
+        // SelectionOverlay の描画座標計算に使用する
+        // row, column は 1始まり
+        const getCellRect = useCallback((row: number, column: number): DOMRect | null => {
+            const container = scrollContainerRef.current;
+            if (!container) return null;
+
+            // data-row 属性で対象行を直接特定する（domRowIndex は 0始まり）
+            const domRowIndex = row - 1;
+            const rowEl = container.querySelector<HTMLElement>(`[data-row="${domRowIndex}"]`);
+            if (!rowEl) return null;
+
+            // 列インデックスは 1始まり → 0始まりに変換して data-col で検索する
+            const colIndex = column - 1;
+            const cellEl = rowEl.querySelector<HTMLElement>(`[data-col="${colIndex}"]`);
+            if (!cellEl) return null;
+            return cellEl.getBoundingClientRect();
+        }, []);
+
+        // 行ヘッダーの mousedown ハンドラ: 行全体を選択する
+        const handleRowHeaderMouseDown = useCallback((domRowIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            const row = domRowIndex + 1;
+            // allRows が存在すれば cells.length = header.length となる
+            const totalCols = allRows.length > 0 ? allRows[0].cells.length : 1;
+            const range: CellRange = {startRow: row, startColumn: 1, endRow: row, endColumn: totalCols};
+            const focusPos: CellPosition = {row, column: 1};
+            const store = useSelectionStore.getState();
+            store.setActiveTable(tableName);
+            store.select(range, focusPos);
+            store.startSelectingRow();
+        }, [allRows, tableName]);
 
         const virtualItems = rowVirtualizer.getVirtualItems();
         const totalSize = rowVirtualizer.getTotalSize();
@@ -173,6 +361,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                             <div
                                 key={virtualRow.key}
                                 className={rowClassName}
+                                data-row={rowData.domRowIndex}
                                 style={{
                                     position: 'absolute',
                                     top: virtualRow.start,
@@ -184,7 +373,10 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                             >
                                 {/* 行番号ヘッダー */}
                                 <div style={{width: ROW_HEADER_WIDTH_PX, flexShrink: 0}}>
-                                    <RowHeader rowNumber={rowNumber} />
+                                    <RowHeader
+                                        rowNumber={rowNumber}
+                                        onMouseDown={e => handleRowHeaderMouseDown(rowData.domRowIndex, e)}
+                                    />
                                 </div>
                                 {/* データセル群 */}
                                 {row.getVisibleCells().map(cell => (
@@ -196,6 +388,13 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                         );
                     })}
                 </div>
+
+                {/* 選択範囲オーバーレイ: position:absolute で仮想スクロール領域に重ねる */}
+                <SelectionOverlay
+                    tableName={tableName}
+                    getCellRect={getCellRect}
+                    tableBoundingRect={tableBoundingRect}
+                />
             </div>
         );
     }
