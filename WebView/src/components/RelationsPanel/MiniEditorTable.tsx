@@ -1,5 +1,6 @@
 import React from 'react';
 import {EditorTableView} from '../EditorTable/EditorTableView';
+import type {ColumnSchema} from '../EditorTable/EditorTableView';
 
 /** FK自動埋め込みエントリ（1:N行追加時に使用） */
 interface AutoFillEntry {
@@ -21,6 +22,8 @@ interface MiniEditorTableProps {
 	 * 現時点では型定義のみ。将来的に EditorTableView へ渡すプロップスを追加する際に使用する。
 	 */
 	autoFillEntries: AutoFillEntry[];
+	/** 列スキーマ情報（FK参照ヒント・ドロップダウン表示用） */
+	columnSchemas: ColumnSchema[];
 }
 
 /**
@@ -32,12 +35,13 @@ interface MiniEditorTableProps {
  * 将来的に EditorTableView が isMiniTable props を受け取る場合は
  * そちらに切り替えるが、現時点は className の切り替えで対応する。
  */
-export function MiniEditorTable({tableName, storeRowIndices, autoFillEntries: _autoFillEntries}: MiniEditorTableProps): React.ReactElement {
+export function MiniEditorTable({tableName, storeRowIndices, autoFillEntries: _autoFillEntries, columnSchemas}: MiniEditorTableProps): React.ReactElement {
 	return (
 		<div className="mini-editor-table">
 			<EditorTableView
 				tableName={tableName}
 				storeRowIndices={storeRowIndices}
+				columnSchemas={columnSchemas}
 			/>
 		</div>
 	);

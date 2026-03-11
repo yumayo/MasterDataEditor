@@ -1,4 +1,15 @@
 /**
+ * 列スキーマ情報（FK参照ヒント・ドロップダウン表示用）。
+ * useEditorTableKeyboard の ColumnSchema と同一構造（循環参照回避のため再定義）。
+ */
+export interface RelationColumnSchema {
+	/** 列名 */
+	name: string;
+	/** FK参照式（例: "enemy.id" → enemy テーブルを参照する） */
+	reference?: string;
+}
+
+/**
  * リレーションパネルに表示する参照エントリ
  *
  * 既存の relations-panel.ts の RelationEntry interface と同一構造。
@@ -25,4 +36,6 @@ export interface RelationEntry {
 	 * N:1はストアの全行を表示するため空配列（通常テーブルと同様 [0,1,...,n-1] として初期化される）。
 	 */
 	storeRowIndices: number[];
+	/** 列スキーマ情報（FK参照ヒント・ドロップダウン表示用） */
+	columnSchemas: RelationColumnSchema[];
 }

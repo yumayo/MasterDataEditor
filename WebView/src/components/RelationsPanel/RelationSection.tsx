@@ -55,6 +55,7 @@ export function RelationSection({entry, onNavigateToDefinition: _onNavigateToDef
 						? [{columnName: entry.fkColumnName, value: entry.fkValue}]
 						: []
 				}
+				columnSchemas={entry.columnSchemas}
 			/>
 		</div>
 	);

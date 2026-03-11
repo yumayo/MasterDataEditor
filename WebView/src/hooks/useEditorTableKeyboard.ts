@@ -3,8 +3,17 @@ import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
 import {useHistoryStore, CellChangeCommand} from '../stores/history-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
+import type {DropdownItem} from '../components/GridDropdownInput';
 import {writeFileAsync} from '../api';
 import {Csv} from '../csv';
+
+/**
+ * スキーマの列定義（reference プロパティの有無で FK 列を判定する）
+ */
+export interface ColumnSchema {
+    name: string;
+    reference?: string;
+}
 
 /**
  * useEditorTableKeyboard フックのオプション
@@ -14,6 +23,13 @@ interface UseEditorTableKeyboardOptions {
     tableName: string;
     /** キーボードイベントが有効か */
     enabled: boolean;
+    /** 列スキーマ（FK列判定用）。ヘッダー列と同じ順序で渡す */
+    columnSchemas: ColumnSchema[];
+    /**
+     * FK列で編集開始する際に呼ばれるコールバック。
+     * 非FK列の場合は通常の startEditing() を使用する。
+     */
+    onShowDropdown: (items: DropdownItem[], position: {top: number; left: number; width: number}, filterText: string) => void;
 }
 
 /**
@@ -99,7 +115,7 @@ function shouldFillSelection(
  *   Ctrl+S         — 保存（未実装）
  *   F2             — セル編集開始
  */
-export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeyboardOptions): void {
+export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown}: UseEditorTableKeyboardOptions): void {
     useEffect(() => {
         if (!enabled) return;
 
@@ -317,8 +333,15 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 if (storeRowIndex < 0 || storeRowIndex >= rows.length) return;
                 const colIndex = focus.column - 1;
                 const currentValue = rows[storeRowIndex][colIndex];
-                // F2 の場合は現在値を初期値とし、oldValue にも同じ値を設定する
-                useSelectionStore.getState().startEditing(currentValue, currentValue);
+                // FK列の場合はドロップダウンを表示する（単純参照のみ対応。動的参照は TODO）
+                const schema = columnSchemas[colIndex];
+                if (schema && schema.reference) {
+                    // TODO: 動的参照（DynamicReference）の場合はドロップダウン非対応
+                    onShowDropdown([], {top: 0, left: 0, width: 0}, '');
+                } else {
+                    // F2 の場合は現在値を初期値とし、oldValue にも同じ値を設定する
+                    useSelectionStore.getState().startEditing(currentValue, currentValue);
+                }
                 return;
             }
 
@@ -329,11 +352,18 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 const rows = useTableStore.getState().getRows(tableName);
                 const storeRowIndex = focus.row - 1;
                 const colIndex = focus.column - 1;
-                // バッファ行やストア未登録の場合は oldValue を空文字にする
-                const oldValue = rows !== false && storeRowIndex >= 0 && storeRowIndex < rows.length
-                    ? rows[storeRowIndex][colIndex]
-                    : '';
-                useSelectionStore.getState().startEditing(e.key, oldValue);
+                const schema = columnSchemas[colIndex];
+                if (schema && schema.reference) {
+                    // FK列: ドロップダウンを表示して、押下した文字をフィルタ初期値とする
+                    // TODO: 動的参照（DynamicReference）の場合はドロップダウン非対応
+                    onShowDropdown([], {top: 0, left: 0, width: 0}, e.key);
+                } else {
+                    // バッファ行やストア未登録の場合は oldValue を空文字にする
+                    const oldValue = rows !== false && storeRowIndex >= 0 && storeRowIndex < rows.length
+                        ? rows[storeRowIndex][colIndex]
+                        : '';
+                    useSelectionStore.getState().startEditing(e.key, oldValue);
+                }
                 return;
             }
 
@@ -429,5 +459,5 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [enabled, tableName]);
+    }, [enabled, tableName, columnSchemas, onShowDropdown]);
 }

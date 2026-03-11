@@ -10,13 +10,20 @@ import {useVirtualizer} from '@tanstack/react-virtual';
 import {useTableStore} from '../../stores/table-store';
 import {useSelectionStore} from '../../stores/selection-store';
 import {useHistoryStore, CellChangeCommand} from '../../stores/history-store';
+import {useReferenceStore} from '../../stores/reference-store';
+import {useReverseReferenceStore, formatReverseReferenceHint} from '../../stores/reverse-reference-store';
 import {generateSeriesData} from '../../fill-series';
+import {config} from '../../config';
+import {parseReferenceExpression, isSimpleReference} from '../../reference-expression';
 import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
 import {SelectionOverlay} from './SelectionOverlay';
 import {FillPreview} from './FillPreview';
 import {GridTextField} from '../GridTextField';
+import {GridDropdownInput} from '../GridDropdownInput';
+import type {DropdownItem} from '../GridDropdownInput';
+import {useEditorTableKeyboard} from '../../hooks/useEditorTableKeyboard';
 import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
 
 /** データ行の下に表示するバッファ空行数 */
@@ -183,6 +190,9 @@ const ROW_HEIGHT_PX = 20;
 /** 行ヘッダー列の固定幅(px) */
 const ROW_HEADER_WIDTH_PX = 40;
 
+// ColumnSchema は useEditorTableKeyboard から再エクスポートする（単一定義を保つ）
+export type {ColumnSchema} from '../../hooks/useEditorTableKeyboard';
+
 interface EditorTableViewProps {
     /** 表示するテーブル名（Zustand Store のキー） */
     tableName: string;
@@ -192,6 +202,11 @@ interface EditorTableViewProps {
      * null の場合はストア行と同じ順序（0, 1, 2, ...）として扱う。
      */
     storeRowIndices: number[] | null;
+    /**
+     * 列スキーマ情報（FK参照ヒント・逆参照ヒント計算に使用する）。
+     * 空配列の場合はヒントを表示しない。
+     */
+    columnSchemas: ColumnSchema[];
 }
 
 /** テーブル1行分のデータ型。列名をキーとした文字列マップ + バッファフラグ */
@@ -212,10 +227,14 @@ interface RowData {
  * `React.forwardRef` でスクロールコンテナのDOMノードを外部公開する。
  */
 export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewProps>(
-    function EditorTableView({tableName, storeRowIndices}, ref) {
+    function EditorTableView({tableName, storeRowIndices, columnSchemas}, ref) {
         // Zustand Store からヘッダーと行データを取得する
         const header = useStore(useTableStore, state => state.headers.get(tableName));
         const storeRows = useStore(useTableStore, state => state.rows.get(tableName));
+
+        // 参照ヒント・逆参照ヒント用ストアのキャッシュを購読する（キャッシュ更新時に再レンダリングされる）
+        const referenceCache = useStore(useReferenceStore, state => state.cache);
+        const reverseReferenceMaps = useStore(useReverseReferenceStore, state => state.reverseReferenceMaps);
 
         // selection-store から必要な状態のみ購読する（不要な再レンダリングを防ぐ）
         const focus = useStore(useSelectionStore, state => state.focus);
@@ -238,6 +257,13 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
 
         // IME変換中フラグ（GridTextField から通知を受け取る）
         const composingRef = useRef(false);
+
+        // FK列ドロップダウンの表示状態（null = 非表示）
+        const [dropdownState, setDropdownState] = useState<{
+            items: DropdownItem[];
+            position: {top: number; left: number; width: number};
+            filterText: string;
+        } | null>(null);
 
         // ResizeObserver でテーブルサイズ変化を監視してBoundingRectを更新する
         useEffect(() => {
@@ -329,6 +355,60 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             store.startSelectingColumn();
         }, [allRows, tableName]);
 
+        /**
+         * 列インデックス→FK参照先テーブル名のマップを構築する。
+         * reference プロパティが単純参照（例: "enemy" または "enemy.id"）の場合のみ登録する。
+         */
+        const fkTableNameByColIndex = useMemo<Map<number, string>>(() => {
+            const map = new Map<number, string>();
+            if (!header) return map;
+            for (let i = 0; i < header.length; i++) {
+                const schema = columnSchemas.find(s => s.name === header[i]);
+                if (!schema || !schema.reference) continue;
+                const expr = parseReferenceExpression(schema.reference);
+                if (isSimpleReference(expr)) map.set(i, expr.tableName);
+            }
+            return map;
+        }, [header, columnSchemas]);
+
+        /**
+         * PK列のインデックスを特定する（逆参照ヒントの対象列）
+         */
+        const pkColIndex = useMemo<number>(() => {
+            if (!header) return -1;
+            return header.indexOf(config.primaryKeyColumnName);
+        }, [header]);
+
+        /**
+         * セル値からヒントテキストを計算する。
+         * FK列: 参照先テーブルの表示テキストを返す。
+         * PK列: 逆参照マップからヒントテキストを返す。
+         * それ以外: 空文字列。
+         * referenceCache / reverseReferenceMaps に依存することで、キャッシュ更新時に再計算される。
+         */
+        const computeReferenceHint = useCallback((colIndex: number, cellValue: string): string => {
+            // FK参照ヒント（A-3）
+            // referenceCache は useStore で購読済みのため、キャッシュ更新時にこの関数が再生成され再描画される
+            const fkTableName = fkTableNameByColIndex.get(colIndex);
+            if (fkTableName !== undefined) {
+                const refData = referenceCache.get(fkTableName);
+                if (!refData) return '';
+                const item = refData.items.find(i => i.id === cellValue);
+                if (!item || item.displayText === item.id) return '';
+                return item.displayText;
+            }
+            // 逆参照ヒント（A-4）
+            // reverseReferenceMaps は useStore で購読済みのため、マップ更新時に再生成・再描画される
+            if (colIndex === pkColIndex && pkColIndex !== -1 && cellValue !== '') {
+                const reverseMap = reverseReferenceMaps.get(tableName);
+                if (!reverseMap) return '';
+                const entries = reverseMap.get(cellValue);
+                if (!entries) return '';
+                return formatReverseReferenceHint(entries);
+            }
+            return '';
+        }, [fkTableNameByColIndex, pkColIndex, tableName, referenceCache, reverseReferenceMaps]);
+
         const columns = useMemo(() => {
             if (!header) return [];
             return header.map((colName, colIndex) =>
@@ -347,25 +427,28 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                         const isFocused = !rowData.isBuffer
                             && focus.row === rowData.domRowIndex + 1
                             && focus.column === colIndex + 1;
+                        const cellValue = info.getValue();
+                        // バッファ行はヒントなし（空行のためヒント計算不要）
+                        const referenceHint = rowData.isBuffer ? '' : computeReferenceHint(colIndex, cellValue);
                         return (
                             <Cell
-                                value={info.getValue()}
+                                value={cellValue}
                                 colIndex={colIndex}
                                 className=""
                                 isFocused={isFocused}
+                                referenceHint={referenceHint}
                                 onMouseDown={e => handleCellMouseDown(rowData.domRowIndex, colIndex, e)}
                                 onDoubleClick={() => {
                                     // ダブルクリックで現在のセル値を初期値として編集開始する
                                     // oldValue にも同じ値を設定する（Undo 時の元の値として使用）
-                                    const currentValue = info.getValue();
-                                    useSelectionStore.getState().startEditing(currentValue, currentValue);
+                                    useSelectionStore.getState().startEditing(cellValue, cellValue);
                                 }}
                             />
                         );
                     },
                 })
             );
-        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleCellMouseDown]);
+        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleCellMouseDown, computeReferenceHint]);
 
         const table = useReactTable({
             data: allRows,
@@ -552,6 +635,106 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             return cellEl.getBoundingClientRect();
         }, []);
 
+        /**
+         * FK列で編集開始する際にドロップダウンを表示する。
+         * reference-store からアイテムリストを取得し、フォーカスセルの位置を計算して
+         * dropdownState を更新する。items が空の場合（参照先未ロード等）は非同期ロード後に再描画を
+         * 期待するため、空リストのまま表示して参照ストアのキャッシュ更新を待つ。
+         */
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const showDropdown = useCallback((_items: DropdownItem[], _position: {top: number; left: number; width: number}, filterText: string) => {
+            const {focus: currentFocus} = useSelectionStore.getState();
+            // FK列の参照先テーブル名を特定する
+            const colIndex = currentFocus.column - 1;
+            const schema = columnSchemas.find(s => header && s.name === header[colIndex]);
+            if (!schema || !schema.reference) return;
+
+            const expr = parseReferenceExpression(schema.reference);
+            if (!isSimpleReference(expr)) {
+                // 動的参照は Phase 17 では非対応（TODO）
+                return;
+            }
+            const refTableName = expr.tableName;
+
+            // キャッシュから同期取得を試みる。未ロードの場合は非同期ロードを開始してから空リストで表示する
+            const cached = useReferenceStore.getState().getSync(refTableName);
+            const resolvedItems: DropdownItem[] = cached
+                ? cached.items.map(item => ({id: item.id, displayName: item.displayText}))
+                : [];
+
+            if (!cached) {
+                // 非同期ロード: ロード完了後に reference-store の cache が更新され、
+                // useStore サブスクリプションで referenceCache が変わるため再レンダリングが起きる。
+                // ただし現在の dropdownState がすでにセットされた後なので、
+                // ロード完了後に再度 showDropdown を呼ぶ必要がある。
+                // ここでは非同期ロードを開始し、ロード後に dropdownState を更新する。
+                useReferenceStore.getState().getAsync(refTableName).then(data => {
+                    setDropdownState(prev => {
+                        if (!prev) return null;
+                        return {
+                            ...prev,
+                            items: data.items.map(item => ({id: item.id, displayName: item.displayText})),
+                        };
+                    });
+                }).catch(err => { console.warn('[showDropdown] 参照データロード失敗:', err); });
+            }
+
+            // フォーカスセルの位置を計算する（getCellRect はスクロールコンテナ相対座標を返す）
+            const cellRect = getCellRect(currentFocus.row, currentFocus.column);
+            const container = scrollContainerRef.current;
+            if (!cellRect || !container) {
+                // セルが仮想スクロール内に存在しない場合はドロップダウンを表示しない
+                return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            const resolvedPosition = {
+                top: cellRect.top - containerRect.top + container.scrollTop,
+                left: cellRect.left - containerRect.left + container.scrollLeft,
+                width: cellRect.width,
+            };
+
+            setDropdownState({items: resolvedItems, position: resolvedPosition, filterText});
+        }, [columnSchemas, header, getCellRect]);
+
+        /**
+         * ドロップダウンで項目が選択された際の処理。
+         * CellChangeCommand を作成して history-store に記録し、編集モードを終了する。
+         */
+        const handleDropdownSelect = useCallback((selectedId: string) => {
+            const {focus: currentFocus} = useSelectionStore.getState();
+            const storeRowIndex = currentFocus.row - 1;
+            const colIndex = currentFocus.column - 1;
+            const rows = useTableStore.getState().getRows(tableName);
+            // バッファ行・ストア未登録の場合は何もしない
+            if (rows === false || storeRowIndex < 0 || storeRowIndex >= rows.length) {
+                setDropdownState(null);
+                return;
+            }
+            const oldValue = rows[storeRowIndex][colIndex];
+            if (oldValue !== selectedId) {
+                const singleRange: CellRange = {
+                    startRow: currentFocus.row, startColumn: currentFocus.column,
+                    endRow: currentFocus.row, endColumn: currentFocus.column,
+                };
+                const copyRange = useSelectionStore.getState().copyRange;
+                const command = new CellChangeCommand([{tableName, rowIndex: storeRowIndex, colIndex, oldValue, newValue: selectedId}]);
+                useHistoryStore.getState().executeCommand(tableName, command, singleRange, copyRange);
+            }
+            useSelectionStore.getState().stopEditing();
+            setDropdownState(null);
+        }, [tableName]);
+
+        // アクティブテーブル名を購読してキーボードショートカットの有効/無効を制御する
+        const activeTableName = useStore(useSelectionStore, state => state.activeTableName);
+
+        // キーボードショートカット（FK列判定付き）。アクティブテーブルのみ有効にする
+        useEditorTableKeyboard({
+            tableName,
+            enabled: activeTableName === tableName,
+            columnSchemas,
+            onShowDropdown: showDropdown,
+        });
+
         // 行ヘッダーの mousedown ハンドラ: 行全体を選択する
         const handleRowHeaderMouseDown = useCallback((domRowIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
             e.preventDefault();
@@ -718,6 +901,23 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     }}
                     onCompositionChange={composing => {
                         composingRef.current = composing;
+                    }}
+                />
+
+                {/* FK列ドロップダウン: dropdownState が non-null のとき表示する */}
+                <GridDropdownInput
+                    visible={dropdownState !== null}
+                    items={dropdownState !== null ? dropdownState.items : []}
+                    filterText={dropdownState !== null ? dropdownState.filterText : ''}
+                    position={dropdownState !== null ? dropdownState.position : {top: 0, left: 0, width: 0}}
+                    onSelect={handleDropdownSelect}
+                    onFilterChange={text => {
+                        setDropdownState(prev => prev !== null ? {...prev, filterText: text} : null);
+                    }}
+                    onCancel={() => {
+                        // Escape: ドロップダウンを閉じて編集も終了する
+                        useSelectionStore.getState().stopEditing();
+                        setDropdownState(null);
                     }}
                 />
             </div>
