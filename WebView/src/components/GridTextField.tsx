@@ -69,6 +69,16 @@ export function GridTextField({visible, initialValue, position, onSubmit, onCanc
         onCompositionChange(false);
     }
 
+    /**
+     * divRef から現在の入力テキストを取得する。
+     * DOM の textContent が null（textNode なし）の場合は空文字列を返す。
+     * Enter / Tab の2箇所で使うため関数化する。
+     */
+    function getCurrentText(): string {
+        const text = divRef.current ? divRef.current.textContent : null;
+        return text !== null ? text : '';
+    }
+
     function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
         if (e.key === 'Escape') {
             e.preventDefault();
@@ -82,19 +92,14 @@ export function GridTextField({visible, initialValue, position, onSubmit, onCanc
         if (e.key === 'Enter') {
             e.preventDefault();
             e.stopPropagation();
-            // keydown 発火時点で divRef.current は確実に存在する。
-            // textContent が null になるのは DOM に textNode が存在しない場合のみで、
-            // その場合は空文字列として確定させる。
-            const value = divRef.current ? divRef.current.textContent : null;
-            onSubmit(value !== null ? value : '');
+            onSubmit(getCurrentText());
             return;
         }
         if (e.key === 'Tab') {
             e.preventDefault();
             e.stopPropagation();
             // Tab で確定する（次セルへの移動は親コンポーネントの責務）
-            const value = divRef.current ? divRef.current.textContent : null;
-            onSubmit(value !== null ? value : '');
+            onSubmit(getCurrentText());
         }
     }
 
