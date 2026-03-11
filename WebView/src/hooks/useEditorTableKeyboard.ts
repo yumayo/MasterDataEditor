@@ -3,6 +3,8 @@ import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
 import {useHistoryStore, CellChangeCommand} from '../stores/history-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
+import {writeFileAsync} from '../api';
+import {Csv} from '../csv';
 
 /**
  * useEditorTableKeyboard フックのオプション
@@ -274,9 +276,31 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                     })();
                     return;
                 }
-                // Ctrl+S: 保存 — Phase 10で実装
+                // Ctrl+S: ストアの全データをCSVとしてファイルに保存する
                 if (e.key === 's' || e.key === 'S') {
                     e.preventDefault();
+                    void (async () => {
+                        try {
+                            // ストアからヘッダーと行データを取得する
+                            const header = useTableStore.getState().getHeader(tableName);
+                            const rows = useTableStore.getState().getRows(tableName);
+                            if (header === false || rows === false) return;
+
+                            // CSV文字列を生成する
+                            const csv = new Csv();
+                            csv.header = header;
+                            csv.body = rows;
+                            const csvString = csv.toString();
+
+                            // data/ ディレクトリにCSVファイルを書き込む
+                            await writeFileAsync(`data/${tableName}.csv`, csvString);
+
+                            // 保存成功: Dirty状態をクリアする
+                            useHistoryStore.getState().markSaved(tableName);
+                        } catch (err) {
+                            console.error('CSV保存に失敗しました', err);
+                        }
+                    })();
                     return;
                 }
                 return;
