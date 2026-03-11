@@ -124,3 +124,12 @@
 - 2026-03-10 (5ecf45f): ミニテーブル行挿入ストア位置バグ修正+deleteRowストア同期+保存パス統一。致命的2件（0行NaN/storeRowIndices陳腐化）、重要3件（Undo FK列消失/空行フィルタ変更/getter違反）。
 - 2026-03-11 (7cc9daa): バッファ空行昇格(PromoteBufferRowCommand)。致命的1件（Fill操作パス漏れ）、重要4件（Undo対称性/DOM列数/二重実行/テスト不足+コピペ21個目）。
 - 2026-03-11 (021a6c2): N:1ストア優先解決。致命的1件（PK高速パス喪失）、重要4件（共通化粒度/コピペ/let乱用/競合リスク）、軽微3件。
+- 2026-03-11 (react branch, Phase 0): React基盤構築。致命的2件（iife/React互換・render/Vanilla初期化レース）、重要4件（QueryClient HMR・非null assertion・StrictMode二重実行・any禁止違反）、軽微3件。
+
+## React Migration (react branch, 2026-03-11)
+- **Branch**: react (masterからフォーク)
+- **Phase 0 状態**: React mount point + 空App + Vanilla初期化コード共存
+- **CRITICAL: iife format**: production buildで`format: 'iife'`が設定されておりReactのコード分割と非互換。Phase 3で爆発予定
+- **Entry point**: main.ts → main.tsx に変更。React mountの後にVanilla即時実行関数が続く構造
+- **Dependencies**: react 19, react-dom 19, zustand 5, immer 11, @tanstack/react-query 5, @tanstack/react-table 8, @tanstack/react-virtual 3, @dnd-kit/core 6, @dnd-kit/sortable 10
+- **SSOT転換計画**: DOM SSOT → Zustand Store SSOT（Phase 1以降）
