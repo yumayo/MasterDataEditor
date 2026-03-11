@@ -1,6 +1,9 @@
 {
   "include": ["src"],
   "compilerOptions": {
+    /* JSX */
+    "jsx": "react-jsx",
+
     /* JSON Import */
     "resolveJsonModule": true,
     "esModuleInterop": true,

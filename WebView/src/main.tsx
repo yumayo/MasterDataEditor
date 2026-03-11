@@ -1,3 +1,5 @@
+import {createRoot} from 'react-dom/client';
+import {App} from './App';
 import {findFilesAsync} from "./api";
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
@@ -6,7 +8,30 @@ import {CommandPalette} from "./command-palette";
 import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
+import {EditorTable} from "./editor-table";
 
+// テスト用グローバル変数: Playwright から activeEditorTable にアクセスするためのブリッジ
+// Phase 10 で Zustand store 経由のアクセスに置き換え、この定義を削除する
+declare global {
+    interface Window {
+        editor: {
+            readonly activeEditorTable: EditorTable | false;
+        };
+    }
+}
+
+// React マウント
+const rootElement = document.getElementById('root');
+if (rootElement === null) {
+    throw new Error('React mount point <div id="root"> が見つかりません。index.htmlを確認してください。');
+}
+createRoot(rootElement).render(<App />);
+
+// Vanilla 初期化コード（main.ts から移植）
+// Phase 10 で完全React化が完了した時点でこの IIFE を削除する。
+// React render は非同期的にDOMをマウントするが、現時点では <div id="root"> 内にしか
+// レンダリングしないため、以下の Vanilla DOM操作との競合は発生しない。
+// Phase 3以降で Vanilla DOM要素を React管理下に移す際は、対応する getElementById() を削除すること。
 (async () => {
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
@@ -43,9 +68,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
 
-    // テスト用: window.editorを公開（activeEditorTableへのアクセスを提供）
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).editor = {
+    window.editor = {
         get activeEditorTable() {
             const state = tab.getActiveTabState();
             if (!state) return false;

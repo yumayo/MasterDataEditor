@@ -1,4 +1,5 @@
 ﻿import {defineConfig, loadEnv, Plugin, UserConfig} from 'vite'
+import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // Load .env from parent directory
@@ -30,7 +31,7 @@ let config: UserConfig;
 if (process.env.NODE_ENV === 'production') {
     config = {
         base: './',
-        plugins: [removeModuleType()],
+        plugins: [react(), removeModuleType()],
         build: {
             outDir: 'dist',
             emptyOutDir: true,
@@ -39,6 +40,9 @@ if (process.env.NODE_ENV === 'production') {
                     main: './index.html'
                 },
                 output: {
+                    // WebView2はChromiumベースだがネイティブアプリ埋め込みのためiifeフォーマットを使用。
+                    // iife はコード分割（React.lazy() / dynamic import）をサポートしないため、
+                    // 全コンポーネントを同期的にインポートすること。
                     format: 'iife',
                     entryFileNames: 'assets/[name]-[hash].js',
                     chunkFileNames: 'assets/[name]-[hash].js',
@@ -51,6 +55,7 @@ if (process.env.NODE_ENV === 'production') {
     const devPort = getDevPort()
     config = {
         base: './',
+        plugins: [react()],
         server: {
             port: devPort,
             strictPort: true
