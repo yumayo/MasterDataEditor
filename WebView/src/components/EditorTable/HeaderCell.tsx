@@ -1,0 +1,23 @@
+import React from 'react';
+
+interface HeaderCellProps {
+    /** 列名 */
+    columnName: string;
+    /** 列インデックス（data-col属性に使用） */
+    colIndex: number;
+}
+
+/**
+ * テーブルの列ヘッダーセルを描画するコンポーネント。
+ * ヘッダーは列数が変わらない限り再レンダリングされないため React.memo で最適化する。
+ */
+export const HeaderCell = React.memo(function HeaderCell({columnName, colIndex}: HeaderCellProps) {
+    return (
+        <div
+            className="editor-table-column-header"
+            data-col={colIndex}
+        >
+            {columnName}
+        </div>
+    );
+});
