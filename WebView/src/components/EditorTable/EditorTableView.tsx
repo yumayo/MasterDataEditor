@@ -10,15 +10,172 @@ import {useVirtualizer} from '@tanstack/react-virtual';
 import {useTableStore} from '../../stores/table-store';
 import {useSelectionStore} from '../../stores/selection-store';
 import {useHistoryStore, CellChangeCommand} from '../../stores/history-store';
+import {generateSeriesData} from '../../fill-series';
 import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
 import {SelectionOverlay} from './SelectionOverlay';
+import {FillPreview} from './FillPreview';
 import {GridTextField} from '../GridTextField';
-import type {CellRange, CellPosition} from '../../types/selection-types';
+import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
 
 /** データ行の下に表示するバッファ空行数 */
 const BUFFER_ROW_COUNT = 100;
+
+/**
+ * フィル操作の方向・ソース範囲・ターゲット範囲・件数をまとめた情報
+ */
+interface FillInfo {
+    direction: FillDirection;
+    sourceRange: CellRange;
+    targetRange: CellRange;
+    count: number;
+}
+
+/**
+ * 選択範囲とフィル先セルからフィル情報を計算する。
+ * フィル先が選択範囲内に収まっている場合は null を返す（フィル対象なし）。
+ * row/column は 1始まり。
+ */
+function computeFillInfo(range: CellRange, fillTarget: CellPosition): FillInfo | null {
+    const selStartRow = Math.min(range.startRow, range.endRow);
+    const selStartColumn = Math.min(range.startColumn, range.endColumn);
+    const selEndRow = Math.max(range.startRow, range.endRow);
+    const selEndColumn = Math.max(range.startColumn, range.endColumn);
+    const {row: targetRow, column: targetCol} = fillTarget;
+
+    if (targetRow > selEndRow) {
+        return {
+            direction: 'down',
+            sourceRange: {startRow: selStartRow, startColumn: selStartColumn, endRow: selEndRow, endColumn: selEndColumn},
+            targetRange: {startRow: selEndRow + 1, startColumn: selStartColumn, endRow: targetRow, endColumn: selEndColumn},
+            count: targetRow - selEndRow,
+        };
+    }
+    if (targetRow < selStartRow) {
+        return {
+            direction: 'up',
+            sourceRange: {startRow: selStartRow, startColumn: selStartColumn, endRow: selEndRow, endColumn: selEndColumn},
+            targetRange: {startRow: targetRow, startColumn: selStartColumn, endRow: selStartRow - 1, endColumn: selEndColumn},
+            count: selStartRow - targetRow,
+        };
+    }
+    if (targetCol > selEndColumn) {
+        return {
+            direction: 'right',
+            sourceRange: {startRow: selStartRow, startColumn: selStartColumn, endRow: selEndRow, endColumn: selEndColumn},
+            targetRange: {startRow: selStartRow, startColumn: selEndColumn + 1, endRow: selEndRow, endColumn: targetCol},
+            count: targetCol - selEndColumn,
+        };
+    }
+    if (targetCol < selStartColumn) {
+        return {
+            direction: 'left',
+            sourceRange: {startRow: selStartRow, startColumn: selStartColumn, endRow: selEndRow, endColumn: selEndColumn},
+            targetRange: {startRow: selStartRow, startColumn: targetCol, endRow: selEndRow, endColumn: selStartColumn - 1},
+            count: selStartColumn - targetCol,
+        };
+    }
+    return null;
+}
+
+/**
+ * フィル操作を実行してストアに値を書き込み、履歴に記録する。
+ * generateSeriesData でソース値から連続データを生成し、CellChangeCommand で一括適用する。
+ */
+function applyFill(tableName: string, fillInfo: FillInfo): void {
+    const rows = useTableStore.getState().getRows(tableName);
+    if (rows === false) return;
+
+    const {sourceRange, targetRange, direction, count} = fillInfo;
+
+    // ソース値を2次元配列として読み取る（ストアインデックスは row-1）
+    const sourceValues: string[][] = [];
+    for (let r = sourceRange.startRow; r <= sourceRange.endRow; r++) {
+        const rowValues: string[] = [];
+        for (let c = sourceRange.startColumn; c <= sourceRange.endColumn; c++) {
+            rowValues.push(rows[r - 1][c - 1]);
+        }
+        sourceValues.push(rowValues);
+    }
+
+    // fill-series で連続データを生成する
+    const generatedData = generateSeriesData(sourceValues, direction, count);
+
+    // 生成データをターゲット範囲のセルにマッピングして変更リストを構築する
+    const changes: Array<{tableName: string; rowIndex: number; colIndex: number; oldValue: string; newValue: string}> = [];
+
+    if (direction === 'down') {
+        // generatedData[i][j] → targetRange.startRow + i 行、sourceRange.startColumn + j 列
+        for (let i = 0; i < generatedData.length; i++) {
+            for (let j = 0; j < generatedData[i].length; j++) {
+                const rowIndex = targetRange.startRow + i - 1;
+                const colIndex = sourceRange.startColumn + j - 1;
+                const oldValue = rows[rowIndex][colIndex];
+                const newValue = generatedData[i][j];
+                if (oldValue !== newValue) {
+                    changes.push({tableName, rowIndex, colIndex, oldValue, newValue});
+                }
+            }
+        }
+    } else if (direction === 'up') {
+        // generateSeriesData('up') は先頭が「1つ上」の値、末尾が「最も上」の値を返す。
+        // ターゲット範囲の末尾（selStartRow-1）から先頭（targetRow）に向かってマッピングする。
+        for (let i = 0; i < generatedData.length; i++) {
+            for (let j = 0; j < generatedData[i].length; j++) {
+                const rowIndex = targetRange.endRow - i - 1;
+                const colIndex = sourceRange.startColumn + j - 1;
+                const oldValue = rows[rowIndex][colIndex];
+                const newValue = generatedData[i][j];
+                if (oldValue !== newValue) {
+                    changes.push({tableName, rowIndex, colIndex, oldValue, newValue});
+                }
+            }
+        }
+    } else if (direction === 'right') {
+        // generatedData[rowIdx][i] → sourceRange.startRow + rowIdx 行、targetRange.startColumn + i 列
+        for (let rowIdx = 0; rowIdx < generatedData.length; rowIdx++) {
+            for (let i = 0; i < generatedData[rowIdx].length; i++) {
+                const rowIndex = sourceRange.startRow + rowIdx - 1;
+                const colIndex = targetRange.startColumn + i - 1;
+                const oldValue = rows[rowIndex][colIndex];
+                const newValue = generatedData[rowIdx][i];
+                if (oldValue !== newValue) {
+                    changes.push({tableName, rowIndex, colIndex, oldValue, newValue});
+                }
+            }
+        }
+    } else {
+        // left: generateSeriesData('left') は先頭が「1つ左」の値、末尾が「最も左」の値を返す。
+        // ターゲット範囲の末尾列（selStartColumn-1）から先頭列（targetCol）に向かってマッピングする。
+        for (let rowIdx = 0; rowIdx < generatedData.length; rowIdx++) {
+            for (let i = 0; i < generatedData[rowIdx].length; i++) {
+                const rowIndex = sourceRange.startRow + rowIdx - 1;
+                const colIndex = targetRange.endColumn - i - 1;
+                const oldValue = rows[rowIndex][colIndex];
+                const newValue = generatedData[rowIdx][i];
+                if (oldValue !== newValue) {
+                    changes.push({tableName, rowIndex, colIndex, oldValue, newValue});
+                }
+            }
+        }
+    }
+
+    if (changes.length === 0) return;
+
+    // 変更をコマンドとして実行し、履歴に記録する
+    const command = new CellChangeCommand(changes);
+    // フィル後の選択範囲はソース範囲とターゲット範囲を合わせた全体にする
+    const newRange: CellRange = {
+        startRow: Math.min(sourceRange.startRow, targetRange.startRow),
+        startColumn: Math.min(sourceRange.startColumn, targetRange.startColumn),
+        endRow: Math.max(sourceRange.endRow, targetRange.endRow),
+        endColumn: Math.max(sourceRange.endColumn, targetRange.endColumn),
+    };
+    const currentState = useSelectionStore.getState();
+    useHistoryStore.getState().executeCommand(tableName, command, newRange, currentState.copyRange);
+    currentState.select(newRange, currentState.focus);
+}
 
 /** テーブル行の高さ(px) — Vanilla側の DEFAULT_ROW_HEIGHT と揃える */
 const ROW_HEIGHT_PX = 20;
@@ -65,12 +222,16 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         const selecting = useStore(useSelectionStore, state => state.selecting);
         const selectingColumn = useStore(useSelectionStore, state => state.selectingColumn);
         const selectingRow = useStore(useSelectionStore, state => state.selectingRow);
+        const filling = useStore(useSelectionStore, state => state.filling);
         const editing = useStore(useSelectionStore, state => state.editing);
         const editingInitialValue = useStore(useSelectionStore, state => state.editingInitialValue);
         const editingOldValue = useStore(useSelectionStore, state => state.editingOldValue);
 
         // スクロールコンテナへの内部ref（useVirtualizerに渡す）
         const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+        // フィルハンドルmousedown時のマウス座標（縦横方向判定用）
+        const fillStartMouseRef = useRef<{x: number; y: number}>({x: 0, y: 0});
 
         // テーブル全体のBoundingRect（SelectionOverlay・GridTextFieldの座標計算基準）
         const [tableBoundingRect, setTableBoundingRect] = useState<DOMRect | null>(null);
@@ -120,6 +281,14 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
 
         // TanStack Table のカラム定義を構築する
         const columnHelper = useMemo(() => createColumnHelper<RowData>(), []);
+
+        // フィルハンドルmousedown: フィル開始座標を記録してフィル操作を開始する
+        const handleFillHandleMouseDown = useCallback((e: React.MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fillStartMouseRef.current = {x: e.clientX, y: e.clientY};
+            useSelectionStore.getState().startFilling({row: 0, column: 0});
+        }, []);
 
         // セルの mousedown ハンドラ: selection-store を更新する（columns より前に定義する必要がある）
         const handleCellMouseDown = useCallback((domRowIndex: number, colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
@@ -287,6 +456,83 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             };
         }, [selecting, selectingColumn, selectingRow, allRows, header]);
 
+        // フィルドラッグ: filling が true のときにのみ有効にする（ドラッグ選択とは別のuseEffect）
+        useEffect(() => {
+            if (!filling) return;
+
+            const handleMouseMove = (e: MouseEvent) => {
+                // document.elementsFromPoint でマウス下のセルを特定する
+                const elements = document.elementsFromPoint(e.clientX, e.clientY);
+                const cellEl = elements.find(el => el.classList.contains('editor-table-cell')) as HTMLElement | null;
+                if (!cellEl) return;
+                const colAttr = cellEl.getAttribute('data-col');
+                if (!colAttr) return;
+                const col = parseInt(colAttr, 10) + 1;
+                const rowEl = cellEl.closest('[data-row]') as HTMLElement | null;
+                if (!rowEl) return;
+                const rowAttr = rowEl.getAttribute('data-row');
+                if (!rowAttr) return;
+                const domRowIndex = parseInt(rowAttr, 10);
+                const row = domRowIndex + 1;
+
+                const {range} = useSelectionStore.getState();
+                const selStartRow = Math.min(range.startRow, range.endRow);
+                const selStartColumn = Math.min(range.startColumn, range.endColumn);
+                const selEndRow = Math.max(range.startRow, range.endRow);
+                const selEndColumn = Math.max(range.startColumn, range.endColumn);
+
+                // セルデルタ量を計算して縦横のはみ出し量を求める
+                const rowDeltaDown = Math.max(0, row - selEndRow);
+                const rowDeltaUp = Math.max(0, selStartRow - row);
+                const colDeltaRight = Math.max(0, col - selEndColumn);
+                const colDeltaLeft = Math.max(0, selStartColumn - col);
+                const hasRowDelta = rowDeltaDown > 0 || rowDeltaUp > 0;
+                const hasColDelta = colDeltaRight > 0 || colDeltaLeft > 0;
+
+                // ピクセル移動量で縦横の優先方向を判定する
+                const startMouse = fillStartMouseRef.current;
+                const mouseDx = Math.abs(e.clientX - startMouse.x);
+                const mouseDy = Math.abs(e.clientY - startMouse.y);
+
+                let targetRow = row;
+                let targetCol = col;
+
+                if (hasRowDelta && hasColDelta) {
+                    if (mouseDy >= mouseDx) {
+                        // 縦方向優先: 列は選択範囲に固定
+                        targetCol = col > selEndColumn ? selEndColumn : (col < selStartColumn ? selStartColumn : col);
+                    } else {
+                        // 横方向優先: 行は選択範囲に固定
+                        targetRow = row > selEndRow ? selEndRow : (row < selStartRow ? selStartRow : row);
+                    }
+                } else if (hasRowDelta && !hasColDelta) {
+                    // 縦方向のみ: FillPreviewが列範囲全体を使うので列は選択開始列に固定
+                    targetCol = selStartColumn;
+                } else if (!hasRowDelta && hasColDelta) {
+                    // 横方向のみ: FillPreviewが行範囲全体を使うので行は選択開始行に固定
+                    targetRow = selStartRow;
+                }
+
+                useSelectionStore.getState().setFillTarget({row: targetRow, column: targetCol});
+            };
+
+            const handleMouseUp = () => {
+                // mouseup時に fillTarget を使ってフィルを実行してからフィル操作を終了する
+                const {range, fillTarget} = useSelectionStore.getState();
+                useSelectionStore.getState().stopFilling();
+                const fillInfo = computeFillInfo(range, fillTarget);
+                if (!fillInfo) return;
+                applyFill(tableName, fillInfo);
+            };
+
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            return () => {
+                window.removeEventListener('mousemove', handleMouseMove);
+                window.removeEventListener('mouseup', handleMouseUp);
+            };
+        }, [filling, tableName]);
+
         // 仮想スクロール内のセルDOMを特定してBoundingRectを返す関数
         // SelectionOverlay の描画座標計算に使用する
         // row, column は 1始まり
@@ -432,6 +678,14 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
 
                 {/* 選択範囲オーバーレイ: position:absolute で仮想スクロール領域に重ねる */}
                 <SelectionOverlay
+                    tableName={tableName}
+                    getCellRect={getCellRect}
+                    tableBoundingRect={tableBoundingRect}
+                    onFillHandleMouseDown={handleFillHandleMouseDown}
+                />
+
+                {/* フィル操作プレビューオーバーレイ */}
+                <FillPreview
                     tableName={tableName}
                     getCellRect={getCellRect}
                     tableBoundingRect={tableBoundingRect}

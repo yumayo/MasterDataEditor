@@ -10,6 +10,8 @@ interface SelectionOverlayProps {
     getCellRect: (row: number, column: number) => DOMRect | null;
     /** テーブル全体のDOMRect（座標計算の基準点） */
     tableBoundingRect: DOMRect | null;
+    /** フィルハンドルのmousedownハンドラ（フィル操作開始時に呼ばれる） */
+    onFillHandleMouseDown: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -85,7 +87,7 @@ function calcBackgroundStyles(
  * - コピー範囲は点線ボーダー（.copy-border クラス）で表示する
  * - フィルハンドル（.fill-handle クラス）を選択範囲の右下に表示する
  */
-export function SelectionOverlay({tableName, getCellRect, tableBoundingRect}: SelectionOverlayProps): React.ReactElement | null {
+export function SelectionOverlay({tableName, getCellRect, tableBoundingRect, onFillHandleMouseDown}: SelectionOverlayProps): React.ReactElement | null {
     const activeTableName = useStore(useSelectionStore, state => state.activeTableName);
     const range = useStore(useSelectionStore, state => state.range);
     const focus = useStore(useSelectionStore, state => state.focus);
@@ -159,7 +161,7 @@ export function SelectionOverlay({tableName, getCellRect, tableBoundingRect}: Se
             {/* コピー範囲の点線ボーダー */}
             <div className="copy-border" style={copyBorderStyle} />
 
-            {/* フィルハンドル: 選択範囲右下に表示 */}
+            {/* フィルハンドル: 選択範囲右下に表示。pointerEvents: 'auto' でセレクションオーバーレイのnoneを上書きする */}
             <div
                 className="fill-handle"
                 style={{
@@ -167,7 +169,9 @@ export function SelectionOverlay({tableName, getCellRect, tableBoundingRect}: Se
                     position: 'absolute',
                     left: fillHandleLeft,
                     top: fillHandleTop,
+                    pointerEvents: 'auto',
                 }}
+                onMouseDown={onFillHandleMouseDown}
             />
         </>
     );
