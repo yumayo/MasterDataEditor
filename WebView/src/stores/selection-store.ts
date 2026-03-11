@@ -49,6 +49,12 @@ interface SelectionStoreState {
     editing: boolean;
     /** 編集開始時のセル初期値（F2・ダブルクリック・文字キーで設定される） */
     editingInitialValue: string;
+    /**
+     * 編集開始前のストア上の値（Undo/Redo 用の oldValue として使用する）。
+     * F2 キー・ダブルクリック時はフォーカスセルのストア値を保存する。
+     * 文字キーで編集開始した場合も編集前の値（空文字になりうる）を保存する。
+     */
+    editingOldValue: string;
 
     // === アクション ===
     /** 選択範囲とフォーカスを一括更新する（個別更新による中間状態を防ぐ） */
@@ -85,8 +91,12 @@ interface SelectionStoreState {
     updateLastNotifiedRow(row: number): boolean;
     /** lastNotifiedRow を -1 にリセットし、次回の updateLastNotifiedRow で必ず true を返す状態にする */
     resetLastNotifiedRow(): void;
-    /** セル編集モードを開始する（initialValue: F2の場合は現在値、文字キーの場合はその文字） */
-    startEditing(initialValue: string): void;
+    /**
+     * セル編集モードを開始する。
+     * initialValue: F2 の場合は現在値、文字キーの場合はその文字。
+     * oldValue: 編集開始前のストア上の値（Undo 時に元に戻す値）。
+     */
+    startEditing(initialValue: string, oldValue: string): void;
     /** セル編集モードを終了する */
     stopEditing(): void;
     /** テスト用: ストア全体を初期状態にリセットする */
@@ -126,6 +136,7 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
         activeTableName: '',
         editing: false,
         editingInitialValue: '',
+        editingOldValue: '',
 
         select(range, focus) {
             set(draft => {
@@ -230,10 +241,12 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
             });
         },
 
-        startEditing(initialValue) {
+        startEditing(initialValue, oldValue) {
             set(draft => {
                 draft.editing = true;
                 draft.editingInitialValue = initialValue;
+                // 編集開始前のストア値を保存する（Undo 用の oldValue として使用）
+                draft.editingOldValue = oldValue;
             });
         },
 
@@ -241,6 +254,7 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
             set(draft => {
                 draft.editing = false;
                 draft.editingInitialValue = '';
+                draft.editingOldValue = '';
             });
         },
 
@@ -258,6 +272,7 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
                 draft.activeTableName = '';
                 draft.editing = false;
                 draft.editingInitialValue = '';
+                draft.editingOldValue = '';
             });
         },
     }))

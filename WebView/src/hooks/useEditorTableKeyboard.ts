@@ -1,6 +1,7 @@
 import {useEffect} from 'react';
 import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
+import {useHistoryStore, CellChangeCommand} from '../stores/history-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
 
 /**
@@ -55,11 +56,11 @@ function moveFocus(row: number, column: number): void {
  *   Delete/Backspace — フォーカスセルの値をクリアする（table-store を更新）
  *   Ctrl+C         — 選択範囲をコピー範囲に設定する（selection-store）
  *   Ctrl+A         — テーブル全体を選択する
- *   Ctrl+Z         — Undo（Phase 10で実装）
- *   Ctrl+Y         — Redo（Phase 10で実装）
- *   Ctrl+V         — ペースト（Phase 10で実装）
- *   Ctrl+S         — 保存（Phase 10で実装）
- *   F2             — セル編集開始（Phase 10で実装）
+ *   Ctrl+Z         — Undo（history-store 経由）
+ *   Ctrl+Y         — Redo（history-store 経由）
+ *   Ctrl+V         — ペースト（未実装）
+ *   Ctrl+S         — 保存（未実装）
+ *   F2             — セル編集開始
  */
 export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeyboardOptions): void {
     useEffect(() => {
@@ -93,14 +94,24 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                     }
                     return;
                 }
-                // Ctrl+Z: Undo — Phase 10で実装
+                // Ctrl+Z: Undo
                 if (e.key === 'z' || e.key === 'Z') {
                     e.preventDefault();
+                    const undoResult = useHistoryStore.getState().undo(tableName);
+                    if (undoResult) {
+                        useSelectionStore.getState().select(undoResult.range, {row: undoResult.range.startRow, column: undoResult.range.startColumn});
+                        useSelectionStore.getState().setCopyRange(undoResult.copyRange);
+                    }
                     return;
                 }
-                // Ctrl+Y: Redo — Phase 10で実装
+                // Ctrl+Y: Redo
                 if (e.key === 'y' || e.key === 'Y') {
                     e.preventDefault();
+                    const redoResult = useHistoryStore.getState().redo(tableName);
+                    if (redoResult) {
+                        useSelectionStore.getState().select(redoResult.range, {row: redoResult.range.startRow, column: redoResult.range.startColumn});
+                        useSelectionStore.getState().setCopyRange(redoResult.copyRange);
+                    }
                     return;
                 }
                 // Ctrl+V: ペースト — Phase 10で実装
@@ -126,14 +137,24 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 // storeRowIndex がデータ行の範囲外（バッファ行）の場合はスキップする
                 if (storeRowIndex < 0 || storeRowIndex >= rows.length) return;
                 const colIndex = focus.column - 1;
-                useSelectionStore.getState().startEditing(rows[storeRowIndex][colIndex]);
+                const currentValue = rows[storeRowIndex][colIndex];
+                // F2 の場合は現在値を初期値とし、oldValue にも同じ値を設定する
+                useSelectionStore.getState().startEditing(currentValue, currentValue);
                 return;
             }
 
             // 印刷可能文字キー: その文字を初期値として編集開始する（Excel同様の動作）
             // バッファ行にフォーカスがある場合も編集は許可する（新規行入力ユースケース）
             if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                useSelectionStore.getState().startEditing(e.key);
+                // 文字キーで編集開始する場合も oldValue（編集前のストア値）を保存する
+                const rows = useTableStore.getState().getRows(tableName);
+                const storeRowIndex = focus.row - 1;
+                const colIndex = focus.column - 1;
+                // バッファ行やストア未登録の場合は oldValue を空文字にする
+                const oldValue = rows !== false && storeRowIndex >= 0 && storeRowIndex < rows.length
+                    ? rows[storeRowIndex][colIndex]
+                    : '';
+                useSelectionStore.getState().startEditing(e.key, oldValue);
                 return;
             }
 
@@ -194,7 +215,19 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 // フォーカス位置のストア行インデックスは「行番号(1始まり) - 1」で計算する
                 const storeRowIndex = focus.row - 1;
                 const columnIndex = focus.column - 1;
-                useTableStore.getState().updateCellValueByRowIndex(tableName, storeRowIndex, columnIndex, '');
+                const rows = useTableStore.getState().getRows(tableName);
+                // バッファ行またはストア未登録の場合は何もしない
+                if (rows === false || storeRowIndex < 0 || storeRowIndex >= rows.length) return;
+                const oldValue = rows[storeRowIndex][columnIndex];
+                // 既に空なら履歴に積まない
+                if (oldValue === '') return;
+                const singleRange: CellRange = {
+                    startRow: focus.row, startColumn: focus.column,
+                    endRow: focus.row, endColumn: focus.column,
+                };
+                const copyRange = useSelectionStore.getState().copyRange;
+                const command = new CellChangeCommand([{tableName, rowIndex: storeRowIndex, colIndex: columnIndex, oldValue, newValue: ''}]);
+                useHistoryStore.getState().executeCommand(tableName, command, singleRange, copyRange);
             }
         }
 

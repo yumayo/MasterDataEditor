@@ -9,6 +9,7 @@ import {
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {useTableStore} from '../../stores/table-store';
 import {useSelectionStore} from '../../stores/selection-store';
+import {useHistoryStore, CellChangeCommand} from '../../stores/history-store';
 import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
@@ -66,6 +67,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         const selectingRow = useStore(useSelectionStore, state => state.selectingRow);
         const editing = useStore(useSelectionStore, state => state.editing);
         const editingInitialValue = useStore(useSelectionStore, state => state.editingInitialValue);
+        const editingOldValue = useStore(useSelectionStore, state => state.editingOldValue);
 
         // スクロールコンテナへの内部ref（useVirtualizerに渡す）
         const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -185,7 +187,9 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                                 onMouseDown={e => handleCellMouseDown(rowData.domRowIndex, colIndex, e)}
                                 onDoubleClick={() => {
                                     // ダブルクリックで現在のセル値を初期値として編集開始する
-                                    useSelectionStore.getState().startEditing(info.getValue());
+                                    // oldValue にも同じ値を設定する（Undo 時の元の値として使用）
+                                    const currentValue = info.getValue();
+                                    useSelectionStore.getState().startEditing(currentValue, currentValue);
                                 }}
                             />
                         );
@@ -439,10 +443,19 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     initialValue={editingInitialValue}
                     position={gridTextFieldPosition}
                     onSubmit={value => {
-                        // 確定: ストアのセル値を更新してから編集モードを終了する
+                        // 確定: CellChangeCommand を作成して履歴に記録してから編集モードを終了する
                         const storeRowIndex = focus.row - 1;
                         const colIndex = focus.column - 1;
-                        useTableStore.getState().updateCellValueByRowIndex(tableName, storeRowIndex, colIndex, value);
+                        // oldValue === newValue の場合は何もしない（履歴に積まない）
+                        if (editingOldValue !== value) {
+                            const singleRange: CellRange = {
+                                startRow: focus.row, startColumn: focus.column,
+                                endRow: focus.row, endColumn: focus.column,
+                            };
+                            const copyRange = useSelectionStore.getState().copyRange;
+                            const command = new CellChangeCommand([{tableName, rowIndex: storeRowIndex, colIndex, oldValue: editingOldValue, newValue: value}]);
+                            useHistoryStore.getState().executeCommand(tableName, command, singleRange, copyRange);
+                        }
                         useSelectionStore.getState().stopEditing();
                     }}
                     onCancel={() => {
