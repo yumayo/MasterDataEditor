@@ -44,6 +44,12 @@ interface SelectionStoreState {
      */
     activeTableName: string;
 
+    // === 編集状態 ===
+    /** セル編集モードかどうか */
+    editing: boolean;
+    /** 編集開始時のセル初期値（F2・ダブルクリック・文字キーで設定される） */
+    editingInitialValue: string;
+
     // === アクション ===
     /** 選択範囲とフォーカスを一括更新する（個別更新による中間状態を防ぐ） */
     select(range: CellRange, focus: CellPosition): void;
@@ -79,6 +85,10 @@ interface SelectionStoreState {
     updateLastNotifiedRow(row: number): boolean;
     /** lastNotifiedRow を -1 にリセットし、次回の updateLastNotifiedRow で必ず true を返す状態にする */
     resetLastNotifiedRow(): void;
+    /** セル編集モードを開始する（initialValue: F2の場合は現在値、文字キーの場合はその文字） */
+    startEditing(initialValue: string): void;
+    /** セル編集モードを終了する */
+    stopEditing(): void;
     /** テスト用: ストア全体を初期状態にリセットする */
     _reset(): void;
 }
@@ -114,6 +124,8 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
         fillTarget: INITIAL_FILL_TARGET,
         lastNotifiedRow: -1,
         activeTableName: '',
+        editing: false,
+        editingInitialValue: '',
 
         select(range, focus) {
             set(draft => {
@@ -218,6 +230,20 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
             });
         },
 
+        startEditing(initialValue) {
+            set(draft => {
+                draft.editing = true;
+                draft.editingInitialValue = initialValue;
+            });
+        },
+
+        stopEditing() {
+            set(draft => {
+                draft.editing = false;
+                draft.editingInitialValue = '';
+            });
+        },
+
         _reset() {
             set(draft => {
                 draft.range = {startRow: 1, startColumn: 1, endRow: 1, endColumn: 1};
@@ -230,6 +256,8 @@ export const useSelectionStore = createStore<SelectionStoreState>()(
                 draft.fillTarget = {row: 0, column: 0};
                 draft.lastNotifiedRow = -1;
                 draft.activeTableName = '';
+                draft.editing = false;
+                draft.editingInitialValue = '';
             });
         },
     }))

@@ -13,6 +13,7 @@ import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
 import {SelectionOverlay} from './SelectionOverlay';
+import {GridTextField} from '../GridTextField';
 import type {CellRange, CellPosition} from '../../types/selection-types';
 
 /** データ行の下に表示するバッファ空行数 */
@@ -63,12 +64,17 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         const selecting = useStore(useSelectionStore, state => state.selecting);
         const selectingColumn = useStore(useSelectionStore, state => state.selectingColumn);
         const selectingRow = useStore(useSelectionStore, state => state.selectingRow);
+        const editing = useStore(useSelectionStore, state => state.editing);
+        const editingInitialValue = useStore(useSelectionStore, state => state.editingInitialValue);
 
         // スクロールコンテナへの内部ref（useVirtualizerに渡す）
         const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-        // テーブル全体のBoundingRect（SelectionOverlayの座標計算基準）
+        // テーブル全体のBoundingRect（SelectionOverlay・GridTextFieldの座標計算基準）
         const [tableBoundingRect, setTableBoundingRect] = useState<DOMRect | null>(null);
+
+        // IME変換中フラグ（GridTextField から通知を受け取る）
+        const composingRef = useRef(false);
 
         // ResizeObserver でテーブルサイズ変化を監視してBoundingRectを更新する
         useEffect(() => {
@@ -177,6 +183,10 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                                 className=""
                                 isFocused={isFocused}
                                 onMouseDown={e => handleCellMouseDown(rowData.domRowIndex, colIndex, e)}
+                                onDoubleClick={() => {
+                                    // ダブルクリックで現在のセル値を初期値として編集開始する
+                                    useSelectionStore.getState().startEditing(info.getValue());
+                                }}
                             />
                         );
                     },
@@ -306,6 +316,33 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             store.startSelectingRow();
         }, [allRows, tableName]);
 
+        // GridTextField の絶対配置座標（スクロールコンテナからの相対座標で計算）
+        // editing が false のときは位置計算を行わずダミー値を返す
+        const gridTextFieldPosition = useMemo<{top: number; left: number; width: number; height: number}>(() => {
+            if (!editing) return {top: 0, left: 0, width: 0, height: 0};
+            const cellRect = getCellRect(focus.row, focus.column);
+            if (!cellRect) return {top: 0, left: 0, width: 0, height: 0};
+            // スクロールコンテナ内の相対座標に変換する（スクロールオフセットを加算する）
+            const container = scrollContainerRef.current;
+            if (!container) return {top: 0, left: 0, width: 0, height: 0};
+            const containerRect = container.getBoundingClientRect();
+            return {
+                top: cellRect.top - containerRect.top + container.scrollTop,
+                left: cellRect.left - containerRect.left + container.scrollLeft,
+                width: cellRect.width,
+                height: cellRect.height,
+            };
+        }, [editing, focus, getCellRect]);
+
+        // editing が true になったとき、フォーカスセルが仮想スクロール内に存在しない場合は editing をリセットする
+        useEffect(() => {
+            if (!editing) return;
+            const cellRect = getCellRect(focus.row, focus.column);
+            if (!cellRect) {
+                useSelectionStore.getState().stopEditing();
+            }
+        }, [editing, focus]);
+
         const virtualItems = rowVirtualizer.getVirtualItems();
         const totalSize = rowVirtualizer.getTotalSize();
         const tableRows = table.getRowModel().rows;
@@ -394,6 +431,27 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     tableName={tableName}
                     getCellRect={getCellRect}
                     tableBoundingRect={tableBoundingRect}
+                />
+
+                {/* セル編集テキストフィールド: フォーカスセル上に重ねて表示する */}
+                <GridTextField
+                    visible={editing}
+                    initialValue={editingInitialValue}
+                    position={gridTextFieldPosition}
+                    onSubmit={value => {
+                        // 確定: ストアのセル値を更新してから編集モードを終了する
+                        const storeRowIndex = focus.row - 1;
+                        const colIndex = focus.column - 1;
+                        useTableStore.getState().updateCellValueByRowIndex(tableName, storeRowIndex, colIndex, value);
+                        useSelectionStore.getState().stopEditing();
+                    }}
+                    onCancel={() => {
+                        // キャンセル: 値を変更せず編集モードを終了する
+                        useSelectionStore.getState().stopEditing();
+                    }}
+                    onCompositionChange={composing => {
+                        composingRef.current = composing;
+                    }}
                 />
             </div>
         );

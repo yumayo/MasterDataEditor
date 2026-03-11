@@ -66,7 +66,11 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
         if (!enabled) return;
 
         function handleKeyDown(e: KeyboardEvent): void {
-            const {focus, range} = useSelectionStore.getState();
+            const {focus, range, editing} = useSelectionStore.getState();
+
+            // 編集中（GridTextField がフォーカスを持つ）はすべてのキーを GridTextField に委任する
+            if (editing) return;
+
             const columnCount = getColumnCount(tableName);
             const rowCount = getRowCount(tableName);
 
@@ -112,9 +116,24 @@ export function useEditorTableKeyboard({tableName, enabled}: UseEditorTableKeybo
                 return;
             }
 
-            // F2: セル編集開始 — Phase 10で実装
+            // F2: フォーカスセルの現在値を初期値として編集開始する
+            // バッファ行（データ行の範囲外）にフォーカスがある場合は何もしない
             if (e.key === 'F2') {
                 e.preventDefault();
+                const rows = useTableStore.getState().getRows(tableName);
+                if (rows === false) return;
+                const storeRowIndex = focus.row - 1;
+                // storeRowIndex がデータ行の範囲外（バッファ行）の場合はスキップする
+                if (storeRowIndex < 0 || storeRowIndex >= rows.length) return;
+                const colIndex = focus.column - 1;
+                useSelectionStore.getState().startEditing(rows[storeRowIndex][colIndex]);
+                return;
+            }
+
+            // 印刷可能文字キー: その文字を初期値として編集開始する（Excel同様の動作）
+            // バッファ行にフォーカスがある場合も編集は許可する（新規行入力ユースケース）
+            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                useSelectionStore.getState().startEditing(e.key);
                 return;
             }
 
