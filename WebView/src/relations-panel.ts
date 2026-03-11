@@ -1,5 +1,5 @@
 import {EditorTable} from "./editor-table";
-import {ReferenceDataCache, ReferenceTableFullData} from "./reference-data-cache";
+import {ReferenceDataCache} from "./reference-data-cache";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {config} from "./config";
@@ -246,33 +246,24 @@ export class RelationsPanel {
     }
 
     /**
-     * fullDataのrows（PK→行Map）からfkValueに対応する行を全件収集する
+     * 指定テーブルのヘッダーと全行をストア優先・キャッシュフォールバックで取得する
      *
-     * columnName がPK列と一致する場合はMap.get()で1件ルックアップ（高速）。
-     * columnName がPK列と異なる場合（例: shop_product.group_id）は全エントリを走査して
-     * 該当列の値がfkValueと一致する行を全件返す（N:1でPK以外を参照している場合に複数件になる）。
+     * ストアにデータがある場合は常に最新データを優先使用する（キャッシュ陳腐化防止）。
+     * タブ未オープンのテーブルはストアに存在しないため、その場合のみキャッシュにフォールバックする。
+     * ストアにもキャッシュにも存在しない場合は null を返す。
      */
-    private resolveRowsByFkValue(
-        fullData: ReferenceTableFullData,
-        columnName: string,
-        fkValue: string
-    ): string[][] {
-        const colIdx = fullData.header.indexOf(columnName);
-        const pkIdx = fullData.header.indexOf(config.primaryKeyColumnName);
-
-        // columnName がPK列と一致 → PKルックアップで1件（高速パス）
-        if (colIdx !== -1 && colIdx === pkIdx) {
-            const row = fullData.rows.get(fkValue);
-            return row ? [row] : [];
+    private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
+        const storeHeader = this.store.getHeader(tableName);
+        const storeRows = this.store.getRows(tableName);
+        if (storeHeader !== false && storeRows !== false) {
+            return { header: storeHeader, rows: storeRows };
         }
-
-        // columnName がPK列と異なる → 全エントリを線形走査して複数件収集
-        if (colIdx === -1) return [];
-        const matched: string[][] = [];
-        fullData.rows.forEach(row => {
-            if (row[colIdx] === fkValue) matched.push(row);
-        });
-        return matched;
+        const syncData = this.referenceDataCache.getFullDataSync(tableName);
+        const fullData = syncData !== false
+            ? syncData
+            : await this.referenceDataCache.getFullDataAsync(tableName).catch(() => false as const);
+        if (fullData === false) return null;
+        return { header: fullData.header, rows: Array.from(fullData.rows.values()) };
     }
 
     /**
@@ -294,21 +285,20 @@ export class RelationsPanel {
             const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + 1);
             if (fkValue === '') continue;
 
-            // キャッシュ未ロードの場合は非同期でロードする
-            const syncData = this.referenceDataCache.getFullDataSync(expr.tableName);
-            const fullData = syncData !== false
-                ? syncData
-                : await this.referenceDataCache.getFullDataAsync(expr.tableName).catch(() => false as const);
-            if (fullData === false) continue;
+            // ストア優先・キャッシュフォールバックでテーブルデータを取得する
+            const refTableData = await this.resolveTableDataAsync(expr.tableName);
+            if (refTableData === null) continue;
+            const { header, rows: allRows } = refTableData;
 
-            // columnName がPK列と一致する場合は1件ルックアップ、異なる場合は全件走査
-            const rows = this.resolveRowsByFkValue(fullData, expr.columnName, fkValue);
+            // FK列値でフィルタ（PK列参照なら一意前提で1件、非PK列なら複数件）
+            const refColIdx = header.indexOf(expr.columnName);
+            const rows = refColIdx === -1 ? [] : allRows.filter(row => row[refColIdx] === fkValue);
 
             entries.push({
                 label: col.name,
                 relationType: 'N:1',
                 tableKey: expr.tableName,
-                header: fullData.header,
+                header,
                 rows,
                 fkColumnName: '',
                 fkValue: '',
@@ -334,23 +324,10 @@ export class RelationsPanel {
                 // （同一値でキーが衝突している別 parentColumnName のエントリを誤って取り込まない）
                 if (reverseEntry.parentColumnName !== parentColumnName) continue;
 
-                // タブ未オープンのテーブルはストアに存在しないため、キャッシュ経由でデータを取得する
-                const storeHeader = this.store.getHeader(reverseEntry.childTableName);
-                const storeRows = this.store.getRows(reverseEntry.childTableName);
-                let header: string[];
-                let allRows: string[][];
-                if (storeHeader !== false && storeRows !== false) {
-                    header = storeHeader;
-                    allRows = storeRows;
-                } else {
-                    const syncData = this.referenceDataCache.getFullDataSync(reverseEntry.childTableName);
-                    const fullData = syncData !== false
-                        ? syncData
-                        : await this.referenceDataCache.getFullDataAsync(reverseEntry.childTableName).catch(() => false as const);
-                    if (fullData === false) continue;
-                    header = fullData.header;
-                    allRows = Array.from(fullData.rows.values());
-                }
+                // ストア優先・キャッシュフォールバックでテーブルデータを取得する
+                const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
+                if (childTableData === null) continue;
+                const { header, rows: allRows } = childTableData;
 
                 // 1:Nのフィルタリング: ストアの最新データから直接フィルタする。
                 // reverseEntry.rows（タブ初期化時のスナップショット）を使うと、
