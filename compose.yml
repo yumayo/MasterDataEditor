@@ -22,6 +22,16 @@ services:
     tty: true
     stop_grace_period: 0s
 
+  script:
+    image: node:24-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    entrypoint: ["sh"]
+    user: 1000:1000
+    tty: true
+    stop_grace_period: 0s
+
 networks:
   internal_net:
     driver: bridge
