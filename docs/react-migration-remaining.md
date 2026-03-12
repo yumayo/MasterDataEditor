@@ -184,102 +184,130 @@ Vanilla TypeScript側に実装されている約100個のメソッド/ロジッ�
 
 ---
 
-## 実装フェーズ（Phase 11〜19）
+## 実装フェーズ
 
-### Phase 11: セル選択・表示（カテゴリ J + I）
-**目的**: セル選択の視覚的表現を完成させる
+### 完了済み
 
-1. J-1: 選択範囲の背景表示（SelectionOverlay）
-2. J-3: フォーカスセルのハイライト
-3. I-1: フォーカス行の自動スクロール
-4. J-2: コピー範囲の点線表示
-5. J-4, J-5: 列/行ヘッダー選択状態
+| Phase | 内容 | コミット |
+|-------|------|---------|
+| 11 | セル選択・表示（SelectionOverlay、フォーカスハイライト、自動スクロール） | `de1cfcb` |
+| 12 | セル編集（F2/ダブルクリック/文字入力、GridTextField） | `8f9522b` |
+| 13 | Undo/Redo（history-store、CellChangeCommand、Ctrl+Z/Y） | `5a83e07` |
+| 14 | コピー・ペースト（Ctrl+C/V、Delete、Shift+矢印範囲拡張） | `6f988b4` |
+| 15 | フィルハンドル（ドラッグ検出、方向判定、数値シリーズ生成） | `0ccb099` |
+| 16 | ファイル保存（Ctrl+S、CSV生成、DirtyClear） | `f54f0ac` |
+| 17 | 参照データ（reference-store、reverse-reference-store、ヒント表示、ドロップダウン） | `5a5fa00` |
+| 18 | RelationsPanel連動（updateForRowAsync、N:1/1:N エントリ解決） | `cc9f035` |
 
-**完了条件**: セルクリックで選択表示、Shift+クリックで範囲選択表示
+### Phase 19: 構造操作（列/行の挿入・削除）
+**目的**: テーブル構造を変更する操作を実装する
 
-### Phase 12: セル編集（カテゴリ A + M）
-**目的**: セルの値を編集できるようにする
+1. 行挿入: 選択行の上/下に空行を挿入（InsertRowCommand）
+2. 行削除: 選択行を削除（DeleteRowCommand）
+3. 列挿入: 選択列の左/右に空列を挿入（InsertColumnCommand）
+4. 列削除: 選択列を削除（DeleteColumnCommand）
+5. table-store に insertRowAt/removeRow/insertColumn/removeColumn アクション追加
+6. useEditorTableKeyboard への対応キーバインド追加
 
-1. M-1: セル編集開始（F2/ダブルクリック）
-2. A-1: テキスト入力モード
-3. M-4: フォーカス管理
-4. M-3: IME入力中の処理制御
-5. A-3: 参照ヒント表示
+**Vanilla側参照**: editor-table-structure.ts
+**完了条件**: 行/列の挿入削除ができ、Undo/Redoに対応している
 
-**完了条件**: セルをダブルクリックしてテキスト入力、確定でストア更新
+### Phase 20: バッファ行昇格
+**目的**: 末尾の空行に値を入力した際にストア行として昇格させる
 
-### Phase 13: Undo/Redo（カテゴリ D）
-**目的**: Commandパターンによる履歴管理を実装する
+1. PromoteBufferRowCommand: バッファ行→ストア行昇格（Undo対応）
+2. DemoteStoreRowCommand: Undo時の降格
+3. EditorTableView のバッファ行表示ロジック
+4. FK自動埋め込み（autoFillEntries）対応
 
-1. D-1: Commandパターンの移植（history-store新設）
-2. D-2: PromoteBufferRowCommand
-3. B-3: Ctrl+Z/Y キーバインド
-4. D-3: SavedIndex管理
-5. D-5: Tab Dirty表示
+**Vanilla側参照**: editor-table.ts:776-846, command.ts
+**完了条件**: 空行に値を入力するとストアに追加、Ctrl+Zで元に戻る
 
-**完了条件**: セル編集後Ctrl+Zで元に戻る、Ctrl+Yでやり直せる
+### Phase 21: コンテキストメニュー
+**目的**: 右クリックメニューを実装する
 
-### Phase 14: コピー・ペースト・削除（カテゴリ B）
-**目的**: クリップボード操作を実装する
+1. ContextMenu コンポーネント（汎用）
+2. 列ヘッダー右クリック: 列挿入/削除メニュー
+3. 行ヘッダー右クリック: 行挿入/削除メニュー
+4. セル右クリック: コピー/ペースト/削除メニュー
+5. メニュー項目の動的有効化/無効化
 
-1. B-1: Ctrl+C（コピー）
-2. B-2: Ctrl+V（ペースト）
-3. B-5: Delete/Backspace（セルクリア）
-4. B-6: 矢印キー + Shift（範囲拡張）
+**Vanilla側参照**: context-menu.ts, editor-table-context-menu.ts
+**完了条件**: 右クリックでメニュー表示、各操作が実行可能
 
-**完了条件**: Ctrl+C/V でコピー＆ペースト、Delete でセルクリア
+### Phase 22: タブ管理ロジック完成
+**目的**: タブのオープン/クローズ/ナビゲーションを完成させる
 
-### Phase 15: フィルハンドル（カテゴリ C）
-**目的**: フィルハンドルによる連続データ生成を実装する
+1. tab-store に openTableAsync アクション（スキーマ+CSV読み込み→テーブル登録）
+2. tab-store に closeTab アクション（Dirtyチェック→リソース解放）
+3. navigateToTableRow: REFERENCESパネルからのジャンプ
+4. navigateToTableCell: SearchPanelからのジャンプ
+5. pendingNavigation: タブ読み込み完了後の遅延ナビゲーション
 
-1. C-1: フィルハンドルのドラッグ検出
-2. C-2: フィル方向・範囲の自動判定
-3. C-3: 数値シリーズの自動生成
-4. C-4: フィル結果のプレビュー表示
+**Vanilla側参照**: tab.ts:188-307
+**完了条件**: タブの開閉、外部からのセルジャンプ
 
-**完了条件**: フィルハンドルドラッグで連続データ生成
+### Phase 23: サイドバーロジック完成
+**目的**: サイドバーの各パネルのロジックを実装する
 
-### Phase 16: ファイル保存（カテゴリ L）
-**目的**: CSV/スキーマの保存機能を実装する
+1. ExplorerPanel: ファイルツリーからタブを開く
+2. ReferencesPanel: PK値の逆参照一覧→クリックでジャンプ
+3. SearchPanel: 全テーブル全文検索→クリックでジャンプ
+4. SearchDataProvider: テーブルリスト読み込み、キャッシュ管理
+5. サイドバーリサイズハンドル
 
-1. L-1: CSV生成・保存
-2. L-2: スキーマ保存
-3. B-4: Ctrl+S キーバインド
-4. L-4: DirtyClear
+**Vanilla側参照**: sidebar.ts, references-panel.ts, search-panel.ts, search-data-provider.ts
+**完了条件**: 各パネルが機能し、ジャンプ操作が動作する
 
-**完了条件**: Ctrl+S でファイル保存、Dirty表示がクリアされる
+### Phase 24: 定義ジャンプ・ナビゲーション
+**目的**: FK値からの定義ジャンプとパンくずナビゲーションを実装する
 
-### Phase 17: 参照データ（カテゴリ G + A残り）
-**目的**: 参照データのキャッシュ・解決機構を実装する
+1. Ctrl+Click / F12: FK列のセルから参照先テーブルへジャンプ
+2. navigateToDefinition: 左ペインのタブとして開く
+3. パンくずナビゲーション: Tab.navigationHistory ベース
 
-1. G-1: ReferenceDataCacheのZustand化
-2. G-2: 逆参照マップの構築
-3. A-2: 参照列ドロップダウン
-4. A-4: 逆参照ヒント
-5. A-5: 動的参照対応
+**Vanilla側参照**: editor-table-handler.ts, tab.ts
+**完了条件**: Ctrl+Click でFK参照先テーブルにジャンプ
 
-**完了条件**: FK列のドロップダウン選択、参照ヒント表示
+### Phase 25: IME制御・入力精度向上
+**目的**: IME入力の正確化と入力制御の完成
 
-### Phase 18: RelationsPanel完成（カテゴリ E + N）
-**目的**: 右ペインの参照パネルを完成させる
+1. compositionstart/compositionend イベント処理
+2. contenteditable div でのテキスト入力正確化
+3. useRef での直接DOM参照
 
-1. E-1: N:1参照先の自動取得
-2. E-2: 1:N逆参照の自動取得
-3. E-3: ミニEditorTable生成
-4. N-3: パネル間の相互作用
-5. E-4: パンくずナビゲーション
+**Vanilla側参照**: editor-table-handler.ts
+**完了条件**: 日本語IME入力が正確に動作する
 
-**完了条件**: 行選択で右ペインに関連テーブルが表示・編集可能
+### Phase 26: 列幅リサイズ・コマンドパレット
+**目的**: 列幅の動的変更とコマンドパレットを実装する
 
-### Phase 19: 周辺機能（カテゴリ F, H, K）
-**目的**: 構造操作・サイドバー・コンテキストメニューを完成させる
+1. 列ヘッダーのドラッグリサイズ
+2. ColumnWidthCommand（Undo対応）
+3. Ctrl+P コマンドパレット（テーブル名ファジー検索）
 
-1. F-1, F-2: 列/行挿入・削除
-2. F-3: バッファ行昇格
-3. K-1: コンテキストメニュー
-4. H-1〜H-4: サイドバー各パネルのロジック完成
+**Vanilla側参照**: area-resizer.ts, command-palette.ts
+**完了条件**: 列幅変更、コマンドパレットからテーブルオープン
 
-**完了条件**: 行/列の挿入削除、コンテキストメニュー、サイドバー全機能
+### Phase 27: タブドラッグ並び替え
+**目的**: タブボタンのドラッグ&ドロップ並び替えを実装する
+
+1. @dnd-kit または HTML5 DnD API でタブ並び替え
+2. ドロップインジケータ表示
+3. tab-store の順序更新アクション
+
+**Vanilla側参照**: tab-drag-drop.ts
+**完了条件**: タブをドラッグで並び替えられる
+
+### Phase 28: Vanilla コード除去・最終統合
+**目的**: Vanilla側コードを完全に除去し、React版に統合する
+
+1. App.tsx のコメントアウト解除
+2. Vanilla側エントリポイント（main.ts）からの呼び出し除去
+3. 不要なVanillaファイルの削除
+4. Playwrightテストの全件GREEN確認
+
+**完了条件**: React版のみで全機能が動作し、全テストがGREEN
 
 ---
 

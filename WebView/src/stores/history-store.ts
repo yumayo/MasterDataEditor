@@ -76,6 +76,149 @@ export class CellChangeCommand implements Command {
     }
 }
 
+/**
+ * 行挿入コマンド
+ *
+ * execute/redo: tableName の rowIndex 位置に空行を挿入する
+ * undo: 挿入した行を削除する
+ */
+export class InsertRowCommand implements Command {
+    constructor(
+        private readonly tableName: string,
+        private readonly rowIndex: number,
+        private readonly columnCount: number
+    ) {}
+
+    execute(): void {
+        useTableStore.getState().insertRowAt(this.tableName, this.rowIndex, new Array(this.columnCount).fill(''));
+    }
+
+    undo(): void {
+        useTableStore.getState().removeRow(this.tableName, this.rowIndex);
+    }
+
+    redo(): void { this.execute(); }
+
+    get description(): string { return `InsertRow at ${this.rowIndex}`; }
+}
+
+/**
+ * 行削除コマンド
+ *
+ * execute/redo: tableName の rowIndex 行を削除する（削除前データを保存してundoで復元）
+ * undo: 削除した行を元の位置に挿入する
+ */
+export class DeleteRowCommand implements Command {
+    private deletedValues: string[] = [];
+
+    constructor(
+        private readonly tableName: string,
+        private readonly rowIndex: number
+    ) {}
+
+    execute(): void {
+        const rows = useTableStore.getState().getRows(this.tableName);
+        if (rows !== false) this.deletedValues = [...rows[this.rowIndex]];
+        useTableStore.getState().removeRow(this.tableName, this.rowIndex);
+    }
+
+    undo(): void {
+        useTableStore.getState().insertRowAt(this.tableName, this.rowIndex, this.deletedValues);
+    }
+
+    redo(): void { this.execute(); }
+
+    get description(): string { return `DeleteRow at ${this.rowIndex}`; }
+}
+
+/**
+ * 列挿入コマンド
+ *
+ * execute/redo: tableName の colIndex 位置に空列を挿入する
+ * undo: 挿入した列を削除する
+ */
+export class InsertColumnCommand implements Command {
+    constructor(
+        private readonly tableName: string,
+        private readonly colIndex: number
+    ) {}
+
+    execute(): void {
+        useTableStore.getState().insertColumnAt(this.tableName, this.colIndex, '');
+    }
+
+    undo(): void {
+        useTableStore.getState().removeColumn(this.tableName, this.colIndex);
+    }
+
+    redo(): void { this.execute(); }
+
+    get description(): string { return `InsertColumn at ${this.colIndex}`; }
+}
+
+/**
+ * 列削除コマンド
+ *
+ * execute/redo: tableName の colIndex 列を削除する（削除前データを保存してundoで復元）
+ * undo: 削除した列を元の位置に挿入し、全行のセル値を復元する
+ */
+export class DeleteColumnCommand implements Command {
+    private deletedHeaderValue: string = '';
+    private deletedCellValues: string[] = [];
+
+    constructor(
+        private readonly tableName: string,
+        private readonly colIndex: number
+    ) {}
+
+    execute(): void {
+        const state = useTableStore.getState();
+        const header = state.getHeader(this.tableName);
+        const rows = state.getRows(this.tableName);
+        if (header !== false) this.deletedHeaderValue = header[this.colIndex];
+        if (rows !== false) this.deletedCellValues = rows.map(row => row[this.colIndex]);
+        state.removeColumn(this.tableName, this.colIndex);
+    }
+
+    undo(): void {
+        const state = useTableStore.getState();
+        state.insertColumnAt(this.tableName, this.colIndex, this.deletedHeaderValue);
+        const rows = state.getRows(this.tableName);
+        if (rows !== false) {
+            for (let i = 0; i < this.deletedCellValues.length && i < rows.length; i++) {
+                state.updateCellValueByRowIndex(this.tableName, i, this.colIndex, this.deletedCellValues[i]);
+            }
+        }
+    }
+
+    redo(): void { this.execute(); }
+
+    get description(): string { return `DeleteColumn at ${this.colIndex}`; }
+}
+
+/**
+ * 複数コマンドを1つのUndoエントリとして実行するバッチコマンド
+ *
+ * execute/redo: commands を順方向に実行する
+ * undo: commands を逆順に Undo する
+ */
+export class BatchCommand implements Command {
+    constructor(
+        private readonly commands: Command[],
+        readonly description: string
+    ) {}
+
+    execute(): void {
+        for (const cmd of this.commands) cmd.execute();
+    }
+
+    undo(): void {
+        for (let i = this.commands.length - 1; i >= 0; i--) this.commands[i].undo();
+    }
+
+    redo(): void { this.execute(); }
+}
+
 interface HistoryStoreState {
     /** テーブル名→履歴スタック */
     histories: Map<string, HistoryEntry[]>;

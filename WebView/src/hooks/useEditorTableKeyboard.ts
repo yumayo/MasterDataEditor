@@ -1,7 +1,7 @@
 import {useEffect} from 'react';
 import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
-import {useHistoryStore, CellChangeCommand} from '../stores/history-store';
+import {useHistoryStore, CellChangeCommand, InsertRowCommand, DeleteRowCommand, InsertColumnCommand, DeleteColumnCommand, BatchCommand} from '../stores/history-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
 import type {DropdownItem} from '../components/GridDropdownInput';
 import {writeFileAsync} from '../api';
@@ -13,6 +13,25 @@ import {Csv} from '../csv';
 export interface ColumnSchema {
     name: string;
     reference?: string;
+}
+
+/**
+ * useEditorTableKeyboard フックが返す行/列操作アクション群
+ * コンテキストメニューなど外部から呼び出す際に使用する
+ */
+export interface EditorTableKeyboardActions {
+    /** フォーカス行の上に空行を挿入する */
+    insertRowAbove: () => void;
+    /** フォーカス行の下に空行を挿入する */
+    insertRowBelow: () => void;
+    /** 選択範囲の行をすべて削除する */
+    deleteSelectedRows: () => void;
+    /** フォーカス列の左に空列を挿入する */
+    insertColumnLeft: () => void;
+    /** フォーカス列の右に空列を挿入する */
+    insertColumnRight: () => void;
+    /** 選択範囲の列をすべて削除する */
+    deleteSelectedColumns: () => void;
 }
 
 /**
@@ -115,7 +134,7 @@ function shouldFillSelection(
  *   Ctrl+S         — 保存（未実装）
  *   F2             — セル編集開始
  */
-export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown}: UseEditorTableKeyboardOptions): void {
+export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown}: UseEditorTableKeyboardOptions): EditorTableKeyboardActions {
     useEffect(() => {
         if (!enabled) return;
 
@@ -460,4 +479,97 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [enabled, tableName, columnSchemas, onShowDropdown]);
+
+    // コンテキストメニューなど外部から呼び出す行/列操作アクション群を返す
+    return {
+        insertRowAbove() {
+            const {focus, range, copyRange} = useSelectionStore.getState();
+            const columnCount = getColumnCount(tableName);
+            // focus.row は1始まり → ストアインデックスは focus.row - 1
+            const storeRowIndex = focus.row - 1;
+            const command = new InsertRowCommand(tableName, storeRowIndex, columnCount);
+            // 挿入後は挿入した行（focus.row）にフォーカスを維持する
+            const insertedRange: CellRange = {startRow: focus.row, startColumn: focus.column, endRow: focus.row, endColumn: focus.column};
+            useHistoryStore.getState().executeCommand(tableName, command, insertedRange, copyRange);
+            useSelectionStore.getState().select(insertedRange, {row: focus.row, column: focus.column});
+        },
+
+        insertRowBelow() {
+            const {focus, copyRange} = useSelectionStore.getState();
+            const columnCount = getColumnCount(tableName);
+            // 下に挿入するため、ストアインデックスは focus.row（1始まり）= focus.row - 1 + 1
+            const storeRowIndex = focus.row;
+            const command = new InsertRowCommand(tableName, storeRowIndex, columnCount);
+            // 挿入後は挿入した行（focus.row + 1）にフォーカスを移動する
+            const insertedRow = focus.row + 1;
+            const insertedRange: CellRange = {startRow: insertedRow, startColumn: focus.column, endRow: insertedRow, endColumn: focus.column};
+            useHistoryStore.getState().executeCommand(tableName, command, insertedRange, copyRange);
+            useSelectionStore.getState().select(insertedRange, {row: insertedRow, column: focus.column});
+        },
+
+        deleteSelectedRows() {
+            const {range, focus, copyRange} = useSelectionStore.getState();
+            const minRow = Math.min(range.startRow, range.endRow);
+            const maxRow = Math.max(range.startRow, range.endRow);
+            const rowCount = getRowCount(tableName);
+            // インデックスずれを防ぐため高インデックスから順に DeleteRowCommand を生成し BatchCommand にまとめる
+            const commands: DeleteRowCommand[] = [];
+            for (let uiRow = maxRow; uiRow >= minRow; uiRow--) {
+                const storeRowIndex = uiRow - 1;
+                if (storeRowIndex < 0 || storeRowIndex >= rowCount) continue;
+                commands.push(new DeleteRowCommand(tableName, storeRowIndex));
+            }
+            if (commands.length === 0) return;
+            // 削除後のフォーカス先（削除範囲先頭行、行数を超えない）
+            const newFocusRow = Math.min(minRow, Math.max(rowCount - commands.length, 1));
+            const afterRange: CellRange = {startRow: newFocusRow, startColumn: focus.column, endRow: newFocusRow, endColumn: focus.column};
+            const batch = new BatchCommand(commands, `DeleteRows ${minRow}-${maxRow}`);
+            useHistoryStore.getState().executeCommand(tableName, batch, afterRange, copyRange);
+            useSelectionStore.getState().select(afterRange, {row: newFocusRow, column: focus.column});
+        },
+
+        insertColumnLeft() {
+            const {focus, copyRange} = useSelectionStore.getState();
+            // focus.column は1始まり → 列インデックスは focus.column - 1
+            const colIndex = focus.column - 1;
+            const command = new InsertColumnCommand(tableName, colIndex);
+            // 挿入後は挿入した列（focus.column）にフォーカスを維持する
+            const insertedRange: CellRange = {startRow: focus.row, startColumn: focus.column, endRow: focus.row, endColumn: focus.column};
+            useHistoryStore.getState().executeCommand(tableName, command, insertedRange, copyRange);
+            useSelectionStore.getState().select(insertedRange, {row: focus.row, column: focus.column});
+        },
+
+        insertColumnRight() {
+            const {focus, copyRange} = useSelectionStore.getState();
+            // 右に挿入するため、列インデックスは focus.column（1始まり）= focus.column - 1 + 1
+            const colIndex = focus.column;
+            const command = new InsertColumnCommand(tableName, colIndex);
+            // 挿入後は挿入した列（focus.column + 1）にフォーカスを移動する
+            const insertedCol = focus.column + 1;
+            const insertedRange: CellRange = {startRow: focus.row, startColumn: insertedCol, endRow: focus.row, endColumn: insertedCol};
+            useHistoryStore.getState().executeCommand(tableName, command, insertedRange, copyRange);
+            useSelectionStore.getState().select(insertedRange, {row: focus.row, column: insertedCol});
+        },
+
+        deleteSelectedColumns() {
+            const {range, focus, copyRange} = useSelectionStore.getState();
+            const minCol = Math.min(range.startColumn, range.endColumn);
+            const maxCol = Math.max(range.startColumn, range.endColumn);
+            const columnCount = getColumnCount(tableName);
+            // インデックスずれを防ぐため高インデックスから順に DeleteColumnCommand を生成し BatchCommand にまとめる
+            const commands: DeleteColumnCommand[] = [];
+            for (let uiCol = maxCol; uiCol >= minCol; uiCol--) {
+                const colIndex = uiCol - 1;
+                if (colIndex < 0 || colIndex >= columnCount) continue;
+                commands.push(new DeleteColumnCommand(tableName, colIndex));
+            }
+            if (commands.length === 0) return;
+            // 削除後のフォーカス先（削除範囲先頭列、列数を超えない）
+            const newFocusCol = Math.min(minCol, Math.max(columnCount - commands.length, 1));
+            const afterRange: CellRange = {startRow: focus.row, startColumn: newFocusCol, endRow: focus.row, endColumn: newFocusCol};
+            const batch = new BatchCommand(commands, `DeleteColumns ${minCol}-${maxCol}`);
+            useHistoryStore.getState().executeCommand(tableName, batch, afterRange, copyRange);
+            useSelectionStore.getState().select(afterRange, {row: focus.row, column: newFocusCol});
+        },
+    };
 }

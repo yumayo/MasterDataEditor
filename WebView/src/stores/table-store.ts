@@ -62,6 +62,12 @@ interface TableStoreState {
     removeRow(tableName: string, rowIndex: number): void;
     /** 指定インデックスに行を挿入する */
     insertRowAt(tableName: string, rowIndex: number, values: string[]): void;
+    /** 指定インデックスに列を挿入する（headers + 全行の colIndex 位置に空文字列を追加） */
+    insertColumnAt(tableName: string, colIndex: number, headerName: string): void;
+    /** 指定インデックスの列を削除する（headers + 全行の colIndex 位置を削除） */
+    removeColumn(tableName: string, colIndex: number): void;
+    /** ヘッダー値を変更する */
+    setHeaderValue(tableName: string, colIndex: number, value: string): void;
     /** 指定キー列の値で行をグループ化したMapを構築する */
     buildKeyMap(tableName: string, keyColumnName: string): Map<string, string[][]>;
 
@@ -270,6 +276,36 @@ export const useTableStore = createStore<TableStoreState>()(
             if (!get().rows.has(tableName)) return;
             set(draft => {
                 draft.rows.get(tableName)!.splice(rowIndex, 0, values);
+            });
+        },
+
+        insertColumnAt(tableName, colIndex, headerName) {
+            if (!get().rows.has(tableName)) return;
+            set(draft => {
+                draft.headers.get(tableName)!.splice(colIndex, 0, headerName);
+                for (const row of draft.rows.get(tableName)!) {
+                    row.splice(colIndex, 0, '');
+                }
+            });
+        },
+
+        removeColumn(tableName, colIndex) {
+            if (!get().rows.has(tableName)) return;
+            set(draft => {
+                draft.headers.get(tableName)!.splice(colIndex, 1);
+                for (const row of draft.rows.get(tableName)!) {
+                    row.splice(colIndex, 1);
+                }
+            });
+        },
+
+        setHeaderValue(tableName, colIndex, value) {
+            const state = get();
+            if (!state.headers.has(tableName)) return;
+            const header = state.headers.get(tableName)!;
+            if (colIndex < 0 || colIndex >= header.length) return;
+            set(draft => {
+                draft.headers.get(tableName)![colIndex] = value;
             });
         },
 
