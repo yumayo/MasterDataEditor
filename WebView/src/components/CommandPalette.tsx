@@ -13,9 +13,9 @@ interface CommandPaletteProps {
  * コマンドパレットコンポーネント。
  * Ctrl+P で表示され、テーブル名のファジー検索でタブを開く。
  * document.body に Portal でレンダリングすることで z-index 問題を回避する。
- * visible=false の場合は何もレンダリングしない。
+ * DOM は常に存在し、.visible クラスの付与/削除で表示を切り替える（CSSで display 制御）。
  */
-export function CommandPalette({visible, onClose}: CommandPaletteProps): React.ReactPortal | null {
+export function CommandPalette({visible, onClose}: CommandPaletteProps): React.ReactPortal {
     const fileNames = useStore(useSidebarStore, state => state.fileNames);
     const [filterText, setFilterText] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -86,11 +86,12 @@ export function CommandPalette({visible, onClose}: CommandPaletteProps): React.R
         if (e.target === e.currentTarget) onClose();
     }
 
-    if (!visible) return null;
+    // visible クラスの付与/削除で表示を制御する（DOMは常に存在する）
+    const overlayClassName = visible ? 'command-palette-overlay visible' : 'command-palette-overlay';
 
     return ReactDOM.createPortal(
         <div
-            className="command-palette-overlay visible"
+            className={overlayClassName}
             onMouseDown={handleOverlayMouseDown}
         >
             <div className="command-palette">

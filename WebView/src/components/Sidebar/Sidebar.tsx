@@ -89,7 +89,7 @@ export function Sidebar({onFileClick, onReferenceRowClick, referencesPkValue, re
     }, [sidebarWidth]);
 
     return (
-        <div className="explorer" style={{width: sidebarWidth}}>
+        <div id="explorer" className="explorer" style={{width: sidebarWidth}}>
             {/* アクティビティバー: 左端の48px幅のアイコン列 */}
             <ActivityBar />
 

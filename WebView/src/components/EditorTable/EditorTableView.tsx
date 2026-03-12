@@ -15,6 +15,8 @@ import {useReverseReferenceStore, formatReverseReferenceHint} from '../../stores
 import {generateSeriesData} from '../../fill-series';
 import {config} from '../../config';
 import {parseReferenceExpression, isSimpleReference} from '../../reference-expression';
+import {Utility} from '../../utility';
+import {MIN_COLUMN_WIDTH_PX} from '../../constant';
 import {Cell} from './Cell';
 import {HeaderCell} from './HeaderCell';
 import {RowHeader} from './RowHeader';
@@ -414,44 +416,128 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         }, [header]);
 
         /**
-         * セル値からヒントテキストを計算する。
-         * FK列: 参照先テーブルの表示テキストを返す。
-         * PK列: 逆参照マップからヒントテキストを返す。
-         * それ以外: 空文字列。
+         * セル値からヒントテキストと種別を計算する。
+         * FK列: 参照先テーブルの表示テキストを 'fk' 種別で返す。
+         * PK列: 逆参照マップからヒントテキストを 'reverse' 種別で返す。
+         * それ以外: text='' / type='none'。
          * referenceCache / reverseReferenceMaps に依存することで、キャッシュ更新時に再計算される。
          */
-        const computeReferenceHint = useCallback((colIndex: number, cellValue: string): string => {
+        const computeReferenceHint = useCallback((colIndex: number, cellValue: string): {text: string; type: 'fk' | 'reverse' | 'none'} => {
             // FK参照ヒント（A-3）
             // referenceCache は useStore で購読済みのため、キャッシュ更新時にこの関数が再生成され再描画される
             const fkTableName = fkTableNameByColIndex.get(colIndex);
             if (fkTableName !== undefined) {
                 const refData = referenceCache.get(fkTableName);
-                if (!refData) return '';
+                if (!refData) return {text: '', type: 'none'};
                 const item = refData.items.find(i => i.id === cellValue);
-                if (!item || item.displayText === item.id) return '';
-                return item.displayText;
+                if (!item || item.displayText === item.id) return {text: '', type: 'none'};
+                return {text: item.displayText, type: 'fk'};
             }
             // 逆参照ヒント（A-4）
             // reverseReferenceMaps は useStore で購読済みのため、マップ更新時に再生成・再描画される
             if (colIndex === pkColIndex && pkColIndex !== -1 && cellValue !== '') {
                 const reverseMap = reverseReferenceMaps.get(tableName);
-                if (!reverseMap) return '';
+                if (!reverseMap) return {text: '', type: 'none'};
                 const entries = reverseMap.get(cellValue);
-                if (!entries) return '';
-                return formatReverseReferenceHint(entries);
+                if (!entries) return {text: '', type: 'none'};
+                return {text: formatReverseReferenceHint(entries), type: 'reverse'};
             }
-            return '';
+            return {text: '', type: 'none'};
         }, [fkTableNameByColIndex, pkColIndex, tableName, referenceCache, reverseReferenceMaps]);
+
+        /**
+         * 列ヘッダー右クリックハンドラ。
+         * ミニテーブル（storeRowIndices が null でない）の場合はメニューを表示しない。
+         * 複数列が選択されている場合は選択列数分の操作ラベルを表示する。
+         */
+        const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // ミニテーブルはコンテキストメニュー非表示（部分データ上書き防止）
+            if (storeRowIndices !== null) return;
+
+            const contextMenuSelectionColumnIndex = colIndex + 1;
+            const selRange = useSelectionStore.getState().range;
+            const totalRows = allRows.filter(r => !r.isBuffer).length;
+            // 列全体選択かどうか（行範囲がデータ行全体か確認）
+            const isColumnSelection = selRange.startRow === 1 && selRange.endRow === totalRows;
+            // 右クリックした列が選択範囲内か判定
+            const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn
+                && contextMenuSelectionColumnIndex <= selRange.endColumn;
+            // 列全体選択かつ範囲内の場合のみ複数列操作とする
+            const useSelectedColumns = isColumnSelection && isInSelection;
+            // 複数列選択時の列情報を計算（0始まりインデックス）
+            const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
+            const startColumnIndex = useSelectedColumns ? selRange.startColumn - 1 : colIndex;
+            const endColumnIndex = useSelectedColumns ? selRange.endColumn - 1 : colIndex;
+
+            // 選択範囲外の右クリック時は対象列を選択する
+            if (!useSelectedColumns) {
+                const newRange: CellRange = {startRow: 1, startColumn: contextMenuSelectionColumnIndex, endRow: totalRows, endColumn: contextMenuSelectionColumnIndex};
+                const focusPos: CellPosition = {row: 1, column: contextMenuSelectionColumnIndex};
+                useSelectionStore.getState().select(newRange, focusPos);
+            }
+
+            // ラベルを列数に応じて変更
+            const insertLeftLabel = columnCount > 1 ? `左に${columnCount}列を挿入` : '左に列を挿入';
+            const insertRightLabel = columnCount > 1 ? `右に${columnCount}列を挿入` : '右に列を挿入';
+            const deleteLabel = columnCount > 1 ? `${columnCount}列を削除` : '列を削除';
+
+            const menuItems: ContextMenuEntry[] = [
+                {label: insertLeftLabel, action: () => {
+                    // 高インデックスから挿入すると後続列がずれるため、低インデックスから順に挿入する
+                    // 挿入位置は毎回 startColumnIndex（左端）に固定する（同位置への複数挿入）
+                    for (let i = 0; i < columnCount; i++) {
+                        const cmd = new InsertColumnCommand(tableName, startColumnIndex);
+                        const singleRange: CellRange = {startRow: 1, startColumn: startColumnIndex + 1, endRow: 1, endColumn: startColumnIndex + 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: insertRightLabel, action: () => {
+                    // 右端の外側（endColumnIndex + 1 + 挿入済み数）に順次挿入する
+                    for (let i = 0; i < columnCount; i++) {
+                        const insertPos = endColumnIndex + 1 + i;
+                        const cmd = new InsertColumnCommand(tableName, insertPos);
+                        const singleRange: CellRange = {startRow: 1, startColumn: insertPos + 1, endRow: 1, endColumn: insertPos + 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: deleteLabel, action: () => {
+                    // 高インデックスから削除してインデックスずれを防ぐ
+                    const commands: DeleteColumnCommand[] = [];
+                    for (let ci = endColumnIndex; ci >= startColumnIndex; ci--) {
+                        commands.push(new DeleteColumnCommand(tableName, ci));
+                    }
+                    if (commands.length === 0) return;
+                    const batch = new BatchCommand(commands, `DeleteColumns ${startColumnIndex}-${endColumnIndex}`);
+                    const afterCol = Math.max(startColumnIndex + 1, 1);
+                    const afterRange: CellRange = {startRow: 1, startColumn: afterCol, endRow: 1, endColumn: afterCol};
+                    useHistoryStore.getState().executeCommand(tableName, batch, afterRange, useSelectionStore.getState().copyRange);
+                }},
+            ];
+
+            setContextMenuState({x: e.clientX, y: e.clientY, items: menuItems});
+        }, [storeRowIndices, allRows, tableName]);
+
+        /** 列インデックス→CSS幅文字列のマップ。スキーマに width があればそれを使い、なければ列名から自動計算する。 */
+        const columnWidths = useMemo<string[]>(() => {
+            if (!header) return [];
+            return header.map(colName => {
+                const schema = columnSchemas.find(s => s.name === colName);
+                return schema && typeof schema.width === 'number' ? `${schema.width}px` : Utility.calculateColumnWidth(colName);
+            });
+        }, [header, columnSchemas]);
 
         const columns = useMemo(() => {
             if (!header) return [];
             return header.map((colName, colIndex) =>
                 columnHelper.accessor(row => row.cells[colIndex] as string, {
-                    id: colName,
+                    id: colName !== '' ? colName : `__col_${colIndex}`,
                     header: () => (
                         <HeaderCell
                             columnName={colName}
                             colIndex={colIndex}
+                            width={columnWidths[colIndex] !== undefined ? columnWidths[colIndex] : `${MIN_COLUMN_WIDTH_PX}px`}
                             onMouseDown={e => handleColumnHeaderMouseDown(colIndex, e)}
                             onContextMenu={e => handleColumnHeaderContextMenu(colIndex, e)}
                         />
@@ -464,14 +550,16 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                             && focus.column === colIndex + 1;
                         const cellValue = info.getValue();
                         // バッファ行はヒントなし（空行のためヒント計算不要）
-                        const referenceHint = rowData.isBuffer ? '' : computeReferenceHint(colIndex, cellValue);
+                        const hintResult = rowData.isBuffer ? {text: '', type: 'none' as const} : computeReferenceHint(colIndex, cellValue);
                         return (
                             <Cell
                                 value={cellValue}
                                 colIndex={colIndex}
                                 className=""
                                 isFocused={isFocused}
-                                referenceHint={referenceHint}
+                                width={columnWidths[colIndex] !== undefined ? columnWidths[colIndex] : `${MIN_COLUMN_WIDTH_PX}px`}
+                                referenceHint={hintResult.text}
+                                referenceHintType={hintResult.type}
                                 onMouseDown={e => handleCellMouseDown(rowData.domRowIndex, colIndex, e)}
                                 onDoubleClick={() => {
                                     // ダブルクリックで現在のセル値を初期値として編集開始する
@@ -483,7 +571,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     },
                 })
             );
-        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleColumnHeaderContextMenu, handleCellMouseDown, computeReferenceHint]);
+        }, [header, columnHelper, focus, columnWidths, handleColumnHeaderMouseDown, handleColumnHeaderContextMenu, handleCellMouseDown, computeReferenceHint]);
 
         const table = useReactTable({
             data: allRows,
@@ -790,80 +878,6 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
         });
 
         /**
-         * 列ヘッダー右クリックハンドラ。
-         * ミニテーブル（storeRowIndices が null でない）の場合はメニューを表示しない。
-         * 複数列が選択されている場合は選択列数分の操作ラベルを表示する。
-         */
-        const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
-            e.preventDefault();
-            e.stopPropagation();
-            // ミニテーブルはコンテキストメニュー非表示（部分データ上書き防止）
-            if (storeRowIndices !== null) return;
-
-            const contextMenuSelectionColumnIndex = colIndex + 1;
-            const selRange = useSelectionStore.getState().range;
-            const totalRows = allRows.filter(r => !r.isBuffer).length;
-            // 列全体選択かどうか（行範囲がデータ行全体か確認）
-            const isColumnSelection = selRange.startRow === 1 && selRange.endRow === totalRows;
-            // 右クリックした列が選択範囲内か判定
-            const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn
-                && contextMenuSelectionColumnIndex <= selRange.endColumn;
-            // 列全体選択かつ範囲内の場合のみ複数列操作とする
-            const useSelectedColumns = isColumnSelection && isInSelection;
-            // 複数列選択時の列情報を計算（0始まりインデックス）
-            const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
-            const startColumnIndex = useSelectedColumns ? selRange.startColumn - 1 : colIndex;
-            const endColumnIndex = useSelectedColumns ? selRange.endColumn - 1 : colIndex;
-
-            // 選択範囲外の右クリック時は対象列を選択する
-            if (!useSelectedColumns) {
-                const newRange: CellRange = {startRow: 1, startColumn: contextMenuSelectionColumnIndex, endRow: totalRows, endColumn: contextMenuSelectionColumnIndex};
-                const focusPos: CellPosition = {row: 1, column: contextMenuSelectionColumnIndex};
-                useSelectionStore.getState().select(newRange, focusPos);
-            }
-
-            // ラベルを列数に応じて変更
-            const insertLeftLabel = columnCount > 1 ? `左に${columnCount}列を挿入` : '左に列を挿入';
-            const insertRightLabel = columnCount > 1 ? `右に${columnCount}列を挿入` : '右に列を挿入';
-            const deleteLabel = columnCount > 1 ? `${columnCount}列を削除` : '列を削除';
-
-            const menuItems: ContextMenuEntry[] = [
-                {label: insertLeftLabel, action: () => {
-                    // 高インデックスから挿入すると後続列がずれるため、低インデックスから順に挿入する
-                    // 挿入位置は毎回 startColumnIndex（左端）に固定する（同位置への複数挿入）
-                    for (let i = 0; i < columnCount; i++) {
-                        const cmd = new InsertColumnCommand(tableName, startColumnIndex);
-                        const singleRange: CellRange = {startRow: 1, startColumn: startColumnIndex + 1, endRow: 1, endColumn: startColumnIndex + 1};
-                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
-                    }
-                }},
-                {label: insertRightLabel, action: () => {
-                    // 右端の外側（endColumnIndex + 1 + 挿入済み数）に順次挿入する
-                    for (let i = 0; i < columnCount; i++) {
-                        const insertPos = endColumnIndex + 1 + i;
-                        const cmd = new InsertColumnCommand(tableName, insertPos);
-                        const singleRange: CellRange = {startRow: 1, startColumn: insertPos + 1, endRow: 1, endColumn: insertPos + 1};
-                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
-                    }
-                }},
-                {label: deleteLabel, action: () => {
-                    // 高インデックスから削除してインデックスずれを防ぐ
-                    const commands: DeleteColumnCommand[] = [];
-                    for (let ci = endColumnIndex; ci >= startColumnIndex; ci--) {
-                        commands.push(new DeleteColumnCommand(tableName, ci));
-                    }
-                    if (commands.length === 0) return;
-                    const batch = new BatchCommand(commands, `DeleteColumns ${startColumnIndex}-${endColumnIndex}`);
-                    const afterCol = Math.max(startColumnIndex + 1, 1);
-                    const afterRange: CellRange = {startRow: 1, startColumn: afterCol, endRow: 1, endColumn: afterCol};
-                    useHistoryStore.getState().executeCommand(tableName, batch, afterRange, useSelectionStore.getState().copyRange);
-                }},
-            ];
-
-            setContextMenuState({x: e.clientX, y: e.clientY, items: menuItems});
-        }, [storeRowIndices, allRows, tableName]);
-
-        /**
          * 行ヘッダー右クリックハンドラ。
          * ミニテーブル（storeRowIndices が null でない）の場合はメニューを表示しない。
          * 複数行が選択されている場合は選択行数分の操作ラベルを表示する。
@@ -1007,7 +1021,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                 style={{overflow: 'auto', position: 'relative'}}
             >
                 {/* ヘッダー行: スティッキーで上部に固定する */}
-                <div className="editor-table-row" style={{display: 'flex', position: 'sticky', top: 0, zIndex: 1}}>
+                <div className="editor-table-row editor-table-column-header-row" style={{display: 'flex', position: 'sticky', top: 0, zIndex: 1}}>
                     {/* 角セル: 行ヘッダー列とカラムヘッダー行の交差部分 */}
                     <div
                         className="editor-table-corner-cell"
@@ -1015,56 +1029,61 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     />
                     {table.getHeaderGroups().map(headerGroup =>
                         headerGroup.headers.map(header => (
-                            <div key={header.id} style={{display: 'flex', alignItems: 'stretch'}}>
+                            <React.Fragment key={header.id}>
                                 {flexRender(header.column.columnDef.header, header.getContext())}
-                            </div>
+                            </React.Fragment>
                         ))
                     )}
                 </div>
 
-                {/* 仮想スクロール領域: totalSize で実際の高さを確保する */}
-                <div style={{height: totalSize, position: 'relative'}}>
-                    {virtualItems.map(virtualRow => {
-                        const row = tableRows[virtualRow.index];
-                        const rowData = row.original;
-                        const isBuffer = rowData.isBuffer;
-                        // バッファ行には editor-table-empty-row クラスを付与する
-                        const rowClassName = 'editor-table-row' + (isBuffer ? ' editor-table-empty-row' : '');
-                        // 行番号: データ行は1始まり、バッファ行は空文字
-                        const rowNumber = isBuffer ? '' : rowData.domRowIndex + 1;
+                {/* データ行: .editor-table の直接の子として配置し、nth-child の互換性を保つ */}
+                {/* position:absolute で仮想化位置に配置する。ヘッダー行の高さ分だけ top をオフセットする */}
+                {virtualItems.map(virtualRow => {
+                    const row = tableRows[virtualRow.index];
+                    const rowData = row.original;
+                    const isBuffer = rowData.isBuffer;
+                    // バッファ行には editor-table-empty-row クラスを付与する
+                    const rowClassName = 'editor-table-row' + (isBuffer ? ' editor-table-empty-row' : '');
+                    // 行番号: データ行は1始まり、バッファ行は空文字
+                    const rowNumber = isBuffer ? '' : rowData.domRowIndex + 1;
 
-                        return (
-                            <div
-                                key={virtualRow.key}
-                                className={rowClassName}
-                                data-row={rowData.domRowIndex}
-                                style={{
-                                    position: 'absolute',
-                                    top: virtualRow.start,
-                                    left: 0,
-                                    width: '100%',
-                                    height: ROW_HEIGHT_PX,
-                                    display: 'flex',
-                                }}
-                            >
-                                {/* 行番号ヘッダー */}
-                                <div style={{width: ROW_HEADER_WIDTH_PX, flexShrink: 0}}>
-                                    <RowHeader
-                                        rowNumber={rowNumber}
-                                        onMouseDown={e => handleRowHeaderMouseDown(rowData.domRowIndex, e)}
-                                        onContextMenu={e => handleRowHeaderContextMenu(rowData.domRowIndex, e)}
-                                    />
-                                </div>
-                                {/* データセル群 */}
-                                {row.getVisibleCells().map(cell => (
-                                    <div key={cell.id} style={{display: 'flex', alignItems: 'stretch'}}>
-                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    })}
-                </div>
+                    return (
+                        <div
+                            key={virtualRow.key}
+                            className={rowClassName}
+                            data-row={rowData.domRowIndex}
+                            style={{
+                                position: 'absolute',
+                                // ヘッダー行（ROW_HEIGHT_PX）の高さ分だけ下にオフセットする
+                                top: virtualRow.start + ROW_HEIGHT_PX,
+                                left: 0,
+                                width: '100%',
+                                height: ROW_HEIGHT_PX,
+                                display: 'flex',
+                            }}
+                        >
+                            {/* 行番号ヘッダー: RowHeader 自体が width/flexShrink を持つのでラッパー不要 */}
+                            <RowHeader
+                                rowNumber={rowNumber}
+                                width={ROW_HEADER_WIDTH_PX}
+                                onMouseDown={e => handleRowHeaderMouseDown(rowData.domRowIndex, e)}
+                                onContextMenu={e => handleRowHeaderContextMenu(rowData.domRowIndex, e)}
+                            />
+                            {/* データセル群: React.Fragment で直接配置（ラッパーdiv除去） */}
+                            {row.getVisibleCells().map(cell => (
+                                <React.Fragment key={cell.id}>
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    );
+                })}
+                {/* スクロール用スペーサー: 仮想化で非表示の行の高さを確保する */}
+                {/* ヘッダー行 + 全行の高さ = ROW_HEIGHT_PX + totalSize */}
+                <div
+                    style={{height: totalSize + ROW_HEIGHT_PX, width: 1, visibility: 'hidden', pointerEvents: 'none'}}
+                    aria-hidden="true"
+                />
 
                 {/* 選択範囲オーバーレイ: position:absolute で仮想スクロール領域に重ねる */}
                 <SelectionOverlay

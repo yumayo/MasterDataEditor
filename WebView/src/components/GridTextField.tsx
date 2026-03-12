@@ -106,7 +106,7 @@ export function GridTextField({visible, initialValue, position, onSubmit, onCanc
     return (
         <div
             ref={divRef}
-            className="grid-textfield"
+            className={'grid-textfield' + (visible ? ' grid-textfield-active' : '')}
             contentEditable
             suppressContentEditableWarning
             onCompositionStart={handleCompositionStart}

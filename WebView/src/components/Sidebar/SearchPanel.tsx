@@ -11,6 +11,8 @@ const DEBOUNCE_DELAY_MS = 150;
  */
 interface SearchOptionButtonProps {
     label: string;
+    /** data-option属性値（テスト用セレクタ） */
+    option: string;
     active: boolean;
     onClick: () => void;
 }
@@ -18,10 +20,11 @@ interface SearchOptionButtonProps {
 /**
  * 検索オプションボタン（大文字小文字・単語単位・正規表現）
  */
-function SearchOptionButton({label, active, onClick}: SearchOptionButtonProps) {
+function SearchOptionButton({label, option, active, onClick}: SearchOptionButtonProps) {
     return (
         <button
             className={'search-option-button' + (active ? ' search-option-active' : '')}
+            data-option={option}
             onClick={onClick}
             type="button"
         >
@@ -103,7 +106,7 @@ export function SearchPanel() {
                 <div className="search-panel-input-row">
                     <input
                         ref={inputRef}
-                        className="search-input"
+                        className="search-panel-input"
                         type="text"
                         placeholder="検索..."
                         defaultValue={searchText}
@@ -111,9 +114,9 @@ export function SearchPanel() {
                     />
                 </div>
                 <div className="search-panel-options">
-                    <SearchOptionButton label="Aa" active={caseSensitive} onClick={handleToggleCaseSensitive} />
-                    <SearchOptionButton label="|ab|" active={wholeWord} onClick={handleToggleWholeWord} />
-                    <SearchOptionButton label=".*" active={useRegex} onClick={handleToggleUseRegex} />
+                    <SearchOptionButton label="Aa" option="caseSensitive" active={caseSensitive} onClick={handleToggleCaseSensitive} />
+                    <SearchOptionButton label="|ab|" option="wholeWord" active={wholeWord} onClick={handleToggleWholeWord} />
+                    <SearchOptionButton label=".*" option="regex" active={useRegex} onClick={handleToggleUseRegex} />
                 </div>
             </div>
             {/* 検索結果リスト */}

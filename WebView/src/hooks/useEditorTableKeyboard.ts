@@ -8,6 +8,7 @@ import type {DropdownItem} from '../components/GridDropdownInput';
 import {writeFileAsync} from '../api';
 import {Csv} from '../csv';
 import {config} from '../config';
+import {Utility} from '../utility';
 
 /**
  * スキーマの列定義（reference プロパティの有無で FK 列を判定する）
@@ -15,6 +16,8 @@ import {config} from '../config';
 export interface ColumnSchema {
     name: string;
     reference?: string;
+    /** スキーマJSONの列幅(px)。未指定の場合はカラム名から自動計算する */
+    width?: number;
 }
 
 /**
@@ -401,7 +404,7 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
                     })();
                     return;
                 }
-                // Ctrl+S: ストアの全データをCSVとしてファイルに保存する
+                // Ctrl+S: ストアの全データをCSVとしてファイルに保存し、スキーマJSONにも列幅を反映する
                 if (e.key === 's' || e.key === 'S') {
                     e.preventDefault();
                     void (async () => {
@@ -419,6 +422,25 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
 
                             // data/ ディレクトリにCSVファイルを書き込む
                             await writeFileAsync(`data/${tableName}.csv`, csvString);
+
+                            // スキーマJSONに列幅を保存する（既存フィールドは保持する）
+                            const rawSchema = useTabStore.getState().getRawSchema(tableName);
+                            if (rawSchema !== null) {
+                                const schemas = useTabStore.getState().getColumnSchemas(tableName);
+                                // headerDefs は元のスキーマの header 配列（各エントリの全フィールドを保持する）
+                                const headerDefs = rawSchema.header as Array<Record<string, unknown>>;
+                                if (Array.isArray(headerDefs)) {
+                                    for (let i = 0; i < headerDefs.length && i < schemas.length; i++) {
+                                        const schema = schemas[i];
+                                        // 列幅: スキーマに width がある場合はそれを使い、なければ列名から計算する
+                                        const widthStr = typeof schema.width === 'number'
+                                            ? `${schema.width}px`
+                                            : Utility.calculateColumnWidth(schema.name);
+                                        headerDefs[i].width = parseInt(widthStr, 10);
+                                    }
+                                }
+                                await writeFileAsync(`schema/${tableName}.json`, JSON.stringify(rawSchema, null, 2));
+                            }
 
                             // 保存成功: Dirty状態をクリアする
                             useHistoryStore.getState().markSaved(tableName);

@@ -43,6 +43,11 @@ interface TabStoreState {
     /** テーブル名→列スキーマのマップ */
     columnSchemaMap: Map<string, ColumnSchema[]>;
     /**
+     * テーブル名→元のスキーマJSONオブジェクトのマップ。
+     * 保存時に既存フィールド（key, type, primary_key 等）を失わないために保持する。
+     */
+    rawSchemaMap: Map<string, Record<string, unknown>>;
+    /**
      * タブ読み込み完了後の保留ナビゲーション
      * null は「保留なし」を表すセンチネル値
      */
@@ -96,6 +101,15 @@ interface TabStoreState {
     navigateToTableCell(tableName: string, pkValue: string, columnIndex: number): void;
     /** 列スキーマを取得する（未登録の場合は空配列を返す） */
     getColumnSchemas(tableName: string): ColumnSchema[];
+    /**
+     * 元のスキーマJSONオブジェクトを取得する。
+     * タブが開かれていない場合は null を返す。
+     */
+    getRawSchema(tableName: string): Record<string, unknown> | null;
+    /**
+     * 列スキーマの幅を更新する（Ctrl+S保存前にスキーマに反映するために使用する）
+     */
+    setColumnSchemaWidths(tableName: string, widths: number[]): void;
     /** テスト用: ストア全体を初期状態にリセットする */
     _reset(): void;
 }
@@ -136,6 +150,7 @@ export const useTabStore = createStore<TabStoreState>()(
         activeTabName: '',
         draggingTabName: '',
         columnSchemaMap: new Map(),
+        rawSchemaMap: new Map(),
         pendingNavigation: null,
 
         addTab(tableName) {
@@ -223,12 +238,13 @@ export const useTabStore = createStore<TabStoreState>()(
 
             // スキーマJSON を読み込んで列スキーマを構築する
             const schemaText = await readFileAsync('schema/' + tableName + '.json');
-            const schemaJson = JSON.parse(schemaText);
-            // スキーマ形式: { header: [{ name: string, reference?: string, ... }] }
-            const headerDefs: Array<{name: string; reference?: string}> = schemaJson.header || [];
+            const schemaJson = JSON.parse(schemaText) as Record<string, unknown>;
+            // スキーマ形式: { header: [{ name: string, reference?: string, width?: number, ... }] }
+            const headerDefs: Array<{name: string; reference?: string; width?: number}> = (schemaJson.header as Array<{name: string; reference?: string; width?: number}>) || [];
             const columnSchemas: ColumnSchema[] = headerDefs.map(col => {
                 const schema: ColumnSchema = {name: col.name};
                 if (col.reference) schema.reference = col.reference;
+                if (typeof col.width === 'number') schema.width = col.width;
                 return schema;
             });
 
@@ -237,7 +253,11 @@ export const useTabStore = createStore<TabStoreState>()(
 
             // タブを追加してアクティブにする
             get().addTab(tableName);
-            set(draft => { draft.columnSchemaMap.set(tableName, columnSchemas); });
+            set(draft => {
+                draft.columnSchemaMap.set(tableName, columnSchemas);
+                // 保存時に既存フィールドを保持するために元のスキーマJSONを記憶する
+                draft.rawSchemaMap.set(tableName, schemaJson);
+            });
             get().activateTab(tableName);
 
             // selection-store: アクティブテーブルを設定して A1 セルにフォーカス
@@ -281,9 +301,12 @@ export const useTabStore = createStore<TabStoreState>()(
             const nextTab = get().findNextTab(tableName);
             const prevTab = get().findPrevTab(tableName);
 
-            // タブを削除して列スキーマをクリアする
+            // タブを削除して列スキーマと元スキーマJSONをクリアする
             get().removeTab(tableName);
-            set(draft => { draft.columnSchemaMap.delete(tableName); });
+            set(draft => {
+                draft.columnSchemaMap.delete(tableName);
+                draft.rawSchemaMap.delete(tableName);
+            });
 
             // table-store: 参照カウントを減らす（0になればデータ解放）
             useTableStore.getState().unregisterTable(tableName);
@@ -340,6 +363,21 @@ export const useTabStore = createStore<TabStoreState>()(
             return schemas !== undefined ? schemas : [];
         },
 
+        getRawSchema(tableName) {
+            const raw = get().rawSchemaMap.get(tableName);
+            return raw !== undefined ? raw : null;
+        },
+
+        setColumnSchemaWidths(tableName, widths) {
+            set(draft => {
+                const schemas = draft.columnSchemaMap.get(tableName);
+                if (!schemas) return;
+                for (let i = 0; i < schemas.length && i < widths.length; i++) {
+                    schemas[i].width = widths[i];
+                }
+            });
+        },
+
         _reset() {
             set(draft => {
                 draft.tabOrder = [];
@@ -347,6 +385,7 @@ export const useTabStore = createStore<TabStoreState>()(
                 draft.activeTabName = '';
                 draft.draggingTabName = '';
                 draft.columnSchemaMap.clear();
+                draft.rawSchemaMap.clear();
                 draft.pendingNavigation = null;
             });
         },
