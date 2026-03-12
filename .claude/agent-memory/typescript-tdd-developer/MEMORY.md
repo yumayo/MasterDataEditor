@@ -16,6 +16,7 @@
 - `/WebView/src/command.ts` - Command pattern implementations
 - `/WebView/src/relations-panel.ts` - Relations panel (right pane)
 - `/WebView/src/selection.ts` - Selection and focus management
+- `/WebView/src/reference-expression.ts` - 参照式パース（SimpleReference/DynamicReference）
 - `/WebView/e2e/fixtures/test-utils.ts` - Shared test utilities
 
 ## Implementation Patterns
@@ -44,6 +45,16 @@ null/undefined 禁止 → boolean `false` や空文字 `""` をセンチネル�
 
 ### 非同期競合防止
 `currentRequestId` パターン: 呼び出し元でインクリメント、`renderAsync` 自身はインクリメントしない。
+
+### 動的参照（DynamicReference）の解決パターン
+`$(table.id == $reward_table_id).master.id` 形式の動的参照を解決する手順:
+1. 同一行から `expr.filter.valueColumn` の値を取得（`editorTable.getCellValueByColumnName`）
+2. フィルタテーブルを `resolveTableDataAsync()` で取得し、`expr.filter.filterColumn` で線形検索（`Array.find`）
+3. その行の `expr.lookupColumn` 値 = 最終テーブル名を取得
+4. この列自身の値（`getCellValueByColumnName(rowIndex, col.name)`）= FK値を取得
+5. 最終テーブルを `resolveTableDataAsync()` で取得し `expr.targetColumn == fkValue` でフィルタ
+フィルタテーブルの行検索には `referenceDataCache.findRowByColumn` は使わず（型の制約があるため）、
+`resolveTableDataAsync()` で取得した rows に対して `Array.find` で自前線形検索する。
 
 ## Recurring Implementation Mistakes
 
@@ -152,3 +163,34 @@ const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row
 await expect(allRows).toHaveCount(5); // ヘッダー(1) + データ(4) = 5
 ```
 ミニテーブルは `emptyRowCount=0` なので `.editor-table-row` で全行カウントしても問題なし。
+
+## テスト実行環境の知見
+
+### production ビルドの更新方法（重要）
+playwright テストは `http://localhost:4173` で動作する production ビルドを使う（`vite build && vite preview`）。
+`reuseExistingServer: !process.env.CI` なので、**最初のテスト実行後はサーバーが起動済みのため再ビルドされない**。
+
+ソースコード変更をテストに反映させるには、**別のポートを使う**ことで新しいビルドを強制起動できる：
+```typescript
+// playwright.config.ts
+webServer: {
+    command: 'npx vite build && npx vite preview --host --port 4174',
+    url: 'http://localhost:4174',
+    reuseExistingServer: !process.env.CI,
+},
+use: { baseURL: 'http://localhost:4174' },
+```
+- コンテナ再起動・ビルドコマンド直接実行は不可（`npx playwright` のみ許可）
+- ポートを変えることで既存サーバーと競合せず新規ビルドが走る
+
+### ブラウザコンソールのデバッグ方法
+production ビルドの console.log はテスト出力に出ない。`page.on('console', ...)` でキャプチャする：
+```typescript
+page.on('console', msg => {
+    const type = msg.type();
+    if (type === 'error' || type === 'warn') {
+        console.log(`[BROWSER ${type}]: ${msg.text()}`);
+    }
+});
+```
+`page.evaluate(async () => { const resp = await fetch(scriptSrc); ... })` で JS バンドルの内容を直接確認できる。
