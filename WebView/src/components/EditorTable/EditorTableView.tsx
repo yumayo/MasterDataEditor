@@ -9,7 +9,7 @@ import {
 import {useVirtualizer} from '@tanstack/react-virtual';
 import {useTableStore} from '../../stores/table-store';
 import {useSelectionStore} from '../../stores/selection-store';
-import {useHistoryStore, CellChangeCommand} from '../../stores/history-store';
+import {useHistoryStore, CellChangeCommand, InsertRowCommand, DeleteRowCommand, InsertColumnCommand, DeleteColumnCommand, BatchCommand} from '../../stores/history-store';
 import {useReferenceStore} from '../../stores/reference-store';
 import {useReverseReferenceStore, formatReverseReferenceHint} from '../../stores/reverse-reference-store';
 import {generateSeriesData} from '../../fill-series';
@@ -27,6 +27,8 @@ import {useEditorTableKeyboard} from '../../hooks/useEditorTableKeyboard';
 import type {AutoFillEntry} from '../../hooks/useEditorTableKeyboard';
 import {useRelationsStore} from '../../stores/relations-store';
 import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
+import {ContextMenu} from '../ContextMenu';
+import type {ContextMenuEntry} from '../ContextMenu';
 
 /** データ行の下に表示するバッファ空行数 */
 const BUFFER_ROW_COUNT = 100;
@@ -273,6 +275,9 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             filterText: string;
         } | null>(null);
 
+        // コンテキストメニューの表示状態（null = 非表示）
+        const [contextMenuState, setContextMenuState] = useState<{x: number; y: number; items: ContextMenuEntry[]} | null>(null);
+
         // ResizeObserver でテーブルサイズ変化を監視してBoundingRectを更新する
         useEffect(() => {
             const container = scrollContainerRef.current;
@@ -427,6 +432,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                             columnName={colName}
                             colIndex={colIndex}
                             onMouseDown={e => handleColumnHeaderMouseDown(colIndex, e)}
+                            onContextMenu={e => handleColumnHeaderContextMenu(colIndex, e)}
                         />
                     ),
                     cell: info => {
@@ -456,7 +462,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                     },
                 })
             );
-        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleCellMouseDown, computeReferenceHint]);
+        }, [header, columnHelper, focus, handleColumnHeaderMouseDown, handleColumnHeaderContextMenu, handleCellMouseDown, computeReferenceHint]);
 
         const table = useReactTable({
             data: allRows,
@@ -761,6 +767,158 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             autoFillEntries,
         });
 
+        /**
+         * 列ヘッダー右クリックハンドラ。
+         * ミニテーブル（storeRowIndices が null でない）の場合はメニューを表示しない。
+         * 複数列が選択されている場合は選択列数分の操作ラベルを表示する。
+         */
+        const handleColumnHeaderContextMenu = useCallback((colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // ミニテーブルはコンテキストメニュー非表示（部分データ上書き防止）
+            if (storeRowIndices !== null) return;
+
+            const contextMenuSelectionColumnIndex = colIndex + 1;
+            const selRange = useSelectionStore.getState().range;
+            const totalRows = allRows.filter(r => !r.isBuffer).length;
+            // 列全体選択かどうか（行範囲がデータ行全体か確認）
+            const isColumnSelection = selRange.startRow === 1 && selRange.endRow === totalRows;
+            // 右クリックした列が選択範囲内か判定
+            const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn
+                && contextMenuSelectionColumnIndex <= selRange.endColumn;
+            // 列全体選択かつ範囲内の場合のみ複数列操作とする
+            const useSelectedColumns = isColumnSelection && isInSelection;
+            // 複数列選択時の列情報を計算（0始まりインデックス）
+            const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
+            const startColumnIndex = useSelectedColumns ? selRange.startColumn - 1 : colIndex;
+            const endColumnIndex = useSelectedColumns ? selRange.endColumn - 1 : colIndex;
+
+            // 選択範囲外の右クリック時は対象列を選択する
+            if (!useSelectedColumns) {
+                const newRange: CellRange = {startRow: 1, startColumn: contextMenuSelectionColumnIndex, endRow: totalRows, endColumn: contextMenuSelectionColumnIndex};
+                const focusPos: CellPosition = {row: 1, column: contextMenuSelectionColumnIndex};
+                useSelectionStore.getState().select(newRange, focusPos);
+            }
+
+            // ラベルを列数に応じて変更
+            const insertLeftLabel = columnCount > 1 ? `左に${columnCount}列を挿入` : '左に列を挿入';
+            const insertRightLabel = columnCount > 1 ? `右に${columnCount}列を挿入` : '右に列を挿入';
+            const deleteLabel = columnCount > 1 ? `${columnCount}列を削除` : '列を削除';
+
+            const menuItems: ContextMenuEntry[] = [
+                {label: insertLeftLabel, action: () => {
+                    // 高インデックスから挿入すると後続列がずれるため、低インデックスから順に挿入する
+                    // 挿入位置は毎回 startColumnIndex（左端）に固定する（同位置への複数挿入）
+                    for (let i = 0; i < columnCount; i++) {
+                        const cmd = new InsertColumnCommand(tableName, startColumnIndex);
+                        const singleRange: CellRange = {startRow: 1, startColumn: startColumnIndex + 1, endRow: 1, endColumn: startColumnIndex + 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: insertRightLabel, action: () => {
+                    // 右端の外側（endColumnIndex + 1 + 挿入済み数）に順次挿入する
+                    for (let i = 0; i < columnCount; i++) {
+                        const insertPos = endColumnIndex + 1 + i;
+                        const cmd = new InsertColumnCommand(tableName, insertPos);
+                        const singleRange: CellRange = {startRow: 1, startColumn: insertPos + 1, endRow: 1, endColumn: insertPos + 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: deleteLabel, action: () => {
+                    // 高インデックスから削除してインデックスずれを防ぐ
+                    const commands: DeleteColumnCommand[] = [];
+                    for (let ci = endColumnIndex; ci >= startColumnIndex; ci--) {
+                        commands.push(new DeleteColumnCommand(tableName, ci));
+                    }
+                    if (commands.length === 0) return;
+                    const batch = new BatchCommand(commands, `DeleteColumns ${startColumnIndex}-${endColumnIndex}`);
+                    const afterCol = Math.max(startColumnIndex + 1, 1);
+                    const afterRange: CellRange = {startRow: 1, startColumn: afterCol, endRow: 1, endColumn: afterCol};
+                    useHistoryStore.getState().executeCommand(tableName, batch, afterRange, useSelectionStore.getState().copyRange);
+                }},
+            ];
+
+            setContextMenuState({x: e.clientX, y: e.clientY, items: menuItems});
+        }, [storeRowIndices, allRows, tableName]);
+
+        /**
+         * 行ヘッダー右クリックハンドラ。
+         * ミニテーブル（storeRowIndices が null でない）の場合はメニューを表示しない。
+         * 複数行が選択されている場合は選択行数分の操作ラベルを表示する。
+         */
+        const handleRowHeaderContextMenu = useCallback((domRowIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // ミニテーブルはコンテキストメニュー非表示
+            if (storeRowIndices !== null) return;
+            // バッファ行の右クリックは無視する
+            if (domRowIndex >= allRows.filter(r => !r.isBuffer).length) return;
+
+            const contextMenuRowIndex = domRowIndex + 1; // 1始まり
+            const selRange = useSelectionStore.getState().range;
+            const totalCols = allRows.length > 0 ? allRows[0].cells.length : 1;
+            // 行全体選択かどうか（列範囲がテーブル全幅か確認）
+            const isRowSelection = selRange.startColumn === 1 && selRange.endColumn === totalCols;
+            // 右クリックした行が選択範囲内か判定
+            const isInSelection = contextMenuRowIndex >= selRange.startRow && contextMenuRowIndex <= selRange.endRow;
+            // 行全体選択かつ範囲内の場合のみ複数行操作とする
+            const useSelectedRows = isRowSelection && isInSelection;
+            // 複数行選択時の行数を計算（1始まり）
+            const rowCount = useSelectedRows ? selRange.endRow - selRange.startRow + 1 : 1;
+            const startRow = useSelectedRows ? selRange.startRow : contextMenuRowIndex;
+            const endRow = useSelectedRows ? selRange.endRow : contextMenuRowIndex;
+
+            // 選択範囲外の右クリック時は対象行を選択する
+            if (!useSelectedRows) {
+                const newRange: CellRange = {startRow: contextMenuRowIndex, startColumn: 1, endRow: contextMenuRowIndex, endColumn: totalCols};
+                const focusPos: CellPosition = {row: contextMenuRowIndex, column: 1};
+                useSelectionStore.getState().select(newRange, focusPos);
+            }
+
+            // ラベルを行数に応じて変更
+            const insertAboveLabel = rowCount > 1 ? `上に${rowCount}行を挿入` : '上に行を挿入';
+            const insertBelowLabel = rowCount > 1 ? `下に${rowCount}行を挿入` : '下に行を挿入';
+            const deleteLabel = rowCount > 1 ? `${rowCount}行を削除` : '行を削除';
+            // header は allRows 構築時点で存在するため非 null として扱う（!header の場合は上でガードされている）
+            const columnCount = header ? header.length : 0;
+
+            const menuItems: ContextMenuEntry[] = [
+                {label: insertAboveLabel, action: () => {
+                    // 上端（startRow - 1 = ストアインデックス）に低インデックスから順次挿入する
+                    for (let i = 0; i < rowCount; i++) {
+                        const storeRowIndex = startRow - 1;
+                        const cmd = new InsertRowCommand(tableName, storeRowIndex, columnCount);
+                        const singleRange: CellRange = {startRow, startColumn: 1, endRow: startRow, endColumn: 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: insertBelowLabel, action: () => {
+                    // 下端（endRow = ストアインデックス）の次から順次挿入する
+                    for (let i = 0; i < rowCount; i++) {
+                        const storeRowIndex = endRow + i;
+                        const cmd = new InsertRowCommand(tableName, storeRowIndex, columnCount);
+                        const singleRange: CellRange = {startRow: endRow + 1, startColumn: 1, endRow: endRow + 1, endColumn: 1};
+                        useHistoryStore.getState().executeCommand(tableName, cmd, singleRange, useSelectionStore.getState().copyRange);
+                    }
+                }},
+                {label: deleteLabel, action: () => {
+                    // 高インデックスから削除してインデックスずれを防ぐ
+                    const commands: DeleteRowCommand[] = [];
+                    for (let uiRow = endRow; uiRow >= startRow; uiRow--) {
+                        commands.push(new DeleteRowCommand(tableName, uiRow - 1));
+                    }
+                    if (commands.length === 0) return;
+                    const batch = new BatchCommand(commands, `DeleteRows ${startRow}-${endRow}`);
+                    const totalRows = allRows.filter(r => !r.isBuffer).length;
+                    const afterRow = Math.min(startRow, Math.max(totalRows - rowCount, 1));
+                    const afterRange: CellRange = {startRow: afterRow, startColumn: 1, endRow: afterRow, endColumn: 1};
+                    useHistoryStore.getState().executeCommand(tableName, batch, afterRange, useSelectionStore.getState().copyRange);
+                }},
+            ];
+
+            setContextMenuState({x: e.clientX, y: e.clientY, items: menuItems});
+        }, [storeRowIndices, allRows, tableName, header]);
+
         // 行ヘッダーの mousedown ハンドラ: 行全体を選択する
         const handleRowHeaderMouseDown = useCallback((domRowIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
             e.preventDefault();
@@ -872,6 +1030,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                                     <RowHeader
                                         rowNumber={rowNumber}
                                         onMouseDown={e => handleRowHeaderMouseDown(rowData.domRowIndex, e)}
+                                        onContextMenu={e => handleRowHeaderContextMenu(rowData.domRowIndex, e)}
                                     />
                                 </div>
                                 {/* データセル群 */}
@@ -945,6 +1104,15 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                         useSelectionStore.getState().stopEditing();
                         setDropdownState(null);
                     }}
+                />
+
+                {/* コンテキストメニュー: Portal で document.body 直下にレンダリングする */}
+                <ContextMenu
+                    visible={contextMenuState !== null}
+                    x={contextMenuState !== null ? contextMenuState.x : 0}
+                    y={contextMenuState !== null ? contextMenuState.y : 0}
+                    items={contextMenuState !== null ? contextMenuState.items : []}
+                    onClose={() => setContextMenuState(null)}
                 />
             </div>
         );

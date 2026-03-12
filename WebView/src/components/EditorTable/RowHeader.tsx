@@ -5,15 +5,17 @@ interface RowHeaderProps {
     rowNumber: number | string;
     /** mousedown イベントハンドラ */
     onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void;
+    /** 右クリック（コンテキストメニュー）ハンドラ */
+    onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
 /**
  * テーブルの行番号ヘッダーセルを描画するコンポーネント。
  * 行番号が変わらない限り再レンダリングされないため React.memo で最適化する。
  */
-export const RowHeader = React.memo(function RowHeader({rowNumber, onMouseDown}: RowHeaderProps) {
+export const RowHeader = React.memo(function RowHeader({rowNumber, onMouseDown, onContextMenu}: RowHeaderProps) {
     return (
-        <div className="editor-table-row-header" onMouseDown={onMouseDown}>
+        <div className="editor-table-row-header" onMouseDown={onMouseDown} onContextMenu={onContextMenu}>
             {rowNumber}
         </div>
     );
