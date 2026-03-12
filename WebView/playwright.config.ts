@@ -4,12 +4,12 @@ export default defineConfig({
     testDir: './e2e',
     outputDir: './test-results',
     fullyParallel: true,
-    forbidOnly: !!process.env.CI,
-    retries: process.env.CI ? 2 : 0,
-    workers: process.env.CI ? 1 : 1,
+    forbidOnly: false,
+    retries: 0,
+    workers: 16,
     reporter: 'list',
     use: {
-        baseURL: 'http://localhost:5173',
+        baseURL: 'http://localhost:4173',
         trace: 'on-first-retry',
     },
     projects: [
@@ -19,8 +19,8 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'npx vite --host',
-        url: 'http://localhost:5173',
+        command: 'npx vite build && npx vite preview --host',
+        url: 'http://localhost:4173',
         reuseExistingServer: !process.env.CI,
     },
 });

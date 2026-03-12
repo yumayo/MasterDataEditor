@@ -8,7 +8,7 @@ function removeModuleType(): Plugin {
     return {
         name: 'remove-module-type',
         transformIndexHtml(html) {
-            return html.replace(/\s*crossorigin/g, '').replace(/\s*type="module"/g, '')
+            return html.replace(/\s*crossorigin/g, '').replace(/type="module"/g, 'defer')
         }
     }
 }

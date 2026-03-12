@@ -18,14 +18,9 @@ BAD
 npm playwright test
 ```
 
-BAD
-```sh
-docker compose exec -T playwright sh -c "npx playwright test 2>&1; echo EXIT_CODE=$?"
-```
-
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test --workers=1 --reporter=list 2>&1; echo "exit $?"
+docker compose exec -T playwright npx playwright test 2>&1; echo "exit $?"
 ```
 
 ## 特定のテストのみ実行する
@@ -35,14 +30,9 @@ BAD
 npm playwright test column-insert
 ```
 
-BAD
-```sh
-docker compose exec -T playwright sh -c "npx playwright test column-insert 2>&1; echo EXIT_CODE=$?"
-```
-
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test column-insert --workers=1 --reporter=list 2>&1; echo "exit $?"
+docker compose exec -T playwright npx playwright test column-insert 2>&1; echo "exit $?"
 ```
 
 ## 核心原則
