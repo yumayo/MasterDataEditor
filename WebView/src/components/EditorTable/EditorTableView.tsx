@@ -24,6 +24,7 @@ import {GridTextField} from '../GridTextField';
 import {GridDropdownInput} from '../GridDropdownInput';
 import type {DropdownItem} from '../GridDropdownInput';
 import {useEditorTableKeyboard} from '../../hooks/useEditorTableKeyboard';
+import {useRelationsStore} from '../../stores/relations-store';
 import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
 
 /** データ行の下に表示するバッファ空行数 */
@@ -469,6 +470,23 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             if (focus.row < 1) return;
             rowVirtualizer.scrollToIndex(focus.row - 1);
         }, [focus.row]);
+
+        // フォーカス行変更時に RelationsPanel を更新する
+        useEffect(() => {
+            // ミニテーブルからは RelationsPanel を更新しない（storeRowIndices が null でないとミニテーブル）
+            if (storeRowIndices !== null) return;
+            // このテーブルがアクティブでなければ更新しない
+            const selState = useSelectionStore.getState();
+            if (selState.activeTableName !== tableName) return;
+            // 同じ行への重複通知を防止する
+            if (!selState.updateLastNotifiedRow(focus.row)) return;
+            // focus.row は 1始まり、ストアインデックスは 0始まり
+            const storeRowIndex = focus.row - 1;
+            if (storeRowIndex < 0) return;
+            useRelationsStore.getState().updateForRowAsync(tableName, storeRowIndex, columnSchemas).catch(err => {
+                console.error('[EditorTableView] updateForRowAsync 失敗:', err);
+            });
+        }, [focus.row, tableName, columnSchemas, storeRowIndices]);
 
         // ドラッグ選択: window の mousemove/mouseup で範囲更新・終了する
         useEffect(() => {
