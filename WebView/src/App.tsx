@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 // React UIに切り替える際に以下のimportを有効化する:
+// import {CommandPalette} from './components/CommandPalette';
 // import {Sidebar} from './components/Sidebar/Sidebar';
 // import {TabBar} from './components/TabBar/TabBar';
 // import {RelationsPanel} from './components/RelationsPanel/RelationsPanel';
