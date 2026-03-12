@@ -26,6 +26,7 @@ import type {DropdownItem} from '../GridDropdownInput';
 import {useEditorTableKeyboard} from '../../hooks/useEditorTableKeyboard';
 import type {AutoFillEntry} from '../../hooks/useEditorTableKeyboard';
 import {useRelationsStore} from '../../stores/relations-store';
+import {useTabStore} from '../../stores/tab-store';
 import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
 import {ContextMenu} from '../ContextMenu';
 import type {ContextMenuEntry} from '../ContextMenu';
@@ -331,6 +332,26 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
 
         // セルの mousedown ハンドラ: selection-store を更新する（columns より前に定義する必要がある）
         const handleCellMouseDown = useCallback((domRowIndex: number, colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
+            // Ctrl+Click / Meta+Click: ミニテーブルの場合は定義元テーブルの該当行へジャンプする
+            if ((e.ctrlKey || e.metaKey) && storeRowIndices !== null) {
+                e.preventDefault();
+                const header = useTableStore.getState().getHeader(tableName);
+                const rows = useTableStore.getState().getRows(tableName);
+                if (header !== false && rows !== false) {
+                    const pkColIndex = header.indexOf(config.primaryKeyColumnName);
+                    if (pkColIndex !== -1 && domRowIndex < storeRowIndices.length) {
+                        const storeRowIndex = storeRowIndices[domRowIndex];
+                        if (storeRowIndex >= 0 && storeRowIndex < rows.length) {
+                            const pkValue = rows[storeRowIndex][pkColIndex];
+                            if (pkValue !== '') {
+                                useTabStore.getState().navigateToTableRow(tableName, pkValue);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+
             e.preventDefault();
             const row = domRowIndex + 1;
             const col = colIndex + 1;
@@ -352,7 +373,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
                 store.select({startRow: row, startColumn: col, endRow: row, endColumn: col}, pos);
                 store.startSelecting();
             }
-        }, [tableName]);
+        }, [tableName, storeRowIndices]);
 
         // 列ヘッダーの mousedown ハンドラ: 列全体を選択する
         const handleColumnHeaderMouseDown = useCallback((colIndex: number, e: React.MouseEvent<HTMLDivElement>) => {
@@ -765,6 +786,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             columnSchemas,
             onShowDropdown: showDropdown,
             autoFillEntries,
+            storeRowIndices,
         });
 
         /**

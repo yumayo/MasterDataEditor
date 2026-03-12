@@ -2,10 +2,12 @@ import {useEffect} from 'react';
 import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
 import {useHistoryStore, CellChangeCommand, InsertRowCommand, DeleteRowCommand, InsertColumnCommand, DeleteColumnCommand, BatchCommand, PromoteBufferRowCommand} from '../stores/history-store';
+import {useTabStore} from '../stores/tab-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
 import type {DropdownItem} from '../components/GridDropdownInput';
 import {writeFileAsync} from '../api';
 import {Csv} from '../csv';
+import {config} from '../config';
 
 /**
  * スキーマの列定義（reference プロパティの有無で FK 列を判定する）
@@ -60,6 +62,12 @@ interface UseEditorTableKeyboardOptions {
      * 1:Nミニテーブルで行追加時に親テーブルのFK値を自動埋めするために使用する。
      */
     autoFillEntries: AutoFillEntry[];
+    /**
+     * DOMの行インデックス（0始まり）からストアの行インデックスへのマッピング。
+     * null の場合は通常テーブル（ミニテーブルではない）として扱う。
+     * null でない場合はミニテーブルとして F12 定義ジャンプを有効にする。
+     */
+    storeRowIndices: number[] | null;
 }
 
 /**
@@ -196,7 +204,27 @@ function shouldFillSelection(
  *   Ctrl+S         — 保存（未実装）
  *   F2             — セル編集開始
  */
-export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown, autoFillEntries}: UseEditorTableKeyboardOptions): EditorTableKeyboardActions {
+/**
+ * ミニテーブルのフォーカス行のPK値を取得するヘルパー。
+ * PK列が存在しない・行が範囲外・値が空の場合は null を返す。
+ */
+function getMiniTableFocusPkValue(tableName: string, focusRow: number, storeRowIndices: number[]): string | null {
+    const header = useTableStore.getState().getHeader(tableName);
+    const rows = useTableStore.getState().getRows(tableName);
+    if (header === false || rows === false) return null;
+    const pkColIndex = header.indexOf(config.primaryKeyColumnName);
+    if (pkColIndex === -1) return null;
+    // focusRow は UI上1始まり → DOM行インデックスは focusRow - 1
+    const domRowIndex = focusRow - 1;
+    if (domRowIndex < 0 || domRowIndex >= storeRowIndices.length) return null;
+    const storeRowIndex = storeRowIndices[domRowIndex];
+    if (storeRowIndex < 0 || storeRowIndex >= rows.length) return null;
+    const pkValue = rows[storeRowIndex][pkColIndex];
+    if (pkValue === '') return null;
+    return pkValue;
+}
+
+export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown, autoFillEntries, storeRowIndices}: UseEditorTableKeyboardOptions): EditorTableKeyboardActions {
     useEffect(() => {
         if (!enabled) return;
 
@@ -403,6 +431,16 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
                 return;
             }
 
+            // F12: ミニテーブルの場合、フォーカス行の定義元テーブルにジャンプする
+            if (e.key === 'F12' && storeRowIndices !== null) {
+                e.preventDefault();
+                const pkValue = getMiniTableFocusPkValue(tableName, focus.row, storeRowIndices);
+                if (pkValue !== null) {
+                    useTabStore.getState().navigateToTableRow(tableName, pkValue);
+                }
+                return;
+            }
+
             // F2: フォーカスセルの現在値を初期値として編集開始する
             // バッファ行の場合は昇格してから編集開始する
             if (e.key === 'F2') {
@@ -542,7 +580,7 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [enabled, tableName, columnSchemas, onShowDropdown, autoFillEntries]);
+    }, [enabled, tableName, columnSchemas, onShowDropdown, autoFillEntries, storeRowIndices]);
 
     // コンテキストメニューなど外部から呼び出す行/列操作アクション群を返す
     return {
