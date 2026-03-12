@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {InMemoryTableStore} from "./in-memory-table-store";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {config} from "./config";
 import {readFileAsync} from "./api";
 import {Tab} from "./tab";
@@ -267,6 +267,68 @@ export class RelationsPanel {
     }
 
     /**
+     * 動的参照を解決してRelationEntryを生成する
+     *
+     * 解決ステップ:
+     *   1. 同一行から expr.filter.valueColumn の値を取得（例: reward_table_id の値 "1"）
+     *   2. フィルタテーブル（expr.filter.tableName）から expr.filter.filterColumn == 手順1の値 の行を線形検索
+     *   3. その行の expr.lookupColumn の値を取得（= 最終テーブル名、例: "chara"）
+     *   4. 最終テーブルのデータを取得し、expr.targetColumn == fkValue の行を絞り込む
+     *   5. RelationEntry として返す
+     *
+     * 解決できない場合（列が存在しない、値が空、テーブルが取得できない等）は null を返す。
+     */
+    private async resolveDynamicReferenceEntryAsync(
+        expr: DynamicReference,
+        columnLabel: string,
+        rowIndex: number,
+        editorTable: EditorTable,
+    ): Promise<RelationEntry | null> {
+        // 手順1: 同一行から動的解決の基準値となる列値を取得する（例: reward_table_id の値）
+        const valueColumnValue = editorTable.getCellValueByColumnName(rowIndex, expr.filter.valueColumn);
+        if (valueColumnValue === '') return null;
+
+        // 手順2: フィルタテーブルのデータを取得して filterColumn == valueColumnValue の行を線形検索する
+        const filterTableData = await this.resolveTableDataAsync(expr.filter.tableName);
+        if (filterTableData === null) return null;
+        const filterColIdx = filterTableData.header.indexOf(expr.filter.filterColumn);
+        if (filterColIdx === -1) return null;
+        const filterRowIdx = filterTableData.rows.findIndex(row => row[filterColIdx] === valueColumnValue);
+        if (filterRowIdx === -1) return null;
+        const filterRow = filterTableData.rows[filterRowIdx];
+
+        // 手順3: フィルタ結果の行から lookupColumn の値を取得する（= 最終テーブル名）
+        const lookupColIdx = filterTableData.header.indexOf(expr.lookupColumn);
+        if (lookupColIdx === -1) return null;
+        const targetTableName = filterRow[lookupColIdx];
+        if (targetTableName === '') return null;
+
+        // 手順4: 同一行からこの列自身の値（= 最終テーブルの targetColumn で絞り込むFK値）を取得する
+        const fkValue = editorTable.getCellValueByColumnName(rowIndex, columnLabel);
+        if (fkValue === '') return null;
+
+        // 手順5: 最終テーブルのデータを取得して targetColumn == fkValue の行に絞り込む
+        const targetTableData = await this.resolveTableDataAsync(targetTableName);
+        if (targetTableData === null) return null;
+        const targetColIdx = targetTableData.header.indexOf(expr.targetColumn);
+        if (targetColIdx === -1) return null;
+        const rows = targetTableData.rows.filter(row => row[targetColIdx] === fkValue);
+
+        return {
+            label: columnLabel,
+            relationType: 'N:1',
+            tableKey: targetTableName,
+            header: targetTableData.header,
+            rows,
+            fkColumnName: '',
+            fkValue: '',
+            // N:1はストア全行を表示するため storeRowIndices は不要。
+            // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
+            storeRowIndices: [],
+        };
+    }
+
+    /**
      * EditorTableの指定行からリレーションエントリを非同期で解決する
      * fullDataCacheが未ロードの場合は getFullDataAsync() でロードする
      */
@@ -279,33 +341,39 @@ export class RelationsPanel {
             const col = tableData.header[colIdx];
             if (!col.reference) continue;
             const expr = parseReferenceExpression(col.reference);
-            if (!isSimpleReference(expr)) continue;
 
-            // DOMの列は1始まり（行ヘッダーが0列目）なのでcolIdx+1
-            const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + 1);
-            if (fkValue === '') continue;
+            if (isSimpleReference(expr)) {
+                // DOMの列は1始まり（行ヘッダーが0列目）なのでcolIdx+1
+                const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + 1);
+                if (fkValue === '') continue;
 
-            // ストア優先・キャッシュフォールバックでテーブルデータを取得する
-            const refTableData = await this.resolveTableDataAsync(expr.tableName);
-            if (refTableData === null) continue;
-            const { header, rows: allRows } = refTableData;
+                // ストア優先・キャッシュフォールバックでテーブルデータを取得する
+                const refTableData = await this.resolveTableDataAsync(expr.tableName);
+                if (refTableData === null) continue;
+                const { header, rows: allRows } = refTableData;
 
-            // FK列値でフィルタ（PK列参照なら一意前提で1件、非PK列なら複数件）
-            const refColIdx = header.indexOf(expr.columnName);
-            const rows = refColIdx === -1 ? [] : allRows.filter(row => row[refColIdx] === fkValue);
+                // FK列値でフィルタ（PK列参照なら一意前提で1件、非PK列なら複数件）
+                const refColIdx = header.indexOf(expr.columnName);
+                const rows = refColIdx === -1 ? [] : allRows.filter(row => row[refColIdx] === fkValue);
 
-            entries.push({
-                label: col.name,
-                relationType: 'N:1',
-                tableKey: expr.tableName,
-                header,
-                rows,
-                fkColumnName: '',
-                fkValue: '',
-                // N:1はストア全行を表示するため storeRowIndices は不要。
-                // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
-                storeRowIndices: [],
-            });
+                entries.push({
+                    label: col.name,
+                    relationType: 'N:1',
+                    tableKey: expr.tableName,
+                    header,
+                    rows,
+                    fkColumnName: '',
+                    fkValue: '',
+                    // N:1はストア全行を表示するため storeRowIndices は不要。
+                    // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
+                    storeRowIndices: [],
+                });
+            } else if (isDynamicReference(expr)) {
+                const dynamicEntry = await this.resolveDynamicReferenceEntryAsync(
+                    expr, col.name, rowIndex, editorTable
+                );
+                if (dynamicEntry !== null) entries.push(dynamicEntry);
+            }
         }
 
         // 1:N（逆参照）の解決
