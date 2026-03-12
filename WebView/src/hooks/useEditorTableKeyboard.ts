@@ -1,7 +1,7 @@
 import {useEffect} from 'react';
 import {useSelectionStore} from '../stores/selection-store';
 import {useTableStore} from '../stores/table-store';
-import {useHistoryStore, CellChangeCommand, InsertRowCommand, DeleteRowCommand, InsertColumnCommand, DeleteColumnCommand, BatchCommand} from '../stores/history-store';
+import {useHistoryStore, CellChangeCommand, InsertRowCommand, DeleteRowCommand, InsertColumnCommand, DeleteColumnCommand, BatchCommand, PromoteBufferRowCommand} from '../stores/history-store';
 import type {CellPosition, CellRange} from '../types/selection-types';
 import type {DropdownItem} from '../components/GridDropdownInput';
 import {writeFileAsync} from '../api';
@@ -34,6 +34,12 @@ export interface EditorTableKeyboardActions {
     deleteSelectedColumns: () => void;
 }
 
+/** FK自動埋め込みエントリ（バッファ行昇格後にFKカラムへ自動設定する） */
+export interface AutoFillEntry {
+    columnName: string;
+    value: string;
+}
+
 /**
  * useEditorTableKeyboard フックのオプション
  */
@@ -49,6 +55,11 @@ interface UseEditorTableKeyboardOptions {
      * 非FK列の場合は通常の startEditing() を使用する。
      */
     onShowDropdown: (items: DropdownItem[], position: {top: number; left: number; width: number}, filterText: string) => void;
+    /**
+     * バッファ行昇格後に自動設定するFK値のリスト。
+     * 1:Nミニテーブルで行追加時に親テーブルのFK値を自動埋めするために使用する。
+     */
+    autoFillEntries: AutoFillEntry[];
 }
 
 /**
@@ -67,6 +78,57 @@ function getColumnCount(tableName: string): number {
 function getRowCount(tableName: string): number {
     const rows = useTableStore.getState().getRows(tableName);
     return rows === false ? 0 : rows.length;
+}
+
+/**
+ * バッファ行にフォーカスがある場合にストアへ昇格する。
+ * targetDomRowIndex がストア行数以上の場合に PromoteBufferRowCommand を実行し、
+ * autoFillEntries で指定されたFK列の値を設定する。
+ * 既にストア行の場合は何もしない。
+ * 戻り値: 昇格または既存ストア行の場合は true、ストア未登録テーブルの場合は false
+ */
+function promoteBufferRowIfNeeded(tableName: string, targetDomRowIndex: number, autoFillEntries: AutoFillEntry[]): boolean {
+    const header = useTableStore.getState().getHeader(tableName);
+    if (header === false) return false;
+    const rows = useTableStore.getState().getRows(tableName);
+    const storeRowCount = rows === false ? 0 : rows.length;
+    // 既存のストア行であれば昇格不要
+    if (targetDomRowIndex < storeRowCount) return true;
+    // バッファ行: PromoteBufferRowCommand で昇格する
+    const columnCount = header.length;
+    const {range, copyRange} = useSelectionStore.getState();
+    const singleRange: CellRange = {
+        startRow: targetDomRowIndex + 1, startColumn: range.startColumn,
+        endRow: targetDomRowIndex + 1, endColumn: range.startColumn,
+    };
+    const promoteCmd = new PromoteBufferRowCommand(tableName, targetDomRowIndex, columnCount);
+    useHistoryStore.getState().executeCommand(tableName, promoteCmd, singleRange, copyRange);
+    // autoFillEntries のFK値を昇格行に設定する（BatchCommand にまとめてUndoの粒度を保つ）
+    if (autoFillEntries.length > 0) {
+        const newRows = useTableStore.getState().getRows(tableName);
+        if (newRows !== false) {
+            const changes = autoFillEntries.flatMap(entry => {
+                const colIndex = header.indexOf(entry.columnName);
+                if (colIndex === -1) return [];
+                // 昇格で追加された行（targetDomRowIndex 以下）すべてにFK値を設定する
+                const startRowIndex = storeRowCount;
+                const endRowIndex = newRows.length - 1;
+                const result: Array<{tableName: string; rowIndex: number; colIndex: number; oldValue: string; newValue: string}> = [];
+                for (let ri = startRowIndex; ri <= endRowIndex; ri++) {
+                    const oldValue = newRows[ri][colIndex];
+                    if (oldValue !== entry.value) {
+                        result.push({tableName, rowIndex: ri, colIndex, oldValue, newValue: entry.value});
+                    }
+                }
+                return result;
+            });
+            if (changes.length > 0) {
+                const fillCmd = new CellChangeCommand(changes);
+                useHistoryStore.getState().executeCommand(tableName, fillCmd, singleRange, copyRange);
+            }
+        }
+    }
+    return true;
 }
 
 /**
@@ -134,7 +196,7 @@ function shouldFillSelection(
  *   Ctrl+S         — 保存（未実装）
  *   F2             — セル編集開始
  */
-export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown}: UseEditorTableKeyboardOptions): EditorTableKeyboardActions {
+export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onShowDropdown, autoFillEntries}: UseEditorTableKeyboardOptions): EditorTableKeyboardActions {
     useEffect(() => {
         if (!enabled) return;
 
@@ -342,16 +404,17 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
             }
 
             // F2: フォーカスセルの現在値を初期値として編集開始する
-            // バッファ行（データ行の範囲外）にフォーカスがある場合は何もしない
+            // バッファ行の場合は昇格してから編集開始する
             if (e.key === 'F2') {
                 e.preventDefault();
+                const domRowIndex = focus.row - 1;
+                if (domRowIndex < 0) return;
+                // バッファ行の場合は昇格する（既存ストア行の場合は何もしない）
+                if (!promoteBufferRowIfNeeded(tableName, domRowIndex, autoFillEntries)) return;
                 const rows = useTableStore.getState().getRows(tableName);
                 if (rows === false) return;
-                const storeRowIndex = focus.row - 1;
-                // storeRowIndex がデータ行の範囲外（バッファ行）の場合はスキップする
-                if (storeRowIndex < 0 || storeRowIndex >= rows.length) return;
                 const colIndex = focus.column - 1;
-                const currentValue = rows[storeRowIndex][colIndex];
+                const currentValue = rows[domRowIndex][colIndex];
                 // FK列の場合はドロップダウンを表示する（単純参照のみ対応。動的参照は TODO）
                 const schema = columnSchemas[colIndex];
                 if (schema && schema.reference) {
@@ -365,11 +428,14 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
             }
 
             // 印刷可能文字キー: その文字を初期値として編集開始する（Excel同様の動作）
-            // バッファ行にフォーカスがある場合も編集は許可する（新規行入力ユースケース）
+            // バッファ行の場合は昇格してから編集開始する
             if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                // 文字キーで編集開始する場合も oldValue（編集前のストア値）を保存する
+                const domRowIndex = focus.row - 1;
+                if (domRowIndex < 0) return;
+                // バッファ行の場合は昇格する（既存ストア行の場合は何もしない）
+                if (!promoteBufferRowIfNeeded(tableName, domRowIndex, autoFillEntries)) return;
                 const rows = useTableStore.getState().getRows(tableName);
-                const storeRowIndex = focus.row - 1;
+                if (rows === false) return;
                 const colIndex = focus.column - 1;
                 const schema = columnSchemas[colIndex];
                 if (schema && schema.reference) {
@@ -377,10 +443,8 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
                     // TODO: 動的参照（DynamicReference）の場合はドロップダウン非対応
                     onShowDropdown([], {top: 0, left: 0, width: 0}, e.key);
                 } else {
-                    // バッファ行やストア未登録の場合は oldValue を空文字にする
-                    const oldValue = rows !== false && storeRowIndex >= 0 && storeRowIndex < rows.length
-                        ? rows[storeRowIndex][colIndex]
-                        : '';
+                    // 昇格後は必ずストア行が存在するため rows[domRowIndex] から oldValue を取得できる
+                    const oldValue = rows[domRowIndex][colIndex];
                     useSelectionStore.getState().startEditing(e.key, oldValue);
                 }
                 return;
@@ -478,7 +542,7 @@ export function useEditorTableKeyboard({tableName, enabled, columnSchemas, onSho
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [enabled, tableName, columnSchemas, onShowDropdown]);
+    }, [enabled, tableName, columnSchemas, onShowDropdown, autoFillEntries]);
 
     // コンテキストメニューなど外部から呼び出す行/列操作アクション群を返す
     return {

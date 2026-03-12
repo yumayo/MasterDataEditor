@@ -197,6 +197,49 @@ export class DeleteColumnCommand implements Command {
 }
 
 /**
+ * バッファ空行をストアに昇格するコマンド
+ *
+ * バッファ行（ストア行数を超えるDOM行）に初めてデータが入力されたとき、
+ * ストアの末尾に空行を追加してバッファ行をストア行に昇格する。
+ * targetRowIndex まで間の行も含めて空行を追加する（飛び番入力に対応）。
+ */
+export class PromoteBufferRowCommand implements Command {
+    /** 昇格前のストア行数（undo時に何行削除するか決める基準） */
+    private readonly storeRowCountBefore: number;
+
+    constructor(
+        private readonly tableName: string,
+        /** バッファ行のインデックス（0始まり、ヘッダー行を除くDOM行インデックス） */
+        private readonly targetRowIndex: number,
+        private readonly columnCount: number
+    ) {
+        const rows = useTableStore.getState().getRows(tableName);
+        this.storeRowCountBefore = rows === false ? 0 : rows.length;
+    }
+
+    execute(): void {
+        // targetRowIndex まで（間の行も含めて）ストア末尾に空行を追加する
+        const rows = useTableStore.getState().getRows(this.tableName);
+        const currentLength = rows === false ? 0 : rows.length;
+        for (let i = currentLength; i <= this.targetRowIndex; i++) {
+            useTableStore.getState().appendRow(this.tableName, new Array(this.columnCount).fill(''));
+        }
+    }
+
+    undo(): void {
+        // storeRowCountBefore まで末尾から逆順で行を削除する
+        const rows = useTableStore.getState().getRows(this.tableName);
+        if (rows === false) return;
+        for (let i = rows.length - 1; i >= this.storeRowCountBefore; i--) {
+            useTableStore.getState().removeRow(this.tableName, i);
+        }
+    }
+
+    redo(): void { this.execute(); }
+    get description(): string { return `PromoteBufferRow at ${this.targetRowIndex}`; }
+}
+
+/**
  * 複数コマンドを1つのUndoエントリとして実行するバッチコマンド
  *
  * execute/redo: commands を順方向に実行する

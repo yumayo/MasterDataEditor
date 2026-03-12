@@ -24,6 +24,7 @@ import {GridTextField} from '../GridTextField';
 import {GridDropdownInput} from '../GridDropdownInput';
 import type {DropdownItem} from '../GridDropdownInput';
 import {useEditorTableKeyboard} from '../../hooks/useEditorTableKeyboard';
+import type {AutoFillEntry} from '../../hooks/useEditorTableKeyboard';
 import {useRelationsStore} from '../../stores/relations-store';
 import type {CellRange, CellPosition, FillDirection} from '../../types/selection-types';
 
@@ -208,6 +209,12 @@ interface EditorTableViewProps {
      * 空配列の場合はヒントを表示しない。
      */
     columnSchemas: ColumnSchema[];
+    /**
+     * バッファ行昇格後に自動設定するFK値のリスト。
+     * 1:Nミニテーブルで行追加時に親テーブルのFK値を自動埋めするために使用する。
+     * 通常テーブルの場合は空配列を渡す。
+     */
+    autoFillEntries: AutoFillEntry[];
 }
 
 /** テーブル1行分のデータ型。列名をキーとした文字列マップ + バッファフラグ */
@@ -228,7 +235,7 @@ interface RowData {
  * `React.forwardRef` でスクロールコンテナのDOMノードを外部公開する。
  */
 export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewProps>(
-    function EditorTableView({tableName, storeRowIndices, columnSchemas}, ref) {
+    function EditorTableView({tableName, storeRowIndices, columnSchemas, autoFillEntries}, ref) {
         // Zustand Store からヘッダーと行データを取得する
         const header = useStore(useTableStore, state => state.headers.get(tableName));
         const storeRows = useStore(useTableStore, state => state.rows.get(tableName));
@@ -751,6 +758,7 @@ export const EditorTableView = React.forwardRef<HTMLDivElement, EditorTableViewP
             enabled: activeTableName === tableName,
             columnSchemas,
             onShowDropdown: showDropdown,
+            autoFillEntries,
         });
 
         // 行ヘッダーの mousedown ハンドラ: 行全体を選択する
