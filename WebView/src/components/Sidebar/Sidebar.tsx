@@ -41,6 +41,20 @@ export function Sidebar({onFileClick, onReferenceRowClick, referencesPkValue, re
         onWidthChange(width);
     }, [onWidthChange]);
 
+    // Ctrl+Shift+F でSEARCHパネルに切り替えるショートカット
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+                e.preventDefault();
+                useSidebarStore.getState().setActivePanel('search');
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
     // document レベルのmousemove/mouseupリスナーをuseEffectで管理する
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
