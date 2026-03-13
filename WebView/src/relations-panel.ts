@@ -218,6 +218,9 @@ export class RelationsPanel {
      * currentEditorTableをfalseにする前に呼ぶことで安全に実行される。
      */
     disconnectEditorTable(): void {
+        // currentRequestId をインクリメントして、進行中の showForTableRowAsync / renderAsync を無効化する。
+        // これにより既存の requestId !== this.currentRequestId ガードが破棄後の描画を防止する。
+        this.currentRequestId++;
         this.destroyMiniEditorTables();
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.relationsPanel = false;
@@ -813,8 +816,9 @@ export class RelationsPanel {
         // PK列でターゲット行を特定する
         const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
         if (pkColIdx === -1) return entries;
-        const targetRow = storeRows.find(row => row[pkColIdx] === pkValue);
-        if (!targetRow) return entries;
+        const targetRowIdx = storeRows.findIndex(row => row[pkColIdx] === pkValue);
+        if (targetRowIdx === -1) return entries;
+        const targetRow = storeRows[targetRowIdx];
 
         // N:1（FK参照先）の解決
         for (const col of header) {
