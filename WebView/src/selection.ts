@@ -193,7 +193,6 @@ export class Selection {
      * 同じ行を再クリックした場合も RelationsPanel に通知するため lastNotifiedRow をリセットする
      */
     selectRow(row: number): void {
-        console.log('[selectRow] row:', row);
         if (row < 1) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();

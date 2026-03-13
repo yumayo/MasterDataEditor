@@ -918,10 +918,14 @@ export class EditorTable {
     /** 行選択が変化したときにRelationsPanelへ通知する（Selectionから呼ばれる） */
     notifyRowSelectionChanged(rowIndex: number): void {
         if (this.relationsPanel === false) return;
-        // ミニEditorTableはRelationsPanelへの通知を行わない。
-        // ミニテーブルのセルをクリックしたとき行選択変化がRelationsPanelに通知されると
-        // updateForRowAsync → destroyMiniEditorTables で自分自身が破棄されてしまうため。
-        if (this.isMiniTable) return;
+        if (this.isMiniTable) {
+            // ミニテーブルの場合: 同一RPのupdateForRow（自己破棄）には通知しない。
+            // 代わりに右隣ペインのRPをこの行のPK値で更新する通知チェーンを呼ぶ。
+            const pkValue = this.getRowPkValue(rowIndex);
+            if (pkValue === '') return;
+            this.relationsPanel.notifyMiniTableRowSelectionChanged(this.tableName, pkValue);
+            return;
+        }
         this.relationsPanel.updateForRow(rowIndex);
     }
 

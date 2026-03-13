@@ -335,4 +335,63 @@ test.describe('ペインスタックナビゲーション', () => {
 			.filter({ hasText: 'world_id' });
 		await expect(areaWorldIdHeader).toBeVisible();
 	});
+
+	// ---------------------------------------------------------------------------
+	// テスト8: 左側RPのミニテーブルで別の行をクリックすると右側RPが更新されること
+	//
+	// シナリオ:
+	//   world の row0（id=1, forest）を選択 → RP1 に area の1:N（forest_north, forest_south）表示
+	//   RP1 の area ミニテーブルで forest_north（area.id=1）をCtrl+Click → RP2 追加
+	//   （RP2 には area.id=1 を参照する enemy: slime, dragon が 2 rows で表示される）
+	//   viewIndex=1 の状態で 左スロット=RP1, 右スロット=RP2
+	//   RP1 の area ミニテーブルで forest_south（area.id=2）の行を通常クリック
+	//   → RP2 が area.id=2 の参照関係に更新されること
+	//   （area.id=2 を参照する enemy は 0 件のため、enemy セクション自体が非表示になる）
+	//   （代わりに area.world_id=1 の N:1 参照として world セクションのみ表示される）
+	// ---------------------------------------------------------------------------
+	test('左側RPのミニテーブルで別の行をクリックすると右側RPが更新されること', async ({ page }) => {
+		// world テーブルを開いて row0 を選択する（RP1 に area の1:N ミニテーブル表示）
+		const mainTable = await openTableAsync(page, 'world');
+		await selectRowAsync(mainTable, 0);
+		await waitForRelationsPanelContentAsync(page);
+
+		// RP1 内の area ミニテーブルが右スロットに表示されるまで待機する
+		const rightSlotMiniTable = page.locator('.editor-right-slot .relations-panel .editor-table').first();
+		await expect(rightSlotMiniTable).toBeVisible();
+
+		// RP1 の area ミニテーブルで forest_north（area.id=1, 1行目）のデータセルを Ctrl+Click → RP2 追加
+		// Ctrl+Click は createCell の mousedown ハンドラ（navigateToDefinition）で処理されるため、
+		// 行ヘッダーではなくデータセル（editor-table-cell かつ非ヘッダー）をクリックする
+		const firstRowDataCell = rightSlotMiniTable
+			.locator('.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)')
+			.first();
+		await expect(firstRowDataCell).toBeVisible();
+		await firstRowDataCell.click({ modifiers: ['Control'] });
+
+		// RP2 が追加されてインジケーターが "2 / 3" になることを確認する
+		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');
+
+		// この時点で viewIndex=1: 左スロット=RP1, 右スロット=RP2
+		// RP2 には area.id=1 を参照する enemy（slime, dragon）が 2 rows で表示される
+		const rp2EnemySection = page.locator('.editor-right-slot .relations-panel .relations-table-section')
+			.filter({ has: page.locator('.relations-table-title', { hasText: 'enemy' }) });
+		const rp2EnemyRowCount = rp2EnemySection.locator('.relations-table-row-count');
+		await expect(rp2EnemyRowCount).toHaveText('2 rows');
+
+		// 左スロット（RP1）の area ミニテーブルで forest_south（area.id=2, 2行目）の行ヘッダーをクリックする
+		// 行ヘッダークリックは selectRow を呼んで行選択を変更する
+		const leftSlotMiniTable = page.locator('.editor-left-slot .relations-panel .editor-table').first();
+		const secondRowHeader = leftSlotMiniTable.locator('.editor-table-row-header').nth(1);
+		await expect(secondRowHeader).toBeVisible();
+		await secondRowHeader.click();
+
+		// 右スロット（RP2）が area.id=2 の参照関係に更新されること
+		// area.id=2 を参照する enemy は 0 件のため、enemy セクション自体が非表示になる（0件エントリは表示されない）
+		// 代わりに area.world_id=1 の N:1 参照（world テーブル）のみが表示される
+		await expect(rp2EnemySection).not.toBeVisible();
+		// world セクション（N:1）が表示されていることで RP2 が再描画されたことを確認する
+		const rp2WorldSection = page.locator('.editor-right-slot .relations-panel .relations-table-section')
+			.filter({ has: page.locator('.relations-table-title', { hasText: 'world' }) });
+		await expect(rp2WorldSection).toBeVisible();
+	});
 });

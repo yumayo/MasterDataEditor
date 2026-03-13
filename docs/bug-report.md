@@ -1014,3 +1014,19 @@ RelationsPanelのミニテーブルでCtrl+Click/F12した際、従来は左ペ�
 4. `registerXxx()` / `unregisterXxx()` の対称性を必ず確認する。生成と破棄のライフサイクルが異なるオブジェクト（通常RP vs ペインスタックRP）では特に注意
 
 ---
+
+## 69. [0d569c9] — 左側RPのミニテーブル行選択で右側RPを動的更新する機能を追加
+
+### 不具合原因名
+機能追加（不具合ではない）
+
+### なぜそうなったのか
+ペインスタック実装（#68）で左側RPのミニテーブルで行を選択しても右側RPが更新されなかった。通知チェーン（ミニテーブル行選択 → 含むRP → Tab → 右側RP）が未実装だったため。レビューで以下の設計不備が発見された:
+1. `showForTableRowAsync` のテーブル切替時に `baseTableName` を `false` にセットするタイミングが `await` の後だったため、非同期ギャップで `disconnectEditorTable` が割り込むと旧テーブルの二重 unregister と新テーブルの leak が発生する
+2. `tab.ts` の `updateNextPaneForMiniTableRow` で配列範囲外アクセスに対し `!nextEntry` で `undefined` を暗黙評価していた（CLAUDE.md ガイドライン違反）
+
+### どうしたら今後は再発しないか
+1. `await` ポイントの前後でフィールドの状態遷移を設計する際、「await 中に割り込まれた場合、各フィールドの値は何か」を必ず検証する。特に `register/unregister` の対称操作では、`await` 前に一時変数に退避し、フィールドを即座にニュートラル状態（`false`）にしてから非同期操作を開始する
+2. 配列の添字アクセスでは `undefined` 判定ではなく `index >= array.length` の境界チェックを使用する
+
+---

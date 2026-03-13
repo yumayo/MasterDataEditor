@@ -733,6 +733,17 @@ export class RelationsPanel {
     }
 
     /**
+     * ミニEditorTableの行選択変化をTabに転送する（EditorTableから呼ばれる）
+     * ペインスタックにおいてこのRPの右隣ペインがRelationsPanelであれば、
+     * そのRPをtableName/pkValueで更新する。
+     * Tab側でペインスタックの位置を判断するため、このRP自身をキーとして渡す。
+     */
+    notifyMiniTableRowSelectionChanged(tableName: string, pkValue: string): void {
+        if (this.tab === false) return;
+        this.tab.updateNextPaneForMiniTableRow(this, tableName, pkValue);
+    }
+
+    /**
      * 指定テーブル名に対応するDirtyマーク要素を更新する
      * History.notifyChange() からストア経由で呼ばれる。
      * panelElement内の全 .relations-table-section を走査して、
@@ -774,15 +785,33 @@ export class RelationsPanel {
 
     /**
      * 指定テーブルの指定PK値に対応する参照関係を表示する（ペインスタック上のRP向け）
-     * EditorTable に依存せず、ストアとスキーマから直接参照を解決する
+     * EditorTable に依存せず、ストアとスキーマから直接参照を解決する。
+     *
+     * 同一テーブルへの再呼び出し（行選択変化）では registerTableAsync をスキップして
+     * refCountリークを防止する。別テーブルへ切り替わる場合は旧テーブルを先に unregister する。
      */
     async showForTableRowAsync(tableName: string, pkValue: string): Promise<void> {
         const requestId = ++this.currentRequestId;
 
-        // テーブルデータをストアに登録（未登録の場合はCSVから読み込む）
-        await this.store.registerTableAsync(tableName);
-        // ペインスタックから破棄される際（disconnectEditorTable 経由）に unregisterTable を呼ぶため記録する
-        this.baseTableName = tableName;
+        // テーブルが切り替わる場合のみ register/unregister を行う（refCountリーク防止）
+        if (this.baseTableName !== tableName) {
+            const oldTable = this.baseTableName;
+            // baseTableName を先に false にしておくことで、await 中に disconnectEditorTable が
+            // 割り込んでも旧テーブルを二重 unregister しないよう防御する
+            this.baseTableName = false;
+            if (oldTable !== false) {
+                this.store.unregisterTable(oldTable);
+            }
+            await this.store.registerTableAsync(tableName);
+            // await 中に disconnectEditorTable / 別リクエストが割り込んだ場合は新テーブルを
+            // リークさせず unregister して返る
+            if (requestId !== this.currentRequestId) {
+                this.store.unregisterTable(tableName);
+                return;
+            }
+            // ペインスタックから破棄される際（disconnectEditorTable 経由）に unregisterTable を呼ぶため記録する
+            this.baseTableName = tableName;
+        }
 
         const entries = await this.resolveEntriesForTableRowAsync(tableName, pkValue);
         if (requestId !== this.currentRequestId) return;

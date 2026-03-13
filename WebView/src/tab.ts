@@ -569,6 +569,37 @@ export class Tab {
     }
 
     /**
+     * ミニテーブルの行選択変化を受けて、右隣ペインのRPを更新する
+     * RelationsPanel.notifyMiniTableRowSelectionChanged から呼ばれる。
+     *
+     * 処理:
+     *   1. paneStack から sourceRP の位置を検索する
+     *   2. 右隣エントリ（sourceRpIndex + 1）がRelationsPanelであれば showForTableRowAsync を呼ぶ
+     *   3. 右隣がEditorTable（panel === false）または存在しない場合は何もしない
+     *
+     * ペインスタックの左スロット側（viewIndex）に表示中のRPのミニテーブルが操作された場合のみ
+     * 右スロット側（viewIndex + 1）のRPを更新する想定だが、Tab側ではスタック全体を走査する。
+     * これにより将来的に複数段階の連動も自然に対応できる。
+     */
+    updateNextPaneForMiniTableRow(sourceRP: RelationsPanel, tableName: string, pkValue: string): void {
+        // sourceRP がスタックのどこにいるかを探す
+        const sourceRpIndex = this.paneStack.findIndex(entry => entry.panel === sourceRP);
+        if (sourceRpIndex === -1) return;
+
+        // 右隣エントリを取得する（境界チェックで undefined 暗黙評価を防ぐ）
+        if (sourceRpIndex + 1 >= this.paneStack.length) return;
+        const nextEntry = this.paneStack[sourceRpIndex + 1];
+
+        // 右隣がRelationsPanelでない場合（EditorTable = panel === false）は何もしない
+        if (nextEntry.panel === false) return;
+
+        // 右隣RPをtableName/pkValueで更新する（非同期レースコンディションはshowForTableRowAsyncのcurrentRequestIdでガード済み）
+        nextEntry.panel.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
+            console.error('[Tab] updateNextPaneForMiniTableRow: showForTableRowAsync failed:', String(err));
+        });
+    }
+
+    /**
      * 新しいタブ状態を作成
      */
     private createTabState(name: string, tabButton: TabButton): void {
