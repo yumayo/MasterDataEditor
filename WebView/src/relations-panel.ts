@@ -8,6 +8,7 @@ import {Tab} from "./tab";
 import {FillController} from "./fill-controller";
 import {AreaResizer} from "./area-resizer";
 import {History} from "./history";
+import {ReverseReferenceResolver, ReverseReferenceRow} from "./reverse-reference-resolver";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -73,6 +74,8 @@ export class RelationsPanel {
     private miniHistories: History[];
     /** 現在表示中のミニEditorTableのテーブル名一覧（破棄時にstoreのunregisterTableを呼ぶ） */
     private miniTableNames: string[];
+    /** showForTableRowAsync() で登録したベーステーブル名。ペインスタック破棄時に unregisterTable するため記録する */
+    private baseTableName: string | false;
 
     constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
         this.referenceDataCache = referenceDataCache;
@@ -87,6 +90,7 @@ export class RelationsPanel {
         this.miniAreaResizers = [];
         this.miniHistories = [];
         this.miniTableNames = [];
+        this.baseTableName = false;
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -115,11 +119,17 @@ export class RelationsPanel {
             document.body.style.userSelect = 'none';
 
             const onMouseMove = (moveEvent: MouseEvent) => {
-                // appendTo() で保存した親要素を参照する。mousedown はappendTo()後にのみ発生するため必ず存在する
-                if (this.parentElement === false) throw new Error('[RelationsPanel] onMouseMove: parentElement が未設定です（appendTo() が呼ばれていません）');
-                const parentRight = this.parentElement.getBoundingClientRect().right;
-                const newWidth = parentRight - moveEvent.clientX;
-                this.panelElement.style.flex = `0 0 ${newWidth}px`;
+                // panelElement の親要素（rightSlot）をDOMから取得する。
+                // appendTo() 経由でも setVisiblePanes() 経由でも rightSlot に追加されるため、
+                // appendTo() が呼ばれていないペインスタック上のRPでも正しく動作する。
+                const parent = this.panelElement.parentElement;
+                if (parent === null) throw new Error('[RelationsPanel] onMouseMove: panelElement が DOM に追加されていません');
+                // parent（rightSlot）の親要素（contentArea）の右端を基準にドラッグ位置から幅を算出する
+                const grandParent = parent.parentElement;
+                if (grandParent === null) throw new Error('[RelationsPanel] onMouseMove: panelElement の祖父要素が存在しません');
+                const containerRight = grandParent.getBoundingClientRect().right;
+                const newWidth = containerRight - moveEvent.clientX;
+                parent.style.flex = `0 0 ${newWidth}px`;
             };
 
             const onMouseUp = () => {
@@ -138,7 +148,9 @@ export class RelationsPanel {
 
     /**
      * 親要素にパネルを追加する
-     * リサイズハンドルのドラッグ計算のため親要素を保存する
+     * 通常のRelationsPanelはここで親要素に追加する。
+     * ペインスタック上のRPはsetVisiblePanes()で直接parentElement.appendChildされるため呼ばれない。
+     * リサイズハンドルはpanelElement.parentElementからDOMを辿るため、どちらでも正しく動作する。
      */
     appendTo(parent: HTMLElement): void {
         this.parentElement = parent;
@@ -212,6 +224,12 @@ export class RelationsPanel {
         }
         this.currentEditorTable = false;
         this.currentEntries = [];
+        // showForTableRowAsync で登録したベーステーブルを解除する（ペインスタックRP用）
+        // destroyMiniEditorTables() がミニテーブル分の unregister を先に行った後にベーステーブルを解除する
+        if (this.baseTableName !== false) {
+            this.store.unregisterTable(this.baseTableName);
+            this.baseTableName = false;
+        }
         this.renderMessage('行を選択してください');
     }
 
@@ -397,45 +415,10 @@ export class RelationsPanel {
                 if (childTableData === null) continue;
                 const { header, rows: allRows } = childTableData;
 
-                // 1:Nのフィルタリング: ストアの最新データから直接フィルタする。
-                // reverseEntry.rows（タブ初期化時のスナップショット）を使うと、
-                // バッファ空行への追加など後からストアに追加された行が除外されるバグが発生する。
-                //
-                // 単純参照（childColumnName が空でない）:
-                //   子テーブルのFK列（childColumnName）の値が columnValue と一致する行を収集する。
-                //   これにより常に最新のストアデータが反映される。
-                //
-                // 動的参照（childColumnName が空文字列）:
-                //   FK列名が特定できないため、reverseEntry.rows のPKセットでフィルタする
-                //   （従来の動作を維持）。
-                const pkColIdx = header.indexOf(config.primaryKeyColumnName);
-                let filteredRows: string[][];
-                let filteredStoreRowIndices: number[];
-                if (reverseEntry.childColumnName !== '') {
-                    // 単純参照: ストアのFK列値で直接フィルタ（常に最新データを反映）
-                    const fkColIdx = header.indexOf(reverseEntry.childColumnName);
-                    if (fkColIdx !== -1) {
-                        const filteredWithIndices = allRows
-                            .map((r, i) => ({ row: r, storeIndex: i }))
-                            .filter(({ row }) => row[fkColIdx] === columnValue);
-                        filteredRows = filteredWithIndices.map(({ row }) => row);
-                        filteredStoreRowIndices = filteredWithIndices.map(({ storeIndex }) => storeIndex);
-                    } else {
-                        filteredRows = [];
-                        filteredStoreRowIndices = [];
-                    }
-                } else if (pkColIdx !== -1) {
-                    // 動的参照: reverseEntry.rows のPKセットでフィルタ（従来通り）
-                    const pkSet = new Set(reverseEntry.rows.map(r => r.pkValue));
-                    const filteredWithIndices = allRows
-                        .map((r, i) => ({ row: r, storeIndex: i }))
-                        .filter(({ row }) => pkSet.has(row[pkColIdx]));
-                    filteredRows = filteredWithIndices.map(({ row }) => row);
-                    filteredStoreRowIndices = filteredWithIndices.map(({ storeIndex }) => storeIndex);
-                } else {
-                    filteredRows = [];
-                    filteredStoreRowIndices = [];
-                }
+                // 1:Nのフィルタリングは共通メソッドに委譲する
+                const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
+                    allRows, header, reverseEntry.childColumnName, columnValue, reverseEntry.rows,
+                );
 
                 const fkColName = reverseEntry.childColumnName;
 
@@ -455,6 +438,44 @@ export class RelationsPanel {
         }
 
         return entries;
+    }
+
+    /**
+     * 1:N逆参照のフィルタリング共通処理。
+     * - childColumnName が空でない場合: FK列値が filterValue と一致する行を収集する（単純参照）。
+     * - childColumnName が空の場合: pkRows のPKセットで allRows を検索する（動的参照）。
+     * - 対象列が見つからない場合は空配列を返す。
+     */
+    private filterRowsByReverseEntry(
+        allRows: string[][],
+        header: string[],
+        childColumnName: string,
+        filterValue: string,
+        pkRows: ReverseReferenceRow[],
+    ): { filteredRows: string[][]; filteredStoreRowIndices: number[] } {
+        if (childColumnName !== '') {
+            // 単純参照: FK列値で直接フィルタ（常に最新のストアデータを反映する）
+            const fkColIdx = header.indexOf(childColumnName);
+            if (fkColIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
+            const filteredWithIndices = allRows
+                .map((r, i) => ({ row: r, storeIndex: i }))
+                .filter(({ row }) => row[fkColIdx] === filterValue);
+            return {
+                filteredRows: filteredWithIndices.map(({ row }) => row),
+                filteredStoreRowIndices: filteredWithIndices.map(({ storeIndex }) => storeIndex),
+            };
+        }
+        // 動的参照: FK列名が特定できないため reverseEntry.rows のPKセットでフィルタする
+        const pkColIdx = header.indexOf(config.primaryKeyColumnName);
+        if (pkColIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
+        const pkSet = new Set(pkRows.map(r => r.pkValue));
+        const filteredWithIndices = allRows
+            .map((r, i) => ({ row: r, storeIndex: i }))
+            .filter(({ row }) => pkSet.has(row[pkColIdx]));
+        return {
+            filteredRows: filteredWithIndices.map(({ row }) => row),
+            filteredStoreRowIndices: filteredWithIndices.map(({ storeIndex }) => storeIndex),
+        };
     }
 
     // =========================================================================
@@ -730,12 +751,134 @@ export class RelationsPanel {
     }
 
     /**
-     * 定義へジャンプ: 参照先テーブルの該当行に左ペインのタブで遷移する
+     * パネルのDOM要素を返す（Tabのペインスタック管理で使用）
+     * getter パターン（get xxx()）は禁止のため通常メソッドとして定義する
+     */
+    getPanelElement(): HTMLElement {
+        return this.panelElement;
+    }
+
+    /**
+     * 定義へジャンプ: ペインスタックに新しい RelationsPanel を追加して参照データを表示する
      * EditorTable.navigateToDefinition() から呼ばれる（ミニテーブル専用）。
+     * 旧動作（Tab.navigateToTableRow で左ペインのタブを開く）から変更:
+     *   新動作: Tab.pushRelationsPanel でペインスタックに追加する
      */
     navigateToDefinition(tableName: string, pkValue: string): void {
         if (this.tab === false) throw new Error('[RelationsPanel] navigateToDefinition: tab が未接続です');
-        this.tab.navigateToTableRow(tableName, pkValue);
+        this.tab.pushRelationsPanel(tableName, pkValue);
+    }
+
+    /**
+     * 指定テーブルの指定PK値に対応する参照関係を表示する（ペインスタック上のRP向け）
+     * EditorTable に依存せず、ストアとスキーマから直接参照を解決する
+     */
+    async showForTableRowAsync(tableName: string, pkValue: string): Promise<void> {
+        const requestId = ++this.currentRequestId;
+
+        // テーブルデータをストアに登録（未登録の場合はCSVから読み込む）
+        await this.store.registerTableAsync(tableName);
+        // ペインスタックから破棄される際（disconnectEditorTable 経由）に unregisterTable を呼ぶため記録する
+        this.baseTableName = tableName;
+
+        const entries = await this.resolveEntriesForTableRowAsync(tableName, pkValue);
+        if (requestId !== this.currentRequestId) return;
+
+        if (entries.length === 0) {
+            this.currentEntries = [];
+            this.renderMessage('参照なし');
+            return;
+        }
+        this.currentEntries = entries;
+        await this.renderAsync();
+    }
+
+    /**
+     * テーブル名とPK値からリレーションエントリを解決する（EditorTable不要版）
+     * ペインスタック上のRPが使用する。ストアとスキーマから直接解決する。
+     */
+    private async resolveEntriesForTableRowAsync(tableName: string, pkValue: string): Promise<RelationEntry[]> {
+        const entries: RelationEntry[] = [];
+
+        // スキーマを読み込む
+        const schemaText = await readFileAsync(`schema/${tableName}.json`);
+        const schemaJson: Record<string, unknown> = JSON.parse(schemaText);
+        const header = schemaJson.header as Array<{name: string; type: string; reference?: string}>;
+
+        // ストアからテーブルデータを取得する
+        const storeHeader = this.store.getHeader(tableName);
+        const storeRows = this.store.getRows(tableName);
+        if (storeHeader === false || storeRows === false) return entries;
+
+        // PK列でターゲット行を特定する
+        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+        if (pkColIdx === -1) return entries;
+        const targetRow = storeRows.find(row => row[pkColIdx] === pkValue);
+        if (!targetRow) return entries;
+
+        // N:1（FK参照先）の解決
+        for (const col of header) {
+            if (!col.reference) continue;
+            const expr = parseReferenceExpression(col.reference);
+            if (!isSimpleReference(expr)) continue; // 動的参照は現在スキップ（シンプル参照のみ対応）
+
+            const fkColIdx = storeHeader.indexOf(col.name);
+            if (fkColIdx === -1) continue;
+            const fkValue = targetRow[fkColIdx];
+            if (fkValue === '') continue;
+
+            const refTableData = await this.resolveTableDataAsync(expr.tableName);
+            if (refTableData === null) continue;
+
+            const refColIdx = refTableData.header.indexOf(expr.columnName);
+            const rows = refColIdx === -1 ? [] : refTableData.rows.filter(row => row[refColIdx] === fkValue);
+
+            entries.push({
+                label: col.name,
+                relationType: 'N:1',
+                tableKey: expr.tableName,
+                header: refTableData.header,
+                rows,
+                fkColumnName: '',
+                fkValue: '',
+                storeRowIndices: [],
+            });
+        }
+
+        // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
+        const resolver = new ReverseReferenceResolver(this.store);
+        const reverseMap = await resolver.resolveAsync(tableName);
+
+        // PK値で逆参照エントリを取得する
+        const reverseEntriesForPk = reverseMap.get(pkValue);
+        if (reverseEntriesForPk) {
+            for (const reverseEntry of reverseEntriesForPk) {
+                // parentColumnName が PK列名と一致するエントリのみ処理する（非PK列参照の誤適用防止）
+                if (reverseEntry.parentColumnName !== config.primaryKeyColumnName) continue;
+
+                const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
+                if (childTableData === null) continue;
+                const { header: childHeader, rows: allRows } = childTableData;
+
+                // 1:Nのフィルタリングは共通メソッドに委譲する
+                const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
+                    allRows, childHeader, reverseEntry.childColumnName, pkValue, reverseEntry.rows,
+                );
+
+                entries.push({
+                    label: reverseEntry.childTableName,
+                    relationType: '1:N',
+                    tableKey: reverseEntry.childTableName,
+                    header: childHeader,
+                    rows: filteredRows,
+                    fkColumnName: reverseEntry.childColumnName,
+                    fkValue: pkValue,
+                    storeRowIndices: filteredStoreRowIndices,
+                });
+            }
+        }
+
+        return entries;
     }
 
 }

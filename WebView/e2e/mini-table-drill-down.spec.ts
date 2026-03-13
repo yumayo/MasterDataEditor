@@ -7,11 +7,11 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //
 // 背景:
 //   EditorTable.navigateToDefinition() はミニテーブル（RelationsPanel内）で
-//   Ctrl+クリック/F12した場合、ミニテーブル自身の tableName を左ペインのタブとして開く。
+//   Ctrl+クリック/F12した場合、ペインスタックに新しい RelationsPanel を追加する。
 //
 // 期待動作:
-//   - ミニテーブルのどのセルでCtrl+クリック/F12しても: ミニテーブルの tableName で
-//     左ペインのタブを開く（Tab.navigateToTableRow(miniTable.tableName, pkValue) が呼ばれる）
+//   - ミニテーブルのどのセルでCtrl+クリック/F12しても: ペインスタックに新しい RP が追加される
+//     （Tab.pushRelationsPanel が呼ばれ、右スロットに新しい RP が表示される）
 //   - 通常テーブル（左ペイン）でのCtrl+クリック/F12: FK参照先テーブルへジャンプ（既存動作を維持）
 //
 // テーブル構成（N:1参照ミニテーブルのシナリオ）:
@@ -19,7 +19,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   quest: id, name, enemy_id（questテーブル。enemy.id をFKとして参照）
 //
 //   questを開いてrow0選択 → RelationsPanelにenemyのN:1ミニテーブルが表示される。
-//   enemyミニテーブルの ja 列（参照なし）をCtrl+クリック → enemyタブが左ペインで開かれる。
+//   enemyミニテーブルの ja 列（参照なし）をCtrl+クリック → ペインスタックに RP が追加される。
 // =============================================================================
 
 /**
@@ -103,10 +103,10 @@ const MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR = [
 ].join('');
 
 // =============================================================================
-// テストスイート1: ミニテーブルのCtrl+クリック/F12でミニテーブル自身のテーブルが開かれること
+// テストスイート1: ミニテーブルのCtrl+クリック/F12でペインスタックが追加されること
 // =============================================================================
 
-test.describe('ミニテーブルのCtrl+クリックでミニテーブル自身のテーブルが開かれること', () => {
+test.describe('ミニテーブルのCtrl+クリックでペインスタックが追加されること', () => {
 	test.beforeEach(async ({ page }) => {
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
@@ -114,7 +114,7 @@ test.describe('ミニテーブルのCtrl+クリックでミニテーブル自身
 	});
 
 	test(
-		'enemyミニテーブルの非参照列（ja列）をCtrl+クリックするとenemyタブが左ペインで開かれること',
+		'enemyミニテーブルの非参照列（ja列）をCtrl+クリックするとペインスタックに RP が追加されること',
 		async ({ page }) => {
 			// quest テーブルを開いて1行目を選択する
 			const mainTable = await openTableAsync(page, 'quest');
@@ -131,17 +131,19 @@ test.describe('ミニテーブルのCtrl+クリックでミニテーブル自身
 			const visibleCell = page.locator(MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
 
-			// Ctrl+クリックで定義ジャンプを実行する
+			// Ctrl+クリックでペインスタックへの追加を実行する
 			await visibleCell.click({ modifiers: ['Control'] });
 
-			// enemy タブが左ペインのアクティブタブになること
-			const activeTab = page.locator('.tab-button-active');
-			await expect(activeTab).toHaveText('enemy');
+			// ナビゲーションバーが表示されること（ペインが3つになった）
+			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+			// 右スロットに新しい RelationsPanel が表示されること
+			await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 		},
 	);
 
 	test(
-		'enemyミニテーブルのセルにフォーカスしてF12を押すとenemyタブが左ペインで開かれること',
+		'enemyミニテーブルのセルにフォーカスしてF12を押すとペインスタックに RP が追加されること',
 		async ({ page }) => {
 			const mainTable = await openTableAsync(page, 'quest');
 			await selectRowAsync(mainTable, 0);
@@ -151,16 +153,19 @@ test.describe('ミニテーブルのCtrl+クリックでミニテーブル自身
 			await expect(visibleCell).toBeVisible();
 			// セルをクリックしてミニテーブルにフォーカスを移す（Ctrlなし）
 			await visibleCell.click();
-			// F12で定義ジャンプ
+			// F12でペインスタックへの追加を実行する
 			await page.keyboard.press('F12');
 
-			const activeTab = page.locator('.tab-button-active');
-			await expect(activeTab).toHaveText('enemy');
+			// ナビゲーションバーが表示されること（ペインが3つになった）
+			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+			// 右スロットに新しい RelationsPanel が表示されること
+			await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 		},
 	);
 
 	test(
-		'enemyミニテーブルのセルをCtrl+クリックすると左ペインにenemyテーブルが表示されること',
+		'enemyミニテーブルのセルをCtrl+クリックすると右スロットに新しい RP が表示されること',
 		async ({ page }) => {
 			const mainTable = await openTableAsync(page, 'quest');
 			await selectRowAsync(mainTable, 0);
@@ -174,23 +179,21 @@ test.describe('ミニテーブルのCtrl+クリックでミニテーブル自身
 
 			await visibleCell.click({ modifiers: ['Control'] });
 
-			// 左ペインのアクティブタブがenemyになり、enemyテーブルが表示されること
+			// ナビゲーションバーが表示されること（ペインが3つになった）
+			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+			// 左スロットに quest テーブル（アクティブタブは quest のまま）が表示されること
 			const activeTab = page.locator('.tab-button-active');
-			await expect(activeTab).toHaveText('enemy');
-			// enemy テーブルのヘッダー（ja列）が左ペインに表示されることを確認する
-			// enemy には id・ja の2列があり、quest の id・name・enemy_id とは列構成が異なる
-			const enemyJaHeader = page.locator('.editor-left-pane .editor-table .editor-table-column-header')
-				.filter({ hasText: 'ja' });
-			await expect(enemyJaHeader).toBeVisible();
+			await expect(activeTab).toHaveText('quest');
 		},
 	);
 });
 
 // =============================================================================
-// テストスイート2: ミニテーブルの参照列でないセルでもCtrl+クリックでジャンプすること
+// テストスイート2: ミニテーブルの参照列でないセルでもCtrl+クリックでペインスタックが追加されること
 // =============================================================================
 
-test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリックでジャンプすること', () => {
+test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリックでペインスタックが追加されること', () => {
 	test.beforeEach(async ({ page }) => {
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
@@ -198,7 +201,7 @@ test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリ
 	});
 
 	test(
-		'参照列がひとつもないenemyミニテーブルの任意のセルでCtrl+クリックするとジャンプが動作すること',
+		'参照列がひとつもないenemyミニテーブルの任意のセルでCtrl+クリックするとペインスタックが追加されること',
 		async ({ page }) => {
 			// quest を開いて row0 を選択することで enemy ミニテーブルを表示させる
 			const mainTable = await openTableAsync(page, 'quest');
@@ -208,16 +211,14 @@ test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリ
 			const visibleCell = page.locator(MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
 
-			// Ctrl+クリック前のアクティブタブが quest であることを確認する
-			const activeTab = page.locator('.tab-button-active');
-			await expect(activeTab).toHaveText('quest');
+			// Ctrl+クリック前はナビゲーションバーが非表示であること
+			await expect(page.locator('.editor-navigation-bar')).toBeHidden();
 
 			// 参照なし列でCtrl+クリック
 			await visibleCell.click({ modifiers: ['Control'] });
 
-			// アクティブタブが enemy に変わること（参照なし列でもジャンプが起きる）
-			await expect(activeTab).toHaveText('enemy');
+			// ナビゲーションバーが表示されること（ペインスタックが追加された）
+			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 		},
 	);
 });
-

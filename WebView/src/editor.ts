@@ -1,4 +1,5 @@
 import {RelationsPanel} from "./relations-panel";
+import {Tab} from "./tab";
 
 export class Editor {
 
@@ -10,8 +11,60 @@ export class Editor {
     /** 左ペインと右ペインを横並びに配置するコンテンツ領域 */
     private readonly contentArea: HTMLElement;
 
+    /** 左スロット（表示中の左ペインを格納するラッパー） */
+    private readonly leftSlot: HTMLElement;
+
+    /** 右スロット（表示中のRelationsPanelを格納するラッパー） */
+    private readonly rightSlot: HTMLElement;
+
+    /** ナビゲーションバー（ペインが3つ以上のとき表示） */
+    private readonly navigationBar: HTMLElement;
+
+    /** ←ボタン */
+    private readonly navLeftButton: HTMLButtonElement;
+
+    /** →ボタン */
+    private readonly navRightButton: HTMLButtonElement;
+
+    /** "2 / 3" のようなページインジケーター */
+    private readonly navIndicator: HTMLElement;
+
+    /** Tab への参照。connectTab() で設定される（ボタンクリック時にナビゲーション呼び出し用） */
+    private tab: Tab | false;
+
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
+        this.tab = false;
+
+        // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
+        const navigationBar = document.createElement('div');
+        navigationBar.classList.add('editor-navigation-bar');
+        navigationBar.style.display = 'none';
+        editorElement.appendChild(navigationBar);
+        this.navigationBar = navigationBar;
+
+        const navLeft = document.createElement('button');
+        navLeft.classList.add('nav-left');
+        navLeft.textContent = '←';
+        navLeft.addEventListener('click', () => {
+            if (this.tab !== false) this.tab.navigateLeft();
+        });
+        navigationBar.appendChild(navLeft);
+        this.navLeftButton = navLeft;
+
+        const navIndicator = document.createElement('span');
+        navIndicator.classList.add('nav-indicator');
+        navigationBar.appendChild(navIndicator);
+        this.navIndicator = navIndicator;
+
+        const navRight = document.createElement('button');
+        navRight.classList.add('nav-right');
+        navRight.textContent = '→';
+        navRight.addEventListener('click', () => {
+            if (this.tab !== false) this.tab.navigateRight();
+        });
+        navigationBar.appendChild(navRight);
+        this.navRightButton = navRight;
 
         // 左ペインと右ペインを横並びに配置するコンテンツ領域を作成する
         const contentArea = document.createElement('div');
@@ -19,23 +72,77 @@ export class Editor {
         editorElement.appendChild(contentArea);
         this.contentArea = contentArea;
 
-        // 左ペインをコンテンツ領域内に作成する
+        // 左スロット（editor-left-pane のラッパー）
+        const leftSlot = document.createElement('div');
+        leftSlot.classList.add('editor-left-slot');
+        contentArea.appendChild(leftSlot);
+        this.leftSlot = leftSlot;
+
+        // leftPane を leftSlot の中に入れる（後方互換性: .editor-left-pane は .editor-left-slot の子として存在し続ける）
         const leftPane = document.createElement('div');
         leftPane.classList.add('editor-left-pane');
-        contentArea.appendChild(leftPane);
+        leftSlot.appendChild(leftPane);
         this.leftPane = leftPane;
+
+        // 右スロット（RelationsPanel のラッパー）
+        const rightSlot = document.createElement('div');
+        rightSlot.classList.add('editor-right-slot');
+        contentArea.appendChild(rightSlot);
+        this.rightSlot = rightSlot;
     }
 
+    /** Tab を接続する（ナビゲーションボタンのクリックハンドラ用） */
+    connectTab(tab: Tab): void {
+        this.tab = tab;
+    }
+
+    /** leftPane への要素追加（TabからEditorTableのwrapperを追加する） */
     appendChild(element: HTMLElement): void {
         this.leftPane.appendChild(element);
     }
 
     /**
-     * リレーションパネルをコンテンツ領域（右ペイン）に追加する
-     * 左ペインではなく editor-content へ追加するため専用メソッドを用意する
+     * リレーションパネルをコンテンツ領域（右スロット）に追加する
+     * 初期配置: rightSlot に追加する
      */
     appendRelationsPanel(panel: RelationsPanel): void {
-        panel.appendTo(this.contentArea);
+        panel.appendTo(this.rightSlot);
+    }
+
+    /**
+     * 表示中の左右スロットの内容を入れ替える（ペインスタックナビゲーション用）
+     * 既存の子要素を全て取り除いてから新しい要素を追加する
+     */
+    setVisiblePanes(leftElement: HTMLElement, rightElement: HTMLElement): void {
+        // 左スロットの全子要素を取り除いてから新しい左ペインを追加する
+        while (this.leftSlot.firstChild) {
+            this.leftSlot.removeChild(this.leftSlot.firstChild);
+        }
+        this.leftSlot.appendChild(leftElement);
+
+        // 右スロットの全子要素を取り除いてから新しい右ペインを追加する
+        while (this.rightSlot.firstChild) {
+            this.rightSlot.removeChild(this.rightSlot.firstChild);
+        }
+        this.rightSlot.appendChild(rightElement);
+    }
+
+    /**
+     * ナビゲーションバーの表示・インジケーター・ボタン有効状態を更新する
+     * totalPanes <= 2 のとき非表示、3以上のとき表示する
+     * インジケーター: "${viewIndex + 1} / ${totalPanes}"
+     */
+    updateNavigationBar(viewIndex: number, totalPanes: number): void {
+        if (totalPanes <= 2) {
+            this.navigationBar.style.display = 'none';
+            return;
+        }
+        this.navigationBar.style.display = '';
+        this.navIndicator.textContent = `${viewIndex + 1} / ${totalPanes}`;
+        // viewIndex=0 のとき ← ボタンを無効化する
+        this.navLeftButton.disabled = viewIndex <= 0;
+        // viewIndex が最右ペアのとき → ボタンを無効化する
+        this.navRightButton.disabled = viewIndex >= totalPanes - 2;
     }
 
     /**

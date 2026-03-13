@@ -97,6 +97,16 @@ export class Tab {
     /** グローバルなリレーションパネル（全タブで共有、editor.elementの右ペインに配置） */
     private readonly relationsPanel: RelationsPanel;
 
+    /**
+     * ペインスタック。
+     * [0] は leftPane の HTMLElement（EditorTable群のコンテナ）、[1..] は RelationsPanel インスタンス。
+     * enableTabButton → activateTabState → initPaneStack() で初期化される。
+     */
+    private paneStack: Array<{ element: HTMLElement; panel: RelationsPanel | false }>;
+
+    /** 現在のビューインデックス（表示ペア: paneStack[viewIndex] と paneStack[viewIndex+1]） */
+    private viewIndex: number;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -113,6 +123,8 @@ export class Tab {
         this.pendingNavigationColumnIndex = -1;
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.store, this.referenceDataCache);
+        this.paneStack = [];
+        this.viewIndex = 0;
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -120,6 +132,8 @@ export class Tab {
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
+        // Editorにこの Tab を接続してナビゲーションボタンのクリックを受け取れるようにする
+        this.editor.connectTab(this);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -445,6 +459,7 @@ export class Tab {
 
     /**
      * タブ状態をアクティブ化（DOMを表示してイベントリスナーを登録）
+     * タブが切り替わるたびにペインスタックをリセットする
      */
     activateTabState(state: TabState): void {
         state.wrapperElement.style.display = '';
@@ -459,6 +474,98 @@ export class Tab {
 
         // EditorTableHandler を有効化（IME対応）
         state.editorTableHandler.enable();
+
+        // ペインスタックをリセットする（タブ切替時は常に2ペイン状態に戻す）
+        this.initPaneStack();
+    }
+
+    /**
+     * ペインスタックを初期状態（EditorTable + relationsPanel の2ペイン）にリセットする
+     * タブ切替時（activateTabState）に呼ばれる
+     */
+    private initPaneStack(): void {
+        // viewIndex より右にある追加 RP を破棄してから初期化する
+        this.truncateStackAfterIndex(0);
+        const leftPaneElement = this.editor.getLeftPaneForScroll();
+        const rpElement = this.relationsPanel.getPanelElement();
+        this.paneStack = [
+            { element: leftPaneElement, panel: false },
+            { element: rpElement, panel: this.relationsPanel },
+        ];
+        this.viewIndex = 0;
+        this.updateVisiblePanes();
+    }
+
+    /**
+     * 指定インデックス以降の追加 RP エントリをスタックから破棄する
+     * truncateFrom: このインデックスより大きいエントリを破棄する（inclusive: truncateFrom+1 から末尾まで）
+     */
+    private truncateStackAfterIndex(truncateFrom: number): void {
+        const removeFrom = truncateFrom + 2;
+        for (let i = this.paneStack.length - 1; i >= removeFrom; i--) {
+            const entry = this.paneStack[i];
+            if (entry.panel !== false) {
+                entry.panel.disconnectEditorTable();
+                if (entry.element.parentElement) {
+                    entry.element.remove();
+                }
+            }
+        }
+        this.paneStack.splice(removeFrom);
+    }
+
+    /**
+     * 表示ペインを更新する（viewIndex に基づいて左右スロットを入れ替える）
+     */
+    private updateVisiblePanes(): void {
+        const left = this.paneStack[this.viewIndex];
+        const right = this.paneStack[this.viewIndex + 1];
+        this.editor.setVisiblePanes(left.element, right.element);
+        this.editor.updateNavigationBar(this.viewIndex, this.paneStack.length);
+    }
+
+    /**
+     * ←ボタン: ビューを1つ左にシフトする
+     */
+    navigateLeft(): void {
+        if (this.viewIndex <= 0) return;
+        this.viewIndex--;
+        this.updateVisiblePanes();
+    }
+
+    /**
+     * →ボタン: ビューを1つ右にシフトする
+     */
+    navigateRight(): void {
+        if (this.viewIndex >= this.paneStack.length - 2) return;
+        this.viewIndex++;
+        this.updateVisiblePanes();
+    }
+
+    /**
+     * RelationsPanel をペインスタックに追加する（ミニテーブルの Ctrl+Click 時に RelationsPanel.navigateToDefinition から呼ばれる）
+     * viewIndex より右にある既存エントリを破棄して新しい RP をスタック末尾に追加し、ビューを右端にシフトする
+     */
+    pushRelationsPanel(tableName: string, pkValue: string): void {
+        // viewIndex より右の分岐パスを破棄する（viewIndex+1 の右ペインは保持して viewIndex+2 以降を削除）
+        this.truncateStackAfterIndex(this.viewIndex);
+
+        // 新しい RelationsPanel を生成してスタックに追加する
+        const rp = new RelationsPanel(this.referenceDataCache, this.store);
+        rp.connectTab(this);
+        const rpElement = rp.getPanelElement();
+        this.paneStack.push({ element: rpElement, panel: rp });
+
+        // ビューを右端（新RP が右スロットに表示される位置）にシフトする
+        this.viewIndex = this.paneStack.length - 2;
+
+        // 表示を更新する
+        this.updateVisiblePanes();
+
+        // 新 RP にテーブルの参照データを表示させる
+        rp.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
+            console.error('[Tab] pushRelationsPanel: showForTableRowAsync failed:', String(err));
+        });
     }
 
     /**
