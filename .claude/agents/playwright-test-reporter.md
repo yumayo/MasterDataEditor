@@ -20,7 +20,7 @@ npm playwright test
 
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test 2>&1; echo "exit $?"
+docker compose exec -T playwright bash -c "npm run stop-preview && npx playwright test" 2>&1; echo "exit $?"
 ```
 
 ## 特定のテストのみ実行する
@@ -32,7 +32,7 @@ npm playwright test column-insert
 
 GOOD
 ```sh
-docker compose exec -T playwright npx playwright test column-insert 2>&1; echo "exit $?"
+docker compose exec -T playwright bash -c "npm run stop-preview && npx playwright test column-insert" 2>&1; echo "exit $?"
 ```
 
 ## 核心原則

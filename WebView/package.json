@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stop-preview": "kill $(lsof -t -i:4173) 2>/dev/null || true"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
