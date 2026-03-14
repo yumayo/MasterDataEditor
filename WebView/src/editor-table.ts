@@ -16,6 +16,7 @@ import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
+import {GitDiffTracker} from "./git-diff-tracker";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -51,6 +52,8 @@ export class EditorTable {
     structure!: EditorTableStructure;
     /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
     relationsPanel: RelationsPanel | false;
+    /** git差分トラッカー（connectGitDiffTrackerで設定される。未設定はfalse） */
+    private gitDiffTracker: GitDiffTracker | false;
 
     /** 空行数（通常は100行、ミニテーブルは0行） */
     private readonly emptyRowCount: number;
@@ -109,6 +112,7 @@ export class EditorTable {
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
         this.relationsPanel = false;
+        this.gitDiffTracker = false;
         this.autoFillEntries = [];
         this.lastNotifiedRow = -1;
         // initialize() で初期化される
@@ -836,6 +840,8 @@ export class EditorTable {
             const domRow = this.element.children[i + 1] as HTMLElement | null;
             if (domRow) domRow.classList.remove('editor-table-empty-row');
         }
+        // バッファ行昇格後にgit差分ハイライトを再評価する（新規昇格行は新規追加行として changed になる）
+        this.applyGitDiffHighlight();
     }
 
     /**
@@ -858,6 +864,8 @@ export class EditorTable {
             const domRow = this.element.children[i + 1] as HTMLElement | null;
             if (domRow) domRow.classList.add('editor-table-empty-row');
         }
+        // 降格後にgit差分ハイライトを再評価する（降格行のストアインデックスが変化するため）
+        this.applyGitDiffHighlight();
     }
 
     /**
@@ -986,6 +994,56 @@ export class EditorTable {
     }
 
     // =========================================================================
+    // git差分ハイライト
+    // =========================================================================
+
+    /**
+     * git差分トラッカーを接続する
+     * Tab.createTabState() からテーブルオープン時に1回だけ呼ばれる
+     */
+    connectGitDiffTracker(tracker: GitDiffTracker): void {
+        this.gitDiffTracker = tracker;
+    }
+
+    /**
+     * 1セル分のgit差分ハイライトを更新する
+     * gitDiffTracker が設定済み（false でない）であることを呼び出し側で保証すること
+     */
+    private updateSingleCellGitHighlight(cell: HTMLElement, storeRows: string[][], storeRowIndex: number, columnIndex: number): void {
+        if ((this.gitDiffTracker as GitDiffTracker).isCellChanged(storeRows, storeRowIndex, columnIndex)) {
+            cell.classList.add('cell-git-changed');
+        } else {
+            cell.classList.remove('cell-git-changed');
+        }
+    }
+
+    /**
+     * 全データセルを走査し、gitのHEAD版との差分に応じて .cell-git-changed クラスを付与/除去する
+     * テーブルオープン時と行挿入・削除・バッファ行昇格・降格の後に呼ばれる
+     */
+    applyGitDiffHighlight(): void {
+        if (this.gitDiffTracker === false) return;
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return;
+        const rowCount = this.getRowCount();
+        const totalColCount = this.getTotalColumnCount();
+        // row=1 から開始（row=0 は列ヘッダー行のため除外）
+        for (let row = 1; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            // バッファ空行（editor-table-empty-row クラスあり）はハイライト対象外
+            if (rowElement.classList.contains('editor-table-empty-row')) continue;
+            const domDataRowIndex = row - 1;
+            if (domDataRowIndex >= this.storeRowIndices.length) continue;
+            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            // col=1 から開始（col=0 は行ヘッダーセルのため除外）
+            for (let col = 1; col < totalColCount; col++) {
+                const cell = this.getCell(row, col);
+                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, col - 1);
+            }
+        }
+    }
+
+    // =========================================================================
     // ファサード: EditorTableReference
     // =========================================================================
 
@@ -1016,6 +1074,14 @@ export class EditorTable {
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
+        // git差分ハイライトをこのセル1つ分だけ再評価する
+        if (this.gitDiffTracker !== false) {
+            const latestRows = this.store.getRows(this.tableName);
+            if (latestRows !== false) {
+                const cell = this.getCell(row, column);
+                this.updateSingleCellGitHighlight(cell, latestRows, storeRowIndex, column - 1);
+            }
+        }
     }
 
     /**

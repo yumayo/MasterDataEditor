@@ -198,3 +198,8 @@
         rgba(0, 120, 215, 0.3)
     );
 }
+
+/* git変更セルのハイライト（HEAD版との差分があるセルを緑背景で表示） */
+.cell-git-changed {
+    background-color: rgba(81, 184, 81, 0.2);
+}

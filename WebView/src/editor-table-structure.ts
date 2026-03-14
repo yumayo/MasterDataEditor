@@ -212,6 +212,8 @@ export class EditorTableStructure {
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
+        // 行挿入後にgit差分ハイライトを全セル再評価する（新規行や後続行のストアインデックスが変化するため）
+        this.table.applyGitDiffHighlight();
     }
 
     /**
@@ -375,6 +377,8 @@ export class EditorTableStructure {
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
+        // 行削除後にgit差分ハイライトを全セル再評価する（後続行のストアインデックスが変化するため）
+        this.table.applyGitDiffHighlight();
     }
 
     /**
