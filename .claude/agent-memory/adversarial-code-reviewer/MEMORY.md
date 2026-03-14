@@ -70,6 +70,17 @@
 - **KNOWN ISSUE**: git status error returns success:true with empty data (error swallowed)
 - **KNOWN ISSUE**: diff-view.ts uses `undefined` comparisons in multiple places
 
+## Diff Tab / EditorTable-based diff (FEAT_0008, 2026-03-15)
+- **CRITICAL**: Right pane Ctrl+S saves to `data/test:diff:current.csv` (wrong path with colons)
+- **CRITICAL**: DiffTab.destroy() does NOT call EditorTableHandler.deactivate() -> global listener leak
+- **KNOWN ISSUE**: diffTab/diffTabTableName are |false half-baked object pattern (same as settingsPanel)
+- **KNOWN ISSUE**: diff-tab.ts parseCsv() duplicates Csv.load() with different trim behavior (3rd time)
+- **KNOWN ISSUE**: dummyTabButton creates DOM <li> + listeners that are never cleaned up
+- **KNOWN ISSUE**: closeTab diff tab -> enableTabButton normal tab: rightSlot may stay hidden
+- **KNOWN ISSUE**: buildUniqueKeyMap `_row` suffix collides with PK values containing `_row`
+- **KNOWN ISSUE**: SchemaJson/SchemaColumn interfaces duplicate existing schema types
+- **KNOWN ISSUE**: scroll sync listeners are anonymous -> cannot be removed in destroy()
+
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
 - **New DOM structure: update ALL readers/writers**: 新しいDOM構造を追加したら全APIを同時に更新
@@ -81,6 +92,9 @@
 - **reloadCellsFromStore行数同期の副作用漏れ**: 行数変更後にSelection/GitDiffHighlight/行ヘッダー再ナンバリングが必要
 - **Orphaned public methods after refactor**: forceNotifyRelationsPanel残存 — リファクタ後に呼び出し元ゼロのpublicメソッドが地雷化
 - **Comment staleness after behavior change**: lastNotifiedRow/forceNotifyRelationsPanel関連コメント3箇所が実装と乖離
+- **CSV parse duplication**: parseCsv() reimplemented 3 times (diff-view.ts, git-diff-tracker.ts, diff-tab.ts) with inconsistent trim/filter behavior
+- **Special tab deactivate() gap**: DiffTab.destroy() missing EditorTableHandler.deactivate() (same pattern as Settings tab cleanup gap)
+- **Ctrl+S on special-key tables**: isMiniTable=true tables with non-standard tableName (`:diff:`) trigger saveTableDataFromStoreAsync with wrong path
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -118,3 +132,4 @@
 - 2026-03-14 (FEAT_0006 git-cell-highlight): 致命的2件、重要4件、軽微4件
 - 2026-03-14 (mini-table-row-store-sync): 致命的2件、重要4件、軽微3件
 - 2026-03-14 (BUG_0006 git-path-fix + paneStack-row-reset): 致命的1件、重要3件、軽微3件
+- 2026-03-15 (FEAT_0008 diff-tab-editortable): 致命的2件、重要4件、軽微4件
