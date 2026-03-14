@@ -174,14 +174,14 @@ export async function installMockApiAsync(
                 }
 
                 // git差分機能: 変更/ステージ済みファイル一覧を返す
-                // テストフィクスチャで setMockGitStatus() により必ず設定される
+                // setMockGitStatus() で明示設定されていない場合は空の変更リストを返す
                 if (type === "git_status_request") {
                     type GitStatusWindow = { __mockGitStatus: { changes: object[]; staged: object[] } };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
                     dispatch({
                         type: "git_status_response",
                         success: true,
-                        data: mockStatus,
+                        data: mockStatus ?? { changes: [], staged: [] },
                     });
                     return;
                 }

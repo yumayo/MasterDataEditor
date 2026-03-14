@@ -361,17 +361,21 @@ export class EditorTable {
         cell.addEventListener('mousedown', (e) => {
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
-            // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
-            if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
-                table.navigateToDefinition(position.row);
-                e.preventDefault();
-                return;
-            }
+            // 編集中のセルを確定する（Ctrl+クリックでも通常クリックでも共通）
             table.handler.submitAndHide();
             // RelationsPanelが接続されている場合: このEditorTableのhandlerをアクティブ化し
             // 他の全EditorTableのhandlerをdeactivateする（フォーカスの排他制御）
             if (table.relationsPanel !== false) {
                 table.relationsPanel.activateHandler(table);
+            }
+            // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
+            // ペインスタック追加（navigateToDefinition）を先に行い、正しいRPに対して選択状態を設定する。
+            // 逆順（selection.start → navigateToDefinition）だと古いRPに対してnotifyが走り無駄な処理が発生する。
+            if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
+                table.navigateToDefinition(position.row);
+                table.selection.start(position.row, position.column);
+                e.preventDefault();
+                return;
             }
             if (e.shiftKey) {
                 table.selection.extendSelection(position.row, position.column);
