@@ -2,6 +2,7 @@
  * 差分ビュー
  * HEAD版CSVと現在版CSVの差分を左右2ペインで表示する読み取り専用ビュー
  */
+import {GitDiffTracker} from "./git-diff-tracker";
 
 /**
  * スキーマJSONのヘッダー列定義
@@ -17,7 +18,8 @@ interface SchemaColumn {
  */
 interface SchemaJson {
     header: SchemaColumn[];
-    primary_key: string;
+    /** 単一PK は文字列、複合PK は文字列配列 */
+    primary_key: string | string[];
 }
 
 /**
@@ -50,9 +52,11 @@ export class DiffView {
     private readonly element: HTMLElement;
 
     constructor(tableName: string, schemaJson: string, headCsv: string, currentCsv: string) {
-        // スキーマをパースしてPK列名を特定する
+        // スキーマをパースしてPK列名（配列）を特定する（単一PKは文字列→配列に正規化）
         const schema = JSON.parse(schemaJson) as SchemaJson;
-        const primaryKeyName = schema.primary_key;
+        const primaryKeyNames: readonly string[] = Array.isArray(schema.primary_key)
+            ? schema.primary_key
+            : [schema.primary_key];
 
         const head = parseCsv(headCsv);
         const current = parseCsv(currentCsv);
@@ -60,20 +64,21 @@ export class DiffView {
         // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
         const displayColumns = current.header.length > 0 ? current.header : head.header;
 
-        // PK列のインデックスを取得する（現在版・HEAD版で同じ列名が存在するものを使う）
-        const pkIndexInHead = head.header.indexOf(primaryKeyName);
-        const pkIndexInCurrent = current.header.indexOf(primaryKeyName);
+        // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
+        const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
+        const pkIndicesInCurrent = primaryKeyNames.map(name => current.header.indexOf(name));
 
-        // HEAD版・現在版のデータをPK値でMapに変換する
-        // PK値が重複している場合は行番号サフィックスを付けて一意にする（例: "1_row0", "1_row1"）
-        // buildUniqueKeyMap: 各行に一意キーを割り当てるローカル関数
-        const buildUniqueKeyMap = (rows: string[][], pkIndex: number): Map<string, string[]> => {
+        // HEAD版・現在版のデータを複合PKキーでMapに変換する
+        // 複合PKキー = 全PK列値をタブ区切りで連結した文字列
+        // PKキーが重複している場合は行番号サフィックスを付けて一意にする
+        const buildUniqueKeyMap = (rows: string[][], pkIndices: number[]): Map<string, string[]> => {
             const map = new Map<string, string[]>();
             // 各rawPKが何行目で使われたかを記録する（重複検出用）
             const seenIndices = new Map<string, number>();
             for (let i = 0; i < rows.length; i++) {
                 const row = rows[i];
-                const rawPk = pkIndex >= 0 && pkIndex < row.length ? row[pkIndex] : '';
+                // GitDiffTracker.buildCompositeKey() で複合PKキーを生成する（コピペ排除）
+                const rawPk = GitDiffTracker.buildCompositeKey(row, pkIndices);
                 if (!seenIndices.has(rawPk)) {
                     // 初出: rawPKをそのまま使う。後で重複が判明した場合に備えてインデックスを記録する
                     seenIndices.set(rawPk, i);
@@ -95,8 +100,8 @@ export class DiffView {
             return map;
         };
 
-        const headMap = buildUniqueKeyMap(head.rows, pkIndexInHead);
-        const currentMap = buildUniqueKeyMap(current.rows, pkIndexInCurrent);
+        const headMap = buildUniqueKeyMap(head.rows, pkIndicesInHead);
+        const currentMap = buildUniqueKeyMap(current.rows, pkIndicesInCurrent);
 
         // 全PK値を収集してソートする
         const allPkValues = new Set<string>([...headMap.keys(), ...currentMap.keys()]);

@@ -1324,3 +1324,18 @@ DiffTab（差分タブ）のEditorTableは `isMiniTable=true` で生成される
 3. コンストラクタで登録したイベントリスナーが destroy() で removeEventListener されているか
 
 ---
+
+## 89. [f04c5a9] — FEAT_0010 複合主キーへの対応
+
+### 不具合原因名
+グローバル固定PK設定のシステム全体への浸透
+
+### なぜそうなったのか
+`config.primaryKeyColumnName`（固定値 `"id"`）がシステム全体の20箇所以上に直接参照されており、テーブルごとに異なるPK定義を持てない構造的制約があった。`primary_key` をスキーマの文字列配列として扱えるよう拡張したが、`RelationsPanel`・`ReferenceDataCache`・`SearchPanel` 等で `config.primaryKeyColumnName` を使い続けている箇所は段階的移行が必要な状態で残存している。複合キーの一意性チェックはPKバリデーション実装（FEAT_0009）で `primaryKeyColumnName` 単列前提で設計されていたため、複合キーに対応するためには `EditorTableData.primaryKeyColumns` と `GitDiffTracker.buildCompositeKey()` という新しいSSOTの導入が必要だった。
+
+### どうしたら今後は再発しないか
+- PK列名の取得は常に `EditorTableData.primaryKeyColumns` を使い、グローバル設定 `config.primaryKeyColumnName` には依存しない
+- 複合キー値の文字列化は `GitDiffTracker.buildCompositeKey()` に集約し、手書きの `join` を散在させない
+- スキーマの `primary_key` フィールドが未定義や空配列の場合は `parse()` 時点で例外を投げる
+
+---

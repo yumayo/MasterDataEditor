@@ -18,7 +18,6 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
-import {config} from "./config";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -1172,16 +1171,27 @@ export class EditorTable {
             return;
         }
         const entry = statusResult.changes[entryIndex];
-        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === this.tableData.primaryKey);
-        if (pkColumnIndex === -1) {
-            // PKカラムが見つからない場合もトラッカーをリセットして中途半端なハイライトを除去する
+        // PK列が定義されていない場合はハイライト不要（空キーで全行が一致扱いになるのを防ぐ）
+        if (this.tableData.primaryKeyColumns.length === 0) {
             this.gitDiffTracker = false;
             this.applyGitDiffHighlight();
             return;
         }
+        // 複合PKの全列インデックスを取得する（いずれか1列でも見つからない場合はハイライト不可）
+        const pkColumnIndices: number[] = [];
+        for (const pkColName of this.tableData.primaryKeyColumns) {
+            const idx = this.tableData.header.findIndex(col => col.name === pkColName);
+            if (idx === -1) {
+                // PKカラムが見つからない場合はトラッカーをリセットして中途半端なハイライトを除去する
+                this.gitDiffTracker = false;
+                this.applyGitDiffHighlight();
+                return;
+            }
+            pkColumnIndices.push(idx);
+        }
         if (entry.isNew) {
             // HEADに存在しない新規テーブル → 全セルchanged
-            const tracker = GitDiffTracker.createForNewTable(pkColumnIndex);
+            const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
             this.connectGitDiffTracker(tracker);
         } else {
             // 既存テーブルの変更 → HEAD版CSVを取得してPKベースのマップを構築する
@@ -1196,8 +1206,8 @@ export class EditorTable {
             }
             // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
             if (requestId !== this.refreshGitDiffRequestId) return;
-            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndex);
-            const tracker = new GitDiffTracker(headRowMap, pkColumnIndex, false);
+            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices);
+            const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
             this.connectGitDiffTracker(tracker);
         }
         // トラッカー再構築後に全セルのハイライトを一括再適用する
@@ -1432,55 +1442,85 @@ export class EditorTable {
      * 空のPK値は重複チェックの対象外（未入力行は無視する）。
      */
     public validatePkDuplicates(): void {
+        // PK列が定義されていない場合はバリデーション不要（全行が空キーで重複扱いになるのを防ぐ）
+        if (this.tableData.primaryKeyColumns.length === 0) return;
         // ストアからPK列の全値を取得してカウントマップを構築する
         const storeHeader = this.store.getHeader(this.tableName);
         const storeRows = this.store.getRows(this.tableName);
         // 編集操作後にストアが存在しないのは設計上ありえないため例外を投げる
         if (storeHeader === false || storeRows === false) throw new Error('[EditorTable.validatePkDuplicates] ストアにテーブルが登録されていません: ' + this.tableName);
 
-        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
-        // PK列が存在しないテーブルはバリデーション不要
-        if (pkColIdx === -1) return;
+        // tableData.primaryKeyColumns を使い複合PKに対応する
+        // 各PK列のストアインデックスを取得し、いずれか1つでも存在しなければバリデーション不要
+        const pkColIndices: number[] = [];
+        for (const pkColName of this.tableData.primaryKeyColumns) {
+            const idx = storeHeader.indexOf(pkColName);
+            if (idx === -1) return;
+            pkColIndices.push(idx);
+        }
 
-        // ストア全行のPK値の出現回数をカウントする（空文字は対象外）
+        // 複合PKキー = GitDiffTracker.buildCompositeKey() で生成する（コピペ排除）
+        // PK構成列のいずれかが空文字の場合はその行をスキップする（未入力行）
         const pkCounts = new Map<string, number>();
         for (const row of storeRows) {
-            const pk = row[pkColIdx];
-            if (pk === '') continue;
-            if (pkCounts.has(pk)) {
-                pkCounts.set(pk, (pkCounts.get(pk) as number) + 1);
+            // PK構成列に空文字が含まれる行はカウント対象外（未入力行）
+            let hasEmpty = false;
+            for (const idx of pkColIndices) {
+                if (row[idx] === '') { hasEmpty = true; break; }
+            }
+            if (hasEmpty) continue;
+            const compositeKey = GitDiffTracker.buildCompositeKey(row, pkColIndices);
+            if (pkCounts.has(compositeKey)) {
+                pkCounts.set(compositeKey, pkCounts.get(compositeKey)! + 1);
             } else {
-                pkCounts.set(pk, 1);
+                pkCounts.set(compositeKey, 1);
             }
         }
 
-        // getColumnHeaderValue() を使ってDOM上のPK列インデックスを特定する
+        // getColumnHeaderValue() を使ってDOM上の各PK列インデックスを特定する
         // （手動でのDOM走査は .column-header-name span 付きのcomment列で誤マッチする危険があるため使わない）
-        let domPkColIndex = -1;
+        const domPkColIndices: number[] = [];
         const colCount = this.getColumnCount();
-        for (let c = 0; c < colCount; c++) {
-            if (this.getColumnHeaderValue(c) === config.primaryKeyColumnName) {
-                domPkColIndex = c + 1; // 行ヘッダーを含むDOMインデックス
-                break;
+        for (const pkColName of this.tableData.primaryKeyColumns) {
+            let found = -1;
+            for (let c = 0; c < colCount; c++) {
+                if (this.getColumnHeaderValue(c) === pkColName) {
+                    found = c + 1; // 行ヘッダーを含むDOMインデックス
+                    break;
+                }
             }
+            // PK列がDOMに存在しない（非表示テーブル等）はバリデーション不要
+            if (found === -1) return;
+            domPkColIndices.push(found);
         }
-        // PK列がDOMに存在しない（非表示テーブル等）はバリデーション不要
-        if (domPkColIndex === -1) return;
 
         // ループ上限をデータ行のみに制限してバッファ空行への不要なDOM走査を排除する
         // （rowIdx=1から開始するのは children[0] が列ヘッダー行のため）
         for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
             const row = this.element.children[rowIdx] as HTMLElement | null;
             if (!row) continue;
-            const pkCell = row.children[domPkColIndex] as HTMLElement | null;
-            if (!pkCell) continue;
-            const pkValue = EditorTable.getCellValue(pkCell);
-            if (pkValue === '' || !pkCounts.has(pkValue)) {
-                pkCell.classList.remove('cell-pk-duplicate');
-            } else if ((pkCounts.get(pkValue) as number) > 1) {
-                pkCell.classList.add('cell-pk-duplicate');
-            } else {
-                pkCell.classList.remove('cell-pk-duplicate');
+            // この行の複合PKキーを構築する（空値があればスキップ）
+            const pkParts: string[] = [];
+            let hasEmpty = false;
+            for (const domColIdx of domPkColIndices) {
+                const cell = row.children[domColIdx] as HTMLElement | null;
+                if (!cell) { hasEmpty = true; break; }
+                const val = EditorTable.getCellValue(cell);
+                if (val === '') { hasEmpty = true; break; }
+                pkParts.push(val);
+            }
+            // 全PK構成列のセルを取得して重複クラスを更新する
+            // pkParts はDOM上のPK列値のみを順番に持つ配列なので、インデックス [0,1,2,...] で buildCompositeKey に渡す
+            const compositeKey = GitDiffTracker.buildCompositeKey(pkParts, pkParts.map((_, i) => i));
+            const isDuplicate = !hasEmpty && pkCounts.has(compositeKey) && pkCounts.get(compositeKey)! > 1;
+            for (const domColIdx of domPkColIndices) {
+                const pkCell = row.children[domColIdx] as HTMLElement | null;
+                if (!pkCell) continue;
+                if (isDuplicate) {
+                    pkCell.classList.add('cell-pk-duplicate');
+                } else {
+                    pkCell.classList.remove('cell-pk-duplicate');
+                }
             }
         }
     }

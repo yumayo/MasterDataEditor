@@ -7,30 +7,41 @@ export class EditorTableData {
 
     description: string | null;
 
-    primaryKey: string;
+    /** 複合主キー構成列名の配列（単一PKも配列で保持する） */
+    primaryKeyColumns: readonly string[];
 
     header: EditorTableDataColumn[];
 
     body: EditorTableDataRow[];
 
     constructor(
-        description: string | null, primaryKey: string,
+        description: string | null, primaryKeyColumns: readonly string[],
         header: EditorTableDataColumn[],
         body: EditorTableDataRow[]
     ) {
         this.description = description;
-        this.primaryKey = primaryKey;
+        this.primaryKeyColumns = primaryKeyColumns;
         this.header = header;
         this.body = body;
     }
 
-    static parse(json: any, csv: Csv) {
+    static parse(json: Record<string, unknown>, csv: Csv) {
 
-        const description = json['description'] !== undefined ? json['description'] : null;
+        const description = json['description'] !== undefined ? json['description'] as string : null;
 
-        const primaryKey = json['primary_key'];
+        // primary_key は文字列（単一PK）または文字列配列（複合PK）のどちらでもよい
+        const rawPrimaryKey = json['primary_key'];
+        if (typeof rawPrimaryKey !== 'string' && !Array.isArray(rawPrimaryKey)) {
+            throw new Error('[EditorTableData.parse] primary_key がスキーマに存在しないか、不正な型です');
+        }
+        const primaryKeyColumns: readonly string[] = Array.isArray(rawPrimaryKey)
+            ? (rawPrimaryKey as string[])
+            : [rawPrimaryKey];
+        if (primaryKeyColumns.length === 0) {
+            throw new Error('[EditorTableData.parse] primary_key が空です');
+        }
 
-        const header = json['header'];
+        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string; width?: number}>;
         const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
@@ -69,7 +80,7 @@ export class EditorTableData {
         }
 
         return new EditorTableData(
-            description, primaryKey, columns, rows
+            description, primaryKeyColumns, columns, rows
         );
     }
 
@@ -89,12 +100,17 @@ export class EditorTableData {
         }
         csv.body = bodyRows;
 
+        // 単一PKは文字列形式に戻してスキーマを汚染しない（後方互換）
+        const primaryKeyValue: string | string[] = this.primaryKeyColumns.length === 1
+            ? this.primaryKeyColumns[0]
+            : [...this.primaryKeyColumns];
+
         return {
             json: {
                 // description が null の場合はキー自体を出力しない（元スキーマに存在しないキーを汚染しない）
                 ...(this.description !== null ? { description: this.description } : {}),
                 header: this.header.map(x => x.serialize()),
-                primary_key: this.primaryKey,
+                primary_key: primaryKeyValue,
             },
             csv: csv
         }

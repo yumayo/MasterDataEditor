@@ -13,6 +13,7 @@ import {ContextMenu} from "./context-menu";
 import {TabButton} from "./tab-button";
 import {Editor} from "./editor";
 import {Sidebar} from "./sidebar";
+import {GitDiffTracker} from "./git-diff-tracker";
 
 /**
  * 差分計算結果の1行分（discriminated union）
@@ -37,7 +38,8 @@ interface SchemaColumn {
  */
 interface SchemaJson {
     header: SchemaColumn[];
-    primary_key: string;
+    /** 単一PK は文字列、複合PK は文字列配列 */
+    primary_key: string | string[];
 }
 
 /**
@@ -52,16 +54,18 @@ function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
 }
 
 /**
- * CSV行をPK値でMapに変換する（順序はarrayで保持する）
- * PK値が重複している行は "_row<index>" サフィックスで一意化する
+ * CSV行を複合PKキー値でMapに変換する（順序はarrayで保持する）
+ * 複合PKキー = 全PK列値をタブ区切りで連結した文字列（単一PKは列値のみ）
+ * PKキーが重複している行は "_row<index>" サフィックスで一意化する
  */
-function buildUniqueKeyMap(rows: string[][], pkIndex: number): { map: Map<string, string[]>; order: string[] } {
+function buildUniqueKeyMap(rows: string[][], pkIndices: number[]): { map: Map<string, string[]>; order: string[] } {
     const map = new Map<string, string[]>();
     const order: string[] = [];
     const seenIndices = new Map<string, number>();
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const rawPk = pkIndex >= 0 && pkIndex < row.length ? row[pkIndex] : '';
+        // GitDiffTracker.buildCompositeKey() で複合PKキーを生成する（コピペ排除）
+        const rawPk = GitDiffTracker.buildCompositeKey(row, pkIndices);
         if (!seenIndices.has(rawPk)) {
             seenIndices.set(rawPk, i);
             map.set(rawPk, row);
@@ -95,18 +99,19 @@ function buildUniqueKeyMap(rows: string[][], pkIndex: number): { map: Map<string
  * 2. HEAD版に残った行（Current版に存在しない）を deleted として末尾に追加する
  * これにより、added行が deleted行より前に配置されるためテストの行順期待と一致する。
  */
-function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyName: string): { diffRows: DiffRow[]; displayHeader: string[] } {
+function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[] } {
     const head = parseCsv(headCsvText);
     const current = parseCsv(currentCsvText);
 
     // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
     const displayHeader = current.header.length > 0 ? current.header : head.header;
 
-    const pkIndexInHead = head.header.indexOf(primaryKeyName);
-    const pkIndexInCurrent = current.header.indexOf(primaryKeyName);
+    // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
+    const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
+    const pkIndicesInCurrent = primaryKeyNames.map(name => current.header.indexOf(name));
 
-    const { map: headMap } = buildUniqueKeyMap(head.rows, pkIndexInHead);
-    const { map: currentMap } = buildUniqueKeyMap(current.rows, pkIndexInCurrent);
+    const { map: headMap } = buildUniqueKeyMap(head.rows, pkIndicesInHead);
+    const { map: currentMap } = buildUniqueKeyMap(current.rows, pkIndicesInCurrent);
 
     // 処理済みHEAD行を追跡するSet（削除行の判定に使う）
     const processedHeadKeys = new Set<string>();
@@ -292,13 +297,15 @@ export class DiffTab {
     ) {
         this.isSyncing = false;
 
-        // スキーマをパースしてPK列名を取得する
+        // スキーマをパースしてPK列名（配列）を取得する（単一PKは文字列→配列に正規化）
         const schema = JSON.parse(schemaJson) as SchemaJson;
-        const primaryKeyName = schema.primary_key;
+        const primaryKeyNames: readonly string[] = Array.isArray(schema.primary_key)
+            ? schema.primary_key
+            : [schema.primary_key];
         const columnCount = schema.header.length;
 
         // 差分計算（ファイル行順）
-        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyName);
+        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
         const {
             leftRows, rightRows,
             leftEmptyRowIndices, rightEmptyRowIndices,
