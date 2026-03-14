@@ -11,7 +11,8 @@ export const DEFAULT_ROW_HEIGHT = '20px';
 /** 列ヘッダーのフォント指定（CSSの body { font-size: 13px; font-family: sans-serif; } と .editor-table-column-header { font-weight: bold; } に対応） */
 export const COLUMN_HEADER_FONT = 'bold 13px sans-serif';
 
-/** セル水平方向の余白（パディング左右12px + リサイズハンドル5px） */
+/** セル水平方向の余白（パディング左右12px + ボーダー右1px + セル内部余裕4px）。
+ *  リサイズハンドルは position: absolute のためテキスト幅計算に影響しない。 */
 export const CELL_HORIZONTAL_EXTRA = 17;
 
 /** 最小列幅(px) */

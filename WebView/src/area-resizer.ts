@@ -178,9 +178,11 @@ export class AreaResizer {
             // 元の幅を保存（Undo用）- セルのスタイルから取得
             this.resizeColumnOldWidth = columnHeaderCell.style.width;
 
-            // ガイドラインを表示（縦線）
+            // ガイドラインを表示（縦線）: 列右端（境界）を基準にすることでマウス位置によらず正確な境界線を示す
+            // getBoundingClientRect() は浮動小数点を返すため Math.round() でサブピクセル蓄積を防ぐ
+            const headerRect = columnHeaderCell.getBoundingClientRect();
             const editorRect = this.editorElement.getBoundingClientRect();
-            this.resizeColumnStartLeft = e.clientX - editorRect.left + this.editorElement.scrollLeft;
+            this.resizeColumnStartLeft = Math.round(headerRect.right - editorRect.left + this.editorElement.scrollLeft);
             this.resizeGuideline.style.display = 'block';
             this.resizeGuideline.style.left = this.resizeColumnStartLeft + 'px';
             this.resizeGuideline.style.top = '0';
@@ -204,9 +206,11 @@ export class AreaResizer {
             // 元の高さを保存（Undo用）- セルのスタイルから取得
             this.resizeRowOldHeight = rowHeaderCell.style.height;
 
-            // ガイドラインを表示（横線）
+            // ガイドラインを表示（横線）: 行下端（境界）を基準にすることでマウス位置によらず正確な境界線を示す
+            // getBoundingClientRect() は浮動小数点を返すため Math.round() でサブピクセル蓄積を防ぐ
+            const headerRect = rowHeaderCell.getBoundingClientRect();
             const editorRect = this.editorElement.getBoundingClientRect();
-            this.resizeRowStartTop = e.clientY - editorRect.top + this.editorElement.scrollTop;
+            this.resizeRowStartTop = Math.round(headerRect.bottom - editorRect.top + this.editorElement.scrollTop);
             this.resizeGuideline.style.display = 'block';
             this.resizeGuideline.style.top = this.resizeRowStartTop + 'px';
             this.resizeGuideline.style.left = '0';

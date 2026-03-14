@@ -89,40 +89,52 @@
     z-index: 40;
 }
 
-/* 列リサイズハンドル */
+/* 列リサイズハンドル（列境界の中央にまたがる: 内側4px + 外側4px）
+   z-index: 45 は .editor-table-column-header-row（z-index: 30）より高く設定し、
+   right: -4px ではみ出た部分が隣の列ヘッダーセルに隠れないようにする。
+   .grid-textfield-active（z-index: 50）より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
 .column-resize-handle {
     position: absolute;
-    right: 0;
+    right: -4px;
     top: 0;
-    width: 5px;
+    width: 8px;
     height: 100%;
     cursor: col-resize;
     user-select: none;
+    z-index: 45;
 }
 
 .column-resize-handle:hover {
     background-color: rgba(128, 128, 128, 0.3);
 }
 
-/* 行リサイズハンドル */
+/* 行リサイズハンドル（行境界の中央にまたがる: 内側4px + 外側4px）
+   z-index: 45 は .editor-table-row-header（z-index: 20）より高く設定し、
+   bottom: -4px ではみ出た部分が下の行ヘッダーセルに隠れないようにする。
+   .grid-textfield-active（z-index: 50）より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
 .row-resize-handle {
     position: absolute;
-    bottom: 0;
+    bottom: -4px;
     left: 0;
     width: 100%;
-    height: 5px;
+    height: 8px;
     cursor: row-resize;
     user-select: none;
+    z-index: 45;
 }
 
 .row-resize-handle:hover {
     background-color: rgba(128, 128, 128, 0.3);
 }
 
-/* ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする */
+/* ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする。
+   overflow: visible はハンドルが right: -4px / bottom: -4px で隣セルの領域に
+   はみ出す際に必須。table-cell はデフォルト visible だが Chrome では
+   隣セルが上に被さるケースがあるため明示する。 */
 .editor-table-column-header,
 .editor-table-row-header {
     position: relative;
+    overflow: visible;
 }
 
 /* 選択された列ヘッダーのスタイル */
