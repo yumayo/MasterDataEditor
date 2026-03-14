@@ -86,7 +86,7 @@
 - **New DOM structure: update ALL readers/writers**: 新しいDOM構造を追加したら全APIを同時に更新
 - **open/close symmetry for special tabs**: Settings tab open creates DOM+panel but close has NO cleanup
 - **show/hide symmetry for overlay views**: showDiffView hides rightSlot but no path restores it on tab switch
-- **CSS変数名の打ち間違い**: 未定義CSS変数が3回連続で別FEAT/ファイルで発生(FEAT_0002,0004,0005)
+- **CSS変数名の打ち間違い**: 未定義CSS変数が4回連続で別FEAT/ファイルで発生(FEAT_0002,0004,0005,0013)
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須
 - **C#バックエンド入力バリデーション不足**: git系ハンドラでフロントエンド入力をそのままコマンド引数に渡している
 - **reloadCellsFromStore行数同期の副作用漏れ**: 行数変更後にSelection/GitDiffHighlight/行ヘッダー再ナンバリングが必要
@@ -171,3 +171,17 @@
 - **KNOWN ISSUE**: column-filter.ts L94,L116 で undefined 比較使用
 - **KNOWN ISSUE**: collectCheckedValues() L251,L255 で || フォールバック使用
 - **KNOWN ISSUE**: FilterDropdown.element がdocument.bodyに追加後、タブ閉じ時に除去されない (destroy()なし)
+
+## Dropdown QuickView (FEAT_0013, 2026-03-15)
+- **CRITICAL**: hoverTimerId: number|null, currentReferenceTableName: string|null are null member variables (half-baked object)
+- **CRITICAL**: renderContent L136 uses `??` fallback (`this.currentReferenceTableName ?? ''`)
+- **KNOWN ISSUE**: CSS `--text-muted-color` and `--text-color` not defined in index.css (4th undefined CSS var occurrence)
+- **KNOWN ISSUE**: setReferenceTable() is a setter method (getter/setter禁止違反)
+- **KNOWN ISSUE**: parentElement! non-null assertion at L34 and L186
+- **KNOWN ISSUE**: GridDropdownInput.element is public HTMLElement (既存負債)
+- **KNOWN ISSUE**: No destroy() method — DOM element persists until parent removed
+- **KNOWN ISSUE**: cleanup() does not clear previewCache (asymmetry with setReferenceTable)
+- **KNOWN ISSUE**: positionElement only checks right overflow, not bottom overflow
+
+## Review History (continued)
+- 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
