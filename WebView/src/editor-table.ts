@@ -19,6 +19,8 @@ import {RelationsPanel} from "./relations-panel";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
 import {ColumnSorter} from "./column-sorter";
+import {ColumnFilter} from "./column-filter";
+import {FilterDropdown} from "./filter-dropdown";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -60,6 +62,12 @@ export class EditorTable {
     private refreshGitDiffRequestId: number;
     /** 列ソート管理（ミニテーブルでは使用しないが、インスタンスは常に保持する） */
     private readonly columnSorter: ColumnSorter;
+    /** 列フィルター管理（ミニテーブルでは使用しないが、インスタンスは常に保持する） */
+    private readonly columnFilter: ColumnFilter;
+    /** フィルタードロップダウン UI（ミニテーブルでは使用しない。initializeModules() で再作成される） */
+    private filterDropdown: FilterDropdown;
+    /** 行数カウンター要素（フィルター適用中に「X / Y 行」を表示する） */
+    private readonly filterRowCountElement: HTMLElement;
 
     /** 空行数（通常は100行、ミニテーブルは0行） */
     private readonly emptyRowCount: number;
@@ -125,6 +133,11 @@ export class EditorTable {
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.columnSorter = new ColumnSorter(this, store);
+        this.columnFilter = new ColumnFilter();
+        this.filterDropdown = new FilterDropdown(this, this.columnFilter);
+        this.filterRowCountElement = document.createElement('div');
+        this.filterRowCountElement.classList.add('filter-row-count');
+        this.filterRowCountElement.style.display = 'none';
         this.selectionDragController = new SelectionDragController(
             this.element,
             selection,
@@ -134,12 +147,24 @@ export class EditorTable {
 
     /**
      * 分割先モジュールを生成・注入する
-     * Object.assign後に呼び出すことで、thisがプロキシオブジェクトを指す
+     * Object.assign後に呼び出すことで、thisがプロキシオブジェクトを指す。
+     *
+     * FilterDropdown はコンストラクタで `this`（realEditorTable）を参照して生成される。
+     * Object.assign でプロキシオブジェクト（editorTable）に内容がコピーされた後も
+     * filterDropdown.table は realEditorTable を指したままになる。
+     * realEditorTable は initialize() が呼ばれないため storeRowIndices = [] のままとなり、
+     * applyFilterDisplay() で全行が制御されず行数カウンターが「0 / 0 行」になるバグを引き起こす。
+     * そのため initializeModules() で FilterDropdown を正しい this（editorTable）で再作成する。
      */
     initializeModules(): void {
         this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache);
         this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
+        // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。
+        // 旧インスタンスは realEditorTable（storeRowIndices=[]）を参照しているため破棄が必要。
+        // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
+        this.filterDropdown.destroy();
+        this.filterDropdown = new FilterDropdown(this, this.columnFilter);
     }
 
     // =========================================================================
@@ -173,6 +198,8 @@ export class EditorTable {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+        // 行数カウンターはテーブルの直後に配置する
+        parent.appendChild(this.filterRowCountElement);
     }
 
     /**
@@ -896,6 +923,9 @@ export class EditorTable {
         // インジケーターをリセットしてUI上のソート表示と実態を一致させる。
         this.columnSorter.clearAllSorts();
         this.updateAllSortIndicators();
+        // タブ切替時にフィルター状態が前回タブのままだと整合性が崩れるためリセットする。
+        // ソートリセットと対称に、フィルター状態も UI と実態を一致させる。
+        this.clearFilterState();
     }
 
     // =========================================================================
@@ -944,6 +974,8 @@ export class EditorTable {
         this.evictOwnReferenceDataCache();
         // バッファ行昇格後にPK重複バリデーションを実行する（新規行のIDが既存と重複する可能性があるため）
         this.validatePkDuplicates();
+        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（新規昇格行がフィルター条件を満たさない可能性）
+        this.refreshFilterDisplayIfActive();
     }
 
     /**
@@ -977,6 +1009,8 @@ export class EditorTable {
         this.evictOwnReferenceDataCache();
         // 降格によりPK重複が解消される可能性があるためバリデーションを再実行する
         this.validatePkDuplicates();
+        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（降格行の除去で表示行数が変化する）
+        this.refreshFilterDisplayIfActive();
     }
 
     /**
@@ -1033,6 +1067,26 @@ export class EditorTable {
     }
 
     /**
+     * フィルター状態をリセットして表示を更新する。
+     * 列挿入/削除時（列インデックス陳腐化）やタブ切替時（前回タブの状態リセット）に呼ばれる。
+     */
+    clearFilterState(): void {
+        // フィルターが適用されていない場合は何もしない（不要な selection.updateRendererAfterResize() を防ぐ）
+        if (!this.columnFilter.hasActiveFilter()) return;
+        this.columnFilter.clearAllFilters();
+        this.applyFilterDisplay();
+    }
+
+    /**
+     * フィルターが適用中の場合のみ applyFilterDisplay() を呼ぶ。
+     * 行挿入/削除/バッファ行昇格/降格後に EditorTableStructure から呼ばれる。
+     * フィルター未適用時はコストのかかる DOM 操作を行わない。
+     */
+    refreshFilterDisplayIfActive(): void {
+        if (this.columnFilter.hasActiveFilter()) this.applyFilterDisplay();
+    }
+
+    /**
      * 指定列のソートをトグルし、DOMの行順を更新する。
      * ソートはView変換のみ（ストア順序は変えない）。Undo/Redo対象外。
      * ミニテーブルでは呼ばれない（ソートインジケーターが存在しないため）。
@@ -1075,6 +1129,86 @@ export class EditorTable {
 
         // 全列ヘッダーのソートインジケーターを更新する
         this.updateAllSortIndicators();
+
+        // ソート後もフィルター状態を維持する（フィルター適用中の場合は表示/非表示を再計算する）
+        this.refreshFilterDisplayIfActive();
+    }
+
+    /**
+     * 現在の ColumnFilter 状態に基づいてデータ行の display を切り替え、
+     * フィルタークラスと行数カウンターを更新する。
+     * FilterDropdown の適用・クリア時と、ソート変更時・行挿入削除時に呼ばれる。
+     */
+    applyFilterDisplay(): void {
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return;
+
+        // フィルター未適用時は全行表示にして行数カウンターを非表示にし早期 return する
+        if (!this.columnFilter.hasActiveFilter()) {
+            for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+                (this.element.children[domDataRow + 1] as HTMLElement).style.display = '';
+            }
+            this.updateFilterActiveClasses();
+            this.filterRowCountElement.style.display = 'none';
+            this.selection.updateRendererAfterResize();
+            return;
+        }
+
+        // フィルター条件に一致するストアインデックスのセットを構築する
+        const filteredSet = new Set(this.columnFilter.computeFilteredIndices(this.storeRowIndices, storeRows));
+
+        let visibleCount = 0;
+        const totalCount = this.storeRowIndices.length;
+
+        // 各データ行の display を更新する（バッファ空行は対象外）
+        // DOM行は initialize() と reloadCellsFromStore() でストア行と必ず対応するため null チェック不要
+        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+            const storeRowIndex = this.storeRowIndices[domDataRow];
+            const domRow = this.element.children[domDataRow + 1] as HTMLElement;
+            if (filteredSet.has(storeRowIndex)) {
+                domRow.style.display = '';
+                visibleCount++;
+            } else {
+                domRow.style.display = 'none';
+            }
+        }
+
+        // フィルターアクティブクラスをヘッダーセルに付与/除去する
+        this.updateFilterActiveClasses();
+
+        // 行数カウンターを更新する
+        this.filterRowCountElement.textContent = `${visibleCount} / ${totalCount} 行`;
+        this.filterRowCountElement.style.display = 'block';
+
+        // 行の display 変更後に選択オーバーレイの描画位置を再計算する（非表示行にまたがる選択を解消）
+        this.selection.updateRendererAfterResize();
+    }
+
+    /**
+     * 全列ヘッダーのフィルタークラス（.filter-active）を現在のフィルター状態に合わせて更新する。
+     */
+    private updateFilterActiveClasses(): void {
+        const headerRow = this.element.children[0];
+        const columnCount = this.getColumnCount();
+        for (let colIdx = 0; colIdx < columnCount; colIdx++) {
+            const headerCell = headerRow.children[colIdx + 1] as HTMLElement;
+            if (this.columnFilter.isColumnFiltered(colIdx)) {
+                headerCell.classList.add('filter-active');
+            } else {
+                headerCell.classList.remove('filter-active');
+            }
+        }
+    }
+
+    /**
+     * フィルタードロップダウンを指定列用に開く（EditorTableStructureのフィルターアイコンクリックから使用）。
+     * デメテルの法則に従い、EditorTable が FilterDropdown を隠蔽して操作する。
+     *
+     * @param columnIndex 対象列インデックス（0始まり、行ヘッダー除く）
+     * @param anchorElement フィルターアイコン要素（位置決め用）
+     */
+    openFilterDropdown(columnIndex: number, anchorElement: HTMLElement): void {
+        this.filterDropdown.open(columnIndex, anchorElement);
     }
 
     /**
@@ -1389,6 +1523,8 @@ export class EditorTable {
         }
         // セル編集確定後にPK重複バリデーションを実行する（ストア全体で重複判定）
         this.validatePkDuplicates();
+        // フィルター適用中にセル値が変更された場合、フィルター条件との整合性を再評価する
+        this.refreshFilterDisplayIfActive();
         return changes;
     }
 
@@ -1408,6 +1544,8 @@ export class EditorTable {
         }
         // Undo/Redo後にPK重複バリデーションを実行する（ストア全体で重複判定）
         this.validatePkDuplicates();
+        // Undo/Redo後にフィルター条件との整合性を再評価する
+        this.refreshFilterDisplayIfActive();
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */

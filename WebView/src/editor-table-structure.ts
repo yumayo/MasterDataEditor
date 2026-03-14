@@ -109,6 +109,8 @@ export class EditorTableStructure {
         this.selection.updateRendererAfterResize();
         // 列挿入によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
         this.table.clearSortState();
+        // 列挿入によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
+        this.table.clearFilterState();
     }
 
     /**
@@ -213,6 +215,8 @@ export class EditorTableStructure {
         this.table.evictOwnReferenceDataCache();
         // 行挿入後にPK重複バリデーションを実行する（Undo/Redo時に挿入した行のIDが重複する可能性があるため）
         this.table.validatePkDuplicates();
+        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（挿入行がフィルター条件を満たさない可能性）
+        this.table.refreshFilterDisplayIfActive();
     }
 
     /**
@@ -317,6 +321,8 @@ export class EditorTableStructure {
         this.selection.updateRendererAfterResize();
         // 列削除によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
         this.table.clearSortState();
+        // 列削除によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
+        this.table.clearFilterState();
     }
 
     /**
@@ -365,6 +371,8 @@ export class EditorTableStructure {
         this.table.evictOwnReferenceDataCache();
         // 行削除後にPK重複バリデーションを実行する（削除によって重複が解消される場合があるため）
         this.table.validatePkDuplicates();
+        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（行削除で表示行数が変化する）
+        this.table.refreshFilterDisplayIfActive();
     }
 
     /**
@@ -406,8 +414,25 @@ export class EditorTableStructure {
         columnHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createColumnHeaderClickHandler(columnHeaderCell));
         // 列ヘッダー右クリックでコンテキストメニュー
         columnHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createColumnHeaderContextMenuHandler(columnHeaderCell));
-        // ミニテーブルにはソートインジケーターを追加しない
+        // ミニテーブルにはフィルターアイコン・ソートインジケーターを追加しない
         if (!this.table.isMiniTableInstance()) {
+            // フィルターアイコン（ソートインジケーターの左に配置）
+            const filterIcon = document.createElement('span');
+            filterIcon.classList.add('filter-icon');
+            filterIcon.textContent = '▼';
+            // mousedown は列選択ハンドラへのバブリングを防止する
+            filterIcon.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+            // click でフィルタードロップダウンをトグルする（columnIndex はクロージャキャプチャではなく
+            // DOM属性から動的取得することで列挿入/削除後の陳腐化を防ぐ）
+            filterIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const headerCell = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+                const colIdx = Number(headerCell.dataset.columnIndex);
+                this.table.openFilterDropdown(colIdx, e.currentTarget as HTMLElement);
+            });
+            columnHeaderCell.appendChild(filterIcon);
+
+            // ソートインジケーター
             const sortIndicator = document.createElement('div');
             sortIndicator.classList.add('sort-indicator');
             const ascIcon = document.createElement('span');

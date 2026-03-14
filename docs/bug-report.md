@@ -1365,3 +1365,42 @@ DiffTab（差分タブ）のEditorTableは `isMiniTable=true` で生成される
 イベントハンドラ内で「変動し得る値」をクロージャキャプチャせず、DOM属性（`dataset.columnIndex` 等）から動的に取得する方式を標準パターンとすること。
 
 ---
+
+## 92. [b76310e] — 列フィルター機能実装：Object.assignパターンによるインスタンス不一致
+
+### 不具合原因名
+Object.assignプロキシとコンストラクタ時の `this` 参照の不一致
+
+### なぜそうなったのか
+`FilterDropdown` がコンストラクタ引数として受け取った `editorTable`（実際は `realEditorTable`、Object.assign 前のオリジナルインスタンス）を参照し続けるため、`initializeModules()` で Object.assign により生成されたプロキシオブジェクト（外部から見える `editorTable`）の `storeRowIndices` 等を参照できなかった。具体的には、`FilterDropdown` は `realEditorTable` の `storeRowIndices` を見ており、プロキシ側のソート/フィルター済みインデックスが反映されなかった。
+
+### どうしたら今後は再発しないか
+`initializeModules()` 内で Object.assign を使用する場合、それ以降に生成するモジュール（FilterDropdown 等）は Object.assign 完了後に `this`（プロキシ）を渡して再生成すること。コンストラクタ実行時点の `this` と Object.assign 後の `this` は別物であることを常に意識し、モジュール初期化順序をプロキシ生成後に揃える。
+
+---
+
+## 93. [b76310e] — 列フィルター機能実装：操作パスの網羅漏れ（フィルター再評価）
+
+### 不具合原因名
+ソート機能と対称なフィルタークリア・再評価の適用漏れ
+
+### なぜそうなったのか
+ソート機能実装時に `clearSortState()` を列挿入/削除等のトリガーポイントで呼ぶパターンが確立されていたが、フィルター機能追加時に同等の `clearFilterState()` および再評価ロジックを以下の操作パスに適用し忘れた：列挿入/削除、行挿入/削除/昇格/降格、セル編集完了時、タブ切替時。フィルター状態が古いまま残り、表示行が実データと乖離した。
+
+### どうしたら今後は再発しないか
+新しい「状態」（ソート・フィルター・ハイライト等）を追加する際は、既存の `clearSortState()` 呼び出し箇所を `grep` で一覧し、同一トリガーポイント全てに新状態のクリア/再評価を追加するチェックリストを設けること。操作パス網羅のテストも先に書くことで TDD で防止できる。
+
+---
+
+## 94. [b76310e] — 列フィルター機能実装：CSSの display 競合による要素表示失敗
+
+### 不具合原因名
+CSS `display: none` と JavaScript `style.display = ''` のリセット競合
+
+### なぜそうなったのか
+CSS で `.filter-dropdown { display: none; }` と定義しつつ、JavaScript で要素を表示する際に `style.display = ''`（空文字リセット）を設定した。空文字リセットはインラインスタイルを除去してCSSに委譲するため、CSS側の `display: none` が再適用され要素が表示されなかった。
+
+### どうしたら今後は再発しないか
+CSS でデフォルト非表示（`display: none`）にした要素を JavaScript で表示する際は、`style.display = 'block'`（または `'flex'` 等、実際に使用するレイアウトモード）を明示的に設定すること。`style.display = ''` はCSSへの委譲であり「表示する」命令ではないことを徹底する。
+
+---

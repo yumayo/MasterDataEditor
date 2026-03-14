@@ -1,0 +1,153 @@
+/* =============================================================================
+   フィルタードロップダウン スタイル
+   ============================================================================= */
+
+/* フィルターアイコン: sort-indicator（right:8px）の左に絶対配置してDOM重なりによるクリック不到達を防ぐ */
+.filter-icon {
+    position: absolute;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    font-size: 8px;
+    cursor: pointer;
+    color: var(--border-color);
+    user-select: none;
+    border-radius: 2px;
+    transition: color 0.15s, background-color 0.15s;
+    z-index: 2;
+}
+
+.filter-icon:hover {
+    color: var(--font-color);
+    background-color: rgba(128, 128, 128, 0.1);
+}
+
+/* フィルター適用中のヘッダーセル */
+.editor-table-column-header.filter-active .filter-icon {
+    color: var(--selection-color);
+}
+
+/* フィルタードロップダウンコンテナ */
+.filter-dropdown {
+    display: none;
+    position: absolute;
+    z-index: 1000;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px;
+    min-width: 180px;
+    max-width: 280px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    color: var(--font-color);
+}
+
+.filter-dropdown.visible {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* 検索ボックス */
+.filter-search-input {
+    width: 100%;
+    padding: 4px 6px;
+    background-color: var(--background-sub-color);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--font-color);
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.filter-search-input:focus {
+    border-color: var(--selection-color);
+}
+
+/* ボタン群 */
+.filter-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.filter-buttons button,
+.filter-apply {
+    padding: 3px 8px;
+    font-size: 11px;
+    background-color: var(--background-sub-color);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--font-color);
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.filter-buttons button:hover,
+.filter-apply:hover {
+    background-color: var(--background-color);
+}
+
+/* チェックボックスリスト */
+.filter-item-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 2px 0;
+}
+
+/* 各チェックボックス項目 */
+.filter-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    user-select: none;
+    border-radius: 2px;
+}
+
+.filter-item:hover {
+    background-color: rgba(128, 128, 128, 0.07);
+}
+
+.filter-item input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: var(--selection-color);
+    flex-shrink: 0;
+}
+
+.filter-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 適用ボタン: 操作を確定するプライマリアクションのため選択色（アクセントカラー）を使用 */
+.filter-apply {
+    align-self: flex-end;
+    background-color: var(--selection-color);
+    border-color: var(--selection-color);
+    color: #ffffff;
+}
+
+.filter-apply:hover {
+    opacity: 0.85;
+}
+
+/* 行数カウンター */
+.filter-row-count {
+    display: none;
+    font-size: 11px;
+    color: var(--border-color);
+    padding: 2px 4px;
+    margin-top: 2px;
+}
