@@ -199,6 +199,8 @@ export class EditorTableStructure {
         // 新規行にIDが入力される前にキャッシュが構築されると空IDがスキップされるため問題ないが、
         // IDが入力された後は updateFullDataCell で逐次更新されるため一貫した挙動を保証する。
         this.table.evictOwnReferenceDataCache();
+        // 行挿入後にPK重複バリデーションを実行する（Undo/Redo時に挿入した行のIDが重複する可能性があるため）
+        this.table.validatePkDuplicates();
     }
 
     /**
@@ -340,6 +342,8 @@ export class EditorTableStructure {
         // undo（insertRowInternal呼び出し）時も insertRowInternal 側でキャッシュを無効化するため、
         // deleteRow と insertRowInternal の両方で evict することで Do/Undo の対称性を保つ。
         this.table.evictOwnReferenceDataCache();
+        // 行削除後にPK重複バリデーションを実行する（削除によって重複が解消される場合があるため）
+        this.table.validatePkDuplicates();
     }
 
     /**

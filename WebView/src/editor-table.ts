@@ -18,6 +18,7 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
+import {config} from "./config";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -245,6 +246,8 @@ export class EditorTable {
                 }
             }
         });
+        // 初期表示時にPK重複を検出してセルにクラスを付与する
+        this.validatePkDuplicates();
     }
 
     /**
@@ -877,6 +880,8 @@ export class EditorTable {
         }
         // DOM行の増減に関わらず git差分ハイライトを再評価する（ストアとDOMのマッピングが変化するため）
         this.applyGitDiffHighlight();
+        // タブ切替後のDOMリロードでもPK重複の赤波線を再適用する
+        this.validatePkDuplicates();
     }
 
     // =========================================================================
@@ -917,6 +922,8 @@ export class EditorTable {
         // バッファ行がストアに昇格した後、参照データキャッシュを無効化する。
         // 昇格行のIDがキャッシュ構築後に入力された場合に古いキャッシュが参照されるのを防ぐ。
         this.evictOwnReferenceDataCache();
+        // バッファ行昇格後にPK重複バリデーションを実行する（新規行のIDが既存と重複する可能性があるため）
+        this.validatePkDuplicates();
     }
 
     /**
@@ -943,6 +950,8 @@ export class EditorTable {
         this.applyGitDiffHighlight();
         // ストア行降格後に参照データキャッシュを無効化する（Undo時に古いIDがドロップダウンに残るのを防ぐ）。
         this.evictOwnReferenceDataCache();
+        // 降格によりPK重複が解消される可能性があるためバリデーションを再実行する
+        this.validatePkDuplicates();
     }
 
     /**
@@ -1250,6 +1259,8 @@ export class EditorTable {
         } else {
             this.forceRefreshRelationsPanel();
         }
+        // セル編集確定後にPK重複バリデーションを実行する（ストア全体で重複判定）
+        this.validatePkDuplicates();
         return changes;
     }
 
@@ -1267,6 +1278,8 @@ export class EditorTable {
         } else {
             this.forceRefreshRelationsPanel();
         }
+        // Undo/Redo後にPK重複バリデーションを実行する（ストア全体で重複判定）
+        this.validatePkDuplicates();
     }
 
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
@@ -1404,5 +1417,71 @@ export class EditorTable {
     /** 行を削除する（Undo用） */
     public deleteRow(rowIndex: number): void {
         this.structure.deleteRow(rowIndex);
+    }
+
+    // =========================================================================
+    // PKバリデーション
+    // =========================================================================
+
+    /**
+     * ストア全体のPK値を走査して重複を検出し、表示中のPKセルに cell-pk-duplicate クラスを適用する。
+     *
+     * ミニテーブルのフィルタで非表示になっている行も含め、ストア全体のデータで重複判定する。
+     * これにより「ミニテーブルに表示されていない行」との重複も正しく検出できる。
+     *
+     * 空のPK値は重複チェックの対象外（未入力行は無視する）。
+     */
+    public validatePkDuplicates(): void {
+        // ストアからPK列の全値を取得してカウントマップを構築する
+        const storeHeader = this.store.getHeader(this.tableName);
+        const storeRows = this.store.getRows(this.tableName);
+        // 編集操作後にストアが存在しないのは設計上ありえないため例外を投げる
+        if (storeHeader === false || storeRows === false) throw new Error('[EditorTable.validatePkDuplicates] ストアにテーブルが登録されていません: ' + this.tableName);
+
+        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+        // PK列が存在しないテーブルはバリデーション不要
+        if (pkColIdx === -1) return;
+
+        // ストア全行のPK値の出現回数をカウントする（空文字は対象外）
+        const pkCounts = new Map<string, number>();
+        for (const row of storeRows) {
+            const pk = row[pkColIdx];
+            if (pk === '') continue;
+            if (pkCounts.has(pk)) {
+                pkCounts.set(pk, (pkCounts.get(pk) as number) + 1);
+            } else {
+                pkCounts.set(pk, 1);
+            }
+        }
+
+        // getColumnHeaderValue() を使ってDOM上のPK列インデックスを特定する
+        // （手動でのDOM走査は .column-header-name span 付きのcomment列で誤マッチする危険があるため使わない）
+        let domPkColIndex = -1;
+        const colCount = this.getColumnCount();
+        for (let c = 0; c < colCount; c++) {
+            if (this.getColumnHeaderValue(c) === config.primaryKeyColumnName) {
+                domPkColIndex = c + 1; // 行ヘッダーを含むDOMインデックス
+                break;
+            }
+        }
+        // PK列がDOMに存在しない（非表示テーブル等）はバリデーション不要
+        if (domPkColIndex === -1) return;
+
+        // ループ上限をデータ行のみに制限してバッファ空行への不要なDOM走査を排除する
+        // （rowIdx=1から開始するのは children[0] が列ヘッダー行のため）
+        for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
+            const row = this.element.children[rowIdx] as HTMLElement | null;
+            if (!row) continue;
+            const pkCell = row.children[domPkColIndex] as HTMLElement | null;
+            if (!pkCell) continue;
+            const pkValue = EditorTable.getCellValue(pkCell);
+            if (pkValue === '' || !pkCounts.has(pkValue)) {
+                pkCell.classList.remove('cell-pk-duplicate');
+            } else if ((pkCounts.get(pkValue) as number) > 1) {
+                pkCell.classList.add('cell-pk-duplicate');
+            } else {
+                pkCell.classList.remove('cell-pk-duplicate');
+            }
+        }
     }
 }
