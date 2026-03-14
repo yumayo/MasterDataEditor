@@ -183,5 +183,12 @@
 - **KNOWN ISSUE**: cleanup() does not clear previewCache (asymmetry with setReferenceTable)
 - **KNOWN ISSUE**: positionElement only checks right overflow, not bottom overflow
 
+## FEAT_0014 Mini-table Buffer Row + AutoFill (2026-03-15)
+- **CRITICAL**: PromoteBufferRowCommand.redo()がapplyAutoFillToRow()を呼ばない -> Redo時にFK値が消失
+- **CRITICAL**: demoteStoreRowToBuffer()がDOMセル値をクリアしない -> Undo後にFK値がDOM上に残留
+- **KNOWN ISSUE**: emptyRowCountの名前が「空行数」だが実際は「最低総行数」(既存負債)
+- **Pattern**: 初回パスで直接関数呼び出し + Command構築 → Redo時にCommand.execute()で同じ関数だけ呼んで付随処理を忘れる
+
 ## Review History (continued)
 - 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
+- 2026-03-15 (FEAT_0014 buffer-row-autofill R1): 致命的2件、重要3件、軽微2件
