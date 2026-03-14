@@ -1030,13 +1030,17 @@ export class EditorTable {
         this.reference.updateColumnReferenceHints(columnIndex);
     }
 
-    /** 逆参照ヒントを更新する。解決完了後にRelationsPanelも再描画する */
+    /**
+     * 逆参照ヒントを更新する。通常テーブルの場合のみRelationsPanelを再描画する。
+     * ミニEditorTableの場合はパネル全体再構築を避ける（ミニテーブル自身が破棄されるため）。
+     * 初回テーブル展開時は forceNotifyRelationsPanel() が先に走り、逆参照マップが未設定のため
+     * 1:Nエントリが0件になる。ここで再描画することで通常テーブルの1:Nも表示される。
+     */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reference.updateReverseReferenceHints(map);
-        // 逆参照マップの非同期解決が完了した時点で、RelationsPanelの1:Nエントリを描画できるようになる。
-        // 初回テーブル展開時は forceNotifyRelationsPanel() が先に走り、逆参照マップが未設定のため
-        // 1:Nエントリが0件になる。ここで再描画することで1:Nも表示される。
-        this.forceRefreshRelationsPanel();
+        if (!this.isMiniTable) {
+            this.forceRefreshRelationsPanel();
+        }
     }
 
     /** 逆参照マップにエントリが存在するか判定する */

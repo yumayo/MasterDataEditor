@@ -1043,3 +1043,17 @@ Selection インスタンス間でlastNotifiedRowが独立保持されること�
 `lastNotifiedRow` のようなキャッシュ変数を設計する際は、「同一インスタンス内での重複通知防止」という前提が崩れるケース（複数インスタンスをまたぐ操作）を必ず列挙する。今回の修正ではガード責務を `Selection`（インスタンスが複数存在する）から `EditorTable.notifyRowSelectionChanged`（通知先で1箇所に集約）に移動し、ミニテーブルの場合は常に通知、非ミニテーブルの場合のみ行番号の重複チェックを行う設計に変更した。キャッシュ・最適化ガードは「その変数のスコープが一意であること」を前提条件として明示すべきである。
 
 ---
+
+## 71. [35525d7] — ミニテーブルのPK列に逆参照ヒントが表示されない不具合を修正
+
+### 不具合原因名
+対称操作パスの欠落（通常タブとミニテーブルの初期化フロー不一致）
+
+### なぜそうなったのか
+`Tab.createMiniEditorTable()` は `Tab.createTabState()` と同等のEditorTable生成メソッドだが、`preloadReferenceTables()`（正参照ヒント解決）のみ呼んでおり、`resolveReverseReferencesAsync()`（逆参照ヒント解決）の呼び出しが欠落していた。通常タブ作成パスでは両方呼ばれるため、通常タブでは逆参照ヒントが正しく表示されるが、ミニテーブルでは表示されなかった。加えて、`updateReverseReferenceHints()` が `forceRefreshRelationsPanel()` を無条件に呼んでいたため、ミニテーブルから呼ばれた場合にRelationsPanel全体が再構築されてミニテーブル自身が破棄されるリスクがあった。
+
+### どうしたら今後は再発しないか
+1. EditorTable生成パスが複数存在する場合（通常タブ、ミニテーブル）、新しいパスを追加・修正する際は既存パスとの対称性を必ず確認する。特に `preloadReferenceTables` と `resolveReverseReferencesAsync` は対で呼ぶこと。
+2. `forceRefreshRelationsPanel()` のような副作用を持つメソッドを呼ぶ際は、ミニテーブルから呼ばれるケースを考慮し、`if (!this.isMiniTable)` ガードの要否を検討する（`applyCellChanges`/`replayCellChanges` の既存パターン参照）。
+
+---

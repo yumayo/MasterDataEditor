@@ -861,6 +861,9 @@ export class Tab {
         // 参照先テーブルを事前読み込みし、完了後に参照ヒントを一括適用する
         this.reference.preloadReferenceTables(tableData, editorTable);
 
+        // 逆参照ヒント（cell-reverse-reference-hint）をミニテーブルのPK列にも表示するため解決する
+        this.reference.resolveReverseReferencesAsync(tableKey, editorTable);
+
         return {editorTable, fillController, areaResizer, history};
     }
 
