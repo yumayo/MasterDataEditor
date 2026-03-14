@@ -32,6 +32,38 @@ export async function findFilesAsync(directory: string): Promise<File[]> {
 }
 
 /**
+ * git status で変更されたCSVファイルの一覧
+ * isNew: true のとき新規ファイル（??ステータス）。HEAD版CSVが存在しないため git show を呼ばない
+ */
+export interface GitStatusEntry {
+    path: string;
+    tableName: string;
+    isNew: boolean;
+}
+
+/**
+ * git status レスポンス
+ */
+export interface GitStatusResult {
+    changes: GitStatusEntry[];
+    staged: GitStatusEntry[];
+}
+
+/**
+ * git status を実行し、変更ファイル・ステージ済みファイルの一覧を返す
+ */
+export async function gitStatusAsync(): Promise<GitStatusResult> {
+    return postMessageAsync<GitStatusResult>('git_status', {});
+}
+
+/**
+ * git show HEAD:path でHEAD時点のファイル内容を返す
+ */
+export async function gitShowAsync(path: string): Promise<string> {
+    return postMessageAsync<string>('git_show', { path });
+}
+
+/**
  * リクエストキュー
  * WebView2のメッセージAPIにはリクエストIDがないため、
  * 同じ種類のリクエストが同時に飛ぶとレスポンスが取り違えられる。

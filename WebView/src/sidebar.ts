@@ -3,6 +3,7 @@ import {Tab} from "./tab";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
 import {SearchPanel} from "./search-panel";
+import {SourceControlPanel} from "./source-control-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
@@ -22,6 +23,7 @@ export class Sidebar {
     private readonly filesPanel: HTMLElement;
     private readonly referencesPanel: ReferencesPanel;
     private readonly searchPanel: SearchPanel;
+    private readonly sourceControlPanel: SourceControlPanel;
     private readonly directory: ExplorerDirectory;
     private isDragging: boolean = false;
     private dragStartX: number = 0;
@@ -66,6 +68,10 @@ export class Sidebar {
         // SEARCHパネル
         this.searchPanel = new SearchPanel(tab, openEditorTables);
         this.searchPanel.appendTo(sidebarContent);
+
+        // ソース管理パネル
+        this.sourceControlPanel = new SourceControlPanel(editor);
+        this.sourceControlPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 1);
@@ -135,12 +141,23 @@ export class Sidebar {
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.referencesPanel.hide();
         this.searchPanel.hide();
+        this.sourceControlPanel.hide();
+
+        if (item === 'sourceControl') {
+            // 差分ビューはソース管理パネル内のクリックで開くため、ここでは操作しない
+            this.sourceControlPanel.show();
+            return;
+        }
+
+        // ソース管理以外に切り替えた場合は差分ビューを閉じてエディターを通常状態に戻す
+        this.editor.hideDiffView();
 
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');
         } else if (item === 'references') {
             this.referencesPanel.show();
         } else {
+            // search
             this.searchPanel.show();
         }
     }

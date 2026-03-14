@@ -1,7 +1,7 @@
 /**
  * アクティビティバーの項目種別
  */
-export type ActivityBarItem = 'files' | 'references' | 'search';
+export type ActivityBarItem = 'files' | 'references' | 'search' | 'sourceControl';
 
 /**
  * ファイルアイコン（SVG）
@@ -27,6 +27,13 @@ const SEARCH_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="n
 </svg>`;
 
 /**
+ * ソース管理アイコン（SVG — gitブランチ形状）
+ */
+const SOURCE_CONTROL_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M7 3C5.34 3 4 4.34 4 6C4 7.31 4.84 8.42 6 8.83V15.17C4.84 15.58 4 16.69 4 18C4 19.66 5.34 21 7 21C8.31 21 9.42 20.16 9.83 19H14.17C14.58 20.16 15.69 21 17 21C18.66 21 20 19.66 20 18C20 16.69 19.16 15.58 18 15.17V13C18 11.34 16.66 10 15 10H9.83C9.42 8.84 8.31 8 7 8C7 8 7 7.5 7 7C7 6.5 7 6 7 6C7 5.45 7.45 5 8 5H12V3H7ZM7 5C7.55 5 8 5.45 8 6C8 6.55 7.55 7 7 7C6.45 7 6 6.55 6 6C6 5.45 6.45 5 7 5ZM15 12C15.55 12 16 12.45 16 13V15.17C14.84 15.58 14 16.69 14 18H9.83C9.42 16.84 8.31 16 7 16V8.83C8.16 8.42 9 7.31 9 6H12V8H15V12ZM17 17C17.55 17 18 17.45 18 18C18 18.55 17.55 19 17 19C16.45 19 16 18.55 16 18C16 17.45 16.45 17 17 17ZM7 17C7.55 17 8 17.45 8 18C8 18.55 7.55 19 7 19C6.45 19 6 18.55 6 18C6 17.45 6.45 17 7 17Z" fill="currentColor"/>
+</svg>`;
+
+/**
  * 歯車アイコン（SVG）
  */
 const SETTINGS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -43,6 +50,7 @@ export class ActivityBar {
     private readonly filesButton: HTMLElement;
     private readonly referencesButton: HTMLElement;
     private readonly searchButton: HTMLElement;
+    private readonly sourceControlButton: HTMLElement;
     private readonly onItemClick: (item: ActivityBarItem) => void;
     private readonly onSettingsClick: () => void;
 
@@ -57,10 +65,12 @@ export class ActivityBar {
         this.filesButton = this.createButton(FILES_ICON_SVG, 'files');
         this.referencesButton = this.createButton(REFERENCES_ICON_SVG, 'references');
         this.searchButton = this.createButton(SEARCH_ICON_SVG, 'search');
+        this.sourceControlButton = this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl');
 
         this.element.appendChild(this.filesButton);
         this.element.appendChild(this.referencesButton);
         this.element.appendChild(this.searchButton);
+        this.element.appendChild(this.sourceControlButton);
 
         // 歯車ボタンは margin-top: auto で下部固定
         const settingsButton = document.createElement('div');
@@ -110,5 +120,6 @@ export class ActivityBar {
         this.filesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'files');
         this.referencesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'references');
         this.searchButton.classList.toggle('activity-bar-item-active', this.activeItem === 'search');
+        this.sourceControlButton.classList.toggle('activity-bar-item-active', this.activeItem === 'sourceControl');
     }
 }

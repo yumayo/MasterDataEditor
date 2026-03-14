@@ -1,0 +1,43 @@
+using System;
+using System.Diagnostics;
+
+namespace App.MasterDataEditor
+{
+	/// <summary>
+	/// gitコマンドを実行する共通ヘルパー
+	/// WebView2HandlerGitStatusRequest / WebView2HandlerGitShowRequest の重複を排除する
+	/// </summary>
+	internal static class GitCommandHelper
+	{
+		/// <summary>
+		/// 指定した作業ディレクトリでgitコマンドを実行し、標準出力を返す
+		/// コマンドが失敗した場合（終了コードが0以外）は InvalidOperationException をスローする
+		/// </summary>
+		public static string RunGitCommand(string workDir, string arguments)
+		{
+			var startInfo = new ProcessStartInfo
+			{
+				FileName = "git",
+				Arguments = arguments,
+				WorkingDirectory = workDir,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				UseShellExecute = false,
+				CreateNoWindow = true,
+			};
+
+			using var process = Process.Start(startInfo);
+			if (process == null) throw new InvalidOperationException("Failed to start git process.");
+			var output = process.StandardOutput.ReadToEnd();
+			var error = process.StandardError.ReadToEnd();
+			process.WaitForExit();
+
+			if (process.ExitCode != 0)
+			{
+				throw new InvalidOperationException($"git command failed (exit code {process.ExitCode}): {error}");
+			}
+
+			return output;
+		}
+	}
+}

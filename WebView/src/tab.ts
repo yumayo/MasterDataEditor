@@ -454,6 +454,10 @@ export class Tab {
 
     enableTabButton(name: string) {
 
+        // 差分ビューが表示中であれば閉じてエディターを通常状態に戻す
+        // hideDiffView() は内部で hasDiffView() のガードがあるため、差分ビュー非表示時に呼んでも安全
+        this.editor.hideDiffView();
+
         // ちょっと面倒なので、一回全部無効な状態にします。
         this.tabButtons.forEach(x => x.disable());
 

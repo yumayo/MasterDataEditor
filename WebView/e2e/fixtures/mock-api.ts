@@ -172,6 +172,41 @@ export async function installMockApiAsync(
                     });
                     return;
                 }
+
+                // git差分機能: 変更/ステージ済みファイル一覧を返す
+                // テストフィクスチャで setMockGitStatus() により必ず設定される
+                if (type === "git_status_request") {
+                    type GitStatusWindow = { __mockGitStatus: { changes: object[]; staged: object[] } };
+                    const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
+                    dispatch({
+                        type: "git_status_response",
+                        success: true,
+                        data: mockStatus,
+                    });
+                    return;
+                }
+
+                // git差分機能: HEAD時点のファイル内容を返す
+                // テストフィクスチャで setMockGitHeadFiles() により必ず設定される
+                if (type === "git_show_request") {
+                    const path = request.path as string;
+                    type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> };
+                    const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles;
+                    if (path in headFiles) {
+                        dispatch({
+                            type: "git_show_response",
+                            success: true,
+                            data: headFiles[path],
+                        });
+                    } else {
+                        dispatch({
+                            type: "git_show_response",
+                            success: false,
+                            error: "fatal: path '" + path + "' does not exist in 'HEAD'",
+                        });
+                    }
+                    return;
+                }
             }
 
             window.chrome = {

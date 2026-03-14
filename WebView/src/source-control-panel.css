@@ -1,0 +1,29 @@
+.source-control-panel {
+    display: none;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.source-control-panel.sidebar-panel-active {
+    display: block;
+}
+
+.source-control-section-header {
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: var(--font-color);
+    opacity: 0.7;
+}
+
+.source-control-file-item {
+    padding: 4px 12px 4px 24px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--font-color);
+}
+
+.source-control-file-item:hover {
+    background-color: var(--list-hover-background);
+}

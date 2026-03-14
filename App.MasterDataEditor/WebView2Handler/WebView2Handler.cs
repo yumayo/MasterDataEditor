@@ -172,6 +172,14 @@ public class WebView2Handler
 							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root));
 							break;
 
+						case "git_status_request":
+							SendMessageToWebView(WebView2HandlerGitStatusRequest.Invoke(root));
+							break;
+
+						case "git_show_request":
+							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root));
+							break;
+
 						default:
 							Logger.Info($"未知のメッセージタイプ: {messageType}");
 							break;

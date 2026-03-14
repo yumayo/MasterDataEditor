@@ -1,5 +1,6 @@
 import {RelationsPanel} from "./relations-panel";
 import {Tab} from "./tab";
+import {DiffView} from "./diff-view";
 
 export class Editor {
 
@@ -166,6 +167,49 @@ export class Editor {
      */
     getLeftPaneForScroll(): HTMLElement {
         return this.leftPane;
+    }
+
+    /**
+     * 差分ビューが現在表示中かどうかを返す
+     * leftSlot に diff-view-wrapper クラスの要素が存在するかで判定する
+     */
+    hasDiffView(): boolean {
+        return this.leftSlot.querySelector('.diff-view-wrapper') !== null;
+    }
+
+    /**
+     * 差分ビューを左ペインに表示する
+     * leftSlot の内容を差分ビュー専用ラッパーに置き換える
+     * leftPane はフィールドで保持しているため hideDiffView() で復元できる
+     */
+    showDiffView(diffView: DiffView): void {
+        // leftSlot の全子要素を除去する（leftPane はフィールドで保持されているため復元可能）
+        while (this.leftSlot.firstChild) {
+            this.leftSlot.removeChild(this.leftSlot.firstChild);
+        }
+        // 差分ビューをラッパーに包んで leftSlot に追加する
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('editor-left-pane', 'diff-view-wrapper');
+        diffView.appendTo(wrapper);
+        this.leftSlot.appendChild(wrapper);
+
+        // 右スロットを非表示にして差分ビューを全幅で表示する
+        this.rightSlot.style.display = 'none';
+    }
+
+    /**
+     * 差分ビューを閉じてエディターを通常状態に戻す
+     * leftSlot を全クリアして元の leftPane を復元し、右スロットを再表示する
+     */
+    hideDiffView(): void {
+        if (!this.hasDiffView()) return;
+        // 差分ビューラッパーを除去して元の leftPane を復元する
+        while (this.leftSlot.firstChild) {
+            this.leftSlot.removeChild(this.leftSlot.firstChild);
+        }
+        this.leftSlot.appendChild(this.leftPane);
+        // 右スロットを再表示する
+        this.rightSlot.style.display = '';
     }
 
     /** サイドバー幅に応じてエディター領域の位置と幅を更新する */
