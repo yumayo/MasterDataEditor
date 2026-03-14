@@ -64,6 +64,12 @@ export class EditorTable {
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     private autoFillEntries: Array<{ columnName: string; value: string }>;
     /**
+     * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
+     * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
+     * forceRefreshRelationsPanel() 呼び出し時は -1 にリセットして強制再通知を保証する。
+     */
+    private lastNotifiedRow: number;
+    /**
      * DOMのデータ行インデックス（0始まり）からストアの行インデックスへのマッピング。
      * 通常テーブル: storeRowIndices[i] = i（DOM行i+1 → ストア行i）。
      * ミニテーブル: filteredRows作成時に各filteredRow がストアの何行目かを記録する。
@@ -104,6 +110,7 @@ export class EditorTable {
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.autoFillEntries = [];
+        this.lastNotifiedRow = -1;
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.selectionDragController = new SelectionDragController(
@@ -919,22 +926,26 @@ export class EditorTable {
     notifyRowSelectionChanged(rowIndex: number): void {
         if (this.relationsPanel === false) return;
         if (this.isMiniTable) {
-            // ミニテーブルの場合: 同一RPのupdateForRow（自己破棄）には通知しない。
-            // 代わりに右隣ペインのRPをこの行のPK値で更新する通知チェーンを呼ぶ。
+            // ミニテーブルの場合: 常に通知する（異なるミニテーブル間の切り替えを正しく検知するため、
+            // 行番号による重複スキップは行わない）
             const pkValue = this.getRowPkValue(rowIndex);
             if (pkValue === '') return;
             this.relationsPanel.notifyMiniTableRowSelectionChanged(this.tableName, pkValue);
             return;
         }
+        // 非ミニテーブルの場合: 同一行インデックスへの重複通知を防止してパフォーマンスを保護する
+        if (rowIndex === this.lastNotifiedRow) return;
+        this.lastNotifiedRow = rowIndex;
         this.relationsPanel.updateForRow(rowIndex);
     }
 
     /**
-     * セル値変更後にRelationsPanelを強制再描画する
-     * Selection.forceNotifyRelationsPanel() 経由でlastNotifiedRowをリセットしてから通知する
+     * セル値変更後にRelationsPanelを強制再描画する。
+     * lastNotifiedRow をリセットして同一行でも確実に再通知する。
      */
     forceRefreshRelationsPanel(): void {
         if (this.relationsPanel === false) return;
+        this.lastNotifiedRow = -1;
         this.selection.forceNotifyRelationsPanel();
     }
 

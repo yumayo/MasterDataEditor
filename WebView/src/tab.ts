@@ -434,7 +434,7 @@ export class Tab {
             // 他タブでインメモリデータが編集された可能性があるため、参照ヒントを再更新する
             this.reference.refreshReferenceHints(name, existingState);
             // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
-            existingState.selection.forceNotifyRelationsPanel();
+            existingState.editorTable.forceRefreshRelationsPanel();
             return;
         }
 
@@ -677,7 +677,7 @@ export class Tab {
             }
 
             // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
-            state.selection.forceNotifyRelationsPanel();
+            state.editorTable.forceRefreshRelationsPanel();
 
             this.consumePendingNavigation(state);
         });

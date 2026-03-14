@@ -63,9 +63,6 @@ export class Selection {
 
     private scrollBinding: ScrollViewportController;
 
-    /** 最後にRelationsPanelへ通知したフォーカス行（重複通知防止用） */
-    private lastNotifiedRow: number;
-
     constructor(editorTable: EditorTable, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
@@ -81,7 +78,6 @@ export class Selection {
         this.fillTarget = { row: 0, column: 0 };
         this.fillStartMousePosition = { x: 0, y: 0 };
         this.fillCurrentMousePosition = { x: 0, y: 0 };
-        this.lastNotifiedRow = -1;
 
         // 選択範囲表示用の要素を作成
         const element = document.createElement('div');
@@ -190,7 +186,6 @@ export class Selection {
 
     /**
      * 行全体を選択する（行ヘッダークリック時）
-     * 同じ行を再クリックした場合も RelationsPanel に通知するため lastNotifiedRow をリセットする
      */
     selectRow(row: number): void {
         if (row < 1) return;
@@ -203,8 +198,6 @@ export class Selection {
         this.selecting = true;
         this.selectingColumn = false;
         this.selectingRow = true;
-        // 同じ行への再クリックでも通知が発火するようにリセットする
-        this.lastNotifiedRow = -1;
         this.updateRenderer();
     }
 
@@ -383,12 +376,11 @@ export class Selection {
     }
 
     /**
-     * lastNotifiedRowをリセットしてからfocus行のRelationsPanel通知を強制発火する。
+     * focus行のRelationsPanel通知を強制発火する。
      * - タブ切り替え時・新規オープン時（tab.ts enableTabButton / createTabState から呼ばれる）
      * - セル値変更後に同一行のままパネルを再描画するとき（editor-table.ts から呼ばれる）
      */
     forceNotifyRelationsPanel(): void {
-        this.lastNotifiedRow = -1;
         this.editorTable.notifyRowSelectionChanged(this.focus.row);
     }
 
@@ -569,11 +561,8 @@ export class Selection {
         // ヘッダーの選択状態を更新
         this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
 
-        // フォーカス行が変化したときにRelationsPanelへ通知する
-        if (this.focus.row !== this.lastNotifiedRow) {
-            this.lastNotifiedRow = this.focus.row;
-            this.editorTable.notifyRowSelectionChanged(this.focus.row);
-        }
+        // フォーカス行が変化したときにRelationsPanelへ通知する（重複制御はEditorTable側で行う）
+        this.editorTable.notifyRowSelectionChanged(this.focus.row);
     }
 
     private scrollFocusIntoView(): void {

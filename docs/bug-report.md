@@ -1030,3 +1030,16 @@ RelationsPanelのミニテーブルでCtrl+Click/F12した際、従来は左ペ�
 2. 配列の添字アクセスでは `undefined` 判定ではなく `index >= array.length` の境界チェックを使用する
 
 ---
+
+## 70. [7f97cc9] — lastNotifiedRowガードをSelection→EditorTableに移動し、ミニテーブル間切り替え時の右ペインRelationsPanel未更新を修正
+
+### 不具合原因名
+Selection インスタンス間でlastNotifiedRowが独立保持されることによる通知スキップ
+
+### なぜそうなったのか
+各ミニテーブルは独立した `Selection` インスタンスを持っており、`Selection.updateRenderer()` 内の `lastNotifiedRow` ガードが「異なるミニテーブル間の切り替え」を考慮していなかった。ミニテーブルA（row0）→ ミニテーブルB（row0）→ 再びミニテーブルA（row0）と操作すると、ミニテーブルAの `lastNotifiedRow` は初回クリック時に 0 に設定されたまま変化せず、3回目のクリック時に `focus.row !== lastNotifiedRow` が `false` となり通知がスキップされ、右ペインのRelationsPanelが更新されなかった。
+
+### どうしたら今後は再発しないか
+`lastNotifiedRow` のようなキャッシュ変数を設計する際は、「同一インスタンス内での重複通知防止」という前提が崩れるケース（複数インスタンスをまたぐ操作）を必ず列挙する。今回の修正ではガード責務を `Selection`（インスタンスが複数存在する）から `EditorTable.notifyRowSelectionChanged`（通知先で1箇所に集約）に移動し、ミニテーブルの場合は常に通知、非ミニテーブルの場合のみ行番号の重複チェックを行う設計に変更した。キャッシュ・最適化ガードは「その変数のスコープが一意であること」を前提条件として明示すべきである。
+
+---
