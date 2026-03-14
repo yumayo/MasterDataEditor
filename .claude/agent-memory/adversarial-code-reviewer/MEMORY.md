@@ -21,16 +21,12 @@
 - `/WebView/src/editor-actions.ts` - saveTableDataFromStoreAsync/saveSchemaDataAsync
 - `/WebView/src/in-memory-table-store.ts` - Central data store + IHistory interface + Dirty management
 - `/WebView/src/reference-expression.ts` - Reference expression parser (SimpleReference + DynamicReference)
+- `/WebView/src/csv.ts` - CSV parser (naive split-based, not RFC 4180 compliant)
 
 ## Pane Stack (2026-03-13)
 - **Design**: Tab.paneStack = [{element, panel}] where [0]=leftPane, [1]=globalRP, [2..]=pushed RPs
 - **viewIndex**: which pair (paneStack[vi], paneStack[vi+1]) is displayed in left/right slots
 - **Notification chain**: Selection → ET.notifyRowSelectionChanged → RP.notifyMiniTableRowSelectionChanged → Tab.updateNextPaneForMiniTableRow → nextRP.showForTableRowAsync
-- **OPEN: awaitギャップ**: showForTableRowAsync内のunregister(old)→await register(new)間にdisconnectが割り込むとbaseTableName復活+二重unregister+refCountリーク
-- **OPEN: appendTo not called**: pushed RPs never have parentElement set → resize handle throws
-- **OPEN: fire-and-forget**: showForTableRowAsync errors are caught but resources not cleaned up
-- **OPEN: dynamic reference skipped**: resolveEntriesForTableRowAsync skips DynamicReference entirely
-- **OPEN: セル編集パス漏れ**: ミニテーブルのPK値編集時に右側RPが更新されない
 
 ## Recurring Review Patterns
 - **Operation path coverage gap**: When removing a guard (e.g. makeReadOnly), ALL paths that depended on it must be re-secured
@@ -40,40 +36,43 @@
 - **Map key semantics change**: When changing the key meaning of a Map, ALL .get() call sites must be updated
 - **insert/delete対称性**: insertRowInternalがストアを操作するなら、deleteRowも必ずストアを操作すべき
 - **register/unregister対称性**: registerTableAsyncを呼んだら必ずunregisterTableが対で呼ばれるライフサイクルを確保すること
-- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須。特にunregister→await register間はbaseTableName復活+二重unregisterの温床
+- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須
 - **セル編集→右側RP更新漏れ**: applyCellChangesのミニテーブルパスは参照ヒントのみ更新し右側RPは更新しない
-- **lastNotifiedRowリセット漏れ**: start()/selectRow()にリセット追加してもmove()/setRange()/selectColumn()に漏れる。updateRenderer()を呼ぶ全パスを網羅すべし
+- **lastNotifiedRowリセット漏れ**: updateRenderer()を呼ぶ全パスを網羅すべし
+- **CSV直読みとストアのデータ時点不整合**: resolveTableDataAsyncがストア未登録時にCSV直読みすると、storeRowIndicesがストアの実行と不一致になる
 
-## lastNotifiedRow設計欠陥 (2026-03-14)
-- **根本原因**: lastNotifiedRowはSelectionインスタンスの同一性を考慮していない
-- **発生パターン**: ミニテーブルA(row0)→ミニテーブルB→ミニテーブルA(row0)で通知スキップ
-- **修正箇所**: start()のみリセット追加 → move()/setRange()/selectColumn()に漏れ
-- **副作用**: メインテーブルで同一行再クリック時に毎回updateForRowAsync発火（パフォーマンス劣化）
-- **updateRenderer()を呼ぶメソッド一覧**: start, move, setRange, selectColumn, selectRow, selectAll, extendSelection, extendSelectionOffset, updateColumn, updateRow, addColumn, addRow, updateRendererAfterResize
-
-## Critical Anti-Pattern: await gap between state mutation and guard
-- showForTableRowAsync: unregister(old)→baseTableName未更新→await register(new)→baseTableName設定
-- この間にdisconnectEditorTableが割り込むと: 二重unregister + baseTableName復活 + refCountリーク
-- **対策**: unregister直後にbaseTableName=false、await後にrequestIdチェック+不一致ならunregister(new)
+## Dual Data Source Pattern (store vs CSV fallback)
+- **CHANGED 2026-03-14**: referenceDataCache除去→CSV直接読み込みに変更(relations-panel.tsのみ)
+- referenceDataCacheは他クラスでは依然使用中(editor-table-handler, editor-table-reference, tab-reference等)
+- ストアパス: 編集中の最新データ / CSVパス: ディスク上の保存済みデータ → 時点不整合あり
+- **性能問題**: CSVパスは毎回ファイルI/O発生。同一リクエスト内のローカルキャッシュなし
 
 ## storeRowIndices (2026-03-10, updated)
 - **導入**: PK重複時にupdateCellValueが最初のヒット行を誤更新するバグ修正
 - **設計**: EditorTable.storeRowIndices[] = DOMデータ行i → ストア行インデックス
-- **OPEN ISSUES**: 0行テーブルinsert NaN / N:1全列一致破綻 / replaceAllRows陳腐化 / getter/setter違反 / 複数ミニテーブル陳腐化
 
-## Dual Data Source Pattern (store vs referenceDataCache)
-- 1:N resolution: InMemoryTableStore (tab open) vs referenceDataCache (tab closed)
-- N:1 resolution: ストア優先→キャッシュフォールバック
-- **FIXED: resolveTableDataAsync共通化**
+## Csv Class Design Debt
+- **生焼けオブジェクト**: constructor()が空状態で生成、load()で充填する2段階初期化
+- **publicフィールド**: header/bodyがpublicで外部から書き換え可能
+- **パーサ制限**: split(',')ベースでRFC 4180非準拠（カンマ含有フィールドで破壊）
+- **プロジェクト全体で10箇所以上** で同じ生焼けパターン使用
+
+## resolveDynamicReferenceEntryAsync requestIdガード漏れ (2026-03-14 R2)
+- 内部で2回awaitするが requestId を受け取らずチェックなし
+- 呼び出し元で戻り後にチェックしているが、1回目のawait後→2回目のawait間が無防備
+- Round 1, Round 2 両方で指摘済み、未修正
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
 - **Window listener累積問題**: activate()をN個のミニテーブルに呼ぶと同時登録
+- **store.getHeader/getRows returns internal reference**: callerがmutateするとstore破壊
 
 ## Review History
 - 2026-03-07 ~ 2026-03-11: See detailed entries in previous versions
 - 2026-03-13 (dynamic-reference): 致命的2件、重要4件、軽微2件
 - 2026-03-13 (pane-stack v1): 致命的4件、重要6件、軽微3件
 - 2026-03-13 (pane-stack v2): 致命的3件、重要5件、軽微3件
-- 2026-03-13 (mini-table-row-selection): 致命的2件(awaitギャップ+二重unregister)、重要4件(セル編集パス漏れ/viewIndex未検証/無意味findIndex/空PKサイレント)、軽微2件
-- 2026-03-14 (lastNotifiedRow cross-switch fix): 致命的1件(move/setRange/selectColumnリセット漏れ)、重要3件、軽微2件
+- 2026-03-13 (mini-table-row-selection): 致命的2件、重要4件、軽微2件
+- 2026-03-14 (lastNotifiedRow cross-switch fix): 致命的1件、重要3件、軽微2件
+- 2026-03-14 (dynamic-ref-panestack+referenceDataCache除去 R1): 致命的2件、重要4件、軽微3件
+- 2026-03-14 (Round 2): 致命的2件(requestIdガード欠落/Csv生焼け)、重要4件、軽微3件
