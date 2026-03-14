@@ -12,7 +12,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 ISSUES_OPEN_DIR="issues/open"
 ISSUES_CLOSED_DIR="issues/closed"
-MAX_LOOPS=50
+MAX_LOOPS=2
 
 loop_count=0
 
