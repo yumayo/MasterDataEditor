@@ -41,24 +41,25 @@
 }
 
 /* 列ヘッダーセルのスタイル */
+/* display: flex は display: table-cell を上書きしてしまいテーブルレイアウトが崩れるため使用しない。
+   display: table-cell のまま vertical-align: middle で縦中央揃えを実現する。 */
 .editor-table-column-header {
     background-color: var(--background-color);
     text-align: center;
     font-weight: bold;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    vertical-align: middle;
 }
 
-/* comment あり列ヘッダー: 上段（日本語名） */
+/* comment あり列ヘッダー: 上段（日本語名）。display: block で縦並びを保証する。 */
 .column-header-comment {
+    display: block;
     font-size: 0.9em;
     line-height: 1.2;
 }
 
-/* comment あり列ヘッダー: 下段（変数名）を控えめに表示 */
+/* comment あり列ヘッダー: 下段（変数名）を控えめに表示。display: block で縦並びを保証する。 */
 .column-header-name {
+    display: block;
     font-size: 0.78em;
     opacity: 0.6;
     line-height: 1.2;

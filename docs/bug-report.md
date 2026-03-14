@@ -1239,3 +1239,16 @@ RelationsPanelの定義ジャンプ（Ctrl+Click）で `Tab.pushRelationsPanel()
 「あるコンテキストに紐づくナビゲーション状態」を管理する場合、そのコンテキストが変わるすべてのイベントでナビゲーション状態のリセットを検討する。今回のケースでは「選択行」がコンテキストであり、「行選択変更」がコンテキスト切り替えイベントだった。機能を追加する際は、その機能が依存するコンテキストを明確にし、コンテキスト変更時の状態管理パスを網羅すること。
 
 ---
+
+## 83. [b4381ac] — テーブルの列ヘッダーが縦に並ぶ問題を修正
+
+### 不具合原因名
+display: flex による display: table-cell の上書き
+
+### なぜそうなったのか
+`.editor-table-column-header` に列ヘッダー内の2段構造（日本語comment名と変数名）を縦並びにするために `display: flex; flex-direction: column;` を設定した。しかし、このクラスは `.editor-table-cell`（`display: table-cell`）と同じ要素に付与されており、CSSのcascadeで `display: flex` が `display: table-cell` を上書きした。結果としてヘッダーセルがテーブルレイアウトに参加しなくなり、各セルがブロック要素として縦方向に並んでしまった。
+
+### どうしたら今後は再発しないか
+`display: table` レイアウトの子要素に `display: flex` や `display: grid` を設定してはならない。セル内の子要素を縦に並べたい場合は、セル自体の `display` は変更せず、子要素の `display: block` で制御する。CSSの `display` プロパティは要素のレイアウトモデルを根本的に変更するため、親のレイアウトモデル（table）と子のレイアウトモデル（flex）が矛盾しないか確認すること。回帰テストで `getComputedStyle(el).display === 'table-cell'` を直接検証している。
+
+---
