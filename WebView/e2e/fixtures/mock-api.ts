@@ -191,7 +191,8 @@ export async function installMockApiAsync(
                 if (type === "git_show_request") {
                     const path = request.path as string;
                     type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> };
-                    const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles;
+                    // __mockGitHeadFiles が未設定の場合は空オブジェクトにフォールバックし TypeError を防ぐ
+                    const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles ?? {};
                     if (path in headFiles) {
                         dispatch({
                             type: "git_show_response",

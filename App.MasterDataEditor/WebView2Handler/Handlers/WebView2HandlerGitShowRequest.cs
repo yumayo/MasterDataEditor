@@ -42,18 +42,23 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				// data/ ディレクトリ内の .csv ファイルのみを許可する
-				if (!path.StartsWith("data/") || !path.EndsWith(".csv"))
+				// gitルート相対のdata/ディレクトリのプレフィックスを取得する
+				// フロントエンドからはgitルート相対パス（entry.path）が渡されるため、バリデーションもそれに合わせる
+				var workDir = AppEnvironment.GetWorkDir();
+				var dataPrefix = GitCommandHelper.GetDataPrefix(workDir);
+
+				// gitルート相対のdata/ディレクトリ内の.csvファイルのみを許可する
+				if (!path.StartsWith(dataPrefix) || !path.EndsWith(".csv"))
 				{
 					return new
 					{
 						type = "git_show_response",
 						success = false,
-						error = "path must be data/*.csv",
+						error = "path must be " + dataPrefix + "*.csv",
 					};
 				}
 
-				var workDir = AppEnvironment.GetWorkDir();
+				// git show にはgitルート相対パスをそのまま渡す（entry.pathはgitルート相対なので正しい）
 				var output = GitCommandHelper.RunGitCommand(workDir, $"show HEAD:{path}");
 
 				return new

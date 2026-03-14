@@ -902,7 +902,8 @@ export class Tab {
             // 既存テーブルの変更 → HEAD版CSVを取得してPKベースのマップを構築する
             let headCsv: string;
             try {
-                headCsv = await gitShowAsync('data/' + name + '.csv');
+                // entry.path はC#が返したgitルート相対パス（サブディレクトリ環境でも正しいパス）
+                headCsv = await gitShowAsync(entry.path);
             } catch (e) {
                 // HEAD版CSVが取得できない場合（削除済み等）はスキップする
                 console.warn('[Tab] connectGitDiffTrackerAsync: HEAD版CSVの取得に失敗しました:', e);

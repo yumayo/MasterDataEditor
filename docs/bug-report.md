@@ -1211,3 +1211,18 @@ storeRowIndicesの陳腐化によるDOMとストアの不整合
 3. DOM行数を変更する全てのパスで、後続の副作用（`renumberRowsFrom`、`clearCopyRange`、`updateRendererAfterResize`、`applyGitDiffHighlight`）を漏れなく呼ぶ。これは `docs/bug-report.md` の事例4「状態変更の波及先への未伝播」と同じパターンであり、状態変更時の影響範囲チェックリストの徹底が必要。
 
 ---
+
+## 81. [5871f73] — git統合のディレクトリパスがdata/にハードコードされていた問題
+
+### 不具合原因名
+環境依存パスのハードコード
+
+### なぜそうなったのか
+git status/showのC#ハンドラーとTypeScript側(tab.ts)で、data/ディレクトリのパスが`data/`リテラルとしてハードコードされていた。`git status --porcelain`はgitリポジトリルートからの相対パスを返すが、workDirがリポジトリルートのサブディレクトリの場合（例：`sample-workdir/`）、出力パスは`sample-workdir/data/xxx.csv`形式となり、`data/`プレフィックスでのフィルタリングがマッチしなかった。開発時にworkDir=リポジトリルートの環境でのみ動作確認していたことが原因。
+
+### どうしたら今後は再発しないか
+1. ファイルパスは環境依存の値として扱い、リテラルでハードコードしない。gitのパス（リポジトリルート相対）とアプリケーションのパス（workDir相対）の座標系の違いを常に意識する。
+2. パスプレフィックスの算出ロジックが複数箇所に必要な場合は、共通ヘルパーメソッド（GitCommandHelper.GetDataPrefix）に集約してコピペを防止する。
+3. workDirがリポジトリルートと異なるサブディレクトリ環境でもテストを行い、環境依存の不具合を早期に検出する。
+
+---

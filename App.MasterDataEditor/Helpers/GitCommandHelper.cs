@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 
 namespace App.MasterDataEditor
 {
@@ -9,6 +10,18 @@ namespace App.MasterDataEditor
 	/// </summary>
 	internal static class GitCommandHelper
 	{
+		/// <summary>
+		/// workDirからgitリポジトリルートへの相対パスを算出し、data/ディレクトリのプレフィックスを返す
+		/// git status --porcelain の出力パスはリポジトリルート相対のため、フィルタリングにはこのプレフィックスを使う
+		/// workDirがリポジトリルートそのものの場合は "data/"、サブディレクトリの場合は "subdir/data/" となる
+		/// </summary>
+		public static string GetDataPrefix(string workDir)
+		{
+			var gitRoot = RunGitCommand(workDir, "rev-parse --show-toplevel").Trim();
+			var relWorkDir = Path.GetRelativePath(gitRoot, workDir).Replace('\\', '/');
+			return relWorkDir == "." ? "data/" : relWorkDir + "/data/";
+		}
+
 		/// <summary>
 		/// 指定した作業ディレクトリでgitコマンドを実行し、標準出力を返す
 		/// コマンドが失敗した場合（終了コードが0以外）は InvalidOperationException をスローする

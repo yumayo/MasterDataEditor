@@ -16,6 +16,10 @@ namespace App.MasterDataEditor
 				var changes = new List<object>();
 				var staged = new List<object>();
 
+				// gitルート相対のdata/ディレクトリのプレフィックスを取得する
+				// git status --porcelain の出力パスはgitリポジトリルート相対のため、フィルタリングにはこのプレフィックスを使う
+				var dataPrefix = GitCommandHelper.GetDataPrefix(workDir);
+
 				foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
 				{
 					if (line.Length < 4) continue;
@@ -23,10 +27,10 @@ namespace App.MasterDataEditor
 					var workTreeStatus = line[1];
 					var filePath = line.Substring(3).Trim();
 
-					// data/ ディレクトリ内の .csv ファイルのみを対象とする
-					if (!filePath.StartsWith("data/") || !filePath.EndsWith(".csv")) continue;
+					// gitルート相対のdata/ディレクトリ内の.csvファイルのみを対象とする
+					if (!filePath.StartsWith(dataPrefix) || !filePath.EndsWith(".csv")) continue;
 
-					// テーブル名を抽出: data/xxx.csv → xxx
+					// テーブル名を抽出: {dataPrefix}xxx.csv → xxx
 					var fileName = Path.GetFileNameWithoutExtension(filePath);
 
 					// 新規ファイル（??）: 未追跡ファイルは isNew=true で changes に追加する
