@@ -26,14 +26,14 @@
 ## Pane Stack (2026-03-14)
 - **Design**: Tab.paneStack = [{element, panel}] where [0]=leftPane, [1]=globalRP, [2..]=pushed RPs
 - **viewIndex**: which pair (paneStack[vi], paneStack[vi+1]) is displayed in left/right slots
-- **Notification chain**: Selection -> ET.notifyRowSelectionChanged -> RP.notifyMiniTableRowSelectionChanged -> Tab.updateNextPaneForMiniTableRow -> nextRP.showForTableRowAsync
-- **Tab switch persistence**: paneStack/viewIndex saved to TabState in deactivateTabState, restored in activateTabState
-- **FIXED**: deactivateTabState now calls suspend() instead of disconnectEditorTable on added RPs
-- **FIXED**: removeTabButton now cleans up added RPs for both active and inactive tabs
-- **FIXED**: suspend() now deactivates miniEditorTable/FillController/AreaResizer global listeners
-- **FIXED**: resume() re-activates them symmetrically
-- **KNOWN ISSUE**: activateTabState does reference assignment (not copy) for paneStack -> state.paneStack mutated by pushRelationsPanel (指摘3回目、未修正)
-- **KNOWN ISSUE**: EditorTable.activate()/deactivate() asymmetry: deactivate() calls handler.deactivate() but activate() does NOT call handler.activate()/enable()
+- **KNOWN ISSUE**: activateTabState does reference assignment (not copy) for paneStack (指摘3回目、未修正)
+- **KNOWN ISSUE**: EditorTable.activate()/deactivate() asymmetry: deactivate() calls handler.deactivate() but activate() does NOT call handler.activate()
+
+## DOM Structure (confirmed 2026-03-14)
+- **wrapperElement children**: .editor-table, .selection, .copy-border, .fill-preview, handler-element, .fill-handle
+- **ALL are siblings** of .editor-table, including .fill-handle (Selection constructor L121 appends to wrapperElement)
+- .fill-handle is NOT inside .editor-table (selection.css L48 comment is WRONG)
+- CSS sibling combinator `~` needed for ALL inactive styling, NOT descendant selector
 
 ## Recurring Review Patterns
 - **Operation path coverage gap**: When removing a guard, ALL paths that depended on it must be re-secured
@@ -43,19 +43,23 @@
 - **Map key semantics change**: When changing key meaning of a Map, ALL .get() call sites must be updated
 - **insert/delete symmetry**: insertRowInternal operates store -> deleteRow must also
 - **register/unregister symmetry**: registerTableAsync must have paired unregisterTable lifecycle
-- **deactivate/activate symmetry**: If deactivate destroys resources, activate MUST rebuild them (confirmed 2026-03-14)
-- **suspend/resume symmetry**: suspend must deactivate global listeners, resume must re-activate them (confirmed 2026-03-14)
+- **deactivate/activate symmetry**: If deactivate destroys resources, activate MUST rebuild them
+- **suspend/resume symmetry**: suspend must deactivate global listeners, resume must re-activate them
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須
-- **セル編集->右側RP更新漏れ**: applyCellChangesのミニテーブルパスは参照ヒントのみ更新
-- **lastNotifiedRowリセット漏れ**: updateRenderer()を呼ぶ全パスを網羅すべし
-- **CSV直読みとストアのデータ時点不整合**: resolveTableDataAsync未登録時CSV直読み問題
-- **テストがDOM存在のみ検証し中身を検証しない**: 要素存在だけでなくデータ内容の検証が必須 (2026-03-14)
+- **テストがDOM存在のみ検証し中身を検証しない**: 要素存在だけでなくデータ内容の検証が必須
+- **CSSコメントの事実誤認がバグを隠蔽**: コメントでDOMの位置関係を誤記するとセレクタバグが見逃される
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
 - **Window listener accumulation**: activate() on N mini-tables registers simultaneously
 - **store.getHeader/getRows returns internal reference**: caller mutation corrupts store
 - **Csv class**: half-baked object pattern (10+ instances project-wide)
+
+## Inactive Appearance Pattern (2026-03-14)
+- **activate()/deactivate()から視覚状態を分離**: setInactiveAppearance()に一本化（修正済み）
+- **destroyMiniEditorTables()パス**: handler.activate() + setInactiveAppearance(false) 追加済み
+- **createMiniEditorTable()初期状態不整合**: 指摘4回目、依然未修正。handler非アクティブだが視覚アクティブで生成
+- **.fill-handle CSSセレクタバグ**: 子孫セレクタで書かれているが実際は兄弟。~セレクタが必要
 
 ## Review History
 - 2026-03-13 (dynamic-reference): 致命的2件、重要4件、軽微2件
@@ -68,3 +72,5 @@
 - 2026-03-14 (tab-switch-pane-stack-persistence): 致命的2件、重要4件、軽微2件
 - 2026-03-14 (suspend-method+removeTab-cleanup R2): 致命的2件、重要4件、軽微3件
 - 2026-03-14 (suspend-resume R3): 致命的2件、重要4件、軽微2件
+- 2026-03-14 (inactive-selection-color R1): 致命的2件、重要4件、軽微2件
+- 2026-03-14 (inactive-selection-color R2): 致命的2件、重要4件、軽微2件
