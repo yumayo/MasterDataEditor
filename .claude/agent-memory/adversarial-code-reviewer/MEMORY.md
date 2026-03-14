@@ -133,3 +133,10 @@
 - 2026-03-14 (mini-table-row-store-sync): 致命的2件、重要4件、軽微3件
 - 2026-03-14 (BUG_0006 git-path-fix + paneStack-row-reset): 致命的1件、重要3件、軽微3件
 - 2026-03-15 (FEAT_0008 diff-tab-editortable): 致命的2件、重要4件、軽微4件
+- 2026-03-15 (PK-validation R2): 致命的2件、重要4件、軽微3件
+
+## PK Validation (2026-03-15)
+- **KNOWN ISSUE**: validatePkDuplicates() runs on mini-tables using store-wide counts -> false positive red wavy underlines on mini-table rows
+- **KNOWN ISSUE**: `as number` type assertions in pkCounts.get() (2 places)
+- **KNOWN ISSUE**: pkColIdx < row.length fallback to empty string silently hides header/row column count mismatch
+- **Pattern**: New validation hooks added at 8 call sites — same "every mutation path" pattern as applyGitDiffHighlight
