@@ -71,6 +71,7 @@
 - **CSS変数名の打ち間違い**: 未定義CSS変数が3回連続で別FEAT/ファイルで発生(FEAT_0002,0004,0005)
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須
 - **C#バックエンド入力バリデーション不足**: git系ハンドラでフロントエンド入力をそのままコマンド引数に渡している
+- **reloadCellsFromStore行数同期の副作用漏れ**: 行数変更後にSelection/GitDiffHighlight/行ヘッダー再ナンバリングが必要
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -106,3 +107,4 @@
 - 2026-03-14 (FEAT_0004 R1-R3): 致命的2件ずつ
 - 2026-03-14 (FEAT_0005 source-control-diff R1): 致命的2件、重要4件、軽微4件
 - 2026-03-14 (FEAT_0006 git-cell-highlight): 致命的2件、重要4件、軽微4件
+- 2026-03-14 (mini-table-row-store-sync): 致命的2件、重要4件、軽微3件

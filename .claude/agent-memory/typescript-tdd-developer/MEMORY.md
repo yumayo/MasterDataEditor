@@ -58,6 +58,17 @@ null/undefined 禁止 → boolean `false` や空文字 `""` をセンチネル�
 
 ## Recurring Implementation Mistakes
 
+### ミニテーブルとメインテーブルのstoreRowIndices陳腐化バグ
+ミニテーブルとメインテーブルは同一ストアを共有する。ミニテーブルで行追加・削除するとストア行数が変わるが、
+左ペインのEditorTableの `storeRowIndices` は更新されないため、`reloadCellsFromStore()` で範囲外インデックスが発生する。
+
+**修正方法**: `reloadCellsFromStore()` の先頭で、通常テーブル（`!isMiniTable`）の場合のみ DOM 行数とストア行数を同期する。
+- ストアが多い → バッファ空行を昇格（`editor-table-empty-row` 除去）、足りなければ新規行を DOM 挿入
+- ストアが少ない → 末尾のデータ行を DOM から除去（バッファ空行は維持）
+- `storeRowIndices` を `push/splice` で同期
+
+ミニテーブルは `destroyMiniEditorTables()/buildMiniEditorTableAsync()` で都度再構築されるため対象外。
+
 ### ミニテーブルのストア行インデックス計算ミス（修正済）
 `insertRowInternal` でストアインデックスを計算する際は `storeRowIndices` から引く必要がある。
 - 上に挿入（domDataRowIndex < indices.length）: `storeRowIndex = indices[domDataRowIndex]`
