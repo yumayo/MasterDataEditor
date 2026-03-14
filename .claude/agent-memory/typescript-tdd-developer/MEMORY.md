@@ -197,11 +197,17 @@ use: { baseURL: 'http://localhost:4174' },
 ### ブラウザコンソールのデバッグ方法
 production ビルドの console.log はテスト出力に出ない。`page.on('console', ...)` でキャプチャする：
 ```typescript
-page.on('console', msg => {
-    const type = msg.type();
-    if (type === 'error' || type === 'warn') {
-        console.log(`[BROWSER ${type}]: ${msg.text()}`);
-    }
-});
+page.on('console', msg => { ... });
 ```
-`page.evaluate(async () => { const resp = await fetch(scriptSrc); ... })` で JS バンドルの内容を直接確認できる。
+
+### Object.assign パターンと initializeModules() の注意点（重要）
+`createEditorTable()` では循環依存解決のために `editorTable = {} as EditorTable`（空オブジェクト）を作成し、
+`new EditorTable(...)`（realEditorTable）を `Object.assign(editorTable, realEditorTable)` でコピーする。
+
+**落とし穴**: コンストラクタ内で `new FilterDropdown(this, ...)` と作成されたオブジェクトは `this = realEditorTable` を参照する。
+`Object.assign` 後も `filterDropdown.table = realEditorTable` のまま。
+`realEditorTable` は `initialize()` が呼ばれないため `storeRowIndices = []` → フィルター適用時に全ループがスキップされる。
+
+**対策**: `this` を参照するサブオブジェクト（`FilterDropdown` 等）は `initializeModules()` で再作成する。
+`reference`, `contextMenuHandler`, `structure` はすでにそうしている。新しくコンストラクタで `new Xxx(this, ...)` を追加したら
+必ず `initializeModules()` に再作成コードを追加すること。

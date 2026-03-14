@@ -97,6 +97,9 @@
 - **Ctrl+S on special-key tables**: isMiniTable=true tables with non-standard tableName (`:diff:`) trigger saveTableDataFromStoreAsync with wrong path
 - **Row sync added but column sync forgotten**: notifyRowInserted/Deleted added but notifyColumnInserted/Deleted missing — sortKeys.columnIndex stale after column insert/delete
 - **Sort reorder missing state propagation**: applySortForColumn reorders DOM but does not update Selection/CopyRange/GitDiff/PKValidation — same pattern as reloadCellsFromStore行数同期の副作用漏れ
+- **New view-state feature missing column-index sync**: Sort/Filter both use columnIndex as key but neither resets when columns are inserted/deleted — clearSortState added for sort but clearFilterState forgotten for filter
+- **CSS hardcoded colors (no CSS variables)**: filter-dropdown.css uses hardcoded dark theme colors, same pattern as FEAT_0002/0005
+- **document listener leak on re-instantiation**: FilterDropdown anonymous mousedown listener cannot be removed, leaks on initializeModules() re-creation
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -138,6 +141,7 @@
 - 2026-03-15 (PK-validation R2): 致命的2件、重要4件、軽微3件
 - 2026-03-15 (column-sorter R2): 致命的2件、重要5件、軽微3件
 - 2026-03-15 (column-sorter R3): 致命的2件、重要4件、軽微3件
+- 2026-03-15 (column-filter R1): 致命的2件、重要4件、軽微4件
 
 ## PK Validation (2026-03-15)
 - **KNOWN ISSUE**: validatePkDuplicates() runs on mini-tables using store-wide counts -> false positive red wavy underlines on mini-table rows
@@ -157,3 +161,13 @@
 - **KNOWN ISSUE R3**: compareValues()がNumber(' ')=0、Number('0x1A')=26を許容 (空白・Hex文字列)
 - **KNOWN ISSUE R3**: applySortForColumn()がapplyGitDiffHighlight()/validatePkDuplicates()を呼ばない
 - **KNOWN ISSUE R3**: ソート中のセル編集で自動再ソートしない設計が未ドキュメント
+
+## Column Filter (FEAT_0012, 2026-03-15)
+- **CRITICAL**: 列挿入/削除時にフィルター状態がリセットされない -> columnIndex陳腐化で別列にフィルター誤適用
+- **CRITICAL**: FilterDropdownのdocument mousedownリスナーが無名関数 -> removeEventListener不可、initializeModules()で再作成時に蓄積
+- **KNOWN ISSUE**: 行挿入/削除/バッファ行昇格時にapplyFilterDisplay()が呼ばれない -> フィルター非表示行の表示/行数カウンター不整合
+- **KNOWN ISSUE**: reloadCellsFromStore()でフィルター状態がリセットされない -> タブ切替後に陳腐なフィルターが残る
+- **KNOWN ISSUE**: filter-dropdown.css が全色ハードコード -> ライトテーマ非対応 (FEAT_0002,0005と同パターン)
+- **KNOWN ISSUE**: column-filter.ts L94,L116 で undefined 比較使用
+- **KNOWN ISSUE**: collectCheckedValues() L251,L255 で || フォールバック使用
+- **KNOWN ISSUE**: FilterDropdown.element がdocument.bodyに追加後、タブ閉じ時に除去されない (destroy()なし)
