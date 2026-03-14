@@ -183,18 +183,21 @@ export class RelationsPanel {
      * の全handlerを対象として排他制御を行う
      */
     activateHandler(targetEditorTable: EditorTable): void {
-        // メインEditorTableのhandlerを制御
+        // メインEditorTableのhandlerを制御し、視覚状態を非アクティブに更新する
         if (this.currentEditorTable !== false && this.currentEditorTable !== targetEditorTable) {
             this.currentEditorTable.getHandler().deactivate();
+            this.currentEditorTable.setInactiveAppearance(true);
         }
-        // 全ミニEditorTableのhandlerを制御
+        // 全ミニEditorTableのhandlerを制御し、視覚状態を非アクティブに更新する
         for (const miniTable of this.miniEditorTables) {
             if (miniTable !== targetEditorTable) {
                 miniTable.getHandler().deactivate();
+                miniTable.setInactiveAppearance(true);
             }
         }
-        // 対象のhandlerをアクティブ化してフォーカスを取得する
+        // 対象のhandlerをアクティブ化し、視覚状態をアクティブに更新する
         targetEditorTable.getHandler().activate();
+        targetEditorTable.setInactiveAppearance(false);
 
         // フォーカスインジケータ: 全 .relations-table-header から --active を除去し、
         // 対象がミニEditorTableならそのヘッダーに --active を付与する
@@ -269,10 +272,20 @@ export class RelationsPanel {
      * 追加RP（ペインスタック上のRP）をタブ復帰時に再開する。
      * suspend() で解除したグローバルリスナーを再登録する。
      * DOM構造・ストアデータ・currentEntries は保持されたままであるため、再描画は不要。
+     *
+     * 視覚状態の初期化: メインテーブルをアクティブ色、全ミニテーブルを非アクティブ色に戻す。
+     * activate() から CSS クラス操作を分離したため、ここで明示的に setInactiveAppearance() を呼ぶ必要がある。
+     * タブ切り替え前の最後の操作がミニテーブルだった場合、メインテーブルが灰色のまま残るのを防ぐ。
      */
     resume(): void {
+        // メインテーブルの視覚状態をアクティブに復元する（初期状態：メインテーブルがフォーカス権を持つ）
+        if (this.currentEditorTable !== false) {
+            this.currentEditorTable.setInactiveAppearance(false);
+        }
         for (const miniTable of this.miniEditorTables) {
             miniTable.activate();
+            // ミニテーブルは初期状態として非アクティブ色にする
+            miniTable.setInactiveAppearance(true);
         }
         for (const fillController of this.miniFillControllers) {
             fillController.activate();
@@ -621,9 +634,12 @@ export class RelationsPanel {
             history.unregister();
         }
         this.miniHistories = [];
-        // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする
+        // ミニEditorTableが破棄された後、メインEditorTableが操作権を持つようにする。
+        // setInactiveAppearance(false) でアクティブ色に戻す（destroyMiniEditorTables は
+        // renderMessage 経由でも呼ばれるため、ここで視覚状態を明示的に復元する）。
         if (this.currentEditorTable !== false) {
             this.currentEditorTable.getHandler().activate();
+            this.currentEditorTable.setInactiveAppearance(false);
         }
     }
 
@@ -789,6 +805,8 @@ export class RelationsPanel {
         }
         // ミニEditorTableにもRelationsPanelを接続して、セルクリック時の排他制御を有効にする
         editorTable.relationsPanel = this;
+        // 生成直後は非アクティブ状態として初期化する（左ペインがアクティブになるまでグレー表示）
+        editorTable.setInactiveAppearance(true);
         this.miniEditorTables.push(editorTable);
         this.miniFillControllers.push(fillController);
         this.miniAreaResizers.push(areaResizer);

@@ -119,6 +119,13 @@
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
 }
 
+/* 非アクティブテーブルのヘッダー選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
+.editor-table--inactive .editor-table-column-header.selected,
+.editor-table--inactive .editor-table-row-header.selected,
+.editor-table--inactive .editor-table-joined-column-header.selected {
+    background-image: linear-gradient(rgba(128, 128, 128, 0.3), rgba(128, 128, 128, 0.3));
+}
+
 /* リサイズガイドライン */
 .resize-guideline {
     position: absolute;

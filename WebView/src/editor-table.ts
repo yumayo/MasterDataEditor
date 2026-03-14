@@ -229,6 +229,9 @@ export class EditorTable {
 
     /**
      * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
+     * 視覚状態（editor-table--inactive クラス）は setInactiveAppearance() に一本化しているため、
+     * ここでは操作しない。タブ復帰時に resume() で全ミニテーブルに activate() が呼ばれても
+     * 非アクティブクラスが意図せず除去されるバグを防ぐためにこの分離が必要。
      */
     activate(): void {
         this.selectionDragController.activate();
@@ -237,11 +240,26 @@ export class EditorTable {
 
     /**
      * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
+     * 視覚状態（editor-table--inactive クラス）は setInactiveAppearance() に一本化しているため、
+     * ここでは操作しない。
      */
     deactivate(): void {
         this.handler.deactivate();
         this.selectionDragController.deactivate();
         this.scrollBinding.deactivate();
+    }
+
+    /**
+     * アクティブ/非アクティブの視覚状態のみを切り替える
+     * activateHandler() から複数の EditorTable に対して呼ばれる。
+     * selectionDragController・scrollBinding は操作しない（handler の排他制御とは独立）。
+     */
+    setInactiveAppearance(inactive: boolean): void {
+        if (inactive) {
+            this.element.classList.add('editor-table--inactive');
+        } else {
+            this.element.classList.remove('editor-table--inactive');
+        }
     }
 
     /**

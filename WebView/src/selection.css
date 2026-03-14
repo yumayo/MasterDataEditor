@@ -43,6 +43,33 @@
     display: none;
 }
 
+/* 非アクティブテーブルの選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
+/* .selection / .copy-border / .fill-preview / .fill-handle はすべて .editor-table の兄弟要素なので ~ セレクタを使う */
+.editor-table--inactive ~ .selection {
+    border-color: rgba(128, 128, 128, 0.5);
+}
+
+.editor-table--inactive ~ .selection .selection-background {
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.editor-table--inactive ~ .copy-border {
+    border-color: rgba(128, 128, 128, 0.9);
+}
+
+.editor-table--inactive ~ .fill-handle {
+    background-color: rgba(128, 128, 128, 0.9);
+}
+
+.editor-table--inactive ~ .fill-handle:hover {
+    background-color: rgba(128, 128, 128, 1);
+}
+
+.editor-table--inactive ~ .fill-preview {
+    border-color: rgba(128, 128, 128, 0.8);
+    background-color: rgba(128, 128, 128, 0.1);
+}
+
 /* 操作拒否時の震え＋赤フィードバック */
 @keyframes reject-shake {
     0%, 100% { transform: translateX(0); }
