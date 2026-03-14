@@ -157,6 +157,9 @@ export class EditorTable {
     /** 内部モジュール用: EditorTableHandler を取得する */
     getHandler(): EditorTableHandler { return this.handler; }
 
+    /** 内部モジュール用: 自テーブルの参照データキャッシュを無効化する（行追加・削除後に呼ぶ） */
+    evictOwnReferenceDataCache(): void { this.referenceDataCache.evictEntry(this.tableName); }
+
     // =========================================================================
     // ライフサイクル
     // =========================================================================
@@ -911,6 +914,9 @@ export class EditorTable {
         }
         // バッファ行昇格後にgit差分ハイライトを再評価する（新規昇格行は新規追加行として changed になる）
         this.applyGitDiffHighlight();
+        // バッファ行がストアに昇格した後、参照データキャッシュを無効化する。
+        // 昇格行のIDがキャッシュ構築後に入力された場合に古いキャッシュが参照されるのを防ぐ。
+        this.evictOwnReferenceDataCache();
     }
 
     /**
@@ -935,6 +941,8 @@ export class EditorTable {
         }
         // 降格後にgit差分ハイライトを再評価する（降格行のストアインデックスが変化するため）
         this.applyGitDiffHighlight();
+        // ストア行降格後に参照データキャッシュを無効化する（Undo時に古いIDがドロップダウンに残るのを防ぐ）。
+        this.evictOwnReferenceDataCache();
     }
 
     /**

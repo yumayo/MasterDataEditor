@@ -1295,3 +1295,16 @@ display: flex による display: table-cell の上書き
 3. `refreshGitDiffAsync()` にはレースコンディション防止の `requestId` パターンとミニテーブルスキップを導入し、非同期競合とミニテーブルの誤動作を防いだ。
 
 ---
+
+## 87. [68d1190] — 行削除後にReferenceDataCacheが無効化されずドロップダウン候補に削除済みIDが残る問題を修正
+
+### 不具合原因名
+ReferenceDataCacheのキャッシュ無効化漏れ（ストア変更時のevict呼び出し欠落）
+
+### なぜそうなったのか
+`ReferenceDataCache` は初回ロード時にストアのデータからスナップショットを作成してキャッシュに保存する。`ReferenceDataCache.get()` はキャッシュヒット時にストアと照合せず、古いスナップショットをそのまま返す設計になっている。セル編集時は `updateFullDataCell()` でキャッシュを即時更新する仕組みがあったが、行削除（`deleteRow`）・行挿入（`insertRowInternal`）・バッファ行昇格（`promoteBufferRowToStore`）・バッファ行降格（`demoteStoreRowToBuffer`）の4つの行構造変更操作には、対応するキャッシュ無効化が実装されていなかった。セル値変更と行構造変更という異なる種類のストア変更に対して、キャッシュ更新の実装が非対称だった。
+
+### どうしたら今後は再発しないか
+ストアのデータを変更する操作を追加・修正する際は、「この操作によってReferenceDataCacheのキャッシュが陳腐化しないか？」を必ずチェックする。具体的には、`InMemoryTableStore` の行追加/削除メソッド（`insertRowAt`, `removeRow`）を呼ぶ全ての箇所で `evictEntry()` が呼ばれることを確認する。また `evictEntry()` は `loadingPromises` / `fullDataLoadingPromises` もクリアし、進行中の非同期ロードが古いデータでキャッシュを再構築するレースコンディションを防止する。
+
+---

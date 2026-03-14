@@ -113,10 +113,16 @@ export class ReferenceDataCache {
      * ストアにデータが残っていても（ミニEditorTableのrefCount分）キャッシュを破棄し、
      * 次回のget()でストアの最新データから再構築させる
      * 未保存タブクローズ後のCSV原本への巻き戻しに使用する
+     *
+     * loadingPromises / fullDataLoadingPromises も削除することで、
+     * evictEntry 呼び出し時に進行中の読み込み Promise が解決した際に
+     * 古いデータがキャッシュに再構築されるレースコンディションを防ぐ。
      */
     evictEntry(tableName: string): void {
         this.cache.delete(tableName);
         this.fullDataCache.delete(tableName);
+        this.loadingPromises.delete(tableName);
+        this.fullDataLoadingPromises.delete(tableName);
     }
 
     /**

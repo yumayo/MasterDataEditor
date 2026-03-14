@@ -193,6 +193,12 @@ export class EditorTableStructure {
         this.selection.updateRendererAfterResize();
         // 行挿入後にgit差分ハイライトを全セル再評価する（新規行や後続行のストアインデックスが変化するため）
         this.table.applyGitDiffHighlight();
+        // 行挿入後に参照データキャッシュを無効化する。
+        // undo（deleteRow呼び出し）後も deleteRow 側でキャッシュを無効化するため、
+        // insertRowInternal と deleteRow の両方で evict することで Do/Undo の対称性を保つ。
+        // 新規行にIDが入力される前にキャッシュが構築されると空IDがスキップされるため問題ないが、
+        // IDが入力された後は updateFullDataCell で逐次更新されるため一貫した挙動を保証する。
+        this.table.evictOwnReferenceDataCache();
     }
 
     /**
@@ -329,6 +335,11 @@ export class EditorTableStructure {
         this.selection.updateRendererAfterResize();
         // 行削除後にgit差分ハイライトを全セル再評価する（後続行のストアインデックスが変化するため）
         this.table.applyGitDiffHighlight();
+        // 行削除後に参照データキャッシュを無効化する。
+        // 削除済みIDがドロップダウン候補に残り続ける問題を防ぐ。
+        // undo（insertRowInternal呼び出し）時も insertRowInternal 側でキャッシュを無効化するため、
+        // deleteRow と insertRowInternal の両方で evict することで Do/Undo の対称性を保つ。
+        this.table.evictOwnReferenceDataCache();
     }
 
     /**
