@@ -95,6 +95,8 @@
 - **CSV parse duplication**: parseCsv() reimplemented 3 times (diff-view.ts, git-diff-tracker.ts, diff-tab.ts) with inconsistent trim/filter behavior
 - **Special tab deactivate() gap**: DiffTab.destroy() missing EditorTableHandler.deactivate() (same pattern as Settings tab cleanup gap)
 - **Ctrl+S on special-key tables**: isMiniTable=true tables with non-standard tableName (`:diff:`) trigger saveTableDataFromStoreAsync with wrong path
+- **Row sync added but column sync forgotten**: notifyRowInserted/Deleted added but notifyColumnInserted/Deleted missing — sortKeys.columnIndex stale after column insert/delete
+- **Sort reorder missing state propagation**: applySortForColumn reorders DOM but does not update Selection/CopyRange/GitDiff/PKValidation — same pattern as reloadCellsFromStore行数同期の副作用漏れ
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -134,9 +136,24 @@
 - 2026-03-14 (BUG_0006 git-path-fix + paneStack-row-reset): 致命的1件、重要3件、軽微3件
 - 2026-03-15 (FEAT_0008 diff-tab-editortable): 致命的2件、重要4件、軽微4件
 - 2026-03-15 (PK-validation R2): 致命的2件、重要4件、軽微3件
+- 2026-03-15 (column-sorter R2): 致命的2件、重要5件、軽微3件
+- 2026-03-15 (column-sorter R3): 致命的2件、重要4件、軽微3件
 
 ## PK Validation (2026-03-15)
 - **KNOWN ISSUE**: validatePkDuplicates() runs on mini-tables using store-wide counts -> false positive red wavy underlines on mini-table rows
 - **KNOWN ISSUE**: `as number` type assertions in pkCounts.get() (2 places)
 - **KNOWN ISSUE**: pkColIdx < row.length fallback to empty string silently hides header/row column count mismatch
 - **Pattern**: New validation hooks added at 8 call sites — same "every mutation path" pattern as applyGitDiffHighlight
+
+## Column Sorter (2026-03-15, R3)
+- **FIXED R2→R3**: 列挿入/削除時にclearSortState()呼び出し追加
+- **FIXED R2→R3**: Map.get()にthrow Errorガード追加
+- **FIXED R2→R3**: undefined比較をfindIndexに変更
+- **FIXED R2→R3**: forEachSortKey()デッドコード削除
+- **FIXED R2→R3**: reorderDomRowsをapplySortForColumnにインライン展開
+- **CRITICAL R3**: applySortForColumn()がSelection/CopyRangeを更新しない -> ソート後に別データを選択状態にする
+- **CRITICAL R3**: clearSortState()がDOM行順序を復元しない -> ソート中の列操作でソート順がCtrl+Sで永続化される
+- **KNOWN ISSUE R3**: getSortKeyForColumn()がSortKeyオブジェクト参照を漏洩 (R2から残存)
+- **KNOWN ISSUE R3**: compareValues()がNumber(' ')=0、Number('0x1A')=26を許容 (空白・Hex文字列)
+- **KNOWN ISSUE R3**: applySortForColumn()がapplyGitDiffHighlight()/validatePkDuplicates()を呼ばない
+- **KNOWN ISSUE R3**: ソート中のセル編集で自動再ソートしない設計が未ドキュメント
