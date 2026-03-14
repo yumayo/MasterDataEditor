@@ -1265,3 +1265,18 @@ display: flex による display: table-cell の上書き
 エディターの表示モード（通常/設定/DiffView）を切り替える際は、データ接続の解除だけでなく、DOM表示状態（rightSlot、navigationBar等）のリセットも必ず対にする。対称操作パターン（enter/leave、show/hide）を新設する際は、既存の対称操作（showDiffView/hideDiffView）を参照し、同等の表示制御が漏れていないか確認する。また、タブの閉鎖処理は `closeTab()` に集約し、各TabButtonから直接 `removeTabButton()` を呼ばない設計を維持する。
 
 ---
+
+## 85. [4a35e34] — セルを編集して確定するとスクロール位置が0,0に戻る問題を修正
+
+### 不具合原因名
+`preventScroll: true` のブラウザ互換性によるスクロール位置リセット
+
+### なぜそうなったのか
+`EditorTableHandler` の contenteditable 要素は `top: -99999px` に配置されており、`onFocusout` 時に `this.element.focus({ preventScroll: true })` でフォーカスを奪還する。しかし WebView2/Chromium の一部バージョンでは `preventScroll: true` オプションが正しく機能せず、`-99999px` に位置する要素へのフォーカス時にブラウザが自動スクロールを実行し、スクロール位置が (0, 0) にリセットされる。特にEnter確定時は `hide()` → `moveCellDown` → `onFocusout` の連鎖で発生し、`scrollCellIntoView` が正しく設定したスクロール位置がブラウザの非同期スクロールリセットによって上書きされた。
+
+### どうしたら今後は再発しないか
+- `focus({ preventScroll: true })` はブラウザ実装依存のため、信頼せず常に前後でスクロール位置を保存・復元するパターン（`focusWithoutScrolling()`）を使う
+- `requestAnimationFrame` で非同期的にスクロール位置を復元する場合は、rAF ID を保持して `cancelAnimationFrame` で競合を管理すること
+- `deactivate()` 等のライフサイクルメソッドでは保留中の rAF を必ずキャンセルすること
+
+---

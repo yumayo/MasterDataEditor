@@ -969,7 +969,8 @@ export class Tab {
         const history = new History(editorTable, tabButton, this.store, name, 1000);
 
         // EditorTableHandler を作成（element を所有し、全イベントを管理）
-        const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
+        // scrollController を渡すことで focusWithoutScrolling() がスクロール位置を保護できる
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
 
         // GridTextField を作成（EditorTableHandler.createGridTextField 経由で element を隠蔽）
         // container は wrapperElement（position:relative）で grid-textfield の絶対配置基準になる
@@ -1066,7 +1067,8 @@ export class Tab {
         const dummyTabButton = new TabButton(this.editor, this, '[mini]');
         const history = new History(editorTable, dummyTabButton, this.store, tableKey, 100);
 
-        const editorTableHandler = new EditorTableHandler(editorTable, selection, history);
+        // scrollController を渡すことで focusWithoutScrolling() がスクロール位置を保護できる
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
         const textField = editorTableHandler.createGridTextField(wrapperElement, editorTable, selection);
         editorTableHandler.setTextField(textField);
 

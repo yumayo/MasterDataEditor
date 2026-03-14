@@ -23,6 +23,7 @@ import {
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
+import {ScrollViewportController} from "./scroll-viewport-controller";
 
 /**
  * 参照解決の結果
@@ -52,6 +53,7 @@ export class EditorTableHandler {
     private readonly table: EditorTable;
     private readonly selection: Selection;
     private readonly history: History;
+    private readonly scrollController: ScrollViewportController;
     private textField: GridTextField | undefined;
 
     private active: boolean;
@@ -61,6 +63,12 @@ export class EditorTableHandler {
      * trueの場合、セル編集UIの表示とCtrl+S保存を禁止してストア汚染とCSV破壊を防ぐ。
      */
     private readOnly: boolean;
+    /**
+     * focusWithoutScrolling() が発行した rAF の ID。
+     * 0 は「未発行」を表す（requestAnimationFrame は 0 を返さないため安全なセンチネル値）。
+     * 連続呼び出し時の競合防止と deactivate 時のキャンセルに使用する。
+     */
+    private pendingScrollRestoreId: number;
 
     // 参照列用のコンポーネント
     private referenceDataCache: ReferenceDataCache | undefined;
@@ -75,17 +83,20 @@ export class EditorTableHandler {
     constructor(
         table: EditorTable,
         selection: Selection,
-        history: History
+        history: History,
+        scrollController: ScrollViewportController
     ) {
         this.table = table;
         this.selection = selection;
         this.history = history;
+        this.scrollController = scrollController;
         this.textField = undefined;
 
         this.active = false;
         this.visible = false;
         this.readOnly = false;
         this.dropdownActive = false;
+        this.pendingScrollRestoreId = 0;
 
         // contenteditable element を作成
         const element = document.createElement('div');
@@ -115,7 +126,7 @@ export class EditorTableHandler {
         if (this.active) return;
 
         this.active = true;
-        this.element.focus({ preventScroll: true });
+        this.focusWithoutScrolling();
     }
 
     /**
@@ -125,7 +136,32 @@ export class EditorTableHandler {
      */
     activate(): void {
         this.active = true;
+        this.focusWithoutScrolling();
+    }
+
+    /**
+     * スクロール位置を維持しながら contenteditable element にフォーカスを移す。
+     *
+     * WebView2/Chromium では `focus({ preventScroll: true })` が機能しない場合があり、
+     * top:-99999px に位置する要素へのフォーカス時にブラウザが自動スクロールして
+     * スクロール位置が(0,0)にリセットされる。
+     * focus 直後にスクロール位置を強制復元することでこの問題を回避する。
+     */
+    private focusWithoutScrolling(): void {
+        const scrollTop = this.scrollController.getScrollTop();
+        const scrollLeft = this.scrollController.getScrollLeft();
         this.element.focus({ preventScroll: true });
+        // preventScroll が機能しなかった場合でも強制的に元の位置に戻す
+        this.scrollController.setScrollPosition(scrollTop, scrollLeft);
+        // 前回の rAF が残っていればキャンセルして競合を防ぐ
+        if (this.pendingScrollRestoreId !== 0) {
+            window.cancelAnimationFrame(this.pendingScrollRestoreId);
+        }
+        // ブラウザの自動スクロールが非同期的に適用される場合に備え、次フレームでも復元する
+        this.pendingScrollRestoreId = window.requestAnimationFrame(() => {
+            this.pendingScrollRestoreId = 0;
+            this.scrollController.setScrollPosition(scrollTop, scrollLeft);
+        });
     }
 
     /**
@@ -133,6 +169,11 @@ export class EditorTableHandler {
      */
     deactivate(): void {
         this.active = false;
+        // タブ切り替え等で deactivate された後も rAF コールバックが実行されないようキャンセルする
+        if (this.pendingScrollRestoreId !== 0) {
+            window.cancelAnimationFrame(this.pendingScrollRestoreId);
+            this.pendingScrollRestoreId = 0;
+        }
     }
 
     /**
@@ -264,7 +305,7 @@ export class EditorTableHandler {
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
         console.log('[handler] reclaiming focus');
-        this.element.focus({ preventScroll: true });
+        this.focusWithoutScrolling();
 
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
