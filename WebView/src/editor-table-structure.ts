@@ -107,6 +107,8 @@ export class EditorTableStructure {
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
+        // 列挿入によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
+        this.table.clearSortState();
     }
 
     /**
@@ -158,6 +160,7 @@ export class EditorTableStructure {
         const newRow = EditorTable.createRow(cells, rowIndex);
         const insertBefore = tableElement.children[rowIndex];
         tableElement.insertBefore(newRow, insertBefore);
+        // ソート時のstoreRowIndex逆引きのためのインデックスは後で設定する（storeRowIndex確定後）
         // ストアにも空行を挿入する。
         // rowIndex はヘッダー行を含む DOM インデックスのため、データ行インデックスは rowIndex - 1。
         // ミニテーブルでは storeRowIndices がフィルタされたサブセット（例: [1, 2]）のため、
@@ -179,12 +182,21 @@ export class EditorTableStructure {
             storeRowIndex = indices[domDataRowIndex - 1] + 1;
         }
         this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
+        // ソート時のstoreRowIndex逆引きのために新しい行にdata-store-indexを付与する
+        newRow.dataset.storeIndex = String(storeRowIndex);
         // storeRowIndices にも挿入インデックスを追加し、ストア上で後ろにずれた全エントリを+1する。
         // domDataRowIndex の位置に storeRowIndex を挿入し、それより大きいストアインデックス値を持つ全エントリを+1。
         indices.splice(domDataRowIndex, 0, storeRowIndex);
         for (let i = domDataRowIndex + 1; i < indices.length; i++) {
-            if (indices[i] >= storeRowIndex) indices[i] += 1;
+            if (indices[i] >= storeRowIndex) {
+                indices[i] += 1;
+                // data-store-index DOM属性もストアインデックスに合わせて更新する
+                const domRow = tableElement.children[i + 1] as HTMLElement | null;
+                if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+            }
         }
+        // ソート中の場合、originalIndices も同期する（行挿入でストアインデックスがずれるため）
+        this.table.notifySortRowInserted(storeRowIndex);
         // 挿入行を含む以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);
         // コピー範囲をクリア（行構造が変わったため）
@@ -303,6 +315,8 @@ export class EditorTableStructure {
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
         this.selection.updateRendererAfterResize();
+        // 列削除によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
+        this.table.clearSortState();
     }
 
     /**
@@ -321,8 +335,15 @@ export class EditorTableStructure {
             this.table.getStore().removeRow(this.table.tableName, removedStoreIndex);
             indices.splice(domDataRowIndex, 1);
             for (let i = domDataRowIndex; i < indices.length; i++) {
-                if (indices[i] > removedStoreIndex) indices[i] -= 1;
+                if (indices[i] > removedStoreIndex) {
+                    indices[i] -= 1;
+                    // data-store-index DOM属性もストアインデックスに合わせて更新する
+                    const domRow = tableElement.children[i + 1] as HTMLElement | null;
+                    if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                }
             }
+            // ソート中の場合、originalIndices も同期する（行削除でストアインデックスがずれるため）
+            this.table.notifySortRowDeleted(removedStoreIndex);
         }
         // 指定位置の行を削除
         const rowToRemove = tableElement.children[rowIndex];
@@ -385,6 +406,36 @@ export class EditorTableStructure {
         columnHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createColumnHeaderClickHandler(columnHeaderCell));
         // 列ヘッダー右クリックでコンテキストメニュー
         columnHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createColumnHeaderContextMenuHandler(columnHeaderCell));
+        // ミニテーブルにはソートインジケーターを追加しない
+        if (!this.table.isMiniTableInstance()) {
+            const sortIndicator = document.createElement('div');
+            sortIndicator.classList.add('sort-indicator');
+            const ascIcon = document.createElement('span');
+            ascIcon.classList.add('sort-icon-asc');
+            ascIcon.textContent = '▲';
+            const descIcon = document.createElement('span');
+            descIcon.classList.add('sort-icon-desc');
+            descIcon.textContent = '▼';
+            const prioritySpan = document.createElement('span');
+            prioritySpan.classList.add('sort-priority');
+            sortIndicator.appendChild(ascIcon);
+            sortIndicator.appendChild(descIcon);
+            sortIndicator.appendChild(prioritySpan);
+            // ソートインジケータークリックで列ソートをトグルする
+            // mousedown は列選択ハンドラへのバブリングを防止するために停止する
+            sortIndicator.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+            });
+            // click でソートをトグルする（columnIndex はクロージャキャプチャではなく
+            // DOM属性から動的取得することで列挿入/削除後の陳腐化を防ぐ）
+            sortIndicator.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const headerCell = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+                const colIdx = Number(headerCell.dataset.columnIndex);
+                this.table.applySortForColumn(colIdx);
+            });
+            columnHeaderCell.appendChild(sortIndicator);
+        }
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('column-resize-handle');
         this.areaResizer.setupColumnResizeHandle(resizeHandle, columnHeaderCell, columnIndex);

@@ -18,6 +18,7 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
+import {ColumnSorter} from "./column-sorter";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -57,6 +58,8 @@ export class EditorTable {
     private gitDiffTracker: GitDiffTracker | false;
     /** refreshGitDiffAsync のレースコンディション防止用リクエストID */
     private refreshGitDiffRequestId: number;
+    /** 列ソート管理（ミニテーブルでは使用しないが、インスタンスは常に保持する） */
+    private readonly columnSorter: ColumnSorter;
 
     /** 空行数（通常は100行、ミニテーブルは0行） */
     private readonly emptyRowCount: number;
@@ -121,6 +124,7 @@ export class EditorTable {
         this.lastNotifiedRow = -1;
         // initialize() で初期化される
         this.storeRowIndices = [];
+        this.columnSorter = new ColumnSorter(this, store);
         this.selectionDragController = new SelectionDragController(
             this.element,
             selection,
@@ -217,6 +221,8 @@ export class EditorTable {
                 cells.push(cell);
             }
             const row = EditorTable.createRow(cells, rowIndex);
+            // ソート時にstoreRowIndexからDOM行要素を逆引きするためのインデックスを付与する
+            row.dataset.storeIndex = String(i);
             this.element.appendChild(row);
         }
         // 全テーブルで storeRowIndices を初期化する（ミニテーブルは1:Nの場合のみ setStoreRowIndices() で上書き）
@@ -813,6 +819,8 @@ export class EditorTable {
                         // バッファ空行をデータ行に昇格する（editor-table-empty-row クラスを除去）
                         existingRow.classList.remove('editor-table-empty-row');
                         existingRow.dataset.row = String(domRowIndex);
+                        // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
+                        existingRow.dataset.storeIndex = String(i);
                     } else {
                         // バッファ空行が不足している場合は新規行を生成して挿入する
                         const cells: HTMLElement[] = [this.structure.createRowHeaderCell(String(domRowIndex), i)];
@@ -820,6 +828,8 @@ export class EditorTable {
                             cells.push(EditorTable.createCell(this, '', j, this.getColumnWidth(j), DEFAULT_ROW_HEIGHT));
                         }
                         const newRow = EditorTable.createRow(cells, domRowIndex);
+                        // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
+                        newRow.dataset.storeIndex = String(i);
                         const insertTarget = this.element.children[domRowIndex];
                         if (insertTarget) {
                             this.element.insertBefore(newRow, insertTarget);
@@ -881,6 +891,11 @@ export class EditorTable {
         this.applyGitDiffHighlight();
         // タブ切替後のDOMリロードでもPK重複の赤波線を再適用する
         this.validatePkDuplicates();
+        // reloadCellsFromStore はストアデータを全面的に上書きするため、ソート状態を維持しても
+        // storeRowIndices が [0..n-1] にリセットされておりソートが無効化されている。
+        // インジケーターをリセットしてUI上のソート表示と実態を一致させる。
+        this.columnSorter.clearAllSorts();
+        this.updateAllSortIndicators();
     }
 
     // =========================================================================
@@ -912,9 +927,15 @@ export class EditorTable {
             const storeRowIndex = storeRows.length;
             this.store.insertRowAt(this.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
             this.storeRowIndices.push(storeRowIndex);
+            // ソート中の場合、originalIndices も同期する（バッファ行昇格でストア行数が増えるため）
+            this.columnSorter.notifyRowInserted(storeRowIndex);
             // DOMの該当行から editor-table-empty-row クラスを除去する（data行として昇格）
             const domRow = this.element.children[i + 1] as HTMLElement | null;
-            if (domRow) domRow.classList.remove('editor-table-empty-row');
+            if (domRow) {
+                domRow.classList.remove('editor-table-empty-row');
+                // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
+                domRow.dataset.storeIndex = String(storeRowIndex);
+            }
         }
         // バッファ行昇格後にgit差分ハイライトを再評価する（新規昇格行は新規追加行として changed になる）
         this.applyGitDiffHighlight();
@@ -941,9 +962,14 @@ export class EditorTable {
             const storeRowIndex = this.storeRowIndices[i];
             this.store.removeRow(this.tableName, storeRowIndex);
             this.storeRowIndices.splice(i, 1);
-            // DOMの該当行に editor-table-empty-row クラスを復元する
+            // ソート中の場合、originalIndices も同期する（ストア行降格でストア行数が減るため）
+            this.columnSorter.notifyRowDeleted(storeRowIndex);
+            // DOMの該当行に editor-table-empty-row クラスを復元し、storeIndex 属性を削除する（promoteBufferRowToStore との対称性）
             const domRow = this.element.children[i + 1] as HTMLElement | null;
-            if (domRow) domRow.classList.add('editor-table-empty-row');
+            if (domRow) {
+                domRow.classList.add('editor-table-empty-row');
+                delete domRow.dataset.storeIndex;
+            }
         }
         // 降格後にgit差分ハイライトを再評価する（降格行のストアインデックスが変化するため）
         this.applyGitDiffHighlight();
@@ -986,6 +1012,98 @@ export class EditorTable {
      * 行挿入・削除時に同期するために使用する
      */
     getStoreRowIndices(): number[] { return this.storeRowIndices; }
+
+    /**
+     * ソート中に行が挿入されたことをColumnSorterに通知する（EditorTableStructureから呼ばれる）
+     */
+    notifySortRowInserted(storeRowIndex: number): void { this.columnSorter.notifyRowInserted(storeRowIndex); }
+
+    /**
+     * ソート中に行が削除されたことをColumnSorterに通知する（EditorTableStructureから呼ばれる）
+     */
+    notifySortRowDeleted(storeRowIndex: number): void { this.columnSorter.notifyRowDeleted(storeRowIndex); }
+
+    /**
+     * ソート状態をリセットしてインジケーターを更新する。
+     * 列挿入/削除時に列インデックスが陳腐化するためEditorTableStructureから呼ばれる。
+     */
+    clearSortState(): void {
+        this.columnSorter.clearAllSorts();
+        this.updateAllSortIndicators();
+    }
+
+    /**
+     * 指定列のソートをトグルし、DOMの行順を更新する。
+     * ソートはView変換のみ（ストア順序は変えない）。Undo/Redo対象外。
+     * ミニテーブルでは呼ばれない（ソートインジケーターが存在しないため）。
+     *
+     * @param columnIndex DOMの列インデックス（0始まり、行ヘッダーなし）
+     */
+    applySortForColumn(columnIndex: number): void {
+        // ColumnSorterにソートを委譲して新しいstoreRowIndicesを取得する
+        const newIndices = this.columnSorter.toggleSort(columnIndex, this.storeRowIndices);
+        this.storeRowIndices = newIndices;
+
+        // data-store-index 属性を使ってストアインデックス → DOM行要素のマップを構築する。
+        // initialize() や insertRowInternal, promoteBufferRowToStore で付与済み。
+        const storeIndexToRowElement = new Map<number, HTMLElement>();
+        const totalRows = this.element.children.length;
+        for (let domIdx = 1; domIdx < totalRows; domIdx++) {
+            const row = this.element.children[domIdx] as HTMLElement;
+            if (row.classList.contains('editor-table-empty-row')) continue;
+            if (!row.hasAttribute('data-store-index')) continue;
+            storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
+        }
+
+        // バッファ行の先頭要素を取得しておく（insertBefore の基準点として使用）
+        const firstEmptyRow = this.element.querySelector('.editor-table-empty-row');
+        // newIndices の順序でデータ行を親に再挿入する（insertBefore でバッファ行の前に配置）
+        for (const storeIdx of newIndices) {
+            const row = storeIndexToRowElement.get(storeIdx);
+            if (!row) throw new Error('[EditorTable.applySortForColumn] storeIdx に対応するDOM行が存在しません: ' + storeIdx);
+            if (firstEmptyRow) {
+                this.element.insertBefore(row, firstEmptyRow);
+            } else {
+                this.element.appendChild(row);
+            }
+        }
+
+        // 並び替え後に全データ行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再設定する
+        this.structure.renumberRowsFrom(1);
+        // DOM行順序が変わったため選択オーバーレイの描画位置を再計算する
+        this.selection.updateRendererAfterResize();
+
+        // 全列ヘッダーのソートインジケーターを更新する
+        this.updateAllSortIndicators();
+    }
+
+    /**
+     * 全列ヘッダーのソートインジケーターを現在のソート状態に合わせて更新する。
+     * - ソートされていない列: sort-asc/sort-desc クラスなし、優先度なし
+     * - ソートされた列: sort-asc または sort-desc クラスを付与、優先度番号を表示
+     */
+    private updateAllSortIndicators(): void {
+        const headerRow = this.element.children[0];
+        const columnCount = this.getColumnCount();
+        const totalSortKeyCount = this.columnSorter.getSortKeyCount();
+        for (let colIdx = 0; colIdx < columnCount; colIdx++) {
+            const headerCell = headerRow.children[colIdx + 1] as HTMLElement;
+            const indicator = headerCell.querySelector('.sort-indicator');
+            if (!indicator) continue;
+            const sortKey = this.columnSorter.getSortKeyForColumn(colIdx);
+            const priority = this.columnSorter.getPriorityForColumn(colIdx);
+            // ソートクラスを更新
+            headerCell.classList.remove('sort-asc', 'sort-desc');
+            if (sortKey) {
+                headerCell.classList.add(sortKey.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+            // 優先度番号を更新（全ソートキー数が1の場合は番号なし）
+            const prioritySpan = indicator.querySelector('.sort-priority');
+            if (prioritySpan) {
+                prioritySpan.textContent = (sortKey && totalSortKeyCount > 1) ? String(priority) : '';
+            }
+        }
+    }
 
     /**
      * FK自動埋め込み情報を取得する（InsertRowCommand / InsertRowsCommand から参照）

@@ -210,3 +210,44 @@
     text-decoration: underline wavy red;
     text-underline-offset: 2px;
 }
+
+/* ソートインジケーター: リサイズハンドルの左に配置、右寄せ */
+.sort-indicator {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    cursor: pointer;
+    user-select: none;
+    z-index: 1;
+}
+
+/* 昇順・降順アイコン: デフォルトで薄い色 */
+.sort-icon-asc,
+.sort-icon-desc {
+    font-size: 0.6em;
+    opacity: 0.3;
+    line-height: 1;
+}
+
+/* 昇順アクティブ時: 昇順アイコンを強調表示 */
+.sort-asc .sort-indicator .sort-icon-asc {
+    opacity: 1;
+}
+
+/* 降順アクティブ時: 降順アイコンを強調表示 */
+.sort-desc .sort-indicator .sort-icon-desc {
+    opacity: 1;
+}
+
+/* 優先度番号: 小さめのフォントサイズ */
+.sort-priority {
+    font-size: 0.65em;
+    font-weight: bold;
+    opacity: 0.8;
+    min-width: 0.8em;
+    text-align: center;
+}
