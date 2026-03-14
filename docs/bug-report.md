@@ -1451,3 +1451,16 @@ CSS でデフォルト非表示（`display: none`）にした要素を JavaScrip
 - 当たり判定が要素の外にはみ出す設計では `overflow: visible` と `z-index` を忘れずに設定する
 
 ---
+
+## 98. [56708d9] — FEAT_0016 PK/FKバッジ表示機能の追加
+
+### 不具合原因名
+ヘッダーテキスト取得時のバッジテキスト混入
+
+### なぜそうなったのか
+列ヘッダーにPK/FKバッジ（span要素）を追加したことで、`allTextContents()` でヘッダーのテキストを取得すると、バッジの「PK」「FK」テキストが列名に付随して返されるようになった。既存テスト `relations-panel-bugs.spec.ts` が `allTextContents()` で列名を検証していたため、`"enemy_id"` が `"enemy_idFK"` として返り、テストが破壊された。また、PK+FK両方のバッジを持つ列では `querySelector` が最初の1つしか取得しないため、全バッジを除去するには `querySelectorAll` を使う必要があった。
+
+### どうしたら今後は再発しないか
+ヘッダーセルにインライン要素（バッジ、アイコン等）を追加する場合、`textContent` で列名のみを取得するロジックに影響が出る。ヘッダーの「列名」を取得する際は、既存の `getColumnHeaderLabel()` を使うか、バッジ要素を除外してからテキストを取得するパターンを採用する。テストコードでも `allTextContents()` の代わりに `evaluateAll` でバッジ要素を除外する方法を使う。
+
+---

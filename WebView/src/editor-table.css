@@ -65,6 +65,34 @@
     line-height: 1.2;
 }
 
+/* PK/FK バッジ共通スタイル */
+.column-header-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    margin-left: 6px;
+    vertical-align: middle;
+    cursor: default;
+}
+
+/* PK バッジ — ゴールド系 */
+.column-header-badge--pk {
+    color: #f59e0b;
+    background-color: rgba(245, 158, 11, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.20);
+}
+
+/* FK バッジ — パープル（RelationsPanelのN:1バッジと統一） */
+.column-header-badge--fk {
+    color: #a78bfa;
+    background-color: rgba(167, 139, 250, 0.10);
+    border: 1px solid rgba(167, 139, 250, 0.20);
+}
+
 /* 行ヘッダーセルのスタイル */
 .editor-table-row-header {
     background-color: var(--background-color);

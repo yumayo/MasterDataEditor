@@ -63,7 +63,8 @@ export class EditorTableStructure {
                 for (let i = 1; i < row.children.length; ++i) {
                     existingLabels.push(getColumnHeaderLabel(row.children[i] as HTMLElement));
                 }
-                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth(''));
+                // 列挿入で追加する新規列は PK でも FK でもないため false/null を渡す
+                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth(''), false, null);
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newHeaderCell, insertBefore);
@@ -379,8 +380,9 @@ export class EditorTableStructure {
      * 列ヘッダーセルを生成する
      * comment がある場合は .column-header-comment（上段）と .column-header-name（下段）の2要素を生成する。
      * comment がない場合は従来通り TextNode で name のみ表示する。
+     * isPrimaryKey が true の場合は PK バッジを、reference が非null の場合は FK バッジを nameSpan の直後に追加する。
      */
-    createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string): HTMLElement {
+    createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string, isPrimaryKey: boolean, reference: string | null): HTMLElement {
         const columnHeaderCell = document.createElement('div');
         columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
         if (comment !== null) {
@@ -397,6 +399,8 @@ export class EditorTableStructure {
             // comment なし: TextNode で name のみ（従来通り）
             columnHeaderCell.appendChild(document.createTextNode(name));
         }
+        // バッジは名前要素の直後に追加（comment有無に関わらず共通）
+        appendBadgeIfNeeded(columnHeaderCell, isPrimaryKey, reference);
         columnHeaderCell.dataset.columnIndex = String(columnIndex);
         columnHeaderCell.dataset.col = String(columnIndex);
         EditorTable.applyCellWidth(columnHeaderCell, width);
@@ -519,6 +523,31 @@ export class EditorTableStructure {
         this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);
         rowHeaderCell.appendChild(resizeHandle);
         return rowHeaderCell;
+    }
+}
+
+/**
+ * CSSモディファイア・ラベル・タイトルを受け取り、バッジ要素を生成して返す。
+ * appendBadgeIfNeeded 内の PK/FK 両バッジで共通利用する。
+ */
+function createBadge(cssModifier: string, label: string, title: string): HTMLElement {
+    const badge = document.createElement('span');
+    badge.classList.add('column-header-badge', `column-header-badge--${cssModifier}`);
+    badge.textContent = label;
+    badge.title = title;
+    return badge;
+}
+
+/**
+ * isPrimaryKey が true の場合は PK バッジを、reference が非 null の場合は FK バッジを追加する。
+ * PKかつFKの列では両バッジを独立して表示する。どちらでもない場合は何もしない。
+ */
+function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolean, reference: string | null): void {
+    if (isPrimaryKey) {
+        columnHeaderCell.appendChild(createBadge('pk', 'PK', 'このテーブルの主キー列です'));
+    }
+    if (reference !== null) {
+        columnHeaderCell.appendChild(createBadge('fk', 'FK', `FK: ${reference} を参照`));
     }
 }
 

@@ -739,7 +739,17 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             // 変更後は enemy_id 列のデータセルに "1" が入っていることを確認できる（GREEN）。
             const allHeaders = miniTable.locator('.editor-table-column-header');
             await expect(allHeaders.first()).toBeVisible();
-            const headerTexts = await allHeaders.allTextContents();
+            // PK/FKバッジ実装によりallTextContents()は "enemy_idFK" のようにバッジテキストを含む。
+            // PK+FK両バッジを持つ列では複数バッジが存在するため querySelectorAll で全バッジを取得し、
+            // 各バッジのテキストを順に除去して列名のみを抽出する。
+            const headerTexts = await allHeaders.evaluateAll((headers: Element[]) =>
+                headers.map(h => {
+                    const badges = h.querySelectorAll('.column-header-badge');
+                    let text = h.textContent!;
+                    badges.forEach(b => { text = text.replace(b.textContent!, ''); });
+                    return text;
+                }),
+            );
             // "enemy_id" がヘッダーに含まれることを検証する（物理除去されていないことの確認）
             expect(headerTexts).toContain('enemy_id');
 

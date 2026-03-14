@@ -231,7 +231,9 @@ export class EditorTable {
             // 列ヘッダー (A, B, C, ...)
             for (let i = 0; i < this.tableData.header.length; ++i) {
                 // comment がある列は上段にcomment、下段に変数名の2行ヘッダーを生成する
-                const columnHeaderCell = this.structure.createColumnHeaderCell(this.tableData.header[i].name, this.tableData.header[i].comment, i, this.tableData.header[i].width);
+                const col = this.tableData.header[i];
+                const isPrimaryKey = this.tableData.primaryKeyColumns.includes(col.name);
+                const columnHeaderCell = this.structure.createColumnHeaderCell(col.name, col.comment, i, col.width, isPrimaryKey, col.reference);
                 cells.push(columnHeaderCell);
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
