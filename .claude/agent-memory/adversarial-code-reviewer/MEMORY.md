@@ -42,6 +42,14 @@
 - **register/unregister対称性**: registerTableAsyncを呼んだら必ずunregisterTableが対で呼ばれるライフサイクルを確保すること
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須。特にunregister→await register間はbaseTableName復活+二重unregisterの温床
 - **セル編集→右側RP更新漏れ**: applyCellChangesのミニテーブルパスは参照ヒントのみ更新し右側RPは更新しない
+- **lastNotifiedRowリセット漏れ**: start()/selectRow()にリセット追加してもmove()/setRange()/selectColumn()に漏れる。updateRenderer()を呼ぶ全パスを網羅すべし
+
+## lastNotifiedRow設計欠陥 (2026-03-14)
+- **根本原因**: lastNotifiedRowはSelectionインスタンスの同一性を考慮していない
+- **発生パターン**: ミニテーブルA(row0)→ミニテーブルB→ミニテーブルA(row0)で通知スキップ
+- **修正箇所**: start()のみリセット追加 → move()/setRange()/selectColumn()に漏れ
+- **副作用**: メインテーブルで同一行再クリック時に毎回updateForRowAsync発火（パフォーマンス劣化）
+- **updateRenderer()を呼ぶメソッド一覧**: start, move, setRange, selectColumn, selectRow, selectAll, extendSelection, extendSelectionOffset, updateColumn, updateRow, addColumn, addRow, updateRendererAfterResize
 
 ## Critical Anti-Pattern: await gap between state mutation and guard
 - showForTableRowAsync: unregister(old)→baseTableName未更新→await register(new)→baseTableName設定
@@ -68,3 +76,4 @@
 - 2026-03-13 (pane-stack v1): 致命的4件、重要6件、軽微3件
 - 2026-03-13 (pane-stack v2): 致命的3件、重要5件、軽微3件
 - 2026-03-13 (mini-table-row-selection): 致命的2件(awaitギャップ+二重unregister)、重要4件(セル編集パス漏れ/viewIndex未検証/無意味findIndex/空PKサイレント)、軽微2件
+- 2026-03-14 (lastNotifiedRow cross-switch fix): 致命的1件(move/setRange/selectColumnリセット漏れ)、重要3件、軽微2件
