@@ -710,6 +710,18 @@ export class Tab {
     }
 
     /**
+     * ペインスタックをルート状態（EditorTable + グローバルRP の2ペイン）にリセットする
+     * メインテーブルで別の行を選択したとき、RelationsPanel.updateForRow() から呼ばれる。
+     * すでにルート状態（paneStack.length <= 2 && viewIndex === 0）の場合は何もしない。
+     */
+    resetPaneStackToRoot(): void {
+        if (this.paneStack.length <= 2 && this.viewIndex === 0) return;
+        this.truncateStackAfterIndex(0);
+        this.viewIndex = 0;
+        this.updateVisiblePanes();
+    }
+
+    /**
      * RelationsPanel をペインスタックに追加する（ミニテーブルの Ctrl+Click 時に RelationsPanel.navigateToDefinition から呼ばれる）
      * viewIndex より右にある既存エントリを破棄して新しい RP をスタック末尾に追加し、ビューを右端にシフトする
      */

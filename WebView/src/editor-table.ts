@@ -69,7 +69,7 @@ export class EditorTable {
     /**
      * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
      * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
-     * forceRefreshRelationsPanel() 呼び出し時は -1 にリセットして強制再通知を保証する。
+     * forceRefreshRelationsPanel() は refreshCurrentRow() を直接呼ぶためこの値を変更しない。
      */
     private lastNotifiedRow: number;
     /**
@@ -1049,13 +1049,16 @@ export class EditorTable {
     }
 
     /**
-     * セル値変更後にRelationsPanelを強制再描画する。
-     * lastNotifiedRow をリセットして同一行でも確実に再通知する。
+     * セル値変更後にRelationsPanelを強制再描画する（同一行リフレッシュ）。
+     * paneStack はリセットしない。lastNotifiedRow も更新しない（次の行変更で正しく検知するため維持する）。
+     * 行を変更しない操作（セル編集後・逆参照マップ更新後など同一行のリフレッシュ）からのみ呼ぶこと。
+     * 行変更を伴う操作では notifyRowSelectionChanged() を通じて updateForRow() を呼ぶこと。
      */
     forceRefreshRelationsPanel(): void {
         if (this.relationsPanel === false) return;
-        this.lastNotifiedRow = -1;
-        this.selection.forceNotifyRelationsPanel();
+        // refreshCurrentRow は paneStack をリセットしないため、
+        // セル編集後に定義ジャンプで開いた追加RPが破棄されない
+        this.relationsPanel.refreshCurrentRow(this.selection.getFocus().row);
     }
 
     // =========================================================================
@@ -1200,8 +1203,8 @@ export class EditorTable {
     /**
      * 逆参照ヒントを更新する。通常テーブルの場合のみRelationsPanelを再描画する。
      * ミニEditorTableの場合はパネル全体再構築を避ける（ミニテーブル自身が破棄されるため）。
-     * 初回テーブル展開時は forceNotifyRelationsPanel() が先に走り、逆参照マップが未設定のため
-     * 1:Nエントリが0件になる。ここで再描画することで通常テーブルの1:Nも表示される。
+     * 初回テーブル展開時は notifyRowSelectionChanged() が先に走り、逆参照マップが未設定のため
+     * 1:Nエントリが0件になる。ここで forceRefreshRelationsPanel() を呼ぶことで1:Nも表示される。
      */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reference.updateReverseReferenceHints(map);

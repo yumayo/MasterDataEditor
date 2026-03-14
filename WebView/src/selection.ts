@@ -375,15 +375,6 @@ export class Selection {
         this.updateRenderer();
     }
 
-    /**
-     * focus行のRelationsPanel通知を強制発火する。
-     * - タブ切り替え時・新規オープン時（tab.ts enableTabButton / createTabState から呼ばれる）
-     * - セル値変更後に同一行のままパネルを再描画するとき（editor-table.ts から呼ばれる）
-     */
-    forceNotifyRelationsPanel(): void {
-        this.editorTable.notifyRowSelectionChanged(this.focus.row);
-    }
-
     isSingleCell(): boolean {
         return this.range.startRow === this.range.endRow && this.range.startColumn === this.range.endColumn;
     }

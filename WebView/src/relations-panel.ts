@@ -301,13 +301,24 @@ export class RelationsPanel {
     }
 
     /**
-     * 選択行の関連データをすべて解決して表示する（Selectionから呼ばれる）
-     * fullDataCacheが未ロードの場合は非同期でロードして再描画する
+     * 選択行が変わったときに呼ばれる（editor-table.ts の notifyRowSelectionChanged 経由）。
+     * 定義ジャンプで深化したペインスタックをルートにリセットしてから refreshCurrentRow() に委譲する。
      */
     updateForRow(rowIndex: number): void {
+        if (this.tab === false) throw new Error('[RelationsPanel] updateForRow: tab が未接続の状態で呼ばれました');
+        this.tab.resetPaneStackToRoot();
+        this.refreshCurrentRow(rowIndex);
+    }
+
+    /**
+     * 同一行のセル値変更後に呼ばれる（editor-table.ts の forceRefreshRelationsPanel 経由）。
+     * paneStack はリセットせず関連データのみ再表示する。
+     * 行を変更しない操作（セル編集後の同一行リフレッシュ）からのみ呼ぶこと。
+     */
+    refreshCurrentRow(rowIndex: number): void {
         if (this.currentEditorTable === false) return;
         this.updateForRowAsync(rowIndex, this.currentEditorTable).catch(err => {
-            console.error('[RelationsPanel] updateForRow 失敗:', err);
+            console.error('[RelationsPanel] refreshCurrentRow 失敗:', err);
         });
     }
 
