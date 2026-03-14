@@ -1252,3 +1252,16 @@ display: flex による display: table-cell の上書き
 `display: table` レイアウトの子要素に `display: flex` や `display: grid` を設定してはならない。セル内の子要素を縦に並べたい場合は、セル自体の `display` は変更せず、子要素の `display: block` で制御する。CSSの `display` プロパティは要素のレイアウトモデルを根本的に変更するため、親のレイアウトモデル（table）と子のレイアウトモデル（flex）が矛盾しないか確認すること。回帰テストで `getComputedStyle(el).display === 'table-cell'` を直接検証している。
 
 ---
+
+## 84. [5ec75f6] — 設定画面表示時にRelationsPanelとナビゲーションバーが残存する問題を修正
+
+### 不具合原因名
+設定タブモード遷移時のエディターレイアウト制御漏れ
+
+### なぜそうなったのか
+`activateSettingsTab()` は `relationsPanel.disconnectEditorTable()` でRelationsPanelのデータ接続を解除していたが、`editor-right-slot` のDOM表示制御（`display: none`）を行っていなかった。また `paneStack`/`viewIndex` のリセットと `updateNavigationBar()` の呼び出しも欠落していたため、前タブのナビゲーションバー（← 1/3 →）が設定画面に残存した。`showDiffView()`/`hideDiffView()` には同等の表示制御が既に実装されていたが、設定タブのパスにはこのパターンが適用されていなかった。加えて、`TabButton.onClickCloseButton()` が `Tab.closeTab()` を経由せず `removeTabButton()` を直接呼んでいたため、設定タブの閉鎖時にクリーンアップロジックがスキップされる問題もあった。
+
+### どうしたら今後は再発しないか
+エディターの表示モード（通常/設定/DiffView）を切り替える際は、データ接続の解除だけでなく、DOM表示状態（rightSlot、navigationBar等）のリセットも必ず対にする。対称操作パターン（enter/leave、show/hide）を新設する際は、既存の対称操作（showDiffView/hideDiffView）を参照し、同等の表示制御が漏れていないか確認する。また、タブの閉鎖処理は `closeTab()` に集約し、各TabButtonから直接 `removeTabButton()` を呼ばない設計を維持する。
+
+---

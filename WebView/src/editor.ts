@@ -212,6 +212,27 @@ export class Editor {
         this.rightSlot.style.display = '';
     }
 
+    /**
+     * 設定タブ表示モードに切り替える。
+     * editor-right-slot（RelationsPanel）を非表示にし、設定画面を全幅表示する。
+     * 設定モード中はナビゲーションバーが不要なため非表示にする。
+     */
+    enterSettingsMode(): void {
+        this.rightSlot.style.display = 'none';
+        this.navigationBar.style.display = 'none';
+    }
+
+    /**
+     * 設定タブ表示モードを解除して通常のエディター状態に戻す。
+     * rightSlot を再表示する（後続の updateVisiblePanes() で正しい内容が設定される）。
+     * 後続の updateNavigationBar() が paneStack.length に基づいて適切に表示制御するため、
+     * ここでは非表示のまま維持する。
+     */
+    leaveSettingsMode(): void {
+        this.rightSlot.style.display = '';
+        this.navigationBar.style.display = 'none';
+    }
+
     /** サイドバー幅に応じてエディター領域の位置と幅を更新する */
     applySidebarWidth(sidebarWidth: number): void {
         const widthPx = sidebarWidth + 'px';

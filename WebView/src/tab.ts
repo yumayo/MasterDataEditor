@@ -332,6 +332,22 @@ export class Tab {
         this.removeTabButton(name);
         tabButton.element.remove();
 
+        // 設定タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
+        // これにより次回 openSettingsTab() 時に新しい SettingsPanel が正しく生成される。
+        // wasActive に関わらず実行する（非アクティブ状態で閉じた場合もクリーンアップが必要なため）。
+        // leaveSettingsMode() は設定タブがアクティブだった場合のみ呼ぶ
+        // （非アクティブなら既に通常タブが表示されており rightSlot は復元済みのため）。
+        if (name === SETTINGS_TAB_NAME) {
+            if (wasActive) {
+                this.editor.leaveSettingsMode();
+            }
+            if (this.settingsWrapperElement !== false) {
+                this.settingsWrapperElement.remove();
+            }
+            this.settingsPanel = false;
+            this.settingsWrapperElement = false;
+        }
+
         if (!wasActive) return;
         if (next) { this.enableTabButton(next.name); return; }
         if (prev) { this.enableTabButton(prev.name); return; }
@@ -425,15 +441,6 @@ export class Tab {
             this.destroyExtraRelationsPanels(state.paneStack);
         }
 
-        // 設定タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
-        // これにより次回 openSettingsTab() 時に新しい SettingsPanel が正しく生成される
-        if (name === SETTINGS_TAB_NAME) {
-            if (this.settingsWrapperElement !== false) {
-                this.settingsWrapperElement.remove();
-            }
-            this.settingsPanel = false;
-            this.settingsWrapperElement = false;
-        }
     }
 
     /**
@@ -476,6 +483,12 @@ export class Tab {
         if (name === SETTINGS_TAB_NAME) {
             this.activateSettingsTab();
             return;
+        }
+
+        // 設定タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
+        // この判定は activateTabState() より前で行う必要がある（activateTabState 内は常に通常タブの文脈）
+        if (this.activeTabName === SETTINGS_TAB_NAME) {
+            this.editor.leaveSettingsMode();
         }
 
         // 設定タブが表示中であれば非表示にする
@@ -556,6 +569,9 @@ export class Tab {
 
         // RelationsPanel を非表示にする（設定画面に不要）
         this.relationsPanel.disconnectEditorTable();
+
+        // editor-right-slot とナビゲーションバーを非表示にする（設定画面を全幅表示するため）
+        this.editor.enterSettingsMode();
 
         // 設定パネルを表示する
         this.settingsWrapperElement.style.display = '';

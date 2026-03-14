@@ -109,39 +109,10 @@ export class TabButton {
         // liのclickイベントが呼び出されてしまうためイベントの伝播を止めておきます。
         ev.stopPropagation();
 
-        // 自分自身がアクティブかどうかを確認
-        const wasActive = this.element.classList.contains('tab-button-active');
-
-        // 削除前に隣のタブを探しておく
-        const prev = this.tab.findPrevTabButton(this.name);
-        const next = this.tab.findNextTabButton(this.name);
-
-        // 自分自身をタブから登録解除します。
-        this.tab.removeTabButton(this.name);
-
-        // 閉じるボタンが押されたので自分自身を削除します。
-        this.element.remove();
-
-        // 自分自身がアクティブじゃないなら、他の要素を自動アクティブにはしないです。
-        if (!wasActive) {
-            return;
-        }
-
-        // 自分がアクティブだった場合は、次にアクティブになるタブを探します。
-        // 見つかればそのタブを有効状態にします。
-        // 優先順位: 右隣 > 左隣 > Editor空にする
-
-        // 自分の右隣が存在していれば右を有効にする。
-        if (next) {
-            this.tab.enableTabButton(next.name);
-            return;
-        }
-
-        // 自分の左隣が存在していれば左を有効にする。
-        if (prev) {
-            this.tab.enableTabButton(prev.name);
-            return;
-        }
+        // closeTab() に一任する。設定タブのクリーンアップ（settingsPanel/settingsWrapperElement のリセット等）
+        // を含む全クリーンアップロジックが closeTab() に集約されているため、直接 removeTabButton() を
+        // 呼ぶ旧実装は設定タブ再オープン時に古い SettingsPanel が再利用される問題を引き起こす。
+        this.tab.closeTab(this.name);
     }
 
     enable() {
