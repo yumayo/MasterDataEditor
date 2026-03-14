@@ -39,6 +39,13 @@
 ## Pane Stack (2026-03-14)
 - **Design**: Tab.paneStack = [{element, panel}] where [0]=leftPane, [1]=globalRP, [2..]=pushed RPs
 - **viewIndex**: which pair (paneStack[vi], paneStack[vi+1]) is displayed in left/right slots
+- **resetPaneStackToRoot()**: truncates to [0][1], sets viewIndex=0 (called from updateForRow on row change)
+
+## RelationsPanel Row Notification (2026-03-14)
+- **updateForRow()**: row change -> resets paneStack + refreshes data
+- **refreshCurrentRow()**: cell edit -> refreshes data only (no paneStack reset)
+- **ORPHANED**: Selection.forceNotifyRelationsPanel() has no callers after refactor — landmine for future devs
+- **STALE COMMENT**: editor-table.ts L72 still says "forceRefreshRelationsPanel resets to -1" (no longer true)
 
 ## Settings Tab (FEAT_0002, 2026-03-14)
 - **KNOWN ISSUE**: closeTab('設定') does NOT clean up settingsWrapperElement/settingsPanel -> dangling reference on re-open
@@ -54,7 +61,7 @@
 
 ## Diff View / Source Control (FEAT_0005, 2026-03-14)
 - **CRITICAL**: showDiffView() sets rightSlot.style.display='none' but tab switch does NOT call hideDiffView() -> rightSlot stays hidden permanently
-- **CRITICAL**: C# git show handler has NO path validation -> path traversal vulnerability
+- **PARTIALLY FIXED**: C# git show handler now validates dataPrefix but path normalization incomplete (Git `/c/` vs `C:\`)
 - **KNOWN ISSUE**: diff-view.css uses `--tab-background` (undefined CSS variable)
 - **KNOWN ISSUE**: source-control-panel.css uses `--list-hover-background` (undefined CSS variable)
 - **KNOWN ISSUE**: SourceControlPanel.currentDiffView is null member variable (half-baked object)
@@ -72,6 +79,8 @@
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須
 - **C#バックエンド入力バリデーション不足**: git系ハンドラでフロントエンド入力をそのままコマンド引数に渡している
 - **reloadCellsFromStore行数同期の副作用漏れ**: 行数変更後にSelection/GitDiffHighlight/行ヘッダー再ナンバリングが必要
+- **Orphaned public methods after refactor**: forceNotifyRelationsPanel残存 — リファクタ後に呼び出し元ゼロのpublicメソッドが地雷化
+- **Comment staleness after behavior change**: lastNotifiedRow/forceNotifyRelationsPanel関連コメント3箇所が実装と乖離
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -108,3 +117,4 @@
 - 2026-03-14 (FEAT_0005 source-control-diff R1): 致命的2件、重要4件、軽微4件
 - 2026-03-14 (FEAT_0006 git-cell-highlight): 致命的2件、重要4件、軽微4件
 - 2026-03-14 (mini-table-row-store-sync): 致命的2件、重要4件、軽微3件
+- 2026-03-14 (BUG_0006 git-path-fix + paneStack-row-reset): 致命的1件、重要3件、軽微3件

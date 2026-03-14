@@ -8,7 +8,14 @@
 - 評価: 🔴 致命的
 - 核心: タブ切替時に RelationsPanel のナビゲーション深度がリセットされる
 - 影響: 定義ジャンプ機能（Ctrl+Click）の価値を約50%減にする
-- 改善案: TabState にパンくず履歴状態を保持し、タブ切替時に復元する
+- 改善案: TabState にパンくず履歴状態を保持し、タブ切替時に復元する（現在は deactivateTabState/activateTabState で paneStack・viewIndex は保存・復元済み）
+
+#### RelationsPanel ナビゲーション履歴の行切り替え時非リセット（2026-03-14）
+- 評価: 🔴 致命的
+- 核心: メインテーブルで行を変えても paneStack/viewIndex がリセットされない。updateForRow() は relationsPanel.updateForRow() しか呼ばず Tab.initPaneStack() を呼ばない
+- 症状: ←で戻り → 別行選択 → →押下で前の行の深いコンテキストが復元される。ユーザーは「今選択している行の関連」を見ているつもりが「前の行の関連」を見せられる
+- 修正方針の妥当性: 「行変更時にナビゲーション履歴をリセット（initPaneStack相当）」は正しい。ただし、StackをL=2に切り詰めるだけでなく viewIndex=0 にも戻すこと
+- 副作用考慮: グローバルRP（paneStack[1]）は updateForRow で自動更新されるため問題なし。追加RP（[2]以降）の破棄は truncateStackAfterIndex(0) で一括処理できる
 
 #### ミニテーブル行操作によるメインテーブルデータ破損（2026-03-14）
 - 評価: 🔴 致命的
