@@ -30,6 +30,11 @@
     border-left: 2px solid var(--font-color);
 }
 
+/* 歯車アイコン（設定）: アクティビティバー下部に固定 */
+.activity-bar-settings {
+    margin-top: auto;
+}
+
 /* サイドバーコンテンツ */
 .sidebar-content {
     flex: 1;

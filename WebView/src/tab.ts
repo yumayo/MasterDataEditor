@@ -19,6 +19,10 @@ import {TabReference} from "./tab-reference";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {Csv} from "./csv";
+import {SettingsPanel} from "./settings-panel";
+
+/** 設定タブの固定名 */
+const SETTINGS_TAB_NAME = '設定';
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -111,6 +115,12 @@ export class Tab {
     /** 現在のビューインデックス（表示ペア: paneStack[viewIndex] と paneStack[viewIndex+1]） */
     private viewIndex: number;
 
+    /** 設定タブの SettingsPanel インスタンス（設定タブが開かれた後に生成される） */
+    private settingsPanel: SettingsPanel | false;
+
+    /** 設定タブのラッパー要素（editor の左ペインに追加するコンテナ） */
+    private settingsWrapperElement: HTMLElement | false;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -129,6 +139,8 @@ export class Tab {
         this.reference = new TabReference(this.store, this.referenceDataCache);
         this.paneStack = [];
         this.viewIndex = 0;
+        this.settingsPanel = false;
+        this.settingsWrapperElement = false;
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -411,6 +423,16 @@ export class Tab {
             // （deactivateTabState() で suspend() のみで保持されているため、ここで完全破棄する）
             this.destroyExtraRelationsPanels(state.paneStack);
         }
+
+        // 設定タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
+        // これにより次回 openSettingsTab() 時に新しい SettingsPanel が正しく生成される
+        if (name === SETTINGS_TAB_NAME) {
+            if (this.settingsWrapperElement !== false) {
+                this.settingsWrapperElement.remove();
+            }
+            this.settingsPanel = false;
+            this.settingsWrapperElement = false;
+        }
     }
 
     /**
@@ -445,6 +467,17 @@ export class Tab {
         // タブを有効化
         tabButton.enable();
 
+        // 設定タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
+        if (name === SETTINGS_TAB_NAME) {
+            this.activateSettingsTab();
+            return;
+        }
+
+        // 設定タブが表示中であれば非表示にする
+        if (this.settingsWrapperElement !== false) {
+            this.settingsWrapperElement.style.display = 'none';
+        }
+
         // 現在アクティブなタブがあれば非アクティブ化
         if (this.activeTabName && this.activeTabName !== name) {
             const previousState = this.tabStates.get(this.activeTabName);
@@ -469,6 +502,76 @@ export class Tab {
 
         // 新しいタブ状態を作成
         this.createTabState(name, tabButton);
+    }
+
+    /**
+     * 設定タブをタブバーに開く。
+     * 既に存在する場合は単純にアクティブ化する。
+     * 歯車アイコンクリック時に Sidebar 経由で呼ばれる。
+     */
+    openSettingsTab(): void {
+        const tabButton = this.append(SETTINGS_TAB_NAME);
+        tabButton.click();
+    }
+
+    /**
+     * 設定タブをアクティブ化する。
+     * enableTabButton('設定') から呼ばれる。
+     * SettingsPanel の初回生成・再表示を担う。
+     * 通常テーブルの wrapperElement は deactivateTabState() で非表示にしない（設定タブは独立）。
+     * 代わりに既存アクティブタブを非アクティブ化してから設定パネルを表示する。
+     */
+    private activateSettingsTab(): void {
+        // 通常テーブルタブがアクティブなら非アクティブ化する
+        if (this.activeTabName && this.activeTabName !== SETTINGS_TAB_NAME) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+        // アクティブ名を設定タブ名に更新する（getActiveTabName() で '設定' が返るようにする）
+        this.activeTabName = SETTINGS_TAB_NAME;
+
+        // SettingsPanel の TabButton を取得する
+        // openSettingsTab() → append() で必ず tabButton が生成されるため、存在しない状態は論理エラー
+        const tabButton = this.tabButtons.find(x => x.name === SETTINGS_TAB_NAME);
+        if (!tabButton) throw new Error('[Tab] activateSettingsTab: 設定タブの TabButton が存在しない');
+
+        // 初回のみ SettingsPanel とラッパーを生成する
+        // SettingsPanel は TabButton を直接参照して dirty マークを更新する（密結合）
+        if (this.settingsWrapperElement === false) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('tab-wrapper', 'settings-tab-wrapper');
+            this.editor.appendChild(wrapper);
+            this.settingsWrapperElement = wrapper;
+
+            this.settingsPanel = new SettingsPanel(tabButton);
+            this.settingsPanel.appendTo(wrapper);
+        }
+
+        // RelationsPanel を非表示にする（設定画面に不要）
+        this.relationsPanel.disconnectEditorTable();
+
+        // 設定パネルを表示する
+        this.settingsWrapperElement.style.display = '';
+    }
+
+    /**
+     * 現在アクティブなタブが設定タブかどうかを返す
+     * main.ts の Ctrl+S ハンドラで判定するために使用する
+     */
+    isSettingsTabActive(): boolean {
+        return this.activeTabName === SETTINGS_TAB_NAME;
+    }
+
+    /**
+     * 設定パネルを保存する（Ctrl+S 時に main.ts から呼ばれる）
+     * isSettingsTabActive() が true のときのみ呼ばれるため、
+     * settingsPanel が false の状態は論理エラーとして throw する
+     */
+    saveSettings(): void {
+        if (this.settingsPanel === false) throw new Error('[Tab] saveSettings: settingsPanel が未初期化の状態で呼ばれた');
+        this.settingsPanel.save();
     }
 
     /**

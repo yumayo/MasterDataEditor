@@ -38,10 +38,11 @@ export class Sidebar {
         this.tab = tab;
         this.editor = editor;
 
-        // アクティビティバー
-        this.activityBar = new ActivityBar((item: ActivityBarItem) => {
-            this.switchPanel(item);
-        });
+        // アクティビティバー（歯車ボタンクリックで設定タブを開く）
+        this.activityBar = new ActivityBar(
+            (item: ActivityBarItem) => { this.switchPanel(item); },
+            () => { this.tab.openSettingsTab(); }
+        );
         this.activityBar.appendTo(explorerElement);
 
         // サイドバーコンテンツ

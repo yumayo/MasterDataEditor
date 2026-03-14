@@ -6,8 +6,12 @@ import {CommandPalette} from "./command-palette";
 import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
+import {applyStoredTheme} from "./settings-panel";
 
 (async () => {
+    // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
+    applyStoredTheme();
+
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
     const tabElement = document.getElementById('tab')!;
@@ -64,6 +68,17 @@ import {ReferenceDataCache} from "./reference-data-cache";
             commandPalette.show();
         }
     });
+
+    // 設定タブの Ctrl+S はキャプチャフェーズで処理する。
+    // 設定画面の <select> 要素にフォーカスがある場合、バブリングフェーズでは
+    // select 要素がキーボードイベントを消費してしまうため、キャプチャフェーズで先に捕捉する。
+    // EditorTable の Ctrl+S は EditorTableHandler 内でバブリングフェーズで処理されるため競合しない。
+    document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.ctrlKey && !e.shiftKey && e.key === 's' && tab.isSettingsTabActive()) {
+            e.preventDefault();
+            tab.saveSettings();
+        }
+    }, true);
 
     // スキーマファイルを読み込み
     const files = await findFilesAsync("schema");
