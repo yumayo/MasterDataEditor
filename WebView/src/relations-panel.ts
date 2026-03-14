@@ -235,6 +235,54 @@ export class RelationsPanel {
     }
 
     /**
+     * 追加RP（ペインスタック上のRP）をタブ非アクティブ時に一時停止する。
+     * disconnectEditorTable() と異なり、ミニEditorTable群・currentEntries・baseTableName を保持する。
+     * currentRequestId をインクリメントして進行中の非同期処理を無効化し、
+     * 全ミニEditorTable / FillController / AreaResizer のグローバルリスナーを解除する。
+     * resume() で対称的に再登録される。DOM構造・ストアデータ・History は保持する。
+     */
+    suspend(): void {
+        this.currentRequestId++;
+        // グローバルイベントリスナー（window mousemove/mouseup 等）を解除する。
+        // タブ切替のたびにリスナーが蓄積して非表示DOMに対するイベント処理が走り続けるのを防ぐ。
+        this.deactivateMiniEditorTables();
+    }
+
+    /**
+     * 全ミニEditorTable / FillController / AreaResizer のグローバルリスナーを解除する。
+     * suspend()（タブ非アクティブ時）と destroyMiniEditorTables()（破棄時）の両方で
+     * 同一の deactivate ループが必要なため共通メソッドとして抽出する。
+     */
+    private deactivateMiniEditorTables(): void {
+        for (const miniTable of this.miniEditorTables) {
+            miniTable.deactivate();
+        }
+        for (const fillController of this.miniFillControllers) {
+            fillController.deactivate();
+        }
+        for (const areaResizer of this.miniAreaResizers) {
+            areaResizer.deactivate();
+        }
+    }
+
+    /**
+     * 追加RP（ペインスタック上のRP）をタブ復帰時に再開する。
+     * suspend() で解除したグローバルリスナーを再登録する。
+     * DOM構造・ストアデータ・currentEntries は保持されたままであるため、再描画は不要。
+     */
+    resume(): void {
+        for (const miniTable of this.miniEditorTables) {
+            miniTable.activate();
+        }
+        for (const fillController of this.miniFillControllers) {
+            fillController.activate();
+        }
+        for (const areaResizer of this.miniAreaResizers) {
+            areaResizer.activate();
+        }
+    }
+
+    /**
      * 選択行の関連データをすべて解決して表示する（Selectionから呼ばれる）
      * fullDataCacheが未ロードの場合は非同期でロードして再描画する
      */
@@ -551,18 +599,14 @@ export class RelationsPanel {
      * 破棄後はメインEditorTableのhandlerをアクティブ化してキーボード操作を復元する
      */
     private destroyMiniEditorTables(): void {
+        // relationsPanel の参照を先に解除する（deactivate 前に解除することで宙吊り状態を防ぐ）
         for (const miniTable of this.miniEditorTables) {
             miniTable.relationsPanel = false;
-            miniTable.deactivate();
         }
+        // deactivate ループは suspend() との共通処理として抽出したメソッドに委譲する
+        this.deactivateMiniEditorTables();
         this.miniEditorTables = [];
-        for (const fillController of this.miniFillControllers) {
-            fillController.deactivate();
-        }
         this.miniFillControllers = [];
-        for (const areaResizer of this.miniAreaResizers) {
-            areaResizer.deactivate();
-        }
         this.miniAreaResizers = [];
         // ミニテーブルのストア参照カウントを減らす（registerTableAsync と対称的な解除）
         // unregisterTable は isTableDirty() で Dirty 判定するため、

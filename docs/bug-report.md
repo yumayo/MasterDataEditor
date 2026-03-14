@@ -1072,3 +1072,18 @@ resolveEntriesForTableRowAsync の動的参照スキップ
 - データ構造の選択がPK重複行に対応しているか常に確認する（`Map<pkValue, row>` はPK重複行を消す）。
 
 ---
+
+## 73. [9250fe1] — タブ切り替え時にRelationsPanel（ペインスタック）の深さがリセットされる問題を修正
+
+### 不具合原因名
+TabState へのペインスタック状態の非保持（activateTabState による無条件リセット）
+
+### なぜそうなったのか
+ペインスタック機能（定義ジャンプによるRelationsPanelの深度追加）が導入された時点で、`TabState` がペインスタックの状態（`paneStack`/`viewIndex`）を保持する設計になっていなかった。`activateTabState()` はタブ切替のたびに `initPaneStack()` でペインスタックを初期化する設計であり、「タブごとに異なる深さのペインスタックを持つ」というユースケースが考慮されていなかった。その結果、定義ジャンプで積み上げた追加RelationsPanel群は別タブに切り替えた瞬間に2エントリの初期状態へ完全リセットされた。
+
+### どうしたら今後は再発しないか
+1. タブ切替で保存・復元すべき状態を追加する際は、`TabState` インターフェースに含め、`deactivateTabState()`/`activateTabState()` の対称性を確認する。
+2. 状態の保存・復元では参照代入ではなく値のコピー（`.slice()` 等）を使い、共有参照による意図しない変更を防ぐ。
+3. `suspend()`/`resume()` のような一時停止/再開パターンを導入する際は、グローバルリスナー（`window.addEventListener` 等）の解除・再登録を忘れないこと。
+
+---

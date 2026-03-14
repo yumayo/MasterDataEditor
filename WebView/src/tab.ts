@@ -36,6 +36,10 @@ export interface TabState {
     savedScrollLeft: number;
     /** タブ非アクティブ時に保存された垂直スクロール位置 */
     savedScrollTop: number;
+    /** タブ非アクティブ時に保存されたペインスタック（定義ジャンプ等で深化した状態を保持） */
+    paneStack: Array<{ element: HTMLElement; panel: RelationsPanel | false }>;
+    /** タブ非アクティブ時に保存されたビューインデックス */
+    viewIndex: number;
 }
 
 export interface EditorTableFactoryResult {
@@ -397,7 +401,32 @@ export class Tab {
         // アクティブタブが削除された場合はリレーションパネルの接続を解除してクリアする
         if (this.activeTabName === name) {
             this.relationsPanel.disconnectEditorTable();
+            // アクティブタブ閉じ時は this.paneStack に追加RP（[2]以降）が残っているため破棄する
+            // （deactivateTabState() が呼ばれていないため state.paneStack には保存されていない）
+            this.destroyExtraRelationsPanels(this.paneStack);
+            this.paneStack = [];
             this.activeTabName = false;
+        } else if (state) {
+            // 非アクティブタブ閉じ時は state.paneStack に保存された追加RP（[2]以降）を破棄する
+            // （deactivateTabState() で suspend() のみで保持されているため、ここで完全破棄する）
+            this.destroyExtraRelationsPanels(state.paneStack);
+        }
+    }
+
+    /**
+     * ペインスタックの追加RP（[2]以降）を完全破棄する。
+     * アクティブタブ閉じ時（this.paneStack）と非アクティブタブ閉じ時（state.paneStack）の
+     * 両パスで同一の破棄ロジックが必要なため共通メソッドとして抽出する。
+     */
+    private destroyExtraRelationsPanels(stack: Array<{ element: HTMLElement; panel: RelationsPanel | false }>): void {
+        for (let i = stack.length - 1; i >= 2; i--) {
+            const entry = stack[i];
+            if (entry.panel !== false) {
+                entry.panel.disconnectEditorTable();
+                if (entry.element.parentElement) {
+                    entry.element.remove();
+                }
+            }
         }
     }
 
@@ -444,13 +473,28 @@ export class Tab {
 
     /**
      * タブ状態を非アクティブ化（DOMを非表示にしてイベントリスナーを解除）
+     * ペインスタックの現在状態を state に保存し、追加RP（paneStack[2]以降）を一時停止する。
+     * グローバルRP（paneStack[1]）は this.relationsPanel.disconnectEditorTable() で完全解除する。
+     * 追加RPは suspend() で一時停止するのみで内部状態（ミニEditorTable群・currentEntries）を保持する。
+     * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
         // スクロール位置をwrapperが表示されている間に保存する（左ペインのスクロール）
         this.editor.saveScrollPosition(state);
         state.wrapperElement.style.display = 'none';
-        // グローバルリレーションパネルのEditorTable接続を解除する（relationsPanel内でフィールドもリセットされる）
+        // グローバルリレーションパネルのEditorTable接続を完全解除する（relationsPanel内でフィールドもリセットされる）
         this.relationsPanel.disconnectEditorTable();
+        // 追加RP（paneStack[2]以降）は suspend() で一時停止するのみ（内部状態を保持）
+        // disconnectEditorTable() ではなく suspend() を使うことで、タブ復帰時に再構築不要になる
+        for (let i = 2; i < this.paneStack.length; i++) {
+            const entry = this.paneStack[i];
+            if (entry.panel !== false) {
+                entry.panel.suspend();
+            }
+        }
+        // 現在のペインスタックと viewIndex を state に保存する（タブ復帰時に復元するため）
+        state.paneStack = this.paneStack.slice();
+        state.viewIndex = this.viewIndex;
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
         state.fillController.deactivate();
@@ -459,7 +503,8 @@ export class Tab {
 
     /**
      * タブ状態をアクティブ化（DOMを表示してイベントリスナーを登録）
-     * タブが切り替わるたびにペインスタックをリセットする
+     * state に保存されたペインスタックを復元する（initPaneStack() は呼ばない）。
+     * 初回アクティブ化（createTabState 内）では state.paneStack が初期化済みであること。
      */
     activateTabState(state: TabState): void {
         state.wrapperElement.style.display = '';
@@ -475,8 +520,22 @@ export class Tab {
         // EditorTableHandler を有効化（IME対応）
         state.editorTableHandler.enable();
 
-        // ペインスタックをリセットする（タブ切替時は常に2ペイン状態に戻す）
-        this.initPaneStack();
+        // state に保存されたペインスタックと viewIndex を復元する
+        // deactivateTabState() で保存された状態であり、initPaneStack() は呼ばない
+        // slice() でコピーを復元する（参照共有による paneStack の相互汚染を防ぐ）
+        this.paneStack = state.paneStack.slice();
+        this.viewIndex = state.viewIndex;
+        // 追加RP（paneStack[2]以降）を resume() でグローバルリスナーを再登録する。
+        // deactivateTabState() での suspend() と対称的なペアとして呼ぶ。
+        // DOM構造・ストアデータは保持されているため再描画は不要。
+        for (let i = 2; i < this.paneStack.length; i++) {
+            const entry = this.paneStack[i];
+            if (entry.panel !== false) {
+                entry.panel.resume();
+            }
+        }
+        // DOM（左右スロット）にペインスタックの状態を反映する
+        this.updateVisiblePanes();
     }
 
     /**
@@ -649,7 +708,12 @@ export class Tab {
             selection.setRange(1, 1, 1, 1);
             selection.move(1, 1);
 
-            // タブ状態を保存
+            // 初回アクティブ化の前にペインスタックを初期状態に設定する
+            // activateTabState() は state.paneStack / state.viewIndex から復元するため、
+            // createTabState() では initPaneStack() を呼んでフィールドを初期化してから state に格納する
+            this.initPaneStack();
+
+            // タブ状態を保存（initPaneStack() 後のフィールド値を初期値として記録する）
             const state: TabState = {
                 editorTable,
                 selection,
@@ -660,11 +724,13 @@ export class Tab {
                 wrapperElement,
                 dropdownInput,
                 savedScrollLeft: 0,
-                savedScrollTop: 0
+                savedScrollTop: 0,
+                paneStack: this.paneStack.slice(),
+                viewIndex: this.viewIndex,
             };
             this.tabStates.set(name, state);
 
-            // アクティブ化
+            // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
             this.activateTabState(state);
             this.activeTabName = name;
 
