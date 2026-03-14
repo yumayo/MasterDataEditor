@@ -806,8 +806,12 @@ export class RelationsPanel {
         // scrollContainer: スクロール担当（overflow:auto）
         // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー、座標基準）
         // wrapper: ドロップダウンの配置先（overflow:visible、クリッピング回避）
+        // 1:Nミニテーブルには最低1行のバッファ行を表示する（行追加のエントリポイントとして機能させるため）
+        // emptyRowCount はデータ行+バッファ行の合計最低行数なので、データ行数+1 を渡す
+        // N:1ミニテーブルは参照先の全行を表示するのみなのでバッファ行は不要
+        const emptyRowCount = entry.relationType === '1:N' ? entry.rows.length + 1 : 0;
         const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
-            scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows
+            scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows, emptyRowCount
         );
         // 全ミニテーブルは initialize() で storeRowIndices = [0, 1, ...] に初期化される。
         // 1:Nの場合のみ filteredStoreRowIndices で上書きする（フィルタリングされた行のストアインデックス）。

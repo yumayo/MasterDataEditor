@@ -368,8 +368,8 @@ test.describe('テストケース5: ストア全体で重複判定される（�
             // id=20（thunder, enemy_id=2）の行はミニテーブルに表示されない
             const miniTable = await getMiniTableAsync(page, 'skill');
 
-            // ミニテーブルの表示行確認（ヘッダー1行 + データ1行 = 2行）
-            await expect(miniTable.locator('.editor-table-row')).toHaveCount(2);
+            // ミニテーブルの表示行確認（ヘッダー1行 + データ1行 + バッファ行(1) = 3行）
+            await expect(miniTable.locator('.editor-table-row')).toHaveCount(3);
 
             // ミニテーブルの 1行目（id=10, slash）のPKセル（colIndex=0）に
             // ストア上には存在するが表示されていない id=20 を入力する

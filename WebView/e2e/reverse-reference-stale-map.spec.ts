@@ -174,19 +174,19 @@ test.describe('バッファ空行に追加した行がミニテーブルに反�
 			await selectRowAsync(enemyTable, 0);
 			await waitForRelationsPanelContentAsync(page);
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
-			// 初期状態: ヘッダー行(1) + データ行(1, slash) = 2行
-			await expect(miniTable.locator('.editor-table-row')).toHaveCount(2);
+			// 初期状態: ヘッダー行(1) + データ行(1, slash) + バッファ行(1) = 3行
+			await expect(miniTable.locator('.editor-table-row')).toHaveCount(3);
 
 			// flame を追加して enemy id=1 を選択した状態にする
 			await setupFlameAddedAndEnemySelectedAsync(page);
 
-			// 期待: ヘッダー行(1) + データ行(2, slash と flame) = 3行
+			// 期待: ヘッダー行(1) + データ行(2, slash と flame) + バッファ行(1) = 4行
 			// 修正前はバグで逆参照マップが古いため flame が除外され、ヘッダー行(1) + データ行(1, slash) = 2行だった
 			const refreshedMiniTable = await getMiniTableSectionAsync(page, 'skill');
 			await expect(
 				refreshedMiniTable.locator('.editor-table-row'),
 				'バッファ空行に追加した flame（enemy_id=1）がミニテーブルに表示されるべき',
-			).toHaveCount(3);
+			).toHaveCount(4);
 		},
 	);
 

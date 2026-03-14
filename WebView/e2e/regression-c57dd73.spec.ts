@@ -146,10 +146,10 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
 
-			// 期待: ヘッダー行(1) + データ行(2) = 3行（slash と flame が FK=1 に対応する）
+			// 期待: ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行（slash と flame が FK=1 に対応する）
 			// リグレッションがある場合: FK値が非連続なため、最初の FK=1 の行 (slash) だけが
-			// 検出されて flame が欠落し、ヘッダー行(1) + データ行(1) = 2行になる
-			await expect(allRows, 'enemy id=1 を選択したとき、FK=1 の行（slash, flame）が2件ミニテーブルに表示されるべき').toHaveCount(3);
+			// 検出されて flame が欠落し、ヘッダー行(1) + データ行(1) + バッファ行(1) = 3行になる
+			await expect(allRows, 'enemy id=1 を選択したとき、FK=1 の行（slash, flame）が2件ミニテーブルに表示されるべき').toHaveCount(4);
 		},
 	);
 
@@ -188,9 +188,9 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
 
-			// 期待: ヘッダー行(1) + データ行(2) = 3行（thunder と blizzard が FK=2 に対応する）
-			// リグレッションがある場合: blizzard が欠落して2行になる
-			await expect(allRows, 'enemy id=2 を選択したとき、FK=2 の行（thunder, blizzard）が2件ミニテーブルに表示されるべき').toHaveCount(3);
+			// 期待: ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行（thunder と blizzard が FK=2 に対応する）
+			// リグレッションがある場合: blizzard が欠落して3行になる
+			await expect(allRows, 'enemy id=2 を選択したとき、FK=2 の行（thunder, blizzard）が2件ミニテーブルに表示されるべき').toHaveCount(4);
 		},
 	);
 

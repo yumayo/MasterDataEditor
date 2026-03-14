@@ -909,8 +909,11 @@ export class EditorTableHandler {
                 // promoteBufferRowToStore は引数の行まで間の行をまとめて昇格するため、
                 // storeRowIndicesLengthBefore = 昇格直前の length = 降格開始インデックスになる。
                 const lengthBefore = this.table.getStoreRowIndices().length;
-                this.table.promoteBufferRowToStore(domDataRowIndex);
-                promoteCommands.push(new PromoteBufferRowCommand(this.table, domDataRowIndex, lengthBefore));
+                // PromoteBufferRowCommand.execute() 内で promoteBufferRowToStore() と applyAutoFillToRow() を両方呼ぶ。
+                // ここでは直接昇格せず、コマンド経由で実行することで Redo 時にも FK 自動埋め込みが行われる。
+                const command = new PromoteBufferRowCommand(this.table, domDataRowIndex, lengthBefore);
+                command.execute();
+                promoteCommands.push(command);
                 promotedDomDataRowIndices.add(domDataRowIndex);
             }
         }

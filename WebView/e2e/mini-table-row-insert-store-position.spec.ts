@@ -170,10 +170,10 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 			await waitForRelationsPanelContentAsync(page);
 
 			// skill ミニテーブルが表示されるまで待機する
-			// ヘッダー行(1) + データ行(2) = 3行
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
-			await expect(allRows).toHaveCount(3);
+			await expect(allRows).toHaveCount(4);
 
 			// ミニテーブルの最終行（2行目、blizzard、ストアインデックス=2）の下に行を挿入する
 			// rowIndex=1（0始まり）はミニテーブル内でのデータ行2番目（blizzard）に相当する
@@ -181,8 +181,8 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 			await clickContextMenuItemAsync(page, '下に行を挿入');
 
 			// 行が追加されてミニテーブルに3データ行が表示されることを確認する
-			// ヘッダー行(1) + データ行(3) = 4行
-			await expect(allRows).toHaveCount(4);
+			// ヘッダー行(1) + データ行(3) + バッファ行(1) = 5行
+			await expect(allRows).toHaveCount(5);
 
 			// エクスプローラーから skill テーブルをタブとして開いて Ctrl+S で保存する
 			// ミニテーブルの Ctrl+S は isMiniTableInstance() で拒否されるため、
@@ -233,17 +233,17 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 			await waitForRelationsPanelContentAsync(page);
 
 			// skill ミニテーブルが表示されるまで待機する
-			// ヘッダー行(1) + データ行(2) = 3行
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
-			await expect(allRows).toHaveCount(3);
+			await expect(allRows).toHaveCount(4);
 
 			// ミニテーブルの最終行（blizzard）の下に行を挿入する
 			await rightClickMiniTableRowHeaderAsync(miniTable, 1);
 			await clickContextMenuItemAsync(page, '下に行を挿入');
 
 			// 行が追加されてミニテーブルに3データ行が表示されることを確認する
-			await expect(allRows).toHaveCount(4);
+			await expect(allRows).toHaveCount(5);
 
 			// ミニテーブルのセルをクリックしてフォーカスを確保してから Ctrl+Z で Undo する
 			// フォーカスがミニテーブルにないと、メインテーブルの History に Undo が届く
@@ -256,8 +256,8 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 			await page.keyboard.press('Control+z');
 
 			// Undo 後にミニテーブルの行数が元の2行に戻ることを確認する
-			// ヘッダー行(1) + データ行(2) = 3行
-			await expect(allRows).toHaveCount(3);
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
+			await expect(allRows).toHaveCount(4);
 
 			// エクスプローラーから skill テーブルをタブとして開いて Ctrl+S で保存する
 			const skillTable = await openTableAsync(page, 'skill');
@@ -305,14 +305,16 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
-			await expect(allRows).toHaveCount(3);
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
+			await expect(allRows).toHaveCount(4);
 
 			// ミニテーブルの先頭行（thunder、ストアインデックス=1）の上に行を挿入する
 			await rightClickMiniTableRowHeaderAsync(miniTable, 0);
 			await clickContextMenuItemAsync(page, '上に行を挿入');
 
 			// 行が追加されてミニテーブルに3データ行が表示されることを確認する
-			await expect(allRows).toHaveCount(4);
+			// ヘッダー行(1) + データ行(3) + バッファ行(1) = 5行
+			await expect(allRows).toHaveCount(5);
 
 			const skillTable = await openTableAsync(page, 'skill');
 			await skillTable.click();
@@ -354,12 +356,14 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			const allRows = miniTable.locator('.editor-table-row');
-			await expect(allRows).toHaveCount(3);
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
+			await expect(allRows).toHaveCount(4);
 
 			// 行を挿入する
 			await rightClickMiniTableRowHeaderAsync(miniTable, 1);
 			await clickContextMenuItemAsync(page, '下に行を挿入');
-			await expect(allRows).toHaveCount(4);
+			// ヘッダー行(1) + データ行(3) + バッファ行(1) = 5行
+			await expect(allRows).toHaveCount(5);
 
 			// フォーカスを確保してから Undo する
 			const firstDataCell = miniTable.locator(
@@ -369,14 +373,15 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 			await firstDataCell.click();
 			await page.keyboard.press('Control+z');
 
-			// Undo後: ミニテーブルが元の2行に戻る
-			await expect(allRows).toHaveCount(3);
+			// Undo後: ミニテーブルが元の2行に戻る（バッファ行込み）
+			// ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行
+			await expect(allRows).toHaveCount(4);
 
 			// Redo で行挿入を再実行する
 			await page.keyboard.press('Control+y');
 
-			// Redo後: ミニテーブルに3データ行が表示される（ヘッダー行 + データ3行 = 4行）
-			await expect(allRows).toHaveCount(4);
+			// Redo後: ミニテーブルに3データ行が表示される（ヘッダー行 + データ3行 + バッファ行(1) = 5行）
+			await expect(allRows).toHaveCount(5);
 
 			// Ctrl+S で保存する（skill タブ経由）
 			const skillTable = await openTableAsync(page, 'skill');

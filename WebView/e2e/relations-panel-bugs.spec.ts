@@ -458,10 +458,10 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
             const miniTable = questSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // ヘッダー行(1) + データ行(2) = 合計3行
+            // ヘッダー行(1) + データ行(2) + バッファ行(1) = 合計4行
             // enemy_id=1 に対応する行は id=1(first_quest) と id=2(second_quest) の2件
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(3);
+            await expect(allRows).toHaveCount(4);
 
             // 行カウント表示も "2 rows" であることを確認する
             const rowCountEl = questSection.locator('.relations-table-row-count');
@@ -484,10 +484,10 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
             const miniTable = questSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // ヘッダー行(1) + データ行(1) = 合計2行
+            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 合計3行
             // enemy_id=2 に対応する行は id=3(dragon_quest) の1件
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(2);
+            await expect(allRows).toHaveCount(3);
 
             const rowCountEl = questSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');

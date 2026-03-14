@@ -630,11 +630,18 @@ export class PromoteBufferRowCommand implements Command {
 
     execute(): void {
         this.editorTable.promoteBufferRowToStore(this.domDataRowIndex);
+        // バッファ行昇格直後にFK自動埋め込みを適用する。
+        // promoteBufferRowToStore() でストアに空行が追加された状態なので、
+        // applyAutoFillToRow() がストア行インデックスを正しく解決できる。
+        // redo() は execute() を呼ぶため、Redo時も同じパスでFK値が埋め込まれる。
+        const rowIndex = this.domDataRowIndex + 1; // DOMデータ行インデックス(0始まり) → DOM行インデックス(1始まり)
+        this.editorTable.applyAutoFillToRow(rowIndex);
     }
 
     undo(): void {
         // storeRowIndicesLengthBefore から末尾までを全て降格する。
         // これにより M..N の範囲で昇格された全行が正確に削除される。
+        // Undo時は demoteStoreRowToBuffer() でストア行ごと削除されるため、FK値も含めて元の状態に戻る（対称性が保たれる）。
         this.editorTable.demoteStoreRowToBuffer(this.storeRowIndicesLengthBefore);
     }
 

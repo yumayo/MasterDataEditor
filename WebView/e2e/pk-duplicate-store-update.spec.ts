@@ -327,9 +327,9 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
             const miniTable = await getMiniTableAsync(page, 'skill');
 
             // ミニテーブルに3行（slash, fireball, thunder）が表示されるまで待機する
-            // ヘッダー行(1) + データ行(3) = 4行
+            // ヘッダー行(1) + データ行(3) + バッファ行(1) = 5行
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(4);
+            await expect(allRows).toHaveCount(5);
 
             // 2行目（id=1, name=fireball）のname列を "fireball_edited" に変更する
             // ストアのインデックス=1（0始まり）に相当する行を編集している
@@ -371,8 +371,8 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
 
             const miniTable = await getMiniTableAsync(page, 'skill');
 
-            // ミニテーブルに3行表示されるまで待機する（ヘッダー行 + 3データ行 = 4行）
-            await expect(miniTable.locator('.editor-table-row')).toHaveCount(4);
+            // ミニテーブルに3行表示されるまで待機する（ヘッダー行 + 3データ行 + バッファ行(1) = 5行）
+            await expect(miniTable.locator('.editor-table-row')).toHaveCount(5);
 
             // 2行目（id=1, name=fireball）のname列を変更する
             // colIndex=2: id(0), enemy_id(1), name(2) — FK列は非表示でないため全列可視

@@ -1093,7 +1093,7 @@ export class Tab {
     /**
      * リレーションパネル用ミニEditorTableを生成する
      *
-     * emptyRowCount=0 でデータ行のみ生成（空行なし）。
+     * emptyRowCount を呼び出し元から受け取り、1:Nミニテーブルでは1以上を渡してバッファ行を確保する。
      * 編集可能モードで生成し、FillControllerも有効化する。
      *
      * scrollContainer: editor-table / selection / areaResizer を配置する overflow:auto のスクロール領域
@@ -1113,7 +1113,8 @@ export class Tab {
         tableKey: string,
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
-        csvRows: string[][]
+        csvRows: string[][],
+        emptyRowCount: number
     ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer; history: History} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
@@ -1151,7 +1152,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, 0, 'editor-table', true
+            scrollController, this.sidebar, emptyRowCount, 'editor-table', true
         );
 
         Object.assign(editorTable, realEditorTable);

@@ -281,8 +281,8 @@ test.describe('テスト2: E2E — shop_product行2選択時に正しいshopレ�
             //   行カウントは "1 rows" になるが、内容が間違っている（ItemShopが表示される）
             // バグ修正後: group_idの値"1"でルックアップ → WeaponShop(1件)が正しく表示
             const allRows = miniTable.locator('.editor-table-row');
-            // ヘッダー行(1) + データ行(1) = 合計2行
-            await expect(allRows).toHaveCount(2);
+            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 合計3行
+            await expect(allRows).toHaveCount(3);
 
             // 行カウントが "1 rows" であることを確認する
             const rowCountEl = shopSection.locator('.relations-table-row-count');
@@ -322,8 +322,8 @@ test.describe('テスト2: E2E — shop_product行2選択時に正しいshopレ�
             //   → 0件表示 または エントリが生成されない
             // バグ修正後: group_idの値"2"でルックアップ → ItemShop(1件)が正しく表示
             const allRows = miniTable.locator('.editor-table-row');
-            // ヘッダー行(1) + データ行(1) = 合計2行
-            await expect(allRows).toHaveCount(2);
+            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 合計3行
+            await expect(allRows).toHaveCount(3);
 
             const rowCountEl = shopSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');
