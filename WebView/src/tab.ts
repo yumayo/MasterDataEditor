@@ -1,7 +1,6 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {TabButton} from "./tab-button";
-import {readFileAsync, gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
-import {GitDiffTracker} from "./git-diff-tracker";
+import {readFileAsync} from "./api";
 import {Editor} from "./editor";
 import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
@@ -851,9 +850,8 @@ export class Tab {
             selection.setRange(1, 1, 1, 1);
             selection.move(1, 1);
 
-            // git差分トラッカーを生成してEditorTableに接続する
-            // git statusを取得し、このテーブルが変更済みの場合のみトラッカーを生成する
-            await this.connectGitDiffTrackerAsync(name, tableData, json, editorTable);
+            // git statusを取得してこのテーブルのGitDiffTrackerを構築・接続し、全セルのハイライトを適用する
+            await editorTable.refreshGitDiffAsync();
 
             // 初回アクティブ化の前にペインスタックを初期状態に設定する
             // activateTabState() は state.paneStack / state.viewIndex から復元するため、
@@ -894,55 +892,6 @@ export class Tab {
 
             this.consumePendingNavigation(state);
         });
-    }
-
-    /**
-     * git statusを確認し、変更済みテーブルに対して GitDiffTracker を生成してEditorTableに接続する
-     * isNew: true の場合は全セルをchangedとするトラッカーを生成する
-     * isNew: false の場合はHEAD版CSVを取得してPKベースの差分マップを構築する
-     * git statusでエラーが発生した場合（gitリポジトリではない等）は何もしない
-     */
-    private async connectGitDiffTrackerAsync(
-        name: string,
-        tableData: EditorTableData,
-        schemaJson: { primary_key: string },
-        editorTable: EditorTable,
-    ): Promise<void> {
-        let statusResult: GitStatusResult;
-        try {
-            statusResult = await gitStatusAsync();
-        } catch (e) {
-            // gitリポジトリでない環境や通信エラーでは差分ハイライトをスキップする
-            console.warn('[Tab] connectGitDiffTrackerAsync: git status の取得に失敗しました:', e);
-            return;
-        }
-        // このテーブル名が変更リストに含まれているか確認する（changes のみ対象、staged は別途将来対応）
-        const entryIndex = statusResult.changes.findIndex(e => e.tableName === name);
-        if (entryIndex === -1) return;
-        const entry = statusResult.changes[entryIndex];
-        const pkColumnIndex = tableData.header.findIndex(col => col.name === schemaJson.primary_key);
-        if (pkColumnIndex === -1) return;
-        if (entry.isNew) {
-            // HEADに存在しない新規テーブル → 全セルchanged
-            const tracker = GitDiffTracker.createForNewTable(pkColumnIndex);
-            editorTable.connectGitDiffTracker(tracker);
-        } else {
-            // 既存テーブルの変更 → HEAD版CSVを取得してPKベースのマップを構築する
-            let headCsv: string;
-            try {
-                // entry.path はC#が返したgitルート相対パス（サブディレクトリ環境でも正しいパス）
-                headCsv = await gitShowAsync(entry.path);
-            } catch (e) {
-                // HEAD版CSVが取得できない場合（削除済み等）はスキップする
-                console.warn('[Tab] connectGitDiffTrackerAsync: HEAD版CSVの取得に失敗しました:', e);
-                return;
-            }
-            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndex);
-            const tracker = new GitDiffTracker(headRowMap, pkColumnIndex, false);
-            editorTable.connectGitDiffTracker(tracker);
-        }
-        // トラッカー接続後に全セルのハイライトを一括適用する
-        editorTable.applyGitDiffHighlight();
     }
 
     /**

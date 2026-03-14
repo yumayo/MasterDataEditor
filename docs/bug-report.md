@@ -1280,3 +1280,18 @@ display: flex による display: table-cell の上書き
 - `deactivate()` 等のライフサイクルメソッドでは保留中の rAF を必ずキャンセルすること
 
 ---
+
+## 86. [f686b27] — セルを編集して保存してもすぐにgit差分として扱われない問題の修正
+
+### 不具合原因名
+保存後のgit差分トラッカー再構築の欠落
+
+### なぜそうなったのか
+`tab.ts` の `connectGitDiffTrackerAsync()` がテーブル初回オープン時に1回だけ呼ばれる設計だった。保存（Ctrl+S）後の `markSavedAndUpdatePanel()` は Dirty フラグのクリアと RelationsPanel の更新のみ行っており、git差分を再取得して `GitDiffTracker` を再構築する処理が完全に欠落していた。そのため、テーブルがgitで未変更の状態で開かれた場合、`GitDiffTracker` が構築されず（`gitDiffTracker = false` のまま）、編集→保存後もgit差分ハイライト（`cell-git-changed`）が一切付与されなかった。
+
+### どうしたら今後は再発しないか
+1. 「保存操作」は単なるファイル書き込みではなく、git状態の遷移点でもある。保存後に影響を受けるすべての状態（Dirty、RelationsPanel、git差分ハイライト）を `markSavedAndUpdatePanel()` で統一的に更新するようにした。
+2. git差分トラッカー構築ロジックを `Tab` から `EditorTable.refreshGitDiffAsync()` に移管し、テーブルオープン時と保存後の両方から同一メソッドを呼ぶことで重複を排除した。
+3. `refreshGitDiffAsync()` にはレースコンディション防止の `requestId` パターンとミニテーブルスキップを導入し、非同期競合とミニテーブルの誤動作を防いだ。
+
+---

@@ -17,6 +17,7 @@ import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {GitDiffTracker} from "./git-diff-tracker";
+import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -54,6 +55,8 @@ export class EditorTable {
     relationsPanel: RelationsPanel | false;
     /** git差分トラッカー（connectGitDiffTrackerで設定される。未設定はfalse） */
     private gitDiffTracker: GitDiffTracker | false;
+    /** refreshGitDiffAsync のレースコンディション防止用リクエストID */
+    private refreshGitDiffRequestId: number;
 
     /** 空行数（通常は100行、ミニテーブルは0行） */
     private readonly emptyRowCount: number;
@@ -113,6 +116,7 @@ export class EditorTable {
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.gitDiffTracker = false;
+        this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
         this.lastNotifiedRow = -1;
         // initialize() で初期化される
@@ -1067,9 +1071,9 @@ export class EditorTable {
 
     /**
      * git差分トラッカーを接続する
-     * Tab.createTabState() からテーブルオープン時に1回だけ呼ばれる
+     * refreshGitDiffAsync内からのみ呼ばれる
      */
-    connectGitDiffTracker(tracker: GitDiffTracker): void {
+    private connectGitDiffTracker(tracker: GitDiffTracker): void {
         this.gitDiffTracker = tracker;
     }
 
@@ -1086,15 +1090,27 @@ export class EditorTable {
     }
 
     /**
-     * 全データセルを走査し、gitのHEAD版との差分に応じて .cell-git-changed クラスを付与/除去する
-     * テーブルオープン時と行挿入・削除・バッファ行昇格・降格の後に呼ばれる
+     * 全データセルを走査し、gitのHEAD版との差分に応じて .cell-git-changed クラスを付与/除去する。
+     * テーブルオープン時・行挿入・削除・バッファ行昇格・降格・保存後に呼ばれる。
+     * gitDiffTracker が false（未接続またはgit差分なし）の場合は全セルからクラスを除去して返す。
      */
     applyGitDiffHighlight(): void {
-        if (this.gitDiffTracker === false) return;
-        const storeRows = this.store.getRows(this.tableName);
-        if (storeRows === false) return;
         const rowCount = this.getRowCount();
         const totalColCount = this.getTotalColumnCount();
+        if (this.gitDiffTracker === false) {
+            // git差分トラッカーが未接続 or 差分なし → 全セルからハイライトを除去する
+            // （保存後にgit statusから差分が消えたケースに対応）
+            for (let row = 1; row < rowCount; row++) {
+                const rowElement = this.element.children[row] as HTMLElement;
+                if (rowElement.classList.contains('editor-table-empty-row')) continue;
+                for (let col = 1; col < totalColCount; col++) {
+                    this.getCell(row, col).classList.remove('cell-git-changed');
+                }
+            }
+            return;
+        }
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return;
         // row=1 から開始（row=0 は列ヘッダー行のため除外）
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
@@ -1109,6 +1125,66 @@ export class EditorTable {
                 this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, col - 1);
             }
         }
+    }
+
+    /**
+     * git statusを再問い合わせし、このテーブルの GitDiffTracker を再構築して全セルのハイライトを再適用する。
+     * テーブルオープン時および保存後（markSavedAndUpdatePanel）に呼ばれ、差分状態をセルに反映する。
+     * ミニテーブルはgit diffハイライト不要のためスキップする。
+     * git statusの取得に失敗した場合（git管理外環境等）は何もしない。
+     */
+    async refreshGitDiffAsync(): Promise<void> {
+        // ミニテーブルはgit差分ハイライトを持たないため何もしない
+        if (this.isMiniTable) return;
+        const requestId = ++this.refreshGitDiffRequestId;
+        let statusResult: GitStatusResult;
+        try {
+            statusResult = await gitStatusAsync();
+        } catch (e) {
+            // gitリポジトリでない環境や通信エラーでは差分ハイライト更新をスキップする
+            console.warn('[EditorTable] refreshGitDiffAsync: git status の取得に失敗しました:', e);
+            return;
+        }
+        // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
+        if (requestId !== this.refreshGitDiffRequestId) return;
+        const entryIndex = statusResult.changes.findIndex(e => e.tableName === this.tableName);
+        if (entryIndex === -1) {
+            // changesに含まれない場合は差分なし → トラッカーをfalseにリセットして全ハイライトを除去する
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
+            return;
+        }
+        const entry = statusResult.changes[entryIndex];
+        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === this.tableData.primaryKey);
+        if (pkColumnIndex === -1) {
+            // PKカラムが見つからない場合もトラッカーをリセットして中途半端なハイライトを除去する
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
+            return;
+        }
+        if (entry.isNew) {
+            // HEADに存在しない新規テーブル → 全セルchanged
+            const tracker = GitDiffTracker.createForNewTable(pkColumnIndex);
+            this.connectGitDiffTracker(tracker);
+        } else {
+            // 既存テーブルの変更 → HEAD版CSVを取得してPKベースのマップを構築する
+            let headCsv: string;
+            try {
+                headCsv = await gitShowAsync(entry.path);
+            } catch (e) {
+                console.warn('[EditorTable] refreshGitDiffAsync: HEAD版CSVの取得に失敗しました:', e);
+                this.gitDiffTracker = false;
+                this.applyGitDiffHighlight();
+                return;
+            }
+            // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
+            if (requestId !== this.refreshGitDiffRequestId) return;
+            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndex);
+            const tracker = new GitDiffTracker(headRowMap, pkColumnIndex, false);
+            this.connectGitDiffTracker(tracker);
+        }
+        // トラッカー再構築後に全セルのハイライトを一括再適用する
+        this.applyGitDiffHighlight();
     }
 
     // =========================================================================

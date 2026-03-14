@@ -170,29 +170,41 @@ export async function installMockApiAsync(
                         type: "write_file_response",
                         success: true,
                     });
+                    // ファイル書き込み後フック: テストから登録することで保存後の状態を動的に変更できる
+                    type AfterWriteHook = (filename: string, data: string) => void;
+                    type HookWindow = { __onAfterWriteFile?: AfterWriteHook };
+                    const hook = (window as unknown as HookWindow).__onAfterWriteFile;
+                    if (hook) { hook(filename, data); }
                     return;
                 }
 
                 // git差分機能: 変更/ステージ済みファイル一覧を返す
-                // setMockGitStatus() で明示設定されていない場合は空の変更リストを返す
+                // __mockGitStatus が未設定の場合は git リポジトリ外環境を模してエラーを返す
                 if (type === "git_status_request") {
-                    type GitStatusWindow = { __mockGitStatus: { changes: object[]; staged: object[] } };
+                    type GitStatusWindow = { __mockGitStatus: { changes: object[]; staged: object[] } | undefined };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
+                    if (mockStatus === undefined) {
+                        dispatch({ type: "git_status_response", success: false, error: "not a git repository" });
+                        return;
+                    }
                     dispatch({
                         type: "git_status_response",
                         success: true,
-                        data: mockStatus ?? { changes: [], staged: [] },
+                        data: mockStatus,
                     });
                     return;
                 }
 
                 // git差分機能: HEAD時点のファイル内容を返す
-                // テストフィクスチャで setMockGitHeadFiles() により必ず設定される
+                // __mockGitHeadFiles が未設定の場合は git リポジトリ外環境を模してエラーを返す
                 if (type === "git_show_request") {
                     const path = request.path as string;
-                    type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> };
-                    // __mockGitHeadFiles が未設定の場合は空オブジェクトにフォールバックし TypeError を防ぐ
-                    const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles ?? {};
+                    type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> | undefined };
+                    const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles;
+                    if (headFiles === undefined) {
+                        dispatch({ type: "git_show_response", success: false, error: "not a git repository" });
+                        return;
+                    }
                     if (path in headFiles) {
                         dispatch({
                             type: "git_show_response",

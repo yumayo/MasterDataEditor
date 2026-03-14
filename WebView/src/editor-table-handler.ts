@@ -621,7 +621,8 @@ export class EditorTableHandler {
     }
 
     /**
-     * 保存完了後の共通後処理: ストアのDirtyフラグをクリアし、RelationsPanelのDirtyマークを更新する。
+     * 保存完了後の共通後処理: ストアのDirtyフラグをクリアし、RelationsPanelのDirtyマークを更新し、
+     * git差分トラッカーを再構築して全セルのハイライトを再適用する。
      * markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
      * RelationsPanelのDirtyマークは呼び出し元で明示的に更新する必要がある。
      */
@@ -630,6 +631,9 @@ export class EditorTableHandler {
         if (this.table.relationsPanel !== false) {
             this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
         }
+        // 保存完了後にgit差分を再取得してセルのハイライトを更新する
+        this.table.refreshGitDiffAsync()
+            .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffAsync failed:', e); });
     }
 
     /**
