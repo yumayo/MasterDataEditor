@@ -4,6 +4,11 @@
 # claude に渡して処理させるループスクリプト。
 # 最大50ループで打ち切り。
 
+# .env ファイルがあれば読み込む
+if [ -f ".env" ]; then
+    source .env
+fi
+
 # ログ出力: 画面とファイルの両方に出力する
 LOG_DIR="logs"
 mkdir -p "$LOG_DIR"
@@ -12,7 +17,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 ISSUES_OPEN_DIR="issues/open"
 ISSUES_CLOSED_DIR="issues/closed"
-MAX_LOOPS=2
+MAX_LOOPS="${MAX_LOOPS:-50}"
 
 loop_count=0
 
