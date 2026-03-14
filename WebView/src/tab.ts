@@ -20,9 +20,13 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
 import {Csv} from "./csv";
 import {SettingsPanel} from "./settings-panel";
+import {DiffTab} from "./diff-tab";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
+
+/** 差分タブ名のプレフィックス */
+const DIFF_TAB_PREFIX = '差分: ';
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -121,6 +125,12 @@ export class Tab {
     /** 設定タブのラッパー要素（editor の左ペインに追加するコンテナ） */
     private settingsWrapperElement: HTMLElement | false;
 
+    /** 差分タブの DiffTab インスタンス（差分タブが開かれた後に生成される） */
+    private diffTab: DiffTab | false;
+
+    /** 現在開いている差分タブのテーブル名（差分タブが開かれていない場合は false） */
+    private diffTabTableName: string | false;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -141,6 +151,8 @@ export class Tab {
         this.viewIndex = 0;
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
+        this.diffTab = false;
+        this.diffTabTableName = false;
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -347,6 +359,19 @@ export class Tab {
             this.settingsWrapperElement = false;
         }
 
+        // 差分タブが閉じられた場合: DiffTab を破棄してフィールドをリセットする
+        if (name.startsWith(DIFF_TAB_PREFIX)) {
+            if (wasActive) {
+                this.editor.leaveSettingsMode();
+                this.activeTabName = false;
+            }
+            if (this.diffTab !== false) {
+                this.diffTab.destroy(this.store);
+            }
+            this.diffTab = false;
+            this.diffTabTableName = false;
+        }
+
         if (!wasActive) return;
         if (next) { this.enableTabButton(next.name); return; }
         if (prev) { this.enableTabButton(prev.name); return; }
@@ -461,10 +486,6 @@ export class Tab {
 
     enableTabButton(name: string) {
 
-        // 差分ビューが表示中であれば閉じてエディターを通常状態に戻す
-        // hideDiffView() は内部で hasDiffView() のガードがあるため、差分ビュー非表示時に呼んでも安全
-        this.editor.hideDiffView();
-
         // ちょっと面倒なので、一回全部無効な状態にします。
         this.tabButtons.forEach(x => x.disable());
 
@@ -477,6 +498,12 @@ export class Tab {
 
         // タブを有効化
         tabButton.enable();
+
+        // 差分タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
+        if (name.startsWith(DIFF_TAB_PREFIX)) {
+            this.activateDiffTab(name);
+            return;
+        }
 
         // 設定タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name === SETTINGS_TAB_NAME) {
@@ -493,6 +520,12 @@ export class Tab {
         // 設定タブが表示中であれば非表示にする
         if (this.settingsWrapperElement !== false) {
             this.settingsWrapperElement.style.display = 'none';
+        }
+
+        // 差分タブが表示中であれば非表示にする（DiffTabのwrapperElementを隠す）
+        if (this.diffTab !== false) {
+            this.diffTab.hide();
+            this.editor.leaveSettingsMode(); // rightSlot を再表示する
         }
 
         // 現在アクティブなタブがあれば非アクティブ化
@@ -592,6 +625,95 @@ export class Tab {
     saveSettings(): void {
         if (this.settingsPanel === false) throw new Error('[Tab] saveSettings: settingsPanel が未初期化の状態で呼ばれた');
         this.settingsPanel.save();
+    }
+
+    /**
+     * 差分タブをタブバーに開く。
+     * 同一テーブルの差分タブが既に開かれている場合は再利用せず新しいタブを作成する。
+     * SourceControlPanel.openDiffTabAsync から呼ばれる。
+     */
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string): void {
+        const diffTabName = DIFF_TAB_PREFIX + tableName;
+
+        // 既存の差分タブが開いている場合は先に閉じてから新しいタブを作成する
+        // 同一テーブルでも最新の差分を常に表示するため再利用しない
+        const existingTabButton = this.tabButtons.find(x => x.name === diffTabName);
+        if (existingTabButton) {
+            this.closeTab(diffTabName);
+        }
+
+        // 差分タブのタブボタンを追加する
+        const tabButton = this.append(diffTabName);
+
+        // DiffTab を生成する（ダミータブボタンはDirty表示に使うが差分タブでは不要なため同じタブボタンを渡す）
+        const dummyTabButton = new TabButton(this.editor, this, '[diff]');
+        const diffTab = new DiffTab(
+            tableName, schemaJson, headCsv, currentCsv, isStaged,
+            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, dummyTabButton
+        );
+        // closeTab() で既存タブは破棄済みのため this.diffTab は false であることが保証される
+        this.diffTab = diffTab;
+        this.diffTabTableName = tableName;
+
+        // タブボタンをクリックしてアクティブ化する
+        tabButton.click();
+    }
+
+    /**
+     * 差分タブをアクティブ化する。
+     * enableTabButton(差分タブ名) から呼ばれる。
+     * 設定タブと同様に全幅表示するため enterSettingsMode() を流用する。
+     */
+    private activateDiffTab(diffTabName: string): void {
+        // 通常テーブルタブがアクティブなら非アクティブ化する
+        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+
+        // 設定タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
+        if (this.activeTabName === SETTINGS_TAB_NAME) {
+            this.editor.leaveSettingsMode();
+        }
+
+        // 設定タブが表示中であれば非表示にする
+        if (this.settingsWrapperElement !== false) {
+            this.settingsWrapperElement.style.display = 'none';
+        }
+
+        this.activeTabName = diffTabName;
+
+        // RelationsPanel を非表示にする（差分ビューに不要）
+        this.relationsPanel.disconnectEditorTable();
+
+        // editor-right-slot とナビゲーションバーを非表示にして差分タブを全幅表示する
+        this.editor.enterSettingsMode();
+
+        // DiffTab を表示する
+        if (this.diffTab !== false) {
+            this.diffTab.show();
+        }
+    }
+
+    /**
+     * 差分タブを閉じる
+     * タブが開かれていない場合は何もしない
+     */
+    closeDiffTab(): void {
+        if (this.diffTabTableName === false) return;
+        const diffTabName = DIFF_TAB_PREFIX + this.diffTabTableName;
+        this.closeTab(diffTabName);
+    }
+
+    /**
+     * 現在アクティブなタブが差分タブかどうかを返す
+     */
+    isDiffTabActive(): boolean {
+        if (this.activeTabName === false) return false;
+        return this.activeTabName.startsWith(DIFF_TAB_PREFIX);
     }
 
     /**

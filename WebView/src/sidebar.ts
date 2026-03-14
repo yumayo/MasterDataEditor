@@ -8,6 +8,7 @@ import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
+// Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
  * サイドバー
@@ -69,8 +70,8 @@ export class Sidebar {
         this.searchPanel = new SearchPanel(tab, openEditorTables);
         this.searchPanel.appendTo(sidebarContent);
 
-        // ソース管理パネル
-        this.sourceControlPanel = new SourceControlPanel(editor);
+        // ソース管理パネル（差分タブを開くために Tab への参照が必要）
+        this.sourceControlPanel = new SourceControlPanel(tab);
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
@@ -144,13 +145,13 @@ export class Sidebar {
         this.sourceControlPanel.hide();
 
         if (item === 'sourceControl') {
-            // 差分ビューはソース管理パネル内のクリックで開くため、ここでは操作しない
+            // 差分タブはソース管理パネル内のクリックで開くため、ここでは操作しない
             this.sourceControlPanel.show();
             return;
         }
 
-        // ソース管理以外に切り替えた場合は差分ビューを閉じてエディターを通常状態に戻す
-        this.editor.hideDiffView();
+        // ソース管理以外に切り替えた場合は差分タブを閉じる
+        this.tab.closeDiffTab();
 
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');

@@ -1,0 +1,562 @@
+import {EditorTable} from "./editor-table";
+import {Selection} from "./selection";
+import {EditorTableHandler} from "./editor-table-handler";
+import {History} from "./history";
+import {AreaResizer} from "./area-resizer";
+import {FillController} from "./fill-controller";
+import {ScrollViewportController} from "./scroll-viewport-controller";
+import {ReferenceDataCache} from "./reference-data-cache";
+import {InMemoryTableStore} from "./in-memory-table-store";
+import {EditorTableData} from "./model/editor-table-data";
+import {Csv} from "./csv";
+import {ContextMenu} from "./context-menu";
+import {TabButton} from "./tab-button";
+import {Editor} from "./editor";
+import {Sidebar} from "./sidebar";
+
+/**
+ * 差分計算結果の1行分（discriminated union）
+ */
+type DiffRow =
+    | { kind: 'modified';   headValues: string[]; currentValues: string[]; changedColumnIndices: Set<number> }
+    | { kind: 'unchanged';  headValues: string[]; currentValues: string[] }
+    | { kind: 'deleted';    headValues: string[] }
+    | { kind: 'added';      currentValues: string[] };
+
+/**
+ * スキーマJSONのヘッダー列定義
+ */
+interface SchemaColumn {
+    key: number;
+    name: string;
+    type: string;
+}
+
+/**
+ * スキーマJSON
+ */
+interface SchemaJson {
+    header: SchemaColumn[];
+    primary_key: string;
+}
+
+/**
+ * CSVを行と列に分割する（ヘッダー行とデータ行に分割）
+ */
+function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
+    const lines = csvText.split('\n').filter(l => l.trim() !== '');
+    if (lines.length === 0) return { header: [], rows: [] };
+    const header = lines[0].split(',').map(c => c.trim());
+    const rows = lines.slice(1).map(l => l.split(',').map(c => c.trim()));
+    return { header, rows };
+}
+
+/**
+ * CSV行をPK値でMapに変換する（順序はarrayで保持する）
+ * PK値が重複している行は "_row<index>" サフィックスで一意化する
+ */
+function buildUniqueKeyMap(rows: string[][], pkIndex: number): { map: Map<string, string[]>; order: string[] } {
+    const map = new Map<string, string[]>();
+    const order: string[] = [];
+    const seenIndices = new Map<string, number>();
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rawPk = pkIndex >= 0 && pkIndex < row.length ? row[pkIndex] : '';
+        if (!seenIndices.has(rawPk)) {
+            seenIndices.set(rawPk, i);
+            map.set(rawPk, row);
+            order.push(rawPk);
+        } else {
+            const firstIndex = seenIndices.get(rawPk)!;
+            if (map.has(rawPk)) {
+                // 初出エントリを "_row<初出index>" キーに移動する
+                const firstRow = map.get(rawPk)!;
+                map.delete(rawPk);
+                const firstKey = rawPk + '_row' + firstIndex;
+                map.set(firstKey, firstRow);
+                const orderIdx = order.indexOf(rawPk);
+                if (orderIdx !== -1) order[orderIdx] = firstKey;
+                seenIndices.set(rawPk, -1);
+            }
+            const newKey = rawPk + '_row' + i;
+            map.set(newKey, row);
+            order.push(newKey);
+        }
+    }
+    return { map, order };
+}
+
+/**
+ * HEAD版とCurrent版のCSVを行順でマージして差分行リストを構築する
+ * ファイル行順を維持するため PKソートは行わない。
+ *
+ * アルゴリズム:
+ * 1. Current版を順番に処理し、HEAD版と照合する（modified/unchanged/added）
+ * 2. HEAD版に残った行（Current版に存在しない）を deleted として末尾に追加する
+ * これにより、added行が deleted行より前に配置されるためテストの行順期待と一致する。
+ */
+function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyName: string): { diffRows: DiffRow[]; displayHeader: string[] } {
+    const head = parseCsv(headCsvText);
+    const current = parseCsv(currentCsvText);
+
+    // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
+    const displayHeader = current.header.length > 0 ? current.header : head.header;
+
+    const pkIndexInHead = head.header.indexOf(primaryKeyName);
+    const pkIndexInCurrent = current.header.indexOf(primaryKeyName);
+
+    const { map: headMap } = buildUniqueKeyMap(head.rows, pkIndexInHead);
+    const { map: currentMap } = buildUniqueKeyMap(current.rows, pkIndexInCurrent);
+
+    // 処理済みHEAD行を追跡するSet（削除行の判定に使う）
+    const processedHeadKeys = new Set<string>();
+
+    const diffRows: DiffRow[] = [];
+
+    // Current版を順番に処理する
+    for (const [currentKey, currentRow] of currentMap) {
+        // Current版のPKキーからrawPK値を取得する（"_row<index>"サフィックスを除去）
+        const rawPk = currentKey.includes('_row') ? currentKey.substring(0, currentKey.lastIndexOf('_row')) : currentKey;
+
+        // HEAD版に同じPK値の行が存在するかを確認する
+        // まず完全一致（重複なし）を試み、次にrawPKで再試みる
+        let headRow: string[] | null = null;
+        let headKey = '';
+        if (headMap.has(currentKey)) {
+            headRow = headMap.get(currentKey)!;
+            headKey = currentKey;
+        } else if (headMap.has(rawPk)) {
+            headRow = headMap.get(rawPk)!;
+            headKey = rawPk;
+        }
+
+        if (headRow !== null) {
+            processedHeadKeys.add(headKey);
+            // 両方に存在 → セル単位で比較する
+            const changedIndices = new Set<number>();
+            const maxLen = Math.max(displayHeader.length, headRow.length, currentRow.length);
+            for (let i = 0; i < maxLen; i++) {
+                const hVal = i < headRow.length ? headRow[i] : '';
+                const cVal = i < currentRow.length ? currentRow[i] : '';
+                if (hVal !== cVal) changedIndices.add(i);
+            }
+            if (changedIndices.size > 0) {
+                diffRows.push({ kind: 'modified', headValues: headRow, currentValues: currentRow, changedColumnIndices: changedIndices });
+            } else {
+                diffRows.push({ kind: 'unchanged', headValues: headRow, currentValues: currentRow });
+            }
+        } else {
+            // Current版にのみ存在 → 追加行
+            diffRows.push({ kind: 'added', currentValues: currentRow });
+        }
+    }
+
+    // HEAD版に残った行（Current版で削除された行）を deleted として末尾に追加する
+    for (const [headKey, headRow] of headMap) {
+        if (!processedHeadKeys.has(headKey)) {
+            diffRows.push({ kind: 'deleted', headValues: headRow });
+        }
+    }
+
+    return { diffRows, displayHeader };
+}
+
+/**
+ * 差分行リストからCSV行データ（マージ済み）を生成する
+ * deleted行は空白行として挿入し、.diff-row-empty クラス付与のためインデックスを記録する
+ *
+ * 戻り値:
+ * - leftRows: 左ペイン（HEAD版）のデータ行配列（空白行は空配列）
+ * - rightRows: 右ペイン（Current版）のデータ行配列（空白行は空配列）
+ * - leftEmptyRowIndices: 左ペインで .diff-row-empty を付与すべきデータ行インデックス（0始まり）
+ * - rightEmptyRowIndices: 右ペインで .diff-row-empty を付与すべきデータ行インデックス（0始まり）
+ * - leftDeletedRowIndices: 左ペインで .diff-row-deleted を付与すべきデータ行インデックス
+ * - rightAddedRowIndices: 右ペインで .diff-row-added を付与すべきデータ行インデックス
+ * - leftModifiedCells: 左ペインで .diff-cell-deleted を付与すべき {rowIndex, colIndex} ペア
+ * - rightModifiedCells: 右ペインで .diff-cell-added を付与すべき {rowIndex, colIndex} ペア
+ */
+function buildMergedData(diffRows: DiffRow[], columnCount: number): {
+    leftRows: string[][];
+    rightRows: string[][];
+    leftEmptyRowIndices: number[];
+    rightEmptyRowIndices: number[];
+    leftDeletedRowIndices: number[];
+    rightAddedRowIndices: number[];
+    leftModifiedCells: Array<{ row: number; col: number }>;
+    rightModifiedCells: Array<{ row: number; col: number }>;
+} {
+    const leftRows: string[][] = [];
+    const rightRows: string[][] = [];
+    const leftEmptyRowIndices: number[] = [];
+    const rightEmptyRowIndices: number[] = [];
+    const leftDeletedRowIndices: number[] = [];
+    const rightAddedRowIndices: number[] = [];
+    const leftModifiedCells: Array<{ row: number; col: number }> = [];
+    const rightModifiedCells: Array<{ row: number; col: number }> = [];
+
+    for (const diffRow of diffRows) {
+        const rowIdx = leftRows.length; // 現在の行インデックス（0始まり）
+
+        if (diffRow.kind === 'deleted') {
+            // 削除行: 左にデータ行、右に空白行を挿入する
+            leftRows.push(padRow(diffRow.headValues, columnCount));
+            rightRows.push(emptyRow(columnCount));
+            leftDeletedRowIndices.push(rowIdx);
+            rightEmptyRowIndices.push(rowIdx);
+        } else if (diffRow.kind === 'added') {
+            // 追加行: 左に空白行、右にデータ行を挿入する
+            leftRows.push(emptyRow(columnCount));
+            rightRows.push(padRow(diffRow.currentValues, columnCount));
+            leftEmptyRowIndices.push(rowIdx);
+            rightAddedRowIndices.push(rowIdx);
+        } else if (diffRow.kind === 'modified') {
+            // 変更行: 左はHEAD版、右は現在版、変更セルに差分クラスを付与する
+            leftRows.push(padRow(diffRow.headValues, columnCount));
+            rightRows.push(padRow(diffRow.currentValues, columnCount));
+            for (const colIdx of diffRow.changedColumnIndices) {
+                leftModifiedCells.push({ row: rowIdx, col: colIdx });
+                rightModifiedCells.push({ row: rowIdx, col: colIdx });
+            }
+        } else {
+            // unchanged: 両方同じデータ
+            leftRows.push(padRow(diffRow.headValues, columnCount));
+            rightRows.push(padRow(diffRow.currentValues, columnCount));
+        }
+    }
+
+    return { leftRows, rightRows, leftEmptyRowIndices, rightEmptyRowIndices, leftDeletedRowIndices, rightAddedRowIndices, leftModifiedCells, rightModifiedCells };
+}
+
+/** 列数に合わせて行を空文字でパディングする */
+function padRow(values: string[], columnCount: number): string[] {
+    if (values.length >= columnCount) return values.slice(0, columnCount);
+    return [...values, ...Array(columnCount - values.length).fill('')];
+}
+
+/** 指定列数の空行を生成する */
+function emptyRow(columnCount: number): string[] {
+    return Array(columnCount).fill('');
+}
+
+/**
+ * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
+ *
+ * 設定タブ（SettingsPanel）と同様に Tab クラスから管理される特別タブ。
+ * 左ペイン（HEAD版）と右ペイン（現在版）にそれぞれ EditorTable を生成して差分を表示する。
+ * changes状態では左ペインが読み取り専用、staged状態では両ペインが読み取り専用。
+ */
+export class DiffTab {
+    private readonly wrapperElement: HTMLElement;
+
+    /** destroy() 時のストア登録解除に必要なテーブルキー */
+    private readonly leftTableKey: string;
+    private readonly rightTableKey: string;
+
+    /** 左ペインのEditorTable関連オブジェクト（クリーンアップ用） */
+    private readonly leftEditorTable: EditorTable;
+    private readonly leftEditorTableHandler: EditorTableHandler;
+    private readonly leftHistory: History;
+    private readonly leftAreaResizer: AreaResizer;
+    private readonly leftFillController: FillController;
+
+    /** 右ペインのEditorTable関連オブジェクト（クリーンアップ用） */
+    private readonly rightEditorTable: EditorTable;
+    private readonly rightEditorTableHandler: EditorTableHandler;
+    private readonly rightHistory: History;
+    private readonly rightAreaResizer: AreaResizer;
+    private readonly rightFillController: FillController;
+
+    /** スクロール同期の再帰ループ防止フラグ */
+    private isSyncing: boolean;
+
+    /** destroy() 時にスクロールリスナーを解除するためのバインド済み関数 */
+    private readonly boundLeftScroll: () => void;
+    private readonly boundRightScroll: () => void;
+
+    /** スクロール同期の対象となるペイン要素（removeEventListener に必要） */
+    private readonly leftPaneElement: HTMLElement;
+    private readonly rightPaneElement: HTMLElement;
+
+    constructor(
+        tableName: string,
+        schemaJson: string,
+        headCsv: string,
+        currentCsv: string,
+        isStaged: boolean,
+        editor: Editor,
+        sidebar: Sidebar,
+        store: InMemoryTableStore,
+        referenceDataCache: ReferenceDataCache,
+        contextMenu: ContextMenu,
+        dummyTabButton: TabButton
+    ) {
+        this.isSyncing = false;
+
+        // スキーマをパースしてPK列名を取得する
+        const schema = JSON.parse(schemaJson) as SchemaJson;
+        const primaryKeyName = schema.primary_key;
+        const columnCount = schema.header.length;
+
+        // 差分計算（ファイル行順）
+        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyName);
+        const {
+            leftRows, rightRows,
+            leftEmptyRowIndices, rightEmptyRowIndices,
+            leftDeletedRowIndices, rightAddedRowIndices,
+            leftModifiedCells, rightModifiedCells,
+        } = buildMergedData(diffRows, columnCount);
+
+        // ルートラッパー要素（初期は非表示にして activateDiffTab() で表示する）
+        const wrapperElement = document.createElement('div');
+        wrapperElement.classList.add('tab-wrapper', 'diff-tab-wrapper');
+        wrapperElement.style.display = 'none';
+        editor.appendChild(wrapperElement);
+        this.wrapperElement = wrapperElement;
+
+        // 差分タブのコンテンツ領域（左右ペインを横並び）
+        const diffTabContent = document.createElement('div');
+        diffTabContent.classList.add('diff-tab');
+        wrapperElement.appendChild(diffTabContent);
+
+        // 左ペイン（HEAD版 = 変更前）
+        const leftPaneElement = document.createElement('div');
+        leftPaneElement.classList.add('diff-pane-left');
+        diffTabContent.appendChild(leftPaneElement);
+        this.leftPaneElement = leftPaneElement;
+
+        // 右ペイン（現在版 = 変更後）
+        const rightPaneElement = document.createElement('div');
+        rightPaneElement.classList.add('diff-pane-right');
+        diffTabContent.appendChild(rightPaneElement);
+        this.rightPaneElement = rightPaneElement;
+
+        // 左右ペイン用のストアキー（差分タブ専用の名前空間を使用して通常テーブルと衝突しない）
+        const leftTableKey = tableName + ':diff:head';
+        const rightTableKey = tableName + ':diff:current';
+        this.leftTableKey = leftTableKey;
+        this.rightTableKey = rightTableKey;
+
+        const leftResult = this.buildDiffEditorTable(
+            leftTableKey, schemaJson, displayHeader, leftRows,
+            leftPaneElement, store, referenceDataCache, contextMenu, dummyTabButton, sidebar
+        );
+        this.leftEditorTable = leftResult.editorTable;
+        this.leftEditorTableHandler = leftResult.editorTableHandler;
+        this.leftHistory = leftResult.history;
+        this.leftAreaResizer = leftResult.areaResizer;
+        this.leftFillController = leftResult.fillController;
+
+        const rightResult = this.buildDiffEditorTable(
+            rightTableKey, schemaJson, displayHeader, rightRows,
+            rightPaneElement, store, referenceDataCache, contextMenu, dummyTabButton, sidebar
+        );
+        this.rightEditorTable = rightResult.editorTable;
+        this.rightEditorTableHandler = rightResult.editorTableHandler;
+        this.rightHistory = rightResult.history;
+        this.rightAreaResizer = rightResult.areaResizer;
+        this.rightFillController = rightResult.fillController;
+
+        // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
+        this.applyDiffClasses(
+            this.leftEditorTable, this.rightEditorTable,
+            leftEmptyRowIndices, rightEmptyRowIndices,
+            leftDeletedRowIndices, rightAddedRowIndices,
+            leftModifiedCells, rightModifiedCells
+        );
+
+        // 左ペイン（HEAD版）は常に読み取り専用にする
+        this.leftEditorTable.makeReadOnly();
+
+        // 差分タブのtableNameは "test:diff:head/current" のような不正パスになるため
+        // Ctrl+Sによるファイル保存を両ペインで禁止する
+        this.leftEditorTableHandler.disableSave();
+        this.rightEditorTableHandler.disableSave();
+
+        // staged状態では右ペイン（現在版）も読み取り専用にする
+        if (isStaged) {
+            this.rightEditorTable.makeReadOnly();
+        }
+
+        // スクロール同期（左→右、右→左の双方向）—— destroy() で解除するためバインド済み関数をフィールドに保持する
+        this.boundLeftScroll = () => {
+            if (this.isSyncing) return;
+            this.isSyncing = true;
+            rightPaneElement.scrollTop = leftPaneElement.scrollTop;
+            rightPaneElement.scrollLeft = leftPaneElement.scrollLeft;
+            this.isSyncing = false;
+        };
+        this.boundRightScroll = () => {
+            if (this.isSyncing) return;
+            this.isSyncing = true;
+            leftPaneElement.scrollTop = rightPaneElement.scrollTop;
+            leftPaneElement.scrollLeft = rightPaneElement.scrollLeft;
+            this.isSyncing = false;
+        };
+        leftPaneElement.addEventListener('scroll', this.boundLeftScroll);
+        rightPaneElement.addEventListener('scroll', this.boundRightScroll);
+    }
+
+    /**
+     * 差分タブのラッパー要素を表示する
+     */
+    show(): void {
+        this.wrapperElement.style.display = '';
+    }
+
+    /**
+     * 差分タブのラッパー要素を非表示にする
+     */
+    hide(): void {
+        this.wrapperElement.style.display = 'none';
+    }
+
+    /**
+     * 差分タブのDOMを削除してリソースを解放する
+     * ストアのテーブルデータとHistoryを解除してからDOMを削除する
+     */
+    destroy(store: InMemoryTableStore): void {
+        // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
+        this.leftPaneElement.removeEventListener('scroll', this.boundLeftScroll);
+        this.rightPaneElement.removeEventListener('scroll', this.boundRightScroll);
+        // EditorTableHandler のキーボードリスナー（グローバル登録）を解除する
+        this.leftEditorTableHandler.deactivate();
+        this.rightEditorTableHandler.deactivate();
+        this.leftEditorTable.deactivate();
+        this.leftAreaResizer.deactivate();
+        this.leftFillController.deactivate();
+        this.rightEditorTable.deactivate();
+        this.rightAreaResizer.deactivate();
+        this.rightFillController.deactivate();
+        // Historyをストアのhistoryレジストリから登録解除する
+        this.leftHistory.unregister();
+        this.rightHistory.unregister();
+        // ストアのテーブルデータも削除する（差分タブ専用キーなのでDirty状態は無視して強制削除）
+        store.unregisterTable(this.leftTableKey);
+        store.unregisterTable(this.rightTableKey);
+        this.wrapperElement.remove();
+    }
+
+    /**
+     * 差分タブ用のEditorTableを生成する内部メソッド
+     * createMiniEditorTable と同パターン（RelationsPanel連携・FillController有効化不要部分は省略）
+     */
+    private buildDiffEditorTable(
+        tableKey: string,
+        schemaJson: string,
+        displayHeader: string[],
+        dataRows: string[][],
+        paneElement: HTMLElement,
+        store: InMemoryTableStore,
+        referenceDataCache: ReferenceDataCache,
+        contextMenu: ContextMenu,
+        dummyTabButton: TabButton,
+        sidebar: Sidebar
+    ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController } {
+        // スキーマをパースしてEditorTableDataを構築する
+        const schemaObj = JSON.parse(schemaJson) as Record<string, unknown>;
+        const csv = new Csv();
+        csv.header = displayHeader;
+        csv.body = dataRows;
+        const tableData = EditorTableData.parse(schemaObj, csv);
+
+        // ストアに登録する（History コンストラクタで registerHistory が呼ばれるためストア登録が先）
+        store.registerTable(tableKey, csv.header, csv.body);
+
+        // 相互参照解決のため一時的な空オブジェクトを作成（Tab.createEditorTable・createMiniEditorTable と同パターン）
+        const editorTable = {} as EditorTable;
+
+        // scrollControllerの対象はペイン要素（overflow:auto）
+        const scrollController = new ScrollViewportController(paneElement, () => {
+            editorTable.onScroll();
+        });
+
+        const selection = new Selection(editorTable, paneElement, scrollController);
+        const history = new History(editorTable, dummyTabButton, store, tableKey, 100);
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
+        const textField = editorTableHandler.createGridTextField(paneElement, editorTable, selection);
+        editorTableHandler.setTextField(textField);
+
+        const areaResizer = new AreaResizer(paneElement, history, selection);
+
+        // emptyRowCount=0、isMiniTable=true で生成する（空行なし、ミニテーブル相当）
+        const realEditorTable = new EditorTable(
+            tableKey, tableData, referenceDataCache, store, editorTableHandler,
+            selection, contextMenu, history, areaResizer,
+            scrollController, sidebar, 0, 'editor-table', true
+        );
+
+        Object.assign(editorTable, realEditorTable);
+        Object.setPrototypeOf(editorTable, EditorTable.prototype);
+        editorTable.initializeModules();
+
+        editorTable.appendTo(paneElement);
+        paneElement.appendChild(selection.element);
+        paneElement.appendChild(selection.copyBorderElement);
+        paneElement.appendChild(selection.fillPreviewElement);
+        editorTableHandler.appendTo(paneElement);
+
+        areaResizer.setEditorTable(editorTable);
+        editorTable.initialize();
+
+        const fillController = new FillController(editorTable, selection, history);
+        fillController.initialize();
+
+        areaResizer.activate();
+        editorTable.activate();
+
+        return { editorTable, editorTableHandler, history, areaResizer, fillController };
+    }
+
+    /**
+     * 差分クラスをEditorTableのDOMに付与する
+     * EditorTable.getCell(row, col) でセル要素を取得し、直接CSSクラスを追加する
+     * row は1始まり（0がヘッダー行）、col は1始まり（0が行ヘッダー）
+     */
+    private applyDiffClasses(
+        leftTable: EditorTable,
+        rightTable: EditorTable,
+        leftEmptyRowIndices: number[],
+        rightEmptyRowIndices: number[],
+        leftDeletedRowIndices: number[],
+        rightAddedRowIndices: number[],
+        leftModifiedCells: Array<{ row: number; col: number }>,
+        rightModifiedCells: Array<{ row: number; col: number }>
+    ): void {
+        const leftElement = leftTable.getTableElement();
+        const rightElement = rightTable.getTableElement();
+
+        // 左ペインの空白行（追加行に対応する空白）
+        // buildMergedData が生成するインデックスとDOM構造は同期的に構築されるため、
+        // インデックスの存在チェックは不要（防御的ガードを除去）
+        for (const rowIdx of leftEmptyRowIndices) {
+            (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-empty'); // +1 でヘッダー行スキップ
+        }
+
+        // 右ペインの空白行（削除行に対応する空白）
+        for (const rowIdx of rightEmptyRowIndices) {
+            (rightElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-empty');
+        }
+
+        // 左ペインの削除行
+        for (const rowIdx of leftDeletedRowIndices) {
+            (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-deleted');
+        }
+
+        // 右ペインの追加行
+        for (const rowIdx of rightAddedRowIndices) {
+            (rightElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-added');
+        }
+
+        // 左ペインの変更セル（.diff-cell-deleted）
+        // EditorTable.getCell は row=1始まり、col=1始まりで取得する
+        // buildMergedData で生成したインデックスはDOMと同期しているためtry-catchは不要
+        for (const { row: rowIdx, col: colIdx } of leftModifiedCells) {
+            leftTable.getCell(rowIdx + 1, colIdx + 1).classList.add('diff-cell-deleted');
+        }
+
+        // 右ペインの変更セル（.diff-cell-added）
+        for (const { row: rowIdx, col: colIdx } of rightModifiedCells) {
+            rightTable.getCell(rowIdx + 1, colIdx + 1).classList.add('diff-cell-added');
+        }
+    }
+}

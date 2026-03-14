@@ -64,6 +64,12 @@ export class EditorTableHandler {
      */
     private readOnly: boolean;
     /**
+     * 保存禁止フラグ。差分タブのEditorTableで使用する。
+     * readOnlyと異なりセル編集は許可しつつCtrl+Sによるファイル保存のみを禁止する。
+     * 差分タブのtableNameは "test:diff:current" のような不正パスになるためファイル破壊防止に必要。
+     */
+    private saveDisabled: boolean;
+    /**
      * focusWithoutScrolling() が発行した rAF の ID。
      * 0 は「未発行」を表す（requestAnimationFrame は 0 を返さないため安全なセンチネル値）。
      * 連続呼び出し時の競合防止と deactivate 時のキャンセルに使用する。
@@ -95,6 +101,7 @@ export class EditorTableHandler {
         this.active = false;
         this.visible = false;
         this.readOnly = false;
+        this.saveDisabled = false;
         this.dropdownActive = false;
         this.pendingScrollRestoreId = 0;
 
@@ -182,6 +189,15 @@ export class EditorTableHandler {
      */
     makeReadOnly(): void {
         this.readOnly = true;
+    }
+
+    /**
+     * 保存を禁止する（差分タブのEditorTable用）
+     * セル編集は許可しつつCtrl+Sによるファイル保存のみを禁止する。
+     * 差分タブのtableNameは不正パスになるためファイル破壊を防止する目的で使用する。
+     */
+    disableSave(): void {
+        this.saveDisabled = true;
     }
 
     /**
@@ -454,6 +470,8 @@ export class EditorTableHandler {
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
             if (this.readOnly) return;
+            // 差分タブ等で保存が明示的に禁止されている場合は何もしない（不正パスへの書き込み防止）
+            if (this.saveDisabled) return;
             const store = this.table.getStore();
             if (this.table.isMiniTableInstance()) {
                 // ミニEditorTableの場合はストアの全列データからCSVを保存する。

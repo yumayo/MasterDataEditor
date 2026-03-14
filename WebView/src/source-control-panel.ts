@@ -1,24 +1,23 @@
 import { gitStatusAsync, gitShowAsync, GitStatusEntry } from './api';
 import { readFileAsync } from './api';
-import { DiffView } from './diff-view';
-import { Editor } from './editor';
+import { Tab } from './tab';
 
 /**
  * ソース管理サイドバーパネル
  * CHANGESセクションとSTAGEDセクションで変更ファイル一覧を表示し、
- * クリックで差分ビューをエディター領域に表示する
+ * クリックで差分タブをエディター領域に表示する
  */
 export class SourceControlPanel {
     private readonly element: HTMLElement;
     private readonly changesSection: HTMLElement;
     private readonly stagedSection: HTMLElement;
-    private readonly editor: Editor;
+    private readonly tab: Tab;
 
-    /** 差分ビュー表示リクエストの競合状態を防ぐためのリクエストID */
+    /** 差分タブ表示リクエストの競合状態を防ぐためのリクエストID */
     private currentRequestId: number;
 
-    constructor(editor: Editor) {
-        this.editor = editor;
+    constructor(tab: Tab) {
+        this.tab = tab;
         this.currentRequestId = 0;
 
         this.element = document.createElement('div');
@@ -79,45 +78,43 @@ export class SourceControlPanel {
     async refreshAsync(): Promise<void> {
         const result = await gitStatusAsync();
 
-        // CHANGESセクションを更新する
+        // CHANGESセクションを更新する（isStaged=false）
         this.changesSection.replaceChildren();
         for (const entry of result.changes) {
-            this.changesSection.appendChild(this.createFileItem(entry));
+            this.changesSection.appendChild(this.createFileItem(entry, false));
         }
 
-        // STAGEDセクションを更新する
+        // STAGEDセクションを更新する（isStaged=true）
         this.stagedSection.replaceChildren();
         for (const entry of result.staged) {
-            this.stagedSection.appendChild(this.createFileItem(entry));
+            this.stagedSection.appendChild(this.createFileItem(entry, true));
         }
     }
 
     /**
      * ファイルアイテム（クリッカブル）のDOM要素を生成する
+     * isStaged: true の場合は staged セクション（左右ともに読み取り専用）
      */
-    private createFileItem(entry: GitStatusEntry): HTMLElement {
+    private createFileItem(entry: GitStatusEntry, isStaged: boolean): HTMLElement {
         const item = document.createElement('div');
         item.classList.add('source-control-file-item');
         item.textContent = entry.tableName;
         item.addEventListener('click', () => {
-            this.openDiffViewAsync(entry).catch(e => { console.error('差分ビュー表示失敗', e); });
+            this.openDiffTabAsync(entry, isStaged).catch(e => { console.error('差分タブ表示失敗', e); });
         });
         return item;
     }
 
     /**
-     * 指定したファイルの差分ビューをエディター領域に表示する
-     * HEAD版CSVをgit showで取得し、現在版CSVとスキーマを読み込んでDiffViewを構築する
+     * 指定したファイルの差分タブをエディター領域に表示する
+     * HEAD版CSVをgit showで取得し、現在版CSVとスキーマを読み込んでDiffTabを構築する
      * isNew=true の場合は新規ファイルのため git show を呼ばずヘッダー行のみのCSVを使う
+     * isStaged=true の場合は左右ともに読み取り専用モードで表示する
      */
-    private async openDiffViewAsync(entry: GitStatusEntry): Promise<void> {
+    private async openDiffTabAsync(entry: GitStatusEntry, isStaged: boolean): Promise<void> {
         // リクエストIDをインクリメントしてこの呼び出しの識別子を確保する
         // await 後にIDが変わっていれば後続リクエストが開始されているため描画をスキップする
         const requestId = ++this.currentRequestId;
-
-        // 既存の差分ビューを閉じてからエディターを通常状態に戻す
-        // DiffView の参照は Editor が管理する（hasDiffView() で存在確認）
-        this.editor.hideDiffView();
 
         const tableName = entry.tableName;
 
@@ -127,12 +124,10 @@ export class SourceControlPanel {
                 readFileAsync(`schema/${tableName}.json`),
                 readFileAsync(`data/${tableName}.csv`),
             ]);
-            // await 完了後に別のリクエストが開始されていれば描画しない
             if (requestId !== this.currentRequestId) return;
             // ヘッダー行のみのCSVをHEAD版として渡す（空のHEAD状態を明示的に表現する）
             const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
-            const diffView = new DiffView(tableName, schemaJson, headerOnlyCsv, currentCsv);
-            this.editor.showDiffView(diffView);
+            this.tab.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv);
         } else {
             // 既存ファイル: スキーマ・現在版CSV・HEAD版CSVを並列取得する
             const [schemaJson, currentCsv, headCsv] = await Promise.all([
@@ -140,10 +135,8 @@ export class SourceControlPanel {
                 readFileAsync(`data/${tableName}.csv`),
                 gitShowAsync(entry.path),
             ]);
-            // await 完了後に別のリクエストが開始されていれば描画しない
             if (requestId !== this.currentRequestId) return;
-            const diffView = new DiffView(tableName, schemaJson, headCsv, currentCsv);
-            this.editor.showDiffView(diffView);
+            this.tab.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv);
         }
     }
 

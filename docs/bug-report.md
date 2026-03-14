@@ -1308,3 +1308,19 @@ ReferenceDataCacheのキャッシュ無効化漏れ（ストア変更時のevict
 ストアのデータを変更する操作を追加・修正する際は、「この操作によってReferenceDataCacheのキャッシュが陳腐化しないか？」を必ずチェックする。具体的には、`InMemoryTableStore` の行追加/削除メソッド（`insertRowAt`, `removeRow`）を呼ぶ全ての箇所で `evictEntry()` が呼ばれることを確認する。また `evictEntry()` は `loadingPromises` / `fullDataLoadingPromises` もクリアし、進行中の非同期ロードが古いデータでキャッシュを再構築するレースコンディションを防止する。
 
 ---
+
+## 88. [fc27b46] — FEAT_0008 Git差分ビューのEditorTable化
+
+### 不具合原因名
+特殊タブでの保存操作パスの未ガード
+
+### なぜそうなったのか
+DiffTab（差分タブ）のEditorTableは `isMiniTable=true` で生成されるが、tableName に差分タブ専用のキー（例: `test:diff:current`）を使用している。このキーがそのままファイルパスとして使われると、Windowsでは不正なパスとなりデータ破壊の可能性があった。レビューで発見されたため実装時点で `disableSave()` メソッドを追加して対処した。また、EditorTableHandler の deactivate() 漏れとスクロールイベントリスナーの解除漏れも発見された。
+
+### どうしたら今後は再発しないか
+特別タブ（設定タブ、差分タブ等）でEditorTableを生成する場合、以下の3点を必ず確認する:
+1. Ctrl+S 保存パスが正しいか、または保存自体を無効化しているか
+2. destroy() で activate() に対応する全ての deactivate() が呼ばれているか（EditorTable, EditorTableHandler, AreaResizer, FillController）
+3. コンストラクタで登録したイベントリスナーが destroy() で removeEventListener されているか
+
+---
