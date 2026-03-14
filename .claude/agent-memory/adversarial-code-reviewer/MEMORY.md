@@ -27,6 +27,7 @@
 - `/WebView/src/model/editor-table-data-column.ts` - Column model (comment/reference are string|null since FEAT_0004 R2)
 - `/WebView/src/diff-view.ts` - Diff view (FEAT_0005)
 - `/WebView/src/source-control-panel.ts` - Source control sidebar panel (FEAT_0005)
+- `/WebView/src/git-diff-tracker.ts` - Git diff tracker for cell highlight (FEAT_0006)
 
 ## CSS Variables (index.css)
 - `:root` = light theme defaults, `[data-theme="dark"]` = dark overrides
@@ -78,6 +79,16 @@
 - **Csv class**: half-baked object pattern (10+ instances project-wide)
 - **textNode: Text | false = false**: | false pattern (廃止方向の既知負債)
 
+## Git Diff Tracker (FEAT_0006, 2026-03-14)
+- **CRITICAL**: Row insert/delete/promote/demote do NOT call applyGitDiffHighlight() -> highlight lost
+- **CRITICAL**: buildHeadRowMap uses .trim() but Csv.load() does not -> data mismatch on comparison
+- **KNOWN ISSUE**: gitDiffTracker: GitDiffTracker | false is half-baked object pattern
+- **KNOWN ISSUE**: pkColumnIndex=-1 not guarded (findIndex returns -1 if PK not found)
+- **KNOWN ISSUE**: let statusResult; is implicit any, entry === undefined violates undefined prohibition
+- **KNOWN ISSUE**: No race condition guard after await in connectGitDiffTrackerAsync
+- **KNOWN ISSUE**: buildHeadRowMap duplicates Csv.load() CSV parsing logic
+- **KNOWN ISSUE**: Empty string PK causes incorrect row matching in headRowMap
+
 ## Review History
 - 2026-03-13 (dynamic-reference): 致命的2件、重要4件、軽微2件
 - 2026-03-13 (pane-stack v1): 致命的4件、重要6件、軽微3件
@@ -94,3 +105,4 @@
 - 2026-03-14 (FEAT_0002 light-theme): 致命的2件、重要4件、軽微3件
 - 2026-03-14 (FEAT_0004 R1-R3): 致命的2件ずつ
 - 2026-03-14 (FEAT_0005 source-control-diff R1): 致命的2件、重要4件、軽微4件
+- 2026-03-14 (FEAT_0006 git-cell-highlight): 致命的2件、重要4件、軽微4件
