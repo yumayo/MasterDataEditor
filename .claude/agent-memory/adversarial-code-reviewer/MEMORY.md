@@ -98,7 +98,7 @@
 - **Row sync added but column sync forgotten**: notifyRowInserted/Deleted added but notifyColumnInserted/Deleted missing — sortKeys.columnIndex stale after column insert/delete
 - **Sort reorder missing state propagation**: applySortForColumn reorders DOM but does not update Selection/CopyRange/GitDiff/PKValidation — same pattern as reloadCellsFromStore行数同期の副作用漏れ
 - **New view-state feature missing column-index sync**: Sort/Filter both use columnIndex as key but neither resets when columns are inserted/deleted — clearSortState added for sort but clearFilterState forgotten for filter
-- **CSS hardcoded colors (no CSS variables)**: filter-dropdown.css uses hardcoded dark theme colors, same pattern as FEAT_0002/0005
+- **CSS hardcoded colors (no CSS variables)**: 5回再発 (FEAT_0002, 0005, 0012, 0013, 0016) — filter-dropdown.css, editor-table.css badge colors
 - **document listener leak on re-instantiation**: FilterDropdown anonymous mousedown listener cannot be removed, leaks on initializeModules() re-creation
 
 ## Structural Concerns
@@ -189,6 +189,15 @@
 - **KNOWN ISSUE**: emptyRowCountの名前が「空行数」だが実際は「最低総行数」(既存負債)
 - **Pattern**: 初回パスで直接関数呼び出し + Command構築 → Redo時にCommand.execute()で同じ関数だけ呼んで付随処理を忘れる
 
+## FEAT_0016 PK/FK Badge (2026-03-15)
+- **CRITICAL**: DeleteColumnCommand.undo() calls insertColumnInternal(false, null) -> PK/FK badge lost on Undo
+- **CRITICAL**: appendBadgeIfNeeded uses if/else if -> PK+FK column shows only PK badge, FK info hidden
+- **KNOWN ISSUE**: CSS colors hardcoded (5th occurrence of same pattern)
+- **KNOWN ISSUE**: appendBadgeIfNeeded called in both if/else branches (should be after)
+- **KNOWN ISSUE**: PK/FK badge createElement duplicated (PK and FK branches nearly identical)
+- **Pattern**: Column delete Undo missing metadata restoration (same as comment='' vs null on FEAT_0004)
+
 ## Review History (continued)
 - 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
 - 2026-03-15 (FEAT_0014 buffer-row-autofill R1): 致命的2件、重要3件、軽微2件
+- 2026-03-15 (FEAT_0016 pk-fk-badge R1): 致命的2件、重要5件、軽微3件
