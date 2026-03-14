@@ -770,8 +770,11 @@ export class EditorTable {
     }
 
     /**
-     * ストアからセルデータを再読み込みし、DOMの値と差分があるセルのみ更新する
-     * タブ切替時に呼び出され、他タブでストアが変更されたセルのDOMを同期する
+     * ストアからセルデータを再読み込みし、DOMの行数・セル値をストアに完全同期する。
+     * タブ切替時に呼び出され、他タブ（またはミニテーブル）でストアが変更された結果を反映する。
+     *
+     * 通常テーブルでは、まずDOMの行数をストアの行数に合わせて増減し storeRowIndices を [0..n-1] に更新する。
+     * ミニテーブルはフィルタ条件を持つため DOM 行数同期は行わず、セル値の更新のみ行う。
      */
     reloadCellsFromStore(): void {
         const storeRows = this.store.getRows(this.tableName);
@@ -786,13 +789,64 @@ export class EditorTable {
             storeColumnIndices.push(storeHeader.indexOf(headerName));
         }
 
-        // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行を更新する
-        // 通常テーブルは storeRowIndices[i]=i なので従来と同様の動作となる
-        // ミニテーブルは filteredRows のストアインデックスを正しく参照できる
-        const domRowCount = this.getRowCount();
+        // 通常テーブルのみ: DOMの行数とストアの行数を同期し、storeRowIndices を [0..storeRows.length-1] に更新する。
+        // ミニテーブルはフィルタ済みのサブセットを表示しており、ストア全行との同期は不適切なため除外する。
+        // ミニテーブルは destroyMiniEditorTables()/buildMiniEditorTableAsync() で都度再構築されるため問題なし。
+        let domRowCountChanged = false;
+        if (!this.isMiniTable) {
+            const currentDataRowCount = this.storeRowIndices.length;
+            if (storeRows.length > currentDataRowCount) {
+                // ストアの方が多い: バッファ空行を昇格してデータ行に変換し、足りなければ新規行を挿入する
+                for (let i = currentDataRowCount; i < storeRows.length; i++) {
+                    const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
+                    const existingRow = this.element.children[domRowIndex] as HTMLElement | null;
+                    if (existingRow && existingRow.classList.contains('editor-table-empty-row')) {
+                        // バッファ空行をデータ行に昇格する（editor-table-empty-row クラスを除去）
+                        existingRow.classList.remove('editor-table-empty-row');
+                        existingRow.dataset.row = String(domRowIndex);
+                    } else {
+                        // バッファ空行が不足している場合は新規行を生成して挿入する
+                        const cells: HTMLElement[] = [this.structure.createRowHeaderCell(String(domRowIndex), i)];
+                        for (let j = 0; j < domColumnCount; j++) {
+                            cells.push(EditorTable.createCell(this, '', j, this.getColumnWidth(j), DEFAULT_ROW_HEIGHT));
+                        }
+                        const newRow = EditorTable.createRow(cells, domRowIndex);
+                        const insertTarget = this.element.children[domRowIndex];
+                        if (insertTarget) {
+                            this.element.insertBefore(newRow, insertTarget);
+                        } else {
+                            this.element.appendChild(newRow);
+                        }
+                    }
+                    this.storeRowIndices.push(i);
+                }
+                domRowCountChanged = true;
+            } else if (storeRows.length < currentDataRowCount) {
+                // ストアの方が少ない: 末尾のデータ行をDOMから除去する（バッファ空行は維持する）
+                for (let i = currentDataRowCount - 1; i >= storeRows.length; i--) {
+                    const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
+                    const rowToRemove = this.element.children[domRowIndex] as HTMLElement | null;
+                    // 通常テーブルで削除対象がnullまたはバッファ空行である場合は設計上の不整合
+                    if (!rowToRemove || rowToRemove.classList.contains('editor-table-empty-row')) {
+                        throw new Error('[EditorTable.reloadCellsFromStore] DOM行とストアの不整合: 削除対象行が存在しないか空行です。 domRowIndex=' + domRowIndex);
+                    }
+                    rowToRemove.remove();
+                    this.storeRowIndices.splice(i, 1);
+                }
+                domRowCountChanged = true;
+            }
+        }
+
+        // DOM行数が変化した場合は全行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再ナンバリングする。
+        // insertRowInternal/deleteRow では挿入・削除位置以降の行のみ再ナンバリングするが、
+        // reloadCellsFromStore では複数行が一括で増減する可能性があるため、データ行先頭（domIndex=1）から全行を対象とする。
+        if (domRowCountChanged) this.structure.renumberRowsFrom(1);
+
+        // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
+        // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
+        // ミニテーブルは filteredRows のストアインデックスを正しく参照できる。
         for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
             const domRow = domDataRow + 1; // DOMは1始まり（列ヘッダー行がある）
-            if (domRow >= domRowCount) break;
             const storeRowIndex = this.storeRowIndices[domDataRow];
             if (storeRowIndex < 0 || storeRowIndex >= storeRows.length) continue;
             const storeRowData = storeRows[storeRowIndex];
@@ -802,13 +856,20 @@ export class EditorTable {
                 if (storeColIdx === -1) continue;
                 const storeValue = storeColIdx < storeRowData.length ? storeRowData[storeColIdx] : '';
                 const domValue = this.getCellValueAt(domRow, domCol + 1);
-
                 if (domValue !== storeValue) {
                     const cell = this.getCell(domRow, domCol + 1);
                     this.reference.setCellValue(cell, storeValue, domCol, domRow);
                 }
             }
         }
+
+        // DOM行数が変化した場合はコピー範囲を無効化し、選択描画を更新する（範囲が行数外を指す可能性があるため）
+        if (domRowCountChanged) {
+            this.selection.clearCopyRange();
+            this.selection.updateRendererAfterResize();
+        }
+        // DOM行の増減に関わらず git差分ハイライトを再評価する（ストアとDOMのマッピングが変化するため）
+        this.applyGitDiffHighlight();
     }
 
     // =========================================================================

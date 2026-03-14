@@ -134,16 +134,24 @@ export class EditorTableStructure {
      */
     insertRowInternal(rowIndex: number): void {
         const tableElement = this.table.getTableElement();
-        // 列ヘッダー行から実際の列数を取得（行ヘッダーセルを除く）
+        // DOM操作前にストアヘッダーを検証する。
+        // これより後にDOM操作を行うため、ここで例外が発生してもDOMにゴミ行が残らない。
+        // ミニテーブルはDOMの列数がストアのサブセット（スキーマの header 配列から決定）のため、DOMの列数では誤りになる場合がある。
+        // ストアのヘッダー長はCSVヘッダーから決定されるため、ストアのスキーマと一致した正しい空行が挿入される。
+        const storeHeader = this.table.getStore().getHeader(this.table.tableName);
+        if (storeHeader === false) throw new Error('[EditorTableStructure.insertRowInternal] ストアにテーブルが登録されていません: ' + this.table.tableName);
+        const storeColumnCount = storeHeader.length;
+        // DOM上の列数（行ヘッダーを除く）。DOM列数はスキーマの header 配列から決定され、ストア列数はCSVヘッダーから決定される。
+        // ミニテーブルではFK列を除いた表示列のみDOMに存在するため、DOM列数とストア列数は一致しない場合がある。
         const columnHeaderRow = tableElement.children[0];
-        const columnCount = columnHeaderRow.children.length - 1;
+        const domColumnCount = columnHeaderRow.children.length - 1;
         // 新しい行を作成
         const cells: HTMLElement[] = [];
         // 行ヘッダーを作成
         const rowHeaderCell = this.createRowHeaderCell(String(rowIndex), rowIndex - 1);
         cells.push(rowHeaderCell);
         // データセルを作成（列幅は列ヘッダーから取得）
-        for (let j = 0; j < columnCount; ++j) {
+        for (let j = 0; j < domColumnCount; ++j) {
             const cell = EditorTable.createCell(this.table, '', j, this.table.getColumnWidth(j), DEFAULT_ROW_HEIGHT);
             cells.push(cell);
         }
@@ -170,44 +178,15 @@ export class EditorTableStructure {
         } else {
             storeRowIndex = indices[domDataRowIndex - 1] + 1;
         }
-        this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(columnCount).fill(''));
+        this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
         // storeRowIndices にも挿入インデックスを追加し、ストア上で後ろにずれた全エントリを+1する。
         // domDataRowIndex の位置に storeRowIndex を挿入し、それより大きいストアインデックス値を持つ全エントリを+1。
         indices.splice(domDataRowIndex, 0, storeRowIndex);
         for (let i = domDataRowIndex + 1; i < indices.length; i++) {
             if (indices[i] >= storeRowIndex) indices[i] += 1;
         }
-        // 後続の行のdata-rowと行ヘッダーの番号を更新
-        for (let i = rowIndex + 1; i < tableElement.children.length; ++i) {
-            const row = tableElement.children[i] as HTMLElement;
-            row.dataset.row = String(i);
-            const header = row.children[0] as HTMLElement;
-            if (header.classList.contains('editor-table-row-header')) {
-                // テキストノードを更新（リサイズハンドルは保持）
-                let textNode: Text | false = false;
-                for (const node of Array.from(header.childNodes)) {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        textNode = node as Text;
-                        break;
-                    }
-                }
-                if (textNode) {
-                    textNode.textContent = String(i);
-                } else {
-                    header.insertBefore(document.createTextNode(String(i)), header.firstChild);
-                }
-                header.dataset.rowIndex = String(i - 1);
-                // リサイズハンドルのイベントハンドラを再設定
-                const resizeHandle = header.querySelector('.row-resize-handle');
-                if (resizeHandle) {
-                    resizeHandle.remove();
-                }
-                const newResizeHandle = document.createElement('div');
-                newResizeHandle.classList.add('row-resize-handle');
-                this.areaResizer.setupRowResizeHandle(newResizeHandle, header, i);
-                header.appendChild(newResizeHandle);
-            }
-        }
+        // 挿入行を含む以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
+        this.renumberRowsFrom(rowIndex);
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
@@ -342,37 +321,8 @@ export class EditorTableStructure {
         if (rowToRemove) {
             rowToRemove.remove();
         }
-        // 後続の行のdata-rowと行ヘッダーの番号を更新
-        for (let i = rowIndex; i < tableElement.children.length; ++i) {
-            const row = tableElement.children[i] as HTMLElement;
-            row.dataset.row = String(i);
-            const header = row.children[0] as HTMLElement;
-            if (header.classList.contains('editor-table-row-header')) {
-                // テキストノードを更新（リサイズハンドルは保持）
-                let textNode: Text | false = false;
-                for (const node of Array.from(header.childNodes)) {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        textNode = node as Text;
-                        break;
-                    }
-                }
-                if (textNode) {
-                    textNode.textContent = String(i);
-                } else {
-                    header.insertBefore(document.createTextNode(String(i)), header.firstChild);
-                }
-                header.dataset.rowIndex = String(i - 1);
-                // リサイズハンドルのイベントハンドラを再設定
-                const resizeHandle = header.querySelector('.row-resize-handle');
-                if (resizeHandle) {
-                    resizeHandle.remove();
-                }
-                const newResizeHandle = document.createElement('div');
-                newResizeHandle.classList.add('row-resize-handle');
-                this.areaResizer.setupRowResizeHandle(newResizeHandle, header, i);
-                header.appendChild(newResizeHandle);
-            }
-        }
+        // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
+        this.renumberRowsFrom(rowIndex);
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
@@ -425,6 +375,39 @@ export class EditorTableStructure {
         this.areaResizer.setupColumnResizeHandle(resizeHandle, columnHeaderCell, columnIndex);
         columnHeaderCell.appendChild(resizeHandle);
         return columnHeaderCell;
+    }
+
+    /**
+     * startDomIndex 以降の全行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再設定する。
+     * 行挿入・削除・DOM行数変化後に必ず呼ぶこと。
+     * @param startDomIndex 更新を開始する DOM インデックス（列ヘッダー行 = 0 を含む、データ行は 1 以上）
+     */
+    renumberRowsFrom(startDomIndex: number): void {
+        const tableElement = this.table.getTableElement();
+        for (let i = startDomIndex; i < tableElement.children.length; ++i) {
+            const row = tableElement.children[i] as HTMLElement;
+            row.dataset.row = String(i);
+            const header = row.children[0] as HTMLElement;
+            if (!header.classList.contains('editor-table-row-header')) continue;
+            // テキストノードを更新（リサイズハンドルは保持）
+            let textNode: Text | null = null;
+            for (const node of Array.from(header.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) { textNode = node as Text; break; }
+            }
+            if (textNode) {
+                textNode.textContent = String(i);
+            } else {
+                header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+            }
+            header.dataset.rowIndex = String(i - 1);
+            // リサイズハンドルのイベントハンドラを再設定
+            const resizeHandle = header.querySelector('.row-resize-handle');
+            if (resizeHandle) resizeHandle.remove();
+            const newResizeHandle = document.createElement('div');
+            newResizeHandle.classList.add('row-resize-handle');
+            this.areaResizer.setupRowResizeHandle(newResizeHandle, header, i);
+            header.appendChild(newResizeHandle);
+        }
     }
 
     /**
