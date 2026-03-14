@@ -1,4 +1,5 @@
-import {ReferenceItem} from "./reference-data-cache";
+import {ReferenceItem, ReferenceDataCache} from "./reference-data-cache";
+import {DropdownQuickView} from "./dropdown-quick-view";
 
 /**
  * ドロップダウンでの選択完了時のコールバック
@@ -14,13 +15,16 @@ export type DropdownCancelCallback = () => void;
  * 参照列用のドロップダウン付き入力コンポーネント
  *
  * 入力フィールドは EditorTableHandler.element を使用し、
- * ドロップダウンリストのみを管理する
+ * ドロップダウンリストとクイックビューパネルを管理する
  */
 export class GridDropdownInput {
     readonly element: HTMLElement;
     private readonly inputElement: HTMLElement;
     private readonly parentElement: HTMLElement;
     private dropdownElement: HTMLElement;
+    private readonly quickView: DropdownQuickView;
+    /** show() で受け取った参照先テーブル名。mouseenter/moveSelection時にQuickViewへ渡す */
+    private referenceTableName: string;
 
     private items: ReferenceItem[];
     private filteredItems: ReferenceItem[];
@@ -34,12 +38,14 @@ export class GridDropdownInput {
         parentElement: HTMLElement,
         inputElement: HTMLElement,
         onSelect: DropdownSelectCallback,
-        onCancel: DropdownCancelCallback
+        onCancel: DropdownCancelCallback,
+        referenceDataCache: ReferenceDataCache
     ) {
         this.items = [];
         this.filteredItems = [];
         this.selectedIndex = 0;
         this.visible = false;
+        this.referenceTableName = '';
         this.onSelect = onSelect;
         this.onCancel = onCancel;
 
@@ -55,15 +61,19 @@ export class GridDropdownInput {
         this.dropdownElement.classList.add('grid-dropdown-list');
         this.element.appendChild(this.dropdownElement);
 
+        // クイックビューパネル（コンテナとドロップダウンリストを渡して構築）
+        this.quickView = new DropdownQuickView(this.element, this.dropdownElement, referenceDataCache);
+
         this.parentElement = parentElement;
         parentElement.appendChild(this.element);
     }
 
     /**
-     * ドロップダウンを表示する
-     * 入力フィールドの表示は呼び出し側（EditorTableHandler）が行う
+     * ドロップダウンを表示する。
+     * 入力フィールドの表示は呼び出し側（EditorTableHandler）が行う。
+     * @param referenceTableName 参照先テーブル名（クイックビュー用）
      */
-    show(rect: DOMRect, items: ReferenceItem[], currentValue: string): void {
+    show(rect: DOMRect, items: ReferenceItem[], currentValue: string, referenceTableName: string): void {
         console.log('[dropdown] show called', { currentValue, itemCount: items.length });
 
         this.items = items;
@@ -83,6 +93,11 @@ export class GridDropdownInput {
             this.selectedIndex = currentIndex;
         }
 
+        // 参照先テーブル名を保持（mouseenter/moveSelection時にQuickViewへ渡す）
+        this.referenceTableName = referenceTableName;
+        // 表示前にQuickViewをリセット（タイマー・表示・キャッシュをクリア）
+        this.quickView.cleanup();
+
         // フィルタを適用（初期表示時は選択を維持）
         this.filterItems('', true);
 
@@ -97,6 +112,8 @@ export class GridDropdownInput {
         this.visible = false;
         this.element.classList.remove('visible');
         this.dropdownElement.innerHTML = '';
+        // クイックビューもクリーンアップ
+        this.quickView.cleanup();
     }
 
     /**
@@ -107,8 +124,8 @@ export class GridDropdownInput {
     }
 
     /**
-     * 現在選択されているアイテムのIDを取得
-     * フィルタ結果が空の場合は入力フィールドのテキストを返す
+     * 現在選択されているアイテムのIDを取得。
+     * フィルタ結果が空の場合は入力フィールドのテキストを返す。
      */
     getSelectedId(): string {
         if (this.filteredItems.length === 0) {
@@ -128,7 +145,8 @@ export class GridDropdownInput {
     }
 
     /**
-     * 矢印キーで選択を移動
+     * 矢印キーで選択を移動する。
+     * キーボード選択時はクイックビューを即時更新する。
      */
     moveSelection(delta: number): void {
         if (this.filteredItems.length === 0) return;
@@ -143,6 +161,13 @@ export class GridDropdownInput {
         }
 
         this.renderDropdown();
+
+        // キーボード選択時はクイックビューを即時更新（ディレイなし）
+        const selectedItem = this.filteredItems[this.selectedIndex];
+        const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
+        if (selectedElement instanceof HTMLElement) {
+            this.quickView.showPreviewImmediate(this.referenceTableName, selectedItem.id, selectedElement);
+        }
     }
 
     /**
@@ -189,7 +214,8 @@ export class GridDropdownInput {
     }
 
     /**
-     * ドロップダウンを描画
+     * ドロップダウンを描画する。
+     * 各アイテムにマウスオーバー/マウスリーブイベントを設定してクイックビュー連携する。
      */
     private renderDropdown(): void {
         this.dropdownElement.innerHTML = '';
@@ -230,6 +256,16 @@ export class GridDropdownInput {
                 e.preventDefault();
                 this.selectedIndex = i;
                 this.confirmSelection();
+            });
+
+            // マウスオーバー: 300msディレイ付きクイックビュー表示
+            itemElement.addEventListener('mouseenter', () => {
+                this.quickView.showPreviewWithDelay(this.referenceTableName, item.id, itemElement);
+            });
+
+            // マウスリーブ: クイックビュー非表示
+            itemElement.addEventListener('mouseleave', () => {
+                this.quickView.hidePreview();
             });
 
             this.dropdownElement.appendChild(itemElement);

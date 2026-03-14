@@ -217,15 +217,17 @@ export class EditorTableHandler {
     }
 
     /**
-     * GridDropdownInput を生成して返す
-     * element の public 露出を避けるため、このメソッド経由で生成する
+     * GridDropdownInput を生成して返す。
+     * element の public 露出を避けるため、このメソッド経由で生成する。
+     * ReferenceDataCache を渡してクイックビュー機能を有効にする。
      */
-    createDropdownInput(container: HTMLElement): GridDropdownInput {
+    createDropdownInput(container: HTMLElement, referenceDataCache: ReferenceDataCache): GridDropdownInput {
         return new GridDropdownInput(
             container,
             this.element,
             (id: string) => { this.submitDropdownSelection(id); },
-            () => { this.cancelDropdown(); }
+            () => { this.cancelDropdown(); },
+            referenceDataCache
         );
     }
 
@@ -1079,8 +1081,8 @@ export class EditorTableHandler {
             this.visible = true;
             this.dropdownActive = true;
 
-            // ドロップダウンリストを表示
-            this.dropdownInput.show(rect, refData.items, initialValue);
+            // ドロップダウンリストを表示（参照先テーブル名をクイックビュー用に渡す）
+            this.dropdownInput.show(rect, refData.items, initialValue, resolvedReference.tableName);
 
             return true;
         } catch (e) {

@@ -961,9 +961,10 @@ export class Tab {
             // 逆参照を並行して解決（インメモリデータ優先取得用にマップを渡す）
             this.reference.resolveReverseReferencesAsync(name, editorTable);
 
-            // ドロップダウン入力コンポーネントを作成
-            // 入力フィールド(element)の公開を避けるため EditorTableHandler.createDropdownInput 経由で生成する
-            const dropdownInput = editorTableHandler.createDropdownInput(wrapperElement);
+            // ドロップダウン入力コンポーネントを作成。
+            // 入力フィールド(element)の公開を避けるため EditorTableHandler.createDropdownInput 経由で生成する。
+            // ReferenceDataCache を渡してクイックビュー機能を有効にする。
+            const dropdownInput = editorTableHandler.createDropdownInput(wrapperElement, this.referenceDataCache);
 
             // EditorTableHandler に参照データキャッシュとドロップダウンを設定
             editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
@@ -1169,8 +1170,9 @@ export class Tab {
         editorTable.initialize();
 
         // ドロップダウンは scrollContainer の overflow:auto にクリッピングされないよう
-        // scrollContainer の外側（dropdownContainer）に配置する
-        const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer);
+        // scrollContainer の外側（dropdownContainer）に配置する。
+        // ReferenceDataCache を渡してクイックビュー機能を有効にする。
+        const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer, this.referenceDataCache);
         editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
         // ミニEditorTableのhandlerは初期状態では非アクティブとする。
