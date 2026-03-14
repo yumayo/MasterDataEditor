@@ -1,9 +1,9 @@
 import {EditorTable} from "./editor-table";
-import {ReferenceDataCache} from "./reference-data-cache";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {config} from "./config";
 import {readFileAsync} from "./api";
+import {Csv} from "./csv";
 import {Tab} from "./tab";
 import {FillController} from "./fill-controller";
 import {AreaResizer} from "./area-resizer";
@@ -47,7 +47,6 @@ interface RelationEntry {
  */
 export class RelationsPanel {
     private readonly panelElement: HTMLElement;
-    private readonly referenceDataCache: ReferenceDataCache;
     private readonly store: InMemoryTableStore;
     /** パネルの親要素。appendTo() で設定する。リサイズハンドルのドラッグ計算に使用 */
     private parentElement: HTMLElement | false;
@@ -77,8 +76,7 @@ export class RelationsPanel {
     /** showForTableRowAsync() で登録したベーステーブル名。ペインスタック破棄時に unregisterTable するため記録する */
     private baseTableName: string | false;
 
-    constructor(referenceDataCache: ReferenceDataCache, store: InMemoryTableStore) {
-        this.referenceDataCache = referenceDataCache;
+    constructor(store: InMemoryTableStore) {
         this.store = store;
         this.parentElement = false;
         this.currentEditorTable = false;
@@ -253,7 +251,7 @@ export class RelationsPanel {
      */
     private async updateForRowAsync(rowIndex: number, editorTable: EditorTable): Promise<void> {
         const requestId = ++this.currentRequestId;
-        const entries = await this.resolveEntriesForEditorRowAsync(rowIndex, editorTable);
+        const entries = await this.resolveEntriesForEditorRowAsync(rowIndex, editorTable, requestId);
         // 非同期処理中にEditorTableが切り替わっていた場合、または新しいリクエストが来ていた場合は描画しない
         if (requestId !== this.currentRequestId) return;
         if (this.currentEditorTable !== editorTable) return;
@@ -267,51 +265,69 @@ export class RelationsPanel {
     }
 
     /**
-     * 指定テーブルのヘッダーと全行をストア優先・キャッシュフォールバックで取得する
+     * 指定テーブルのヘッダーと全行をストア優先・CSV直読みで取得する
      *
-     * ストアにデータがある場合は常に最新データを優先使用する（キャッシュ陳腐化防止）。
-     * タブ未オープンのテーブルはストアに存在しないため、その場合のみキャッシュにフォールバックする。
-     * ストアにもキャッシュにも存在しない場合は null を返す。
+     * ストアに登録済みの場合は常に最新データを優先使用する。
+     * タブ未オープンのテーブルはストアに存在しないため、その場合のみCSVファイルから直接読み込む。
+     *
+     * CSVパスが返す行データとストアの行順序は一致する。
+     * ストア未登録テーブルはCSVのbodyをそのまま行配列として返すが、
+     * 後続の buildMiniEditorTableAsync 内で registerTableAsync が呼ばれる際も同じCSVを読み込むため
+     * storeRowIndices（filterRowsByReverseEntry が計算したインデックス）とストアの行順序は整合する。
+     *
+     * ファイルが存在しない場合は異常系（スキーマと実データの不整合）として例外を伝播させる。
      */
-    private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
+    private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] }> {
+        // ストアに登録済みの場合はストアから取得する。
+        // ストアの rows は string[][] でPK重複行を含む全行を保持しているため正確。
         const storeHeader = this.store.getHeader(tableName);
         const storeRows = this.store.getRows(tableName);
         if (storeHeader !== false && storeRows !== false) {
             return { header: storeHeader, rows: storeRows };
         }
-        const syncData = this.referenceDataCache.getFullDataSync(tableName);
-        const fullData = syncData !== false
-            ? syncData
-            : await this.referenceDataCache.getFullDataAsync(tableName).catch(() => false as const);
-        if (fullData === false) return null;
-        return { header: fullData.header, rows: Array.from(fullData.rows.values()) };
+        // ストア未登録の場合はCSVファイルから直接読み込む。
+        // referenceDataCache.rows は Map<pkValue, row> 形式のためPK重複行が上書きされて消える。
+        // 1:Nフィルタリングには全行が必要なため、CSVのbodyをそのまま使う。
+        const csvText = await readFileAsync(`data/${tableName}.csv`);
+        const csv = new Csv();
+        csv.load(csvText);
+        return { header: csv.header, rows: csv.body };
     }
 
     /**
      * 動的参照を解決してRelationEntryを生成する
      *
+     * EditorTableに依存せず、行データ（targetRow）とヘッダー名配列（rowHeader）から直接解決する。
+     * EditorTable版（resolveEntriesForEditorRowAsync）とペインスタック版（resolveEntriesForTableRowAsync）
+     * の両方から呼び出せるよう、共通インターフェースとして定義する。
+     *
      * 解決ステップ:
-     *   1. 同一行から expr.filter.valueColumn の値を取得（例: reward_table_id の値 "1"）
+     *   1. targetRow から expr.filter.valueColumn の値を取得（例: reward_table_id の値 "1"）
      *   2. フィルタテーブル（expr.filter.tableName）から expr.filter.filterColumn == 手順1の値 の行を線形検索
      *   3. その行の expr.lookupColumn の値を取得（= 最終テーブル名、例: "chara"）
-     *   4. 最終テーブルのデータを取得し、expr.targetColumn == fkValue の行を絞り込む
-     *   5. RelationEntry として返す
+     *   4. targetRow からこの列自身の値（= 最終テーブルの targetColumn で絞り込むFK値）を取得する
+     *   5. 最終テーブルのデータを取得し、expr.targetColumn == fkValue の行を絞り込む
+     *   6. RelationEntry として返す
      *
      * 解決できない場合（列が存在しない、値が空、テーブルが取得できない等）は null を返す。
      */
     private async resolveDynamicReferenceEntryAsync(
         expr: DynamicReference,
         columnLabel: string,
-        rowIndex: number,
-        editorTable: EditorTable,
+        targetRow: string[],
+        rowHeader: string[],
+        requestId: number,
     ): Promise<RelationEntry | null> {
         // 手順1: 同一行から動的解決の基準値となる列値を取得する（例: reward_table_id の値）
-        const valueColumnValue = editorTable.getCellValueByColumnName(rowIndex, expr.filter.valueColumn);
+        const valueColIdx = rowHeader.indexOf(expr.filter.valueColumn);
+        if (valueColIdx === -1) return null;
+        const valueColumnValue = targetRow[valueColIdx];
         if (valueColumnValue === '') return null;
 
         // 手順2: フィルタテーブルのデータを取得して filterColumn == valueColumnValue の行を線形検索する
         const filterTableData = await this.resolveTableDataAsync(expr.filter.tableName);
-        if (filterTableData === null) return null;
+        // await 後に別リクエストが割り込んでいないか確認する
+        if (requestId !== this.currentRequestId) return null;
         const filterColIdx = filterTableData.header.indexOf(expr.filter.filterColumn);
         if (filterColIdx === -1) return null;
         const filterRowIdx = filterTableData.rows.findIndex(row => row[filterColIdx] === valueColumnValue);
@@ -325,12 +341,15 @@ export class RelationsPanel {
         if (targetTableName === '') return null;
 
         // 手順4: 同一行からこの列自身の値（= 最終テーブルの targetColumn で絞り込むFK値）を取得する
-        const fkValue = editorTable.getCellValueByColumnName(rowIndex, columnLabel);
+        const fkColIdx = rowHeader.indexOf(columnLabel);
+        if (fkColIdx === -1) return null;
+        const fkValue = targetRow[fkColIdx];
         if (fkValue === '') return null;
 
         // 手順5: 最終テーブルのデータを取得して targetColumn == fkValue の行に絞り込む
         const targetTableData = await this.resolveTableDataAsync(targetTableName);
-        if (targetTableData === null) return null;
+        // await 後に別リクエストが割り込んでいないか確認する
+        if (requestId !== this.currentRequestId) return null;
         const targetColIdx = targetTableData.header.indexOf(expr.targetColumn);
         if (targetColIdx === -1) return null;
         const rows = targetTableData.rows.filter(row => row[targetColIdx] === fkValue);
@@ -351,11 +370,20 @@ export class RelationsPanel {
 
     /**
      * EditorTableの指定行からリレーションエントリを非同期で解決する
-     * fullDataCacheが未ロードの場合は getFullDataAsync() でロードする
+     *
+     * requestId を受け取り、各 await 後にレースコンディションを検出した場合は空配列を返す。
+     * 呼び出し元の updateForRowAsync が await 後に改めて requestId チェックを行うため、
+     * ここで空配列を返しても二重チェックにはならない（呼び出し元が最終判断する）。
      */
-    private async resolveEntriesForEditorRowAsync(rowIndex: number, editorTable: EditorTable): Promise<RelationEntry[]> {
+    private async resolveEntriesForEditorRowAsync(rowIndex: number, editorTable: EditorTable, requestId: number): Promise<RelationEntry[]> {
         const entries: RelationEntry[] = [];
         const tableData = editorTable.getTableData();
+
+        // resolveDynamicReferenceEntryAsync に渡すための行データ配列を構築する。
+        // EditorTable の DOM 上の最新値（ストアより新しい可能性がある）を列名配列と対応付けて保持する。
+        // DOMの列は1始まり（行ヘッダーが0列目）なのでcolIdx+1でアクセスする。
+        const rowHeader = tableData.header.map(col => col.name);
+        const targetRow = tableData.header.map((_, colIdx) => editorTable.getCellValueAt(rowIndex, colIdx + 1));
 
         // N:1（FK参照先）の解決
         for (let colIdx = 0; colIdx < tableData.header.length; colIdx++) {
@@ -368,9 +396,9 @@ export class RelationsPanel {
                 const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + 1);
                 if (fkValue === '') continue;
 
-                // ストア優先・キャッシュフォールバックでテーブルデータを取得する
+                // ストア優先・CSV直読みでテーブルデータを取得する
                 const refTableData = await this.resolveTableDataAsync(expr.tableName);
-                if (refTableData === null) continue;
+                if (requestId !== this.currentRequestId) return entries;
                 const { header, rows: allRows } = refTableData;
 
                 // FK列値でフィルタ（PK列参照なら一意前提で1件、非PK列なら複数件）
@@ -390,9 +418,12 @@ export class RelationsPanel {
                     storeRowIndices: [],
                 });
             } else if (isDynamicReference(expr)) {
+                // resolveDynamicReferenceEntryAsync 内部で複数回 await するため、requestId を渡してガードさせる。
+                // メソッド内でキャンセルが検出された場合は null が返るため、呼び出し元でも戻り後に確認する。
                 const dynamicEntry = await this.resolveDynamicReferenceEntryAsync(
-                    expr, col.name, rowIndex, editorTable
+                    expr, col.name, targetRow, rowHeader, requestId
                 );
+                if (requestId !== this.currentRequestId) return entries;
                 if (dynamicEntry !== null) entries.push(dynamicEntry);
             }
         }
@@ -413,9 +444,9 @@ export class RelationsPanel {
                 // （同一値でキーが衝突している別 parentColumnName のエントリを誤って取り込まない）
                 if (reverseEntry.parentColumnName !== parentColumnName) continue;
 
-                // ストア優先・キャッシュフォールバックでテーブルデータを取得する
+                // ストア優先・CSV直読みでテーブルデータを取得する
                 const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
-                if (childTableData === null) continue;
+                if (requestId !== this.currentRequestId) return entries;
                 const { header, rows: allRows } = childTableData;
 
                 // 1:Nのフィルタリングは共通メソッドに委譲する
@@ -813,7 +844,7 @@ export class RelationsPanel {
             this.baseTableName = tableName;
         }
 
-        const entries = await this.resolveEntriesForTableRowAsync(tableName, pkValue);
+        const entries = await this.resolveEntriesForTableRowAsync(tableName, pkValue, requestId);
         if (requestId !== this.currentRequestId) return;
 
         if (entries.length === 0) {
@@ -828,24 +859,37 @@ export class RelationsPanel {
     /**
      * テーブル名とPK値からリレーションエントリを解決する（EditorTable不要版）
      * ペインスタック上のRPが使用する。ストアとスキーマから直接解決する。
+     *
+     * requestId を受け取り、各 await 後にレースコンディションを検出した場合は空配列を返す。
+     * 呼び出し元の showForTableRowAsync が await 後に改めて requestId チェックを行うため、
+     * ここで空配列を返しても二重チェックにはならない（呼び出し元が最終判断する）。
      */
-    private async resolveEntriesForTableRowAsync(tableName: string, pkValue: string): Promise<RelationEntry[]> {
+    private async resolveEntriesForTableRowAsync(tableName: string, pkValue: string, requestId: number): Promise<RelationEntry[]> {
         const entries: RelationEntry[] = [];
 
         // スキーマを読み込む
         const schemaText = await readFileAsync(`schema/${tableName}.json`);
+        if (requestId !== this.currentRequestId) return entries;
         const schemaJson: Record<string, unknown> = JSON.parse(schemaText);
         const header = schemaJson.header as Array<{name: string; type: string; reference?: string}>;
 
-        // ストアからテーブルデータを取得する
+        // ストアからテーブルデータを取得する。
+        // registerTableAsync が直前に成功しているためデータが取れない状態は実装バグ。
         const storeHeader = this.store.getHeader(tableName);
         const storeRows = this.store.getRows(tableName);
-        if (storeHeader === false || storeRows === false) return entries;
+        if (storeHeader === false || storeRows === false) {
+            throw new Error(`resolveEntriesForTableRowAsync: registerTableAsync 成功後にストアデータが取得できない（tableName=${tableName}）`);
+        }
 
-        // PK列でターゲット行を特定する
+        // PK列でターゲット行を特定する。
+        // PK列が存在しないのはスキーマ定義の不整合であり実装バグ。
         const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
-        if (pkColIdx === -1) return entries;
+        if (pkColIdx === -1) {
+            throw new Error(`resolveEntriesForTableRowAsync: PK列が見つからない（tableName=${tableName}, pkColumn=${config.primaryKeyColumnName}）`);
+        }
         const targetRowIdx = storeRows.findIndex(row => row[pkColIdx] === pkValue);
+        // ターゲット行が見つからない場合は、ユーザーが行を削除した後にパンくずリストを
+        // 辿るなどの正常なユースケースが存在するため、空配列を返して処理を終了する。
         if (targetRowIdx === -1) return entries;
         const targetRow = storeRows[targetRowIdx];
 
@@ -853,34 +897,45 @@ export class RelationsPanel {
         for (const col of header) {
             if (!col.reference) continue;
             const expr = parseReferenceExpression(col.reference);
-            if (!isSimpleReference(expr)) continue; // 動的参照は現在スキップ（シンプル参照のみ対応）
 
-            const fkColIdx = storeHeader.indexOf(col.name);
-            if (fkColIdx === -1) continue;
-            const fkValue = targetRow[fkColIdx];
-            if (fkValue === '') continue;
+            if (isSimpleReference(expr)) {
+                const fkColIdx = storeHeader.indexOf(col.name);
+                if (fkColIdx === -1) continue;
+                const fkValue = targetRow[fkColIdx];
+                if (fkValue === '') continue;
 
-            const refTableData = await this.resolveTableDataAsync(expr.tableName);
-            if (refTableData === null) continue;
+                const refTableData = await this.resolveTableDataAsync(expr.tableName);
+                if (requestId !== this.currentRequestId) return entries;
+                const refColIdx = refTableData.header.indexOf(expr.columnName);
+                const rows = refColIdx === -1 ? [] : refTableData.rows.filter(row => row[refColIdx] === fkValue);
 
-            const refColIdx = refTableData.header.indexOf(expr.columnName);
-            const rows = refColIdx === -1 ? [] : refTableData.rows.filter(row => row[refColIdx] === fkValue);
-
-            entries.push({
-                label: col.name,
-                relationType: 'N:1',
-                tableKey: expr.tableName,
-                header: refTableData.header,
-                rows,
-                fkColumnName: '',
-                fkValue: '',
-                storeRowIndices: [],
-            });
+                entries.push({
+                    label: col.name,
+                    relationType: 'N:1',
+                    tableKey: expr.tableName,
+                    header: refTableData.header,
+                    rows,
+                    fkColumnName: '',
+                    fkValue: '',
+                    storeRowIndices: [],
+                });
+            } else if (isDynamicReference(expr)) {
+                // resolveEntriesForEditorRowAsync と同じ共通メソッドで動的参照を解決する。
+                // targetRow と storeHeader はストアから取得済みのため直接渡す。
+                // resolveDynamicReferenceEntryAsync 内部で複数回 await するため、requestId を渡してガードさせる。
+                // メソッド内でキャンセルが検出された場合は null が返るため、呼び出し元でも戻り後に確認する。
+                const dynamicEntry = await this.resolveDynamicReferenceEntryAsync(
+                    expr, col.name, targetRow, storeHeader, requestId
+                );
+                if (requestId !== this.currentRequestId) return entries;
+                if (dynamicEntry !== null) entries.push(dynamicEntry);
+            }
         }
 
         // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
         const resolver = new ReverseReferenceResolver(this.store);
         const reverseMap = await resolver.resolveAsync(tableName);
+        if (requestId !== this.currentRequestId) return entries;
 
         // PK値で逆参照エントリを取得する
         const reverseEntriesForPk = reverseMap.get(pkValue);
@@ -890,7 +945,7 @@ export class RelationsPanel {
                 if (reverseEntry.parentColumnName !== config.primaryKeyColumnName) continue;
 
                 const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
-                if (childTableData === null) continue;
+                if (requestId !== this.currentRequestId) return entries;
                 const { header: childHeader, rows: allRows } = childTableData;
 
                 // 1:Nのフィルタリングは共通メソッドに委譲する

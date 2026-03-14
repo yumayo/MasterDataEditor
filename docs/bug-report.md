@@ -1057,3 +1057,18 @@ Selection インスタンス間でlastNotifiedRowが独立保持されること�
 2. `forceRefreshRelationsPanel()` のような副作用を持つメソッドを呼ぶ際は、ミニテーブルから呼ばれるケースを考慮し、`if (!this.isMiniTable)` ガードの要否を検討する（`applyCellChanges`/`replayCellChanges` の既存パターン参照）。
 
 ---
+
+## 72. [f635062] — ペインスタック上のRelationsPanelで動的参照が解決されないバグを修正
+
+### 不具合原因名
+resolveEntriesForTableRowAsync の動的参照スキップ
+
+### なぜそうなったのか
+`RelationsPanel` には参照解決メソッドが2系統存在する: `resolveEntriesForEditorRowAsync`（左ペインのEditorTable経由）と `resolveEntriesForTableRowAsync`（ペインスタック経由）。前者は動的参照（DynamicReference）を `resolveDynamicReferenceEntryAsync` で解決していたが、後者は `if (!isSimpleReference(expr)) continue;` で動的参照を無条件にスキップしていた。さらに `resolveDynamicReferenceEntryAsync` が `EditorTable` インスタンスに依存したシグネチャ（`rowIndex, editorTable`）を持っていたため、EditorTableを持たないペインスタック版からは呼び出すことができなかった。また、`resolveTableDataAsync` が `referenceDataCache`（`Map<pkValue, row>` 形式）をフォールバックとして使用していたため、PK重複行が上書きされて消失する副次的な問題も存在した。
+
+### どうしたら今後は再発しないか
+- `resolveEntriesForEditorRowAsync` と `resolveEntriesForTableRowAsync` は同じ契約（テーブルの全参照を解決する）を持つ対称的なメソッドである。片方に機能を追加したら必ずもう片方にも追加すること。
+- 共通処理は共通メソッドに抽出し（今回の `resolveDynamicReferenceEntryAsync` のEditorTable非依存化）、片方漏れを構造的に防ぐ。
+- データ構造の選択がPK重複行に対応しているか常に確認する（`Map<pkValue, row>` はPK重複行を消す）。
+
+---

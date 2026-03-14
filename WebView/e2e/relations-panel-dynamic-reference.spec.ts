@@ -140,6 +140,144 @@ function getRelationSection(page: Page, tableName: string): Locator {
     });
 }
 
+// =============================================================================
+// ペインスタック上のRelationsPanelで動的参照を持つテーブルの行をCtrl+クリックした際に
+// resolveEntriesForTableRowAsync が動的参照をスキップするバグの再現テスト
+//
+// 再現シナリオ:
+//   1. quest テーブルを開く
+//   2. quest row0 を選択する → RP1 に quest_reward の 1:N ミニテーブルが表示される
+//      （quest.quest_reward_group_id → quest_reward.group_id の逆参照）
+//   3. RP1 の quest_reward ミニテーブルのセルを Ctrl+クリック → RP2 が右スロットに追加される
+//      RP2 は resolveEntriesForTableRowAsync("quest_reward", "1") で解決される
+//   4. quest_reward テーブルには動的参照（reward_record_id）があるが
+//      resolveEntriesForTableRowAsync は isSimpleReference でない参照をスキップするため
+//      chara セクションが表示されない → このアサーションが RED で失敗する
+//
+// フィクスチャ構成（ペインスタックドリルダウン専用）:
+//   table: id, master（テーブルリスト。master カラムに実テーブル名が入る）
+//   chara: id, name（キャラマスター）
+//   quest: id, name（クエストマスター）
+//   quest_reward: id, quest_id（→ quest.id 参照）, reward_table_id（→ table.id 参照）,
+//                 reward_record_id（動的参照: $(table.id == $reward_table_id).master.id → chara.id）
+//
+//   quest_reward id=1: quest_id=1, reward_table_id=1 → master="chara" → chara.id=2
+//   quest_reward id=2: quest_id=1, reward_table_id=1 → master="chara" → chara.id=3
+// =============================================================================
+
+/**
+ * ペインスタックドリルダウンでの動的参照解決テスト用ファイルシステムを生成する
+ */
+function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "master", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/table.csv": [
+            "id,master",
+            "1,chara",
+        ].join("\n"),
+        "schema/chara.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/chara.csv": [
+            "id,name",
+            "1,うーぱー",
+            "2,ひつじ",
+            "3,まんぼう",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                // quest_reward.group_id への参照（1:N逆参照のため quest_reward ミニテーブルが RP1 に表示される）
+                { key: 2, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": [
+            "id,name,quest_reward_group_id",
+            "1,はじまりのクエスト,1",
+        ].join("\n"),
+        "schema/quest_reward.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "group_id", type: "int" },
+                // table.id への参照（どのテーブルかを指定する列）
+                { key: 2, name: "reward_table_id", type: "int", reference: "table.id" },
+                // 動的参照: reward_table_id の値で table テーブルを検索し master カラムの値（テーブル名）を取得、
+                // そのテーブルの id カラムを参照する
+                { key: 3, name: "reward_record_id", type: "int", reference: "$(table.id == $reward_table_id).master.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest_reward.csv": [
+            "id,group_id,reward_table_id,reward_record_id",
+            "1,1,1,2",
+            "2,1,1,3",
+        ].join("\n"),
+    };
+}
+
+test.describe('ペインスタック上のRelationsPanelで動的参照を持つテーブルにドリルダウンしたとき chara セクションが表示される', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createPaneStackDynamicReferenceTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'quest row0 選択後に RP1 の quest_reward ミニテーブルをCtrl+クリックすると RP2 に chara セクションが表示される',
+        async ({ page }) => {
+            // quest テーブルを開いて row0（はじまりのクエスト）を選択する
+            const questTable = await openTableAsync(page, 'quest');
+            await selectRowAsync(questTable, 0);
+
+            // RP1 に quest_reward の 1:N ミニテーブルが表示されるまで待機する
+            // （quest.quest_reward_group_id=1 → quest_reward.group_id=1 の逆参照）
+            const questRewardSection = getRelationSection(page, 'quest_reward');
+            await expect(questRewardSection).toBeVisible();
+
+            // RP1 の quest_reward ミニテーブルの最初のデータセルを取得する
+            // N:1ミニテーブルと同様に id 列は hideColumnsByName() で非表示のため visible なセルを取得する
+            const questRewardMiniTable = questRewardSection.locator('.editor-table');
+            await expect(questRewardMiniTable).toBeVisible();
+            const visibleCell = questRewardMiniTable.locator(
+                '.editor-table-cell:not(.editor-table-row-header)' +
+                ':not(.editor-table-column-header)' +
+                ':not(.editor-table-corner-cell)' +
+                ':not([style*="display: none"])'
+            ).first();
+            await expect(visibleCell).toBeVisible();
+
+            // Ctrl+クリックでペインスタックに RP2 を追加する
+            await visibleCell.click({ modifiers: ['Control'] });
+
+            // ナビゲーションバーが表示されること（ペインスタックが3つになった）
+            await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+            // 右スロットに RP2 が表示されること
+            await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
+
+            // RP2 に chara セクションが表示されること
+            // resolveEntriesForTableRowAsync が動的参照をスキップするバグにより、
+            // 現状はこのアサーションが失敗する（RED）
+            const charaSection = page.locator('.editor-right-slot .relations-panel .relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('chara', { exact: true }),
+            });
+            await expect(charaSection).toBeVisible();
+        },
+    );
+});
+
 test.describe('RelationsPanel 動的参照のN:1ミニテーブル表示', () => {
     test.beforeEach(async ({ page }) => {
         const fs = createDynamicReferenceTestFileSystem();

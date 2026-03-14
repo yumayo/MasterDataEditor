@@ -128,7 +128,7 @@ export class Tab {
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
-        this.relationsPanel = new RelationsPanel(this.referenceDataCache, this.store);
+        this.relationsPanel = new RelationsPanel(this.store);
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
@@ -551,7 +551,7 @@ export class Tab {
         this.truncateStackAfterIndex(this.viewIndex);
 
         // 新しい RelationsPanel を生成してスタックに追加する
-        const rp = new RelationsPanel(this.referenceDataCache, this.store);
+        const rp = new RelationsPanel(this.store);
         rp.connectTab(this);
         const rpElement = rp.getPanelElement();
         this.paneStack.push({ element: rpElement, panel: rp });
