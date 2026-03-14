@@ -141,6 +141,21 @@ test.describe('RelationsPanel', () => {
 // 改善1: パネル幅リサイザー
 // =============================================================================
 
+/**
+ * リサイズハンドルを左に指定ピクセルドラッグするヘルパー関数
+ */
+async function dragResizeHandleAsync(page: Page, dragLeftPx: number): Promise<void> {
+    const handle = page.locator('.relations-panel-resize-handle');
+    const handleBox = await handle.boundingBox();
+    if (!handleBox) throw new Error('リサイズハンドルの boundingBox が取得できません');
+    const startX = handleBox.x + handleBox.width / 2;
+    const startY = handleBox.y + handleBox.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX - dragLeftPx, startY);
+    await page.mouse.up();
+}
+
 test.describe('RelationsPanel リサイザー', () => {
     test.beforeEach(async ({ page }) => {
         const fs = createRelationsPanelTestFileSystem();
@@ -164,33 +179,50 @@ test.describe('RelationsPanel リサイザー', () => {
             await selectRowAsync(table, 0);
             await expect(page.locator('.relations-panel-content')).toBeVisible();
 
-            const handle = page.locator('.relations-panel-resize-handle');
-
             // ドラッグ前の幅を取得
             const beforeWidth = await page.evaluate(() => {
                 const el = document.querySelector('.relations-panel');
-                return el ? el.getBoundingClientRect().width : 0;
+                if (!el) throw new Error('.relations-panel が見つかりません');
+                return el.getBoundingClientRect().width;
             });
 
             // ハンドルを左に100px ドラッグ（パネルを広げる方向）
-            const handleBox = await handle.boundingBox();
-            if (!handleBox) throw new Error('リサイズハンドルの boundingBox が取得できません');
-            const startX = handleBox.x + handleBox.width / 2;
-            const startY = handleBox.y + handleBox.height / 2;
-            await page.mouse.move(startX, startY);
-            await page.mouse.down();
-            await page.mouse.move(startX - 100, startY);
-            await page.mouse.up();
+            await dragResizeHandleAsync(page, 100);
 
             // ドラッグ後の幅を取得して変化していることを確認
             const afterWidth = await page.evaluate(() => {
                 const el = document.querySelector('.relations-panel');
-                return el ? el.getBoundingClientRect().width : 0;
+                if (!el) throw new Error('.relations-panel が見つかりません');
+                return el.getBoundingClientRect().width;
             });
 
             expect(afterWidth).not.toBeCloseTo(beforeWidth, -1);
             // パネルは広がっているはずなので幅が増加していることも確認
             expect(afterWidth).toBeGreaterThan(beforeWidth);
+        },
+    );
+
+    test(
+        'リサイズハンドルをドラッグした後、右スロットのflex-basisがパーセンテージで設定されること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            // 行選択してパネルにコンテンツを表示させる
+            await selectRowAsync(table, 0);
+            await expect(page.locator('.relations-panel-content')).toBeVisible();
+
+            // ハンドルを左に100px ドラッグ（パネルを広げる方向）
+            await dragResizeHandleAsync(page, 100);
+
+            // ドラッグ後の .editor-right-slot の style.flexBasis を直接取得する
+            const flexBasis = await page.evaluate(() => {
+                const el = document.querySelector('.editor-right-slot') as HTMLElement | null;
+                if (!el) throw new Error('.editor-right-slot が見つかりません');
+                return el.style.flexBasis;
+            });
+
+            // flex-basis がパーセンテージで設定されていることを確認する
+            expect(flexBasis).toContain('%');
+            expect(flexBasis).not.toContain('px');
         },
     );
 });

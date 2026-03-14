@@ -125,9 +125,14 @@ export class RelationsPanel {
                 // parent（rightSlot）の親要素（contentArea）の右端を基準にドラッグ位置から幅を算出する
                 const grandParent = parent.parentElement;
                 if (grandParent === null) throw new Error('[RelationsPanel] onMouseMove: panelElement の祖父要素が存在しません');
-                const containerRight = grandParent.getBoundingClientRect().right;
-                const newWidth = containerRight - moveEvent.clientX;
-                parent.style.flex = `0 0 ${newWidth}px`;
+                const rect = grandParent.getBoundingClientRect();
+                if (rect.width === 0) return;
+                const newWidth = rect.right - moveEvent.clientX;
+                // 左右ペインの最小幅を保証するため10%〜90%にクランプし、小数点1桁に丸める
+                const percentage = Math.round(Math.max(10, Math.min(90, (newWidth / rect.width) * 100)) * 10) / 10;
+                parent.style.flexGrow = '0';
+                parent.style.flexShrink = '0';
+                parent.style.flexBasis = `${percentage}%`;
             };
 
             const onMouseUp = () => {
