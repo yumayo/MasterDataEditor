@@ -773,6 +773,13 @@ export class Tab {
             const csv = await this.store.registerTableAsync(name);
             const tableData = EditorTableData.parse(json, csv);
 
+            // タブボタンの表示テキストをdescription（日本語名）に差し替える
+            // title 属性でテーブルファイル名をツールチップとして保持する
+            // descriptionがスキーマに定義されていない場合はファイル名のまま表示する
+            if (tableData.description !== null) {
+                tabButton.setDisplayName(tableData.description);
+            }
+
             // ラッパー要素を作成（このタブのDOM全体を包む）
             // editor.appendChild は左ペインへのappendに変更された
             const wrapperElement = document.createElement('div');

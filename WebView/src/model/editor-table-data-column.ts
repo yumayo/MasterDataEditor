@@ -6,13 +6,13 @@ export class EditorTableDataColumn {
 
     type: string;
 
-    comment: string | undefined;
+    comment: string | null;
 
-    reference: string | undefined;
+    reference: string | null;
 
     width: string;
 
-    constructor(key: number, name: string, type: string, comment: string | undefined, reference: string | undefined, width: string) {
+    constructor(key: number, name: string, type: string, comment: string | null, reference: string | null, width: string) {
         this.key = key;
         this.name = name;
         this.type = type;

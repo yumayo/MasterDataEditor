@@ -5,7 +5,7 @@ import {Utility} from "../utility";
 
 export class EditorTableData {
 
-    description: string;
+    description: string | null;
 
     primaryKey: string;
 
@@ -14,7 +14,7 @@ export class EditorTableData {
     body: EditorTableDataRow[];
 
     constructor(
-        description: string, primaryKey: string,
+        description: string | null, primaryKey: string,
         header: EditorTableDataColumn[],
         body: EditorTableDataRow[]
     ) {
@@ -26,7 +26,7 @@ export class EditorTableData {
 
     static parse(json: any, csv: Csv) {
 
-        const description = json['description'];
+        const description = json['description'] !== undefined ? json['description'] : null;
 
         const primaryKey = json['primary_key'];
 
@@ -36,7 +36,9 @@ export class EditorTableData {
             const column = header[i];
             columns.push(new EditorTableDataColumn(
                 column.key, column.name, column.type,
-                column.comment, column.reference, column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name)
+                column.comment !== undefined ? column.comment : null,
+                column.reference !== undefined ? column.reference : null,
+                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name)
             ));
         }
 
@@ -89,7 +91,8 @@ export class EditorTableData {
 
         return {
             json: {
-                description: this.description,
+                // description が null の場合はキー自体を出力しない（元スキーマに存在しないキーを汚染しない）
+                ...(this.description !== null ? { description: this.description } : {}),
                 header: this.header.map(x => x.serialize()),
                 primary_key: this.primaryKey,
             },

@@ -144,7 +144,8 @@ export class InsertColumnCommand implements Command {
     }
 
     execute(): void {
-        this.editorTable.insertColumnInternal(this.columnIndex);
+        // 新規挿入時はcommentなし（null）
+        this.editorTable.insertColumnInternal(this.columnIndex, null);
     }
 
     undo(): void {
@@ -183,10 +184,9 @@ export class InsertColumnsCommand implements Command {
     }
 
     execute(): void {
+        // 新規挿入時はcommentなし（null）
         for (let i = 0; i < this.count; ++i) {
-            this.editorTable.insertColumnInternal(
-                this.columnIndex
-            );
+            this.editorTable.insertColumnInternal(this.columnIndex, null);
         }
     }
 
@@ -533,6 +533,8 @@ export class DeleteColumnCommand implements Command {
     private deletedHeaderValue: string;
     private deletedCellValues: string[];
     private deletedWidth: string;
+    /** 削除した列のcomment（2行ヘッダー）。commentなし列はnull。 */
+    private deletedComment: string | null;
 
     constructor(editorTable: EditorTable, columnIndex: number) {
         this.editorTable = editorTable;
@@ -540,13 +542,15 @@ export class DeleteColumnCommand implements Command {
         this.deletedHeaderValue = '';
         this.deletedCellValues = [];
         this.deletedWidth = '';
+        this.deletedComment = null;
     }
 
     execute(): void {
         this.deletedCellValues = [];
 
-        // 列ヘッダーの値を保存
+        // 列ヘッダーの値とcommentを保存（undo時にcomment付き列ヘッダーを復元するため）
         this.deletedHeaderValue = this.editorTable.getColumnHeaderValue(this.columnIndex);
+        this.deletedComment = this.editorTable.getColumnHeaderComment(this.columnIndex);
 
         // 各行から削除する列のセル値を保存（列ヘッダー行を除く）
         const rowCount = this.editorTable.getRowCount();
@@ -563,8 +567,8 @@ export class DeleteColumnCommand implements Command {
     }
 
     undo(): void {
-        // 列を挿入
-        this.editorTable.insertColumnInternal(this.columnIndex);
+        // commentを引き継いで列ヘッダーセルを生成（削除前のcomment付き2行構造を復元）
+        this.editorTable.insertColumnInternal(this.columnIndex, this.deletedComment);
 
         // 列ヘッダーの値を復元
         this.editorTable.setColumnHeaderValue(this.columnIndex, this.deletedHeaderValue);

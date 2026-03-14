@@ -1121,3 +1121,20 @@ DOM構造の誤認によるCSSセレクタ不一致と、オブジェクト生�
 - E2Eテスト（`relations-panel.spec.ts`）でflex-basisの値がパーセンテージであることを検証するテストを追加済み
 
 ---
+
+## 76. [933d207] — FEAT_0004: 列ヘッダーにcomment（日本語名）を2行表示、タブにdescription（日本語説明）を表示
+
+### 不具合原因名
+DOM構造変更によるTextNodeサーチロジックの破綻、Commandパターンでの情報保全漏れ、モデル層のundefined型違反の波及
+
+### なぜそうなったのか
+1. **列ヘッダーのDOM構造変更がTextNodeサーチロジックを壊す**: `getColumnHeaderValue` / `setColumnHeaderValue` がTextNodeを直接走査していたが、comment付き2行構造ではTextNodeが存在せず `.column-header-name` spanがname値を保持する設計に変わった。DOM構造が変わったのにそのDOMを読み書きするAPIが追従しておらず、セル編集→ストア書き込み・検索パネル・FK自動埋め込み・列名解決の全てが破綻した。
+2. **Commandパターンでの情報保全漏れ**: `DeleteColumnCommand` がcomment情報を保持していなかったため、列削除→Undoを実行すると2行構造（comment表示）が消失し、1行構造（name表示のみ）に戻ってしまった。
+3. **`EditorTableDataColumn.comment` が `string | undefined` だった**: プロジェクトルール「undefined禁止」に違反した既存の型定義が、新機能実装時に波及して `undefined` チェックの連鎖を生み出し、型安全性を損なった。
+
+### どうしたら今後は再発しないか
+- **ヘッダーセルのDOM構造を変更する場合、そのDOMを読み書きする全てのメソッドを洗い出して更新すること。** 特に `getColumnHeaderValue` / `setColumnHeaderValue` のような低レベルDOM操作メソッドは変更の影響が広範に及ぶため、修正前に使用箇所を全て列挙する。
+- **新しいDOM属性やデータを追加した場合、対応するCommandクラスのexecute/undoが新情報を保存・復元しているか確認すること。** Commandの対称性（do/undo）は常にペアで検証する。
+- **モデル層の型を新機能で参照する際、既存の型がプロジェクトルール（undefined禁止）に沿っているか確認し、必要なら修正すること。** `string | undefined` を発見したら即座に `string` へ修正し、未設定の初期値は空文字 `""` を使う。
+
+---

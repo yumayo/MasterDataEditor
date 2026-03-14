@@ -48,6 +48,27 @@ export class TabButton {
     }
 
     /**
+     * タブボタンの表示テキストを description（日本語名）に差し替える。
+     * title 属性に元のテーブルファイル名を設定してツールチップで確認できるようにする。
+     * textContent による全置換は closeButton 等の子要素を破壊するため、
+     * 最初のテキストノードのみを差し替える。
+     * コンストラクタで this.element.textContent = name を実行しているため
+     * テキストノードは必ず存在する。
+     */
+    setDisplayName(description: string): void {
+        this.element.title = this.name;
+        for (const node of Array.from(this.element.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent = description;
+                return;
+            }
+        }
+        // コンストラクタで textContent = name を設定しているためテキストノードは必ず存在する。
+        // 見つからない場合は不変条件の違反なので例外をスローする。
+        throw new Error('[TabButton] setDisplayName: テキストノードが見つかりません');
+    }
+
+    /**
      * 編集状態（dirty）を設定
      * @param dirty true: 編集あり（丸ポッチ表示）、false: 保存済み（丸ポッチ非表示）
      */

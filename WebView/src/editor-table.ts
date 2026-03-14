@@ -171,7 +171,15 @@ export class EditorTable {
             // 左上隅の空セル
             const cornerCell = document.createElement('div');
             cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
-            EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
+            // comment 付き列が1つでもある場合、ヘッダー行は2行分の高さになるためコーナーセルも合わせる
+            const hasComment = this.tableData.header.some(col => col.comment !== null);
+            if (hasComment) {
+                cornerCell.style.height = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
+                cornerCell.style.minHeight = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
+                cornerCell.style.maxHeight = 'none';
+            } else {
+                EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
+            }
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', () => {
                 this.handler.submitAndHide();
@@ -180,7 +188,8 @@ export class EditorTable {
             cells.push(cornerCell);
             // 列ヘッダー (A, B, C, ...)
             for (let i = 0; i < this.tableData.header.length; ++i) {
-                const columnHeaderCell = this.structure.createColumnHeaderCell(this.tableData.header[i].name, i, this.tableData.header[i].width);
+                // comment がある列は上段にcomment、下段に変数名の2行ヘッダーを生成する
+                const columnHeaderCell = this.structure.createColumnHeaderCell(this.tableData.header[i].name, this.tableData.header[i].comment, i, this.tableData.header[i].width);
                 cells.push(columnHeaderCell);
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
@@ -501,25 +510,34 @@ export class EditorTable {
     }
 
     /**
-     * 列ヘッダーの値を取得する
+     * 列ヘッダーの値を取得する。
+     * comment付き2行構造では .column-header-name span から、それ以外は TextNode から取得する。
      */
     getColumnHeaderValue(columnIndex: number): string {
         const headerRow = this.element.children[0] as HTMLElement;
         const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        // comment付き2行構造の場合は .column-header-name span を優先する
+        const nameSpan = headerCell.querySelector('.column-header-name');
+        if (nameSpan !== null) return nameSpan.textContent as string;
         for (const node of Array.from(headerCell.childNodes)) {
-            if (node.nodeType === Node.TEXT_NODE) {
-                return node.textContent ?? '';
-            }
+            if (node.nodeType === Node.TEXT_NODE) return node.textContent as string;
         }
         return '';
     }
 
     /**
-     * 列ヘッダーの値を設定する
+     * 列ヘッダーの値を設定する。
+     * comment付き2行構造では .column-header-name span を、それ以外は TextNode を更新する。
      */
     setColumnHeaderValue(columnIndex: number, value: string): void {
         const headerRow = this.element.children[0] as HTMLElement;
         const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        // comment付き2行構造の場合は .column-header-name span を優先する
+        const nameSpan = headerCell.querySelector('.column-header-name');
+        if (nameSpan !== null) {
+            nameSpan.textContent = value;
+            return;
+        }
         for (const node of Array.from(headerCell.childNodes)) {
             if (node.nodeType === Node.TEXT_NODE) {
                 node.textContent = value;
@@ -1108,8 +1126,21 @@ export class EditorTable {
     }
 
     /** 列挿入の内部実装（Commandから呼び出される） */
-    public insertColumnInternal(columnIndex: number): void {
-        this.structure.insertColumnInternal(columnIndex);
+    public insertColumnInternal(columnIndex: number, comment: string | null): void {
+        this.structure.insertColumnInternal(columnIndex, comment);
+    }
+
+    /**
+     * 列ヘッダーのcommentを取得する。
+     * 2行構造（comment付き）の場合は .column-header-comment span の textContent を返す。
+     * comment なし（TextNode のみ）の場合は null を返す。
+     */
+    public getColumnHeaderComment(columnIndex: number): string | null {
+        const headerRow = this.element.children[0] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        const commentSpan = headerCell.querySelector('.column-header-comment');
+        if (commentSpan === null) return null;
+        return commentSpan.textContent as string;
     }
 
     /** 行挿入（Commandを使用してhistoryに追加） */

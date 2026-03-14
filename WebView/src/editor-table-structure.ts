@@ -49,8 +49,9 @@ export class EditorTableStructure {
 
     /**
      * 列挿入の内部実装（Commandから呼び出される）
+     * comment: Undo時にcommentを復元するために使用する。新規挿入時は null を渡す。
      */
-    insertColumnInternal(columnIndex: number): void {
+    insertColumnInternal(columnIndex: number, comment: string | null): void {
         const tableElement = this.table.getTableElement();
         // 各行に新しいセルを挿入
         for (let currentRowIndex = 0; currentRowIndex < tableElement.children.length; ++currentRowIndex) {
@@ -60,17 +61,9 @@ export class EditorTableStructure {
                 // 挿入前に既存のラベルをDOMから取得
                 const existingLabels: string[] = [];
                 for (let i = 1; i < row.children.length; ++i) {
-                    const headerCell = row.children[i] as HTMLElement;
-                    let label = '';
-                    for (const node of Array.from(headerCell.childNodes)) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            label = node.textContent || '';
-                            break;
-                        }
-                    }
-                    existingLabels.push(label);
+                    existingLabels.push(getColumnHeaderLabel(row.children[i] as HTMLElement));
                 }
-                const newHeaderCell = this.createColumnHeaderCell('', columnIndex, Utility.calculateColumnWidth(''));
+                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth(''));
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newHeaderCell, insertBefore);
@@ -86,20 +79,8 @@ export class EditorTableStructure {
                     } else if (i > columnIndex) {
                         label = existingLabels[i - 1] || '';
                     }
-                    // 既存のテキストノードを探して更新（リサイズハンドルは保持）
-                    let textNode: Text | false = false;
-                    for (const node of Array.from(headerCell.childNodes)) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            textNode = node as Text;
-                            break;
-                        }
-                    }
-                    if (textNode) {
-                        textNode.textContent = label;
-                    } else {
-                        // テキストノードがない場合は先頭に挿入
-                        headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
-                    }
+                    // comment あり（.column-header-name span）かcommentなし（TextNode）かに応じてラベルを更新
+                    setColumnHeaderLabel(headerCell, label);
                     // リサイズハンドルのイベントハンドラを再設定
                     const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
                     if (existingResizeHandle) {
@@ -287,15 +268,7 @@ export class EditorTableStructure {
         // 削除前に既存のラベルをDOMから取得
         const existingLabels: string[] = [];
         for (let i = 1; i < columnHeaderRow.children.length; ++i) {
-            const headerCell = columnHeaderRow.children[i] as HTMLElement;
-            let label = '';
-            for (const node of Array.from(headerCell.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    label = node.textContent || '';
-                    break;
-                }
-            }
-            existingLabels.push(label);
+            existingLabels.push(getColumnHeaderLabel(columnHeaderRow.children[i] as HTMLElement));
         }
         // 各行から指定位置のセルを削除
         for (let rowIdx = 0; rowIdx < tableElement.children.length; ++rowIdx) {
@@ -317,18 +290,8 @@ export class EditorTableStructure {
                     } else {
                         label = existingLabels[i + 1] || '';
                     }
-                    let textNode: Text | false = false;
-                    for (const node of Array.from(headerCell.childNodes)) {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            textNode = node as Text;
-                            break;
-                        }
-                    }
-                    if (textNode) {
-                        textNode.textContent = label;
-                    } else {
-                        headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
-                    }
+                    // comment あり（.column-header-name span）かcommentなし（TextNode）かに応じてラベルを更新
+                    setColumnHeaderLabel(headerCell, label);
                     // リサイズハンドルのイベントハンドラを再設定
                     const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
                     if (existingResizeHandle) {
@@ -416,15 +379,39 @@ export class EditorTableStructure {
 
     /**
      * 列ヘッダーセルを生成する
+     * comment がある場合は .column-header-comment（上段）と .column-header-name（下段）の2要素を生成する。
+     * comment がない場合は従来通り TextNode で name のみ表示する。
      */
-    createColumnHeaderCell(text: string, columnIndex: number, width: string): HTMLElement {
+    createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string): HTMLElement {
         const columnHeaderCell = document.createElement('div');
         columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
-        columnHeaderCell.textContent = text;
+        if (comment !== null) {
+            // 2行構造: 上段にcomment、下段に変数名
+            const commentSpan = document.createElement('span');
+            commentSpan.classList.add('column-header-comment');
+            commentSpan.textContent = comment;
+            const nameSpan = document.createElement('span');
+            nameSpan.classList.add('column-header-name');
+            nameSpan.textContent = name;
+            columnHeaderCell.appendChild(commentSpan);
+            columnHeaderCell.appendChild(nameSpan);
+        } else {
+            // comment なし: TextNode で name のみ（従来通り）
+            columnHeaderCell.appendChild(document.createTextNode(name));
+        }
         columnHeaderCell.dataset.columnIndex = String(columnIndex);
         columnHeaderCell.dataset.col = String(columnIndex);
         EditorTable.applyCellWidth(columnHeaderCell, width);
-        EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
+        if (comment !== null) {
+            // comment あり: 2行分のコンテンツを持つため、maxHeight/lineHeight による単行クリップを解除する。
+            // minHeight のみ設定してコンテンツに合わせて自然に伸長させる。
+            columnHeaderCell.style.height = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
+            columnHeaderCell.style.minHeight = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
+            columnHeaderCell.style.maxHeight = 'none';
+            columnHeaderCell.style.lineHeight = 'normal';
+        } else {
+            EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
+        }
         // 列ヘッダークリックで列全体を選択
         columnHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createColumnHeaderClickHandler(columnHeaderCell));
         // 列ヘッダー右クリックでコンテキストメニュー
@@ -455,4 +442,43 @@ export class EditorTableStructure {
         rowHeaderCell.appendChild(resizeHandle);
         return rowHeaderCell;
     }
+}
+
+/**
+ * 列ヘッダーセルからラベル文字列を取得する。
+ * comment あり（.column-header-name span）の場合はそのテキストを返し、
+ * comment なし（TextNode）の場合は TextNode のテキストを返す。
+ */
+function getColumnHeaderLabel(headerCell: HTMLElement): string {
+    const nameSpan = headerCell.querySelector<HTMLElement>('.column-header-name');
+    if (nameSpan !== null) {
+        return nameSpan.textContent || '';
+    }
+    for (const node of Array.from(headerCell.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent || '';
+        }
+    }
+    return '';
+}
+
+/**
+ * 列ヘッダーセルのラベルを更新する。
+ * comment あり（.column-header-name span）の場合はそのテキストを書き換え、
+ * comment なし（TextNode）の場合は TextNode を書き換える（なければ先頭に挿入）。
+ */
+function setColumnHeaderLabel(headerCell: HTMLElement, label: string): void {
+    const nameSpan = headerCell.querySelector<HTMLElement>('.column-header-name');
+    if (nameSpan !== null) {
+        nameSpan.textContent = label;
+        return;
+    }
+    for (const node of Array.from(headerCell.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            node.textContent = label;
+            return;
+        }
+    }
+    // TextNode がない場合は先頭に挿入
+    headerCell.insertBefore(document.createTextNode(label), headerCell.firstChild);
 }

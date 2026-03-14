@@ -45,6 +45,23 @@
     background-color: var(--background-color);
     text-align: center;
     font-weight: bold;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+/* comment あり列ヘッダー: 上段（日本語名） */
+.column-header-comment {
+    font-size: 0.9em;
+    line-height: 1.2;
+}
+
+/* comment あり列ヘッダー: 下段（変数名）を控えめに表示 */
+.column-header-name {
+    font-size: 0.78em;
+    opacity: 0.6;
+    line-height: 1.2;
 }
 
 /* 行ヘッダーセルのスタイル */
