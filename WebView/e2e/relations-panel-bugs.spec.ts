@@ -129,8 +129,8 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
             // データ行（ヘッダー行 row=0 を除いた .editor-table-row）を数える
             // .editor-table-row の nth(0) はヘッダー行なので、データ行は nth(1) 以降
             const allRows = miniEditorTable.locator('.editor-table-row');
-            // ヘッダー行(1) + データ行(2) = 合計3行以上あることを検証
-            await expect(allRows).toHaveCount(3);
+            // ヘッダー行(1) + データ行(2) + バッファ空行(1) = 合計4行あることを検証
+            await expect(allRows).toHaveCount(4);
 
             // 行カウント表示も "2 rows" であることを確認
             const rowCountEl = shopProductSection.locator('.relations-table-row-count');
@@ -156,8 +156,8 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
 
             // group_id=2 に対応する行は id=3(Potion) の1件
             const allRows = shopProductSection.locator('.editor-table .editor-table-row');
-            // ヘッダー行(1) + データ行(1) = 合計2行
-            await expect(allRows).toHaveCount(2);
+            // ヘッダー行(1) + データ行(1) + バッファ空行(1) = 合計3行
+            await expect(allRows).toHaveCount(3);
 
             const rowCountEl = shopProductSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');
@@ -766,6 +766,180 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             const enemyIdCell = firstDataRow.locator('.editor-table-cell').nth(enemyIdColIndex + 1);
             await expect(enemyIdCell).toBeVisible();
             await expect(enemyIdCell).toHaveText('1スライム');
+        },
+    );
+});
+
+// =============================================================================
+// バグ7: N:1ミニテーブルにバッファ行（editor-table-empty-row）が表示されない問題
+//
+// 根本原因:
+//   relations-panel.ts の buildMiniEditorTableAsync() 呼び出し箇所で、
+//   N:1ミニテーブルに emptyRowCount=0 がハードコードされているため、
+//   バッファ行（editor-table-empty-row）が一切生成されない。
+//
+//   const emptyRowCount = entry.relationType === '1:N' ? entry.rows.length + 1 : 0;
+//
+//   1:Nミニテーブルには entry.rows.length + 1 が渡されてバッファ行が表示されるが、
+//   N:1ミニテーブルは常に 0 が渡されるため空行がなく、
+//   コンテキストメニューなしでは新規データ入力ができない。
+//
+// 期待動作（修正後）:
+//   N:1ミニテーブルにも 1:N と同様に emptyRowCount = entry.rows.length + 1 を渡し、
+//   データ末尾にバッファ行1行を常時表示する。
+//
+// テーブル構成:
+//   table: id, name（シーンテーブル）
+//   chara: id, name（キャラテーブル）
+//   quest: id, name, table_id（table.id を FK 参照）, chara_id（chara.id を FK 参照）
+//
+//   quest を開くと RelationsPanel に N:1 として table と chara のミニテーブルが表示される。
+//   現在の実装では emptyRowCount=0 のためバッファ行がなく、修正後は表示されるべき。
+// =============================================================================
+
+/**
+ * バグ7テスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   table: id, name（シーン種別テーブル）
+ *   chara: id, name（キャラクターテーブル）
+ *   quest: id, name, table_id（table.id を FK 参照）, chara_id（chara.id を FK 参照）
+ *
+ * quest の行を選択すると RelationsPanel に N:1 として table と chara のミニテーブルが表示される。
+ * N:1ミニテーブルには現在 emptyRowCount=0 が渡されるためバッファ行が存在しない（バグ）。
+ * 修正後は emptyRowCount = entry.rows.length + 1 が渡されてバッファ行が表示される（GREEN）。
+ */
+function createN1EmptyRowFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/table.csv": [
+            "id,name",
+            "1,dungeon",
+            "2,field",
+        ].join("\n"),
+        "schema/chara.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/chara.csv": [
+            "id,name",
+            "1,hero",
+            "2,villain",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                // table.id を FK として参照する（N:1 関係）
+                { key: 2, name: "table_id", type: "int", reference: "table.id" },
+                // chara.id を FK として参照する（N:1 関係）
+                { key: 3, name: "chara_id", type: "int", reference: "chara.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/quest.csv": [
+            "id,name,table_id,chara_id",
+            "1,first_quest,1,1",
+            "2,second_quest,2,2",
+        ].join("\n"),
+    };
+}
+
+test.describe('バグ7: N:1ミニテーブルにバッファ行（editor-table-empty-row）が表示されること', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createN1EmptyRowFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'quest を開いた際、N:1 の table ミニテーブルにバッファ行（editor-table-empty-row）が少なくとも1行存在すること',
+        async ({ page }) => {
+            // quest テーブルを開く（activateTabState により id=1 が初期選択される）
+            // quest の1行目は table_id=1 → N:1 で table テーブルが表示される
+            const mainTable = await openTableAsync(page, 'quest');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            // table テーブルセクションを取得する（N:1ミニテーブル）
+            const tableSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('table', { exact: true }),
+            });
+            await expect(tableSection).toBeVisible();
+
+            const miniTable = tableSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // N:1も emptyRowCount = entry.rows.length + 1 でバッファ行が確保されるため、
+            // ミニテーブルの末尾に editor-table-empty-row クラスの行が1行表示される。
+            const bufferRow = miniTable.locator('.editor-table-empty-row').first();
+            await expect(
+                bufferRow,
+                'N:1 ミニテーブル（table）にバッファ行（editor-table-empty-row）が最低1行表示されていること',
+            ).toBeVisible();
+        },
+    );
+
+    test(
+        'quest を開いた際、N:1 の chara ミニテーブルにバッファ行（editor-table-empty-row）が少なくとも1行存在すること',
+        async ({ page }) => {
+            // quest の1行目は chara_id=1 → N:1 で chara テーブルが表示される
+            const mainTable = await openTableAsync(page, 'quest');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            // chara テーブルセクションを取得する（N:1ミニテーブル）
+            const charaSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('chara', { exact: true }),
+            });
+            await expect(charaSection).toBeVisible();
+
+            const miniTable = charaSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // N:1も emptyRowCount = entry.rows.length + 1 でバッファ行が確保されるため、
+            // ミニテーブルの末尾に editor-table-empty-row クラスの行が1行表示される。
+            const bufferRow = miniTable.locator('.editor-table-empty-row').first();
+            await expect(
+                bufferRow,
+                'N:1 ミニテーブル（chara）にバッファ行（editor-table-empty-row）が最低1行表示されていること',
+            ).toBeVisible();
+        },
+    );
+
+    test(
+        'quest を開いた際、N:1 の table ミニテーブルに行数カウントを除く正しい行数が表示されること',
+        async ({ page }) => {
+            // quest の1行目（table_id=1）→ N:1 で table テーブルが表示される
+            // table.id=1（dungeon）の1行がデータ行として表示される
+            const mainTable = await openTableAsync(page, 'quest');
+            await selectRowAsync(mainTable, 0);
+            await waitForRelationsPanelContentAsync(page);
+
+            const tableSection = page.locator('.relations-table-section').filter({
+                has: page.locator('.relations-table-title').getByText('table', { exact: true }),
+            });
+            await expect(tableSection).toBeVisible();
+
+            const miniTable = tableSection.locator('.editor-table');
+            await expect(miniTable).toBeVisible();
+
+            // N:1も emptyRowCount = entry.rows.length + 1 でバッファ行が確保されるため、
+            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 3行が表示される。
+            const allRows = miniTable.locator('.editor-table-row');
+            await expect(
+                allRows,
+                'N:1 ミニテーブル（table）にはヘッダー(1) + データ(1) + バッファ(1) = 3行が表示されるべき',
+            ).toHaveCount(3);
         },
     );
 });

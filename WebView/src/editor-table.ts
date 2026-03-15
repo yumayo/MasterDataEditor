@@ -258,7 +258,7 @@ export class EditorTable {
             row.dataset.storeIndex = String(i);
             this.element.appendChild(row);
         }
-        // 全テーブルで storeRowIndices を初期化する（ミニテーブルは1:Nの場合のみ setStoreRowIndices() で上書き）
+        // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
         this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
         for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
             const cells = [];

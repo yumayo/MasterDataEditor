@@ -1531,3 +1531,18 @@ DiffTab での参照プリロード呼び出し漏れ
 新しいEditorTable生成パスを追加する際は、通常タブ（`Tab.createTabState`）の後処理チェックリストを必ず確認すること。特に `preloadReferenceTables` と `resolveReverseReferencesAsync` の呼び出しは、EditorTable生成のどのパスでも必須であることを意識する。
 
 ---
+
+## 104. [c3ae1f0] — N:1ミニテーブルにバッファ行（空行）が表示されず、データ追加ができない問題の修正
+
+### 不具合原因名
+対称操作の片方の欠落（emptyRowCount / storeRowIndices）
+
+### なぜそうなったのか
+`relations-panel.ts` の `buildMiniEditorTableAsync` で `emptyRowCount` を計算する際、`entry.relationType === '1:N' ? entry.rows.length + 1 : 0` という三項式により、1:Nミニテーブルにのみバッファ行を提供し、N:1ミニテーブルには `emptyRowCount=0` をハードコードしていた。また、N:1エントリの `storeRowIndices` が空配列のまま放置され、`setStoreRowIndices()` も1:Nの場合のみ呼ばれていたため、N:1ミニテーブルのストアインデックスがデフォルト値 `[0,1,...,n-1]` となり、フィルタリングされた行の実際のストアインデックスと一致しなかった。これは1:Nのバッファ行修正（過去のバグ修正）を実施した際にN:1への適用が漏れた「対称操作の片方の欠落」パターンである。
+
+### どうしたら今後は再発しないか
+ミニテーブルの生成パラメータ（`emptyRowCount`, `storeRowIndices`, `setAutoFillEntries` 等）を変更する際は、1:NとN:1の両方のコードパスに同じ変更が必要かを必ず確認する。条件分岐で `relationType` をチェックしている箇所は、その分岐が本当に必要かを検証し、不要であれば条件分岐を除去して統一する。
+
+---
+
+---

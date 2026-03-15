@@ -1106,7 +1106,7 @@ export class Tab {
     /**
      * リレーションパネル用ミニEditorTableを生成する
      *
-     * emptyRowCount を呼び出し元から受け取り、1:Nミニテーブルでは1以上を渡してバッファ行を確保する。
+     * emptyRowCount を呼び出し元から受け取り、N:1・1:Nいずれのミニテーブルでも1以上を渡してバッファ行を確保する。
      * 編集可能モードで生成し、FillControllerも有効化する。
      *
      * scrollContainer: editor-table / selection / areaResizer を配置する overflow:auto のスクロール領域

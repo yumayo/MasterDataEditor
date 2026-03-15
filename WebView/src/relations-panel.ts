@@ -30,8 +30,8 @@ interface RelationEntry {
     fkValue: string;
     /**
      * rows[i] がストアの何行目に対応するかのインデックス配列（0始まり）
-     * 1:Nフィルタリング時に記録し、ミニEditorTableの storeRowIndices として渡す。
-     * N:1はストアの全行を表示するため空配列（通常テーブルと同様 [0,1,...,n-1] として初期化される）。
+     * N:1・1:N ともにフィルタリング時に記録し、ミニEditorTableの storeRowIndices として渡す。
+     * N:1は参照先テーブルのFK一致行のみ表示するためデフォルト [0,1,...] とは一致しない場合がある。
      */
     storeRowIndices: number[];
 }
@@ -429,7 +429,10 @@ export class RelationsPanel {
         if (requestId !== this.currentRequestId) return null;
         const targetColIdx = targetTableData.header.indexOf(expr.targetColumn);
         if (targetColIdx === -1) return null;
-        const rows = targetTableData.rows.filter(row => row[targetColIdx] === fkValue);
+
+        // FK列値でフィルタし、実際のストアインデックスも収集する
+        const { filteredRows: rows, filteredStoreRowIndices: storeRowIndices } =
+            this.filterRowsByColumn(targetTableData.rows, targetTableData.header, expr.targetColumn, fkValue);
 
         return {
             label: columnLabel,
@@ -439,9 +442,7 @@ export class RelationsPanel {
             rows,
             fkColumnName: '',
             fkValue: '',
-            // N:1はストア全行を表示するため storeRowIndices は不要。
-            // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
-            storeRowIndices: [],
+            storeRowIndices,
         };
     }
 
@@ -478,9 +479,9 @@ export class RelationsPanel {
                 if (requestId !== this.currentRequestId) return entries;
                 const { header, rows: allRows } = refTableData;
 
-                // FK列値でフィルタ（PK列参照なら一意前提で1件、非PK列なら複数件）
-                const refColIdx = header.indexOf(expr.columnName);
-                const rows = refColIdx === -1 ? [] : allRows.filter(row => row[refColIdx] === fkValue);
+                // FK列値でフィルタし、実際のストアインデックスも収集する（PK列参照なら一意前提で1件、非PK列なら複数件）
+                const { filteredRows: rows, filteredStoreRowIndices: storeRowIndices } =
+                    this.filterRowsByColumn(allRows, header, expr.columnName, fkValue);
 
                 entries.push({
                     label: col.name,
@@ -490,9 +491,7 @@ export class RelationsPanel {
                     rows,
                     fkColumnName: '',
                     fkValue: '',
-                    // N:1はストア全行を表示するため storeRowIndices は不要。
-                    // ミニEditorTable の initialize() 時に通常テーブルとして [0,1,...] に初期化される。
-                    storeRowIndices: [],
+                    storeRowIndices,
                 });
             } else if (isDynamicReference(expr)) {
                 // resolveDynamicReferenceEntryAsync 内部で複数回 await するため、requestId を渡してガードさせる。
@@ -549,6 +548,28 @@ export class RelationsPanel {
         }
 
         return entries;
+    }
+
+    /**
+     * N:1参照のフィルタリング共通処理。
+     * columnName 列の値が filterValue と一致する行を収集し、実際のストアインデックスも返す。
+     * columnName が header に存在しない場合は空配列を返す。
+     */
+    private filterRowsByColumn(
+        allRows: string[][],
+        header: string[],
+        columnName: string,
+        filterValue: string,
+    ): { filteredRows: string[][]; filteredStoreRowIndices: number[] } {
+        const colIdx = header.indexOf(columnName);
+        if (colIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
+        const filteredWithIndices = allRows
+            .map((r, i) => ({ row: r, storeIndex: i }))
+            .filter(({ row }) => row[colIdx] === filterValue);
+        return {
+            filteredRows: filteredWithIndices.map(({ row }) => row),
+            filteredStoreRowIndices: filteredWithIndices.map(({ storeIndex }) => storeIndex),
+        };
     }
 
     /**
@@ -806,19 +827,16 @@ export class RelationsPanel {
         // scrollContainer: スクロール担当（overflow:auto）
         // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー、座標基準）
         // wrapper: ドロップダウンの配置先（overflow:visible、クリッピング回避）
-        // 1:Nミニテーブルには最低1行のバッファ行を表示する（行追加のエントリポイントとして機能させるため）
+        // すべてのミニテーブルに最低1行のバッファ行を表示する（行追加のエントリポイントとして機能させるため）
         // emptyRowCount はデータ行+バッファ行の合計最低行数なので、データ行数+1 を渡す
-        // N:1ミニテーブルは参照先の全行を表示するのみなのでバッファ行は不要
-        const emptyRowCount = entry.relationType === '1:N' ? entry.rows.length + 1 : 0;
+        const emptyRowCount = entry.rows.length + 1;
         const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
             scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows, emptyRowCount
         );
-        // 全ミニテーブルは initialize() で storeRowIndices = [0, 1, ...] に初期化される。
-        // 1:Nの場合のみ filteredStoreRowIndices で上書きする（フィルタリングされた行のストアインデックス）。
-        // N:1はストア全行をそのまま表示するため initialize() の初期値で正しい。
-        if (entry.relationType === '1:N') {
-            editorTable.setStoreRowIndices(entry.storeRowIndices);
-        }
+        // 全ミニテーブルにフィルタリングされた行の実際のストアインデックスを設定する。
+        // N:1は参照先テーブルの一致行のみ表示するため、initialize() のデフォルト [0,1,...] では実際と一致しない。
+        // 1:N も同様にフィルタリングされた行のインデックスを使う。
+        editorTable.setStoreRowIndices(entry.storeRowIndices);
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
         if (entry.fkColumnName !== '' && entry.fkValue !== '') {
             editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);
@@ -988,8 +1006,10 @@ export class RelationsPanel {
 
                 const refTableData = await this.resolveTableDataAsync(expr.tableName);
                 if (requestId !== this.currentRequestId) return entries;
-                const refColIdx = refTableData.header.indexOf(expr.columnName);
-                const rows = refColIdx === -1 ? [] : refTableData.rows.filter(row => row[refColIdx] === fkValue);
+
+                // FK列値でフィルタし、実際のストアインデックスも収集する
+                const { filteredRows: rows, filteredStoreRowIndices: storeRowIndices } =
+                    this.filterRowsByColumn(refTableData.rows, refTableData.header, expr.columnName, fkValue);
 
                 entries.push({
                     label: col.name,
@@ -999,7 +1019,7 @@ export class RelationsPanel {
                     rows,
                     fkColumnName: '',
                     fkValue: '',
-                    storeRowIndices: [],
+                    storeRowIndices,
                 });
             } else if (isDynamicReference(expr)) {
                 // resolveEntriesForEditorRowAsync と同じ共通メソッドで動的参照を解決する。
