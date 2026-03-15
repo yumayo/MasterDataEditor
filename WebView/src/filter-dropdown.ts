@@ -152,6 +152,7 @@ export class FilterDropdown {
     /**
      * 指定列のユニーク値からチェックボックスリストを構築する。
      * 既存フィルター状態があれば反映する。
+     * columnIndex は DOM列インデックス（0始まり）。ストア列インデックスに変換してから ColumnFilter に渡す。
      */
     private buildItems(columnIndex: number): void {
         this.itemList.innerHTML = '';
@@ -159,8 +160,10 @@ export class FilterDropdown {
         const storeRows = this.table.getStore().getRows(this.table.tableName);
         if (storeRows === false) return;
 
-        const uniqueValues = this.columnFilter.getUniqueValues(columnIndex, storeRows);
-        const existingSelection = this.columnFilter.getSelectedValues(columnIndex);
+        // DOM列インデックス → ストア（CSV）列インデックスに変換する
+        const storeColumnIndex = this.table.getStoreColumnIndex(columnIndex);
+        const uniqueValues = this.columnFilter.getUniqueValues(storeColumnIndex, storeRows);
+        const existingSelection = this.columnFilter.getSelectedValues(storeColumnIndex);
 
         for (const value of uniqueValues) {
             const item = this.createCheckboxItem(value, existingSelection);
@@ -235,21 +238,24 @@ export class FilterDropdown {
 
     /**
      * 適用ボタンのハンドラ: チェックされた値でフィルターを適用してドロップダウンを閉じる。
+     * currentColumnIndex は DOM列インデックスのため、ストア列インデックスに変換してから ColumnFilter に渡す。
      */
     private applyAndClose(): void {
+        const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         const selectedValues = this.collectCheckedValues();
-        this.columnFilter.applyFilter(this.currentColumnIndex, selectedValues);
+        this.columnFilter.applyFilter(storeColumnIndex, selectedValues);
         this.hide();
         this.table.applyFilterDisplay();
     }
 
     /**
      * クリアボタンのハンドラ: 当該列のフィルターを解除してドロップダウンを閉じる。
+     * currentColumnIndex は DOM列インデックスのため、ストア列インデックスに変換してから ColumnFilter に渡す。
      */
     private clearAndClose(): void {
-        const colIndex = this.currentColumnIndex;
+        const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         this.hide();
-        this.columnFilter.clearFilter(colIndex);
+        this.columnFilter.clearFilter(storeColumnIndex);
         this.table.applyFilterDisplay();
     }
 

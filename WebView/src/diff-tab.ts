@@ -77,10 +77,13 @@ export class DiffTab {
         const primaryKeyNames: readonly string[] = Array.isArray(schema.primary_key)
             ? schema.primary_key
             : [schema.primary_key];
-        const columnCount = schema.header.length;
 
         // 差分計算（ファイル行順）
         const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
+        // columnCount はスキーマ列数ではなくCSV全列数（displayHeader.length）を使う。
+        // スキーマが非連番keyの場合、changedColumnIndices はCSV列インデックス（0〜N-1）を持つため、
+        // CSV全列数で切り詰めないと applyDiffClasses でインデックス範囲外になる。
+        const columnCount = displayHeader.length;
         const {
             leftRows, rightRows,
             leftEmptyRowIndices, rightEmptyRowIndices,
@@ -155,12 +158,23 @@ export class DiffTab {
         this.leftEditorTable.diffTab = this;
         this.rightEditorTable.diffTab = this;
 
+        // CSV列インデックス → DOM列インデックスの逆引きマップを構築する。
+        // columnMapping[domIndex] = csvIndex なので、逆引きは Map<csvIndex, domIndex> となる。
+        // スキーマに定義されていないCSV列（-1 のエントリ）はマップに含めない。
+        // 左右ペインはどちらも同じスキーマ由来なので leftResult で代表する。
+        const csvIndexToDomIndex = new Map<number, number>();
+        for (let domIdx = 0; domIdx < leftResult.tableData.columnMapping.length; domIdx++) {
+            const csvIdx = leftResult.tableData.columnMapping[domIdx];
+            if (csvIdx !== -1) csvIndexToDomIndex.set(csvIdx, domIdx);
+        }
+
         // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
         this.applyDiffClasses(
             this.leftEditorTable, this.rightEditorTable,
             leftEmptyRowIndices, rightEmptyRowIndices,
             leftDeletedRowIndices, rightAddedRowIndices,
-            leftModifiedCells, rightModifiedCells
+            leftModifiedCells, rightModifiedCells,
+            csvIndexToDomIndex
         );
 
         // 左ペイン（HEAD版）は常に読み取り専用にする
@@ -437,6 +451,10 @@ export class DiffTab {
      * 差分クラスをEditorTableのDOMに付与する
      * EditorTable.getCell(row, col) でセル要素を取得し、直接CSSクラスを追加する
      * row は1始まり（0がヘッダー行）、col は1始まり（0が行ヘッダー）
+     *
+     * @param csvIndexToDomIndex CSV列インデックス → DOM列インデックスの逆引きマップ。
+     *   スキーマに定義されていないCSV列はマップに含まれないためスキップされる。
+     *   非連番keyスキーマではCSV列インデックス（0〜全列-1）とDOM列インデックスが一致しないため必須。
      */
     private applyDiffClasses(
         leftTable: EditorTable,
@@ -446,7 +464,8 @@ export class DiffTab {
         leftDeletedRowIndices: number[],
         rightAddedRowIndices: number[],
         leftModifiedCells: Array<{ row: number; col: number }>,
-        rightModifiedCells: Array<{ row: number; col: number }>
+        rightModifiedCells: Array<{ row: number; col: number }>,
+        csvIndexToDomIndex: Map<number, number>
     ): void {
         const leftElement = leftTable.getTableElement();
         const rightElement = rightTable.getTableElement();
@@ -474,15 +493,19 @@ export class DiffTab {
         }
 
         // 左ペインの変更セル（.diff-cell-deleted）
-        // EditorTable.getCell は row=1始まり、col=1始まりで取得する
-        // buildMergedData で生成したインデックスはDOMと同期しているためtry-catchは不要
-        for (const { row: rowIdx, col: colIdx } of leftModifiedCells) {
-            leftTable.getCell(rowIdx + 1, colIdx + 1).classList.add('diff-cell-deleted');
+        // colIdx はCSV列インデックスなので、DOM列インデックスへ変換する。
+        // スキーマに定義されていないCSV列（csvIndexToDomIndex に存在しない）はスキップする。
+        for (const { row: rowIdx, col: csvColIdx } of leftModifiedCells) {
+            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
+            if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
+            leftTable.getCell(rowIdx + 1, domColIdx + 1).classList.add('diff-cell-deleted');
         }
 
         // 右ペインの変更セル（.diff-cell-added）
-        for (const { row: rowIdx, col: colIdx } of rightModifiedCells) {
-            rightTable.getCell(rowIdx + 1, colIdx + 1).classList.add('diff-cell-added');
+        for (const { row: rowIdx, col: csvColIdx } of rightModifiedCells) {
+            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
+            if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
+            rightTable.getCell(rowIdx + 1, domColIdx + 1).classList.add('diff-cell-added');
         }
     }
 }

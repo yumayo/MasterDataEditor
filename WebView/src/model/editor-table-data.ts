@@ -14,15 +14,26 @@ export class EditorTableData {
 
     body: EditorTableDataRow[];
 
+    /**
+     * スキーマ列（DOM列）インデックス → ストア（CSV）列インデックスのマッピング。
+     * DOM列インデックス i に対して columnMapping[i] がCSVの何番目の列かを示す。
+     * 対応するCSV列が存在しない場合は -1。
+     * 非連番keyスキーマ（key=0,3,4...）ではDOMインデックスとストアインデックスが異なるため、
+     * ソート・git差分ハイライト等でストア行にアクセスする際は必ずこのマッピングを介すること。
+     */
+    columnMapping: readonly number[];
+
     constructor(
         description: string | null, primaryKeyColumns: readonly string[],
         header: EditorTableDataColumn[],
-        body: EditorTableDataRow[]
+        body: EditorTableDataRow[],
+        columnMapping: readonly number[]
     ) {
         this.description = description;
         this.primaryKeyColumns = primaryKeyColumns;
         this.header = header;
         this.body = body;
+        this.columnMapping = columnMapping;
     }
 
     /**
@@ -85,7 +96,7 @@ export class EditorTableData {
         }
 
         return new EditorTableData(
-            description, primaryKeyColumns, columns, rows
+            description, primaryKeyColumns, columns, rows, columnMapping
         );
     }
 

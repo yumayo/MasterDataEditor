@@ -170,11 +170,12 @@ export class ColumnSorter {
         indicesToSort.sort((aStoreIdx, bStoreIdx) => {
             // 優先度の高い順（sortKeys[0] が最高優先度）に比較する
             for (const key of this.sortKeys) {
-                // DOM列インデックス（0始まり、行ヘッダーなし）はストアの列インデックスと一致する
+                // DOM列インデックスをストア（CSV）列インデックスに変換する（ファサード経由）
+                const storeColIndex = this.table.getStoreColumnIndex(key.columnIndex);
                 const aRow = storeRows[aStoreIdx];
                 const bRow = storeRows[bStoreIdx];
-                const aVal = aRow[key.columnIndex];
-                const bVal = bRow[key.columnIndex];
+                const aVal = storeColIndex < aRow.length ? aRow[storeColIndex] : '';
+                const bVal = storeColIndex < bRow.length ? bRow[storeColIndex] : '';
                 const cmp = compareValues(aVal, bVal);
                 if (cmp !== 0) {
                     return key.direction === 'asc' ? cmp : -cmp;

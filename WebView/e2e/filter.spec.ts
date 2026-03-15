@@ -623,6 +623,103 @@ test.describe('フィルター機能', () => {
         );
     });
 
+    test.describe('非連番keyスキーマでのフィルター', () => {
+        /**
+         * 非連番keyスキーマテスト用のファイルシステムを生成する。
+         *
+         * テーブル構成:
+         *   item: スキーマ列は id（DOM列0, CSV列0）と attack（DOM列1, CSV列3）の2列のみ。
+         *   CSVには id,hp,mp,attack,defense の5列が存在するが、スキーマでは id と attack しか定義しない。
+         *   これにより DOM列インデックス ≠ ストア（CSV）列インデックスとなる。
+         *   attack の DOM列インデックスは 1 だが、CSV列インデックスは 3 である。
+         *
+         * このテストは BUG_0021 修正（ColumnFilter のDOM列/ストア列インデックス変換）の回帰テスト。
+         * 修正前: filterMap に DOM列インデックス=1 がセットされ、storeRows[row][1]=hp でフィルターされる誤動作。
+         * 修正後: filterMap にストア列インデックス=3 がセットされ、storeRows[row][3]=attack で正しくフィルターされる。
+         */
+        function createNonSequentialKeyFilterTestFileSystem(): MockFileSystem {
+            return {
+                "schema/item.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        // attack のみ定義（hp, mp, defense はスキーマに含まれない）
+                        { key: 3, name: "attack", type: "int" },
+                    ],
+                    primary_key: "id",
+                }),
+                // CSV は id,hp,mp,attack,defense の5列（スキーマよりも多い列を持つ）
+                // attack 列（CSV列3）の値: 10, 20, 10, 30, 20
+                "data/item.csv": [
+                    "id,hp,mp,attack,defense",
+                    "1,100,50,10,5",
+                    "2,200,80,20,8",
+                    "3,150,60,10,6",
+                    "4,300,100,30,10",
+                    "5,250,90,20,9",
+                ].join("\n"),
+            };
+        }
+
+        test.beforeEach(async ({ page }) => {
+            const fs = createNonSequentialKeyFilterTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test(
+            '非連番keyスキーマのattack列（DOM列1、CSV列3）でフィルターが正しく動作する',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // フィルター前: DOM列1(attack) は 10, 20, 10, 30, 20 の順
+                const before = await getVisibleColumnValuesAsync(table, 1);
+                expect(before).toEqual(['10', '20', '10', '30', '20']);
+
+                // attack 列（DOM列1）のフィルターアイコンをクリック
+                await clickFilterIconAsync(table, 1);
+
+                // ドロップダウンに表示されるユニーク値が attack の値（10, 20, 30）であることを確認
+                // （修正前バグでは hp 列の値 100, 150, 200, 250, 300 が表示されていた）
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+                await expect(dropdown).toContainText('10');
+                await expect(dropdown).toContainText('20');
+                await expect(dropdown).toContainText('30');
+                // hp 列の値が表示されていないことを確認（修正前バグの検証）
+                await expect(dropdown).not.toContainText('100');
+                await expect(dropdown).not.toContainText('200');
+
+                // "30" のチェックを外す（attack=10 と attack=20 の行のみ残す）
+                await setFilterItemCheckedAsync(page, '30', false);
+                await applyFilterAsync(page);
+
+                // attack=30 の行（id=4）が非表示になり、attack=10,20 の行のみ表示される
+                const after = await getVisibleColumnValuesAsync(table, 1);
+                expect(after).toEqual(['10', '20', '10', '20']);
+            },
+        );
+
+        test(
+            '非連番keyスキーマのattack列フィルター適用後に .filter-active クラスが正しく付与される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                const headerRow = table.locator('.editor-table-column-header-row');
+                const attackHeader = headerRow.locator('.editor-table-column-header').nth(1);
+
+                // フィルター適用前は .filter-active クラスがない
+                await expect(attackHeader).not.toHaveClass(/filter-active/);
+
+                // attack 列で "30" を除外するフィルター適用
+                await clickFilterIconAsync(table, 1);
+                await setFilterItemCheckedAsync(page, '30', false);
+                await applyFilterAsync(page);
+
+                // フィルター適用後は .filter-active クラスが付与される
+                await expect(attackHeader).toHaveClass(/filter-active/);
+            },
+        );
+    });
+
     test.describe('ソートとフィルターの組み合わせ', () => {
         test.beforeEach(async ({ page }) => {
             const fs = createSortFilterTestFileSystem();

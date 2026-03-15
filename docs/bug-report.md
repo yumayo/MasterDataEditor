@@ -1669,3 +1669,16 @@ DiffTab の buildDiffEditorTable() でドロップダウン初期化処理の欠
 絶対配置要素を追加する際は、テキスト領域との重なりを防ぐために対応する方向の padding を必ずセットで確保する。`has-badge`（左パディング）と `has-icons`（右パディング）のように、CSS クラスとパディング確保をペアで設計するパターンを踏襲すること。列幅の自動計算（`calculateColumnWidth`）にもパディング分を含める。
 
 ---
+
+## 114. [0f33e8f] — 非連番keyスキーマでソート・差分ビュー・フィルターの列参照がずれる
+
+### 不具合原因名
+DOM列インデックスとCSV列インデックスの取り違え
+
+### なぜそうなったのか
+スキーマの `key` が 0,1,2... の連番であることを暗黙の前提としており、`ColumnSorter.computeSortedIndices`、`DiffTab.applyDiffClasses`、`EditorTable.applyGitDiffHighlight`、`ColumnFilter.computeFilteredIndices`、`FilterDropdown` のいずれもがDOM列インデックスをそのままCSV配列のインデックスとして使用していた。`columnMapping`（DOM列→CSV列の変換テーブル）は `EditorTableData.parse()` 内でローカル変数として一時的に構築されていたが、インスタンスフィールドとして保持されておらず、呼び出し側が参照する手段がなかった。結果として、スキーマkeyが非連番のテーブル（例: key=0,3,4,5,7）で列参照のずれが複数箇所で同時発生した。
+
+### どうしたら今後は再発しないか
+`columnMapping` を `EditorTableData` のインスタンスフィールドとして公開し、`EditorTable.getStoreColumnIndex()` ファサードメソッドを追加した。ストア行にアクセスする際は必ずこのファサードを経由するルールを徹底する。新たにストア行の列を参照するコードを書く際は「DOM列インデックスをそのまま配列インデックスに使っていないか」を確認する。bug-report.md #64（ミニテーブル行追加時のストアインデックス未変換）と同構造のパターンであり、行方向の `storeRowIndices` と列方向の `columnMapping` という対称な設計で統一された。
+
+---

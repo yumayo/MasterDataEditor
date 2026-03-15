@@ -181,6 +181,17 @@ export class EditorTable {
     /** 内部モジュール用: テーブルデータを取得する */
     getTableData(): EditorTableData { return this.tableData; }
 
+    /**
+     * DOM列インデックス（0始まり）をストア（CSV）列インデックスに変換して返す。
+     * 対応するCSV列が存在しない場合、または範囲外の場合は -1 を返す。
+     * ColumnSorter・ColumnFilter・FilterDropdown などが columnMapping に直接触れないようにするファサード。
+     */
+    getStoreColumnIndex(domColumnIndex: number): number {
+        const mapping = this.tableData.columnMapping;
+        if (domColumnIndex < 0 || domColumnIndex >= mapping.length) return -1;
+        return mapping[domColumnIndex];
+    }
+
     /** 内部モジュール用: 中央ストアを取得する */
     getStore(): InMemoryTableStore { return this.store; }
 
@@ -1264,13 +1275,15 @@ export class EditorTable {
 
     /**
      * 全列ヘッダーのフィルタークラス（.filter-active）を現在のフィルター状態に合わせて更新する。
+     * ColumnFilter はストア列インデックスで管理しているため、DOM列インデックスを変換してから参照する。
      */
     private updateFilterActiveClasses(): void {
         const headerRow = this.element.children[0];
         const columnCount = this.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; colIdx++) {
             const headerCell = headerRow.children[colIdx + 1] as HTMLElement;
-            if (this.columnFilter.isColumnFiltered(colIdx)) {
+            const storeColIdx = this.getStoreColumnIndex(colIdx);
+            if (storeColIdx !== -1 && this.columnFilter.isColumnFiltered(storeColIdx)) {
                 headerCell.classList.add('filter-active');
             } else {
                 headerCell.classList.remove('filter-active');
@@ -1457,6 +1470,9 @@ export class EditorTable {
         }
         const storeRows = this.store.getRows(this.tableName);
         if (storeRows === false) return;
+        // DOM列インデックス（0始まり）→ ストア（CSV）列インデックスのマッピングを取得する。
+        // 非連番keyスキーマではDOMインデックスとCSVインデックスが一致しないため変換が必須。
+        const columnMapping = this.tableData.columnMapping;
         // row=1 から開始（row=0 は列ヘッダー行のため除外）
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
@@ -1467,8 +1483,11 @@ export class EditorTable {
             const storeRowIndex = this.storeRowIndices[domDataRowIndex];
             // col=1 から開始（col=0 は行ヘッダーセルのため除外）
             for (let col = 1; col < totalColCount; col++) {
+                const domColIndex = col - 1; // DOM列インデックス（0始まり）
+                const storeColIndex = columnMapping[domColIndex]; // CSV列インデックスに変換
+                if (storeColIndex === -1) continue; // 対応するCSV列がない場合はスキップ
                 const cell = this.getCell(row, col);
-                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, col - 1);
+                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, storeColIndex);
             }
         }
     }
@@ -1507,10 +1526,18 @@ export class EditorTable {
             this.applyGitDiffHighlight();
             return;
         }
-        // 複合PKの全列インデックスを取得する（いずれか1列でも見つからない場合はハイライト不可）
+        // 複合PKのストア（CSV）列インデックスを取得する（いずれか1列でも見つからない場合はハイライト不可）
+        // GitDiffTracker はストア行（CSV列順）に対してインデックスを使うため、DOM列インデックスではなく
+        // ストア列インデックスを使う必要がある。ストアヘッダーから列名で検索する。
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeHeader === false) {
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
+            return;
+        }
         const pkColumnIndices: number[] = [];
         for (const pkColName of this.tableData.primaryKeyColumns) {
-            const idx = this.tableData.header.findIndex(col => col.name === pkColName);
+            const idx = storeHeader.indexOf(pkColName);
             if (idx === -1) {
                 // PKカラムが見つからない場合はトラッカーをリセットして中途半端なハイライトを除去する
                 this.gitDiffTracker = false;
@@ -1573,14 +1600,16 @@ export class EditorTable {
         if (storeColIndex === -1) return;
         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
+        // storeColIndex はすでにCSV列インデックスに変換済みのためそのまま渡す（column-1はDOM列インデックスなので誤り）
         const id = this.reference.getRowPkValue(row);
-        this.referenceDataCache.updateFullDataCell(this.tableName, id, column - 1, value);
+        this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
         // git差分ハイライトをこのセル1つ分だけ再評価する
+        // storeColIndex はすでにストア（CSV）列インデックスに変換済みなのでそのまま使う
         if (this.gitDiffTracker !== false) {
             const latestRows = this.store.getRows(this.tableName);
             if (latestRows !== false) {
                 const cell = this.getCell(row, column);
-                this.updateSingleCellGitHighlight(cell, latestRows, storeRowIndex, column - 1);
+                this.updateSingleCellGitHighlight(cell, latestRows, storeRowIndex, storeColIndex);
             }
         }
     }
