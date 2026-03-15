@@ -228,6 +228,16 @@
 - **KNOWN ISSUE**: insertColumnInternal signature only accepts comment, not isPrimaryKey/reference -> caller cannot restore badges on Undo
 - **KNOWN ISSUE**: CSS colors hardcoded (6th occurrence)
 
+## FEAT_0019 Explorer Active Highlight + 2-row Display (2026-03-15)
+- **CRITICAL**: navigateToTableRow/navigateToTableCell/CommandPalette → append(name, null) → TabButton(null) → createTabState → tableData.description判明するが更新手段なし → 永続1行表示
+- **CRITICAL**: setDisplayName廃止で代替手段がない。ExplorerFileクリック以外で開いたタブは全て1行表示のまま
+- **KNOWN ISSUE**: ExplorerDirectory.appendFile 重複登録時 Map上書きのみでDOM上に重複ノードが残る（防衛的チェックなし）
+- **KNOWN ISSUE**: closeAllDiffTabs後に残存normalタブのexplorer highlightが復元されない（tab-button-activeも消えたまま）
+- **KNOWN ISSUE**: ExplorerFile._description 命名がコードベース一貫性を欠く（他は _prefix なし）
+- **KNOWN ISSUE**: ExplorerFile.name, ExplorerFile.depth が不要な public readonly
+- **KNOWN ISSUE**: tab.css の line-height: 44px が2行TabButton時代にデッドCSS
+- **Pattern**: コンストラクタで DOM構造を確定するアプローチでは「後からdescriptionが判明する」フローを扱えない。description=null で生成した TabButton を createTabState で後から更新するAPIが必要
+
 ## BUG_0016 差分タブDirtyマーク+Ctrl+S修正 (2026-03-15)
 - **CRITICAL**: markSavedAndUpdatePanel() が this.table.tableName（= storeKey 'tableName:diff:current'）でmarkAllSaved → 元テーブル（saveTargetTableName）のHistoryセットは未更新。通常タブが同テーブルを開いていると、差分タブ保存後も通常タブの●が消えない。
 - **CRITICAL**: setSaveTargetTableName はsetterであり生焼けオブジェクトパターン（コンストラクタ引数化すべき）
@@ -254,9 +264,24 @@
 - **KNOWN ISSUE**: dummyTabButton DOM+リスナーリーク (FEAT_0008から未修正)
 - **Pattern**: 単一フィールド→Mapへの移行時に「閉じる」API の意味が変わるリスク（1個を閉じる vs 全部閉じる）を見落とす
 
+## FEAT_0019 Explorer Highlight R2 (2026-03-15)
+- **FIXED**: setDisplayName廃止 -> applyDescription(後付けspan挿入)に変更
+- **FIXED**: closeAllDiffTabs末尾でhighlightExplorerFile/clearExplorerHighlight追加
+- **FIXED**: name/depth/onClick -> private、_description->description
+- **FIXED**: ExplorerDirectory.appendFile重複チェック追加
+- **CRITICAL**: applyDescription呼び出しはcreateTabStateの.then内だが、tabButton参照は古いタブが閉じられた場合にDOM孤立する -> 孤立tabButtonへのDOM操作は無音で捨てられ、再度開いたタブのdescriptionが消える
+- **CRITICAL**: closeAllDiffTabs末尾のhighlight復元は「先頭通常タブ」を使うが activeTabName は false のまま -> activeTabName と explorer highlight の乖離。enableTabButton を使わずにhighlightだけ呼ぶのは半端な修正
+- **KNOWN ISSUE**: applyDescription内の querySelector('.tab-button-label')! が非null assertionのまま
+- **KNOWN ISSUE**: main.ts のfor+await直列化でN往復IPC（Promise.allで並列化すべき）
+- **KNOWN ISSUE**: highlightExplorerFile に未登録名を渡しても無音で全ハイライト解除（警告なし）
+- **KNOWN ISSUE**: ExplorerFile.appendTo が public → element が間接漏洩
+- **KNOWN ISSUE**: tab.css line-height:44px が2行TabButton時に崩れる可能性
+- **KNOWN ISSUE**: main.ts (window as any).editor が any禁止違反
+
 ## Review History (continued)
 - 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
 - 2026-03-15 (FEAT_0014 buffer-row-autofill R1): 致命的2件、重要3件、軽微2件
 - 2026-03-15 (FEAT_0016 pk-fk-badge R1): 致命的2件、重要5件、軽微3件
 - 2026-03-15 (diffTab Map化): 致命的2件、重要3件、軽微3件
 - 2026-03-15 (FEAT_0017 pk-fk-badge-left R1): 致命的2件、重要4件、軽微3件
+- 2026-03-15 (FEAT_0019 explorer-highlight R2): 致命的2件、重要5件、軽微3件
