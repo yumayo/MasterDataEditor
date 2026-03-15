@@ -173,7 +173,8 @@ const allRows = itemTable.locator('.editor-table-row');
 const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row)');
 await expect(allRows).toHaveCount(5); // ヘッダー(1) + データ(4) = 5
 ```
-ミニテーブルは `emptyRowCount=0` なので `.editor-table-row` で全行カウントしても問題なし。
+ミニテーブルも `emptyRowCount = entry.rows.length + 1` のためバッファ空行が1行存在する。
+`.editor-table-row:not(.editor-table-empty-row)` でバッファ除外すること（N:1・1:N どちらも同様）。
 
 ## テスト実行環境の知見
 
@@ -200,14 +201,22 @@ production ビルドの console.log はテスト出力に出ない。`page.on('c
 page.on('console', msg => { ... });
 ```
 
-### Object.assign パターンと initializeModules() の注意点（重要）
-`createEditorTable()` では循環依存解決のために `editorTable = {} as EditorTable`（空オブジェクト）を作成し、
-`new EditorTable(...)`（realEditorTable）を `Object.assign(editorTable, realEditorTable)` でコピーする。
+### Object.assign パターンと initializeModules() の注意点
+詳細は `patterns.md` 参照。新しく `new Xxx(this, ...)` を追加したら `initializeModules()` に再作成コードを追加すること。
 
-**落とし穴**: コンストラクタ内で `new FilterDropdown(this, ...)` と作成されたオブジェクトは `this = realEditorTable` を参照する。
-`Object.assign` 後も `filterDropdown.table = realEditorTable` のまま。
-`realEditorTable` は `initialize()` が呼ばれないため `storeRowIndices = []` → フィルター適用時に全ループがスキップされる。
+### Ctrl+Shift+Z の Redo キーハンドリング
+`editor-table-handler.ts` の Redo は `Ctrl+Y` と `Ctrl+Shift+Z` の両方に対応する。
+`Shift+Z` を押すと `keyboardEvent.key === 'Z'`（大文字）になるため Ctrl+Z (Undo) と区別される。
+```typescript
+if (keyboardEvent.ctrlKey && (keyboardEvent.key === 'y' || keyboardEvent.key === 'Z')) {
+    // Redo処理
+}
+```
 
-**対策**: `this` を参照するサブオブジェクト（`FilterDropdown` 等）は `initializeModules()` で再作成する。
-`reference`, `contextMenuHandler`, `structure` はすでにそうしている。新しくコンストラクタで `new Xxx(this, ...)` を追加したら
-必ず `initializeModules()` に再作成コードを追加すること。
+### DiffTabのパディング行同期パターン（FEAT_0018）
+EditorTableStructure の行挿入・削除が diffTab 接続時に左ペインのパディング行を同期する。
+- `insertRowInternal` 末尾: `diffTab.notifyRightPaneRowInserted(rowIndex)` で左ペインにパディング行挿入
+- `deleteRow` DOM削除: `diffTab.notifyRightPaneRowDeleted(rowIndex, rowElement)` に委譲
+  - `diff-row-padding-inserted` クラス付き → 行挿入のUndo → 左右DOM行を削除
+  - それ以外（通常削除）→ 右ペインをパディング行変換 + 左ペインに `diff-row-deleted` 付与
+Undo/Redo の対称性はDOMのクラス状態（`diff-row-padding-inserted`）で判断する。

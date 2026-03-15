@@ -200,6 +200,7 @@
 ## Review History (continued)
 - 2026-03-15 (N:1-buffer-row): 致命的2件、重要3件、軽微2件
 - 2026-03-15 (diff-tab-reference-hint): 致命的2件、重要3件、軽微2件
+- 2026-03-15 (FEAT_0018 diff-tab-row-insert-delete-sync): 致命的2件、重要4件、軽微3件
 
 ## diff-tab-reference-hint fix (2026-03-15)
 - **CRITICAL**: buildDiffEditorTable() missing setReferenceComponents() + createDropdownInput() -> FK dropdown disabled in right pane even with isStaged=false
@@ -212,6 +213,14 @@
 - **CRITICAL**: storeRowIndices: [] comment lies "N:1 shows all rows" but rows is filtered subset; same lie existed before this change but only became dangerous when buffer row was added
 - **KNOWN ISSUE**: N:1 buffer row tests only verify visibility, not that store is NOT corrupted on buffer row input
 - **Pattern**: "partial-subset storeRowIndices" bug - whenever filtered rows are displayed but storeRowIndices is not set to actual store indices, buffer row promote corrupts the backing store
+
+## FEAT_0018 DiffTab Row Insert/Delete Sync (2026-03-15)
+- **CRITICAL**: InsertRowsCommand.execute() calls insertRowInternal(rowIndex) count times with same rowIndex → notifyRightPaneRowInserted(rowIndex) fires with same index each time → left pane accumulates padding rows at same position instead of sequential positions
+- **CRITICAL**: DeleteRowCommand.undo() calls insertRowInternal() (new row) but original deleteRow converted right pane row to padding (not removed) → right pane row count inflates by 1 per undo cycle; padding-converted row remains as ghost
+- **KNOWN ISSUE**: notifyRightPaneRowDeleted does not renumberLeftRows in normal-delete path (行数不変なので data-row はずれないが非対称)
+- **KNOWN ISSUE**: convertRightRowToPadding called on already-diff-row-empty initial padding row → semantic mismatch (store row deleted but DOM was never real data)
+- **KNOWN ISSUE**: diff-row-deleted double-add when left row already has diff-row-deleted from initial applyDiffClasses
+- **Pattern**: InsertRowsCommand fixed-rowIndex loop + DOM notification inside insertRowInternal = notification index must equal actual DOM insert position, not original rowIndex
 
 ## FEAT_0017 PK/FK Badge Left Placement (2026-03-15)
 - **CRITICAL**: DeleteColumnCommand.undo() still does not restore badge (same as FEAT_0016 unfixed) -> isPrimaryKey/reference not saved/restored
