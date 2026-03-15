@@ -85,6 +85,17 @@
 - **PATTERN**: deleteRow の diffTab条件チェックが必要な理由: deleteRow はコンテキストメニューから DiffTab テーブルでも呼ばれる。promoteBufferRowToStore/demoteStoreRowToBuffer は DiffTab テーブルで isBufferRow が常に false のため呼ばれず、diffTab条件チェック不要
 - **PATTERN**: ensureTrailingBufferRow はアクセス修飾子なし(暗黙public) — EditorTableStructure から呼ばれるため private 化不可（TypeScript の package-level アクセス制御がない）
 
+## BUG_0021 Non-Sequential Schema Key Known Patterns
+- **FIXED**: column-sorter.ts computeSortedIndices に getStoreColumnIndex() ファサード経由のDOM→CSV変換追加
+- **FIXED**: diff-tab.ts columnCount を schema.header.length から displayHeader.length に修正
+- **FIXED**: diff-tab.ts csvIndexToDomIndex 逆引きマップ構築して applyDiffClasses に渡す
+- **FIXED**: editor-table.ts applyGitDiffHighlight に columnMapping 変換追加
+- **FIXED**: editor-table.ts refreshGitDiffAsync の pkColumnIndices をstoreHeader.indexOf に修正
+- **FIXED**: ColumnFilter / FilterDropdown が getStoreColumnIndex() ファサード経由でストア列インデックスを使うよう修正
+- **CRITICAL UNFIXED (R2)**: updateCellValueAt (editor-table.ts L1604) が `updateFullDataCell` に `column - 1`（DOM列インデックス）を渡している。storeColIndex（L1600で取得済み）を使うべき。非連番keyスキーマで参照キャッシュが汚染される。
+- **PATTERN**: columnMapping 変換が必要な箇所: ソート・フィルター・git差分ハイライト・referenceDataCache更新の4箇所。修正漏れが発生しやすい。
+- **PATTERN**: getStoreColumnIndex() ファサードを追加してもそのすぐ下のコードで storeColIndex を使わず column-1 を渡すミスが発生した。同一メソッド内の全column参照を横断チェックすること。
+
 ## FEAT_0023 Header Icon Separation Known Patterns
 - **CRITICAL**: diff-tabはisMiniTable=trueだが、EditorTableData.parse(..., true)を渡している。isMiniTableInstance()=trueのためcreateColumnHeaderCellがhas-iconsクラスを付与せずアイコンも追加しないが、列幅にHEADER_ICON_AREA_PX(48px)が加算される → 「幅広いのにアイコンがない」逆転バグ
 - **CRITICAL**: area-resizerの最小列幅が20pxハードコード → MIN_COLUMN_WIDTH_PX(50px)定数と乖離。has-icons列で20pxまで縮小するとアイコン(right:30px)がセル外にはみ出す
@@ -111,3 +122,5 @@
 - (FEAT_0022 mini-table-trailing-buffer-row): 致命的2件、重要3件、軽微2件
 - (FEAT_0022 R2): 問題なし（前回指摘4件がすべて修正済み）
 - (FEAT_0023 header-icon-separation): 致命的2件、重要3件、軽微3件
+- (BUG_0021 non-sequential-schema-key): 致命的1件、重要2件、軽微2件
+- (BUG_0021 R2 column-filter fix): 致命的1件、重要2件、軽微2件

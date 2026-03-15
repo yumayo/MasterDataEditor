@@ -22,6 +22,13 @@
 - console.log デバッグログが GridDropdownInput.show() に残存（本番環境への混入リスク）
 - 左ペインの読み取り専用状態がDOM上で明示されていない（aria属性なし）
 
+#### BUG_0021 非連番keyスキーマのソート・差分ビューずれ修正（2026-03-16レビュー）評価: A
+- ファイル: project_bug0021_non_sequential_key.md
+- ソート: data-store-index が attack昇順(10<50<80)に正しく並び替わっている（attack列ヘッダーに sort-asc クラス付与）
+- 差分ビュー: CSV列インデックス5(recover_hp)→DOM列インデックス3 への変換が正しく行われ diff-cell-deleted/added が正確に配置されている
+- 残課題: 差分ビュー左ペイン（HEAD版）に aria-readonly などの読み取り専用マークアップが皆無（前回レビューの指摘継続）
+- 残課題: 差分ビューの行レベルに data-diff-kind="modified" などの属性がなく行単位のアクセシビリティ強調が困難
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
