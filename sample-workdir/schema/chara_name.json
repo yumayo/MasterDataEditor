@@ -16,5 +16,6 @@
             "comment": "名前(日本語)",
             "width": 196
         }
-    ]
+    ],
+    "primary_key": "id"
 }

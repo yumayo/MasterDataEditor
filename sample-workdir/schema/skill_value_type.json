@@ -17,5 +17,6 @@
             "name": "comment",
             "type": "string"
         }
-    ]
+    ],
+    "primary_key": "id"
 }

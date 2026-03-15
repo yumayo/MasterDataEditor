@@ -22,5 +22,6 @@
             "name": "master",
             "type": "string"
         }
-    ]
+    ],
+    "primary_key": "id"
 }
