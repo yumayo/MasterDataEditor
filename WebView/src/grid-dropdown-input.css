@@ -33,16 +33,20 @@
     font-family: sans-serif;
 }
 
+/* ホバー: ライトテーマで見える水色ベース */
 .grid-dropdown-item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(0, 120, 215, 0.1);
 }
 
+/* 選択中: 薄い水色（白背景にアクセント色20%を合成した不透明色）、フォント色はテーマ変数を使用 */
 .grid-dropdown-item.selected {
-    background-color: #264f78;
+    background-color: #cce4f7;
+    color: var(--font-color);
 }
 
+/* 選択中ホバー: 選択中より少し濃い水色 */
 .grid-dropdown-item.selected:hover {
-    background-color: #264f78;
+    background-color: #bfddf4;
 }
 
 /* 項目のID表示 */
@@ -64,4 +68,15 @@
     color: var(--text-color-secondary, #888);
     font-style: italic;
     font-size: 13px;
+}
+
+/* ダークテーマ用オーバーライド */
+[data-theme="dark"] .grid-dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .grid-dropdown-item.selected {
+    background-color: #264f78;
+}
+[data-theme="dark"] .grid-dropdown-item.selected:hover {
+    background-color: #2d5a87;
 }

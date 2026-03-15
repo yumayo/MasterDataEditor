@@ -104,18 +104,18 @@
     cursor: default;
 }
 
-/* PK バッジ — ゴールド系 */
+/* PK バッジ — ゴールド系（アルファ値0.20でライトテーマ上でも視認できる濃さ） */
 .column-header-badge--pk {
     color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.10);
-    border: 1px solid rgba(245, 158, 11, 0.20);
+    background-color: rgba(245, 158, 11, 0.20);
+    border: 1px solid rgba(245, 158, 11, 0.40);
 }
 
-/* FK バッジ — パープル（RelationsPanelのN:1バッジと統一） */
+/* FK バッジ — パープル（RelationsPanelのN:1バッジと統一、アルファ値0.20） */
 .column-header-badge--fk {
     color: #a78bfa;
-    background-color: rgba(167, 139, 250, 0.10);
-    border: 1px solid rgba(167, 139, 250, 0.20);
+    background-color: rgba(167, 139, 250, 0.20);
+    border: 1px solid rgba(167, 139, 250, 0.40);
 }
 
 /* 行ヘッダーセルのスタイル */

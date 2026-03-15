@@ -55,14 +55,15 @@
     color: var(--font-color);
 }
 
+/* ホバー: ライトテーマで見える水色ベース */
 .command-palette-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 120, 215, 0.1);
 }
 
-/* 選択中の項目 */
+/* 選択中: ライトテーマ向けの薄い水色、フォント色はテーマ変数を使用 */
 .command-palette-item.selected {
-    background: #264f78;
-    color: #ffffff;
+    background: #cce4f7;
+    color: var(--font-color);
 }
 
 /* 項目名 */
@@ -83,4 +84,16 @@
     color: var(--font-color);
     opacity: 0.5;
     text-align: center;
+}
+
+/* ダークテーマ用オーバーライド */
+[data-theme="dark"] .command-palette-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+[data-theme="dark"] .command-palette-item.selected {
+    background: #264f78;
+    color: #ffffff;
+}
+[data-theme="dark"] .command-palette-item.selected:hover {
+    background: #2d5a87;
 }
