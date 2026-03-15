@@ -232,22 +232,11 @@ export class DiffTab {
             if (oldPaddingRow !== null) oldPaddingRow.remove();
             return;
         }
-        // 通常の行挿入: 左ペインの rowIndex 位置にパディング行を挿入して行数を同期する
-        const columnCount = this.leftEditorTable.getColumnCount();
-        // 空セル（行ヘッダー + データセル）を生成してパディング行を構築する
-        const headerCell = document.createElement('div');
-        headerCell.classList.add('editor-table-cell', 'editor-table-row-header');
-        const cells: HTMLElement[] = [headerCell];
-        for (let j = 0; j < columnCount; j++) {
-            const cell = document.createElement('div');
-            cell.classList.add('editor-table-cell');
-            cell.dataset.col = String(j);
-            cells.push(cell);
-        }
-        const paddingRow = document.createElement('div');
-        paddingRow.classList.add('editor-table-row', 'diff-row-empty', 'diff-row-padding-inserted');
-        paddingRow.dataset.row = String(rowIndex);
-        for (const cell of cells) paddingRow.appendChild(cell);
+        // 通常の行挿入: 左ペインの rowIndex 位置にパディング行を挿入して行数を同期する。
+        // createPaddingRow() はイベントリスナーなしの軽量な空行を返すため、
+        // DiffTab 固有のクラスはここで付与する（SRP: EditorTable は diff の知識を持たない）。
+        const paddingRow = this.leftEditorTable.createPaddingRow(rowIndex);
+        paddingRow.classList.add('diff-row-empty', 'diff-row-padding-inserted');
         // 左ペインの rowIndex 位置に挿入する（insertBefore で rowIndex の前に配置）
         const insertBefore = leftElement.children.item(rowIndex) as HTMLElement | null;
         leftElement.insertBefore(paddingRow, insertBefore);
@@ -277,15 +266,13 @@ export class DiffTab {
             // 削除後のdata-row属性を再ナンバリングする
             this.renumberLeftRows(rowIndex);
         } else {
-            // 通常のデータ行削除: 右ペインをパディング行に変換し、左ペインに削除マークを付与する
-            rightRow.classList.remove('diff-row-added', 'diff-row-deleted', 'diff-row-padding-inserted');
-            rightRow.classList.add('diff-row-empty');
-            // セル内のテキストと差分クラスをクリアする（行ヘッダーセルは除く）
-            for (const cell of Array.from(rightRow.children) as HTMLElement[]) {
-                if (cell.classList.contains('editor-table-row-header')) continue;
-                cell.textContent = '';
-                cell.classList.remove('diff-cell-added', 'diff-cell-deleted');
-            }
+            // 通常のデータ行削除: 右ペインをパディング行に置き換え、左ペインに削除マークを付与する。
+            // インプレース変換では元のイベントリスナー（dblclick, mousedown, contextmenu等）が残存するため、
+            // createPaddingRow() でイベントリスナーなしの軽量な空行を生成して replaceWith() で差し替える。
+            // diff-row-padding-inserted は「行挿入で生成されたパディング行」のマーカーなので付与しない（diff-row-empty のみ）。
+            const newPaddingRow = this.rightEditorTable.createPaddingRow(rowIndex);
+            newPaddingRow.classList.add('diff-row-empty');
+            rightRow.replaceWith(newPaddingRow);
             if (leftRow !== null) leftRow.classList.add('diff-row-deleted');
         }
     }

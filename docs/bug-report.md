@@ -1682,3 +1682,16 @@ DOM列インデックスとCSV列インデックスの取り違え
 `columnMapping` を `EditorTableData` のインスタンスフィールドとして公開し、`EditorTable.getStoreColumnIndex()` ファサードメソッドを追加した。ストア行にアクセスする際は必ずこのファサードを経由するルールを徹底する。新たにストア行の列を参照するコードを書く際は「DOM列インデックスをそのまま配列インデックスに使っていないか」を確認する。bug-report.md #64（ミニテーブル行追加時のストアインデックス未変換）と同構造のパターンであり、行方向の `storeRowIndices` と列方向の `columnMapping` という対称な設計で統一された。
 
 ---
+
+## 115. [0938f26] — 差分ビューのパディング行セル高さが1px未満になる問題
+
+### 不具合原因名
+パディング行生成の独自DOM実装による applyCellHeight 呼び出し漏れ
+
+### なぜそうなったのか
+`diff-tab.ts` の `notifyRightPaneRowInserted()` が差分ビューの左ペインに挿入するパディング行を、`document.createElement('div')` で独自にDOMを手書きしていた。通常の行生成では `EditorTable.createCell()` → `applyCellHeight()` という共通経路を経由して `height: 20px; min-height: 20px; max-height: 20px` がセルに設定されるが、パディング行だけこの共通経路を使っていなかったため、セルに高さスタイルが一切設定されず、CSSのborder（1px）のみが表示される状態になった。同様に `notifyRightPaneRowDeleted()` でも右ペインの行をインプレース変換していたため、イベントリスナー付きDOMが残存する問題もあった。
+
+### どうしたら今後は再発しないか
+行を動的に生成する際は必ず `EditorTable.createPaddingRow()` の共通経路を経由する。手書きDOMで `div` を生成してテーブル行とすることを禁止し、`applyCellHeight` / `applyCellWidth` が漏れないことを保証する。パディング行はイベントリスナー不要のため `createCell` / `createRowHeaderCell` は使わず軽量な空divで生成するが、高さ・幅のスタイル適用は必ず行う。対称操作（挿入と削除）の両パスで同じ生成ロジックを使用する。
+
+---

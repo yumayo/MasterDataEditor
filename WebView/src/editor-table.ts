@@ -656,6 +656,32 @@ export class EditorTable {
     }
 
     /**
+     * 差分ビュー用パディング行を生成して返す。
+     * 左ペインの行数を右ペインに合わせるために挿入する「穴埋め専用の空行」として使用する。
+     * イベントリスナー（dblclick・mousedown・contextmenu・row-resize-handle）は不要かつ有害なため、
+     * createCell / createRowHeaderCell を使わず軽量な空div を直接生成する。
+     * DiffTab固有のクラス（diff-row-empty・diff-row-padding-inserted）の付与は呼び出し側の責務であり、
+     * ここでは付与しない（SRP遵守）。
+     * @param rowIndex DOM行インデックス（data-row 属性に設定する値）
+     */
+    createPaddingRow(rowIndex: number): HTMLElement {
+        const columnCount = this.getColumnCount();
+        const rowHeaderCell = document.createElement('div');
+        rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+        EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
+        const cells: HTMLElement[] = [rowHeaderCell];
+        for (let j = 0; j < columnCount; j++) {
+            const cell = document.createElement('div');
+            cell.classList.add('editor-table-cell');
+            cell.dataset.col = String(j);
+            EditorTable.applyCellWidth(cell, this.getColumnWidth(j));
+            EditorTable.applyCellHeight(cell, DEFAULT_ROW_HEIGHT);
+            cells.push(cell);
+        }
+        return EditorTable.createRow(cells, rowIndex);
+    }
+
+    /**
      * 指定列の幅を設定し、その列の全セルのスタイルを更新
      */
     setColumnWidth(columnIndex: number, width: string): void {
