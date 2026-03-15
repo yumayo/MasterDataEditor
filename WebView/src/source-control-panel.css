@@ -18,12 +18,33 @@
 }
 
 .source-control-file-item {
+    display: flex;
+    flex-direction: column;
     padding: 4px 12px 4px 24px;
     cursor: pointer;
-    font-size: 13px;
     color: var(--font-color);
 }
 
 .source-control-file-item:hover {
-    background-color: var(--list-hover-background);
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .source-control-file-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.source-control-file-item-active {
+    background-color: rgba(0, 0, 100, 0.1);
+}
+
+[data-theme="dark"] .source-control-file-item-active {
+    background-color: rgba(100, 140, 255, 0.15);
+}
+
+.source-control-file-item-active:hover {
+    background-color: rgba(0, 0, 100, 0.15);
+}
+
+[data-theme="dark"] .source-control-file-item-active:hover {
+    background-color: rgba(100, 140, 255, 0.2);
 }

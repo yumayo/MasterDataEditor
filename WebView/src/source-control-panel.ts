@@ -4,7 +4,7 @@ import { Tab } from './tab';
 
 /**
  * ソース管理サイドバーパネル
- * CHANGESセクションとSTAGEDセクションで変更ファイル一覧を表示し、
+ * STAGEDセクション（上）とCHANGESセクション（下）で変更ファイル一覧を表示し、
  * クリックで差分タブをエディター領域に表示する
  */
 export class SourceControlPanel {
@@ -28,17 +28,7 @@ export class SourceControlPanel {
         header.textContent = 'SOURCE CONTROL';
         this.element.appendChild(header);
 
-        // CHANGESセクション
-        const changesHeader = document.createElement('div');
-        changesHeader.classList.add('source-control-section-header');
-        changesHeader.textContent = 'CHANGES';
-        this.element.appendChild(changesHeader);
-
-        this.changesSection = document.createElement('div');
-        this.changesSection.classList.add('source-control-changes-section');
-        this.element.appendChild(this.changesSection);
-
-        // STAGEDセクション
+        // STAGEDセクション（上）
         const stagedHeader = document.createElement('div');
         stagedHeader.classList.add('source-control-section-header');
         stagedHeader.textContent = 'STAGED';
@@ -47,6 +37,16 @@ export class SourceControlPanel {
         this.stagedSection = document.createElement('div');
         this.stagedSection.classList.add('source-control-staged-section');
         this.element.appendChild(this.stagedSection);
+
+        // CHANGESセクション（下）
+        const changesHeader = document.createElement('div');
+        changesHeader.classList.add('source-control-section-header');
+        changesHeader.textContent = 'CHANGES';
+        this.element.appendChild(changesHeader);
+
+        this.changesSection = document.createElement('div');
+        this.changesSection.classList.add('source-control-changes-section');
+        this.element.appendChild(this.changesSection);
     }
 
     /**
@@ -74,32 +74,74 @@ export class SourceControlPanel {
 
     /**
      * git status を呼んで変更ファイル一覧を更新する
+     * スキーマをすべて並列取得してから各セクションを構築する
+     * 非同期中断が2箇所あるため requestId で競合状態を防ぐ
      */
     async refreshAsync(): Promise<void> {
+        const requestId = ++this.currentRequestId;
         const result = await gitStatusAsync();
+        if (requestId !== this.currentRequestId) return;
+        const allEntries = [...result.staged, ...result.changes];
 
-        // CHANGESセクションを更新する（isStaged=false）
-        this.changesSection.replaceChildren();
-        for (const entry of result.changes) {
-            this.changesSection.appendChild(this.createFileItem(entry, false));
-        }
+        // 全スキーマを並列取得してdescriptionを抽出する
+        // システム境界（ファイルI/O）のエラーは握り潰して空文字列を返す
+        const descriptions = await Promise.all(
+            allEntries.map(async entry => {
+                try {
+                    const schemaJson = await readFileAsync(`schema/${entry.tableName}.json`);
+                    const schema = JSON.parse(schemaJson) as { description?: string };
+                    return schema.description ?? '';
+                } catch {
+                    return '';
+                }
+            })
+        );
+        if (requestId !== this.currentRequestId) return;
 
         // STAGEDセクションを更新する（isStaged=true）
         this.stagedSection.replaceChildren();
-        for (const entry of result.staged) {
-            this.stagedSection.appendChild(this.createFileItem(entry, true));
-        }
+        result.staged.forEach((entry, index) => {
+            this.stagedSection.appendChild(this.createFileItem(entry, true, descriptions[index]));
+        });
+
+        // CHANGESセクションを更新する（isStaged=false）
+        this.changesSection.replaceChildren();
+        result.changes.forEach((entry, index) => {
+            this.changesSection.appendChild(this.createFileItem(entry, false, descriptions[result.staged.length + index]));
+        });
     }
 
     /**
      * ファイルアイテム（クリッカブル）のDOM要素を生成する
+     * ExplorerFileと同様の2行構造（description + tableName）で表示する
      * isStaged: true の場合は staged セクション（左右ともに読み取り専用）
+     * description: "" の場合は description行を非表示にする
      */
-    private createFileItem(entry: GitStatusEntry, isStaged: boolean): HTMLElement {
+    private createFileItem(entry: GitStatusEntry, isStaged: boolean, description: string): HTMLElement {
         const item = document.createElement('div');
         item.classList.add('source-control-file-item');
-        item.textContent = entry.tableName;
+
+        // description が存在する場合は上段に表示する
+        if (description !== '') {
+            const descEl = document.createElement('span');
+            descEl.classList.add('explorer-file-description');
+            descEl.textContent = description;
+            item.appendChild(descEl);
+        }
+
+        // テーブル名は下段に表示する
+        const nameEl = document.createElement('span');
+        nameEl.classList.add('explorer-file-name');
+        nameEl.textContent = entry.tableName;
+        item.appendChild(nameEl);
+
         item.addEventListener('click', () => {
+            // DOMをSSOTとしてアクティブクラスを切り替える
+            // パネル全体から既存のアクティブクラスをすべて除去してからクリックされた要素に付与する
+            this.element.querySelectorAll('.source-control-file-item-active').forEach(el => {
+                el.classList.remove('source-control-file-item-active');
+            });
+            item.classList.add('source-control-file-item-active');
             this.openDiffTabAsync(entry, isStaged).catch(e => { console.error('差分タブ表示失敗', e); });
         });
         return item;

@@ -45,6 +45,19 @@ const TEST_SCHEMA = JSON.stringify({
 });
 
 /**
+ * description付き差分テスト用スキーマ（FEAT_0028: 2行構造表示のテスト用）
+ */
+const TEST_SCHEMA_WITH_DESC = JSON.stringify({
+    header: [
+        { key: 0, name: "id", type: "int" },
+        { key: 1, name: "name", type: "string" },
+        { key: 2, name: "value", type: "int" },
+    ],
+    primary_key: "id",
+    description: "テスト用テーブル",
+});
+
+/**
  * 現在のCSV（working tree）
  *   id=1: value が 100→150 に変更
  *   id=2: 変更なし
@@ -85,6 +98,15 @@ const GIT_STATUS = {
 const GIT_STATUS_STAGED = {
     changes: [] as { path: string; tableName: string; isNew: boolean }[],
     staged: [{ path: "data/test.csv", tableName: "test", isNew: false }],
+};
+
+/**
+ * git status レスポンス（changesとstagedの両方にエントリがある — FEAT_0028テスト18用）
+ * test テーブルは changes に、test2 テーブルは staged に存在する
+ */
+const GIT_STATUS_BOTH = {
+    changes: [{ path: "data/test.csv", tableName: "test", isNew: false }],
+    staged: [{ path: "data/test2.csv", tableName: "test2", isNew: false }],
 };
 
 /**
@@ -140,6 +162,10 @@ interface SourceControlFixtures {
     sourceControlStagedPage: void;
     /** スクロール同期テスト用（50行データ、changes状態） */
     scrollSyncPage: void;
+    /** description付きスキーマでchanges状態のページを開く（FEAT_0028: 2行構造表示テスト用） */
+    descriptionPage: void;
+    /** changesとstagedの両方にエントリがある状態のページを開く（FEAT_0028: アクティブ切り替えテスト用） */
+    bothSectionsPage: void;
 }
 
 /**
@@ -190,6 +216,49 @@ const test = base.extend<SourceControlFixtures>({
         }, { status: GIT_STATUS, headFiles: scrollHeadFiles });
 
         await installMockApiAsync(page, createScrollTestFileSystem());
+        await page.goto('/');
+        await use();
+    },
+
+    descriptionPage: async ({ page }, use) => {
+        // FEAT_0028: description付きスキーマでchanges状態のページを開く（2行構造表示テスト用）
+        await page.addInitScript((args: {
+            status: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] };
+            headFiles: Record<string, string>;
+        }) => {
+            (window as unknown as { __mockGitStatus: object }).__mockGitStatus = args.status;
+            (window as unknown as { __mockGitHeadFiles: Record<string, string> }).__mockGitHeadFiles = args.headFiles;
+        }, { status: GIT_STATUS, headFiles: HEAD_FILES });
+
+        await installMockApiAsync(page, {
+            "schema/test.json": TEST_SCHEMA_WITH_DESC,
+            "data/test.csv": CURRENT_CSV,
+        });
+        await page.goto('/');
+        await use();
+    },
+
+    bothSectionsPage: async ({ page }, use) => {
+        // FEAT_0028: changesとstagedの両方にエントリがある状態（アクティブ切り替えテスト用）
+        // test.csv は changes、test2.csv は staged として扱う
+        const headFiles: Record<string, string> = {
+            "data/test.csv": HEAD_CSV,
+            "data/test2.csv": HEAD_CSV,
+        };
+        await page.addInitScript((args: {
+            status: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] };
+            headFiles: Record<string, string>;
+        }) => {
+            (window as unknown as { __mockGitStatus: object }).__mockGitStatus = args.status;
+            (window as unknown as { __mockGitHeadFiles: Record<string, string> }).__mockGitHeadFiles = args.headFiles;
+        }, { status: GIT_STATUS_BOTH, headFiles });
+
+        await installMockApiAsync(page, {
+            "schema/test.json": TEST_SCHEMA,
+            "data/test.csv": CURRENT_CSV,
+            "schema/test2.json": TEST_SCHEMA,
+            "data/test2.csv": CURRENT_CSV,
+        });
         await page.goto('/');
         await use();
     },
@@ -542,6 +611,119 @@ test.describe('ソース管理パネル', () => {
             // SVG内部にpath要素が存在することを確認する（空SVGでないこと）
             const pathEl = svgEl.locator('path');
             await expect(pathEl.first()).toBeVisible();
+        },
+    );
+
+    // =========================================================================
+    // FEAT_0028: gitの差分エクスプローラー改修
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // テスト15: セクション順序 — STAGED が CHANGES より上に表示されること
+    // -------------------------------------------------------------------------
+    test(
+        'FEAT_0028: ソース管理パネルで STAGED セクションが CHANGES セクションより上（前）に表示されること',
+        async ({ page, sourceControlStagedPage: _sourceControlStagedPage }) => {
+            // ソース管理パネルを開く
+            await page.locator('[data-panel="sourceControl"]').click();
+            const panel = page.locator('.source-control-panel');
+            await expect(panel).toBeVisible();
+
+            // STAGED と CHANGES テキストが両方表示されていることを確認する
+            const stagedText = panel.getByText('STAGED');
+            const changesText = panel.getByText('CHANGES');
+            await expect(stagedText).toBeVisible();
+            await expect(changesText).toBeVisible();
+
+            // DOMツリー上でSTAGEDがCHANGESより前（上）に現れることを確認する
+            const stagedBeforeChanges = await panel.evaluate((el) => {
+                const allText = el.querySelectorAll('.source-control-section-header');
+                const headers = Array.from(allText).map(h => h.textContent?.trim() ?? '');
+                const stagedIndex = headers.indexOf('STAGED');
+                const changesIndex = headers.indexOf('CHANGES');
+                return stagedIndex !== -1 && changesIndex !== -1 && stagedIndex < changesIndex;
+            });
+            expect(stagedBeforeChanges).toBe(true);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト16: ファイルアイテムが2行構造（description + tableName）で表示されること
+    // -------------------------------------------------------------------------
+    test(
+        'FEAT_0028: ソース管理パネルのファイルアイテムが .explorer-file-description と .explorer-file-name の2行構造で表示されること',
+        async ({ page, descriptionPage: _descriptionPage }) => {
+            // ソース管理パネルを開く
+            await page.locator('[data-panel="sourceControl"]').click();
+            const panel = page.locator('.source-control-panel');
+            await expect(panel).toBeVisible();
+
+            // CHANGES セクション内のファイルアイテムを取得する
+            const fileItem = panel.locator('.source-control-file-item').first();
+            await expect(fileItem).toBeVisible();
+
+            // description行が存在することを確認する
+            const descriptionEl = fileItem.locator('.explorer-file-description');
+            await expect(descriptionEl).toBeVisible();
+            await expect(descriptionEl).toHaveText('テスト用テーブル');
+
+            // テーブル名行が存在することを確認する
+            const nameEl = fileItem.locator('.explorer-file-name');
+            await expect(nameEl).toBeVisible();
+            await expect(nameEl).toHaveText('test');
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト17: 差分タブ表示中のアイテムにアクティブクラスが付与されること
+    // -------------------------------------------------------------------------
+    test(
+        'FEAT_0028: CHANGES セクションのアイテムをクリックして差分タブが開いた後、そのアイテムに .source-control-file-item-active クラスが付与されること',
+        async ({ page, sourceControlPage: _sourceControlPage }) => {
+            // ソース管理パネルを開く
+            await page.locator('[data-panel="sourceControl"]').click();
+            const panel = page.locator('.source-control-panel');
+            await expect(panel).toBeVisible();
+
+            // CHANGES セクションのファイルアイテムをクリックする
+            const fileItem = panel.locator('.source-control-changes-section .source-control-file-item').first();
+            await expect(fileItem).toBeVisible();
+            await fileItem.click();
+
+            // クリック後にアクティブクラスが付与されることを確認する
+            await expect(fileItem).toHaveClass(/source-control-file-item-active/);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト18: 別の差分タブを開くと前のアイテムのアクティブが外れること
+    // -------------------------------------------------------------------------
+    test(
+        'FEAT_0028: 別のファイルアイテムをクリックすると前のアイテムの .source-control-file-item-active が外れ、新しいアイテムに付与されること',
+        async ({ page, bothSectionsPage: _bothSectionsPage }) => {
+            // ソース管理パネルを開く
+            await page.locator('[data-panel="sourceControl"]').click();
+            const panel = page.locator('.source-control-panel');
+            await expect(panel).toBeVisible();
+
+            // CHANGES セクションの test をクリックしてアクティブにする
+            const changesItem = panel.locator('.source-control-changes-section .source-control-file-item').first();
+            await expect(changesItem).toBeVisible();
+            await changesItem.click();
+
+            // changesItem がアクティブになることを確認する
+            await expect(changesItem).toHaveClass(/source-control-file-item-active/);
+
+            // STAGED セクションの test2 をクリックして別の差分タブを開く
+            const stagedItem = panel.locator('.source-control-staged-section .source-control-file-item').first();
+            await expect(stagedItem).toBeVisible();
+            await stagedItem.click();
+
+            // changesItem のアクティブが外れることを確認する
+            await expect(changesItem).not.toHaveClass(/source-control-file-item-active/);
+
+            // stagedItem がアクティブになることを確認する
+            await expect(stagedItem).toHaveClass(/source-control-file-item-active/);
         },
     );
 
