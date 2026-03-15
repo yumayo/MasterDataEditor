@@ -936,6 +936,10 @@ export class EditorTable {
         // insertRowInternal/deleteRow では挿入・削除位置以降の行のみ再ナンバリングするが、
         // reloadCellsFromStore では複数行が一括で増減する可能性があるため、データ行先頭（domIndex=1）から全行を対象とする。
         if (domRowCountChanged) this.structure.renumberRowsFrom(1);
+        // ストアとのDOMリロード後も末尾に1行バッファ行を保持する（他経路と同一ガード条件）。
+        // ミニテーブルは都度再構築（destroyMiniEditorTables/buildMiniEditorTableAsync）のため到達しないが、
+        // promoteBufferRowToStore/demoteStoreRowToBuffer/deleteRow と条件を統一する。
+        if (this.diffTab === false) this.ensureTrailingBufferRow();
 
         // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
         // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
@@ -1025,8 +1029,8 @@ export class EditorTable {
         this.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（新規昇格行がフィルター条件を満たさない可能性）
         this.refreshFilterDisplayIfActive();
-        // ミニテーブルは常に末尾にバッファ行を1行保持する（昇格で消えた場合に補充する）。差分タブでは不要。
-        if (this.isMiniTable && this.diffTab === false) this.ensureTrailingBufferRow();
+        // 常に末尾にバッファ行を1行保持する（昇格で消えた場合に補充する）。差分タブでは不要。
+        if (this.diffTab === false) this.ensureTrailingBufferRow();
     }
 
     /**
@@ -1062,9 +1066,9 @@ export class EditorTable {
         this.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（降格行の除去で表示行数が変化する）
         this.refreshFilterDisplayIfActive();
-        // ミニテーブルでUndoにより降格した行がバッファ行に戻ると、バッファ行が蓄積する可能性がある。
+        // Undoにより降格した行がバッファ行に戻ると、バッファ行が蓄積する可能性がある。
         // 蓄積したバッファ行（2行以上）は末尾から削除し、常に1行だけになるよう整理する。差分タブでは不要。
-        if (this.isMiniTable && this.diffTab === false) this.normalizeTrailingBufferRows();
+        if (this.diffTab === false) this.normalizeTrailingBufferRows();
     }
 
     /**
@@ -1076,7 +1080,7 @@ export class EditorTable {
 
     /**
      * 末尾バッファ行が存在しない場合に1行追加する（蓄積防止のため既にある場合は何もしない）。
-     * ミニテーブルでバッファ行が昇格した後に必ず1行末尾バッファ行を保持するために使う。
+     * バッファ行が昇格・削除された後に末尾に必ず1行バッファ行を保持するために使う（通常テーブル・ミニテーブル共通）。
      *
      * 行番号はDOMの現在の全データ行数（storeRowIndices.length + 現在のバッファ行数）に基づく。
      * 追加する行は editor-table-empty-row クラスを持つ。
@@ -1112,7 +1116,7 @@ export class EditorTable {
 
     /**
      * バッファ行が2行以上存在する場合に末尾から余分な行を削除し、常に1行だけになるよう整理する。
-     * demoteStoreRowToBuffer() のUndo後にバッファ行が蓄積するのを防ぐために使う。
+     * demoteStoreRowToBuffer() のUndo後にバッファ行が蓄積するのを防ぐために使う（通常テーブル・ミニテーブル共通）。
      * demoteStoreRowToBuffer() は降格対象行に必ず editor-table-empty-row を付与するため、
      * このメソッド実行後にバッファ行が0行になることはない。
      */
