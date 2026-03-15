@@ -14,6 +14,7 @@ import {TabButton} from "./tab-button";
 import {Editor} from "./editor";
 import {Sidebar} from "./sidebar";
 import {SchemaColumn, SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
+import {TabReference} from "./tab-reference";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -65,7 +66,8 @@ export class DiffTab {
         store: InMemoryTableStore,
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
-        tabButton: TabButton
+        tabButton: TabButton,
+        tabReference: TabReference
     ) {
         this.isSyncing = false;
 
@@ -125,6 +127,10 @@ export class DiffTab {
         this.leftAreaResizer = leftResult.areaResizer;
         this.leftFillController = leftResult.fillController;
 
+        // 左ペインの参照ヒントを設定する（通常テーブルと同パターン）
+        tabReference.preloadReferenceTables(leftResult.tableData, this.leftEditorTable);
+        tabReference.resolveReverseReferencesAsync(tableName, this.leftEditorTable);
+
         const rightResult = this.buildDiffEditorTable(
             rightTableKey, schemaJson, displayHeader, rightRows,
             rightPaneElement, store, referenceDataCache, contextMenu, tabButton, sidebar
@@ -134,6 +140,10 @@ export class DiffTab {
         this.rightHistory = rightResult.history;
         this.rightAreaResizer = rightResult.areaResizer;
         this.rightFillController = rightResult.fillController;
+
+        // 右ペインの参照ヒントを設定する（通常テーブルと同パターン）
+        tabReference.preloadReferenceTables(rightResult.tableData, this.rightEditorTable);
+        tabReference.resolveReverseReferencesAsync(tableName, this.rightEditorTable);
 
         // 左右EditorTableに自身（DiffTab）を接続する（排他制御のため）
         // RelationsPanel.connectEditorTable() と対称的なパターン
@@ -260,7 +270,7 @@ export class DiffTab {
         contextMenu: ContextMenu,
         tabButton: TabButton,
         sidebar: Sidebar
-    ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController } {
+    ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController; tableData: EditorTableData } {
         // スキーマをパースしてEditorTableDataを構築する
         const schemaObj = JSON.parse(schemaJson) as Record<string, unknown>;
         const csv = new Csv();
@@ -313,7 +323,7 @@ export class DiffTab {
         areaResizer.activate();
         editorTable.activate();
 
-        return { editorTable, editorTableHandler, history, areaResizer, fillController };
+        return { editorTable, editorTableHandler, history, areaResizer, fillController, tableData };
     }
 
     /**

@@ -645,7 +645,8 @@ export class Tab {
 
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged,
-            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton
+            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
+            this.reference
         );
         // closeTab() で既存タブは破棄済みのためキーが存在しないことが保証される
         this.diffTabs.set(diffTabName, diffTab);

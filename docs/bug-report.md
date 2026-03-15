@@ -1518,3 +1518,16 @@ DiffTabへのdummyTabButton注入によるDirty通知到達不能・保存完全
 3. コメントと実装が矛盾していないか、レビュー時に注意すること
 
 ---
+
+## 103. [dd791d7] — 差分ビュー（DiffTab）で参照ヒントが表示されない問題の修正
+
+### 不具合原因名
+DiffTab での参照プリロード呼び出し漏れ
+
+### なぜそうなったのか
+`DiffTab` は `Tab` とは別クラスとして実装されており、EditorTable生成後の後処理（参照プリロード）が通常タブ・ミニテーブルのパターンからコピーされなかった。`DiffTab` コンストラクタが `TabReference` を受け取っていなかったため、`TabReference.preloadReferenceTables()` と `resolveReverseReferencesAsync()` を呼ぶ手段自体が存在せず、差分ビューの左右両ペインのEditorTableに参照ヒント（`.cell-reference-hint`）が描画されなかった。
+
+### どうしたら今後は再発しないか
+新しいEditorTable生成パスを追加する際は、通常タブ（`Tab.createTabState`）の後処理チェックリストを必ず確認すること。特に `preloadReferenceTables` と `resolveReverseReferencesAsync` の呼び出しは、EditorTable生成のどのパスでも必須であることを意識する。
+
+---
