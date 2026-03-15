@@ -92,6 +92,13 @@
 - 要改善: `has-badge` による `padding-left:32px` が `calculateColumnWidth` に加算されていない。長いPK/FK列名（例: `player_character_id`）で列名が右側アイコン領域に食い込む可能性あり
 - `HEADER_ICON_AREA_PX` の算出根拠（filter-icon right:30px、width:14px）が CSS の absolute positioning に依存しており、CSSを変更した際に定数の更新漏れが起きやすい構造
 
+#### 差分ビューペインリサイズハンドル（2026-03-16レビュー）評価: A
+- ファイル: project_diff_view_resize_handle.md
+- flex-basisパーセンテージ管理・20〜80%クランプ・userSelect解除がすべて正しく実装
+- RelationsPanelハンドルとまったく同じパターンで一貫性あり
+- 残課題(🔴): 初期状態でハンドルが視覚的に不可視（background: var(--border-color)のみ、border等の常時表示手がかりなし）
+- 残課題(🟡): height/align-self 明示なし、ドラッグ中クラスなし、均等リセット手段なし、aria属性なし
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ

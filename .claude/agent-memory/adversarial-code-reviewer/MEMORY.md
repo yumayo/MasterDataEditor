@@ -21,8 +21,9 @@
 - `/WebView/src/dropdown-quick-view.ts` - Hover quick preview panel (RelationsPanel-style)
 
 ## CSS Variables (index.css)
-- Defined: `--font-color`, `--background-color`, `--background-sub-color`, `--border-color`, `--selection-color`, `--selection-font-color`, `--scroll-bar-background-color`
-- NOT defined: `--selected-color`, `--tab-background`, `--list-hover-background`, `--text-muted-color`, `--text-color-secondary`
+- Defined: `--font-color`, `--background-color`, `--background-sub-color`, `--border-color`, `--selection-color`, `--selection-font-color`, `--scroll-bar-background-color`, `--focus-border` (#007acc, ライトテーマのみ)
+- NOT defined in dark theme: `--focus-border` (`:root`の値を引き継ぐが明示再定義なし)
+- NOT defined: `--selected-color`, `--tab-background`, `--list-hover-background`, `--text-muted-color`, `--text-color-secondary`, `--cell-background-color`
 - CSS hardcoded colors: 7+ occurrences across FEATs (recurring pattern)
 
 ## Recurring Review Patterns
@@ -117,15 +118,28 @@
 - **FIXED FEAT_0027**: previewCacheを廃止してミニEditorTableに全面置き換え
 
 ## FEAT_0028 SourceControlPanel改修 Known Patterns
-- **CRITICAL**: refreshAsync に requestId チェックがない → show()連打でDOM二重上書き (openDiffTabAsync は正しく実装済みなのに非対称)
-- **CRITICAL**: loadDescriptionAsync が Promise.all に包まれ、1テーブルのスキーマ失敗で全パネルが空になる → try/catchで空文字フォールバック必要
-- **PATTERN**: replaceChildren()でDOM全破棄する際、アクティブクラスも失われる → refreshAsync後にアクティブ状態を復元する仕組みが必要
-- **KNOWN ISSUE**: diffTabName に isStaged が含まれない問題が、STAGED/CHANGESが同一パネルに並ぶようになって顕在化しやすくなった (MEMORY記録済みだが未修正)
+- **FIXED (R2)**: refreshAsync に requestId チェックが追加された (2箇所のawaitポイント後)
+- **FIXED (R2)**: スキーマ取得失敗時のtry/catchで空文字を返すようになった
+- **FIXED (R2)**: STAGEDセクションが上、CHANGESセクションが下に変更 (ExplorerFile同様の2行構造)
+- **FIXED (R2)**: description表示を追加 (ExplorerFileと同じ視認性)
+- **KNOWN ISSUE**: `schema.description ?? ''` → フォールバック禁止ルール違反 (`??`演算子)
+- **PATTERN**: replaceChildren()でDOM全破棄する際、アクティブクラスも失われる → refreshAsync後にアクティブ状態が失われる (未修正)
+- **KNOWN ISSUE**: diffTabName に isStaged が含まれない問題が顕在化しやすい (未修正)
 - **PATTERN**: アクティブクラス付与がawait前に行われるため「アクティブ表示あり・タブ未表示」の一時状態が発生する
-- **PATTERN**: TDDコメント「現実装にはないためREDになる」が実装完了後も残留 → 削除必須
+
+## DiffTab Resize Handle Known Patterns
+- **FIXED (R2)**: mousedown後destroy()でdocumentのmousemove/mouseupリスナーを強制解除するようになった (dragMouseMove/dragMouseUp保持+nullチェック)
+- **FIXED (R2)**: `--focus-border`がindex.css `:root`に定義された (#007acc)
+- **FIXED (R2)**: flexGrow/flexShrink再代入が廃止、flexBasisのみ変更するようになった
+- **KNOWN ISSUE**: 水平スクロール同期は左右pane幅が異なる(リサイズ後)と意味をなさない。垂直のみ同期が正しい設計 (未修正)
+- **KNOWN ISSUE**: `--focus-border`がdarkテーマで再定義されていない (未修正)
+- **PATTERN**: ドラッグ中destroy()はRelationsPanelリサイズも同じ問題を持つ既存負債
+- **PATTERN**: `.diff-pane-left`のborder-rightとリサイズハンドルbackgroundが視覚的に二重線になる
 
 ## Review History (2026-03-16)
 - (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
+- (diff-tab-resize-handle): 致命的2件、重要3件、軽微2件
+- (diff-tab-resize-handle R2): 致命的0件、重要2件(うち1件継続)、軽微2件(うち1件継続) — 前回指摘4件はすべて修正済み
 
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
