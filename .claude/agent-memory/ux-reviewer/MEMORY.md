@@ -47,6 +47,16 @@
 - 残課題: `command-palette.spec.ts` の `setupTestPageAsync()` がダークテーマのまま（`data-theme="dark"` をダンプで確認）
 - 残課題: コマンドパレット・ドロップダウンの aria-selected / role="listbox" 未実装（継続）
 
+#### FEAT_0025 通常テーブル末尾バッファ行自動補充（ラウンド2フィードバック修正後）評価: A
+- ファイル: project_feat0025_buffer_row.md
+- deleteRow経路・reloadCellsFromStore経路へのバッファ行補充追加が正しく動作確認（テスト4追加）
+- テスト4: 2行→potion削除→sword1行+バッファ行の構造が正しい。ダーティ状態も削除後にvisibleになっている
+- テスト3（Undo後）: バッファ行蓄積なし、ダーティ状態リセット済みを確認
+- 残課題(🟡): テスト4のダンプでコンテキストメニューが開いたまま残存（left:326px,top:79pxのstyle付き）。deleteRow後にmenu.hide()が呼ばれているか確認が必要
+- 残課題(🟡): deleteRow→Undo後のダーティ状態リセットのテストが存在しない（テスト3は昇格Undoのみ）
+- 残課題(🟡): バッファ行に row-resize-handle が付いており除去漏れの継続指摘
+- 要確認: `diffTab === false` 除外が deleteRow/reloadCellsFromStore 経路にも適用されているかはDOMから確認不可
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
