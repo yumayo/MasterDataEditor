@@ -441,7 +441,20 @@ export class EditorTableStructure {
             // フィルターアイコン（ソートインジケーターの左に配置）
             const filterIcon = document.createElement('span');
             filterIcon.classList.add('filter-icon');
-            filterIcon.textContent = '▼';
+            // 漏斗型SVGアイコンを作成。fill="currentColor" により CSS の color プロパティで色を制御できる。
+            const svgNs = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNs, 'svg');
+            svg.setAttribute('viewBox', '0 0 14 14');
+            svg.setAttribute('width', '14');
+            svg.setAttribute('height', '14');
+            // SVG内の子要素がクリックイベントのヒットテストターゲットにならないよう、親のfilterIconにのみイベントを届ける
+            svg.style.pointerEvents = 'none';
+            const path = document.createElementNS(svgNs, 'path');
+            // 上辺(0,1)-(14,1)の広い口から絞り込まれ(5,7)-(9,7)、下部パイプ(5,7)-(9,7)-(9,13)-(5,13)の漏斗形状
+            path.setAttribute('d', 'M0 1 L14 1 L9 7 L9 13 L5 13 L5 7 Z');
+            path.setAttribute('fill', 'currentColor');
+            svg.appendChild(path);
+            filterIcon.appendChild(svg);
             // mousedown は列選択ハンドラへのバブリングを防止する
             filterIcon.addEventListener('mousedown', (e) => { e.stopPropagation(); });
             // click でフィルタードロップダウンをトグルする（columnIndex はクロージャキャプチャではなく
