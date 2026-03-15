@@ -1464,3 +1464,16 @@ CSS でデフォルト非表示（`display: none`）にした要素を JavaScrip
 ヘッダーセルにインライン要素（バッジ、アイコン等）を追加する場合、`textContent` で列名のみを取得するロジックに影響が出る。ヘッダーの「列名」を取得する際は、既存の `getColumnHeaderLabel()` を使うか、バッジ要素を除外してからテキストを取得するパターンを採用する。テストコードでも `allTextContents()` の代わりに `evaluateAll` でバッジ要素を除外する方法を使う。
 
 ---
+
+## 99. [fbf2e09] — 差分タブのEditorTableでセルクリック後キー入力が無効になる不具合を修正
+
+### 不具合原因名
+操作パスの排他制御網羅漏れ（relationsPanel === false 時の activate 未呼び出し）
+
+### なぜそうなったのか
+`editor-table.ts` の mousedown ハンドラで `relationsPanel !== false` の場合のみ `activateHandler()` を呼ぶ設計だった。差分タブ（DiffTab）の EditorTable は `relationsPanel = false` で生成されるため、セルをクリックしても `handler.activate()` が一切呼ばれず、`handler.active = false` のまま維持された。`onKeydown()` の冒頭にある `if (!this.active) return;` ガードにより、全てのキー入力が無視された。差分タブの追加時に、mousedown ハンドラの分岐が relationsPanel 接続前提であることが見落とされた。
+
+### どうしたら今後は再発しないか
+新しいコンテキスト（DiffTab、将来の SplitPane 等）で EditorTable を生成する際は、mousedown → activate のパスが正しく接続されているかを必ず確認する。今回の修正で mousedown ハンドラを3段階分岐（relationsPanel → diffTab → 直接activate）に拡張したが、新しいコンテキスト追加時にはこの分岐にパスを追加する必要がある。また、RelationsPanel.activateHandler() と DiffTab.activateHandler() を対称的に実装するパターンを確立したので、排他制御が必要な場面では同パターンを踏襲すること。
+
+---

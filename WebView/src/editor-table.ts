@@ -16,6 +16,7 @@ import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
+import {DiffTab} from "./diff-tab";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
 import {ColumnSorter} from "./column-sorter";
@@ -56,6 +57,8 @@ export class EditorTable {
     structure!: EditorTableStructure;
     /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
     relationsPanel: RelationsPanel | false;
+    /** 差分タブ（DiffTab.buildDiffEditorTableで設定される。未設定はfalse） */
+    diffTab: DiffTab | false;
     /** git差分トラッカー（connectGitDiffTrackerで設定される。未設定はfalse） */
     private gitDiffTracker: GitDiffTracker | false;
     /** refreshGitDiffAsync のレースコンディション防止用リクエストID */
@@ -126,6 +129,7 @@ export class EditorTable {
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
         this.relationsPanel = false;
+        this.diffTab = false;
         this.gitDiffTracker = false;
         this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
@@ -407,10 +411,16 @@ export class EditorTable {
             if (!position) return;
             // 編集中のセルを確定する（Ctrl+クリックでも通常クリックでも共通）
             table.handler.submitAndHide();
-            // RelationsPanelが接続されている場合: このEditorTableのhandlerをアクティブ化し
-            // 他の全EditorTableのhandlerをdeactivateする（フォーカスの排他制御）
+            // フォーカスの排他制御: 接続先に応じて適切な activateHandler を呼び出す
+            // RelationsPanel 接続時: 全ミニEditorTableを含む排他制御
+            // DiffTab 接続時: 左右ペイン間の排他制御
+            // どちらも未接続（通常テーブル単独）: 直接このhandlerをアクティブ化する
             if (table.relationsPanel !== false) {
                 table.relationsPanel.activateHandler(table);
+            } else if (table.diffTab !== false) {
+                table.diffTab.activateHandler(table);
+            } else {
+                table.handler.activate();
             }
             // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
             // ペインスタック追加（navigateToDefinition）を先に行い、正しいRPに対して選択状態を設定する。

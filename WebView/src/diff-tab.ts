@@ -363,6 +363,11 @@ export class DiffTab {
         this.rightAreaResizer = rightResult.areaResizer;
         this.rightFillController = rightResult.fillController;
 
+        // 左右EditorTableに自身（DiffTab）を接続する（排他制御のため）
+        // RelationsPanel.connectEditorTable() と対称的なパターン
+        this.leftEditorTable.diffTab = this;
+        this.rightEditorTable.diffTab = this;
+
         // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
         this.applyDiffClasses(
             this.leftEditorTable, this.rightEditorTable,
@@ -404,6 +409,28 @@ export class DiffTab {
     }
 
     /**
+     * 差分タブ内の左右EditorTable間での排他制御を行う
+     * RelationsPanel.activateHandler() と対称的な設計:
+     * - 対象テーブルを activate + setInactiveAppearance(false)
+     * - 非対象テーブルを deactivate + setInactiveAppearance(true)
+     */
+    activateHandler(targetEditorTable: EditorTable): void {
+        if (targetEditorTable === this.leftEditorTable) {
+            this.leftEditorTable.getHandler().activate();
+            this.leftEditorTable.setInactiveAppearance(false);
+            this.rightEditorTable.getHandler().deactivate();
+            this.rightEditorTable.setInactiveAppearance(true);
+        } else if (targetEditorTable === this.rightEditorTable) {
+            this.rightEditorTable.getHandler().activate();
+            this.rightEditorTable.setInactiveAppearance(false);
+            this.leftEditorTable.getHandler().deactivate();
+            this.leftEditorTable.setInactiveAppearance(true);
+        } else {
+            throw new Error('activateHandler: targetEditorTableはDiffTabに属していません');
+        }
+    }
+
+    /**
      * 差分タブのラッパー要素を表示する
      */
     show(): void {
@@ -425,6 +452,9 @@ export class DiffTab {
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
         this.leftPaneElement.removeEventListener('scroll', this.boundLeftScroll);
         this.rightPaneElement.removeEventListener('scroll', this.boundRightScroll);
+        // EditorTableのdiffTab参照をリセットする（RelationsPanel.disconnectEditorTable() と対称）
+        this.leftEditorTable.diffTab = false;
+        this.rightEditorTable.diffTab = false;
         // EditorTableHandler のキーボードリスナー（グローバル登録）を解除する
         this.leftEditorTableHandler.deactivate();
         this.rightEditorTableHandler.deactivate();
