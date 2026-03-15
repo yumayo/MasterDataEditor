@@ -133,10 +133,10 @@ description: 開発、実装、修正と呼ばれる類のもので必ず使用�
 - 実装完了報告を待つ
 
 #### **ux-reviewer** エージェントにTaskツールでUXレビューを依頼する
-- レビュー依頼前に `npx playwright test dump-dom` を実行してDOMダンプを更新する
+- DOMダンプはフェーズ5のテスト実行時に全テストケースから自動出力される（`autoDump` フィクスチャ）
 - 依頼時には以下を伝える：
   - 今回の変更の目的（何を修正・実装したか）
-  - `.CONTEXT/dump/` 以下のHTMLファイルを読んでDOM構造をレビューすること
+  - `.CONTEXT/dump/{specファイル名}/{テストタイトル}.html` から関連するダンプを読んでDOM構造をレビューすること
   - DOM構造の妥当性、アクセシビリティ、操作性の観点でレビューを求めること
   - 問題があればフィードバックループ（typescript-tdd-developerに修正依頼→playwright-test-reporterでGREEN確認）を回すこと
 - 実装完了報告を待つ

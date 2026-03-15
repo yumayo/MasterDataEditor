@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/test';
 import { InMemoryTableStore } from '../src/in-memory-table-store';
 import { ReferenceDataCache, ReferenceTableData, ReferenceTableFullData } from '../src/reference-data-cache';
 

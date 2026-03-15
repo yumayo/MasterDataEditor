@@ -13,20 +13,20 @@ memory: project
 
 ## レビュー手順
 
-### Step 1: DOM構造の取得
+### Step 1: DOM構造の確認
 
-以下のコマンドを実行して、現在のDOM構造をダンプしてください:
-
-```bash
-docker compose exec -T playwright bash -c "npm run stop-preview && npx playwright test dump-dom" 2>&1; echo "exit $?"
-```
+全テストが `fixtures/test.ts` の `autoDump` フィクスチャにより、テスト完了後に自動でDOMをダンプします。
+ダンプファイルは `.CONTEXT/dump/{specファイル名}/{テストタイトル}.html` に出力されます。
 
 ### Step 2: ファイルの読み取り
 
-以下のファイルをすべて読み取ってください:
+レビュー対象に関連するダンプファイルを読み取ってください:
 
-1. `.CONTEXT/dump/` ディレクトリ配下のすべての `.html` ファイル — 実際のDOM構造
+1. `.CONTEXT/dump/` ディレクトリ配下の関連する `.html` ファイル — テストケースごとの実際のDOM構造
 2. `docs/bug-report.md` — よくある不具合原因のまとめ
+
+ダンプファイルは `<style>` と `<script>` が除去済みで軽量化されています。
+レビュー対象の機能に関連するspecファイルのダンプを優先的に確認してください。
 
 ### Step 3: レビュー観点
 
