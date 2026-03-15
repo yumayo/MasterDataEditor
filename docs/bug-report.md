@@ -1477,3 +1477,16 @@ CSS でデフォルト非表示（`display: none`）にした要素を JavaScrip
 新しいコンテキスト（DiffTab、将来の SplitPane 等）で EditorTable を生成する際は、mousedown → activate のパスが正しく接続されているかを必ず確認する。今回の修正で mousedown ハンドラを3段階分岐（relationsPanel → diffTab → 直接activate）に拡張したが、新しいコンテキスト追加時にはこの分岐にパスを追加する必要がある。また、RelationsPanel.activateHandler() と DiffTab.activateHandler() を対称的に実装するパターンを確立したので、排他制御が必要な場面では同パターンを踏襲すること。
 
 ---
+
+## 100. [e4b8772] — 差分ビューで削除行が元の位置ではなく末尾に表示される
+
+### 不具合原因名
+buildDiffRowsのループ順序によるdeleted行の位置ずれ
+
+### なぜそうなったのか
+`diff-tab.ts` の `buildDiffRows()` 関数は、Current版（変更後）の行を先に順番にループ処理してdiffRowsに追加し、その後にHEAD版の未処理行（削除行）を末尾にpushしていた。このアルゴリズムにより、削除行のHEAD版における元の位置情報が失われ、常に末尾に配置されていた。`buildUniqueKeyMap` が返す `order` 配列（行順序情報）が存在していたにもかかわらず、`buildDiffRows` では `map` のみを分割代入で取得し、`order` を無視していた。
+
+### どうしたら今後は再発しないか
+差分行の表示順序はHEAD版の行順序を基準とすべきである。HEAD版のorder順にループし、各行に対してCurrent版の対応行を照合する方式にすることで、削除行が元の位置に配置される。added行はHEAD版に存在しないため末尾に配置される。同様のmergeアルゴリズムを実装する際は、「基準となる順序はどちら側か」を明確にしてからループ順を決定すること。
+
+---

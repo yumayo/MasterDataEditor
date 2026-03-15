@@ -441,14 +441,17 @@ test.describe('ソース管理パネル', () => {
             const rightPane = diffTab.locator('.diff-pane-right');
 
             // 右ペイン（現在版）のデータ行を取得する（ヘッダーを除く）
-            // FEAT_0008: ファイル順（id=1, id=2, id=4の順）で表示される（RED: 現在はPKソートのため順序が異なる場合がある）
-            // 現在版の1行目はid=1（変更あり）であることを確認する
+            // CSV行順（id=1, id=2, id=4の順）で表示され、削除行（id=3）の位置には空行が挿入される
             const dataRows = rightPane.locator('.editor-table .editor-table-row:not(:first-child)');
-            // id=4（追加行）がファイル末尾（index=2）に表示されることを確認する
-            // IDソートなら id=1, id=2, id=4 = 変化なし、だが id=3 削除分との組み合わせで位置が変わる
-            // ここでは: 右ペイン3行目が id=4 であることを検証する（空行でなく実データ）
+            // 新アルゴリズムでは削除行（id=3）を元の位置（index=2）に配置し、右ペインは空行（diff-row-empty）となる
+            // index=0: id=1（変更あり、diff-row-modified）
+            // index=1: id=2（変更なし）
+            // index=2: 空行（diff-row-empty）— 左ペインの id=3 削除行に対応する右ペインの埋め合わせ行
+            // index=3: id=4（追加行、diff-row-added）
             const thirdDataRow = dataRows.nth(2);
-            await expect(thirdDataRow).toHaveClass(/diff-row-added/);
+            await expect(thirdDataRow).toHaveClass(/diff-row-empty/);
+            const fourthDataRow = dataRows.nth(3);
+            await expect(fourthDataRow).toHaveClass(/diff-row-added/);
         },
     );
 
