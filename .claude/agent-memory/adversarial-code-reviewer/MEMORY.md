@@ -70,6 +70,13 @@
 - **diffTabName に isStaged が含まれない**: キー = DIFF_TAB_PREFIX + tableName のみ。staged/changesの切り替えで古いタブが再利用されサイレントバグになる。
 - **closeAllDiffTabs は closeTab を経由しない**: enterSettingsMode/leaveSettingsMode の重複呼び出し回避のため直接destroyする設計。この2パスの乖離が今後も問題を生みやすい。
 
+## DiffTab Dropdown (diff-tab-dropdown-fix) Known Patterns
+- **staged=true でドロップダウン生成を抑制しない**: isStaged チェックを buildDiffEditorTable 呼び出し前に行い dropdownContainer=null を渡すべき
+- **buildDiffEditorTable 戻り値に dropdownInput が含まれない**: destroy() でhide()できずタイマーリークの温床
+- **diff-tab-wrapper に position:relative がない**: ドロップダウンの絶対座標基準が .editor(position:fixed)になり、スクロール時ズレが発生する
+- **buildDiffEditorTable で fillController.activate() が欠落**: createMiniEditorTable と乖離 (対称操作パターン再発)
+- **console.log が GridDropdownInput.show() / EditorTableHandler に残留**: 差分タブドロップダウン修正で初めてこのパスが通るようになり問題が顕在化
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
@@ -85,3 +92,4 @@
 - (FEAT_0018 diff-tab-row-insert-delete-sync): 致命的2件、重要4件、軽微3件
 - (FEAT_0019 dropdown-quickview-hover): 致命的2件、重要4件、軽微4件
 - (diff-tab-duplicate-fix): 致命的2件、重要3件、軽微3件
+- (diff-tab-dropdown-fix): 致命的2件、重要3件、軽微2件

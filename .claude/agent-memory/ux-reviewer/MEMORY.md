@@ -16,6 +16,12 @@
 - ファイル: project_diff_tab_dedup.md
 - openDiffTab()の重複防止とremoveTabButton()のDOM除去修正が適切に実装されている
 
+#### 差分ビュー右ペインFKドロップダウン追加（2026-03-15レビュー）
+- ファイル: project_diff_tab_dropdown.md
+- dropdownContainer=wrapperElementパターンで overflow クリッピングを回避
+- console.log デバッグログが GridDropdownInput.show() に残存（本番環境への混入リスク）
+- 左ペインの読み取り専用状態がDOM上で明示されていない（aria属性なし）
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ
