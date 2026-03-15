@@ -15,6 +15,12 @@ export const COLUMN_HEADER_FONT = 'bold 13px sans-serif';
  *  リサイズハンドルは position: absolute のためテキスト幅計算に影響しない。 */
 export const CELL_HORIZONTAL_EXTRA = 17;
 
+/** 通常テーブルのヘッダーアイコン占有幅(px)。
+ *  filter-icon(right:30px, width:14px) の左端が cell.right-44px にあるため、
+ *  テキスト右端が cell.right-44px を超えないよう padding-right 相当の余白として確保する。
+ *  44px + 余裕4px = 48px。 */
+export const HEADER_ICON_AREA_PX = 48;
+
 /** 最小列幅(px) */
 export const MIN_COLUMN_WIDTH_PX = 50;
 

@@ -82,6 +82,14 @@
     padding-left: 32px;
 }
 
+/* アイコンありのヘッダーセルは padding-right を広げてテキストとアイコンが重ならないようにする。
+   filter-icon(right:30px, width:14px) の左端が cell.right-44px にあるため、
+   テキストの content-box 右端がアイコン領域を超えないよう 48px 確保する。
+   ミニテーブルにはアイコンがないため has-icons クラスは付与されない。 */
+.editor-table-column-header.has-icons {
+    padding-right: 48px;
+}
+
 /* PK/FK バッジ共通スタイル */
 .column-header-badge {
     display: inline-block;

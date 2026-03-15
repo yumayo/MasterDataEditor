@@ -374,7 +374,8 @@ export class DiffTab {
         const csv = new Csv();
         csv.header = displayHeader;
         csv.body = dataRows;
-        const tableData = EditorTableData.parse(schemaObj, csv);
+        // 差分ビューはミニテーブルとして生成されるためフィルター・ソートアイコンは持たない。hasIcons: false
+        const tableData = EditorTableData.parse(schemaObj, csv, false);
 
         // ストアに登録する（History コンストラクタで registerHistory が呼ばれるためストア登録が先）
         store.registerTable(tableKey, csv.header, csv.body);

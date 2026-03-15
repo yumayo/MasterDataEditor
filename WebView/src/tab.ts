@@ -968,7 +968,8 @@ export class Tab {
 
             // 中央ストアにCSVを読み込み・登録
             const csv = await this.store.registerTableAsync(name);
-            const tableData = EditorTableData.parse(json, csv);
+            // 通常テーブルはフィルター・ソートアイコンを持つため hasIcons: true
+            const tableData = EditorTableData.parse(json, csv, true);
 
             // ラッパー要素を作成（このタブのDOM全体を包む）
             // editor.appendChild は左ペインへのappendに変更された
@@ -1163,7 +1164,8 @@ export class Tab {
         const csv = new Csv();
         csv.header = csvHeader;
         csv.body = csvRows;
-        const tableData = EditorTableData.parse(schemaJson, csv);
+        // ミニテーブルはフィルター・ソートアイコンを持たないため hasIcons: false
+        const tableData = EditorTableData.parse(schemaJson, csv, false);
 
         // 相互参照を解決するため一時的な空オブジェクトを作成（Tab.createEditorTable と同パターン）
         const editorTable = {} as EditorTable;

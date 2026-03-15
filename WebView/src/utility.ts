@@ -1,4 +1,4 @@
-import {COLUMN_HEADER_FONT, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
+import {COLUMN_HEADER_FONT, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX, HEADER_ICON_AREA_PX} from "./constant";
 
 export class Utility {
 
@@ -26,10 +26,16 @@ export class Utility {
         return metrics.width;
     }
 
-    /** カラム名に応じた列幅を計算する */
-    static calculateColumnWidth(columnName: string): string {
+    /**
+     * カラム名に応じた列幅を計算する。
+     * hasIcons が true の場合、絶対配置アイコン（フィルター・ソートインジケーター）の
+     * 占有幅（HEADER_ICON_AREA_PX）を列幅に加算してテキストとアイコンが重ならないようにする。
+     * ミニテーブル（アイコンなし）の場合は false を渡す。
+     */
+    static calculateColumnWidth(columnName: string, hasIcons: boolean): string {
         const textWidth = Utility.getTextWidth(columnName, COLUMN_HEADER_FONT);
-        const totalWidth = Math.ceil(textWidth) + CELL_HORIZONTAL_EXTRA;
+        const iconExtra = hasIcons ? HEADER_ICON_AREA_PX : 0;
+        const totalWidth = Math.ceil(textWidth) + CELL_HORIZONTAL_EXTRA + iconExtra;
         const width = Math.max(totalWidth, MIN_COLUMN_WIDTH_PX);
         return `${width}px`;
     }

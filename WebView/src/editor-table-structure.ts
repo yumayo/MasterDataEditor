@@ -64,7 +64,8 @@ export class EditorTableStructure {
                     existingLabels.push(getColumnHeaderLabel(row.children[i] as HTMLElement));
                 }
                 // 列挿入で追加する新規列は PK でも FK でもないため false/null を渡す
-                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth(''), false, null);
+                // ミニテーブルはアイコンなしのため hasIcons: false、通常テーブルは hasIcons: true
+                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth('', !this.table.isMiniTableInstance()), false, null);
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newHeaderCell, insertBefore);
@@ -93,8 +94,8 @@ export class EditorTableStructure {
                     headerCell.appendChild(newResizeHandle);
                 }
             } else {
-                // 通常の行: 行の高さは既存のセルから取得
-                const newCell = EditorTable.createCell(this.table, '', columnIndex, Utility.calculateColumnWidth(''), DEFAULT_ROW_HEIGHT);
+                // 通常の行: 行の高さは既存のセルから取得。列幅はヘッダーと同じ計算で揃える
+                const newCell = EditorTable.createCell(this.table, '', columnIndex, Utility.calculateColumnWidth('', !this.table.isMiniTableInstance()), DEFAULT_ROW_HEIGHT);
                 const insertBefore = row.children[columnIndex + 1];
                 row.insertBefore(newCell, insertBefore);
                 // 後続のセルのdata-colを更新
@@ -433,8 +434,10 @@ export class EditorTableStructure {
         columnHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createColumnHeaderClickHandler(columnHeaderCell));
         // 列ヘッダー右クリックでコンテキストメニュー
         columnHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createColumnHeaderContextMenuHandler(columnHeaderCell));
-        // ミニテーブルにはフィルターアイコン・ソートインジケーターを追加しない
+        // ミニテーブルにはフィルターアイコン・ソートインジケーターを追加しない。
+        // アイコンがある場合は has-icons クラスを付与して CSS の padding-right を有効にする。
         if (!this.table.isMiniTableInstance()) {
+            columnHeaderCell.classList.add('has-icons');
             // フィルターアイコン（ソートインジケーターの左に配置）
             const filterIcon = document.createElement('span');
             filterIcon.classList.add('filter-icon');

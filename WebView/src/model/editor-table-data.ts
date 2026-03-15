@@ -25,7 +25,12 @@ export class EditorTableData {
         this.body = body;
     }
 
-    static parse(json: Record<string, unknown>, csv: Csv) {
+    /**
+     * スキーマJSONとCSVからEditorTableDataを生成する。
+     * hasIcons が true の場合、フィルター・ソートアイコンの占有幅を列幅計算に含める。
+     * ミニテーブル（アイコンなし）は false を渡すこと。
+     */
+    static parse(json: Record<string, unknown>, csv: Csv, hasIcons: boolean) {
 
         const description = json['description'] !== undefined ? json['description'] as string : null;
 
@@ -49,7 +54,7 @@ export class EditorTableData {
                 column.key, column.name, column.type,
                 column.comment !== undefined ? column.comment : null,
                 column.reference !== undefined ? column.reference : null,
-                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name)
+                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name, hasIcons)
             ));
         }
 
