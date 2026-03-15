@@ -77,6 +77,14 @@
 - **buildDiffEditorTable で fillController.activate() が欠落**: createMiniEditorTable と乖離 (対称操作パターン再発)
 - **console.log が GridDropdownInput.show() / EditorTableHandler に残留**: 差分タブドロップダウン修正で初めてこのパスが通るようになり問題が顕在化
 
+## Mini-table Buffer Row (FEAT_0022) Known Patterns (R2で確認済み)
+- **FIXED**: deleteRow(structure.ts) に `isMiniTableInstance() && diffTab === false` 条件でensureTrailingBufferRow追加
+- **FIXED**: normalizeTrailingBufferRows が removeChild 後に renumberRowsFrom(0) と updateRendererAfterResize を呼ぶ
+- **FIXED**: ensureTrailingBufferRow で追加したバッファ行に updateReferenceHintsForRows を呼ぶ
+- **FIXED**: ensureTrailingBufferRow/normalizeTrailingBufferRows で selection.updateRendererAfterResize を呼ぶ
+- **PATTERN**: deleteRow の diffTab条件チェックが必要な理由: deleteRow はコンテキストメニューから DiffTab テーブルでも呼ばれる。promoteBufferRowToStore/demoteStoreRowToBuffer は DiffTab テーブルで isBufferRow が常に false のため呼ばれず、diffTab条件チェック不要
+- **PATTERN**: ensureTrailingBufferRow はアクセス修飾子なし(暗黙public) — EditorTableStructure から呼ばれるため private 化不可（TypeScript の package-level アクセス制御がない）
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
@@ -93,3 +101,5 @@
 - (FEAT_0019 dropdown-quickview-hover): 致命的2件、重要4件、軽微4件
 - (diff-tab-duplicate-fix): 致命的2件、重要3件、軽微3件
 - (diff-tab-dropdown-fix): 致命的2件、重要3件、軽微2件
+- (FEAT_0022 mini-table-trailing-buffer-row): 致命的2件、重要3件、軽微2件
+- (FEAT_0022 R2): 問題なし（前回指摘4件がすべて修正済み）
