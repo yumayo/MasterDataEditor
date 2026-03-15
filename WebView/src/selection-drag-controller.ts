@@ -52,7 +52,6 @@ export class SelectionDragController {
     }
 
     stopAutoScrollForInput(): void {
-        console.log('[auto-scroll] stopAutoScrollForInput');
         this.stopAutoScroll();
     }
 
@@ -81,12 +80,6 @@ export class SelectionDragController {
 
     private updateAutoScrollState(clientX: number, clientY: number): void {
         const delta = this.getAutoScrollDelta(clientX, clientY);
-        console.log('[auto-scroll] updateAutoScrollState', {
-            clientX,
-            clientY,
-            deltaX: delta.x,
-            deltaY: delta.y
-        });
         if (delta.x !== 0 || delta.y !== 0) {
             this.startAutoScroll();
         } else {
@@ -96,7 +89,6 @@ export class SelectionDragController {
 
     private startAutoScroll(): void {
         if (this.autoScrollActive) return;
-        console.log('[auto-scroll] start');
         this.autoScrollActive = true;
         this.autoScrollFrameId = window.requestAnimationFrame(() => {
             this.handleAutoScrollFrame();
@@ -106,26 +98,16 @@ export class SelectionDragController {
     private handleAutoScrollFrame(): void {
         if (!this.autoScrollActive) return;
         if (!this.selection.isSelectingColumn() && !this.selection.isSelectingRow() && !this.selection.isSelecting()) {
-            console.log('[auto-scroll] stop (selection inactive)');
             this.stopAutoScroll();
             return;
         }
         const delta = this.getAutoScrollDelta(this.lastMouseX, this.lastMouseY);
         if (delta.x === 0 && delta.y === 0) {
-            console.log('[auto-scroll] stop (no delta)');
             this.stopAutoScroll();
             return;
         }
         const scrollTop = this.scrollBinding.getScrollTop();
         const scrollLeft = this.scrollBinding.getScrollLeft();
-        console.log('[auto-scroll] frame', {
-            lastMouseX: this.lastMouseX,
-            lastMouseY: this.lastMouseY,
-            deltaX: delta.x,
-            deltaY: delta.y,
-            scrollTop,
-            scrollLeft
-        });
         this.scrollBinding.setScrollPosition(scrollTop + delta.y, scrollLeft + delta.x);
         this.updateSelectionFromPoint(this.lastMouseX, this.lastMouseY);
         this.autoScrollFrameId = window.requestAnimationFrame(() => {
@@ -135,7 +117,6 @@ export class SelectionDragController {
 
     private stopAutoScroll(): void {
         if (!this.autoScrollActive) return;
-        console.log('[auto-scroll] stop');
         this.autoScrollActive = false;
         if (this.autoScrollFrameId !== 0) {
             window.cancelAnimationFrame(this.autoScrollFrameId);

@@ -283,18 +283,11 @@ export class EditorTableHandler {
      * フォーカスアウト時の処理
      */
     private onFocusout(event: FocusEvent): void {
-        console.log('[handler] onFocusout', {
-            active: this.active,
-            dropdownActive: this.dropdownActive,
-            visible: this.visible,
-            relatedTarget: event.relatedTarget
-        });
 
         if (!this.active) return;
 
         // ドロップダウンがアクティブな場合はキャンセルして非表示にする
         if (this.dropdownActive && this.dropdownInput) {
-            console.log('[handler] dropdownActive=true, cancelling dropdown');
             this.dropdownInput.cancel();
         }
 
@@ -302,7 +295,6 @@ export class EditorTableHandler {
         // 意図的な移動なのでフォーカスを奪わない（検索パネル等の入力フィールド用）
         const focusTarget = event.relatedTarget;
         if (focusTarget instanceof HTMLInputElement || focusTarget instanceof HTMLTextAreaElement) {
-            console.log('[handler] focus moved to input element, not reclaiming');
             if (this.visible) {
                 this.submitText();
                 this.hide();
@@ -314,7 +306,6 @@ export class EditorTableHandler {
         // フォーカスを奪わない。そのEditorTableのhandlerがactivate()を呼んでアクティブになっているため
         // こちらはdeactivate()された状態になっており、奪還してもIMEが壊れるだけ。
         if (focusTarget instanceof HTMLElement && focusTarget.classList.contains('grid-textfield') && focusTarget !== this.element) {
-            console.log('[handler] focus moved to another editor-table handler, not reclaiming');
             if (this.visible) {
                 this.submitText();
                 this.hide();
@@ -324,7 +315,6 @@ export class EditorTableHandler {
 
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
-        console.log('[handler] reclaiming focus');
         this.focusWithoutScrolling();
 
         // すでに非表示なら何もしないです。
@@ -362,18 +352,8 @@ export class EditorTableHandler {
      * キーボードイベントを処理する
      */
     private onKeydown(keyboardEvent: KeyboardEvent): void {
-        // テーブルのグローバルなキー入力が見たい場合はコメントアウトしてください。
-        console.log(keyboardEvent);
-
         if (!this.active) return;
 
-        console.log('[input] keydown', {
-            key: keyboardEvent.key,
-            code: keyboardEvent.code,
-            shiftKey: keyboardEvent.shiftKey,
-            ctrlKey: keyboardEvent.ctrlKey,
-            metaKey: keyboardEvent.metaKey
-        });
         this.table.stopAutoScrollForInput();
 
         // ドロップダウンがアクティブな場合

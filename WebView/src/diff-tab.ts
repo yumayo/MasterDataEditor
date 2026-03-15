@@ -15,6 +15,7 @@ import {Editor} from "./editor";
 import {Sidebar} from "./sidebar";
 import {SchemaColumn, SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
 import {TabReference} from "./tab-reference";
+import {GridDropdownInput} from "./grid-dropdown-input";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -117,9 +118,10 @@ export class DiffTab {
         this.leftTableKey = leftTableKey;
         this.rightTableKey = rightTableKey;
 
+        // 左ペイン（HEAD版）はドロップダウン不要のため dropdownContainer=null を渡す
         const leftResult = this.buildDiffEditorTable(
             leftTableKey, schemaJson, displayHeader, leftRows,
-            leftPaneElement, store, referenceDataCache, contextMenu, tabButton, sidebar
+            leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar
         );
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
@@ -131,9 +133,12 @@ export class DiffTab {
         tabReference.preloadReferenceTables(leftResult.tableData, this.leftEditorTable);
         tabReference.resolveReverseReferencesAsync(tableName, this.leftEditorTable);
 
+        // 右ペイン（現在版）: staged=falseのときのみドロップダウンを有効化する。
+        // overflow:auto のスクロールコンテナ（rightPaneElement）の外側に配置することでクリッピングを防ぐ。
+        // staged=trueの場合は makeReadOnly() が呼ばれるためドロップダウンDOMは不要（null を渡す）。
         const rightResult = this.buildDiffEditorTable(
             rightTableKey, schemaJson, displayHeader, rightRows,
-            rightPaneElement, store, referenceDataCache, contextMenu, tabButton, sidebar
+            rightPaneElement, isStaged ? null : wrapperElement, store, referenceDataCache, contextMenu, tabButton, sidebar
         );
         this.rightEditorTable = rightResult.editorTable;
         this.rightEditorTableHandler = rightResult.editorTableHandler;
@@ -357,6 +362,7 @@ export class DiffTab {
         displayHeader: string[],
         dataRows: string[][],
         paneElement: HTMLElement,
+        dropdownContainer: HTMLElement | null,
         store: InMemoryTableStore,
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
@@ -414,6 +420,14 @@ export class DiffTab {
 
         areaResizer.activate();
         editorTable.activate();
+
+        // ドロップダウンコンテナが指定されている場合のみドロップダウンを生成・設定する。
+        // overflow:auto のスクロールコンテナ（paneElement）の外側に配置することでクリッピングを防ぐ。
+        // ミニテーブル（tab.ts 1219行）と同パターン。
+        if (dropdownContainer !== null) {
+            const dropdownInput: GridDropdownInput = editorTableHandler.createDropdownInput(dropdownContainer, referenceDataCache);
+            editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
+        }
 
         return { editorTable, editorTableHandler, history, areaResizer, fillController, tableData };
     }

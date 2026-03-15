@@ -355,7 +355,6 @@ export async function saveTableDataFromStoreAsync(tableName: string, store: InMe
         throw new Error(`[saveTableDataFromStoreAsync] テーブル "${tableName}" がストアに存在しません`);
     }
     await writeFileAsync(csvPath, csv.toString());
-    console.log(`Saved ${csvPath} (from store)`);
 }
 
 /**
@@ -375,5 +374,4 @@ export async function saveDiffTableDataFromStoreAsync(saveTableName: string, sto
         throw new Error(`[saveDiffTableDataFromStoreAsync] ストアキー "${storeKey}" がストアに存在しません`);
     }
     await writeFileAsync(csvPath, csv.toString());
-    console.log(`Saved ${csvPath} (from diff store key: ${storeKey})`);
 }

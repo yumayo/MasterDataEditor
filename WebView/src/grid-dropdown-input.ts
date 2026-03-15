@@ -74,7 +74,6 @@ export class GridDropdownInput {
      * @param referenceTableName 参照先テーブル名（クイックビュー用）
      */
     show(rect: DOMRect, items: ReferenceItem[], currentValue: string, referenceTableName: string): void {
-        console.log('[dropdown] show called', { currentValue, itemCount: items.length });
 
         this.items = items;
         this.visible = true;

@@ -1628,3 +1628,16 @@ openDiffTab の「閉じて再作成」ポリシーと removeTabButton の DOM �
 3. データ管理（Map/配列）とDOM操作を常にセットで行う。配列から除去したらDOM除去も同時に行う設計にすることで不整合を防ぐ
 
 ---
+
+## 111. [0318047] — 差分ビュータブの右ペインでFK参照ドロップダウンが表示されない不具合を修正
+
+### 不具合原因名
+DiffTab の buildDiffEditorTable() でドロップダウン初期化処理の欠落
+
+### なぜそうなったのか
+`DiffTab.buildDiffEditorTable()` で `EditorTable` を生成する際に、通常タブ（`tab.ts` の `createEditorTable`）やミニテーブル（`createMiniEditorTable`）では必ず呼ばれる `createDropdownInput()` と `setReferenceComponents()` の2行が実装されていなかった。これは DiffTab 新設時に通常タブの EditorTable 生成後処理チェックリストの一部が転記されなかったことが原因。bug-report #103（DiffTab での参照プリロード呼び出し漏れ）と同じ構造的問題の再発である。
+
+### どうしたら今後は再発しないか
+新しい EditorTable 生成パスを追加する際は、`tab.ts` の通常タブ生成処理（`createEditorTable` メソッド）と対照して、全コンポーネントの初期化が揃っているか確認する。特に EditorTable 生成後の初期化チェックリスト: (1) `initializeModules()` (2) `initialize()` (3) `preloadReferenceTables()` (4) `resolveReverseReferencesAsync()` (5) `createDropdownInput()` + `setReferenceComponents()` — これらが全て呼ばれているか確認する。長期的には、EditorTable の生成と初期化を1つの共通ファクトリメソッドに統合し、初期化漏れが構造的に起きない設計にすることを検討する。
+
+---

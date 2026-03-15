@@ -13,7 +13,6 @@ export class TabButton {
     private closeButton: HTMLButtonElement;
 
     constructor(editor: Editor, tab: Tab, name: string, description: string | null) {
-        console.log('[TabButton] constructor', name);
         this.editor = editor;
         this.name = name;
         this.tab = tab;

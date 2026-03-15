@@ -172,7 +172,6 @@ export class Selection {
      * 列全体を選択する（列ヘッダークリック時）
      */
     selectColumn(column: number): void {
-        console.log('[selectColumn] column:', column);
         const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
@@ -205,7 +204,6 @@ export class Selection {
      * 現在のアンカーから指定した列まで選択を拡張する（Shift+列ヘッダークリック時）
      */
     extendToColumn(column: number): void {
-        console.log('[extendToColumn] column:', column);
         const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
@@ -218,7 +216,6 @@ export class Selection {
      * 現在のアンカーから指定した行まで選択を拡張する（Shift+行ヘッダークリック時）
      */
     extendToRow(row: number): void {
-        console.log('[extendToRow] row:', row);
         if (row < 1) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();
@@ -251,7 +248,6 @@ export class Selection {
      * 現在の選択範囲に列を追加する（Ctrl+列ヘッダークリック時）
      */
     addColumn(column: number): void {
-        console.log('[addColumn] column:', column);
         const rowCount = this.editorTable.getRowCount();
         if (rowCount < 2) return;
 
@@ -269,7 +265,6 @@ export class Selection {
      * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
      */
     addRow(row: number): void {
-        console.log('[addRow] row:', row);
         if (row < 1) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();
@@ -341,7 +336,6 @@ export class Selection {
      * 列選択のドラッグ更新（列ヘッダーをドラッグ中に呼ばれる）
      */
     updateColumn(column: number): void {
-        console.log('[updateColumn] column:', column, 'selectingColumn:', this.selectingColumn);
         if (!this.selectingColumn) return;
         if (column < 1) return;
 
@@ -360,7 +354,6 @@ export class Selection {
      * 行選択のドラッグ更新（行ヘッダーをドラッグ中に呼ばれる）
      */
     updateRow(row: number): void {
-        console.log('[updateRow] row:', row, 'selectingRow:', this.selectingRow);
         if (!this.selectingRow) return;
         if (row < 1) return;
 
@@ -575,20 +568,6 @@ export class Selection {
 
         let nextScrollTop = this.scrollBinding.getScrollTop();
         let nextScrollLeft = this.scrollBinding.getScrollLeft();
-        console.log('[scroll] before', {
-            row,
-            column,
-            scrollTop: nextScrollTop,
-            scrollLeft: nextScrollLeft,
-            visibleTop,
-            visibleBottom,
-            visibleLeft,
-            visibleRight,
-            targetTop: targetRect.top,
-            targetBottom: targetRect.bottom,
-            targetLeft: targetRect.left,
-            targetRight: targetRect.right
-        });
 
         if (targetRect.top < visibleTop) {
             nextScrollTop += targetRect.top - visibleTop;
@@ -603,25 +582,11 @@ export class Selection {
         }
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
-            console.log('[scroll] apply', {
-                row,
-                column,
-                nextScrollTop,
-                nextScrollLeft
-            });
             this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
 
             // ブラウザの慣性スクロール等により次フレームでスクロール位置が上書きされる場合があるため再適用
             const scrollBinding = this.scrollBinding;
             window.requestAnimationFrame(() => {
-                console.log('[scroll] raf', {
-                    row,
-                    column,
-                    expectedScrollTop: nextScrollTop,
-                    expectedScrollLeft: nextScrollLeft,
-                    actualScrollTop: scrollBinding.getScrollTop(),
-                    actualScrollLeft: scrollBinding.getScrollLeft()
-                });
                 if (scrollBinding.getScrollTop() !== nextScrollTop || scrollBinding.getScrollLeft() !== nextScrollLeft) {
                     scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
                 }
