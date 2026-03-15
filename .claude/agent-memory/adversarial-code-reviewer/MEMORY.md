@@ -197,7 +197,15 @@
 - **KNOWN ISSUE**: PK/FK badge createElement duplicated (PK and FK branches nearly identical)
 - **Pattern**: Column delete Undo missing metadata restoration (same as comment='' vs null on FEAT_0004)
 
+## FEAT_0017 PK/FK Badge Left Placement (2026-03-15)
+- **CRITICAL**: DeleteColumnCommand.undo() still does not restore badge (same as FEAT_0016 unfixed) -> isPrimaryKey/reference not saved/restored
+- **CRITICAL**: setColumnHeaderValue/setColumnHeaderLabel TextNode fallback inserts before badgeArea -> DOM structure corruption when badge-first + no TextNode + no nameSpan
+- **KNOWN ISSUE**: insertColumnInternal signature only accepts comment, not isPrimaryKey/reference -> caller cannot restore badges on Undo
+- **KNOWN ISSUE**: CSS colors hardcoded (6th occurrence)
+- **Pattern**: Inserting new first-child element (badgeArea) invalidates all TextNode-fallback insert paths that use `insertBefore(x, firstChild)`
+
 ## Review History (continued)
 - 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
 - 2026-03-15 (FEAT_0014 buffer-row-autofill R1): 致命的2件、重要3件、軽微2件
 - 2026-03-15 (FEAT_0016 pk-fk-badge R1): 致命的2件、重要5件、軽微3件
+- 2026-03-15 (FEAT_0017 pk-fk-badge-left R1): 致命的2件、重要4件、軽微3件
