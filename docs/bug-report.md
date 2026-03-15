@@ -1641,3 +1641,18 @@ DiffTab の buildDiffEditorTable() でドロップダウン初期化処理の欠
 新しい EditorTable 生成パスを追加する際は、`tab.ts` の通常タブ生成処理（`createEditorTable` メソッド）と対照して、全コンポーネントの初期化が揃っているか確認する。特に EditorTable 生成後の初期化チェックリスト: (1) `initializeModules()` (2) `initialize()` (3) `preloadReferenceTables()` (4) `resolveReverseReferencesAsync()` (5) `createDropdownInput()` + `setReferenceComponents()` — これらが全て呼ばれているか確認する。長期的には、EditorTable の生成と初期化を1つの共通ファクトリメソッドに統合し、初期化漏れが構造的に起きない設計にすることを検討する。
 
 ---
+
+## 112. [9ef9aa7] — ミニテーブル末尾バッファ行の動的補充機能追加（FEAT_0022）
+
+### 不具合原因名
+バッファ行ライフサイクルの一方向設計（初期配置のみ・昇格後補充なし）
+
+### なぜそうなったのか
+`promoteBufferRowToStore()` がバッファ行をストアに昇格した後、新しいバッファ行を補充する処理が存在しなかった。`emptyRowCount` は初期化時に固定値として設定され、昇格後のバッファ行数の動的管理が考慮されていなかった。バッファ行のライフサイクル設計が「初期化時に固定数を配置する」一方向のモデルだったため、昇格後のバッファ行補充という逆方向の操作が設計段階で想定されていなかった。
+
+### どうしたら今後は再発しないか
+1. バッファ行を含むDOMの動的変更を行う箇所では、末尾バッファ行の不変条件（ミニテーブルでは常に1行存在する）を維持する処理を追加すること。
+2. `promoteBufferRowToStore` / `demoteStoreRowToBuffer` / `deleteRow` の3パスすべてにバッファ行管理を追加した。新たな行変更パスを追加する際は同様のバッファ行保証を検討すること。
+3. `diffTab === false` 条件で差分ビューのEditorTableを除外するパターンを確立した。ミニテーブル判定だけでは差分ビューも含まれることに注意。
+
+---

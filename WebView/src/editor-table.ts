@@ -988,6 +988,8 @@ export class EditorTable {
         this.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（新規昇格行がフィルター条件を満たさない可能性）
         this.refreshFilterDisplayIfActive();
+        // ミニテーブルは常に末尾にバッファ行を1行保持する（昇格で消えた場合に補充する）。差分タブでは不要。
+        if (this.isMiniTable && this.diffTab === false) this.ensureTrailingBufferRow();
     }
 
     /**
@@ -1023,6 +1025,9 @@ export class EditorTable {
         this.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（降格行の除去で表示行数が変化する）
         this.refreshFilterDisplayIfActive();
+        // ミニテーブルでUndoにより降格した行がバッファ行に戻ると、バッファ行が蓄積する可能性がある。
+        // 蓄積したバッファ行（2行以上）は末尾から削除し、常に1行だけになるよう整理する。差分タブでは不要。
+        if (this.isMiniTable && this.diffTab === false) this.normalizeTrailingBufferRows();
     }
 
     /**
@@ -1030,6 +1035,67 @@ export class EditorTable {
      */
     isBufferRow(domDataRowIndex: number): boolean {
         return domDataRowIndex >= this.storeRowIndices.length;
+    }
+
+    /**
+     * 末尾バッファ行が存在しない場合に1行追加する（蓄積防止のため既にある場合は何もしない）。
+     * ミニテーブルでバッファ行が昇格した後に必ず1行末尾バッファ行を保持するために使う。
+     *
+     * 行番号はDOMの現在の全データ行数（storeRowIndices.length + 現在のバッファ行数）に基づく。
+     * 追加する行は editor-table-empty-row クラスを持つ。
+     *
+     * @internal EditorTableStructure.deleteRow() からも呼ばれる。外部からは呼ばないこと。
+     */
+    ensureTrailingBufferRow(): void {
+        // 列ヘッダー行(children[0])を除いたデータ行の総数（ストア行 + 既存バッファ行）
+        const totalDataRows = this.element.children.length - 1;
+        // 末尾のDOM行がバッファ行かどうかを確認する（children[0]は列ヘッダーなので+1オフセット）
+        if (totalDataRows > 0) {
+            const lastRow = this.element.children[totalDataRows] as HTMLElement;
+            if (lastRow.classList.contains('editor-table-empty-row')) return;
+        }
+        // 新しいバッファ行の行インデックス（0始まり）
+        const newRowIndex = totalDataRows;
+        const cells: HTMLElement[] = [];
+        cells.push(this.structure.createRowHeaderCell(String(newRowIndex + 1), newRowIndex));
+        for (let j = 0; j < this.tableData.header.length; ++j) {
+            cells.push(EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
+        }
+        const row = EditorTable.createRow(cells, newRowIndex);
+        row.classList.add('editor-table-empty-row');
+        this.element.appendChild(row);
+        // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
+        this.structure.renumberRowsFrom(0);
+        // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
+        const newDomRow = newRowIndex + 1; // DOMインデックス（列ヘッダー行を+1でオフセット）
+        this.updateReferenceHintsForRows(newDomRow, newDomRow);
+        // 行数変化後に選択オーバーレイの描画位置を再計算する
+        this.selection.updateRendererAfterResize();
+    }
+
+    /**
+     * バッファ行が2行以上存在する場合に末尾から余分な行を削除し、常に1行だけになるよう整理する。
+     * demoteStoreRowToBuffer() のUndo後にバッファ行が蓄積するのを防ぐために使う。
+     * demoteStoreRowToBuffer() は降格対象行に必ず editor-table-empty-row を付与するため、
+     * このメソッド実行後にバッファ行が0行になることはない。
+     */
+    private normalizeTrailingBufferRows(): void {
+        // DOM上のバッファ行（editor-table-empty-row）を末尾から数えて2行目以降を削除する
+        // children[0]は列ヘッダーなのでデータ行は children[1] 以降
+        const toRemove: HTMLElement[] = [];
+        let bufferRowCount = 0;
+        for (let i = this.element.children.length - 1; i >= 1; i--) {
+            const row = this.element.children[i] as HTMLElement;
+            if (!row.classList.contains('editor-table-empty-row')) break;
+            bufferRowCount++;
+            // 2行目以降の余分なバッファ行を削除対象に追加する（末尾の1行は残す）
+            if (bufferRowCount > 1) toRemove.push(row);
+        }
+        for (const row of toRemove) this.element.removeChild(row);
+        // 行削除後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
+        this.structure.renumberRowsFrom(0);
+        // 行数変化後に選択オーバーレイの描画位置を再計算する
+        this.selection.updateRendererAfterResize();
     }
 
     // =========================================================================

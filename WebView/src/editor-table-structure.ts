@@ -384,6 +384,11 @@ export class EditorTableStructure {
         this.table.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（行削除で表示行数が変化する）
         this.table.refreshFilterDisplayIfActive();
+        // ミニテーブルはコンテキストメニューの「行を削除」でデータ行を削除した後も末尾に常に1行バッファ行を保持する。
+        // ただし差分ビューのEditorTable（diffTab !== false）は isMiniTable=true で構築されているが
+        // パディング行管理を DiffTab 側で行うためバッファ行の自動補充は不要。
+        // deleteRow の呼び出し元（DeleteRowCommand.execute/undo）はこの区別を知らないため、ここで一元的に判定する。
+        if (this.table.isMiniTableInstance() && this.table.diffTab === false) this.table.ensureTrailingBufferRow();
     }
 
     /**
