@@ -188,8 +188,9 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
 
             // quest_reward ミニテーブルが表示されるまで待機する
             // ヘッダー行(1) + データ行(2) = 3行
+            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
             const miniTable = await getMiniTableSectionAsync(page, 'quest_reward');
-            const allMiniRows = miniTable.locator('.editor-table-row');
+            const allMiniRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
             await expect(allMiniRows).toHaveCount(3);
 
             // ステップ2: ミニテーブルの2行目（id=2, group_id=1, storeIndex=1）の下に行を挿入する
@@ -251,7 +252,8 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
 
             // ミニテーブルが再表示されるまで待機する
             const miniTableAfterSwitch = await getMiniTableSectionAsync(page, 'quest_reward');
-            const allMiniRowsAfterSwitch = miniTableAfterSwitch.locator('.editor-table-row');
+            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+            const allMiniRowsAfterSwitch = miniTableAfterSwitch.locator('.editor-table-row:not(.editor-table-empty-row)');
             // ミニテーブルには3行（id=1, id=2, id=5(group_id=1)）が表示される
             // ヘッダー行(1) + データ行(3) = 4行
             await expect(allMiniRowsAfterSwitch).toHaveCount(4);
@@ -326,8 +328,9 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             await waitForRelationsPanelContentAsync(page);
 
             // ミニテーブルが表示される（ヘッダー行 + 2データ行 = 3行）
+            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
             const miniTable = await getMiniTableSectionAsync(page, 'quest_reward');
-            const allMiniRows = miniTable.locator('.editor-table-row');
+            const allMiniRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
             await expect(allMiniRows).toHaveCount(3);
 
             // ステップ2: ミニテーブルの2行目の下に行を挿入する

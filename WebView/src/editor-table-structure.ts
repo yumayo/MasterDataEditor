@@ -218,6 +218,10 @@ export class EditorTableStructure {
         this.table.validatePkDuplicates();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（挿入行がフィルター条件を満たさない可能性）
         this.table.refreshFilterDisplayIfActive();
+        // 差分ビューの右ペインで行挿入した場合、左ペインの同一位置にパディング行を挿入して行数を同期する
+        if (this.table.diffTab !== false) {
+            this.table.diffTab.notifyRightPaneRowInserted(rowIndex);
+        }
     }
 
     /**
@@ -352,10 +356,16 @@ export class EditorTableStructure {
             // ソート中の場合、originalIndices も同期する（行削除でストアインデックスがずれるため）
             this.table.notifySortRowDeleted(removedStoreIndex);
         }
-        // 指定位置の行を削除
-        const rowToRemove = tableElement.children[rowIndex];
-        if (rowToRemove) {
-            rowToRemove.remove();
+        // 差分ビューの右ペインでは DOM 行の削除を DiffTab に委譲する。
+        // DiffTab.notifyRightPaneRowDeleted は以下の2つのケースを DOM 状態で判断する:
+        //   - 左ペインの対応行が diff-row-padding-inserted → 行挿入のUndo → 左右のDOM行を削除
+        //   - そうでない → 通常のデータ行削除 → 右ペインをパディング行変換 + 左ペインに削除マーク
+        if (this.table.diffTab !== false) {
+            const rowElement = tableElement.children[rowIndex] as HTMLElement;
+            this.table.diffTab.notifyRightPaneRowDeleted(rowIndex, rowElement);
+        } else {
+            // 通常テーブルの場合は DOM 行をそのまま削除する
+            tableElement.children[rowIndex].remove();
         }
         // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);

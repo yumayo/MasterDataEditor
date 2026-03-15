@@ -188,16 +188,18 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 			await waitForRelationsPanelContentAsync(page);
 			const miniTable = await getMiniTableSectionAsync(page, 'shop_product');
 			// 初期状態: ヘッダー行(1) + データ行(2, Sword・Shield) = 3行
-			await expect(miniTable.locator('.editor-table-row')).toHaveCount(3);
+			// バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+			await expect(miniTable.locator('.editor-table-row:not(.editor-table-empty-row)')).toHaveCount(3);
 
 			// Axe を追加して shop WeaponShop 行を選択した状態にする
 			await setupAxeAddedAndShopSelectedAsync(page);
 
 			// 期待: ヘッダー行(1) + データ行(3, Sword・Shield・Axe) = 4行
 			// バグの動作: fullDataCache が陳腐化しているため Axe が除外されて3行（ヘッダー+2）になる
+			// バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
 			const refreshedMiniTable = await getMiniTableSectionAsync(page, 'shop_product');
 			await expect(
-				refreshedMiniTable.locator('.editor-table-row'),
+				refreshedMiniTable.locator('.editor-table-row:not(.editor-table-empty-row)'),
 				'shop_product に追加した Axe（group_id=1）が N:1 ミニテーブルに表示されるべき',
 			).toHaveCount(4);
 		},
@@ -213,7 +215,8 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 
 			// ミニテーブルのデータ行一覧から "Axe" セルを探す
 			// バグ修正前は fullDataCache の古いデータで resolveRowsByFkValue() が走るため Axe が含まれない
-			const allRows = miniTable.locator('.editor-table-row');
+			// バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+			const allRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
 			const rowCount = await allRows.count();
 			// ヘッダー行(0) + データ行(1,2,3) = 4行あるはず。バグがあれば3行になる。
 			expect(rowCount, 'ミニテーブルの行数が4行（ヘッダー+3データ）であるべき').toBe(4);

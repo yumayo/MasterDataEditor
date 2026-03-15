@@ -537,8 +537,9 @@ export class EditorTableHandler {
             return;
         }
 
-        // Ctrl+Y: Redo
-        if (keyboardEvent.ctrlKey && keyboardEvent.key === 'y') {
+        // Ctrl+Y または Ctrl+Shift+Z: Redo
+        // Ctrl+Shift+Z は key が 'Z'（大文字）になるため、Ctrl+Z (Undo) と区別される
+        if (keyboardEvent.ctrlKey && (keyboardEvent.key === 'y' || keyboardEvent.key === 'Z')) {
             keyboardEvent.preventDefault();
             const result = this.history.redo();
             if (result) {

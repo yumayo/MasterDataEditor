@@ -1545,4 +1545,17 @@ DiffTab での参照プリロード呼び出し漏れ
 
 ---
 
+## 105. [62eebea] — 差分ビュー（DiffTab）で行挿入・削除時にパディング行を左右ペインで同期する機能追加
+
+### 不具合原因名
+差分ビューの動的行操作における左右ペイン同期の欠如
+
+### なぜそうなったのか
+DiffTabは初期表示時に`buildMergedData()`で左右ペインの行構造を静的に構築していたが、右ペインでの行挿入・削除操作が左ペインに反映されるメカニズムが存在しなかった。`EditorTableStructure.insertRowInternal`と`deleteRow`は単一のEditorTableに対する操作として設計されており、DiffTabの左右ペイン同期を考慮していなかった。また、`HTMLCollection.children[index]`がundefinedを返す範囲外アクセスを`!== null`チェックで検出できない問題（JavaScriptでundefined !== nullがtrue）も潜在していた。
+
+### どうしたら今後は再発しないか
+DOMコレクションの要素アクセスには`children[index]`（undefinedを返す）ではなく`children.item(index)`（nullを返す）を使用すること。Undo/Redoの対称性を実装する際は、Do操作（deleteRow→パディング変換）とUndo操作（insertRowInternal→新行挿入）の両方でDOM状態の整合性を確認すること。特にDOMを削除せずに変換するパターンでは、Undoが新要素を追加することで旧要素との重複が発生する点に注意が必要。
+
+---
+
 ---
