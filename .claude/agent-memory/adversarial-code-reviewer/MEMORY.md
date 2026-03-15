@@ -203,6 +203,14 @@
 - **KNOWN ISSUE**: insertColumnInternal signature only accepts comment, not isPrimaryKey/reference -> caller cannot restore badges on Undo
 - **KNOWN ISSUE**: CSS colors hardcoded (6th occurrence)
 
+## BUG_0016 差分タブDirtyマーク+Ctrl+S修正 (2026-03-15)
+- **CRITICAL**: markSavedAndUpdatePanel() が this.table.tableName（= storeKey 'tableName:diff:current'）でmarkAllSaved → 元テーブル（saveTargetTableName）のHistoryセットは未更新。通常タブが同テーブルを開いていると、差分タブ保存後も通常タブの●が消えない。
+- **CRITICAL**: setSaveTargetTableName はsetterであり生焼けオブジェクトパターン（コンストラクタ引数化すべき）
+- **KNOWN ISSUE**: setSaveTargetTableName('') 呼び出しへのバリデーションなし -> ミニテーブルパスへのフォールスルーでファイル破壊リスク
+- **KNOWN ISSUE**: .catch で throw new Error -> Unhandled Promise Rejection（既存パターンと同じ欠陥の踏襲）
+- **PATTERN**: 差分タブ保存では storeKey と saveTargetTableName が異なるため markAllSaved の呼び出しが2回必要
+- **Review**: 2026-03-15 致命的2件、重要3件、軽微2件
+
 ## diff-rows.ts buildDiffRows (BUG_0013 fix, 2026-03-15)
 - **CRITICAL**: resolveCurrentEntry uses includes('_row') -> PK値に "_row" を含む場合に誤マッチ。正規表現 /_row\d+$/ で末尾サフィックスのみ照合すべき
 - **CRITICAL**: buildUniqueKeyMap で PK重複3行以上の場合、seenIndices.set(rawPk,-1)後に firstIndex=-1 で map.has(rawPk)=false → 初出移動スキップ。dupCountマップで出現回数管理に変更すべき
