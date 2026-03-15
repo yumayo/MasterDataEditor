@@ -41,6 +41,7 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 | **adversarial-code-reviewer** | 敵対的コードレビュー（バグ・脆弱性の発見） |
 | **code-reviewer** | 一般的なコードレビュー |
 | **game-planner-ux-reviewer** | ゲームプランナー視点でのUXレビュー |
+| **ux-reviewer** | DOMダンプを用いたUXレビュー |
 
 #### ファイル/クラス担当エージェント
 | エージェント名 | 担当ファイル/クラス |
@@ -62,7 +63,7 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 
 テストの確認は、**playwright-test-reporter** エージェントに任せること。
 
-コードレビューは、**fix-scope-auditor** エージェント、**adversarial-code-reviewer** エージェント、**code-reviewer** エージェントに並列で任せること。
+コードレビューは、**fix-scope-auditor** エージェント、**adversarial-code-reviewer** エージェント、**code-reviewer** エージェント、**ux-reviewer** エージェントに並列で任せること。
 
 コミットは、**commit** スキルを使用すること。
 

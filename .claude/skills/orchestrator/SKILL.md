@@ -29,6 +29,7 @@ description: 開発、実装、修正と呼ばれる類のもので必ず使用�
 | **adversarial-code-reviewer** | 敵対的コードレビュー |
 | **code-reviewer** | 一般的なコードレビュー |
 | **game-planner-ux-reviewer** | ゲームプランナー視点でのUXレビュー |
+| **ux-reviewer** | DOMダンプを用いたUXレビュー |
 | **commit** スキル | 最終コミット担当 |
 
 ### ファイル/クラス担当エージェント（不具合調査チーム要員）
@@ -131,11 +132,20 @@ description: 開発、実装、修正と呼ばれる類のもので必ず使用�
     - TDDサイクルが正しく回されているか
 - 実装完了報告を待つ
 
+#### **ux-reviewer** エージェントにTaskツールでUXレビューを依頼する
+- レビュー依頼前に `npx playwright test dump-dom` を実行してDOMダンプを更新する
+- 依頼時には以下を伝える：
+  - 今回の変更の目的（何を修正・実装したか）
+  - `.CONTEXT/dump/` 以下のHTMLファイルを読んでDOM構造をレビューすること
+  - DOM構造の妥当性、アクセシビリティ、操作性の観点でレビューを求めること
+  - 問題があればフィードバックループ（typescript-tdd-developerに修正依頼→playwright-test-reporterでGREEN確認）を回すこと
+- 実装完了報告を待つ
+
 ### フェーズ7: フィードバックループ
-- fix-scope-auditor、adversarial-code-reviewer、code-reviewer からフィードバック（指摘事項）があった場合：
+- fix-scope-auditor、adversarial-code-reviewer、code-reviewer、ux-reviewer からフィードバック（指摘事項）があった場合：
   1. フィードバック内容を整理する
   2. **typescript-tdd-developer** に再度Taskツールで修正を依頼する（フィードバック内容を具体的に伝える）
-  3. 修正完了後、再び **fix-scope-auditor**、**adversarial-code-reviewer**、**code-reviewer** 各エージェントにレビューを依頼する
+  3. 修正完了後、再び **fix-scope-auditor**、**adversarial-code-reviewer**、**code-reviewer**、**ux-reviewer** 各エージェントにレビューを依頼する
   4. フィードバックがなくなるまでこのループを繰り返す
 - **最大3回のループ**を目安とし、それ以上繰り返す場合はユーザーに状況を報告して判断を仰ぐ
 

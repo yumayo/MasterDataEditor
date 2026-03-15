@@ -72,7 +72,7 @@ export class EditorTable {
     /** 行数カウンター要素（フィルター適用中に「X / Y 行」を表示する） */
     private readonly filterRowCountElement: HTMLElement;
 
-    /** 空行数（通常は100行、ミニテーブルは0行） */
+    /** 空行数（データ行+バッファ1行） */
     private readonly emptyRowCount: number;
     /** ルート要素に付与するCSSクラス名（通常は 'editor-table'、ミニテーブルは別クラス） */
     private readonly rootCssClass: string;

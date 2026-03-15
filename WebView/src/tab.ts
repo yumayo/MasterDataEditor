@@ -1094,11 +1094,12 @@ export class Tab {
         // AreaResizer を作成（History, Selection が必要）
         const areaResizer = new AreaResizer(wrapperElement, history, selection);
 
-        // 本物の EditorTable インスタンスを作成（空行100行で通常の編集テーブルを生成）
+        // 本物の EditorTable インスタンスを作成（データ行+バッファ1行で通常の編集テーブルを生成）
+        const emptyRowCount = tableData.body.length + 1;
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, 100, 'editor-table', false
+            scrollController, this.sidebar, emptyRowCount, 'editor-table', false
         );
 
         // editorTable に本物のインスタンスの内容をコピー
