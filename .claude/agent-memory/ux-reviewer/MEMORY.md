@@ -57,6 +57,15 @@
 - 残課題(🟡): バッファ行に row-resize-handle が付いており除去漏れの継続指摘
 - 要確認: `diffTab === false` 除外が deleteRow/reloadCellsFromStore 経路にも適用されているかはDOMから確認不可
 
+#### FEAT_0027 クイックビュー改修（body直下固定配置＋ミニEditorTable）（2026-03-16レビュー）評価: A
+- ファイル: project_feat0027_quick_view_mini_editor.md
+- body直下 position:fixed 配置でStackingContext問題を根本解決（ダンプ確認済み）
+- シングルトン設計: Tab所有のsharedDropdownQuickView → connectDropdownQuickView()で後付け接続
+- RelationsPanelと同一DOM構造でミニEditorTableを正しく表示
+- 残課題(🔴): クイックビュー内 .editor-table に editor-table--inactive が付いていない（bug-report #3パターン）
+- 残課題(🟡): private tab!/store! の !アサーション（connectTab二重呼び出しのファストフェイル未実装）
+- 残課題(🟡): クイックビュー max-width 未定義（列数が多いテーブルでの表示崩れリスク）
+
 #### FEAT_0026 フィルターアイコンSVG化（2026-03-16レビュー）評価: A
 - DOM: `span.filter-icon > svg[viewBox="0 0 14 14"] > path[fill="currentColor"]`
 - createElementNS で生成（innerHTML 回避）、`style="display: block;"` でベースラインズレ防止

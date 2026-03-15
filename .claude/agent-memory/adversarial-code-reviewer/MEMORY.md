@@ -103,6 +103,19 @@
 - **PATTERN**: スキーマ保存(saveSchemaDataAsync)でDOM実幅がwidthフィールドに保存される。再読み込み時はcalculateColumnWidthを呼ばずwidthを直接使うため、hasIconsの効果がラウンドトリップで失われる
 - **PATTERN**: CELL_HORIZONTAL_EXTRA(17)はpadding-right:6pxを前提にするが、has-iconsクラスでpadding-right:48pxに変わる。table-cellのwidthとpaddingの相互作用が未検証
 
+## FEAT_0027 DropdownQuickView Singleton/body配置 Known Patterns
+- **FIXED R2**: cleanup()/hidePreview()が++currentPreviewRequestIdでキャンセルするようになった
+- **FIXED R2**: connectQuickView:false引数でQV内ミニテーブルへのQV接続を防止
+- **FIXED R2**: tab!/store!をTab|false/InMemoryTableStore|falseに変更+renderContentAsyncでエラースロー
+- **FIXED R2**: DOM構築を全await完了後に移動 (renderContentAsync)
+- **FIXED R2**: createMiniEditorTable後にeditorTable.deactivate()呼び出し追加
+- **CRITICAL R2 UNFIXED**: destroyCurrentMiniEditorTable()がthis.element.innerHTML=''を呼ばない → キャンセル時DOM残留 (visibleクラスなしで非表示だが次のrenderまで孤立)
+- **CRITICAL R2 UNFIXED**: connectTab()/connectDropdownQuickView()は依然として後付け設計 → コンストラクタ引数渡しにすべき
+- **PATTERN R2**: preloadReferenceTables/resolveReverseReferencesAsyncがfire-and-forgetでQV破棄後も完了コールバックが走る
+- **PATTERN R2**: store.registerTableAsync()をQVが呼び、その直後にcreateEditorTableも呼ぶ二重登録の懸念
+- **FIXED FEAT_0027**: z-index:1000の親スタッキングコンテキスト問題をbody直下+position:fixedで解決
+- **FIXED FEAT_0027**: previewCacheを廃止してミニEditorTableに全面置き換え
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
@@ -124,3 +137,5 @@
 - (FEAT_0023 header-icon-separation): 致命的2件、重要3件、軽微3件
 - (BUG_0021 non-sequential-schema-key): 致命的1件、重要2件、軽微2件
 - (BUG_0021 R2 column-filter fix): 致命的1件、重要2件、軽微2件
+- (FEAT_0027 dropdown-quickview-singleton): 致命的3件、重要3件、軽微3件
+- (FEAT_0027 R2 dropdown-quickview-singleton-fix): 致命的2件、重要3件、軽微3件

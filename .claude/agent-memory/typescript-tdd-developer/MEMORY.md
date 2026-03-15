@@ -213,6 +213,12 @@ if (keyboardEvent.ctrlKey && (keyboardEvent.key === 'y' || keyboardEvent.key ===
 }
 ```
 
+### style.top 変更後のスクロール位置読み取りバグ
+`focusWithoutScrolling()` のようにスクロール位置を保護するメソッドは、DOM スタイル変更「前」に
+スクロール位置を取得して渡す必要がある。`style.top = '-99999px'` のような変更でブラウザが
+同期的にスクロールをリセットした後に `getScrollTop()` を呼ぶと 0 を読んでしまい「0 で保護」する。
+`editor-table-handler.ts` の `hide()` で実例を参照。
+
 ### DiffTabのパディング行同期パターン（FEAT_0018）
 EditorTableStructure の行挿入・削除が diffTab 接続時に左ペインのパディング行を同期する。
 - `insertRowInternal` 末尾: `diffTab.notifyRightPaneRowInserted(rowIndex)` で左ペインにパディング行挿入
