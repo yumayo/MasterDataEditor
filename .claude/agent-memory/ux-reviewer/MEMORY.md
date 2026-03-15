@@ -40,6 +40,13 @@
 - 残課題(🟡): 削除直後の左ペインに editor-table--inactive がなく、Undo後には付与されるという非対称
 - 残課題(🟡): 左ペイン読み取り専用の aria 属性欠如（継続指摘）
 
+#### FEAT_0024 ライトテーマ色改修（ラウンド2 フィードバック修正後）評価: B+
+- ファイル: project_feat0024_light_theme.md
+- ラウンド1の主要問題（テーマ設定漏れ・ダークオーバーライド欠如）は解消済み
+- 残課題: `command-palette.css` に `[data-theme="dark"] .command-palette-item.selected:hover` がない（grid-dropdown との非対称）
+- 残課題: `command-palette.spec.ts` の `setupTestPageAsync()` がダークテーマのまま（`data-theme="dark"` をダンプで確認）
+- 残課題: コマンドパレット・ドロップダウンの aria-selected / role="listbox" 未実装（継続）
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
