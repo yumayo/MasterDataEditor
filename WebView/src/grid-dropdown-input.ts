@@ -263,9 +263,10 @@ export class GridDropdownInput {
                 this.quickView.showPreviewWithDelay(this.referenceTableName, item.id, itemElement);
             });
 
-            // マウスリーブ: クイックビュー非表示
+            // マウスリーブ: 短いディレイ後にクイックビュー非表示
+            // クイックビュー自体へマウスが移動した場合はhideをキャンセルする
             itemElement.addEventListener('mouseleave', () => {
-                this.quickView.hidePreview();
+                this.quickView.hidePreviewWithDelay();
             });
 
             this.dropdownElement.appendChild(itemElement);

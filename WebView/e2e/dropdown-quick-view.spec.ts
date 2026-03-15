@@ -8,8 +8,10 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // 機能概要:
 //   FK列のドロップダウンアイテム（.grid-dropdown-item）にマウスオーバーすると、
 //   300ms後にクイックビューパネル（.dropdown-quick-view）が表示される。
-//   クイックビューには参照先テーブルの関連データがHTMLテーブルとして表示される。
+//   クイックビューはRelationsPanelと同じCSSクラス・視覚スタイルで表示される。
 //   アイテムからマウスが離れるとクイックビューが非表示になる。
+//   クイックビュー自体にマウスオーバーしている間は表示が維持される。
+//   クイックビューからもマウスが離れると非表示になる。
 //   矢印キーで選択を移動してもクイックビューが更新される。
 //   ドロップダウンを閉じるとクイックビューも消える。
 //   300ms以内に別のアイテムへ移動した場合、前のタイマーはキャンセルされる（レースコンディション防止）。
@@ -23,6 +25,10 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   6. ドロップダウンを閉じるとクイックビューも消える
 //   7. 300ms以内に別のアイテムへ移動するとレースコンディションを防止する
 //   8. クイックビューはドロップダウンの右側に表示される
+//   9. クイックビューにRelationsPanel風のセクションヘッダーが表示される
+//  10. クイックビューにテーブルヘッダー（テーブル名・参照種別タグ・行数）が表示される
+//  11. クイックビューにマウスオーバーすると表示が維持される
+//  12. クイックビューからマウスが離れると非表示になる
 // =============================================================================
 
 // =============================================================================
@@ -161,16 +167,16 @@ test.describe('ドロップダウン クイックビュー', () => {
             const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
-            // HTMLテーブルが存在する
-            const htmlTable = quickView.locator('table');
-            await expect(htmlTable).toBeVisible();
+            // RelationsPanel風のミニテーブルが存在する
+            const miniTable = quickView.locator('.relations-mini-table');
+            await expect(miniTable).toBeVisible();
 
             // ヘッダー行が存在する
-            const headerRow = htmlTable.locator('thead tr');
+            const headerRow = miniTable.locator('thead tr');
             await expect(headerRow).toBeVisible();
 
             // データ行が1件以上存在する
-            const dataRows = htmlTable.locator('tbody tr');
+            const dataRows = miniTable.locator('tbody tr');
             await expect(dataRows.first()).toBeVisible();
         },
     );
@@ -190,12 +196,12 @@ test.describe('ドロップダウン クイックビュー', () => {
             await expect(quickView).toBeVisible();
 
             // reward_group テーブルの列名が表示されている
-            await expect(quickView.locator('table thead')).toContainText('id');
-            await expect(quickView.locator('table thead')).toContainText('name');
+            await expect(quickView.locator('.relations-mini-table thead')).toContainText('id');
+            await expect(quickView.locator('.relations-mini-table thead')).toContainText('name');
 
             // id=1 に対応する値が表示されている
-            await expect(quickView.locator('table tbody')).toContainText('1');
-            await expect(quickView.locator('table tbody')).toContainText('daily_reward');
+            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('1');
+            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('daily_reward');
         },
     );
 
@@ -235,12 +241,12 @@ test.describe('ドロップダウン クイックビュー', () => {
             await expect(quickView).toBeVisible();
 
             // 1件目の内容が表示されていることを確認
-            await expect(quickView.locator('table tbody')).toContainText('daily_reward');
+            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('daily_reward');
 
             // ArrowDown で2件目（id=2, event_reward）に移動
             await page.keyboard.press('ArrowDown');
             // キーボード選択によってクイックビューが即座に更新される
-            await expect(quickView.locator('table tbody')).toContainText('event_reward');
+            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('event_reward');
         },
     );
 
@@ -296,7 +302,7 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             // 2件目のデータがクイックビューに表示される
             await expect(quickView).toBeVisible();
-            await expect(quickView.locator('table tbody')).toContainText('event_reward');
+            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('event_reward');
         },
     );
 
@@ -321,6 +327,107 @@ test.describe('ドロップダウン クイックビュー', () => {
             }
             // クイックビューの左端 >= ドロップダウンリストの右端（右側に表示）
             expect(quickViewBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
+        },
+    );
+
+    test(
+        'クイックビューにRelationsPanel風のセクションヘッダーが表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // セクションヘッダーが存在し "RELATIONS" テキストを持つ
+            const sectionHeader = quickView.locator('.relations-panel-section-header');
+            await expect(sectionHeader).toBeVisible();
+            await expect(sectionHeader).toHaveText('RELATIONS');
+        },
+    );
+
+    test(
+        'クイックビューにテーブルヘッダー（テーブル名・参照種別タグ・行数）が表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // テーブルヘッダーが存在する
+            const tableHeader = quickView.locator('.relations-table-header');
+            await expect(tableHeader).toBeVisible();
+
+            // テーブル名が表示される（参照先テーブルは reward_group）
+            const tableTitle = tableHeader.locator('.relations-table-title');
+            await expect(tableTitle).toBeVisible();
+            await expect(tableTitle).toContainText('reward_group');
+
+            // N:1 タグが表示される（FK参照先なので N:1）
+            const n1Tag = tableHeader.locator('.relations-tag--n1');
+            await expect(n1Tag).toBeVisible();
+
+            // 行数が表示される（reward_group は3行）
+            const rowCount = tableHeader.locator('.relations-table-row-count');
+            await expect(rowCount).toBeVisible();
+            await expect(rowCount).toContainText('1');
+        },
+    );
+
+    test(
+        'クイックビューにマウスオーバーすると表示が維持される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンアイテムにホバーしてクイックビューを表示する
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // クイックビューにマウスを移動する（ドロップダウンアイテムから mouseleave が発生する）
+            await quickView.hover();
+
+            // クイックビューが表示されたままであることを確認
+            await expect(quickView).toBeVisible();
+        },
+    );
+
+    test(
+        'クイックビューからマウスが離れると非表示になる',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンアイテムにホバーしてクイックビューを表示する
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // クイックビューにマウスを移動する
+            await quickView.hover();
+            await expect(quickView).toBeVisible();
+
+            // クイックビューからマウスを離す（ページ左上の安全な場所に移動）
+            await page.mouse.move(0, 0);
+
+            // クイックビューが非表示になる
+            await expect(quickView).not.toBeVisible();
         },
     );
 });
