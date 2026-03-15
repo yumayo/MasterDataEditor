@@ -16,6 +16,7 @@ body {
     --selection-color: #007fd4;
     --selection-font-color: #ffffff;
     --scroll-bar-background-color: rgba(0, 0, 0, 0.2);
+    --focus-border: #007acc;
 }
 
 [data-theme="dark"] {

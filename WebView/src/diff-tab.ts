@@ -52,6 +52,16 @@ export class DiffTab {
     private readonly boundLeftScroll: () => void;
     private readonly boundRightScroll: () => void;
 
+    /** destroy() 時にリサイズハンドルのリスナーを解除するためのバインド済み関数 */
+    private readonly boundResizeMouseDown: (e: MouseEvent) => void;
+
+    /** ドラッグ操作中のリスナー参照（destroy() 時に強制解除するため保持） */
+    private dragMouseMove: ((e: MouseEvent) => void) | null;
+    private dragMouseUp: (() => void) | null;
+
+    /** リサイズハンドル要素（removeEventListener に必要） */
+    private readonly resizeHandle: HTMLElement;
+
     /** スクロール同期の対象となるペイン要素（removeEventListener に必要） */
     private readonly leftPaneElement: HTMLElement;
     private readonly rightPaneElement: HTMLElement;
@@ -71,6 +81,8 @@ export class DiffTab {
         tabReference: TabReference
     ) {
         this.isSyncing = false;
+        this.dragMouseMove = null;
+        this.dragMouseUp = null;
 
         // スキーマをパースしてPK列名（配列）を取得する（単一PKは文字列→配列に正規化）
         const schema = JSON.parse(schemaJson) as SchemaJson;
@@ -103,13 +115,56 @@ export class DiffTab {
         diffTabContent.classList.add('diff-tab');
         wrapperElement.appendChild(diffTabContent);
 
-        // 左ペイン（HEAD版 = 変更前）
+        // 左ペイン（HEAD版 = 変更前）— 初期50%はCSSの flex: 0 0 50% で設定済み
         const leftPaneElement = document.createElement('div');
         leftPaneElement.classList.add('diff-pane-left');
         diffTabContent.appendChild(leftPaneElement);
         this.leftPaneElement = leftPaneElement;
 
-        // 右ペイン（現在版 = 変更後）
+        // リサイズハンドル — 左右ペイン間に配置してドラッグで幅を調整する
+        const resizeHandle = document.createElement('div');
+        resizeHandle.classList.add('diff-resize-handle');
+        diffTabContent.appendChild(resizeHandle);
+        this.resizeHandle = resizeHandle;
+
+        // バインド済み関数としてフィールドに保持する（destroy() での解除のため）
+        this.boundResizeMouseDown = (e: MouseEvent) => {
+            // SelectionDragController との競合を防ぐ
+            e.stopPropagation();
+            e.preventDefault();
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            const onMouseMove = (moveEvent: MouseEvent) => {
+                // diffTabContent の左端を基準にマウス位置から左ペイン幅パーセンテージを計算する
+                const rect = diffTabContent.getBoundingClientRect();
+                if (rect.width === 0) throw new Error('差分ビューのコンテナ幅が0です');
+                const newWidth = moveEvent.clientX - rect.left;
+                // 20%〜80%にクランプし、小数点1桁に丸める
+                const percentage = Math.round(Math.max(20, Math.min(80, (newWidth / rect.width) * 100)) * 10) / 10;
+                leftPaneElement.style.flexBasis = `${percentage}%`;
+            };
+
+            const onMouseUp = () => {
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                // ドラッグ終了時に参照をクリアする
+                this.dragMouseMove = null;
+                this.dragMouseUp = null;
+            };
+
+            // ドラッグ中のリスナー参照を保持する（destroy() 時の強制解除のため）
+            this.dragMouseMove = onMouseMove;
+            this.dragMouseUp = onMouseUp;
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        };
+        resizeHandle.addEventListener('mousedown', this.boundResizeMouseDown);
+
+        // 右ペイン（現在版 = 変更後）— flex: 1 のまま（残りスペースを埋める）
         const rightPaneElement = document.createElement('div');
         rightPaneElement.classList.add('diff-pane-right');
         diffTabContent.appendChild(rightPaneElement);
@@ -332,6 +387,20 @@ export class DiffTab {
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
         this.leftPaneElement.removeEventListener('scroll', this.boundLeftScroll);
         this.rightPaneElement.removeEventListener('scroll', this.boundRightScroll);
+        // リサイズハンドルの mousedown リスナーを解除する
+        this.resizeHandle.removeEventListener('mousedown', this.boundResizeMouseDown);
+        // ドラッグ操作中に destroy() が呼ばれた場合、document に残存するリスナーを強制解除する
+        if (this.dragMouseMove !== null) {
+            document.removeEventListener('mousemove', this.dragMouseMove);
+            this.dragMouseMove = null;
+        }
+        if (this.dragMouseUp !== null) {
+            document.removeEventListener('mouseup', this.dragMouseUp);
+            this.dragMouseUp = null;
+        }
+        // ドラッグ操作中に destroy() が呼ばれた場合のカーソル・ユーザー選択スタイルをリセットする
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
         // EditorTableのdiffTab参照をリセットする（RelationsPanel.disconnectEditorTable() と対称）
         this.leftEditorTable.diffTab = false;
         this.rightEditorTable.diffTab = false;

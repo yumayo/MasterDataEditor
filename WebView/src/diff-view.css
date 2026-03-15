@@ -82,16 +82,35 @@
     height: 100%;
 }
 
-.diff-pane-left,
-.diff-pane-right {
-    flex: 1;
+/* 左ペインの初期幅は50%。リサイズ後はJSが flexBasis のみ上書きする */
+.diff-pane-left {
+    flex: 0 0 50%;
     overflow: auto;
     border-right: 1px solid var(--border-color);
     position: relative;
+    min-width: 0;
 }
 
+/* 右ペインは残りスペースを埋める（flex: 1） */
 .diff-pane-right {
-    border-right: none;
+    flex: 1;
+    overflow: auto;
+    position: relative;
+    min-width: 0;
+}
+
+/* リサイズハンドル — 左右ペイン間に縦線として配置する */
+.diff-resize-handle {
+    width: 4px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: var(--border-color, #333);
+    transition: background 0.1s;
+    border-right: 1px solid rgba(128, 128, 128, 0.3);
+}
+
+.diff-resize-handle:hover {
+    background: var(--focus-border, #007acc);
 }
 
 /* EditorTable 内の差分行クラス */
