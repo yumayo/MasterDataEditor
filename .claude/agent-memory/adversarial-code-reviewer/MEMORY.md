@@ -198,6 +198,7 @@
 - **Pattern**: Column delete Undo missing metadata restoration (same as comment='' vs null on FEAT_0004)
 
 ## Review History (continued)
+- 2026-03-15 (N:1-buffer-row): 致命的2件、重要3件、軽微2件
 - 2026-03-15 (diff-tab-reference-hint): 致命的2件、重要3件、軽微2件
 
 ## diff-tab-reference-hint fix (2026-03-15)
@@ -205,6 +206,12 @@
 - **CRITICAL**: Test missing staged case (isStaged=true) and reverse reference hint (cell-reverse-reference-hint) coverage
 - **IMPORTANT**: buildDiffEditorTable() does not encapsulate reference setup internally (preload/resolveReverse called outside) -> asymmetry with createEditorTable/createMiniEditorTable guarantees future omission
 - **PATTERN**: Factory method must complete ALL setup (reference hints + dropdown components) before returning — partial setup externalized to caller is a recurring DiffTab bug source
+
+## N:1 Buffer Row (2026-03-15)
+- **CRITICAL**: N:1 entry rows are FK-filtered subset but storeRowIndices=[] -> initialize() sets [0..rows.length-1] which does NOT match actual store indices -> promoteBufferRowToStore writes to wrong position in reference table, corrupting it
+- **CRITICAL**: storeRowIndices: [] comment lies "N:1 shows all rows" but rows is filtered subset; same lie existed before this change but only became dangerous when buffer row was added
+- **KNOWN ISSUE**: N:1 buffer row tests only verify visibility, not that store is NOT corrupted on buffer row input
+- **Pattern**: "partial-subset storeRowIndices" bug - whenever filtered rows are displayed but storeRowIndices is not set to actual store indices, buffer row promote corrupts the backing store
 
 ## FEAT_0017 PK/FK Badge Left Placement (2026-03-15)
 - **CRITICAL**: DeleteColumnCommand.undo() still does not restore badge (same as FEAT_0016 unfixed) -> isPrimaryKey/reference not saved/restored
