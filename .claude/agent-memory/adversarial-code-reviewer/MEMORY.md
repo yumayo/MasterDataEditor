@@ -85,6 +85,13 @@
 - **PATTERN**: deleteRow の diffTab条件チェックが必要な理由: deleteRow はコンテキストメニューから DiffTab テーブルでも呼ばれる。promoteBufferRowToStore/demoteStoreRowToBuffer は DiffTab テーブルで isBufferRow が常に false のため呼ばれず、diffTab条件チェック不要
 - **PATTERN**: ensureTrailingBufferRow はアクセス修飾子なし(暗黙public) — EditorTableStructure から呼ばれるため private 化不可（TypeScript の package-level アクセス制御がない）
 
+## FEAT_0023 Header Icon Separation Known Patterns
+- **CRITICAL**: diff-tabはisMiniTable=trueだが、EditorTableData.parse(..., true)を渡している。isMiniTableInstance()=trueのためcreateColumnHeaderCellがhas-iconsクラスを付与せずアイコンも追加しないが、列幅にHEADER_ICON_AREA_PX(48px)が加算される → 「幅広いのにアイコンがない」逆転バグ
+- **CRITICAL**: area-resizerの最小列幅が20pxハードコード → MIN_COLUMN_WIDTH_PX(50px)定数と乖離。has-icons列で20pxまで縮小するとアイコン(right:30px)がセル外にはみ出す
+- **PATTERN**: isMiniTable=trueが「アイコンなし/バッファ行なし/保存不可」複数の意味を兼ねる設計。diff-tabが「ミニテーブルだがアイコンあり」を実現しようとして矛盾が生じる
+- **PATTERN**: スキーマ保存(saveSchemaDataAsync)でDOM実幅がwidthフィールドに保存される。再読み込み時はcalculateColumnWidthを呼ばずwidthを直接使うため、hasIconsの効果がラウンドトリップで失われる
+- **PATTERN**: CELL_HORIZONTAL_EXTRA(17)はpadding-right:6pxを前提にするが、has-iconsクラスでpadding-right:48pxに変わる。table-cellのwidthとpaddingの相互作用が未検証
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
@@ -103,3 +110,4 @@
 - (diff-tab-dropdown-fix): 致命的2件、重要3件、軽微2件
 - (FEAT_0022 mini-table-trailing-buffer-row): 致命的2件、重要3件、軽微2件
 - (FEAT_0022 R2): 問題なし（前回指摘4件がすべて修正済み）
+- (FEAT_0023 header-icon-separation): 致命的2件、重要3件、軽微3件

@@ -22,6 +22,12 @@
 - console.log デバッグログが GridDropdownInput.show() に残存（本番環境への混入リスク）
 - 左ペインの読み取り専用状態がDOM上で明示されていない（aria属性なし）
 
+#### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
+- `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
+- ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
+- 要改善: `has-badge` による `padding-left:32px` が `calculateColumnWidth` に加算されていない。長いPK/FK列名（例: `player_character_id`）で列名が右側アイコン領域に食い込む可能性あり
+- `HEADER_ICON_AREA_PX` の算出根拠（filter-icon right:30px、width:14px）が CSS の absolute positioning に依存しており、CSSを変更した際に定数の更新漏れが起きやすい構造
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ
