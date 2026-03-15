@@ -197,6 +197,15 @@
 - **KNOWN ISSUE**: PK/FK badge createElement duplicated (PK and FK branches nearly identical)
 - **Pattern**: Column delete Undo missing metadata restoration (same as comment='' vs null on FEAT_0004)
 
+## Review History (continued)
+- 2026-03-15 (diff-tab-reference-hint): 致命的2件、重要3件、軽微2件
+
+## diff-tab-reference-hint fix (2026-03-15)
+- **CRITICAL**: buildDiffEditorTable() missing setReferenceComponents() + createDropdownInput() -> FK dropdown disabled in right pane even with isStaged=false
+- **CRITICAL**: Test missing staged case (isStaged=true) and reverse reference hint (cell-reverse-reference-hint) coverage
+- **IMPORTANT**: buildDiffEditorTable() does not encapsulate reference setup internally (preload/resolveReverse called outside) -> asymmetry with createEditorTable/createMiniEditorTable guarantees future omission
+- **PATTERN**: Factory method must complete ALL setup (reference hints + dropdown components) before returning — partial setup externalized to caller is a recurring DiffTab bug source
+
 ## FEAT_0017 PK/FK Badge Left Placement (2026-03-15)
 - **CRITICAL**: DeleteColumnCommand.undo() still does not restore badge (same as FEAT_0016 unfixed) -> isPrimaryKey/reference not saved/restored
 - **CRITICAL**: setColumnHeaderValue/setColumnHeaderLabel TextNode fallback inserts before badgeArea -> DOM structure corruption when badge-first + no TextNode + no nameSpan
