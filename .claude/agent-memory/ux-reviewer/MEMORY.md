@@ -29,6 +29,17 @@
 - 残課題: 差分ビュー左ペイン（HEAD版）に aria-readonly などの読み取り専用マークアップが皆無（前回レビューの指摘継続）
 - 残課題: 差分ビューの行レベルに data-diff-kind="modified" などの属性がなく行単位のアクセシビリティ強調が困難
 
+#### BUG_0022 差分ビューパディング行高さ修正（2026-03-16レビュー、ラウンド2対応確認済み）評価: B
+- ファイル: project_bug0022_padding_row_height.md
+- createPaddingRow()共通化でheight:20px が正しく付与されバグ解消（ラウンド1）
+- ラウンド2追加確認: notifyRightPaneRowDeleted の通常削除パスでも createPaddingRow が使われ height:20px 統一を確認
+- ラウンド2追加確認: Undo後の左右ペインの行数・クラスが削除前と完全一致することを確認
+- ラウンド2追加確認: 削除後パディング行の row-resize-handle 除去を確認
+- 残課題(🔴): 挿入パディング行は diff-row-padding-inserted クラスがあるが、削除パディング行には対称クラスがない。bug-report #3パターン（対称操作の欠落）に該当
+- 残課題(🟡): data-row="3" data-store-index="2" のパディング行が store-index を持っており、意図的かゴミ属性か不明
+- 残課題(🟡): 削除直後の左ペインに editor-table--inactive がなく、Undo後には付与されるという非対称
+- 残課題(🟡): 左ペイン読み取り専用の aria 属性欠如（継続指摘）
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
