@@ -340,7 +340,6 @@ export class Tab {
         const next = this.findNextTabButton(name);
 
         this.removeTabButton(name);
-        tabButton.element.remove();
 
         // 設定タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
         // これにより次回 openSettingsTab() 時に新しい SettingsPanel が正しく生成される。
@@ -393,6 +392,9 @@ export class Tab {
     removeTabButton(name: string) {
         const index = this.tabButtons.findIndex(x => x.name === name);
         if (index !== -1) {
+            // DOMからタブボタン要素を除去する（差分タブは tabStates に登録されないため
+            // state.wrapperElement.remove() が呼ばれず、ここで除去しないとDOMに残存する）
+            this.tabButtons[index].element.remove();
             this.tabButtons.splice(index, 1);
         }
 
@@ -639,17 +641,17 @@ export class Tab {
 
     /**
      * 差分タブをタブバーに開く。
-     * 同一テーブルの差分タブが既に開かれている場合は再利用せず新しいタブを作成する。
+     * 同一テーブルの差分タブが既に開かれている場合は既存タブをアクティブ化するだけにする。
      * SourceControlPanel.openDiffTabAsync から呼ばれる。
      */
     openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string): void {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
 
-        // 既存の差分タブが開いている場合は先に閉じてから新しいタブを作成する
-        // 同一テーブルでも最新の差分を常に表示するため再利用しない
-        const existingTabButton = this.tabButtons.find(x => x.name === diffTabName);
-        if (existingTabButton) {
-            this.closeTab(diffTabName);
+        // 既存の差分タブが開いている場合はアクティブ化するだけにする
+        // 再作成するとタブのスクロール位置・編集状態が失われるため再利用する
+        if (this.diffTabs.has(diffTabName)) {
+            this.enableTabButton(diffTabName);
+            return;
         }
 
         // 差分タブのタブボタンを追加する
@@ -662,7 +664,7 @@ export class Tab {
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference
         );
-        // closeTab() で既存タブは破棄済みのためキーが存在しないことが保証される
+        // 新規作成時点では diffTabs にキーが存在しないことが保証される（上の早期リターンで確認済み）
         this.diffTabs.set(diffTabName, diffTab);
 
         // タブボタンをクリックしてアクティブ化する
