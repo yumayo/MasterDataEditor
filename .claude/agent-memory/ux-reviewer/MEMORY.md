@@ -57,6 +57,15 @@
 - 残課題(🟡): バッファ行に row-resize-handle が付いており除去漏れの継続指摘
 - 要確認: `diffTab === false` 除外が deleteRow/reloadCellsFromStore 経路にも適用されているかはDOMから確認不可
 
+#### FEAT_0026 フィルターアイコンSVG化（2026-03-16レビュー）評価: A
+- DOM: `span.filter-icon > svg[viewBox="0 0 14 14"] > path[fill="currentColor"]`
+- createElementNS で生成（innerHTML 回避）、`style="display: block;"` でベースラインズレ防止
+- `fill="currentColor"` でテーマ対応完全（JS分岐なし）
+- `mousedown` バブリング抑制 / `filter-active` 時の色変化 いずれも適切
+- HEADER_ICON_AREA_PX=48 との整合性維持確認（right:30px+width:14px=44px < 48px）
+- 残課題(🟡): SVGに `aria-hidden="true"` がなく、span.filter-icon に `aria-label` / `role="button"` もない
+- 継続パターン: インタラクティブな `span` に role 未付与（コマンドパレット・ドロップダウンと同じ課題）
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避
