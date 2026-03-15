@@ -40,6 +40,7 @@ while [ "$loop_count" -lt "$MAX_LOOPS" ]; do
         -p "/orchestrator ${issue_file}"
 
     # claude プロセス終了後、課題ファイルを closed に移動
+    # orchestratorスキルでコミットするようにしていますが、保険です。
     mv "$issue_file" "$ISSUES_CLOSED_DIR/"
     echo "=== ${issue_file} を ${ISSUES_CLOSED_DIR}/ に移動しました ==="
 
