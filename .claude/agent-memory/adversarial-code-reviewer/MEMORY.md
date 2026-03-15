@@ -202,6 +202,15 @@
 - **CRITICAL**: setColumnHeaderValue/setColumnHeaderLabel TextNode fallback inserts before badgeArea -> DOM structure corruption when badge-first + no TextNode + no nameSpan
 - **KNOWN ISSUE**: insertColumnInternal signature only accepts comment, not isPrimaryKey/reference -> caller cannot restore badges on Undo
 - **KNOWN ISSUE**: CSS colors hardcoded (6th occurrence)
+
+## diff-rows.ts buildDiffRows (BUG_0013 fix, 2026-03-15)
+- **CRITICAL**: resolveCurrentEntry uses includes('_row') -> PK値に "_row" を含む場合に誤マッチ。正規表現 /_row\d+$/ で末尾サフィックスのみ照合すべき
+- **CRITICAL**: buildUniqueKeyMap で PK重複3行以上の場合、seenIndices.set(rawPk,-1)後に firstIndex=-1 で map.has(rawPk)=false → 初出移動スキップ。dupCountマップで出現回数管理に変更すべき
+- **IMPORTANT**: resolveCurrentEntry が照合済みCurrentキーを再度照合する可能性 → HEAD版に重複PKがありCurrent版に単一PKが1行の場合、同一Currentエントリが2つのHEAD行に照合され deleted が消える
+- **IMPORTANT**: pkIndicesInHead/-current に -1 が含まれる場合の無音失敗（indexOf で列見つからず空文字PKに落ちる）
+- **IMPORTANT**: parseCsv が4回目の独自実装（Csv.load() に統一すべき）
+- **PATTERN**: `_row<n>` サフィックスによるPKキー重複解消パターンは PK値に "_row" を含む場合に崩壊する設計上の欠陥
+- **Review**: 2026-03-15 致命的2件、重要4件、軽微2件
 - **Pattern**: Inserting new first-child element (badgeArea) invalidates all TextNode-fallback insert paths that use `insertBefore(x, firstChild)`
 
 ## Review History (continued)
