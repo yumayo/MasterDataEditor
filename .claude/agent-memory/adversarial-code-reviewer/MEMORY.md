@@ -213,8 +213,17 @@
 - **Review**: 2026-03-15 致命的2件、重要4件、軽微2件
 - **Pattern**: Inserting new first-child element (badgeArea) invalidates all TextNode-fallback insert paths that use `insertBefore(x, firstChild)`
 
+## diffTab Map化 (BUG_0015相当, 2026-03-15)
+- **CRITICAL**: closeTab(差分タブ) が差分タブブロックで activeTabName=false をリセットするため、removeTabButton L451 の `activeTabName===name` 判定が絶対にtrueにならず paneStack がクリアされない
+- **CRITICAL**: closeDiffTab() が「現在アクティブな差分タブ1つを閉じる」に変わったが、呼び出し元 sidebar.ts L154 は「全差分タブを閉じる」意図で呼んでいる -> 非アクティブ差分タブが残留
+- **IMPORTANT**: 差分タブ間切り替え時に enableTabButton L522 で leaveSettingsMode → activateDiffTab で enterSettingsMode の二重呼び出し (冪等前提の時限爆弾)
+- **IMPORTANT**: テスト3のコメントが実際の動作と乖離 (closeDiffTab が1つしか閉じないため count=1 の保証が誤)
+- **KNOWN ISSUE**: dummyTabButton DOM+リスナーリーク (FEAT_0008から未修正)
+- **Pattern**: 単一フィールド→Mapへの移行時に「閉じる」API の意味が変わるリスク（1個を閉じる vs 全部閉じる）を見落とす
+
 ## Review History (continued)
 - 2026-03-15 (FEAT_0013 dropdown-quick-view): 致命的2件、重要5件、軽微4件
 - 2026-03-15 (FEAT_0014 buffer-row-autofill R1): 致命的2件、重要3件、軽微2件
 - 2026-03-15 (FEAT_0016 pk-fk-badge R1): 致命的2件、重要5件、軽微3件
+- 2026-03-15 (diffTab Map化): 致命的2件、重要3件、軽微3件
 - 2026-03-15 (FEAT_0017 pk-fk-badge-left R1): 致命的2件、重要4件、軽微3件
