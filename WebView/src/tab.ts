@@ -125,11 +125,8 @@ export class Tab {
     /** 設定タブのラッパー要素（editor の左ペインに追加するコンテナ） */
     private settingsWrapperElement: HTMLElement | false;
 
-    /** 差分タブの DiffTab インスタンス（差分タブが開かれた後に生成される） */
-    private diffTab: DiffTab | false;
-
-    /** 現在開いている差分タブのテーブル名（差分タブが開かれていない場合は false） */
-    private diffTabTableName: string | false;
+    /** 差分タブのDiffTabインスタンスマップ（キー: 差分タブ名 = DIFF_TAB_PREFIX + tableName） */
+    private readonly diffTabs: Map<string, DiffTab>;
 
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
@@ -151,8 +148,7 @@ export class Tab {
         this.viewIndex = 0;
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
-        this.diffTab = false;
-        this.diffTabTableName = false;
+        this.diffTabs = new Map();
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -359,17 +355,17 @@ export class Tab {
             this.settingsWrapperElement = false;
         }
 
-        // 差分タブが閉じられた場合: DiffTab を破棄してフィールドをリセットする
+        // 差分タブが閉じられた場合: 対象の DiffTab を破棄してマップから除去する
         if (name.startsWith(DIFF_TAB_PREFIX)) {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
                 this.activeTabName = false;
             }
-            if (this.diffTab !== false) {
-                this.diffTab.destroy(this.store);
-            }
-            this.diffTab = false;
-            this.diffTabTableName = false;
+            // DIFF_TAB_PREFIX で始まるタブ名が closeTab に渡された時点で diffTabs に存在するのが不変条件
+            const diffTabToDestroy = this.diffTabs.get(name);
+            if (!diffTabToDestroy) throw new Error(`[Tab] closeTab: diffTabs に存在しないキーが渡された: ${name}`);
+            diffTabToDestroy.destroy(this.store);
+            this.diffTabs.delete(name);
         }
 
         if (!wasActive) return;
@@ -522,9 +518,10 @@ export class Tab {
             this.settingsWrapperElement.style.display = 'none';
         }
 
-        // 差分タブが表示中であれば非表示にする（DiffTabのwrapperElementを隠す）
-        if (this.diffTab !== false) {
-            this.diffTab.hide();
+        // 現在アクティブなタブが差分タブの場合のみ非表示にして leaveSettingsMode() を呼ぶ
+        // （通常タブ→通常タブの切り替え時に余分な leaveSettingsMode() が呼ばれないようにする）
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabs.forEach(diffTab => diffTab.hide());
             this.editor.leaveSettingsMode(); // rightSlot を再表示する
         }
 
@@ -651,9 +648,8 @@ export class Tab {
             tableName, schemaJson, headCsv, currentCsv, isStaged,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, dummyTabButton
         );
-        // closeTab() で既存タブは破棄済みのため this.diffTab は false であることが保証される
-        this.diffTab = diffTab;
-        this.diffTabTableName = tableName;
+        // closeTab() で既存タブは破棄済みのためキーが存在しないことが保証される
+        this.diffTabs.set(diffTabName, diffTab);
 
         // タブボタンをクリックしてアクティブ化する
         tabButton.click();
@@ -692,20 +688,37 @@ export class Tab {
         // editor-right-slot とナビゲーションバーを非表示にして差分タブを全幅表示する
         this.editor.enterSettingsMode();
 
-        // DiffTab を表示する
-        if (this.diffTab !== false) {
-            this.diffTab.show();
-        }
+        // アクティブな差分タブのみ表示し、それ以外は非表示にする
+        this.diffTabs.forEach((diffTab, tabName) => {
+            if (tabName === diffTabName) {
+                diffTab.show();
+            } else {
+                diffTab.hide();
+            }
+        });
     }
 
     /**
-     * 差分タブを閉じる
-     * タブが開かれていない場合は何もしない
+     * 開いている全差分タブを閉じる
+     * ソース管理以外のパネルに切り替えた際にサイドバーから呼ばれる
+     * closeTab() 経由では中間的に enterSettingsMode/leaveSettingsMode が複数回呼ばれるため、
+     * 直接 destroy → Map クリーンアップ → removeTabButton の順で処理する
      */
-    closeDiffTab(): void {
-        if (this.diffTabTableName === false) return;
-        const diffTabName = DIFF_TAB_PREFIX + this.diffTabTableName;
-        this.closeTab(diffTabName);
+    closeAllDiffTabs(): void {
+        if (this.diffTabs.size === 0) return;
+        // アクティブタブが差分タブの場合は leaveSettingsMode を一度だけ呼んで状態を復元する
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.editor.leaveSettingsMode();
+            this.activeTabName = false;
+        }
+        // 全差分タブを直接破棄する（closeTab経由だと enterSettingsMode/leaveSettingsMode が中間的に呼ばれるため）
+        const diffTabNames = Array.from(this.diffTabs.keys());
+        for (const name of diffTabNames) {
+            // diffTabNames は diffTabs.keys() のスナップショットなので存在が保証されている
+            this.diffTabs.get(name)!.destroy(this.store);
+            this.diffTabs.delete(name);
+            this.removeTabButton(name);
+        }
     }
 
     /**

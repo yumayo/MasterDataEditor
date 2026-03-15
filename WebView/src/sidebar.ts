@@ -150,8 +150,8 @@ export class Sidebar {
             return;
         }
 
-        // ソース管理以外に切り替えた場合は差分タブを閉じる
-        this.tab.closeDiffTab();
+        // ソース管理以外に切り替えた場合は全差分タブを閉じる
+        this.tab.closeAllDiffTabs();
 
         if (item === 'files') {
             this.filesPanel.classList.add('sidebar-panel-active');
