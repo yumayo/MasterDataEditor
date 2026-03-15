@@ -65,6 +65,11 @@
 ## Review History (2026-03-13〜2026-03-14)
 → 詳細は `known-issues-archive.md` 参照
 
+## Diff Tab (tab.ts) Known Patterns
+- **removeTabButton/closeTab二重remove**: removeTabButtonにelement.remove()を追加した場合、closeTab側の tabButton.element.remove()が二重削除になる。経路ごとに削除責務が違う構造が根本原因。
+- **diffTabName に isStaged が含まれない**: キー = DIFF_TAB_PREFIX + tableName のみ。staged/changesの切り替えで古いタブが再利用されサイレントバグになる。
+- **closeAllDiffTabs は closeTab を経由しない**: enterSettingsMode/leaveSettingsMode の重複呼び出し回避のため直接destroyする設計。この2パスの乖離が今後も問題を生みやすい。
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
@@ -79,3 +84,4 @@
 - (diff-tab-reference-hint): 致命的2件、重要3件、軽微2件
 - (FEAT_0018 diff-tab-row-insert-delete-sync): 致命的2件、重要4件、軽微3件
 - (FEAT_0019 dropdown-quickview-hover): 致命的2件、重要4件、軽微4件
+- (diff-tab-duplicate-fix): 致命的2件、重要3件、軽微3件
