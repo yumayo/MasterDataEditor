@@ -343,7 +343,7 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
  * 行挿入で追加した空行がストア内にある場合にデータが欠落する。
  * ストアから直接保存することで挿入・削除を含む全変更を正確にCSVに反映できる。
  *
- * @param tableName 保存するテーブル名
+ * @param tableName 保存するテーブル名（= ファイルパス `data/tableName.csv` の tableName）
  * @param store InMemoryTableStore（全行全列データを持つ）
  */
 export async function saveTableDataFromStoreAsync(tableName: string, store: InMemoryTableStore): Promise<void> {
@@ -356,4 +356,24 @@ export async function saveTableDataFromStoreAsync(tableName: string, store: InMe
     }
     await writeFileAsync(csvPath, csv.toString());
     console.log(`Saved ${csvPath} (from store)`);
+}
+
+/**
+ * 差分タブの右ペイン専用の保存関数
+ *
+ * 差分タブのストアキーは "tableName:diff:current" のような不正パスのため、
+ * 保存先ファイル（saveTableName）とデータ取得元（storeKey）を分離して渡す。
+ *
+ * @param saveTableName 保存先テーブル名（= ファイルパス `data/saveTableName.csv`）
+ * @param store InMemoryTableStore（全行全列データを持つ）
+ * @param storeKey ストアのキー（差分タブでは "tableName:diff:current" 等の専用キー）
+ */
+export async function saveDiffTableDataFromStoreAsync(saveTableName: string, store: InMemoryTableStore, storeKey: string): Promise<void> {
+    const csvPath = `data/${saveTableName}.csv`;
+    const csv = store.getCsv(storeKey);
+    if (csv === false) {
+        throw new Error(`[saveDiffTableDataFromStoreAsync] ストアキー "${storeKey}" がストアに存在しません`);
+    }
+    await writeFileAsync(csvPath, csv.toString());
+    console.log(`Saved ${csvPath} (from diff store key: ${storeKey})`);
 }

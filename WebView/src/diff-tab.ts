@@ -65,7 +65,7 @@ export class DiffTab {
         store: InMemoryTableStore,
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
-        dummyTabButton: TabButton
+        tabButton: TabButton
     ) {
         this.isSyncing = false;
 
@@ -117,7 +117,7 @@ export class DiffTab {
 
         const leftResult = this.buildDiffEditorTable(
             leftTableKey, schemaJson, displayHeader, leftRows,
-            leftPaneElement, store, referenceDataCache, contextMenu, dummyTabButton, sidebar
+            leftPaneElement, store, referenceDataCache, contextMenu, tabButton, sidebar
         );
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
@@ -127,7 +127,7 @@ export class DiffTab {
 
         const rightResult = this.buildDiffEditorTable(
             rightTableKey, schemaJson, displayHeader, rightRows,
-            rightPaneElement, store, referenceDataCache, contextMenu, dummyTabButton, sidebar
+            rightPaneElement, store, referenceDataCache, contextMenu, tabButton, sidebar
         );
         this.rightEditorTable = rightResult.editorTable;
         this.rightEditorTableHandler = rightResult.editorTableHandler;
@@ -149,16 +149,16 @@ export class DiffTab {
         );
 
         // 左ペイン（HEAD版）は常に読み取り専用にする
+        // makeReadOnly() により Ctrl+S も禁止される（不正パスへの書き込み防止）
         this.leftEditorTable.makeReadOnly();
 
-        // 差分タブのtableNameは "test:diff:head/current" のような不正パスになるため
-        // Ctrl+Sによるファイル保存を両ペインで禁止する
-        this.leftEditorTableHandler.disableSave();
-        this.rightEditorTableHandler.disableSave();
-
-        // staged状態では右ペイン（現在版）も読み取り専用にする
+        // 右ペイン（現在版）のストアキーは "tableName:diff:current" のような不正パスだが、
+        // 元の tableName を保存先としてオーバーライドすることでファイル破壊なく保存できる。
+        // staged状態では右ペインも読み取り専用にする（makeReadOnly が Ctrl+S を禁止する）。
         if (isStaged) {
             this.rightEditorTable.makeReadOnly();
+        } else {
+            this.rightEditorTableHandler.configureSaveTargetTableName(tableName);
         }
 
         // スクロール同期（左→右、右→左の双方向）—— destroy() で解除するためバインド済み関数をフィールドに保持する
@@ -258,7 +258,7 @@ export class DiffTab {
         store: InMemoryTableStore,
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
-        dummyTabButton: TabButton,
+        tabButton: TabButton,
         sidebar: Sidebar
     ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController } {
         // スキーマをパースしてEditorTableDataを構築する
@@ -280,7 +280,7 @@ export class DiffTab {
         });
 
         const selection = new Selection(editorTable, paneElement, scrollController);
-        const history = new History(editorTable, dummyTabButton, store, tableKey, 100);
+        const history = new History(editorTable, tabButton, store, tableKey, 100);
         const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
         const textField = editorTableHandler.createGridTextField(paneElement, editorTable, selection);
         editorTableHandler.setTextField(textField);

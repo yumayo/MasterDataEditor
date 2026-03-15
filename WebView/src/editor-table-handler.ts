@@ -20,6 +20,7 @@ import {
     moveCellLeftWithinSelection,
     saveSchemaDataAsync,
     saveTableDataFromStoreAsync,
+    saveDiffTableDataFromStoreAsync,
     getTarget
 } from "./editor-actions";
 import {config} from "./config";
@@ -64,11 +65,12 @@ export class EditorTableHandler {
      */
     private readOnly: boolean;
     /**
-     * 保存禁止フラグ。差分タブのEditorTableで使用する。
-     * readOnlyと異なりセル編集は許可しつつCtrl+Sによるファイル保存のみを禁止する。
-     * 差分タブのtableNameは "test:diff:current" のような不正パスになるためファイル破壊防止に必要。
+     * 保存先テーブル名のオーバーライド。差分タブの右ペインで使用する。
+     * 空文字の場合は this.table.tableName をそのまま使用する。
+     * 差分タブのストアキーは "tableName:diff:current" のような不正パスのため、
+     * 元の tableName を指定することでファイル破壊を防ぎつつ保存を可能にする。
      */
-    private saveDisabled: boolean;
+    private saveTargetTableName: string;
     /**
      * focusWithoutScrolling() が発行した rAF の ID。
      * 0 は「未発行」を表す（requestAnimationFrame は 0 を返さないため安全なセンチネル値）。
@@ -101,7 +103,7 @@ export class EditorTableHandler {
         this.active = false;
         this.visible = false;
         this.readOnly = false;
-        this.saveDisabled = false;
+        this.saveTargetTableName = '';
         this.dropdownActive = false;
         this.pendingScrollRestoreId = 0;
 
@@ -192,12 +194,12 @@ export class EditorTableHandler {
     }
 
     /**
-     * 保存を禁止する（差分タブのEditorTable用）
-     * セル編集は許可しつつCtrl+Sによるファイル保存のみを禁止する。
-     * 差分タブのtableNameは不正パスになるためファイル破壊を防止する目的で使用する。
+     * 保存先テーブル名をオーバーライドする（差分タブの右ペイン用）
+     * ストアキーが "tableName:diff:current" のような不正パスでも、
+     * 元の tableName を指定することでファイル破壊なく保存できる。
      */
-    disableSave(): void {
-        this.saveDisabled = true;
+    configureSaveTargetTableName(tableName: string): void {
+        this.saveTargetTableName = tableName;
     }
 
     /**
@@ -472,9 +474,24 @@ export class EditorTableHandler {
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 's') {
             keyboardEvent.preventDefault();
             if (this.readOnly) return;
-            // 差分タブ等で保存が明示的に禁止されている場合は何もしない（不正パスへの書き込み防止）
-            if (this.saveDisabled) return;
             const store = this.table.getStore();
+            // 差分タブの右ペイン: saveTargetTableName が設定されている場合は元テーブル名で保存する。
+            // ストアキーは "tableName:diff:current" だが保存先は元の tableName にする。
+            if (this.saveTargetTableName !== '') {
+                // 差分タブの右ペイン保存: ストアキーが不正パス（"tableName:diff:current"）のため、
+                // refreshGitDiffAsync をスキップして Dirty 解除のみ行う。
+                // this.table.tableName は不正パスであり git 差分取得に使えないため、
+                // markSavedAndUpdatePanel()（refreshGitDiffAsync を含む）は呼ばない。
+                saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName)
+                    .then(() => {
+                        this.table.getStore().markAllSaved(this.saveTargetTableName);
+                        if (this.table.relationsPanel !== false) {
+                            this.table.relationsPanel.updateDirtyMark(this.saveTargetTableName, false);
+                        }
+                    })
+                    .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });
+                return;
+            }
             if (this.table.isMiniTableInstance()) {
                 // ミニEditorTableの場合はストアの全列データからCSVを保存する。
                 // DOM上はFK列が欠落したフィルタ済みデータのみ表示しているが、

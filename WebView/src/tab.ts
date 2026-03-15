@@ -640,13 +640,12 @@ export class Tab {
         }
 
         // 差分タブのタブボタンを追加する
+        // このタブボタンを DiffTab の History に渡すことで Dirty マークが画面に反映される
         const tabButton = this.append(diffTabName);
 
-        // DiffTab を生成する（ダミータブボタンはDirty表示に使うが差分タブでは不要なため同じタブボタンを渡す）
-        const dummyTabButton = new TabButton(this.editor, this, '[diff]');
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged,
-            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, dummyTabButton
+            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton
         );
         // closeTab() で既存タブは破棄済みのためキーが存在しないことが保証される
         this.diffTabs.set(diffTabName, diffTab);
