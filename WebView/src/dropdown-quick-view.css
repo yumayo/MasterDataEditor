@@ -1,6 +1,7 @@
 /* ドロップダウン クイックビューパネル */
+/* body 直下に固定配置し、StackingContext の影響を受けずに最前面に表示する */
 .dropdown-quick-view {
-    position: absolute;
+    position: fixed;
     z-index: 1000;
     display: none;
     background-color: var(--background-color);

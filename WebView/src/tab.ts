@@ -11,6 +11,7 @@ import {ContextMenu} from "./context-menu";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {GridDropdownInput} from "./grid-dropdown-input";
+import {DropdownQuickView} from "./dropdown-quick-view";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
 import {Sidebar} from "./sidebar";
@@ -128,6 +129,13 @@ export class Tab {
     /** 差分タブのDiffTabインスタンスマップ（キー: 差分タブ名 = DIFF_TAB_PREFIX + tableName） */
     private readonly diffTabs: Map<string, DiffTab>;
 
+    /**
+     * 全 GridDropdownInput が共有するシングルトン DropdownQuickView。
+     * body 直下に1つだけ配置されることで、strict mode の複数マッチ問題を回避する。
+     * Tab コンストラクタで生成し、各 GridDropdownInput へ connectDropdownQuickView() で接続する。
+     */
+    private readonly sharedDropdownQuickView: DropdownQuickView;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -149,6 +157,11 @@ export class Tab {
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
         this.diffTabs = new Map();
+
+        // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
+        // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
+        this.sharedDropdownQuickView = new DropdownQuickView(this.referenceDataCache);
+        this.sharedDropdownQuickView.connectTab(this, this.store);
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -1000,8 +1013,9 @@ export class Tab {
 
             // ドロップダウン入力コンポーネントを作成。
             // 入力フィールド(element)の公開を避けるため EditorTableHandler.createDropdownInput 経由で生成する。
-            // ReferenceDataCache を渡してクイックビュー機能を有効にする。
-            const dropdownInput = editorTableHandler.createDropdownInput(wrapperElement, this.referenceDataCache);
+            const dropdownInput = editorTableHandler.createDropdownInput(wrapperElement);
+            // シングルトン DropdownQuickView を接続してクイックビュー機能を有効にする
+            dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView);
 
             // EditorTableHandler に参照データキャッシュとドロップダウンを設定
             editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
@@ -1158,7 +1172,8 @@ export class Tab {
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
         csvRows: string[][],
-        emptyRowCount: number
+        emptyRowCount: number,
+        connectQuickView: boolean
     ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer; history: History} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
@@ -1217,8 +1232,10 @@ export class Tab {
 
         // ドロップダウンは scrollContainer の overflow:auto にクリッピングされないよう
         // scrollContainer の外側（dropdownContainer）に配置する。
-        // ReferenceDataCache を渡してクイックビュー機能を有効にする。
-        const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer, this.referenceDataCache);
+        const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer);
+        // QV内ミニテーブルは自己破棄ループを防ぐためクイックビューを接続しない。
+        // RelationsPanel 等の通常ミニテーブルのみ接続する。
+        if (connectQuickView) { dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView); }
         editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
         // ミニEditorTableのhandlerは初期状態では非アクティブとする。

@@ -1,4 +1,4 @@
-import {ReferenceItem, ReferenceDataCache} from "./reference-data-cache";
+import {ReferenceItem} from "./reference-data-cache";
 import {DropdownQuickView} from "./dropdown-quick-view";
 
 /**
@@ -15,14 +15,19 @@ export type DropdownCancelCallback = () => void;
  * 参照列用のドロップダウン付き入力コンポーネント
  *
  * 入力フィールドは EditorTableHandler.element を使用し、
- * ドロップダウンリストとクイックビューパネルを管理する
+ * ドロップダウンリストとクイックビューパネルを管理する。
+ *
+ * クイックビューは Tab が所有するシングルトン DropdownQuickView を
+ * connectDropdownQuickView() で接続することで有効になる。
+ * 接続なし（false）の場合はクイックビュー機能が無効になる（差分タブ等で使用）。
  */
 export class GridDropdownInput {
     readonly element: HTMLElement;
     private readonly inputElement: HTMLElement;
     private readonly parentElement: HTMLElement;
     private dropdownElement: HTMLElement;
-    private readonly quickView: DropdownQuickView;
+    /** Tab から接続されるシングルトン DropdownQuickView（未接続時は false） */
+    private quickView: DropdownQuickView | false;
     /** show() で受け取った参照先テーブル名。mouseenter/moveSelection時にQuickViewへ渡す */
     private referenceTableName: string;
 
@@ -39,7 +44,6 @@ export class GridDropdownInput {
         inputElement: HTMLElement,
         onSelect: DropdownSelectCallback,
         onCancel: DropdownCancelCallback,
-        referenceDataCache: ReferenceDataCache
     ) {
         this.items = [];
         this.filteredItems = [];
@@ -48,6 +52,7 @@ export class GridDropdownInput {
         this.referenceTableName = '';
         this.onSelect = onSelect;
         this.onCancel = onCancel;
+        this.quickView = false;
 
         // EditorTableHandler.element への参照を保持
         this.inputElement = inputElement;
@@ -61,11 +66,18 @@ export class GridDropdownInput {
         this.dropdownElement.classList.add('grid-dropdown-list');
         this.element.appendChild(this.dropdownElement);
 
-        // クイックビューパネル（コンテナとドロップダウンリストを渡して構築）
-        this.quickView = new DropdownQuickView(this.element, this.dropdownElement, referenceDataCache);
-
         this.parentElement = parentElement;
         parentElement.appendChild(this.element);
+    }
+
+    /**
+     * Tab が所有するシングルトン DropdownQuickView を接続する。
+     * 接続後はドロップダウンアイテムにホバーしたときクイックビューが表示される。
+     * Tab.createTabState / Tab.createMiniEditorTable から呼ばれる。
+     * diff-tab.ts のように Tab を持たない場面では接続しない（クイックビュー無効）。
+     */
+    connectDropdownQuickView(quickView: DropdownQuickView): void {
+        this.quickView = quickView;
     }
 
     /**
@@ -95,7 +107,7 @@ export class GridDropdownInput {
         // 参照先テーブル名を保持（mouseenter/moveSelection時にQuickViewへ渡す）
         this.referenceTableName = referenceTableName;
         // 表示前にQuickViewをリセット（タイマー・表示・キャッシュをクリア）
-        this.quickView.cleanup();
+        if (this.quickView !== false) { this.quickView.cleanup(); }
 
         // フィルタを適用（初期表示時は選択を維持）
         this.filterItems('', true);
@@ -111,8 +123,8 @@ export class GridDropdownInput {
         this.visible = false;
         this.element.classList.remove('visible');
         this.dropdownElement.innerHTML = '';
-        // クイックビューもクリーンアップ
-        this.quickView.cleanup();
+        // クイックビューもクリーンアップ（接続済みの場合のみ）
+        if (this.quickView !== false) { this.quickView.cleanup(); }
     }
 
     /**
@@ -161,11 +173,13 @@ export class GridDropdownInput {
 
         this.renderDropdown();
 
-        // キーボード選択時はクイックビューを即時更新（ディレイなし）
-        const selectedItem = this.filteredItems[this.selectedIndex];
-        const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
-        if (selectedElement instanceof HTMLElement) {
-            this.quickView.showPreviewImmediate(this.referenceTableName, selectedItem.id, selectedElement);
+        // キーボード選択時はクイックビューを即時更新（ディレイなし、接続済みの場合のみ）
+        if (this.quickView !== false) {
+            const selectedItem = this.filteredItems[this.selectedIndex];
+            const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
+            if (selectedElement instanceof HTMLElement) {
+                this.quickView.showPreviewImmediate(this.referenceTableName, selectedItem.id, selectedElement, this.dropdownElement);
+            }
         }
     }
 
@@ -257,15 +271,17 @@ export class GridDropdownInput {
                 this.confirmSelection();
             });
 
-            // マウスオーバー: 300msディレイ付きクイックビュー表示
+            // マウスオーバー: 300msディレイ付きクイックビュー表示（接続済みの場合のみ）
             itemElement.addEventListener('mouseenter', () => {
-                this.quickView.showPreviewWithDelay(this.referenceTableName, item.id, itemElement);
+                if (this.quickView !== false) {
+                    this.quickView.showPreviewWithDelay(this.referenceTableName, item.id, itemElement, this.dropdownElement);
+                }
             });
 
-            // マウスリーブ: 短いディレイ後にクイックビュー非表示
+            // マウスリーブ: 短いディレイ後にクイックビュー非表示（接続済みの場合のみ）
             // クイックビュー自体へマウスが移動した場合はhideをキャンセルする
             itemElement.addEventListener('mouseleave', () => {
-                this.quickView.hidePreviewWithDelay();
+                if (this.quickView !== false) { this.quickView.hidePreviewWithDelay(); }
             });
 
             this.dropdownElement.appendChild(itemElement);

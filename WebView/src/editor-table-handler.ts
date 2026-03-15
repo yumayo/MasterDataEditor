@@ -135,7 +135,7 @@ export class EditorTableHandler {
         if (this.active) return;
 
         this.active = true;
-        this.focusWithoutScrolling();
+        this.focusWithoutScrolling(this.scrollController.getScrollTop(), this.scrollController.getScrollLeft());
     }
 
     /**
@@ -145,7 +145,7 @@ export class EditorTableHandler {
      */
     activate(): void {
         this.active = true;
-        this.focusWithoutScrolling();
+        this.focusWithoutScrolling(this.scrollController.getScrollTop(), this.scrollController.getScrollLeft());
     }
 
     /**
@@ -155,10 +155,12 @@ export class EditorTableHandler {
      * top:-99999px に位置する要素へのフォーカス時にブラウザが自動スクロールして
      * スクロール位置が(0,0)にリセットされる。
      * focus 直後にスクロール位置を強制復元することでこの問題を回避する。
+     *
+     * scrollTop/scrollLeft は呼び出し元が「DOM スタイル変更前」に取得して渡すこと。
+     * style.top 変更後にこのメソッドを呼ぶと、ブラウザが既にスクロールをリセット済みの
+     * 状態でスクロール位置を読んでしまい、0 を「正しい位置」として保護してしまう。
      */
-    private focusWithoutScrolling(): void {
-        const scrollTop = this.scrollController.getScrollTop();
-        const scrollLeft = this.scrollController.getScrollLeft();
+    private focusWithoutScrolling(scrollTop: number, scrollLeft: number): void {
         this.element.focus({ preventScroll: true });
         // preventScroll が機能しなかった場合でも強制的に元の位置に戻す
         this.scrollController.setScrollPosition(scrollTop, scrollLeft);
@@ -221,15 +223,15 @@ export class EditorTableHandler {
     /**
      * GridDropdownInput を生成して返す。
      * element の public 露出を避けるため、このメソッド経由で生成する。
-     * ReferenceDataCache を渡してクイックビュー機能を有効にする。
+     * DropdownQuickView は呼び出し元（Tab）が dropdownInput.connectDropdownQuickView() で後から接続する。
+     * diff-tab.ts のように Tab を持たない場面では接続しないことでクイックビュー無効になる。
      */
-    createDropdownInput(container: HTMLElement, referenceDataCache: ReferenceDataCache): GridDropdownInput {
+    createDropdownInput(container: HTMLElement): GridDropdownInput {
         return new GridDropdownInput(
             container,
             this.element,
             (id: string) => { this.submitDropdownSelection(id); },
             () => { this.cancelDropdown(); },
-            referenceDataCache
         );
     }
 
@@ -315,7 +317,8 @@ export class EditorTableHandler {
 
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
-        this.focusWithoutScrolling();
+        // フォーカスアウト時点のスクロール位置を先に読んでから focus() を呼ぶ（DOM変更前なので正しい値）。
+        this.focusWithoutScrolling(this.scrollController.getScrollTop(), this.scrollController.getScrollLeft());
 
         // すでに非表示なら何もしないです。
         if (!this.visible) return;
@@ -667,9 +670,18 @@ export class EditorTableHandler {
     }
 
     /**
-     * テキスト入力フィールドを非表示にする
+     * テキスト入力フィールドを非表示にする。
+     * top:-99999px にした後もフォーカスがこの要素に残るため、
+     * ブラウザが自動スクロールでビューポートをリセットする場合がある。
+     *
+     * 重要: style.top の変更によってブラウザが同期的にスクロールをリセットするため、
+     * スクロール位置は style 変更「前」に取得しなければならない。
+     * 変更後に getScrollTop() を呼ぶと既に 0 になっており、0 で「保護」してしまう。
      */
     private hide(): void {
+        // style.top 変更前にスクロール位置を保存する（変更後はブラウザが 0 にリセットする場合がある）
+        const scrollTop = this.scrollController.getScrollTop();
+        const scrollLeft = this.scrollController.getScrollLeft();
         this.visible = false;
         this.element.textContent = null;
         this.element.style.width = '0px';
@@ -679,6 +691,8 @@ export class EditorTableHandler {
         this.element.style.left = '-99999px';
         this.element.appendChild(document.createElement('br'));
         this.element.classList.remove('grid-textfield-active');
+        // 事前保存したスクロール位置を渡して保護する（style.top 変更後のブラウザ自動スクロールを防ぐ）
+        this.focusWithoutScrolling(scrollTop, scrollLeft);
     }
 
     /**

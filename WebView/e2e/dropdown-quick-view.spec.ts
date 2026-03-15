@@ -143,7 +143,7 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             // 300ms経過前はクイックビューが表示されていない
             // 左ペインのクイックビューに限定（RelationsPanelのミニテーブルにも存在するため）
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).not.toBeVisible();
 
             // 300ms 実時間で待機
@@ -164,19 +164,19 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
-            // RelationsPanel風のミニテーブルが存在する
-            const miniTable = quickView.locator('.relations-mini-table');
-            await expect(miniTable).toBeVisible();
+            // ミニEditorTableが存在する
+            const editorTable = quickView.locator('.editor-table');
+            await expect(editorTable).toBeVisible();
 
             // ヘッダー行が存在する
-            const headerRow = miniTable.locator('thead tr');
+            const headerRow = editorTable.locator('.editor-table-column-header-row');
             await expect(headerRow).toBeVisible();
 
-            // データ行が1件以上存在する
-            const dataRows = miniTable.locator('tbody tr');
+            // データ行が1件以上存在する（バッファ空行を除外）
+            const dataRows = editorTable.locator('.editor-table-row:not(.editor-table-empty-row)');
             await expect(dataRows.first()).toBeVisible();
         },
     );
@@ -192,16 +192,17 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // reward_group テーブルの列名が表示されている
-            await expect(quickView.locator('.relations-mini-table thead')).toContainText('id');
-            await expect(quickView.locator('.relations-mini-table thead')).toContainText('name');
+            await expect(quickView.locator('.editor-table-column-header-row')).toContainText('id');
+            await expect(quickView.locator('.editor-table-column-header-row')).toContainText('name');
 
-            // id=1 に対応する値が表示されている
-            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('1');
-            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('daily_reward');
+            // id=1 に対応する値が表示されている（バッファ空行・列ヘッダー行を除外したデータ行）
+            const dataRows = quickView.locator('.editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row)');
+            await expect(dataRows.first()).toContainText('1');
+            await expect(dataRows.first()).toContainText('daily_reward');
         },
     );
 
@@ -215,7 +216,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // アイテムからマウスを離す（ドロップダウンリスト外に移動）
@@ -237,16 +238,16 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
-            // 1件目の内容が表示されていることを確認
-            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('daily_reward');
+            // 1件目の内容が表示されていることを確認（バッファ空行・列ヘッダー行を除外したデータ行）
+            await expect(quickView.locator('.editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row)').first()).toContainText('daily_reward');
 
             // ArrowDown で2件目（id=2, event_reward）に移動
             await page.keyboard.press('ArrowDown');
-            // キーボード選択によってクイックビューが即座に更新される
-            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('event_reward');
+            // キーボード選択によってクイックビューが即座に更新される（非同期のため再取得して待機）
+            await expect(page.locator('body > .dropdown-quick-view .editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row)').first()).toContainText('event_reward');
         },
     );
 
@@ -260,7 +261,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // Escape でドロップダウンを閉じる
@@ -294,7 +295,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             // 1件目のタイマー開始から300ms以上経過してもクイックビューは未表示
             // （1件目のタイマーはキャンセル済み、2件目のタイマーはまだ300ms未達）
             await page.waitForTimeout(150);
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).not.toBeVisible();
 
             // 2件目のホバー開始から300ms以上経過させる
@@ -302,7 +303,7 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             // 2件目のデータがクイックビューに表示される
             await expect(quickView).toBeVisible();
-            await expect(quickView.locator('.relations-mini-table tbody')).toContainText('event_reward');
+            await expect(quickView.locator('.editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row)').first()).toContainText('event_reward');
         },
     );
 
@@ -316,7 +317,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // クイックビューがドロップダウンリストの右側に配置されている
@@ -340,7 +341,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // セクションヘッダーが存在し "RELATIONS" テキストを持つ
@@ -360,7 +361,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // テーブルヘッダーが存在する
@@ -394,7 +395,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // クイックビューにマウスを移動する（ドロップダウンアイテムから mouseleave が発生する）
@@ -416,7 +417,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             await firstItem.hover();
             await page.waitForTimeout(350);
 
-            const quickView = page.locator('.editor-left-pane .dropdown-quick-view');
+            const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
             // クイックビューにマウスを移動する
@@ -428,6 +429,60 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             // クイックビューが非表示になる
             await expect(quickView).not.toBeVisible();
+        },
+    );
+
+    // =========================================================================
+    // FEAT_0027: クイックビュー改修のテスト
+    // =========================================================================
+
+    test(
+        'クイックビューが body 直下に配置され position:fixed で表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            // 修正後: クイックビューは .grid-dropdown の子ではなく body 直下に配置される
+            // body の直接の子要素として .dropdown-quick-view.visible が存在することを検証する
+            const bodyDirectChild = page.locator('body > .dropdown-quick-view.visible');
+            await expect(bodyDirectChild).toBeVisible();
+
+            // position が fixed であることを検証する（StackingContext の問題を解消するため）
+            const position = await bodyDirectChild.evaluate(el => window.getComputedStyle(el).position);
+            expect(position).toBe('fixed');
+        },
+    );
+
+    test(
+        'クイックビューがミニEditorTableを使用している',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+            await page.waitForTimeout(350);
+
+            // 修正後: body 直下にクイックビューが配置される
+            const quickView = page.locator('body > .dropdown-quick-view.visible');
+            await expect(quickView).toBeVisible();
+
+            // 静的な <table class="relations-mini-table"> ではなく EditorTable の DOM 構造が存在する
+            // EditorTable の特徴的な要素: .editor-table クラスを持つコンテナ
+            const editorTable = quickView.locator('.editor-table');
+            await expect(editorTable).toBeVisible();
+
+            // EditorTable の列ヘッダー行が存在することを検証する
+            const columnHeaderRow = quickView.locator('.editor-table-column-header-row');
+            await expect(columnHeaderRow).toBeVisible();
+
+            // 参照先テーブル (reward_group) の列名が EditorTable のヘッダーに表示されていることを検証する
+            await expect(columnHeaderRow).toContainText('id');
+            await expect(columnHeaderRow).toContainText('name');
         },
     );
 });

@@ -427,7 +427,8 @@ export class DiffTab {
         // overflow:auto のスクロールコンテナ（paneElement）の外側に配置することでクリッピングを防ぐ。
         // ミニテーブル（tab.ts 1219行）と同パターン。
         if (dropdownContainer !== null) {
-            const dropdownInput: GridDropdownInput = editorTableHandler.createDropdownInput(dropdownContainer, referenceDataCache);
+            // 差分タブでは DropdownQuickView は接続しない（差分は読み取り専用のためクイックビュー不要）
+            const dropdownInput: GridDropdownInput = editorTableHandler.createDropdownInput(dropdownContainer);
             editorTableHandler.setReferenceComponents(referenceDataCache, dropdownInput, tableData);
         }
 

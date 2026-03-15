@@ -1723,3 +1723,29 @@ FEAT_0022でミニテーブルにバッファ行自動補充（ensureTrailingBuf
 バッファ行の補充・正規化はテーブル種別（ミニ/通常）に依存しない不変条件として扱う。新しい操作パスを追加する際は、バッファ行の状態が維持されるかを全経路で検証する。ガード条件は `diffTab === false` のみとし、テーブル種別でのガードは避ける。
 
 ---
+
+## 118. [3881d40] — クイックビューをbody直下配置+position:fixedに変更
+
+### 不具合原因名
+StackingContext封じ込めによるz-index無効化
+
+### なぜそうなったのか
+DropdownQuickViewのDOM要素が`.grid-dropdown`（z-index:100, position:absolute）の子要素として配置されていた。`.grid-dropdown`が新しいStackingContextを形成するため、子要素のz-index:1000は親のStackingContext内でのみ有効であり、兄弟要素であるRelationsPanel（右ペイン）より前面に出ることができなかった。
+
+### どうしたら今後は再発しないか
+absolute/fixedのposition指定を持つ要素にz-indexを設定する際は、親要素のStackingContextを確認すること。特にオーバーレイ系のUI（ドロップダウン、ツールチップ、クイックビュー等）は`document.body`直下に配置して`position:fixed`を使うことで、StackingContextの問題を根本的に回避できる。コンテキストメニューの実装（context-menu.ts）が正しい設計例として参照可能。
+
+---
+
+## 119. [3881d40] — cleanup/hidePreviewでcurrentPreviewRequestIdをインクリメント
+
+### 不具合原因名
+非同期キャンセル用IDのクリーンアップ時インクリメント漏れ
+
+### なぜそうなったのか
+DropdownQuickViewの非同期処理キャンセルに`currentPreviewRequestId`パターンを使用していたが、`cleanup()`と`hidePreview()`でIDをインクリメントしていなかった。showPreviewImmediate()が発行したリクエストがI/O待機中にドロップダウンが閉じられた場合、cleanup()でvisibleクラスは削除されるが、I/O完了後にrequestIdチェックが通り続けてクイックビューが再表示される問題があった。
+
+### どうしたら今後は再発しないか
+非同期キャンセルIDパターンを使用する場合、「表示開始」だけでなく「表示終了（hide/cleanup）」時にもIDをインクリメントすること。対称操作の原則として「開始時にインクリメント → 終了時にもインクリメント」を徹底する。awaitポイント後のIDチェックは、表示要求のキャンセルだけでなく非表示要求後の遅延完了も防ぐ必要がある。
+
+---

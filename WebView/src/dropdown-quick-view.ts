@@ -1,19 +1,34 @@
 import {ReferenceDataCache} from "./reference-data-cache";
+import {readFileAsync} from "./api";
+import {Tab} from "./tab";
+import {InMemoryTableStore} from "./in-memory-table-store";
+import {EditorTable} from "./editor-table";
+import {FillController} from "./fill-controller";
+import {AreaResizer} from "./area-resizer";
+import {History} from "./history";
 
 /**
  * ドロップダウンのクイックビューパネルを管理するクラス。
  *
  * FK列のドロップダウンアイテムにホバーすると、300ms後に参照先テーブルの
- * 関連データをRelationsPanel風のDOM構造で表示する。
+ * 関連データをミニEditorTableで表示する。
  * クイックビュー自体にマウスオーバーしている間は表示が維持される。
+ *
+ * DOM配置: document.body 直下に固定配置し、position:fixed でビューポート座標を使用する。
+ * これにより .grid-dropdown の StackingContext に影響されず最前面に表示できる。
+ *
+ * シングルトン設計: Tab が1つだけ生成し、全 GridDropdownInput が共有する。
+ * これにより body 直下に .dropdown-quick-view が1つしか存在しないことを保証する。
+ *
+ * Tab・InMemoryTableStore は connectTab() で Tab コンストラクタから接続する。
+ * showPreviewWithDelay/showPreviewImmediate が呼ばれる時点では必ず接続済みであることが保証される。
+ * dropdownListElement は各呼び出し時に引数として受け取り、シングルトンで正しい位置決めを実現する。
  */
 export class DropdownQuickView {
-    /** クイックビューのルート要素 */
+    /** クイックビューのルート要素（document.body 直下に配置） */
     private readonly element: HTMLDivElement;
-    /** ドロップダウンリスト要素（位置決め基準） */
-    private readonly dropdownListElement: HTMLElement;
-    /** .grid-dropdown コンテナ要素（位置決め基準） */
-    private readonly containerElement: HTMLElement;
+    /** ドロップダウンリスト要素（位置決め基準）。呼び出し元の GridDropdownInput ごとに更新される */
+    private dropdownListElement: HTMLElement;
     /** ホバーディレイタイマーID（0 = タイマーなし） */
     private hoverTimerId: number = 0;
     /** hidePreviewWithDelay のディレイタイマーID（0 = タイマーなし） */
@@ -22,21 +37,48 @@ export class DropdownQuickView {
     private hovered: boolean = false;
     /** レースコンディション防止用リクエストID */
     private currentPreviewRequestId: number = 0;
-    /** IDをキーとしたプレビューキャッシュ */
-    private readonly previewCache: Map<string, { header: string[]; row: string[] }>;
     /** 参照データキャッシュへの参照 */
     private readonly referenceDataCache: ReferenceDataCache;
+    /**
+     * ミニEditorTable生成に使用するTab。
+     * connectTab() で設定される。false の場合は connectTab() 未呼び出しを意味し、renderContentAsync() でエラーを投げる。
+     */
+    private tab: Tab | false;
+    /**
+     * テーブルデータの中央ストア。
+     * connectTab() で設定される。false の場合は connectTab() 未呼び出しを意味する。
+     */
+    private store: InMemoryTableStore | false;
+    /** 現在表示中のミニEditorTableインスタンス（未表示時はfalse） */
+    private currentMiniEditorTable: EditorTable | false;
+    /** 現在表示中のミニEditorTableのFillController（未表示時はfalse） */
+    private currentMiniFillController: FillController | false;
+    /** 現在表示中のミニEditorTableのAreaResizer（未表示時はfalse） */
+    private currentMiniAreaResizer: AreaResizer | false;
+    /** 現在表示中のミニEditorTableのHistory（未表示時はfalse） */
+    private currentMiniHistory: History | false;
+    /** 現在表示中のミニEditorTableのテーブル名（未表示時はfalse） */
+    private currentMiniTableName: string | false;
 
-    constructor(containerElement: HTMLElement, dropdownListElement: HTMLElement, referenceDataCache: ReferenceDataCache) {
-        this.containerElement = containerElement;
-        this.dropdownListElement = dropdownListElement;
+    constructor(referenceDataCache: ReferenceDataCache) {
+        // dropdownListElement は showPreviewWithDelay/showPreviewImmediate 呼び出し時に更新される。
+        // シングルトンとして複数の GridDropdownInput から共有されるため、
+        // コンストラクタでは空の div で初期化し、実際の呼び出し前に必ず上書きされることを保証する。
+        this.dropdownListElement = document.createElement('div');
         this.referenceDataCache = referenceDataCache;
-        this.previewCache = new Map();
+        this.tab = false;
+        this.store = false;
+        this.currentMiniEditorTable = false;
+        this.currentMiniFillController = false;
+        this.currentMiniAreaResizer = false;
+        this.currentMiniHistory = false;
+        this.currentMiniTableName = false;
 
-        // クイックビューのDOM要素を構築してコンテナに追加
+        // クイックビューのDOM要素を構築して document.body 直下に追加する。
+        // .grid-dropdown の StackingContext に影響されず最前面に表示するため body 直下に配置する。
         this.element = document.createElement('div');
         this.element.classList.add('dropdown-quick-view');
-        containerElement.appendChild(this.element);
+        document.body.appendChild(this.element);
 
         // クイックビュー自体へのホバーで表示を維持する
         this.element.addEventListener('mouseenter', () => {
@@ -50,30 +92,43 @@ export class DropdownQuickView {
     }
 
     /**
+     * Tab と InMemoryTableStore を接続する（Tab コンストラクタから呼ばれる）。
+     * ミニEditorTable生成能力を付与するために必要。
+     * シングルトンとして生成後に一度だけ呼ばれる。
+     */
+    connectTab(tab: Tab, store: InMemoryTableStore): void {
+        if (this.tab !== false) {
+            throw new Error('[DropdownQuickView] connectTab() は複数回呼べません');
+        }
+        this.tab = tab;
+        this.store = store;
+    }
+
+    /**
      * アイテムホバー開始時に呼ぶ（300msディレイ付き）。
      * 300ms以内に別アイテムへ移動した場合、前のタイマーをキャンセルする。
+     * listElement: 現在表示中のドロップダウンリスト要素（クイックビューの位置決め基準）。
+     * シングルトンとして複数の GridDropdownInput から共有されるため、呼び出しごとに更新する。
      */
-    showPreviewWithDelay(tableName: string, itemId: string, anchorElement: HTMLElement): void {
+    showPreviewWithDelay(tableName: string, itemId: string, anchorElement: HTMLElement, listElement: HTMLElement): void {
+        this.dropdownListElement = listElement;
         this.cancelHoverTimer();
         this.hoverTimerId = window.setTimeout(() => {
             this.hoverTimerId = 0;
-            this.showPreviewImmediate(tableName, itemId, anchorElement);
+            this.showPreviewImmediate(tableName, itemId, anchorElement, listElement);
         }, 300);
     }
 
     /**
      * 即座にプレビューを表示する（キーボード選択用・ディレイなし）。
+     * listElement: 現在表示中のドロップダウンリスト要素（クイックビューの位置決め基準）。
+     * シングルトンとして複数の GridDropdownInput から共有されるため、呼び出しごとに更新する。
      */
-    showPreviewImmediate(tableName: string, itemId: string, anchorElement: HTMLElement): void {
-        const cached = this.previewCache.get(`${tableName}:${itemId}`);
-        if (cached) {
-            this.renderAndPosition(tableName, cached.header, cached.row, anchorElement);
-            return;
-        }
-
+    showPreviewImmediate(tableName: string, itemId: string, anchorElement: HTMLElement, listElement: HTMLElement): void {
+        this.dropdownListElement = listElement;
         const requestId = ++this.currentPreviewRequestId;
-        this.fetchPreviewAsync(tableName, itemId, requestId, anchorElement)
-            .catch((e: unknown) => { console.warn('[DropdownQuickView] fetchPreviewAsync failed', e); });
+        this.fetchAndRenderAsync(tableName, itemId, requestId, anchorElement)
+            .catch((e: unknown) => { console.warn('[DropdownQuickView] fetchAndRenderAsync failed', e); });
     }
 
     /**
@@ -83,7 +138,10 @@ export class DropdownQuickView {
     hidePreview(): void {
         this.cancelHideTimer();
         this.cancelHoverTimer();
+        // 進行中の非同期処理（fetchAndRenderAsync / renderContentAsync）を確実にキャンセルする
+        ++this.currentPreviewRequestId;
         this.element.classList.remove('visible');
+        this.destroyCurrentMiniEditorTable();
     }
 
     /**
@@ -106,15 +164,17 @@ export class DropdownQuickView {
     cleanup(): void {
         this.cancelHoverTimer();
         this.cancelHideTimer();
+        // 進行中の非同期処理（fetchAndRenderAsync / renderContentAsync）を確実にキャンセルする
+        ++this.currentPreviewRequestId;
         this.hovered = false;
         this.element.classList.remove('visible');
-        this.previewCache.clear();
+        this.destroyCurrentMiniEditorTable();
     }
 
     /**
-     * 参照テーブルからプレビューデータを非同期で取得してレンダリングする。
+     * 参照テーブルからプレビューデータを非同期で取得してミニEditorTableをレンダリングする。
      */
-    private async fetchPreviewAsync(tableName: string, itemId: string, requestId: number, anchorElement: HTMLElement): Promise<void> {
+    private async fetchAndRenderAsync(tableName: string, itemId: string, requestId: number, anchorElement: HTMLElement): Promise<void> {
         const fullData = await this.referenceDataCache.getFullDataAsync(tableName);
 
         // レースコンディション防止: 非同期待機中に別のリクエストが発行された場合は破棄する
@@ -127,27 +187,50 @@ export class DropdownQuickView {
             return;
         }
 
-        // テーブル名とIDを複合キーにしてキャッシュ保存（異なるテーブルで同一IDが存在する場合の衝突を防ぐ）
-        this.previewCache.set(`${tableName}:${itemId}`, { header: fullData.header, row });
-        this.renderAndPosition(tableName, fullData.header, row, anchorElement);
-    }
+        await this.renderContentAsync(tableName, fullData.header, row, requestId);
 
-    /**
-     * プレビューをレンダリングして位置を決定する。
-     */
-    private renderAndPosition(tableName: string, header: string[], row: string[], anchorElement: HTMLElement): void {
-        this.renderContent(tableName, header, row);
+        // 非同期待機中に別のリクエストが発行された場合は表示しない
+        if (requestId !== this.currentPreviewRequestId) {
+            this.destroyCurrentMiniEditorTable();
+            return;
+        }
+
         this.element.classList.add('visible');
         this.positionElement(anchorElement);
     }
 
     /**
-     * クイックビューのHTMLコンテンツをRelationsPanel風のDOM構造でレンダリングする。
+     * クイックビューのコンテンツをミニEditorTableでレンダリングする。
+     * 既存のミニEditorTableを破棄してから新しいものを生成する。
+     *
+     * DOM構築は非同期I/O完了後に行う。早期リターン時にDOM残留が発生しないようにするため。
      */
-    private renderContent(tableName: string, header: string[], row: string[]): void {
+    private async renderContentAsync(tableName: string, header: string[], row: string[], requestId: number): Promise<void> {
+        if (this.tab === false || this.store === false) {
+            throw new Error('[DropdownQuickView] connectTab() が呼ばれていない状態で renderContentAsync が呼ばれた');
+        }
+        // 既存のミニEditorTableを破棄する
+        this.destroyCurrentMiniEditorTable();
+
+        // スキーマをファイルから読み込む（DOM構築前にI/Oを完了させる）
+        const schemaText = await readFileAsync(`schema/${tableName}.json`);
+
+        // 非同期待機中に別のリクエストが発行された場合はここで中断する（DOM残留なし）
+        if (requestId !== this.currentPreviewRequestId) return;
+
+        const schemaJson: Record<string, unknown> = JSON.parse(schemaText);
+        await this.store.registerTableAsync(tableName);
+
+        // 非同期待機中に別のリクエストが発行された場合はストア登録を戻して中断する（DOM残留なし）
+        if (requestId !== this.currentPreviewRequestId) {
+            this.store.unregisterTable(tableName);
+            return;
+        }
+
+        // すべての非同期処理が完了してからDOMを構築・挿入する
         this.element.innerHTML = '';
 
-        // relations-panel-content ラッパー
+        // RelationsPanel と同じ構造でコンテンツを構築する
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('relations-panel-content');
 
@@ -178,79 +261,104 @@ export class DropdownQuickView {
         // 行数は常に1（クイックビューは1行分のデータを表示するため）
         const rowCount = document.createElement('span');
         rowCount.classList.add('relations-table-row-count');
-        rowCount.textContent = '1 rows';
+        rowCount.textContent = '1 row';
         tableHeader.appendChild(rowCount);
 
         tableSection.appendChild(tableHeader);
 
-        // ミニテーブルラッパー
-        const miniTableWrapper = document.createElement('div');
-        miniTableWrapper.classList.add('relations-mini-table-wrapper');
+        // ミニEditorTableのラッパー構造（RelationsPanel と同じ構造）
+        // wrapper: ドロップダウン配置先（overflow:visible）
+        // scrollContainer: スクロール担当（overflow:auto）
+        // innerWrapper: EditorTable・テキストフィールドの配置先（通常フロー）
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('relations-mini-table-wrapper');
+        tableSection.appendChild(wrapper);
 
-        const miniTable = document.createElement('table');
-        miniTable.classList.add('relations-mini-table');
+        const scrollContainer = document.createElement('div');
+        scrollContainer.classList.add('relations-mini-table-scroll');
+        wrapper.appendChild(scrollContainer);
 
-        // thead
-        const thead = document.createElement('thead');
-        const theadRow = document.createElement('tr');
-        for (const col of header) {
-            const th = document.createElement('th');
-            th.textContent = col;
-            theadRow.appendChild(th);
-        }
-        thead.appendChild(theadRow);
-        miniTable.appendChild(thead);
+        const innerWrapper = document.createElement('div');
+        scrollContainer.appendChild(innerWrapper);
 
-        // tbody（1行のみ）
-        const tbody = document.createElement('tbody');
-        const tbodyRow = document.createElement('tr');
-        tbodyRow.classList.add('relations-mini-table-row');
-        for (const cell of row) {
-            const td = document.createElement('td');
-            td.textContent = cell;
-            tbodyRow.appendChild(td);
-        }
-        tbody.appendChild(tbodyRow);
-        miniTable.appendChild(tbody);
-
-        miniTableWrapper.appendChild(miniTable);
-        tableSection.appendChild(miniTableWrapper);
         contentDiv.appendChild(tableSection);
         this.element.appendChild(contentDiv);
+
+        // クイックビューは1行だけ表示する。バッファ行1行を加えて emptyRowCount=2 とする。
+        // connectQuickView: false を渡してQV内ミニテーブルのFK列ホバーによる自己破棄ループを防ぐ。
+        const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
+            scrollContainer, innerWrapper, wrapper, tableName, schemaJson, header, [row], 2, false
+        );
+
+        // QV内ミニテーブルはReadOnly表示専用のため非アクティブ状態に設定する。
+        // deactivate() はイベントリスナーの解除のみ行うため、視覚状態の付与には
+        // setInactiveAppearance(true) を別途呼ぶ必要がある。
+        editorTable.deactivate();
+        editorTable.setInactiveAppearance(true);
+
+        // 現在表示中のミニEditorTableとして記録する（破棄時に使用）
+        this.currentMiniEditorTable = editorTable;
+        this.currentMiniFillController = fillController;
+        this.currentMiniAreaResizer = areaResizer;
+        this.currentMiniHistory = history;
+        this.currentMiniTableName = tableName;
     }
 
     /**
-     * クイックビューの表示位置を決定する。
+     * クイックビューの表示位置を決定する（position:fixed のビューポート座標を使用）。
      * デフォルトはドロップダウンリストの右側。
      * ビューポートの右端にはみ出す場合は左側に配置する。
      */
     private positionElement(anchorElement: HTMLElement): void {
-        // コンテナとドロップダウンリストの絶対位置を取得（relative座標計算の基準）
+        // position:fixed なのでビューポート座標（getBoundingClientRect の結果）をそのまま使う
         const listRect = this.dropdownListElement.getBoundingClientRect();
-        const containerRect = this.containerElement.getBoundingClientRect();
-
-        // アンカー要素の上端をコンテナ相対のtop座標として算出する
         const anchorRect = anchorElement.getBoundingClientRect();
-        const topRelative = anchorRect.top - containerRect.top;
 
         // まずドロップダウンリストの右側に配置を試みる
-        const rightPosition = listRect.right - containerRect.left;
-        this.element.style.left = rightPosition + 'px';
-        this.element.style.top = topRelative + 'px';
+        this.element.style.left = listRect.right + 'px';
+        this.element.style.top = anchorRect.top + 'px';
 
         // ビューポートの右端をはみ出す場合はドロップダウンリストの左側に配置する
         const quickViewRect = this.element.getBoundingClientRect();
         if (quickViewRect.right > window.innerWidth) {
-            const leftPosition = listRect.left - containerRect.left - this.element.offsetWidth;
-            this.element.style.left = leftPosition + 'px';
+            this.element.style.left = (listRect.left - this.element.offsetWidth) + 'px';
         }
 
         // ビューポートの下端をはみ出す場合は上方向にずらして収める
         const updatedRect = this.element.getBoundingClientRect();
         if (updatedRect.bottom > window.innerHeight) {
-            const adjustedTop = topRelative - (updatedRect.bottom - window.innerHeight);
+            const adjustedTop = anchorRect.top - (updatedRect.bottom - window.innerHeight);
             this.element.style.top = Math.max(0, adjustedTop) + 'px';
         }
+    }
+
+    /**
+     * 現在表示中のミニEditorTableを破棄する。
+     * FillController・AreaResizer を deactivate し、History を unregister し、
+     * ストアの参照カウントを戻す。
+     */
+    private destroyCurrentMiniEditorTable(): void {
+        if (this.currentMiniEditorTable === false) return;
+        this.currentMiniEditorTable.deactivate();
+        if (this.currentMiniFillController !== false) {
+            this.currentMiniFillController.deactivate();
+            this.currentMiniFillController = false;
+        }
+        if (this.currentMiniAreaResizer !== false) {
+            this.currentMiniAreaResizer.deactivate();
+            this.currentMiniAreaResizer = false;
+        }
+        if (this.currentMiniHistory !== false) {
+            this.currentMiniHistory.unregister();
+            this.currentMiniHistory = false;
+        }
+        if (this.currentMiniTableName !== false && this.store !== false) {
+            this.store.unregisterTable(this.currentMiniTableName);
+            this.currentMiniTableName = false;
+        }
+        this.currentMiniEditorTable = false;
+        // DOMに残留したミニEditorTableの要素を削除する
+        this.element.innerHTML = '';
     }
 
     /**

@@ -831,7 +831,7 @@ export class RelationsPanel {
         // emptyRowCount はデータ行+バッファ行の合計最低行数なので、データ行数+1 を渡す
         const emptyRowCount = entry.rows.length + 1;
         const {editorTable, fillController, areaResizer, history} = this.tab.createMiniEditorTable(
-            scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows, emptyRowCount
+            scrollContainer, innerWrapper, wrapper, entry.tableKey, schemaJson, entry.header, entry.rows, emptyRowCount, true
         );
         // 全ミニテーブルにフィルタリングされた行の実際のストアインデックスを設定する。
         // N:1は参照先テーブルの一致行のみ表示するため、initialize() のデフォルト [0,1,...] では実際と一致しない。
