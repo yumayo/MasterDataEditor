@@ -13,6 +13,24 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   5. PKバッジのtitle属性を「このテーブルの主キー列です」とする
 // =============================================================================
 
+// テスト1・3・4-6で共通利用するskillテーブルのモックデータ
+const skillMockFs: MockFileSystem = {
+    "schema/skill.json": JSON.stringify({
+        description: "スキルマスター",
+        primary_key: "id",
+        header: [
+            { key: 0, name: "id",                  type: "int",    comment: "ID" },
+            { key: 1, name: "name",                type: "string", comment: "スキル名" },
+            { key: 2, name: "skill_value_type_id", type: "int",    comment: "効果タイプ", reference: "skill_value_type.id" },
+        ],
+    }),
+    "data/skill.csv": [
+        "id,name,skill_value_type_id",
+        "1,slash,1",
+        "2,thunder,2",
+    ].join("\n"),
+};
+
 /**
  * テーブルを開き、左ペインの EditorTable Locator を返す
  */
@@ -39,24 +57,7 @@ function getColumnHeaderCell(table: Locator, colIndex: number): Locator {
 test.describe('PK列のバッジ表示', () => {
 
     test.beforeEach(async ({ page }) => {
-        // skill テーブル: id（PK）/ name（通常列）/ skill_value_type_id（FK）
-        const fs: MockFileSystem = {
-            "schema/skill.json": JSON.stringify({
-                description: "スキルマスター",
-                primary_key: "id",
-                header: [
-                    { key: 0, name: "id",                  type: "int",    comment: "ID" },
-                    { key: 1, name: "name",                type: "string", comment: "スキル名" },
-                    { key: 2, name: "skill_value_type_id", type: "int",    comment: "効果タイプ", reference: "skill_value_type.id" },
-                ],
-            }),
-            "data/skill.csv": [
-                "id,name,skill_value_type_id",
-                "1,slash,1",
-                "2,thunder,2",
-            ].join("\n"),
-        };
-        await installMockApiAsync(page, fs);
+        await installMockApiAsync(page, skillMockFs);
         await page.goto('/');
     });
 
@@ -163,24 +164,7 @@ test.describe('FK列のバッジ表示', () => {
 test.describe('通常列にはバッジが表示されない', () => {
 
     test.beforeEach(async ({ page }) => {
-        // skill テーブル: id（PK）/ name（通常列）/ skill_value_type_id（FK）
-        const fs: MockFileSystem = {
-            "schema/skill.json": JSON.stringify({
-                description: "スキルマスター",
-                primary_key: "id",
-                header: [
-                    { key: 0, name: "id",                  type: "int",    comment: "ID" },
-                    { key: 1, name: "name",                type: "string", comment: "スキル名" },
-                    { key: 2, name: "skill_value_type_id", type: "int",    comment: "効果タイプ", reference: "skill_value_type.id" },
-                ],
-            }),
-            "data/skill.csv": [
-                "id,name,skill_value_type_id",
-                "1,slash,1",
-                "2,thunder,2",
-            ].join("\n"),
-        };
-        await installMockApiAsync(page, fs);
+        await installMockApiAsync(page, skillMockFs);
         await page.goto('/');
     });
 
@@ -200,6 +184,95 @@ test.describe('通常列にはバッジが表示されない', () => {
             await expect(nameHeader.locator('.column-header-badge')).toHaveCount(0);
             await expect(nameHeader.locator('.column-header-badge--pk')).toHaveCount(0);
             await expect(nameHeader.locator('.column-header-badge--fk')).toHaveCount(0);
+        },
+    );
+});
+
+// =============================================================================
+// テスト4・5・6: PK/FKバッジが .column-header-badge-area コンテナ内に格納されている
+//
+// 要件: バッジを列ヘッダー左側の専用コンテナ（.column-header-badge-area）に配置する。
+//   ソート/フィルターアイコンが右側に配置されているのと対称的に、バッジは左側に配置される。
+//
+// 期待するDOM構造:
+//   .editor-table-column-header
+//   ├── .column-header-badge-area  ← 左側コンテナ（position: absolute; left側）
+//   │   ├── .column-header-badge--pk  [PKの場合]
+//   │   └── .column-header-badge--fk  [FKの場合]
+//   ├── 列名部分
+//   ├── .filter-icon（右側）
+//   ├── .sort-indicator（右側）
+//   └── .column-resize-handle
+// =============================================================================
+test.describe('PK/FKバッジが .column-header-badge-area コンテナ内に格納されている', () => {
+
+    // テスト4（PK列）・テスト5（FK列）・テスト6（通常列）の3ケースをまとめてカバーする
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, skillMockFs);
+        await page.goto('/');
+    });
+
+    // ---------------------------------------------------------------------------
+    // テスト4: id列（PK列）のヘッダーに .column-header-badge-area が存在し、
+    //          PKバッジがその子要素として格納されている
+    // ---------------------------------------------------------------------------
+    test(
+        'id列（PK列）のヘッダーセルに .column-header-badge-area が存在し、PKバッジがその子要素であること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'skill');
+
+            // id 列は colIndex=0
+            const idHeader = getColumnHeaderCell(table, 0);
+
+            // .column-header-badge-area コンテナ自体が存在することを確認する
+            const badgeArea = idHeader.locator('.column-header-badge-area');
+            await expect(badgeArea).toBeVisible();
+
+            // PKバッジがコンテナの子要素として格納されていることを確認する
+            // （ヘッダー直下ではなく、.column-header-badge-area 内に入っていることを保証する）
+            const pkBadgeInArea = badgeArea.locator('.column-header-badge--pk');
+            await expect(pkBadgeInArea).toBeVisible();
+            await expect(pkBadgeInArea).toHaveText('PK');
+        },
+    );
+
+    // ---------------------------------------------------------------------------
+    // テスト5: skill_value_type_id列（FK列）のヘッダーに .column-header-badge-area が存在し、
+    //          FKバッジがその子要素として格納されている
+    // ---------------------------------------------------------------------------
+    test(
+        'skill_value_type_id列（FK列）のヘッダーセルに .column-header-badge-area が存在し、FKバッジがその子要素であること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'skill');
+
+            // skill_value_type_id 列は colIndex=2
+            const fkHeader = getColumnHeaderCell(table, 2);
+
+            // .column-header-badge-area コンテナ自体が存在することを確認する
+            const badgeArea = fkHeader.locator('.column-header-badge-area');
+            await expect(badgeArea).toBeVisible();
+
+            // FKバッジがコンテナの子要素として格納されていることを確認する
+            const fkBadgeInArea = badgeArea.locator('.column-header-badge--fk');
+            await expect(fkBadgeInArea).toBeVisible();
+            await expect(fkBadgeInArea).toHaveText('FK');
+        },
+    );
+
+    // ---------------------------------------------------------------------------
+    // テスト6: name列（通常列）のヘッダーには .column-header-badge-area が存在しない
+    // ---------------------------------------------------------------------------
+    test(
+        'name列（通常列）のヘッダーセルに .column-header-badge-area 要素が存在しないこと',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'skill');
+
+            // name 列は colIndex=1
+            const nameHeader = getColumnHeaderCell(table, 1);
+
+            // 通常列にはバッジエリアコンテナ自体が存在しないことを確認する
+            // バッジが不要な列にコンテナが生成されてしまうと、DOMが余分に汚染されるため検出する
+            await expect(nameHeader.locator('.column-header-badge-area')).toHaveCount(0);
         },
     );
 });

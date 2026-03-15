@@ -399,7 +399,7 @@ export class EditorTableStructure {
             // comment なし: TextNode で name のみ（従来通り）
             columnHeaderCell.appendChild(document.createTextNode(name));
         }
-        // バッジは名前要素の直後に追加（comment有無に関わらず共通）
+        // バッジエリアをヘッダーセルの先頭に挿入し、has-badge クラスを付与する（appendBadgeIfNeeded 内で実施）
         appendBadgeIfNeeded(columnHeaderCell, isPrimaryKey, reference);
         columnHeaderCell.dataset.columnIndex = String(columnIndex);
         columnHeaderCell.dataset.col = String(columnIndex);
@@ -540,15 +540,24 @@ function createBadge(cssModifier: string, label: string, title: string): HTMLEle
 
 /**
  * isPrimaryKey が true の場合は PK バッジを、reference が非 null の場合は FK バッジを追加する。
- * PKかつFKの列では両バッジを独立して表示する。どちらでもない場合は何もしない。
+ * バッジは .column-header-badge-area コンテナに格納し、ヘッダーセルの先頭（insertBefore）に挿入する。
+ * PKかつFKの列では両バッジをコンテナ内に縦並びで表示する。どちらでもない場合は何もしない。
+ * バッジが付与された場合は has-badge クラスをヘッダーセルに付与する。
  */
 function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolean, reference: string | null): void {
+    if (!isPrimaryKey && reference === null) return;
+    const badgeArea = document.createElement('div');
+    badgeArea.classList.add('column-header-badge-area');
     if (isPrimaryKey) {
-        columnHeaderCell.appendChild(createBadge('pk', 'PK', 'このテーブルの主キー列です'));
+        badgeArea.appendChild(createBadge('pk', 'PK', 'このテーブルの主キー列です'));
     }
     if (reference !== null) {
-        columnHeaderCell.appendChild(createBadge('fk', 'FK', `FK: ${reference} を参照`));
+        badgeArea.appendChild(createBadge('fk', 'FK', `FK: ${reference} を参照`));
     }
+    // ヘッダーセルの先頭に挿入することで、列名テキストより左（絶対配置）に表示される
+    columnHeaderCell.insertBefore(badgeArea, columnHeaderCell.firstChild);
+    // バッジに関するすべての処理（コンテナ生成・バッジ生成・クラス付与）をここに集約する
+    columnHeaderCell.classList.add('has-badge');
 }
 
 /**
