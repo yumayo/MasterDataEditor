@@ -10,7 +10,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   テーブルの表示順をソートできる。
 //   ソートはView変換のみ（storeRowIndicesの並び替え）でストア順序は変えない。
 //   Undo/Redo対象外。バッファ行は末尾固定。ミニテーブルには適用しない。
-//   複数列ソート対応（後からソートした列が高い優先度（後勝ちルール））。
+//   複数列ソート対応（先にソートした列が高い優先度（先勝ちルール））。
 //   サイクル: 昇順 → 降順 → 解除。
 //
 // テストケース一覧:
@@ -20,10 +20,11 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   4. 降順状態でクリックするとソート解除される
 //   5. ソート解除で元のデータ順序が完全に復元される
 //   6. 数値列のソートが正しく動作する（文字列比較ではなく数値比較）
-//   7. 複数列ソート: 後からソートした列が1番目の優先度になる（後勝ちルール）
-//   8. ソート優先度の繰り上がり（中間列解除で後続繰り上がり）
-//   9. ミニテーブルにはソートボタンが表示されない
-//  10. ソート中の優先度番号表示
+//   7. 複数列ソート: 先にソートした列が最高優先度になる（先勝ちルール）
+//   8. ソート中の優先度番号表示
+//   9. 先勝ちルール: 再クリックで優先度が変わらない
+//  10. ソート優先度の繰り上がり（中間列解除で後続繰り上がり）
+//  11. ミニテーブルにはソートボタンが表示されない
 // =============================================================================
 
 // =============================================================================
@@ -395,17 +396,18 @@ test.describe('ソート機能', () => {
         });
 
         test(
-            '2列目のソートが1番目の優先度になる（後勝ちルール）',
+            '最初にソートした列が最高優先度になる（先勝ちルール）',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'product');
 
-                // price列（colIndex=2）を先にソート
-                await clickSortIndicatorAsync(table, 2);
-                // category列（colIndex=1）を後にソート → category が1番目の優先度
+                // category列（colIndex=1）を先にソート → category が1番目の優先度
                 await clickSortIndicatorAsync(table, 1);
+                // price列（colIndex=2）を後にソート → price が2番目の優先度
+                await clickSortIndicatorAsync(table, 2);
 
-                // category列（1番目優先）で昇順ソート → A,A,A,B,B の順
-                // 同じ category 内では price列（2番目優先）で昇順 → A: 100,200,300 / B: 150,250
+                // category列（1番目優先）昇順ソート: A,A,A,B,B の順
+                // 同じcategory内はprice昇順（2番目優先）: A→100,200,300 / B→150,250
+                // id列の値: (A,100)→id=3, (A,200)→id=5, (A,300)→id=1, (B,150)→id=2, (B,250)→id=4
                 const categories = await getColumnValuesAsync(table, 1);
                 expect(categories).toEqual(['A', 'A', 'A', 'B', 'B']);
 
@@ -426,15 +428,42 @@ test.describe('ソート機能', () => {
 
                 const headerRow = table.locator('.editor-table-column-header-row');
 
-                // category列ヘッダーに優先度番号 "1" が表示される（1番目の優先度）
-                const categoryHeader = headerRow.locator('.editor-table-column-header').nth(1);
-                const categoryIndicator = categoryHeader.locator('.sort-indicator');
-                await expect(categoryIndicator).toContainText('1');
-
-                // price列ヘッダーに優先度番号 "2" が表示される（2番目の優先度）
+                // price列ヘッダーに優先度番号 "1" が表示される（先にソートしたので1番目の優先度）
                 const priceHeader = headerRow.locator('.editor-table-column-header').nth(2);
                 const priceIndicator = priceHeader.locator('.sort-indicator');
-                await expect(priceIndicator).toContainText('2');
+                await expect(priceIndicator).toContainText('1');
+
+                // category列ヘッダーに優先度番号 "2" が表示される（後にソートしたので2番目の優先度）
+                const categoryHeader = headerRow.locator('.editor-table-column-header').nth(1);
+                const categoryIndicator = categoryHeader.locator('.sort-indicator');
+                await expect(categoryIndicator).toContainText('2');
+            },
+        );
+
+        test(
+            '先勝ちルール: 再クリックで優先度が変わらない',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'product');
+
+                // price列（colIndex=2）を1番目にソート → price が最高優先度
+                await clickSortIndicatorAsync(table, 2);
+                // category列（colIndex=1）を2番目にソート → category が2番目の優先度
+                await clickSortIndicatorAsync(table, 1);
+
+                // price を再クリック（昇順→降順）→ 優先度は変わらず price が1番目
+                await clickSortIndicatorAsync(table, 2);
+
+                const headerRow = table.locator('.editor-table-column-header-row');
+
+                // price列は再クリック後も優先度番号 "1" のまま変わらない
+                const priceHeader = headerRow.locator('.editor-table-column-header').nth(2);
+                const priceIndicator = priceHeader.locator('.sort-indicator');
+                await expect(priceIndicator).toContainText('1');
+
+                // category列は依然として優先度番号 "2"
+                const categoryHeader = headerRow.locator('.editor-table-column-header').nth(1);
+                const categoryIndicator = categoryHeader.locator('.sort-indicator');
+                await expect(categoryIndicator).toContainText('2');
             },
         );
 
@@ -448,8 +477,7 @@ test.describe('ソート機能', () => {
                 await clickSortIndicatorAsync(table, 1);
                 await clickSortIndicatorAsync(table, 2);
 
-                // category列（2番目優先度）のソートを解除（3回クリック: 昇順→降順→解除）
-                await clickSortIndicatorAsync(table, 1);
+                // category列（2番目優先度）のソートを解除（先勝ちルールでは位置移動なし: 2回クリック: 昇順→降順→解除）
                 await clickSortIndicatorAsync(table, 1);
                 await clickSortIndicatorAsync(table, 1);
 
