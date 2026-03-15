@@ -75,6 +75,17 @@
 - 残課題(🟡): SVGに `aria-hidden="true"` がなく、span.filter-icon に `aria-label` / `role="button"` もない
 - 継続パターン: インタラクティブな `span` に role 未付与（コマンドパレット・ドロップダウンと同じ課題）
 
+#### FEAT_0028 SourceControlPanel見た目改修（2026-03-16レビュー）評価: B+
+- STAGED上・CHANGES下の配置が正しく実装されている（DOM順で確認）
+- 2行構造（.explorer-file-description + .explorer-file-name）がCHANGESアイテムで正しく表示される
+- アクティブ状態の排他制御（セクションをまたいだ .source-control-file-item-active トグル）が正しい
+- タブとパネルアイテムの双方向状態同期が確認できた
+- 残課題(🔴): STAGEDセクションのアイテムに .explorer-file-description が存在しない（CHANGESとの構造的非対称。bug-report #3パターン）
+- 残課題(🔴): .source-control-file-item が div 要素のままで role="button" / tabindex がない（継続する span/div インタラクティブ要素問題）
+- 残課題(🟡): 差分タブをXで閉じたとき .source-control-file-item-active が外れるかのテストが確認できない（対称操作のテスト不在リスク）
+- 残課題(🟡): タブバーのタブを直接クリックで切り替えたとき、パネル側アクティブが追従するかの確認が必要（状態波及漏れリスク）
+- 参考: .source-control-panel が非アクティブ時に sidebar-panel 基底クラスを持たない（他パネルとの不一致）
+
 #### ヘッダーアイコン領域確保（FEAT_0023、2026-03-15レビュー）評価: A
 - `.editor-table-column-header.has-icons { padding-right: 48px }` と `HEADER_ICON_AREA_PX = 48` の連動が適切
 - ミニテーブル除外が CSS付与（isMiniTableInstance()条件）とJS幅計算（hasIcons=false）の両方で対称に実装されており bug-report #3パターンを回避

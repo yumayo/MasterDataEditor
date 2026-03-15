@@ -116,6 +116,17 @@
 - **FIXED FEAT_0027**: z-index:1000の親スタッキングコンテキスト問題をbody直下+position:fixedで解決
 - **FIXED FEAT_0027**: previewCacheを廃止してミニEditorTableに全面置き換え
 
+## FEAT_0028 SourceControlPanel改修 Known Patterns
+- **CRITICAL**: refreshAsync に requestId チェックがない → show()連打でDOM二重上書き (openDiffTabAsync は正しく実装済みなのに非対称)
+- **CRITICAL**: loadDescriptionAsync が Promise.all に包まれ、1テーブルのスキーマ失敗で全パネルが空になる → try/catchで空文字フォールバック必要
+- **PATTERN**: replaceChildren()でDOM全破棄する際、アクティブクラスも失われる → refreshAsync後にアクティブ状態を復元する仕組みが必要
+- **KNOWN ISSUE**: diffTabName に isStaged が含まれない問題が、STAGED/CHANGESが同一パネルに並ぶようになって顕在化しやすくなった (MEMORY記録済みだが未修正)
+- **PATTERN**: アクティブクラス付与がawait前に行われるため「アクティブ表示あり・タブ未表示」の一時状態が発生する
+- **PATTERN**: TDDコメント「現実装にはないためREDになる」が実装完了後も残留 → 削除必須
+
+## Review History (2026-03-16)
+- (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
+
 ## Review History (2026-03-15)
 - (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
 - (PK-validation R2): 致命的2件、重要4件、軽微3件
