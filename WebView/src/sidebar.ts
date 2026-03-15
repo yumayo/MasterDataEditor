@@ -114,8 +114,23 @@ export class Sidebar {
     /**
      * ファイルを追加する
      */
-    appendFile(name: string): void {
-        this.directory.appendFile(name);
+    appendFile(name: string, description: string | null): void {
+        this.directory.appendFile(name, description);
+    }
+
+    /**
+     * 指定テーブル名のエクスプローラーファイルノードをアクティブ（ハイライト）状態にする
+     * 他のファイルノードのハイライトは解除する
+     */
+    highlightExplorerFile(name: string): void {
+        this.directory.highlightFile(name);
+    }
+
+    /**
+     * 全エクスプローラーファイルノードのハイライトを解除する
+     */
+    clearExplorerHighlight(): void {
+        this.directory.clearHighlight();
     }
 
     /**

@@ -12,22 +12,36 @@ export class TabButton {
     private dirtyIndicator: HTMLElement;
     private closeButton: HTMLButtonElement;
 
-    constructor(editor: Editor, tab: Tab, name: string) {
+    constructor(editor: Editor, tab: Tab, name: string, description: string | null) {
         console.log('[TabButton] constructor', name);
         this.editor = editor;
         this.name = name;
         this.tab = tab;
 
         this.element = document.createElement('li');
-
         this.element.classList.add('tab-button');
-        this.element.textContent = name;
 
         this.element.addEventListener('click', this.onClick.bind(this));
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
-
-        // マウスイベントでドラッグアンドドロップを実装（WebView2対応）
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
+
+        // ラベル部（テーブル名 + description の2行構造）
+        const labelContainer = document.createElement('div');
+        labelContainer.classList.add('tab-button-label');
+
+        if (description !== null && description !== '') {
+            const descSpan = document.createElement('span');
+            descSpan.classList.add('tab-button-description');
+            descSpan.textContent = description;
+            labelContainer.appendChild(descSpan);
+        }
+
+        const nameSpan = document.createElement('span');
+        nameSpan.classList.add('tab-button-name');
+        nameSpan.textContent = name;
+        labelContainer.appendChild(nameSpan);
+
+        this.element.appendChild(labelContainer);
 
         // 閉じるボタンと丸ポッチを配置するコンテナ
         const buttonContainer = document.createElement('div');
@@ -45,27 +59,6 @@ export class TabButton {
         buttonContainer.appendChild(this.closeButton);
 
         this.element.appendChild(buttonContainer);
-    }
-
-    /**
-     * タブボタンの表示テキストを description（日本語名）に差し替える。
-     * title 属性に元のテーブルファイル名を設定してツールチップで確認できるようにする。
-     * textContent による全置換は closeButton 等の子要素を破壊するため、
-     * 最初のテキストノードのみを差し替える。
-     * コンストラクタで this.element.textContent = name を実行しているため
-     * テキストノードは必ず存在する。
-     */
-    setDisplayName(description: string): void {
-        this.element.title = this.name;
-        for (const node of Array.from(this.element.childNodes)) {
-            if (node.nodeType === Node.TEXT_NODE) {
-                node.textContent = description;
-                return;
-            }
-        }
-        // コンストラクタで textContent = name を設定しているためテキストノードは必ず存在する。
-        // 見つからない場合は不変条件の違反なので例外をスローする。
-        throw new Error('[TabButton] setDisplayName: テキストノードが見つかりません');
     }
 
     /**
@@ -87,6 +80,22 @@ export class TabButton {
         return this.dirtyIndicator.classList.contains('tab-button-dirty-visible');
     }
 
+    /**
+     * スキーマ読み込み後に description を後付けで適用する。
+     * ExplorerFile クリック以外の経路（navigateToTableRow / CommandPalette 等）で
+     * null で生成されたタブボタンに description span を挿入する。
+     * 既に description span が存在する場合（ExplorerFile 経由で既に設定済み）は何もしない。
+     */
+    applyDescription(description: string): void {
+        const label = this.element.querySelector('.tab-button-label');
+        if (!label) throw new Error('[TabButton] applyDescription: .tab-button-label が見つかりません');
+        if (label.querySelector('.tab-button-description')) return;
+        const descSpan = document.createElement('span');
+        descSpan.classList.add('tab-button-description');
+        descSpan.textContent = description;
+        label.insertBefore(descSpan, label.firstChild);
+    }
+
     click() {
         this.element.click();
     }
@@ -104,7 +113,6 @@ export class TabButton {
     }
 
     private onClickCloseButton(ev: MouseEvent) {
-
         // 閉じるボタンをliの上に置いていて、
         // liのclickイベントが呼び出されてしまうためイベントの伝播を止めておきます。
         ev.stopPropagation();
@@ -120,7 +128,7 @@ export class TabButton {
     }
 
     disable() {
-        this.element.classList.remove('tab-button-active')
+        this.element.classList.remove('tab-button-active');
     }
 
     private onMouseDown(ev: MouseEvent) {

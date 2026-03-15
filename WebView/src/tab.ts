@@ -232,8 +232,9 @@ export class Tab {
             return;
         }
         // タブが未作成の場合: pendingNavigationPkValue を設定して新規タブを開く
+        // navigateToTableRow 経由の場合 description は不明なので null で生成する
         this.pendingNavigationPkValue = pkValue;
-        const tabButton = this.append(tableName);
+        const tabButton = this.append(tableName, null);
         tabButton.click();
     }
 
@@ -249,9 +250,10 @@ export class Tab {
             return;
         }
         // タブが未作成の場合: pendingNavigationを設定して新規タブを開く
+        // navigateToTableCell 経由の場合 description は不明なので null で生成する
         this.pendingNavigationPkValue = pkValue;
         this.pendingNavigationColumnIndex = columnIndex;
-        const tabButton = this.append(tableName);
+        const tabButton = this.append(tableName, null);
         tabButton.click();
     }
 
@@ -307,8 +309,9 @@ export class Tab {
      * タブに要素を追加します。
      *
      * すでに追加されている名前だった場合は何もせず、その要素を返却します。
+     * description は TabButton の2行表示に使用します（null の場合は1行表示）。
      */
-    append(name: string) {
+    append(name: string, description: string | null) {
 
         // すでに同じ名前のオブジェクトが追加されていたら何もしないです。
         let tabButton = this.tabButtons.find(x => x.name === name);
@@ -316,7 +319,7 @@ export class Tab {
             return tabButton;
         }
 
-        tabButton = new TabButton(this.editor, this, name);
+        tabButton = new TabButton(this.editor, this, name, description);
         this.tabButtons.push(tabButton);
 
         this.element.appendChild(tabButton.element);
@@ -371,6 +374,8 @@ export class Tab {
         if (!wasActive) return;
         if (next) { this.enableTabButton(next.name); return; }
         if (prev) { this.enableTabButton(prev.name); return; }
+        // アクティブだったタブを閉じて他にタブがない場合、エクスプローラーのハイライトをクリアする
+        this.sidebar.clearExplorerHighlight();
     }
 
     findNextTabButton(name: string): TabButton | false {
@@ -495,6 +500,14 @@ export class Tab {
         // タブを有効化
         tabButton.enable();
 
+        // エクスプローラーのハイライトを更新する
+        // 設定タブ・差分タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
+        if (name === SETTINGS_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
+            this.sidebar.clearExplorerHighlight();
+        } else {
+            this.sidebar.highlightExplorerFile(name);
+        }
+
         // 差分タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name.startsWith(DIFF_TAB_PREFIX)) {
             this.activateDiffTab(name);
@@ -557,7 +570,7 @@ export class Tab {
      * 歯車アイコンクリック時に Sidebar 経由で呼ばれる。
      */
     openSettingsTab(): void {
-        const tabButton = this.append(SETTINGS_TAB_NAME);
+        const tabButton = this.append(SETTINGS_TAB_NAME, null);
         tabButton.click();
     }
 
@@ -641,7 +654,8 @@ export class Tab {
 
         // 差分タブのタブボタンを追加する
         // このタブボタンを DiffTab の History に渡すことで Dirty マークが画面に反映される
-        const tabButton = this.append(diffTabName);
+        // 差分タブには description がないため null で生成する
+        const tabButton = this.append(diffTabName, null);
 
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged,
@@ -718,6 +732,20 @@ export class Tab {
             this.diffTabs.get(name)!.destroy(this.store);
             this.diffTabs.delete(name);
             this.removeTabButton(name);
+        }
+
+        // 残存する通常タブ（設定タブ・差分タブ以外）があれば最後のものをアクティブ化する。
+        // 差分タブがアクティブなままだと activeTabName = false になるため、
+        // Ctrl+S 等のキーボード操作が無視されるのを防ぐ。
+        // enableTabButton は highlightExplorerFile / activateTabState も内包するため、
+        // ハイライト・スクロール位置復元・activeTabName の更新がすべてここで完結する。
+        const remainingNormal = this.tabButtons.find(
+            btn => btn.name !== SETTINGS_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
+        );
+        if (remainingNormal) {
+            this.enableTabButton(remainingNormal.name);
+        } else {
+            this.sidebar.clearExplorerHighlight();
         }
     }
 
@@ -940,13 +968,6 @@ export class Tab {
             const csv = await this.store.registerTableAsync(name);
             const tableData = EditorTableData.parse(json, csv);
 
-            // タブボタンの表示テキストをdescription（日本語名）に差し替える
-            // title 属性でテーブルファイル名をツールチップとして保持する
-            // descriptionがスキーマに定義されていない場合はファイル名のまま表示する
-            if (tableData.description !== null) {
-                tabButton.setDisplayName(tableData.description);
-            }
-
             // ラッパー要素を作成（このタブのDOM全体を包む）
             // editor.appendChild は左ペインへのappendに変更された
             const wrapperElement = document.createElement('div');
@@ -1025,6 +1046,12 @@ export class Tab {
 
             // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
             state.editorTable.forceRefreshRelationsPanel();
+
+            // navigateToTableRow / navigateToTableCell / CommandPalette 経由で null で生成されたタブボタンに
+            // description を後付けで適用する。ExplorerFile 経由で既に設定済みの場合は applyDescription 内でスキップされる。
+            if (tableData.description !== null && tableData.description !== '') {
+                tabButton.applyDescription(tableData.description);
+            }
 
             this.consumePendingNavigation(state);
         });
@@ -1150,7 +1177,7 @@ export class Tab {
 
         // ダミーTabButton: dirty表示の通知先として使用（DOMには追加しない）
         // ストア経由の通知で更新されるためDOMへの追加は不要。コンストラクタの型制約上ダミーとして渡す。
-        const dummyTabButton = new TabButton(this.editor, this, '[mini]');
+        const dummyTabButton = new TabButton(this.editor, this, '[mini]', null);
         const history = new History(editorTable, dummyTabButton, this.store, tableKey, 100);
 
         // scrollController を渡すことで focusWithoutScrolling() がスクロール位置を保護できる

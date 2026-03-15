@@ -125,7 +125,8 @@ export class CommandPalette {
         if (index < 0 || index >= this.filteredItems.length) return;
         const item = this.filteredItems[index];
         // tab.append でタブボタンを取得（既存ならそのまま返る）し、click でタブを有効化する
-        const tabButton = this.tab.append(item.tabName);
+        // コマンドパレットからは description が不明なので null で生成する（既存タブは再利用）
+        const tabButton = this.tab.append(item.tabName, null);
         tabButton.click();
         this.hide();
     }

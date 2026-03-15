@@ -1559,3 +1559,29 @@ DOMコレクションの要素アクセスには`children[index]`（undefinedを
 ---
 
 ---
+
+## 106. [7f551a5] — FEAT_0019 エクスプローラーのアクティブファイルハイライト＆2行表示
+
+### 不具合原因名
+setDisplayName廃止時の経路非対称性
+
+### なぜそうなったのか
+`setDisplayName` を廃止してコンストラクタで description を受け取る設計に変更した際、ExplorerFile経由では description を渡せるが、navigateToTableRow / CommandPalette 経由では description が不明なため null で生成される非対称性が生まれた。`createTabState` で非同期にスキーマを読み込んだ後に description が判明するが、TabButton を更新する手段が削除されていた。
+
+### どうしたら今後は再発しないか
+メソッドを廃止する際は「そのメソッドが担っていた全経路での責務」を洗い出し、代替手段が全経路をカバーしているか確認する。非同期で後から判明するデータに依存するUI要素には、後付け更新メソッドを設計に組み込む。
+
+---
+
+## 107. [7f551a5] — FEAT_0019 closeAllDiffTabs後のハイライト復元漏れ
+
+### 不具合原因名
+状態変更の波及不足
+
+### なぜそうなったのか
+`closeAllDiffTabs` で差分タブを全閉した後、エクスプローラーのハイライトのみを `highlightExplorerFile` で復元したが、`enableTabButton` を呼ばなかったため `activeTabName` が `false` のまま残り、Ctrl+S等の操作が無視される状態になった。
+
+### どうしたら今後は再発しないか
+新しいUI状態（ハイライト等）を追加した際は、既存の全状態変更パス（closeTab, closeAllDiffTabs, enableTabButton等）でその状態が正しく連動するか網羅的に確認する。可能な限り既存の状態管理メソッド（enableTabButton）を再利用し、部分的な状態更新（highlightExplorerFileだけ呼ぶ等）を避ける。
+
+---

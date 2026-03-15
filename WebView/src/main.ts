@@ -1,4 +1,4 @@
-import {findFilesAsync} from "./api";
+import {findFilesAsync, readFileAsync} from "./api";
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
@@ -81,11 +81,20 @@ import {applyStoredTheme} from "./settings-panel";
     }, true);
 
     // スキーマファイルを読み込み
+    // 各スキーマJSONを読み込んでdescriptionを取得し、エクスプローラーに2行表示する
     const files = await findFilesAsync("schema");
     for (let i = 0; i < files.length; ++i) {
         const file = files[i];
         const tableName = file.name.split('.').slice(0, -1).join('.');
-        sidebar.appendFile(tableName);
+        const schemaText = await readFileAsync("schema/" + file.name);
+        let schemaJson: Record<string, unknown>;
+        try {
+            schemaJson = JSON.parse(schemaText) as Record<string, unknown>;
+        } catch (e) {
+            throw new Error(`[main] スキーマファイル schema/${file.name} のJSON解析に失敗: ${e}`);
+        }
+        const description: string | null = typeof schemaJson['description'] === 'string' ? schemaJson['description'] : null;
+        sidebar.appendFile(tableName, description);
         commandPalette.registerTable(tableName);
     }
 })();

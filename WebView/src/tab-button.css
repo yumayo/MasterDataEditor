@@ -5,6 +5,35 @@
     padding-right: 4px;
 }
 
+/* ラベル部（description + テーブル名の2行構造コンテナ） */
+.tab-button-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* description（日本語名）: 通常フォントサイズ */
+.tab-button-description {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* テーブル名: 灰色・小さめフォント */
+.tab-button-name {
+    font-size: 11px;
+    opacity: 0.65;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .tab-button:hover {
     background-color: rgba(0, 0, 0, 0.1);
 }

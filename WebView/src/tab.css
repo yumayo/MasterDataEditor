@@ -10,7 +10,7 @@
     left: 300px;
     top: 0;
     box-sizing: border-box;
-    height: 36px;
+    height: 48px;
     width: calc(100vw - 300px);
     margin: 0;
     border-bottom: 1px solid rgba(128, 128, 128, 0.3);
@@ -38,7 +38,7 @@
     display: flex;
     margin: 0;
     padding: 0;
-    line-height: 32px;
+    line-height: 44px;
     list-style: none;
     white-space: nowrap;
 }

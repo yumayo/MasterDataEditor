@@ -5,8 +5,8 @@
 
     position: fixed;
     left: 300px;
-    top: 36px;
-    height: calc(100vh - 36px);
+    top: 48px;
+    height: calc(100vh - 48px);
     width: calc(100vw - 300px);
 
     overflow: hidden;
