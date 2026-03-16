@@ -198,6 +198,15 @@
 - **PATTERN**: D&Dとダブルクリックで最小幅保証が非対称になるパターン — 両経路の Math.max を同じ定数で揃えること
 - **PATTERN**: 「セル幅計算でreferenceヒントを考慮する」コードは正参照・逆参照の両セレクタを網羅すること
 
+## CommandPalette Description (FEAT_未定) Known Patterns
+- **CRITICAL**: main.tsの `typeof x === 'string'` 判定は空文字列を通過させる → `description = ''` で空spanがDOM生成される。`length > 0` チェックが必須
+- **IMPORTANT**: createTestFileSystem()が両テーブルともdescriptionありに変更された → descriptionなしパスのテストが欠落（操作パス網羅漏れパターン再発）
+- **IMPORTANT**: デッドCSS `.command-palette-item-kind` が残留したまま同一スタイルの `.command-palette-item-description` を重複追加 → `.kind` を削除すべき
+- **IMPORTANT**: TDDコメント「現在は 6px なので RED」が実装後も残留
+- **MINOR**: descriptionのtext-overflow/white-space/overflow対策なし → 長いdescriptionでitem高が崩れる
+- **PATTERN**: TDDのRED段階コメントは実装完了後（GREEN）に必ず削除またはリライトすること
+
 ## Review History (2026-03-17 最新)
 - (FEAT_0036 column-auto-resize R1): 致命的2件、重要3件、軽微3件
 - (FEAT_0036 column-auto-resize R2): 致命的2件、重要1件、軽微2件 — 前回5件中3件修正済み
+- (CommandPalette description表示): 致命的1件、重要3件、軽微2件

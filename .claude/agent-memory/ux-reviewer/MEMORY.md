@@ -40,12 +40,10 @@
 - 残課題(🟡): 削除直後の左ペインに editor-table--inactive がなく、Undo後には付与されるという非対称
 - 残課題(🟡): 左ペイン読み取り専用の aria 属性欠如（継続指摘）
 
-#### FEAT_0024 ライトテーマ色改修（ラウンド2 フィードバック修正後）評価: B+
+#### FEAT_0024 ライトテーマ色改修（修正済み）
 - ファイル: project_feat0024_light_theme.md
-- ラウンド1の主要問題（テーマ設定漏れ・ダークオーバーライド欠如）は解消済み
-- 残課題: `command-palette.css` に `[data-theme="dark"] .command-palette-item.selected:hover` がない（grid-dropdown との非対称）
-- 残課題: `command-palette.spec.ts` の `setupTestPageAsync()` がダークテーマのまま（`data-theme="dark"` をダンプで確認）
-- 残課題: コマンドパレット・ドロップダウンの aria-selected / role="listbox" 未実装（継続）
+- 解消済み: command-palette.css に `[data-theme="dark"] .command-palette-item.selected:hover` が追加された（FEAT_commandpalette_descriptionレビューで確認）
+- 継続: コマンドパレット role="listbox"/aria-selected 未実装
 
 #### FEAT_0025 通常テーブル末尾バッファ行自動補充（ラウンド2フィードバック修正後）評価: A
 - ファイル: project_feat0025_buffer_row.md
@@ -194,6 +192,15 @@
 - 状態の永続性（タブ切替をまたいだ状態保存）はユーザーの当然の期待
 - 特殊タブ（差分タブ・設定タブ）は `tabStates` に登録されない → DOMクリーンアップは独自に行う必要あり
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
+
+#### コマンドパレット description表示・角直角化改修（2026-03-17レビュー）評価: A
+- ファイル: project_command_palette_description.md
+- border-radius:0 / description表示 / description検索 の3改修すべて正常動作確認
+- `[data-theme="dark"] .command-palette-item.selected:hover` 追加（FEAT_0024残課題解消）
+- 残課題(🟡): div.command-palette-item に role="option"/aria-selected なし（継続パターン）
+- 残課題(🟡): div.command-palette-list に role="listbox" なし（継続パターン）
+- 残課題(🟡): input.command-palette-input に aria-controls/aria-activedescendant なし
+- 残課題(🟡): .command-palette-item-kind クラスがCSS定義に残存するがDOMには出現しない（将来の予備枠か残骸か不明）
 
 ### DOM構造パターン（良い例）
 - タブバー: `div#tab > div.tab-scroll-area > ul#tab-content.tab-list > li.tab-button`
