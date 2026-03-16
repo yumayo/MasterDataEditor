@@ -1,4 +1,5 @@
 import {Tab} from "./tab";
+import {fuzzyMatch, appendHighlightedSegments} from "./fuzzy-search";
 
 /**
  * コマンドパレットの候補アイテム
@@ -134,19 +135,20 @@ export class CommandPalette {
 
     /**
      * フィルタテキストに基づいてリストを描画する
-     * 部分一致（大文字小文字区別なし）でフィルタリングし、
+     * fuzzyMatchによるローマ字・全角半角対応フィルタリングを行い、
      * 該当なしの場合は空メッセージを表示する
      */
     private renderList(filterText: string): void {
         this.listElement.innerHTML = '';
         this.selectedIndex = 0;
 
-        const lowerFilter = filterText.toLowerCase();
-        // テーブル名またはdescriptionの部分一致でフィルタリング
-        this.filteredItems = this.items.filter(item =>
-            item.displayName.toLowerCase().includes(lowerFilter) ||
-            (item.description !== null && item.description.toLowerCase().includes(lowerFilter))
-        );
+        // テーブル名またはdescriptionのfuzzyMatchでフィルタリング
+        this.filteredItems = filterText === ''
+            ? [...this.items]
+            : this.items.filter(item =>
+                fuzzyMatch(item.displayName, filterText) ||
+                (item.description !== null && fuzzyMatch(item.description, filterText))
+            );
 
         if (this.filteredItems.length === 0) {
             // 該当なしメッセージを表示
@@ -169,7 +171,12 @@ export class CommandPalette {
 
             const nameElement = document.createElement('span');
             nameElement.classList.add('command-palette-item-name');
-            nameElement.textContent = item.displayName;
+            // ハイライト付きでテーブル名を表示する
+            if (filterText !== '') {
+                appendHighlightedSegments(nameElement, item.displayName, filterText);
+            } else {
+                nameElement.textContent = item.displayName;
+            }
 
             // マウスクリックで項目を確定する（mousedownでblurを防ぎつつ確定処理を実行）
             const clickIndex = i;
@@ -184,7 +191,12 @@ export class CommandPalette {
             if (item.description !== null) {
                 const descElement = document.createElement('span');
                 descElement.classList.add('command-palette-item-description');
-                descElement.textContent = item.description;
+                // ハイライト付きでdescriptionを表示する
+                if (filterText !== '') {
+                    appendHighlightedSegments(descElement, item.description, filterText);
+                } else {
+                    descElement.textContent = item.description;
+                }
                 itemElement.appendChild(descElement);
             }
 

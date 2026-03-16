@@ -84,6 +84,15 @@
     color: var(--font-color);
 }
 
+.search-result-pk {
+    font-size: 0.85em;
+    color: #888;
+}
+
+.search-result-pk::before {
+    content: "#";
+}
+
 .search-result-reference-hint {
     font-size: 11px;
     color: #528bff;

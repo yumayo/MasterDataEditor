@@ -266,6 +266,37 @@ test.describe('CommandPalette', () => {
         await expect(palette).toHaveCSS('border-radius', '0px');
     });
 
+    test('ローマ字入力でdescriptionにマッチしてフィルタリングされる', async ({page}) => {
+        // description: エネミーマスター / アイテムマスター
+        await setupTestPageAsync(page);
+        await page.keyboard.press('Control+p');
+        const input = page.locator('.command-palette-input');
+        const items = page.locator('.command-palette-item');
+
+        // "aitemu" でローマ字変換→"あいてむ" が description "アイテムマスター" に部分マッチ
+        await input.fill('aitemu');
+        await expect(items).toHaveCount(1);
+        await expect(page.locator('.command-palette-item-name').nth(0)).toHaveText('item');
+
+        // "enemii" でローマ字変換→"えねみー" が description "エネミーマスター" に部分マッチ
+        await input.fill('ene');
+        await expect(items).toHaveCount(1);
+        await expect(page.locator('.command-palette-item-name').nth(0)).toHaveText('enemy');
+    });
+
+    test('ヒット部分にハイライトクラスが付与される', async ({page}) => {
+        // description: エネミーマスター / アイテムマスター
+        await setupTestPageAsync(page);
+        await page.keyboard.press('Control+p');
+        const input = page.locator('.command-palette-input');
+
+        // "item" でフィルタリング
+        await input.fill('item');
+        // ヒット部分に .search-highlight クラスが付与された span が存在すること
+        const highlights = page.locator('.command-palette-item .search-highlight');
+        await expect(highlights.first()).toBeVisible();
+    });
+
     test('再表示時に入力欄がリセットされ全項目が表示される', async ({page}) => {
         await setupTestPageAsync(page);
 

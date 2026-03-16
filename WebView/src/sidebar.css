@@ -115,3 +115,10 @@
 [data-theme="dark"] .references-row:hover {
     background-color: rgba(255, 255, 255, 0.05);
 }
+
+/* 検索ハイライト（コマンドパレット・フィルタードロップダウン・検索パネルで共通使用） */
+.search-highlight {
+    background-color: #fde68a;
+    border-radius: 3px;
+    padding: 0 2px;
+}

@@ -3,6 +3,7 @@ import {SearchDataProvider, TableSearchData} from "./search-data-provider";
 import {parseSearchQuery, matchesQuery, SearchOptions, SearchQuery} from "./search-query";
 import {EditorTable} from "./editor-table";
 import {config} from "./config";
+import {appendHighlightedSegments} from "./fuzzy-search";
 
 /**
  * 検索結果1件分の情報
@@ -28,18 +29,27 @@ export class SearchPanel {
     private readonly dataProvider: SearchDataProvider;
     private readonly openEditorTables: Map<string, EditorTable>;
     private caseSensitive: boolean;
-    private wholeWord: boolean;
+    /** ユーザーが手動でONにしたかどうか */
+    private wholeWordManual: boolean;
+    /** 数値入力による自動ONかどうか */
+    private wholeWordAuto: boolean;
     private useRegex: boolean;
     private debounceTimer: ReturnType<typeof setTimeout> | false;
+    /** レースコンディション防止用のリクエストID。非同期検索の結果が古い場合に破棄するために使う */
+    private searchRequestId: number;
+    /** wholeWordボタン要素（自動ON/OFFで状態更新するためフィールドで保持） */
+    private readonly wholeWordButton: HTMLElement;
 
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
         this.openEditorTables = openEditorTables;
         this.dataProvider = new SearchDataProvider(openEditorTables);
         this.caseSensitive = false;
-        this.wholeWord = false;
+        this.wholeWordManual = false;
+        this.wholeWordAuto = false;
         this.useRegex = false;
         this.debounceTimer = false;
+        this.searchRequestId = 0;
 
         // パネルルート
         this.element = document.createElement('div');
@@ -66,7 +76,7 @@ export class SearchPanel {
         this.inputElement.type = 'text';
         this.inputElement.placeholder = '検索...';
         this.inputElement.addEventListener('input', () => {
-            this.scheduleSearch();
+            this.handleInputChange();
         });
         inputRow.appendChild(this.inputElement);
 
@@ -76,7 +86,10 @@ export class SearchPanel {
         controlsElement.appendChild(optionsRow);
 
         optionsRow.appendChild(this.createOptionButton('caseSensitive', 'Aa'));
-        optionsRow.appendChild(this.createOptionButton('wholeWord', '|ab|'));
+        this.wholeWordButton = this.createOptionButton('wholeWord', '|ab|');
+        // 初期状態（OFF）のtitleを設定する
+        this.wholeWordButton.title = '単語単位で検索';
+        optionsRow.appendChild(this.wholeWordButton);
         optionsRow.appendChild(this.createOptionButton('regex', '.*'));
 
         // 検索結果
@@ -124,24 +137,49 @@ export class SearchPanel {
         button.addEventListener('click', () => {
             if (option === 'caseSensitive') {
                 this.caseSensitive = !this.caseSensitive;
+                button.classList.toggle('search-option-active', this.caseSensitive);
             } else if (option === 'wholeWord') {
-                this.wholeWord = !this.wholeWord;
+                // 手動トグル
+                this.wholeWordManual = !this.wholeWordManual;
+                this.updateWholeWordButtonState();
             } else {
                 this.useRegex = !this.useRegex;
+                button.classList.toggle('search-option-active', this.useRegex);
             }
-            button.classList.toggle('search-option-active', this.getOptionValue(option));
             this.scheduleSearch();
         });
         return button;
     }
 
     /**
-     * オプションの現在値を取得する
+     * 入力変更時の処理：数値自動wholeWordの判定 + 検索スケジュール
      */
-    private getOptionValue(option: 'caseSensitive' | 'wholeWord' | 'regex'): boolean {
-        if (option === 'caseSensitive') return this.caseSensitive;
-        if (option === 'wholeWord') return this.wholeWord;
-        return this.useRegex;
+    private handleInputChange(): void {
+        const value = this.inputElement.value;
+        const isNumericOnly = /^\d+$/.test(value);
+        if (isNumericOnly) {
+            this.wholeWordAuto = true;
+        } else {
+            this.wholeWordAuto = false;
+        }
+        this.updateWholeWordButtonState();
+        this.scheduleSearch();
+    }
+
+    /**
+     * wholeWordボタンの表示状態を実効値（wholeWordManual || wholeWordAuto）に同期する。
+     * 自動ON時はtitleとdata-auto-active属性でユーザーに理由を伝える。
+     */
+    private updateWholeWordButtonState(): void {
+        const effective = this.wholeWordManual || this.wholeWordAuto;
+        this.wholeWordButton.classList.toggle('search-option-active', effective);
+        if (this.wholeWordAuto) {
+            this.wholeWordButton.title = '数値入力のため単語単位検索を自動でONにしました';
+            this.wholeWordButton.dataset['autoActive'] = 'true';
+        } else {
+            this.wholeWordButton.title = '単語単位で検索';
+            delete this.wholeWordButton.dataset['autoActive'];
+        }
     }
 
     /**
@@ -158,9 +196,11 @@ export class SearchPanel {
     }
 
     /**
-     * 検索を実行して結果をDOMに反映する
+     * 検索を実行して結果をDOMに反映する。
+     * searchRequestId パターンで古いリクエストの結果を破棄してレースコンディションを防ぐ。
      */
     private async executeSearchAsync(): Promise<void> {
+        const requestId = ++this.searchRequestId;
         const inputText = this.inputElement.value.trim();
         if (inputText === '') {
             this.resultsElement.replaceChildren();
@@ -168,12 +208,14 @@ export class SearchPanel {
         }
         const options: SearchOptions = {
             caseSensitive: this.caseSensitive,
-            wholeWord: this.wholeWord,
+            wholeWord: this.wholeWordManual || this.wholeWordAuto,
             useRegex: this.useRegex,
         };
         const query = parseSearchQuery(inputText, options);
         const results = await this.searchAsync(query);
-        this.renderResults(results);
+        // await の間に新しい検索が始まっていた場合は結果を破棄する
+        if (requestId !== this.searchRequestId) return;
+        this.renderResults(results, inputText);
     }
 
     /**
@@ -299,8 +341,11 @@ export class SearchPanel {
 
     /**
      * 検索結果をDOMに描画する
+     *
+     * @param results 検索結果
+     * @param searchText ハイライト用の検索テキスト
      */
-    private renderResults(results: SearchResult[]): void {
+    private renderResults(results: SearchResult[], searchText: string): void {
         this.resultsElement.replaceChildren();
         for (const result of results) {
             const item = document.createElement('div');
@@ -310,11 +355,17 @@ export class SearchPanel {
             location.classList.add('search-result-location');
             location.textContent = `${result.tableName}.${result.columnName}`;
             item.appendChild(location);
-            // 値表示
-            const value = document.createElement('div');
-            value.classList.add('search-result-value');
-            value.textContent = result.value;
-            item.appendChild(value);
+            // PK値表示
+            const pkElement = document.createElement('span');
+            pkElement.classList.add('search-result-pk');
+            pkElement.textContent = result.pkValue;
+            pkElement.title = '主キー値';
+            item.appendChild(pkElement);
+            // 値表示（ハイライト付き）
+            const valueElement = document.createElement('div');
+            valueElement.classList.add('search-result-value');
+            appendHighlightedSegments(valueElement, result.value, searchText);
+            item.appendChild(valueElement);
             // 参照表示テキスト（参照列の場合のみ）
             if (result.referenceDisplayText !== '') {
                 const hint = document.createElement('div');
@@ -329,4 +380,5 @@ export class SearchPanel {
             this.resultsElement.appendChild(item);
         }
     }
+
 }

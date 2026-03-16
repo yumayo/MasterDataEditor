@@ -1,3 +1,5 @@
+import {fuzzyMatch, normalizeForSearch, normalizeForSearchCaseSensitive, romajiToHiragana} from './fuzzy-search';
+
 /**
  * 全文検索クエリ
  */
@@ -89,12 +91,21 @@ export function matchesQuery(cellValue: string, searchText: string, options: Sea
             return false;
         }
     }
-    let haystack = cellValue;
-    let needle = searchText;
+    // 大文字小文字を区別しない場合はfuzzyMatchを使用（全角半角・ローマ字変換を含む）
     if (!options.caseSensitive) {
-        haystack = haystack.toLowerCase();
-        needle = needle.toLowerCase();
+        if (options.wholeWord) {
+            // wholeWordの場合は完全一致でfuzzyMatch相当のロジックを適用
+            const normalizedHaystack = normalizeForSearch(cellValue);
+            const normalizedNeedle = normalizeForSearch(searchText);
+            if (normalizedHaystack === normalizedNeedle) return true;
+            const romajiConverted = normalizeForSearch(romajiToHiragana(searchText));
+            return romajiConverted !== normalizedNeedle && normalizedHaystack === romajiConverted;
+        }
+        return fuzzyMatch(cellValue, searchText);
     }
+    // caseSensitive: true の場合は全角半角正規化のみ行い大文字小文字は区別する
+    const haystack = normalizeForSearchCaseSensitive(cellValue);
+    const needle = normalizeForSearchCaseSensitive(searchText);
     if (options.wholeWord) {
         return haystack === needle;
     }

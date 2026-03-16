@@ -1,6 +1,7 @@
 import {ColumnFilter} from "./column-filter";
 import {EditorTable} from "./editor-table";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {fuzzyMatch, appendHighlightedSegments} from "./fuzzy-search";
 
 /**
  * フィルタードロップダウン UI コンポーネント
@@ -223,6 +224,8 @@ export class FilterDropdown {
         const labelSpan = document.createElement('span');
         labelSpan.classList.add('filter-item-label');
         labelSpan.textContent = value;
+        // 元のテキストを data 属性に保持（ハイライト付与後も正確に取得できるようにする）
+        labelSpan.dataset['rawText'] = value;
 
         label.appendChild(checkbox);
         label.appendChild(labelSpan);
@@ -232,6 +235,8 @@ export class FilterDropdown {
             const hintSpan = document.createElement('span');
             hintSpan.classList.add('filter-item-hint');
             hintSpan.textContent = hint;
+            // 元のテキストを data 属性に保持
+            hintSpan.dataset['rawText'] = hint;
             label.appendChild(hintSpan);
         }
 
@@ -240,23 +245,31 @@ export class FilterDropdown {
 
     /**
      * 検索ボックスの入力に合わせてリストを絞り込む。
-     * 絞り込みはラベルテキストおよびヒントテキストへの部分一致（大文字小文字無視）。
+     * fuzzyMatchによるローマ字・全角半角対応絞り込みを行い、
+     * マッチ部分には .search-highlight クラスの span を付与する。
      * 一致しない項目は DOM から除去し、一致する項目は再追加する。
      * チェック状態は allItemElements 上の要素で維持される。
      * 検索結果が 0 件の場合は「検索結果なし」メッセージを表示する。
      */
     private filterItems(): void {
-        const query = this.searchInput.value.toLowerCase();
+        const query = this.searchInput.value;
         this.itemList.innerHTML = '';
         let matchCount = 0;
         for (const item of this.allItemElements) {
             // createCheckboxItem で必ず .filter-item-label が生成されるため null チェック不要
             const labelSpan = item.querySelector('.filter-item-label') as HTMLElement;
-            const labelText = (labelSpan.textContent as string).toLowerCase();
+            const labelText = labelSpan.dataset['rawText'] ?? (labelSpan.textContent as string);
             // ヒントテキストも検索対象に含める
             const hintSpan = item.querySelector('.filter-item-hint') as HTMLElement | null;
-            const hintText = hintSpan !== null ? (hintSpan.textContent as string).toLowerCase() : '';
-            if (labelText.includes(query) || hintText.includes(query)) {
+            const hintText = hintSpan !== null ? (hintSpan.dataset['rawText'] ?? (hintSpan.textContent as string)) : '';
+            if (query === '' || fuzzyMatch(labelText, query) || (hintText !== '' && fuzzyMatch(hintText, query))) {
+                // ハイライトを再構築する（replaceChildren()で既存の子要素をクリアしてから付与）
+                labelSpan.replaceChildren();
+                appendHighlightedSegments(labelSpan, labelText, query);
+                if (hintSpan !== null) {
+                    hintSpan.replaceChildren();
+                    appendHighlightedSegments(hintSpan, hintText, query);
+                }
                 this.itemList.appendChild(item);
                 matchCount++;
             }
@@ -330,7 +343,8 @@ export class FilterDropdown {
             // DOM から除去されている（検索絞り込みで非表示）項目はチェック済みとして扱う
             const isFilteredOut = !this.itemList.contains(item);
             if (checkbox.checked || isFilteredOut) {
-                selected.add(labelSpan.textContent as string);
+                // data-raw-text でハイライトspanが入っても元の値を正確に取得する
+                selected.add(labelSpan.dataset['rawText'] ?? (labelSpan.textContent as string));
             }
         }
         return selected;

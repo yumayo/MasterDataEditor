@@ -1140,4 +1140,121 @@ test.describe('FEAT_0035 フィルター機能改修', () => {
             },
         );
     });
+
+    test.describe('要件8: ローマ字入力でドロップダウン項目が絞り込まれる', () => {
+        /**
+         * ローマ字検索用ファイルシステム
+         * category 列にひらがな・カタカナ値を含む item テーブル
+         */
+        function createRomajiSearchFileSystem(): MockFileSystem {
+            return {
+                "schema/item.json": JSON.stringify({
+                    header: [
+                        {key: 0, name: "id", type: "int"},
+                        {key: 1, name: "category", type: "string"},
+                    ],
+                    primary_key: "id",
+                }),
+                "data/item.csv": [
+                    "id,category",
+                    "1,ぶき",
+                    "2,ぼうぐ",
+                    "3,アイテム",
+                ].join("\n"),
+            };
+        }
+
+        test.beforeEach(async ({page}) => {
+            await installMockApiAsync(page, createRomajiSearchFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '"buki" で絞り込むと "ぶき" のみ表示される',
+            async ({page}) => {
+                const table = await openTableAsync(page, 'item');
+                // category 列（colIndex=1）のフィルターを開く
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // 絞り込み前は3項目（ぶき・ぼうぐ・アイテム）
+                await expect(dropdown.locator('.filter-item')).toHaveCount(3);
+
+                // "buki"（ローマ字）で絞り込む
+                const searchInput = dropdown.locator('.filter-search-input');
+                await searchInput.fill('buki');
+
+                // "ぶき" にのみマッチして1項目に絞られること
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(1);
+                await expect(items.first().locator('.filter-item-label')).toHaveText('ぶき');
+            },
+        );
+
+        test(
+            '"aite" で絞り込むと "アイテム" のみ表示される',
+            async ({page}) => {
+                const table = await openTableAsync(page, 'item');
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                const searchInput = dropdown.locator('.filter-search-input');
+                await searchInput.fill('aite');
+
+                // "アイテム" にのみマッチすること（"あいて" に変換後カタカナ正規化でヒット）
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(1);
+                await expect(items.first().locator('.filter-item-label')).toHaveText('アイテム');
+            },
+        );
+    });
+
+    test.describe('要件9: フィルタードロップダウンのヒット部分にハイライト表示', () => {
+        function createHighlightFilterTestFileSystem(): MockFileSystem {
+            return {
+                "schema/item.json": JSON.stringify({
+                    header: [
+                        {key: 0, name: "id", type: "int"},
+                        {key: 1, name: "name", type: "string"},
+                    ],
+                    primary_key: "id",
+                }),
+                "data/item.csv": [
+                    "id,name",
+                    "1,weapon",
+                    "2,armor",
+                    "3,potion",
+                ].join("\n"),
+            };
+        }
+
+        test.beforeEach(async ({page}) => {
+            await installMockApiAsync(page, createHighlightFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '検索ヒット部分に .search-highlight クラスが付与される',
+            async ({page}) => {
+                const table = await openTableAsync(page, 'item');
+                // name 列（colIndex=1）のフィルターを開く
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // "wea" で検索（"weapon" にマッチ）
+                const searchInput = dropdown.locator('.filter-search-input');
+                await searchInput.fill('wea');
+
+                // "weapon" を含む項目のラベルにハイライト span が存在すること
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(1);
+                const highlight = items.first().locator('.filter-item-label .search-highlight');
+                await expect(highlight).toBeVisible();
+                await expect(highlight).toHaveText('wea');
+            },
+        );
+    });
 });

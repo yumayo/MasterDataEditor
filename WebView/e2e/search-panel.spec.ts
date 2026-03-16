@@ -190,6 +190,93 @@ test.describe('検索パネル', () => {
         await expect(selection).toBeVisible();
     });
 
+    test('ローマ字入力で全文検索がヒットすること', async ({page}) => {
+        // enemy テーブルの ja 列: "スライム", "ドラゴン"
+        // "suraimu" → "すらいむ" → ひらがな変換後に "スライム"（カタカナ→ひらがな正規化）にマッチ
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        await searchInput.fill('suraimu');
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible();
+        await expect(results.first().locator('.search-result-value')).toHaveText('スライム');
+    });
+
+    test('全角半角を無視して検索がヒットすること', async ({page}) => {
+        // quest テーブルの name 列: "quest_a", "quest_b"
+        // "ＱＵＥＳＴ" (全角大文字) → 正規化後 "quest" → 部分一致でヒット
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        await searchInput.fill('ＱＵＥＳＴ');
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible();
+        // quest_a か quest_b のどちらかがヒットすること
+        const count = await results.count();
+        expect(count).toBeGreaterThan(0);
+    });
+
+    test('検索結果にPK値が表示されること', async ({page}) => {
+        // quest テーブルを検索: quest_a (id=1) がヒットしたとき、PK値 "1" が表示される
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        await searchInput.fill('quest_a');
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible();
+        // 検索結果に PK 値を示す .search-result-pk 要素が存在すること
+        const pkElement = results.first().locator('.search-result-pk');
+        await expect(pkElement).toBeVisible();
+        await expect(pkElement).toHaveText('1');
+    });
+
+    test('数値のみ入力時にwholeWordが自動的にONになること', async ({page}) => {
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        // 数値のみ入力
+        await searchInput.fill('1');
+        // wholeWord ボタンが active 状態になること（自動ON）
+        const wholeWordButton = getOptionButton(page, 'wholeWord');
+        await expect(wholeWordButton).toHaveClass(/search-option-active/);
+    });
+
+    test('数値から数値以外に変更したらwholeWordの自動ONが解除されること', async ({page}) => {
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        // 数値のみ入力でwholeWord自動ON
+        await searchInput.fill('1');
+        const wholeWordButton = getOptionButton(page, 'wholeWord');
+        await expect(wholeWordButton).toHaveClass(/search-option-active/);
+        // 数値以外に変更（自動ONが解除される）
+        await searchInput.fill('quest');
+        await expect(wholeWordButton).not.toHaveClass(/search-option-active/);
+    });
+
+    test('ユーザーが手動でwholeWordをONにした場合は数値解除後も維持されること', async ({page}) => {
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        const wholeWordButton = getOptionButton(page, 'wholeWord');
+        // 手動でwholeWordをONにする
+        await wholeWordButton.click();
+        await expect(wholeWordButton).toHaveClass(/search-option-active/);
+        // 数値を入力（自動ONと同じ状態）
+        await searchInput.fill('1');
+        // 数値以外に変更（手動ONなので解除されない）
+        await searchInput.fill('quest');
+        // 手動ONは維持されること
+        await expect(wholeWordButton).toHaveClass(/search-option-active/);
+    });
+
+    test('検索ヒット部分がハイライト表示されること', async ({page}) => {
+        // quest テーブルの name 列: "quest_a" を "quest" で検索
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        await searchInput.fill('quest');
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible();
+        // ヒット部分に .search-highlight クラスが付与された span が存在すること
+        const highlights = results.first().locator('.search-result-value .search-highlight');
+        await expect(highlights.first()).toBeVisible();
+        await expect(highlights.first()).toHaveText('quest');
+    });
+
     test('テーブルを開いた後でもフィルタ検索ができること', async ({page}) => {
         // まず参照先テーブルを開く
         await openTableAsync(page, 'enemy');
