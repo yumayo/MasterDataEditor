@@ -107,6 +107,16 @@
 - 残課題(🟡): ミニテーブルの row-resize-handle 残存（継続指摘）
 - bug-report #104（N:1とN:1の対称操作欠落）パターンの修正として適切
 
+#### BUG_0025 差分ビュー行挿入後の左ペイン行番号表示修正（2026-03-17レビュー）評価: B+
+- 修正の核心: 左ペインのパディング行に行番号が表示されるようになった（data-row-index と 1-indexed 表示が正しく対応）
+- 再ナンバリング: 挿入後の既存行の行番号が正しくインクリメントされている（左右ペインで対応行の data-row が一致）
+- 残課題(🔴): 右ペインの diff-row-initial-padding に row-resize-handle が残存（左ペインは除去済みで非対称。BUG_0022継続）
+- 残課題(🔴): diff-row-deleted 行に row-resize-handle が残存（削除済み行のリサイズは不要で誤操作リスク）
+- 残課題(🔴): 行挿入後もコンテキストメニューが残存（left:822px,top:100px/79px のstyle付き）。hide()漏れパターン継続（bug-report #8/#65）
+- 残課題(🟡): 左ペイン aria-readonly 欠如（BUG_0021〜BUG_0023から継続）
+- 残課題(🟡): diff-row-deleted 行に data-diff-kind 属性なし（BUG_0021から継続）
+- 残課題(🟡): 左右ペインで data-row 衝突継続（左=パディング行・右=実データ行の同一 data-row 値）
+
 #### BUG_0023 差分ビューパディング行保存・Dirty・通常タブ反映修正（2026-03-17レビュー）評価: A-
 - テスト1: Dirty消去確認済み（tab-button-dirty に visible クラスなし）。bug-report #102修正が有効
 - テスト2: パディング行（diff-row-padding-inserted）に data-store-index なし → CSV除外が属性レベルで正しく実装
