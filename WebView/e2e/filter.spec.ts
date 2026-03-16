@@ -789,3 +789,355 @@ test.describe('フィルター機能', () => {
         );
     });
 });
+
+// =============================================================================
+// FEAT_0035 フィルター機能改修 — REDテスト
+// =============================================================================
+
+/**
+ * 空文字列セルを含むフィルターテスト用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   item: id（int）, category（string）, price（int）
+ *
+ * category が空文字列の行（id=2, id=4）が存在する。
+ * 空文字列はフィルタードロップダウンのリストに表示されないが、
+ * フィルター適用時は常に表示されること（どの値を選択していても除外されない）を確認する。
+ */
+function createEmptyValueFilterTestFileSystem(): MockFileSystem {
+    return {
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "category", type: "string" },
+                { key: 2, name: "price", type: "int" },
+            ],
+            primary_key: "id",
+        }),
+        "data/item.csv": [
+            "id,category,price",
+            "1,weapon,100",
+            "2,,200",
+            "3,armor,300",
+            "4,,",
+            "5,potion,500",
+        ].join("\n"),
+    };
+}
+
+/**
+ * 参照ヒント付きフィルターテスト用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   chara: id（int, PK）, name（string）
+ *   item: id（int, PK）, name（string）, chara_id（int, FK → chara.id）
+ *
+ * item.chara_id は chara.id を参照するFK列。
+ * フィルタードロップダウンに参照ヒント（chara.name の値）が表示されることを確認する。
+ */
+function createReferenceHintFilterTestFileSystem(): MockFileSystem {
+    return {
+        "schema/chara.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/chara.csv": [
+            "id,ja",
+            "1,勇者",
+            "2,魔法使い",
+            "3,戦士",
+        ].join("\n"),
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "chara_id", type: "int", reference: "chara.id" },
+            ],
+            primary_key: "id",
+        }),
+        "data/item.csv": [
+            "id,name,chara_id",
+            "1,剣,1",
+            "2,杖,2",
+            "3,盾,1",
+            "4,ローブ,3",
+        ].join("\n"),
+    };
+}
+
+test.describe('FEAT_0035 フィルター機能改修', () => {
+    test.describe('要件1: 空文字列のフィルター動作', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createEmptyValueFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '空文字列はフィルタードロップダウンのユニーク値リストに表示されない',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                // category 列（colIndex=1）のフィルターを開く
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // ユニーク値リストには weapon, armor, potion のみ表示される（空文字列は除外）
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(3);
+
+                // 空文字列を表すラベルが存在しないこと
+                const labels = dropdown.locator('.filter-item-label');
+                const count = await labels.count();
+                for (let i = 0; i < count; i++) {
+                    const text = await labels.nth(i).innerText();
+                    expect(text.trim()).not.toBe('');
+                }
+            },
+        );
+
+        test(
+            '空文字列セルはフィルター適用時に常に表示される（weapon のみ選択でも空文字行は表示）',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // category フィルターで weapon のみ選択
+                await clickFilterIconAsync(table, 1);
+                await setFilterItemCheckedAsync(page, 'armor', false);
+                await setFilterItemCheckedAsync(page, 'potion', false);
+                await applyFilterAsync(page);
+
+                // weapon 行 (id=1,3) に加え、category が空の行 (id=2,4) も表示されること
+                const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+                // weapon(id=1), ""(id=2), weapon(id=3), ""(id=4) の順で表示
+                expect(categoryValues).toContain('weapon');
+                // 空文字列行が除外されていないことを確認（weapon のみになるはずだが、空文字行も含まれる）
+                expect(categoryValues.length).toBeGreaterThan(2);
+                // armor と potion は除外されている
+                expect(categoryValues).not.toContain('armor');
+                expect(categoryValues).not.toContain('potion');
+            },
+        );
+    });
+
+    test.describe('要件2: ESCキーでフィルタードロップダウンを閉じる', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createEmptyValueFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            'フィルタードロップダウンが表示中にESCキーを押すとドロップダウンが閉じる',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // ドロップダウンを開く
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // ESC キーを押す
+                await page.keyboard.press('Escape');
+
+                // ドロップダウンが閉じること
+                await expect(dropdown).not.toBeAttached();
+            },
+        );
+    });
+
+    test.describe('要件3: フィルタードロップダウンに参照ヒントを表示する', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createReferenceHintFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            'FK参照列のフィルタードロップダウンに参照ヒントが表示される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // 参照データのプリロード完了を待つ（セルに参照ヒントが表示されるまで）
+                await expect(table.locator('.cell-reference-hint').first()).toBeAttached();
+
+                // chara_id 列（colIndex=2）のフィルターを開く
+                await clickFilterIconAsync(table, 2);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // ユニーク値は 1, 2, 3（chara_id の値）
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(3);
+
+                // 各 filter-item に参照ヒント要素が存在すること
+                for (let i = 0; i < 3; i++) {
+                    const hint = items.nth(i).locator('.filter-item-hint');
+                    await expect(hint).toBeAttached();
+                }
+
+                // 参照ヒントに chara.name の値が含まれること
+                await expect(dropdown).toContainText('勇者');
+                await expect(dropdown).toContainText('魔法使い');
+                await expect(dropdown).toContainText('戦士');
+            },
+        );
+
+        test(
+            'FK参照列でない列のフィルタードロップダウンには参照ヒントが表示されない',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // name 列（colIndex=1）のフィルターを開く（参照列ではない）
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // filter-item-hint が存在しないこと
+                const hints = dropdown.locator('.filter-item-hint');
+                await expect(hints).toHaveCount(0);
+            },
+        );
+    });
+
+    test.describe('要件4: 検索で参照ヒントも含めて検索できる', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createReferenceHintFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '参照ヒントのテキストで検索すると対応する項目がヒットする',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+
+                // 参照データのプリロード完了を待つ（セルに参照ヒントが表示されるまで）
+                await expect(table.locator('.cell-reference-hint').first()).toBeAttached();
+
+                // chara_id 列（colIndex=2）のフィルターを開く
+                await clickFilterIconAsync(table, 2);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // 検索前は 3 項目（1, 2, 3）
+                await expect(dropdown.locator('.filter-item')).toHaveCount(3);
+
+                // 参照ヒントの値「魔法使い」で検索
+                const searchInput = dropdown.locator('.filter-search-input');
+                await searchInput.fill('魔法使い');
+
+                // chara_id=2（魔法使い）に対応する 1 項目のみ表示される
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(1);
+                // ラベルは "2"（chara_id の値）
+                await expect(items.first().locator('.filter-item-label')).toContainText('2');
+            },
+        );
+    });
+
+    test.describe('要件5: 空の検索結果時に「検索結果なし」を表示する', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createEmptyValueFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '検索で一件もヒットしない場合に「検索結果なし」が表示される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // 存在しない文字列で検索
+                const searchInput = dropdown.locator('.filter-search-input');
+                await searchInput.fill('xyznotexist');
+
+                // 項目が0件になり「検索結果なし」テキストが表示される
+                const items = dropdown.locator('.filter-item');
+                await expect(items).toHaveCount(0);
+                await expect(dropdown).toContainText('検索結果なし');
+            },
+        );
+    });
+
+    test.describe('要件6: フィルターウィンドウの横幅を広げる', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createEmptyValueFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            'フィルタードロップダウンの min-width が 240px 以上である',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // computedStyle から min-width を取得して 240px 以上であることを確認
+                const minWidth = await dropdown.evaluate((el) => {
+                    return parseInt(getComputedStyle(el).minWidth, 10);
+                });
+                expect(minWidth).toBeGreaterThanOrEqual(240);
+            },
+        );
+
+        test(
+            'フィルタードロップダウンの max-width が 340px 以上である',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // computedStyle から max-width を取得して 340px 以上であることを確認
+                const maxWidth = await dropdown.evaluate((el) => {
+                    const raw = getComputedStyle(el).maxWidth;
+                    // "none" の場合は極大値として扱う（none なら確実に 340 超え）
+                    if (raw === 'none') return 99999;
+                    return parseInt(raw, 10);
+                });
+                expect(maxWidth).toBeGreaterThanOrEqual(340);
+            },
+        );
+    });
+
+    test.describe('要件7: ボタンを等幅で幅いっぱいに広げる', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createEmptyValueFilterTestFileSystem());
+            await page.goto('/');
+        });
+
+        test(
+            '全選択・全解除・クリアボタンが均等幅で親要素の幅いっぱいに広がっている',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'item');
+                await clickFilterIconAsync(table, 1);
+                const dropdown = page.locator('.filter-dropdown.visible');
+                await expect(dropdown).toBeVisible();
+
+                // 各ボタンの flex プロパティが "1 1 0%" 相当（flex: 1）になっていること
+                const selectAllBtn = dropdown.locator('.filter-select-all');
+                const deselectAllBtn = dropdown.locator('.filter-deselect-all');
+                const clearBtn = dropdown.locator('.filter-clear');
+
+                const selectAllFlex = await selectAllBtn.evaluate((el) => getComputedStyle(el).flexGrow);
+                const deselectAllFlex = await deselectAllBtn.evaluate((el) => getComputedStyle(el).flexGrow);
+                const clearFlex = await clearBtn.evaluate((el) => getComputedStyle(el).flexGrow);
+
+                // flex-grow が 1 であること（flex: 1 の意味）
+                expect(parseFloat(selectAllFlex)).toBe(1);
+                expect(parseFloat(deselectAllFlex)).toBe(1);
+                expect(parseFloat(clearFlex)).toBe(1);
+
+                // 3つのボタンの幅が同じであること（均等幅）
+                const selectAllWidth = await selectAllBtn.evaluate((el) => el.getBoundingClientRect().width);
+                const deselectAllWidth = await deselectAllBtn.evaluate((el) => el.getBoundingClientRect().width);
+                const clearWidth = await clearBtn.evaluate((el) => el.getBoundingClientRect().width);
+                expect(Math.abs(selectAllWidth - deselectAllWidth)).toBeLessThan(2);
+                expect(Math.abs(selectAllWidth - clearWidth)).toBeLessThan(2);
+            },
+        );
+    });
+});

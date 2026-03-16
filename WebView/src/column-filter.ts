@@ -84,6 +84,8 @@ export class ColumnFilter {
             // 全フィルター列で AND 条件を評価する
             for (const { storeColumnIndex, selectedValues } of filterEntries) {
                 if (storeColumnIndex >= row.length) return false;
+                // 空文字列セルは常にフィルターを通過させる（リストに表示されない値のため）
+                if (row[storeColumnIndex] === '') continue;
                 if (!selectedValues.has(row[storeColumnIndex])) return false;
             }
             return true;
@@ -92,7 +94,7 @@ export class ColumnFilter {
 
     /**
      * 指定ストア列のユニーク値リストをソートして返す。
-     * 空文字列は除外しない（フィルターで空セルも選択対象にできる）。
+     * 空文字列は除外する（リストに表示しないが、フィルター適用時は常に通過させる）。
      *
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      * @param storeRows ストアの全行データ
@@ -100,15 +102,11 @@ export class ColumnFilter {
     getUniqueValues(storeColumnIndex: number, storeRows: string[][]): string[] {
         const valueSet = new Set<string>();
         for (const row of storeRows) {
-            if (storeColumnIndex < row.length) {
+            if (storeColumnIndex < row.length && row[storeColumnIndex] !== '') {
                 valueSet.add(row[storeColumnIndex]);
             }
         }
         return Array.from(valueSet).sort((a, b) => {
-            // 空文字列は末尾に配置する
-            if (a === '' && b === '') return 0;
-            if (a === '') return 1;
-            if (b === '') return -1;
             const numA = Number(a);
             const numB = Number(b);
             if (!isNaN(numA) && !isNaN(numB)) return numA - numB;

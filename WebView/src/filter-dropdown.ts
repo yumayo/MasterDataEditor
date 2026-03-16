@@ -1,15 +1,17 @@
 import {ColumnFilter} from "./column-filter";
 import {EditorTable} from "./editor-table";
+import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
  * フィルタードロップダウン UI コンポーネント
  *
  * 責務:
  * - チェックボックス付きドロップダウンの構築・表示・非表示
- * - 検索ボックスによる項目絞り込み
+ * - 検索ボックスによる項目絞り込み（参照ヒントも検索対象）
  * - 全選択・全解除ボタン
  * - 適用ボタンで ColumnFilter にフィルター状態を反映し EditorTable を再描画
  * - クリアボタンで当該列のフィルターを解除し EditorTable を再描画
+ * - FK参照列のドロップダウンに参照ヒント（表示名）を表示する
  *
  * 表示制御は .visible クラスの付与/除去で行う。
  * EditorTable と密結合（相互参照）で、適用・クリア後に EditorTable を直接呼び出す。
@@ -34,6 +36,10 @@ export class FilterDropdown {
      * document の mousedown リスナー（destroy() で解除するためフィールドに保持）
      */
     private readonly outsideClickHandler: (e: MouseEvent) => void;
+    /**
+     * document の keydown リスナー（destroy() で解除するためフィールドに保持）
+     */
+    private readonly escKeyHandler: (e: KeyboardEvent) => void;
 
     constructor(table: EditorTable, columnFilter: ColumnFilter) {
         this.table = table;
@@ -96,6 +102,18 @@ export class FilterDropdown {
             }
         };
         document.addEventListener('mousedown', this.outsideClickHandler);
+
+        // ESCキーでドロップダウンを閉じる。フィールドに保持して destroy() で解除できるようにする。
+        // stopPropagation と preventDefault で EditorTableHandler 等の上流 ESC 処理への連鎖を防ぐ。
+        this.escKeyHandler = (e: KeyboardEvent) => {
+            if (!this.element.classList.contains('visible')) return;
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                e.preventDefault();
+                this.hide();
+            }
+        };
+        document.addEventListener('keydown', this.escKeyHandler);
     }
 
     /**
@@ -104,6 +122,7 @@ export class FilterDropdown {
      */
     destroy(): void {
         document.removeEventListener('mousedown', this.outsideClickHandler);
+        document.removeEventListener('keydown', this.escKeyHandler);
         if (this.element.parentElement) {
             this.element.parentElement.removeChild(this.element);
         }
@@ -123,10 +142,9 @@ export class FilterDropdown {
             return;
         }
         this.currentColumnIndex = columnIndex;
-        this.buildItems(columnIndex);
-
-        // 検索ボックスをリセット
+        // 検索ボックスをリセット（buildItems 前に行うことで絞り込み状態をリセットしてから構築する）
         this.searchInput.value = '';
+        this.buildItems(columnIndex);
 
         // 位置決め: アイコン要素の直下に表示する
         const rect = anchorElement.getBoundingClientRect();
@@ -153,6 +171,7 @@ export class FilterDropdown {
      * 指定列のユニーク値からチェックボックスリストを構築する。
      * 既存フィルター状態があれば反映する。
      * columnIndex は DOM列インデックス（0始まり）。ストア列インデックスに変換してから ColumnFilter に渡す。
+     * FK参照列の場合は referenceDataCache から表示名を取得してヒントとして表示する。
      */
     private buildItems(columnIndex: number): void {
         this.itemList.innerHTML = '';
@@ -162,11 +181,24 @@ export class FilterDropdown {
 
         // DOM列インデックス → ストア（CSV）列インデックスに変換する
         const storeColumnIndex = this.table.getStoreColumnIndex(columnIndex);
+        // ストア列インデックスが -1（CSVに存在しないスキーマ列）の場合は構築不可
+        if (storeColumnIndex === -1) return;
         const uniqueValues = this.columnFilter.getUniqueValues(storeColumnIndex, storeRows);
         const existingSelection = this.columnFilter.getSelectedValues(storeColumnIndex);
 
+        // 対象列の参照式を取得する（FK参照列であれば表示名をヒントとして付加）
+        // tableData.header はスキーマ定義順（DOM列インデックスと一致）なので columnIndex を使う
+        const tableData = this.table.getTableData();
+        if (columnIndex >= tableData.header.length) throw new Error(`[FilterDropdown.buildItems] columnIndex=${columnIndex} がヘッダー範囲外`);
+        const colDef = tableData.header[columnIndex];
+        const referenceExpr = colDef.reference !== null ? parseReferenceExpression(colDef.reference) : null;
+
         for (const value of uniqueValues) {
-            const item = this.createCheckboxItem(value, existingSelection);
+            // FK単純参照列の場合はキャッシュから表示名を取得する
+            const hint = (referenceExpr !== null && isSimpleReference(referenceExpr))
+                ? this.table.getDisplayTextById(referenceExpr.tableName, value)
+                : null;
+            const item = this.createCheckboxItem(value, existingSelection, hint);
             this.allItemElements.push(item);
             this.itemList.appendChild(item);
         }
@@ -177,8 +209,9 @@ export class FilterDropdown {
      *
      * @param value 表示する値
      * @param existingSelection 既存フィルターの選択セット（null: 未適用 = 全チェック）
+     * @param hint 参照ヒントテキスト（null: ヒントなし）
      */
-    private createCheckboxItem(value: string, existingSelection: Set<string> | null): HTMLElement {
+    private createCheckboxItem(value: string, existingSelection: Set<string> | null, hint: string | null): HTMLElement {
         const label = document.createElement('label');
         label.classList.add('filter-item');
 
@@ -193,25 +226,47 @@ export class FilterDropdown {
 
         label.appendChild(checkbox);
         label.appendChild(labelSpan);
+
+        // 参照ヒントがある場合は hint span を追加する
+        if (hint !== null) {
+            const hintSpan = document.createElement('span');
+            hintSpan.classList.add('filter-item-hint');
+            hintSpan.textContent = hint;
+            label.appendChild(hintSpan);
+        }
+
         return label;
     }
 
     /**
      * 検索ボックスの入力に合わせてリストを絞り込む。
-     * 絞り込みはラベルテキストへの部分一致（大文字小文字無視）。
+     * 絞り込みはラベルテキストおよびヒントテキストへの部分一致（大文字小文字無視）。
      * 一致しない項目は DOM から除去し、一致する項目は再追加する。
      * チェック状態は allItemElements 上の要素で維持される。
+     * 検索結果が 0 件の場合は「検索結果なし」メッセージを表示する。
      */
     private filterItems(): void {
         const query = this.searchInput.value.toLowerCase();
         this.itemList.innerHTML = '';
+        let matchCount = 0;
         for (const item of this.allItemElements) {
             // createCheckboxItem で必ず .filter-item-label が生成されるため null チェック不要
             const labelSpan = item.querySelector('.filter-item-label') as HTMLElement;
-            const text = (labelSpan.textContent as string).toLowerCase();
-            if (text.includes(query)) {
+            const labelText = (labelSpan.textContent as string).toLowerCase();
+            // ヒントテキストも検索対象に含める
+            const hintSpan = item.querySelector('.filter-item-hint') as HTMLElement | null;
+            const hintText = hintSpan !== null ? (hintSpan.textContent as string).toLowerCase() : '';
+            if (labelText.includes(query) || hintText.includes(query)) {
                 this.itemList.appendChild(item);
+                matchCount++;
             }
+        }
+        // 検索結果が 0 件の場合は「検索結果なし」テキストを表示する
+        if (matchCount === 0 && query !== '') {
+            const noResult = document.createElement('div');
+            noResult.classList.add('filter-no-result');
+            noResult.textContent = '検索結果なし';
+            this.itemList.appendChild(noResult);
         }
     }
 
@@ -264,17 +319,16 @@ export class FilterDropdown {
      * allItemElements（全量リスト）を走査するため、検索絞り込みで非表示の項目も含まれる。
      * 非表示（DOM から除去済み）の項目はチェック状態に関わらず「チェック済み」として扱う
      * （検索絞り込み中に全解除を押しても非表示項目は選択状態が維持される）。
+     * DOM の実際の状態（itemList.contains）で非表示判定するため、filterItems のロジックと一致する。
      */
     private collectCheckedValues(): Set<string> {
         const selected = new Set<string>();
-        const query = this.searchInput.value.toLowerCase();
         for (const item of this.allItemElements) {
             // createCheckboxItem で必ず checkbox と .filter-item-label が生成されるため null チェック不要
             const checkbox = item.querySelector<HTMLInputElement>('input[type="checkbox"]') as HTMLInputElement;
             const labelSpan = item.querySelector('.filter-item-label') as HTMLElement;
-            const text = (labelSpan.textContent as string).toLowerCase();
-            // 検索絞り込みで非表示になっている（DOM未挿入）項目はチェック済みとして扱う
-            const isFilteredOut = !text.includes(query);
+            // DOM から除去されている（検索絞り込みで非表示）項目はチェック済みとして扱う
+            const isFilteredOut = !this.itemList.contains(item);
             if (checkbox.checked || isFilteredOut) {
                 selected.add(labelSpan.textContent as string);
             }

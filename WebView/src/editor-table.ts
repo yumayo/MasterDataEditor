@@ -1760,6 +1760,14 @@ export class EditorTable {
         return this.reference.resolveValueColumnIndex(valueColumnName, currentDataColumnIndex);
     }
 
+    /**
+     * 参照テーブルのIDから表示テキストを同期取得する（フィルタードロップダウン参照ヒント用）
+     * 参照キャッシュの結果を null に正規化して返す
+     */
+    getDisplayTextById(tableName: string, id: string): string | null {
+        return this.referenceDataCache.getDisplayTextById(tableName, id) ?? null;
+    }
+
     // =========================================================================
     // ファサード: EditorTableStructure
     // =========================================================================
