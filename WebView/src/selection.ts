@@ -160,6 +160,7 @@ export class Selection {
         this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
         this.focus = { row, column }; // start 選択開始位置にフォーカスを設定
         this.updateRenderer();
+        this.scrollFocusIntoView();
     }
 
     end(): void {
@@ -180,6 +181,7 @@ export class Selection {
         this.selecting = true;
         this.selectingColumn = true;
         this.selectingRow = false;
+        // 列ヘッダークリック時はビューポート位置を維持するためスクロールしない
         this.updateRenderer();
     }
 
@@ -197,6 +199,7 @@ export class Selection {
         this.selecting = true;
         this.selectingColumn = false;
         this.selectingRow = true;
+        // 行ヘッダークリック時はビューポート位置を維持するためスクロールしない
         this.updateRenderer();
     }
 
@@ -209,6 +212,7 @@ export class Selection {
 
         // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
         this.range = { startRow: 1, startColumn: this.range.startColumn, endRow: rowCount - 1, endColumn: column };
+        // 列ヘッダークリック時はビューポート位置を維持するためスクロールしない
         this.updateRenderer();
     }
 
@@ -223,6 +227,7 @@ export class Selection {
 
         // アンカー（startRow）を保持したまま、endRowを新しい行に拡張
         this.range = { startRow: this.range.startRow, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
+        // 行ヘッダークリック時はビューポート位置を維持するためスクロールしない
         this.updateRenderer();
     }
 
@@ -294,6 +299,10 @@ export class Selection {
             endColumn: endColumn
         };
         this.updateRenderer();
+        // Shift+クリック時のみスクロール。ドラッグ中（selecting=true）はDragControllerがスクロールを管理する
+        if (!this.selecting) {
+            this.scrollCellIntoView(endRow, endColumn);
+        }
     }
 
     /**

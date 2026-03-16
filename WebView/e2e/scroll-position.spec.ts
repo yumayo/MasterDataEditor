@@ -193,3 +193,213 @@ test(
         ).toBeGreaterThan(100);
     },
 );
+
+// =============================================================================
+// TDD RED テスト: マウスクリック時の自動スクロール
+//
+// 背景:
+//   キーボード操作（矢印キー等）では selection.move() → scrollFocusIntoView() が呼ばれ
+//   選択セルが画面内に収まるよう自動スクロールされる。
+//   しかし mousedown 時の selection.start() / extendSelection() では
+//   scrollFocusIntoView() が呼ばれないため自動スクロールが行われない。
+//
+// 期待動作:
+//   マウスクリック時にも選択セルが画面内に完全に収まるようスクロールされること。
+//   Shift+クリック時にも拡張先のセルが画面内に完全に収まるようスクロールされること。
+// =============================================================================
+
+/**
+ * セルの DOMRect を JS 評価で取得する
+ * Playwright の getBoundingClientRect は scrollIntoViewIfNeeded を内部で呼ぶ可能性があるため
+ * evaluate 経由で直接取得する
+ * rowIndex: 0始まり（ヘッダー行を除く）、colIndex: 0始まり（行ヘッダーを除く）
+ */
+async function getCellBoundingRectAsync(
+    page: Page,
+    rowIndex: number,
+    colIndex: number,
+): Promise<{ top: number; bottom: number; left: number; right: number }> {
+    return page.evaluate(
+        ([rowIdx, colIdx]) => {
+            // editor-table-row を rowIdx+1 番目（ヘッダー行をスキップ）から取得する
+            const rows = document.querySelectorAll('.editor-left-pane .editor-table .editor-table-row');
+            const row = rows[rowIdx + 1] as HTMLElement | undefined;
+            if (!row) return { top: 0, bottom: 0, left: 0, right: 0 };
+            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
+            const cell = cells[colIdx] as HTMLElement | undefined;
+            if (!cell) return { top: 0, bottom: 0, left: 0, right: 0 };
+            const rect = cell.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+        },
+        [rowIndex, colIndex] as [number, number],
+    );
+}
+
+/**
+ * スクロールコンテナのクライアント矩形を取得する
+ */
+async function getContainerRectAsync(page: Page): Promise<{ top: number; bottom: number; left: number; right: number }> {
+    return page.evaluate(() => {
+        const container = document.querySelector('.editor-left-pane');
+        if (!container) return { top: 0, bottom: 0, left: 0, right: 0 };
+        const rect = container.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+    });
+}
+
+test(
+    'マウスクリック時にセルが画面外にある場合、クリック後にセルが完全に見えるようスクロールされること',
+    async ({ page }) => {
+        // 小さいビューポートでスクロールが発生しやすくする
+        await page.setViewportSize({ width: 1024, height: 400 });
+
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara');
+
+        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+        await expect(dataRows).toHaveCount(101);
+
+        // まず最初の行を選択してフォーカスをテーブルに当てる（{ force: true } のためフォーカスが必要）
+        const firstCell = getDataCell(table, 0, 0);
+        await firstCell.click();
+
+        // ターゲット行（rowIndex=30）の下端が画面下端からはみ出るようスクロールする
+        // offsetTop を使って、行の上端がコンテナ表示領域の下端から5pxだけ内側に来るようにする
+        // これにより行の大部分は画面外にはみ出す
+        const targetRowIndex = 30;
+        await page.evaluate(([rowIdx]) => {
+            const container = document.querySelector('.editor-left-pane');
+            if (!container) return;
+            const rows = container.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
+            const targetRow = rows[rowIdx + 1] as HTMLElement | undefined; // +1 でヘッダー行をスキップ
+            if (!targetRow) return;
+            // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
+            // これにより行の大部分（下端）は画面外にはみ出す
+            container.scrollTop = targetRow.offsetTop - container.clientHeight + 5;
+        }, [targetRowIndex] as [number]);
+
+        // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
+        const containerRectAfterScroll = await getContainerRectAsync(page);
+        const cellRectBefore = await getCellBoundingRectAsync(page, targetRowIndex, 2);
+        expect(
+            cellRectBefore.bottom,
+            `ターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
+        ).toBeGreaterThan(containerRectAfterScroll.bottom);
+
+        // スクロール前のスクロール量を記録する
+        const scrollBefore = await getScrollPositionAsync(page);
+
+        // ターゲットセルに対して mousedown イベントを直接ディスパッチする
+        // page.mouse.click() や Locator.click() はブラウザの scrollIntoView が介入するため、
+        // evaluate 経由でイベントを直接発火し、アプリケーション側の自動スクロールのみを検証する
+        await page.evaluate(([rowIdx, colIdx]) => {
+            const rows = document.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
+            const row = rows[rowIdx + 1] as HTMLElement | undefined;
+            if (!row) return;
+            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
+            const cell = cells[colIdx] as HTMLElement | undefined;
+            if (!cell) return;
+            cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+            cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+        }, [targetRowIndex, 2] as [number, number]);
+
+        // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
+        // クリック後のスクロール量を取得する
+        const scrollAfter = await getScrollPositionAsync(page);
+
+        // クリック後にセルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
+        expect(
+            scrollAfter.scrollTop,
+            `クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBefore.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBefore.scrollTop);
+
+        // さらにクリック後にターゲットセルが完全に画面内に収まっていることを確認する
+        const containerRectFinal = await getContainerRectAsync(page);
+        const cellRectAfter = await getCellBoundingRectAsync(page, targetRowIndex, 2);
+        expect(
+            cellRectAfter.bottom,
+            `自動スクロール後もターゲットセルが画面外にある（bottom=${cellRectAfter.bottom}, containerBottom=${containerRectFinal.bottom}）`,
+        ).toBeLessThanOrEqual(containerRectFinal.bottom);
+    },
+);
+
+test(
+    'Shift+クリックで選択範囲を拡張した際、拡張先のセルが画面内に収まるようスクロールされること',
+    async ({ page }) => {
+        // 小さいビューポートでスクロールが発生しやすくする
+        await page.setViewportSize({ width: 1024, height: 400 });
+
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara');
+
+        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+        await expect(dataRows).toHaveCount(101);
+
+        // 1行目のセルを通常クリックして選択開始位置（アンカー）を確立する
+        const anchorCell = getDataCell(table, 0, 0);
+        await anchorCell.click();
+
+        // Shift+クリックのターゲット行（rowIndex=30）の下端が画面外にはみ出るようスクロールする
+        const targetRowIndex = 30;
+        await page.evaluate(([rowIdx]) => {
+            const container = document.querySelector('.editor-left-pane');
+            if (!container) return;
+            const rows = container.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
+            const targetRow = rows[rowIdx + 1] as HTMLElement | undefined;
+            if (!targetRow) return;
+            // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
+            container.scrollTop = targetRow.offsetTop - container.clientHeight + 5;
+        }, [targetRowIndex] as [number]);
+
+        // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
+        const containerRectAfterScroll = await getContainerRectAsync(page);
+        const cellRectBefore = await getCellBoundingRectAsync(page, targetRowIndex, 0);
+        expect(
+            cellRectBefore.bottom,
+            `Shift+クリックのターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
+        ).toBeGreaterThan(containerRectAfterScroll.bottom);
+
+        // スクロール前のスクロール量を記録する
+        const scrollBefore = await getScrollPositionAsync(page);
+
+        // ターゲットセルに対して Shift+mousedown を直接ディスパッチする
+        await page.evaluate(([rowIdx, colIdx]) => {
+            const rows = document.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
+            const row = rows[rowIdx + 1] as HTMLElement | undefined;
+            if (!row) return;
+            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
+            const cell = cells[colIdx] as HTMLElement | undefined;
+            if (!cell) return;
+            cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
+            cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
+        }, [targetRowIndex, 0] as [number, number]);
+
+        // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
+        // クリック後のスクロール量を取得する
+        const scrollAfter = await getScrollPositionAsync(page);
+
+        // Shift+クリック後に拡張先セルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
+        expect(
+            scrollAfter.scrollTop,
+            `Shift+クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBefore.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBefore.scrollTop);
+
+        // さらにShift+クリック後にターゲットセルが完全に画面内に収まっていることを確認する
+        const containerRectFinal = await getContainerRectAsync(page);
+        const cellRectAfter = await getCellBoundingRectAsync(page, targetRowIndex, 0);
+        expect(
+            cellRectAfter.bottom,
+            `Shift+クリック自動スクロール後もターゲットセルが画面外にある（bottom=${cellRectAfter.bottom}, containerBottom=${containerRectFinal.bottom}）`,
+        ).toBeLessThanOrEqual(containerRectFinal.bottom);
+    },
+);
