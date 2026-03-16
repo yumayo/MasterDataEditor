@@ -41,4 +41,6 @@
     line-height: 44px;
     list-style: none;
     white-space: nowrap;
+    /* 親の.tab-scroll-areaの高さを埋めるために100%を設定する */
+    height: 100%;
 }
