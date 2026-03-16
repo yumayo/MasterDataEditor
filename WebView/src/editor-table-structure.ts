@@ -470,16 +470,21 @@ export class EditorTableStructure {
             // ソートインジケーター
             const sortIndicator = document.createElement('div');
             sortIndicator.classList.add('sort-indicator');
+            // 昇順・降順の矢印アイコンを縦積みにするラッパー
+            const arrowPair = document.createElement('span');
+            arrowPair.classList.add('sort-arrow-pair');
             const ascIcon = document.createElement('span');
             ascIcon.classList.add('sort-icon-asc');
-            ascIcon.textContent = '▲';
+            ascIcon.appendChild(this.createSortArrowSvg('M5 0 L10 6 L0 6 Z'));
             const descIcon = document.createElement('span');
             descIcon.classList.add('sort-icon-desc');
-            descIcon.textContent = '▼';
+            descIcon.appendChild(this.createSortArrowSvg('M5 6 L0 0 L10 0 Z'));
+            arrowPair.appendChild(ascIcon);
+            arrowPair.appendChild(descIcon);
             const prioritySpan = document.createElement('span');
             prioritySpan.classList.add('sort-priority');
-            sortIndicator.appendChild(ascIcon);
-            sortIndicator.appendChild(descIcon);
+            // sort-indicator は横並び（row）: arrowPair（矢印縦積み） + prioritySpan（優先度番号）
+            sortIndicator.appendChild(arrowPair);
             sortIndicator.appendChild(prioritySpan);
             // ソートインジケータークリックで列ソートをトグルする
             // mousedown は列選択ハンドラへのバブリングを防止するために停止する
@@ -534,6 +539,26 @@ export class EditorTableStructure {
             this.areaResizer.setupRowResizeHandle(newResizeHandle, header, i);
             header.appendChild(newResizeHandle);
         }
+    }
+
+    /**
+     * ソート矢印用SVG要素を生成するプライベートヘルパー。
+     * ascIcon / descIcon の両方で使用するため共通化する。
+     * pathData のみが異なり、それ以外の属性（width/height/viewBox/fill）は共通。
+     */
+    private createSortArrowSvg(pathData: string): SVGSVGElement {
+        const svgNs = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNs, 'svg');
+        svg.setAttribute('width', '10');
+        svg.setAttribute('height', '6');
+        svg.setAttribute('viewBox', '0 0 10 6');
+        svg.setAttribute('aria-hidden', 'true'); // 装飾用SVGをスクリーンリーダーから隠す
+        svg.style.pointerEvents = 'none';
+        const path = document.createElementNS(svgNs, 'path');
+        path.setAttribute('d', pathData);
+        path.setAttribute('fill', 'currentColor');
+        svg.appendChild(path);
+        return svg;
     }
 
     /**

@@ -17,13 +17,12 @@
     color: var(--border-color);
     user-select: none;
     border-radius: 2px;
-    transition: color 0.15s, background-color 0.15s;
+    transition: color 0.15s;
     z-index: 2;
 }
 
 .filter-icon:hover {
     color: var(--font-color);
-    background-color: rgba(128, 128, 128, 0.1);
 }
 
 /* フィルター適用中のヘッダーセル */

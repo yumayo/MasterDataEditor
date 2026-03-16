@@ -276,13 +276,15 @@
     text-underline-offset: 2px;
 }
 
-/* ソートインジケーター: リサイズハンドルの左に配置、右寄せ */
+/* ソートインジケーター: リサイズハンドルの左に配置、右寄せ。
+   arrowPair（矢印縦積み）と prioritySpan（優先度番号）を横並びで配置する。 */
 .sort-indicator {
     position: absolute;
     right: 8px;
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;
+    flex-direction: row;
     align-items: center;
     gap: 1px;
     cursor: pointer;
@@ -290,12 +292,19 @@
     z-index: 1;
 }
 
-/* 昇順・降順アイコン: デフォルトで薄い色 */
+/* 昇順・降順の矢印アイコンを縦に並べるラッパー */
+.sort-arrow-pair {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+/* 昇順・降順アイコン: デフォルトで薄い色。display:flex でフォントメトリクス由来のline-boxを排除しSVGサイズを正確に反映 */
 .sort-icon-asc,
 .sort-icon-desc {
-    font-size: 0.6em;
     opacity: 0.3;
-    line-height: 1;
+    display: flex;
 }
 
 /* 昇順アクティブ時: 昇順アイコンを強調表示 */
