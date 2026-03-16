@@ -157,6 +157,17 @@
 - **MINOR**: テスト1番の { timeout: 100 } はモックが速いので通るが「即座表示」の証明としては不十分。フレイキーリスクあり。
 - **PATTERN**: ディレイを削除するとき「ディレイ中は発火しない」ガード条件も必ず合わせて見直すこと。旧コードの hoverTimerId !== 0 ガードが hidePreviewWithDelay に存在していた。
 
+## Click Auto-Scroll (scroll-position / selection.ts) Known Patterns
+- **CRITICAL**: extendSelection()にscrollCellIntoView()を追加すると、ドラッグ中(selecting=true)にDragControllerのオートスクロールと競合する。`if (!this.selecting)` ガードが必須。
+- **CRITICAL**: start()のscrollFocusIntoView()→rAF再適用が、ドラッグ開始直後のDragControllerスクロールを上書きする競合がある。rAFコールバック内でselecting確認が必要。
+- **IMPORTANT**: selectColumn/selectRow/extendToColumn/extendToRowにもscrollFocusIntoViewが必要 — 操作パスの網羅漏れパターン再発
+- **PATTERN**: scrollCellIntoView()のrAF再適用はdrag中に高頻度登録される。selecting=trueのガードで呼び出し自体を抑制する設計が正しい。
+- **TEST PATTERN**: getCellBoundingRectAsyncのセレクタが.editor-table-empty-rowを除外していないとバッファ行構造変更時にOff-by-one発生
+- **TEST PATTERN**: 使われていないcontainerRect変数がデッドコードとして両テストに存在
+
+## Review History (2026-03-17 続き)
+- (click-auto-scroll selection.ts): 致命的2件、重要3件、軽微3件
+
 ## Review History (2026-03-16)
 - (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
 - (diff-tab-resize-handle): 致命的2件、重要3件、軽微2件

@@ -127,6 +127,14 @@
 - 残課題(🟡): diff-row-deleted 行に data-diff-kind 属性なし（BUG_0021から継続）
 - 確認パターン: 保存経路（Ctrl+S）でのコンテキストメニュー hide() 漏れは「操作パスの網羅漏れ」パターン（bug-report #8, #65）の典型
 
+#### マウスクリック/Shift+クリック 自動スクロール追加（2026-03-17レビュー）評価: A-
+- ファイル: project_scroll_position_autoscroll.md
+- マウスクリック: fill-handle left:519px/top:668px + corner-cell left:161px → 行32・列2へのスクロール正常
+- Shift+クリック: 31行のrow-header selected + 列ヘッダー1個 = 32要素選択 + corner-cell left:0px → 拡張先スクロール正常
+- Tab確定後・セル編集確定後もスクロール位置維持を確認（top=1907px/2033px）
+- 残課題(🟡): selectRow/selectColumn/extendToRow/extendToColumn/selectAll に scrollFocusIntoView 未追加（対称操作の欠落 bug-report #3）
+- 残課題(🟡): scrollCellIntoView の rAF ID を保持していないため高速連続クリック時の競合リスク（bug-report #85パターン）
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ
