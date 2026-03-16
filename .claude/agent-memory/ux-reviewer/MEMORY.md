@@ -152,6 +152,20 @@
 - 残課題(🟡): HEADER_ICON_AREA_PX=48 の算出根拠が CSS の absolute positioning に依存（CSSを変えると定数更新漏れリスク）
 - 良いパターン: sortIndicator.addEventListener('mousedown', e.stopPropagation) で列選択への誤バブリングを防止
 
+#### FEAT_0035 フィルター機能改修（2026-03-17レビュー）評価: A-
+- ファイル: project_feat0035_filter_improvements.md
+- 7つの改修（空文字除外・ESCキー・FK参照ヒント・ヒント検索・「検索結果なし」・横幅拡大・ボタン均等幅）すべて正常動作確認
+- FK列フィルター: label.filter-item > span.filter-item-label + span.filter-item-hint の2要素構造
+- 非FK列フィルター: label.filter-item > span.filter-item-label のみ（filter-item-hint なし）。FK/非FK列で対称に実装
+- 空文字除外: category列に空文字セルが2行あってもドロップダウンリストに空文字エントリーなし
+- 空文字行常時表示: weapon選択フィルター適用後も空文字行が display:none にならず表示維持（正しい）
+- 行数カウンター: div.filter-row-count に "3 / 5 行" 形式で表示（適用中のみ display:block）
+- 残課題(🟡): filter-dropdown に role="dialog" / aria-label がない（スクリーンリーダー非対応）
+- 残課題(🟡): filter-item の label 要素に for 属性がない（内包関係は機能するが明示的関連付けが望ましい）
+- 残課題(🟡): filter-item-hint に aria-label がない（「これが何のヒントか」が機械可読でない）
+- 残課題(🟡): filter-apply が filter-buttons div の外で独立している（DOM構造の整理余地あり）
+- 残課題(🟡): filter-no-result に aria-live="polite" がない（動的更新のスクリーンリーダー非対応）
+
 #### FEAT_0034 アクティビティバー調整（2026-03-17レビュー）評価: A-
 - gitアイコン: circle×3 + path でブランチ分岐を正確に表現。stroke="currentColor"でテーマ対応完全
 - 透明border常時配置: `.activity-bar-item { border-left: 2px solid transparent; box-sizing: border-box }` でレイアウトシフト防止
