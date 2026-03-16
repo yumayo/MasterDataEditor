@@ -152,6 +152,17 @@
 - 残課題(🟡): HEADER_ICON_AREA_PX=48 の算出根拠が CSS の absolute positioning に依存（CSSを変えると定数更新漏れリスク）
 - 良いパターン: sortIndicator.addEventListener('mousedown', e.stopPropagation) で列選択への誤バブリングを防止
 
+#### FEAT_0034 アクティビティバー調整（2026-03-17レビュー）評価: A-
+- gitアイコン: circle×3 + path でブランチ分岐を正確に表現。stroke="currentColor"でテーマ対応完全
+- 透明border常時配置: `.activity-bar-item { border-left: 2px solid transparent; box-sizing: border-box }` でレイアウトシフト防止
+- 選択色: `.activity-bar-item-active { border-left: 2px solid var(--selection-color) }` でVSCode準拠の青色border
+- 全アイコンが fill="currentColor" / stroke="currentColor" で統一。bug-report #116（ハードコード色）パターン回避
+- 残課題(🔴): `.activity-bar-item` が div 要素で role="button" / tabindex / aria-label がない（キーボード操作不可・継続パターン）
+- 残課題(🔴): SVGに aria-hidden="true" がなく親要素にも aria-label がない（FEAT_0026・FEAT_0033と同じ継続課題）
+- 残課題(🟡): SVG生成に innerHTML を使用（createElementNS を推奨するプロジェクト方針との不一致）
+- 残課題(🟡): gitアイコン下端ノード cy=20+r=2.5 → 下端22.5px（viewBox下端まで1.5px）。stroke-width=1.5でclip懸念
+- 残課題(🟡): アクティブ時にアイコン色自体の変化がない（opacity変化 + border-left のみ。アイコン青染めで二重強調の余地あり）
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ
