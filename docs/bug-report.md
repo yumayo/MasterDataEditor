@@ -1926,3 +1926,24 @@ CSSレイアウトモデルの不整合とSVGパスの視認性不足
 3. **フィルタリング条件のロジックが複数箇所に存在する場合は、DOMの状態を直接参照して重複を排除する。** `this.itemList.contains(item)` のように実際のDOM状態を参照すれば、条件の同期漏れを防げる。
 
 ---
+
+## 132. [d9f5be3] — 列幅自動調整機能の追加（ダブルクリック/複数列一括リサイズ）
+
+### 不具合原因名
+機能追加に伴うレビュー指摘（設計上の抜け漏れ）
+
+### なぜそうなったのか
+1. `Selection.isSelectingColumn()` はドラッグ中のみtrueとなるフラグであり、mouseup後の `selection.end()` でfalseにリセットされる。D&Dリサイズのmouseupハンドラ時点では常にfalseを返すため、選択範囲の構造（全行選択かどうか）で列全体選択を判定する必要があった。
+2. `applyColumnWidthWithUndo` と `applyAutoFitColumnWidth` の2メソッドを作った際、差異がwidth factoryだけだったにもかかわらずコピペで重複させてしまった。
+3. D&Dリサイズの外側ガード（`resizeColumnOldWidth !== newWidthStr`）が複数列選択を考慮していなかった。ドラッグ対象列が元の幅に戻った場合、他の選択列が更新されないバグを埋め込んでいた。
+4. `.cell-reverse-reference-hint`（逆参照ヒント）をquerySelectorの対象に含め忘れた。
+
+### どうしたら今後は再発しないか
+1. 状態フラグ（`isSelectingColumn`等）に依存する前に、そのフラグのライフサイクル（いつtrue/falseになるか）を確認する。特にmouseup系のハンドラでは、SelectionDragControllerの `end()` が先行して呼ばれる可能性を常に考慮する。
+2. 2つのメソッドで同じ制御フローが現れたら即座にwidth factoryパターン等で統合する。「後で統合する」は実行されない。
+3. 複数列選択時の操作では「ドラッグ対象列」と「他の選択列」の両方を考慮したテストケースを書く。特に「ドラッグ対象列だけが変化しない」エッジケースを忘れない。
+4. querySelectorで参照ヒントを扱う場合は `.cell-reference-hint, .cell-reverse-reference-hint` の両方を常にセットで記述する。
+
+---
+
+---

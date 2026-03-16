@@ -1,8 +1,11 @@
 import type { History } from "./history";
 import type { Selection } from "./selection";
 import type { EditorTable } from "./editor-table";
-import { ColumnWidthCommand, RowHeightCommand } from "./command";
-import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT } from "./constant";
+import { ColumnWidthCommand, RowHeightCommand, CompositeCommand } from "./command";
+import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COLUMN_WIDTH_PX } from "./constant";
+
+/** D&D開始と判定する最小移動距離(px) */
+const DRAG_MIN_DISTANCE_PX = 3;
 
 export class AreaResizer {
     private editorTable!: EditorTable;
@@ -17,6 +20,8 @@ export class AreaResizer {
     private resizeStartWidth: number = 0;
     private resizeColumnStartLeft: number = 0;
     private resizeColumnOldWidth: string = DEFAULT_COLUMN_WIDTH;
+    /** mousedownからの移動距離がDRAG_MIN_DISTANCE_PX以上になったらD&D確定 */
+    private columnDragConfirmed: boolean = false;
 
     private isResizingRow: boolean = false;
     private resizingRowIndex: number = -1;
@@ -56,8 +61,11 @@ export class AreaResizer {
         this.mousemoveHandler = (e: MouseEvent) => {
             if (this.isResizingColumn) {
                 const deltaX = e.clientX - this.resizeStartX;
+                // DRAG_MIN_DISTANCE_PX 以上動いたらD&D確定（ダブルクリックとの排他）
+                if (!this.columnDragConfirmed && Math.abs(deltaX) >= DRAG_MIN_DISTANCE_PX) {
+                    this.columnDragConfirmed = true;
+                }
                 const newLeft = this.resizeColumnStartLeft + deltaX;
-
                 // ガイドラインの位置を更新（実際のセルは変更しない）
                 this.resizeGuideline.style.left = newLeft + 'px';
             }
@@ -65,7 +73,6 @@ export class AreaResizer {
             if (this.isResizingRow) {
                 const deltaY = e.clientY - this.resizeStartY;
                 const newTop = this.resizeRowStartTop + deltaY;
-
                 // ガイドラインの位置を更新（実際のセルは変更しない）
                 this.resizeGuideline.style.top = newTop + 'px';
             }
@@ -73,33 +80,12 @@ export class AreaResizer {
 
         this.mouseupHandler = (e: MouseEvent) => {
             if (this.isResizingColumn) {
-                const deltaX = e.clientX - this.resizeStartX;
-                const newWidth = Math.max(20, this.resizeStartWidth + deltaX);
-                const newWidthStr = newWidth + 'px';
-
-                // 幅が変わった場合のみ履歴に追加
-                if (this.resizeColumnOldWidth !== newWidthStr) {
-                    const command = new ColumnWidthCommand(
-                        this.editorTable,
-                        this.resizingColumnIndex,
-                        this.resizeColumnOldWidth,
-                        newWidthStr
-                    );
-                    // マウスアップ時にセルのスタイルを更新
-                    this.editorTable.setColumnWidth(this.resizingColumnIndex, newWidthStr);
-
-                    // 履歴に追加（既に実行済み）
-                    const copyRange = this.selection.getCopyRange();
-                    const anchor = this.selection.getAnchor();
-                    this.history.pushCommand(command, {
-                        startRow: anchor.row,
-                        startColumn: anchor.column,
-                        endRow: anchor.row,
-                        endColumn: anchor.column
-                    }, copyRange);
-
-                    // selection の描画領域を更新
-                    this.selection.updateRendererAfterResize();
+                // D&D確定している場合のみリサイズを実行（dblclickによるmousedownは除外）
+                if (this.columnDragConfirmed) {
+                    const deltaX = e.clientX - this.resizeStartX;
+                    const newWidth = Math.max(MIN_COLUMN_WIDTH_PX, this.resizeStartWidth + deltaX);
+                    const newWidthStr = newWidth + 'px';
+                    this.applyColumnsWidthWithUndo(this.resizingColumnIndex, () => newWidthStr);
                 }
 
                 // ガイドラインを非表示
@@ -144,7 +130,70 @@ export class AreaResizer {
 
             this.isResizingColumn = false;
             this.isResizingRow = false;
+            this.columnDragConfirmed = false;
         };
+    }
+
+    /**
+     * 指定列（または複数列選択中の全列）に widthFactory で算出した幅を適用し、Undo/Redo用コマンドを登録する。
+     * D&Dリサイズ（全選択列に同一幅）とダブルクリック自動フィット（各列個別幅）の共通実装。
+     * 複数列選択中かつ対象列が選択範囲内の場合は全選択列に適用し、1回のUndoで全列を元に戻せる複合コマンドを使用する。
+     * @param targetColumnIndex 操作対象の列インデックス（0始まり、行ヘッダーを除く）
+     * @param widthFactory 列インデックスを受け取り適用する幅文字列を返す関数
+     */
+    private applyColumnsWidthWithUndo(targetColumnIndex: number, widthFactory: (colIndex: number) => string): void {
+        const copyRange = this.selection.getCopyRange();
+        const anchor = this.selection.getAnchor();
+        const historyRange = {
+            startRow: anchor.row,
+            startColumn: anchor.column,
+            endRow: anchor.row,
+            endColumn: anchor.column
+        };
+
+        // 選択範囲が列全体選択を表しているか判定（context-menu.ts と同じ判定方式）
+        const selectionRange = this.selection.getSelectionRange();
+        const lastRow = this.editorTable.getRowCount() - 1;
+        const isColumnSelection = selectionRange.startRow === 1 && selectionRange.endRow === lastRow;
+        // targetColumnIndex は0始まり、selectionRange の column は1始まり（行ヘッダー含む）
+        const targetSelectionColumn = targetColumnIndex + 1;
+        const isInSelection = targetSelectionColumn >= selectionRange.startColumn && targetSelectionColumn <= selectionRange.endColumn;
+
+        if (!isColumnSelection || !isInSelection) {
+            // 単列変更: 列全体選択でないか選択範囲外の列を操作した場合
+            const oldWidth = this.editorTable.getColumnWidth(targetColumnIndex);
+            const newWidth = widthFactory(targetColumnIndex);
+            if (oldWidth === newWidth) return;
+            const command = new ColumnWidthCommand(this.editorTable, targetColumnIndex, oldWidth, newWidth);
+            this.editorTable.setColumnWidth(targetColumnIndex, newWidth);
+            this.history.pushCommand(command, historyRange, copyRange);
+            this.selection.updateRendererAfterResize();
+            return;
+        }
+
+        // 複数列選択中かつ対象列が選択範囲内: 選択範囲の全列に widthFactory で算出した幅を適用
+        const startCol = selectionRange.startColumn;
+        const endCol = selectionRange.endColumn;
+
+        // 幅が変わる列のみコマンドを生成（変化なし列はスキップ）
+        const commands: ColumnWidthCommand[] = [];
+        for (let col = startCol; col <= endCol; col++) {
+            // 列インデックスへの変換: selectionのcolumnはDOMのcolumn（行ヘッダーを含むため1始まり）
+            // EditorTableのcolumnIndexは0始まり（行ヘッダーを除く）
+            const colIndex = col - 1;
+            const oldWidth = this.editorTable.getColumnWidth(colIndex);
+            const newWidth = widthFactory(colIndex);
+            if (oldWidth === newWidth) continue;
+            commands.push(new ColumnWidthCommand(this.editorTable, colIndex, oldWidth, newWidth));
+            this.editorTable.setColumnWidth(colIndex, newWidth);
+        }
+
+        if (commands.length === 0) return;
+
+        // 1コマンドの場合は直接使用、複数の場合はCompositeCommandでラップして1回のUndoで全列を元に戻せるようにする
+        const command = commands.length === 1 ? commands[0] : new CompositeCommand(commands);
+        this.history.pushCommand(command, historyRange, copyRange);
+        this.selection.updateRendererAfterResize();
     }
 
     /**
@@ -171,6 +220,7 @@ export class AreaResizer {
             e.preventDefault();
             e.stopPropagation();
             this.isResizingColumn = true;
+            this.columnDragConfirmed = false;
             this.resizingColumnIndex = columnIndex;
             this.resizeStartX = e.clientX;
             const width = Number.parseFloat(columnHeaderCell.style.width);
@@ -188,6 +238,13 @@ export class AreaResizer {
             this.resizeGuideline.style.top = '0';
             this.resizeGuideline.classList.add('resize-guideline-column');
             this.resizeGuideline.classList.remove('resize-guideline-row');
+        });
+
+        // ダブルクリックで自動幅調整（D&Dとは排他、mouseupで既にリセット済み）
+        resizeHandle.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.applyColumnsWidthWithUndo(columnIndex, (col) => this.editorTable.calculateAutoColumnWidth(col));
         });
     }
 

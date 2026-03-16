@@ -5,7 +5,7 @@ import {ContextMenu} from "./context-menu";
 import {History} from "./history";
 import {CellChange} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_ROW_HEIGHT} from "./constant";
+import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_LEFT_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
@@ -22,6 +22,7 @@ import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
 import {ColumnSorter} from "./column-sorter";
 import {ColumnFilter} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
+import {Utility} from "./utility";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -653,6 +654,54 @@ export class EditorTable {
             widths.push(this.getColumnWidth(i));
         }
         return widths;
+    }
+
+    /**
+     * 指定列の自動フィット幅を計算する。
+     * 全データ行のセルテキスト幅と参照ヒント幅を Canvas API で計測し、
+     * ヘッダー幅との最大値を返す。バッファ空行（editor-table-empty-row）は計算対象外。
+     * ミニテーブルかどうかは this.isMiniTable で自動判定する。
+     * @param columnIndex 列インデックス（0始まり、行ヘッダーを除く）
+     */
+    calculateAutoColumnWidth(columnIndex: number): string {
+        const ctx = Utility.canvas.getContext('2d');
+        if (ctx === null) throw new Error('Canvas 2D コンテキストの取得に失敗しました');
+
+        // ヘッダー幅を基底値として取得（ミニテーブルはアイコンなし）
+        const columnName = this.getColumnHeaderValue(columnIndex);
+        const headerWidthStr = Utility.calculateColumnWidth(columnName, !this.isMiniTable);
+        let maxWidth = parseFloat(headerWidthStr);
+
+        // 全データ行（バッファ空行を除く）のセル幅を計測
+        const rowCount = this.element.children.length;
+        for (let rowIdx = 1; rowIdx < rowCount; rowIdx++) {
+            const rowElement = this.element.children[rowIdx] as HTMLElement;
+            // バッファ空行はスキップ
+            if (rowElement.classList.contains('editor-table-empty-row')) continue;
+
+            // 列ヘッダーセルを除いた列インデックス（columnIndex+1 が DOM上の位置）
+            const cell = rowElement.children[columnIndex + 1] as HTMLElement | undefined;
+            if (!cell) continue;
+
+            // セルテキスト値の幅を計測
+            const cellValue = EditorTable.getCellValue(cell);
+            ctx.font = CELL_FONT;
+            const textWidth = ctx.measureText(cellValue).width;
+
+            // 参照ヒント幅を計測（通常参照ヒント・逆参照ヒントのどちらも対象）
+            const hintElement = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint') as HTMLElement | null;
+            let hintWidth = 0;
+            if (hintElement !== null) {
+                ctx.font = REFERENCE_HINT_FONT;
+                hintWidth = ctx.measureText(hintElement.textContent as string).width + REFERENCE_HINT_MARGIN_LEFT_PX;
+            }
+
+            // セル全体の占有幅 = テキスト幅 + ヒント幅 + パディング
+            const cellTotalWidth = Math.ceil(textWidth + hintWidth) + CELL_HORIZONTAL_EXTRA;
+            if (cellTotalWidth > maxWidth) maxWidth = cellTotalWidth;
+        }
+
+        return `${Math.max(maxWidth, MIN_COLUMN_WIDTH_PX)}px`;
     }
 
     /**
