@@ -142,6 +142,16 @@
 - 残課題(🟡): .tab-button-dirty に title 属性なし（未保存ドットの意味が初見では不明）
 - 要確認: .tab-button の height は tab.css に明示ルールなし（flex stretch で伸びている可能性。CSS側の根拠明示が望ましい）
 
+#### FEAT_0033 フィルターとソートアイコンの位置・見た目調整（2026-03-17レビュー）評価: A
+- ソートアイコン: createElementNS で SVG 化。ascSvg(10x6)とdescSvg(10x6)が sort-indicator 内に縦並び（gap:1px）
+- フィルターアイコンhover: background-color 削除済み。color: var(--font-color) のみ変化するスッキリした実装
+- フィルターアイコン(right:30px)とソートインジケーター(right:8px)の間に36pxの隙間があり重ならない
+- fill="currentColor" と opacity:0.3/1.0 の二段階表現で「ソート可能/ソート中」の状態が視覚的に明確
+- 残課題(🟡): sort-indicator div に role="button" / title / aria-label がない（継続パターン）
+- 残課題(🟡): sort-icon-asc/desc の svg に aria-hidden="true" がない（FEAT_0026と同じ継続課題）
+- 残課題(🟡): HEADER_ICON_AREA_PX=48 の算出根拠が CSS の absolute positioning に依存（CSSを変えると定数更新漏れリスク）
+- 良いパターン: sortIndicator.addEventListener('mousedown', e.stopPropagation) で列選択への誤バブリングを防止
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ

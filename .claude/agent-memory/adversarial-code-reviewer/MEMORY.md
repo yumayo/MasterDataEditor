@@ -165,8 +165,20 @@
 - **TEST PATTERN**: getCellBoundingRectAsyncのセレクタが.editor-table-empty-rowを除外していないとバッファ行構造変更時にOff-by-one発生
 - **TEST PATTERN**: 使われていないcontainerRect変数がデッドコードとして両テストに存在
 
+## Sort/Filter Icon SVG (FEAT_0033) Known Patterns
+- **FIXED R2**: arrowPairラッパーspan導入でprioritySpanのflexrow横並び問題が解消
+- **CRITICAL (R2未解決)**: span.sort-icon-asc/descのline-height:1が残存。display:flexまたはdisplay:inline-flexを付与しないとfont metrics由来のline-boxがSVGサイズと不整合になる
+- **CRITICAL (FEAT_0023継続)**: area-resizerの最小列幅が20pxハードコード → MIN_COLUMN_WIDTH_PX(50px)と乖離。has-icons列で20pxまで縮小するとアイコンがセル外にはみ出す
+- **IMPORTANT (R2未解決)**: createSortArrowSvgにaria-hidden="true"がない — 装飾SVG全般に必須
+- **IMPORTANT (R2未解決)**: E2Eテストでfor+breakパターンが3テスト全てに再発 — 「最初の1列だけ検証」で全列カバーしない
+- **MINOR (R2未解決)**: filter-icon border-radius:2pxがbackground-color削除後もデッドCSSとして残存
+- **PATTERN**: flexレイアウト変更時は複数列ソート優先度表示パスを必ずテストすること
+- **PATTERN**: SVGをspan内に入れる場合はaria-hidden="true"を付与すること（装飾目的のSVG全般に適用）
+- **PATTERN**: E2Eテストでfor+breakパターンは「最初の1件しか検証しない」欠陥になる。全件走査すること
+
 ## Review History (2026-03-17 続き)
 - (click-auto-scroll selection.ts): 致命的2件、重要3件、軽微3件
+- (FEAT_0033 sort-filter-icon R2): 致命的2件、重要2件、軽微2件
 
 ## Review History (2026-03-16)
 - (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
@@ -197,3 +209,4 @@
 - (FEAT_0027 dropdown-quickview-singleton): 致命的3件、重要3件、軽微3件
 - (FEAT_0027 R2 dropdown-quickview-singleton-fix): 致命的2件、重要3件、軽微3件
 - (BUG_0024 N:1コンテキストヒント修正): 致命的2件、重要2件、軽微2件
+- (FEAT_0033 sort-filter-icon-adjustment): 致命的2件、重要3件、軽微2件
