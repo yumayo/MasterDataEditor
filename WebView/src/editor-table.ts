@@ -1167,6 +1167,17 @@ export class EditorTable {
     getStoreRowIndices(): number[] { return this.storeRowIndices; }
 
     /**
+     * 差分タブの右ペインでのパディング行（.diff-row-empty）のストア行インデックスを返す。
+     * EditorTableHandler の保存処理から呼ばれ、差分タブの DiffTab に委譲する。
+     * このメソッドは差分タブの右ペイン（saveTargetTableName が設定されたコンテキスト）でのみ呼ばれる。
+     * diffTab === false の場合は到達不能であり、フォールバックとして空配列を返すことはデータ破壊のリスクがあるため例外を投げる。
+     */
+    getDiffPaddingStoreRowIndices(): readonly number[] {
+        if (this.diffTab === false) throw new Error('[EditorTable] getDiffPaddingStoreRowIndices: 差分タブ以外のコンテキストで呼び出されました。呼び出し側のガード条件を確認してください。');
+        return this.diffTab.computeCurrentRightPaddingStoreRowIndices();
+    }
+
+    /**
      * ソート中に行が挿入されたことをColumnSorterに通知する（EditorTableStructureから呼ばれる）
      */
     notifySortRowInserted(storeRowIndex: number): void { this.columnSorter.notifyRowInserted(storeRowIndex); }

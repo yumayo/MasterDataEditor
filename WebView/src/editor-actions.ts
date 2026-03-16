@@ -362,14 +362,17 @@ export async function saveTableDataFromStoreAsync(tableName: string, store: InMe
  *
  * 差分タブのストアキーは "tableName:diff:current" のような不正パスのため、
  * 保存先ファイル（saveTableName）とデータ取得元（storeKey）を分離して渡す。
+ * paddingStoreRowIndices に指定したストア行インデックスは除外してCSVを出力する。
+ * これにより deleted行に対応するパディング行（全列空の行）がCSVに混入することを防ぐ。
  *
  * @param saveTableName 保存先テーブル名（= ファイルパス `data/saveTableName.csv`）
  * @param store InMemoryTableStore（全行全列データを持つ）
  * @param storeKey ストアのキー（差分タブでは "tableName:diff:current" 等の専用キー）
+ * @param paddingStoreRowIndices 保存から除外するストア行インデックス（パディング行）
  */
-export async function saveDiffTableDataFromStoreAsync(saveTableName: string, store: InMemoryTableStore, storeKey: string): Promise<void> {
+export async function saveDiffTableDataFromStoreAsync(saveTableName: string, store: InMemoryTableStore, storeKey: string, paddingStoreRowIndices: readonly number[]): Promise<void> {
     const csvPath = `data/${saveTableName}.csv`;
-    const csv = store.getCsv(storeKey);
+    const csv = store.getCsvWithoutRows(storeKey, paddingStoreRowIndices);
     if (csv === false) {
         throw new Error(`[saveDiffTableDataFromStoreAsync] ストアキー "${storeKey}" がストアに存在しません`);
     }

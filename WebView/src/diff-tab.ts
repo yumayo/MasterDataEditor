@@ -78,7 +78,8 @@ export class DiffTab {
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
         tabButton: TabButton,
-        tabReference: TabReference
+        tabReference: TabReference,
+        openEditorTables: Map<string, EditorTable>
     ) {
         this.isSyncing = false;
         this.dragMouseMove = null;
@@ -243,6 +244,10 @@ export class DiffTab {
             this.rightEditorTable.makeReadOnly();
         } else {
             this.rightEditorTableHandler.configureSaveTargetTableName(tableName);
+            // 差分タブ保存後に通常タブが開かれている場合にDOMを同期するため openEditorTables を設定する。
+            // connectOpenEditorTables に Tab.getOpenEditorTables() の参照を渡すことで、
+            // 保存時点でそのタブが開かれているかどうかを動的に確認できる。
+            this.rightEditorTableHandler.connectOpenEditorTables(openEditorTables);
         }
 
         // スクロール同期（左→右、右→左の双方向）—— destroy() で解除するためバインド済み関数をフィールドに保持する
@@ -341,6 +346,37 @@ export class DiffTab {
         for (let i = startDomIndex; i < leftElement.children.length; i++) {
             (leftElement.children[i] as HTMLElement).dataset.row = String(i);
         }
+    }
+
+    /**
+     * 右ペインの初期パディング行（.diff-row-initial-padding クラスを持つ行）のストア行インデックスを返す。
+     * 保存時にこれらの行をCSVから除外してパディング行の混入を防ぐために使用する。
+     *
+     * 右ペインの .diff-row-empty 行は2種類ある：
+     * 1. 初期パディング行（左ペインにデータがあり右ペインに対応行がない差分行）:
+     *    applyDiffClasses() で diff-row-initial-padding クラスと data-padding-store-index 属性が付与される。
+     *    → 保存時に除外してCSVに空行が混入しないようにする必要がある。
+     * 2. ユーザーが右ペインのデータ行を削除した後に生成されたパディング行:
+     *    notifyRightPaneRowDeleted() で生成され、diff-row-empty のみ（diff-row-initial-padding なし）。
+     *    → ストア上に既に存在しないため除外対象に含める必要がない。
+     *
+     * diff-row-initial-padding クラスの有無で2種類を明確に区別できるため、
+     * storeRowIndices（行削除で詰まる）に依存せずに正確なインデックスを返せる。
+     * 各行の data-padding-store-index 属性には生成時のストアインデックスが記録されており、
+     * 行挿入・削除・Undo/Redoが発生しても属性値は変わらないため安全。
+     */
+    computeCurrentRightPaddingStoreRowIndices(): readonly number[] {
+        const rightElement = this.rightEditorTable.getTableElement();
+        const result: number[] = [];
+        // diff-row-initial-padding クラスを持つ行のみを対象にする。
+        // ユーザー削除後のパディング行はこのクラスを持たないため自動的に除外される。
+        const paddingRows = rightElement.querySelectorAll('.diff-row-initial-padding');
+        for (const row of paddingRows) {
+            const attr = (row as HTMLElement).getAttribute('data-padding-store-index');
+            if (attr === null) throw new Error('[DiffTab] 初期パディング行に data-padding-store-index 属性がありません');
+            result.push(Number(attr));
+        }
+        return result;
     }
 
     /**
@@ -534,9 +570,14 @@ export class DiffTab {
             (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-empty'); // +1 でヘッダー行スキップ
         }
 
-        // 右ペインの空白行（削除行に対応する空白）
+        // 右ペインの空白行（削除行に対応する空白）: 初期パディング行であることを明示する。
+        // diff-row-initial-padding クラスと data-padding-store-index 属性を付与することで、
+        // ユーザー削除後のパディング行（diff-row-empty だが初期パディングではない行）と区別できる。
+        // rowIdx は rightRows 配列のインデックスであり、store.registerTable に渡したボディの行インデックスと一致する。
         for (const rowIdx of rightEmptyRowIndices) {
-            (rightElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-empty');
+            const rightRow = rightElement.children[rowIdx + 1] as HTMLElement;
+            rightRow.classList.add('diff-row-empty', 'diff-row-initial-padding');
+            rightRow.setAttribute('data-padding-store-index', String(rowIdx));
         }
 
         // 左ペインの削除行

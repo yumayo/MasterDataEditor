@@ -87,12 +87,16 @@ export class InMemoryTableStore {
 
     /**
      * テーブルデータをCSVから再読み込みする（refCountは維持）
-     * 未保存タブクローズ後もミニEditorTableのrefCountにより残っているストアデータを
-     * CSV原本に巻き戻すために使用する。
+     * 以下のシナリオで使用する:
+     * 1. 未保存タブクローズ後もミニEditorTableのrefCountにより残っているストアデータをCSV原本に巻き戻す
+     * 2. 差分タブ保存後に通常テーブルのストアを最新CSVに更新する（タブ再オープン時に古いデータを表示しないため）
+     *
+     * refCountが0でもDirtyデータ保持パス（headers.hasがtrue）の場合は更新を許可する。
+     * これにより差分タブ保存後の通常テーブルのストア更新でエラーが発生しない。
      * 巻き戻し後は補完Dirty状態もクリアする（CSVが正とする状態に戻るため）。
      */
     async reloadTableDataAsync(tableName: string): Promise<void> {
-        if (!this.refCounts.has(tableName)) throw new Error('[InMemoryTableStore] reloadTableDataAsync: テーブル "' + tableName + '" は登録されていません');
+        if (!this.headers.has(tableName)) throw new Error('[InMemoryTableStore] reloadTableDataAsync: テーブル "' + tableName + '" はストアに存在しません');
         const csvText = await readFileAsync('data/' + tableName + '.csv');
         const csv = new Csv();
         csv.load(csvText);
@@ -135,6 +139,21 @@ export class InMemoryTableStore {
         const csv = new Csv();
         csv.header = this.headers.get(tableName)!;
         csv.body = this.rows.get(tableName)!;
+        return csv;
+    }
+
+    /**
+     * 指定ストア行インデックスを除外したCsvを返す
+     * 差分タブの右ペイン保存時に、パディング行（deleted行に対応する空行）を除外するために使用する。
+     * excludeStoreRowIndices はソート済みを前提としない（Set で検索する）。
+     */
+    getCsvWithoutRows(tableName: string, excludeStoreRowIndices: readonly number[]): Csv | false {
+        if (!this.headers.has(tableName)) return false;
+        const excludeSet = new Set(excludeStoreRowIndices);
+        const csv = new Csv();
+        // 内部配列への参照漏洩を防ぐためスプレッドコピーする
+        csv.header = [...this.headers.get(tableName)!];
+        csv.body = this.rows.get(tableName)!.filter((_, i) => !excludeSet.has(i));
         return csv;
     }
 

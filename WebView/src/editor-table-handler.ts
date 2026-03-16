@@ -72,6 +72,12 @@ export class EditorTableHandler {
      */
     private saveTargetTableName: string;
     /**
+     * 差分タブ保存後に通常タブのDOMを同期するため、Tab.getOpenEditorTables() の Map を保持する。
+     * 差分タブの右ペインの EditorTableHandler にのみ connectOpenEditorTables() で設定される。
+     * false の場合は通常タブのDOM同期をスキップする（通常テーブル・ミニテーブル・差分タブ左ペイン）。
+     */
+    private openEditorTables: Map<string, EditorTable> | false;
+    /**
      * focusWithoutScrolling() が発行した rAF の ID。
      * 0 は「未発行」を表す（requestAnimationFrame は 0 を返さないため安全なセンチネル値）。
      * 連続呼び出し時の競合防止と deactivate 時のキャンセルに使用する。
@@ -104,6 +110,7 @@ export class EditorTableHandler {
         this.visible = false;
         this.readOnly = false;
         this.saveTargetTableName = '';
+        this.openEditorTables = false;
         this.dropdownActive = false;
         this.pendingScrollRestoreId = 0;
 
@@ -202,6 +209,16 @@ export class EditorTableHandler {
      */
     configureSaveTargetTableName(tableName: string): void {
         this.saveTargetTableName = tableName;
+    }
+
+    /**
+     * 差分タブ保存後に通常タブのDOMを同期するため、開かれているEditorTableのMapを設定する。
+     * Tab.getOpenEditorTables() の戻り値を渡すことで、差分タブ保存後に対応する通常タブが
+     * 開いている場合は reloadCellsFromStore() を呼び出してDOMをストアと同期させる。
+     * 差分タブの右ペイン生成時（DiffTab.buildRightEditorTablePane）から呼ぶこと。
+     */
+    connectOpenEditorTables(openEditorTables: Map<string, EditorTable>): void {
+        this.openEditorTables = openEditorTables;
     }
 
     /**
@@ -461,15 +478,38 @@ export class EditorTableHandler {
             // 差分タブの右ペイン: saveTargetTableName が設定されている場合は元テーブル名で保存する。
             // ストアキーは "tableName:diff:current" だが保存先は元の tableName にする。
             if (this.saveTargetTableName !== '') {
-                // 差分タブの右ペイン保存: ストアキーが不正パス（"tableName:diff:current"）のため、
-                // refreshGitDiffAsync をスキップして Dirty 解除のみ行う。
-                // this.table.tableName は不正パスであり git 差分取得に使えないため、
-                // markSavedAndUpdatePanel()（refreshGitDiffAsync を含む）は呼ばない。
-                saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName)
+                // 差分タブの右ペイン保存:
+                // - ストアキーは "tableName:diff:current" のような不正パスのため saveTargetTableName で保存する
+                // - getDiffPaddingStoreRowIndices() で現在のDOM状態からパディング行インデックスを動的に取得してCSVから除外する
+                // - Dirty解除は差分タブの History キー（this.table.tableName）で行う
+                // - 保存後は通常テーブルのストアも最新CSVに更新してタブ再オープン時に反映する
+                // - refreshGitDiffAsync は this.table.tableName が不正パスのためスキップする
+                const paddingIndices = this.table.getDiffPaddingStoreRowIndices();
+                saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName, paddingIndices)
                     .then(() => {
-                        this.table.getStore().markAllSaved(this.saveTargetTableName);
+                        // 問題2修正: this.table.tableName = "quest_reward:diff:current" で markAllSaved を呼ぶ。
+                        // 差分タブの History は this.table.tableName（不正パスキー）で historyRegistry に登録されており、
+                        // saveTargetTableName（"quest_reward"）では登録されていない。
+                        store.markAllSaved(this.table.tableName);
                         if (this.table.relationsPanel !== false) {
                             this.table.relationsPanel.updateDirtyMark(this.saveTargetTableName, false);
+                        }
+                        // 問題3修正: 通常テーブルのストアが存在する場合（タブが開いている、またはキャッシュ中）は
+                        // ファイルから再読み込みして最新状態に更新する。
+                        // これにより通常タブを開いたときに差分タブで保存したデータが反映される。
+                        // ただし通常テーブルがDirty状態の場合は未保存変更が上書きされるためスキップする。
+                        if (store.hasTable(this.saveTargetTableName) && !store.isTableDirty(this.saveTargetTableName)) {
+                            store.reloadTableDataAsync(this.saveTargetTableName)
+                                .then(() => {
+                                    // 指摘4修正: 通常タブが既に開かれている場合は reloadCellsFromStore() で
+                                    // ストアの最新データをDOMに反映する。
+                                    // openEditorTables は connectOpenEditorTables() で設定された Map（Tab.getOpenEditorTables() の参照）。
+                                    if (this.openEditorTables !== false && this.openEditorTables.has(this.saveTargetTableName)) {
+                                        // has() で存在確認済みのため get() は必ず EditorTable を返す。
+                                        (this.openEditorTables.get(this.saveTargetTableName) as EditorTable).reloadCellsFromStore();
+                                    }
+                                })
+                                .catch((e: unknown) => { throw new Error('[EditorTableHandler] reloadTableDataAsync failed: ' + String(e)); });
                         }
                     })
                     .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });
