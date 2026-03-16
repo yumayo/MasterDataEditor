@@ -202,6 +202,16 @@
 - 残課題(🟡): input.command-palette-input に aria-controls/aria-activedescendant なし
 - 残課題(🟡): .command-palette-item-kind クラスがCSS定義に残存するがDOMには出現しない（将来の予備枠か残骸か不明）
 
+#### FEAT_0038 検索機能改修（2026-03-17レビュー）評価: A-
+- ファイル: project_feat0038_search_improvements.md
+- span.search-highlight が3コンポーネント（コマンドパレット・フィルター・全文検索）で統一されCSSも1箇所で管理
+- data-raw-text属性でオリジナルテキスト保持、ハイライト後もマッチング対象が壊れない設計
+- 残課題(🔴): span.search-result-pk が単なる数値「1」で、PKとの対応ラベルが皆無
+- 残課題(🔴): 数値自動wholeWordのON時に「なぜ自動でONになったか」の説明がない（title属性等）
+- 残課題(🟡): search-highlight に意味的に正しい `mark` 要素の代わりに `span` を使用
+- 残課題(🟡): 全文検索パネルに「検索結果なし」表示がない（フィルタードロップダウンと非対称）
+- 残課題(🟡): .search-highlight の background-color: #fde68a がダークテーマ用の dark テーマ変数未定義（推測）
+
 ### DOM構造パターン（良い例）
 - タブバー: `div#tab > div.tab-scroll-area > ul#tab-content.tab-list > li.tab-button`
 - タブボタン: `.tab-button-name`, `.tab-button-dirty`, `button.tab-button-close` の3要素構成
