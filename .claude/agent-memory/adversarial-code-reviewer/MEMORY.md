@@ -185,28 +185,19 @@
 - (diff-tab-resize-handle): 致命的2件、重要3件、軽微2件
 - (diff-tab-resize-handle R2): 致命的0件、重要2件(うち1件継続)、軽微2件(うち1件継続) — 前回指摘4件はすべて修正済み
 
-## Review History (2026-03-15)
-- (FEAT_0008 diff-tab): 致命的2件、重要4件、軽微4件
-- (PK-validation R2): 致命的2件、重要4件、軽微3件
-- (column-sorter R2): 致命的2件、重要5件、軽微3件
-- (column-sorter R3): 致命的2件、重要4件、軽微3件
-- (column-filter R1): 致命的2件、重要4件、軽微4件
-- (FEAT_0013 dropdown-quickview): 致命的2件、重要4件、軽微4件
-- (FEAT_0014 mini-table-buffer-row): 致命的2件、重要3件、軽微2件
-- (FEAT_0016 PK/FK badge): 致命的2件、重要3件、軽微3件
-- (FEAT_0017 badge-left-placement): 致命的2件、重要3件、軽微2件
-- (N:1-buffer-row): 致命的2件、重要3件、軽微2件
-- (diff-tab-reference-hint): 致命的2件、重要3件、軽微2件
-- (FEAT_0018 diff-tab-row-insert-delete-sync): 致命的2件、重要4件、軽微3件
-- (FEAT_0019 dropdown-quickview-hover): 致命的2件、重要4件、軽微4件
-- (diff-tab-duplicate-fix): 致命的2件、重要3件、軽微3件
-- (diff-tab-dropdown-fix): 致命的2件、重要3件、軽微2件
-- (FEAT_0022 mini-table-trailing-buffer-row): 致命的2件、重要3件、軽微2件
-- (FEAT_0022 R2): 問題なし（前回指摘4件がすべて修正済み）
-- (FEAT_0023 header-icon-separation): 致命的2件、重要3件、軽微3件
-- (BUG_0021 non-sequential-schema-key): 致命的1件、重要2件、軽微2件
-- (BUG_0021 R2 column-filter fix): 致命的1件、重要2件、軽微2件
-- (FEAT_0027 dropdown-quickview-singleton): 致命的3件、重要3件、軽微3件
-- (FEAT_0027 R2 dropdown-quickview-singleton-fix): 致命的2件、重要3件、軽微3件
-- (BUG_0024 N:1コンテキストヒント修正): 致命的2件、重要2件、軽微2件
-- (FEAT_0033 sort-filter-icon-adjustment): 致命的2件、重要3件、軽微2件
+→ 詳細は `review-history.md` 参照
+
+## FEAT_0036 Column Auto-Resize Known Patterns (R2確認済み)
+- **FIXED R2**: calculateAutoColumnWidth のセレクタが `.cell-reference-hint, .cell-reverse-reference-hint` に修正された
+- **FIXED R2**: widthFactoryパターンで applyColumnsWidthWithUndo に統合された（重複コード解消）
+- **FIXED R2**: 空テーブルでの isColumnSelection 判定は実質問題なし（バッファ行が常に存在するため rowCount>=2）
+- **CRITICAL R2 UNFIXED**: D&Dリサイズの Math.max(20,...) が MIN_COLUMN_WIDTH_PX(50px) に未修正。MIN_COLUMN_WIDTH_PX がimportすらされていない (area-resizer.ts L86)
+- **CRITICAL R2 UNFIXED**: 複数列選択D&Dでドラッグ対象列の幅が変化なし→他の選択列も未更新。L89の早期リターンが原因（`resizeColumnOldWidth !== newWidthStr`チェックをD&D経路から除去すべき）
+- **IMPORTANT R2 UNFIXED**: calculateAutoColumnWidth が Utility.canvas シングルトンを使わず毎回 document.createElement('canvas')（3度目の指摘）
+- **MINOR R2 UNFIXED**: hintElement.textContent! → `as string` にすべき (editor-table.ts L697)
+- **PATTERN**: D&Dとダブルクリックで最小幅保証が非対称になるパターン — 両経路の Math.max を同じ定数で揃えること
+- **PATTERN**: 「セル幅計算でreferenceヒントを考慮する」コードは正参照・逆参照の両セレクタを網羅すること
+
+## Review History (2026-03-17 最新)
+- (FEAT_0036 column-auto-resize R1): 致命的2件、重要3件、軽微3件
+- (FEAT_0036 column-auto-resize R2): 致命的2件、重要1件、軽微2件 — 前回5件中3件修正済み

@@ -166,6 +166,17 @@
 - 残課題(🟡): filter-apply が filter-buttons div の外で独立している（DOM構造の整理余地あり）
 - 残課題(🟡): filter-no-result に aria-live="polite" がない（動的更新のスクリーンリーダー非対応）
 
+#### FEAT_0036 列幅自動調整機能（2026-03-17レビュー）評価: A
+- ファイル: project_feat0036_column_resize_autofit.md
+- ダブルクリック自動幅: `name`列が296pxに計算（`very_long_item_name_exceeding_default_width`包含。正確）
+- FK参照ヒント含む幅: `enemy_id`列が233pxに計算（「超強力なレッドドラゴン（エリート）」を包含。正確）
+- 複数列D&D等幅一括: id列・name列が共に179pxに揃い、value列（非選択）は99pxのまま不変
+- 複数列ダブルクリック各列独立: id列77px（短い整数）・name列296px（長い文字列）と各列データ量に応じた異なる幅
+- Undo/Redo連鎖: Ctrl+Z後に元幅復元+Dirty解消、Ctrl+Y後に自動調整幅再適用+Dirty付与 いずれも正常
+- 最小幅制約: 全列50px以上を維持
+- 注意点: 列幅変更でも `tab-button-dirty-visible` が付く（CSV保存不要な表示設定変更なのにDirtyフラグが立つ）
+- 注意点: `複数列D&DリサイズをCtrl+Z 1回で全列が元の幅に戻ること` のダンプファイルが `&` 文字によりファイルシステム上で欠落（autoDumpのエスケープ漏れ）
+
 #### FEAT_0034 アクティビティバー調整（2026-03-17レビュー）評価: A-
 - gitアイコン: circle×3 + path でブランチ分岐を正確に表現。stroke="currentColor"でテーマ対応完全
 - 透明border常時配置: `.activity-bar-item { border-left: 2px solid transparent; box-sizing: border-box }` でレイアウトシフト防止

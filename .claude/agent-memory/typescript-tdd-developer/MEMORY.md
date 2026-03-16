@@ -219,6 +219,10 @@ if (keyboardEvent.ctrlKey && (keyboardEvent.key === 'y' || keyboardEvent.key ===
 同期的にスクロールをリセットした後に `getScrollTop()` を呼ぶと 0 を読んでしまい「0 で保護」する。
 `editor-table-handler.ts` の `hide()` で実例を参照。
 
+### 列リサイズ（D&D・dblclick）実装パターン
+詳細は `column-resize-patterns.md` 参照。D&D/dblclick排他は `columnDragConfirmed` フラグ、
+複数列一括はCompositeCommand、自動幅はEditorTable.calculateAutoColumnWidth()。
+
 ### DiffTabのパディング行同期パターン（FEAT_0018）
 EditorTableStructure の行挿入・削除が diffTab 接続時に左ペインのパディング行を同期する。
 - `insertRowInternal` 末尾: `diffTab.notifyRightPaneRowInserted(rowIndex)` で左ペインにパディング行挿入
