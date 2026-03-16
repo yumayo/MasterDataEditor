@@ -99,6 +99,17 @@
 - 残課題(🔴): 初期状態でハンドルが視覚的に不可視（background: var(--border-color)のみ、border等の常時表示手がかりなし）
 - 残課題(🟡): height/align-self 明示なし、ドラッグ中クラスなし、均等リセット手段なし、aria属性なし
 
+#### BUG_0023 差分ビューパディング行保存・Dirty・通常タブ反映修正（2026-03-17レビュー）評価: A-
+- テスト1: Dirty消去確認済み（tab-button-dirty に visible クラスなし）。bug-report #102修正が有効
+- テスト2: パディング行（diff-row-padding-inserted）に data-store-index なし → CSV除外が属性レベルで正しく実装
+- テスト3: 通常タブに追加行（id=5）が存在、cell-git-changed クラスで差分ハイライト表示。バッファ行（editor-table-empty-row）1行維持
+- 残課題(🔴): 左右ペインで data-row="5" が衝突（左=パディング行・右=実データ行）。行番号の意味が左右で一致しない
+- 残課題(🔴): 保存後もコンテキストメニューが残存（left:822px,top:142px のstyle付き）。FEAT_0025レビューと同じ hide()漏れパターン（bug-report #8/#65）
+- 残課題(🔴): 差分ビュー左ペイン aria-readonly 欠如（BUG_0021・BUG_0022から継続）
+- 残課題(🟡): CHANGES セクションに保存後も quest_reward が残る（git add との区別が不明確。ツールチップ等で補足が必要）
+- 残課題(🟡): diff-row-deleted 行に data-diff-kind 属性なし（BUG_0021から継続）
+- 確認パターン: 保存経路（Ctrl+S）でのコンテキストメニュー hide() 漏れは「操作パスの網羅漏れ」パターン（bug-report #8, #65）の典型
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ

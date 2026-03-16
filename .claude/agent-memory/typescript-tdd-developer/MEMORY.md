@@ -226,3 +226,9 @@ EditorTableStructure の行挿入・削除が diffTab 接続時に左ペイン�
   - `diff-row-padding-inserted` クラス付き → 行挿入のUndo → 左右DOM行を削除
   - それ以外（通常削除）→ 右ペインをパディング行変換 + 左ペインに `diff-row-deleted` 付与
 Undo/Redo の対称性はDOMのクラス状態（`diff-row-padding-inserted`）で判断する。
+
+### 差分タブ保存の3つの落とし穴（BUG_0023）
+詳細は `diff-tab-save-patterns.md` を参照。
+- 問題1: パディング行が CSV に混入 → DOM の `.diff-row-empty` から動的にストア行インデックスを取得して除外
+- 問題2: `markAllSaved` のキー不一致 → `this.table.tableName`（ストアキー）で呼ぶ
+- 問題3: 通常タブのストア未更新 → 保存後に `store.reloadTableDataAsync(saveTargetTableName)` を呼ぶ

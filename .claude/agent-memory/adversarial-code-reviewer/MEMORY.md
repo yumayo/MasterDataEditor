@@ -136,6 +136,15 @@
 - **PATTERN**: ドラッグ中destroy()はRelationsPanelリサイズも同じ問題を持つ既存負債
 - **PATTERN**: `.diff-pane-left`のborder-rightとリサイズハンドルbackgroundが視覚的に二重線になる
 
+## BUG_0023 Diff Tab Padding Row Save (2026-03-17)
+- **CRITICAL (R2 未解決)**: computeCurrentRightPaddingStoreRowIndices が「domDataRowIndex < storeRowIndices.length」で2種のパディング行を区別しようとしているが、行削除後にstoreRowIndices.spliceで詰まった後、削除後パディング行のdomDataRowIndexがstoreRowIndices.length未満になるシナリオで誤判定する。初期パディング行インデックスをコンストラクタ時点でSet<number>として保持しCommandでsync するのが正しい設計
+- **CRITICAL (R2 新規)**: reloadCellsFromStore()で通常タブに行が追加される場合、参照ヒント・ドロップダウンが設定されないセルが生成される (EditorTable.createCell は基本DOMのみ)
+- **CRITICAL (R2 新規)**: reloadTableDataAsync でDirtyなストアをCSV上書きするリスク。差分タブ保存→通常タブのDirtyデータが消えるシナリオ
+- **KNOWN ISSUE (R2)**: connectOpenEditorTables()が生焼けオブジェクトパターン(| falseメンバ変数+後付けconnect)
+- **FIXED (R2)**: openEditorTables経由でreloadCellsFromStore()呼び出し追加
+- **PATTERN**: テストは「行追加→保存」のみカバー。「行削除（パディング化）→保存」パスが未検証 — 操作パスの網羅漏れパターン(BUG_REPORT#1)の再発
+- **PATTERN**: then().catch()内で再throwした場合、親chainと繋がらずunhandled rejectionになる
+
 ## Review History (2026-03-16)
 - (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
 - (diff-tab-resize-handle): 致命的2件、重要3件、軽微2件
