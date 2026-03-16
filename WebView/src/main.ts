@@ -93,8 +93,9 @@ import {applyStoredTheme} from "./settings-panel";
         } catch (e) {
             throw new Error(`[main] スキーマファイル schema/${file.name} のJSON解析に失敗: ${e}`);
         }
-        const description: string | null = typeof schemaJson['description'] === 'string' ? schemaJson['description'] : null;
+        const descriptionRaw = schemaJson['description'];
+        const description: string | null = typeof descriptionRaw === 'string' && descriptionRaw.length > 0 ? descriptionRaw : null;
         sidebar.appendFile(tableName, description);
-        commandPalette.registerTable(tableName);
+        commandPalette.registerTable(tableName, description);
     }
 })();

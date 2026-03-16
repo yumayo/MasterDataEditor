@@ -1946,4 +1946,17 @@ CSSレイアウトモデルの不整合とSVGパスの視認性不足
 
 ---
 
+## 133. [dd7e338] — コマンドパレット改修（description表示・検索対応・UI調整）
+
+### 不具合原因名
+CommandPaletteItemのデータモデルにdescriptionが含まれておらず、機能間で情報量の非対称が生じていた
+
+### なぜそうなったのか
+CommandPaletteの初期実装時、テーブル名のみで十分と判断し、descriptionフィールドをデータモデルに含めなかった。一方サイドバーのExplorerではdescriptionを表示しており、機能間で情報量の非対称が生じていた。またmain.tsで取得済みのdescriptionがregisterTableに渡されておらず、空文字列のdescriptionが `typeof x === 'string'` チェックを通過する問題や、デッドCSS（.command-palette-item-kind）が残存していた。
+
+### どうしたら今後は再発しないか
+新しいUI要素でテーブル一覧を表示する際は、テーブル名だけでなくdescriptionも含めることを標準とする。また `typeof x === 'string'` で型チェックする際は空文字列の通過を考慮し、`x.length > 0` の追加ガードを検討する。デッドCSSはレビュー時に積極的に削除し、未使用セレクタが蓄積しないよう注意する。
+
+---
+
 ---

@@ -6,6 +6,7 @@ import {Tab} from "./tab";
 interface CommandPaletteItem {
     displayName: string;
     tabName: string;
+    description: string | null;
 }
 
 /**
@@ -94,8 +95,8 @@ export class CommandPalette {
     /**
      * テーブルを候補リストに登録する
      */
-    registerTable(tableName: string): void {
-        this.items.push({displayName: tableName, tabName: tableName});
+    registerTable(tableName: string, description: string | null): void {
+        this.items.push({displayName: tableName, tabName: tableName, description: description});
     }
 
     /**
@@ -141,7 +142,11 @@ export class CommandPalette {
         this.selectedIndex = 0;
 
         const lowerFilter = filterText.toLowerCase();
-        this.filteredItems = this.items.filter(item => item.displayName.toLowerCase().includes(lowerFilter));
+        // テーブル名またはdescriptionの部分一致でフィルタリング
+        this.filteredItems = this.items.filter(item =>
+            item.displayName.toLowerCase().includes(lowerFilter) ||
+            (item.description !== null && item.description.toLowerCase().includes(lowerFilter))
+        );
 
         if (this.filteredItems.length === 0) {
             // 該当なしメッセージを表示
@@ -174,6 +179,15 @@ export class CommandPalette {
             });
 
             itemElement.appendChild(nameElement);
+
+            // descriptionが設定されている場合のみ右端に表示する
+            if (item.description !== null) {
+                const descElement = document.createElement('span');
+                descElement.classList.add('command-palette-item-description');
+                descElement.textContent = item.description;
+                itemElement.appendChild(descElement);
+            }
+
             this.listElement.appendChild(itemElement);
         }
     }

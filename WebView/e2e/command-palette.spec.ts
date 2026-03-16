@@ -21,15 +21,18 @@ import {Page} from '@playwright/test';
 
 /**
  * テーブル2つ（enemy, item）を含むテスト用ファイルシステムを構築する
+ * enemy には「エネミーマスター」、item には「アイテムマスター」という description を持つ
  */
 function createTestFileSystem(): Record<string, string> {
     return {
         'schema/enemy.json': JSON.stringify({
+            description: 'エネミーマスター',
             header: [{key: 0, name: "id", type: "int"}, {key: 1, name: "name", type: "string"}],
             primary_key: "id",
         }),
         'data/enemy.csv': 'id,name\r\n1,Goblin\r\n',
         'schema/item.json': JSON.stringify({
+            description: 'アイテムマスター',
             header: [{key: 0, name: "id", type: "int"}, {key: 1, name: "name", type: "string"}],
             primary_key: "id",
         }),
@@ -91,6 +94,15 @@ test.describe('CommandPalette', () => {
         // オーバーレイからvisibleクラスが削除されて非表示になること
         await expect(overlay).not.toHaveClass(/visible/);
         await expect(overlay).not.toBeVisible();
+    });
+
+    test('descriptionなしのテーブルはパレット項目に.command-palette-item-description要素が存在しない', async ({page, mockFileSystem}) => {
+        // mockFileSystem フィクスチャ（descriptionなしテーブル）を使用
+        // Ctrl+Pでコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+
+        // .command-palette-item-description 要素が存在しないこと
+        await expect(page.locator('.command-palette-item-description')).toHaveCount(0);
     });
 
     test('Ctrl+Pで開くと登録済みの全項目がリストに表示される', async ({page}) => {
@@ -207,6 +219,51 @@ test.describe('CommandPalette', () => {
 
         // タブボタンにitemが表示されること
         await expect(page.locator('.tab-button').first()).toContainText('item');
+    });
+
+    test('テーブルの説明（description）がコマンドパレットの各項目に表示される', async ({page}) => {
+        await setupTestPageAsync(page);
+
+        // Ctrl+Pでコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+
+        // enemy の説明が .command-palette-item-description に表示されること
+        const descriptions = page.locator('.command-palette-item-description');
+        await expect(descriptions).toHaveCount(2);
+        await expect(descriptions.nth(0)).toHaveText('エネミーマスター');
+        await expect(descriptions.nth(1)).toHaveText('アイテムマスター');
+    });
+
+    test('テーブルの説明（description）でフィルタリングにヒットする', async ({page}) => {
+        await setupTestPageAsync(page);
+
+        // Ctrl+Pでコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+        const input = page.locator('.command-palette-input');
+        const items = page.locator('.command-palette-item');
+
+        // "エネミー"と入力するとenemyのみ表示される
+        await input.fill('エネミー');
+        await expect(items).toHaveCount(1);
+        await expect(page.locator('.command-palette-item-name').nth(0)).toHaveText('enemy');
+
+        // "アイテム"と入力するとitemのみ表示される
+        await input.fill('アイテム');
+        await expect(items).toHaveCount(1);
+        await expect(page.locator('.command-palette-item-name').nth(0)).toHaveText('item');
+    });
+
+    test('コマンドパレットの角は直角（border-radius: 0px）である', async ({page}) => {
+        // setupTestPageAsync は不要（パレットのスタイルはデータ依存なし）
+        await installMockApiAsync(page, createTestFileSystem());
+        await page.goto('/');
+
+        // Ctrl+Pでコマンドパレットを表示
+        await page.keyboard.press('Control+p');
+
+        // .command-palette の border-radius が 0px であること（現在は 6px なので RED）
+        const palette = page.locator('.command-palette');
+        await expect(palette).toHaveCSS('border-radius', '0px');
     });
 
     test('再表示時に入力欄がリセットされ全項目が表示される', async ({page}) => {
