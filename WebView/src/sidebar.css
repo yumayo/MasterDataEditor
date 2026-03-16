@@ -19,6 +19,9 @@
     cursor: pointer;
     opacity: 0.5;
     color: var(--font-color);
+    /* アクティブ時のborder追加によるレイアウトシフトを防止するため常に透明borderを配置する */
+    box-sizing: border-box;
+    border-left: 2px solid transparent;
 }
 
 .activity-bar-item:hover {
@@ -27,7 +30,8 @@
 
 .activity-bar-item-active {
     opacity: 1;
-    border-left: 2px solid var(--font-color);
+    /* 選択中アイテムはselection-color（青色）のborderで強調する */
+    border-left: 2px solid var(--selection-color);
 }
 
 /* 歯車アイコン（設定）: アクティビティバー下部に固定 */

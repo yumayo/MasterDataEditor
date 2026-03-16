@@ -1892,3 +1892,20 @@ UIアイコンのテキスト文字実装とレイアウト構造の不備
 3. SVG構築コードが複数箇所で必要な場合は、pathDataのみを引数とするヘルパー関数で共通化する
 
 ---
+
+## 130. [f17e3e4] — アクティビティバーのgitアイコン潰れ・選択時レイアウトシフト・border色修正
+
+### 不具合原因名
+CSSレイアウトモデルの不整合とSVGパスの視認性不足
+
+### なぜそうなったのか
+1. ソース管理アイコン（SOURCE_CONTROL_ICON_SVG）は複雑なpath要素のみで構成されており、24x24のviewBox内でgitブランチの分岐形状が適切に表現できず潰れて見えていた。
+2. `.activity-bar-item` に `border-left` が定義されておらず、`.activity-bar-item-active` でのみ `border-left: 2px solid` が追加される設計だったため、アクティブ切替時に要素幅が変化しアイコンが右にずれていた。
+3. アクティブ時の `border-left-color` が `var(--font-color)` に設定されており、デザインシステムの選択色（`var(--selection-color)`）と統一されていなかった。
+
+### どうしたら今後は再発しないか
+1. SVGアイコンは `circle` や `rect` 等の基本図形と `path` を組み合わせて、viewBox内での視認性を確保する。複雑なpath単体では小サイズで潰れやすい。
+2. CSS状態変化（hover/active/focus等）でborderやpaddingを追加する場合は、デフォルト状態に同サイズの透明border/paddingを配置してレイアウトシフトを防止する。`box-sizing: border-box` も併用して幅計算を明確にする。
+3. 選択・ハイライト色にはデザインシステムのCSS変数（`var(--selection-color)` 等）を使用し、フォント色やハードコードされた色値と混同しない。
+
+---
