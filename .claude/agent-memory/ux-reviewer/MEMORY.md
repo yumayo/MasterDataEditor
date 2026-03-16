@@ -135,6 +135,13 @@
 - 残課題(🟡): selectRow/selectColumn/extendToRow/extendToColumn/selectAll に scrollFocusIntoView 未追加（対称操作の欠落 bug-report #3）
 - 残課題(🟡): scrollCellIntoView の rAF ID を保持していないため高速連続クリック時の競合リスク（bug-report #85パターン）
 
+#### FEAT_0032 tab-list height: 100% 追加（2026-03-17レビュー）評価: A
+- CSS 1行追加のみ。tab-scroll-area(47px)全体を tab-list が埋めることを2テストで検証
+- クリック領域がタブの下半分まで拡大されプランナーの高速タブ切り替えが改善
+- 残課題(🟡): li.tab-button に role="tab" / aria-selected なし（コマンドパレット・ドロップダウンと同じ継続パターン）
+- 残課題(🟡): .tab-button-dirty に title 属性なし（未保存ドットの意味が初見では不明）
+- 要確認: .tab-button の height は tab.css に明示ルールなし（flex stretch で伸びている可能性。CSS側の根拠明示が望ましい）
+
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
 - 差別化機能が壊れている場合は問答無用で評価下げ
