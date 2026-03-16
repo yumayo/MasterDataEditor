@@ -300,8 +300,8 @@ export class DiffTab {
         // 左ペインの rowIndex 位置に挿入する（insertBefore で rowIndex の前に配置）
         const insertBefore = leftElement.children.item(rowIndex) as HTMLElement | null;
         leftElement.insertBefore(paddingRow, insertBefore);
-        // 挿入後のdata-row属性を再ナンバリングする
-        this.renumberLeftRows(rowIndex + 1);
+        // 挿入したパディング行自身も含めて rowIndex 以降を再ナンバリングする
+        this.renumberLeftRows(rowIndex);
     }
 
     /**
@@ -338,13 +338,31 @@ export class DiffTab {
     }
 
     /**
-     * 左ペインの startDomIndex 以降の data-row 属性を再ナンバリングする。
+     * 左ペインの startDomIndex 以降の data-row 属性・行ヘッダーテキスト・data-rowIndex を再ナンバリングする。
      * notifyRightPaneRowInserted / notifyRightPaneRowDeleted の後に呼ぶ。
+     * 差分ビュー左ペインはリサイズハンドルを持たないため、テキストノードの更新のみ行う。
+     * ※ EditorTableStructure.renumberRowsFrom() への委譲は不可。
+     *   あちらはリサイズハンドルを毎回 appendChild するため、差分ビューのパディング行に
+     *   不要なハンドル要素が挿入される副作用がある。独自実装を維持する。
      */
     private renumberLeftRows(startDomIndex: number): void {
         const leftElement = this.leftEditorTable.getTableElement();
         for (let i = startDomIndex; i < leftElement.children.length; i++) {
-            (leftElement.children[i] as HTMLElement).dataset.row = String(i);
+            const row = leftElement.children[i] as HTMLElement;
+            row.dataset.row = String(i);
+            const header = row.children[0] as HTMLElement;
+            if (!header.classList.contains('editor-table-row-header')) continue;
+            // テキストノードを更新する（editor-table-structure.ts の renumberRowsFrom と同パターン）
+            let textNode: Text | null = null;
+            for (const node of Array.from(header.childNodes)) {
+                if (node.nodeType === Node.TEXT_NODE) { textNode = node as Text; break; }
+            }
+            if (textNode !== null) {
+                textNode.textContent = String(i);
+            } else {
+                header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+            }
+            header.dataset.rowIndex = String(i - 1);
         }
     }
 

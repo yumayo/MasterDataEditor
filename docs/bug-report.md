@@ -1809,3 +1809,16 @@ RelationEntry インターフェースの fkColumnName/fkValue が当初「1:N�
 RelationEntry の fkColumnName/fkValue はリレーション種別に関わらず「このミニテーブルを絞り込んだFK列名とFK値」として統一的に扱う。エントリ生成メソッドの追加・変更時には、生成した全経路で fkColumnName/fkValue が正しく設定されているかを確認すること。描画条件は relationType による分岐ではなく fkColumnName の空文字チェックで統一する（ただし setAutoFillEntries は1:N専用のため relationType ガードを維持する）。
 
 ---
+
+## 124. [7b6668d] — gitの差分ビューで右ペインで行を挿入すると左ペインの行番号が表示されない問題を修正
+
+### 不具合原因名
+差分ビュー固有コードパスでのDOM更新漏れ
+
+### なぜそうなったのか
+`DiffTab` クラスに `renumberLeftRows` という差分ビュー専用の再ナンバリングメソッドがあり、`EditorTableStructure.renumberRowsFrom` と同様の責務を持つが、`data-row` 属性の更新のみを行い、行ヘッダーのテキストノード（行番号表示）と `data-rowIndex` 属性の更新が欠落していた。また `createPaddingRow` もパディング行の行ヘッダーに行番号テキストと `data-rowIndex` を設定していなかった。通常のテーブル操作では `renumberRowsFrom` が正しく機能するため問題が顕在化しなかったが、差分ビュー固有のコードパスで同等の処理が漏れた。
+
+### どうしたら今後は再発しないか
+既存メソッドと同等の責務を持つ新メソッドを作る際は、元メソッドの全処理項目（属性更新、テキストノード更新等）を網羅的にリストアップし、差分ビュー固有の要件で不要なものを明示的にスキップする設計判断を記録すること。また、新しいDOM要素生成メソッド（`createPaddingRow` 等）は既存の同類メソッド（`createRowHeaderCell` 等）と対比して、必要な属性・テキストの設定漏れがないかチェックすること。
+
+---

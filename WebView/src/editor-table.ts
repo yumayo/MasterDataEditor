@@ -668,6 +668,10 @@ export class EditorTable {
         const columnCount = this.getColumnCount();
         const rowHeaderCell = document.createElement('div');
         rowHeaderCell.classList.add('editor-table-cell', 'editor-table-row-header');
+        // 行番号テキストを設定する（renumberLeftRows のテキストノード更新対象になるため必須）
+        rowHeaderCell.textContent = String(rowIndex);
+        // data-rowIndex を設定する（通常行ヘッダーと同様に設定してコンテキストメニュー等が参照できるようにする）
+        rowHeaderCell.dataset.rowIndex = String(rowIndex - 1);
         EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
         const cells: HTMLElement[] = [rowHeaderCell];
         for (let j = 0; j < columnCount; j++) {
