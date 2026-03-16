@@ -136,6 +136,11 @@
 - **PATTERN**: ドラッグ中destroy()はRelationsPanelリサイズも同じ問題を持つ既存負債
 - **PATTERN**: `.diff-pane-left`のborder-rightとリサイズハンドルbackgroundが視覚的に二重線になる
 
+## BUG_0024 N:1コンテキストヒント修正 (2026-03-17) Known Patterns
+- **CRITICAL**: buildMiniEditorTableAsync L841 の `setAutoFillEntries` 呼び出しは relationType チェックなし。N:1の fkColumnName が空文字列から非空文字列になった修正で、N:1ミニテーブルにも自動入力が設定される新バグが発生する。`entry.relationType === '1:N'` 条件を追加すること。
+- **CRITICAL**: 描画条件 `if (entry.fkColumnName !== '')` が fkValue の空文字列をガードしていない → `quest_id=` という不正テキスト表示の可能性。
+- **PATTERN**: fkColumnName/fkValue を「コンテキスト表示」と「自動入力」の2つの目的に使い回しているため、一方の修正がもう一方に意図せぬ副作用を与えやすい構造的問題。
+
 ## BUG_0023 Diff Tab Padding Row Save (2026-03-17)
 - **CRITICAL (R2 未解決)**: computeCurrentRightPaddingStoreRowIndices が「domDataRowIndex < storeRowIndices.length」で2種のパディング行を区別しようとしているが、行削除後にstoreRowIndices.spliceで詰まった後、削除後パディング行のdomDataRowIndexがstoreRowIndices.length未満になるシナリオで誤判定する。初期パディング行インデックスをコンストラクタ時点でSet<number>として保持しCommandでsync するのが正しい設計
 - **CRITICAL (R2 新規)**: reloadCellsFromStore()で通常タブに行が追加される場合、参照ヒント・ドロップダウンが設定されないセルが生成される (EditorTable.createCell は基本DOMのみ)
@@ -173,3 +178,4 @@
 - (BUG_0021 R2 column-filter fix): 致命的1件、重要2件、軽微2件
 - (FEAT_0027 dropdown-quickview-singleton): 致命的3件、重要3件、軽微3件
 - (FEAT_0027 R2 dropdown-quickview-singleton-fix): 致命的2件、重要3件、軽微3件
+- (BUG_0024 N:1コンテキストヒント修正): 致命的2件、重要2件、軽微2件

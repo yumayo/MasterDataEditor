@@ -99,6 +99,14 @@
 - 残課題(🔴): 初期状態でハンドルが視覚的に不可視（background: var(--border-color)のみ、border等の常時表示手がかりなし）
 - 残課題(🟡): height/align-self 明示なし、ドラッグ中クラスなし、均等リセット手段なし、aria属性なし
 
+#### N:1ミニテーブル コンテキストヒント修正（2026-03-17レビュー）評価: A
+- ファイル: project_n1_context_hint.md
+- `span.relations-table-context` が N:1 ヘッダーに正しく追加され、1:N と構造的に対称化された
+- テキスト更新（行変更時に quest_id=1 → quest_id=2）も正しく動作
+- 残課題(🟡): relations-table-context に title 属性なし（長い列名でツールチップなし）
+- 残課題(🟡): ミニテーブルの row-resize-handle 残存（継続指摘）
+- bug-report #104（N:1とN:1の対称操作欠落）パターンの修正として適切
+
 #### BUG_0023 差分ビューパディング行保存・Dirty・通常タブ反映修正（2026-03-17レビュー）評価: A-
 - テスト1: Dirty消去確認済み（tab-button-dirty に visible クラスなし）。bug-report #102修正が有効
 - テスト2: パディング行（diff-row-padding-inserted）に data-store-index なし → CSV除外が属性レベルで正しく実装
