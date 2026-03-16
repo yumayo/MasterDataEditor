@@ -7,28 +7,31 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //
 // 機能概要:
 //   FK列のドロップダウンアイテム（.grid-dropdown-item）にマウスオーバーすると、
-//   300ms後にクイックビューパネル（.dropdown-quick-view）が表示される。
+//   即座にクイックビューパネル（.dropdown-quick-view）が表示される。
 //   クイックビューはRelationsPanelと同じCSSクラス・視覚スタイルで表示される。
 //   アイテムからマウスが離れるとクイックビューが非表示になる。
 //   クイックビュー自体にマウスオーバーしている間は表示が維持される。
 //   クイックビューからもマウスが離れると非表示になる。
 //   矢印キーで選択を移動してもクイックビューが更新される。
 //   ドロップダウンを閉じるとクイックビューも消える。
-//   300ms以内に別のアイテムへ移動した場合、前のタイマーはキャンセルされる（レースコンディション防止）。
+//   素早く別のアイテムへ移動した場合、最後にホバーしたアイテムのデータが表示される（レースコンディション防止）。
 //
 // テストケース一覧:
-//   1. マウスオーバーで300ms後にクイックビューが表示される
+//   1. マウスオーバーで即座にクイックビューが表示される（300msディレイなし）
 //   2. クイックビューに参照先テーブルのHTMLテーブルが表示される（ヘッダーと行）
 //   3. クイックビューに参照先テーブルの列名と値が含まれる
 //   4. マウスリーブでクイックビューが非表示になる
 //   5. 矢印キーでの選択移動でクイックビューが更新される
 //   6. ドロップダウンを閉じるとクイックビューも消える
-//   7. 300ms以内に別のアイテムへ移動するとレースコンディションを防止する
+//   7. 素早く別のアイテムへ移動すると最後にホバーしたアイテムのデータが表示される
 //   8. クイックビューはドロップダウンの右側に表示される
 //   9. クイックビューにRelationsPanel風のセクションヘッダーが表示される
 //  10. クイックビューにテーブルヘッダー（テーブル名・参照種別タグ・行数）が表示される
 //  11. クイックビューにマウスオーバーすると表示が維持される
 //  12. クイックビューからマウスが離れると非表示になる
+//  13. クイックビューの背景色が --background-sub-color である
+//  14. クイックビューに max-width が設定されていない
+//  15. クイックビューに max-height と overflow-y:auto が設定されている
 // =============================================================================
 
 // =============================================================================
@@ -132,7 +135,7 @@ test.describe('ドロップダウン クイックビュー', () => {
     });
 
     test(
-        'マウスオーバーで300ms後にクイックビューパネルが表示される',
+        'マウスオーバーで即座にクイックビューパネルが表示される（300msディレイなし）',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
             const dropdown = await openFkDropdownAsync(page, table, 0, 2);
@@ -141,15 +144,9 @@ test.describe('ドロップダウン クイックビュー', () => {
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
 
-            // 300ms経過前はクイックビューが表示されていない
-            // 左ペインのクイックビューに限定（RelationsPanelのミニテーブルにも存在するため）
+            // ディレイなしで即座にフェッチ・レンダリングが開始されるため、
+            // デフォルトタイムアウト（5秒）内に表示されることを検証する。
             const quickView = page.locator('body > .dropdown-quick-view');
-            await expect(quickView).not.toBeVisible();
-
-            // 300ms 実時間で待機
-            await page.waitForTimeout(350);
-
-            // クイックビューパネルが表示される
             await expect(quickView).toBeVisible();
         },
     );
@@ -162,7 +159,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -190,7 +186,6 @@ test.describe('ドロップダウン クイックビュー', () => {
             // 1件目（id=1, daily_reward）にホバー
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -214,7 +209,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -236,7 +230,6 @@ test.describe('ドロップダウン クイックビュー', () => {
             // 最初のアイテム（id=1, daily_reward）にホバーしてクイックビューを表示
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -259,7 +252,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -276,7 +268,7 @@ test.describe('ドロップダウン クイックビュー', () => {
     );
 
     test(
-        '300ms以内に別のアイテムへ移動すると前のクイックビューは表示されない',
+        '素早く別のアイテムへ移動すると最後にホバーしたアイテムのデータが表示される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
             const dropdown = await openFkDropdownAsync(page, table, 0, 2);
@@ -285,24 +277,18 @@ test.describe('ドロップダウン クイックビュー', () => {
             const firstItem = items.nth(0);
             const secondItem = items.nth(1);
 
-            // 1件目にホバー
+            // 1件目にホバーしてすぐに2件目に移動する（ディレイ削除後でも非同期レースが起きうる）
             await firstItem.hover();
-
-            // 150ms 経過前に2件目に移動（前のタイマーはキャンセルされるべき）
-            await page.waitForTimeout(100);
             await secondItem.hover();
 
-            // 1件目のタイマー開始から300ms以上経過してもクイックビューは未表示
-            // （1件目のタイマーはキャンセル済み、2件目のタイマーはまだ300ms未達）
-            await page.waitForTimeout(150);
+            // ディレイ削除後: 即座に非同期処理が始まるが、最後にホバーした2件目のデータが表示されるべき。
+            // クイックビューが表示されるまで待機する。
             const quickView = page.locator('body > .dropdown-quick-view');
-            await expect(quickView).not.toBeVisible();
-
-            // 2件目のホバー開始から300ms以上経過させる
-            await page.waitForTimeout(200);
-
-            // 2件目のデータがクイックビューに表示される
             await expect(quickView).toBeVisible();
+
+            // 2件目（event_reward）のデータが表示されていることを検証する。
+            // 1件目（daily_reward）が表示された状態で2件目に移動したとしても、
+            // 最終的には2件目のデータに更新されることを確認する。
             await expect(quickView.locator('.editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row)').first()).toContainText('event_reward');
         },
     );
@@ -315,7 +301,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -339,7 +324,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -359,7 +343,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -393,7 +376,6 @@ test.describe('ドロップダウン クイックビュー', () => {
             // ドロップダウンアイテムにホバーしてクイックビューを表示する
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -415,7 +397,6 @@ test.describe('ドロップダウン クイックビュー', () => {
             // ドロップダウンアイテムにホバーしてクイックビューを表示する
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
@@ -433,6 +414,82 @@ test.describe('ドロップダウン クイックビュー', () => {
     );
 
     // =========================================================================
+    // クイックビュー改修（色味・サイズ・スクロール・ディレイ削除）のテスト
+    // =========================================================================
+
+    test(
+        'クイックビューの背景色が --background-sub-color である',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // クイックビュー要素自身から CSS 変数の解決済み値と実際の backgroundColor を同時に取得して比較する。
+            // 要素自身から取得することでダークテーマ等の上書きにも対応できる。
+            const actualBgColor = await quickView.evaluate(el =>
+                getComputedStyle(el).backgroundColor
+            );
+            // CSS 変数の値を rgb/rgba 形式に正規化して比較する
+            const expectedBgColor = await quickView.evaluate(el => {
+                const varValue = getComputedStyle(el).getPropertyValue('--background-sub-color').trim();
+                const tempEl = document.createElement('div');
+                tempEl.style.backgroundColor = varValue;
+                el.appendChild(tempEl);
+                const computed = getComputedStyle(tempEl).backgroundColor;
+                el.removeChild(tempEl);
+                return computed;
+            });
+
+            expect(actualBgColor).toBe(expectedBgColor);
+        },
+    );
+
+    test(
+        'クイックビューに max-width が設定されていない',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // max-width が none（制限なし）であることを検証する
+            const maxWidth = await quickView.evaluate(el => getComputedStyle(el).maxWidth);
+            expect(maxWidth).toBe('none');
+        },
+    );
+
+    test(
+        'クイックビューに max-height が設定されており overflow-y が auto である',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // max-height が none 以外（スクロール上限あり）であることを検証する
+            const maxHeight = await quickView.evaluate(el => getComputedStyle(el).maxHeight);
+            expect(maxHeight).not.toBe('none');
+
+            // overflow-y が auto であることを検証する（ウィンドウからはみ出した場合にスクロール）
+            const overflowY = await quickView.evaluate(el => getComputedStyle(el).overflowY);
+            expect(overflowY).toBe('auto');
+        },
+    );
+
+    // =========================================================================
     // FEAT_0027: クイックビュー改修のテスト
     // =========================================================================
 
@@ -444,7 +501,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             // 修正後: クイックビューは .grid-dropdown の子ではなく body 直下に配置される
             // body の直接の子要素として .dropdown-quick-view.visible が存在することを検証する
@@ -465,7 +521,6 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
-            await page.waitForTimeout(350);
 
             // 修正後: body 直下にクイックビューが配置される
             const quickView = page.locator('body > .dropdown-quick-view.visible');

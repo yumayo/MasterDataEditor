@@ -10,7 +10,7 @@ import {History} from "./history";
 /**
  * ドロップダウンのクイックビューパネルを管理するクラス。
  *
- * FK列のドロップダウンアイテムにホバーすると、300ms後に参照先テーブルの
+ * FK列のドロップダウンアイテムにホバーすると即座に参照先テーブルの
  * 関連データをミニEditorTableで表示する。
  * クイックビュー自体にマウスオーバーしている間は表示が維持される。
  *
@@ -21,7 +21,7 @@ import {History} from "./history";
  * これにより body 直下に .dropdown-quick-view が1つしか存在しないことを保証する。
  *
  * Tab・InMemoryTableStore は connectTab() で Tab コンストラクタから接続する。
- * showPreviewWithDelay/showPreviewImmediate が呼ばれる時点では必ず接続済みであることが保証される。
+ * showPreview が呼ばれる時点では必ず接続済みであることが保証される。
  * dropdownListElement は各呼び出し時に引数として受け取り、シングルトンで正しい位置決めを実現する。
  */
 export class DropdownQuickView {
@@ -29,8 +29,6 @@ export class DropdownQuickView {
     private readonly element: HTMLDivElement;
     /** ドロップダウンリスト要素（位置決め基準）。呼び出し元の GridDropdownInput ごとに更新される */
     private dropdownListElement: HTMLElement;
-    /** ホバーディレイタイマーID（0 = タイマーなし） */
-    private hoverTimerId: number = 0;
     /** hidePreviewWithDelay のディレイタイマーID（0 = タイマーなし） */
     private hideDelayTimerId: number = 0;
     /** クイックビュー自体にマウスがホバー中かどうか */
@@ -61,7 +59,7 @@ export class DropdownQuickView {
     private currentMiniTableName: string | false;
 
     constructor(referenceDataCache: ReferenceDataCache) {
-        // dropdownListElement は showPreviewWithDelay/showPreviewImmediate 呼び出し時に更新される。
+        // dropdownListElement は showPreview 呼び出し時に更新される。
         // シングルトンとして複数の GridDropdownInput から共有されるため、
         // コンストラクタでは空の div で初期化し、実際の呼び出し前に必ず上書きされることを保証する。
         this.dropdownListElement = document.createElement('div');
@@ -105,26 +103,16 @@ export class DropdownQuickView {
     }
 
     /**
-     * アイテムホバー開始時に呼ぶ（300msディレイ付き）。
-     * 300ms以内に別アイテムへ移動した場合、前のタイマーをキャンセルする。
+     * プレビューを表示する（マウスホバー・キーボード選択どちらからも呼ぶ）。
      * listElement: 現在表示中のドロップダウンリスト要素（クイックビューの位置決め基準）。
      * シングルトンとして複数の GridDropdownInput から共有されるため、呼び出しごとに更新する。
+     *
+     * アイテムAからBに素早く移動した場合、mouseleave(A)が設定した hideTimer が残存し
+     * hidePreview() が requestId を上書きしてBのfetch結果を破棄するバグを防ぐため、
+     * 冒頭で cancelHideTimer() を呼んでタイマーを確実にキャンセルする。
      */
-    showPreviewWithDelay(tableName: string, itemId: string, anchorElement: HTMLElement, listElement: HTMLElement): void {
-        this.dropdownListElement = listElement;
-        this.cancelHoverTimer();
-        this.hoverTimerId = window.setTimeout(() => {
-            this.hoverTimerId = 0;
-            this.showPreviewImmediate(tableName, itemId, anchorElement, listElement);
-        }, 300);
-    }
-
-    /**
-     * 即座にプレビューを表示する（キーボード選択用・ディレイなし）。
-     * listElement: 現在表示中のドロップダウンリスト要素（クイックビューの位置決め基準）。
-     * シングルトンとして複数の GridDropdownInput から共有されるため、呼び出しごとに更新する。
-     */
-    showPreviewImmediate(tableName: string, itemId: string, anchorElement: HTMLElement, listElement: HTMLElement): void {
+    showPreview(tableName: string, itemId: string, anchorElement: HTMLElement, listElement: HTMLElement): void {
+        this.cancelHideTimer();
         this.dropdownListElement = listElement;
         const requestId = ++this.currentPreviewRequestId;
         this.fetchAndRenderAsync(tableName, itemId, requestId, anchorElement)
@@ -137,7 +125,6 @@ export class DropdownQuickView {
      */
     hidePreview(): void {
         this.cancelHideTimer();
-        this.cancelHoverTimer();
         // 進行中の非同期処理（fetchAndRenderAsync / renderContentAsync）を確実にキャンセルする
         ++this.currentPreviewRequestId;
         this.element.classList.remove('visible');
@@ -152,8 +139,8 @@ export class DropdownQuickView {
         this.cancelHideTimer();
         this.hideDelayTimerId = window.setTimeout(() => {
             this.hideDelayTimerId = 0;
-            // 新しい表示タイマーが進行中、またはクイックビューにホバー中なら何もしない
-            if (this.hoverTimerId !== 0 || this.hovered) return;
+            // クイックビューにホバー中なら何もしない
+            if (this.hovered) return;
             this.hidePreview();
         }, 50);
     }
@@ -162,7 +149,6 @@ export class DropdownQuickView {
      * クリーンアップ（ドロップダウンhide時）。
      */
     cleanup(): void {
-        this.cancelHoverTimer();
         this.cancelHideTimer();
         // 進行中の非同期処理（fetchAndRenderAsync / renderContentAsync）を確実にキャンセルする
         ++this.currentPreviewRequestId;
@@ -318,10 +304,12 @@ export class DropdownQuickView {
         this.element.style.left = listRect.right + 'px';
         this.element.style.top = anchorRect.top + 'px';
 
-        // ビューポートの右端をはみ出す場合はドロップダウンリストの左側に配置する
+        // ビューポートの右端をはみ出す場合はドロップダウンリストの左側に配置する。
+        // Math.max(0, ...) でビューポート左端より外に出ないよう保護する。
         const quickViewRect = this.element.getBoundingClientRect();
         if (quickViewRect.right > window.innerWidth) {
-            this.element.style.left = (listRect.left - this.element.offsetWidth) + 'px';
+            const leftAligned = listRect.left - this.element.offsetWidth;
+            this.element.style.left = Math.max(0, leftAligned) + 'px';
         }
 
         // ビューポートの下端をはみ出す場合は上方向にずらして収める
@@ -359,16 +347,6 @@ export class DropdownQuickView {
         this.currentMiniEditorTable = false;
         // DOMに残留したミニEditorTableの要素を削除する
         this.element.innerHTML = '';
-    }
-
-    /**
-     * ホバーディレイタイマーをキャンセルする。
-     */
-    private cancelHoverTimer(): void {
-        if (this.hoverTimerId !== 0) {
-            window.clearTimeout(this.hoverTimerId);
-            this.hoverTimerId = 0;
-        }
     }
 
     /**

@@ -30,6 +30,8 @@ export class GridDropdownInput {
     private quickView: DropdownQuickView | false;
     /** show() で受け取った参照先テーブル名。mouseenter/moveSelection時にQuickViewへ渡す */
     private referenceTableName: string;
+    /** キーボード操作によるDOM再構築時にmouseenterイベントを抑制するフラグ */
+    private suppressMouseEnterQuickView: boolean;
 
     private items: ReferenceItem[];
     private filteredItems: ReferenceItem[];
@@ -50,6 +52,7 @@ export class GridDropdownInput {
         this.selectedIndex = 0;
         this.visible = false;
         this.referenceTableName = '';
+        this.suppressMouseEnterQuickView = false;
         this.onSelect = onSelect;
         this.onCancel = onCancel;
         this.quickView = false;
@@ -171,14 +174,18 @@ export class GridDropdownInput {
             this.selectedIndex = 0;
         }
 
+        // DOM再構築時のmouseenter抑制（キーボード操作によるDOM再構築でカーソル下の要素に
+        // mouseenterが発火し、キーボード選択したアイテムのクイックビューを上書きしてしまうのを防ぐ）
+        this.suppressMouseEnterQuickView = true;
         this.renderDropdown();
+        requestAnimationFrame(() => { this.suppressMouseEnterQuickView = false; });
 
-        // キーボード選択時はクイックビューを即時更新（ディレイなし、接続済みの場合のみ）
+        // キーボード選択時はクイックビューを即時更新（接続済みの場合のみ）
         if (this.quickView !== false) {
             const selectedItem = this.filteredItems[this.selectedIndex];
             const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
             if (selectedElement instanceof HTMLElement) {
-                this.quickView.showPreviewImmediate(this.referenceTableName, selectedItem.id, selectedElement, this.dropdownElement);
+                this.quickView.showPreview(this.referenceTableName, selectedItem.id, selectedElement, this.dropdownElement);
             }
         }
     }
@@ -271,10 +278,11 @@ export class GridDropdownInput {
                 this.confirmSelection();
             });
 
-            // マウスオーバー: 300msディレイ付きクイックビュー表示（接続済みの場合のみ）
+            // マウスオーバー: クイックビュー表示（接続済みかつキーボード操作中でない場合のみ）
+            // suppressMouseEnterQuickView が true の場合はキーボード操作によるDOM再構築なので無視する
             itemElement.addEventListener('mouseenter', () => {
-                if (this.quickView !== false) {
-                    this.quickView.showPreviewWithDelay(this.referenceTableName, item.id, itemElement, this.dropdownElement);
+                if (this.quickView !== false && !this.suppressMouseEnterQuickView) {
+                    this.quickView.showPreview(this.referenceTableName, item.id, itemElement, this.dropdownElement);
                 }
             });
 

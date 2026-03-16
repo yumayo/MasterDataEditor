@@ -4,11 +4,12 @@
     position: fixed;
     z-index: 1000;
     display: none;
-    background-color: var(--background-color);
+    background-color: var(--background-sub-color);
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     min-width: 200px;
-    max-width: 400px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
 }
 
 .dropdown-quick-view.visible {
