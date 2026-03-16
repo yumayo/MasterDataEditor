@@ -24,9 +24,9 @@ interface RelationEntry {
     header: string[];
     /** 表示する行データ（各行は列値の配列） */
     rows: string[][];
-    /** 1:Nの場合: 親テーブルのFK列名（子テーブル側の列名）。N:1の場合は空文字列 */
+    /** FK列名。N:1の場合は参照元テーブルのFK列名、1:Nの場合は子テーブルのFK列名 */
     fkColumnName: string;
-    /** 1:Nの場合: 親テーブルのFK値（自動埋め込みする値）。N:1の場合は空文字列 */
+    /** FK値。N:1の場合は参照元行のFK値、1:Nの場合は親テーブルのFK値（自動埋め込みする値） */
     fkValue: string;
     /**
      * rows[i] がストアの何行目に対応するかのインデックス配列（0始まり）
@@ -440,8 +440,8 @@ export class RelationsPanel {
             tableKey: targetTableName,
             header: targetTableData.header,
             rows,
-            fkColumnName: '',
-            fkValue: '',
+            fkColumnName: columnLabel,
+            fkValue,
             storeRowIndices,
         };
     }
@@ -489,8 +489,8 @@ export class RelationsPanel {
                     tableKey: expr.tableName,
                     header,
                     rows,
-                    fkColumnName: '',
-                    fkValue: '',
+                    fkColumnName: col.name,
+                    fkValue,
                     storeRowIndices,
                 });
             } else if (isDynamicReference(expr)) {
@@ -735,8 +735,8 @@ export class RelationsPanel {
             tableHeader.appendChild(tableTitle);
             tableHeader.appendChild(dirtyMark);
             tableHeader.appendChild(tagEl);
-            // 1:Nエントリの場合はFK条件コンテキスト（例: enemy_id=3）を表示する
-            if (entry.relationType === '1:N' && entry.fkColumnName !== '') {
+            // FK条件コンテキスト（例: enemy_id=3）を表示する（N:1・1:N どちらも対応）
+            if (entry.fkColumnName !== '') {
                 const contextEl = document.createElement('span');
                 contextEl.classList.add('relations-table-context');
                 contextEl.textContent = `${entry.fkColumnName}=${entry.fkValue}`;
@@ -837,8 +837,8 @@ export class RelationsPanel {
         // N:1は参照先テーブルの一致行のみ表示するため、initialize() のデフォルト [0,1,...] では実際と一致しない。
         // 1:N も同様にフィルタリングされた行のインデックスを使う。
         editorTable.setStoreRowIndices(entry.storeRowIndices);
-        // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）
-        if (entry.fkColumnName !== '' && entry.fkValue !== '') {
+        // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）。N:1参照先テーブルには適用しない。
+        if (entry.relationType === '1:N' && entry.fkColumnName !== '' && entry.fkValue !== '') {
             editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);
         }
         // ミニEditorTableにもRelationsPanelを接続して、セルクリック時の排他制御を有効にする
@@ -1017,8 +1017,8 @@ export class RelationsPanel {
                     tableKey: expr.tableName,
                     header: refTableData.header,
                     rows,
-                    fkColumnName: '',
-                    fkValue: '',
+                    fkColumnName: col.name,
+                    fkValue,
                     storeRowIndices,
                 });
             } else if (isDynamicReference(expr)) {
