@@ -150,6 +150,13 @@
 - **PATTERN**: テストは「行追加→保存」のみカバー。「行削除（パディング化）→保存」パスが未検証 — 操作パスの網羅漏れパターン(BUG_REPORT#1)の再発
 - **PATTERN**: then().catch()内で再throwした場合、親chainと繋がらずunhandled rejectionになる
 
+## DropdownQuickView Instant-Show Refactor (2026-03-17) Known Patterns
+- **CRITICAL**: showPreviewImmediate が cancelHideTimer() を呼ばない。アイテムA→B素早く移動時にmouseleave(A)の50ms hideTimerが残存し、B用のfetchAndRenderAsyncをキャンセルする。修正: showPreviewImmediateの冒頭でcancelHideTimer()を呼ぶこと。
+- **IMPORTANT**: showPreviewWithDelay と showPreviewImmediate が完全に同一の実装になった。"WithDelay"という名前が嘘。一方を削除してAPIを統一すべき。
+- **IMPORTANT**: max-width削除後にpositionElementの左配置 (listRect.left - offsetWidth) に Math.max(0,...) が無い。大量列テーブルでQVが画面外左に消える。
+- **MINOR**: テスト1番の { timeout: 100 } はモックが速いので通るが「即座表示」の証明としては不十分。フレイキーリスクあり。
+- **PATTERN**: ディレイを削除するとき「ディレイ中は発火しない」ガード条件も必ず合わせて見直すこと。旧コードの hoverTimerId !== 0 ガードが hidePreviewWithDelay に存在していた。
+
 ## Review History (2026-03-16)
 - (FEAT_0028 source-control-panel改修): 致命的2件、重要3件、軽微3件
 - (diff-tab-resize-handle): 致命的2件、重要3件、軽微2件
