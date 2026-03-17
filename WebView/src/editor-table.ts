@@ -1,7 +1,7 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection, CellPosition} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
-import {ContextMenu} from "./context-menu";
+import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
 import {CellChange, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
@@ -23,6 +23,7 @@ import {ColumnSorter} from "./column-sorter";
 import {ColumnFilter} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
 import {Utility} from "./utility";
+import {Tab} from "./tab";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -60,6 +61,11 @@ export class EditorTable {
     relationsPanel: RelationsPanel | false;
     /** 差分タブ（DiffTab.buildDiffEditorTableで設定される。未設定はfalse） */
     diffTab: DiffTab | false;
+    /**
+     * Tabへの参照（Tab.createEditorTable後にconnectTabで設定される。未設定はfalse）
+     * フォームビューの表示（showFormPanel）に使用する
+     */
+    tab: Tab | false;
     /** git差分トラッカー（connectGitDiffTrackerで設定される。未設定はfalse） */
     private gitDiffTracker: GitDiffTracker | false;
     /** refreshGitDiffAsync のレースコンディション防止用リクエストID */
@@ -131,6 +137,7 @@ export class EditorTable {
         this.element = document.createElement('div');
         this.relationsPanel = false;
         this.diffTab = false;
+        this.tab = false;
         this.gitDiffTracker = false;
         this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
@@ -462,26 +469,41 @@ export class EditorTable {
                     if (entry.parentColumnName === colName) allEntries.push(entry);
                 }
             }
-            if (allEntries.length === 0) return;
+            // PKセルかどうかを判定する（columnIndex はデータ列インデックス = 行ヘッダーを除いた0始まり）
+            const col = table.tableData.header[columnIndex];
+            const isPkColumn = col !== undefined && table.tableData.primaryKeyColumns.includes(col.name);
             const pkValue = table.getRowPkValue(position.row);
-            if (pkValue === '') return;
+            // フォームビュー表示はPKセルかつPK値が空でない場合のみ表示する
+            const canShowFormView = isPkColumn && pkValue !== '' && table.tab !== false;
+            // 逆参照なし かつ フォームビューも表示しない場合はメニューを出さない
+            if (allEntries.length === 0 && !canShowFormView) return;
             e.preventDefault();
             e.stopPropagation();
             // ドラグ状態をリセット
             table.selection.end();
-            table.contextMenu.show(e.clientX, e.clientY, [{
-                label: '参照箇所を表示',
-                action: () => {
-                    table.sidebar.showReferences(pkValue, allEntries);
-                },
-            }]);
+            const menuItems: ContextMenuEntry[] = [];
+            if (allEntries.length > 0) {
+                menuItems.push({
+                    label: '参照箇所を表示',
+                    action: () => { table.sidebar.showReferences(pkValue, allEntries); },
+                });
+            }
+            if (canShowFormView) {
+                // クロージャ内で table.tab の型を Tab として保持する（型ガード後の型を維持するため）
+                const tabRef = table.tab as Tab;
+                menuItems.push({
+                    label: 'フォームビューを表示',
+                    action: () => { tabRef.showFormPanel(table.tableName, pkValue); },
+                });
+            }
+            table.contextMenu.show(e.clientX, e.clientY, menuItems);
         });
         // renderAsHtml を考慮してセル値を設定する（初期レンダリング時にHTML描画を正しく適用）
         // value の実際の型は string のみ（body.values は string[]、バッファ行は '' を渡す）
         const strValue = value as string;
         // バッファ空行挿入時等で columnIndex がヘッダー範囲外になる場合は false（テキスト描画）でフォールバック
-        const col = table.tableData.header[columnIndex];
-        table.reference.applyTextOrHtml(cell, strValue, col ? col.renderAsHtml : false);
+        const cellCol = table.tableData.header[columnIndex];
+        table.reference.applyTextOrHtml(cell, strValue, cellCol ? cellCol.renderAsHtml : false);
         return cell;
     }
 

@@ -1,0 +1,329 @@
+/* =========================================================================
+   フォームパネル — 右ペインのオーバーレイスタイル
+   RelationsPanel の上に重なって表示される。
+   既存の CSS 変数（--background-color, --border-color, --font-color 等）を使用する。
+   ========================================================================= */
+
+.form-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    background-color: var(--background-sub-color);
+    color: var(--font-color);
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ─── 閉じるボタン ─── */
+
+.form-panel-close {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--font-color);
+    opacity: 0.5;
+    border-radius: 4px;
+    z-index: 1;
+    transition: opacity 0.15s, background-color 0.15s;
+}
+
+.form-panel-close:hover {
+    opacity: 1;
+    background-color: var(--hover-color, rgba(255, 255, 255, 0.08));
+}
+
+/* ─── ヘッダー（パンくず） ─── */
+
+.form-panel-header {
+    padding: 8px 36px 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.form-panel-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--font-color);
+    opacity: 0.7;
+    line-height: 1.4;
+}
+
+.form-panel-breadcrumb-sep {
+    opacity: 0.4;
+    user-select: none;
+}
+
+.form-panel-breadcrumb-item {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.form-panel-breadcrumb-item--link {
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: opacity 0.15s;
+}
+
+.form-panel-breadcrumb-item--link:hover {
+    opacity: 1;
+}
+
+.form-panel-breadcrumb-item--current {
+    color: var(--focus-border, #569cd6);
+    opacity: 1;
+    font-weight: 500;
+}
+
+/* ─── コンテンツ（スクロール領域） ─── */
+
+.form-panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ─── ローディング ─── */
+
+.form-panel-loading {
+    padding: 24px;
+    text-align: center;
+    opacity: 0.4;
+    font-size: 11px;
+}
+
+/* ─── タイトル ─── */
+
+.form-panel-title {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.form-panel-title-table {
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.form-panel-title-pk {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--focus-border, #569cd6);
+}
+
+/* ─── 深さインジケーター ─── */
+
+.form-panel-depth-bar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 14px;
+    align-items: center;
+}
+
+.form-panel-depth-dot {
+    height: 3px;
+    border-radius: 2px;
+    background-color: var(--border-color);
+    transition: width 0.2s ease, background-color 0.2s ease;
+    width: 6px;
+}
+
+.form-panel-depth-dot--active {
+    width: 20px;
+    background-color: var(--focus-border, #569cd6);
+    opacity: 0.7;
+}
+
+/* ─── フィールド一覧 ─── */
+
+.form-panel-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.form-panel-field-row {
+    display: flex;
+    gap: 8px;
+}
+
+.form-panel-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.form-panel-field-label {
+    font-size: 10px;
+    opacity: 0.55;
+    margin-bottom: 3px;
+    letter-spacing: 0.3px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.form-panel-field-value {
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+}
+
+.form-panel-field-value--empty {
+    opacity: 0.3;
+    font-style: italic;
+}
+
+/* ─── 参照セクション（アコーディオン） ─── */
+
+.form-panel-section {
+    margin-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.form-panel-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 2px;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s;
+}
+
+.form-panel-section-header:hover {
+    opacity: 0.8;
+}
+
+.form-panel-section-arrow {
+    font-size: 10px;
+    opacity: 0.6;
+    display: inline-block;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.form-panel-section-arrow--open {
+    transform: rotate(90deg);
+}
+
+.form-panel-section-title {
+    font-size: 12px;
+    font-weight: 500;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.form-panel-section-badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    opacity: 0.7;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.form-panel-section-body {
+    padding: 2px 0 6px;
+}
+
+.form-panel-section-empty {
+    padding: 8px 10px;
+    font-size: 11px;
+    opacity: 0.4;
+    font-style: italic;
+}
+
+/* ─── 参照アイテム ─── */
+
+.form-panel-ref-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    transition: background-color 0.12s;
+}
+
+.form-panel-ref-item--clickable {
+    cursor: pointer;
+}
+
+.form-panel-ref-item--clickable:hover {
+    background-color: var(--hover-color, rgba(255, 255, 255, 0.06));
+}
+
+.form-panel-ref-item-main {
+    font-size: 12px;
+    font-weight: 500;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.form-panel-ref-item-sub {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.form-panel-ref-item-arrow {
+    font-size: 11px;
+    opacity: 0.4;
+    flex-shrink: 0;
+}
+
+/* ─── 行が見つからない場合 ─── */
+
+.form-panel-not-found {
+    padding: 24px;
+    text-align: center;
+    opacity: 0.4;
+    font-size: 12px;
+}

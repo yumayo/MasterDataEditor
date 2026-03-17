@@ -22,6 +22,7 @@ import {RelationsPanel} from "./relations-panel";
 import {Csv} from "./csv";
 import {SettingsPanel} from "./settings-panel";
 import {DiffTab} from "./diff-tab";
+import {FormPanel} from "./form-panel";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -130,6 +131,12 @@ export class Tab {
     private readonly diffTabs: Map<string, DiffTab>;
 
     /**
+     * 現在表示中のフォームパネル（PKセル右クリック→「フォームビューを表示」で生成）
+     * 表示中でない場合は false
+     */
+    private currentFormPanel: FormPanel | false;
+
+    /**
      * 全 GridDropdownInput が共有するシングルトン DropdownQuickView。
      * body 直下に1つだけ配置されることで、strict mode の複数マッチ問題を回避する。
      * Tab コンストラクタで生成し、各 GridDropdownInput へ connectDropdownQuickView() で接続する。
@@ -157,6 +164,7 @@ export class Tab {
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
         this.diffTabs = new Map();
+        this.currentFormPanel = false;
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -780,6 +788,8 @@ export class Tab {
      * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
+        // フォームパネルが表示中であれば閉じる（タブ切り替え時に残留しないようにする）
+        this.closeFormPanel();
         // スクロール位置をwrapperが表示されている間に保存する（左ペインのスクロール）
         this.editor.saveScrollPosition(state);
         state.wrapperElement.style.display = 'none';
@@ -1125,6 +1135,8 @@ export class Tab {
 
         // 分割先モジュールを生成・注入（Object.assign後なのでeditorTableは完全に初期化済み）
         editorTable.initializeModules();
+        // Tab への参照を設定する（フォームビュー表示のための密結合）
+        editorTable.tab = this;
 
         // FillController を作成（EditorTable, Selection, History が必要）
         const fillController = new FillController(editorTable, selection, history);
@@ -1307,5 +1319,51 @@ export class Tab {
 
     dropTab(clientX: number): void {
         this.dragDrop.dropTab(clientX);
+    }
+
+    /**
+     * フォームビューを表示する（PKセル右クリックメニューから呼ばれる）
+     * RelationsPanelの親要素（rightSlot）にFormPanelをオーバーレイして表示する。
+     * 既存のFormPanelがあれば破棄してから新しいものを生成する。
+     * @param tableName 対象テーブル名
+     * @param pkValue 対象行のPK値
+     */
+    showFormPanel(tableName: string, pkValue: string): void {
+        // 既存のFormPanelを破棄する（新しいPK値で開き直す場合）
+        if (this.currentFormPanel !== false) {
+            this.currentFormPanel.remove();
+            this.currentFormPanel = false;
+        }
+
+        // RelationsPanelの親要素（rightSlot または setVisiblePanes で設定された要素）を取得する
+        const rpParent = this.relationsPanel.getPanelElement().parentElement;
+        if (rpParent === null) {
+            throw new Error('[Tab] showFormPanel: RelationsPanel が DOM に追加されていません');
+        }
+        // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
+        this.relationsPanel.getPanelElement().style.display = 'none';
+
+        // FormPanel を生成して右スロットにオーバーレイする
+        const formPanel = new FormPanel(this.store, this);
+        formPanel.appendTo(rpParent);
+        this.currentFormPanel = formPanel;
+
+        // 指定行のフォームを非同期で描画する
+        formPanel.showForRowAsync(tableName, pkValue).catch(err => {
+            console.error('[Tab] showFormPanel: showForRowAsync failed:', String(err));
+        });
+    }
+
+    /**
+     * フォームビューを閉じてRelationsPanelを再表示する
+     * FormPanel.✕ボタンクリックから呼ばれる
+     */
+    closeFormPanel(): void {
+        if (this.currentFormPanel === false) return;
+        // FormPanel の DOM 要素を削除する
+        this.currentFormPanel.remove();
+        this.currentFormPanel = false;
+        // RelationsPanelを再表示する
+        this.relationsPanel.getPanelElement().style.display = '';
     }
 }
