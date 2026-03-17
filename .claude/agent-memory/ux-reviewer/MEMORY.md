@@ -212,6 +212,15 @@
 - 残課題(🟡): 全文検索パネルに「検索結果なし」表示がない（フィルタードロップダウンと非対称）
 - 残課題(🟡): .search-highlight の background-color: #fde68a がダークテーマ用の dark テーマ変数未定義（推測）
 
+#### FEAT_0040 全文検索バックグラウンド対応（2026-03-18レビュー）評価: B+
+- ファイル: project_feat0040_search_background.md
+- searchRequestId + debounce150ms + setTimeout(0) の組み合わせが正しく実装
+- transition: opacity 0.1s ease の付与先が .search-panel-results で適切
+- 残課題(🟡): L205の searching クラス付与後にL207の空文字チェックが来る順序バグリスク
+- 残課題(🟡): 検索結果なし表示がない（FEAT_0038継続指摘。フィルタードロップダウンと非対称）
+- 残課題(🟡): aria-live="polite" 未設定（動的更新のスクリーンリーダー非対応・継続パターン）
+- 残課題(🟡): .search-result-reference-hint の color: #528bff がハードコード（bug-report #116パターン）
+
 ### DOM構造パターン（良い例）
 - タブバー: `div#tab > div.tab-scroll-area > ul#tab-content.tab-list > li.tab-button`
 - タブボタン: `.tab-button-name`, `.tab-button-dirty`, `button.tab-button-close` の3要素構成

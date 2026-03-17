@@ -31,8 +31,8 @@
 
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
-- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038で未適用)
-- **CSS hardcoded colors**: 8回再発 — CSS変数使用を徹底せよ
+- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040で再発。新しいawaitを追加するたびに漏れる)
+- **CSS hardcoded colors**: 9回再発 — CSS変数使用を徹底せよ (FEAT_0040: search-result-pk #888 ハードコード)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
 - **参照式の独自パース**: parseReferenceExpression を使わずdotIndex手動パース (search-panel.ts)
@@ -40,6 +40,14 @@
 - **document listener leak on re-instantiation**: 無名リスナーはremoveEventListener不可
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
+
+## FEAT_0040 Background Search Known Patterns
+- **CRITICAL**: loadAllTableNamesAsync 後に requestId チェックなし → 無駄な Promise.all 実行
+- **CRITICAL**: Promise.all はキャンセル不能 → 新 await ポイント追加のたびにキャンセル漏れが構造的に発生
+- **CRITICAL**: executeSearchAsync に try/catch なし → loadAllTableNamesAsync 例外で searching クラスが永続固着
+- **IMPORTANT**: setTimeout(0) が searchInTable の後 → 最後テーブルで yield しない (最初のテーブルでも初回 yield なし)
+- **IMPORTANT**: MutationObserver が disconnect されない → テストのメモリリーク
+- **PATTERN**: Promise.all + requestId キャンセルの組み合わせは危険。各 map 内でも requestId チェックが必要
 
 ## Structural Concerns
 - **Parallel array anti-pattern in RelationsPanel**: 5 arrays + storeRowIndices
@@ -71,6 +79,7 @@
 
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-18) FEAT_0040 search background: 致命的3件、重要4件、軽微3件
 - (2026-03-17) FEAT_0038 fuzzy-search: 致命的4件、重要5件、軽微4件
 - (2026-03-17) CommandPalette description表示: 致命的1件、重要3件、軽微2件
 - (2026-03-17) FEAT_0036 R2: 致命的2件、重要1件、軽微2件
