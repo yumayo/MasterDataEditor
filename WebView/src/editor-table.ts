@@ -3,7 +3,7 @@ import {Selection, CellPosition} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "./context-menu";
 import {History} from "./history";
-import {CellChange} from "./command";
+import {CellChange, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_LEFT_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -476,7 +476,12 @@ export class EditorTable {
                 },
             }]);
         });
-        cell.textContent = value as any;
+        // renderAsHtml を考慮してセル値を設定する（初期レンダリング時にHTML描画を正しく適用）
+        // value の実際の型は string のみ（body.values は string[]、バッファ行は '' を渡す）
+        const strValue = value as string;
+        // バッファ空行挿入時等で columnIndex がヘッダー範囲外になる場合は false（テキスト描画）でフォールバック
+        const col = table.tableData.header[columnIndex];
+        table.reference.applyTextOrHtml(cell, strValue, col ? col.renderAsHtml : false);
         return cell;
     }
 
@@ -502,8 +507,12 @@ export class EditorTable {
 
     /**
      * セルの値を取得する（参照ヒントを除外）
+     * renderAsHtml モードのセルは innerHTML でレンダリングされているため、
+     * data-raw-value に保存した生テキストを返す。
      */
     static getCellValue(cell: HTMLElement): string {
+        // renderAsHtml モードのセルは data-raw-value に生テキストが保存されている
+        if (cell.dataset.rawValue !== undefined) return cell.dataset.rawValue;
         // .cell-value 要素があればそこから取得
         const valueElement = cell.querySelector('.cell-value');
         if (valueElement) return valueElement.textContent ?? '';
@@ -654,6 +663,21 @@ export class EditorTable {
             widths.push(this.getColumnWidth(i));
         }
         return widths;
+    }
+
+    /**
+     * 指定列の renderAsHtml トグルをコマンドとして実行する（Undo/Redo対応）。
+     * コンテキストメニューからの呼び出し専用。列が存在しない場合は例外を投げる。
+     * @param columnIndex 列インデックス（0始まり、行ヘッダーを除く）
+     */
+    executeRenderAsHtmlToggle(columnIndex: number): void {
+        const col = this.tableData.header[columnIndex];
+        if (!col) throw new Error(`[EditorTable] 列が見つかりません: columnIndex=${columnIndex}`);
+        const cmd = new RenderAsHtmlToggleCommand(col, this, columnIndex);
+        const anchor = this.selection.getAnchor();
+        const copyRange = this.selection.getCopyRange();
+        const range = {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column};
+        this.history.executeCommand(cmd, range, copyRange);
     }
 
     /**

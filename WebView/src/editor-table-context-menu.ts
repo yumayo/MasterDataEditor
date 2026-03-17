@@ -78,7 +78,19 @@ export class EditorTableContextMenu {
             const insertLeftLabel = columnCount > 1 ? `左に${columnCount}列を挿入` : '左に列を挿入';
             const insertRightLabel = columnCount > 1 ? `右に${columnCount}列を挿入` : '右に列を挿入';
             const deleteLabel = columnCount > 1 ? `${columnCount}列を削除` : '列を削除';
+            // renderAsHtml トグルは対象列（右クリックした列）に対して行う（複数列選択でも1列ずつ）
+            // EditorTableContextMenu は EditorTable の密結合コンポーネントなので tableData.header への直接参照を許容する
+            const renderAsHtmlLabel = this.table.getTableData().header[contextMenuColumnIndex]?.renderAsHtml
+                ? '✓ HTMLとして表示'
+                : '　HTMLとして表示';
             const menuItems: ContextMenuEntry[] = [
+                {
+                    label: renderAsHtmlLabel,
+                    action: () => {
+                        this.table.executeRenderAsHtmlToggle(contextMenuColumnIndex);
+                    }
+                },
+                {separator: true},
                 {label: insertLeftLabel, action: () => { this.table.insertColumns(startColumnIndex, columnCount); }},
                 {label: insertRightLabel, action: () => { this.table.insertColumns(endColumnIndex + 1, columnCount); }},
                 {label: deleteLabel, action: () => { this.table.removeColumns(startColumnIndex, columnCount); }},

@@ -325,11 +325,19 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
     const existingSchemaText = await readFileAsync(schemaPath);
     const existingSchema = JSON.parse(existingSchemaText);
 
-    // 現在のDOM列幅を取得してヘッダーに反映
+    // 現在のDOM列幅と renderAsHtml フラグを取得してヘッダーに反映
+    // EditorTableData は getTableData() 経由でアクセスする（EditorTable の密結合な利用者として直接参照）
     const columnWidths = table.getColumnWidths();
+    const tableDataHeader = table.getTableData().header;
     const header = existingSchema['header'];
     for (let i = 0; i < header.length && i < columnWidths.length; i++) {
         header[i].width = parseInt(columnWidths[i]);
+        // renderAsHtml が true の場合のみキーを追加（falseはキー自体を削除してスキーマを汚染しない）
+        if (tableDataHeader[i] && tableDataHeader[i].renderAsHtml) {
+            header[i].renderAsHtml = true;
+        } else {
+            delete header[i].renderAsHtml;
+        }
     }
 
     await writeFileAsync(schemaPath, JSON.stringify(existingSchema, null, 4));

@@ -4,6 +4,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
 import {config} from "./config";
+import {sanitizeHtml} from "./html-sanitizer";
 
 /**
  * 参照ヒント管理モジュール
@@ -66,7 +67,7 @@ export class EditorTableReference {
         const column = this.tableData.header[dataColumnIndex];
         if (!column || !column.reference) {
             // 参照列でなければ通常のテキストコンテンツを設定
-            cell.textContent = value;
+            this.applyTextOrHtml(cell, value, column ? column.renderAsHtml : false);
             // PK列の場合は逆参照ヒントを再適用（全parentColumnNameの列値でエントリを収集）
             if (column && column.name === config.primaryKeyColumnName) {
                 const allEntries: ReverseReferenceEntry[] = [];
@@ -86,8 +87,8 @@ export class EditorTableReference {
             }
             return;
         }
-        // 値を設定
-        cell.textContent = value;
+        // 値を設定（参照列でも renderAsHtml を考慮）
+        this.applyTextOrHtml(cell, value, column.renderAsHtml);
         // 参照式をパース
         const expr = parseReferenceExpression(column.reference);
         if (isDynamicReference(expr)) {
@@ -297,6 +298,33 @@ export class EditorTableReference {
         hintSpan.classList.add('cell-reverse-reference-hint');
         hintSpan.textContent = hintText;
         cell.appendChild(hintSpan);
+    }
+
+    /**
+     * renderAsHtml フラグに応じてセルにテキストまたはHTMLを設定する。
+     * renderAsHtml が true の場合は `data-raw-value` に生テキストを保存し `innerHTML` で描画する。
+     * getCellValue が生テキストを正しく返せるよう `data-raw-value` を使う。
+     * renderAsHtml が false の場合は通常の `textContent` 設定。
+     */
+    applyTextOrHtml(cell: HTMLElement, value: string, renderAsHtml: boolean): void {
+        if (renderAsHtml) {
+            cell.dataset.rawValue = value;
+            cell.innerHTML = sanitizeHtml(value);
+            // HTML改行（<br>）が描画されるようにwhiteSpaceをnormalにする
+            cell.style.whiteSpace = 'normal';
+            // 行高さを自然なフォント行高にする（固定px指定を解除）
+            cell.style.lineHeight = 'normal';
+            // はみ出しはクリップのまま維持
+            cell.style.overflow = 'hidden';
+        } else {
+            // data-raw-value が残っている場合はクリアする（モード切替時の残留防止）
+            delete cell.dataset.rawValue;
+            cell.textContent = value;
+            // renderAsHtml モードからテキストモードに戻した場合はスタイルを元に戻す
+            cell.style.whiteSpace = '';
+            cell.style.lineHeight = '';
+            cell.style.overflow = '';
+        }
     }
 
     /**
