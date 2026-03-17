@@ -418,6 +418,36 @@ test.describe('ドロップダウン クイックビュー', () => {
     // =========================================================================
 
     test(
+        'ダークモードでクイックビューのフォント色が --font-color である',
+        async ({ page }) => {
+            // index.html の body に data-theme="dark" が設定済みのため、ダークテーマが既に適用されている
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // クイックビュー要素自身から CSS 変数の解決済み値と実際の color を同時に取得して比較する
+            const actualColor = await quickView.evaluate(el => getComputedStyle(el).color);
+            // CSS 変数の値を rgb/rgba 形式に正規化して比較する
+            const expectedColor = await quickView.evaluate(el => {
+                const varValue = getComputedStyle(el).getPropertyValue('--font-color').trim();
+                const tempEl = document.createElement('div');
+                tempEl.style.color = varValue;
+                el.appendChild(tempEl);
+                const computed = getComputedStyle(tempEl).color;
+                el.removeChild(tempEl);
+                return computed;
+            });
+
+            expect(actualColor).toBe(expectedColor);
+        },
+    );
+
+    test(
         'クイックビューの背景色が --background-sub-color である',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');

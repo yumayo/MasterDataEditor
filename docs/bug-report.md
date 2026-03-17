@@ -1975,3 +1975,16 @@ CommandPaletteの初期実装時、テーブル名のみで十分と判断し、
 3. 非同期処理を含むメソッドを新規追加する場合は、currentRequestIdパターンの適用有無をチェックリストとして確認する。
 
 ---
+
+## 135. [dc4d8ac] — ダークモードのクイックビューにフォント色を追加
+
+### 不具合原因名
+浮遊UI要素へのCSS `color` 宣言の欠落
+
+### なぜそうなったのか
+`.dropdown-quick-view` は `body` 直下に `position: fixed` で配置される浮遊UI要素である。`background-color: var(--background-sub-color)` は宣言されていたが、`color: var(--font-color)` の宣言が欠落していた。`body` 要素自体にも `color` プロパティが設定されていないため、ブラウザデフォルトの黒色が継承され、ダークモード（暗い背景色）でテキストが見にくくなった。同種の浮遊UI（`.context-menu`、`.command-palette-input`）は `color: var(--font-color)` を明示宣言しており、`.dropdown-quick-view` だけが漏れていた。
+
+### どうしたら今後は再発しないか
+浮遊UI要素（`body` 直下 `position: fixed/absolute` で配置し、通常のDOM階層から離脱する要素）を新規作成する際は、`background-color` と同時に `color: var(--font-color)` を必ず宣言する。既存の `.context-menu`、`.relations-panel` と同じパターンを踏襲する。レビュー時に「浮遊UI要素に `color` が宣言されているか」をチェック項目に含める。
+
+---
