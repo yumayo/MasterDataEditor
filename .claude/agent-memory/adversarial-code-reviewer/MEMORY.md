@@ -86,8 +86,20 @@
 - **IMPORTANT**: `RenderAsHtmlToggleCommand` の `execute`/`undo`/`redo` が全て `this.toggle()` を呼ぶだけ → `redo()` は不要（`Command` インターフェースに `redo` があるなら正しい実装だが、interface 側に `redo` があるかを確認すること）。
 - **PATTERN**: renderAsHtml + 参照ヒント共存時: innerHTML で描画した後に span を appendChild するのは安全だが、innerHTML 再設定でヒントが消えるため、setCellValue の冒頭でヒント remove → applyTextOrHtml という順序が不変条件。現実装は満たしている。
 
+## FEAT_0043 FormPanel Known Patterns
+- **CRITICAL**: `EditorTable.tab` が public フィールドで生焼けオブジェクトパターン再発。`connectTabRef(tab)` + private化すべき
+- **CRITICAL**: `loadFkSectionDataAsync` が `section.title` 文字列を正規表現パースしてテーブル名取得 → `section.tableKey` / `section.fkValue` を直接使うべき
+- **CRITICAL**: `renderCurrentPageAsync` に try/catch なし → resolveAsync 例外で「読み込み中...」が永続固着
+- **CRITICAL**: `reverseMap.get(pkValue) ?? []` 含む ?? 演算子が計8箇所 → フォールバック禁止ルール大量違反
+- **CRITICAL**: テストスキーマが `{ header: [...] }` 形式だが `SchemaJson` は `{ columns: [...] }` を期待 → FK参照セクションが常に空の可能性
+- **IMPORTANT**: `getPanelElement()` がgetter相当 → `dispose()` メソッドで閉じ処理をカプセル化すべき
+- **IMPORTANT**: `visibility: hidden/''` によるRP切り替えが `disconnectEditorTable()` と二重状態管理
+- **PATTERN**: `buildRefSection` と `loadFkSectionDataAsync` でref-item構築ロジックが完全コピペ → 共通メソッド化必須
+- **PATTERN**: CSS `rgba(255,255,255,0.03/0.06/0.08)` ハードコード + `--hover-color` は未定義変数（CSS hardcoded 10回目）
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-18) FEAT_0043 FormPanel: 致命的5件、重要5件、軽微3件
 - (2026-03-18) FEAT_0042 HTML cell render: 致命的2件、重要3件、軽微2件
 - (2026-03-18) FEAT_0040 search background: 致命的3件、重要4件、軽微3件
 - (2026-03-17) FEAT_0038 fuzzy-search: 致命的4件、重要5件、軽微4件

@@ -238,6 +238,20 @@
 - 残課題(🟡): aria-live="polite" 未設定（動的更新のスクリーンリーダー非対応・継続パターン）
 - 残課題(🟡): .search-result-reference-hint の color: #528bff がハードコード（bug-report #116パターン）
 
+#### FEAT_0043 フォームビュー作成（2026-03-18レビュー）評価: B-
+- ファイル: project_feat0043_form_panel.md
+- 良い点: ✕ボタンに aria-label 付与（このプロジェクトで珍しく適切なアクセシビリティ対応）
+- 良い点: form-panel-depth-bar で4段深度インジケーターを実装
+- 良い点: コンテキストメニューが✕クリック後に正しくhideされている（bug-report #8/#65 再発なし）
+- 残課題(🔴): FK参照・逆参照のアコーディオンが未実装。ドリルダウンUIが存在しない（要件の核心が未完成）
+- 残課題(🔴): form-panel が relations-panel の兄弟としてeditor-right-slot内に配置。visibility:hiddenとの併用でflex構造崩壊リスク
+- 残課題(🔴): form-panel-close ボタンが form-panel の最初の子要素で、form-panel-header の外側に浮いている（DOM順の設計ミス）
+- 残課題(🟡): form-panel-field-label に PK/FK バッジなし（テーブルビューと非対称）
+- 残課題(🟡): form-panel-title と form-panel-breadcrumb が同じ情報を二重表示
+- 残課題(🟡): form-panel-depth-dot がインタラクティブでない（深度に直接ジャンプ不可）
+- 残課題(🟡): form-panel-field-row が固定2列でフィールド数が奇数のとき最終行が半欠け
+- 状態管理: 行切り替え時のフォームビュー更新仕様が未確定（深度2以上でのリセット/保持の挙動）
+
 ### DOM構造パターン（良い例）
 - タブバー: `div#tab > div.tab-scroll-area > ul#tab-content.tab-list > li.tab-button`
 - タブボタン: `.tab-button-name`, `.tab-button-dirty`, `button.tab-button-close` の3要素構成
