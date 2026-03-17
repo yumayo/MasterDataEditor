@@ -206,36 +206,54 @@ export class SearchPanel {
             this.resultsElement.replaceChildren();
             return;
         }
-        const options: SearchOptions = {
-            caseSensitive: this.caseSensitive,
-            wholeWord: this.wholeWordManual || this.wholeWordAuto,
-            useRegex: this.useRegex,
-        };
-        const query = parseSearchQuery(inputText, options);
-        const results = await this.searchAsync(query);
-        // await の間に新しい検索が始まっていた場合は結果を破棄する
-        if (requestId !== this.searchRequestId) return;
-        this.renderResults(results, inputText);
+        // 空文字でないことが確定してからローディング表示を開始する
+        this.resultsElement.classList.add('searching');
+        try {
+            const options: SearchOptions = {
+                caseSensitive: this.caseSensitive,
+                wholeWord: this.wholeWordManual || this.wholeWordAuto,
+                useRegex: this.useRegex,
+            };
+            const query = parseSearchQuery(inputText, options);
+            const results = await this.searchAsync(query, requestId);
+            // await の間に新しい検索が始まっていた場合は結果を破棄する
+            if (requestId !== this.searchRequestId) return;
+            this.renderResults(results, inputText);
+        } finally {
+            // 自分が最新リクエストの場合のみ除去する（新しいリクエストが既に付与している場合は触らない）
+            if (requestId === this.searchRequestId) {
+                this.resultsElement.classList.remove('searching');
+            }
+        }
     }
 
     /**
-     * 全テーブルを横断して検索する
+     * 全テーブルを横断して検索する。
+     * テーブルデータ取得は Promise.all で並列化し、検索処理はテーブルごとに
+     * setTimeout(0) でメインスレッドに制御を返してキー入力のカクつきを防ぐ。
+     * requestId が変化した時点で中断して空配列を返す。
      */
-    private async searchAsync(query: SearchQuery): Promise<SearchResult[]> {
-        const results: SearchResult[] = [];
+    private async searchAsync(query: SearchQuery, requestId: number): Promise<SearchResult[]> {
         const tableNames = await this.dataProvider.loadAllTableNamesAsync();
+        // テーブル名取得後に新しいリクエストが来ていれば中断する
+        if (requestId !== this.searchRequestId) return [];
         // フィルタクエリの場合は対象テーブルのみ検索
         const targetTables = query.kind === 'filter'
             ? tableNames.filter(name => name === query.tableName)
             : tableNames;
-        for (const tableName of targetTables) {
-            try {
-                const tableData = await this.dataProvider.getTableDataAsync(tableName);
-                this.searchInTable(query, tableData, results);
-            } catch {
-                // テーブル読み込みエラーは無視して次へ
-                continue;
-            }
+        // テーブルデータをすべて並列取得する
+        const tableDataResults = await Promise.all(
+            targetTables.map(tableName => this.dataProvider.getTableDataAsync(tableName))
+        );
+        // 並列取得完了後に新しいリクエストが来ていれば中断する
+        if (requestId !== this.searchRequestId) return [];
+        const results: SearchResult[] = [];
+        for (let i = 0; i < tableDataResults.length; i++) {
+            if (requestId !== this.searchRequestId) return [];
+            // 2テーブル目以降の前にメインスレッドに制御を返してキー入力のカクつきを防ぐ
+            if (i > 0) await new Promise(resolve => setTimeout(resolve, 0));
+            if (requestId !== this.searchRequestId) return [];
+            this.searchInTable(query, tableDataResults[i], results);
         }
         return results;
     }

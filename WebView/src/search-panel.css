@@ -57,6 +57,12 @@
 .search-panel-results {
     overflow-y: auto;
     max-height: calc(100vh - 160px);
+    transition: opacity 0.1s ease;
+}
+
+/* 検索中は半透明にして処理中であることをユーザーに伝える */
+.search-panel-results.searching {
+    opacity: 0.5;
 }
 
 .search-result-item {

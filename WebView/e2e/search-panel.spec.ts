@@ -290,4 +290,32 @@ test.describe('検索パネル', () => {
         await expect(results.first()).toBeVisible({timeout: 10000});
         await expect(results.first().locator('.search-result-value')).toHaveText('quest_a');
     });
+
+    test('検索中にローディングインジケータが表示され、完了後に消えること', async ({page}) => {
+        await page.keyboard.press('Control+Shift+F');
+        const searchInput = getSearchInput(page);
+        // MutationObserver で searching クラスの付与を検知する（検索が高速完了してもキャッチできる）
+        await page.evaluate(() => {
+            const target = document.querySelector('.search-panel-results')!;
+            (window as Record<string, unknown>)['__searchingDetected'] = false;
+            const observer = new MutationObserver(() => {
+                if (target.classList.contains('searching')) {
+                    (window as Record<string, unknown>)['__searchingDetected'] = true;
+                    observer.disconnect();
+                }
+            });
+            observer.observe(target, {attributes: true, attributeFilter: ['class']});
+        });
+        // 検索ボックスに文字を入力する
+        await searchInput.fill('quest_a');
+        // 検索完了まで待つ（結果が表示される）
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible({timeout: 10000});
+        // searching クラスが一時的に付与されたことを MutationObserver 経由で確認する
+        const wasSearching = await page.evaluate(() => (window as Record<string, unknown>)['__searchingDetected']);
+        expect(wasSearching).toBe(true);
+        // 検索完了後に searching クラスが除去されていること
+        const searchResultsContainer = page.locator('.search-panel-results');
+        await expect(searchResultsContainer).not.toHaveClass(/searching/, {timeout: 5000});
+    });
 });
