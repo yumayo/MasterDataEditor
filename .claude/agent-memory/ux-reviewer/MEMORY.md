@@ -198,6 +198,16 @@
 - border-radius:0 / description表示 / description検索 の3改修すべて正常動作確認
 - `[data-theme="dark"] .command-palette-item.selected:hover` 追加（FEAT_0024残課題解消）
 - 残課題(🟡): div.command-palette-item に role="option"/aria-selected なし（継続パターン）
+
+#### FEAT_0041 テーブル名と説明の表示順逆転（2026-03-18レビュー）評価: A
+- ファイル: project_feat0041_table_name_description_order.md
+- DOM子要素順: explorer-file-name → explorer-file-description / tab-button-name → tab-button-description の順序が正しく実装
+- CSS: name=12px/font-weight:500、description=11px/opacity:0.65 の二段階で主従明確
+- エクスプローラー・タブ間で完全に統一された視覚パターン
+- descriptionなしのテーブル（quest）は description span が存在しない（DOM節約適切）
+- 残課題(🟡): explorer-file-name に text-overflow: ellipsis / overflow: hidden がない（tab-button-name には存在。非対称。bug-report #3パターン）
+- 残課題(🟡): explorer-file-description に title 属性なし（\n切り捨てで失われた後続行が確認不可）
+- 残課題(🟡): explorer-file / tab-button に role / aria-label なし（継続パターン）
 - 残課題(🟡): div.command-palette-list に role="listbox" なし（継続パターン）
 - 残課題(🟡): input.command-palette-input に aria-controls/aria-activedescendant なし
 - 残課題(🟡): .command-palette-item-kind クラスがCSS定義に残存するがDOMには出現しない（将来の予備枠か残骸か不明）
