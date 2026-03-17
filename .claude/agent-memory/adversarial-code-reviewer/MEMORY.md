@@ -77,8 +77,18 @@
 → 詳細は `feat-archive.md` 参照
 - **CRITICAL UNFIXED**: editor-table.ts L1604 updateFullDataCell に `column - 1`（DOM列）を渡している。storeColIndex を使うべき
 
+## FEAT_0042 HTML Cell Render Known Patterns
+- **CRITICAL**: sanitizeHtml のプレースホルダー `\x00BR\x00` がユーザー入力に含まれる場合、手順2で `&` エスケープ後にプレースホルダーが `<br>` に展開され任意の `<br>` が挿入される。ただし `\x00` はCSVや通常テキスト入力では実用上発生しにくい。将来的な攻撃面として存在する。
+- **CRITICAL**: `applyTextOrHtml` が `cell.innerHTML = sanitizeHtml(value)` した後、参照ヒントの `appendChild` は機能するが、逆参照ヒントが PK 列に付く際も同フローを通るため、PK列に renderAsHtml が有効な場合のみ問題はないが、renderAsHtml列への参照ヒント+innerHTML の組み合わせでセルにヒント span が残ったまま innerHTML が上書きされると、次の setCellValue でヒント削除→innerHTML 再設定の順序になるため、一見正しく見えるが「setCellValue 冒頭でヒントを remove() してから innerHTML 設定」という不変条件が実際には満たされている。問題なし。
+- **CRITICAL**: `getCellValue` で `cell.dataset.rawValue !== undefined` を先頭チェックするが、renderAsHtml列に参照ヒント span を appendChild した後は、`data-raw-value` も設定されているため rawValue を返す。正常。ただし、`cell.dataset.rawValue` が空文字列 `""` の場合 `undefined` ではなく `""` を返すため空文字値は正常に機能する。
+- **CRITICAL**: `createCell` で `table.tableData.header[columnIndex]` アクセスが未範囲チェック。columnIndex がバッファ行挿入時に header 長を超える場合 `undefined` になり `.renderAsHtml` で TypeError がスローされる。
+- **IMPORTANT**: `getColumnRenderAsHtml` と `getColumn` が getter に相当する（CLAUDE.md getter禁止）。
+- **IMPORTANT**: `RenderAsHtmlToggleCommand` の `execute`/`undo`/`redo` が全て `this.toggle()` を呼ぶだけ → `redo()` は不要（`Command` インターフェースに `redo` があるなら正しい実装だが、interface 側に `redo` があるかを確認すること）。
+- **PATTERN**: renderAsHtml + 参照ヒント共存時: innerHTML で描画した後に span を appendChild するのは安全だが、innerHTML 再設定でヒントが消えるため、setCellValue の冒頭でヒント remove → applyTextOrHtml という順序が不変条件。現実装は満たしている。
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-18) FEAT_0042 HTML cell render: 致命的2件、重要3件、軽微2件
 - (2026-03-18) FEAT_0040 search background: 致命的3件、重要4件、軽微3件
 - (2026-03-17) FEAT_0038 fuzzy-search: 致命的4件、重要5件、軽微4件
 - (2026-03-17) CommandPalette description表示: 致命的1件、重要3件、軽微2件

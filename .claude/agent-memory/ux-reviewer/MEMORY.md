@@ -199,6 +199,13 @@
 - `[data-theme="dark"] .command-palette-item.selected:hover` 追加（FEAT_0024残課題解消）
 - 残課題(🟡): div.command-palette-item に role="option"/aria-selected なし（継続パターン）
 
+#### FEAT_0042 HTMLのセルを表示する（2026-03-18レビュー）評価: B
+- ファイル: project_feat0042_html_cell_render.md
+- セパレーター配置・XSSエスケープ・data-raw-value保持は正しく実装
+- 残課題(🔴): renderAsHtml列でも height:20px/max-height:20px 固定のまま。`<br>` 改行が視覚的に機能しない（bug-report #115と同根）
+- 残課題(🔴): チェックマーク ON/OFF が全角空白とUnicode文字`✓`の切り替えで実装。role="menuitemcheckbox"/aria-checked なし
+- 残課題(🟡): 列ヘッダーにHTML表示中を示す視覚マーカーがない（badge等の不在）
+
 #### FEAT_0041 テーブル名と説明の表示順逆転（2026-03-18レビュー）評価: A
 - ファイル: project_feat0041_table_name_description_order.md
 - DOM子要素順: explorer-file-name → explorer-file-description / tab-button-name → tab-button-description の順序が正しく実装
