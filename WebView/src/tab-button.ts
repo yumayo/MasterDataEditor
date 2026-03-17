@@ -1,5 +1,6 @@
 import {Tab} from "./tab";
 import {Editor} from "./editor";
+import {extractFirstLineFromDescription} from "./description-utils";
 
 export class TabButton {
 
@@ -24,21 +25,25 @@ export class TabButton {
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
 
-        // ラベル部（テーブル名 + description の2行構造）
+        // ラベル部（テーブル名を1行目、description を2行目とする2行構造）
         const labelContainer = document.createElement('div');
         labelContainer.classList.add('tab-button-label');
-
-        if (description !== null && description !== '') {
-            const descSpan = document.createElement('span');
-            descSpan.classList.add('tab-button-description');
-            descSpan.textContent = description;
-            labelContainer.appendChild(descSpan);
-        }
 
         const nameSpan = document.createElement('span');
         nameSpan.classList.add('tab-button-name');
         nameSpan.textContent = name;
         labelContainer.appendChild(nameSpan);
+
+        // description が存在する場合は1行目のみ使用。表示する行がない場合は生成しない
+        if (description !== null) {
+            const firstLine = extractFirstLineFromDescription(description);
+            if (firstLine !== null) {
+                const descSpan = document.createElement('span');
+                descSpan.classList.add('tab-button-description');
+                descSpan.textContent = firstLine;
+                labelContainer.appendChild(descSpan);
+            }
+        }
 
         this.element.appendChild(labelContainer);
 
@@ -89,10 +94,13 @@ export class TabButton {
         const label = this.element.querySelector('.tab-button-label');
         if (!label) throw new Error('[TabButton] applyDescription: .tab-button-label が見つかりません');
         if (label.querySelector('.tab-button-description')) return;
+        // description は1行目のみ使用し、name の後（2行目）に追加する
+        const firstLine = extractFirstLineFromDescription(description);
+        if (firstLine === null) return;
         const descSpan = document.createElement('span');
         descSpan.classList.add('tab-button-description');
-        descSpan.textContent = description;
-        label.insertBefore(descSpan, label.firstChild);
+        descSpan.textContent = firstLine;
+        label.appendChild(descSpan);
     }
 
     click() {

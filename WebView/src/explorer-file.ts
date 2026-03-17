@@ -1,4 +1,5 @@
 import {Tab} from "./tab";
+import {extractFirstLineFromDescription} from "./description-utils";
 
 export class ExplorerFile {
 
@@ -24,18 +25,22 @@ export class ExplorerFile {
         div.classList.add('explorer-file');
         div.setAttribute('style', 'padding-left: ' + this.depth * 16 + 'px');
 
-        // description が存在かつ空文字でない場合は2行構造（description + name）、それ以外は名前のみ
-        if (description !== null && description !== '') {
-            const descSpan = document.createElement('span');
-            descSpan.classList.add('explorer-file-description');
-            descSpan.textContent = description;
-            div.appendChild(descSpan);
-        }
-
+        // name を1行目（主情報）、description を2行目（補助情報）として表示する
         const nameSpan = document.createElement('span');
         nameSpan.classList.add('explorer-file-name');
         nameSpan.textContent = name;
         div.appendChild(nameSpan);
+
+        // description が存在する場合は1行目のみ使用。表示する行がない場合は生成しない
+        if (description !== null) {
+            const firstLine = extractFirstLineFromDescription(description);
+            if (firstLine !== null) {
+                const descSpan = document.createElement('span');
+                descSpan.classList.add('explorer-file-description');
+                descSpan.textContent = firstLine;
+                div.appendChild(descSpan);
+            }
+        }
 
         div.addEventListener('click', this.onClick.bind(this));
 

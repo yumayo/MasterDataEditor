@@ -1,6 +1,7 @@
 import { gitStatusAsync, gitShowAsync, GitStatusEntry } from './api';
 import { readFileAsync } from './api';
 import { Tab } from './tab';
+import { extractFirstLineFromDescription } from './description-utils';
 
 /**
  * ソース管理サイドバーパネル
@@ -113,7 +114,7 @@ export class SourceControlPanel {
 
     /**
      * ファイルアイテム（クリッカブル）のDOM要素を生成する
-     * ExplorerFileと同様の2行構造（description + tableName）で表示する
+     * ExplorerFileと同様の2行構造（テーブル名 + description）で表示する
      * isStaged: true の場合は staged セクション（左右ともに読み取り専用）
      * description: "" の場合は description行を非表示にする
      */
@@ -121,19 +122,22 @@ export class SourceControlPanel {
         const item = document.createElement('div');
         item.classList.add('source-control-file-item');
 
-        // description が存在する場合は上段に表示する
-        if (description !== '') {
-            const descEl = document.createElement('span');
-            descEl.classList.add('explorer-file-description');
-            descEl.textContent = description;
-            item.appendChild(descEl);
-        }
-
-        // テーブル名は下段に表示する
+        // テーブル名は上段（主情報）に表示する
         const nameEl = document.createElement('span');
         nameEl.classList.add('explorer-file-name');
         nameEl.textContent = entry.tableName;
         item.appendChild(nameEl);
+
+        // description が存在する場合は1行目のみ使用して下段（補助情報）に表示する
+        if (description !== '') {
+            const firstLine = extractFirstLineFromDescription(description);
+            if (firstLine !== null) {
+                const descEl = document.createElement('span');
+                descEl.classList.add('explorer-file-description');
+                descEl.textContent = firstLine;
+                item.appendChild(descEl);
+            }
+        }
 
         item.addEventListener('click', () => {
             // DOMをSSOTとしてアクティブクラスを切り替える

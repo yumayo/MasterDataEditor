@@ -41,16 +41,16 @@
     background-color: rgba(100, 140, 255, 0.2);
 }
 
-/* description（日本語名）: 通常フォントサイズで太字 */
-.explorer-file-description {
+/* テーブル名: 主情報として通常フォントサイズで太字 */
+.explorer-file-name {
     font-size: 12px;
     font-weight: 500;
     line-height: 1.3;
     padding-top: 3px;
 }
 
-/* テーブル名: 灰色・小さめフォント */
-.explorer-file-name {
+/* description（説明文）: 補助情報として控えめな小さめフォント */
+.explorer-file-description {
     font-size: 11px;
     opacity: 0.65;
     line-height: 1.3;

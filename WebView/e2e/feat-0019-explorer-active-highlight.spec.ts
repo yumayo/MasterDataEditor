@@ -352,3 +352,161 @@ test.describe('タブボタンの2行表示', () => {
         },
     );
 });
+
+// =============================================================================
+// テスト4: FEAT_0041 — エクスプローラーでテーブル名が説明の前に表示されること
+// =============================================================================
+// テストデータ: description に "\n" 含む item テーブルを追加して切り捨ても検証する
+// =============================================================================
+
+/**
+ * FEAT_0041 用のファイルシステム
+ * item: description に改行を含む（"アイテムマスタ\n詳細説明"）
+ * enemy: 通常の description
+ * quest: description なし
+ */
+function createFeat0041FileSystem(): MockFileSystem {
+    return {
+        "schema/item.json": JSON.stringify({
+            description: "アイテムマスタ\n詳細説明",
+            primary_key: "id",
+            header: [
+                { key: 0, name: "id",    type: "int" },
+                { key: 1, name: "name",  type: "string" },
+                { key: 2, name: "value", type: "int" },
+            ],
+        }),
+        "data/item.csv": [
+            "id,name,value",
+            "1,sword,100",
+        ].join("\n"),
+        "schema/enemy.json": JSON.stringify({
+            description: "敵マスター",
+            primary_key: "id",
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+        }),
+        "data/enemy.csv": [
+            "id,ja",
+            "1,スライム",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            primary_key: "id",
+            header: [
+                { key: 0, name: "id",   type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+        }),
+        "data/quest.csv": [
+            "id,name",
+            "1,first_quest",
+        ].join("\n"),
+    };
+}
+
+test.describe('FEAT_0041: エクスプローラーでテーブル名が説明の前に表示されること', () => {
+
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createFeat0041FileSystem());
+        await page.goto('/');
+    });
+
+    // -------------------------------------------------------------------------
+    // テスト4-1: .explorer-file の最初の子要素が .explorer-file-name であること
+    // -------------------------------------------------------------------------
+    test(
+        'エクスプローラーのファイルノードで最初の子要素が .explorer-file-name であること',
+        async ({ page }) => {
+            const itemFile = getExplorerFile(page, 'item');
+            await expect(itemFile).toBeVisible();
+
+            // 最初の子要素が .explorer-file-name であること（テーブル名が1行目）
+            const firstChild = itemFile.locator(':scope > :first-child');
+            await expect(firstChild).toHaveClass(/explorer-file-name/);
+
+            // 次の子要素が .explorer-file-description であること（説明が2行目）
+            const secondChild = itemFile.locator(':scope > :nth-child(2)');
+            await expect(secondChild).toHaveClass(/explorer-file-description/);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト4-2: description の \n 以降が表示されないこと（"アイテムマスタ" のみ表示）
+    // -------------------------------------------------------------------------
+    test(
+        'エクスプローラーの説明で \\n 以降が切り捨てられ1行目のみ表示されること',
+        async ({ page }) => {
+            const itemFile = getExplorerFile(page, 'item');
+            await expect(itemFile).toBeVisible();
+
+            // .explorer-file-description のテキストが \n より前の部分のみであること
+            const descriptionSpan = itemFile.locator('.explorer-file-description');
+            await expect(descriptionSpan).toBeVisible();
+            await expect(descriptionSpan).toHaveText('アイテムマスタ');
+        },
+    );
+});
+
+// =============================================================================
+// テスト5: FEAT_0041 — タブでテーブル名が説明の前に表示されること
+// =============================================================================
+
+test.describe('FEAT_0041: タブでテーブル名が説明の前に表示されること', () => {
+
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createFeat0041FileSystem());
+        await page.goto('/');
+    });
+
+    // -------------------------------------------------------------------------
+    // テスト5-1: .tab-button-label の最初の子要素が .tab-button-name であること
+    // -------------------------------------------------------------------------
+    test(
+        'タブの .tab-button-label で最初の子要素が .tab-button-name であること',
+        async ({ page }) => {
+            // item タブを開く
+            const explorer = page.locator('#explorer');
+            await explorer.locator('.explorer-file-name', { hasText: 'item' }).click();
+
+            const tabButton = page.locator('.tab-button').filter({
+                has: page.locator('.tab-button-name', { hasText: 'item' }),
+            }).first();
+            await expect(tabButton).toBeVisible();
+
+            const label = tabButton.locator('.tab-button-label');
+            await expect(label).toBeVisible();
+
+            // .tab-button-label の最初の子要素が .tab-button-name であること（テーブル名が1行目）
+            const firstChild = label.locator(':scope > :first-child');
+            await expect(firstChild).toHaveClass(/tab-button-name/);
+
+            // 次の子要素が .tab-button-description であること（説明が2行目）
+            const secondChild = label.locator(':scope > :nth-child(2)');
+            await expect(secondChild).toHaveClass(/tab-button-description/);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト5-2: タブの description で \n 以降が切り捨てられること
+    // -------------------------------------------------------------------------
+    test(
+        'タブの説明で \\n 以降が切り捨てられ1行目のみ表示されること',
+        async ({ page }) => {
+            const explorer = page.locator('#explorer');
+            await explorer.locator('.explorer-file-name', { hasText: 'item' }).click();
+
+            const tabButton = page.locator('.tab-button').filter({
+                has: page.locator('.tab-button-name', { hasText: 'item' }),
+            }).first();
+            await expect(tabButton).toBeVisible();
+
+            const label = tabButton.locator('.tab-button-label');
+            const descriptionSpan = label.locator('.tab-button-description');
+            await expect(descriptionSpan).toBeVisible();
+            // \n 以降が切り捨てられた "アイテムマスタ" のみ表示されること
+            await expect(descriptionSpan).toHaveText('アイテムマスタ');
+        },
+    );
+});
