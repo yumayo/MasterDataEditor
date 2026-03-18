@@ -32,6 +32,9 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //  13. クイックビューの背景色が --background-sub-color である
 //  14. クイックビューに max-width が設定されていない
 //  15. クイックビューに max-height と overflow-y:auto が設定されている
+// BUG_0026:
+//  16. クイックビューはビューポート下端付近でも 2D AABB 判定でドロップダウンリストの領域に重ならない
+//  17. 右端フォールバック時にクイックビューはドロップダウンリストの領域に水平方向で被らない
 // =============================================================================
 
 // =============================================================================
@@ -121,6 +124,35 @@ async function openFkDropdownAsync(page: Page, table: Locator, rowIndex: number,
     // アイテムが1件以上表示されるまで待機
     await expect(dropdownList.locator('.grid-dropdown-item').first()).toBeVisible();
     return dropdownList;
+}
+
+/**
+ * 2D AABB 重なり判定: クイックビューとドロップダウンリストが重ならないことを検証する。
+ * 水平または垂直のいずれか一方でも分離していれば重なりなしと判定する。
+ */
+function assertNoAABBOverlap(
+    quickViewBox: { x: number; y: number; width: number; height: number },
+    dropdownBox: { x: number; y: number; width: number; height: number },
+): void {
+    const quickViewLeft = quickViewBox.x;
+    const quickViewRight = quickViewBox.x + quickViewBox.width;
+    const quickViewTop = quickViewBox.y;
+    const quickViewBottom = quickViewBox.y + quickViewBox.height;
+    const dropdownLeft = dropdownBox.x;
+    const dropdownRight = dropdownBox.x + dropdownBox.width;
+    const dropdownTop = dropdownBox.y;
+    const dropdownBottom = dropdownBox.y + dropdownBox.height;
+
+    const noHorizontalOverlap = quickViewRight <= dropdownLeft || quickViewLeft >= dropdownRight;
+    const noVerticalOverlap = quickViewBottom <= dropdownTop || quickViewTop >= dropdownBottom;
+    const noOverlap = noHorizontalOverlap || noVerticalOverlap;
+    expect(
+        noOverlap,
+        `クイックビュー（left:${quickViewLeft.toFixed(0)}, right:${quickViewRight.toFixed(0)}, ` +
+        `top:${quickViewTop.toFixed(0)}, bottom:${quickViewBottom.toFixed(0)}）が` +
+        `ドロップダウンリスト（left:${dropdownLeft.toFixed(0)}, right:${dropdownRight.toFixed(0)}, ` +
+        `top:${dropdownTop.toFixed(0)}, bottom:${dropdownBottom.toFixed(0)}）と重なっています`,
+    ).toBe(true);
 }
 
 // =============================================================================
@@ -568,6 +600,103 @@ test.describe('ドロップダウン クイックビュー', () => {
             // 参照先テーブル (reward_group) の列名が EditorTable のヘッダーに表示されていることを検証する
             await expect(columnHeaderRow).toContainText('id');
             await expect(columnHeaderRow).toContainText('name');
+        },
+    );
+
+    // =========================================================================
+    // BUG_0026: クイックビューがプルダウンメニューに被る問題のテスト
+    //
+    // 不具合内容:
+    //   positionElement() でビューポート下端をはみ出す場合に上方向補正するが、
+    //   「ドロップダウンリストの top より上に行かない」制約がないため、
+    //   クイックビューがドロップダウンリストに重なって操作不能になる。
+    //
+    // 検証方法:
+    //   ドロップダウンリストを画面下端付近に強制配置して上方向補正が発動する状況を作り、
+    //   クイックビューの矩形とドロップダウンリストの矩形が重ならないことを検証する。
+    // =========================================================================
+
+    test(
+        'クイックビューはビューポート下端付近でも　ドロップダウンリストの領域に重ならない',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンリスト要素をビューポート下端付近に強制配置して、
+            // クイックビューの上方向補正が発動する状況を作る。
+            // grid-dropdown-list は position:absolute だが、親 grid-dropdown を fixed に変更することで
+            // ビューポート下端付近に配置する。
+            await page.evaluate(() => {
+                // grid-dropdown コンテナを画面下端付近に強制配置する
+                const dropdown = document.querySelector('.editor-left-pane .grid-dropdown') as HTMLElement | null;
+                if (!dropdown) throw new Error('.grid-dropdown が見つかりません');
+                dropdown.style.position = 'fixed';
+                // ビューポート下端から100px上に配置（max-height:200px のリストが下端付近に来る）
+                dropdown.style.top = (window.innerHeight - 100) + 'px';
+                dropdown.style.left = '200px';
+            });
+
+            // アイテムにホバーしてクイックビューを表示させる
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            // クイックビューとドロップダウンリストの矩形を取得する
+            const quickViewBox = await quickView.boundingBox();
+            const dropdownBox = await dropdown.boundingBox();
+            if (!quickViewBox || !dropdownBox) {
+                throw new Error('boundingBox が取得できません');
+            }
+
+            // 2D AABB 重なり判定: クイックビューがドロップダウンリストと重ならないことを検証する
+            assertNoAABBOverlap(quickViewBox, dropdownBox);
+        },
+    );
+
+    // =========================================================================
+    // BUG_0026 追加: 右端フォールバック時にクイックビューがドロップダウンに被らない
+    //
+    // シナリオ:
+    //   ドロップダウンリストをビューポート右端付近に配置する。
+    //   positionElement() はまず右側に配置を試み、はみ出しを検出して左側フォールバックを実行する。
+    //   左側にも十分なスペースがない場合、maxWidth 制約によりクイックビューがドロップダウン領域に
+    //   水平方向で重ならないよう制限される。
+    // =========================================================================
+
+    test(
+        '右端フォールバック時にクイックビューはドロップダウンリストの領域に水平方向で被らない',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンリストをビューポート右端付近に強制配置する。
+            // これにより右側配置でははみ出し、左側フォールバックが発動する。
+            // 左側スペースも小さいため maxWidth 制約が発動してドロップダウンに被らないことを検証する。
+            await page.evaluate(() => {
+                const dropdownEl = document.querySelector('.editor-left-pane .grid-dropdown') as HTMLElement | null;
+                if (!dropdownEl) throw new Error('.grid-dropdown が見つかりません');
+                dropdownEl.style.position = 'fixed';
+                // ビューポート右端 - 200px に配置（右側にはわずかしかスペースがない）
+                dropdownEl.style.left = (window.innerWidth - 200) + 'px';
+                dropdownEl.style.top = '200px';
+            });
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            const quickViewBox = await quickView.boundingBox();
+            const dropdownBox = await dropdown.boundingBox();
+            if (!quickViewBox || !dropdownBox) {
+                throw new Error('boundingBox が取得できません');
+            }
+
+            // 2D AABB 重なり判定: クイックビューがドロップダウンリストと重ならないことを検証する
+            assertNoAABBOverlap(quickViewBox, dropdownBox);
         },
     );
 });

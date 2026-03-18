@@ -300,23 +300,52 @@ export class DropdownQuickView {
         const listRect = this.dropdownListElement.getBoundingClientRect();
         const anchorRect = anchorElement.getBoundingClientRect();
 
+        // 前回呼び出し時の制約スタイルをリセットする（シングルトンのため残存する）
+        this.element.style.maxWidth = '';
+        this.element.style.maxHeight = '';
+
         // まずドロップダウンリストの右側に配置を試みる
         this.element.style.left = listRect.right + 'px';
         this.element.style.top = anchorRect.top + 'px';
 
         // ビューポートの右端をはみ出す場合はドロップダウンリストの左側に配置する。
-        // Math.max(0, ...) でビューポート左端より外に出ないよう保護する。
+        // 左側にも十分なスペースがない場合の挙動は listRect.left の大きさで分岐する:
+        //   - CSS の min-width（200px）未満: 左側に配置しても QV がほぼ表示できないため、
+        //     右側に留まったまま maxWidth でビューポート内に収める（左フォールバックを諦める）。
+        //   - min-width 以上: QV の幅を listRect.left に制約して左端 0 から配置する。
+        //     これにより QV の right === listRect.left となりドロップダウンと水平方向で重ならない。
+        const minWidthThreshold = 200;
         const quickViewRect = this.element.getBoundingClientRect();
         if (quickViewRect.right > window.innerWidth) {
             const leftAligned = listRect.left - this.element.offsetWidth;
-            this.element.style.left = Math.max(0, leftAligned) + 'px';
+            if (listRect.left < minWidthThreshold) {
+                // 左側スペースが小さすぎて左フォールバックが無意味な場合は、
+                // 右側配置のまま maxWidth でビューポート右端に収める。
+                this.element.style.maxWidth = Math.max(0, window.innerWidth - listRect.right) + 'px';
+            } else if (leftAligned < 0) {
+                // 左側スペースが min-width 以上あるが QV 幅に足りない場合、
+                // QV の幅を listRect.left に制約して左端 0 から配置する。
+                this.element.style.maxWidth = listRect.left + 'px';
+                this.element.style.left = '0px';
+            } else {
+                this.element.style.left = leftAligned + 'px';
+            }
         }
 
-        // ビューポートの下端をはみ出す場合は上方向にずらして収める
+        // ビューポートの下端をはみ出す場合は上方向にずらして収める。
+        // ただしドロップダウンリストの top より上には行かない制約を設ける。
+        // この制約により「クイックビューがドロップダウンリスト領域に重なって操作不能」を防ぐ。
         const updatedRect = this.element.getBoundingClientRect();
         if (updatedRect.bottom > window.innerHeight) {
             const adjustedTop = anchorRect.top - (updatedRect.bottom - window.innerHeight);
-            this.element.style.top = Math.max(0, adjustedTop) + 'px';
+            // listRect.top を下限とすることでドロップダウンリストに被らない位置まで上方向補正を制限する。
+            // ビューポート上端（0）も下限として保護する（listRect.top が負になるケースに備える）。
+            const clampedTop = Math.max(0, Math.max(listRect.top, adjustedTop));
+            this.element.style.top = clampedTop + 'px';
+            // top を listRect.top に制約した結果、クイックビューが下端からはみ出す可能性があるため
+            // max-height を動的に設定してビューポート内に収まるようにする
+            const availableHeight = Math.max(0, window.innerHeight - clampedTop);
+            this.element.style.maxHeight = availableHeight + 'px';
         }
     }
 
