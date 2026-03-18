@@ -258,10 +258,12 @@ export class FilterDropdown {
         for (const item of this.allItemElements) {
             // createCheckboxItem で必ず .filter-item-label が生成されるため null チェック不要
             const labelSpan = item.querySelector('.filter-item-label') as HTMLElement;
-            const labelText = labelSpan.dataset['rawText'] ?? (labelSpan.textContent as string);
+            const labelRawText = labelSpan.dataset['rawText'];
+            const labelText = labelRawText !== undefined ? labelRawText : (labelSpan.textContent as string);
             // ヒントテキストも検索対象に含める
             const hintSpan = item.querySelector('.filter-item-hint') as HTMLElement | null;
-            const hintText = hintSpan !== null ? (hintSpan.dataset['rawText'] ?? (hintSpan.textContent as string)) : '';
+            const hintRawText = hintSpan !== null ? hintSpan.dataset['rawText'] : undefined;
+            const hintText = hintSpan !== null ? (hintRawText !== undefined ? hintRawText : (hintSpan.textContent as string)) : '';
             if (query === '' || fuzzyMatch(labelText, query) || (hintText !== '' && fuzzyMatch(hintText, query))) {
                 // ハイライトを再構築する（replaceChildren()で既存の子要素をクリアしてから付与）
                 labelSpan.replaceChildren();
@@ -329,23 +331,22 @@ export class FilterDropdown {
 
     /**
      * チェックされた全値のセットを収集して返す。
-     * allItemElements（全量リスト）を走査するため、検索絞り込みで非表示の項目も含まれる。
-     * 非表示（DOM から除去済み）の項目はチェック状態に関わらず「チェック済み」として扱う
-     * （検索絞り込み中に全解除を押しても非表示項目は選択状態が維持される）。
-     * DOM の実際の状態（itemList.contains）で非表示判定するため、filterItems のロジックと一致する。
+     * DOM の itemList に存在する項目（検索絞り込みで表示中の項目）のみを走査し、
+     * チェックされているものだけを選択済みとして返す。
+     * 検索絞り込みで非表示（DOM から除去済み）の項目は選択対象から除外する。
      */
     private collectCheckedValues(): Set<string> {
         const selected = new Set<string>();
         for (const item of this.allItemElements) {
+            // 検索絞り込みで itemList から除去されている項目はスキップ（選択対象外）
+            if (!this.itemList.contains(item)) { continue; }
             // createCheckboxItem で必ず checkbox と .filter-item-label が生成されるため null チェック不要
             const checkbox = item.querySelector<HTMLInputElement>('input[type="checkbox"]') as HTMLInputElement;
+            if (!checkbox.checked) { continue; }
             const labelSpan = item.querySelector('.filter-item-label') as HTMLElement;
-            // DOM から除去されている（検索絞り込みで非表示）項目はチェック済みとして扱う
-            const isFilteredOut = !this.itemList.contains(item);
-            if (checkbox.checked || isFilteredOut) {
-                // data-raw-text でハイライトspanが入っても元の値を正確に取得する
-                selected.add(labelSpan.dataset['rawText'] ?? (labelSpan.textContent as string));
-            }
+            // data-raw-text でハイライトspanが入っても元の値を正確に取得する
+            const rawText = labelSpan.dataset['rawText'];
+            selected.add(rawText !== undefined ? rawText : (labelSpan.textContent as string));
         }
         return selected;
     }

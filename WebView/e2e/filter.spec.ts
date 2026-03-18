@@ -1258,3 +1258,85 @@ test.describe('FEAT_0035 フィルター機能改修', () => {
         );
     });
 });
+
+// =============================================================================
+// BUG: 検索絞り込み後の適用で非表示項目がチェック済み扱いされるバグの回帰テスト
+//
+// 根本原因:
+//   collectCheckedValues() の `|| isFilteredOut` 条件により、
+//   検索で DOM から除去された非表示項目が常にチェック済みとして扱われる。
+//   これにより、検索で1項目に絞ってから「適用」を押しても
+//   残り全ての非表示項目もフィルター対象（選択済み）として扱われ、
+//   結果的にフィルターが機能しない（全行表示されてしまう）。
+// =============================================================================
+
+test.describe('BUG: 検索絞り込み後の適用で非表示項目がチェック済み扱いされるバグ', () => {
+    test.beforeEach(async ({page}) => {
+        // weapon=2行, armor=2行, potion=1行 の基本フィクスチャを使用
+        await installMockApiAsync(page, createFilterTestFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '検索絞り込み後の適用で非表示項目はチェック解除として扱われ、表示項目のみがフィルター対象になる',
+        async ({page}) => {
+            const table = await openTableAsync(page, 'item');
+
+            // フィルター前: 5行（weapon, armor, weapon, armor, potion）すべて表示
+            const before = await getVisibleColumnValuesAsync(table, 1);
+            expect(before).toEqual(['weapon', 'armor', 'weapon', 'armor', 'potion']);
+
+            // category 列のフィルタードロップダウンを開く
+            await clickFilterIconAsync(table, 1);
+            const dropdown = page.locator('.filter-dropdown.visible');
+            await expect(dropdown).toBeVisible();
+
+            // 検索ボックスに "weapon" と入力して絞り込む
+            // → ドロップダウンには "weapon" のみ表示、"armor" と "potion" は DOM から除去される
+            const searchInput = dropdown.locator('.filter-search-input');
+            await searchInput.fill('weapon');
+
+            // 絞り込み後: weapon のみが visible になっていること
+            const visibleItems = dropdown.locator('.filter-item');
+            await expect(visibleItems).toHaveCount(1);
+            await expect(visibleItems.first().locator('.filter-item-label')).toContainText('weapon');
+
+            // この状態（weapon のみ表示・armor と potion は非表示）で「適用」をクリックする。
+            // 非表示項目（armor, potion）はチェック解除として扱われるべきである。
+            await applyFilterAsync(page);
+
+            // 期待: weapon 行のみ表示（2行）
+            // バグあり時の実際: armor と potion も isFilteredOut=true でチェック済みとなり全5行表示
+            const after = await getVisibleColumnValuesAsync(table, 1);
+            expect(after).toEqual(['weapon', 'weapon']);
+        },
+    );
+
+    test(
+        '検索絞り込み後に表示されている項目のチェックを外して適用すると全行が非表示になる',
+        async ({page}) => {
+            const table = await openTableAsync(page, 'item');
+
+            // category 列のフィルタードロップダウンを開く
+            await clickFilterIconAsync(table, 1);
+            const dropdown = page.locator('.filter-dropdown.visible');
+            await expect(dropdown).toBeVisible();
+
+            // "weapon" で検索して weapon のみ表示状態にする
+            const searchInput = dropdown.locator('.filter-search-input');
+            await searchInput.fill('weapon');
+            await expect(dropdown.locator('.filter-item')).toHaveCount(1);
+
+            // 表示中の "weapon" のチェックを外す
+            await setFilterItemCheckedAsync(page, 'weapon', false);
+
+            // 適用する（表示項目=weapon はチェック外し、非表示項目=armor,potion はチェック外しとして扱われるべき）
+            await applyFilterAsync(page);
+
+            // 期待: 選択された値が0件 → フィルターにより全行が非表示になる
+            // バグあり時: armor, potion が isFilteredOut でチェック済み扱いされるため armor+potion の行が表示されてしまう
+            const after = await getVisibleColumnValuesAsync(table, 1);
+            expect(after).toEqual([]);
+        },
+    );
+});
