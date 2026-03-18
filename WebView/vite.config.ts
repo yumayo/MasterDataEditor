@@ -1,7 +1,7 @@
 ﻿import {defineConfig, loadEnv, Plugin, UserConfig} from 'vite'
 import path from 'path'
 
-// Load .env from parent directory
+// 親ディレクトリの .env を読み込む
 const env = loadEnv('development', path.resolve(__dirname, '..'), '')
 
 function removeModuleType(): Plugin {
@@ -40,9 +40,9 @@ if (process.env.NODE_ENV === 'production') {
                 },
                 output: {
                     format: 'iife',
-                    entryFileNames: 'assets/[name]-[hash].js',
-                    chunkFileNames: 'assets/[name]-[hash].js',
-                    assetFileNames: 'assets/[name]-[hash].[ext]'
+                    entryFileNames: 'assets/[name].js',
+                    chunkFileNames: 'assets/[name].js',
+                    assetFileNames: 'assets/[name].[ext]'
                 }
             }
         }

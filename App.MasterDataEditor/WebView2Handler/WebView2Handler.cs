@@ -72,6 +72,37 @@ public class WebView2Handler
 			// DevToolsProtocolのRuntimeを有効化（console.logキャプチャ用）
 			await webView2.CoreWebView2.CallDevToolsProtocolMethodAsync("Runtime.enable", "{}");
 
+			// 外部通信遮断: すべてのリクエストをフィルタリング対象にする
+			webView2.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+			webView2.CoreWebView2.WebResourceRequested += (sender, args) =>
+			{
+				Uri uri;
+				try { uri = new Uri(args.Request.Uri); }
+				catch (UriFormatException)
+				{
+					// 解析不能なURIはブロック
+					args.Response = webView2.CoreWebView2.Environment.CreateWebResourceResponse(
+						null, 403, "Blocked", "Content-Type: text/plain");
+					return;
+				}
+
+				// WebView2仕様上は data: / blob: は WebResourceRequested で発火しない可能性があるが、安全のため許可しておく
+				if (uri.Scheme == "data" || uri.Scheme == "blob" || uri.Scheme == "about") return;
+
+#if DEBUG
+				// DEBUGビルド: 開発サーバーのポートのみ許可（HMR用に ws スキームも同条件で許可）
+				var allowedPort = AppEnvironment.GetDevPort();
+				if ((uri.Scheme == "http" || uri.Scheme == "ws") && uri.Host == "localhost" && uri.Port == allowedPort) return;
+#else
+				// RELEASEビルド: file:// スキームのリクエストのみ許可
+				if (uri.Scheme == "file") return;
+#endif
+
+				// 上記以外の外部リクエストはすべてブロック
+				args.Response = webView2.CoreWebView2.Environment.CreateWebResourceResponse(
+					null, 403, "Blocked", "Content-Type: text/plain");
+			};
+
 #if DEBUG
 			var devPort = AppEnvironment.GetDevPort();
 			var devUri = new Uri($"http://localhost:{devPort}");
