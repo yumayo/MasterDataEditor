@@ -1,0 +1,34 @@
+/* =============================================================================
+   z-index 一元管理ファイル
+   すべてのコンポーネントの z-index 値はここで定義した CSS 変数を参照すること。
+   ============================================================================= */
+
+:root {
+    /* ─── EditorTable 内部の重なり順 ─── */
+    --z-index-selection-range-bg: 10;
+    --z-index-editor-table-row-header: 20;
+    --z-index-editor-table-column-header-row: 30;
+    --z-index-editor-table-corner: 40;
+    --z-index-resize-handle: 45;
+    --z-index-grid-textfield-active: 50;
+    --z-index-column-header-badge-area: 1;
+    --z-index-resize-guideline: 100;
+    --z-index-sort-indicator: 1;
+    --z-index-grid-dropdown: 100;
+    --z-index-grid-dropdown-list: 101;
+
+    /* ─── パネル・オーバーレイ ─── */
+    --z-index-form-panel: 200;
+    --z-index-sidebar-resizer: 10;
+    --z-index-relations-panel-resize-handle: 10;
+    --z-index-relations-mini-table-header: 2;
+    --z-index-form-panel-field-label: 1;
+    --z-index-filter-dropdown-overlay: 2;
+
+    /* ─── 最前面 UI ─── */
+    --z-index-filter-dropdown-container: 1000;
+    --z-index-dropdown-quick-view: 1000;
+    --z-index-command-palette-overlay: 2000;
+    --z-index-context-menu-overlay: 9999;
+    --z-index-context-menu: 10000;
+}

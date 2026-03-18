@@ -37,7 +37,7 @@
     background-color: var(--background-color);
     position: sticky;
     top: 0;
-    z-index: 30;
+    z-index: var(--z-index-editor-table-column-header-row);
 }
 
 /* 列ヘッダーセルのスタイル */
@@ -74,7 +74,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    z-index: 1;
+    z-index: var(--z-index-column-header-badge-area);
 }
 
 /* バッジありのヘッダーセルは padding-left を広げてテキストとバッジが重ならないようにする */
@@ -128,7 +128,7 @@
     width: 40px;
     position: sticky;
     left: 0;
-    z-index: 20;
+    z-index: var(--z-index-editor-table-row-header);
 }
 
 /* 左上隅のセルのスタイル */
@@ -139,13 +139,13 @@
     width: 40px;
     position: sticky;
     left: 0;
-    z-index: 40;
+    z-index: var(--z-index-editor-table-corner);
 }
 
 /* 列リサイズハンドル（列境界の中央にまたがる: 内側4px + 外側4px）
-   z-index: 45 は .editor-table-column-header-row（z-index: 30）より高く設定し、
+   --z-index-resize-handle は --z-index-editor-table-column-header-row より高く設定し、
    right: -4px ではみ出た部分が隣の列ヘッダーセルに隠れないようにする。
-   .grid-textfield-active（z-index: 50）より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
+   --z-index-grid-textfield-active より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
 .column-resize-handle {
     position: absolute;
     right: -4px;
@@ -154,7 +154,7 @@
     height: 100%;
     cursor: col-resize;
     user-select: none;
-    z-index: 45;
+    z-index: var(--z-index-resize-handle);
 }
 
 .column-resize-handle:hover {
@@ -162,9 +162,9 @@
 }
 
 /* 行リサイズハンドル（行境界の中央にまたがる: 内側4px + 外側4px）
-   z-index: 45 は .editor-table-row-header（z-index: 20）より高く設定し、
+   --z-index-resize-handle は --z-index-editor-table-row-header より高く設定し、
    bottom: -4px ではみ出た部分が下の行ヘッダーセルに隠れないようにする。
-   .grid-textfield-active（z-index: 50）より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
+   --z-index-grid-textfield-active より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
 .row-resize-handle {
     position: absolute;
     bottom: -4px;
@@ -173,7 +173,7 @@
     height: 8px;
     cursor: row-resize;
     user-select: none;
-    z-index: 45;
+    z-index: var(--z-index-resize-handle);
 }
 
 .row-resize-handle:hover {
@@ -214,7 +214,7 @@
     position: absolute;
     background-color: #4a90d9;
     pointer-events: none;
-    z-index: 100;
+    z-index: var(--z-index-resize-guideline);
 }
 
 /* 列リサイズ時のガイドライン（縦線） */
@@ -289,7 +289,7 @@
     gap: 1px;
     cursor: pointer;
     user-select: none;
-    z-index: 1;
+    z-index: var(--z-index-sort-indicator);
 }
 
 /* 昇順・降順の矢印アイコンを縦に並べるラッパー */

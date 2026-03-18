@@ -25,7 +25,7 @@
     box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.3);
     /* RelationsPanel内ではpanelElement直下にappendされるため、
        overflow-y:autoを持つ.relations-panel-contentのスタッキングコンテキストより手前に描画する */
-    z-index: 50;
+    z-index: var(--z-index-grid-textfield-active);
 }
 
 [data-theme="dark"] .grid-textfield {

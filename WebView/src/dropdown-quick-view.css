@@ -2,7 +2,7 @@
 /* body 直下に固定配置し、StackingContext の影響を受けずに最前面に表示する */
 .dropdown-quick-view {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-index-dropdown-quick-view);
     display: none;
     background-color: var(--background-sub-color);
     color: var(--font-color);

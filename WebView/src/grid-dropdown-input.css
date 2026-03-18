@@ -2,7 +2,7 @@
 /* 入力フィールドは grid-textfield を使用 */
 .grid-dropdown {
     position: absolute;
-    z-index: 100;
+    z-index: var(--z-index-grid-dropdown);
     display: none;
 }
 
@@ -21,7 +21,7 @@
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    z-index: 101;
+    z-index: var(--z-index-grid-dropdown-list);
 }
 
 /* ドロップダウン項目 */

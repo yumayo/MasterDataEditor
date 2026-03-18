@@ -5,7 +5,7 @@
     width: 4px;
     height: 100%;
     cursor: col-resize;
-    z-index: 10;
+    z-index: var(--z-index-sidebar-resizer);
     border-right: 1px solid rgba(128, 128, 128, 0.3);
 }
 

@@ -163,6 +163,36 @@ test.describe('フォームビュー（FEAT_0043）', () => {
     });
 
     // -------------------------------------------------------------------------
+    // テスト（BUG_0027）: フォームビューのz-indexが200であること
+    // -------------------------------------------------------------------------
+    test('BUG_0027: フォームビューのz-indexが200であること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+
+        // .form-panel の computedStyle.zIndex が '200' であること（現在は '10' なのでRED）
+        const zIndex = await formPanel.evaluate(el => getComputedStyle(el).zIndex);
+        expect(zIndex).toBe('200');
+    });
+
+    // -------------------------------------------------------------------------
+    // テスト（BUG_0027）: z-index値がCSS変数（--z-index-*）で一元管理されていること
+    // -------------------------------------------------------------------------
+    test('BUG_0027: CSS変数--z-index-form-panelが:rootに定義され値が200であること', async ({ page }) => {
+        // :root の computedStyle から --z-index-form-panel が定義されているか検証
+        // 現在CSS変数が存在しないためRED
+        const value = await page.evaluate(() => {
+            return getComputedStyle(document.documentElement).getPropertyValue('--z-index-form-panel').trim();
+        });
+        expect(value).toBe('200');
+    });
+
+    // -------------------------------------------------------------------------
     // テスト3: フォームビューの ✕ ボタンで閉じて RelationsPanel に戻ること
     // -------------------------------------------------------------------------
     test('フォームビューの ✕ ボタンをクリックすると RelationsPanel に戻ること', async ({ page }) => {

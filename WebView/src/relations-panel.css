@@ -24,7 +24,7 @@
     bottom: 0;
     width: 4px;
     cursor: col-resize;
-    z-index: 10;
+    z-index: var(--z-index-relations-panel-resize-handle);
 }
 
 .relations-panel-resize-handle:hover {
@@ -150,7 +150,7 @@
 .relations-mini-table thead th {
     position: sticky;
     top: 0;
-    z-index: 2;
+    z-index: var(--z-index-relations-mini-table-header);
     padding: 4px 8px;
     text-align: left;
     font-size: 10px;
