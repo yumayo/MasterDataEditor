@@ -32,7 +32,7 @@
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040で再発。新しいawaitを追加するたびに漏れる)
-- **CSS hardcoded colors**: 9回再発 — CSS変数使用を徹底せよ (FEAT_0040: search-result-pk #888 ハードコード)
+- **CSS hardcoded colors**: 10回再発 — CSS変数使用を徹底せよ (FEAT_0045: notification.css に #c0392b/#ffffff 等 8箇所ハードコード)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
 - **参照式の独自パース**: parseReferenceExpression を使わずdotIndex手動パース (search-panel.ts)
@@ -97,8 +97,17 @@
 - **PATTERN**: `buildRefSection` と `loadFkSectionDataAsync` でref-item構築ロジックが完全コピペ → 共通メソッド化必須
 - **PATTERN**: CSS `rgba(255,255,255,0.03/0.06/0.08)` ハードコード + `--hover-color` は未定義変数（CSS hardcoded 10回目）
 
+## FEAT_0045 Notification Known Patterns
+- **CRITICAL**: `window.Notification` への代入は Web標準 Notification API を上書きする。クラス名を `SystemNotification` 等に変更必須
+- **CRITICAL**: setTimeout IDを保持しないため shift() による強制削除時にタイマーをキャンセルできない。Map<HTMLElement, ReturnType<typeof setTimeout>> で管理すべき
+- **CRITICAL**: `historyMessages: string[]` がDOMと二重状態管理（DOMがSSOT違反）。historyElement の children から復元可能であり削除すべき
+- **IMPORTANT**: 無名アロー関数リスナー → removeEventListener 不可。dispose() 実装が必要
+- **PATTERN**: FADE_DURATION_MS(TS) と CSS transition 0.4s の二重定義 → transitionend イベントで解消可能
+- **PATTERN**: (window as any) によるグローバル公開がmain.tsに本番コードとして混入。テスト専用グローバルはフィクスチャで注入すべき
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-19) FEAT_0045 Notification: 致命的3件、重要4件、軽微3件
 - (2026-03-18) FEAT_0043 FormPanel: 致命的5件、重要5件、軽微3件
 - (2026-03-18) FEAT_0042 HTML cell render: 致命的2件、重要3件、軽微2件
 - (2026-03-18) FEAT_0040 search background: 致命的3件、重要4件、軽微3件

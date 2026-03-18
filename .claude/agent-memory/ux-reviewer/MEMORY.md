@@ -8,6 +8,13 @@
 - ファイル: project_review_archive_mar2026.md
 - 差分タブ・BUG_0021〜0025・FEAT_0023〜0036 の要約と横断的継続課題リストを収録
 
+#### FEAT_0045 通知UI（2026-03-19レビュー）評価: C
+- ファイル: project_feat0045_notification.md
+- 致命的(🔴): 履歴パネルを閉じる手段がDOM上に存在しない
+- 致命的(🔴): notification-bell が div のまま（role/tabindex/aria-label なし）
+- 致命的(🔴): notification-toast に role="alert"/aria-live なし（スクリーンリーダー非通知）
+- 改善推奨(🟡): 未読バッジなし・タイムスタンプなし・履歴表示順が古い順
+
 #### BUG_0026 クイックビュー位置調整（2026-03-19レビュー）評価: B+
 - ファイル: project_bug0026_quick_view_position.md
 - 下端はみ出し: top固定+max-height動的付与 正常（top:620px, max-height:100px）
@@ -27,7 +34,7 @@
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
 ### 横断的な継続課題（最新）
-- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item ほか）
+- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
 - 差分ビュー左ペインに aria-readonly がない（BUG_0021から継続）
 - row-resize-handle がミニテーブル・バッファ行・差分削除行に残存
