@@ -23,6 +23,7 @@ import {Csv} from "./csv";
 import {SettingsPanel} from "./settings-panel";
 import {DiffTab} from "./diff-tab";
 import {FormPanel} from "./form-panel";
+import {NavigationHistory} from "./navigation-history";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -137,6 +138,12 @@ export class Tab {
     private currentFormPanel: FormPanel | false;
 
     /**
+     * ブラウザ History API によるナビゲーション履歴管理。
+     * コンストラクタ末尾で生成され、Tab と相互参照する。
+     */
+    private readonly navigationHistory: NavigationHistory;
+
+    /**
      * 全 GridDropdownInput が共有するシングルトン DropdownQuickView。
      * body 直下に1つだけ配置されることで、strict mode の複数マッチ問題を回避する。
      * Tab コンストラクタで生成し、各 GridDropdownInput へ connectDropdownQuickView() で接続する。
@@ -179,6 +186,22 @@ export class Tab {
         this.relationsPanel.connectTab(this);
         // Editorにこの Tab を接続してナビゲーションボタンのクリックを受け取れるようにする
         this.editor.connectTab(this);
+
+        // NavigationHistory を生成する（Tab と相互参照）。Tab の全メンバが初期化された後で生成する。
+        this.navigationHistory = new NavigationHistory(this);
+    }
+
+    /**
+     * 既存タブをアクティブにする（NavigationHistory の popstate 復元から呼ばれる）。
+     * 新規タブ作成は行わない。タブが存在しない場合は閉じられたタブの履歴エントリをスキップする。
+     */
+    switchToExistingTab(name: string): void {
+        if (!this.tabStates.has(name)) {
+            // 閉じられたタブの履歴エントリをスキップして次のエントリに進む
+            history.back();
+            return;
+        }
+        this.enableTabButton(name);
     }
 
     /** サイドバー幅に応じてタブバーの位置と幅を更新する */
@@ -560,6 +583,10 @@ export class Tab {
             this.diffTabs.forEach(diffTab => diffTab.hide());
             this.editor.leaveSettingsMode(); // rightSlot を再表示する
         }
+
+        // 通常テーブルタブへの切り替えをナビゲーション履歴に記録する
+        // （設定タブ・差分タブはここに到達しない）
+        this.navigationHistory.pushTabSwitch(name);
 
         // 現在アクティブなタブがあれば非アクティブ化
         if (this.activeTabName && this.activeTabName !== name) {
