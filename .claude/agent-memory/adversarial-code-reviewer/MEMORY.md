@@ -105,8 +105,18 @@
 - **PATTERN**: FADE_DURATION_MS(TS) と CSS transition 0.4s の二重定義 → transitionend イベントで解消可能
 - **PATTERN**: (window as any) によるグローバル公開がmain.tsに本番コードとして混入。テスト専用グローバルはフィクスチャで注入すべき
 
+## FEAT_0047 Navigation History Known Patterns
+- **CRITICAL**: `navigationHistory: NavigationHistory | false` + `connectNavigationHistory()` が生焼けオブジェクトパターン再発。Tab コンストラクタ末尾で `new NavigationHistory(this)` して解決すべき
+- **CRITICAL**: `restoring` フラグが同期的にリセットされるが、`enableTabButton()` が非同期処理をトリガーするため非同期完了後の副作用には無効
+- **CRITICAL**: タブ閉鎖後に戻る操作をすると孤立エントリを踏み続け、UIが変化しない。`skipCurrentEntry()` で相互参照を介したスキップ処理が必要
+- **CRITICAL**: 現在アクティブなタブと同じタブをクリックすると同一エントリが重複 push される。`name !== this.activeTabName` ガードが必要
+- **IMPORTANT**: `window.addEventListener('popstate', 無名関数)` → removeEventListener 不可 (MEMORY既知パターン再発)
+- **IMPORTANT**: `state['tabName'] as string` の実行時型チェックなし
+- **PATTERN**: TDD RED フェーズのコメントが実装後も残存 → GREEN 後に削除すること
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-19) FEAT_0047 Navigation History: 致命的4件、重要3件、軽微3件
 - (2026-03-19) FEAT_0045 Notification: 致命的3件、重要4件、軽微3件
 - (2026-03-18) FEAT_0043 FormPanel: 致命的5件、重要5件、軽微3件
 - (2026-03-18) FEAT_0042 HTML cell render: 致命的2件、重要3件、軽微2件
