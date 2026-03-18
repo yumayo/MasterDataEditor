@@ -28,6 +28,7 @@
     /* ─── 最前面 UI ─── */
     --z-index-filter-dropdown-container: 1000;
     --z-index-dropdown-quick-view: 1000;
+    --z-index-notification: 1500;
     --z-index-command-palette-overlay: 2000;
     --z-index-context-menu-overlay: 9999;
     --z-index-context-menu: 10000;

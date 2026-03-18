@@ -7,6 +7,7 @@ import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {applyStoredTheme} from "./settings-panel";
+import {NotificationToast} from "./notification";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -46,6 +47,12 @@ import {applyStoredTheme} from "./settings-panel";
 
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
+
+    // 通知ポップアップを初期化（右下固定、アプリ全体で1つ）
+    const notification = new NotificationToast();
+
+    // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
+    (window as unknown as Record<string, unknown>)['notification'] = notification;
 
     // テスト用: window.editorを公開（activeEditorTableへのアクセスを提供）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
