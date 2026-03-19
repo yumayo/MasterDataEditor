@@ -37,6 +37,14 @@ export class NavigationHistory {
             const state = e.state as Record<string, unknown> | null;
             // state が null の場合（ブラウザが管理するエントリ）は無視する
             if (state === null) return;
+            // initial エントリに到達した場合（全部戻りきった場合）は即座に forward で跳ね返す。
+            // initial はページアンロード防止の番兵であり、ユーザーが到達すべきエントリではない。
+            // ここで跳ね返すことで、戻るボタンの余分な消費を防ぎ進む履歴が破壊されない。
+            if (state['type'] === 'initial') {
+                history.forward();
+                return;
+            }
+
             this.restoring = true;
             try {
                 // popstate 時は常にフォームパネルを閉じる（フォームパネルが開いていない場合は何もしない）
