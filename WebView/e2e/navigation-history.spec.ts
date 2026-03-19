@@ -1,20 +1,27 @@
 import { test, expect } from './fixtures/test';
-import { Page } from '@playwright/test';
+import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
 // =============================================================================
-// ブラウザ History API によるタブナビゲーション履歴テスト (RED)
+// ブラウザ History API によるナビゲーション履歴テスト (RED)
 //
 // 機能概要:
-//   タブ切替時に pushState でブラウザ履歴を記録し、
-//   マウスの戻る/進むボタン（page.goBack/goForward）でタブを復元する。
+//   各種ナビゲーション操作時に pushState でブラウザ履歴を記録し、
+//   マウスの戻る/進むボタン（page.goBack/goForward）でナビゲーションを復元する。
 //
-// 実装クラス（未実装）: NavigationHistory
-//   - タブ切替時に pushState({ type: 'tab-switch', tabName }, '', '#tab-xxx') を呼ぶ
-//   - 初期ロード時に replaceState({ type: 'initial' }, '', '') を呼ぶ
-//   - popstate イベントを受け取り、state.tabName のタブをアクティブにする
+// 対象操作:
+//   1. タブ切替 (tab-switch) — 実装済み
+//   2. 定義ジャンプ (navigate-definition) — ミニテーブルのCtrl+Clickで paneStack 深化
+//   3. REFERENCESパネルからのジャンプ (navigate-row) — 別テーブルの特定行へジャンプ
+//   4. 検索パネルからのジャンプ (navigate-cell) — 別テーブルの特定セルへジャンプ
+//   5. フォームパネル開閉 (form-panel-open) — PKセル右クリックでフォームパネルを開く
+//   6. paneStack深化 (pane-push) — 定義ジャンプで viewIndex が変化する
 //
-// 現時点では NavigationHistory が存在しないため、すべてのテストは RED。
+// 実装クラス: NavigationHistory (navigation-history.ts)
+//   - 各操作時に pushState でエントリを積む
+//   - popstate イベントで操作の逆を再現する
+//
+// テスト1-4 は実装済み。テスト5以降は RED（プロダクションコード未実装）。
 // =============================================================================
 
 /**
@@ -50,6 +57,102 @@ function createNavigationTestFileSystem(): MockFileSystem {
 }
 
 /**
+ * 定義ジャンプ・paneStack深化テスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   world: id, name（ワールドマスター）
+ *   area:  id, name, world_id（エリア。world.idをFKとして参照）
+ *
+ * worldを開いてrow0を選択 → RelationsPanelにareaの1:Nミニテーブルが表示される。
+ * areaミニテーブルのセルをCtrl+Click → paneStackにRelationsPanelが追加される（定義ジャンプ）。
+ */
+function createDefinitionJumpTestFileSystem(): MockFileSystem {
+	return {
+		"schema/world.json": JSON.stringify({
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "name", type: "string" },
+			],
+			primary_key: "id",
+		}),
+		"data/world.csv": [
+			"id,name",
+			"1,forest",
+			"2,desert",
+		].join("\n"),
+		"schema/area.json": JSON.stringify({
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "name", type: "string" },
+				{ key: 2, name: "world_id", type: "int", reference: "world.id" },
+			],
+			primary_key: "id",
+		}),
+		"data/area.csv": [
+			"id,name,world_id",
+			"1,forest_north,1",
+			"2,forest_south,1",
+		].join("\n"),
+	};
+}
+
+/**
+ * REFERENCESパネル・フォームパネルテスト用のファイルシステムを生成する
+ *
+ * テーブル構成:
+ *   enemy: id, ja（敵マスター）
+ *   quest: id, name, enemy_id（クエスト。enemy.idをFKとして参照）
+ *   item:  id, name, quest_id（アイテム。quest.idをFKとして参照）
+ *
+ * quest.id はitem.quest_idから逆参照されるため、questのPKセル右クリックで
+ * REFERENCESパネルに逆参照エントリが表示される。
+ * REFERENCESパネルの行をクリックすると item テーブルの該当行へジャンプする。
+ */
+function createReferencesJumpTestFileSystem(): MockFileSystem {
+	return {
+		"schema/enemy.json": JSON.stringify({
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "ja", type: "string" },
+			],
+			primary_key: "id",
+		}),
+		"data/enemy.csv": [
+			"id,ja",
+			"1,スライム",
+			"2,ドラゴン",
+		].join("\n"),
+		"schema/quest.json": JSON.stringify({
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "name", type: "string" },
+				{ key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+			],
+			primary_key: "id",
+		}),
+		"data/quest.csv": [
+			"id,name,enemy_id",
+			"1,first_quest,1",
+			"2,second_quest,2",
+		].join("\n"),
+		"schema/item.json": JSON.stringify({
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "name", type: "string" },
+				{ key: 2, name: "quest_id", type: "int", reference: "quest.id" },
+			],
+			primary_key: "id",
+		}),
+		"data/item.csv": [
+			"id,name,quest_id",
+			"1,sword,1",
+			"2,shield,1",
+			"3,potion,2",
+		].join("\n"),
+	};
+}
+
+/**
  * エクスプローラーから指定テーブルを開く
  * サイドバーのファイル名をクリックしてタブをアクティブにする
  */
@@ -58,6 +161,52 @@ async function openTableAsync(page: Page, tableName: string): Promise<void> {
 	await explorer.getByText(tableName, { exact: true }).click();
 	// タブが開かれてアクティブになるまで待機する
 	await expect(page.locator(`.tab-button-active`)).toContainText(tableName);
+}
+
+/**
+ * 左スロットのEditorTableを取得する
+ */
+function getLeftSlotTable(page: Page): Locator {
+	return page.locator('.editor-left-slot .editor-table');
+}
+
+/**
+ * 行ヘッダーをクリックして行を選択する（rowIndex: 0始まり、ヘッダー行除く）
+ */
+async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
+	const header = table.locator('.editor-table-row-header').nth(rowIndex);
+	await header.click();
+}
+
+/**
+ * RelationsPanelのコンテンツが表示されるまで待機する
+ */
+async function waitForRelationsPanelAsync(page: Page): Promise<void> {
+	await expect(page.locator('.relations-panel-content')).toBeVisible();
+}
+
+/**
+ * 右スロットのRelationsPanel内ミニテーブルの最初のvisibleなデータセルを取得する
+ */
+function getFirstMiniTableVisibleCell(page: Page): Locator {
+	return page.locator([
+		'.editor-right-slot .relations-panel .editor-table',
+		' .editor-table-cell:not(.editor-table-row-header)',
+		':not(.editor-table-column-header)',
+		':not(.editor-table-corner-cell)',
+		':not([style*="display: none"])',
+	].join('')).first();
+}
+
+/**
+ * questテーブルのPKセル（id列、rowIndex行目）を右クリックしてコンテキストメニューを開く
+ * rowIndex: 0始まり（ヘッダー行除く）
+ */
+async function rightClickPkCellAsync(table: Locator, rowIndex: number): Promise<void> {
+	// データ行は .editor-table-row の nth(rowIndex + 1)（0番目はヘッダー行）
+	const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+	const pkCell = row.locator('.editor-table-cell:not(.editor-table-row-header)').first();
+	await pkCell.click({ button: 'right' });
 }
 
 // =============================================================================
@@ -131,5 +280,357 @@ test.describe('ブラウザ History API によるタブナビゲーション', (
 		// ページロード直後（beforeEach で goto済み）の state を確認する
 		const state = await page.evaluate(() => history.state);
 		expect(state).toMatchObject({ type: 'initial' });
+	});
+});
+
+// =============================================================================
+// 定義ジャンプ（Ctrl+Click on ミニテーブル）による paneStack 深化の履歴テスト (RED)
+//
+// 操作フロー:
+//   worldテーブルを開いてrow0を選択
+//   → RelationsPanelにareaの1:Nミニテーブルが表示される
+//   → areaミニテーブルのセルをCtrl+Click
+//   → Tab.pushRelationsPanel が呼ばれてpaneStackが深化（viewIndex が1→2）
+//   → history.state に { type: 'pane-push', viewIndex: 2 } が積まれること
+//
+// goBack で戻ると viewIndex が 1 に戻り（ナビゲーションバーが非表示になるか
+// インジケーターが "1 / 3" 相当に戻る）、
+// goForward で再び viewIndex が 2 に進むこと。
+// =============================================================================
+test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
+	test.beforeEach(async ({ page }) => {
+		const fs = createDefinitionJumpTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト5: ミニテーブルのCtrl+Click（定義ジャンプ）で history.state に pane-push が記録される
+	//
+	// worldを開いてrow0選択 → areaミニテーブルのCtrl+Click後に
+	// history.state が { type: 'pane-push' } を含むことを確認する。
+	// ---------------------------------------------------------------------------
+	test('ミニテーブルのCtrl+Clickで history.state に pane-push が記録される', async ({ page }) => {
+		// worldテーブルを開いてrow0を選択する
+		await openTableAsync(page, 'world');
+		const mainTable = getLeftSlotTable(page);
+		await expect(mainTable).toBeVisible();
+		await selectRowAsync(mainTable, 0);
+		await waitForRelationsPanelAsync(page);
+
+		// areaミニテーブルの最初のデータセルをCtrl+ClickしてpaneStackを深化させる
+		const firstCell = getFirstMiniTableVisibleCell(page);
+		await expect(firstCell).toBeVisible();
+		await firstCell.click({ modifiers: ['Control'] });
+
+		// ナビゲーションバーが表示されるまで待機する（paneStack深化の確認）
+		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+		// history.state に pane-push が記録されていること
+		const state = await page.evaluate(() => history.state);
+		expect(state).toMatchObject({ type: 'pane-push' });
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト6: 定義ジャンプ後にブラウザの戻るで paneStack が元の深さに戻る
+	//
+	// Ctrl+Click でpaneStackを深化させた後、goBack() で
+	// ナビゲーションバーが非表示になる（paneStack深さが初期の2に戻る）ことを確認する。
+	// ---------------------------------------------------------------------------
+	test('定義ジャンプ後にgoBackでpaneStackが元の深さに戻る（ナビゲーションバーが非表示になる）', async ({ page }) => {
+		// worldテーブルを開いてrow0を選択してpaneStackを深化させる
+		await openTableAsync(page, 'world');
+		const mainTable = getLeftSlotTable(page);
+		await expect(mainTable).toBeVisible();
+		await selectRowAsync(mainTable, 0);
+		await waitForRelationsPanelAsync(page);
+
+		const firstCell = getFirstMiniTableVisibleCell(page);
+		await expect(firstCell).toBeVisible();
+		await firstCell.click({ modifiers: ['Control'] });
+
+		// paneStack深化を確認する（ナビゲーションバーが表示される）
+		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+		// goBack でpaneStackが元の深さに戻ること（ナビゲーションバーが非表示になる）
+		await page.goBack();
+		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト7: 定義ジャンプ後にgoBack→goForwardでpaneStackが再深化する
+	//
+	// Ctrl+Click → goBack（paneStack戻る）→ goForward で
+	// 再びナビゲーションバーが表示されることを確認する。
+	// ---------------------------------------------------------------------------
+	test('定義ジャンプ後にgoBack→goForwardでpaneStackが再深化する', async ({ page }) => {
+		// worldテーブルを開いてrow0を選択してpaneStackを深化させる
+		await openTableAsync(page, 'world');
+		const mainTable = getLeftSlotTable(page);
+		await expect(mainTable).toBeVisible();
+		await selectRowAsync(mainTable, 0);
+		await waitForRelationsPanelAsync(page);
+
+		const firstCell = getFirstMiniTableVisibleCell(page);
+		await expect(firstCell).toBeVisible();
+		await firstCell.click({ modifiers: ['Control'] });
+		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+
+		// goBack でpaneStackを元の深さに戻す
+		await page.goBack();
+		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+
+		// goForward で再びpaneStackが深化すること
+		await page.goForward();
+		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+	});
+});
+
+// =============================================================================
+// REFERENCESパネルからのジャンプの履歴テスト (RED)
+//
+// 操作フロー:
+//   questテーブルを開いてPKセル（id列）を右クリック
+//   → アクティビティバーのREFERENCESアイコンをクリック（または自動切替）
+//   → REFERENCESパネルに逆参照エントリ（item テーブル行一覧）が表示される
+//   → itemテーブルの行をクリックするとそのテーブルへジャンプ
+//   → history.state に { type: 'navigate-row', tableName: 'item' } が積まれること
+//
+// goBack で戻ると quest タブがアクティブに戻ること。
+// =============================================================================
+test.describe('REFERENCESパネルからのジャンプの履歴記録', () => {
+	test.beforeEach(async ({ page }) => {
+		const fs = createReferencesJumpTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト8: REFERENCESパネルの行クリックで history.state に navigate-row が記録される
+	//
+	// questのPKセルを右クリック → 「参照箇所を表示」でREFERENCESパネルにデータを表示し、
+	// itemテーブルの行をクリック後に history.state が { type: 'navigate-row' } を含むことを確認する。
+	// ---------------------------------------------------------------------------
+	test('REFERENCESパネルの行クリックで history.state に navigate-row が記録される', async ({ page }) => {
+		// quest テーブルを開く
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		// 1行目（id=1）のPKセルを右クリックして「参照箇所を表示」をクリックする
+		// （item.quest_id が quest.id を参照しているため逆参照エントリが存在する）
+		await rightClickPkCellAsync(questTable, 0);
+		const menu = page.locator('.context-menu.visible');
+		await expect(menu).toBeVisible();
+		const showRefsItem = menu.locator('.context-menu-item', { hasText: '参照箇所を表示' });
+		await expect(showRefsItem).toBeVisible();
+		await showRefsItem.click();
+
+		// REFERENCESパネルがアクティブになっていること
+		const referencesPanel = page.locator('.references-panel.sidebar-panel-active');
+		await expect(referencesPanel).toBeVisible();
+
+		// item テーブルの逆参照フォルダが表示されるまで待機する
+		const itemFolder = referencesPanel.locator('.references-folder', { hasText: 'item' });
+		await expect(itemFolder).toBeVisible();
+
+		// item フォルダ内の最初の行をクリックして item テーブルへジャンプする
+		const firstRow = itemFolder.locator('.references-row').first();
+		await expect(firstRow).toBeVisible();
+		await firstRow.click();
+
+		// item タブがアクティブになること（ジャンプが成功していること）
+		await expect(page.locator('.tab-button-active')).toContainText('item');
+
+		// history.state に navigate-row が記録されていること
+		const state = await page.evaluate(() => history.state);
+		expect(state).toMatchObject({ type: 'navigate-row', tableName: 'item' });
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト9: REFERENCESパネルジャンプ後にgoBackで元のタブ（quest）に戻る
+	//
+	// itemへジャンプした後、goBack() で quest タブがアクティブになることを確認する。
+	// ---------------------------------------------------------------------------
+	test('REFERENCESパネルジャンプ後にgoBackで元のタブに戻る', async ({ page }) => {
+		// quest テーブルを開いてREFERENCESパネルのitemフォルダからジャンプする
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		// 「参照箇所を表示」でREFERENCESパネルにデータを表示する
+		await rightClickPkCellAsync(questTable, 0);
+		const menu = page.locator('.context-menu.visible');
+		await expect(menu).toBeVisible();
+		const showRefsItem = menu.locator('.context-menu-item', { hasText: '参照箇所を表示' });
+		await expect(showRefsItem).toBeVisible();
+		await showRefsItem.click();
+
+		const referencesPanel = page.locator('.references-panel.sidebar-panel-active');
+		await expect(referencesPanel).toBeVisible();
+
+		const itemFolder = referencesPanel.locator('.references-folder', { hasText: 'item' });
+		await expect(itemFolder).toBeVisible();
+		const firstRow = itemFolder.locator('.references-row').first();
+		await expect(firstRow).toBeVisible();
+		await firstRow.click();
+
+		// item タブがアクティブになったことを確認する
+		await expect(page.locator('.tab-button-active')).toContainText('item');
+
+		// goBack で quest タブに戻ること
+		await page.goBack();
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+	});
+});
+
+// =============================================================================
+// 検索パネルからのジャンプの履歴テスト (RED)
+//
+// 操作フロー:
+//   Ctrl+Shift+F で検索パネルを開いて "first_quest" を検索
+//   → 検索結果の最初の行をクリックして quest テーブルへジャンプ
+//   → history.state に { type: 'navigate-cell', tableName: 'quest' } が積まれること
+//
+// goBack で戻ると検索前の状態（元のタブ）に戻ること。
+// =============================================================================
+test.describe('検索パネルからのジャンプの履歴記録', () => {
+	test.beforeEach(async ({ page }) => {
+		const fs = createReferencesJumpTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト10: 検索結果クリックで history.state に navigate-cell が記録される
+	//
+	// item テーブルを開いた後、検索パネルで "first_quest" を検索して
+	// 結果クリック後に history.state が { type: 'navigate-cell' } を含むことを確認する。
+	// ---------------------------------------------------------------------------
+	test('検索結果クリックで history.state に navigate-cell が記録される', async ({ page }) => {
+		// item テーブルを開いて（ジャンプ前の状態を作る）
+		await openTableAsync(page, 'item');
+
+		// Ctrl+Shift+F で検索パネルを開く
+		await page.keyboard.press('Control+Shift+F');
+		const searchInput = page.locator('.search-panel-input');
+		await expect(searchInput).toBeVisible();
+
+		// "first_quest" で検索する
+		await searchInput.fill('first_quest');
+		const results = page.locator('.search-result-item');
+		await expect(results.first()).toBeVisible();
+
+		// 最初の検索結果をクリックして quest テーブルへジャンプする
+		await results.first().click();
+
+		// quest テーブルが開かれていること
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+
+		// history.state に navigate-cell が記録されていること
+		const state = await page.evaluate(() => history.state);
+		expect(state).toMatchObject({ type: 'navigate-cell', tableName: 'quest' });
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト11: 検索パネルジャンプ後にgoBackで元のタブ（item）に戻る
+	//
+	// item → 検索ジャンプ（quest）→ goBack で item タブに戻ることを確認する。
+	// ---------------------------------------------------------------------------
+	test('検索パネルジャンプ後にgoBackで元のタブに戻る', async ({ page }) => {
+		// item テーブルを開く（ジャンプ前の状態）
+		await openTableAsync(page, 'item');
+
+		// 検索パネルで "first_quest" を検索して最初の結果をクリックする
+		await page.keyboard.press('Control+Shift+F');
+		const searchInput = page.locator('.search-panel-input');
+		await expect(searchInput).toBeVisible();
+		await searchInput.fill('first_quest');
+		const results = page.locator('.search-result-item');
+		await expect(results.first()).toBeVisible();
+		await results.first().click();
+
+		// quest タブがアクティブになったことを確認する
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+
+		// goBack で item タブに戻ること
+		await page.goBack();
+		await expect(page.locator('.tab-button-active')).toContainText('item');
+	});
+});
+
+// =============================================================================
+// フォームパネルの開閉の履歴テスト (RED)
+//
+// 操作フロー:
+//   questテーブルを開いてPKセル（id列）を右クリック
+//   → コンテキストメニューの「フォームビューを表示」をクリック
+//   → 右ペインにフォームパネルが表示される
+//   → history.state に { type: 'form-panel-open' } が積まれること
+//
+// goBack（戻る）でフォームパネルが閉じること。
+// =============================================================================
+test.describe('フォームパネル開閉の履歴記録', () => {
+	test.beforeEach(async ({ page }) => {
+		const fs = createReferencesJumpTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト12: フォームパネルを開くと history.state に form-panel-open が記録される
+	//
+	// questのPKセルを右クリック → 「フォームビューを表示」クリック後に
+	// history.state が { type: 'form-panel-open' } を含むことを確認する。
+	// ---------------------------------------------------------------------------
+	test('フォームパネルを開くと history.state に form-panel-open が記録される', async ({ page }) => {
+		// quest テーブルを開く（item が quest_id で参照しているため逆参照エントリが存在する）
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		// 1行目（id=1）のPKセルを右クリックしてコンテキストメニューを開く
+		await rightClickPkCellAsync(questTable, 0);
+		const menu = page.locator('.context-menu.visible');
+		await expect(menu).toBeVisible();
+
+		// 「フォームビューを表示」をクリックしてフォームパネルを開く
+		const formViewItem = menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' });
+		await expect(formViewItem).toBeVisible();
+		await formViewItem.click();
+
+		// フォームパネルが表示されていること
+		await expect(page.locator('.form-panel')).toBeVisible();
+
+		// history.state に form-panel-open が記録されていること
+		const state = await page.evaluate(() => history.state);
+		expect(state).toMatchObject({ type: 'form-panel-open' });
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト13: フォームパネル表示中にgoBackでフォームパネルが閉じる
+	//
+	// フォームパネルを開いた後、goBack() でフォームパネルが非表示になることを確認する。
+	// RelationsPanelが再表示されること（または少なくともフォームパネルが消えること）も確認する。
+	// ---------------------------------------------------------------------------
+	test('フォームパネル表示中にgoBackでフォームパネルが閉じる', async ({ page }) => {
+		// quest テーブルを開いてフォームパネルを表示する
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		await rightClickPkCellAsync(questTable, 0);
+		const menu = page.locator('.context-menu.visible');
+		await expect(menu).toBeVisible();
+		const formViewItem = menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' });
+		await expect(formViewItem).toBeVisible();
+		await formViewItem.click();
+
+		// フォームパネルが表示されていることを確認する
+		await expect(page.locator('.form-panel')).toBeVisible();
+
+		// goBack でフォームパネルが閉じること
+		await page.goBack();
+		await expect(page.locator('.form-panel')).toBeHidden();
 	});
 });

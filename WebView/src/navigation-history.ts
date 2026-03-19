@@ -2,8 +2,14 @@ import {Tab} from "./tab";
 
 /**
  * ブラウザ History API を使ったナビゲーション履歴管理。
- * マウスサイドボタン（戻る/進む）や Alt+Left/Right で
- * タブ遷移を復元する。
+ * マウスサイドボタン（戻る/進む）や Alt+Left/Right で各種ナビゲーション操作を復元する。
+ *
+ * 対応エントリタイプ:
+ *   - tab-switch:      タブ切り替え（tabName, viewIndex=0）
+ *   - pane-push:       定義ジャンプ（paneStack深化）(tabName, viewIndex=N)
+ *   - navigate-row:    REFERENCESパネルからのジャンプ（tableName）
+ *   - navigate-cell:   検索パネルからのジャンプ（tableName）
+ *   - form-panel-open: フォームパネル開（tabName, pkValue）
  *
  * Tab との相互参照で密結合する。
  * Tab コンストラクタ末尾で生成され、Tab.enableTabButton() から pushTabSwitch() が呼ばれる。
@@ -11,6 +17,8 @@ import {Tab} from "./tab";
 export class NavigationHistory {
     /** popstate による復元中かどうか（Tab から再 pushState されるのを防ぐ） */
     private restoring: boolean;
+    /** navigate-row/cell の push 直後に enableTabButton からの tab-switch push を1回スキップするフラグ */
+    private suppressNextTabSwitch: boolean;
     /** タブ切り替えを委譲する Tab への参照 */
     private readonly tab: Tab;
     /** popstate リスナーの参照（将来の removeEventListener に備えてメンバ変数に保持） */
@@ -18,6 +26,7 @@ export class NavigationHistory {
 
     constructor(tab: Tab) {
         this.restoring = false;
+        this.suppressNextTabSwitch = false;
         this.tab = tab;
 
         // 初期ロードのエントリを保護（全部戻りきってもページがアンロードされないようにする）
@@ -28,10 +37,30 @@ export class NavigationHistory {
             const state = e.state as Record<string, unknown> | null;
             // state が null の場合（ブラウザが管理するエントリ）は無視する
             if (state === null) return;
+            this.restoring = true;
+            try {
+                // popstate 時は常にフォームパネルを閉じる（フォームパネルが開いていない場合は何もしない）
+                this.tab.closeFormPanel();
 
-            if (state['type'] === 'tab-switch' && typeof state['tabName'] === 'string') {
-                this.restoring = true;
-                this.tab.switchToExistingTab(state['tabName']);
+                const type = state['type'];
+                if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
+                    // tabName で切り替え + viewIndex は 0 に戻す
+                    this.tab.switchToExistingTab(state['tabName']);
+                    this.tab.restoreViewIndex(0);
+                } else if (type === 'pane-push' && typeof state['tabName'] === 'string') {
+                    // pane-push エントリには viewIndex が必ず存在する。存在しない場合は設計ミスのため throw する
+                    if (typeof state['viewIndex'] !== 'number') throw new Error('[NavigationHistory] pane-push エントリに viewIndex がありません');
+                    this.tab.switchToExistingTab(state['tabName']);
+                    this.tab.restoreViewIndex(state['viewIndex']);
+                } else if ((type === 'navigate-row' || type === 'navigate-cell') && typeof state['tableName'] === 'string') {
+                    // popstate は「移動先エントリ」の state を返すため、tableName（ジャンプ先）に切り替える
+                    // goBack 時は前のエントリ（tab-switch 等）の state が返るため、tab-switch ハンドラが元のタブを自動復元する
+                    this.tab.switchToExistingTab(state['tableName']);
+                } else if (type === 'form-panel-open' && typeof state['tabName'] === 'string' && typeof state['pkValue'] === 'string') {
+                    // goForward でフォームパネルエントリに到達した場合、フォームパネルを再オープンする
+                    this.tab.showFormPanel(state['tabName'], state['pkValue']);
+                }
+            } finally {
                 this.restoring = false;
             }
         };
@@ -40,14 +69,57 @@ export class NavigationHistory {
 
     /**
      * タブ遷移をブラウザ履歴に記録する。
-     * restoring 中（popstate からの復元）は再 push を防ぐため無視する。
+     * restoring 中（popstate からの復元）や suppressNextTabSwitch フラグが立っている場合はスキップする。
      * 現在の履歴エントリと同じタブ名なら重複 push をスキップする。
      */
     pushTabSwitch(tabName: string): void {
         if (this.restoring) return;
+        // navigate-row/cell push 直後は enableTabButton から呼ばれる tab-switch を1回スキップする
+        if (this.suppressNextTabSwitch) {
+            this.suppressNextTabSwitch = false;
+            return;
+        }
         // 現在の履歴エントリと同じタブなら重複 push しない
         const currentState = history.state as Record<string, unknown> | null;
         if (currentState !== null && currentState['type'] === 'tab-switch' && currentState['tabName'] === tabName) return;
-        history.pushState({ type: 'tab-switch', tabName: tabName }, '');
+        history.pushState({ type: 'tab-switch', tabName, viewIndex: 0 }, '');
+    }
+
+    /**
+     * 定義ジャンプ（paneStack深化）をブラウザ履歴に記録する。
+     * pushRelationsPanel() 呼び出し後、viewIndex が深化した後に呼ぶこと。
+     */
+    pushPaneChange(tabName: string, viewIndex: number): void {
+        if (this.restoring) return;
+        history.pushState({ type: 'pane-push', tabName, viewIndex }, '');
+    }
+
+    /**
+     * REFERENCESパネルからのジャンプをブラウザ履歴に記録する。
+     * enableTabButton が連動して pushTabSwitch を呼ぶため、suppressNextTabSwitch で抑制する。
+     */
+    pushNavigateRow(tableName: string): void {
+        if (this.restoring) return;
+        this.suppressNextTabSwitch = true;
+        history.pushState({ type: 'navigate-row', tableName }, '');
+    }
+
+    /**
+     * 検索パネルからのジャンプをブラウザ履歴に記録する。
+     * enableTabButton が連動して pushTabSwitch を呼ぶため、suppressNextTabSwitch で抑制する。
+     */
+    pushNavigateCell(tableName: string): void {
+        if (this.restoring) return;
+        this.suppressNextTabSwitch = true;
+        history.pushState({ type: 'navigate-cell', tableName }, '');
+    }
+
+    /**
+     * フォームパネルを開いたことをブラウザ履歴に記録する。
+     * goForward でこのエントリに到達したとき、popstate ハンドラがフォームパネルを再オープンする。
+     */
+    pushFormPanelOpen(tabName: string, pkValue: string): void {
+        if (this.restoring) return;
+        history.pushState({ type: 'form-panel-open', tabName, pkValue }, '');
     }
 }

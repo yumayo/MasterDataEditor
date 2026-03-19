@@ -2103,3 +2103,19 @@ Csv クラスの load() が line.split(',') による単純分割、toString() �
 - RFC4180の仕様を意識し、フィールド区切り処理には単純な split(',') を使わない。
 
 ---
+
+## 144. [a8d930f] — マウスの戻る/進むボタンでナビゲーション履歴を拡張（定義ジャンプ・REFERENCES・検索・フォームパネル対応）
+
+### 不具合原因名
+History API のpopstate方向非対称性に起因する設計ミス
+
+### なぜそうなったのか
+初期実装では `navigate-row` / `navigate-cell` エントリに `previousTabName` を保存し、popstate時に `previousTabName` へ切り替える設計としたが、History APIの `popstate` イベントは goBack/goForward の区別なく「移動先エントリのstate」を返すため、goForward時にジャンプ先ではなくジャンプ元に切り替えてしまう致命的な方向ミスが発生した。同様に `form-panel-open` エントリには `tabName` と `pkValue` が未記録だったため、goForward時にフォームパネルを再オープンできず、goBack時にもフォームパネルが閉じない（先に閉じる処理が未実装だった）。また `restoring` フラグに try/finally が未適用で例外時に永続化するリスクがあった。
+
+### どうしたら今後は再発しないか
+- History API の `pushState` で記録するエントリは「そのエントリに到達したときのビューの状態」を自己記述的に持たせる。goBack/goForwardの方向に依存した設計にしない。
+- popstate ハンドラでは「現在のエントリstateに記述された状態を復元する」という単一の責務に徹する。方向に応じた分岐を持たない。
+- `restoring` のようなフラグ管理には必ず try/finally を使い、例外安全性を保証する。
+- フォールバック値（`typeof x === 'number' ? x : 0`）ではなく、存在が保証されるフィールドの不在は throw で検知する。
+
+---

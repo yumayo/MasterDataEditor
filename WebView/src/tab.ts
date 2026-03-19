@@ -268,6 +268,9 @@ export class Tab {
      * 開かれていなければタブを新規作成して読み込み完了後に行を選択する
      */
     navigateToTableRow(tableName: string, pkValue: string): void {
+        // ジャンプ先テーブル名をブラウザ履歴に記録する（enableTabButton より前に push する）
+        // goBack 時は前のエントリ（tab-switch 等）の state が返るため、previousTabName は不要
+        this.navigationHistory.pushNavigateRow(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             // 既存タブをアクティブにして行を選択
@@ -287,6 +290,9 @@ export class Tab {
      * navigateToTableRow と同様だが、特定の列にフォーカスする
      */
     navigateToTableCell(tableName: string, pkValue: string, columnIndex: number): void {
+        // ジャンプ先テーブル名をブラウザ履歴に記録する（enableTabButton より前に push する）
+        // goBack 時は前のエントリ（tab-switch 等）の state が返るため、previousTabName は不要
+        this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             this.enableTabButton(tableName);
@@ -940,6 +946,17 @@ export class Tab {
     }
 
     /**
+     * ブラウザ履歴の復元時に viewIndex を指定の値に直接設定する。
+     * NavigationHistory の popstate ハンドラからのみ呼ばれる。
+     * 指定値が有効範囲外の場合はクランプする。
+     */
+    restoreViewIndex(viewIndex: number): void {
+        const maxIndex = Math.max(0, this.paneStack.length - 2);
+        this.viewIndex = Math.min(Math.max(0, viewIndex), maxIndex);
+        this.updateVisiblePanes();
+    }
+
+    /**
      * ペインスタックをルート状態（EditorTable + グローバルRP の2ペイン）にリセットする
      * メインテーブルで別の行を選択したとき、RelationsPanel.updateForRow() から呼ばれる。
      * すでにルート状態（paneStack.length <= 2 && viewIndex === 0）の場合は何もしない。
@@ -970,6 +987,11 @@ export class Tab {
 
         // 表示を更新する
         this.updateVisiblePanes();
+
+        // paneStack 深化をブラウザ履歴に記録する（viewIndex 確定後に記録する）
+        // アクティブタブなしで pushRelationsPanel が呼ばれるのは設計ミスのため throw する
+        if (this.activeTabName === false) throw new Error('[Tab] pushRelationsPanel: activeTabName が false のまま pushRelationsPanel が呼ばれました');
+        this.navigationHistory.pushPaneChange(this.activeTabName, this.viewIndex);
 
         // 新 RP にテーブルの参照データを表示させる
         rp.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
@@ -1356,6 +1378,9 @@ export class Tab {
      * @param pkValue 対象行のPK値
      */
     showFormPanel(tableName: string, pkValue: string): void {
+        // フォームパネルを開いたことをブラウザ履歴に記録する（tabName/pkValue を記録して goForward で再オープン可能にする）
+        this.navigationHistory.pushFormPanelOpen(tableName, pkValue);
+
         // 既存のFormPanelを破棄する（新しいPK値で開き直す場合）
         if (this.currentFormPanel !== false) {
             this.currentFormPanel.remove();
