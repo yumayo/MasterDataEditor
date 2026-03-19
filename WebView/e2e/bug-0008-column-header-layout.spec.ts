@@ -245,13 +245,14 @@ test.describe('BUG_0008: comment 付き 2行ヘッダーのレイアウト', () 
     );
 
     // ---------------------------------------------------------------------------
-    // テスト6: セル内で .column-header-comment が .column-header-name より上に位置すること
+    // テスト6: セル内で .column-header-name が .column-header-comment より上に位置すること
+    //         （FEAT_0049 で name が上段、comment が下段に変更された）
     //
-    // display: block が機能していれば comment は name の上に縦に並ぶ。
+    // display: block が機能していれば name は comment の上に縦に並ぶ。
     // flex-direction 等の不正なスタイルが入ると縦並びが崩れる可能性がある。
     // ---------------------------------------------------------------------------
     test(
-        'セル内で comment が name より上に表示されていること',
+        'セル内で name が comment より上に表示されていること',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item_with_comment');
             const headerRow = table.locator('.editor-table-column-header-row');
@@ -262,22 +263,22 @@ test.describe('BUG_0008: comment 付き 2行ヘッダーのレイアウト', () 
             // comment 付き列が存在することを前提とする
             expect(count).toBeGreaterThanOrEqual(1);
 
-            // 各列ヘッダーセルで comment の bottom <= name の top を検証する
+            // 各列ヘッダーセルで name の bottom <= comment の top を検証する
             for (let i = 0; i < count; i++) {
                 const header = headers.nth(i);
-                const commentEl = header.locator('.column-header-comment');
                 const nameEl = header.locator('.column-header-name');
+                const commentEl = header.locator('.column-header-comment');
 
-                // comment 要素と name 要素が存在するセルのみ検証する
-                const commentCount = await commentEl.count();
+                // name 要素と comment 要素が存在するセルのみ検証する
                 const nameCount = await nameEl.count();
-                if (commentCount === 0 || nameCount === 0) { continue; }
+                const commentCount = await commentEl.count();
+                if (nameCount === 0 || commentCount === 0) { continue; }
 
-                const commentBottom = await commentEl.evaluate((el: Element) => el.getBoundingClientRect().bottom);
-                const nameTop = await nameEl.evaluate((el: Element) => el.getBoundingClientRect().top);
+                const nameBottom = await nameEl.evaluate((el: Element) => el.getBoundingClientRect().bottom);
+                const commentTop = await commentEl.evaluate((el: Element) => el.getBoundingClientRect().top);
 
-                // comment の下端が name の上端以下（つまり comment が name より上）であることを確認する
-                expect(commentBottom, `列ヘッダー[${i}] で comment.bottom=${commentBottom} が name.top=${nameTop} より下になっています（comment が name の上にあるべき）`).toBeLessThanOrEqual(nameTop + 2);
+                // name の下端が comment の上端以下（つまり name が comment より上）であることを確認する
+                expect(nameBottom, `列ヘッダー[${i}] で name.bottom=${nameBottom} が comment.top=${commentTop} より下になっています（name が comment の上にあるべき）`).toBeLessThanOrEqual(commentTop + 2);
             }
         },
     );

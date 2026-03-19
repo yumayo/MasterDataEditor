@@ -253,7 +253,7 @@ export class EditorTable {
             cells.push(cornerCell);
             // 列ヘッダー (A, B, C, ...)
             for (let i = 0; i < this.tableData.header.length; ++i) {
-                // comment がある列は上段にcomment、下段に変数名の2行ヘッダーを生成する
+                // comment がある列は上段に変数名、下段にcommentの2行ヘッダーを生成する
                 const col = this.tableData.header[i];
                 const isPrimaryKey = this.tableData.primaryKeyColumns.includes(col.name);
                 const columnHeaderCell = this.structure.createColumnHeaderCell(col.name, col.comment, i, col.width, isPrimaryKey, col.reference);
@@ -1884,15 +1884,17 @@ export class EditorTable {
 
     /**
      * 列ヘッダーのcommentを取得する。
-     * 2行構造（comment付き）の場合は .column-header-comment span の textContent を返す。
+     * comment がある場合は data-full-comment 属性から完全な値（\n含む）を返す。
      * comment なし（TextNode のみ）の場合は null を返す。
      */
     public getColumnHeaderComment(columnIndex: number): string | null {
         const headerRow = this.element.children[0] as HTMLElement;
         const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
-        const commentSpan = headerCell.querySelector('.column-header-comment');
-        if (commentSpan === null) return null;
-        return commentSpan.textContent as string;
+        // data-full-comment があれば完全なcomment（\n含む）を返す
+        // \n を含まないcommentも createColumnHeaderCell で必ず dataset.fullComment に保存されるため、
+        // commentがある場合は常にここから読み取る。commentなし（TextNodeのみ）の場合は属性が存在しない。
+        if ('fullComment' in headerCell.dataset) return headerCell.dataset.fullComment as string;
+        return null;
     }
 
     /** 行挿入（Commandを使用してhistoryに追加） */

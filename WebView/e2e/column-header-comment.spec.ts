@@ -7,7 +7,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //
 // 実装すべき機能:
 //   1. 列ヘッダーセルにcomment（日本語名）とname（変数名）を2行で表示する
-//      - comment あり: 上段に .column-header-comment、下段に .column-header-name
+//      - comment あり: 上段に .column-header-name、下段に .column-header-comment
 //      - comment なし: .column-header-comment 要素は生成しない（name のみ表示）
 //   2. タブボタンにdescription（日本語説明）を表示する
 //      - タブボタンのtextContentがdescriptionになる
@@ -156,6 +156,74 @@ test.describe('列ヘッダーへのcomment表示', () => {
             await expect(nameHeader.locator('.column-header-comment')).toHaveCount(0);
             // textContent 全体に変数名が含まれていること（.column-header-name でも素のテキストでも可）
             await expect(nameHeader).toContainText('name');
+        },
+    );
+});
+
+// =============================================================================
+// テスト（FEAT_0049）: 列ヘッダーの表示順序 — name が上段、comment が下段
+// =============================================================================
+test.describe('FEAT_0049: 列ヘッダーの順序 — name上段・comment下段', () => {
+
+    test.beforeEach(async ({ page }) => {
+        const fs: MockFileSystem = {
+            "schema/item.json": JSON.stringify({
+                description: "アイテムマスタ",
+                primary_key: "id",
+                header: [
+                    { key: 0, name: "id",     type: "int" },
+                    { key: 1, name: "attack",  type: "int", comment: "攻撃値\n追加説明" },
+                    { key: 2, name: "defense", type: "int", comment: "防御値" },
+                ],
+            }),
+            "data/item.csv": [
+                "id,attack,defense",
+                "1,50,10",
+            ].join("\n"),
+        };
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    // ---------------------------------------------------------------------------
+    // テスト: .column-header-name が .column-header-comment より上（先）に DOM 上で現れること
+    // DOM 上の出現順序を previousElementSibling で検証する（display:block で縦並びになるため）
+    // ---------------------------------------------------------------------------
+    test(
+        '.column-header-name が .column-header-comment より上（DOM上で先）に表示されること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'item');
+            // attack 列は colIndex=1
+            const attackHeader = getColumnHeaderCell(table, 1);
+
+            // nameEl が commentEl より DOM 上で先（上側）に現れることを verify する。
+            // nameEl の直後の兄弟要素が commentEl であることを確認する（name → comment の順）
+            const isNameBeforeComment = await attackHeader.evaluate((el: Element) => {
+                const nameEl = el.querySelector('.column-header-name');
+                const commentEl = el.querySelector('.column-header-comment');
+                if (!nameEl || !commentEl) return false;
+                // nameEl の nextElementSibling が commentEl であれば name が先
+                return nameEl.nextElementSibling === commentEl;
+            });
+            // プロダクションコードが name→comment 順で appendChild するまで失敗（RED）
+            expect(isNameBeforeComment).toBe(true);
+        },
+    );
+
+    // ---------------------------------------------------------------------------
+    // テスト: comment に \n が含まれる場合、\n 以降を切り捨てて最初の行のみ表示されること
+    // ---------------------------------------------------------------------------
+    test(
+        'commentに\\nが含まれる場合は最初の行のみ表示されること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'item');
+            // attack 列の comment は "攻撃値\n追加説明" — \n 以降は表示しない
+            const attackHeader = getColumnHeaderCell(table, 1);
+            const commentEl = attackHeader.locator('.column-header-comment');
+
+            await expect(commentEl).toBeVisible();
+            // "追加説明" が表示されていないことを確認する（\n でカット）
+            await expect(commentEl).toHaveText('攻撃値');
         },
     );
 });

@@ -2119,3 +2119,17 @@ History API のpopstate方向非対称性に起因する設計ミス
 - フォールバック値（`typeof x === 'number' ? x : 0`）ではなく、存在が保証されるフィールドの不在は throw で検知する。
 
 ---
+
+## 145. [d176e9d] — 列ヘッダーの列名と説明の表示順序を逆転し、説明の\n以降を非表示にする
+
+### 不具合原因名
+DOM表示用の切り捨てがSSOTを破壊するパターン
+
+### なぜそうなったのか
+列ヘッダーのcommentに`\n`が含まれる場合に`comment.split('\n')[0]`で最初の行のみをDOMに表示する処理を追加した際、`getColumnHeaderComment`がDOMの`.column-header-comment`のtextContentを読み取る設計だったため、切り捨て後の値がSSOTになってしまった。`DeleteColumnCommand`がUndo用にこのメソッドでcommentを保存するため、Undo後に`\n`以降の情報が失われる問題が発生した。
+
+### どうしたら今後は再発しないか
+- DOMに表示用の加工（切り捨て・省略等）を施す場合、完全な値を`data-*`属性に保存し、読み取りはそちらから行うこと。DOMのtextContentは「表示用」であり「データ用」ではないという区別を意識する。
+- 列ヘッダーの情報を読み取るメソッド（`getColumnHeaderName`, `getColumnHeaderComment`）がDOMから読む場合、表示加工の影響を受けないか確認すること。
+
+---

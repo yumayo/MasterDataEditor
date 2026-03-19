@@ -394,23 +394,28 @@ export class EditorTableStructure {
 
     /**
      * 列ヘッダーセルを生成する
-     * comment がある場合は .column-header-comment（上段）と .column-header-name（下段）の2要素を生成する。
+     * comment がある場合は .column-header-name（上段）と .column-header-comment（下段）の2要素を生成する。
      * comment がない場合は従来通り TextNode で name のみ表示する。
      * isPrimaryKey が true の場合は PK バッジを、reference が非null の場合は FK バッジを nameSpan の直後に追加する。
+     * comment に \n が含まれる場合は最初の行のみ表示する。
      */
     createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string, isPrimaryKey: boolean, reference: string | null): HTMLElement {
         const columnHeaderCell = document.createElement('div');
         columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
         if (comment !== null) {
-            // 2行構造: 上段にcomment、下段に変数名
-            const commentSpan = document.createElement('span');
-            commentSpan.classList.add('column-header-comment');
-            commentSpan.textContent = comment;
+            // 2行構造: 上段に変数名（name）、下段にcomment
             const nameSpan = document.createElement('span');
             nameSpan.classList.add('column-header-name');
             nameSpan.textContent = name;
-            columnHeaderCell.appendChild(commentSpan);
+            const commentSpan = document.createElement('span');
+            commentSpan.classList.add('column-header-comment');
+            // \n が含まれる場合は最初の行のみ表示する（表示用の切り捨て）
+            commentSpan.textContent = comment.split('\n')[0];
             columnHeaderCell.appendChild(nameSpan);
+            columnHeaderCell.appendChild(commentSpan);
+            // 完全なcomment（\n を含む場合でも全体）を data-full-comment に保存し、
+            // getColumnHeaderComment() や DeleteColumnCommand が正確な値を読み取れるようにする
+            columnHeaderCell.dataset.fullComment = comment;
         } else {
             // comment なし: TextNode で name のみ（従来通り）
             columnHeaderCell.appendChild(document.createTextNode(name));
