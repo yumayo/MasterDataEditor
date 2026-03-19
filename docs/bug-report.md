@@ -2133,3 +2133,17 @@ DOM表示用の切り捨てがSSOTを破壊するパターン
 - 列ヘッダーの情報を読み取るメソッド（`getColumnHeaderName`, `getColumnHeaderComment`）がDOMから読む場合、表示加工の影響を受けないか確認すること。
 
 ---
+
+## 146. [9eef1a3] — 同一タブ内でpaneStack深化→戻る→進むが機能しない不具合を修正
+
+### 不具合原因名
+同一タブ復元時のstate.paneStack未保存
+
+### なぜそうなったのか
+`enableTabButton`は`this.activeTabName !== name`の場合のみ`deactivateTabState`を呼び、その中で`state.paneStack = this.paneStack.slice()`によりpaneStackをstateに保存する。しかしpopstateで同一タブ内のpane-push履歴を戻る/進む場合、`activeTabName === name`が成立して`deactivateTabState`がスキップされるため、深化後のpaneStack（3要素以上）がstateに保存されなかった。続く`activateTabState`が古いstate.paneStack（2要素）を復元し、`restoreViewIndex`のクランプにより進む操作が無効化されていた。
+
+### どうしたら今後は再発しないか
+- `deactivateTabState`と`activateTabState`はペアで呼ばれることを前提としているが、同一タブへのenableTabButton呼び出しではdeactivateがスキップされるパスが存在する。状態の保存と復元が対称的にペアで行われているか、全てのコールパスを検証すること。
+- 暗黙の不変条件（「activateTabState呼び出し前にstateが最新である」）は、条件分岐で経路が分かれる場合に各経路で個別に保証されているか確認すること。
+
+---

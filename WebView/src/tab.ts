@@ -594,6 +594,16 @@ export class Tab {
         // （設定タブ・差分タブはここに到達しない）
         this.navigationHistory.pushTabSwitch(name);
 
+        // 同一タブが既にアクティブな状態で enableTabButton が呼ばれた場合（popstate復元・同一タブ再クリック等）:
+        // deactivateTabState()がスキップされるため、ここで明示的にstateを更新しないと
+        // activateTabState()が古いstate.paneStackを復元してpaneStack深化状態が失われる。
+        if (this.activeTabName === name) {
+            const currentState = this.tabStates.get(name);
+            if (!currentState) throw new Error(`[Tab] enableTabButton: アクティブタブ "${name}" の状態が tabStates に存在しません`);
+            currentState.paneStack = this.paneStack.slice();
+            currentState.viewIndex = this.viewIndex;
+        }
+
         // 現在アクティブなタブがあれば非アクティブ化
         if (this.activeTabName && this.activeTabName !== name) {
             const previousState = this.tabStates.get(this.activeTabName);
