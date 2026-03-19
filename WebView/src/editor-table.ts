@@ -246,7 +246,9 @@ export class EditorTable {
                 EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
             }
             // コーナーセルクリックで全選択
-            cornerCell.addEventListener('mousedown', () => {
+            cornerCell.addEventListener('mousedown', (e) => {
+                // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
+                if (e.button !== 0) return;
                 this.handler.submitAndHide();
                 this.selection.selectAll();
             });
@@ -426,6 +428,8 @@ export class EditorTable {
             });
         });
         cell.addEventListener('mousedown', (e) => {
+            // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
+            if (e.button !== 0) return;
             const position = EditorTable.getCellPosition(cell, table.element);
             if (!position) return;
             // 編集中のセルを確定する（Ctrl+クリックでも通常クリックでも共通）
