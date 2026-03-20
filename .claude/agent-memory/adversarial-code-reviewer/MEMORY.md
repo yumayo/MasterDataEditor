@@ -166,8 +166,20 @@
 - **IMPORTANT**: `form-panel.ts` N:1 セクションが `primaryKeyColumnName: ''` で生焼けオブジェクト生成
 - **PATTERN**: primary_key 抽出ロジックのコピペが5ファイル8箇所に分散 → リファクタ時はユーティリティ関数化を先行させること
 
+## ValidationPanel jumpToError リファクタ Known Patterns (2026-03-21)
+- **[R1 FIXED]** PK重複ジャンプ: タブ開時は storeRowToDomRow で正確にジャンプ、タブ未開時は navigateToTableCell（PK値ベース）に分岐
+- **[R1 FIXED]** フィルタ非表示行スキップ保護: storeRowToDomRow === null で早期リターン復活
+- **[R1 FIXED]** getRowPkValue() デッドコード削除済み、resolvePkValueForRow に統合
+- **[R2 STILL]** PK重複 + タブ未開時: pkValue が重複値そのもの → navigateToCell は最初の一致行にしかジャンプできない（設計判断として許容、コメント記載済み）
+- **[R2 STILL]** validValues == null (L445) が抽象等価比較 → === null に修正すべき（R1指摘からの持ち越し）
+- **[R2 STILL]** TDD RED フェーズコメントがテストに残存（L13-16, L138-140）（FEAT_0047 から3回目の再発）
+- **[R2 NEW]** テスト2件のセットアップが完全コピペ（共通関数に抽出すべき）
+- **[R2 NEW]** タブ開/未開でナビゲーション履歴への影響が非対称（switchToExistingTab vs navigateToTableCell）
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-21) ValidationPanel jumpToError リファクタ R2: 致命的1件（PK重複+タブ未開の制約）、重要3件（REDコメント残存/==null持越し/pkValueスナップショット）、軽微3件
+- (2026-03-21) ValidationPanel jumpToError リファクタ: 致命的3件、重要4件、軽微3件
 - (2026-03-20) config.primaryKeyColumnName廃止リファクタ: 致命的3件、重要4件、軽微3件
 - (2026-03-20) ISSUE_0080 Dynamic Reference Validation: 致命的3件（validateSimpleReference未修正、??演算子、filterRowIndex=-1黙殺）、重要3件、軽微3件
 - (2026-03-20) ResizeHandle consumedDelta 符号修正: 致命的1件（RelationsPanel浮動小数点ドリフト）、重要3件、軽微2件

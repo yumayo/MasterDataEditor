@@ -18,18 +18,19 @@
 - 残存(🔴): notification-bell に aria-expanded なし
 - 残存(🟡): notification-history-item に role="listitem" なし・未読バッジなし
 
-#### FEAT バリデーションエラーパネル / ResizeHandle（初回B→再レビューA→リサイズ共通化A→超過分戻りきりA 2026-03-20）
+#### FEAT バリデーションエラーパネル / ResizeHandle / 未開封テーブルジャンプ（初回B→A→A→A→2026-03-21 A-）
 - ファイル: project_feat_validation_panel.md
 - 修正済み: validation-panel-item に role/tabindex / status-bar-badge に role/tabindex / show/hide 対称
 - 修正済み: validation-panel-close に role/tabindex/aria-label 付与済み
 - 修正済み: resize-handle クラスを Sidebar/RelationsPanel/PROBLEMSパネルで共通化（data-direction属性）
 - 修正済み: ステータスバーにエラーアイコン+件数追加、aria-hidden/role/tabindex/aria-label 完備
 - 修正済み: 超過分戻りきりドラッグ（prevCoord += consumedDelta 方式）3パネル全て対応、DOMで確認
-- 残存(🟡): validation-panel-group-header に role/aria-label なし（複数テーブル混在時のグループ帰属）
-- 残存(🟡): バッジのエラー0件時の視覚的区別なし（data-error-count="0" CSSグレーアウト推奨）
+- 修正済み（2026-03-21）: 未開封テーブルへのジャンプ機能を追加。cell-error+editor-table-cell-focused が正しく付与されることDOMで確認
+- 残存(🔴): cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080 から継続）
+- 残存(🟡): validation-panel-group-header に role/aria-label なし（全サイクル継続課題）
+- 残存(🟡): validation-panel-item に aria-label なし（3 span分散のスクリーンリーダー読み上げ懸念）
 - 残存(🟡): resize-handle に aria 属性なし（role="separator"/aria-orientation/aria-label 推奨）
-- 残存(🟡): PROBLEMSパネルの min-height/max-height 制約がDOMから確認できない（推測）
-- 残存(🟡): 下限到達後の逆方向挙動テストが spec に未記載（上限テストの対称ケース）
+- 残存(🟡): バッジのエラー0件時の視覚的区別なし（data-error-count="0" CSSグレーアウト推奨）
 
 #### ISSUE_0080 動的参照バリデーション（2026-03-20レビュー）評価: B+
 - cell-error の付与箇所・エラー件数カウント・PROBLEMSメッセージ内容はすべて正確

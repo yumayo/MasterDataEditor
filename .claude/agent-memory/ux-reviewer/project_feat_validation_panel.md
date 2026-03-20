@@ -1,8 +1,42 @@
 ---
-name: FEAT バリデーションエラーパネル（2026-03-20初回 / 2026-03-20再レビュー / 2026-03-20 リサイズ共通化レビュー / 2026-03-20 超過分戻りきりレビュー）
-description: バリデーションエラーパネルのUXレビュー結果。リサイズハンドル共通化・PROBLEMSパネル高さ調整・ステータスバーエラーアイコン追加・超過分戻りきりドラッグ改善のレビューを含む。
+name: FEAT バリデーションエラーパネル（2026-03-20初回〜 / 2026-03-21 未開封テーブルジャンプ追加）
+description: バリデーションエラーパネルのUXレビュー結果。リサイズハンドル共通化・PROBLEMSパネル高さ調整・ステータスバーエラーアイコン追加・超過分戻りきりドラッグ改善・未開封テーブルへのジャンプ機能のレビューを含む。
 type: project
 ---
+
+## 未開封テーブルへのジャンプ機能レビュー（2026-03-21 第5回）評価: A-
+
+### 今回の変更内容
+PROBLEMSパネルのエラー項目クリック時、該当テーブルがタブで開かれていない場合でもテーブルを新規に開いてエラーセルにフォーカスする機能を追加。
+
+### 確認できた正常動作（DOM/スクリーンショット）
+1. タブを閉じた後にエラー項目をクリックすると `tab-button-active` が product タブに付与され、テーブルが新規に開かれる（1枚目スクリーンショット・DOM確認）
+2. フォーカス後のDOMで `cell-error editor-table-cell-focused` が同一セル（product 行1 category_id）に付与されている（2枚目DOM確認）
+3. 2枚のダンプが同一のDOM状態であることを確認（テスト2の「フォーカス移動」はテスト1終了時点の状態を確認するもの）
+
+### 残存課題（改善必須 🔴）
+1. **cell-error セルに aria-invalid/aria-describedby がない（ISSUE_0080 から継続）**
+   - 該当セル: `<div class="editor-table-cell cell-error editor-table-cell-focused" data-col="1">999</div>`
+   - `aria-invalid="true"` と `aria-describedby="..." ` が未付与
+   - キーボードナビゲーションユーザーはフォーカスされてもエラーであることを把握できない
+
+### 残存課題（改善推奨 🟡）
+1. **validation-panel-group-header に role/aria-label がない**（全レビューサイクルを通じて継続）
+   - `<div class="validation-panel-group-header"><span class="validation-panel-group-name">product</span>...`
+   - `role="group"` + `aria-label` 未設定
+2. **validation-panel-item に aria-label がない**
+   - `<div class="validation-panel-item" role="button" tabindex="0">` に aria-label が未設定
+   - テキストが3つのspanに分散しており、スクリーンリーダーが全文を正しく読み上げられるか不明
+   - 推奨: `aria-label="FK切れ: product 行1 category_id 参照先 category.id に値 999 が存在しません"` のような連結ラベル
+3. **resize-handle に role/aria-label なし**（継続課題）
+
+### 特記: 2枚のダンプが同一DOM状態である件
+- テスト「テーブルが新規に開かれる」と「エラーセルにフォーカスが移動する」の2つが同一DOMになっている
+- これは「開いた直後にフォーカスも完了している」実装になっているためと考えられる（合理的な設計）
+- ただし「タブを開く」と「フォーカス移動」が別々にテストアサートされているか、spec の内容確認が望ましい
+
+**Why:** 「PROBLEMSクリック→タブがない→開く→エラーセルへ」は1クリックで完結するべき核心ワークフロー。機能としては正しく動作しており、残課題はアクセシビリティの補足に留まる。
+**How to apply:** cell-error に aria-invalid を付与する際は aria-describedby でエラーメッセージIDへの参照も忘れずに付与すること。
 
 ## リサイズ共通化・PROBLEMSパネル改善レビュー（2026-03-20 第3回）評価: A
 
