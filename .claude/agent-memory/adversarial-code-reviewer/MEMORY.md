@@ -197,8 +197,20 @@
 - **IMPORTANT**: form-panel.ts に ?? 演算子8箇所が既存のまま放置（FEAT_0043指摘からの持越し）
 - **MINOR**: isDisplayColumn が1箇所からしか呼ばれていない（共通化の名目だがpublic export過剰）
 
+## FormPanel Drilldown Navigation History Known Patterns (2026-03-21)
+- **CRITICAL**: form-panel-open/drilldown の popstate で switchToExistingTab が呼ばれない → 別タブアクティブ中に goBack するとフォームが間違ったタブの右スロットに表示される（操作パスの網羅漏れ）
+- **CRITICAL**: isRestoring() は getter 禁止ルール違反。pushFormPanelOpen 内部で restoring チェック済みのため showFormPanel 側のガードは不要。メソッド自体を削除可能
+- **CRITICAL**: restoreNavStackAsync に空配列バリデーションなし → navStack=[] で TypeError（Array.isArray は空配列も true）
+- **CRITICAL**: pushFormPanelDrillDown のコメント「ディープコピー」は虚偽。[...navStack] はシャローコピー（history.pushState の structured clone に救われているが将来誤導の原因）
+- **IMPORTANT**: popstate ハンドラの restoring フラグが同期リセットだが showFormPanel/showFormPanelWithNavStack は非同期 → 連打でレースコンディション（FEAT_0047 既知パターン再発）
+- **IMPORTANT**: _tabName パラメータ未使用 → タブ切り替え漏れの根本原因
+- **IMPORTANT**: navStack 要素のプロパティ型バリデーションなし → structured clone 復元からの型安全性破壊
+- **IMPORTANT**: パンくず history.go(delta) のクロージャが this.navStack.length を動的参照 → capturedDepth でキャプチャすべき
+- **MINOR**: パンくずクリックのテストがない（goToPageAsync → history.go 完全置換後のテスト漏れ）
+
 ## Review History
 → 詳細は `known-issues-archive.md` 参照
+- (2026-03-21) FormPanel Drilldown Navigation History: 致命的4件（タブ切替漏れ/getter禁止/空配列/コメント虚偽）、重要5件、軽微3件
 - (2026-03-21) determineDisplayColumnName共通化リファクタ: 致命的3件（??新規導入/fixtures暗黙変更/スコープ逸脱）、重要3件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播 R2: 致命的3件（保存失敗通知漏れ持越し/catch握り潰し持越し/==null）、重要4件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播: 致命的3件（生焼けnotification/保存失敗通知漏れ/catch網羅漏れ）、重要4件、軽微3件
