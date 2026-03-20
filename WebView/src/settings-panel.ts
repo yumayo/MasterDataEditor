@@ -3,9 +3,8 @@ import {TabButton} from "./tab-button";
 /**
  * 設定画面パネル
  * テーマ選択プルダウンを提供する。
- * - change イベントで body[data-theme] を即時更新（プレビュー）
- * - dirty 状態は savedTheme との差分で判定し、TabButton に直接反映する
- * - save() で localStorage に永続化し dirty を解除する
+ * - change イベントで body[data-theme] を即時更新し、自動的に localStorage へ保存する
+ * - Ctrl+S による手動保存も引き続き動作する（冪等）
  */
 
 /** localStorage に保存するテーマ設定のキー */
@@ -14,17 +13,11 @@ const THEME_STORAGE_KEY = 'master-data-editor-theme';
 export class SettingsPanel {
     private readonly element: HTMLElement;
     private readonly themeSelect: HTMLSelectElement;
-    /** 最後に保存されたテーマ値（dirty 判定の基準） */
-    private savedTheme: string;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
     private readonly tabButton: TabButton;
 
     constructor(tabButton: TabButton) {
         this.tabButton = tabButton;
-
-        // localStorage から保存済みテーマを読み込む（未保存の場合は 'dark' をデフォルトとして使用）
-        const stored = localStorage.getItem(THEME_STORAGE_KEY);
-        this.savedTheme = stored !== null ? stored : 'dark';
 
         // 設定パネル全体のコンテナ
         this.element = document.createElement('div');
@@ -58,10 +51,10 @@ export class SettingsPanel {
         const currentTheme = document.body.getAttribute('data-theme')!;
         this.themeSelect.value = currentTheme;
 
-        // プルダウン変更時に即時プレビューと dirty 判定を行う
+        // プルダウン変更時に即時プレビューと自動保存を行う
         this.themeSelect.addEventListener('change', () => {
             document.body.dataset.theme = this.themeSelect.value;
-            this.tabButton.setDirty(this.isDirty());
+            this.save();
         });
 
         label.appendChild(this.themeSelect);
@@ -78,20 +71,11 @@ export class SettingsPanel {
 
     /**
      * 現在の設定を localStorage に保存し、dirty 状態を解除する
-     * Ctrl+S 時に呼ばれる
+     * change イベント（自動保存）および Ctrl+S（手動保存）の両方から呼ばれる
      */
     save(): void {
-        const currentTheme = this.themeSelect.value;
-        localStorage.setItem(THEME_STORAGE_KEY, currentTheme);
-        this.savedTheme = currentTheme;
+        localStorage.setItem(THEME_STORAGE_KEY, this.themeSelect.value);
         this.tabButton.setDirty(false);
-    }
-
-    /**
-     * 現在の選択値が保存済みテーマと異なるかどうかを返す
-     */
-    isDirty(): boolean {
-        return this.themeSelect.value !== this.savedTheme;
     }
 }
 

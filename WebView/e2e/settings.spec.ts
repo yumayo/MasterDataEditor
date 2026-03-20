@@ -3,20 +3,16 @@ import { test, expect } from './fixtures/test';
 // =============================================================================
 // 設定画面（ライトテーマ対応）テスト
 //
-// 実装すべき機能:
+// 検証する機能:
 //   1. アクティビティバー下部に歯車アイコン（.activity-bar-settings）を配置する
 //   2. 歯車クリックで「設定」タブをタブバーに開く
 //   3. 設定画面にライト/ダークの2択プルダウン（select.settings-theme-select）を表示する
 //   4. プルダウン変更時に body[data-theme] が即時更新される
-//   5. テーマ変更時に設定タブの dirty マーク（.tab-button-dirty-visible）が表示される
-//   6. Ctrl+S で保存後に dirty マークが消え、localStorage に永続化される
-//   7. ページリロード後もテーマが維持される
-//
-// RED状態の理由:
-//   - .activity-bar-settings 要素がプロダクションコードに存在しない
-//   - 「設定」タブ・.settings-panel・select.settings-theme-select が存在しない
-//   - テーマ変更の body[data-theme] 更新ロジックが存在しない
-//   - Ctrl+S による localStorage 永続化が存在しない
+//   5. テーマ変更時に自動保存されるため dirty マークが表示されない
+//   6. Ctrl+S は冪等に動作する（自動保存済みでもエラーにならない）
+//   7. Ctrl+S 経由での保存後リロードでテーマが維持される
+//   8. テーマ変更のみ（Ctrl+S なし）でリロード後もテーマが維持される（自動保存）
+//   9. 設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作する
 // =============================================================================
 
 // =============================================================================
@@ -100,10 +96,10 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト5: テーマ変更時にタブに dirty マークが表示されること
+    // テスト5: テーマ変更時に自動保存されるため dirty マークが表示されないこと
     // ---------------------------------------------------------------------------
     test(
-        'テーマを変更すると設定タブに dirty マーク（.tab-button-dirty-visible）が表示されること',
+        'テーマを変更しても自動保存されるため dirty マークが表示されないこと',
         async ({ page, mockFileSystem }) => {
             // 歯車ボタンをクリックして設定タブを開く
             const settingsButton = page.locator('.activity-bar-settings');
@@ -119,38 +115,37 @@ test.describe('設定画面', () => {
             const themeSelect = page.locator('.settings-panel select.settings-theme-select');
             await themeSelect.selectOption('light');
 
-            // テーマ変更後に設定タブの dirty マークが表示されることを確認する
-            // プロダクションコードに dirty マーク更新ロジックが存在しないため失敗（RED）
-            await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
+            // 自動保存により dirty マークが表示されないことを確認する
+            await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
         },
     );
 
     // ---------------------------------------------------------------------------
-    // テスト6: Ctrl+S でテーマ設定が保存されること
+    // テスト6: Ctrl+S が冪等に動作すること（自動保存済みでもエラーにならない）
     // ---------------------------------------------------------------------------
     test(
-        'Ctrl+S で保存後に dirty マークが消えること',
+        'テーマ変更後に Ctrl+S を押しても dirty マークが表示されないこと（冪等性）',
         async ({ page, mockFileSystem }) => {
             // 歯車ボタンをクリックして設定タブを開く
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // テーマを変更して dirty 状態にする
+            // テーマを変更する（自動保存される）
             const themeSelect = page.locator('.settings-panel select.settings-theme-select');
             await themeSelect.selectOption('light');
 
-            // dirty マークが表示されることを確認する（前提確認）
+            // 自動保存により dirty マークが表示されていないことを確認する
             const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
             const dirtyIndicator = settingsTabButton.locator('.tab-button-dirty');
-            await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
+            await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
 
-            // 設定パネルにフォーカスを当てた状態で Ctrl+S を押す
+            // Ctrl+S を押しても問題なく動作することを確認する（冪等性）
             // ネイティブ <select> にフォーカスがあると Chromium が keydown イベントを生成しないため、
             // 設定タブボタンをクリックしてフォーカスを <select> から外す
             await settingsTabButton.click();
             await page.keyboard.press('Control+s');
 
-            // Ctrl+S 後に dirty マークが消えることを確認する
+            // Ctrl+S 後も dirty マークが表示されないことを確認する
             await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
         },
     );
@@ -190,7 +185,34 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト8: 設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作すること
+    // テスト8: テーマ変更のみ（Ctrl+S なし）でリロード後もテーマが維持されること
+    // ---------------------------------------------------------------------------
+    test(
+        'テーマを変更すると自動的に保存され、リロード後もテーマが維持されること',
+        async ({ page, mockFileSystem }) => {
+            // 歯車ボタンをクリックして設定タブを開く
+            const settingsButton = page.locator('.activity-bar-settings');
+            await settingsButton.click();
+
+            // テーマを「light」に変更する（Ctrl+S は押さない）
+            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
+            await themeSelect.selectOption('light');
+
+            // dirty マークが表示されないことを確認する（自動保存済み）
+            const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
+            const dirtyIndicator = settingsTabButton.locator('.tab-button-dirty');
+            await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
+
+            // ページをリロードする
+            await page.reload();
+
+            // リロード後もライトテーマが維持されることを確認する（自動保存されたため）
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+        },
+    );
+
+    // ---------------------------------------------------------------------------
+    // テスト9: 設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作すること
     // ---------------------------------------------------------------------------
     test(
         '設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作すること',
@@ -225,15 +247,15 @@ test.describe('設定画面', () => {
             // 歯車ボタンを再度クリックして設定タブを開く
             await settingsButton.click();
 
-            // 再オープン後のタブのプルダウンが「light」であることを確認する（savedTheme から正しく初期化される）
+            // 再オープン後のタブのプルダウンが「light」であることを確認する（localStorage から正しく初期化される）
             await expect(page.locator('.settings-panel select.settings-theme-select')).toHaveValue('light');
 
-            // テーマを「dark」に変更する
+            // テーマを「dark」に変更する（自動保存される）
             await page.locator('.settings-panel select.settings-theme-select').selectOption('dark');
 
-            // dirty マークが表示されることを確認する
+            // 自動保存により dirty マークが表示されないことを確認する
             const newDirtyIndicator = page.locator('.tab-button').filter({ hasText: '設定' }).locator('.tab-button-dirty');
-            await expect(newDirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
+            await expect(newDirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
         },
     );
 });
