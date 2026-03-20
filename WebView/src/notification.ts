@@ -45,9 +45,7 @@ export class NotificationToast {
         this.bellElement.setAttribute('aria-label', '通知履歴を表示');
         this.bellElement.setAttribute('aria-expanded', 'false');
         // SVGは装飾用のためスクリーンリーダーから隠す
-        this.bellElement.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-</svg>`;
+        this.bellElement.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M18 16v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
         // クリック時に履歴パネルの表示/非表示を切り替える。開いた場合はコンテナ外クリックで閉じる（1箇所のみの使用のためインライン展開）
         this.bellElement.addEventListener('click', () => {
             const isVisible = this.historyElement.classList.toggle('visible');

@@ -1,6 +1,7 @@
 import {ValidationEngine, ValidationError} from "./validation-engine";
 import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
+import {ResizeHandle} from "./resize-handle";
 
 /**
  * バリデーションエラーパネル
@@ -23,6 +24,8 @@ export class ValidationPanel {
     private readonly engine: ValidationEngine;
     private readonly tab: Tab;
     private readonly statusBar: StatusBar;
+    /** 縦方向リサイズハンドル。render() でコンテンツをクリアした後に再 prependTo する */
+    private readonly resizeHandle: ResizeHandle;
     /** 現在のエラーリスト */
     private currentErrors: ValidationError[];
 
@@ -37,6 +40,17 @@ export class ValidationPanel {
         // 初期状態は非表示（ステータスバーのバッジクリックで表示する）
         panel.style.display = 'none';
         this.element = panel;
+
+        // 縦方向リサイズハンドル: 上端に配置し、上方向へドラッグすることで高さを増やす
+        // delta が正（下移動）= 高さ縮小、負（上移動）= 高さ増加 なので -delta を加算する
+        this.resizeHandle = new ResizeHandle('vertical', (delta: number) => {
+            const currentHeight = this.element.getBoundingClientRect().height;
+            const newHeight = Math.min(400, Math.max(80, currentHeight - delta));
+            this.element.style.height = `${newHeight}px`;
+        });
+
+        // 初期表示を構築する（PROBLEMSヘッダー + 「エラーはありません」）
+        this.render();
     }
 
     /**
@@ -76,18 +90,14 @@ export class ValidationPanel {
      * applyCellChanges / replayCellChanges 完了後に呼ばれる。
      *
      * 参照先テーブルが未ロードのためFKチェックがスキップされた列については、
-     * 前回の currentErrors から該当列のエラーを引き継ぐ。
-     * これにより、categoryタブを閉じた状態でproductセルを編集してもFKエラーが消えない。
+     * 現在のストア値がエラー発生時の値と同じ場合のみエラーを引き継ぐ。
+     * 値が変わっていればエラーは引き継がず消える（テストケース6の修正）。
      */
     runAndUpdate(): void {
-        const result = this.engine.validate();
-        // スキップされたFK列に対する前回エラーを引き継ぐ（参照先テーブルが未ロードの場合）
-        const preservedErrors = this.currentErrors.filter(e =>
-            e.kind === 'fk-broken' && result.skippedFkColumns.some(
-                sk => sk.tableName === e.tableName && sk.columnName === e.columnName
-            )
-        );
-        const mergedErrors = [...result.errors, ...preservedErrors];
+        // 現在のエラーリストを渡してエンジン側でスキップ行の値変化を検知させる
+        const result = this.engine.validate(this.currentErrors);
+        // preservableErrors: 参照先テーブルが未ロードだが現在のストア値が変わっていないエラーのみ引き継ぐ
+        const mergedErrors = [...result.errors, ...result.preservableErrors];
         this.currentErrors = mergedErrors;
         this.render();
         // エラーが1件以上ある場合はパネルを自動表示する。エラーが0件になったら自動で非表示にする。
@@ -115,7 +125,34 @@ export class ValidationPanel {
         while (this.element.firstChild) {
             this.element.removeChild(this.element.firstChild);
         }
-        if (this.currentErrors.length === 0) return;
+        // クリア後にリサイズハンドルを先頭に戻す（render のたびに削除されるため）
+        this.resizeHandle.prependTo(this.element);
+
+        // PROBLEMSタイトルバー
+        const header = document.createElement('div');
+        header.classList.add('validation-panel-header');
+        const title = document.createElement('span');
+        title.textContent = 'PROBLEMS';
+        header.appendChild(title);
+        // 閉じるボタン（×）
+        const closeBtn = document.createElement('div');
+        closeBtn.classList.add('validation-panel-close');
+        closeBtn.setAttribute('role', 'button');
+        closeBtn.setAttribute('tabindex', '0');
+        closeBtn.setAttribute('aria-label', 'PROBLEMSパネルを閉じる');
+        closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708z"/></svg>`;
+        closeBtn.addEventListener('click', () => { this.element.style.display = 'none'; });
+        header.appendChild(closeBtn);
+        this.element.appendChild(header);
+
+        // エラーがなければ「エラーはありません」を表示して終了
+        if (this.currentErrors.length === 0) {
+            const empty = document.createElement('div');
+            empty.classList.add('validation-panel-empty');
+            empty.textContent = 'エラーはありません';
+            this.element.appendChild(empty);
+            return;
+        }
 
         // テーブル名でグループ化する
         const groups = new Map<string, ValidationError[]>();

@@ -25,15 +25,13 @@ export interface ValidationError {
 /**
  * validate() の結果型。
  * errors: 検出されたエラーリスト。
- * skippedFkColumns: 参照先テーブルが未ロードのためFKチェックをスキップした列の情報（列全体）。
- *   フィルタテーブル未ロード等の全行スキップ相当。スキップされた列の前回エラーは ValidationPanel 側で引き継ぐ。
- * skippedFkRows: 動的参照で最終テーブルが未ロードのためスキップされた個別行の情報（行レベル）。
- *   列内の一部行だけがスキップ対象の場合に使う。該当行の前回エラーのみ ValidationPanel 側で引き継ぐ。
+ * preservableErrors: スキップされた列・行について、現在のストア値がエラー発生時の値と同じエラー。
+ *   ValidationPanel 側で前回 currentErrors と照合して引き継ぐ対象を絞り込む際に使用する。
+ *   「値が変わっていないのに参照先テーブルが未ロードでスキップされた」行のエラーのみを保持する。
  */
 export interface ValidateResult {
     errors: ValidationError[];
-    skippedFkColumns: Array<{ tableName: string; columnName: string }>;
-    skippedFkRows: Array<{ tableName: string; columnName: string; rowIndex: number }>;
+    preservableErrors: ValidationError[];
 }
 
 /**
@@ -86,22 +84,24 @@ export class ValidationEngine {
     /**
      * 登録済みスキーマを持つ全テーブルを対象にバリデーションを実行する。
      * PK重複エラーと FK参照切れエラーを検出して返す。
-     * 参照先テーブルが未ロードのためFKチェックをスキップした列は skippedFkColumns に記録する。
-     * 呼び出し元（ValidationPanel）がスキップされた列に対する前回エラーを引き継ぐ責務を持つ。
+     *
+     * preservableErrors: 参照先テーブルが未ロードのためスキップされた列・行について、
+     * 現在のストア値が previousErrors のエラー値と一致するエラーを返す。
+     * 呼び出し元（ValidationPanel）は previousErrors と照合して引き継ぐ対象を絞り込む。
      */
-    validate(): ValidateResult {
+    validate(previousErrors: ValidationError[]): ValidateResult {
         const errors: ValidationError[] = [];
-        const skippedFkColumns: Array<{ tableName: string; columnName: string }> = [];
-        const skippedFkRows: Array<{ tableName: string; columnName: string; rowIndex: number }> = [];
+        // スキップされた列・行についてストア上の現在値を照合して引き継ぎ可能なエラーを収集する
+        const preservableErrors: ValidationError[] = [];
         for (const [tableName, schema] of this.schemas) {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             // ストアに存在しないテーブルはスキップ（タブ未オープン等）
             if (header === false || rows === false) continue;
             this.validatePkDuplicates(tableName, schema, header, rows, errors);
-            this.validateFkReferences(tableName, schema, header, rows, errors, skippedFkColumns, skippedFkRows);
+            this.validateFkReferences(tableName, schema, header, rows, errors, previousErrors, preservableErrors);
         }
-        return { errors, skippedFkColumns, skippedFkRows };
+        return { errors, preservableErrors };
     }
 
     // -------------------------------------------------------------------------
@@ -169,8 +169,8 @@ export class ValidationEngine {
         header: string[],
         rows: string[][],
         errors: ValidationError[],
-        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
-        skippedFkRows: Array<{ tableName: string; columnName: string; rowIndex: number }>,
+        previousErrors: ValidationError[],
+        preservableErrors: ValidationError[],
     ): void {
         for (const col of schema.columns) {
             if (col.reference === null) continue;
@@ -178,9 +178,9 @@ export class ValidationEngine {
             const colIdx = header.indexOf(col.name);
             if (colIdx === -1) continue;
             if (isSimpleReference(expr)) {
-                this.validateSimpleReference(tableName, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, skippedFkColumns);
+                this.validateSimpleReference(tableName, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, previousErrors, preservableErrors);
             } else if (isDynamicReference(expr)) {
-                this.validateDynamicReference(tableName, col.name, colIdx, expr, header, rows, errors, skippedFkColumns, skippedFkRows);
+                this.validateDynamicReference(tableName, col.name, colIdx, expr, header, rows, errors, previousErrors, preservableErrors);
             }
         }
     }
@@ -188,7 +188,8 @@ export class ValidationEngine {
     /**
      * 単純参照（SimpleReference）のFK検証。
      * 参照先テーブルの指定列に値が存在しないセルをエラーとして登録する。
-     * 参照先テーブルが未ロードの場合は skippedFkColumns に追加してスキップする。
+     * 参照先テーブルが未ロードの場合: previousErrors の中から現在のストア値と一致する行のエラーのみを
+     * preservableErrors に追加して引き継ぐ（値が変わっていればエラーは引き継がない）。
      */
     private validateSimpleReference(
         tableName: string,
@@ -198,14 +199,21 @@ export class ValidationEngine {
         refColumnName: string,
         rows: string[][],
         errors: ValidationError[],
-        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
+        previousErrors: ValidationError[],
+        preservableErrors: ValidationError[],
     ): void {
         // 参照先テーブルの値セットを構築する
         const refHeader = this.store.getHeader(refTableName);
         const refRows = this.store.getRows(refTableName);
-        // 参照先テーブルがストアに存在しない場合: スキップしてその旨を記録する（前回エラーを引き継ぐ）
+        // 参照先テーブルがストアに存在しない場合: 現在のストア値と一致する前回エラーのみを引き継ぐ
         if (refHeader === false || refRows === false) {
-            skippedFkColumns.push({ tableName, columnName: colName });
+            for (const prev of previousErrors) {
+                if (prev.kind !== 'fk-broken' || prev.tableName !== tableName || prev.columnName !== colName) continue;
+                // 行がまだストアにある かつ 現在の値がエラー発生時と同じ場合のみ引き継ぐ
+                if (prev.rowIndex < rows.length && rows[prev.rowIndex][colIdx] === prev.value) {
+                    preservableErrors.push(prev);
+                }
+            }
             return;
         }
         const refColIdx = refHeader.indexOf(refColumnName);
@@ -242,7 +250,8 @@ export class ValidationEngine {
      *   2. filter.tableName テーブルで filter.filterColumn == その値 の行を線形検索
      *   3. 一致行の lookupColumn 値（= 参照先テーブル名）を取得
      *   4. そのテーブルの targetColumn に cellValue が存在するか検証
-     * フィルタテーブルまたは最終テーブルが未ロードの場合は skippedFkColumns に追加する。
+     * フィルタテーブルまたは最終テーブルが未ロードの場合:
+     *   現在のストア値と一致する previousErrors のエラーのみを preservableErrors に追加して引き継ぐ。
      */
     private validateDynamicReference(
         tableName: string,
@@ -252,15 +261,20 @@ export class ValidationEngine {
         header: string[],
         rows: string[][],
         errors: ValidationError[],
-        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
-        skippedFkRows: Array<{ tableName: string; columnName: string; rowIndex: number }>,
+        previousErrors: ValidationError[],
+        preservableErrors: ValidationError[],
     ): void {
         // フィルタテーブルがストアに存在するか先に確認する
         const filterHeader = this.store.getHeader(expr.filter.tableName);
         const filterRows = this.store.getRows(expr.filter.tableName);
         if (filterHeader === false || filterRows === false) {
-            // フィルタテーブル未ロードは全行スキップ相当なので列レベルで記録する
-            skippedFkColumns.push({ tableName, columnName: colName });
+            // フィルタテーブル未ロードは全行スキップ相当: 現在値と一致する前回エラーのみ引き継ぐ
+            for (const prev of previousErrors) {
+                if (prev.kind !== 'fk-broken' || prev.tableName !== tableName || prev.columnName !== colName) continue;
+                if (prev.rowIndex < rows.length && rows[prev.rowIndex][colIdx] === prev.value) {
+                    preservableErrors.push(prev);
+                }
+            }
             return;
         }
         const filterColIdx = filterHeader.indexOf(expr.filter.filterColumn);
@@ -296,9 +310,10 @@ export class ValidationEngine {
                 const targetHeader = this.store.getHeader(targetTableName);
                 const targetRows = this.store.getRows(targetTableName);
                 if (targetHeader === false || targetRows === false) {
-                    // 最終テーブル未ロードはこの行のみ行レベルでスキップ記録する
+                    // 最終テーブル未ロード: この行のみ現在値一致チェックで引き継ぐ
                     targetValidValuesCache.set(targetTableName, null);
-                    skippedFkRows.push({ tableName, columnName: colName, rowIndex: r });
+                    const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue);
+                    if (prev) preservableErrors.push(prev);
                     continue;
                 }
                 const targetColIdx = targetHeader.indexOf(expr.targetColumn);
@@ -316,8 +331,9 @@ export class ValidationEngine {
 
             const validValues = targetValidValuesCache.get(targetTableName)!;
             if (validValues === null) {
-                // キャッシュ済みの未ロードテーブル → 行レベルでスキップ記録する
-                skippedFkRows.push({ tableName, columnName: colName, rowIndex: r });
+                // キャッシュ済みの未ロードテーブル: 現在値一致チェックで引き継ぐ
+                const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue);
+                if (prev) preservableErrors.push(prev);
                 continue;
             }
 

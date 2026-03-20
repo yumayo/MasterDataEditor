@@ -1,14 +1,10 @@
-.sidebar-resize-handle {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 4px;
-    height: 100%;
-    cursor: col-resize;
+/* Sidebar（.explorer）内の横方向リサイズハンドル固有スタイル */
+/* 共通スタイルは resize-handle.css に定義されている */
+.explorer .resize-handle[data-direction="horizontal"] {
     z-index: var(--z-index-sidebar-resizer);
     border-right: 1px solid rgba(128, 128, 128, 0.3);
 }
 
-.sidebar-resize-handle:hover {
+.explorer .resize-handle[data-direction="horizontal"]:hover {
     background-color: rgba(0, 120, 212, 0.5);
 }

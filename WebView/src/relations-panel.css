@@ -16,19 +16,12 @@
 }
 
 /* ─── リサイズハンドル ─── */
+/* 共通スタイルは resize-handle.css に定義されている。RelationsPanel は左端に配置するためオーバーライドする */
 
-.relations-panel-resize-handle {
-    position: absolute;
+.relations-panel .resize-handle[data-direction="horizontal"] {
+    right: auto;
     left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    cursor: col-resize;
     z-index: var(--z-index-relations-panel-resize-handle);
-}
-
-.relations-panel-resize-handle:hover {
-    background: var(--focus-border, #007acc);
 }
 
 /* ─── プレースホルダー（行未選択・参照なし） ─── */

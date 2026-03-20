@@ -2,12 +2,57 @@
 
 .validation-panel {
     flex-shrink: 0;
-    max-height: 200px;
+    max-height: 400px;
     overflow-y: auto;
     background-color: var(--background-color);
-    border-top: 1px solid var(--border-color);
     font-size: 12px;
     color: var(--font-color);
+    position: relative;
+}
+
+/* リサイズハンドルがスクロールで流れないよう sticky で上端に固定する */
+.validation-panel > .resize-handle[data-direction="vertical"] {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+/* PROBLEMSタイトルバー */
+.validation-panel-header {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--font-color);
+    user-select: none;
+}
+
+/* 閉じるボタン（右端） */
+.validation-panel-close {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    color: var(--font-color);
+    opacity: 0.6;
+}
+
+.validation-panel-close:hover {
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* エラーなし時のメッセージ */
+.validation-panel-empty {
+    padding: 12px;
+    color: rgba(200, 200, 200, 0.5);
+    font-size: 11px;
+    user-select: none;
 }
 
 /* テーブル別グループヘッダー */
@@ -27,7 +72,7 @@
 }
 
 .validation-panel-group-count {
-    color: rgba(255, 80, 80, 0.9);
+    color: var(--error-color);
     font-size: 11px;
 }
 
@@ -53,16 +98,11 @@
     flex-shrink: 0;
 }
 
-.validation-panel-item-kind-pk {
-    background-color: rgba(255, 80, 80, 0.25);
-    color: rgb(255, 120, 120);
-    border: 1px solid rgba(255, 80, 80, 0.5);
-}
-
+.validation-panel-item-kind-pk,
 .validation-panel-item-kind-fk {
-    background-color: rgba(255, 160, 0, 0.2);
-    color: rgb(255, 180, 60);
-    border: 1px solid rgba(255, 160, 0, 0.4);
+    background-color: var(--error-bg);
+    color: var(--error-color);
+    border: 1px solid var(--error-border);
 }
 
 .validation-panel-item-location {

@@ -1,0 +1,26 @@
+.resize-handle {
+    position: absolute;
+    z-index: 10;
+}
+
+/* 横方向（左右の境界）: 右端に配置して左右方向のリサイズに使う */
+.resize-handle[data-direction="horizontal"] {
+    top: 0;
+    right: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+}
+
+/* 縦方向（上下の境界）: 上端に配置して上下方向のリサイズに使う */
+.resize-handle[data-direction="vertical"] {
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 4px;
+    cursor: row-resize;
+}
+
+.resize-handle:hover {
+    background: var(--focus-border, #007acc);
+}

@@ -19,17 +19,15 @@
     justify-content: center;
     padding: 0 8px;
     cursor: pointer;
-    border-radius: 0;
     background: transparent;
-    border: 1px solid transparent;
+    border: none;
     color: var(--font-color, #cccccc);
-    transition: background 0.15s;
+    transition: none;
     user-select: none;
 }
 
 .notification-bell:hover {
     background-color: rgba(255, 255, 255, 0.1);
-    border-color: var(--border-color);
 }
 
 /* トースト表示エリア（ステータスバーの上方に展開） */
@@ -75,10 +73,10 @@
     max-height: 300px;
     overflow-y: auto;
     background: var(--background-color, #2d2d2d);
-    border: 1px solid rgba(128, 128, 128, 0.3);
+    border: none;
     border-radius: 4px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    padding: 6px 0;
+    padding: 0;
     z-index: var(--z-index-notification);
 }
 

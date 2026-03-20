@@ -9,6 +9,7 @@ import {FillController} from "./fill-controller";
 import {AreaResizer} from "./area-resizer";
 import {History} from "./history";
 import {ReverseReferenceResolver, ReverseReferenceRow} from "./reverse-reference-resolver";
+import {ResizeHandle} from "./resize-handle";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -48,8 +49,6 @@ interface RelationEntry {
 export class RelationsPanel {
     private readonly panelElement: HTMLElement;
     private readonly store: InMemoryTableStore;
-    /** パネルの親要素。appendTo() で設定する。リサイズハンドルのドラッグ計算に使用 */
-    private parentElement: HTMLElement | false;
     /** 現在接続中のEditorTable。未接続時はfalse */
     private currentEditorTable: EditorTable | false;
     /** 現在表示中のリレーションエントリ一覧。空の場合はプレースホルダーを表示 */
@@ -78,7 +77,6 @@ export class RelationsPanel {
 
     constructor(store: InMemoryTableStore) {
         this.store = store;
-        this.parentElement = false;
         this.currentEditorTable = false;
         this.currentEntries = [];
         this.currentRequestId = 0;
@@ -95,58 +93,31 @@ export class RelationsPanel {
         this.panelElement = panel;
 
         // リサイズハンドルをパネル先頭に配置する
-        this.panelElement.prepend(this.buildResizeHandle());
+        // delta が正（右移動）= ハンドルを右に動かす = 右ペイン幅縮小なので -delta で幅を加算する
+        const resizeHandle = new ResizeHandle('horizontal', (delta: number) => {
+            // panelElement の親要素（rightSlot）をDOMから取得する。
+            // appendTo() 経由でも setVisiblePanes() 経由でも rightSlot に追加されるため、
+            // appendTo() が呼ばれていないペインスタック上のRPでも正しく動作する。
+            const parent = this.panelElement.parentElement;
+            if (parent === null) throw new Error('[RelationsPanel] resizeHandle: panelElement が DOM に追加されていません');
+            // parent（rightSlot）の親要素（contentArea）の右端を基準に幅を算出する
+            const grandParent = parent.parentElement;
+            if (grandParent === null) throw new Error('[RelationsPanel] resizeHandle: panelElement の祖父要素が存在しません');
+            const rect = grandParent.getBoundingClientRect();
+            if (rect.width === 0) return;
+            // 現在の幅から delta を引く（左へドラッグ = 負の delta = 幅増加）
+            const currentWidth = this.panelElement.getBoundingClientRect().width;
+            const newWidth = currentWidth - delta;
+            // 左右ペインの最小幅を保証するため10%〜90%にクランプし、小数点1桁に丸める
+            const percentage = Math.round(Math.max(10, Math.min(90, (newWidth / rect.width) * 100)) * 10) / 10;
+            parent.style.flexGrow = '0';
+            parent.style.flexShrink = '0';
+            parent.style.flexBasis = `${percentage}%`;
+        });
+        resizeHandle.prependTo(this.panelElement);
 
         // 初期状態: プレースホルダーを表示
         this.renderMessage('行を選択してください');
-    }
-
-    /**
-     * リサイズハンドルを構築する
-     * mousedown でドラッグを開始し、document の mousemove/mouseup で幅を更新する
-     */
-    private buildResizeHandle(): HTMLElement {
-        const handle = document.createElement('div');
-        handle.classList.add('relations-panel-resize-handle');
-
-        handle.addEventListener('mousedown', (e: MouseEvent) => {
-            // SelectionDragController との競合を防ぐ
-            e.stopPropagation();
-            e.preventDefault();
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-
-            const onMouseMove = (moveEvent: MouseEvent) => {
-                // panelElement の親要素（rightSlot）をDOMから取得する。
-                // appendTo() 経由でも setVisiblePanes() 経由でも rightSlot に追加されるため、
-                // appendTo() が呼ばれていないペインスタック上のRPでも正しく動作する。
-                const parent = this.panelElement.parentElement;
-                if (parent === null) throw new Error('[RelationsPanel] onMouseMove: panelElement が DOM に追加されていません');
-                // parent（rightSlot）の親要素（contentArea）の右端を基準にドラッグ位置から幅を算出する
-                const grandParent = parent.parentElement;
-                if (grandParent === null) throw new Error('[RelationsPanel] onMouseMove: panelElement の祖父要素が存在しません');
-                const rect = grandParent.getBoundingClientRect();
-                if (rect.width === 0) return;
-                const newWidth = rect.right - moveEvent.clientX;
-                // 左右ペインの最小幅を保証するため10%〜90%にクランプし、小数点1桁に丸める
-                const percentage = Math.round(Math.max(10, Math.min(90, (newWidth / rect.width) * 100)) * 10) / 10;
-                parent.style.flexGrow = '0';
-                parent.style.flexShrink = '0';
-                parent.style.flexBasis = `${percentage}%`;
-            };
-
-            const onMouseUp = () => {
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-
-        return handle;
     }
 
     /**
@@ -156,7 +127,6 @@ export class RelationsPanel {
      * リサイズハンドルはpanelElement.parentElementからDOMを辿るため、どちらでも正しく動作する。
      */
     appendTo(parent: HTMLElement): void {
-        this.parentElement = parent;
         parent.appendChild(this.panelElement);
     }
 
@@ -631,11 +601,12 @@ export class RelationsPanel {
 
     /**
      * リサイズハンドルを除いたコンテンツ領域をクリアする
+     * ResizeHandle は .resize-handle クラスで識別する
      */
     private clearContentArea(): void {
         const children = Array.from(this.panelElement.children);
         for (const child of children) {
-            if (!child.classList.contains('relations-panel-resize-handle')) {
+            if (!child.classList.contains('resize-handle')) {
                 child.remove();
             }
         }

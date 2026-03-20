@@ -7,7 +7,7 @@ import { test, expect } from './fixtures/test';
 test(
     'リサイズハンドルが存在すること',
     async ({ page, mockFileSystem }) => {
-        const handle = page.locator('.sidebar-resize-handle');
+        const handle = page.locator('.explorer .resize-handle');
         await expect(handle).toBeVisible();
     },
 );
@@ -15,7 +15,7 @@ test(
 test(
     'ドラッグでサイドバー幅が変更されること',
     async ({ page, mockFileSystem }) => {
-        const handle = page.locator('.sidebar-resize-handle');
+        const handle = page.locator('.explorer .resize-handle');
         const explorer = page.locator('#explorer');
         const tab = page.locator('#tab');
         const editor = page.locator('#editor');
@@ -49,7 +49,7 @@ test(
 test(
     '最小幅（150px）を下回らないこと',
     async ({ page, mockFileSystem }) => {
-        const handle = page.locator('.sidebar-resize-handle');
+        const handle = page.locator('.explorer .resize-handle');
 
         // ハンドルを左に大きくドラッグ（-300px）
         const handleBox = await handle.boundingBox();
@@ -70,7 +70,7 @@ test(
 test(
     '最大幅（600px）を超えないこと',
     async ({ page, mockFileSystem }) => {
-        const handle = page.locator('.sidebar-resize-handle');
+        const handle = page.locator('.explorer .resize-handle');
 
         // ハンドルを右に大きくドラッグ（+500px）
         const handleBox = await handle.boundingBox();

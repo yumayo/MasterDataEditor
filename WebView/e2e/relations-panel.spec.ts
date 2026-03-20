@@ -145,7 +145,7 @@ test.describe('RelationsPanel', () => {
  * リサイズハンドルを左に指定ピクセルドラッグするヘルパー関数
  */
 async function dragResizeHandleAsync(page: Page, dragLeftPx: number): Promise<void> {
-    const handle = page.locator('.relations-panel-resize-handle');
+    const handle = page.locator('.relations-panel .resize-handle');
     const handleBox = await handle.boundingBox();
     if (!handleBox) throw new Error('リサイズハンドルの boundingBox が取得できません');
     const startX = handleBox.x + handleBox.width / 2;
@@ -166,7 +166,7 @@ test.describe('RelationsPanel リサイザー', () => {
     test(
         'リサイズハンドルが存在すること',
         async ({ page }) => {
-            const handle = page.locator('.relations-panel-resize-handle');
+            const handle = page.locator('.relations-panel .resize-handle');
             await expect(handle).toHaveCount(1);
         },
     );

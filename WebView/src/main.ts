@@ -67,7 +67,8 @@ import {StatusBar} from "./status-bar";
     tab.connectValidationPanel(validationPanel);
     // editor 直下の下段に配置する（flex-direction: column のため自然に下段になる）
     editor.appendValidationPanel(validationPanel);
-    editor.appendStatusBar(statusBar);
+    // ステータスバーは画面幅いっぱいに表示するため body 直下に配置する
+    statusBar.appendTo(document.body);
 
     // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
     (window as unknown as Record<string, unknown>)['notification'] = notification;

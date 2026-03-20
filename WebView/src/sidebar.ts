@@ -8,6 +8,7 @@ import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
+import {ResizeHandle} from "./resize-handle";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -26,10 +27,6 @@ export class Sidebar {
     private readonly searchPanel: SearchPanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly directory: ExplorerDirectory;
-    private isDragging: boolean = false;
-    private dragStartX: number = 0;
-    private dragStartWidth: number = 0;
-    private dragStartCursor: string = '';
 
     constructor(
         explorerElement: HTMLElement,
@@ -77,38 +74,16 @@ export class Sidebar {
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 1);
 
-        // リサイズハンドルを作成しサイドバーに追加
-        const handleElement = document.createElement('div');
-        handleElement.classList.add('sidebar-resize-handle');
-        explorerElement.appendChild(handleElement);
-
         // 初期幅を適用
         this.applyWidth(DEFAULT_SIDEBAR_WIDTH);
 
-        // ドラッグ開始
-        handleElement.addEventListener('mousedown', (e: MouseEvent) => {
-            e.preventDefault();
-            this.isDragging = true;
-            this.dragStartX = e.clientX;
-            this.dragStartWidth = this.explorerElement.getBoundingClientRect().width;
-            this.dragStartCursor = document.body.style.cursor;
-            document.body.style.cursor = 'col-resize';
-        });
-
-        // ドラッグ中の幅更新
-        window.addEventListener('mousemove', (e: MouseEvent) => {
-            if (!this.isDragging) return;
-            const deltaX = e.clientX - this.dragStartX;
-            const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, this.dragStartWidth + deltaX));
+        // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプする
+        const resizeHandle = new ResizeHandle('horizontal', (delta: number) => {
+            const currentWidth = this.explorerElement.getBoundingClientRect().width;
+            const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, currentWidth + delta));
             this.applyWidth(newWidth);
         });
-
-        // ドラッグ終了
-        window.addEventListener('mouseup', () => {
-            if (!this.isDragging) return;
-            this.isDragging = false;
-            document.body.style.cursor = this.dragStartCursor;
-        });
+        resizeHandle.appendTo(explorerElement);
     }
 
     /**

@@ -6,7 +6,7 @@
     position: fixed;
     left: 300px;
     top: 48px;
-    height: calc(100vh - 48px);
+    height: calc(100vh - 48px - 22px);
     width: calc(100vw - 300px);
 
     overflow: hidden;
