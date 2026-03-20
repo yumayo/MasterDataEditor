@@ -246,27 +246,31 @@ export class ValidationPanel {
 
     /**
      * エラー項目クリック時に該当テーブルタブを開き、対象セルにフォーカスする。
-     * 行インデックス・列インデックスはストア基準なので、EditorTable.storeRowToDomRow() で
-     * DOM上の行番号に変換する。ソート適用中でも正しい行を特定できる。
-     * フィルターで非表示の行（storeRowToDomRow が null）はジャンプをスキップする。
+     *
+     * タブが開いている場合: ストア行インデックスで正確にジャンプする。
+     *   PK重複エラーは同じPK値を持つ複数行が存在するため、PK値検索では2行目以降を特定できない。
+     *   storeRowToDomRow() でストア行→DOM行を直接マッピングすることで正確な行にジャンプする。
+     *
+     * タブが開いていない場合: PK値ベースで navigateToTableCell を使いテーブルを新規作成してジャンプする。
+     *   PK重複の場合は最初の一致行にしかジャンプできないが、テーブルは開かれる。
      */
     private jumpToError(error: ValidationError): void {
         const tableName = error.tableName;
-
-        // タブが既に開かれている場合はアクティブにする
-        this.tab.switchToExistingTab(tableName);
-
         const tabStates = this.tab.getTabStates();
         const state = tabStates.get(tableName);
-        if (!state) return;
-
-        // ストア行インデックス → DOM行インデックスに変換する（ソート中も正しく逆引きできる）
-        const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
-        // フィルターで非表示の行はジャンプ対象外
-        if (domRow === null) return;
-        // DOM上の列: 行ヘッダーがcol=0なのでcolumnIndex + 1がデータ列
-        const domCol = error.columnIndex + 1;
-        state.selection.setRange(domRow, domCol, domRow, domCol);
-        state.selection.move(domRow, domCol);
+        if (state) {
+            // タブが開いている場合: ストア行インデックスからDOM行を正確に特定する
+            this.tab.switchToExistingTab(tableName);
+            const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
+            if (domRow === null) return; // フィルター非表示行はスキップ
+            // columnIndex はCSVの0始まり列 → DOM上は +1（行ヘッダー列分）
+            const domCol = error.columnIndex + 1;
+            state.selection.setRange(domRow, domCol, domRow, domCol);
+            state.selection.move(domRow, domCol);
+        } else {
+            // タブが開いていない場合: PK値ベースでテーブルを開いてジャンプ
+            if (error.pkValue === null) return;
+            this.tab.navigateToTableCell(tableName, error.pkValue, error.columnIndex);
+        }
     }
 }

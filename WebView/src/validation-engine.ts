@@ -27,6 +27,13 @@ export interface ValidationError {
      * 単純参照・PK重複エラーでは null。
      */
     filterValue: string | null;
+    /**
+     * エラー生成時点でのPK値（primaryKeyColumns[0] の値）。
+     * タブ閉じ後にエラー項目クリックでジャンプする際、ストアデータが消去されていても
+     * navigateToTableCell に PK値を渡せるようにするため、バリデーション実行時に事前計算して保持する。
+     * PK列なし・PK値空文字の場合は null。
+     */
+    pkValue: string | null;
 }
 
 /**
@@ -71,6 +78,20 @@ export class ValidationEngine {
      */
     registerSchema(tableName: string, schema: TableSchema): void {
         this.schemas.set(tableName, schema);
+    }
+
+    /**
+     * 行のPK値を取得する（エラー生成時の事前計算用）。
+     * header と rows は呼び出し元で既に取得済みなので引数で受け取る。
+     * PK列なし・PK値が空文字の場合は null を返す。
+     */
+    private resolvePkValueForRow(schema: TableSchema, header: string[], rows: string[][], rowIndex: number): string | null {
+        if (schema.primaryKeyColumns.length === 0) return null;
+        const pkColIdx = header.indexOf(schema.primaryKeyColumns[0]);
+        if (pkColIdx === -1) return null;
+        const pkValue = rows[rowIndex][pkColIdx];
+        if (pkValue === '') return null;
+        return pkValue;
     }
 
     /**
@@ -164,6 +185,7 @@ export class ValidationEngine {
                         kind: 'pk-duplicate',
                         message: `主キー値 "${row[colIdx]}" が重複しています`,
                         filterValue: null,
+                        pkValue: this.resolvePkValueForRow(schema, header, rows, rowIndex),
                     });
                 }
             }
@@ -189,9 +211,9 @@ export class ValidationEngine {
             const colIdx = header.indexOf(col.name);
             if (colIdx === -1) continue;
             if (isSimpleReference(expr)) {
-                this.validateSimpleReference(tableName, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, previousErrors, preservableErrors);
+                this.validateSimpleReference(tableName, schema, header, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, previousErrors, preservableErrors);
             } else if (isDynamicReference(expr)) {
-                this.validateDynamicReference(tableName, col.name, colIdx, expr, header, rows, errors, previousErrors, preservableErrors);
+                this.validateDynamicReference(tableName, schema, col.name, colIdx, expr, header, rows, errors, previousErrors, preservableErrors);
             }
         }
     }
@@ -204,6 +226,8 @@ export class ValidationEngine {
      */
     private validateSimpleReference(
         tableName: string,
+        schema: TableSchema,
+        header: string[],
         colName: string,
         colIdx: number,
         refTableName: string,
@@ -259,6 +283,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照先 ${refTableName}.${refColumnName} に値 "${cellValue}" が存在しません`,
                     filterValue: null,
+                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
                 });
             }
         }
@@ -276,6 +301,7 @@ export class ValidationEngine {
      */
     private validateDynamicReference(
         tableName: string,
+        schema: TableSchema,
         colName: string,
         colIdx: number,
         expr: DynamicReference,
@@ -338,6 +364,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照元カラム ${expr.filter.valueColumn} が空のため、参照先を解決できません`,
                     filterValue,
+                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
                 });
                 continue;
             }
@@ -363,6 +390,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `フィルタテーブル ${expr.filter.tableName} に ${expr.filter.filterColumn}="${filterValue}" の行が存在しないため、参照先を解決できません`,
                     filterValue,
+                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
                 });
                 continue;
             }
@@ -432,6 +460,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照先 ${targetTableName}.${expr.targetColumn} に値 "${cellValue}" が存在しません`,
                     filterValue,
+                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
                 });
             }
         }
