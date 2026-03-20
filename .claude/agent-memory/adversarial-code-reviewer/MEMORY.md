@@ -126,8 +126,15 @@
 - **NEW ISSUE**: display:'none'/'block' の比較によるトグルは visibility の SSOT 問題（DOMから状態を読んでいる点はSSOT準拠だがCSS classで管理すべき）
 - **PATTERN**: CSS hardcoded colors は validation-panel.css/status-bar.css でも再発（rgba()直書き13箇所超）
 
+## FEAT_0047 Navigation goBack/goForward R2 Known Patterns
+- **CRITICAL**: `tab-switch` popstate で同一タブに goBack した場合、`enableTabButton` L618 が深化 paneStack を `currentState.paneStack` に保存した後 `activateTabState` が復元、さらに `restoreViewIndex(0)` の `truncateStackAfterIndex` が RP インスタンスに `disconnectEditorTable()` + `element.remove()` を実行。同一インスタンスを指す `existingState.paneStack[2]` がゾンビ参照になる
+- **CRITICAL**: goBack 直後に同一タブが `activateTabState` されると `resume()` がゾンビ RP に呼ばれる可能性（一般的なタブ切り替えは `deactivateTabState` で paneStack を上書きするため実用上は顕在化しにくい）
+- **IMPORTANT**: `restoreOrRebuildPaneStack` が `pushRelationsPanel` を呼ぶ前の `this.viewIndex=0` を暗黙の前提としている
+- **PATTERN**: コメント「pushRelationsPanel 内で restoring=true のため...」は Tab が NavigationHistory の private フィールドを参照できるかのような誤解を招く
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) FEAT_0047 Navigation goBack/goForward R2: 致命的1件（ゾンビ RP 参照）、重要2件、軽微2件
 - (2026-03-20) FEAT_0048 ValidationPanel R2: 致命的5件修正確認。新規: 重要2件（clearFocusedCell未呼び出し、CSS hardcoded）、軽微2件
 - (2026-03-19) FEAT_0047 Navigation History: 致命的4件、重要3件、軽微3件
 - (2026-03-19) FEAT_0045 Notification: 致命的3件、重要4件、軽微3件
