@@ -1,7 +1,8 @@
 ---
 name: adversarial-code-reviewer
 description: "Use this agent when code has been recently written or modified and needs a rigorous, adversarial review to find bugs, design flaws, security issues, and violations of coding principles. This agent actively tries to break the code and find every possible weakness. Examples:\\n\\n- Example 1:\\n  user: \"セルの編集機能を実装して\"\\n  assistant: \"セルの編集機能を実装しました。\" <function call omitted>\\n  <commentary>\\n  重要なコードが書かれたので、Agent toolを使ってadversarial-code-reviewerエージェントを起動し、実装の欠陥を徹底的に洗い出します。\\n  </commentary>\\n  assistant: \"では、敵対的レビューエージェントを起動して、この実装を徹底的にレビューします。\"\\n\\n- Example 2:\\n  user: \"このPRをレビューして\"\\n  assistant: \"Agent toolを使ってadversarial-code-reviewerエージェントを起動し、変更されたコードを敵対的に検証します。\"\\n\\n- Example 3:\\n  user: \"Undoの処理をリファクタリングしたよ\"\\n  assistant: \"リファクタリングされたコードを敵対的レビューエージェントで検証しましょう。\"\\n  <commentary>\\n  リファクタリング後のコードは回帰バグが潜みやすいため、adversarial-code-reviewerで徹底的にレビューする。\\n  </commentary>"
-model: sonnet
+model: opus
+effort: max
 memory: project
 ---
 
