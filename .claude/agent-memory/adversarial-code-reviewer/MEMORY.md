@@ -31,7 +31,7 @@
 
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
-- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040で再発。新しいawaitを追加するたびに漏れる)
+- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040, DiffTabSaveHighlightで再発 **4回目**。新しいawaitを追加するたびに漏れる)
 - **CSS hardcoded colors**: 10回再発 — CSS変数使用を徹底せよ (FEAT_0045: notification.css に #c0392b/#ffffff 等 8箇所ハードコード)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
@@ -208,8 +208,17 @@
 - **IMPORTANT**: パンくず history.go(delta) のクロージャが this.navStack.length を動的参照 → capturedDepth でキャプチャすべき
 - **MINOR**: パンくずクリックのテストがない（goToPageAsync → history.go 完全置換後のテスト漏れ）
 
+## Diff Tab Save Highlight Known Patterns (2026-03-21)
+- **CRITICAL**: `refreshGitDiffForDiffTabAsync` に `refreshGitDiffRequestId` チェックなし → awaitポイント後のrequestIdチェック漏れ **4回目** の再発（FEAT_0038, FEAT_0040, 今回）
+- **CRITICAL**: `refreshGitDiffAsync` と `refreshGitDiffForDiffTabAsync` のPK解決ロジック（L1752-1777 vs L1812-1834）が完全コピペ → `resolvePkColumnIndices()` に抽出すべき
+- **CRITICAL**: `connectGitDiffTracker` のJSDocコメント「refreshGitDiffAsync内からのみ呼ばれる」が嘘（refreshGitDiffForDiffTabAsyncからも呼ばれる）
+- **IMPORTANT**: `gitShowAsync` 失敗時の挙動が2メソッド間で非対称（通常: tracker=false, 差分タブ: createForNewTable）
+- **IMPORTANT**: `catch { }` で例外変数を省略 → デバッグ情報消失
+- **PATTERN**: テストフィクスチャの `__mockGitStatus/__mockGitHeadFiles` セットアップが15+ファイルでコピペ
+
 ## Review History
 → 詳細は `known-issues-archive.md` 参照
+- (2026-03-21) Diff Tab Save Highlight: 致命的3件（requestIdチェック漏れ/PKロジックコピペ/コメント虚偽）、重要3件、軽微2件
 - (2026-03-21) FormPanel Drilldown Navigation History: 致命的4件（タブ切替漏れ/getter禁止/空配列/コメント虚偽）、重要5件、軽微3件
 - (2026-03-21) determineDisplayColumnName共通化リファクタ: 致命的3件（??新規導入/fixtures暗黙変更/スコープ逸脱）、重要3件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播 R2: 致命的3件（保存失敗通知漏れ持越し/catch握り潰し持越し/==null）、重要4件、軽微3件
