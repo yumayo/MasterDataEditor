@@ -55,6 +55,9 @@ export const test = base.extend<MockFixtures>({
             return clone.outerHTML;
         });
         writeFileSync(resolve(outputDir, testTitle + '.html'), html, 'utf-8');
+
+        // スクリーンショットも保存する
+        await page.screenshot({ path: resolve(outputDir, testTitle + '.png'), fullPage: true });
     }, { auto: true }],
 });
 
