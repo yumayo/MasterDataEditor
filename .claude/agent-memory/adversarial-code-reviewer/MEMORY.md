@@ -156,8 +156,19 @@
 - **PATTERN**: ストア/キャッシュからの有効値セット構築コードが完全重複（共通メソッド化可能）
 - **PATTERN**: `previousErrors.find()` が行ループ内で毎回線形検索 → O(rows * previousErrors)
 
+## config.primaryKeyColumnName 廃止リファクタリング Known Patterns (2026-03-20)
+- **CRITICAL**: `search-data-provider.ts` `loadFromFileAsync` が `primary_key` 不正時に `''` をサイレント返却 → throw に変えること
+- **CRITICAL**: `form-panel.ts` の `primary_key[0]` アクセスが配列長未検証（空配列で undefined）× 6箇所コピペ
+- **CRITICAL**: `form-panel.ts` L486/L492 に `?? ''` フォールバック残存（フォールバック禁止ルール違反）
+- **IMPORTANT**: `extractFirstPrimaryKeyColumn` / `extractFirstPrimaryKeyColumnFromSchema` が2ファイルに重複実装 → 共通化必須
+- **IMPORTANT**: `relations-panel.ts` L963-965 が空配列でサイレント `''` フォールバック（throw に変えること）
+- **IMPORTANT**: `reference-data-cache.ts` でインポートと関数定義が混在（import順序破損）
+- **IMPORTANT**: `form-panel.ts` N:1 セクションが `primaryKeyColumnName: ''` で生焼けオブジェクト生成
+- **PATTERN**: primary_key 抽出ロジックのコピペが5ファイル8箇所に分散 → リファクタ時はユーティリティ関数化を先行させること
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) config.primaryKeyColumnName廃止リファクタ: 致命的3件、重要4件、軽微3件
 - (2026-03-20) ISSUE_0080 Dynamic Reference Validation: 致命的3件（validateSimpleReference未修正、??演算子、filterRowIndex=-1黙殺）、重要3件、軽微3件
 - (2026-03-20) ResizeHandle consumedDelta 符号修正: 致命的1件（RelationsPanel浮動小数点ドリフト）、重要3件、軽微2件
 - (2026-03-20) ResizeHandle共通化+PROBLEMSパネル縦リサイズ+StatusBar UI: 致命的2件、重要4件、軽微3件
