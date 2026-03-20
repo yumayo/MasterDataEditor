@@ -35,7 +35,7 @@ const TEST_SCHEMA = JSON.stringify({
         { key: 1, name: "name", type: "string" },
         { key: 2, name: "value", type: "int" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 /**

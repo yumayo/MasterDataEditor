@@ -39,7 +39,7 @@ function createTestFileSystem(): MockFileSystem {
     return {
         "schema/item.json": JSON.stringify({
             description: "アイテムマスター",
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",    type: "int" },
                 { key: 1, name: "name",  type: "string" },
@@ -53,7 +53,7 @@ function createTestFileSystem(): MockFileSystem {
         ].join("\n"),
         "schema/enemy.json": JSON.stringify({
             description: "敵マスター",
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
@@ -66,7 +66,7 @@ function createTestFileSystem(): MockFileSystem {
         ].join("\n"),
         "schema/quest.json": JSON.stringify({
             // description なし（フィールド未定義）
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",   type: "int" },
                 { key: 1, name: "name", type: "string" },
@@ -369,7 +369,7 @@ function createFeat0041FileSystem(): MockFileSystem {
     return {
         "schema/item.json": JSON.stringify({
             description: "アイテムマスタ\n詳細説明",
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",    type: "int" },
                 { key: 1, name: "name",  type: "string" },
@@ -382,7 +382,7 @@ function createFeat0041FileSystem(): MockFileSystem {
         ].join("\n"),
         "schema/enemy.json": JSON.stringify({
             description: "敵マスター",
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
@@ -393,7 +393,7 @@ function createFeat0041FileSystem(): MockFileSystem {
             "1,スライム",
         ].join("\n"),
         "schema/quest.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",   type: "int" },
                 { key: 1, name: "name", type: "string" },

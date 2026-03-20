@@ -34,7 +34,7 @@ function createNavigationTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/item.csv": [
 			"id,name",
@@ -46,7 +46,7 @@ function createNavigationTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest.csv": [
 			"id,name",
@@ -73,7 +73,7 @@ function createDefinitionJumpTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/world.csv": [
 			"id,name",
@@ -86,7 +86,7 @@ function createDefinitionJumpTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "world_id", type: "int", reference: "world.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/area.csv": [
 			"id,name,world_id",
@@ -115,7 +115,7 @@ function createReferencesJumpTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "ja", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/enemy.csv": [
 			"id,ja",
@@ -128,7 +128,7 @@ function createReferencesJumpTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest.csv": [
 			"id,name,enemy_id",
@@ -141,7 +141,7 @@ function createReferencesJumpTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "quest_id", type: "int", reference: "quest.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/item.csv": [
 			"id,name,quest_id",

@@ -59,7 +59,7 @@ function createMiniTableRowInsertFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "ja", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/enemy.csv": [
 			"id,ja",
@@ -72,7 +72,7 @@ function createMiniTableRowInsertFileSystem(): MockFileSystem {
 				{ key: 1, name: "enemy_id", type: "int", reference: "enemy.id" },
 				{ key: 2, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		// ストアインデックス:
 		//   [0] id=1, enemy_id=1, name=slash    → enemy id=1 の行

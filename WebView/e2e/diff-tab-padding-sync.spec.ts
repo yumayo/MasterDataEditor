@@ -25,7 +25,7 @@ const ITEM_SCHEMA = JSON.stringify({
         { key: 1, name: "name", type: "string" },
         { key: 2, name: "value", type: "int" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 現在版CSV（working tree）— id=1 の value が変更されており、id=3 は存在しない（削除済み）

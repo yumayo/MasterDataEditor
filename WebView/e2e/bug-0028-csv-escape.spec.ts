@@ -39,7 +39,7 @@ function createParseTestFileSystem(): MockFileSystem {
             { key: 0, name: "id", type: "int" },
             { key: 1, name: "description", type: "string" },
         ],
-        primary_key: "id",
+        primary_key: ["id"],
     });
 
     // RFC4180 形式: "hello,world" は1フィールド、"say ""hello""" は say "hello" にパースされる
@@ -64,7 +64,7 @@ function createSerializeTestFileSystem(): MockFileSystem {
             { key: 0, name: "id", type: "int" },
             { key: 1, name: "description", type: "string" },
         ],
-        primary_key: "id",
+        primary_key: ["id"],
     });
 
     const csv = [

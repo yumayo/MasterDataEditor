@@ -28,13 +28,13 @@ function createTestFileSystem(): Record<string, string> {
         'schema/enemy.json': JSON.stringify({
             description: 'エネミーマスター',
             header: [{key: 0, name: "id", type: "int"}, {key: 1, name: "name", type: "string"}],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         'data/enemy.csv': 'id,name\r\n1,Goblin\r\n',
         'schema/item.json': JSON.stringify({
             description: 'アイテムマスター',
             header: [{key: 0, name: "id", type: "int"}, {key: 1, name: "name", type: "string"}],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         'data/item.csv': 'id,name\r\n1,Potion\r\n',
     };

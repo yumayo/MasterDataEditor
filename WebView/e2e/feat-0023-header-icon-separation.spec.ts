@@ -27,7 +27,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 function createFileSystemWithLongColumnNames(): MockFileSystem {
     return {
         "schema/long_columns.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",                   type: "int" },
                 { key: 1, name: "character_name",       type: "string" },
@@ -51,7 +51,7 @@ function createFileSystemWithLongColumnNames(): MockFileSystem {
 function createFileSystemWithShortColumnNames(): MockFileSystem {
     return {
         "schema/short_columns.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",  type: "int" },
                 { key: 1, name: "hp",  type: "int" },

@@ -40,7 +40,7 @@ function createFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id",
@@ -52,7 +52,7 @@ function createFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int", reference: "chara.id" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara_name.csv": [
             "id,ja",
@@ -64,7 +64,7 @@ function createFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "chara_id", type: "int", reference: "chara.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/skill.csv": [
             "id,chara_id",

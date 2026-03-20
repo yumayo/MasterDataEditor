@@ -18,8 +18,7 @@ interface SchemaColumn {
  */
 interface SchemaJson {
     header: SchemaColumn[];
-    /** 単一PK は文字列、複合PK は文字列配列 */
-    primary_key: string | string[];
+    primary_key: string[];
 }
 
 /**
@@ -52,11 +51,9 @@ export class DiffView {
     private readonly element: HTMLElement;
 
     constructor(tableName: string, schemaJson: string, headCsv: string, currentCsv: string) {
-        // スキーマをパースしてPK列名（配列）を特定する（単一PKは文字列→配列に正規化）
+        // スキーマをパースしてPK列名（配列）を特定する
         const schema = JSON.parse(schemaJson) as SchemaJson;
-        const primaryKeyNames: readonly string[] = Array.isArray(schema.primary_key)
-            ? schema.primary_key
-            : [schema.primary_key];
+        const primaryKeyNames: readonly string[] = schema.primary_key;
 
         const head = parseCsv(headCsv);
         const current = parseCsv(currentCsv);

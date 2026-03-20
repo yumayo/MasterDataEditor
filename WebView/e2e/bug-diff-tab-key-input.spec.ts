@@ -34,7 +34,7 @@ const QUEST_REWARD_SCHEMA = JSON.stringify({
         { key: 0, name: "id", type: "int" },
         { key: 1, name: "name", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 現在版CSV（working tree）— HEAD版から id=1 の name を変更した状態

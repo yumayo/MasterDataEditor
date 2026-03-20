@@ -23,8 +23,7 @@ export interface SchemaColumn {
  */
 export interface SchemaJson {
     header: SchemaColumn[];
-    /** 単一PK は文字列、複合PK は文字列配列 */
-    primary_key: string | string[];
+    primary_key: string[];
 }
 
 /**

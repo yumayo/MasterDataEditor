@@ -34,7 +34,7 @@ function createResizeHitboxFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "value", type: "int" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/item.csv": [
 			"id,name,value",

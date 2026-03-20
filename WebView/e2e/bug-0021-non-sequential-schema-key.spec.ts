@@ -43,7 +43,7 @@ const ITEM_SCHEMA = JSON.stringify({
         { key: 5, name: "recover_hp",    type: "int" },
         { key: 7, name: "special",       type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 /**

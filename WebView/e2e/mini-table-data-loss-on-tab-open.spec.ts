@@ -51,7 +51,7 @@ function createShopProductFileSystem(): MockFileSystem {
                 { key: 1, name: "group_id", type: "int" },
                 { key: 2, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop_product.csv": [
             "id,group_id,name",
@@ -66,7 +66,7 @@ function createShopProductFileSystem(): MockFileSystem {
                 // product_group_id は shop_product.group_id を参照（group_id はPK "id" ではない）
                 { key: 2, name: "product_group_id", type: "int", reference: "shop_product.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop.csv": [
             "id,name,product_group_id",

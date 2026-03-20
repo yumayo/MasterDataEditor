@@ -49,7 +49,7 @@ function createFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest.csv": [
 			"id,name",
@@ -64,7 +64,7 @@ function createFileSystem(): MockFileSystem {
 				{ key: 1, name: "quest_id", type: "int", reference: "quest.id" },
 				{ key: 2, name: "item_name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		// quest_id=1 の行が1件、quest_id=2 の行は存在しない
 		"data/quest_reward.csv": [

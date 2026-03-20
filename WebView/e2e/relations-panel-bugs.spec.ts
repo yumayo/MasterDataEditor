@@ -66,7 +66,7 @@ function createNto1MultiRowFileSystem(): MockFileSystem {
                 { key: 1, name: "group_id", type: "int" },
                 { key: 2, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop_product.csv": [
             "id,group_id,name",
@@ -81,7 +81,7 @@ function createNto1MultiRowFileSystem(): MockFileSystem {
                 // product_group_id は shop_product.group_id を参照（group_id はPK "id" ではない）
                 { key: 2, name: "product_group_id", type: "int", reference: "shop_product.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop.csv": [
             "id,name,product_group_id",
@@ -207,7 +207,7 @@ function createMiniTableKeyboardFileSystem(): MockFileSystem {
                 { key: 1, name: "ja", type: "string" },
                 { key: 2, name: "en", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja,en",
@@ -221,7 +221,7 @@ function createMiniTableKeyboardFileSystem(): MockFileSystem {
                 // enemy.id を FK として参照する（RelationsPanel は columnName="id" で PKルックアップ）
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // quest は2行。メインテーブルでの ArrowDown 移動を検証するためにも2行必要
         "data/quest.csv": [
@@ -365,7 +365,7 @@ function createOneToNUnloadedChildFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -379,7 +379,7 @@ function createOneToNUnloadedChildFileSystem(): MockFileSystem {
                 // enemy.id を FK として参照する（逆参照: enemy → quest が 1:N）
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",
@@ -528,7 +528,7 @@ function createN1AllColumnsVisibleFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -541,7 +541,7 @@ function createN1AllColumnsVisibleFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",
@@ -656,7 +656,7 @@ function createOneToNFkColumnVisibleFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -669,7 +669,7 @@ function createOneToNFkColumnVisibleFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",
@@ -816,7 +816,7 @@ function createN1EmptyRowFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/table.csv": [
             "id,name",
@@ -828,7 +828,7 @@ function createN1EmptyRowFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id,name",
@@ -844,7 +844,7 @@ function createN1EmptyRowFileSystem(): MockFileSystem {
                 // chara.id を FK として参照する（N:1 関係）
                 { key: 3, name: "chara_id", type: "int", reference: "chara.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,table_id,chara_id",

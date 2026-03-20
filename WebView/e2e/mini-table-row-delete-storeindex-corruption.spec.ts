@@ -77,7 +77,7 @@ function createQuestRewardCorruptionFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,quest_reward_group_id",
@@ -91,7 +91,7 @@ function createQuestRewardCorruptionFileSystem(): MockFileSystem {
                 { key: 1, name: "group_id", type: "int" },
                 { key: 2, name: "reward_value", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // ストアインデックス:
         //   [0] id=1, group_id=1, reward_value=100  ← quest_reward_group_id=1 の行

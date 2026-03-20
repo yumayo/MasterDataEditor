@@ -49,7 +49,7 @@ function createSortTestFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "value", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // 意図的にバラバラな順序: id=2, id=10, id=1
         // name には重複あり（"alpha" が2行存在）
@@ -78,7 +78,7 @@ function createMultiSortTestFileSystem(): MockFileSystem {
                 { key: 1, name: "category", type: "string" },
                 { key: 2, name: "price", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // category重複あり: A=3行（price: 300,100,200）, B=2行（price: 150,250）
         "data/product.csv": [
@@ -108,7 +108,7 @@ function createMiniTableSortTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -121,7 +121,7 @@ function createMiniTableSortTestFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",

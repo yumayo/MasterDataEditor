@@ -27,7 +27,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 function createFilterIconTestFileSystem(): MockFileSystem {
     return {
         "schema/items.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },

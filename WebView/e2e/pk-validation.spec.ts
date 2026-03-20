@@ -36,7 +36,7 @@ function createItemFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name",
@@ -58,7 +58,7 @@ function createInitialDuplicateFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // id=1 が2行存在する（初期データに重複あり）
         "data/item.csv": [
@@ -89,7 +89,7 @@ function createMiniTableStoreWideDuplicateFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -102,7 +102,7 @@ function createMiniTableStoreWideDuplicateFileSystem(): MockFileSystem {
                 { key: 1, name: "enemy_id", type: "int", reference: "enemy.id" },
                 { key: 2, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // enemy_id=1 の行: id=10、enemy_id=2 の行: id=20
         // ミニテーブル（enemy_id=1フィルタ）には id=10 のみ表示される

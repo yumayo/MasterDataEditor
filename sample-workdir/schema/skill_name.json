@@ -15,5 +15,5 @@
             "comment": "名前(日本語)"
         }
     ],
-    "primary_key": "id"
+    "primary_key": ["id"]
 }

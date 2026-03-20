@@ -29,7 +29,7 @@ const QUEST_SCHEMA = JSON.stringify({
         { key: 2, name: "first_clear_reward_record_id", type: "int" },
         { key: 3, name: "quest_reward_group_id", type: "int" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 /**

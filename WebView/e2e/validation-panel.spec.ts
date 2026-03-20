@@ -46,7 +46,7 @@ function createPkFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/product.csv": [
             "id,name",
@@ -71,7 +71,7 @@ function createFkFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/category.csv": [
             "id,name",
@@ -84,7 +84,7 @@ function createFkFileSystem(): MockFileSystem {
                 { key: 1, name: "category_id", type: "int", reference: "category.id" },
                 { key: 2, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/product.csv": [
             "id,category_id,name",
@@ -648,7 +648,7 @@ function createDynamicRefFileSystem(): MockFileSystem {
                 { key: 2, name: "comment", type: "string" },
                 { key: 3, name: "master", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/table.csv": [
             "id,enum,comment,master",
@@ -660,7 +660,7 @@ function createDynamicRefFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name",
@@ -675,7 +675,7 @@ function createDynamicRefFileSystem(): MockFileSystem {
                 { key: 2, name: "record_id", type: "int", reference: "$(table.id == $table_id).master.id" },
                 { key: 3, name: "price", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop_product.csv": [
             "id,table_id,record_id,price",

@@ -33,5 +33,5 @@
             "width": 185
         }
     ],
-    "primary_key": "id"
+    "primary_key": ["id"]
 }

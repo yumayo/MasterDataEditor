@@ -34,7 +34,7 @@ const QUEST_REWARD_SCHEMA = JSON.stringify({
         { key: 1, name: "group_id", type: "int" },
         { key: 2, name: "name", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // quest_reward 現在版（working tree）— id=1 の行を削除した状態
@@ -59,7 +59,7 @@ const SHOP_PRODUCT_SCHEMA = JSON.stringify({
         { key: 1, name: "shop_id", type: "int" },
         { key: 2, name: "item", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // shop_product 現在版（working tree）— id=1 の行を削除した状態

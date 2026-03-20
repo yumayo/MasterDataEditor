@@ -47,7 +47,7 @@ function createN1ContextHintTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name",
@@ -61,7 +61,7 @@ function createN1ContextHintTestFileSystem(): MockFileSystem {
                 { key: 1, name: "quest_id", type: "int", reference: "quest.id" },
                 { key: 2, name: "reward_name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest_reward.csv": [
             "id,quest_id,reward_name",

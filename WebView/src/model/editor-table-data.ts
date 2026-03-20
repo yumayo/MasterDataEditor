@@ -117,10 +117,7 @@ export class EditorTableData {
         }
         csv.body = bodyRows;
 
-        // 単一PKは文字列形式に戻してスキーマを汚染しない（後方互換）
-        const primaryKeyValue: string | string[] = this.primaryKeyColumns.length === 1
-            ? this.primaryKeyColumns[0]
-            : [...this.primaryKeyColumns];
+        const primaryKeyValue: string[] = [...this.primaryKeyColumns];
 
         return {
             json: {

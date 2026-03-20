@@ -39,7 +39,7 @@ function createTabSwitchTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/shop.csv": [
 			"id,name",
@@ -53,7 +53,7 @@ function createTabSwitchTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "shop_id", type: "int", reference: "shop.id" },
 				{ key: 2, name: "item_name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/shop_product.csv": [
 			"id,shop_id,item_name",
@@ -67,7 +67,7 @@ function createTabSwitchTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest.csv": [
 			"id,name",

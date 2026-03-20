@@ -30,7 +30,7 @@ const CHARA_SCHEMA = JSON.stringify({
         { key: 0, name: "id", type: "int" },
         { key: 1, name: "name", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 現在版CSV（working tree）— id=1〜3（id=4が削除済み）

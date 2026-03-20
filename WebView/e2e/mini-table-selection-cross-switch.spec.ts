@@ -42,7 +42,7 @@ function createCrossMiniTableSwitchFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/chara.csv": [
 			"id,name",
@@ -54,7 +54,7 @@ function createCrossMiniTableSwitchFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/skill_name.csv": [
 			"id,name",
@@ -68,7 +68,7 @@ function createCrossMiniTableSwitchFileSystem(): MockFileSystem {
 				{ key: 1, name: "chara_id", type: "int", reference: "chara.id" },
 				{ key: 2, name: "lang", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/chara_name.csv": [
 			"id,chara_id,lang",
@@ -83,7 +83,7 @@ function createCrossMiniTableSwitchFileSystem(): MockFileSystem {
 				{ key: 1, name: "chara_id", type: "int", reference: "chara.id" },
 				{ key: 2, name: "item", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest_reward.csv": [
 			"id,chara_id,item",
@@ -98,7 +98,7 @@ function createCrossMiniTableSwitchFileSystem(): MockFileSystem {
 				// skill_name.id をFKとして参照する（N:1: skill → skill_name）
 				{ key: 2, name: "skill_name_id", type: "int", reference: "skill_name.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/skill.csv": [
 			"id,chara_id,skill_name_id",

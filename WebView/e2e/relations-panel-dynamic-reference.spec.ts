@@ -41,7 +41,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 2, name: "comment", type: "string" },
                 { key: 3, name: "master", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/table.csv": [
             "id,enum,comment,master",
@@ -53,7 +53,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id,name",
@@ -66,7 +66,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name",
@@ -84,7 +84,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 // quest_rewardのgroup_idを参照（通常の単純参照）
                 { key: 3, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,reward_table_id,reward_record_id,quest_reward_group_id",
@@ -97,7 +97,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 1, name: "group_id", type: "int" },
                 { key: 2, name: "reward_name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest_reward.csv": [
             "id,group_id,reward_name",
@@ -175,7 +175,7 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "master", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/table.csv": [
             "id,master",
@@ -186,7 +186,7 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id,name",
@@ -201,7 +201,7 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 // quest_reward.group_id への参照（1:N逆参照のため quest_reward ミニテーブルが RP1 に表示される）
                 { key: 2, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,quest_reward_group_id",
@@ -217,7 +217,7 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 // そのテーブルの id カラムを参照する
                 { key: 3, name: "reward_record_id", type: "int", reference: "$(table.id == $reward_table_id).master.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest_reward.csv": [
             "id,group_id,reward_table_id,reward_record_id",

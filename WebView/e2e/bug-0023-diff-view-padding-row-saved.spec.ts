@@ -46,7 +46,7 @@ const QUEST_REWARD_SCHEMA = JSON.stringify({
         { key: 2, name: "master_id", type: "int" },
         { key: 3, name: "count", type: "int" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 現在版CSV（working tree）— id=1が削除された状態（id=2〜4のみ）

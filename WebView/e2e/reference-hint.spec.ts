@@ -63,7 +63,7 @@ test.describe('単純参照の参照名表示', () => {
                         reference: "enemy.ja",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/test.csv": [
                 "id,name,enemy_id",
@@ -80,7 +80,7 @@ test.describe('単純参照の参照名表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/enemy.csv": [
                 "id,ja",
@@ -154,7 +154,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                             + ".master_table.ja",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/test.csv": [
                 "id,type_id,item_id",
@@ -176,7 +176,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/type_map.csv": [
                 "id,ja,master_table",
@@ -192,7 +192,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/weapon.csv": [
                 "id,ja",
@@ -208,7 +208,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/armor.csv": [
                 "id,ja",

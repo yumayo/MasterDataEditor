@@ -50,7 +50,7 @@ function createPaneStackTestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/world.csv": [
 			"id,name",
@@ -63,7 +63,7 @@ function createPaneStackTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "world_id", type: "int", reference: "world.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/area.csv": [
 			"id,name,world_id",
@@ -77,7 +77,7 @@ function createPaneStackTestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "area_id", type: "int", reference: "area.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/enemy.csv": [
 			"id,name,area_id",

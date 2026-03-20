@@ -58,7 +58,7 @@ function createQuickViewTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/reward_group.csv": [
             "id,name",
@@ -73,7 +73,7 @@ function createQuickViewTestFileSystem(): MockFileSystem {
                 // reward_group.id を FK として参照する
                 { key: 2, name: "reward_group_id", type: "int", reference: "reward_group.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,reward_group_id",

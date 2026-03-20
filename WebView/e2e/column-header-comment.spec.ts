@@ -52,7 +52,7 @@ test.describe('列ヘッダーへのcomment表示', () => {
         const fs: MockFileSystem = {
             "schema/item.json": JSON.stringify({
                 description: "アイテムマスタ",
-                primary_key: "id",
+                primary_key: ["id"],
                 header: [
                     { key: 0, name: "id",      type: "int" },
                     { key: 1, name: "name",     type: "string" },
@@ -169,7 +169,7 @@ test.describe('FEAT_0049: 列ヘッダーの順序 — name上段・comment下�
         const fs: MockFileSystem = {
             "schema/item.json": JSON.stringify({
                 description: "アイテムマスタ",
-                primary_key: "id",
+                primary_key: ["id"],
                 header: [
                     { key: 0, name: "id",     type: "int" },
                     { key: 1, name: "attack",  type: "int", comment: "攻撃値\n追加説明" },
@@ -237,7 +237,7 @@ test.describe('タブへのdescription表示', () => {
         const fs: MockFileSystem = {
             "schema/item.json": JSON.stringify({
                 description: "アイテムマスタ",
-                primary_key: "id",
+                primary_key: ["id"],
                 header: [
                     { key: 0, name: "id",   type: "int" },
                     { key: 1, name: "name", type: "string" },

@@ -45,7 +45,7 @@ function createBug0009TestFileSystem(): MockFileSystem {
 				{ key: 0, name: "id", type: "int" },
 				{ key: 1, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/world.csv": [
 			"id,name",
@@ -58,7 +58,7 @@ function createBug0009TestFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "world_id", type: "int", reference: "world.id" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/area.csv": [
 			"id,name,world_id",

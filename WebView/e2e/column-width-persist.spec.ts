@@ -71,7 +71,7 @@ function createFileSystemWithoutWidth(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "value", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name,value",
@@ -92,7 +92,7 @@ function createFileSystemWithWidth(): MockFileSystem {
                 { key: 1, name: "name", type: "string", width: 250 },
                 { key: 2, name: "value", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name,value",
@@ -112,7 +112,7 @@ function createFileSystemWithLongColumnName(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "description_text_long_name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,description_text_long_name",

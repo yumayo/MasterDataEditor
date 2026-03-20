@@ -6,7 +6,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // 複合主キー対応のテスト（REDテスト）
 //
 // 機能概要:
-//   現在の実装は `primary_key: "id"` の単一PKのみ対応している。
+//   現在の実装は `primary_key: ["id"]` の単一PKのみ対応している。
 //   複合主キー（`primary_key: ["shop_id", "product_id"]` のような配列形式）を
 //   スキーマで定義した場合、現行の validatePkDuplicates() は
 //   config.primaryKeyColumnName（固定文字列 "id"）でPK列を探して -1 になり、
@@ -87,7 +87,7 @@ function createSinglePkItemFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name",
@@ -322,14 +322,14 @@ test.describe('テストケース4: 初期表示で複合主キー重複が検�
 
 test.describe('テストケース5: 単一主キーとの後方互換性', () => {
     test.beforeEach(async ({ page }) => {
-        // 既存の string 形式 primary_key: "id" のテーブルを使う
+        // 既存の string 形式 primary_key: ["id"] のテーブルを使う
         const fs = createSinglePkItemFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
     });
 
     test(
-        '既存の primary_key: "id" 形式のテーブルが正常に開け、単一PK重複も正しく検出される',
+        '既存の primary_key: ["id"] 形式のテーブルが正常に開け、単一PK重複も正しく検出される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item');
 

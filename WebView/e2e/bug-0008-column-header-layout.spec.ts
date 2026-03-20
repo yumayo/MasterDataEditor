@@ -27,7 +27,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 function createFileSystem(): MockFileSystem {
     return {
         "schema/item.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",      type: "int" },
                 { key: 1, name: "name",    type: "string" },
@@ -84,7 +84,7 @@ async function getColumnHeaderRectsAsync(table: Locator): Promise<{ top: number;
 function createFileSystemWithComment(): MockFileSystem {
     return {
         "schema/item_with_comment.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",      type: "int",    comment: "識別子" },
                 { key: 1, name: "attack",  type: "int",    comment: "攻撃力" },

@@ -85,11 +85,9 @@ export class DiffTab {
         this.dragMouseMove = null;
         this.dragMouseUp = null;
 
-        // スキーマをパースしてPK列名（配列）を取得する（単一PKは文字列→配列に正規化）
+        // スキーマをパースしてPK列名（配列）を取得する
         const schema = JSON.parse(schemaJson) as SchemaJson;
-        const primaryKeyNames: readonly string[] = Array.isArray(schema.primary_key)
-            ? schema.primary_key
-            : [schema.primary_key];
+        const primaryKeyNames: readonly string[] = schema.primary_key;
 
         // 差分計算（ファイル行順）
         const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);

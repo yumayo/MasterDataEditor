@@ -24,7 +24,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 function createFileSystemWithHtmlColumn(): MockFileSystem {
     return {
         "schema/item.json": JSON.stringify({
-            primary_key: "id",
+            primary_key: ["id"],
             header: [
                 { key: 0, name: "id",          type: "int" },
                 { key: 1, name: "name",         type: "string" },
@@ -182,7 +182,7 @@ test(
         // renderAsHtml が未設定のスキーマから始める
         const fs: MockFileSystem = {
             "schema/item.json": JSON.stringify({
-                primary_key: "id",
+                primary_key: ["id"],
                 header: [
                     { key: 0, name: "id",          type: "int" },
                     { key: 1, name: "name",         type: "string" },

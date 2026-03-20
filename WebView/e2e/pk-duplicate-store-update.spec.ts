@@ -53,7 +53,7 @@ function createPkDuplicateFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // id=1 が2行あるPK重複データ（コピペで発生しやすいシナリオ）
         "data/item.csv": [
@@ -216,7 +216,7 @@ function createMiniTablePkDuplicateFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -229,7 +229,7 @@ function createMiniTablePkDuplicateFileSystem(): MockFileSystem {
                 { key: 1, name: "enemy_id", type: "int", reference: "enemy.id" },
                 { key: 2, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // skill の id=1 が2行（PK重複）。コピペで発生しやすいシナリオ。
         // enemy_id=1 の行が3件: id=1(slash), id=1(fireball), id=2(thunder)

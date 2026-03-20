@@ -36,7 +36,7 @@ const REWARD_TABLE_SCHEMA = JSON.stringify({
         { key: 0, name: "id", type: "int" },
         { key: 1, name: "ja", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // reward_table のデータ（ヘッダーは ja 列）
@@ -54,7 +54,7 @@ const QUEST_REWARD_SCHEMA = JSON.stringify({
         { key: 1, name: "group_id", type: "int" },
         { key: 2, name: "reward_table_id", type: "int", reference: "reward_table.id" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // quest_reward 現在版（working tree）— id=1 の行を削除した状態

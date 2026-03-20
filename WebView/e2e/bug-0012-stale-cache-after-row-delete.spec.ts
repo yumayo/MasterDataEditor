@@ -20,7 +20,7 @@ function createFileSystem(): MockFileSystem {
 				{ key: 1, name: "group_id", type: "int" },
 				{ key: 2, name: "name", type: "string" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest_reward.csv": [
 			"id,group_id,name",
@@ -35,7 +35,7 @@ function createFileSystem(): MockFileSystem {
 				{ key: 1, name: "name", type: "string" },
 				{ key: 2, name: "reward_id", type: "int", reference: "quest_reward.name" },
 			],
-			primary_key: "id",
+			primary_key: ["id"],
 		}),
 		"data/quest.csv": [
 			"id,name,reward_id",

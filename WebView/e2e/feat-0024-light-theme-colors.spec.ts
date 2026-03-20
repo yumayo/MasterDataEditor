@@ -20,7 +20,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 const mockFs: MockFileSystem = {
     "schema/skill.json": JSON.stringify({
         description: "スキルマスター",
-        primary_key: "id",
+        primary_key: ["id"],
         header: [
             { key: 0, name: "id",                  type: "int",    comment: "ID" },
             { key: 1, name: "name",                type: "string", comment: "スキル名" },
@@ -30,7 +30,7 @@ const mockFs: MockFileSystem = {
     "data/skill.csv": ["id,name,skill_value_type_id", "1,slash,1", "2,thunder,2"].join("\n"),
     "schema/skill_value_type.json": JSON.stringify({
         description: "スキル効果タイプ",
-        primary_key: "id",
+        primary_key: ["id"],
         header: [
             { key: 0, name: "id",   type: "int",    comment: "ID" },
             { key: 1, name: "name", type: "string", comment: "タイプ名" },

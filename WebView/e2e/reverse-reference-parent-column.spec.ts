@@ -91,7 +91,7 @@ function createTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int", comment: "ID" },
                 { key: 1, name: "group_id", type: "int", comment: "グループID" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop_product.csv": [
             "id,group_id",
@@ -106,7 +106,7 @@ function createTestFileSystem(): MockFileSystem {
                 // shop_product_group_id は shop_product.group_id を参照（PK列"id"ではない）
                 { key: 2, name: "shop_product_group_id", type: "int", comment: "商品グループID", reference: "shop_product.group_id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/shop.csv": [
             "id,name,shop_product_group_id",

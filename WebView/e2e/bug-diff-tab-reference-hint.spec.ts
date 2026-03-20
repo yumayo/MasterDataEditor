@@ -33,7 +33,7 @@ const QUEST_SCHEMA = JSON.stringify({
         { key: 1, name: "enemy_id", type: "int", reference: "enemy.ja" },
         { key: 2, name: "name", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 参照先テーブルのスキーマ（enemy: id, ja の2列テーブル）
@@ -42,7 +42,7 @@ const ENEMY_SCHEMA = JSON.stringify({
         { key: 0, name: "id", type: "int" },
         { key: 1, name: "ja", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // 参照先テーブルのデータ（enemy）

@@ -35,7 +35,7 @@ const QUEST_REWARD_SCHEMA = JSON.stringify({
         { key: 0, name: "id", type: "int" },
         { key: 1, name: "name", type: "string" },
     ],
-    primary_key: "id",
+    primary_key: ["id"],
 });
 
 // HEAD版CSV（変更前）— id=1〜4 の全行が存在する

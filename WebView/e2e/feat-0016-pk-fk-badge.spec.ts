@@ -17,7 +17,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 const skillMockFs: MockFileSystem = {
     "schema/skill.json": JSON.stringify({
         description: "スキルマスター",
-        primary_key: "id",
+        primary_key: ["id"],
         header: [
             { key: 0, name: "id",                  type: "int",    comment: "ID" },
             { key: 1, name: "name",                type: "string", comment: "スキル名" },
@@ -106,7 +106,7 @@ test.describe('FK列のバッジ表示', () => {
         const fs: MockFileSystem = {
             "schema/shop_product.json": JSON.stringify({
                 description: "ショップ商品マスター",
-                primary_key: "id",
+                primary_key: ["id"],
                 header: [
                     { key: 0, name: "id",       type: "int", comment: "ID" },
                     { key: 1, name: "group_id",  type: "int", comment: "グループID" },

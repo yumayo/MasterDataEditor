@@ -51,7 +51,7 @@ function createFilterTestFileSystem(): MockFileSystem {
                 { key: 1, name: "category", type: "string" },
                 { key: 2, name: "price", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // category: weapon=2行, armor=2行, potion=1行
         // price: 100=2行, 200=1行, 300=1行, 500=1行
@@ -82,7 +82,7 @@ function createMiniTableFilterTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -95,7 +95,7 @@ function createMiniTableFilterTestFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",
@@ -121,7 +121,7 @@ function createSortFilterTestFileSystem(): MockFileSystem {
                 { key: 1, name: "category", type: "string" },
                 { key: 2, name: "price", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // category: A=3行, B=2行
         // price は降順: 500, 400, 300, 200, 100
@@ -645,7 +645,7 @@ test.describe('フィルター機能', () => {
                         // attack のみ定義（hp, mp, defense はスキーマに含まれない）
                         { key: 3, name: "attack", type: "int" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 // CSV は id,hp,mp,attack,defense の5列（スキーマよりも多い列を持つ）
                 // attack 列（CSV列3）の値: 10, 20, 10, 30, 20
@@ -812,7 +812,7 @@ function createEmptyValueFilterTestFileSystem(): MockFileSystem {
                 { key: 1, name: "category", type: "string" },
                 { key: 2, name: "price", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,category,price",
@@ -842,7 +842,7 @@ function createReferenceHintFilterTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id,ja",
@@ -856,7 +856,7 @@ function createReferenceHintFilterTestFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "chara_id", type: "int", reference: "chara.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name,chara_id",
@@ -1153,7 +1153,7 @@ test.describe('FEAT_0035 フィルター機能改修', () => {
                         {key: 0, name: "id", type: "int"},
                         {key: 1, name: "category", type: "string"},
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/item.csv": [
                     "id,category",
@@ -1219,7 +1219,7 @@ test.describe('FEAT_0035 フィルター機能改修', () => {
                         {key: 0, name: "id", type: "int"},
                         {key: 1, name: "name", type: "string"},
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/item.csv": [
                     "id,name",

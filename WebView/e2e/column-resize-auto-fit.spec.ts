@@ -83,7 +83,7 @@ function createSimpleFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "value", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // name列に長い文字列を意図的に入れる
         "data/item.csv": [
@@ -107,7 +107,7 @@ function createFkReferenceFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -121,7 +121,7 @@ function createFkReferenceFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",

@@ -36,7 +36,7 @@ function createFileSystem(): MockFileSystem {
                 { key: 3, name: "defense", type: "int" },
                 { key: 4, name: "speed", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": rows.join("\n"),
     };

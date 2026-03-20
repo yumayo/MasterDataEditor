@@ -127,7 +127,7 @@ test.describe(
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/enemy.csv": [
                 "id,ja",
@@ -149,7 +149,7 @@ test.describe(
                         reference: "enemy.ja",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/quest.csv": [
                 "id,enemy_id",
@@ -286,7 +286,7 @@ test.describe(
                                     type: "string",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/parent.csv": [
                         "id,ja",
@@ -313,7 +313,7 @@ test.describe(
                                     type: "string",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/child.csv": [
                         "id,parent_id,ja",
@@ -398,7 +398,7 @@ test.describe(
                                     type: "string",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/enemy.csv": [
                         "id,ja",
@@ -421,7 +421,7 @@ test.describe(
                                     reference: "enemy.ja",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/quest.csv": [
                         "id,enemy_id",
@@ -530,7 +530,7 @@ test.describe(
                                     type: "string",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/parent.csv": [
                         "id,ja",
@@ -558,7 +558,7 @@ test.describe(
                                     type: "string",
                                 },
                             ],
-                            primary_key: "id",
+                            primary_key: ["id"],
                         }),
                     "data/child.csv": [
                         "id,parent_id,ja",

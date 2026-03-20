@@ -58,7 +58,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 { key: 2, name: "comment", type: "string" },
                 { key: 3, name: "master", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/table.csv": [
             "id,enum,comment,master",
@@ -70,7 +70,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/chara.csv": [
             "id,name",
@@ -83,7 +83,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/item.csv": [
             "id,name",
@@ -100,7 +100,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 // そのテーブルのidカラムを参照する
                 { key: 2, name: "reward_record_id", type: "int", reference: "$(table.id == $reward_table_id).master.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         // quest id=1: reward_table_id=1(chara), reward_record_id=3(まんぼう) → 有効
         // quest id=2: reward_table_id=2(item),  reward_record_id=1(ポーション) → 有効

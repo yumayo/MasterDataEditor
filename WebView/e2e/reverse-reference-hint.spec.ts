@@ -98,7 +98,7 @@ test.describe('逆参照ヒントの表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/parent.csv": [
                 "id,ja",
@@ -121,7 +121,7 @@ test.describe('逆参照ヒントの表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/child_a.csv": [
                 "id,parent_id,ja",
@@ -142,7 +142,7 @@ test.describe('逆参照ヒントの表示', () => {
                         type: "string",
                     },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/child_b.csv": [
                 "id,parent_id,ja",
@@ -227,7 +227,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
                         + ".master_table.id",
                 },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/test.csv": [
             "id,type_id,item_id",
@@ -250,7 +250,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
                     type: "string",
                 },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/type_map.csv": [
             "id,ja,master_table",
@@ -261,7 +261,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
             header: [
                 { key: 0, name: "id", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/weapon.csv": [
             "id",
@@ -282,7 +282,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
                     type: "string",
                 },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/weapon_name.csv": [
             "id,ja",
@@ -293,7 +293,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
             header: [
                 { key: 0, name: "id", type: "int" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/armor.csv": [
             "id",
@@ -314,7 +314,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
                     type: "string",
                 },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/armor_name.csv": [
             "id,ja",
@@ -508,7 +508,7 @@ test.describe('逆参照ヒントの表示形式', () => {
                             type: "string",
                         },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/parent.csv": [
                     "id,ja",
@@ -534,7 +534,7 @@ test.describe('逆参照ヒントの表示形式', () => {
                                 type: "string",
                             },
                         ],
-                        primary_key: "id",
+                        primary_key: ["id"],
                     }),
                 "data/child_with_ja.csv": [
                     "id,parent_id,ja",
@@ -560,7 +560,7 @@ test.describe('逆参照ヒントの表示形式', () => {
                                 type: "string",
                             },
                         ],
-                        primary_key: "id",
+                        primary_key: ["id"],
                     }),
                 "data/child_without_ja.csv": [
                     "id,parent_id,code",
@@ -607,7 +607,7 @@ test.describe('表示列編集時の参照ヒント同期更新', () => {
                 header: [
                     { key: 0, name: "id", type: "int" },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/chara.csv": [
                 "id",
@@ -619,7 +619,7 @@ test.describe('表示列編集時の参照ヒント同期更新', () => {
                     { key: 0, name: "id", type: "int", reference: "chara.id" },
                     { key: 1, name: "ja", type: "string" },
                 ],
-                primary_key: "id",
+                primary_key: ["id"],
             }),
             "data/chara_name.csv": [
                 "id,ja",
@@ -691,7 +691,7 @@ test.describe('逆参照の表示優先度', () => {
                     header: [
                         { key: 0, name: "id", type: "int" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/parent.csv": [
                     "id",
@@ -703,7 +703,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 1,
                 }),
                 "data/child_high.csv": [
@@ -716,7 +716,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 2,
                 }),
                 "data/child_low.csv": [
@@ -751,7 +751,7 @@ test.describe('逆参照の表示優先度', () => {
                     header: [
                         { key: 0, name: "id", type: "int" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/parent.csv": [
                     "id",
@@ -763,7 +763,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 1,
                 }),
                 "data/child_priority.csv": [
@@ -776,7 +776,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/child_none.csv": [
                     "id,parent_id,ja",
@@ -810,7 +810,7 @@ test.describe('逆参照の表示優先度', () => {
                     header: [
                         { key: 0, name: "id", type: "int" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/parent.csv": [
                     "id",
@@ -822,7 +822,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 1,
                 }),
                 "data/child_a.csv": [
@@ -835,7 +835,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                         { key: 2, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 1,
                 }),
                 "data/child_b.csv": [
@@ -880,7 +880,7 @@ test.describe('逆参照の表示優先度', () => {
                     header: [
                         { key: 0, name: "id", type: "int" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/parent.csv": [
                     "id",
@@ -892,7 +892,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 0, name: "id", type: "int", reference: "parent.id" },
                         { key: 1, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 2,
                 }),
                 "data/aaa_child_low.csv": [
@@ -905,7 +905,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 0, name: "id", type: "int", reference: "parent.id" },
                         { key: 1, name: "ja", type: "string" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                     reverseReferencePriority: 1,
                 }),
                 "data/zzz_child_high.csv": [
@@ -918,7 +918,7 @@ test.describe('逆参照の表示優先度', () => {
                         { key: 0, name: "id", type: "int" },
                         { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
                     ],
-                    primary_key: "id",
+                    primary_key: ["id"],
                 }),
                 "data/other.csv": [
                     "id,parent_id",

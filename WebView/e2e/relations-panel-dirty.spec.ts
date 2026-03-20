@@ -36,7 +36,7 @@ function createDirtyTestFileSystem(): MockFileSystem {
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "ja", type: "string" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/enemy.csv": [
             "id,ja",
@@ -50,7 +50,7 @@ function createDirtyTestFileSystem(): MockFileSystem {
                 // enemy.id を FK として参照する（RelationsPanel に N:1 として enemy が表示される）
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
             ],
-            primary_key: "id",
+            primary_key: ["id"],
         }),
         "data/quest.csv": [
             "id,name,enemy_id",
