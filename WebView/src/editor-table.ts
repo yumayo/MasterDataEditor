@@ -1800,6 +1800,58 @@ export class EditorTable {
         this.applyGitDiffHighlight();
     }
 
+    /**
+     * 差分タブの右ペイン保存後にgit差分ハイライトを更新する。
+     * 通常テーブルの refreshGitDiffAsync は git status でテーブル名を検索するが、
+     * 差分タブの tableName は "xxx:diff:current" という仮名のため git status では見つからない。
+     * 代わりに saveTableName（実テーブル名）を使って gitShowAsync でHEAD版CSVを取得し、
+     * GitDiffTracker を再構築して全セルのハイライトを再適用する。
+     */
+    async refreshGitDiffForDiffTabAsync(saveTableName: string): Promise<void> {
+        const requestId = ++this.refreshGitDiffRequestId;
+        // PK列が定義されていない場合はハイライト不要
+        if (this.tableData.primaryKeyColumns.length === 0) {
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
+            return;
+        }
+        // ストアヘッダーからPK列インデックスを解決する
+        // ストアキーは this.tableName（"xxx:diff:current"）で登録されている
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeHeader === false) {
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
+            return;
+        }
+        const pkColumnIndices: number[] = [];
+        for (const pkColName of this.tableData.primaryKeyColumns) {
+            const idx = storeHeader.indexOf(pkColName);
+            if (idx === -1) {
+                this.gitDiffTracker = false;
+                this.applyGitDiffHighlight();
+                return;
+            }
+            pkColumnIndices.push(idx);
+        }
+        // saveTableName（実テーブル名）を使ってHEAD版CSVを取得する
+        let headCsv: string;
+        try {
+            headCsv = await gitShowAsync(`data/${saveTableName}.csv`);
+        } catch {
+            // HEAD版が取得できない場合（新規テーブル等）は全セルchangedとする
+            const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
+            this.connectGitDiffTracker(tracker);
+            this.applyGitDiffHighlight();
+            return;
+        }
+        // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
+        if (requestId !== this.refreshGitDiffRequestId) return;
+        const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices);
+        const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
+        this.connectGitDiffTracker(tracker);
+        this.applyGitDiffHighlight();
+    }
+
     // =========================================================================
     // ファサード: EditorTableReference
     // =========================================================================

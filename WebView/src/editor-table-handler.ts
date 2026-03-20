@@ -487,7 +487,7 @@ export class EditorTableHandler {
                 // - getDiffPaddingStoreRowIndices() で現在のDOM状態からパディング行インデックスを動的に取得してCSVから除外する
                 // - Dirty解除は差分タブの History キー（this.table.tableName）で行う
                 // - 保存後は通常テーブルのストアも最新CSVに更新してタブ再オープン時に反映する
-                // - refreshGitDiffAsync は this.table.tableName が不正パスのためスキップする
+                // - 保存後は refreshGitDiffForDiffTabAsync で saveTargetTableName を使ってgit差分ハイライトを更新する
                 const paddingIndices = this.table.getDiffPaddingStoreRowIndices();
                 saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName, paddingIndices)
                     .then(() => {
@@ -515,6 +515,10 @@ export class EditorTableHandler {
                                 })
                                 .catch((e: unknown) => { throw new Error('[EditorTableHandler] reloadTableDataAsync failed: ' + String(e)); });
                         }
+                        // 保存後にgit差分ハイライトを更新する。
+                        // saveTargetTableName（実テーブル名）を渡してHEAD版CSVとの差分を再計算する。
+                        this.table.refreshGitDiffForDiffTabAsync(this.saveTargetTableName)
+                            .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffForDiffTabAsync failed:', e); });
                     })
                     .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });
                 return;

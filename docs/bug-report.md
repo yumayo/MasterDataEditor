@@ -2360,3 +2360,17 @@ SettingsPanel の change イベントハンドラが `this.tabButton.setDirty(th
 3. フロントエンドのモーダルは視覚的なオーバーレイだけでなく、キーボード入力の遮断も含めてモーダルとして完全に機能させる
 
 ---
+
+## 162. [6bc43e0] — 差分タブ右ペインで保存後にgit差分ハイライトが更新されない不具合を修正
+
+### 不具合原因名
+差分タブ保存フローでrefreshGitDiffAsyncが呼ばれていない
+
+### なぜそうなったのか
+通常テーブルの保存フローでは `markSavedAndUpdatePanel()` → `refreshGitDiffAsync()` で差分ハイライトが更新されるが、差分タブの保存フロー（editor-table-handler.ts）にはこの呼び出しが含まれていなかった。さらに差分タブの EditorTable は `tableName` が `"xxx:diff:current"` という仮名のため、標準の `refreshGitDiffAsync()` は git status/show でパス解決できず使えなかった。差分タブ専用の `refreshGitDiffForDiffTabAsync(saveTableName)` を追加し、実テーブル名を使ってHEAD版を取得する方式で解決した。
+
+### どうしたら今後は再発しないか
+1. 新しい保存パスを追加する際は、既存の保存パス（通常テーブル）で行われる後処理（差分ハイライト更新、dirty マーク解除等）を漏れなく対称的に実装する
+2. 非同期メソッドにはレースコンディション防止の requestId パターンを必ず適用する（既存の refreshGitDiffAsync と同じパターン）
+
+---
