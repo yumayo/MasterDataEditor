@@ -36,7 +36,7 @@
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
 - **参照式の独自パース**: parseReferenceExpression を使わずdotIndex手動パース (search-panel.ts)
-- **フォールバック禁止**: `??` 演算子はCLAUDE.mdで禁止。filter-dropdown.ts L261/264/370で違反
+- **フォールバック禁止**: `??` 演算子はCLAUDE.mdで禁止。14回以上再発（reference-data-cache.ts, form-panel.ts, filter-dropdown.ts等）
 - **document listener leak on re-instantiation**: 無名リスナーはremoveEventListener不可
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
@@ -189,8 +189,17 @@
 - **PATTERN**: removeToast() が public だが呼び出し箇所なし（デッドコード）
 - **PATTERN**: 同一メッセージ重複トースト防止なし（UXレビューでも指摘済み）
 
+## determineDisplayColumnName 共通化リファクタ Known Patterns (2026-03-21)
+- **CRITICAL**: `determineDisplayColumnName() ?? ''` が reference-data-cache.ts 2箇所でフォールバック禁止ルール違反（??演算子 14回目の再発）
+- **CRITICAL**: fixtures config.json の referenceDisplayColumnPriority を ["ja"]→["ja","comment"] に変更。table テーブル（comment列あり）を使う3テストの振る舞いが暗黙変更
+- **CRITICAL**: primaryKeyColumnName フィールドの無断削除がリファクタスコープを逸脱
+- **IMPORTANT**: `(schema.header as Array<{name: string}>).map(h => h.name)` が reference-data-cache.ts 3箇所にコピペ新規発生
+- **IMPORTANT**: form-panel.ts に ?? 演算子8箇所が既存のまま放置（FEAT_0043指摘からの持越し）
+- **MINOR**: isDisplayColumn が1箇所からしか呼ばれていない（共通化の名目だがpublic export過剰）
+
 ## Review History
-→ 詳細は `review-history.md` 参照
+→ 詳細は `known-issues-archive.md` 参照
+- (2026-03-21) determineDisplayColumnName共通化リファクタ: 致命的3件（??新規導入/fixtures暗黙変更/スコープ逸脱）、重要3件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播 R2: 致命的3件（保存失敗通知漏れ持越し/catch握り潰し持越し/==null）、重要4件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播: 致命的3件（生焼けnotification/保存失敗通知漏れ/catch網羅漏れ）、重要4件、軽微3件
 - (2026-03-21) ValidationPanel jumpToError リファクタ R2: 致命的1件（PK重複+タブ未開の制約）、重要3件（REDコメント残存/==null持越し/pkValueスナップショット）、軽微3件
