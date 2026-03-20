@@ -624,7 +624,9 @@ export class ReferenceDataCache {
      * preloadReferenceTables() 完了後はキャッシュ済みのため同期アクセスで十分
      */
     getFullDataSync(tableName: string): ReferenceTableFullData | false {
-        return this.fullDataCache.get(tableName) ?? false;
+        const data = this.fullDataCache.get(tableName);
+        if (data !== undefined) return data;
+        return false;
     }
 
     /**

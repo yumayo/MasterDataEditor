@@ -58,7 +58,7 @@ import {StatusBar} from "./status-bar";
     // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
     // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
     // Tab ↔ Sidebar と同じパターン。
-    const validationEngine = new ValidationEngine(store);
+    const validationEngine = new ValidationEngine(store, referenceDataCache);
     const statusBar = {} as StatusBar;
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
     const realStatusBar = new StatusBar(validationPanel, notification);
