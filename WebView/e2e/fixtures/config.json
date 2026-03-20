@@ -1,5 +1,5 @@
 {
-  "referenceDisplayColumnPriority": ["ja"],
+  "referenceDisplayColumnPriority": ["ja", "comment"],
   "primaryKeyColumnName": "id",
   "locale": "ja"
 }

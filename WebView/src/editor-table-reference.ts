@@ -3,7 +3,7 @@ import {EditorTableData} from "./model/editor-table-data";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
-import {config} from "./config";
+import {isDisplayColumn} from "./config";
 import {sanitizeHtml} from "./html-sanitizer";
 
 
@@ -370,7 +370,7 @@ export class EditorTableReference {
         const changedColumn = this.tableData.header[changedDataColumnIndex];
         if (!changedColumn) return;
         // 表示列でなければ更新不要
-        if (!config.referenceDisplayColumnPriority.includes(changedColumn.name)) return;
+        if (!isDisplayColumn(changedColumn.name)) return;
         const tableElement = this.table.getTableElement();
         const rowElement = tableElement.children[rowIndex] as HTMLElement;
         for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {

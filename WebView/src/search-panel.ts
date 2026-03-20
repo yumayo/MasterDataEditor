@@ -2,7 +2,7 @@ import {Tab} from "./tab";
 import {SearchDataProvider, TableSearchData} from "./search-data-provider";
 import {parseSearchQuery, matchesQuery, SearchOptions, SearchQuery} from "./search-query";
 import {EditorTable} from "./editor-table";
-import {config} from "./config";
+import {determineDisplayColumnName} from "./config";
 import {appendHighlightedSegments} from "./fuzzy-search";
 
 /**
@@ -326,19 +326,14 @@ export class SearchPanel {
     private findDisplayTextFromEditorTable(editorTable: EditorTable, idValue: string): string {
         const columnCount = editorTable.getColumnCount();
         const rowCount = editorTable.getRowCount();
-        // 表示列を特定
-        let displayColIndex = -1;
+        // 表示列を特定（EditorTableのヘッダーから列名配列を構築して共通関数で決定）
+        const headerNames: string[] = [];
         for (let c = 0; c < columnCount; c++) {
-            const colName = editorTable.getColumnHeaderValue(c);
-            for (const priority of config.referenceDisplayColumnPriority) {
-                if (colName === priority) {
-                    displayColIndex = c;
-                    break;
-                }
-            }
-            if (displayColIndex !== -1) break;
+            headerNames.push(editorTable.getColumnHeaderValue(c));
         }
-        if (displayColIndex === -1) return '';
+        const displayColName = determineDisplayColumnName(headerNames);
+        if (displayColName === '') return '';
+        const displayColIndex = headerNames.indexOf(displayColName);
         // PKColumnを特定（テーブルスキーマのprimaryKeyColumnsから最初のPK列名を使用）
         const pkColumnName = editorTable.getTableData().primaryKeyColumns[0];
         let pkColIndex = -1;

@@ -2301,3 +2301,18 @@ preloadReferenceTables のキャッシュ不足と preservableErrors の引き�
 3. 新しい依存をコンポーネントに追加する際は、既存の `| undefined` パターン（`setXxx` で後から設定する方式）に倣わず、コンストラクタ引数として渡す
 
 ---
+
+## 158. [d1877d4] — 表示列決定ロジック（determineDisplayColumn）を共通関数に集約
+
+### 不具合原因名
+同一ロジックの5箇所コピペによるインポート削除漏れサイレント障害
+
+### なぜそうなったのか
+`config.referenceDisplayColumnPriority` を走査して表示列を決定するロジックが `reference-data-cache.ts`、`reverse-reference-resolver.ts`、`form-panel.ts`、`search-panel.ts`、`editor-table-reference.ts` の5箇所にコピペされていた。`config.primaryKeyColumnName` 廃止リファクタリング時に `reverse-reference-resolver.ts` から `config` インポートを削除した際、同ファイル内の `determineDisplayColumnIndex` が `config.referenceDisplayColumnPriority` を使っていることに気づけず `ReferenceError: config is not defined` がサイレント障害として発生した。ロジックが分散していたことが見落としの直接原因。
+
+### どうしたら今後は再発しないか
+1. 同一ロジックが複数箇所に存在する場合は共通関数に集約し、依存先への参照を1箇所に限定する
+2. `config` オブジェクトのフィールドを使ったロジックは `config.ts` に共通関数として定義し、各モジュールは共通関数をインポートする（直接 `config.referenceDisplayColumnPriority` を参照しない）
+3. リファクタリングでインポートを削除する際は、同ファイル内で削除対象モジュールの他のプロパティが使われていないかをgrepで確認する
+
+---

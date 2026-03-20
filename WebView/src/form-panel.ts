@@ -1,6 +1,6 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReverseReferenceResolver} from "./reverse-reference-resolver";
-import {config} from "./config";
+import {determineDisplayColumnName} from "./config";
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
@@ -434,7 +434,8 @@ export class FormPanel {
             body.appendChild(empty);
         } else {
             const pkColIdx = section.primaryKeyColumnName !== '' ? section.header.indexOf(section.primaryKeyColumnName) : -1;
-            const displayColIdx = this.findDisplayColumnIndex(section.header);
+            const sectionDisplayColName = determineDisplayColumnName(section.header);
+            const displayColIdx = sectionDisplayColName !== '' ? section.header.indexOf(sectionDisplayColName) : -1;
             for (const refRow of section.rows) {
                 const refPkValue = pkColIdx !== -1 ? (refRow[pkColIdx] ?? '') : '';
                 const displayValue = displayColIdx !== -1 ? (refRow[displayColIdx] ?? '') : '';
@@ -517,24 +518,14 @@ export class FormPanel {
             return;
         }
 
-        const displayColIdx = this.findDisplayColumnIndex(targetData.header);
+        const targetDisplayColName = determineDisplayColumnName(targetData.header);
+        const displayColIdx = targetDisplayColName !== '' ? targetData.header.indexOf(targetDisplayColName) : -1;
         for (const refRow of matchedRows) {
             const refPkValue = targetPkColIdx !== -1 ? (refRow[targetPkColIdx] ?? '') : '';
             const displayValue = displayColIdx !== -1 ? (refRow[displayColIdx] ?? '') : '';
             const canDrillDown = currentDepth < FormPanel.MAX_DEPTH - 1 && refPkValue !== '';
             body.appendChild(this.buildRefItemElement(section.tableKey, refPkValue, displayValue, canDrillDown));
         }
-    }
-
-    /**
-     * 表示列インデックスを見つける（config.referenceDisplayColumnPriority で優先される列）
-     */
-    private findDisplayColumnIndex(header: string[]): number {
-        for (const priorityName of config.referenceDisplayColumnPriority) {
-            const idx = header.indexOf(priorityName);
-            if (idx !== -1) return idx;
-        }
-        return -1;
     }
 
     /**

@@ -1,5 +1,5 @@
 import {findFilesAsync, readFileAsync} from "./api";
-import {config} from "./config";
+import {determineDisplayColumnName} from "./config";
 import {Csv} from "./csv";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
@@ -328,12 +328,10 @@ export class ReverseReferenceResolver {
         }
 
         // 表示列を決定
-        // 該当する列がない場合は空文字を使い、
-        // テーブル名(件数) 形式で表示する
-        const displayColumnIndex =
-            this.determineDisplayColumnIndex(
-                schema.header, csv.header
-            );
+        // 該当する列がない場合は空文字を使い、テーブル名(件数) 形式で表示する
+        const schemaColumnNames = (schema.header as Array<{name: string}>).map(h => h.name);
+        const displayColumnName = determineDisplayColumnName(schemaColumnNames);
+        const displayColumnIndex = displayColumnName !== '' ? csv.header.indexOf(displayColumnName) : -1;
 
         // 子テーブルのPK列名をスキーマから取得してインデックスを解決する
         const childPkColumnName = extractFirstPrimaryKeyColumn(schema);
@@ -421,26 +419,6 @@ export class ReverseReferenceResolver {
         }
     }
 
-    /**
-     * スキーマヘッダーとCSVヘッダーから表示列のインデックスを決定する
-     */
-    private determineDisplayColumnIndex(
-        schemaHeader: Array<{ name: string }>,
-        csvHeader: string[]
-    ): number {
-        const columnNames =
-            schemaHeader.map(h => h.name);
-
-        for (
-            const priority
-            of config.referenceDisplayColumnPriority
-        ) {
-            if (columnNames.includes(priority)) {
-                return csvHeader.indexOf(priority);
-            }
-        }
-        return -1;
-    }
 }
 
 /**

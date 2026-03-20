@@ -1,5 +1,5 @@
 import {readFileAsync, findFilesAsync} from "./api";
-import {config} from "./config";
+import {determineDisplayColumnName} from "./config";
 import {Csv} from "./csv";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
@@ -189,7 +189,8 @@ export class ReferenceDataCache {
         }
 
         // 表示列を決定する
-        const displayColumnName = this.determineDisplayColumn(schema.header);
+        const columnNames = (schema.header as Array<{name: string}>).map(h => h.name);
+        const displayColumnName = determineDisplayColumnName(columnNames);
 
         // 主キー列のインデックスを取得（スキーマの primary_key から決定）
         const pkColumnName = extractFirstPrimaryKeyColumn(schema);
@@ -340,11 +341,8 @@ export class ReferenceDataCache {
                 }
 
                 // 子テーブルに表示列があるか
-                const displayCol =
-                    this.determineDisplayColumn(
-                        childSchema.header
-                    );
-                if (displayCol === '') continue;
+                const childColumnNames = (childSchema.header as Array<{name: string}>).map(h => h.name);
+                if (determineDisplayColumnName(childColumnNames) === '') continue;
 
                 // スキーマから逆参照の表示優先度を読み取る
                 const priority = readReverseReferencePriority(childSchema);
@@ -382,22 +380,6 @@ export class ReferenceDataCache {
                 item.displayText = childItem.displayText;
             }
         }
-    }
-
-    /**
-     * スキーマのヘッダーから表示列を決定する
-     */
-    private determineDisplayColumn(headerSchema: Array<{name: string}>): string {
-        const columnNames = headerSchema.map(h => h.name);
-
-        for (const priority of config.referenceDisplayColumnPriority) {
-            if (columnNames.includes(priority)) {
-                return priority;
-            }
-        }
-
-        // 優先順位の列がなければ空文字列を返す（表示列なし）
-        return '';
     }
 
     /**
@@ -576,7 +558,8 @@ export class ReferenceDataCache {
         }
 
         // 表示列を決定する
-        const displayColumnName = this.determineDisplayColumn(schema.header);
+        const fullColumnNames = (schema.header as Array<{name: string}>).map(h => h.name);
+        const displayColumnName = determineDisplayColumnName(fullColumnNames);
         const displayColumnIndex = csv.header.indexOf(displayColumnName);
 
         // 主キー列のインデックスを取得（スキーマの primary_key から決定）
