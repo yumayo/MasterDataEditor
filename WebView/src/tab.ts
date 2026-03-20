@@ -398,9 +398,35 @@ export class Tab {
 
     /**
      * 指定名のタブを閉じる
-     * タブが開かれていない場合は何もしない
+     * タブが開かれていない場合は何もしない。
+     * dirty 状態の場合は確認ダイアログを表示し、ユーザーの確認後にクローズを実行する。
      */
     closeTab(name: string): void {
+        const tabButton = this.tabButtons.find(x => x.name === name);
+        if (!tabButton) return;
+
+        // ダイアログ表示中は別タブの閉じ操作を無視する（多重ダイアログ防止）
+        // DOMがSSOTのため、オーバーレイ要素の存在で判定する
+        if (document.querySelector('.close-confirm-overlay')) return;
+
+        // dirty 状態のタブは確認ダイアログを表示してからクローズする
+        if (tabButton.isDirty()) {
+            this.showCloseConfirmDialog(name);
+            return;
+        }
+
+        this.performCloseTab(name);
+    }
+
+    /**
+     * タブの実際のクローズ処理。
+     * closeTab() の非 dirty パスと、確認ダイアログの「閉じる」ボタンの2箇所から呼ばれるため
+     * private メソッドとして抽出している。
+     * name のみを受け取り、tabButton は内部で解決する。
+     * ダイアログ表示中にタブが別経路で閉じられる理論的可能性を考慮し、
+     * tabButton が見つからない場合は防御的に return する。
+     */
+    private performCloseTab(name: string): void {
         const tabButton = this.tabButtons.find(x => x.name === name);
         if (!tabButton) return;
 
@@ -434,7 +460,7 @@ export class Tab {
             }
             // DIFF_TAB_PREFIX で始まるタブ名が closeTab に渡された時点で diffTabs に存在するのが不変条件
             const diffTabToDestroy = this.diffTabs.get(name);
-            if (!diffTabToDestroy) throw new Error(`[Tab] closeTab: diffTabs に存在しないキーが渡された: ${name}`);
+            if (!diffTabToDestroy) throw new Error(`[Tab] performCloseTab: diffTabs に存在しないキーが渡された: ${name}`);
             diffTabToDestroy.destroy(this.store);
             this.diffTabs.delete(name);
         }
@@ -444,6 +470,93 @@ export class Tab {
         if (prev) { this.enableTabButton(prev.name); return; }
         // アクティブだったタブを閉じて他にタブがない場合、エクスプローラーのハイライトをクリアする
         this.sidebar.clearExplorerHighlight();
+    }
+
+    /**
+     * dirty 状態のタブを閉じる確認ダイアログを表示する。
+     * 「閉じる」で performCloseTab を実行、「キャンセル」またはオーバーレイクリックでダイアログを閉じる。
+     */
+    private showCloseConfirmDialog(name: string): void {
+        // オーバーレイ
+        const overlay = document.createElement('div');
+        overlay.classList.add('close-confirm-overlay');
+
+        // ダイアログ本体
+        const dialog = document.createElement('div');
+        dialog.classList.add('close-confirm-dialog');
+
+        // メッセージ
+        const message = document.createElement('div');
+        message.classList.add('close-confirm-message');
+        message.textContent = `「${name}」には未保存の変更があります。閉じてもよろしいですか？`;
+        dialog.appendChild(message);
+
+        // ボタンコンテナ
+        const buttons = document.createElement('div');
+        buttons.classList.add('close-confirm-buttons');
+
+        // キャンセルボタン
+        const cancelButton = document.createElement('button');
+        cancelButton.classList.add('close-confirm-button-cancel');
+        cancelButton.textContent = 'キャンセル';
+        buttons.appendChild(cancelButton);
+
+        // 閉じるボタン
+        const closeButton = document.createElement('button');
+        closeButton.classList.add('close-confirm-button-close');
+        closeButton.textContent = '閉じる';
+        buttons.appendChild(closeButton);
+
+        dialog.appendChild(buttons);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        // ダイアログを表示する
+        overlay.classList.add('visible');
+
+        // ダイアログを閉じる共通処理（DOM除去とキャプチャフェーズのイベントリスナー解除を一括で行う）
+        const dismissDialog = () => {
+            document.removeEventListener('keydown', onKeyDown, true);
+            overlay.remove();
+        };
+
+        // 「閉じる」ボタン: 確認後にタブをクローズする
+        // Enter キーは closeButton にフォーカスが当たっているためブラウザ標準の click イベントで発火する
+        closeButton.addEventListener('click', () => {
+            dismissDialog();
+            this.performCloseTab(name);
+        });
+
+        // 「キャンセル」ボタン: ダイアログを閉じるだけ
+        cancelButton.addEventListener('click', () => {
+            dismissDialog();
+        });
+
+        // オーバーレイ背景クリック: キャンセルと同じ動作
+        overlay.addEventListener('click', (ev: MouseEvent) => {
+            if (ev.target === overlay) {
+                dismissDialog();
+            }
+        });
+
+        // キーボード操作: キャプチャフェーズで全キーを遮断し、グローバルショートカット（Ctrl+S, Ctrl+P 等）の貫通を防ぐ
+        // Escape のみダイアログ閉じとして処理する
+        // Enter は closeButton.focus() により click イベント経由で処理されるため、ここでは遮断のみ行う
+        const onKeyDown = (ev: KeyboardEvent) => {
+            if (ev.key === 'Escape') {
+                ev.preventDefault();
+                ev.stopPropagation();
+                dismissDialog();
+                return;
+            }
+            // Escape 以外の全キーイベントを遮断してグローバルショートカットの貫通を防ぐ
+            ev.preventDefault();
+            ev.stopPropagation();
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+
+        // 「閉じる」ボタンにフォーカスを当てて Enter で確認できるようにする
+        closeButton.focus();
     }
 
     findNextTabButton(name: string): TabButton | false {

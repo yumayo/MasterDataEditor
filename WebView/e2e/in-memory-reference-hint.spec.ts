@@ -492,6 +492,14 @@ test.describe(
                     .locator('.tab-button-close')
                     .click({ force: true });
 
+                // dirty状態のため確認ダイアログが表示される
+                // 「閉じる」を選択してタブを閉じる
+                await page.locator(
+                    '.close-confirm-overlay.visible'
+                ).locator(
+                    '.close-confirm-button-close'
+                ).click();
+
                 // 参照ヒントがCSV元データに戻る
                 await expect(hint)
                     .toHaveText('slime');
@@ -603,6 +611,14 @@ test.describe(
                 await childTab
                     .locator('.tab-button-close')
                     .click({ force: true });
+
+                // dirty状態のため確認ダイアログが表示される
+                // 「閉じる」を選択してタブを閉じる
+                await page.locator(
+                    '.close-confirm-overlay.visible'
+                ).locator(
+                    '.close-confirm-button-close'
+                ).click();
 
                 // 逆参照ヒントがCSV元データに戻る
                 await expect(hint)
