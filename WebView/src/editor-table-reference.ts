@@ -6,6 +6,7 @@ import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} 
 import {config} from "./config";
 import {sanitizeHtml} from "./html-sanitizer";
 
+
 /**
  * 参照ヒント管理モジュール
  *
@@ -69,7 +70,7 @@ export class EditorTableReference {
             // 参照列でなければ通常のテキストコンテンツを設定
             this.applyTextOrHtml(cell, value, column ? column.renderAsHtml : false);
             // PK列の場合は逆参照ヒントを再適用（全parentColumnNameの列値でエントリを収集）
-            if (column && column.name === config.primaryKeyColumnName) {
+            if (column && this.tableData.primaryKeyColumns.includes(column.name)) {
                 const allEntries: ReverseReferenceEntry[] = [];
                 for (const colName of this.getAllParentColumnNames()) {
                     const colDataIndex = this.tableData.header.findIndex(h => h.name === colName);
@@ -158,8 +159,8 @@ export class EditorTableReference {
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reverseReferenceMap = map;
         const tableElement = this.table.getTableElement();
-        // PK列のインデックスを取得（ヒントの表示先）
-        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === config.primaryKeyColumnName);
+        // PK列のインデックスを取得（ヒントの表示先は最初のPK列）
+        const pkColumnIndex = this.tableData.header.findIndex(col => col.name === this.tableData.primaryKeyColumns[0]);
         if (pkColumnIndex === -1) return;
         // 逆参照マップで使われている全 parentColumnName とそのデータ列インデックスを事前計算する
         const parentColumnIndices = new Map<string, number>();
@@ -242,7 +243,7 @@ export class EditorTableReference {
      */
     getRowPkValue(rowIndex: number): string {
         const pkColumnIndex = this.tableData.header.findIndex(
-            col => col.name === config.primaryKeyColumnName
+            col => col.name === this.tableData.primaryKeyColumns[0]
         );
         if (pkColumnIndex === -1) return '';
         return this.table.getCellValueAt(rowIndex, pkColumnIndex + 1);

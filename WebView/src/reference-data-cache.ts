@@ -2,6 +2,7 @@ import {readFileAsync, findFilesAsync} from "./api";
 import {config} from "./config";
 import {Csv} from "./csv";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {extractFirstPrimaryKeyColumn} from "./schema-utils";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {readReverseReferencePriority} from "./reverse-reference-resolver";
 
@@ -31,6 +32,8 @@ export interface ReferenceTableFullData {
     rows: Map<string, string[]>;    // id → 全カラム値
     displayColumnName: string;
     displayColumnIndex: number;
+    /** このテーブルのPK列名（スキーマの primary_key から取得） */
+    primaryKeyColumnName: string;
 }
 
 
@@ -188,8 +191,9 @@ export class ReferenceDataCache {
         // 表示列を決定する
         const displayColumnName = this.determineDisplayColumn(schema.header);
 
-        // 主キー列のインデックスを取得
-        const idColumnIndex = csv.header.indexOf(config.primaryKeyColumnName);
+        // 主キー列のインデックスを取得（スキーマの primary_key から決定）
+        const pkColumnName = extractFirstPrimaryKeyColumn(schema);
+        const idColumnIndex = csv.header.indexOf(pkColumnName);
         if (idColumnIndex === -1) {
             // id列がない場合は空のデータを返す
             return {
@@ -218,7 +222,7 @@ export class ReferenceDataCache {
 
         // id列のスキーマ定義に参照がある場合、参照先テーブルから表示テキストを再帰的に解決する
         const idColumnSchemaEntry = schema.header.find(
-            (h: {name: string; reference?: string}) => h.name === config.primaryKeyColumnName
+            (h: {name: string; reference?: string}) => h.name === pkColumnName
         );
         if (idColumnSchemaEntry && idColumnSchemaEntry.reference) {
             const refExpr = parseReferenceExpression(idColumnSchemaEntry.reference);
@@ -305,15 +309,20 @@ export class ReferenceDataCache {
                 }
 
                 // id列がこのテーブルを参照しているか
+                // 子テーブルのPK列名をスキーマから取得する
+                let childPkColumnName: string;
+                try {
+                    childPkColumnName = extractFirstPrimaryKeyColumn(childSchema);
+                } catch {
+                    continue;
+                }
                 const idEntry =
                     childSchema.header.find(
                         (h: {
                             name: string;
                             reference?: string;
                         }) =>
-                            h.name
-                            === config
-                                .primaryKeyColumnName
+                            h.name === childPkColumnName
                     );
                 if (!idEntry
                     || !idEntry.reference) {
@@ -509,7 +518,8 @@ export class ReferenceDataCache {
                 header: [],
                 rows: new Map(),
                 displayColumnName: '',
-                displayColumnIndex: -1
+                displayColumnIndex: -1,
+                primaryKeyColumnName: '',
             };
         }
 
@@ -523,7 +533,8 @@ export class ReferenceDataCache {
                 header: [],
                 rows: new Map(),
                 displayColumnName: '',
-                displayColumnIndex: -1
+                displayColumnIndex: -1,
+                primaryKeyColumnName: '',
             };
         }
 
@@ -535,7 +546,8 @@ export class ReferenceDataCache {
                 header: [],
                 rows: new Map(),
                 displayColumnName: '',
-                displayColumnIndex: -1
+                displayColumnIndex: -1,
+                primaryKeyColumnName: '',
             };
         }
 
@@ -554,7 +566,8 @@ export class ReferenceDataCache {
                     header: [],
                     rows: new Map(),
                     displayColumnName: '',
-                    displayColumnIndex: -1
+                    displayColumnIndex: -1,
+                    primaryKeyColumnName: '',
                 };
             }
 
@@ -566,8 +579,9 @@ export class ReferenceDataCache {
         const displayColumnName = this.determineDisplayColumn(schema.header);
         const displayColumnIndex = csv.header.indexOf(displayColumnName);
 
-        // 主キー列のインデックスを取得
-        const idColumnIndex = csv.header.indexOf(config.primaryKeyColumnName);
+        // 主キー列のインデックスを取得（スキーマの primary_key から決定）
+        const pkColumnName = extractFirstPrimaryKeyColumn(schema);
+        const idColumnIndex = csv.header.indexOf(pkColumnName);
 
         // 行データをMapに格納
         const rows = new Map<string, string[]>();
@@ -587,7 +601,8 @@ export class ReferenceDataCache {
             header: csv.header,
             rows,
             displayColumnName,
-            displayColumnIndex
+            displayColumnIndex,
+            primaryKeyColumnName: pkColumnName,
         };
     }
 
@@ -641,7 +656,7 @@ export class ReferenceDataCache {
         if (columnIndex === -1) return undefined;
 
         // 主キー列の場合はMap lookupで高速に検索
-        const idColumnIndex = fullData.header.indexOf(config.primaryKeyColumnName);
+        const idColumnIndex = fullData.header.indexOf(fullData.primaryKeyColumnName);
         if (columnIndex === idColumnIndex) {
             return fullData.rows.get(value);
         }

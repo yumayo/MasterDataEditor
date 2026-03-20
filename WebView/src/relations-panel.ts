@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {extractFirstPrimaryKeyColumn} from "./schema-utils";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
-import {config} from "./config";
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
 import {Tab} from "./tab";
@@ -502,8 +502,9 @@ export class RelationsPanel {
                 const { header, rows: allRows } = childTableData;
 
                 // 1:Nのフィルタリングは共通メソッドに委譲する
+                // 子テーブルのPK列名は ReverseReferenceEntry.childPkColumnName から取得（スキーマ再読み込み不要）
                 const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
-                    allRows, header, reverseEntry.childColumnName, columnValue, reverseEntry.rows,
+                    allRows, header, reverseEntry.childColumnName, columnValue, reverseEntry.rows, reverseEntry.childPkColumnName,
                 );
 
                 const fkColName = reverseEntry.childColumnName;
@@ -553,6 +554,7 @@ export class RelationsPanel {
      * - childColumnName が空でない場合: FK列値が filterValue と一致する行を収集する（単純参照）。
      * - childColumnName が空の場合: pkRows のPKセットで allRows を検索する（動的参照）。
      * - 対象列が見つからない場合は空配列を返す。
+     * childPkColumnName: 子テーブルのPK列名（動的参照でのフィルタリングに使用）
      */
     private filterRowsByReverseEntry(
         allRows: string[][],
@@ -560,6 +562,7 @@ export class RelationsPanel {
         childColumnName: string,
         filterValue: string,
         pkRows: ReverseReferenceRow[],
+        childPkColumnName: string,
     ): { filteredRows: string[][]; filteredStoreRowIndices: number[] } {
         if (childColumnName !== '') {
             // 単純参照: FK列値で直接フィルタ（常に最新のストアデータを反映する）
@@ -574,7 +577,8 @@ export class RelationsPanel {
             };
         }
         // 動的参照: FK列名が特定できないため reverseEntry.rows のPKセットでフィルタする
-        const pkColIdx = header.indexOf(config.primaryKeyColumnName);
+        // 子テーブルのPK列名はスキーマから取得した childPkColumnName を使用する
+        const pkColIdx = header.indexOf(childPkColumnName);
         if (pkColIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
         const pkSet = new Set(pkRows.map(r => r.pkValue));
         const filteredWithIndices = allRows
@@ -958,11 +962,12 @@ export class RelationsPanel {
             throw new Error(`resolveEntriesForTableRowAsync: registerTableAsync 成功後にストアデータが取得できない（tableName=${tableName}）`);
         }
 
-        // PK列でターゲット行を特定する。
+        // PK列でターゲット行を特定する。スキーマの primary_key から親テーブルのPK列名を取得する。
         // PK列が存在しないのはスキーマ定義の不整合であり実装バグ。
-        const pkColIdx = storeHeader.indexOf(config.primaryKeyColumnName);
+        const parentPkColumnName = extractFirstPrimaryKeyColumn(schemaJson);
+        const pkColIdx = storeHeader.indexOf(parentPkColumnName);
         if (pkColIdx === -1) {
-            throw new Error(`resolveEntriesForTableRowAsync: PK列が見つからない（tableName=${tableName}, pkColumn=${config.primaryKeyColumnName}）`);
+            throw new Error(`resolveEntriesForTableRowAsync: PK列が見つからない（tableName=${tableName}, pkColumn=${parentPkColumnName}）`);
         }
         const targetRowIdx = storeRows.findIndex(row => row[pkColIdx] === pkValue);
         // ターゲット行が見つからない場合は、ユーザーが行を削除した後にパンくずリストを
@@ -1013,23 +1018,25 @@ export class RelationsPanel {
 
         // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
         const resolver = new ReverseReferenceResolver(this.store);
-        const reverseMap = await resolver.resolveAsync(tableName);
+        const reverseMap = await resolver.resolveAsync(tableName, parentPkColumnName);
         if (requestId !== this.currentRequestId) return entries;
 
         // PK値で逆参照エントリを取得する
         const reverseEntriesForPk = reverseMap.get(pkValue);
         if (reverseEntriesForPk) {
             for (const reverseEntry of reverseEntriesForPk) {
-                // parentColumnName が PK列名と一致するエントリのみ処理する（非PK列参照の誤適用防止）
-                if (reverseEntry.parentColumnName !== config.primaryKeyColumnName) continue;
+                // parentColumnName が親テーブルのPK列名と一致するエントリのみ処理する（非PK列参照の誤適用防止）
+                if (reverseEntry.parentColumnName !== parentPkColumnName) continue;
 
+                // 子テーブルのデータを取得する
                 const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
                 if (requestId !== this.currentRequestId) return entries;
                 const { header: childHeader, rows: allRows } = childTableData;
 
                 // 1:Nのフィルタリングは共通メソッドに委譲する
+                // 子テーブルのPK列名は ReverseReferenceEntry.childPkColumnName から取得（スキーマ再読み込み不要）
                 const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
-                    allRows, childHeader, reverseEntry.childColumnName, pkValue, reverseEntry.rows,
+                    allRows, childHeader, reverseEntry.childColumnName, pkValue, reverseEntry.rows, reverseEntry.childPkColumnName,
                 );
 
                 entries.push({

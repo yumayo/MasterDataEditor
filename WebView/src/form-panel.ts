@@ -3,6 +3,7 @@ import {ReverseReferenceResolver} from "./reverse-reference-resolver";
 import {config} from "./config";
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
+import {extractFirstPrimaryKeyColumn} from "./schema-utils";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {Tab} from "./tab";
 
@@ -34,6 +35,8 @@ interface RefSectionData {
     fkColumnName: string;
     /** 参照種別 */
     relationType: 'N:1' | '1:N';
+    /** 参照先テーブルのPK列名（スキーマから取得） */
+    primaryKeyColumnName: string;
 }
 
 /**
@@ -157,14 +160,18 @@ export class FormPanel {
             const { header, rows } = await this.resolveTableDataAsync(page.tableName);
             if (requestId !== this.currentRequestId) return;
 
-            // PK列のインデックスを特定する
-            const pkColIdx = header.indexOf(config.primaryKeyColumnName);
+            // スキーマからPK列名を取得してPK列インデックスを特定する
+            // loadSchemaJsonAsync の呼び出しより先にスキーマが必要なため先行ロードする
+            const pageSchema = await this.loadSchemaJsonAsync(page.tableName);
+            if (requestId !== this.currentRequestId) return;
+            const pagePkColumnName = extractFirstPrimaryKeyColumn(pageSchema);
+            const pkColIdx = header.indexOf(pagePkColumnName);
             // 対象行をPK値で検索する
             const targetRow = rows.find(row => row[pkColIdx] !== undefined && row[pkColIdx] === page.pkValue);
             if (requestId !== this.currentRequestId) return;
 
             // 逆参照マップを取得する
-            const reverseMap = await this.reverseReferenceResolver.resolveAsync(page.tableName);
+            const reverseMap = await this.reverseReferenceResolver.resolveAsync(page.tableName, pagePkColumnName);
             if (requestId !== this.currentRequestId) return;
 
             // コンテンツを構築する
@@ -211,11 +218,8 @@ export class FormPanel {
             }
             content.appendChild(fieldsContainer);
 
-            // FK参照先セクション（N:1）を構築する
-            const schemaJson = await this.loadSchemaJsonAsync(page.tableName);
-            if (requestId !== this.currentRequestId) return;
-
-            const fkSections = this.buildFkSections(header, targetRow, schemaJson);
+            // FK参照先セクション（N:1）を構築する（pageSchemaを再利用）
+            const fkSections = this.buildFkSections(header, targetRow, pageSchema);
             for (const section of fkSections) {
                 const sectionEl = this.buildRefSection(section, this.navStack.length - 1);
                 content.appendChild(sectionEl);
@@ -227,13 +231,17 @@ export class FormPanel {
             // priority でソートして優先度の高いものを先に表示する
             const sortedEntries = [...reverseEntries].sort((a, b) => a.priority - b.priority);
             for (const entry of sortedEntries) {
-                // 逆参照の行をストア優先で取得する
-                const childData = await this.resolveTableDataAsync(entry.childTableName);
+                // 逆参照の行とスキーマをストア優先で取得する
+                const [childData, childSchema] = await Promise.all([
+                    this.resolveTableDataAsync(entry.childTableName),
+                    this.loadSchemaJsonAsync(entry.childTableName),
+                ]);
                 if (requestId !== this.currentRequestId) return;
                 const fkColIdx = childData.header.indexOf(entry.childColumnName);
                 const filteredRows = fkColIdx === -1
                     ? []
                     : childData.rows.filter(row => row[fkColIdx] === pkValue);
+                const childPkColumnName = extractFirstPrimaryKeyColumn(childSchema);
                 const section: RefSectionData = {
                     title: `← ${entry.childTableName}（${entry.childColumnName}）`,
                     tableKey: entry.childTableName,
@@ -241,6 +249,7 @@ export class FormPanel {
                     rows: filteredRows,
                     fkColumnName: entry.childColumnName,
                     relationType: '1:N',
+                    primaryKeyColumnName: childPkColumnName,
                 };
                 const sectionEl = this.buildRefSection(section, this.navStack.length - 1);
                 content.appendChild(sectionEl);
@@ -324,8 +333,7 @@ export class FormPanel {
      * FK参照先セクション（N:1）のデータを構築する
      * スキーマのreference定義から単純参照のみ対応する（動的参照は省略）
      */
-    private buildFkSections(header: string[], row: string[], schemaJson: SchemaJson | null): RefSectionData[] {
-        if (schemaJson === null) return [];
+    private buildFkSections(header: string[], row: string[], schemaJson: SchemaJson): RefSectionData[] {
         const sections: RefSectionData[] = [];
         for (let i = 0; i < header.length; i++) {
             const colName = header[i];
@@ -337,6 +345,7 @@ export class FormPanel {
             const expr = parseReferenceExpression(colDef.reference);
             if (!isSimpleReference(expr)) continue;
             // FK参照先テーブルのデータをストアから取得する（非同期は構築時には行えないため後続でロードする）
+            // primaryKeyColumnName は loadFkSectionDataAsync で非同期取得するため空文字列をプレースホルダーとする
             sections.push({
                 title: `→ ${expr.tableName}（${colName}）`,
                 tableKey: expr.tableName,
@@ -344,6 +353,7 @@ export class FormPanel {
                 rows: [],
                 fkColumnName: colName,
                 relationType: 'N:1',
+                primaryKeyColumnName: '',
             });
         }
         return sections;
@@ -417,7 +427,7 @@ export class FormPanel {
             empty.textContent = '参照なし';
             body.appendChild(empty);
         } else {
-            const pkColIdx = section.header.indexOf(config.primaryKeyColumnName);
+            const pkColIdx = section.primaryKeyColumnName !== '' ? section.header.indexOf(section.primaryKeyColumnName) : -1;
             const displayColIdx = this.findDisplayColumnIndex(section.header);
             for (const refRow of section.rows) {
                 const refPkValue = pkColIdx !== -1 ? (refRow[pkColIdx] ?? '') : '';
@@ -462,22 +472,30 @@ export class FormPanel {
 
         // FK値は現在ページのソーステーブルから section.fkColumnName で取得する
         const currentPage = this.navStack[this.navStack.length - 1];
-        const { header: srcHeader, rows: srcRows } = await this.resolveTableDataAsync(currentPage.tableName);
+        const [srcData, srcSchema] = await Promise.all([
+            this.resolveTableDataAsync(currentPage.tableName),
+            this.loadSchemaJsonAsync(currentPage.tableName),
+        ]);
         if (requestId !== this.currentRequestId) return;
-        const pkColIdx = srcHeader.indexOf(config.primaryKeyColumnName);
-        const srcRow = srcRows.find(row => row[pkColIdx] !== undefined && row[pkColIdx] === currentPage.pkValue);
+        const srcPkColumnName = extractFirstPrimaryKeyColumn(srcSchema);
+        const pkColIdx = srcData.header.indexOf(srcPkColumnName);
+        const srcRow = srcData.rows.find(row => row[pkColIdx] !== undefined && row[pkColIdx] === currentPage.pkValue);
         if (srcRow === undefined) return;
-        const fkColIdx = srcHeader.indexOf(section.fkColumnName);
+        const fkColIdx = srcData.header.indexOf(section.fkColumnName);
         if (fkColIdx === -1) return;
-        const fkValue = srcRow[fkColIdx] ?? '';
-        if (fkValue === '') return;
+        const fkValue = srcRow[fkColIdx];
+        if (fkValue === '' || fkValue === undefined) return;
 
-        // FK参照先テーブルのデータを取得し、PK列がfkValueと一致する行を検索する
-        const { header: targetHeader, rows: targetRows } = await this.resolveTableDataAsync(section.tableKey);
+        // FK参照先テーブルのデータとスキーマを取得し、PK列がfkValueと一致する行を検索する
+        const [targetData, targetSchema] = await Promise.all([
+            this.resolveTableDataAsync(section.tableKey),
+            this.loadSchemaJsonAsync(section.tableKey),
+        ]);
         if (requestId !== this.currentRequestId) return;
-        const targetPkColIdx = targetHeader.indexOf(config.primaryKeyColumnName);
+        const targetPkColumnName = extractFirstPrimaryKeyColumn(targetSchema);
+        const targetPkColIdx = targetData.header.indexOf(targetPkColumnName);
         const matchedRows = targetPkColIdx !== -1
-            ? targetRows.filter(row => row[targetPkColIdx] === fkValue)
+            ? targetData.rows.filter(row => row[targetPkColIdx] === fkValue)
             : [];
 
         // badge とbodyを更新する
@@ -492,7 +510,7 @@ export class FormPanel {
             return;
         }
 
-        const displayColIdx = this.findDisplayColumnIndex(targetHeader);
+        const displayColIdx = this.findDisplayColumnIndex(targetData.header);
         for (const refRow of matchedRows) {
             const refPkValue = targetPkColIdx !== -1 ? (refRow[targetPkColIdx] ?? '') : '';
             const displayValue = displayColIdx !== -1 ? (refRow[displayColIdx] ?? '') : '';
@@ -528,16 +546,12 @@ export class FormPanel {
     }
 
     /**
-     * スキーマJSONをロードする（FK参照定義の取得に使用）
-     * ロードに失敗した場合は null を返す
+     * スキーマJSONをロードする（FK参照定義・PK列名の取得に使用）
+     * ロードに失敗した場合は例外を伝播させる
      */
-    private async loadSchemaJsonAsync(tableName: string): Promise<SchemaJson | null> {
-        try {
-            const text = await readFileAsync(`schema/${tableName}.json`);
-            return JSON.parse(text) as SchemaJson;
-        } catch {
-            return null;
-        }
+    private async loadSchemaJsonAsync(tableName: string): Promise<SchemaJson> {
+        const text = await readFileAsync(`schema/${tableName}.json`);
+        return JSON.parse(text) as SchemaJson;
     }
 }
 
@@ -547,4 +561,5 @@ export class FormPanel {
  */
 interface SchemaJson {
     header: Array<{ name: string; reference?: string }>;
+    primary_key: string | string[];
 }

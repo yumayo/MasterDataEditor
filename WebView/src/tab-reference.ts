@@ -45,7 +45,8 @@ export class TabReference {
      */
     resolveReverseReferencesAsync(tableName: string, editorTable: EditorTable): void {
         const resolver = new ReverseReferenceResolver(this.store);
-        resolver.resolveAsync(tableName).then(reverseMap => {
+        const parentPkColumnName = editorTable.getTableData().primaryKeyColumns[0];
+        resolver.resolveAsync(tableName, parentPkColumnName).then(reverseMap => {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {
             console.warn('Failed to resolve reverse references:', error);

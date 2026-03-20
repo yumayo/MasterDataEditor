@@ -339,10 +339,11 @@ export class SearchPanel {
             if (displayColIndex !== -1) break;
         }
         if (displayColIndex === -1) return '';
-        // PKColumnを特定
+        // PKColumnを特定（テーブルスキーマのprimaryKeyColumnsから最初のPK列名を使用）
+        const pkColumnName = editorTable.getTableData().primaryKeyColumns[0];
         let pkColIndex = -1;
         for (let c = 0; c < columnCount; c++) {
-            if (editorTable.getColumnHeaderValue(c) === config.primaryKeyColumnName) {
+            if (editorTable.getColumnHeaderValue(c) === pkColumnName) {
                 pkColIndex = c;
                 break;
             }

@@ -1,7 +1,7 @@
 import {readFileAsync, findFilesAsync} from "./api";
 import {Csv} from "./csv";
 import {EditorTable} from "./editor-table";
-import {config} from "./config";
+import {extractFirstPrimaryKeyColumn} from "./schema-utils";
 
 /**
  * テーブル1つ分のスキーマ+データ
@@ -112,7 +112,8 @@ export class SearchDataProvider {
             header,
             csvHeader,
             csvBody,
-            primaryKeyColumnName: config.primaryKeyColumnName,
+            // テーブルスキーマのprimaryKeyColumnsから最初のPK列名を使用する
+            primaryKeyColumnName: tableData.primaryKeyColumns[0],
         };
     }
 
@@ -135,12 +136,14 @@ export class SearchDataProvider {
                 reference: col.reference ? col.reference : '',
             });
         }
+        // スキーマの primary_key から最初のPK列名を取得する
+        const primaryKeyColumnName = extractFirstPrimaryKeyColumn(schema);
         return {
             tableName,
             header,
             csvHeader: csv.header,
             csvBody: csv.body,
-            primaryKeyColumnName: config.primaryKeyColumnName,
+            primaryKeyColumnName,
         };
     }
 }

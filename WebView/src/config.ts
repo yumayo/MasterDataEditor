@@ -11,11 +11,6 @@ export interface Config {
     referenceDisplayColumnPriority: string[];
 
     /**
-     * 主キー列の列名
-     */
-    primaryKeyColumnName: string;
-
-    /**
      * ソート等で使用するロケール
      */
     locale: string;

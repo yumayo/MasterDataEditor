@@ -23,7 +23,6 @@ import {
     saveDiffTableDataFromStoreAsync,
     getTarget
 } from "./editor-actions";
-import {config} from "./config";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 
 /**
@@ -1100,11 +1099,11 @@ export class EditorTableHandler {
             const columnIndex = focus.column - 1;
             if (columnIndex >= 0
                 && columnIndex < this.tableData.header.length
-                && this.tableData.header[columnIndex].name === config.primaryKeyColumnName
+                && this.tableData.primaryKeyColumns.includes(this.tableData.header[columnIndex].name)
                 && this.table.hasReverseReferences()) {
                 resolvedReference = {
                     tableName: this.table.tableName,
-                    columnName: config.primaryKeyColumnName,
+                    columnName: this.tableData.header[columnIndex].name,
                 };
             }
         }
