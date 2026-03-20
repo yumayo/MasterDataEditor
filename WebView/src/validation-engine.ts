@@ -21,6 +21,12 @@ export interface ValidationError {
     kind: ValidationErrorKind;
     /** エラーメッセージ */
     message: string;
+    /**
+     * 動的参照エラーの場合、エラー生成時の依存カラム値（filterValue）。
+     * preservableErrors の引き継ぎ判定で、依存カラムが変更されたかを検出するために使用する。
+     * 単純参照・PK重複エラーでは null。
+     */
+    filterValue: string | null;
 }
 
 /**
@@ -75,7 +81,8 @@ export class ValidationEngine {
      */
     validatePkDuplicatesForTable(tableName: string): ValidationError[] {
         if (!this.schemas.has(tableName)) return [];
-        const schema = this.schemas.get(tableName)!;
+        const schema = this.schemas.get(tableName);
+        if (schema === undefined) return [];
         const header = this.store.getHeader(tableName);
         const rows = this.store.getRows(tableName);
         if (header === false || rows === false) return [];
@@ -156,6 +163,7 @@ export class ValidationEngine {
                         value: row[colIdx],
                         kind: 'pk-duplicate',
                         message: `主キー値 "${row[colIdx]}" が重複しています`,
+                        filterValue: null,
                     });
                 }
             }
@@ -250,6 +258,7 @@ export class ValidationEngine {
                     value: cellValue,
                     kind: 'fk-broken',
                     message: `参照先 ${refTableName}.${refColumnName} に値 "${cellValue}" が存在しません`,
+                    filterValue: null,
                 });
             }
         }
@@ -328,13 +337,15 @@ export class ValidationEngine {
                     value: cellValue,
                     kind: 'fk-broken',
                     message: `参照元カラム ${expr.filter.valueColumn} が空のため、参照先を解決できません`,
+                    filterValue,
                 });
                 continue;
             }
 
             // フィルタテーブルが未取得の場合: filterValue が非空のこの行は検証不能
+            // filterValue も一致する前回エラーのみ引き継ぐ（依存カラム変更時は引き継がない）
             if (filterRows === null) {
-                const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue);
+                const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue && e.filterValue === filterValue);
                 if (prev) preservableErrors.push(prev);
                 continue;
             }
@@ -351,6 +362,7 @@ export class ValidationEngine {
                     value: cellValue,
                     kind: 'fk-broken',
                     message: `フィルタテーブル ${expr.filter.tableName} に ${expr.filter.filterColumn}="${filterValue}" の行が存在しないため、参照先を解決できません`,
+                    filterValue,
                 });
                 continue;
             }
@@ -401,9 +413,10 @@ export class ValidationEngine {
             }
 
             const validValues = targetValidValuesCache.get(targetTableName);
-            if (validValues === null || validValues === undefined) {
-                // 未解決テーブル: 現在値一致チェックで前回エラーを引き継ぐ
-                const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue);
+            if (validValues === null) {
+                // 未解決テーブル: 現在値と filterValue の両方が一致する前回エラーのみ引き継ぐ
+                // filterValue が変わっていれば参照先テーブルが切り替わったので古いエラーは引き継がない
+                const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue && e.filterValue === filterValue);
                 if (prev) preservableErrors.push(prev);
                 continue;
             }
@@ -417,6 +430,7 @@ export class ValidationEngine {
                     value: cellValue,
                     kind: 'fk-broken',
                     message: `参照先 ${targetTableName}.${expr.targetColumn} に値 "${cellValue}" が存在しません`,
+                    filterValue,
                 });
             }
         }

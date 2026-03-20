@@ -89,6 +89,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
             "id,name",
             "1,ポーション",
             "2,エリクサー",
+            "5,尖ったかま",
         ].join("\n"),
         "schema/quest.json": JSON.stringify({
             header: [
@@ -236,6 +237,205 @@ test.describe('動的参照バリデーション: 依存カラムが空の場合
             // cell-error が付与されるべき
             // 現在の不具合: filterValue === '' のとき無条件スキップされてエラーが出ない
             await expect(rewardRecordIdCell).toHaveClass(/cell-error/);
+        },
+    );
+});
+
+// =============================================================================
+// シナリオ3: ドロップダウン（マウスクリック）で reward_table_id を変更した後、
+// reward_record_id にエラーが付与される
+//
+// キーボード入力ではなくドロップダウンのマウスクリックで値を変更した場合に
+// バリデーションが正しく実行されるかを検証する。
+// =============================================================================
+
+test.describe('動的参照バリデーション: ドロップダウン選択後のエラー検出', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createDynamicRefValidationFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'ドロップダウンで reward_table_id を変更した後、reward_record_id に存在しない値があれば cell-error が付与される',
+        async ({ page }) => {
+            // quest テーブルを開く
+            const questTable = await openTableAsync(page, 'quest');
+
+            // quest id=2（row index 1）の reward_record_id を "99"（どのテーブルにも存在しない値）に変更
+            await editCellAsync(questTable, page, 1, 2, '99');
+
+            // reward_table_id のセルをダブルクリックしてドロップダウンを開く
+            const rewardTableIdCell = getDataCell(questTable, 1, 1);
+            await rewardTableIdCell.dblclick();
+
+            // ドロップダウンリストが表示されるまで待機
+            const dropdownList = page.locator('.editor-left-pane .grid-dropdown-list');
+            await expect(dropdownList).toBeVisible();
+
+            // "1"（chara）のアイテムをマウスクリックで選択
+            // ドロップダウンアイテムの .grid-dropdown-item-id に "1" が含まれるものをクリック
+            const charaItem = dropdownList.locator('.grid-dropdown-item').filter({
+                has: page.locator('.grid-dropdown-item-id', { hasText: '1' }),
+            });
+            await charaItem.click();
+
+            // reward_record_id=99 は chara.id に存在しないため cell-error が付与されるべき
+            const rewardRecordIdCell = getDataCell(questTable, 1, 2);
+            await expect(rewardRecordIdCell).toHaveClass(/cell-error/);
+        },
+    );
+});
+
+// =============================================================================
+// シナリオ4: Undo で reward_table_id を元に戻した後、reward_record_id の
+// バリデーションが正しく更新される
+//
+// reward_table_id を "1"（chara）に変更 → chara.id=1 が存在するため
+// reward_record_id=1 はエラーにならない。
+// Ctrl+Z で Undo → reward_table_id が "2"（item）に戻る → item.id=1 も存在するため
+// reward_record_id=1 は引き続きエラーにならないことを検証する。
+// =============================================================================
+
+test.describe('動的参照バリデーション: Undo後のバリデーション更新', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createDynamicRefValidationFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'Undo で reward_table_id を元に戻した後、reward_record_id のバリデーションが正しく更新される',
+        async ({ page }) => {
+            // quest テーブルを開く
+            const questTable = await openTableAsync(page, 'quest');
+
+            // 初期状態: quest id=2（row index 1）
+            // reward_table_id=2（item）, reward_record_id=1（ポーション）→ エラーなし
+            const rewardRecordIdCell = getDataCell(questTable, 1, 2);
+            await expect(rewardRecordIdCell).not.toHaveClass(/cell-error/);
+
+            // reward_table_id を "1"（chara）に変更
+            // chara.id=1（うーぱー）が存在するため reward_record_id=1 はエラーにならないはず
+            await editCellAsync(questTable, page, 1, 1, '1');
+            await expect(rewardRecordIdCell).not.toHaveClass(/cell-error/);
+
+            // Ctrl+Z で Undo → reward_table_id が "2"（item）に戻る
+            // item.id=1（ポーション）が存在するため reward_record_id=1 は引き続きエラーにならないはず
+            await page.keyboard.press('Control+z');
+            await expect(rewardRecordIdCell).not.toHaveClass(/cell-error/);
+        },
+    );
+});
+
+// =============================================================================
+// シナリオ5: ドロップダウンで reward_table_id を変更後、Undo で元に戻すと
+// バリデーション結果が正しく維持される
+//
+// 1. reward_record_id を "99" に変更（item.id=99 は存在しないためエラー）
+// 2. ドロップダウンで reward_table_id を "1"（chara）に変更
+//    → chara.id=99 も存在しないため cell-error が付与されるべき
+// 3. Ctrl+Z で Undo → reward_table_id が "2"（item）に戻る
+//    → item.id=99 も存在しないため cell-error は残るべき
+// =============================================================================
+
+test.describe('動的参照バリデーション: ドロップダウン変更後のUndo', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createDynamicRefValidationFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'ドロップダウンで reward_table_id を変更後、Undo で元に戻してもバリデーション結果が正しく維持される',
+        async ({ page }) => {
+            // quest テーブルを開く
+            const questTable = await openTableAsync(page, 'quest');
+
+            // quest id=2（row index 1）の reward_record_id を "99" に変更
+            await editCellAsync(questTable, page, 1, 2, '99');
+
+            // reward_table_id のセルをダブルクリックしてドロップダウンを開く
+            const rewardTableIdCell = getDataCell(questTable, 1, 1);
+            await rewardTableIdCell.dblclick();
+
+            // ドロップダウンリストが表示されるまで待機
+            const dropdownList = page.locator('.editor-left-pane .grid-dropdown-list');
+            await expect(dropdownList).toBeVisible();
+
+            // "1"（chara）のアイテムをマウスクリックで選択
+            const charaItem = dropdownList.locator('.grid-dropdown-item').filter({
+                has: page.locator('.grid-dropdown-item-id', { hasText: '1' }),
+            });
+            await charaItem.click();
+
+            // reward_record_id=99 は chara.id に存在しないため cell-error が付与されるべき
+            const rewardRecordIdCell = getDataCell(questTable, 1, 2);
+            await expect(rewardRecordIdCell).toHaveClass(/cell-error/);
+
+            // Ctrl+Z で Undo → reward_table_id が "2"（item）に戻る
+            // item.id=99 も存在しないため cell-error は残るべき
+            await page.keyboard.press('Control+z');
+            await expect(rewardRecordIdCell).toHaveClass(/cell-error/);
+        },
+    );
+});
+
+// =============================================================================
+// シナリオ6: record_id を手入力後、ドロップダウンで table_id を変更すると
+// 参照先が切り替わりエラーが解消される
+//
+// ユーザー報告の再現手順:
+//   1. quest テーブルを開く
+//   2. quest id=1 の reward_record_id に "5" を手入力する
+//      → chara.id=5 は存在しないためエラーになる
+//   3. reward_table_id をドロップダウンで "2"（item）に変更する
+//      → item.id=5（尖ったかま）が存在するため、エラーが解消されるべき
+//   4. 実際の不具合: エラーメッセージが「chara.id に値 5 が存在しません」のまま残る
+//      → preservableErrors で前回のエラーが filterValue の変更を考慮せず引き継がれてしまう
+// =============================================================================
+
+test.describe('動的参照バリデーション: table_id変更で参照先が切り替わりエラーが解消される', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createDynamicRefValidationFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'record_id を手入力後、ドロップダウンで table_id を変更すると参照先が切り替わりエラーが解消される',
+        async ({ page }) => {
+            // quest テーブルを開く
+            const questTable = await openTableAsync(page, 'quest');
+
+            // 初期状態: quest id=1（row index 0）
+            // reward_table_id=1（chara）, reward_record_id=3（まんぼう）→ エラーなし
+            const rewardRecordIdCell = getDataCell(questTable, 0, 2);
+            await expect(rewardRecordIdCell).not.toHaveClass(/cell-error/);
+
+            // reward_record_id を "5" に変更する
+            // chara.id=5 は存在しないためエラーになるべき
+            await editCellAsync(questTable, page, 0, 2, '5');
+            await expect(rewardRecordIdCell).toHaveClass(/cell-error/);
+
+            // reward_table_id をドロップダウンで "2"（item）に変更する
+            const rewardTableIdCell = getDataCell(questTable, 0, 1);
+            await rewardTableIdCell.dblclick();
+
+            // ドロップダウンリストが表示されるまで待機
+            const dropdownList = page.locator('.editor-left-pane .grid-dropdown-list');
+            await expect(dropdownList).toBeVisible();
+
+            // "2"（item）のアイテムをマウスクリックで選択
+            const itemEntry = dropdownList.locator('.grid-dropdown-item').filter({
+                has: page.locator('.grid-dropdown-item-id', { hasText: '2' }),
+            });
+            await itemEntry.click();
+
+            // item.id=5（尖ったかま）が存在するため、reward_record_id=5 のエラーが解消されるべき
+            // 不具合: preservableErrors で前回のエラー（chara.id 向け）が
+            // filterValue（table_id）の変更を考慮せず引き継がれてしまう
+            await expect(rewardRecordIdCell).not.toHaveClass(/cell-error/);
         },
     );
 });

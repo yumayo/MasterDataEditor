@@ -94,9 +94,14 @@ export class TabReference {
                     });
                 }
                 // 参照先テーブルをプリロード（存在しないテーブルの失敗は無視する）
+                // get() に加えて getFullDataAsync() でもプリロードする。
+                // ValidationEngine.validateDynamicReference() が getFullDataSync() で
+                // fullDataCache を参照するため、通常キャッシュだけではバリデーション時に
+                // ターゲットテーブルが見つからず preservableErrors にフォールバックしてしまう。
                 const targetPromises: Promise<unknown>[] = [];
                 targetTableNames.forEach(targetName => {
                     targetPromises.push(this.referenceDataCache.get(targetName).catch(() => {}));
+                    targetPromises.push(this.referenceDataCache.getFullDataAsync(targetName).catch(() => {}));
                 });
                 return Promise.all(targetPromises);
             });
