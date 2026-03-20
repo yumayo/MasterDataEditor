@@ -601,3 +601,118 @@ test.describe('テストケース13: FK参照先テーブルを閉じた状態�
         },
     );
 });
+
+// =============================================================================
+// テストケース14: DynamicReference（動的参照）のFK参照切れがバリデーションパネルに表示される
+// =============================================================================
+
+/**
+ * DynamicReference（動的参照）バリデーションテスト用のファイルシステムを生成する
+ *
+ * table テーブル: id=1(chara), id=2(item) — master列にテーブル名
+ * item テーブル: id=1,2,3 の3件
+ * shop_product テーブル: table_id=2（item参照）, record_id=999（存在しない）でFKエラーを発生させる
+ *
+ * DynamicReference: "$(table.id == $table_id).master.id"
+ *   - 同一行のtable_id値でtableテーブルをフィルタ（table.id == table_id）
+ *   - 一致行のmaster列の値（= テーブル名）を取得
+ *   - そのテーブルのid列にrecord_idが存在するか検証
+ */
+function createDynamicRefFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "enum", type: "string" },
+                { key: 2, name: "comment", type: "string" },
+                { key: 3, name: "master", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/table.csv": [
+            "id,enum,comment,master",
+            "1,chara,キャラ,chara",
+            "2,item,アイテム,item",
+        ].join("\n"),
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: "id",
+        }),
+        "data/item.csv": [
+            "id,name",
+            "1,sword",
+            "2,shield",
+            "3,potion",
+        ].join("\n"),
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "table_id", type: "int", reference: "table.id" },
+                { key: 2, name: "record_id", type: "int", reference: "$(table.id == $table_id).master.id" },
+                { key: 3, name: "price", type: "int" },
+            ],
+            primary_key: "id",
+        }),
+        "data/shop_product.csv": [
+            "id,table_id,record_id,price",
+            "1,2,1,100",
+            "2,2,2,200",
+        ].join("\n"),
+    };
+}
+
+test.describe('テストケース14: DynamicReference（動的参照）のFK参照切れがバリデーションパネルに表示される', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createDynamicRefFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '動的参照列（record_id）に存在しない値を入力すると、バリデーションパネルにFKエラーが表示される',
+        async ({ page }) => {
+            // table と item テーブルを開いてストアにロードする
+            await openTableAsync(page, 'table');
+            await openTableAsync(page, 'item');
+            const shopProductTable = await openTableAsync(page, 'shop_product');
+
+            // 初期状態: FK参照エラーがないことを確認する
+            await expect(getValidationPanelItems(page)).toHaveCount(0);
+
+            // item.id に存在しない値 "999" を record_id 列（colIndex=2）に入力する
+            // table_id=2（item）の行なので、item.id=999 が存在するか検証される
+            await editCellAsync(shopProductTable, page, 0, 2, '999');
+
+            // バリデーションパネルに shop_product テーブルのFK参照切れエラーが表示される
+            const items = getValidationPanelItems(page);
+            await expect(items).not.toHaveCount(0);
+
+            const fkErrorItem = page.locator('.validation-panel .validation-panel-item').filter({
+                hasText: 'shop_product',
+            });
+            await expect(fkErrorItem.first()).toBeVisible();
+        },
+    );
+
+    test(
+        '動的参照列（record_id）を有効な値に修正すると、バリデーションパネルのFKエラーが消える',
+        async ({ page }) => {
+            // table と item テーブルを開いてストアにロードする
+            await openTableAsync(page, 'table');
+            await openTableAsync(page, 'item');
+            const shopProductTable = await openTableAsync(page, 'shop_product');
+
+            // FKエラーを発生させる
+            await editCellAsync(shopProductTable, page, 0, 2, '999');
+            await expect(getValidationPanelItems(page)).not.toHaveCount(0);
+
+            // 有効な値（item.id=3 が存在する）に修正する
+            await editCellAsync(shopProductTable, page, 0, 2, '3');
+
+            // パネルからエラーが消えることを確認する
+            await expect(getValidationPanelItems(page)).toHaveCount(0);
+        },
+    );
+});

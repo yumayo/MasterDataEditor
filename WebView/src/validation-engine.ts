@@ -1,5 +1,5 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 
 /** バリデーションエラーの種別 */
 export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken';
@@ -170,43 +170,165 @@ export class ValidationEngine {
         for (const col of schema.columns) {
             if (col.reference === null) continue;
             const expr = parseReferenceExpression(col.reference);
-            // 動的参照はバリデーション対象外（解決コストが高く、スキーマ設計上も複雑すぎる）
-            if (!isSimpleReference(expr)) continue;
             const colIdx = header.indexOf(col.name);
             if (colIdx === -1) continue;
-            // 参照先テーブルの値セットを構築する
-            const refHeader = this.store.getHeader(expr.tableName);
-            const refRows = this.store.getRows(expr.tableName);
-            // 参照先テーブルがストアに存在しない場合: スキップしてその旨を記録する（前回エラーを引き継ぐ）
-            if (refHeader === false || refRows === false) {
-                skippedFkColumns.push({ tableName, columnName: col.name });
-                continue;
+            if (isSimpleReference(expr)) {
+                this.validateSimpleReference(tableName, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, skippedFkColumns);
+            } else if (isDynamicReference(expr)) {
+                this.validateDynamicReference(tableName, col.name, colIdx, expr, header, rows, errors, skippedFkColumns);
             }
-            const refColIdx = refHeader.indexOf(expr.columnName);
-            if (refColIdx === -1) continue;
-            // 参照先の有効値セットを構築する
-            const validValues = new Set<string>();
-            for (const refRow of refRows) {
-                const val = refRow[refColIdx];
-                if (val !== '') validValues.add(val);
+        }
+    }
+
+    /**
+     * 単純参照（SimpleReference）のFK検証。
+     * 参照先テーブルの指定列に値が存在しないセルをエラーとして登録する。
+     * 参照先テーブルが未ロードの場合は skippedFkColumns に追加してスキップする。
+     */
+    private validateSimpleReference(
+        tableName: string,
+        colName: string,
+        colIdx: number,
+        refTableName: string,
+        refColumnName: string,
+        rows: string[][],
+        errors: ValidationError[],
+        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
+    ): void {
+        // 参照先テーブルの値セットを構築する
+        const refHeader = this.store.getHeader(refTableName);
+        const refRows = this.store.getRows(refTableName);
+        // 参照先テーブルがストアに存在しない場合: スキップしてその旨を記録する（前回エラーを引き継ぐ）
+        if (refHeader === false || refRows === false) {
+            skippedFkColumns.push({ tableName, columnName: colName });
+            return;
+        }
+        const refColIdx = refHeader.indexOf(refColumnName);
+        if (refColIdx === -1) return;
+        // 参照先の有効値セットを構築する
+        const validValues = new Set<string>();
+        for (const refRow of refRows) {
+            const val = refRow[refColIdx];
+            if (val !== '') validValues.add(val);
+        }
+        // 各行のFK値が参照先に存在するか検証する
+        for (let r = 0; r < rows.length; r++) {
+            const cellValue = rows[r][colIdx];
+            // 空値は未入力扱いでエラー対象外
+            if (cellValue === '') continue;
+            if (!validValues.has(cellValue)) {
+                errors.push({
+                    tableName,
+                    rowIndex: r,
+                    columnIndex: colIdx,
+                    columnName: colName,
+                    value: cellValue,
+                    kind: 'fk-broken',
+                    message: `参照先 ${refTableName}.${refColumnName} に値 "${cellValue}" が存在しません`,
+                });
             }
-            // 各行のFK値が参照先に存在するか検証する
-            for (let r = 0; r < rows.length; r++) {
-                const cellValue = rows[r][colIdx];
-                // 空値は未入力扱いでエラー対象外
-                if (cellValue === '') continue;
-                if (!validValues.has(cellValue)) {
-                    errors.push({
-                        tableName,
-                        rowIndex: r,
-                        columnIndex: colIdx,
-                        columnName: col.name,
-                        value: cellValue,
-                        kind: 'fk-broken',
-                        message: `参照先 ${expr.tableName}.${expr.columnName} に値 "${cellValue}" が存在しません`,
-                    });
+        }
+    }
+
+    /**
+     * 動的参照（DynamicReference）のFK検証。
+     * 各行ごとに以下の手順で参照先テーブルと有効値を動的に解決する：
+     *   1. 同一行の filter.valueColumn 値を取得（空なら未入力としてスキップ）
+     *   2. filter.tableName テーブルで filter.filterColumn == その値 の行を線形検索
+     *   3. 一致行の lookupColumn 値（= 参照先テーブル名）を取得
+     *   4. そのテーブルの targetColumn に cellValue が存在するか検証
+     * フィルタテーブルまたは最終テーブルが未ロードの場合は skippedFkColumns に追加する。
+     */
+    private validateDynamicReference(
+        tableName: string,
+        colName: string,
+        colIdx: number,
+        expr: DynamicReference,
+        header: string[],
+        rows: string[][],
+        errors: ValidationError[],
+        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
+    ): void {
+        // フィルタテーブルがストアに存在するか先に確認する
+        const filterHeader = this.store.getHeader(expr.filter.tableName);
+        const filterRows = this.store.getRows(expr.filter.tableName);
+        if (filterHeader === false || filterRows === false) {
+            // フィルタテーブル未ロードは全行スキップ相当なのでskipとして記録する
+            skippedFkColumns.push({ tableName, columnName: colName });
+            return;
+        }
+        const filterColIdx = filterHeader.indexOf(expr.filter.filterColumn);
+        const lookupColIdx = filterHeader.indexOf(expr.lookupColumn);
+        // フィルタ列またはlookup列がフィルタテーブルに存在しなければ検証不能
+        if (filterColIdx === -1 || lookupColIdx === -1) return;
+        const valueColIdx = header.indexOf(expr.filter.valueColumn);
+        // valueColumn が同一テーブルのヘッダーに存在しなければ検証不能
+        if (valueColIdx === -1) return;
+
+        // 最終テーブルのキャッシュ（同一テーブルへの複数行チェックを効率化）
+        const targetValidValuesCache = new Map<string, Set<string> | null>();
+        let hasSkippedRow = false;
+
+        for (let r = 0; r < rows.length; r++) {
+            const cellValue = rows[r][colIdx];
+            // 空値は未入力扱いでエラー対象外
+            if (cellValue === '') continue;
+            const filterValue = rows[r][valueColIdx];
+            // 同一行のvalueColumnが空の場合は未入力なのでスキップ
+            if (filterValue === '') continue;
+
+            // フィルタテーブルで filterColumn == filterValue の行を線形検索する
+            const filterRowIndex = filterRows.findIndex(row => row[filterColIdx] === filterValue);
+            // 一致する行がない場合はフィルタ解決不能なのでスキップ
+            if (filterRowIndex === -1) continue;
+
+            // lookupColumn の値が参照先テーブル名
+            const targetTableName = filterRows[filterRowIndex][lookupColIdx];
+            if (targetTableName === '') continue;
+
+            // キャッシュにあればそれを使う
+            if (!targetValidValuesCache.has(targetTableName)) {
+                const targetHeader = this.store.getHeader(targetTableName);
+                const targetRows = this.store.getRows(targetTableName);
+                if (targetHeader === false || targetRows === false) {
+                    // 最終テーブル未ロードはこの行をスキップ
+                    targetValidValuesCache.set(targetTableName, null);
+                    hasSkippedRow = true;
+                    continue;
                 }
+                const targetColIdx = targetHeader.indexOf(expr.targetColumn);
+                if (targetColIdx === -1) {
+                    targetValidValuesCache.set(targetTableName, null);
+                    continue;
+                }
+                const validValues = new Set<string>();
+                for (const targetRow of targetRows) {
+                    const val = targetRow[targetColIdx];
+                    if (val !== '') validValues.add(val);
+                }
+                targetValidValuesCache.set(targetTableName, validValues);
             }
+
+            const validValues = targetValidValuesCache.get(targetTableName)!;
+            // 最終テーブルが未ロードだった場合（null）はスキップ済みなので続行
+            if (validValues === null) continue;
+
+            if (!validValues.has(cellValue)) {
+                errors.push({
+                    tableName,
+                    rowIndex: r,
+                    columnIndex: colIdx,
+                    columnName: colName,
+                    value: cellValue,
+                    kind: 'fk-broken',
+                    message: `参照先 ${targetTableName}.${expr.targetColumn} に値 "${cellValue}" が存在しません`,
+                });
+            }
+        }
+
+        // 少なくとも1行でも最終テーブル未ロードによりスキップが発生した場合は記録する
+        if (hasSkippedRow) {
+            skippedFkColumns.push({ tableName, columnName: colName });
         }
     }
 }
