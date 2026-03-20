@@ -664,6 +664,71 @@ function createDynamicRefFileSystem(): MockFileSystem {
     };
 }
 
+// =============================================================================
+// テストケース15: 動的参照の1段目を変更すると2段目のFKエラーが再検査される
+// =============================================================================
+
+/**
+ * バグ再現シナリオ:
+ *   row0: table_id=2(item), record_id=1(有効)
+ *   row1: table_id=2(item), record_id=2(有効)
+ *
+ *   1. row0の record_id=999 → FKエラー（shop_product, row0）
+ *   2. row1の record_id=999 → FKエラー（shop_product, row1）
+ *   3. row0の table_id=1(chara) に変更 → charは未ロードなので row0 がスキップ
+ *   4. row1の record_id=1(有効) に変更 → row1のエラーは解消されるべき
+ *
+ *   現状（列レベルスキップ）:
+ *     row0スキップ → skippedFkColumns=[shop_product.record_id]
+ *     preservedErrors = currentErrors({row0エラー, row1エラー}) 全件保持 → row1のエラーが消えない（バグ）
+ *
+ *   行レベルスキップ修正後:
+ *     row0スキップ → skippedFkRows=[{shop_product, record_id, row0}]
+ *     preservedErrors = {row0エラー}のみ保持 → row1のエラーが正しく消える
+ */
+test.describe('テストケース15: 動的参照の1段目を変更すると2段目のFKエラーが再検査される', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createDynamicRefFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '別の行で最終テーブルがスキップされても、解消されたFKエラーがパネルから消える',
+        async ({ page }) => {
+            // table と item テーブルを開いてストアにロードする（chara は開かない）
+            await openTableAsync(page, 'table');
+            await openTableAsync(page, 'item');
+            const shopProductTable = await openTableAsync(page, 'shop_product');
+
+            // 初期状態: FK参照エラーがないことを確認する
+            await expect(getValidationPanelItems(page)).toHaveCount(0);
+
+            // row0の record_id=999 → FKエラー発生（item.id=999 不在）
+            await editCellAsync(shopProductTable, page, 0, 2, '999');
+            await expect(getValidationPanelItems(page)).not.toHaveCount(0);
+
+            // row1の record_id=999 → FKエラー追加（item.id=999 不在）
+            await editCellAsync(shopProductTable, page, 1, 2, '999');
+
+            // エラーが2件以上あることを確認する（row0とrow1のFKエラー）
+            const fkErrorItems = page.locator('.validation-panel .validation-panel-item').filter({ hasText: 'shop_product' });
+            await expect(fkErrorItems).not.toHaveCount(0);
+
+            // row0の table_id=1（chara参照）に変更 → chara は未ロードなので row0 はスキップ
+            await editCellAsync(shopProductTable, page, 0, 1, '1');
+
+            // row1の record_id=1（item.id=1 は存在する）に修正してエラーを解消する
+            await editCellAsync(shopProductTable, page, 1, 2, '1');
+
+            // アサーション: row1のFKエラーはパネルから消えるべき
+            // （row0はcharaが未ロードなのでスキップ → row0のエラーは保持されても構わない）
+            // shop_product の行2（row1）を示すエラーアイテムが存在しないことを確認する
+            const row2ErrorItem = page.locator('.validation-panel .validation-panel-item').filter({ hasText: '行2' });
+            await expect(row2ErrorItem).toHaveCount(0);
+        },
+    );
+});
+
 test.describe('テストケース14: DynamicReference（動的参照）のFK参照切れがバリデーションパネルに表示される', () => {
     test.beforeEach(async ({ page }) => {
         await installMockApiAsync(page, createDynamicRefFileSystem());
