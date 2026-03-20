@@ -51,7 +51,7 @@ memory: project
 ### TDDサイクル
 - 実装前にテストを書く。テストが先、実装が後。
 - テストは `WebView/e2e/` ディレクトリに配置。
-- テスト実行: `docker compose exec playwright npx playwright test`
+- テスト実行: `playwright`
 
 ## 作業フロー
 

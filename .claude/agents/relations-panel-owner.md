@@ -72,7 +72,7 @@ RelationsPanelとEditorTableは相互参照の関係にある:
 2. テストを通す最小実装を書く
 3. リファクタリング
 
-テスト実行: `docker compose exec playwright npx playwright test`
+テスト実行: `playwright`
 
 ## 作業手順
 
