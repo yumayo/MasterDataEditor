@@ -77,11 +77,13 @@ export class Sidebar {
         // 初期幅を適用
         this.applyWidth(DEFAULT_SIDEBAR_WIDTH);
 
-        // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプする
-        const resizeHandle = new ResizeHandle('horizontal', (delta: number) => {
+        // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプし、実際に変化した量を返す
+        const resizeHandle = new ResizeHandle('horizontal', (delta: number): number => {
             const currentWidth = this.explorerElement.getBoundingClientRect().width;
             const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, currentWidth + delta));
             this.applyWidth(newWidth);
+            // 実際に変化したピクセル数を返す（クランプで動けなかった分はゼロ寄りになる）
+            return newWidth - currentWidth;
         });
         resizeHandle.appendTo(explorerElement);
     }

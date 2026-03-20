@@ -43,10 +43,12 @@ export class ValidationPanel {
 
         // 縦方向リサイズハンドル: 上端に配置し、上方向へドラッグすることで高さを増やす
         // delta が正（下移動）= 高さ縮小、負（上移動）= 高さ増加 なので -delta を加算する
-        this.resizeHandle = new ResizeHandle('vertical', (delta: number) => {
+        this.resizeHandle = new ResizeHandle('vertical', (delta: number): number => {
             const currentHeight = this.element.getBoundingClientRect().height;
             const newHeight = Math.min(400, Math.max(80, currentHeight - delta));
             this.element.style.height = `${newHeight}px`;
+            // 上方向ドラッグ(delta負)で高さ増加のため、消費delta = currentHeight - newHeight（delta反転後の変化量）
+            return currentHeight - newHeight;
         });
 
         // 初期表示を構築する（PROBLEMSヘッダー + 「エラーはありません」）

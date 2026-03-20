@@ -2,17 +2,19 @@
  * ドラッグでリサイズする共通ハンドル。
  * 横方向（col-resize）と縦方向（row-resize）の両方に対応する。
  *
- * onResize コールバックはドラッグ中の差分ピクセルを受け取る。
+ * onResize コールバックはドラッグ中の差分ピクセルを受け取り、実際に消費したdeltaを返す。
  * 呼び出し元がサイズ制約（MIN/MAX クランプ）を管理し、実際の要素サイズを変更する。
+ * 返り値（消費delta）を使って prevCoord を補正することで、上限/下限到達後の
+ * 「超過分を戻りきるまでリサイズが始まらない」という直感的な挙動を実現する。
  */
 export class ResizeHandle {
     private readonly element: HTMLElement;
     private readonly direction: 'horizontal' | 'vertical';
-    private readonly onResize: (delta: number) => void;
+    private readonly onResize: (delta: number) => number;
     /** 二重ドラッグ防止フラグ（全インスタンス共有） */
     private static dragging = false;
 
-    constructor(direction: 'horizontal' | 'vertical', onResize: (delta: number) => void) {
+    constructor(direction: 'horizontal' | 'vertical', onResize: (delta: number) => number) {
         this.direction = direction;
         this.onResize = onResize;
 
@@ -56,8 +58,11 @@ export class ResizeHandle {
         const onMouseMove = (moveEvent: MouseEvent) => {
             const currentCoord = this.direction === 'horizontal' ? moveEvent.clientX : moveEvent.clientY;
             const delta = currentCoord - prevCoord;
-            prevCoord = currentCoord;
-            this.onResize(delta);
+            // onResize が返す消費deltaだけ prevCoord を進める。
+            // クランプで実際に動かなかった分は prevCoord に反映されないため、
+            // 逆方向に戻すときに超過分を解消するまでリサイズが始まらない。
+            const consumedDelta = this.onResize(delta);
+            prevCoord += consumedDelta;
         };
 
         const onMouseUp = () => {

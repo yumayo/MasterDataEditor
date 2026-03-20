@@ -94,7 +94,7 @@ export class RelationsPanel {
 
         // リサイズハンドルをパネル先頭に配置する
         // delta が正（右移動）= ハンドルを右に動かす = 右ペイン幅縮小なので -delta で幅を加算する
-        const resizeHandle = new ResizeHandle('horizontal', (delta: number) => {
+        const resizeHandle = new ResizeHandle('horizontal', (delta: number): number => {
             // panelElement の親要素（rightSlot）をDOMから取得する。
             // appendTo() 経由でも setVisiblePanes() 経由でも rightSlot に追加されるため、
             // appendTo() が呼ばれていないペインスタック上のRPでも正しく動作する。
@@ -104,15 +104,21 @@ export class RelationsPanel {
             const grandParent = parent.parentElement;
             if (grandParent === null) throw new Error('[RelationsPanel] resizeHandle: panelElement の祖父要素が存在しません');
             const rect = grandParent.getBoundingClientRect();
-            if (rect.width === 0) return;
+            if (rect.width === 0) return 0;
             // 現在の幅から delta を引く（左へドラッグ = 負の delta = 幅増加）
             const currentWidth = this.panelElement.getBoundingClientRect().width;
             const newWidth = currentWidth - delta;
-            // 左右ペインの最小幅を保証するため10%〜90%にクランプし、小数点1桁に丸める
-            const percentage = Math.round(Math.max(10, Math.min(90, (newWidth / rect.width) * 100)) * 10) / 10;
+            // 先にピクセルでクランプし、そこから percentage を逆算する。
+            // percentage から clampedNewWidth を求めると丸め誤差が蓄積するため逆順にする。
+            const minWidth = rect.width * 0.1;
+            const maxWidth = rect.width * 0.9;
+            const clampedNewWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+            const percentage = Math.round((clampedNewWidth / rect.width) * 100 * 10) / 10;
             parent.style.flexGrow = '0';
             parent.style.flexShrink = '0';
             parent.style.flexBasis = `${percentage}%`;
+            // 実際に変化した量を返す。ハンドル右移動(delta正)で幅縮小のため正の値になる。
+            return currentWidth - clampedNewWidth;
         });
         resizeHandle.prependTo(this.panelElement);
 

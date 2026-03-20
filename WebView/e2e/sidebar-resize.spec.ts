@@ -87,3 +87,50 @@ test(
         expect(box!.width).toBeLessThanOrEqual(600);
     },
 );
+
+test(
+    '上限到達後にマウスを逆方向に移動しても超過分を戻りきるまでリサイズが始まらないこと',
+    async ({ page, mockFileSystem }) => {
+        const handle = page.locator('.explorer .resize-handle');
+        const explorer = page.locator('#explorer');
+
+        // ハンドルの初期位置を取得
+        const handleBox = await handle.boundingBox();
+        const startX = handleBox!.x + handleBox!.width / 2;
+        const startY = handleBox!.y + handleBox!.height / 2;
+        await page.mouse.move(startX, startY);
+        await page.mouse.down();
+
+        // ステップ1: 右に大きく移動して最大幅（600px）に到達させる
+        // 初期幅 + 500px ほど動かせば確実に上限に当たる
+        await page.mouse.move(startX + 500, startY);
+
+        // 600px に達していることを確認（この時点でのハンドル位置を記録）
+        const atMaxBox = await explorer.boundingBox();
+        expect(atMaxBox!.width).toBeLessThanOrEqual(600);
+        const handleAtMax = await handle.boundingBox();
+        const maxHandleX = handleAtMax!.x + handleAtMax!.width / 2;
+
+        // ステップ2: さらに右に100px移動する（パネルは動かないが、マウスの論理位置は右へ）
+        await page.mouse.move(maxHandleX + 100, startY);
+
+        // 超過移動後もパネルが最大幅のままであること
+        expect((await explorer.boundingBox())!.width).toBeLessThanOrEqual(600);
+
+        // ステップ3: 左に50px移動する（まだ100px分の超過「貯金」があるのでパネルは動かないはず）
+        await page.mouse.move(maxHandleX + 50, startY);
+
+        // サイドバー幅がまだ600pxであること（50px分しか戻っていないので縮小が始まっていない）
+        const afterPartialReturnBox = await explorer.boundingBox();
+        expect(afterPartialReturnBox!.width).toBeCloseTo(600, -1);
+
+        // ステップ4: さらに左に120px移動（超過100pxを解消し、さらに20px分縮小するはず）
+        await page.mouse.move(maxHandleX - 20, startY);
+
+        // 超過分を戻りきった後はリサイズが始まるため、600pxより小さくなっているはず
+        const afterFullReturnBox = await explorer.boundingBox();
+        expect(afterFullReturnBox!.width).toBeLessThan(600);
+
+        await page.mouse.up();
+    },
+);
