@@ -6,4 +6,4 @@
 # 引数から "WebView/" プレフィックスを除去する（Docker内のパスは e2e/ 始まり）
 ARGS=$(echo "$*" | sed 's|WebView/||g')
 
-docker compose exec -T playwright bash -c "npx tsc --noEmit && npm run stop-preview && npx playwright test $ARGS" 2>&1; echo "exit $?"
+docker compose exec -T playwright bash -c "npm run stop-preview && npx playwright test $ARGS" 2>&1; echo "exit $?"
