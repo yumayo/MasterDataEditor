@@ -20,6 +20,8 @@ export class TabButton {
 
         this.element = document.createElement('li');
         this.element.classList.add('tab-button');
+        // ホバー時にテーブル名をツールチップ表示する
+        this.element.title = name;
 
         this.element.addEventListener('click', this.onClick.bind(this));
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));

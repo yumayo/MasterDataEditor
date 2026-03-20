@@ -974,13 +974,51 @@ export class Tab {
 
     /**
      * ブラウザ履歴の復元時に viewIndex を指定の値に直接設定する。
-     * NavigationHistory の popstate ハンドラからのみ呼ばれる。
-     * 指定値が有効範囲外の場合はクランプする。
+     * NavigationHistory の tab-switch popstate ハンドラからのみ呼ばれる。
+     * 指定値が有効範囲外の場合はクランプし、viewIndex+2 以降の余分なペインを破棄する。
+     * （goBack で pane-push から tab-switch に戻った場合、paneStack が長いまま残るため）
+     * truncate 後は tabState にも即座に反映する（ゾンビ RP 参照防止）。
      */
     restoreViewIndex(viewIndex: number): void {
         const maxIndex = Math.max(0, this.paneStack.length - 2);
         this.viewIndex = Math.min(Math.max(0, viewIndex), maxIndex);
+        // viewIndex+2 以降の余分なペインを破棄する（goBack で浅いエントリに戻ったとき paneStack を詰める）
+        this.truncateStackAfterIndex(this.viewIndex);
         this.updateVisiblePanes();
+        // truncate で破壊された RP がtabState.paneStack に残らないよう即座に同期する
+        this.syncPaneStackToActiveTabState();
+    }
+
+    /**
+     * goForward で pane-push エントリに到達した際に呼ばれる。
+     * paneStack が既にトランケートされている場合は pushRelationsPanel で再構築する。
+     * paneStack が十分なら restoreViewIndex に委譲する。
+     * NavigationHistory の pane-push popstate ハンドラからのみ呼ばれる。
+     */
+    restoreOrRebuildPaneStack(viewIndex: number, tableName: string, pkValue: string): void {
+        if (this.paneStack.length < viewIndex + 2) {
+            // paneStack が不足しているため pushRelationsPanel でペインスタックを再構築する。
+            // この呼び出しは popstateHandler の try ブロック内で実行されるため
+            // NavigationHistory.restoring=true が保持されており pushPaneChange は自動的にスキップされる。
+            this.pushRelationsPanel(tableName, pkValue);
+            // 再構築後の paneStack/viewIndex を tabState に反映する（ゾンビ参照防止）
+            this.syncPaneStackToActiveTabState();
+        } else {
+            this.restoreViewIndex(viewIndex);
+        }
+    }
+
+    /**
+     * 現在の paneStack と viewIndex をアクティブタブの tabState に同期する。
+     * popstate ハンドラで paneStack を変更した後に呼ぶ（ゾンビ RP 参照防止）。
+     * restoreViewIndex と restoreOrRebuildPaneStack から呼ばれる。
+     */
+    private syncPaneStackToActiveTabState(): void {
+        if (this.activeTabName === false) return;
+        const state = this.tabStates.get(this.activeTabName);
+        if (!state) return;
+        state.paneStack = this.paneStack.slice();
+        state.viewIndex = this.viewIndex;
     }
 
     /**
@@ -1018,7 +1056,8 @@ export class Tab {
         // paneStack 深化をブラウザ履歴に記録する（viewIndex 確定後に記録する）
         // アクティブタブなしで pushRelationsPanel が呼ばれるのは設計ミスのため throw する
         if (this.activeTabName === false) throw new Error('[Tab] pushRelationsPanel: activeTabName が false のまま pushRelationsPanel が呼ばれました');
-        this.navigationHistory.pushPaneChange(this.activeTabName, this.viewIndex);
+        // goForward で復帰できるよう tableName/pkValue も記録する
+        this.navigationHistory.pushPaneChange(this.activeTabName, this.viewIndex, tableName, pkValue);
 
         // 新 RP にテーブルの参照データを表示させる
         rp.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {

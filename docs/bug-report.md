@@ -2213,3 +2213,16 @@ ValidationPanel と StatusBar の相互参照を `| false` パターンと `conn
 バリデーションで「チェックできなかった列」と「チェックしてエラーなしだった列」を区別する。`validate()` の戻り値に `skippedFkColumns` を含め、`runAndUpdate()` でスキップされた列の前回エラーを保持するマージ戦略を採用した。「スキップ＝エラーなし」ではなく「スキップ＝前回結果を維持」という設計原則を徹底する。
 
 ---
+
+## 152. [0556abb] — pane-push goBack/goForwardでナビゲーションバーの表示が復元されない
+
+### 不具合原因名
+History APIエントリの自己記述性不足とpaneStackトランケート欠如
+
+### なぜそうなったのか
+NavigationHistoryのpane-pushエントリに`{type, tabName, viewIndex}`しか記録しておらず、goForwardでペインスタックを再構築するために必要な`tableName`/`pkValue`が含まれていなかった。また、goBackでtab-switch（viewIndex=0）に戻る際、`restoreViewIndex(0)`はviewIndexを0に設定するだけでpaneStackをトランケートしなかったため、paneStack長が3のまま残りナビゲーションバーが表示され続けた。さらに、トランケート後にtabStateのpaneStackを同期しなかったため、破壊済みRPインスタンスがtabStateに残るゾンビ参照問題も潜在していた。
+
+### どうしたら今後は再発しないか
+History APIエントリは「そのエントリに到達したとき完全なビュー状態を自力で復元できる」自己記述的な設計にする。paneStackの変更（truncate/rebuild）を行った後は必ずtabStateにも即座に反映する（syncPaneStackToActiveTabState）。goBack/goForwardの対称性を常に検証し、片方の実装時に必ずもう片方の動作も確認する。
+
+---

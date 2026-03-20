@@ -56,10 +56,14 @@ export class NavigationHistory {
                     this.tab.switchToExistingTab(state['tabName']);
                     this.tab.restoreViewIndex(0);
                 } else if (type === 'pane-push' && typeof state['tabName'] === 'string') {
-                    // pane-push エントリには viewIndex が必ず存在する。存在しない場合は設計ミスのため throw する
+                    // pane-push エントリには viewIndex/tableName/pkValue が必ず存在する。存在しない場合は設計ミスのため throw する
                     if (typeof state['viewIndex'] !== 'number') throw new Error('[NavigationHistory] pane-push エントリに viewIndex がありません');
+                    if (typeof state['tableName'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに tableName がありません');
+                    if (typeof state['pkValue'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに pkValue がありません');
                     this.tab.switchToExistingTab(state['tabName']);
-                    this.tab.restoreViewIndex(state['viewIndex']);
+                    // goForward で到達した場合、paneStack がトランケートされていることがある。
+                    // その場合は pushRelationsPanel でペインスタックを再構築してから viewIndex を復元する。
+                    this.tab.restoreOrRebuildPaneStack(state['viewIndex'], state['tableName'], state['pkValue']);
                 } else if ((type === 'navigate-row' || type === 'navigate-cell') && typeof state['tableName'] === 'string') {
                     // popstate は「移動先エントリ」の state を返すため、tableName（ジャンプ先）に切り替える
                     // goBack 時は前のエントリ（tab-switch 等）の state が返るため、tab-switch ハンドラが元のタブを自動復元する
@@ -96,10 +100,11 @@ export class NavigationHistory {
     /**
      * 定義ジャンプ（paneStack深化）をブラウザ履歴に記録する。
      * pushRelationsPanel() 呼び出し後、viewIndex が深化した後に呼ぶこと。
+     * goForward で復帰する際に pushRelationsPanel を再構築できるよう tableName/pkValue も保持する。
      */
-    pushPaneChange(tabName: string, viewIndex: number): void {
+    pushPaneChange(tabName: string, viewIndex: number, tableName: string, pkValue: string): void {
         if (this.restoring) return;
-        history.pushState({ type: 'pane-push', tabName, viewIndex }, '');
+        history.pushState({ type: 'pane-push', tabName, viewIndex, tableName, pkValue }, '');
     }
 
     /**
