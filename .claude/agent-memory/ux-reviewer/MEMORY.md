@@ -8,12 +8,15 @@
 - ファイル: project_review_archive_mar2026.md
 - 差分タブ・BUG_0021〜0025・FEAT_0023〜0036 の要約と横断的継続課題リストを収録
 
-#### FEAT_0045 通知UI（2026-03-19レビュー）評価: C
+#### FEAT_0045/ISSUE_0079 通知UI（2026-03-19初回C→2026-03-20再レビューB）
 - ファイル: project_feat0045_notification.md
-- 致命的(🔴): 履歴パネルを閉じる手段がDOM上に存在しない
-- 致命的(🔴): notification-bell が div のまま（role/tabindex/aria-label なし）
-- 致命的(🔴): notification-toast に role="alert"/aria-live なし（スクリーンリーダー非通知）
-- 改善推奨(🟡): 未読バッジなし・タイムスタンプなし・履歴表示順が古い順
+- 修正済み: notification-bell に role="button"/tabindex="0"/aria-label 付与
+- 修正済み: notification-toast に role="alert" 付与
+- 修正済み: ベルSVGに aria-hidden="true" 付与
+- 修正済み: notification-container をステータスバー内に移動（ISSUE_0079）
+- 残存(🔴): 履歴パネルを閉じる手段がDOM上に依然存在しない
+- 残存(🔴): notification-bell に aria-expanded なし
+- 残存(🟡): notification-history-item に role="listitem" なし・未読バッジなし
 
 #### FEAT バリデーションエラーパネル（初回2026-03-20 B → 再レビュー2026-03-20 A）
 - ファイル: project_feat_validation_panel.md
