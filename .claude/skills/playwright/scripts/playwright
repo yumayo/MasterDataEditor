@@ -3,4 +3,7 @@
 # Playwrightテスト実行ラッパー
 # 使い方: playwright [playwright testに渡す引数...]
 
-docker compose exec -T playwright bash -c "npm run stop-preview && npx playwright test $*" 2>&1; echo "exit $?"
+# 引数から "WebView/" プレフィックスを除去する（Docker内のパスは e2e/ 始まり）
+ARGS=$(echo "$*" | sed 's|WebView/||g')
+
+docker compose exec -T playwright bash -c "npx tsc --noEmit && npm run stop-preview && npx playwright test $ARGS" 2>&1; echo "exit $?"
