@@ -131,7 +131,7 @@ interface EditorEditAPI {
 2. `Tab` から対象テーブルの `EditorTable` と `History` を取得
 3. 既存の `CellChangeCommand` / `InsertRowCommand` / `DeleteRowCommand` を構築
 4. `History.executeCommand()` で実行 → 既存Undo/Redoスタックに統合
-5. 対象テーブルがタブで開かれていない場合は `false`（DOMがSSOTのため、DOM不在では操作不可）
+5. テーブルデータのSSOTは `InMemoryTableStore` であるため、タブで開かれていないテーブルに対してもAPI経由で操作可能とする
 
 ---
 
