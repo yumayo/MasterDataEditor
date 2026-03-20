@@ -16,6 +16,8 @@ import {EditorTableContextMenu} from "./editor-table-context-menu";
 import {EditorTableStructure} from "./editor-table-structure";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
+import {ValidationPanel} from "./validation-panel";
+import {ValidationError} from "./validation-engine";
 import {DiffTab} from "./diff-tab";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
@@ -59,6 +61,8 @@ export class EditorTable {
     structure!: EditorTableStructure;
     /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
     relationsPanel: RelationsPanel | false;
+    /** バリデーションパネル（Tab.createEditorTable内でconnectValidationPanel()で設定される。未設定はfalse） */
+    private validationPanel: ValidationPanel | false;
     /** 差分タブ（DiffTab.buildDiffEditorTableで設定される。未設定はfalse） */
     diffTab: DiffTab | false;
     /**
@@ -90,6 +94,13 @@ export class EditorTable {
     private readonly isMiniTable: boolean;
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     private autoFillEntries: Array<{ columnName: string; value: string }>;
+    /**
+     * 最後にフォーカスクラスを付与したセルの行列（DOM座標）。
+     * -1 は「まだフォーカスが当たったことがない」状態。
+     * Selection.updateFocusedCellClass の代わりにEditorTable側でクラスを管理する（DOM要素の流出防止）。
+     */
+    private lastFocusedRow: number;
+    private lastFocusedCol: number;
     /**
      * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
      * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
@@ -136,12 +147,15 @@ export class EditorTable {
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
         this.relationsPanel = false;
+        this.validationPanel = false;
         this.diffTab = false;
         this.tab = false;
         this.gitDiffTracker = false;
         this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
         this.lastNotifiedRow = -1;
+        this.lastFocusedRow = -1;
+        this.lastFocusedCol = -1;
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.columnSorter = new ColumnSorter(this, store);
@@ -305,8 +319,8 @@ export class EditorTable {
                 }
             }
         });
-        // 初期表示時にPK重複を検出してセルにクラスを付与する
-        this.validatePkDuplicates();
+        // 初期表示時にバリデーションを実行してセルにエラークラスを付与する
+        this.runValidation();
     }
 
     /**
@@ -593,6 +607,57 @@ export class EditorTable {
             throw new Error(`セルが見つかりません: row=${row}, column=${column}`);
         }
         return cell;
+    }
+
+    /**
+     * セル要素を取得する（存在しない場合は null を返す）。
+     * 内部のクラス操作で使用する。DOM要素を外部に流出させないこと。
+     */
+    private getCellOrNull(row: number, column: number): HTMLElement | null {
+        const rowElement = this.element.children[row] as HTMLElement | null;
+        if (!rowElement) return null;
+        return rowElement.children[column] as HTMLElement | null;
+    }
+
+    /**
+     * 指定セルに editor-table-cell-focused クラスを付与し、前のフォーカスセルから除去する。
+     * Selection から呼ばれる（DOM要素の流出防止のため Selection 側でクラスを操作しない）。
+     *
+     * @param row DOM行インデックス（列ヘッダー行を含む: データ行1行目 = 1）
+     * @param col DOM列インデックス（行ヘッダーを含む: データ列1列目 = 1）
+     */
+    markFocusedCell(row: number, col: number): void {
+        // 前のフォーカスセルからクラスを除去する
+        if (this.lastFocusedRow !== -1) {
+            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
+        }
+        const cell = this.getCellOrNull(row, col);
+        if (cell !== null) {
+            cell.classList.add('editor-table-cell-focused');
+            this.lastFocusedRow = row;
+            this.lastFocusedCol = col;
+        }
+    }
+
+    /**
+     * フォーカスクラスを除去する（タブ切り替えや初期化時に呼ぶ）。
+     */
+    clearFocusedCell(): void {
+        if (this.lastFocusedRow !== -1) {
+            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
+        }
+        this.lastFocusedRow = -1;
+        this.lastFocusedCol = -1;
+    }
+
+    /**
+     * ValidationPanel を接続する（Tab.createEditorTable 内から呼ばれる）。
+     * セッター禁止のため connectXxx パターンで相互参照を構築する。
+     */
+    connectValidationPanel(panel: ValidationPanel): void {
+        this.validationPanel = panel;
     }
 
     /**
@@ -1072,8 +1137,8 @@ export class EditorTable {
         }
         // DOM行の増減に関わらず git差分ハイライトを再評価する（ストアとDOMのマッピングが変化するため）
         this.applyGitDiffHighlight();
-        // タブ切替後のDOMリロードでもPK重複の赤波線を再適用する
-        this.validatePkDuplicates();
+        // タブ切替後のDOMリロードでもバリデーションエラークラスを再適用する
+        this.runValidation();
         // reloadCellsFromStore はストアデータを全面的に上書きするため、ソート状態を維持しても
         // storeRowIndices が [0..n-1] にリセットされておりソートが無効化されている。
         // インジケーターをリセットしてUI上のソート表示と実態を一致させる。
@@ -1128,8 +1193,8 @@ export class EditorTable {
         // バッファ行がストアに昇格した後、参照データキャッシュを無効化する。
         // 昇格行のIDがキャッシュ構築後に入力された場合に古いキャッシュが参照されるのを防ぐ。
         this.evictOwnReferenceDataCache();
-        // バッファ行昇格後にPK重複バリデーションを実行する（新規行のIDが既存と重複する可能性があるため）
-        this.validatePkDuplicates();
+        // バッファ行昇格後にバリデーションを実行する（新規行のIDが既存と重複する可能性があるため）
+        this.runValidation();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（新規昇格行がフィルター条件を満たさない可能性）
         this.refreshFilterDisplayIfActive();
         // 常に末尾にバッファ行を1行保持する（昇格で消えた場合に補充する）。差分タブでは不要。
@@ -1165,8 +1230,8 @@ export class EditorTable {
         this.applyGitDiffHighlight();
         // ストア行降格後に参照データキャッシュを無効化する（Undo時に古いIDがドロップダウンに残るのを防ぐ）。
         this.evictOwnReferenceDataCache();
-        // 降格によりPK重複が解消される可能性があるためバリデーションを再実行する
-        this.validatePkDuplicates();
+        // 降格によりエラーが解消される可能性があるためバリデーションを再実行する
+        this.runValidation();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（降格行の除去で表示行数が変化する）
         this.refreshFilterDisplayIfActive();
         // Undoにより降格した行がバッファ行に戻ると、バッファ行が蓄積する可能性がある。
@@ -1179,6 +1244,21 @@ export class EditorTable {
      */
     isBufferRow(domDataRowIndex: number): boolean {
         return domDataRowIndex >= this.storeRowIndices.length;
+    }
+
+    /**
+     * ストア行インデックスをDOM行インデックスに変換する。
+     * ソート適用中は storeRowIndices の並び順が変化しているため、線形探索で逆引きする。
+     * フィルターにより非表示の行は storeRowIndices に存在しないため null を返す。
+     *
+     * @param storeRowIndex ストア行インデックス（0始まり）
+     * @returns DOM行インデックス（列ヘッダー行を含む: データ行1行目 = 1）、非表示・未登録の場合は null
+     */
+    storeRowToDomRow(storeRowIndex: number): number | null {
+        const domDataIndex = this.storeRowIndices.indexOf(storeRowIndex);
+        if (domDataIndex === -1) return null;
+        // DOM上は 0行目が列ヘッダーなのでデータ行は +1
+        return domDataIndex + 1;
     }
 
     /**
@@ -1772,8 +1852,8 @@ export class EditorTable {
         } else {
             this.forceRefreshRelationsPanel();
         }
-        // セル編集確定後にPK重複バリデーションを実行する（ストア全体で重複判定）
-        this.validatePkDuplicates();
+        // セル編集確定後にバリデーションを実行してパネルとエラークラスを更新する
+        this.runValidation();
         // フィルター適用中にセル値が変更された場合、フィルター条件との整合性を再評価する
         this.refreshFilterDisplayIfActive();
         return changes;
@@ -1793,8 +1873,8 @@ export class EditorTable {
         } else {
             this.forceRefreshRelationsPanel();
         }
-        // Undo/Redo後にPK重複バリデーションを実行する（ストア全体で重複判定）
-        this.validatePkDuplicates();
+        // Undo/Redo後にバリデーションを実行してパネルとエラークラスを更新する
+        this.runValidation();
         // Undo/Redo後にフィルター条件との整合性を再評価する
         this.refreshFilterDisplayIfActive();
     }
@@ -1947,98 +2027,77 @@ export class EditorTable {
     }
 
     // =========================================================================
-    // PKバリデーション
+    // バリデーション
     // =========================================================================
 
     /**
-     * ストア全体のPK値を走査して重複を検出し、表示中のPKセルに cell-pk-duplicate クラスを適用する。
+     * バリデーションを実行してパネルを更新する。
      *
-     * ミニテーブルのフィルタで非表示になっている行も含め、ストア全体のデータで重複判定する。
-     * これにより「ミニテーブルに表示されていない行」との重複も正しく検出できる。
+     * 通常テーブル（ValidationPanel 接続済み）:
+     *   validationPanel.runAndUpdate() で全テーブルのバリデーションを実行し、
+     *   ValidationPanel 側が全 EditorTable に applyValidationErrors() を呼ぶ。
      *
-     * 空のPK値は重複チェックの対象外（未入力行は無視する）。
+     * ミニテーブル（ValidationPanel 接続済みだが openEditorTables 未登録）:
+     *   validationPanel.validatePkDuplicatesForTable() でストア全体からPK重複のみを検出し、
+     *   自分自身の DOM に applyValidationErrors() を適用する独立したバリデーションパス。
+     *   runAndUpdate() は呼ばない（全テーブル再バリデーションのコストを避けるため）。
+     *
+     * ValidationPanel 未接続: 何もしない。
      */
-    public validatePkDuplicates(): void {
-        // PK列が定義されていない場合はバリデーション不要（全行が空キーで重複扱いになるのを防ぐ）
-        if (this.tableData.primaryKeyColumns.length === 0) return;
-        // ストアからPK列の全値を取得してカウントマップを構築する
+    runValidation(): void {
+        if (this.validationPanel === false) return;
+        if (this.isMiniTable) {
+            // ミニテーブル用独立パス: ストア全体でPK重複を検出して自身のDOMに適用する
+            const errors = this.validationPanel.validatePkDuplicatesForTable(this.tableName);
+            this.applyValidationErrors(errors);
+        } else {
+            this.validationPanel.runAndUpdate();
+        }
+    }
+
+    /**
+     * ValidationPanel から呼ばれる: このテーブルのバリデーションエラーをDOMに適用する。
+     * PK重複エラーには cell-pk-duplicate + cell-error を付与する。
+     * FK参照切れエラーには cell-error を付与する。
+     * エラーがないセルからは両クラスを除去する。
+     */
+    public applyValidationErrors(errors: ValidationError[]): void {
+        // ストア列インデックス → エラー種別のマップにグループ化する（key: "storeRow,storeCol"）
+        const pkErrorCells = new Set<string>();
+        const fkErrorCells = new Set<string>();
+        for (const error of errors) {
+            const key = `${error.rowIndex},${error.columnIndex}`;
+            if (error.kind === 'pk-duplicate') { pkErrorCells.add(key); } else { fkErrorCells.add(key); }
+        }
+        // ストアヘッダーはループ外で1回だけ取得する
         const storeHeader = this.store.getHeader(this.tableName);
-        const storeRows = this.store.getRows(this.tableName);
-        // 編集操作後にストアが存在しないのは設計上ありえないため例外を投げる
-        if (storeHeader === false || storeRows === false) throw new Error('[EditorTable.validatePkDuplicates] ストアにテーブルが登録されていません: ' + this.tableName);
-
-        // tableData.primaryKeyColumns を使い複合PKに対応する
-        // 各PK列のストアインデックスを取得し、いずれか1つでも存在しなければバリデーション不要
-        const pkColIndices: number[] = [];
-        for (const pkColName of this.tableData.primaryKeyColumns) {
-            const idx = storeHeader.indexOf(pkColName);
-            if (idx === -1) return;
-            pkColIndices.push(idx);
-        }
-
-        // 複合PKキー = GitDiffTracker.buildCompositeKey() で生成する（コピペ排除）
-        // PK構成列のいずれかが空文字の場合はその行をスキップする（未入力行）
-        const pkCounts = new Map<string, number>();
-        for (const row of storeRows) {
-            // PK構成列に空文字が含まれる行はカウント対象外（未入力行）
-            let hasEmpty = false;
-            for (const idx of pkColIndices) {
-                if (row[idx] === '') { hasEmpty = true; break; }
-            }
-            if (hasEmpty) continue;
-            const compositeKey = GitDiffTracker.buildCompositeKey(row, pkColIndices);
-            if (pkCounts.has(compositeKey)) {
-                pkCounts.set(compositeKey, pkCounts.get(compositeKey)! + 1);
-            } else {
-                pkCounts.set(compositeKey, 1);
-            }
-        }
-
-        // getColumnHeaderValue() を使ってDOM上の各PK列インデックスを特定する
-        // （手動でのDOM走査は .column-header-name span 付きのcomment列で誤マッチする危険があるため使わない）
-        const domPkColIndices: number[] = [];
+        if (storeHeader === false) return;
         const colCount = this.getColumnCount();
-        for (const pkColName of this.tableData.primaryKeyColumns) {
-            let found = -1;
-            for (let c = 0; c < colCount; c++) {
-                if (this.getColumnHeaderValue(c) === pkColName) {
-                    found = c + 1; // 行ヘッダーを含むDOMインデックス
-                    break;
-                }
-            }
-            // PK列がDOMに存在しない（非表示テーブル等）はバリデーション不要
-            if (found === -1) return;
-            domPkColIndices.push(found);
+        // DOM列名→ストア列インデックスのマッピングを事前構築する（内ループでのindexOf呼び出しを排除）
+        const domColToStoreCol: number[] = [];
+        for (let domColIdx = 1; domColIdx <= colCount; domColIdx++) {
+            domColToStoreCol.push(storeHeader.indexOf(this.getColumnHeaderValue(domColIdx - 1)));
         }
-
-        // ループ上限をデータ行のみに制限してバッファ空行への不要なDOM走査を排除する
-        // （rowIdx=1から開始するのは children[0] が列ヘッダー行のため）
+        // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
             const row = this.element.children[rowIdx] as HTMLElement | null;
             if (!row) continue;
-            // この行の複合PKキーを構築する（空値があればスキップ）
-            const pkParts: string[] = [];
-            let hasEmpty = false;
-            for (const domColIdx of domPkColIndices) {
+            const storeRowIdx = this.storeRowIndices[rowIdx - 1];
+            for (let domColIdx = 1; domColIdx <= colCount; domColIdx++) {
                 const cell = row.children[domColIdx] as HTMLElement | null;
-                if (!cell) { hasEmpty = true; break; }
-                const val = EditorTable.getCellValue(cell);
-                if (val === '') { hasEmpty = true; break; }
-                pkParts.push(val);
-            }
-            // 全PK構成列のセルを取得して重複クラスを更新する
-            // pkParts はDOM上のPK列値のみを順番に持つ配列なので、インデックス [0,1,2,...] で buildCompositeKey に渡す
-            const compositeKey = GitDiffTracker.buildCompositeKey(pkParts, pkParts.map((_, i) => i));
-            const isDuplicate = !hasEmpty && pkCounts.has(compositeKey) && pkCounts.get(compositeKey)! > 1;
-            for (const domColIdx of domPkColIndices) {
-                const pkCell = row.children[domColIdx] as HTMLElement | null;
-                if (!pkCell) continue;
-                if (isDuplicate) {
-                    pkCell.classList.add('cell-pk-duplicate');
-                } else {
-                    pkCell.classList.remove('cell-pk-duplicate');
-                }
+                if (!cell) continue;
+                const storeColIdx = domColToStoreCol[domColIdx - 1];
+                if (storeColIdx === -1) continue;
+                const key = `${storeRowIdx},${storeColIdx}`;
+                const isPkError = pkErrorCells.has(key);
+                const isFkError = fkErrorCells.has(key);
+                // cell-pk-duplicate: PKエラーのみ
+                if (isPkError) { cell.classList.add('cell-pk-duplicate'); } else { cell.classList.remove('cell-pk-duplicate'); }
+                // cell-error: PKエラーまたはFKエラー
+                if (isPkError || isFkError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
             }
         }
     }
+
 }
+

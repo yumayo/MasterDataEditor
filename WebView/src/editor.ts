@@ -1,6 +1,8 @@
 import {RelationsPanel} from "./relations-panel";
 import {Tab} from "./tab";
 import {DiffView} from "./diff-view";
+import {ValidationPanel} from "./validation-panel";
+import {StatusBar} from "./status-bar";
 
 export class Editor {
 
@@ -231,6 +233,22 @@ export class Editor {
     leaveSettingsMode(): void {
         this.rightSlot.style.display = '';
         this.navigationBar.style.display = 'none';
+    }
+
+    /**
+     * バリデーションエラーパネルを editor 直下（コンテンツ領域の下）に追加する。
+     * editor は flex-direction: column のため、contentArea の下段に配置される。
+     */
+    appendValidationPanel(panel: ValidationPanel): void {
+        panel.appendTo(this.element);
+    }
+
+    /**
+     * ステータスバーを editor 直下の最下部に追加する。
+     * バリデーションパネルの後に追加することで最下段に配置される。
+     */
+    appendStatusBar(statusBar: StatusBar): void {
+        statusBar.appendTo(this.element);
     }
 
     /** サイドバー幅に応じてエディター領域の位置と幅を更新する */

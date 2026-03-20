@@ -1,0 +1,38 @@
+/* ─── ステータスバー ─── */
+
+.status-bar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 12px;
+    height: 22px;
+    background-color: var(--background-color);
+    border-top: 1px solid var(--border-color);
+    font-size: 11px;
+    color: var(--font-color);
+    user-select: none;
+}
+
+/* エラー件数バッジ */
+.status-bar-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    min-width: 24px;
+    justify-content: center;
+}
+
+.status-bar-badge:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--border-color);
+}
+
+/* エラーがある場合は赤系 */
+.status-bar-badge[data-error-count]:not([data-error-count="0"]) {
+    color: rgb(255, 120, 120);
+}

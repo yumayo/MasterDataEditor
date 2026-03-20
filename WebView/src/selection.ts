@@ -556,6 +556,10 @@ export class Selection {
 
         // フォーカス行が変化したときにRelationsPanelへ通知する（重複制御はEditorTable側で行う）
         this.editorTable.notifyRowSelectionChanged(this.focus.row);
+
+        // フォーカスセルに editor-table-cell-focused クラスを付与する（ジャンプ確認用）
+        // DOM要素の流出防止のため EditorTable 側でクラスを管理する
+        this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
     }
 
     private scrollFocusIntoView(): void {

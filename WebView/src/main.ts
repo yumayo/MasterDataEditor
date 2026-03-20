@@ -8,6 +8,9 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {applyStoredTheme} from "./settings-panel";
 import {NotificationToast} from "./notification";
+import {ValidationEngine} from "./validation-engine";
+import {ValidationPanel} from "./validation-panel";
+import {StatusBar} from "./status-bar";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -50,6 +53,20 @@ import {NotificationToast} from "./notification";
 
     // 通知ポップアップを初期化（右下固定、アプリ全体で1つ）
     const notification = new NotificationToast();
+
+    // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
+    // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
+    // Tab ↔ Sidebar と同じパターン。
+    const validationEngine = new ValidationEngine(store);
+    const statusBar = {} as StatusBar;
+    const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
+    const realStatusBar = new StatusBar(validationPanel);
+    Object.assign(statusBar, realStatusBar);
+    Object.setPrototypeOf(statusBar, StatusBar.prototype);
+    tab.connectValidationPanel(validationPanel);
+    // editor 直下の下段に配置する（flex-direction: column のため自然に下段になる）
+    editor.appendValidationPanel(validationPanel);
+    editor.appendStatusBar(statusBar);
 
     // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
     (window as unknown as Record<string, unknown>)['notification'] = notification;

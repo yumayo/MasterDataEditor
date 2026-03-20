@@ -19,6 +19,7 @@ import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {RelationsPanel} from "./relations-panel";
+import {ValidationPanel} from "./validation-panel";
 import {Csv} from "./csv";
 import {SettingsPanel} from "./settings-panel";
 import {DiffTab} from "./diff-tab";
@@ -138,6 +139,12 @@ export class Tab {
     private currentFormPanel: FormPanel | false;
 
     /**
+     * バリデーションパネル（main.tsのconnectValidationPanelで設定される。未設定はfalse）
+     * テーブルを開く際にスキーマを登録し、EditorTable に接続するために使用する。
+     */
+    private validationPanel: ValidationPanel | false;
+
+    /**
      * ブラウザ History API によるナビゲーション履歴管理。
      * コンストラクタ末尾で生成され、Tab と相互参照する。
      */
@@ -172,6 +179,7 @@ export class Tab {
         this.settingsWrapperElement = false;
         this.diffTabs = new Map();
         this.currentFormPanel = false;
+        this.validationPanel = false;
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -212,12 +220,19 @@ export class Tab {
     }
 
     /**
+     * バリデーションパネルを接続する（main.ts で呼ぶ）。
+     * 接続後は createEditorTable 時にスキーマ登録と validationPanel 接続が行われる。
+     */
+    connectValidationPanel(panel: ValidationPanel): void {
+        this.validationPanel = panel;
+    }
+
+    /**
      * タブで開かれているEditorTableの参照マップを取得する
      */
     getOpenEditorTables(): Map<string, EditorTable> {
         return this.openEditorTables;
     }
-
 
     /**
      * タブボタン配列を取得する（サブモジュール用）
@@ -849,6 +864,8 @@ export class Tab {
         // 現在のペインスタックと viewIndex を state に保存する（タブ復帰時に復元するため）
         state.paneStack = this.paneStack.slice();
         state.viewIndex = this.viewIndex;
+        // フォーカスクラスを除去して次タブ切り替え時に前タブのハイライトが残留しないようにする
+        state.editorTable.clearFocusedCell();
         state.editorTable.deactivate();
         state.areaResizer.deactivate();
         state.fillController.deactivate();
@@ -1074,6 +1091,13 @@ export class Tab {
             // 開いているテーブルのマップに登録
             this.openEditorTables.set(name, editorTable);
 
+            // ValidationPanel が接続されている場合: openEditorTables.set() 完了後に全テーブルバリデーションを実行する。
+            // createEditorTable() 内ではなくここで呼ぶことで、今開いたテーブルが applyErrorClassesToAllEditorTables()
+            // の対象に含まれ、初期表示時の重複PKにも cell-pk-duplicate クラスが正しく付与される。
+            if (this.validationPanel !== false) {
+                this.validationPanel.runAndUpdate();
+            }
+
             // 参照先テーブルを事前読み込み
             this.reference.preloadReferenceTables(tableData, editorTable);
 
@@ -1216,6 +1240,19 @@ export class Tab {
         // FillController のイベントを初期化（EditorTable が初期化された後）
         fillController.initialize();
 
+        // ValidationPanel が接続されている場合: スキーマを登録して EditorTable に接続する。
+        // runAndUpdate() は呼び出し元 createTabState() で openEditorTables.set() 完了後に呼ぶ。
+        // ここで runAndUpdate() を呼ぶと openEditorTables に今開いたテーブルがまだ登録されておらず、
+        // applyErrorClassesToAllEditorTables() が新テーブルのDOMに適用できないため。
+        if (this.validationPanel !== false) {
+            this.validationPanel.registerSchema(
+                name,
+                tableData.primaryKeyColumns,
+                tableData.header.map(col => ({ name: col.name, reference: col.reference }))
+            );
+            editorTable.connectValidationPanel(this.validationPanel);
+        }
+
         return {editorTable, selection, editorTableHandler, history, areaResizer, fillController};
     }
 
@@ -1334,6 +1371,18 @@ export class Tab {
 
         // 逆参照ヒント（cell-reverse-reference-hint）をミニテーブルのPK列にも表示するため解決する
         this.reference.resolveReverseReferencesAsync(tableKey, editorTable);
+
+        // ValidationPanel が接続されている場合: ミニテーブルにもスキーマを登録して ValidationPanel を接続する。
+        // ミニテーブルは openEditorTables に登録されないため runAndUpdate() では適用されない。
+        // 代わりに runValidation()（isMiniTable パス）で独立してPKバリデーションを実行する。
+        if (this.validationPanel !== false) {
+            this.validationPanel.registerSchema(
+                tableKey,
+                tableData.primaryKeyColumns,
+                tableData.header.map(col => ({ name: col.name, reference: col.reference }))
+            );
+            editorTable.connectValidationPanel(this.validationPanel);
+        }
 
         return {editorTable, fillController, areaResizer, history};
     }

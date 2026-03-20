@@ -276,6 +276,21 @@
     text-underline-offset: 2px;
 }
 
+/* エラーセル: 背景赤 + 枠赤
+   getComputedStyle().backgroundColor が rgb(255,...) を返すよう、不透明な rgb() 値を使用する。
+   テストが /rgb\(25[0-5]/ でマッチを確認するため rgba は使用しない。 */
+.cell-error {
+    background-color: rgb(255, 60, 60) !important;
+    outline: 1px solid rgb(255, 80, 80);
+    outline-offset: -1px;
+}
+
+/* フォーカスセル: バリデーションパネルからジャンプした後の視覚的フィードバック */
+.editor-table-cell-focused {
+    outline: 2px solid var(--focus-border, #007fd4);
+    outline-offset: -2px;
+}
+
 /* ソートインジケーター: リサイズハンドルの左に配置、右寄せ。
    arrowPair（矢印縦積み）と prioritySpan（優先度番号）を横並びで配置する。 */
 .sort-indicator {

@@ -215,8 +215,8 @@ export class EditorTableStructure {
         // 新規行にIDが入力される前にキャッシュが構築されると空IDがスキップされるため問題ないが、
         // IDが入力された後は updateFullDataCell で逐次更新されるため一貫した挙動を保証する。
         this.table.evictOwnReferenceDataCache();
-        // 行挿入後にPK重複バリデーションを実行する（Undo/Redo時に挿入した行のIDが重複する可能性があるため）
-        this.table.validatePkDuplicates();
+        // 行挿入後にバリデーションを実行する（Undo/Redo時に挿入した行のIDが重複する可能性があるため）
+        this.table.runValidation();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（挿入行がフィルター条件を満たさない可能性）
         this.table.refreshFilterDisplayIfActive();
         // 差分ビューの右ペインで行挿入した場合、左ペインの同一位置にパディング行を挿入して行数を同期する
@@ -381,8 +381,8 @@ export class EditorTableStructure {
         // undo（insertRowInternal呼び出し）時も insertRowInternal 側でキャッシュを無効化するため、
         // deleteRow と insertRowInternal の両方で evict することで Do/Undo の対称性を保つ。
         this.table.evictOwnReferenceDataCache();
-        // 行削除後にPK重複バリデーションを実行する（削除によって重複が解消される場合があるため）
-        this.table.validatePkDuplicates();
+        // 行削除後にバリデーションを実行する（削除によってエラーが解消される場合があるため）
+        this.table.runValidation();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（行削除で表示行数が変化する）
         this.table.refreshFilterDisplayIfActive();
         // 行削除後も末尾に常に1行バッファ行を保持する（通常テーブル・ミニテーブル共通）。
