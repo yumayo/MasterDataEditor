@@ -140,8 +140,17 @@
 - **IMPORTANT**: `resize-handle.css` の `.resize-handle[data-direction="vertical"]` は `top: 0` に配置。ValidationPanel 上端に固定されるが、パネルに `overflow-y: auto` があるため、スクロール後にハンドルがスクロール領域内に引き込まれ位置がズレる可能性がある（position:absolute は親のposition:relativeを基準とするため実際にはズレない、ただし overflow:auto との兼ね合いで clip される可能性がある）
 - **IMPORTANT**: notification.css に `#c0392b`/`#ffffff`/`#252526`/`#cccccc` ハードコード 8 箇所（CSS hardcoded colors パターン継続）
 
+## ResizeHandle consumedDelta パターン (2026-03-20 追加)
+- **onResize の返り値規約**: 「マウスの移動方向と同符号のピクセル消費量」を返す。prevCoord += consumedDelta で更新される
+- **Sidebar**: `return newWidth - currentWidth`（右移動でwidthが増えれば正）→ delta と同符号 → 正しい
+- **ValidationPanel**: `return currentHeight - newHeight`（下移動でheightが縮小するので currentHeight - newHeight が正）→ delta と同符号 → 正しい
+- **RelationsPanel**: `return currentWidth - clampedNewWidth`。右移動(delta正)でwidth縮小なのでcurrentWidth - clampedNewWidth が正。delta と同符号になり正しい（ただし符号二重反転で成立しているため脆い）
+- **RelationsPanel の浮動小数点誤差**: percentage を 0.1%丸めした後 `(percentage/100) * rect.width` で clampedNewWidth を計算 → rect.width が整数でない HiDPI 環境でフレームごとに最大 0.5px の誤差が蓄積。長時間ドラッグで prevCoord がドリフトする
+- **テスト設計のパターン**: 「上限到達後に超過分を戻るまで動かない」は検証しているが「超過解消後に動き始める」を検証していない。境界の両側をテストせよ
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) ResizeHandle consumedDelta 符号修正: 致命的1件（RelationsPanel浮動小数点ドリフト）、重要3件、軽微2件
 - (2026-03-20) ResizeHandle共通化+PROBLEMSパネル縦リサイズ+StatusBar UI: 致命的2件、重要4件、軽微3件
 - (2026-03-20) FEAT_0047 Navigation goBack/goForward R2: 致命的1件（ゾンビ RP 参照）、重要2件、軽微2件
 - (2026-03-20) FEAT_0048 ValidationPanel R2: 致命的5件修正確認。新規: 重要2件（clearFocusedCell未呼び出し、CSS hardcoded）、軽微2件
