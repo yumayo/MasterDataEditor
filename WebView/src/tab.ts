@@ -1478,37 +1478,73 @@ export class Tab {
      * フォームビューを表示する（PKセル右クリックメニューから呼ばれる）
      * RelationsPanelの親要素（rightSlot）にFormPanelをオーバーレイして表示する。
      * 既存のFormPanelがあれば破棄してから新しいものを生成する。
+     * 履歴 push は NavigationHistory.pushFormPanelOpen 内部の restoring フラグで自律的に制御される。
      * @param tableName 対象テーブル名
      * @param pkValue 対象行のPK値
      */
     showFormPanel(tableName: string, pkValue: string): void {
-        // フォームパネルを開いたことをブラウザ履歴に記録する（tabName/pkValue を記録して goForward で再オープン可能にする）
+        // 履歴に記録する（pushFormPanelOpen 内部の restoring フラグで popstate 復元中は自律的にスキップされる）
         this.navigationHistory.pushFormPanelOpen(tableName, pkValue);
 
-        // 既存のFormPanelを破棄する（新しいPK値で開き直す場合）
-        if (this.currentFormPanel !== false) {
-            this.currentFormPanel.remove();
-            this.currentFormPanel = false;
-        }
-
-        // RelationsPanelの親要素（rightSlot または setVisiblePanes で設定された要素）を取得する
-        const rpParent = this.relationsPanel.getPanelElement().parentElement;
-        if (rpParent === null) {
-            throw new Error('[Tab] showFormPanel: RelationsPanel が DOM に追加されていません');
-        }
-        // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
-        this.relationsPanel.getPanelElement().style.display = 'none';
-
-        // FormPanel を生成して右スロットにオーバーレイする
-        const formPanel = new FormPanel(this.store, this, this.notification);
-        formPanel.appendTo(rpParent);
-        this.currentFormPanel = formPanel;
-
+        // FormPanel を生成して表示する（共通処理）
+        const formPanel = this.createFormPanel();
         // 指定行のフォームを非同期で描画する
         // FormPanel.renderCurrentPageAsync 内でエラー通知するため、ここでは通知しない（二重通知防止）
         formPanel.showForRowAsync(tableName, pkValue).catch(err => {
             console.error('[Tab] showFormPanel: showForRowAsync failed:', String(err));
         });
+    }
+
+    /**
+     * navStack を復元してフォームビューを表示する（popstate 復元専用）
+     * NavigationHistory の form-panel-drilldown ハンドラから呼ばれる。
+     * 履歴への push は行わない（popstate 復元のため）。
+     * @param _tabName タブ名（将来のタブ切り替え復元用。現状は未使用）
+     * @param navStack 復元するナビゲーションスタック
+     */
+    showFormPanelWithNavStack(_tabName: string, navStack: Array<{tableName: string; pkValue: string; label: string}>): void {
+        // FormPanel を生成して表示する（共通処理）
+        const formPanel = this.createFormPanel();
+        // navStack を復元して最後のページを描画する
+        formPanel.restoreNavStackAsync(navStack).catch(err => {
+            console.error('[Tab] showFormPanelWithNavStack: restoreNavStackAsync failed:', String(err));
+        });
+    }
+
+    /**
+     * FormPanel を生成して右スロットにオーバーレイする共通処理。
+     * 既存の FormPanel があれば破棄してから新しいものを生成する。
+     * showFormPanel と showFormPanelWithNavStack の両方から呼ばれる。
+     */
+    private createFormPanel(): FormPanel {
+        // 既存のFormPanelを破棄する（新しいPK値で開き直す場合）
+        if (this.currentFormPanel !== false) {
+            this.currentFormPanel.remove();
+            this.currentFormPanel = false;
+        }
+        // RelationsPanelの親要素（rightSlot または setVisiblePanes で設定された要素）を取得する
+        const rpParent = this.relationsPanel.getPanelElement().parentElement;
+        if (rpParent === null) {
+            throw new Error('[Tab] createFormPanel: RelationsPanel が DOM に追加されていません');
+        }
+        // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
+        this.relationsPanel.getPanelElement().style.display = 'none';
+        // FormPanel を生成して右スロットにオーバーレイする
+        const formPanel = new FormPanel(this.store, this, this.notification);
+        formPanel.appendTo(rpParent);
+        this.currentFormPanel = formPanel;
+        return formPanel;
+    }
+
+    /**
+     * フォームパネル内のドリルダウンをブラウザ履歴に記録する。
+     * FormPanel.drillDownAsync から呼ばれる。
+     * NavigationHistory.restoring 中は自動的にスキップされる。
+     * @param navStack ドリルダウン後の完全なナビゲーションスタック
+     */
+    pushFormDrillDown(navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
+        if (this.activeTabName === false) throw new Error('[Tab] pushFormDrillDown: アクティブなタブが存在しない状態でドリルダウンが要求されました');
+        this.navigationHistory.pushFormPanelDrillDown(this.activeTabName, navStack);
     }
 
     /**

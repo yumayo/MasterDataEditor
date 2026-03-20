@@ -634,3 +634,126 @@ test.describe('フォームパネル開閉の履歴記録', () => {
 		await expect(page.locator('.form-panel')).toBeHidden();
 	});
 });
+
+// =============================================================================
+// フォームパネルのドリルダウン履歴テスト
+//
+// 操作フロー:
+//   questテーブルを開いてPKセル右クリック → フォームビューを表示
+//   → N:1参照先（enemy）セクションを開いてドリルダウン
+//   → history.state に { type: 'form-panel-drilldown' } が積まれること
+//
+// goBack で前のページ（quest のフォーム）に戻り、
+// goForward でドリルダウン先（enemy のフォーム）に再び進むこと。
+//
+// テーブル構成（createReferencesJumpTestFileSystem と同一）:
+//   enemy: id(PK), ja(string)
+//   quest: id(PK), name(string), enemy_id(FK→enemy.id)
+//   item:  id(PK), name(string), quest_id(FK→quest.id)
+//
+// quest(id=1) のフォームを開き、enemy セクションを開くと enemy(id=1) が表示される。
+// enemy(id=1) をクリックするとドリルダウンする。
+// =============================================================================
+test.describe('フォームパネルのドリルダウン履歴記録', () => {
+	test.beforeEach(async ({ page }) => {
+		const fs = createReferencesJumpTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+	});
+
+	/**
+	 * quest テーブルのフォームビューを開いて、enemy セクションの参照アイテムにドリルダウンする。
+	 * 複数テストで共通して使うセットアップ処理。
+	 * ドリルダウン後、フォームパネルにはドリルダウン先（enemy テーブル）の内容が表示されている状態を返す。
+	 */
+	async function openFormAndDrillDownAsync(page: Page): Promise<void> {
+		// quest テーブルを開く
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		// 1行目（id=1, enemy_id=1）のPKセルを右クリックしてフォームビューを開く
+		await rightClickPkCellAsync(questTable, 0);
+		const menu = page.locator('.context-menu.visible');
+		await expect(menu).toBeVisible();
+		await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+		// フォームパネルが表示されていること
+		const formPanel = page.locator('.form-panel');
+		await expect(formPanel).toBeVisible();
+
+		// フォームのタイトルに quest テーブル名が表示されていること（ルートページの確認）
+		await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+
+		// N:1参照先（enemy）セクションを開いてドリルダウンする
+		// セクションヘッダー「→ enemy（enemy_id）」をクリックしてアコーディオンを開く
+		const enemySection = formPanel.locator('.form-panel-section', { hasText: '→ enemy' });
+		await expect(enemySection).toBeVisible();
+		const sectionHeader = enemySection.locator('.form-panel-section-header');
+		await sectionHeader.click();
+
+		// セクションボディが表示され、参照アイテム（enemy id=1）が非同期ロードされるのを待つ
+		const refItem = enemySection.locator('.form-panel-ref-item--clickable').first();
+		await expect(refItem).toBeVisible();
+
+		// 参照アイテムをクリックしてドリルダウンする
+		await refItem.click();
+
+		// ドリルダウン後、フォームのタイトルが enemy テーブルに変わっていること
+		await expect(formPanel.locator('.form-panel-title-table')).toHaveText('enemy');
+	}
+
+	// ---------------------------------------------------------------------------
+	// テスト14: ドリルダウン時に history.state に form-panel-drilldown が記録される
+	// ---------------------------------------------------------------------------
+	test('ドリルダウン時に history.state に form-panel-drilldown が記録される', async ({ page }) => {
+		await openFormAndDrillDownAsync(page);
+
+		// history.state に form-panel-drilldown が記録されていること
+		const state = await page.evaluate(() => history.state);
+		expect(state).toMatchObject({ type: 'form-panel-drilldown' });
+		// navStack が2要素（quest ルート + enemy ドリルダウン先）であること
+		expect(state).toHaveProperty('navStack');
+		expect((state as Record<string, unknown>)['navStack']).toHaveLength(2);
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト15: ドリルダウン後にgoBackで前のページ（quest）に戻る
+	//
+	// ドリルダウンして enemy フォームが表示されている状態で goBack() を呼ぶと、
+	// フォームパネルが quest のルートページに戻る（タイトルが quest に変わる）ことを確認する。
+	// ---------------------------------------------------------------------------
+	test('ドリルダウン後にgoBackでフォームが前のページ（quest）に戻る', async ({ page }) => {
+		await openFormAndDrillDownAsync(page);
+
+		const formPanel = page.locator('.form-panel');
+
+		// goBack でフォームが quest に戻ること
+		await page.goBack();
+		// フォームパネルは表示されたまま（閉じない）
+		await expect(formPanel).toBeVisible();
+		// タイトルが quest に戻っていること
+		await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+	});
+
+	// ---------------------------------------------------------------------------
+	// テスト16: goBack後にgoForwardでドリルダウン先（enemy）に再び進む
+	//
+	// goBack で quest に戻った後、goForward で再び enemy のフォームに進むことを確認する。
+	// ---------------------------------------------------------------------------
+	test('goBack後にgoForwardでドリルダウン先（enemy）に再び進む', async ({ page }) => {
+		await openFormAndDrillDownAsync(page);
+
+		const formPanel = page.locator('.form-panel');
+
+		// goBack でフォームが quest に戻る
+		await page.goBack();
+		await expect(formPanel).toBeVisible();
+		await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+
+		// goForward で enemy に再び進む
+		await page.goForward();
+		await expect(formPanel).toBeVisible();
+		await expect(formPanel.locator('.form-panel-title-table')).toHaveText('enemy');
+	});
+});

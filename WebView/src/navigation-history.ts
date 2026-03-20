@@ -5,11 +5,12 @@ import {Tab} from "./tab";
  * マウスサイドボタン（戻る/進む）や Alt+Left/Right で各種ナビゲーション操作を復元する。
  *
  * 対応エントリタイプ:
- *   - tab-switch:      タブ切り替え（tabName, viewIndex=0）
- *   - pane-push:       定義ジャンプ（paneStack深化）(tabName, viewIndex=N)
- *   - navigate-row:    REFERENCESパネルからのジャンプ（tableName）
- *   - navigate-cell:   検索パネルからのジャンプ（tableName）
- *   - form-panel-open: フォームパネル開（tabName, pkValue）
+ *   - tab-switch:           タブ切り替え（tabName, viewIndex=0）
+ *   - pane-push:            定義ジャンプ（paneStack深化）(tabName, viewIndex=N)
+ *   - navigate-row:         REFERENCESパネルからのジャンプ（tableName）
+ *   - navigate-cell:        検索パネルからのジャンプ（tableName）
+ *   - form-panel-open:      フォームパネル開（tabName, pkValue）
+ *   - form-panel-drilldown: フォームパネル内ドリルダウン（tabName, navStack）
  *
  * Tab との相互参照で密結合する。
  * Tab コンストラクタ末尾で生成され、Tab.enableTabButton() から pushTabSwitch() が呼ばれる。
@@ -47,30 +48,40 @@ export class NavigationHistory {
 
             this.restoring = true;
             try {
-                // popstate 時は常にフォームパネルを閉じる（フォームパネルが開いていない場合は何もしない）
-                this.tab.closeFormPanel();
-
                 const type = state['type'];
-                if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
-                    // tabName で切り替え + viewIndex は 0 に戻す
+                if (type === 'form-panel-open' && typeof state['tabName'] === 'string' && typeof state['pkValue'] === 'string') {
+                    // フォーム復元前にタブを切り替える（異なるタブで開いたフォームの復元に必要）
                     this.tab.switchToExistingTab(state['tabName']);
-                    this.tab.restoreViewIndex(0);
-                } else if (type === 'pane-push' && typeof state['tabName'] === 'string') {
-                    // pane-push エントリには viewIndex/tableName/pkValue が必ず存在する。存在しない場合は設計ミスのため throw する
-                    if (typeof state['viewIndex'] !== 'number') throw new Error('[NavigationHistory] pane-push エントリに viewIndex がありません');
-                    if (typeof state['tableName'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに tableName がありません');
-                    if (typeof state['pkValue'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに pkValue がありません');
-                    this.tab.switchToExistingTab(state['tabName']);
-                    // goForward で到達した場合、paneStack がトランケートされていることがある。
-                    // その場合は pushRelationsPanel でペインスタックを再構築してから viewIndex を復元する。
-                    this.tab.restoreOrRebuildPaneStack(state['viewIndex'], state['tableName'], state['pkValue']);
-                } else if ((type === 'navigate-row' || type === 'navigate-cell') && typeof state['tableName'] === 'string') {
-                    // popstate は「移動先エントリ」の state を返すため、tableName（ジャンプ先）に切り替える
-                    // goBack 時は前のエントリ（tab-switch 等）の state が返るため、tab-switch ハンドラが元のタブを自動復元する
-                    this.tab.switchToExistingTab(state['tableName']);
-                } else if (type === 'form-panel-open' && typeof state['tabName'] === 'string' && typeof state['pkValue'] === 'string') {
-                    // goForward でフォームパネルエントリに到達した場合、フォームパネルを再オープンする
+                    // フォームパネルを閉じて、ルートページで再オープンする（restoring中なので履歴pushはスキップされる）
+                    this.tab.closeFormPanel();
                     this.tab.showFormPanel(state['tabName'], state['pkValue']);
+                } else if (type === 'form-panel-drilldown' && typeof state['tabName'] === 'string' && Array.isArray(state['navStack'])) {
+                    // フォーム復元前にタブを切り替える（異なるタブで開いたフォームの復元に必要）
+                    this.tab.switchToExistingTab(state['tabName']);
+                    // フォームパネルを閉じて、navStack全体を復元して再オープンする
+                    this.tab.closeFormPanel();
+                    this.tab.showFormPanelWithNavStack(state['tabName'], state['navStack'] as Array<{tableName: string; pkValue: string; label: string}>);
+                } else {
+                    // フォーム以外のエントリ: フォームパネルを閉じる（開いていなければ何もしない）
+                    this.tab.closeFormPanel();
+                    if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
+                        // tabName で切り替え + viewIndex は 0 に戻す
+                        this.tab.switchToExistingTab(state['tabName']);
+                        this.tab.restoreViewIndex(0);
+                    } else if (type === 'pane-push' && typeof state['tabName'] === 'string') {
+                        // pane-push エントリには viewIndex/tableName/pkValue が必ず存在する。存在しない場合は設計ミスのため throw する
+                        if (typeof state['viewIndex'] !== 'number') throw new Error('[NavigationHistory] pane-push エントリに viewIndex がありません');
+                        if (typeof state['tableName'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに tableName がありません');
+                        if (typeof state['pkValue'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに pkValue がありません');
+                        this.tab.switchToExistingTab(state['tabName']);
+                        // goForward で到達した場合、paneStack がトランケートされていることがある。
+                        // その場合は pushRelationsPanel でペインスタックを再構築してから viewIndex を復元する。
+                        this.tab.restoreOrRebuildPaneStack(state['viewIndex'], state['tableName'], state['pkValue']);
+                    } else if ((type === 'navigate-row' || type === 'navigate-cell') && typeof state['tableName'] === 'string') {
+                        // popstate は「移動先エントリ」の state を返すため、tableName（ジャンプ先）に切り替える
+                        // goBack 時は前のエントリ（tab-switch 等）の state が返るため、tab-switch ハンドラが元のタブを自動復元する
+                        this.tab.switchToExistingTab(state['tableName']);
+                    }
                 }
             } finally {
                 this.restoring = false;
@@ -135,4 +146,14 @@ export class NavigationHistory {
         if (this.restoring) return;
         history.pushState({ type: 'form-panel-open', tabName, pkValue }, '');
     }
+
+    /**
+     * フォームパネル内のドリルダウンをブラウザ履歴に記録する。
+     * navStack 全体をディープコピーして保存し、goBack/goForward で復元可能にする。
+     */
+    pushFormPanelDrillDown(tabName: string, navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
+        if (this.restoring) return;
+        history.pushState({ type: 'form-panel-drilldown', tabName, navStack: [...navStack] }, '');
+    }
+
 }

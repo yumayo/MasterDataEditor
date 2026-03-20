@@ -124,19 +124,23 @@ export class FormPanel {
     }
 
     /**
-     * パンくずの指定インデックスまで戻る
-     */
-    private goToPageAsync(index: number): Promise<void> {
-        this.navStack = this.navStack.slice(0, index + 1);
-        return this.renderCurrentPageAsync();
-    }
-
-    /**
-     * 参照アイテムをクリックしてドリルダウンする
+     * 参照アイテムをクリックしてドリルダウンする。
+     * navStack に push してからブラウザ履歴に記録する（popstate 復元中は記録しない）。
      */
     private drillDownAsync(tableName: string, pkValue: string, label: string): Promise<void> {
         if (this.navStack.length >= FormPanel.MAX_DEPTH) return Promise.resolve();
         this.navStack.push({ tableName, pkValue, label });
+        // ドリルダウンをブラウザ履歴に記録する（Tab → NavigationHistory 経由）
+        this.tab.pushFormDrillDown(this.navStack);
+        return this.renderCurrentPageAsync();
+    }
+
+    /**
+     * ナビゲーションスタックを直接復元して最後のページを描画する（popstate 復元用）。
+     * Tab.showFormPanelWithNavStack から呼ばれる。
+     */
+    restoreNavStackAsync(navStack: Array<{tableName: string; pkValue: string; label: string}>): Promise<void> {
+        this.navStack = [...navStack];
         return this.renderCurrentPageAsync();
     }
 
@@ -290,10 +294,10 @@ export class FormPanel {
                 item.classList.add('form-panel-breadcrumb-item--link');
                 const capturedIndex = i;
                 item.addEventListener('click', () => {
-                    this.goToPageAsync(capturedIndex).catch(err => {
-                        console.error('[FormPanel] goToPageAsync failed:', err);
-                        this.notification.show('フォームのページ遷移に失敗しました');
-                    });
+                    // 現在の深さとターゲットの差分だけ履歴を戻る。
+                    // popstate が発火し、form-panel-drilldown または form-panel-open の復元ロジックが実行される。
+                    const delta = capturedIndex - (this.navStack.length - 1);
+                    history.go(delta);
                 });
             }
             item.textContent = this.navStack[i].label;
