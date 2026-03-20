@@ -176,8 +176,23 @@
 - **[R2 NEW]** テスト2件のセットアップが完全コピペ（共通関数に抽出すべき）
 - **[R2 NEW]** タブ開/未開でナビゲーション履歴への影響が非対称（switchToExistingTab vs navigateToTableCell）
 
+## NotificationToast エラー通知伝播 Known Patterns (2026-03-21 R2)
+- **[R1 FIXED]** EditorTableHandler.notification がコンストラクタ引数に修正済み（生焼けオブジェクト解消）
+- **[R1 FIXED]** `if (this.notification)` フォールバック解消（notification は常に存在）
+- **[R2 STILL]** 保存失敗 .catch() 4箇所（editor-table-handler.ts L516/519/528/538）に通知未追加。throw new Error で unhandled rejection（R1からの持ち越し）
+- **[R2 STILL]** tab-reference.ts L108-109 の `.catch(() => {})` が console.warn すら出力しない完全握り潰し（R1からの持ち越し）
+- **[R2 NEW]** notification.ts L97/99 の `== null` が抽象等価比較 → `=== undefined` に変更すべき
+- **[R2 NEW]** (window as any).editor がmain.ts L77に残存（notification は修正済みだがeditorは放置）
+- **[R2 NEW]** tab.ts L515 の reloadTableDataAsync catch も throw new Error パターン
+- **[R2 NEW]** editor-table-handler.ts L701 refreshGitDiffAsync の catch に通知スキップの判断理由コメントなし
+- **[R2 NEW]** 通知追加箇所の選定基準が不明確（「ノイズ防止」コメントありの箇所とコメントなしの箇所が混在）
+- **PATTERN**: removeToast() が public だが呼び出し箇所なし（デッドコード）
+- **PATTERN**: 同一メッセージ重複トースト防止なし（UXレビューでも指摘済み）
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-21) NotificationToast エラー通知伝播 R2: 致命的3件（保存失敗通知漏れ持越し/catch握り潰し持越し/==null）、重要4件、軽微3件
+- (2026-03-21) NotificationToast エラー通知伝播: 致命的3件（生焼けnotification/保存失敗通知漏れ/catch網羅漏れ）、重要4件、軽微3件
 - (2026-03-21) ValidationPanel jumpToError リファクタ R2: 致命的1件（PK重複+タブ未開の制約）、重要3件（REDコメント残存/==null持越し/pkValueスナップショット）、軽微3件
 - (2026-03-21) ValidationPanel jumpToError リファクタ: 致命的3件、重要4件、軽微3件
 - (2026-03-20) config.primaryKeyColumnName廃止リファクタ: 致命的3件、重要4件、軽微3件

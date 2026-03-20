@@ -61,3 +61,43 @@ type: project
 
 **Why:** ISSUE_0079でステータスバー統合という構造的改善を実施。アクセシビリティ属性（role/aria）の主要問題が解消されたが、「閉じる手段がない」という最初から指摘している根本問題は未解決。
 **How to apply:** 次回レビュー時は「閉じる手段とaria-expanded」を最初に確認する。
+
+---
+
+## 参照エラーの通知化 追加レビュー（2026-03-21）評価: B
+
+### 変更概要
+.catch() で console.warn/console.error に握りつぶされていた内部エラーを NotificationToast でユーザーに通知する機能を追加。
+
+### 新規改善確認済み
+1. **`notification-bell` に `aria-expanded` が付与され open/close 状態と連動** — 前回指摘が解消。「ベルマークをクリックすると」ダンプで aria-expanded="true"、「通知コンテナはbody直下に存在しない」ダンプで aria-expanded="false" を確認。
+2. **エラーメッセージが業務用語で記述** — 「参照テーブルの事前読み込みに失敗しました」「関連パネルの更新に失敗しました」。プランナーが読める言葉。
+3. **FIFO 3件スタック・4件目追加で最古消失** — 「通知は最大3つまでスタック」ダンプで「通知2/3/4」の3件、historyには「通知1〜4」全4件を確認。
+4. **notification-history visible クラスで開閉・aria-expanded と連動** — DOM対称性が向上。
+
+### DOM構造サマリ（2026-03-21時点）
+```
+.status-bar
+  .status-bar-badge [role="button" tabindex="0" data-error-count="0"]
+  .notification-container
+    .notification-toast-area
+      .notification-toast [role="alert"]  ← 最大3件（FIFO）
+    .notification-history [.visible で表示切替]
+      .notification-history-item  ← 全件保持（最大制限なし）
+    .notification-bell [role="button" tabindex="0" aria-label="通知履歴を表示" aria-expanded="false|true"]
+      SVG [aria-hidden="true"]
+```
+
+### 残存問題（🔴 改善必須）
+1. **トーストが縦書き表示** — スクリーンショット全件で右端に縦長赤ブロックとして表示。status-bar のフレックス継承か flex-direction:column の影響と推察。`writing-mode: horizontal-tb` + `min-width` + `padding` の横長ブロック化が必要。
+2. **履歴パネルを閉じる手段がDOM上に存在しない** — 「ベルマークをクリックすると」ダンプで `notification-history visible` 内に×ボタン等のクローズ要素がない。3サイクル継続未解決。
+3. **同一メッセージの重複トースト積み上がり** — `notification-on-reference-error` ダンプで「関連パネルの更新に失敗しました」が2件同時出現。デバウンスまたは重複排除が必要。
+
+### 残存問題（🟡 改善推奨）
+- `notification-history-item` に `role="listitem"` なし・`notification-history` に `role="list"` なし
+- トーストにタイムスタンプなし
+- severity 区別なし（全トースト同一赤色。warning/error 2段階推奨）
+
+### bug-report.md 照合（2026-03-21）
+- #8/#65（コンテキストメニューhide漏れ）: notification-history の open/close ロジックに同様パターンが潜在する可能性。ベル以外の操作（セル編集・コマンドパレット起動等）で開いたままにならないか要確認。
+- #53（activateTabState/resetNotification）: タブ切り替え時の参照エラー再発火リスクあり。

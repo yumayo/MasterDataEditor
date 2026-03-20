@@ -8,15 +8,22 @@
 - ファイル: project_review_archive_mar2026.md
 - 差分タブ・BUG_0021〜0025・FEAT_0023〜0036 の要約と横断的継続課題リストを収録
 
-#### FEAT_0045/ISSUE_0079 通知UI（2026-03-19初回C→2026-03-20再レビューB）
+#### FEAT_0045/ISSUE_0079 通知UI + 参照エラー通知（2026-03-19初回C→2026-03-20 B→2026-03-21 B）
 - ファイル: project_feat0045_notification.md
 - 修正済み: notification-bell に role="button"/tabindex="0"/aria-label 付与
 - 修正済み: notification-toast に role="alert" 付与
 - 修正済み: ベルSVGに aria-hidden="true" 付与
 - 修正済み: notification-container をステータスバー内に移動（ISSUE_0079）
-- 残存(🔴): 履歴パネルを閉じる手段がDOM上に依然存在しない
-- 残存(🔴): notification-bell に aria-expanded なし
-- 残存(🟡): notification-history-item に role="listitem" なし・未読バッジなし
+- 修正済み: notification-bell に aria-expanded が付与され open/close 状態と連動（2026-03-21確認）
+- 修正済み: 参照エラー（console.warn 握りつぶし分）をトーストで通知（2026-03-21確認）
+- 修正済み: エラーメッセージが業務用語（「参照テーブルの事前読み込みに失敗しました」等）で記述
+- 修正済み: FIFO 3件スタック・4件目追加で最古消失・履歴には全件保持
+- 残存(🔴): トーストが縦書き表示（status-bar フレックス継承か flex-direction:column の影響と推察）
+- 残存(🔴): 履歴パネルを閉じる手段がDOM上に存在しない（×ボタンなし、ESCハンドラ不明）
+- 残存(🔴): 同一メッセージの重複トースト積み上がり（「関連パネルの更新に失敗しました」x2が同時出現）
+- 残存(🟡): notification-history-item に role="listitem" なし・notification-history に role="list" なし
+- 残存(🟡): トーストにタイムスタンプなし（いつ発生したエラーか不明）
+- 残存(🟡): severity 区別なし（全トーストが同一赤色、warning/error 2段階推奨）
 
 #### FEAT バリデーションエラーパネル / ResizeHandle / 未開封テーブルジャンプ（初回B→A→A→A→2026-03-21 A-）
 - ファイル: project_feat_validation_panel.md

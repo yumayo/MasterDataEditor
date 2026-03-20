@@ -17,6 +17,7 @@
 - `/WebView/src/relations-panel.ts` - Relations panel (right pane)
 - `/WebView/src/selection.ts` - Selection and focus management
 - `/WebView/src/reference-expression.ts` - 参照式パース（SimpleReference/DynamicReference）
+- `/WebView/src/notification.ts` - NotificationToast（エラー通知トースト）
 - `/WebView/e2e/fixtures/test-utils.ts` - Shared test utilities
 
 ## Implementation Patterns
