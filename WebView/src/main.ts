@@ -44,9 +44,8 @@ import {StatusBar} from "./status-bar";
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
 
-    // ツールバーを初期化（タブへの密結合）
-    const toolbarElement = document.getElementById('toolbar')!;
-    const toolbar = new Toolbar(toolbarElement, tab);
+    // ツールバーを初期化（タブへの密結合。コンストラクタ内でDOMイベントをバインドするため変数保持不要）
+    new Toolbar(document.getElementById('toolbar')!, tab);
 
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);

@@ -334,7 +334,7 @@ export class EditorTableReference {
      * @param valueColumnName 動的参照式のvalueColumn名（素の列名）
      * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
      */
-    resolveValueColumnIndex(valueColumnName: string, currentDataColumnIndex: number): number {
+    resolveValueColumnIndex(valueColumnName: string, _currentDataColumnIndex: number): number {
         return this.tableData.header.findIndex(col => col.name === valueColumnName);
     }
 

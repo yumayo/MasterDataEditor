@@ -4,7 +4,6 @@ import {readFileAsync} from "./api";
 import {Editor} from "./editor";
 import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
-import {GridTextField} from "./grid-textfield";
 import {History} from "./history";
 import {AreaResizer} from "./area-resizer";
 import {ContextMenu} from "./context-menu";

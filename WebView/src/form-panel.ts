@@ -562,4 +562,6 @@ export class FormPanel {
 interface SchemaJson {
     header: Array<{ name: string; reference?: string }>;
     primary_key: string | string[];
+    /** JSONパース結果なので任意のキーが存在しうる（extractFirstPrimaryKeyColumn との互換性に必要） */
+    [key: string]: unknown;
 }

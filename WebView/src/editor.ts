@@ -11,9 +11,6 @@ export class Editor {
     /** 左ペイン（EditorTableを包む領域） */
     private readonly leftPane: HTMLElement;
 
-    /** 左ペインと右ペインを横並びに配置するコンテンツ領域 */
-    private readonly contentArea: HTMLElement;
-
     /** 左スロット（表示中の左ペインを格納するラッパー） */
     private readonly leftSlot: HTMLElement;
 
@@ -73,7 +70,6 @@ export class Editor {
         const contentArea = document.createElement('div');
         contentArea.classList.add('editor-content');
         editorElement.appendChild(contentArea);
-        this.contentArea = contentArea;
 
         // 左スロット（editor-left-pane のラッパー）
         const leftSlot = document.createElement('div');

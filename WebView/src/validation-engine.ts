@@ -413,7 +413,8 @@ export class ValidationEngine {
             }
 
             const validValues = targetValidValuesCache.get(targetTableName);
-            if (validValues === null) {
+            // Map.get() は undefined を返しうるが、上の has() ガードで必ず set 済み。null は未解決テーブルを示す。
+            if (validValues == null) {
                 // 未解決テーブル: 現在値と filterValue の両方が一致する前回エラーのみ引き継ぐ
                 // filterValue が変わっていれば参照先テーブルが切り替わったので古いエラーは引き継がない
                 const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue && e.filterValue === filterValue);

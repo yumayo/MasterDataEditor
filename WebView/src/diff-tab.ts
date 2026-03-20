@@ -13,7 +13,7 @@ import {ContextMenu} from "./context-menu";
 import {TabButton} from "./tab-button";
 import {Editor} from "./editor";
 import {Sidebar} from "./sidebar";
-import {SchemaColumn, SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
+import {SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
 import {TabReference} from "./tab-reference";
 import {GridDropdownInput} from "./grid-dropdown-input";
 

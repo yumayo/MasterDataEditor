@@ -2,7 +2,7 @@ import type { History } from "./history";
 import type { Selection } from "./selection";
 import type { EditorTable } from "./editor-table";
 import { ColumnWidthCommand, RowHeightCommand, CompositeCommand } from "./command";
-import { DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, MIN_COLUMN_WIDTH_PX } from "./constant";
+import { DEFAULT_ROW_HEIGHT, MIN_COLUMN_WIDTH_PX } from "./constant";
 
 /** D&D開始と判定する最小移動距離(px) */
 const DRAG_MIN_DISTANCE_PX = 3;
@@ -19,7 +19,6 @@ export class AreaResizer {
     private resizeStartX: number = 0;
     private resizeStartWidth: number = 0;
     private resizeColumnStartLeft: number = 0;
-    private resizeColumnOldWidth: string = DEFAULT_COLUMN_WIDTH;
     /** mousedownからの移動距離がDRAG_MIN_DISTANCE_PX以上になったらD&D確定 */
     private columnDragConfirmed: boolean = false;
 
@@ -225,9 +224,6 @@ export class AreaResizer {
             this.resizeStartX = e.clientX;
             const width = Number.parseFloat(columnHeaderCell.style.width);
             this.resizeStartWidth = width;
-            // 元の幅を保存（Undo用）- セルのスタイルから取得
-            this.resizeColumnOldWidth = columnHeaderCell.style.width;
-
             // ガイドラインを表示（縦線）: 列右端（境界）を基準にすることでマウス位置によらず正確な境界線を示す
             // getBoundingClientRect() は浮動小数点を返すため Math.round() でサブピクセル蓄積を防ぐ
             const headerRect = columnHeaderCell.getBoundingClientRect();
