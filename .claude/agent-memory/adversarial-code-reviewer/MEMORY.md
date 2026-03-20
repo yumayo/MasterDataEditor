@@ -132,8 +132,17 @@
 - **IMPORTANT**: `restoreOrRebuildPaneStack` が `pushRelationsPanel` を呼ぶ前の `this.viewIndex=0` を暗黙の前提としている
 - **PATTERN**: コメント「pushRelationsPanel 内で restoring=true のため...」は Tab が NavigationHistory の private フィールドを参照できるかのような誤解を招く
 
+## ResizeHandle 共通化 Known Patterns
+- **CRITICAL**: ResizeHandle は `dispose()` メソッドを持たない。ValidationPanel や Sidebar は生涯1インスタンスなので問題なしだが、将来的に動的破棄されるコンポーネントに使う場合はリスク。mousedown リスナーは匿名アロー経由であり RemoveEventListener 不可
+- **CRITICAL**: ドラッグ中に mousemove が `document` で捕捉されるが、`pointer-events: none` を body に設定しないため iframe/SVG 上でイベントが消える可能性あり（WebView2 環境では iframe なしのため現状問題なし）
+- **CRITICAL**: 2つの ResizeHandle ドラッグが同時発火した場合（ハンドル重なり等）、`document.body.style.cursor` が競合してリセットで片方が cursor='' になり状態が壊れる
+- **IMPORTANT**: ValidationPanel.render() が毎回 `while(firstChild) removeChild` で全子削除 → resizeHandle.prependTo() で再 prepend。ResizeHandle の element は同一インスタンスなのでリスナーも生き続けるが、render() 内のクローズボタン click リスナーは毎回新規追加されている（1回のみの使用でOK）
+- **IMPORTANT**: `resize-handle.css` の `.resize-handle[data-direction="vertical"]` は `top: 0` に配置。ValidationPanel 上端に固定されるが、パネルに `overflow-y: auto` があるため、スクロール後にハンドルがスクロール領域内に引き込まれ位置がズレる可能性がある（position:absolute は親のposition:relativeを基準とするため実際にはズレない、ただし overflow:auto との兼ね合いで clip される可能性がある）
+- **IMPORTANT**: notification.css に `#c0392b`/`#ffffff`/`#252526`/`#cccccc` ハードコード 8 箇所（CSS hardcoded colors パターン継続）
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) ResizeHandle共通化+PROBLEMSパネル縦リサイズ+StatusBar UI: 致命的2件、重要4件、軽微3件
 - (2026-03-20) FEAT_0047 Navigation goBack/goForward R2: 致命的1件（ゾンビ RP 参照）、重要2件、軽微2件
 - (2026-03-20) FEAT_0048 ValidationPanel R2: 致命的5件修正確認。新規: 重要2件（clearFocusedCell未呼び出し、CSS hardcoded）、軽微2件
 - (2026-03-19) FEAT_0047 Navigation History: 致命的4件、重要3件、軽微3件

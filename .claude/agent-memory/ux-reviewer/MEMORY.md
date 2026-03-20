@@ -18,14 +18,16 @@
 - 残存(🔴): notification-bell に aria-expanded なし
 - 残存(🟡): notification-history-item に role="listitem" なし・未読バッジなし
 
-#### FEAT バリデーションエラーパネル（初回2026-03-20 B → 再レビュー2026-03-20 A）
+#### FEAT バリデーションエラーパネル（初回B→再レビューA→リサイズ共通化レビュー2026-03-20 A）
 - ファイル: project_feat_validation_panel.md
-- 修正済み: validation-panel-item に role="button"/tabindex="0" 付与
-- 修正済み: status-bar-badge に role="button"/tabindex="0" 付与
-- 修正済み: show/hide 対称（display:block / display:none）
-- 修正済み: max-height/overflow-y（スクリーンショットで視覚的に確認）
-- 残存(🟡): validation-panel-group-header に role/aria-label がない（複数テーブルエラー混在時のグループ帰属）
-- 残存(🟡): バッジのエラー0件時の視覚的区別なし（data-error-count="0" でCSSグレーアウト推奨）
+- 修正済み: validation-panel-item に role/tabindex / status-bar-badge に role/tabindex / show/hide 対称
+- 修正済み: validation-panel-close に role/tabindex/aria-label 付与済み
+- 修正済み: resize-handle クラスを Sidebar/RelationsPanel/PROBLEMSパネルで共通化（data-direction属性）
+- 修正済み: ステータスバーにエラーアイコン+件数追加、aria-hidden/role/tabindex/aria-label 完備
+- 残存(🟡): validation-panel-group-header に role/aria-label なし（複数テーブル混在時のグループ帰属）
+- 残存(🟡): バッジのエラー0件時の視覚的区別なし（data-error-count="0" CSSグレーアウト推奨）
+- 残存(🟡): resize-handle に aria 属性なし（role="separator"/aria-orientation/aria-label 推奨）
+- 残存(🟡): PROBLEMSパネルの min-height/max-height 制約がDOMから確認できない（推測）
 
 #### BUG_0026 クイックビュー位置調整（2026-03-19レビュー）評価: B+
 - ファイル: project_bug0026_quick_view_position.md

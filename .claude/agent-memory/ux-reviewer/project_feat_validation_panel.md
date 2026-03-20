@@ -1,44 +1,69 @@
 ---
-name: FEAT バリデーションエラーパネル（2026-03-20初回 / 2026-03-20再レビュー）
-description: バリデーションエラーパネルのUXレビュー結果。初回指摘4件が修正済みになったことを再レビューで確認。
+name: FEAT バリデーションエラーパネル（2026-03-20初回 / 2026-03-20再レビュー / 2026-03-20 リサイズ共通化レビュー）
+description: バリデーションエラーパネルのUXレビュー結果。リサイズハンドル共通化・PROBLEMSパネル高さ調整・ステータスバーエラーアイコン追加のレビューを含む。
 type: project
 ---
 
-## 再レビュー評価: A（初回: B）
+## リサイズ共通化・PROBLEMSパネル改善レビュー（2026-03-20 第3回）評価: A
 
-### 修正確認済み（前回改善必須4件、すべて解消）
+### 今回の変更内容
+1. PROBLEMSパネルの高さをドラッグで調整できるようにした
+2. リサイズハンドルをSidebar/RelationsPanel/PROBLEMSパネルで共通化（`class="resize-handle" data-direction="horizontal|vertical"`）
+3. ステータスバーにエラーアイコンを追加し画面幅いっぱいに配置
 
-1. **validation-panel-item に role/tabindex 付与済み**
-   - `<div class="validation-panel-item" role="button" tabindex="0">` — 修正済み
-   - FK切れ・PK重複の両ケースで一貫して適用されていることを全DOMダンプで確認
+### 良い点
 
-2. **status-bar-badge に role/tabindex 付与済み**
-   - `<div class="status-bar-badge" role="button" tabindex="0" data-error-count="2">` — 修正済み
-   - エラー0件状態でも同属性が維持されており一貫性がある
+1. **リサイズハンドルの共通化が設計的に正しい**
+   - `<div class="resize-handle" data-direction="horizontal">` がサイドバー・RelationsPanel・PROBLEMSパネルで統一
+   - `data-direction` 属性によりCSSカーソル制御が一元管理できる構造
+   - 3箇所でクラス名とデータ属性が完全に統一されており、将来の追加コンポーネントへの適用指針が明確
 
-3. **show/hide 対称性が修正済み**
-   - 表示時: `style="display: block;"` / 非表示時: `style="display: none;"` — 対称になった
-   - bug-report #3/#32/#77/#84 の繰り返しパターンが本機能では解消
+2. **PROBLEMSパネルの構造が正しい順序で配置されている**
+   - `resize-handle` → `validation-panel-header` → `validation-panel-group-header` → `validation-panel-item`
+   - リサイズハンドルがパネル内最上部に来ており、ドラッグ操作のヒットエリアがヘッダーと被らない
 
-4. **max-height/overflow-y — 視覚的には適切に収まっている**
-   - スクリーンショットで確認。style属性として記述はないためCSSクラス側で制御と推測
-   - パネルがエディタ領域を圧迫していないことをスクリーンショットで確認済み
+3. **ステータスバーのエラーアイコンが視覚的に有効に機能している**
+   - スクリーンショット左下の「x 2」表示が赤いXアイコン+数字で即座に認識できる
+   - SVGに `aria-hidden="true"` 付与済み、`role="button"` + `tabindex="0"` + `aria-label` も完備
+   - `data-error-count` 属性でSSOTを維持
+
+4. **閉じるボタンのアクセシビリティが整備されている**
+   - `validation-panel-close` に `role="button"` + `tabindex="0"` + `aria-label="PROBLEMSパネルを閉じる"` 付与済み
+   - 閉じるボタンのSVGにも `aria-hidden="true"` 付与済み
+
+5. **エラーメッセージの情報密度が高い**
+   - 「product 行1 id: 主キー値 "1" が重複しています」のようにテーブル名+行番号+列名+値を含む
+   - `PK重複`/`FK切れ` バッジが色分け表示でエラー種別を一目で識別できる
 
 ### 残存課題（改善推奨 🟡）
 
-1. **validation-panel-group-header に role/aria-label がない**
-   - 複数テーブルのエラーが混在した場合、グループ帰属がスクリーンリーダーに伝わらない
+1. **validation-panel-group-header に role/aria-label がない**（前回から継続）
+   - `<div class="validation-panel-group-header">` に role/aria-label 未設定
+   - 複数テーブルのエラーが混在した場合、スクリーンリーダーがグループ帰属を把握できない
    - 推奨: `role="group"` + `aria-label="product のエラー (2 件)"`
 
-2. **バッジのエラー0件時の視覚的強調なし**
-   - エラーあり/なしがバッジの数値だけで区別されている
-   - `data-error-count="0"` のCSSセレクタでグレーアウト可能
+2. **エラー0件時のバッジの視覚的区別なし**（前回から継続）
+   - `data-error-count="0"` の状態でもバッジが同じスタイルで表示される
+   - `data-error-count="0"` をCSSセレクタとしてグレーアウト推奨
+   - プランナー視点: エラーがない状態は「すべてOK」なのにアイコンが赤く見えると誤認を招く
 
-### 良い点（引き続き維持）
-- cell-error/cell-pk-duplicate の分離設計
-- エラーメッセージにテーブル名+行番号+列名を含む点
-- data-error-count 属性によるSSOT管理
-- クリックジャンプが機能し、editor-table-cell-focused が適切に付与される
+3. **resize-handle に aria-label/role がない**
+   - `<div class="resize-handle" data-direction="vertical">` にアクセシビリティ属性なし
+   - キーボード操作でのリサイズができない（ドラッグ専用になっている）
+   - 推奨: `role="separator"` + `aria-orientation="horizontal"` + `aria-label="PROBLEMSパネルの高さを調整"`
+   - ただし現状のターゲットユーザー（マウス操作前提のゲームプランナー）への影響は低め
 
-**Why:** バリデーションパネルは「書いたデータが正しいか」を確認する安全網。
-**How to apply:** 今後のバリデーション系機能では role/tabindex の付与と show/hide 対称性をレビューチェックリストの必須項目として扱う。
+4. **PROBLEMSパネルの最小高さ・最大高さの制約が不明**
+   - DOMダンプにはパネルの高さ制御に関するstyle属性が確認できない
+   - ドラッグでエディタ領域を潰しきれてしまうリスクがある（推測）
+   - 推奨: `min-height: 80px`（最低でもヘッダー+1件が見える高さ）、`max-height: 50vh` の制約
+
+### 修正確認済み（前々回からの指摘）
+- validation-panel-item に role/tabindex 付与済み（全DOMダンプで確認）
+- status-bar-badge に role/tabindex 付与済み
+- show/hide 対称性: `display: block` / `display: none` で対称
+- max-height/overflow-y が適切に機能（スクリーンショット確認）
+- validation-panel-close のアクセシビリティ属性完備
+
+**Why:** バリデーションパネルは安全網機能。リサイズで高さを調整できることはエラー件数が多いときに特に重要。
+**How to apply:** 今後の resize-handle 追加時には data-direction + aria 属性をセットで実装するチェックリストを適用。
