@@ -15,6 +15,15 @@
 - 致命的(🔴): notification-toast に role="alert"/aria-live なし（スクリーンリーダー非通知）
 - 改善推奨(🟡): 未読バッジなし・タイムスタンプなし・履歴表示順が古い順
 
+#### FEAT バリデーションエラーパネル（初回2026-03-20 B → 再レビュー2026-03-20 A）
+- ファイル: project_feat_validation_panel.md
+- 修正済み: validation-panel-item に role="button"/tabindex="0" 付与
+- 修正済み: status-bar-badge に role="button"/tabindex="0" 付与
+- 修正済み: show/hide 対称（display:block / display:none）
+- 修正済み: max-height/overflow-y（スクリーンショットで視覚的に確認）
+- 残存(🟡): validation-panel-group-header に role/aria-label がない（複数テーブルエラー混在時のグループ帰属）
+- 残存(🟡): バッジのエラー0件時の視覚的区別なし（data-error-count="0" でCSSグレーアウト推奨）
+
 #### BUG_0026 クイックビュー位置調整（2026-03-19レビュー）評価: B+
 - ファイル: project_bug0026_quick_view_position.md
 - 下端はみ出し: top固定+max-height動的付与 正常（top:620px, max-height:100px）

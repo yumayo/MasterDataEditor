@@ -114,8 +114,21 @@
 - **IMPORTANT**: `state['tabName'] as string` の実行時型チェックなし
 - **PATTERN**: TDD RED フェーズのコメントが実装後も残存 → GREEN 後に削除すること
 
+## FEAT_0048 ValidationPanel Known Patterns (R2修正後)
+- **[FIXED]** runValidation() に統合（全6箇所の validatePkDuplicates 直接呼び出し解消）
+- **[FIXED]** storeRowToDomRow() 追加でソート中のジャンプが正しく機能
+- **[FIXED]** ValidationPanel/StatusBar を Object.assign パターンで生焼けオブジェクト解消（Tab↔Sidebar と同パターン）
+- **[FIXED]** ?? 演算子4箇所を除去（validation-engine.ts で list !== undefined チェックに変更）
+- **[STILL]** Tab.validationPanel が | false パターン（connectValidationPanel で後付け）→ 生焼けオブジェクトの名残。ただしTab自体が巨大コンストラクタのため許容されているパターン
+- **NEW ISSUE**: validation-panel.css に rgba ハードコード9箇所（CSS hardcoded colors 12回目）; status-bar.css に rgba/rgb 2箇所
+- **NEW ISSUE**: clearFocusedCell() が定義されているが呼ばれていない（タブ切り替え時にフォーカスクラスが残留する）
+- **NEW ISSUE**: jumpToError() で switchToExistingTab→getTabStates は同期完了するが、enableTabButton内でpaneStack操作後にsetRange/moveを呼ぶため、paneStack状態依存のタイミング問題が残存
+- **NEW ISSUE**: display:'none'/'block' の比較によるトグルは visibility の SSOT 問題（DOMから状態を読んでいる点はSSOT準拠だがCSS classで管理すべき）
+- **PATTERN**: CSS hardcoded colors は validation-panel.css/status-bar.css でも再発（rgba()直書き13箇所超）
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) FEAT_0048 ValidationPanel R2: 致命的5件修正確認。新規: 重要2件（clearFocusedCell未呼び出し、CSS hardcoded）、軽微2件
 - (2026-03-19) FEAT_0047 Navigation History: 致命的4件、重要3件、軽微3件
 - (2026-03-19) FEAT_0045 Notification: 致命的3件、重要4件、軽微3件
 - (2026-03-18) FEAT_0043 FormPanel: 致命的5件、重要5件、軽微3件

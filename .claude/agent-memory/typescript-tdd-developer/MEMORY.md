@@ -236,3 +236,9 @@ Undo/Redo の対称性はDOMのクラス状態（`diff-row-padding-inserted`）�
 - 問題1: パディング行が CSV に混入 → DOM の `.diff-row-empty` から動的にストア行インデックスを取得して除外
 - 問題2: `markAllSaved` のキー不一致 → `this.table.tableName`（ストアキー）で呼ぶ
 - 問題3: 通常タブのストア未更新 → 保存後に `store.reloadTableDataAsync(saveTargetTableName)` を呼ぶ
+
+### バリデーションパネル実装パターン
+詳細は `validation-panel-patterns.md` 参照。
+- `rgba(...)` は `/rgb\(25[0-5]/` にマッチしない → `rgb(255, 60, 60)` を使う
+- `editor-table-cell-focused` は `Selection.updateRenderer()` で付与・除去する
+- `ValidationPanel → Tab → EditorTable` の1段経由で循環参照を回避する
