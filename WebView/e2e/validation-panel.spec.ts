@@ -507,3 +507,97 @@ test.describe('テストケース11: FK参照切れセルの背景が赤く、�
         },
     );
 });
+
+// =============================================================================
+// テストケース12: FK参照先テーブルを閉じた後、FKエラーをクリックしてもエラーがパネルから消えない
+// =============================================================================
+
+test.describe('テストケース12: FK参照先テーブルを閉じた後、FKエラーをクリックしてもエラーがパネルから消えない', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createFkFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        'category タブを閉じた後にパネルの FK エラーをクリックしても、エラーがパネルから消えない',
+        async ({ page }) => {
+            // 1. FK参照元テーブル（product）を開く
+            const productTable = await openTableAsync(page, 'product');
+
+            // 2. FK参照先テーブル（category）を開く
+            await openTableAsync(page, 'category');
+
+            // productタブに戻る
+            await openTableAsync(page, 'product');
+
+            // 3. productのcategory_id列（colIndex=1）に存在しない値 "999" を入力してFKエラーを発生させる
+            await editCellAsync(productTable, page, 0, 1, '999');
+
+            // FKエラーがパネルに表示されていることを確認する
+            const items = getValidationPanelItems(page);
+            await expect(items).not.toHaveCount(0);
+            const fkErrorItem = items.filter({ hasText: 'product' });
+            await expect(fkErrorItem.first()).toBeVisible();
+
+            // 4. category タブの閉じるボタンをクリックしてタブを閉じる
+            //    これにより store.unregisterTable('category') が呼ばれ、categoryのデータがストアから消える
+            const categoryTabButton = page.locator('.tab-button').filter({ hasText: 'category' }).first();
+            await categoryTabButton.locator('.tab-button-close').click();
+
+            // 5. パネルのFKエラー項目をクリックする
+            //    クリックにより jumpToError() → switchToExistingTab('product') → reloadCellsFromStore()
+            //    → runValidation() が呼ばれるが、category のデータがストアにないためFKチェックがスキップされる
+            //    【不具合】: このタイミングでエラーが消えてしまう（currentErrors が [] にリセットされる）
+            await fkErrorItem.first().click();
+
+            // 6. アサーション: FKエラーがパネルに表示されたままであること
+            //    reloadCellsFromStore() はDOMリロードのためエラークラスが消えるが、
+            //    新しいバリデーション実行をせずに既存エラーをそのまま再適用すべき
+            await expect(fkErrorItem.first()).toBeVisible();
+        },
+    );
+});
+
+// =============================================================================
+// テストケース13: FK参照先テーブルを閉じた状態でセルを編集してもFKエラーが消えない
+// =============================================================================
+
+test.describe('テストケース13: FK参照先テーブルを閉じた状態でセルを編集してもFKエラーが消えない', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createFkFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        'category タブを閉じた状態で product の別セルを編集しても、FK エラーがパネルから消えない',
+        async ({ page }) => {
+            // 1. product と category を両方開く
+            const productTable = await openTableAsync(page, 'product');
+            await openTableAsync(page, 'category');
+            await openTableAsync(page, 'product');
+
+            // 2. productのcategory_id列（colIndex=1）に存在しない値 "999" を入力してFKエラーを発生させる
+            await editCellAsync(productTable, page, 0, 1, '999');
+
+            // FKエラーがパネルに表示されていることを確認する
+            const items = getValidationPanelItems(page);
+            await expect(items).not.toHaveCount(0);
+            const fkErrorItem = items.filter({ hasText: 'product' });
+            await expect(fkErrorItem.first()).toBeVisible();
+
+            // 3. categoryタブを閉じる（ストアからcategoryデータが消える）
+            const categoryTabButton = page.locator('.tab-button').filter({ hasText: 'category' }).first();
+            await categoryTabButton.locator('.tab-button-close').click();
+
+            // 4. productの別セル（name列 colIndex=2）を編集して確定する
+            //    applyCellChanges → runAndUpdate() → engine.validate() が呼ばれるが、
+            //    categoryがストアにないためFKチェックがスキップされる
+            //    【修正前の不具合】: currentErrors が [] にリセットされFKエラーが消えていた
+            await editCellAsync(productTable, page, 0, 2, 'super_sword');
+
+            // 5. アサーション: FKエラーがパネルに表示されたままであること
+            //    スキップされたFK列のエラーは前回currentErrorsから引き継がれるべき
+            await expect(fkErrorItem.first()).toBeVisible();
+        },
+    );
+});

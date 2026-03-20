@@ -23,6 +23,17 @@ export interface ValidationError {
 }
 
 /**
+ * validate() の結果型。
+ * errors: 検出されたエラーリスト。
+ * skippedFkColumns: 参照先テーブルが未ロードのためFKチェックをスキップした列の情報。
+ *   スキップされた列に関する前回エラーは ValidationPanel 側で引き継ぐ。
+ */
+export interface ValidateResult {
+    errors: ValidationError[];
+    skippedFkColumns: Array<{ tableName: string; columnName: string }>;
+}
+
+/**
  * バリデーションエンジン
  *
  * ストア全体を走査して PK重複 と FK参照切れ を検出する。
@@ -72,18 +83,21 @@ export class ValidationEngine {
     /**
      * 登録済みスキーマを持つ全テーブルを対象にバリデーションを実行する。
      * PK重複エラーと FK参照切れエラーを検出して返す。
+     * 参照先テーブルが未ロードのためFKチェックをスキップした列は skippedFkColumns に記録する。
+     * 呼び出し元（ValidationPanel）がスキップされた列に対する前回エラーを引き継ぐ責務を持つ。
      */
-    validate(): ValidationError[] {
+    validate(): ValidateResult {
         const errors: ValidationError[] = [];
+        const skippedFkColumns: Array<{ tableName: string; columnName: string }> = [];
         for (const [tableName, schema] of this.schemas) {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             // ストアに存在しないテーブルはスキップ（タブ未オープン等）
             if (header === false || rows === false) continue;
             this.validatePkDuplicates(tableName, schema, header, rows, errors);
-            this.validateFkReferences(tableName, schema, header, rows, errors);
+            this.validateFkReferences(tableName, schema, header, rows, errors, skippedFkColumns);
         }
-        return errors;
+        return { errors, skippedFkColumns };
     }
 
     // -------------------------------------------------------------------------
@@ -151,6 +165,7 @@ export class ValidationEngine {
         header: string[],
         rows: string[][],
         errors: ValidationError[],
+        skippedFkColumns: Array<{ tableName: string; columnName: string }>,
     ): void {
         for (const col of schema.columns) {
             if (col.reference === null) continue;
@@ -162,8 +177,11 @@ export class ValidationEngine {
             // 参照先テーブルの値セットを構築する
             const refHeader = this.store.getHeader(expr.tableName);
             const refRows = this.store.getRows(expr.tableName);
-            // 参照先テーブルがストアに存在しない場合はスキップ（未オープン状態）
-            if (refHeader === false || refRows === false) continue;
+            // 参照先テーブルがストアに存在しない場合: スキップしてその旨を記録する（前回エラーを引き継ぐ）
+            if (refHeader === false || refRows === false) {
+                skippedFkColumns.push({ tableName, columnName: col.name });
+                continue;
+            }
             const refColIdx = refHeader.indexOf(expr.columnName);
             if (refColIdx === -1) continue;
             // 参照先の有効値セットを構築する

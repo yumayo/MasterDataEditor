@@ -2200,3 +2200,16 @@ ValidationPanel と StatusBar の相互参照を `| false` パターンと `conn
 循環参照は `Object.assign + Object.setPrototypeOf` パターン（main.tsの Tab↔Sidebar 実績）で解決し、コンストラクタ引数としてすべての依存を渡す。`| false` パターンはミニテーブル等の正当な未接続ケースのみに限定する。
 
 ---
+
+## 151. [1d97d69] — 参照先テーブル未ロード時のバリデーション結果消失
+
+### 不具合原因名
+参照先テーブル未ロード時のFK検証スキップによるエラー消失
+
+### なぜそうなったのか
+`ValidationEngine.validateFkReferences()` は参照先テーブルがストアに存在しない場合（タブを閉じた等）、そのFK列のチェックを `continue` でスキップしていた。スキップ＝エラーなしと同義だったため、`runAndUpdate()` でバリデーション再実行されるたびに `currentErrors` からFKエラーが消えていた。`jumpToError()` → `switchToExistingTab()` → `reloadCellsFromStore()` → `runValidation()` のチェーンや、セル編集時の `runValidation()` で再現した。
+
+### どうしたら今後は再発しないか
+バリデーションで「チェックできなかった列」と「チェックしてエラーなしだった列」を区別する。`validate()` の戻り値に `skippedFkColumns` を含め、`runAndUpdate()` でスキップされた列の前回エラーを保持するマージ戦略を採用した。「スキップ＝エラーなし」ではなく「スキップ＝前回結果を維持」という設計原則を徹底する。
+
+---

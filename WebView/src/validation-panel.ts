@@ -63,18 +63,38 @@ export class ValidationPanel {
     }
 
     /**
+     * 指定テーブルに関する現在のエラーリストを返す。
+     * reloadCellsFromStore() でDOMを再構築した後に既存エラークラスを再適用するために使う。
+     * バリデーションを再実行しないため、参照先テーブルが閉じられていてもエラーが消えない。
+     */
+    getErrorsForTable(tableName: string): ValidationError[] {
+        return this.currentErrors.filter(e => e.tableName === tableName);
+    }
+
+    /**
      * バリデーションを実行してパネル・ステータスバー・各EditorTableのエラークラスを更新する。
      * applyCellChanges / replayCellChanges 完了後に呼ばれる。
+     *
+     * 参照先テーブルが未ロードのためFKチェックがスキップされた列については、
+     * 前回の currentErrors から該当列のエラーを引き継ぐ。
+     * これにより、categoryタブを閉じた状態でproductセルを編集してもFKエラーが消えない。
      */
     runAndUpdate(): void {
-        const errors = this.engine.validate();
-        this.currentErrors = errors;
+        const result = this.engine.validate();
+        // スキップされたFK列に対する前回エラーを引き継ぐ（参照先テーブルが未ロードの場合）
+        const preservedErrors = this.currentErrors.filter(e =>
+            e.kind === 'fk-broken' && result.skippedFkColumns.some(
+                sk => sk.tableName === e.tableName && sk.columnName === e.columnName
+            )
+        );
+        const mergedErrors = [...result.errors, ...preservedErrors];
+        this.currentErrors = mergedErrors;
         this.render();
         // エラーが1件以上ある場合はパネルを自動表示する。エラーが0件になったら自動で非表示にする。
-        this.element.style.display = errors.length > 0 ? 'block' : 'none';
-        this.statusBar.updateCount(errors.length);
+        this.element.style.display = mergedErrors.length > 0 ? 'block' : 'none';
+        this.statusBar.updateCount(mergedErrors.length);
         // 全EditorTableにエラー情報を適用してセルのDOMクラスを更新する
-        this.applyErrorClassesToAllEditorTables(errors);
+        this.applyErrorClassesToAllEditorTables(mergedErrors);
     }
 
     /** パネルの表示/非表示をトグルする（ステータスバーのバッジクリックから呼ばれる） */

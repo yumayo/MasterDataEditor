@@ -1137,8 +1137,13 @@ export class EditorTable {
         }
         // DOM行の増減に関わらず git差分ハイライトを再評価する（ストアとDOMのマッピングが変化するため）
         this.applyGitDiffHighlight();
-        // タブ切替後のDOMリロードでもバリデーションエラークラスを再適用する
-        this.runValidation();
+        // タブ切替後のDOMリロードでもバリデーションエラークラスを再適用する。
+        // バリデーションを再実行すると参照先テーブルが閉じられている場合にFKエラーが消えてしまうため、
+        // ValidationPanel の currentErrors から自テーブル分だけを取り出してDOMクラスを再適用する。
+        // ミニテーブルは都度 buildMiniEditorTableAsync で再構築されるため対象外。
+        if (this.validationPanel !== false && !this.isMiniTable) {
+            this.applyValidationErrors(this.validationPanel.getErrorsForTable(this.tableName));
+        }
         // reloadCellsFromStore はストアデータを全面的に上書きするため、ソート状態を維持しても
         // storeRowIndices が [0..n-1] にリセットされておりソートが無効化されている。
         // インジケーターをリセットしてUI上のソート表示と実態を一致させる。
