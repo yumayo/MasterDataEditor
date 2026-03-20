@@ -1,8 +1,9 @@
 /**
  * システムエラー通知ポップアップ
  *
- * 右下にトーストを最大3件スタック表示し、ベルマークアイコンで
- * 全履歴を一覧できる。Undo/Redo 不要（通知は副作用的UIで可逆操作なし）。
+ * ステータスバー右端にベルマークアイコンを配置し、
+ * トーストと履歴パネルはステータスバーの上方に展開する。
+ * Undo/Redo 不要（通知は副作用的UIで可逆操作なし）。
  *
  * クラス名は window.Notification (Push Notification API) との衝突を避けるため
  * NotificationToast とする。
@@ -19,6 +20,8 @@ export class NotificationToast {
     private readonly toastAreaElement: HTMLElement;
     /** 履歴パネル（DOMがSSOT: 履歴メッセージは直接DOM上に追記する） */
     private readonly historyElement: HTMLElement;
+    /** ステータスバー内のコンテナ要素 */
+    private readonly container: HTMLElement;
 
     /** 最大同時表示トースト数 */
     private static readonly MAX_TOASTS = 3;
@@ -30,9 +33,9 @@ export class NotificationToast {
     constructor() {
         this.activeToasts = new Map();
 
-        // コンテナ要素（右下固定）を構築して body 直下に配置する
-        const container = document.createElement('div');
-        container.classList.add('notification-container');
+        // コンテナ要素を構築する（ステータスバー内に配置される相対配置ラッパー）
+        this.container = document.createElement('div');
+        this.container.classList.add('notification-container');
 
         // ベルマークSVGアイコンを構築する
         this.bellElement = document.createElement('div');
@@ -40,29 +43,49 @@ export class NotificationToast {
         this.bellElement.setAttribute('role', 'button');
         this.bellElement.setAttribute('tabindex', '0');
         this.bellElement.setAttribute('aria-label', '通知履歴を表示');
+        this.bellElement.setAttribute('aria-expanded', 'false');
         // SVGは装飾用のためスクリーンリーダーから隠す
-        this.bellElement.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+        this.bellElement.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
   <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
 </svg>`;
-        // クリック時に履歴パネルの表示/非表示を切り替える（1箇所のみの使用のためインライン展開）
+        // クリック時に履歴パネルの表示/非表示を切り替える。開いた場合はコンテナ外クリックで閉じる（1箇所のみの使用のためインライン展開）
         this.bellElement.addEventListener('click', () => {
-            this.historyElement.classList.toggle('visible');
+            const isVisible = this.historyElement.classList.toggle('visible');
+            this.bellElement.setAttribute('aria-expanded', String(isVisible));
+            if (isVisible) {
+                const onOutsideClick = (e: MouseEvent) => {
+                    if (!this.container.contains(e.target as Node)) {
+                        this.historyElement.classList.remove('visible');
+                        this.bellElement.setAttribute('aria-expanded', 'false');
+                        document.removeEventListener('mousedown', onOutsideClick, true);
+                    }
+                };
+                document.addEventListener('mousedown', onOutsideClick, true);
+            }
         });
 
-        // トースト表示エリアを構築する
+        // トースト表示エリアを構築する（ステータスバーの上方に展開）
         this.toastAreaElement = document.createElement('div');
         this.toastAreaElement.classList.add('notification-toast-area');
 
-        // 履歴パネルを構築する（初期状態は非表示）
+        // 履歴パネルを構築する（初期状態は非表示、ステータスバーの上方に展開）
         this.historyElement = document.createElement('div');
         this.historyElement.classList.add('notification-history');
 
-        // コンテナ内の並び順: ベル → トーストエリア → 履歴パネル
-        container.appendChild(this.bellElement);
-        container.appendChild(this.toastAreaElement);
-        container.appendChild(this.historyElement);
+        // コンテナ内の並び順: トーストエリア → 履歴パネル → ベル
+        // トーストエリアと履歴パネルは position: absolute でステータスバー上方に展開するため
+        // DOM順序はベルの前後どちらでも視覚的に変わらないが、意味的にベルを最後に配置する
+        this.container.appendChild(this.toastAreaElement);
+        this.container.appendChild(this.historyElement);
+        this.container.appendChild(this.bellElement);
+    }
 
-        document.body.appendChild(container);
+    /**
+     * 通知要素をステータスバーに追加する（StatusBar から呼ばれる）。
+     */
+    appendTo(parent: HTMLElement): void {
+        if (this.container.parentElement !== null) throw new Error('NotificationToast は既にDOMに配置されています');
+        parent.appendChild(this.container);
     }
 
     /**

@@ -5,16 +5,18 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 2px 12px;
+    padding: 0 4px 0 12px;
     height: 22px;
     background-color: var(--background-color);
     border-top: 1px solid var(--border-color);
     font-size: 11px;
     color: var(--font-color);
     user-select: none;
+    /* notification-history などの absolute 要素がステータスバー上方に展開できるよう overflow visible を維持 */
+    overflow: visible;
 }
 
-/* エラー件数バッジ */
+/* エラー件数バッジ（margin-right: auto で通知ベルを右端に押し出す） */
 .status-bar-badge {
     display: flex;
     align-items: center;
@@ -25,6 +27,7 @@
     border: 1px solid transparent;
     min-width: 24px;
     justify-content: center;
+    margin-right: auto;
 }
 
 .status-bar-badge:hover {
@@ -36,3 +39,4 @@
 .status-bar-badge[data-error-count]:not([data-error-count="0"]) {
     color: rgb(255, 120, 120);
 }
+

@@ -2,49 +2,51 @@
    通知ポップアップ（notification）スタイル
    ============================================================================= */
 
-/* コンテナ: 右下固定配置 */
+/* コンテナ: ステータスバー内に配置される相対配置ラッパー */
+/* トーストエリアと履歴パネルの position: absolute の基準点になる */
 .notification-container {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    z-index: var(--z-index-notification);
+    position: relative;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
+    align-items: center;
+    height: 100%;
 }
 
-/* ベルマークボタン */
+/* ベルマークボタン（ステータスバーに合うフラットスタイル） */
 .notification-bell {
-    width: 36px;
-    height: 36px;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0 8px;
     cursor: pointer;
-    border-radius: 50%;
-    background: var(--background-color, #2d2d2d);
-    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+    background: transparent;
+    border: none;
     color: var(--font-color, #cccccc);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: background 0.15s;
     user-select: none;
 }
 
 .notification-bell:hover {
-    background: rgba(0, 120, 215, 0.15);
+    background: rgba(255, 255, 255, 0.1);
 }
 
-/* トースト表示エリア */
+/* トースト表示エリア（ステータスバーの上方に展開） */
 .notification-toast-area {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
+    /* ステータスバー上方への展開なのでポインターイベントは有効のまま */
+    pointer-events: none;
 }
 
 /* 個々のトースト */
 .notification-toast {
+    pointer-events: auto;
     max-width: 320px;
     padding: 10px 14px;
     border-radius: 4px;
@@ -62,9 +64,12 @@
     opacity: 0;
 }
 
-/* 履歴パネル（ベルクリックで表示） */
+/* 履歴パネル（ベルクリックで表示、ステータスバーの上方に展開） */
 .notification-history {
     display: none;
+    position: absolute;
+    bottom: 100%;
+    right: 0;
     max-width: 320px;
     max-height: 300px;
     overflow-y: auto;
@@ -73,6 +78,7 @@
     border-radius: 4px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
     padding: 6px 0;
+    z-index: var(--z-index-notification);
 }
 
 .notification-history.visible {
@@ -94,7 +100,6 @@
 
 /* ダークテーマ上書き */
 [data-theme="dark"] .notification-bell {
-    background: #3c3c3c;
     color: #cccccc;
 }
 

@@ -51,7 +51,8 @@ import {StatusBar} from "./status-bar";
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
 
-    // 通知ポップアップを初期化（右下固定、アプリ全体で1つ）
+    // 通知ポップアップを初期化（アプリ全体で1つ）
+    // StatusBar のコンストラクタに渡してステータスバー右端に配置する
     const notification = new NotificationToast();
 
     // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
@@ -60,7 +61,7 @@ import {StatusBar} from "./status-bar";
     const validationEngine = new ValidationEngine(store);
     const statusBar = {} as StatusBar;
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
-    const realStatusBar = new StatusBar(validationPanel);
+    const realStatusBar = new StatusBar(validationPanel, notification);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
     tab.connectValidationPanel(validationPanel);
