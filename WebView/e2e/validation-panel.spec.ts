@@ -166,6 +166,13 @@ function getStatusBarBadge(page: Page): Locator {
     return page.locator('.status-bar-badge');
 }
 
+/**
+ * ステータスバーのバッジをクリックしてバリデーションパネルを開く
+ */
+async function openValidationPanelAsync(page: Page): Promise<void> {
+    await getStatusBarBadge(page).click();
+}
+
 // =============================================================================
 // テストケース1: PK重複エラーが検出されると、バリデーションパネルにエラーが表示される
 // =============================================================================
@@ -186,6 +193,9 @@ test.describe('テストケース1: PK重複エラーが検出されると、バ
 
             // 2行目の id を 1行目と同じ "1" に変更してPK重複を発生させる
             await editCellAsync(table, page, 1, 0, '1');
+
+            // パネルを開く
+            await openValidationPanelAsync(page);
 
             // バリデーションパネルに product テーブルのPK重複エラーが表示される
             // エラーアイテムは「テーブル名 > 列名 > エラー内容」の形式で表示される想定
@@ -219,6 +229,9 @@ test.describe('テストケース2: PK重複エラーをクリックすると該
             // PK重複を発生させる
             await editCellAsync(table, page, 1, 0, '1');
 
+            // パネルを開く
+            await openValidationPanelAsync(page);
+
             // バリデーションパネルのエラーアイテムをクリックする
             const items = getValidationPanelItems(page);
             await expect(items.first()).toBeVisible();
@@ -247,8 +260,9 @@ test.describe('テストケース3: PK重複を解消するとエラーがパネ
         async ({ page }) => {
             const table = await openTableAsync(page, 'product');
 
-            // PK重複を発生させてパネルにエラーが出ることを確認する
+            // PK重複を発生させてパネルを開き、エラーが出ることを確認する
             await editCellAsync(table, page, 1, 0, '1');
+            await openValidationPanelAsync(page);
             await expect(getValidationPanelItems(page)).not.toHaveCount(0);
 
             // 重複を解消する値（=99）に変更する
@@ -281,6 +295,9 @@ test.describe('テストケース4: FK参照先に存在しない値を入力す
             // category.id に存在しない値 "999" を category_id 列（colIndex=1）に入力する
             await editCellAsync(table, page, 0, 1, '999');
 
+            // パネルを開く
+            await openValidationPanelAsync(page);
+
             // バリデーションパネルに product テーブルのFK参照切れエラーが表示される
             const items = getValidationPanelItems(page);
             await expect(items).not.toHaveCount(0);
@@ -311,6 +328,9 @@ test.describe('テストケース5: FK参照切れエラーをクリックする
             // FK参照切れを発生させる（category_id に存在しない値 "999" を入力）
             await editCellAsync(table, page, 0, 1, '999');
 
+            // パネルを開く
+            await openValidationPanelAsync(page);
+
             // バリデーションパネルのエラーアイテムをクリックする
             const items = getValidationPanelItems(page);
             await expect(items.first()).toBeVisible();
@@ -338,8 +358,9 @@ test.describe('テストケース6: 有効なFK値に修正するとエラーが
         async ({ page }) => {
             const table = await openTableAsync(page, 'product');
 
-            // FK参照切れを発生させる
+            // FK参照切れを発生させてパネルを開く
             await editCellAsync(table, page, 0, 1, '999');
+            await openValidationPanelAsync(page);
             await expect(getValidationPanelItems(page)).not.toHaveCount(0);
 
             // 有効な FK 値（category.id=2 が存在する）に修正する
@@ -457,7 +478,7 @@ test.describe('テストケース10: PK重複セルの背景が赤く、枠も�
     });
 
     test(
-        'PK重複が発生したセルに cell-error クラスが付与され、背景色・枠色が赤になる',
+        'PK重複が発生したセルに cell-error クラスが付与され、赤波線が表示される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'product');
 
@@ -465,32 +486,30 @@ test.describe('テストケース10: PK重複セルの背景が赤く、枠も�
             await editCellAsync(table, page, 1, 0, '1');
 
             // 1行目と2行目のPKセルに cell-error クラスが付与される
-            // cell-error は背景赤 + セル枠赤を表すCSSクラス（波線下線の cell-pk-duplicate より強い表示）
             const firstPkCell = getPkCell(table, 0);
             const secondPkCell = getPkCell(table, 1);
             await expect(firstPkCell).toHaveClass(/cell-error/);
             await expect(secondPkCell).toHaveClass(/cell-error/);
 
-            // 背景色が実際に赤系であることをスタイルで確認する
-            const bgColor = await firstPkCell.evaluate(el => getComputedStyle(el).backgroundColor);
-            // 赤系の背景色が設定されている（rgb(255, ...) または rgba(255, ...)）
-            expect(bgColor).toMatch(/rgb\(25[0-5]/);
+            // ::after 疑似要素で赤波線が描画されていることを確認する
+            const bgImage = await firstPkCell.evaluate(el => getComputedStyle(el, '::after').backgroundImage);
+            expect(bgImage).not.toBe('none');
         },
     );
 });
 
 // =============================================================================
-// テストケース11: FK参照切れセルの背景が赤く、枠も赤くなる
+// テストケース11: FK参照切れセルに赤波線が表示される
 // =============================================================================
 
-test.describe('テストケース11: FK参照切れセルの背景が赤く、枠も赤くなる', () => {
+test.describe('テストケース11: FK参照切れセルに赤波線が表示される', () => {
     test.beforeEach(async ({ page }) => {
         await installMockApiAsync(page, createFkFileSystem());
         await page.goto('/');
     });
 
     test(
-        'FK参照切れが発生したセルに cell-error クラスが付与され、背景色・枠色が赤になる',
+        'FK参照切れが発生したセルに cell-error クラスが付与され、赤波線が表示される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'product');
 
@@ -501,9 +520,9 @@ test.describe('テストケース11: FK参照切れセルの背景が赤く、�
             const fkCell = getDataCell(table, 0, 1);
             await expect(fkCell).toHaveClass(/cell-error/);
 
-            // 背景色が赤系であることを確認する
-            const bgColor = await fkCell.evaluate(el => getComputedStyle(el).backgroundColor);
-            expect(bgColor).toMatch(/rgb\(25[0-5]/);
+            // ::after 疑似要素で赤波線が描画されていることを確認する
+            const bgImage = await fkCell.evaluate(el => getComputedStyle(el, '::after').backgroundImage);
+            expect(bgImage).not.toBe('none');
         },
     );
 });
@@ -533,7 +552,8 @@ test.describe('テストケース12: FK参照先テーブルを閉じた後、FK
             // 3. productのcategory_id列（colIndex=1）に存在しない値 "999" を入力してFKエラーを発生させる
             await editCellAsync(productTable, page, 0, 1, '999');
 
-            // FKエラーがパネルに表示されていることを確認する
+            // パネルを開いてFKエラーが表示されていることを確認する
+            await openValidationPanelAsync(page);
             const items = getValidationPanelItems(page);
             await expect(items).not.toHaveCount(0);
             const fkErrorItem = items.filter({ hasText: 'product' });
@@ -579,7 +599,8 @@ test.describe('テストケース13: FK参照先テーブルを閉じた状態�
             // 2. productのcategory_id列（colIndex=1）に存在しない値 "999" を入力してFKエラーを発生させる
             await editCellAsync(productTable, page, 0, 1, '999');
 
-            // FKエラーがパネルに表示されていることを確認する
+            // パネルを開いてFKエラーが表示されていることを確認する
+            await openValidationPanelAsync(page);
             const items = getValidationPanelItems(page);
             await expect(items).not.toHaveCount(0);
             const fkErrorItem = items.filter({ hasText: 'product' });
@@ -749,6 +770,9 @@ test.describe('テストケース14: DynamicReference（動的参照）のFK参�
             // item.id に存在しない値 "999" を record_id 列（colIndex=2）に入力する
             // table_id=2（item）の行なので、item.id=999 が存在するか検証される
             await editCellAsync(shopProductTable, page, 0, 2, '999');
+
+            // パネルを開く
+            await openValidationPanelAsync(page);
 
             // バリデーションパネルに shop_product テーブルのFK参照切れエラーが表示される
             const items = getValidationPanelItems(page);

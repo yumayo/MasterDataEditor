@@ -249,6 +249,7 @@
     opacity: 0.7;
 }
 
+
 /* 結合列ヘッダーのスタイル（視覚的に区別） */
 .editor-table-joined-column-header {
     background-color: var(--background-color);
@@ -270,19 +271,34 @@
     background-color: rgba(81, 184, 81, 0.2);
 }
 
-/* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示） */
+/* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示）
+   cell-error と併用される場合は ::after 側の波線に統一するため text-decoration を消す */
 .cell-pk-duplicate {
     text-decoration: underline wavy red;
     text-underline-offset: 2px;
 }
+.cell-pk-duplicate.cell-error {
+    text-decoration: none;
+}
 
-/* エラーセル: 背景赤 + 枠赤
-   getComputedStyle().backgroundColor が rgb(255,...) を返すよう、不透明な rgb() 値を使用する。
-   テストが /rgb\(25[0-5]/ でマッチを確認するため rgba は使用しない。 */
+/* エラーセル: 赤波線（下線）
+   ::after 疑似要素でセルの上に波線を重ねる。
+   背景画像方式だと子要素（参照ヒント span）にも伝播して二重に見えるため、
+   独立したレイヤーとして重ねることで1本だけ描画する。 */
 .cell-error {
-    background-color: rgb(255, 60, 60) !important;
-    outline: 1px solid rgb(255, 80, 80);
-    outline-offset: -1px;
+    position: relative;
+}
+.cell-error::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0px;
+    height: 3px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-size: 6px 3px;
+    pointer-events: none;
 }
 
 /* フォーカスセル: バリデーションパネルからジャンプした後の視覚的フィードバック */

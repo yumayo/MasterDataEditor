@@ -45,7 +45,7 @@ export class ValidationPanel {
         // delta が正（下移動）= 高さ縮小、負（上移動）= 高さ増加 なので -delta を加算する
         this.resizeHandle = new ResizeHandle('vertical', (delta: number): number => {
             const currentHeight = this.element.getBoundingClientRect().height;
-            const newHeight = Math.min(400, Math.max(80, currentHeight - delta));
+            const newHeight = Math.max(80, currentHeight - delta);
             this.element.style.height = `${newHeight}px`;
             // 上方向ドラッグ(delta負)で高さ増加のため、消費delta = currentHeight - newHeight（delta反転後の変化量）
             return currentHeight - newHeight;
@@ -102,8 +102,6 @@ export class ValidationPanel {
         const mergedErrors = [...result.errors, ...result.preservableErrors];
         this.currentErrors = mergedErrors;
         this.render();
-        // エラーが1件以上ある場合はパネルを自動表示する。エラーが0件になったら自動で非表示にする。
-        this.element.style.display = mergedErrors.length > 0 ? 'block' : 'none';
         this.statusBar.updateCount(mergedErrors.length);
         // 全EditorTableにエラー情報を適用してセルのDOMクラスを更新する
         this.applyErrorClassesToAllEditorTables(mergedErrors);
