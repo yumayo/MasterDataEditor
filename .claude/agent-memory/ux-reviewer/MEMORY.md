@@ -31,6 +31,16 @@
 - 残存(🟡): PROBLEMSパネルの min-height/max-height 制約がDOMから確認できない（推測）
 - 残存(🟡): 下限到達後の逆方向挙動テストが spec に未記載（上限テストの対称ケース）
 
+#### ISSUE_0080 動的参照バリデーション（2026-03-20レビュー）評価: B+
+- cell-error の付与箇所・エラー件数カウント・PROBLEMSメッセージ内容はすべて正確
+- BUG#151（参照先テーブル未ロード時の消失）への対処有効性をDOMで確認
+- 残存(🔴): cell-error セルに aria-invalid="true" / aria-describedby がない
+- 残存(🟡): テスト1のスクリーンショットで reward_record_id 列が画面外（DOMでは確認できるが視覚検証不可）
+- 残存(🟡): validation-panel-group-header に role/aria-label なし（継続課題）
+- 残存(🟡): 動的参照FKバッジの title が内部式（$(...)）を露出している
+- 残存(🟡): バッファ行に row-resize-handle 残存（継続パターン）
+- PROBLEMSパネルは display:none のまま（エラー自動開閉廃止の意図通り、赤波線が視覚的補完）
+
 #### BUG_0026 クイックビュー位置調整（2026-03-19レビュー）評価: B+
 - ファイル: project_bug0026_quick_view_position.md
 - 下端はみ出し: top固定+max-height動的付与 正常（top:620px, max-height:100px）

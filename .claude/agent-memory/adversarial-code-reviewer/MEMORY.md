@@ -148,8 +148,17 @@
 - **RelationsPanel の浮動小数点誤差**: percentage を 0.1%丸めした後 `(percentage/100) * rect.width` で clampedNewWidth を計算 → rect.width が整数でない HiDPI 環境でフレームごとに最大 0.5px の誤差が蓄積。長時間ドラッグで prevCoord がドリフトする
 - **テスト設計のパターン**: 「上限到達後に超過分を戻るまで動かない」は検証しているが「超過解消後に動き始める」を検証していない。境界の両側をテストせよ
 
+## ISSUE_0080 Dynamic Reference Validation Known Patterns
+- **CRITICAL**: `validateSimpleReference` に ReferenceDataCache フォールバックが未追加（動的参照のみ修正、単純参照は放置）→ 操作パスの網羅漏れ（bug-report.md パターン1）再発
+- **CRITICAL**: `filterRowIndex === -1` のサイレントスキップ → bug-report.md パターン5（b1384a0）と同構造。フィルタテーブルにマッチしない filterValue で動的参照カラムのエラーが黙殺される
+- **CRITICAL**: `getFullDataSync` が `??` 演算子使用（reference-data-cache.ts L627）→ フォールバック禁止ルール違反（FEAT_0043/FEAT_0048で指摘・修正済みにもかかわらず残存）
+- **IMPORTANT**: `ReferenceDataCache.fullDataCache` は行追加・削除を反映しない（updateFullDataCell はセル値更新のみ）→ キャッシュ陳腐化リスク
+- **PATTERN**: ストア/キャッシュからの有効値セット構築コードが完全重複（共通メソッド化可能）
+- **PATTERN**: `previousErrors.find()` が行ループ内で毎回線形検索 → O(rows * previousErrors)
+
 ## Review History
 → 詳細は `review-history.md` 参照
+- (2026-03-20) ISSUE_0080 Dynamic Reference Validation: 致命的3件（validateSimpleReference未修正、??演算子、filterRowIndex=-1黙殺）、重要3件、軽微3件
 - (2026-03-20) ResizeHandle consumedDelta 符号修正: 致命的1件（RelationsPanel浮動小数点ドリフト）、重要3件、軽微2件
 - (2026-03-20) ResizeHandle共通化+PROBLEMSパネル縦リサイズ+StatusBar UI: 致命的2件、重要4件、軽微3件
 - (2026-03-20) FEAT_0047 Navigation goBack/goForward R2: 致命的1件（ゾンビ RP 参照）、重要2件、軽微2件
