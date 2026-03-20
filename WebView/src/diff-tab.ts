@@ -16,6 +16,7 @@ import {Sidebar} from "./sidebar";
 import {SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
 import {TabReference} from "./tab-reference";
 import {GridDropdownInput} from "./grid-dropdown-input";
+import {NotificationToast} from "./notification";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -79,7 +80,8 @@ export class DiffTab {
         contextMenu: ContextMenu,
         tabButton: TabButton,
         tabReference: TabReference,
-        openEditorTables: Map<string, EditorTable>
+        openEditorTables: Map<string, EditorTable>,
+        notification: NotificationToast
     ) {
         this.isSyncing = false;
         this.dragMouseMove = null;
@@ -178,7 +180,7 @@ export class DiffTab {
         // 左ペイン（HEAD版）はドロップダウン不要のため dropdownContainer=null を渡す
         const leftResult = this.buildDiffEditorTable(
             leftTableKey, schemaJson, displayHeader, leftRows,
-            leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar
+            leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar, notification
         );
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
@@ -195,7 +197,7 @@ export class DiffTab {
         // staged=trueの場合は makeReadOnly() が呼ばれるためドロップダウンDOMは不要（null を渡す）。
         const rightResult = this.buildDiffEditorTable(
             rightTableKey, schemaJson, displayHeader, rightRows,
-            rightPaneElement, isStaged ? null : wrapperElement, store, referenceDataCache, contextMenu, tabButton, sidebar
+            rightPaneElement, isStaged ? null : wrapperElement, store, referenceDataCache, contextMenu, tabButton, sidebar, notification
         );
         this.rightEditorTable = rightResult.editorTable;
         this.rightEditorTableHandler = rightResult.editorTableHandler;
@@ -489,7 +491,8 @@ export class DiffTab {
         referenceDataCache: ReferenceDataCache,
         contextMenu: ContextMenu,
         tabButton: TabButton,
-        sidebar: Sidebar
+        sidebar: Sidebar,
+        notification: NotificationToast
     ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController; tableData: EditorTableData } {
         // スキーマをパースしてEditorTableDataを構築する
         const schemaObj = JSON.parse(schemaJson) as Record<string, unknown>;
@@ -512,7 +515,7 @@ export class DiffTab {
 
         const selection = new Selection(editorTable, paneElement, scrollController);
         const history = new History(editorTable, tabButton, store, tableKey, 100);
-        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController, notification);
         const textField = editorTableHandler.createGridTextField(paneElement, editorTable, selection);
         editorTableHandler.setTextField(textField);
 

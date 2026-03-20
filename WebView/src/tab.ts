@@ -24,6 +24,7 @@ import {SettingsPanel} from "./settings-panel";
 import {DiffTab} from "./diff-tab";
 import {FormPanel} from "./form-panel";
 import {NavigationHistory} from "./navigation-history";
+import {NotificationToast} from "./notification";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -156,7 +157,10 @@ export class Tab {
      */
     private readonly sharedDropdownQuickView: DropdownQuickView;
 
-    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
+    /** エラー通知トースト（各子コンポーネントに伝播させる） */
+    private readonly notification: NotificationToast;
+
+    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.editor = editor;
         this.element = tabContentElement;
         this.tabButtons = [];
@@ -168,10 +172,11 @@ export class Tab {
         this.openEditorTables = new Map();
         this.store = store;
         this.referenceDataCache = referenceDataCache;
+        this.notification = notification;
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
         this.dragDrop = new TabDragDrop(this);
-        this.reference = new TabReference(this.store, this.referenceDataCache);
+        this.reference = new TabReference(this.store, this.referenceDataCache, this.notification);
         this.paneStack = [];
         this.viewIndex = 0;
         this.settingsPanel = false;
@@ -187,7 +192,7 @@ export class Tab {
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
-        this.relationsPanel = new RelationsPanel(this.store);
+        this.relationsPanel = new RelationsPanel(this.store, this.notification);
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
@@ -740,7 +745,7 @@ export class Tab {
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
-            this.reference, this.openEditorTables
+            this.reference, this.openEditorTables, this.notification
         );
         // 新規作成時点では diffTabs にキーが存在しないことが保証される（上の早期リターンで確認済み）
         this.diffTabs.set(diffTabName, diffTab);
@@ -1041,7 +1046,7 @@ export class Tab {
         this.truncateStackAfterIndex(this.viewIndex);
 
         // 新しい RelationsPanel を生成してスタックに追加する
-        const rp = new RelationsPanel(this.store);
+        const rp = new RelationsPanel(this.store, this.notification);
         rp.connectTab(this);
         const rpElement = rp.getPanelElement();
         this.paneStack.push({ element: rpElement, panel: rp });
@@ -1061,6 +1066,7 @@ export class Tab {
         // 新 RP にテーブルの参照データを表示させる
         rp.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
             console.error('[Tab] pushRelationsPanel: showForTableRowAsync failed:', String(err));
+            this.notification.show('関連テーブルの表示に失敗しました');
         });
     }
 
@@ -1092,6 +1098,7 @@ export class Tab {
         // 右隣RPをtableName/pkValueで更新する（非同期レースコンディションはshowForTableRowAsyncのcurrentRequestIdでガード済み）
         nextEntry.panel.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
             console.error('[Tab] updateNextPaneForMiniTableRow: showForTableRowAsync failed:', String(err));
+            this.notification.show('関連テーブルの更新に失敗しました');
         });
     }
 
@@ -1230,7 +1237,7 @@ export class Tab {
 
         // EditorTableHandler を作成（element を所有し、全イベントを管理）
         // scrollController を渡すことで focusWithoutScrolling() がスクロール位置を保護できる
-        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController, this.notification);
 
         // GridTextField を作成（EditorTableHandler.createGridTextField 経由で element を隠蔽）
         // container は wrapperElement（position:relative）で grid-textfield の絶対配置基準になる
@@ -1347,7 +1354,7 @@ export class Tab {
         const history = new History(editorTable, dummyTabButton, this.store, tableKey, 100);
 
         // scrollController を渡すことで focusWithoutScrolling() がスクロール位置を保護できる
-        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController);
+        const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController, this.notification);
         const textField = editorTableHandler.createGridTextField(wrapperElement, editorTable, selection);
         editorTableHandler.setTextField(textField);
 
@@ -1493,11 +1500,12 @@ export class Tab {
         this.relationsPanel.getPanelElement().style.display = 'none';
 
         // FormPanel を生成して右スロットにオーバーレイする
-        const formPanel = new FormPanel(this.store, this);
+        const formPanel = new FormPanel(this.store, this, this.notification);
         formPanel.appendTo(rpParent);
         this.currentFormPanel = formPanel;
 
         // 指定行のフォームを非同期で描画する
+        // FormPanel.renderCurrentPageAsync 内でエラー通知するため、ここでは通知しない（二重通知防止）
         formPanel.showForRowAsync(tableName, pkValue).catch(err => {
             console.error('[Tab] showFormPanel: showForRowAsync failed:', String(err));
         });

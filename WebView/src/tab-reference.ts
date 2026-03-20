@@ -5,6 +5,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isDynamicReference} from "./reference-expression";
 import {ReverseReferenceResolver} from "./reverse-reference-resolver";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {NotificationToast} from "./notification";
 
 /**
  * タブ参照データ管理モジュール
@@ -17,10 +18,12 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 export class TabReference {
     private readonly store: InMemoryTableStore;
     private readonly referenceDataCache: ReferenceDataCache;
+    private readonly notification: NotificationToast;
 
-    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
+    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.store = store;
         this.referenceDataCache = referenceDataCache;
+        this.notification = notification;
     }
 
     /**
@@ -50,6 +53,7 @@ export class TabReference {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {
             console.warn('Failed to resolve reverse references:', error);
+            this.notification.show('逆参照ヒントの読み込みに失敗しました');
         });
     }
 
@@ -111,6 +115,7 @@ export class TabReference {
 
         const allPromises = [...simplePromises, ...dynamicPromises];
         if (allPromises.length > 0) {
+            // バックグラウンドプリロード失敗はユーザーに通知しない（ノイズ防止）
             Promise.all(allPromises).then(() => {
                 editorTable.updateReferenceHints();
             }).catch(error => {

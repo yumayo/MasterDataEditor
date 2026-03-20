@@ -10,6 +10,7 @@ import {AreaResizer} from "./area-resizer";
 import {History} from "./history";
 import {ReverseReferenceResolver, ReverseReferenceRow} from "./reverse-reference-resolver";
 import {ResizeHandle} from "./resize-handle";
+import {NotificationToast} from "./notification";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -49,6 +50,7 @@ interface RelationEntry {
 export class RelationsPanel {
     private readonly panelElement: HTMLElement;
     private readonly store: InMemoryTableStore;
+    private readonly notification: NotificationToast;
     /** 現在接続中のEditorTable。未接続時はfalse */
     private currentEditorTable: EditorTable | false;
     /** 現在表示中のリレーションエントリ一覧。空の場合はプレースホルダーを表示 */
@@ -75,8 +77,9 @@ export class RelationsPanel {
     /** showForTableRowAsync() で登録したベーステーブル名。ペインスタック破棄時に unregisterTable するため記録する */
     private baseTableName: string | false;
 
-    constructor(store: InMemoryTableStore) {
+    constructor(store: InMemoryTableStore, notification: NotificationToast) {
         this.store = store;
+        this.notification = notification;
         this.currentEditorTable = false;
         this.currentEntries = [];
         this.currentRequestId = 0;
@@ -295,6 +298,7 @@ export class RelationsPanel {
         if (this.currentEditorTable === false) return;
         this.updateForRowAsync(rowIndex, this.currentEditorTable).catch(err => {
             console.error('[RelationsPanel] refreshCurrentRow 失敗:', err);
+            this.notification.show('関連パネルの更新に失敗しました');
         });
     }
 

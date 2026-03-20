@@ -2284,3 +2284,20 @@ preloadReferenceTables のキャッシュ不足と preservableErrors の引き�
 3. 既存APIの契約（`switchToExistingTab` は既存タブのみ、`navigateToTableCell` は新規作成も可能）を正確に把握してから使い分ける
 
 ---
+
+## 157. [6d0914c] — 内部エラーをNotificationToastでユーザーに通知する機能を追加
+
+### 不具合原因名
+非同期エラーの console.warn/error による握りつぶし
+
+### なぜそうなったのか
+非同期処理（参照テーブルの読み込み、RelationsPanel/FormPanelの表示等）の `.catch()` ハンドラで `console.warn` / `console.error` にログ出力するだけでエラーを握りつぶしていた。`NotificationToast` は既に実装されていたが、実装コードからは1箇所も `show()` が呼ばれていなかった。ブラウザの開発者ツールを開かない限りエラーに気づけず、実際に `ReferenceError` が `.catch()` で握りつぶされ発見が遅れる事態が発生した。
+
+初期実装では `EditorTableHandler` に `notification` を `| undefined` として後から `setReferenceComponents()` で設定する生焼けオブジェクトパターンを採用してしまい、レビューで指摘を受けてコンストラクタ引数に修正した。また、全ての `.catch()` に通知を追加しようとして、バックグラウンドプリロードの失敗（ノイズになる）と二重通知（FormPanel内部とTab呼び出し元の両方で通知）の問題も発生した。
+
+### どうしたら今後は再発しないか
+1. 非同期処理の `.catch()` で `console.warn`/`console.error` のみで処理する場合は、それがユーザーの作業に影響するエラーかどうかを判断し、影響する場合は `NotificationToast` でも通知する
+2. 通知の追加先を選定する際は「ユーザー操作の直接的な結果として発生するエラー」と「バックグラウンドプリロードの失敗」を区別し、後者は通知対象外とする
+3. 新しい依存をコンポーネントに追加する際は、既存の `| undefined` パターン（`setXxx` で後から設定する方式）に倣わず、コンストラクタ引数として渡す
+
+---

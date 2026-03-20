@@ -24,6 +24,7 @@ import {
     getTarget
 } from "./editor-actions";
 import {ScrollViewportController} from "./scroll-viewport-controller";
+import {NotificationToast} from "./notification";
 
 /**
  * 参照解決の結果
@@ -88,6 +89,8 @@ export class EditorTableHandler {
     private dropdownInput: GridDropdownInput | undefined;
     private tableData: EditorTableData | undefined;
     private dropdownActive: boolean;
+    /** エラー通知トースト */
+    private readonly notification: NotificationToast;
 
     private readonly boundOnKeydown: (e: KeyboardEvent) => void;
     private readonly boundOnFocusout: (e: FocusEvent) => void;
@@ -97,12 +100,14 @@ export class EditorTableHandler {
         table: EditorTable,
         selection: Selection,
         history: History,
-        scrollController: ScrollViewportController
+        scrollController: ScrollViewportController,
+        notification: NotificationToast
     ) {
         this.table = table;
         this.selection = selection;
         this.history = history;
         this.scrollController = scrollController;
+        this.notification = notification;
         this.textField = undefined;
 
         this.active = false;
@@ -1141,6 +1146,7 @@ export class EditorTableHandler {
             return true;
         } catch (e) {
             console.warn(`Failed to load reference data for ${resolvedReference.tableName}`, e);
+            this.notification.show('参照データの読み込みに失敗しました');
             return false;
         }
     }

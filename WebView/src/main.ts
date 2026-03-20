@@ -30,10 +30,14 @@ import {StatusBar} from "./status-bar";
     // 参照データキャッシュ（アプリケーション全体で1つ、中央ストア経由でインメモリデータを取得する）
     const referenceDataCache = new ReferenceDataCache(store);
 
+    // 通知ポップアップを初期化（アプリ全体で1つ。Tab より先に生成し、Tab 経由で子コンポーネントに伝播させる）
+    // StatusBar のコンストラクタに渡してステータスバー右端に配置する
+    const notification = new NotificationToast();
+
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
 
-    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache);
+    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache, notification);
 
     const realSidebar = new Sidebar(
         explorerElement,
@@ -49,10 +53,6 @@ import {StatusBar} from "./status-bar";
 
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
-
-    // 通知ポップアップを初期化（アプリ全体で1つ）
-    // StatusBar のコンストラクタに渡してステータスバー右端に配置する
-    const notification = new NotificationToast();
 
     // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
     // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。

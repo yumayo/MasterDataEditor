@@ -6,6 +6,7 @@ import {Csv} from "./csv";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {Tab} from "./tab";
+import {NotificationToast} from "./notification";
 
 /**
  * フォームパネルの1ページ（ナビゲーションスタックの1エントリ）
@@ -54,6 +55,7 @@ export class FormPanel {
     private readonly store: InMemoryTableStore;
     private readonly reverseReferenceResolver: ReverseReferenceResolver;
     private readonly tab: Tab;
+    private readonly notification: NotificationToast;
     /** ナビゲーションスタック（先頭がルート、末尾が現在表示中ページ） */
     private navStack: FormPage[];
     /** レースコンディション防止用リクエストID */
@@ -62,10 +64,11 @@ export class FormPanel {
     /** 最大ドリルダウン深度 */
     private static readonly MAX_DEPTH = 4;
 
-    constructor(store: InMemoryTableStore, tab: Tab) {
+    constructor(store: InMemoryTableStore, tab: Tab, notification: NotificationToast) {
         this.store = store;
         this.reverseReferenceResolver = new ReverseReferenceResolver(store);
         this.tab = tab;
+        this.notification = notification;
         this.navStack = [];
         this.currentRequestId = 0;
 
@@ -262,6 +265,7 @@ export class FormPanel {
             errorEl.textContent = 'エラーが発生しました';
             content.appendChild(errorEl);
             console.error('[FormPanel] renderCurrentPageAsync failed:', err);
+            this.notification.show('フォームの表示に失敗しました');
         }
     }
 
@@ -288,6 +292,7 @@ export class FormPanel {
                 item.addEventListener('click', () => {
                     this.goToPageAsync(capturedIndex).catch(err => {
                         console.error('[FormPanel] goToPageAsync failed:', err);
+                        this.notification.show('フォームのページ遷移に失敗しました');
                     });
                 });
             }
@@ -386,6 +391,7 @@ export class FormPanel {
             refItem.addEventListener('click', () => {
                 this.drillDownAsync(tableKey, refPkValue, capturedLabel).catch(err => {
                     console.error('[FormPanel] drillDownAsync failed:', err);
+                    this.notification.show('フォームのドリルダウンに失敗しました');
                 });
             });
         }
@@ -449,6 +455,7 @@ export class FormPanel {
 
         // 非同期でN:1参照先テーブルのデータをロードしてbodyを更新する
         if (section.relationType === 'N:1' && section.rows.length === 0 && section.header.length === 0) {
+            // バックグラウンドでFK参照データをロードする（失敗時はユーザーに通知しない、ノイズ防止）
             this.loadFkSectionDataAsync(section, body, badge, currentDepth).catch(err => {
                 console.error('[FormPanel] loadFkSectionDataAsync failed:', err);
             });
