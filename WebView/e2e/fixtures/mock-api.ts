@@ -124,6 +124,20 @@ export async function installMockApiAsync(
                 const request = JSON.parse(message);
                 const type = request.type as string;
 
+                // editor_api_request は C# → WebView の逆方向通信。
+                // ブリッジが addEventListener で登録したリスナーに配信する。
+                if (type === "editor_api_request") {
+                    dispatch(request);
+                    return;
+                }
+
+                // editor_api_response はブリッジが postMessage で送信した C# 向けレスポンス。
+                // テスト環境ではリスナーに配信してテストが受信できるようにする。
+                if (type === "editor_api_response") {
+                    dispatch(request);
+                    return;
+                }
+
                 if (type === "find_files_request") {
                     try {
                         const files = findFiles(request.directory);

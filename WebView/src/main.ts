@@ -11,6 +11,9 @@ import {NotificationToast} from "./notification";
 import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
+import {EditorApiImpl} from "./editor-api";
+import {EditorApiBridge} from "./editor-api-bridge";
+import type {SchemaEntry, EditorSchemaColumn, EditorSchemaReference} from "./editor-api-types";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -107,6 +110,8 @@ import {StatusBar} from "./status-bar";
 
     // スキーマファイルを読み込み
     // 各スキーマJSONを読み込んでdescriptionを取得し、エクスプローラーに2行表示する
+    // 同時に schemaRegistry を構築する（EditorAPI.schema の情報源となる）
+    const schemaRegistry = new Map<string, SchemaEntry>();
     const files = await findFilesAsync("schema");
     for (let i = 0; i < files.length; ++i) {
         const file = files[i];
@@ -122,5 +127,38 @@ import {StatusBar} from "./status-bar";
         const description: string | null = typeof descriptionRaw === 'string' && descriptionRaw.length > 0 ? descriptionRaw : null;
         sidebar.appendFile(tableName, description);
         commandPalette.registerTable(tableName, description);
+
+        // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
+        const headerArray = schemaJson['header'] as Array<Record<string, unknown>>;
+        const columns: EditorSchemaColumn[] = [];
+        const references: EditorSchemaReference[] = [];
+        for (let j = 0; j < headerArray.length; ++j) {
+            const col = headerArray[j];
+            columns.push({ name: col['name'] as string, type: col['type'] as string });
+            // reference フィールドが存在する場合は FK 参照として登録する
+            const refRaw = col['reference'];
+            if (typeof refRaw === 'string' && refRaw.length > 0) {
+                const dotIndex = refRaw.indexOf('.');
+                if (dotIndex !== -1) {
+                    references.push({
+                        columnName: col['name'] as string,
+                        targetTable: refRaw.substring(0, dotIndex),
+                        targetColumn: refRaw.substring(dotIndex + 1),
+                    });
+                }
+            }
+        }
+        const primaryKeyRaw = schemaJson['primary_key'];
+        const primaryKeys: string[] = Array.isArray(primaryKeyRaw) ? primaryKeyRaw as string[] : [];
+        schemaRegistry.set(tableName, { columns, primaryKeys, references });
     }
+
+    // EditorAPI を構築して window.editorApi として公開する
+    const editorApi = new EditorApiImpl(store, tab, schemaRegistry);
+    tab.connectEditorApi(editorApi);
+    (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
+
+    // C# ↔ WebView ブリッジを構築してインストールする
+    const bridge = new EditorApiBridge(editorApi);
+    bridge.install();
 })();

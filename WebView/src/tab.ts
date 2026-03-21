@@ -25,6 +25,7 @@ import {DiffTab} from "./diff-tab";
 import {FormPanel} from "./form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "./notification";
+import type {EditorAPI} from "./editor-api-types";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -160,6 +161,9 @@ export class Tab {
     /** エラー通知トースト（各子コンポーネントに伝播させる） */
     private readonly notification: NotificationToast;
 
+    /** EditorAPI（connectEditorApi で後から接続する。未接続時は false） */
+    private editorApi: EditorAPI | false;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -184,6 +188,7 @@ export class Tab {
         this.diffTabs = new Map();
         this.currentFormPanel = false;
         this.validationPanel = false;
+        this.editorApi = false;
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -435,6 +440,11 @@ export class Tab {
         const next = this.findNextTabButton(name);
 
         this.removeTabButton(name);
+
+        // テーブルクローズイベントを発火する（設定タブ・差分タブは通常テーブルではないため除外する）
+        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
+            this.editorApi.emitTableClosed(name);
+        }
 
         // 設定タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
         // これにより次回 openSettingsTab() 時に新しい SettingsPanel が正しく生成される。
@@ -755,11 +765,14 @@ export class Tab {
             this.reference.refreshReferenceHints(name, existingState);
             // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
             existingState.editorTable.forceRefreshRelationsPanel();
+            // 既存タブの再アクティブ化では emitTableOpened を発火しない（Open/Close の対称性を維持するため）
             return;
         }
 
         // 新しいタブ状態を作成
         this.createTabState(name, tabButton);
+        // テーブルオープンイベントを発火する（EditorAPI が接続済みの場合のみ）
+        if (this.editorApi !== false) this.editorApi.emitTableOpened(name);
     }
 
     /**
@@ -1555,6 +1568,20 @@ export class Tab {
         const state = this.tabStates.get(this.activeTabName);
         if (!state) return false;
         return state;
+    }
+
+    /**
+     * テーブル名からタブ状態を取得する（EditorAPI がタブを開いていないテーブルへの操作を判定するために使用する）
+     */
+    getTabStateByName(tableName: string): TabState | null {
+        const state = this.tabStates.get(tableName);
+        if (!state) return null;
+        return state;
+    }
+
+    /** EditorAPI を後から接続する（main.ts で EditorAPI 構築後に呼ばれる） */
+    connectEditorApi(api: EditorAPI): void {
+        this.editorApi = api;
     }
 
     // =========================================================================

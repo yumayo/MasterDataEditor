@@ -133,6 +133,11 @@ export class InMemoryTableStore {
         return this.headers.has(tableName);
     }
 
+    /** ストアに登録されている全テーブル名を返す */
+    getTableNames(): string[] {
+        return [...this.headers.keys()];
+    }
+
     /** header+bodyをCsvとして返す */
     getCsv(tableName: string): Csv | false {
         if (!this.headers.has(tableName)) return false;
