@@ -31,7 +31,7 @@
 
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
-- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040, DiffTabSaveHighlightで再発 **4回目**。新しいawaitを追加するたびに漏れる)
+- **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040, DiffTabSaveHighlight, ISSUE_0089で再発 **5回目**。catchブロック内も漏れやすい。新しいawaitを追加するたびに漏れる)
 - **CSS hardcoded colors**: 10回再発 — CSS変数使用を徹底せよ (FEAT_0045: notification.css に #c0392b/#ffffff 等 8箇所ハードコード)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
