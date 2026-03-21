@@ -1589,6 +1589,16 @@ export class Tab {
         this.editorApi = api;
     }
 
+    /** テーブル保存イベントを EditorAPI に委譲する（EditorTable から呼ばれる） */
+    emitTableSaved(tableName: string): void {
+        if (this.editorApi !== false) this.editorApi.emitTableSaved(tableName);
+    }
+
+    /** 行選択変更イベントを EditorAPI に委譲する（EditorTable から呼ばれる） */
+    emitRowSelected(tableName: string, rowIndex: number): void {
+        if (this.editorApi !== false) this.editorApi.emitRowSelected(tableName, rowIndex);
+    }
+
     // =========================================================================
     // TabDragDrop ファサード
     // =========================================================================

@@ -8,6 +8,10 @@ export interface EditorAPI {
     emitTableOpened(tableName: string): void;
     /** テーブルクローズイベントを発火する（Tab から呼ばれる） */
     emitTableClosed(tableName: string): void;
+    /** テーブル保存イベントを発火する（EditorTableHandler の保存完了時に呼ばれる） */
+    emitTableSaved(tableName: string): void;
+    /** 行選択変更イベントを発火する（EditorTable の行選択変化時に呼ばれる） */
+    emitRowSelected(tableName: string, rowIndex: number): void;
 }
 
 /** データ読み取りAPI */
@@ -53,6 +57,8 @@ export interface EditorEventsAPI {
     onTableOpened(handler: (event: { tableName: string }) => void): EditorDisposable;
     onTableClosed(handler: (event: { tableName: string }) => void): EditorDisposable;
     onCellChanged(handler: (event: EditorCellChangeEvent) => void): EditorDisposable;
+    onTableSaved(handler: (event: { tableName: string }) => void): EditorDisposable;
+    onRowSelected(handler: (event: { tableName: string; rowIndex: number }) => void): EditorDisposable;
 }
 
 /** セル変更イベント */

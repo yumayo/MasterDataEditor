@@ -479,6 +479,128 @@ test.describe('Phase 3: イベントAPI', () => {
         const tableName = await eventPromise;
         expect(tableName).toBe('test');
     });
+
+    test('onTableSaved: Ctrl+S 保存時にイベントが発火する', async ({ mockFileSystem, page }) => {
+        const table = await openTableAsync(page, 'test');
+
+        // セル値を変更してダーティ状態にする
+        await page.evaluate(() => {
+            (window as unknown as { editorApi: {
+                edit: { setCellValue(name: string, row: number, col: number, value: string): boolean };
+            } }).editorApi.edit.setCellValue('test', 0, 1, 'saved_name');
+        });
+
+        // onTableSaved イベントを Promise で待ち受ける
+        const eventPromise = page.evaluate(() => {
+            return new Promise<{ tableName: string }>((resolve) => {
+                const api = (window as unknown as { editorApi: {
+                    events: { onTableSaved(handler: (e: { tableName: string }) => void): { dispose(): void } };
+                } }).editorApi;
+                api.events.onTableSaved((e) => { resolve(e); });
+            });
+        });
+
+        // セルをクリックしてフォーカスを確保し、Ctrl+S で保存する
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+s');
+
+        const event = await eventPromise;
+        expect(event.tableName).toBe('test');
+    });
+
+    test('onTableSaved: dispose 後はイベントが発火しない', async ({ mockFileSystem, page }) => {
+        const table = await openTableAsync(page, 'test');
+
+        // セル値を変更してダーティ状態にする
+        await page.evaluate(() => {
+            (window as unknown as { editorApi: {
+                edit: { setCellValue(name: string, row: number, col: number, value: string): boolean };
+            } }).editorApi.edit.setCellValue('test', 0, 1, 'will_not_fire');
+        });
+
+        // onTableSaved を登録して即座に dispose し、グローバルフラグで発火を追跡する
+        await page.evaluate(() => {
+            type FlagWindow = { __tableSavedFired: boolean };
+            (window as unknown as FlagWindow).__tableSavedFired = false;
+            const api = (window as unknown as { editorApi: {
+                events: { onTableSaved(handler: (e: unknown) => void): { dispose(): void } };
+            } }).editorApi;
+            const sub = api.events.onTableSaved(() => {
+                (window as unknown as FlagWindow).__tableSavedFired = true;
+            });
+            // 購読解除する
+            sub.dispose();
+        });
+
+        // セルをクリックしてフォーカスを確保し、Ctrl+S で保存する
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+s');
+
+        // 非同期の保存完了を待ってからフラグを確認する
+        const fired = await page.evaluate(() => {
+            return new Promise<boolean>((resolve) => {
+                setTimeout(() => {
+                    resolve((window as unknown as { __tableSavedFired: boolean }).__tableSavedFired);
+                }, 300);
+            });
+        });
+        expect(fired).toBe(false);
+    });
+
+    test('onRowSelected: 行クリック時にイベントが発火する', async ({ mockFileSystem, page }) => {
+        await openTableAsync(page, 'test');
+
+        // onRowSelected イベントを Promise で待ち受ける（2行目クリックを検知する）
+        const eventPromise = page.evaluate(() => {
+            return new Promise<{ tableName: string; rowIndex: number }>((resolve) => {
+                const api = (window as unknown as { editorApi: {
+                    events: { onRowSelected(handler: (e: { tableName: string; rowIndex: number }) => void): { dispose(): void } };
+                } }).editorApi;
+                api.events.onRowSelected((e) => { resolve(e); });
+            });
+        });
+
+        // 2行目のセルをクリックして行選択を変更する（DOMの3行目 = ヘッダー + データ行1 + データ行2）
+        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)');
+        await secondRowCell.click();
+
+        const event = await eventPromise;
+        expect(event.tableName).toBe('test');
+        // rowIndex はストアインデックス（0始まり）で通知される
+        expect(event.rowIndex).toBe(1);
+    });
+
+    test('onRowSelected: dispose 後はイベントが発火しない', async ({ mockFileSystem, page }) => {
+        await openTableAsync(page, 'test');
+
+        // onRowSelected を登録して即座に dispose し、グローバルフラグで発火を追跡する
+        await page.evaluate(() => {
+            type FlagWindow = { __rowSelectedFired: boolean };
+            (window as unknown as FlagWindow).__rowSelectedFired = false;
+            const api = (window as unknown as { editorApi: {
+                events: { onRowSelected(handler: (e: unknown) => void): { dispose(): void } };
+            } }).editorApi;
+            const sub = api.events.onRowSelected(() => {
+                (window as unknown as FlagWindow).__rowSelectedFired = true;
+            });
+            // 購読解除する
+            sub.dispose();
+        });
+
+        // 行クリックして行選択を変更する
+        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)');
+        await secondRowCell.click();
+
+        // 行選択イベント処理の完了を待ってからフラグを確認する
+        const fired = await page.evaluate(() => {
+            return new Promise<boolean>((resolve) => {
+                setTimeout(() => {
+                    resolve((window as unknown as { __rowSelectedFired: boolean }).__rowSelectedFired);
+                }, 300);
+            });
+        });
+        expect(fired).toBe(false);
+    });
 });
 
 // =============================================================================

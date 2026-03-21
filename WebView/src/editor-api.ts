@@ -20,11 +20,15 @@ export class EditorApiImpl implements EditorAPI {
     private readonly cellChangedHandlers: Array<(event: EditorCellChangeEvent) => void>;
     private readonly tableOpenedHandlers: Array<(event: { tableName: string }) => void>;
     private readonly tableClosedHandlers: Array<(event: { tableName: string }) => void>;
+    private readonly tableSavedHandlers: Array<(event: { tableName: string }) => void>;
+    private readonly rowSelectedHandlers: Array<(event: { tableName: string; rowIndex: number }) => void>;
 
     constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>) {
         this.cellChangedHandlers = [];
         this.tableOpenedHandlers = [];
         this.tableClosedHandlers = [];
+        this.tableSavedHandlers = [];
+        this.rowSelectedHandlers = [];
 
         // data 名前空間: ストアからの読み取り（ディープコピーを返して内部データを保護する）
         this.data = {
@@ -104,8 +108,10 @@ export class EditorApiImpl implements EditorAPI {
                 const command = new CellChangeCommand(tabState.editorTable, changes, range, range);
                 tabState.history.executeCommand(command, range, range);
                 // セル変更イベントはストアインデックスで発火する（外部API視点）
-                for (let i = 0; i < cellChangedHandlers.length; ++i) {
-                    try { cellChangedHandlers[i]({ tableName, row, column, oldValue, newValue: value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+                // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
+                const handlers = [...cellChangedHandlers];
+                for (let i = 0; i < handlers.length; ++i) {
+                    try { handlers[i]({ tableName, row, column, oldValue, newValue: value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
                 }
                 return true;
             },
@@ -138,11 +144,13 @@ export class EditorApiImpl implements EditorAPI {
                 tabState.history.executeCommand(command, range, range);
                 // セル変更イベントはストアインデックスで発火する（外部API視点）
                 // oldValue は cellChanges から取得する（executeCommand 後はストアが更新済みのため rows を参照してはならない）
+                // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
+                const handlers = [...cellChangedHandlers];
                 for (let i = 0; i < cellChanges.length; ++i) {
                     const cc = cellChanges[i];
                     const c = changes[i];
-                    for (let j = 0; j < cellChangedHandlers.length; ++j) {
-                        try { cellChangedHandlers[j]({ tableName, row: c.row, column: c.column, oldValue: cc.oldValue, newValue: c.value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+                    for (let j = 0; j < handlers.length; ++j) {
+                        try { handlers[j]({ tableName, row: c.row, column: c.column, oldValue: cc.oldValue, newValue: c.value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
                     }
                 }
                 return true;
@@ -194,20 +202,47 @@ export class EditorApiImpl implements EditorAPI {
                 this.tableClosedHandlers.push(handler);
                 return { dispose: () => { const idx = this.tableClosedHandlers.indexOf(handler); if (idx !== -1) this.tableClosedHandlers.splice(idx, 1); } };
             },
+            onTableSaved: (handler: (event: { tableName: string }) => void): EditorDisposable => {
+                this.tableSavedHandlers.push(handler);
+                return { dispose: () => { const idx = this.tableSavedHandlers.indexOf(handler); if (idx !== -1) this.tableSavedHandlers.splice(idx, 1); } };
+            },
+            onRowSelected: (handler: (event: { tableName: string; rowIndex: number }) => void): EditorDisposable => {
+                this.rowSelectedHandlers.push(handler);
+                return { dispose: () => { const idx = this.rowSelectedHandlers.indexOf(handler); if (idx !== -1) this.rowSelectedHandlers.splice(idx, 1); } };
+            },
         };
     }
 
     /** テーブルオープンイベントを発火する（Tab.enableTabButton から呼ばれる） */
     emitTableOpened(tableName: string): void {
-        for (let i = 0; i < this.tableOpenedHandlers.length; ++i) {
-            try { this.tableOpenedHandlers[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+        // ハンドラー実行中に dispose() で配列が縮小してもループインデックスがずれないようスナップショットを作成する
+        const snapshot = [...this.tableOpenedHandlers];
+        for (let i = 0; i < snapshot.length; ++i) {
+            try { snapshot[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
         }
     }
 
     /** テーブルクローズイベントを発火する（Tab.performCloseTab から呼ばれる） */
     emitTableClosed(tableName: string): void {
-        for (let i = 0; i < this.tableClosedHandlers.length; ++i) {
-            try { this.tableClosedHandlers[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+        const snapshot = [...this.tableClosedHandlers];
+        for (let i = 0; i < snapshot.length; ++i) {
+            try { snapshot[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+        }
+    }
+
+    /** テーブル保存イベントを発火する（EditorTableHandler の保存完了時に呼ばれる） */
+    emitTableSaved(tableName: string): void {
+        const snapshot = [...this.tableSavedHandlers];
+        for (let i = 0; i < snapshot.length; ++i) {
+            try { snapshot[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+        }
+    }
+
+    /** 行選択変更イベントを発火する（EditorTable.notifyRowSelectionChanged から呼ばれる） */
+    emitRowSelected(tableName: string, rowIndex: number): void {
+        const snapshot = [...this.rowSelectedHandlers];
+        for (let i = 0; i < snapshot.length; ++i) {
+            try { snapshot[i]({ tableName, rowIndex }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
         }
     }
 }

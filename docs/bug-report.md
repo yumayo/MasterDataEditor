@@ -2452,3 +2452,16 @@ Path.Combineの絶対パス上書き挙動によるbaseDir脱出、およびProc
 スクロールコンテナ（`overflow:auto`）を `position:absolute` 要素の含有ブロックとして直接使ってはならない。スクロールコンテナの内側に `position:relative` な通常フロー要素（`innerWrapper`）を配置し、これを container として渡すことで `getBoundingClientRect()` がスクロール量を含み正しく座標変換できる。新しいテーブル表示コンテナを作る際は通常テーブル・ミニテーブルと同じ「スクロールコンテナ → innerWrapper → EditorTable/Selection/GridTextField」のDOM階層パターンを必ず踏襲すること。
 
 ---
+
+## 169. bd5a378 — EditorAPIのonTableSavedとonRowSelectedイベントを接続する
+
+### 不具合原因名
+イベントハンドラー配列のループ中dispose安全性の欠如
+
+### なぜそうなったのか
+既存のemitTableOpened/emitTableClosedが `this.xxxHandlers` 配列を直接forループで走査する実装だった。ハンドラー実行中に `dispose()` が呼ばれると `splice(idx, 1)` で配列が縮小し、ループインデックスがずれて後続のハンドラーがスキップされる。新規イベント追加時に既存パターンをそのままコピーしたため、構造的欠陥ごと伝播した。
+
+### どうしたら今後は再発しないか
+イベントハンドラーの発火ループでは、ループ前に `const snapshot = [...this.xxxHandlers]` でスナップショットを作成し、スナップショットを走査すること。配列を直接走査すると、ハンドラー内でのdispose（splice）によりインデックスずれが発生する。新しいイベントパターンを追加する際は、既存コードをコピーする前に既存コードの正しさを検証すること。
+
+---

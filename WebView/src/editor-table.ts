@@ -1638,7 +1638,7 @@ export class EditorTable {
     // RelationsPanel 連携
     // =========================================================================
 
-    /** 行選択が変化したときにRelationsPanelへ通知する（Selectionから呼ばれる） */
+    /** 行選択が変化したときにRelationsPanelへ通知し、EditorAPI に行選択イベントを発火する（Selectionから呼ばれる） */
     notifyRowSelectionChanged(rowIndex: number): void {
         if (this.relationsPanel === false) return;
         if (this.isMiniTable) {
@@ -1652,6 +1652,13 @@ export class EditorTable {
         // 非ミニテーブルの場合: 同一行インデックスへの重複通知を防止してパフォーマンスを保護する
         if (rowIndex === this.lastNotifiedRow) return;
         this.lastNotifiedRow = rowIndex;
+        // 重複チェック通過後に EditorAPI へ行選択イベントを発火する（ストアインデックス0始まりで通知）
+        if (this.tab !== false) {
+            const domDataRow = rowIndex - 1; // DOM行インデックス（1始まり）→ データ行インデックス（0始まり）
+            if (domDataRow >= 0 && domDataRow < this.storeRowIndices.length) {
+                this.tab.emitRowSelected(this.tableName, this.storeRowIndices[domDataRow]);
+            }
+        }
         this.relationsPanel.updateForRow(rowIndex);
     }
 

@@ -531,6 +531,9 @@ export class EditorTableHandler {
                         // gitPath（gitルート相対パス）を渡してHEAD版CSVとの差分を再計算する。
                         this.table.refreshGitDiffForDiffTabAsync(this.gitPath)
                             .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffForDiffTabAsync failed:', e); });
+                        // テーブル保存イベントを EditorAPI に発火する（差分タブの場合は元テーブル名を使用する）
+                        // EditorTable の中継メソッドを経由せず Tab に直接アクセスする
+                        if (this.table.tab !== false) this.table.tab.emitTableSaved(this.saveTargetTableName);
                     })
                     .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });
                 return;
@@ -715,6 +718,9 @@ export class EditorTableHandler {
         // 保存完了後にgit差分を再取得してセルのハイライトを更新する
         this.table.refreshGitDiffAsync()
             .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffAsync failed:', e); });
+        // テーブル保存イベントを EditorAPI に発火する
+        // EditorTable の中継メソッドを経由せず Tab に直接アクセスする
+        if (this.table.tab !== false) this.table.tab.emitTableSaved(this.table.tableName);
     }
 
     /**
