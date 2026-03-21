@@ -839,8 +839,10 @@ export class Tab {
      * 差分タブをタブバーに開く。
      * 同一テーブルの差分タブが既に開かれている場合は既存タブをアクティブ化するだけにする。
      * SourceControlPanel.openDiffTabAsync から呼ばれる。
+     * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
+     *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
      */
-    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string): void {
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string): void {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
 
         // 既存の差分タブが開いている場合はアクティブ化するだけにする
@@ -856,7 +858,7 @@ export class Tab {
         const tabButton = this.append(diffTabName, null);
 
         const diffTab = new DiffTab(
-            tableName, schemaJson, headCsv, currentCsv, isStaged,
+            tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference, this.openEditorTables, this.notification
         );

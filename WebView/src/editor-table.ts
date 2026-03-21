@@ -1806,10 +1806,13 @@ export class EditorTable {
      * 差分タブの右ペイン保存後にgit差分ハイライトを更新する。
      * 通常テーブルの refreshGitDiffAsync は git status でテーブル名を検索するが、
      * 差分タブの tableName は "xxx:diff:current" という仮名のため git status では見つからない。
-     * 代わりに saveTableName（実テーブル名）を使って gitShowAsync でHEAD版CSVを取得し、
+     * 代わりに gitPath（gitルート相対のファイルパス）を使って gitShowAsync でHEAD版CSVを取得し、
      * GitDiffTracker を再構築して全セルのハイライトを再適用する。
+     *
+     * gitPath: source-control-panel.ts の entry.path をそのまま引き回したもの。
+     *          サブディレクトリ環境では "subdir/data/xxx.csv" 形式になる。
      */
-    async refreshGitDiffForDiffTabAsync(saveTableName: string): Promise<void> {
+    async refreshGitDiffForDiffTabAsync(gitPath: string): Promise<void> {
         const requestId = ++this.refreshGitDiffRequestId;
         // PK列が定義されていない場合はハイライト不要
         if (this.tableData.primaryKeyColumns.length === 0) {
@@ -1835,10 +1838,12 @@ export class EditorTable {
             }
             pkColumnIndices.push(idx);
         }
-        // saveTableName（実テーブル名）を使ってHEAD版CSVを取得する
+        // gitPath（gitルート相対パス）を使ってHEAD版CSVを取得する。
+        // source-control-panel.ts の openDiffTabAsync で gitShowAsync(entry.path) が成功しているため、
+        // 同じパスを使えばサブディレクトリ環境でも正しく動作する。
         let headCsv: string;
         try {
-            headCsv = await gitShowAsync(`data/${saveTableName}.csv`);
+            headCsv = await gitShowAsync(gitPath);
         } catch {
             // HEAD版が取得できない場合（新規テーブル等）は全セルchangedとする
             const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);

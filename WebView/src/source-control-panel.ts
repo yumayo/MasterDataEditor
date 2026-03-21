@@ -173,7 +173,7 @@ export class SourceControlPanel {
             if (requestId !== this.currentRequestId) return;
             // ヘッダー行のみのCSVをHEAD版として渡す（空のHEAD状態を明示的に表現する）
             const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
-            this.tab.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv);
+            this.tab.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path);
         } else {
             // 既存ファイル: スキーマ・現在版CSV・HEAD版CSVを並列取得する
             const [schemaJson, currentCsv, headCsv] = await Promise.all([
@@ -182,7 +182,7 @@ export class SourceControlPanel {
                 gitShowAsync(entry.path),
             ]);
             if (requestId !== this.currentRequestId) return;
-            this.tab.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv);
+            this.tab.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path);
         }
     }
 

@@ -72,6 +72,13 @@ export class EditorTableHandler {
      */
     private saveTargetTableName: string;
     /**
+     * gitルート相対のファイルパス。差分タブの右ペインで使用する。
+     * 空文字の場合は未設定を表す。
+     * 保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
+     * サブディレクトリ環境（例: "subdir/data/quest_reward.csv"）でも正しく動作する。
+     */
+    private gitPath: string;
+    /**
      * 差分タブ保存後に通常タブのDOMを同期するため、Tab.getOpenEditorTables() の Map を保持する。
      * 差分タブの右ペインの EditorTableHandler にのみ connectOpenEditorTables() で設定される。
      * false の場合は通常タブのDOM同期をスキップする（通常テーブル・ミニテーブル・差分タブ左ペイン）。
@@ -114,6 +121,7 @@ export class EditorTableHandler {
         this.visible = false;
         this.readOnly = false;
         this.saveTargetTableName = '';
+        this.gitPath = '';
         this.openEditorTables = false;
         this.dropdownActive = false;
         this.pendingScrollRestoreId = 0;
@@ -207,12 +215,16 @@ export class EditorTableHandler {
     }
 
     /**
-     * 保存先テーブル名をオーバーライドする（差分タブの右ペイン用）
-     * ストアキーが "tableName:diff:current" のような不正パスでも、
-     * 元の tableName を指定することでファイル破壊なく保存できる。
+     * 差分タブの右ペイン用に保存先テーブル名とgitパスを一括設定する。
+     * - saveTargetTableName: ストアキーが "tableName:diff:current" のような不正パスでも、
+     *   元の tableName を指定することでファイル破壊なく保存できる。
+     * - gitPath: gitルート相対のファイルパス。保存後の refreshGitDiffForDiffTabAsync で HEAD版CSVを取得する際に使用する。
+     *   サブディレクトリ環境では "data/xxx.csv" ではなく "subdir/data/xxx.csv" 形式になるため、
+     *   ハードコードせず source-control-panel.ts の entry.path をそのまま引き回す。
      */
-    configureSaveTargetTableName(tableName: string): void {
-        this.saveTargetTableName = tableName;
+    configureDiffRightPane(saveTargetTableName: string, gitPath: string): void {
+        this.saveTargetTableName = saveTargetTableName;
+        this.gitPath = gitPath;
     }
 
     /**
@@ -487,7 +499,7 @@ export class EditorTableHandler {
                 // - getDiffPaddingStoreRowIndices() で現在のDOM状態からパディング行インデックスを動的に取得してCSVから除外する
                 // - Dirty解除は差分タブの History キー（this.table.tableName）で行う
                 // - 保存後は通常テーブルのストアも最新CSVに更新してタブ再オープン時に反映する
-                // - 保存後は refreshGitDiffForDiffTabAsync で saveTargetTableName を使ってgit差分ハイライトを更新する
+                // - 保存後は refreshGitDiffForDiffTabAsync で gitPath（gitルート相対パス）を使ってgit差分ハイライトを更新する
                 const paddingIndices = this.table.getDiffPaddingStoreRowIndices();
                 saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName, paddingIndices)
                     .then(() => {
@@ -516,8 +528,8 @@ export class EditorTableHandler {
                                 .catch((e: unknown) => { throw new Error('[EditorTableHandler] reloadTableDataAsync failed: ' + String(e)); });
                         }
                         // 保存後にgit差分ハイライトを更新する。
-                        // saveTargetTableName（実テーブル名）を渡してHEAD版CSVとの差分を再計算する。
-                        this.table.refreshGitDiffForDiffTabAsync(this.saveTargetTableName)
+                        // gitPath（gitルート相対パス）を渡してHEAD版CSVとの差分を再計算する。
+                        this.table.refreshGitDiffForDiffTabAsync(this.gitPath)
                             .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffForDiffTabAsync failed:', e); });
                     })
                     .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });

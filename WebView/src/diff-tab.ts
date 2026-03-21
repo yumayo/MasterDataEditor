@@ -83,6 +83,7 @@ export class DiffTab {
         headCsv: string,
         currentCsv: string,
         isStaged: boolean,
+        gitPath: string,
         editor: Editor,
         sidebar: Sidebar,
         store: InMemoryTableStore,
@@ -272,7 +273,7 @@ export class DiffTab {
         if (isStaged) {
             this.rightEditorTable.makeReadOnly();
         } else {
-            this.rightEditorTableHandler.configureSaveTargetTableName(tableName);
+            this.rightEditorTableHandler.configureDiffRightPane(tableName, gitPath);
             // 差分タブ保存後に通常タブが開かれている場合にDOMを同期するため openEditorTables を設定する。
             // connectOpenEditorTables に Tab.getOpenEditorTables() の参照を渡すことで、
             // 保存時点でそのタブが開かれているかどうかを動的に確認できる。

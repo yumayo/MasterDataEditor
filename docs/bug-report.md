@@ -2387,3 +2387,16 @@ DiffTab差分クラスの静的適用（コンストラクタ1回限り）
 既存の読み取り専用機能を編集可能に拡張する際は、表示状態の動的更新（ハイライト、バリデーション等）が編集操作と連動しているかを確認する。特にコンストラクタで1回だけ実行される初期化処理が、状態変更後も正しいかをレビューチェックリストに含める。
 
 ---
+
+## 164. [e9e8095] — 差分タブ保存後のgit差分ハイライト更新でgitパスがハードコードされておりサブディレクトリ環境で全セルchangedになる不具合を修正
+
+### 不具合原因名
+gitパスのハードコード（entry.path未引き回し）
+
+### なぜそうなったのか
+`refreshGitDiffForDiffTabAsync` が `gitShowAsync("data/" + saveTableName + ".csv")` で gitPath を構築していた。差分タブを開くときは `source-control-panel.ts` の `openDiffTabAsync` が `entry.path`（git statusから取得したgitルート相対パス）を使って `gitShowAsync(entry.path)` を呼んでおり正しく動作するが、保存後のハイライト更新パスでは独自にパスを再構築していた。workDirがリポジトリルートの場合は `"data/"` プレフィックスで一致するが、サブディレクトリ環境（例: `sample-workdir/`）では `GetDataPrefix` が `"sample-workdir/data/"` を返すため、`"data/quest_reward.csv".StartsWith("sample-workdir/data/")` が false となりC#側バリデーションで拒否され、catch節で `createForNewTable()` により全セルがchangedとして着色された。
+
+### どうしたら今後は再発しないか
+gitでファイルを特定するパスは、必ず同一のソース（`entry.path`）から引き回すこと。C#側から返ってきたパスを通じてパスの正規化責任を一箇所に集約し、TypeScript側でパスを再構築（ハードコード）しない。
+
+---
