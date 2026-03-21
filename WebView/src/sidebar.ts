@@ -76,7 +76,7 @@ export class Sidebar {
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
-        this.directory = new ExplorerDirectory(tab, this.filesPanel, 1);
+        this.directory = new ExplorerDirectory(tab, this.filesPanel, 0);
 
         // 初期幅を適用
         this.applyWidth(DEFAULT_SIDEBAR_WIDTH);

@@ -20,7 +20,7 @@
 .source-control-file-item {
     display: flex;
     flex-direction: column;
-    padding: 4px 12px 4px 24px;
+    padding: 4px 16px;
     cursor: pointer;
     color: var(--font-color);
 }
@@ -34,17 +34,17 @@
 }
 
 .source-control-file-item-active {
-    background-color: rgba(0, 0, 100, 0.1);
+    background-color: rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="dark"] .source-control-file-item-active {
-    background-color: rgba(100, 140, 255, 0.15);
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
 .source-control-file-item-active:hover {
-    background-color: rgba(0, 0, 100, 0.15);
+    background-color: rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] .source-control-file-item-active:hover {
-    background-color: rgba(100, 140, 255, 0.2);
+    background-color: rgba(255, 255, 255, 0.1);
 }

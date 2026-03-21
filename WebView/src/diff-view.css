@@ -45,19 +45,19 @@
 }
 
 .diff-cell-deleted {
-    background-color: rgba(255, 0, 0, 0.15);
+    background-color: rgba(240, 50, 50, 0.2);
 }
 
 .diff-cell-added {
-    background-color: rgba(0, 255, 0, 0.15);
+    background-color: rgba(81, 184, 81, 0.2);
 }
 
 .diff-row-deleted .diff-cell {
-    background-color: rgba(255, 0, 0, 0.15);
+    background-color: rgba(240, 50, 50, 0.2);
 }
 
 .diff-row-added .diff-cell {
-    background-color: rgba(0, 255, 0, 0.15);
+    background-color: rgba(81, 184, 81, 0.2);
 }
 
 .diff-row-empty {
@@ -116,7 +116,7 @@
 /* EditorTable 内の差分行クラス */
 .diff-pane-left .editor-table-row.diff-row-deleted .editor-table-cell,
 .diff-pane-left .editor-table-row.diff-row-deleted .editor-table-row-header {
-    background-color: rgba(255, 0, 0, 0.15);
+    background-color: rgba(240, 50, 50, 0.2);
 }
 
 .diff-pane-right .editor-table-row.diff-row-added .editor-table-cell,
@@ -134,11 +134,11 @@
 
 /* EditorTable 内の差分セルクラス */
 .diff-pane-left .editor-table-cell.diff-cell-deleted {
-    background-color: rgba(255, 0, 0, 0.25);
+    background-color: rgba(240, 50, 50, 0.2);
 }
 
 .diff-pane-right .editor-table-cell.diff-cell-added {
-    background-color: rgba(0, 255, 0, 0.25);
+    background-color: rgba(81, 184, 81, 0.2);
 }
 
 /* innerWrapper — position:absolute 要素の含有ブロック */

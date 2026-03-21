@@ -23,7 +23,7 @@ export class ExplorerFile {
 
         const div = document.createElement('div');
         div.classList.add('explorer-file');
-        div.setAttribute('style', 'padding-left: ' + this.depth * 16 + 'px');
+        div.style.paddingLeft = (this.depth * 16) + 'px';
 
         // name を1行目（主情報）、description を2行目（補助情報）として表示する
         const nameSpan = document.createElement('span');

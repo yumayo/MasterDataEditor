@@ -17,7 +17,6 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    opacity: 0.5;
     color: var(--font-color);
     /* アクティブ時のborder追加によるレイアウトシフトを防止するため常に透明borderを配置する */
     box-sizing: border-box;
@@ -26,12 +25,17 @@
     position: relative;
 }
 
-.activity-bar-item:hover {
-    opacity: 0.8;
+/* アイコン（SVG）のみ明暗を制御し、バッジは常にフル表示を維持する */
+.activity-bar-item > svg {
+    opacity: 0.5;
+}
+
+.activity-bar-item:hover > svg,
+.activity-bar-item-active > svg {
+    opacity: 1;
 }
 
 .activity-bar-item-active {
-    opacity: 1;
     /* 選択中アイテムはselection-color（青色）のborderで強調する */
     border-left: 2px solid var(--selection-color);
 }
