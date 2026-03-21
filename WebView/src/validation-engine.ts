@@ -3,7 +3,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 
 /** バリデーションエラーの種別 */
-export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken';
+export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch';
 
 /** バリデーションエラー情報 */
 export interface ValidationError {
@@ -51,7 +51,7 @@ export interface ValidateResult {
 /**
  * バリデーションエンジン
  *
- * ストア全体を走査して PK重複 と FK参照切れ を検出する。
+ * ストア全体を走査して PK重複、FK参照切れ、型不一致 を検出する。
  * DOM 操作は行わず、エラー情報の構造体リストを返すだけの純粋ロジッククラス。
  */
 export class ValidationEngine {
@@ -114,7 +114,7 @@ export class ValidationEngine {
 
     /**
      * 登録済みスキーマを持つ全テーブルを対象にバリデーションを実行する。
-     * PK重複エラーと FK参照切れエラーを検出して返す。
+     * PK重複エラー、FK参照切れエラー、型不一致エラーを検出して返す。
      *
      * preservableErrors: 参照先テーブルが未ロードのためスキップされた列・行について、
      * 現在のストア値が previousErrors のエラー値と一致するエラーを返す。
@@ -131,6 +131,7 @@ export class ValidationEngine {
             if (header === false || rows === false) continue;
             this.validatePkDuplicates(tableName, schema, header, rows, errors);
             this.validateFkReferences(tableName, schema, header, rows, errors, previousErrors, preservableErrors);
+            this.validateTypeMatch(tableName, schema, header, rows, errors);
         }
         return { errors, preservableErrors };
     }
@@ -465,6 +466,49 @@ export class ValidationEngine {
             }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // 型不一致検出
+    // -------------------------------------------------------------------------
+
+    private validateTypeMatch(
+        tableName: string,
+        schema: TableSchema,
+        header: string[],
+        rows: string[][],
+        errors: ValidationError[],
+    ): void {
+        for (const col of schema.columns) {
+            const colIdx = header.indexOf(col.name);
+            if (colIdx === -1) continue;
+            // int / float / double のみ検証対象。string型や未知の型はスキップする
+            const colType = col.type;
+            if (colType !== 'int' && colType !== 'float' && colType !== 'double') continue;
+            for (let r = 0; r < rows.length; r++) {
+                const cellValue = rows[r][colIdx];
+                // 空文字は未入力扱いでエラー対象外
+                if (cellValue === '') continue;
+                const trimmed = cellValue.trim();
+                // 型チェック: 16進・8進・2進リテラルを排除するため正規表現で10進数のみ許可する
+                const isValid = colType === 'int'
+                    ? /^[+-]?\d+$/.test(trimmed)
+                    : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed);
+                if (!isValid) {
+                    errors.push({
+                        tableName,
+                        rowIndex: r,
+                        columnIndex: colIdx,
+                        columnName: col.name,
+                        value: cellValue,
+                        kind: 'type-mismatch',
+                        message: `値 "${cellValue}" は型 ${colType} と一致しません`,
+                        filterValue: null,
+                        pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                    });
+                }
+            }
+        }
+    }
 }
 
 /** ValidationEngine に渡すテーブルスキーマ情報 */
@@ -472,5 +516,5 @@ export interface TableSchema {
     /** 複合主キー列名の配列 */
     primaryKeyColumns: readonly string[];
     /** 列情報の配列 */
-    columns: ReadonlyArray<{ name: string; reference: string | null }>;
+    columns: ReadonlyArray<{ name: string; type: string; reference: string | null }>;
 }

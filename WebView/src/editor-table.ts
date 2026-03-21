@@ -2155,16 +2155,16 @@ export class EditorTable {
     /**
      * ValidationPanel から呼ばれる: このテーブルのバリデーションエラーをDOMに適用する。
      * PK重複エラーには cell-pk-duplicate + cell-error を付与する。
-     * FK参照切れエラーには cell-error を付与する。
+     * FK参照切れ・型不一致エラーには cell-error を付与する。
      * エラーがないセルからは両クラスを除去する。
      */
     public applyValidationErrors(errors: ValidationError[]): void {
         // ストア列インデックス → エラー種別のマップにグループ化する（key: "storeRow,storeCol"）
         const pkErrorCells = new Set<string>();
-        const fkErrorCells = new Set<string>();
+        const otherErrorCells = new Set<string>();
         for (const error of errors) {
             const key = `${error.rowIndex},${error.columnIndex}`;
-            if (error.kind === 'pk-duplicate') { pkErrorCells.add(key); } else { fkErrorCells.add(key); }
+            if (error.kind === 'pk-duplicate') { pkErrorCells.add(key); } else { otherErrorCells.add(key); }
         }
         // ストアヘッダーはループ外で1回だけ取得する
         const storeHeader = this.store.getHeader(this.tableName);
@@ -2187,11 +2187,11 @@ export class EditorTable {
                 if (storeColIdx === -1) continue;
                 const key = `${storeRowIdx},${storeColIdx}`;
                 const isPkError = pkErrorCells.has(key);
-                const isFkError = fkErrorCells.has(key);
+                const isOtherError = otherErrorCells.has(key);
                 // cell-pk-duplicate: PKエラーのみ
                 if (isPkError) { cell.classList.add('cell-pk-duplicate'); } else { cell.classList.remove('cell-pk-duplicate'); }
-                // cell-error: PKエラーまたはFKエラー
-                if (isPkError || isFkError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
+                // cell-error: PKエラー・FK参照切れ・型不一致
+                if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
             }
         }
     }

@@ -65,7 +65,7 @@ export class ValidationPanel {
     /**
      * ValidationEngine にスキーマを登録する（Tab がテーブルを開いた後に呼ぶ）
      */
-    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; reference: string | null}>): void {
+    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; type: string; reference: string | null}>): void {
         this.engine.registerSchema(tableName, { primaryKeyColumns, columns });
     }
 
@@ -191,6 +191,9 @@ export class ValidationPanel {
                 if (error.kind === 'pk-duplicate') {
                     kindSpan.classList.add('validation-panel-item-kind-pk');
                     kindSpan.textContent = 'PK重複';
+                } else if (error.kind === 'type-mismatch') {
+                    kindSpan.classList.add('validation-panel-item-kind-type');
+                    kindSpan.textContent = '型不一致';
                 } else {
                     kindSpan.classList.add('validation-panel-item-kind-fk');
                     kindSpan.textContent = 'FK切れ';

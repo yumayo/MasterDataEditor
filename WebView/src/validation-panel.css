@@ -99,7 +99,8 @@
 }
 
 .validation-panel-item-kind-pk,
-.validation-panel-item-kind-fk {
+.validation-panel-item-kind-fk,
+.validation-panel-item-kind-type {
     background-color: var(--error-bg);
     color: var(--error-color);
     border: 1px solid var(--error-border);
