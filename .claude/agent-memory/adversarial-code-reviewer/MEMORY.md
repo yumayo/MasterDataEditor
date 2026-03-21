@@ -22,6 +22,9 @@
 - `/WebView/src/fuzzy-search.ts` - ローマ字変換・正規化・ファジーマッチング (FEAT_0038)
 - `/WebView/src/search-query.ts` - 検索クエリパース・matchesQuery (FEAT_0038)
 - `/WebView/src/search-panel.ts` - 全文検索パネル (FEAT_0038)
+- `/WebView/src/editor-api.ts` - EditorAPI実装 (内部API層)
+- `/WebView/src/editor-api-bridge.ts` - C#↔WebViewブリッジ
+- `/WebView/src/editor-api-types.ts` - EditorAPI型定義
 
 ## CSS Variables (index.css)
 - Defined: `--font-color`, `--background-color`, `--background-sub-color`, `--border-color`, `--selection-color`, `--selection-font-color`, `--scroll-bar-background-color`, `--focus-border` (#007acc, ライトテーマのみ)
@@ -222,6 +225,7 @@
 - (2026-03-21) FormPanel Drilldown Navigation History: 致命的4件（タブ切替漏れ/getter禁止/空配列/コメント虚偽）、重要5件、軽微3件
 - (2026-03-21) determineDisplayColumnName共通化リファクタ: 致命的3件（??新規導入/fixtures暗黙変更/スコープ逸脱）、重要3件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播 R2: 致命的3件（保存失敗通知漏れ持越し/catch握り潰し持越し/==null）、重要4件、軽微3件
+- (2026-03-21) EditorAPI内部API層: 致命的5件（生焼け/emit未接続/insertRow境界/空配列クラッシュ/Bridge型バリデ皆無）、重要5件、軽微3件
 - (2026-03-21) NotificationToast エラー通知伝播: 致命的3件（生焼けnotification/保存失敗通知漏れ/catch網羅漏れ）、重要4件、軽微3件
 - (2026-03-21) ValidationPanel jumpToError リファクタ R2: 致命的1件（PK重複+タブ未開の制約）、重要3件（REDコメント残存/==null持越し/pkValueスナップショット）、軽微3件
 - (2026-03-21) ValidationPanel jumpToError リファクタ: 致命的3件、重要4件、軽微3件

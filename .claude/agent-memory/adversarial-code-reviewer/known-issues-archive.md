@@ -96,3 +96,16 @@ type: project
 ## diff-tab-reference-hint fix
 - CRITICAL: buildDiffEditorTable() missing setReferenceComponents() + createDropdownInput() -> FK dropdown disabled in right pane
 - buildDiffEditorTable() does not encapsulate reference setup internally -> asymmetry with createEditorTable/createMiniEditorTable
+
+## EditorAPI Internal API Layer (2026-03-21)
+- **CRITICAL**: Tab.editorApi が `| false` 生焼けオブジェクト（connectEditorApi で後付け）
+- **CRITICAL**: emitTableSaved / emitRowSelected が定義されているが一度も呼ばれていない（操作パスの網羅漏れ）
+- **CRITICAL**: insertRow に rowIndex 境界値チェックなし（deleteRow にはある）
+- **CRITICAL**: setCellValues に空配列渡しで cellChanges[0].row → TypeError クラッシュ
+- **CRITICAL**: EditorApiBridge の as キャスト嵐 — params の型バリデーション皆無（string "0" + 1 = "01" 問題）
+- **IMPORTANT**: イベントハンドラー例外が後続ハンドラーを全滅させる（try/catch なし）
+- **IMPORTANT**: EditorApiBridge.install() の無名リスナーが removeEventListener 不可
+- **IMPORTANT**: emitTableOpened が既存タブ再アクティブ化でも発火（Open/Close の非対称性）
+- **IMPORTANT**: store.getRows() 内部参照を edit 名前空間で直接使用（data 名前空間ではディープコピー）
+- **PATTERN**: テストの window キャスト30箇所コピペ（ヘルパー関数化すべき）
+- **PATTERN**: schemaRegistry 構築ロジックが main.ts にベタ書き
