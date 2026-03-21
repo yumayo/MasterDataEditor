@@ -793,6 +793,11 @@ export class Tab {
      * 代わりに既存アクティブタブを非アクティブ化してから設定パネルを表示する。
      */
     private activateSettingsTab(): void {
+        // 差分タブがアクティブだった場合: 全差分タブを非表示にする
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabs.forEach(diffTab => diffTab.hide());
+        }
+
         // 通常テーブルタブがアクティブなら非アクティブ化する
         if (this.activeTabName && this.activeTabName !== SETTINGS_TAB_NAME) {
             const previousState = this.tabStates.get(this.activeTabName);

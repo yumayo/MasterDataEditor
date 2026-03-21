@@ -452,7 +452,7 @@ test.describe('Phase 3: イベントAPI', () => {
         });
 
         // テーブルを開く
-        await page.locator('#explorer').getByText('test').click();
+        await page.locator('#explorer .explorer-file').getByText('test').click();
 
         const tableName = await eventPromise;
         expect(tableName).toBe('test');

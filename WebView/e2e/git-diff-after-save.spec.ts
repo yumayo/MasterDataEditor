@@ -128,7 +128,7 @@ test.describe('保存後のgit差分ハイライト更新', () => {
         'セルを編集してCtrl+Sで保存した後、変更セルに .cell-git-changed クラスが付与されること',
         async ({ page, gitDiffAfterSavePage: _gitDiffAfterSavePage }) => {
             // quest テーブルを開く
-            await page.locator('#explorer').getByText('quest').click();
+            await page.locator('#explorer .explorer-file').getByText('quest').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`,
@@ -181,7 +181,7 @@ test.describe('保存後のgit差分ハイライト更新', () => {
         '保存前はHEAD版と同じ値のセルに .cell-git-changed クラスが付与されないこと',
         async ({ page, gitDiffAfterSavePage: _gitDiffAfterSavePage }) => {
             // quest テーブルを開く
-            await page.locator('#explorer').getByText('quest').click();
+            await page.locator('#explorer .explorer-file').getByText('quest').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`,

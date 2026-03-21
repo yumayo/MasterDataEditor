@@ -259,7 +259,7 @@ test.describe('タブへのdescription表示', () => {
         'itemテーブルを開くとタブボタンのテキストが "アイテムマスタ" になること',
         async ({ page }) => {
             // Explorer で item テーブルを開く
-            await page.locator('#explorer').getByText('item').click();
+            await page.locator('#explorer .explorer-file').getByText('item').click();
 
             // タブボタンが表示されるまで待機する
             const tabButton = page.locator('.tab-button').filter({ hasText: 'アイテムマスタ' });
@@ -277,7 +277,7 @@ test.describe('タブへのdescription表示', () => {
         'itemテーブルを開くとタブボタンのtitle属性が "item" になること',
         async ({ page }) => {
             // Explorer で item テーブルを開く
-            await page.locator('#explorer').getByText('item').click();
+            await page.locator('#explorer .explorer-file').getByText('item').click();
 
             // タブバーに item のタブが表示されるまで待機する（description への更新前に存在確認）
             // 初期表示はファイル名なので、まず .tab-button が生成されることを確認する
