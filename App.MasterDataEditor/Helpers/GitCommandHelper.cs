@@ -39,6 +39,7 @@ namespace App.MasterDataEditor
 				UseShellExecute = false,
 				CreateNoWindow = true,
 				StandardOutputEncoding = System.Text.Encoding.UTF8,
+				StandardErrorEncoding = System.Text.Encoding.UTF8,
 			};
 
 			foreach (var arg in arguments)
