@@ -168,7 +168,7 @@ test.describe('DiffTab右ペインでスクロール後にテキストフィー�
                 // セルのビューポート上の位置を特定する
                 // テキストフィールドが編集中のセルは selected クラスを持つ行の対応セルだが、
                 // 直接 getBoundingClientRect で取得するのが確実
-                // 選択中セルは .editor-table-cell-focused クラスを持つ
+                // フォーカスセルは .editor-table-cell-focused クラスで特定できる
                 const focusedCell = container.querySelector('.editor-table-cell-focused') as HTMLElement | null;
                 if (!focusedCell) throw new Error('フォーカスセルが見つかりません');
                 const cellRect = focusedCell.getBoundingClientRect();

@@ -140,7 +140,7 @@ test.describe('BUG_0006: git show パスのハードコード問題', () => {
         'git statusのentry.pathが "data/" 非プレフィックスでもHEAD版CSVが取得され .cell-git-changed が付与されること',
         async ({ page, bug0006Page: _bug0006Page }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,
@@ -166,7 +166,7 @@ test.describe('BUG_0006: git show パスのハードコード問題', () => {
         'git statusのentry.pathが "data/" 非プレフィックスでもHEAD版CSVが取得され変更なしセルに .cell-git-changed が付与されないこと',
         async ({ page, bug0006Page: _bug0006Page }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,

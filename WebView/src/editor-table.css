@@ -301,10 +301,8 @@
     pointer-events: none;
 }
 
-/* フォーカスセル: バリデーションパネルからジャンプした後の視覚的フィードバック */
+/* フォーカスセル: バリデーションパネルからジャンプした後のセル特定用（テストセレクタとして使用） */
 .editor-table-cell-focused {
-    outline: 2px solid var(--focus-border, #007fd4);
-    outline-offset: -2px;
 }
 
 /* ソートインジケーター: リサイズハンドルの左に配置、右寄せ。

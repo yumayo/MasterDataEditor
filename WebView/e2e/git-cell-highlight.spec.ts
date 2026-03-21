@@ -158,7 +158,7 @@ test.describe('gitセルハイライト', () => {
         'HEAD版から値が変更されたセルに .cell-git-changed クラスが付与されること',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,
@@ -178,7 +178,7 @@ test.describe('gitセルハイライト', () => {
         'HEAD版に存在しない新規追加行の全データセルに .cell-git-changed クラスが付与されること',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,
@@ -202,7 +202,7 @@ test.describe('gitセルハイライト', () => {
         'HEAD版と同じ値のセルには .cell-git-changed クラスが付与されないこと',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,
@@ -232,7 +232,7 @@ test.describe('gitセルハイライト', () => {
         'セルを編集してHEAD版と異なる値にすると .cell-git-changed が付与され、HEAD版と同じ値に戻すと除去されること',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,
@@ -270,7 +270,7 @@ test.describe('gitセルハイライト', () => {
         'git statusで isNew: true のテーブルは全データセルに .cell-git-changed クラスが付与されること',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // new_table テーブルを開く（isNew: true でHEADに存在しない）
-            await page.locator('#explorer').getByText('new_table').click();
+            await page.locator('#explorer .explorer-file').getByText('new_table').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="new_table"] .editor-table`,
@@ -300,7 +300,7 @@ test.describe('gitセルハイライト', () => {
         '列ヘッダー行および行ヘッダーセルには .cell-git-changed クラスが付与されないこと',
         async ({ page, gitHighlightPage: _gitHighlightPage }) => {
             // test テーブルを開く
-            await page.locator('#explorer').getByText('test').click();
+            await page.locator('#explorer .explorer-file').getByText('test').click();
 
             const table = page.locator(
                 `.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table`,

@@ -245,7 +245,7 @@ test.describe(
                 const schema = JSON.parse(schemaJson);
 
                 // primary_keyが保持されること
-                expect(schema.primary_key).toBe('id');
+                expect(schema.primary_key).toEqual(["id"]);
                 // headerの各フィールドが保持されること
                 expect(schema.header[0].name).toBe('id');
                 expect(schema.header[0].type).toBe('int');

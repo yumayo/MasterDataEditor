@@ -237,8 +237,7 @@ test.describe('テストケース2: PK重複エラーをクリックすると該
             await expect(items.first()).toBeVisible();
             await items.first().click();
 
-            // クリック後、該当セルがフォーカス（アクティブ）状態になる
-            // フォーカスされたセルは .editor-table-cell-focused クラスを持つ想定
+            // クリック後、該当セルにフォーカスが移動する
             const focusedCell = table.locator('.editor-table-cell-focused');
             await expect(focusedCell).toBeVisible();
         },

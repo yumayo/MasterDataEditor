@@ -175,7 +175,7 @@ test.describe('バリデーションパネル: 未開テーブルへのエラー
 
             // 8. FK参照切れエラーのセル（category_id列=colIndex 1、1行目=rowIndex 0）に
             //    フォーカスが移動していることを検証する。
-            //    フォーカスセルは editor-table-cell-focused クラスが付与される。
+            //    フォーカスセルは editor-table-cell-focused クラスで特定できる。
             const focusedCell = reopenedProductTable.locator('.editor-table-cell-focused');
             await expect(focusedCell).toBeVisible({ timeout: 5000 });
 
