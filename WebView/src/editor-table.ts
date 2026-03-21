@@ -1748,12 +1748,9 @@ export class EditorTable {
     /**
      * git statusを再問い合わせし、このテーブルの GitDiffTracker を再構築して全セルのハイライトを再適用する。
      * テーブルオープン時および保存後（markSavedAndUpdatePanel）に呼ばれ、差分状態をセルに反映する。
-     * ミニテーブルはgit diffハイライト不要のためスキップする。
      * git statusの取得に失敗した場合（git管理外環境等）は何もしない。
      */
     async refreshGitDiffAsync(): Promise<void> {
-        // ミニテーブルはgit差分ハイライトを持たないため何もしない
-        if (this.isMiniTable) return;
         const requestId = ++this.refreshGitDiffRequestId;
         let statusResult: GitStatusResult;
         try {
