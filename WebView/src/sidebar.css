@@ -22,6 +22,8 @@
     /* アクティブ時のborder追加によるレイアウトシフトを防止するため常に透明borderを配置する */
     box-sizing: border-box;
     border-left: 2px solid transparent;
+    /* バッジの position: absolute の基準となるため relative を指定する */
+    position: relative;
 }
 
 .activity-bar-item:hover {
@@ -37,6 +39,24 @@
 /* 歯車アイコン（設定）: アクティビティバー下部に固定 */
 .activity-bar-settings {
     margin-top: auto;
+}
+
+/* ソース管理アイコンのバッジ（変更ファイル数を表示する） */
+.activity-bar-badge {
+    position: absolute;
+    right: 4px;
+    top: 4px;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background-color: var(--focus-border);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 /* サイドバーコンテンツ */

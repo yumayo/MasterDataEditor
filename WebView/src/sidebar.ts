@@ -9,6 +9,7 @@ import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
 import {ResizeHandle} from "./resize-handle";
+import {gitStatusAsync} from "./api";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -27,6 +28,8 @@ export class Sidebar {
     private readonly searchPanel: SearchPanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly directory: ExplorerDirectory;
+    /** refreshSourceControlBadgeAsync のレースコンディション防御用リクエストID */
+    private currentBadgeRequestId: number;
 
     constructor(
         explorerElement: HTMLElement,
@@ -37,6 +40,7 @@ export class Sidebar {
         this.explorerElement = explorerElement;
         this.tab = tab;
         this.editor = editor;
+        this.currentBadgeRequestId = 0;
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
@@ -86,6 +90,22 @@ export class Sidebar {
             return newWidth - currentWidth;
         });
         resizeHandle.appendTo(explorerElement);
+
+        // C# FileSystemWatcher からの file_changed プッシュ通知を受信してバッジを更新する
+        window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
+            if (typeof event.data !== 'string') return;
+            let data: { type: string };
+            try {
+                data = JSON.parse(event.data) as { type: string };
+            } catch {
+                return;
+            }
+            if (data.type !== 'file_changed') return;
+            this.refreshSourceControlBadgeAsync().catch(e => { console.error('バッジ更新失敗', e); });
+        });
+
+        // 初回起動時にバッジを表示する（gitリポジトリ外の場合はエラーになるためスキップする）
+        this.refreshSourceControlBadgeAsync().catch(e => { console.warn('初回バッジ取得をスキップ', e); });
     }
 
     /**
@@ -153,6 +173,20 @@ export class Sidebar {
             // search
             this.searchPanel.show();
         }
+    }
+
+    /**
+     * git status を取得してソース管理アイコンのバッジを更新する
+     * changes + staged の合計件数をバッジに表示する
+     * requestId でレースコンディションを防ぐ（古い応答が新しい応答を上書きしない）
+     */
+    private async refreshSourceControlBadgeAsync(): Promise<void> {
+        const requestId = ++this.currentBadgeRequestId;
+        const result = await gitStatusAsync();
+        if (requestId !== this.currentBadgeRequestId) return;
+        this.activityBar.updateSourceControlBadge(result.changes.length + result.staged.length);
+        // ソース管理パネルのファイル一覧も更新する（requestId ガード済みのため安全）
+        this.sourceControlPanel.refreshAsync().catch(e => { console.error('ソース管理パネル更新失敗', e); });
     }
 
     /** 指定幅をサイドバー・タブ・エディターに一括適用する */

@@ -138,6 +138,13 @@ export async function installMockApiAsync(
                     return;
                 }
 
+                // file_changed は C# の FileSystemWatcher からのプッシュ通知。
+                // そのまま全リスナーに配信する。
+                if (type === "file_changed") {
+                    dispatch({ type: "file_changed" });
+                    return;
+                }
+
                 if (type === "find_files_request") {
                     try {
                         const files = findFiles(request.directory);

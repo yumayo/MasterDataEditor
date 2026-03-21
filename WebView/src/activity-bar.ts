@@ -118,6 +118,28 @@ export class ActivityBar {
     }
 
     /**
+     * ソース管理アイコンにバッジを表示/非表示する
+     * count > 0: バッジ要素を作成または更新して変更ファイル数を表示する
+     * count === 0: バッジ要素をDOMから除去する
+     */
+    updateSourceControlBadge(count: number): void {
+        const existing = this.sourceControlButton.querySelector('.activity-bar-badge');
+        if (count === 0) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (existing) {
+            existing.textContent = String(count);
+            return;
+        }
+        // バッジ要素を新規作成してソース管理ボタンの子要素として追加する
+        const badge = document.createElement('span');
+        badge.classList.add('activity-bar-badge');
+        badge.textContent = String(count);
+        this.sourceControlButton.appendChild(badge);
+    }
+
+    /**
      * アクティブ状態の視覚表現を更新する
      */
     private updateActiveState(): void {

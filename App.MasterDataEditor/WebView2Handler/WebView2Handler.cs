@@ -9,11 +9,12 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace App.MasterDataEditor;
 
-public class WebView2Handler
+public class WebView2Handler : IDisposable
 {
 	private readonly Dispatcher _dispatcher;
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
+	private readonly IDisposable _fileWatcherHandle;
 
 	public WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
 	{
@@ -25,6 +26,23 @@ public class WebView2Handler
 		// DevToolsProtocolを使ってconsole.logをキャプチャ
 		var receiver = _webView2.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.consoleAPICalled");
 		receiver.DevToolsProtocolEventReceived += OnConsoleAPICalled;
+
+		// data/ ディレクトリのCSVファイル変更を監視し、WebViewに通知する
+		// ディレクトリが存在しない場合は NullDisposable で nullable を回避する
+		var dataDirectory = Path.Combine(AppEnvironment.GetWorkDir(), "data");
+		if (Directory.Exists(dataDirectory))
+		{
+			_fileWatcherHandle = new FileWatcher(dataDirectory, () =>
+			{
+				SendMessageToWebView(new { type = "file_changed" });
+			});
+			Logger.Info($"ファイル監視を開始: {dataDirectory}");
+		}
+		else
+		{
+			_fileWatcherHandle = NullDisposable.Instance;
+			Logger.Info($"data/ ディレクトリが存在しないためファイル監視をスキップ: {dataDirectory}");
+		}
 	}
 
 	private void OnConsoleAPICalled(object? sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
@@ -125,6 +143,11 @@ public class WebView2Handler
 		}
 
 		return new WebView2Handler(dispatcher, webView2, consoleLogPath);
+	}
+
+	public void Dispose()
+	{
+		_fileWatcherHandle.Dispose();
 	}
 
 	public void SendMessageToWebView(object data)
