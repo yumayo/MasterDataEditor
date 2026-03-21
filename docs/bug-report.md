@@ -2465,3 +2465,16 @@ Path.Combineの絶対パス上書き挙動によるbaseDir脱出、およびProc
 イベントハンドラーの発火ループでは、ループ前に `const snapshot = [...this.xxxHandlers]` でスナップショットを作成し、スナップショットを走査すること。配列を直接走査すると、ハンドラー内でのdispose（splice）によりインデックスずれが発生する。新しいイベントパターンを追加する際は、既存コードをコピーする前に既存コードの正しさを検証すること。
 
 ---
+
+## 170. cd97e08 — EditorApiBridgeにdisposeメソッドを追加しリスナーリークを防止する
+
+### 不具合原因名
+addEventListener の無名リスナーによるリスナーリーク
+
+### なぜそうなったのか
+EditorApiBridge.install() が addEventListener にアロー関数をインラインで渡しており、リスナー参照をフィールドに保持していなかった。そのため removeEventListener で解除する手段がなく、将来的にブリッジの再構築時にリスナーが累積するリスクがあった。
+
+### どうしたら今後は再発しないか
+addEventListener に渡すリスナー関数は必ずフィールドに保持し、dispose() で removeEventListener できるようにする。また、リスナー登録はコンストラクタ内で行い、オブジェクト作成と同時に有効な状態にすることで生焼けオブジェクトを防止する（bug-report #121 の知見と同様）。
+
+---

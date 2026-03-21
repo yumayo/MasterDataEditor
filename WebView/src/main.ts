@@ -158,7 +158,9 @@ import type {SchemaEntry, EditorSchemaColumn, EditorSchemaReference} from "./edi
     tab.connectEditorApi(editorApi);
     (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
 
-    // C# ↔ WebView ブリッジを構築してインストールする
+    // C# ↔ WebView ブリッジを構築する（コンストラクタでリスナー登録完了）
     const bridge = new EditorApiBridge(editorApi);
-    bridge.install();
+
+    // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
+    (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;
 })();

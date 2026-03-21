@@ -5,18 +5,17 @@ import type {EditorAPI} from "./editor-api-types";
  *
  * C# 側から postMessage で送信された editor_api_request を受信し、
  * EditorAPI のメソッドを呼び出してレスポンスを返す。
- * install() で window.chrome.webview にリスナーを登録する。
+ * コンストラクタで window.chrome.webview にリスナーを登録する。
  */
 export class EditorApiBridge {
     private readonly api: EditorAPI;
+    /** リスナー関数。dispose() 後は false（センチネル値） */
+    private listener: ((event: MessageEvent) => void) | false;
 
     constructor(api: EditorAPI) {
         this.api = api;
-    }
-
-    /** WebView のメッセージリスナーを登録する */
-    install(): void {
-        window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
+        // コンストラクタ完了時に有効な状態を保証する（生焼けオブジェクト防止）
+        this.listener = (event: MessageEvent) => {
             let data: Record<string, unknown>;
             try {
                 data = JSON.parse(event.data as string) as Record<string, unknown>;
@@ -29,7 +28,15 @@ export class EditorApiBridge {
                 data['method'] as string,
                 data['params'] as Record<string, unknown>,
             );
-        });
+        };
+        window.chrome.webview.addEventListener('message', this.listener);
+    }
+
+    /** リスナーを解除してブリッジを無効化する。dispose 済みの場合はエラー */
+    dispose(): void {
+        if (this.listener === false) throw new Error('EditorApiBridge.dispose() は既に dispose 済みです。');
+        window.chrome.webview.removeEventListener('message', this.listener);
+        this.listener = false;
     }
 
     /** リクエストをディスパッチしてレスポンスを返す */
