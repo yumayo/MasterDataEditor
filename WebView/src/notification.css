@@ -46,7 +46,8 @@
 /* 個々のトースト */
 .notification-toast {
     pointer-events: auto;
-    max-width: 320px;
+    box-sizing: border-box;
+    width: 320px;
     padding: 10px 14px;
     border-radius: 4px;
     background: #c0392b;
@@ -69,7 +70,8 @@
     position: absolute;
     bottom: 100%;
     right: 0;
-    max-width: 320px;
+    box-sizing: border-box;
+    width: 320px;
     max-height: 300px;
     overflow-y: auto;
     background: var(--background-color, #2d2d2d);
@@ -86,8 +88,8 @@
 
 /* 履歴アイテム */
 .notification-history-item {
-    padding: 8px 14px;
-    font-size: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
     color: var(--font-color, #cccccc);
     border-bottom: 1px solid rgba(128, 128, 128, 0.15);
     word-break: break-word;
