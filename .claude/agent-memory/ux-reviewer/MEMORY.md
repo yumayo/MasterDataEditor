@@ -49,6 +49,15 @@
 - 残存(🟡): バッファ行に row-resize-handle 残存（継続パターン）
 - PROBLEMSパネルは display:none のまま（エラー自動開閉廃止の意図通り、赤波線が視覚的補完）
 
+#### ISSUE_0092 差分タブスクロール位置復元（2026-03-21レビュー）評価: A
+- 修正済み: DiffTab.hide()でスクロール位置保存、show()で復元+行ヘッダー強制同期
+- DOMで確認: diff-pane-left/rightの全corner-cell・row-headerのleftが200pxに揃っている（scrollLeft=200pxのテストケース）
+- DOMで確認: diff-cell-deleted/addedが正確（1変更行に限定、誤検出なし）
+- 残存(🟡): diff-resize-handleにaria属性なし（role="separator"等）
+- 残存(🟡): 差分タブ内のrow-resize-handleが全データ行に残存（データ行3行x左右2ペインで6個）
+- 残存(🟡): fill-handleが左右両ペインに存在（差分ビューでのfill操作の意図確認推奨）
+- 継続(💡): 差分ビュー左ペインにaria-readonlyなし（BUG_0021から継続、スコープ外）
+
 #### BUG_0026 クイックビュー位置調整（2026-03-19レビュー）評価: B+
 - ファイル: project_bug0026_quick_view_position.md
 - 下端はみ出し: top固定+max-height動的付与 正常（top:620px, max-height:100px）
