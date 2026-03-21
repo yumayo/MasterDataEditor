@@ -76,6 +76,16 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
+#### ISSUE_0090 ファイルウォッチャーバッジ表示（2026-03-21レビュー）評価: B
+- activity-bar-item[data-panel="sourceControl"] の子に `<span class="activity-bar-badge">N</span>` が動的付与される設計
+- バッジ非表示時は span 自体が DOM から消える（display:none ではなく DOM 除去方式）
+- スクリーンショットで青い丸バッジ＋数字が視認可能。VSCodeとほぼ同等の見た目を達成
+- 残存(🔴): activity-bar-item[data-panel="sourceControl"] に role="button"/tabindex="0" がない（継続課題：横断的なアクセシビリティ問題）
+- 残存(🔴): activity-bar-badge に aria-label がない（「3件のファイル変更」等の読み上げ不可）
+- 残存(🔴): source-control-panel の staged/changes セクションが空（バッジ件数とパネル内容の不一致）
+- 残存(🟡): activity-bar SVG に aria-hidden="true" がない（横断的継続課題）
+- 残存(🟡): バッジ数字が大きい場合（99+以上）の表示崩れ対策がDOM上で確認不可（推測）
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
