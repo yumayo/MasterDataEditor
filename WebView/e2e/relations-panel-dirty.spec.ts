@@ -12,10 +12,6 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   4. Undo/Redoで変更が戻ったり増えたりしたとき Dirty マークが更新される
 //   5. 同じテーブルがタブでも開かれていたら、タブのDirtyマーク（.tab-button-dirty-visible）も連動する
 //
-// RED状態の理由:
-//   - .relations-table-dirty 要素がプロダクションコードに存在しない（テスト1〜4）
-//   - ミニテーブルの History が持つ dummyTabButton はDOMに追加されておらず、
-//     同名タブのTabButtonと連動していない（テスト5）
 // =============================================================================
 
 /**
@@ -158,8 +154,6 @@ test.describe('ミニEditorTableのDirty管理', () => {
             await editMiniTableCellAsync(page, 'スライム改');
 
             // 編集後にDirtyマークが visible になることを確認する
-            // プロダクションコードに .relations-table-dirty 要素が存在しないため、
-            // このアサーションが失敗して RED になる
             await expect(dirtyMark).toBeVisible();
         },
     );
@@ -190,8 +184,6 @@ test.describe('ミニEditorTableのDirty管理', () => {
             await page.keyboard.press('Control+s');
 
             // Dirty マークが消えることを確認する
-            // プロダクションコードで Ctrl+S がミニテーブルで拒否される（isMiniTableInstance()）ため、
-            // このアサーションが失敗して RED になる
             await expect(dirtyMark).not.toBeVisible();
         },
     );
@@ -221,8 +213,6 @@ test.describe('ミニEditorTableのDirty管理', () => {
             await page.keyboard.press('Control+z');
 
             // Undo 後に Dirty マークが消えることを確認する
-            // プロダクションコードに .relations-table-dirty の更新ロジックが存在しないため、
-            // このアサーションが失敗して RED になる
             await expect(dirtyMark).not.toBeVisible();
         },
     );
@@ -256,8 +246,6 @@ test.describe('ミニEditorTableのDirty管理', () => {
             await page.keyboard.press('Control+y');
 
             // Redo 後に Dirty マークが再表示されることを確認する
-            // プロダクションコードに .relations-table-dirty の更新ロジックが存在しないため、
-            // このアサーションが失敗して RED になる
             await expect(dirtyMark).toBeVisible();
         },
     );
@@ -291,8 +279,6 @@ test.describe('ミニEditorTableのDirty管理', () => {
             await editMiniTableCellAsync(page, 'スライム改');
 
             // ミニテーブルで編集した後、左ペインの enemy タブに Dirty マークが付くことを確認する
-            // 現状の dummyTabButton は DOM に追加されていないため enemy タブの setDirty() が
-            // 呼ばれず、このアサーションが失敗して RED になる
             await expect(enemyDirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
         },
     );
