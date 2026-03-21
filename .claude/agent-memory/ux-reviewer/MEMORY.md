@@ -131,9 +131,26 @@
 - 残存(🟡): `requireArray` の中身の型チェックなし（setCellValues で不正 changes 配列を渡した際のエラーメッセージが内部例外になる）
 - 残存(🟡): sendBridgeRequestAsync の timeoutMs 値（1000ms vs 3000ms）に定数化なし（意図がコメントなしで不明瞭）
 
+#### type-validation 型バリデーション（2026-03-22レビュー）評価: A-
+- 正常: int列の型不一致（"abc"）に cell-error が正確に付与。行1のvalue列のみ。誤検出ゼロ
+- 正常: エラー解消後に cell-error が消え、validation-panel-empty・data-error-count="0" に正しく切り替わる
+- 正常: string型列は数値文字列を入れてもエラーにならない（仕様通り）
+- 正常: PROBLEMSメッセージが「型不一致 / item 行1 value: / 値 "abc" は型 int と一致しません」と業務用語で明確
+- 残存(🔴): cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080・FEAT_validation継続）
+- 残存(🔴): 列ヘッダーに型情報バッジがない（int型列のヘッダーに型種別が視覚的に示されていない）
+- 残存(🟡): validation-panel-group-header に role/aria-label なし（全サイクル継続）
+- 残存(🟡): validation-panel-item に aria-label なし（3span分散）
+- 残存(🟡): data-error-count="0" 時のバッジアイコンがグレーアウトされていない
+- 残存(🟡): バッファ行（editor-table-empty-row）に row-resize-handle 残存（継続パターン）
+- 残存(🟡): エラー解消後も validation-panel が display:block のまま（エラー0件で自動閉じ推奨）
+- 知見: 空文字はint型バリデーションをスキップする仕様（バッファ行の空セルにエラー出ない）。validation-engine.tsのコメントへの明記推奨
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
 - 差分ビュー左ペインに aria-readonly がない（BUG_0021から継続）
 - row-resize-handle がミニテーブル・バッファ行・差分削除行に残存
 - コンテキストメニューが操作後に残存（hide()漏れ、bug-report #8/#65）
+- cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080から全サイクル継続）
+- validation-panel-group-header に role/aria-label なし（全サイクル継続）
+- 列ヘッダーに型情報バッジがない（型バリデーション機能追加に伴う新規課題）
