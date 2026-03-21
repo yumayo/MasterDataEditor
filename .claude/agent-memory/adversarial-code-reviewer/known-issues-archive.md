@@ -99,13 +99,21 @@ type: project
 
 ## EditorAPI Internal API Layer (2026-03-21)
 - **CRITICAL**: Tab.editorApi が `| false` 生焼けオブジェクト（connectEditorApi で後付け）
-- **CRITICAL**: emitTableSaved / emitRowSelected が定義されているが一度も呼ばれていない（操作パスの網羅漏れ）
+- **[FIXED 2026-03-22]**: emitTableSaved / emitRowSelected が接続済み（ISSUE_0093）
 - **CRITICAL**: insertRow に rowIndex 境界値チェックなし（deleteRow にはある）
 - **CRITICAL**: setCellValues に空配列渡しで cellChanges[0].row → TypeError クラッシュ
 - **CRITICAL**: EditorApiBridge の as キャスト嵐 — params の型バリデーション皆無（string "0" + 1 = "01" 問題）
-- **IMPORTANT**: イベントハンドラー例外が後続ハンドラーを全滅させる（try/catch なし）
+- **[PARTIAL FIX]**: イベントハンドラー例外は try/catch 追加済みだが、emit中のdisposeで配列splice→ハンドラースキップの問題が残存
 - **IMPORTANT**: EditorApiBridge.install() の無名リスナーが removeEventListener 不可
 - **IMPORTANT**: emitTableOpened が既存タブ再アクティブ化でも発火（Open/Close の非対称性）
 - **IMPORTANT**: store.getRows() 内部参照を edit 名前空間で直接使用（data 名前空間ではディープコピー）
 - **PATTERN**: テストの window キャスト30箇所コピペ（ヘルパー関数化すべき）
 - **PATTERN**: schemaRegistry 構築ロジックが main.ts にベタ書き
+
+## ISSUE_0093 onTableSaved/onRowSelected (2026-03-22)
+- **CRITICAL**: 全emitメソッドでループ中にdispose→splice→ハンドラースキップ（再入可能性の欠陥）。スナップショットコピーで修正要
+- **IMPORTANT**: C#ブリッジにevents名前空間ディスパッチなし（request-responseパターンに不適合、設計判断として明記要）
+- **IMPORTANT**: onRowSelected が矢印キー移動で毎回発火（lastNotifiedRowチェック前にemit）→ パフォーマンス劣化リスク
+- **IMPORTANT**: disposeテストがsetTimeout(300)依存（CI環境で偽陽性リスク）
+- **PATTERN**: emit/subscribeコピペが5重複（共通ヘルパー化すべき）
+- **PATTERN**: EditorTable.emitTableSaved はTab へのパススルーのみ（責務の適切性に疑問）

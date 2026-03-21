@@ -97,6 +97,17 @@
 - 残存(🟡): activity-bar SVG に aria-hidden="true" がない（横断的継続課題）
 - 残存(🟡): バッジ数字が大きい場合（99+以上）の表示崩れ対策がDOM上で確認不可（推測）
 
+#### EditorAPI onTableSaved/onRowSelected イベント追加（2026-03-22レビュー）評価: A
+- UI変更なし。プログラマティックAPIの追加のみ
+- 正常: emitTableSaved は CSVへの書き込み完了 .then() 内で発火（保存前発火なし）
+- 正常: onRowSelected はストアインデックス（0始まり）で通知（data.getRows() と対応）
+- 正常: ミニテーブルの行選択は onRowSelected をスキップ（外部スクリプトへの誤通知なし）
+- 正常: dispose パターンが5イベント全て indexOf+splice で対称実装
+- 残存(🟡): onRowSelected がテーブル初回展開の初期フォーカス時にも発火する仕様が EditorEventsAPI のコメントに未記載
+- 残存(🟡): ミニテーブル経由保存で onTableSaved が発火するか否かが仕様上不明確
+- 残存(🟡): EditorEventsAPI 全イベントに JSDoc がない（rowIndex の0始まり等の仕様が型定義から読み取れない）
+- 残存(🟡): ダーティでない状態の Ctrl+S で onTableSaved が発火するか否かのテストなし
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
