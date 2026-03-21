@@ -599,18 +599,26 @@ export class DiffTab {
         // 相互参照解決のため一時的な空オブジェクトを作成（Tab.createEditorTable・createMiniEditorTable と同パターン）
         const editorTable = {} as EditorTable;
 
+        // スクロールコンテナ（paneElement, overflow:auto）内に innerWrapper を配置する。
+        // GridTextField/Selection/AreaResizer の position:absolute の含有ブロック（position:relative）となる。
+        // 通常テーブル（tab.ts の wrapperElement）やミニテーブル（createMiniEditorTable の wrapperElement）と同じパターン。
+        // paneElement を直接 container として渡すと、getBoundingClientRect() がスクロール分ズレるため不正確になる。
+        const innerWrapper = document.createElement('div');
+        innerWrapper.classList.add('diff-pane-inner');
+        paneElement.appendChild(innerWrapper);
+
         // scrollControllerの対象はペイン要素（overflow:auto）
         const scrollController = new ScrollViewportController(paneElement, () => {
             editorTable.onScroll();
         });
 
-        const selection = new Selection(editorTable, paneElement, scrollController);
+        const selection = new Selection(editorTable, innerWrapper, scrollController);
         const history = new History(editorTable, tabButton, store, tableKey, 100);
         const editorTableHandler = new EditorTableHandler(editorTable, selection, history, scrollController, notification);
-        const textField = editorTableHandler.createGridTextField(paneElement, editorTable, selection);
+        const textField = editorTableHandler.createGridTextField(innerWrapper, editorTable, selection);
         editorTableHandler.setTextField(textField);
 
-        const areaResizer = new AreaResizer(paneElement, history, selection);
+        const areaResizer = new AreaResizer(innerWrapper, history, selection);
 
         // emptyRowCount=0、isMiniTable=true で生成する（空行なし、ミニテーブル相当）
         const realEditorTable = new EditorTable(
@@ -623,11 +631,11 @@ export class DiffTab {
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
         editorTable.initializeModules();
 
-        editorTable.appendTo(paneElement);
-        paneElement.appendChild(selection.element);
-        paneElement.appendChild(selection.copyBorderElement);
-        paneElement.appendChild(selection.fillPreviewElement);
-        editorTableHandler.appendTo(paneElement);
+        editorTable.appendTo(innerWrapper);
+        innerWrapper.appendChild(selection.element);
+        innerWrapper.appendChild(selection.copyBorderElement);
+        innerWrapper.appendChild(selection.fillPreviewElement);
+        editorTableHandler.appendTo(innerWrapper);
 
         areaResizer.setEditorTable(editorTable);
         editorTable.initialize();

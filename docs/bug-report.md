@@ -2439,3 +2439,16 @@ Path.Combineの絶対パス上書き挙動によるbaseDir脱出、およびProc
 外部入力由来のパスを `Path.Combine` で結合した後は、必ず `Path.GetFullPath` で正規化し、`StartsWith` でbaseDir配下に収まることを確認する（`ResolveSafePath` パターン）。入力バリデーション（`IsValidFilename`）だけに頼らず、結合後の正規化検証を第2防御層として必ず設ける。外部プロセスの起動には `ProcessStartInfo.Arguments`（単一文字列）ではなく `ProcessStartInfo.ArgumentList`（個別追加）を使用して引数インジェクションを防止する。
 
 ---
+
+## 168. [f9c4601] — DiffTab右ペインでスクロール後にテキストフィールドの位置がずれる
+
+### 不具合原因名
+スクロールコンテナを直接 position:absolute の含有ブロックとして使用
+
+### なぜそうなったのか
+`diff-tab.ts` の `buildDiffEditorTable()` で `paneElement`（`overflow:auto` のスクロールコンテナ）を `Selection`・`GridTextField`・`AreaResizer` の container として直接渡していた。`position:absolute` 要素の座標計算は `getBoundingClientRect()` でビューポート座標を取得し container の `getBoundingClientRect()` を引く方式だが、スクロールコンテナの `getBoundingClientRect()` はスクロール量を反映しないため、スクロール量だけ位置がずれる。通常テーブル（`tab.ts` の `wrapperElement`）やミニテーブルではスクロールコンテナの内側に `position:relative` な通常フロー要素を配置し、それを container としていたが、DiffTab だけがこのパターンを踏襲していなかった。
+
+### どうしたら今後は再発しないか
+スクロールコンテナ（`overflow:auto`）を `position:absolute` 要素の含有ブロックとして直接使ってはならない。スクロールコンテナの内側に `position:relative` な通常フロー要素（`innerWrapper`）を配置し、これを container として渡すことで `getBoundingClientRect()` がスクロール量を含み正しく座標変換できる。新しいテーブル表示コンテナを作る際は通常テーブル・ミニテーブルと同じ「スクロールコンテナ → innerWrapper → EditorTable/Selection/GridTextField」のDOM階層パターンを必ず踏襲すること。
+
+---

@@ -141,6 +141,11 @@
     background-color: rgba(0, 255, 0, 0.25);
 }
 
+/* innerWrapper — position:absolute 要素の含有ブロック */
+.diff-pane-inner {
+    position: relative;
+}
+
 /* diff-tab-wrapper は tab-wrapper と同じ高さを持つ */
 .diff-tab-wrapper {
     width: 100%;

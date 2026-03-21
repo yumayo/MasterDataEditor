@@ -32,7 +32,8 @@ export class GridTextField {
      * rect はセルのビューポート絶対座標（EditorTableHandler で計算済み）。
      * grid-textfield は position:absolute なので、コンストラクタで受け取った container の
      * BoundingClientRect を引いて相対座標に変換する。
-     * これによりメインテーブルでも relations-panel のミニテーブルでも正しく配置できる。
+     * container はスクロールコンテナの内側に配置された通常フロー要素（position:relative）であり、
+     * getBoundingClientRect() がスクロールに追従するため scrollLeft/scrollTop の加算は不要。
      */
     show(rect: DOMRect, cellText: string, preserveContent: boolean): void {
         this.element.classList.add('grid-textfield-active');
