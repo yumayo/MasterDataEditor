@@ -6,6 +6,11 @@
 - Design: Intentionally tightly coupled, Command pattern for Undo/Redo
 - WebView2 (Microsoft browser control) used for frontend hosting
 
+## C# Security Patterns
+→ 詳細は `csharp-security-patterns.md` 参照
+- ResolveSafePath: symlink/ADS 未対応、ex.Message 情報漏洩が既知の攻撃面
+- GitCommandHelper: ArgumentList でインジェクション防止済み、git内部構文は別問題
+
 ## Key Files
 - `/WebView/src/editor.ts` - Editor area (nav bar + content area with left/right slots)
 - `/WebView/src/editor-table.ts` - Core table + storeRowIndices (DOM->store row mapping)
