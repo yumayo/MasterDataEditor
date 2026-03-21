@@ -13,7 +13,7 @@ import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
-import type {SchemaEntry, EditorSchemaColumn, EditorSchemaReference} from "./editor-api-types";
+import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -129,28 +129,7 @@ import type {SchemaEntry, EditorSchemaColumn, EditorSchemaReference} from "./edi
         commandPalette.registerTable(tableName, description);
 
         // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
-        const headerArray = schemaJson['header'] as Array<Record<string, unknown>>;
-        const columns: EditorSchemaColumn[] = [];
-        const references: EditorSchemaReference[] = [];
-        for (let j = 0; j < headerArray.length; ++j) {
-            const col = headerArray[j];
-            columns.push({ name: col['name'] as string, type: col['type'] as string });
-            // reference フィールドが存在する場合は FK 参照として登録する
-            const refRaw = col['reference'];
-            if (typeof refRaw === 'string' && refRaw.length > 0) {
-                const dotIndex = refRaw.indexOf('.');
-                if (dotIndex !== -1) {
-                    references.push({
-                        columnName: col['name'] as string,
-                        targetTable: refRaw.substring(0, dotIndex),
-                        targetColumn: refRaw.substring(dotIndex + 1),
-                    });
-                }
-            }
-        }
-        const primaryKeyRaw = schemaJson['primary_key'];
-        const primaryKeys: string[] = Array.isArray(primaryKeyRaw) ? primaryKeyRaw as string[] : [];
-        schemaRegistry.set(tableName, { columns, primaryKeys, references });
+        schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
     }
 
     // EditorAPI を構築して window.editorApi として公開する

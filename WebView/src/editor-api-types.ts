@@ -81,3 +81,44 @@ export interface SchemaEntry {
     primaryKeys: string[];
     references: EditorSchemaReference[];
 }
+
+/** スキーマJSONから SchemaEntry を構築する */
+export function createSchemaEntryFromJson(json: Record<string, unknown>): SchemaEntry {
+    // header フィールドのバリデーション: 配列でなければスキーマとして不正
+    const headerRaw = json['header'];
+    if (!Array.isArray(headerRaw)) {
+        throw new Error('[createSchemaEntryFromJson] スキーマJSONに "header" 配列が存在しません');
+    }
+    const headerArray = headerRaw as Array<Record<string, unknown>>;
+    const columns: EditorSchemaColumn[] = [];
+    const references: EditorSchemaReference[] = [];
+    for (let i = 0; i < headerArray.length; ++i) {
+        const col = headerArray[i];
+        // 各カラムの name/type は文字列でなければスキーマとして不正
+        const name = col['name'];
+        const type = col['type'];
+        if (typeof name !== 'string' || typeof type !== 'string') {
+            throw new Error('[createSchemaEntryFromJson] header[' + i + '] に name または type が存在しません');
+        }
+        columns.push({ name, type });
+        // reference フィールドが存在し非空文字列の場合のみ FK 参照として登録する
+        const refRaw = col['reference'];
+        if (typeof refRaw === 'string' && refRaw.length > 0) {
+            const dotIndex = refRaw.indexOf('.');
+            if (dotIndex !== -1) {
+                references.push({
+                    columnName: name,
+                    targetTable: refRaw.substring(0, dotIndex),
+                    targetColumn: refRaw.substring(dotIndex + 1),
+                });
+            }
+        }
+    }
+    // primary_key フィールドのバリデーション: 配列でなければスキーマとして不正（フォールバック禁止）
+    const primaryKeyRaw = json['primary_key'];
+    if (!Array.isArray(primaryKeyRaw)) {
+        throw new Error('[createSchemaEntryFromJson] スキーマJSONに "primary_key" 配列が存在しません');
+    }
+    const primaryKeys: string[] = primaryKeyRaw as string[];
+    return { columns, primaryKeys, references };
+}

@@ -2478,3 +2478,16 @@ EditorApiBridge.install() が addEventListener にアロー関数をインライ
 addEventListener に渡すリスナー関数は必ずフィールドに保持し、dispose() で removeEventListener できるようにする。また、リスナー登録はコンストラクタ内で行い、オブジェクト作成と同時に有効な状態にすることで生焼けオブジェクトを防止する（bug-report #121 の知見と同様）。
 
 ---
+
+## 171. 4ef227d — schemaRegistry構築ロジックをmain.tsからSchemaEntryファクトリに切り出す
+
+### 不具合原因名
+初期化ロジックのインライン展開による責務混在と入力バリデーション欠如
+
+### なぜそうなったのか
+EditorAPI実装時にスキーマJSON解析ロジックをmain.tsの初期化ループ内にインライン展開していた。SchemaEntryの構築責務がmain.tsの初期化責務と混在し、再利用不可能な状態だった。また、`Record<string, unknown>` を受け取りながら `as` キャストのみで型安全性が担保されておらず、不正なスキーマJSONに対してTypeErrorという不明瞭なエラーが発生する状態だった。
+
+### どうしたら今後は再発しないか
+型構築ロジックはその型を定義しているモジュールにファクトリ関数として配置し、main.tsには呼び出しのみを残す。`Record<string, unknown>` を引数に取るファクトリ関数では、必須フィールドの存在と型を `Array.isArray` / `typeof` で検証してからキャストし、不正な入力にはフォールバックせず明確なエラーメッセージをスローする。
+
+---
