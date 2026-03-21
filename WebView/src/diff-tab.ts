@@ -67,6 +67,16 @@ export class DiffTab {
     private readonly leftPaneElement: HTMLElement;
     private readonly rightPaneElement: HTMLElement;
 
+    /**
+     * DOM行インデックス（0始まり） → HEAD版のCSV値配列。
+     * 空行（パディング行）や追加行（HEAD版に存在しない行）は null。
+     * セル編集後のdiff-cell-added/diff-cell-deleted動的更新に使用する。
+     */
+    private readonly headRowValuesPerDomRow: ReadonlyArray<string[] | null>;
+
+    /** DOM列インデックス → CSV列インデックスの順引きマップ（動的更新で使用） */
+    private readonly domIndexToCsvIndex: ReadonlyMap<number, number>;
+
     constructor(
         tableName: string,
         schemaJson: string,
@@ -103,6 +113,20 @@ export class DiffTab {
             leftDeletedRowIndices, rightAddedRowIndices,
             leftModifiedCells, rightModifiedCells,
         } = buildMergedData(diffRows, columnCount);
+
+        // DOM行インデックス → HEAD版のCSV値配列を構築する。
+        // buildMergedData のループと同じ順序で走査し、各DOM行のHEAD版値を保持する。
+        // 追加行（HEAD版に存在しない行）はnull、空行（パディング行）もnull。
+        const headRowValuesPerDomRow: Array<string[] | null> = [];
+        for (const diffRow of diffRows) {
+            if (diffRow.kind === 'deleted' || diffRow.kind === 'modified' || diffRow.kind === 'unchanged') {
+                headRowValuesPerDomRow.push(diffRow.headValues);
+            } else {
+                // added行: HEAD版に存在しないためnull
+                headRowValuesPerDomRow.push(null);
+            }
+        }
+        this.headRowValuesPerDomRow = headRowValuesPerDomRow;
 
         // ルートラッパー要素（初期は非表示にして activateDiffTab() で表示する）
         const wrapperElement = document.createElement('div');
@@ -214,15 +238,20 @@ export class DiffTab {
         this.leftEditorTable.diffTab = this;
         this.rightEditorTable.diffTab = this;
 
-        // CSV列インデックス → DOM列インデックスの逆引きマップを構築する。
+        // CSV列インデックス ↔ DOM列インデックスの双方向マップを構築する。
         // columnMapping[domIndex] = csvIndex なので、逆引きは Map<csvIndex, domIndex> となる。
         // スキーマに定義されていないCSV列（-1 のエントリ）はマップに含めない。
         // 左右ペインはどちらも同じスキーマ由来なので leftResult で代表する。
         const csvIndexToDomIndex = new Map<number, number>();
+        const domIndexToCsvIndex = new Map<number, number>();
         for (let domIdx = 0; domIdx < leftResult.tableData.columnMapping.length; domIdx++) {
             const csvIdx = leftResult.tableData.columnMapping[domIdx];
-            if (csvIdx !== -1) csvIndexToDomIndex.set(csvIdx, domIdx);
+            if (csvIdx !== -1) {
+                csvIndexToDomIndex.set(csvIdx, domIdx);
+                domIndexToCsvIndex.set(domIdx, csvIdx);
+            }
         }
+        this.domIndexToCsvIndex = domIndexToCsvIndex;
 
         // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
         this.applyDiffClasses(
@@ -395,6 +424,43 @@ export class DiffTab {
             result.push(Number(attr));
         }
         return result;
+    }
+
+    /**
+     * 右ペインのセルが編集されたときに、HEAD版と比較してdiff-cell-added / diff-cell-deleted を動的に更新する。
+     * updateCellValueAt() からセル値がストア・DOMに反映された後に呼ばれる。
+     *
+     * @param domRow DOM行インデックス（1始まり、0がヘッダー行）
+     * @param domColumn DOM列インデックス（1始まり、0が行ヘッダー）
+     * @param newValue 編集後の値
+     */
+    notifyCellEdited(domRow: number, domColumn: number, newValue: string): void {
+        // DOM行インデックス（1始まり） → データ行インデックス（0始まり）
+        const dataRowIndex = domRow - 1;
+        if (dataRowIndex < 0 || dataRowIndex >= this.headRowValuesPerDomRow.length) return;
+        const headValues = this.headRowValuesPerDomRow[dataRowIndex];
+        // HEAD版が存在しない行（追加行）は常に diff-cell-added を維持する（除去不要）
+        if (headValues === null) return;
+        // DOM列インデックス（1始まり、行ヘッダー含む） → DOM列インデックス（0始まり、行ヘッダー除外）
+        const domColIndex = domColumn - 1;
+        // DOM列インデックス → CSV列インデックスに変換する（スキーマにないCSV列はスキップ）
+        if (!this.domIndexToCsvIndex.has(domColIndex)) return;
+        const csvColIndex = this.domIndexToCsvIndex.get(domColIndex) as number;
+        // HEAD版の該当セル値を取得する
+        const headValue = csvColIndex < headValues.length ? headValues[csvColIndex] : '';
+        // 右ペインのセルにdiff-cell-addedを付与/除去する
+        const rightCell = this.rightEditorTable.getCell(domRow, domColumn);
+        // 左ペインの対応セルにdiff-cell-deletedを付与/除去する
+        const leftCell = this.leftEditorTable.getCell(domRow, domColumn);
+        if (newValue === headValue) {
+            // HEAD版と同じ値 → 差分なし。diff-cell-added / diff-cell-deleted を除去する
+            rightCell.classList.remove('diff-cell-added');
+            leftCell.classList.remove('diff-cell-deleted');
+        } else {
+            // HEAD版と異なる値 → 差分あり。diff-cell-added / diff-cell-deleted を付与する
+            rightCell.classList.add('diff-cell-added');
+            leftCell.classList.add('diff-cell-deleted');
+        }
     }
 
     /**

@@ -1707,6 +1707,8 @@ export class EditorTable {
             const rowElement = this.element.children[row] as HTMLElement;
             // バッファ空行（editor-table-empty-row クラスあり）はハイライト対象外
             if (rowElement.classList.contains('editor-table-empty-row')) continue;
+            // 差分タブのパディング行（diff-row-empty クラスあり）もハイライト対象外
+            if (rowElement.classList.contains('diff-row-empty')) continue;
             const domDataRowIndex = row - 1;
             if (domDataRowIndex >= this.storeRowIndices.length) continue;
             const storeRowIndex = this.storeRowIndices[domDataRowIndex];
@@ -1892,6 +1894,10 @@ export class EditorTable {
                 const cell = this.getCell(row, column);
                 this.updateSingleCellGitHighlight(cell, latestRows, storeRowIndex, storeColIndex);
             }
+        }
+        // 差分タブのdiff-cell-added/diff-cell-deletedクラスをセル単位で再評価する
+        if (this.diffTab !== false) {
+            this.diffTab.notifyCellEdited(row, column, value);
         }
     }
 
