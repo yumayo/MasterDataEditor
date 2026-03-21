@@ -2491,3 +2491,16 @@ EditorAPI実装時にスキーマJSON解析ロジックをmain.tsの初期化ル
 型構築ロジックはその型を定義しているモジュールにファクトリ関数として配置し、main.tsには呼び出しのみを残す。`Record<string, unknown>` を引数に取るファクトリ関数では、必須フィールドの存在と型を `Array.isArray` / `typeof` で検証してからキャストし、不正な入力にはフォールバックせず明確なエラーメッセージをスローする。
 
 ---
+
+## 172. [次のコミット] — git差分ビューで左ペイン（変更前）の日本語が文字化けする問題を修正
+
+### 不具合原因名
+StandardOutput のエンコーディング未指定による文字化け
+
+### なぜそうなったのか
+`GitCommandHelper.RunGitCommand` の `ProcessStartInfo` に `StandardOutputEncoding` が設定されていなかった。.NET はデフォルトでシステムのコードページ（Windows 環境では cp932 = Shift-JIS）で標準出力を読み取る。`git show HEAD:path` は UTF-8 のバイト列をそのまま出力するため、UTF-8 バイト列を Shift-JIS として解釈した結果、マルチバイト文字（日本語等）が文字化けした。右ペイン（変更後）は `File.ReadAllText` で読んでおりこちらは UTF-8 自動判定されるため正常だった。
+
+### どうしたら今後は再発しないか
+`Process.StandardOutput` を `RedirectStandardOutput = true` でリダイレクトする際は、必ず `StandardOutputEncoding` を明示的に指定する。git をはじめとする外部コマンドは UTF-8 で出力することが多いため、特別な理由がない限り `System.Text.Encoding.UTF8` を設定する。`File.ReadAllText` と `Process.StandardOutput.ReadToEnd()` でエンコーディング挙動が異なることを意識し、同一データを複数の読み取り経路で扱う場合は両方のエンコーディングが一致していることを確認する。
+
+---

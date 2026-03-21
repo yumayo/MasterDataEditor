@@ -38,6 +38,7 @@ namespace App.MasterDataEditor
 				RedirectStandardError = true,
 				UseShellExecute = false,
 				CreateNoWindow = true,
+				StandardOutputEncoding = System.Text.Encoding.UTF8,
 			};
 
 			foreach (var arg in arguments)
