@@ -303,6 +303,9 @@ export class DiffTab {
         };
         leftPaneElement.addEventListener('scroll', this.boundLeftScroll);
         rightPaneElement.addEventListener('scroll', this.boundRightScroll);
+
+        // 初期状態: 左ペイン（HEAD版）を非アクティブ表示にする（右ペインが操作対象）
+        this.leftEditorTable.setInactiveAppearance(true);
     }
 
     /**
@@ -508,6 +511,9 @@ export class DiffTab {
         // 行ヘッダーの style.left を復元後の scrollLeft に同期する
         this.leftEditorTable.forceRowHeaderScrollSync();
         this.rightEditorTable.forceRowHeaderScrollSync();
+        // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
+        this.leftEditorTable.refreshSelectionDisplay();
+        this.rightEditorTable.refreshSelectionDisplay();
     }
 
     /**

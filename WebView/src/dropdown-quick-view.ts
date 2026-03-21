@@ -183,6 +183,11 @@ export class DropdownQuickView {
 
         this.element.classList.add('visible');
         this.positionElement(anchorElement);
+
+        // display:none → display:block 後にSelectionの視覚位置をレイアウトに基づいて更新する
+        if (this.currentMiniEditorTable !== false) {
+            this.currentMiniEditorTable.refreshSelectionDisplay();
+        }
     }
 
     /**

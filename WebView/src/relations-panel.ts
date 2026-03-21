@@ -740,6 +740,12 @@ export class RelationsPanel {
         // 全エントリ構築後も割り込みがなかった場合のみ DOM に追加する
         if (requestId !== this.currentRequestId) return;
         this.panelElement.appendChild(content);
+
+        // DOM追加後にSelectionの視覚位置をレイアウトに基づいて更新する
+        // createMiniEditorTable 時点ではDOMがレイアウトされていないため getBoundingClientRect が0を返す
+        for (const miniTable of this.miniEditorTables) {
+            miniTable.refreshSelectionDisplay();
+        }
     }
 
     /**

@@ -358,6 +358,11 @@ export class EditorTable {
         }
     }
 
+    /** DOMレイアウト完了後にSelectionの視覚位置を現在の内部状態に基づいて更新する */
+    refreshSelectionDisplay(): void {
+        this.selection.updateRendererAfterResize();
+    }
+
     /**
      * 読み取り専用にする（ミニEditorTable用）
      * セル編集UIの表示を禁止してストア汚染を防ぎ、Ctrl+Sも禁止してCSV破壊を防ぐ
