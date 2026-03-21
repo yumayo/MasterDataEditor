@@ -54,11 +54,23 @@
 - DOMで確認: textfield(top:525,left:141) と selection(top:524,left:141) が整合、scrollTop=300 で正しく配置
 - DOMで確認: fill-handle(top:542) も selection.top+height-2 と一致（整合）
 - 知見: `position:absolute` 要素の offsetParent がスクロールコンテナ自体の場合は scrollTop/scrollLeft 加算が必要。innerWrapper（スクロールに追従するフロー要素）が offsetParent の場合は不要。コンストラクタコメントで明記するパターンが必要
-- 残存(🔴): 左ペインの grid-textfield に contenteditable="true" が残存（makeReadOnly() で contentEditable='false' 設定推奨）
-- 残存(🔴): 左ペインの editor-table に aria-readonly="true" がない（BUG_0021 から継続）
+- 残存(🔴): 左ペインの grid-textfield に contenteditable="true" が残存（makeReadOnly() で contentEditable='false' 設定推奨）— 2026-03-22日本語修正レビューでも未対処確認
+- 残存(🔴): 左ペインの editor-table に aria-readonly="true" がない（BUG_0021 から継続）— 2026-03-22日本語修正レビューでも未対処確認
 - 残存(🟡): diff-resize-handle に role/aria-orientation/aria-label がない（ISSUE_0092 から継続）
 - 残存(🟡): 差分タブ右ペインにバッファ行がない（編集可能ペインにもかかわらず data-row max=99、意図的設計であれば要コメント明記）
 - 要bug-report記録: 今回の修正は bug-report.md に未記載。#168 として追加推奨
+
+#### diff-tab-japanese 差分ビュー日本語表示修正（2026-03-22レビュー）評価: A
+- 修正済み: GitCommandHelper.RunGitCommand の StandardOutputEncoding を UTF8 に設定
+- DOMで確認: 左ペイン「スライム/ドラゴン/ゴブリン/最も弱い魔物/最強の魔物/群れで襲ってくる」すべて文字化けなし
+- DOMで確認: diff-cell-deleted（左ペイン description行1）/ diff-cell-added（右ペイン description行1）が正確に付与
+- DOMで確認: 変更のない行2・行3に誤検出なし
+- bug-report.md #172 として StandardOutput エンコーディング未指定の原因が記録済み
+- 残存(🔴): 左ペイン grid-textfield contenteditable="true" 継続未対処（makeReadOnly()推奨）
+- 残存(🔴): 左ペイン editor-table に aria-readonly="true" なし（BUG_0021継続）
+- 残存(🟡): diff-resize-handle に aria 属性なし（role="separator"/aria-orientation）
+- 残存(🟡): 全データ行に row-resize-handle 残存（左右ペイン各3行、差分ビューで必要か要確認）
+- 残存(🟡): 左ペインに fill-handle が display:block で表示（読み取り専用ペインには不要）
 
 #### ISSUE_0092 差分タブスクロール位置復元（2026-03-21レビュー）評価: A
 - 修正済み: DiffTab.hide()でスクロール位置保存、show()で復元+行ヘッダー強制同期
