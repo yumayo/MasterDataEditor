@@ -1787,6 +1787,8 @@ export class EditorTable {
             try {
                 headCsv = await gitShowAsync(entry.path);
             } catch (e) {
+                // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
+                if (requestId !== this.refreshGitDiffRequestId) return;
                 console.warn('[EditorTable] refreshGitDiffAsync: HEAD版CSVの取得に失敗しました:', e);
                 this.gitDiffTracker = false;
                 this.applyGitDiffHighlight();
@@ -1844,10 +1846,18 @@ export class EditorTable {
         let headCsv: string;
         try {
             headCsv = await gitShowAsync(gitPath);
-        } catch {
-            // HEAD版が取得できない場合（新規テーブル等）は全セルchangedとする
-            const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
-            this.connectGitDiffTracker(tracker);
+        } catch (e) {
+            // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
+            if (requestId !== this.refreshGitDiffRequestId) return;
+            const message = e instanceof Error ? e.message : String(e);
+            if (message.includes('does not exist')) {
+                // HEADに存在しない（新規テーブル等） → 全セルchanged
+                const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
+                this.connectGitDiffTracker(tracker);
+            } else {
+                // バリデーションエラー等その他のエラー → ハイライトなし
+                this.gitDiffTracker = false;
+            }
             this.applyGitDiffHighlight();
             return;
         }

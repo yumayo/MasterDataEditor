@@ -196,9 +196,17 @@ export async function installMockApiAsync(
                 }
 
                 // git差分機能: HEAD時点のファイル内容を返す
+                // __mockGitShowError が設定されている場合はそのエラーメッセージを返す（エラー種別テスト用）
                 // __mockGitHeadFiles が未設定の場合は git リポジトリ外環境を模してエラーを返す
                 if (type === "git_show_request") {
                     const path = request.path as string;
+                    // テストからgit showの任意エラーを注入するためのモック変数
+                    // プロパティ未設定の既存テストではスキップし、設定済みの場合のみエラーを返す
+                    if ('__mockGitShowError' in window) {
+                        const forcedError = (window as unknown as { __mockGitShowError: string }).__mockGitShowError;
+                        dispatch({ type: "git_show_response", success: false, error: forcedError });
+                        return;
+                    }
                     type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> | undefined };
                     const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles;
                     if (headFiles === undefined) {
