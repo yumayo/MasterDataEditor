@@ -383,6 +383,16 @@ export class EditorTable {
         this.updateRowHeaderSticky();
     }
 
+    /**
+     * 行ヘッダーの位置を現在のscrollLeftに強制同期する。
+     * display:none → display:'' でスクロール位置がリセットされた際に
+     * scrollイベントが発火しないため、外部から明示的に呼び出す。
+     */
+    forceRowHeaderScrollSync(): void {
+        this.lastScrollLeft = -1;
+        this.updateRowHeaderSticky();
+    }
+
     private updateRowHeaderSticky(): void {
         const offset = this.scrollBinding.getScrollLeft();
         if (offset === this.lastScrollLeft) return;

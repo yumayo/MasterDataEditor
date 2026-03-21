@@ -60,6 +60,10 @@ export class DiffTab {
     private dragMouseMove: ((e: MouseEvent) => void) | null;
     private dragMouseUp: (() => void) | null;
 
+    /** hide() 時に保存するスクロール位置（show() で復元して行ヘッダーずれを防止） */
+    private savedScrollLeft: number;
+    private savedScrollTop: number;
+
     /** リサイズハンドル要素（removeEventListener に必要） */
     private readonly resizeHandle: HTMLElement;
 
@@ -97,6 +101,8 @@ export class DiffTab {
         this.isSyncing = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
+        this.savedScrollLeft = 0;
+        this.savedScrollTop = 0;
 
         // スキーマをパースしてPK列名（配列）を取得する
         const schema = JSON.parse(schemaJson) as SchemaJson;
@@ -487,16 +493,34 @@ export class DiffTab {
     }
 
     /**
-     * 差分タブのラッパー要素を表示する
+     * 差分タブのラッパー要素を表示する。
+     * hide() で保存したスクロール位置を復元し、行ヘッダーを現在のscrollLeftに同期する。
+     * display:none → display:'' ではブラウザがscrollLeftを0にリセットするが
+     * scrollイベントが発火しないため、明示的に行ヘッダー位置を補正する必要がある。
      */
     show(): void {
         this.wrapperElement.style.display = '';
+        // display:none 中にブラウザがリセットしたスクロール位置を左右両ペインに復元する
+        this.leftPaneElement.scrollLeft = this.savedScrollLeft;
+        this.leftPaneElement.scrollTop = this.savedScrollTop;
+        this.rightPaneElement.scrollLeft = this.savedScrollLeft;
+        this.rightPaneElement.scrollTop = this.savedScrollTop;
+        // 行ヘッダーの style.left を復元後の scrollLeft に同期する
+        this.leftEditorTable.forceRowHeaderScrollSync();
+        this.rightEditorTable.forceRowHeaderScrollSync();
     }
 
     /**
-     * 差分タブのラッパー要素を非表示にする
+     * 差分タブのラッパー要素を非表示にする。
+     * display:none 設定前にスクロール位置を保存する（ブラウザが scrollLeft を 0 にリセットするため）。
+     * 全diffTabに対して forEach で呼ばれるため、既に非表示の場合は早期リターンする。
+     * （display:none 後は scrollLeft が 0 にリセット済みのため、保存値を上書きしてはならない）
      */
     hide(): void {
+        if (this.wrapperElement.style.display === 'none') return;
+        // display:none にするとブラウザがscrollLeftを0にリセットするため、事前に保存する
+        this.savedScrollLeft = this.leftPaneElement.scrollLeft;
+        this.savedScrollTop = this.leftPaneElement.scrollTop;
         this.wrapperElement.style.display = 'none';
     }
 

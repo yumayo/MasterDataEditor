@@ -2413,3 +2413,16 @@ catch節でのエラー種別未分岐
 外部コマンド（git等）のエラーをcatchする際は、エラーメッセージの内容に応じた分岐を必ず設計する。「全エラーを同じように処理する」catch節を書いたらレビューで指摘すること。また、catch節もawaitポイント後のrequestIdチェックを忘れないこと（今回も漏れていた）。
 
 ---
+
+## 166. [93da895] — 差分タブのスクロール位置復元時に行ヘッダーだけが取り残される不具合を修正
+
+### 不具合原因名
+display:none 復帰時の scrollLeft リセットと scroll イベント未発火
+
+### なぜそうなったのか
+`DiffTab.hide()` で `display: none` を設定するとブラウザが `scrollLeft` を 0 にリセットするが、scroll イベントは発火しない。行ヘッダーは JavaScript で `style.left` を動的に設定する擬似sticky実装のため、scroll イベントなしでは古い値が残留する。`DiffTab.show()` で `display: ''` に復帰しても行ヘッダーの `style.left` はリセットされず、データセル（scrollLeft=0）とのずれが発生した。通常タブでは `saveScrollPosition`/`restoreScrollPosition` + `activate()` で対処されていたが、差分タブにはこの仕組みがなかった。
+
+### どうしたら今後は再発しないか
+`display: none` で要素を非表示にする際は、ブラウザが `scrollLeft`/`scrollTop` を 0 にリセットし scroll イベントを発火しないことを前提に設計する。非表示前にスクロール位置を保存し、再表示後に明示的に復元し、依存する視覚状態（行ヘッダー等）を強制同期する。
+
+---
