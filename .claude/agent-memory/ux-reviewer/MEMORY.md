@@ -108,6 +108,17 @@
 - 残存(🟡): EditorEventsAPI 全イベントに JSDoc がない（rowIndex の0始まり等の仕様が型定義から読み取れない）
 - 残存(🟡): ダーティでない状態の Ctrl+S で onTableSaved が発火するか否かのテストなし
 
+#### EditorApiBridge dispose/二重install防止（2026-03-22レビュー）評価: A
+- UI変更なし。C#↔WebViewブリッジのライフサイクル管理APIの追加のみ
+- 正常: `false` センチネル値でインストール状態を管理（null/undefined 不使用、ガイドライン準拠）
+- 正常: install() 二重呼び出しで即エラー、dispose() 未インストール時も即エラー（サイレント無視なし）
+- 正常: install/dispose の対称性確認済み（addEventListener/removeEventListener + センチネルリセット）
+- 正常: dispose→install 再登録後にリクエストが再処理されることをテストで確認
+- 正常: dispose 後のデータ状態に副作用なし（DOMダンプ3件でグリッドデータが同一）
+- 残存(🟡): `window.__editorApiBridge` がプロダクションビルドでも露出する（ビルド時フラグでのガード推奨）
+- 残存(🟡): `requireArray` の中身の型チェックなし（setCellValues で不正 changes 配列を渡した際のエラーメッセージが内部例外になる）
+- 残存(🟡): sendBridgeRequestAsync の timeoutMs 値（1000ms vs 3000ms）に定数化なし（意図がコメントなしで不明瞭）
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
