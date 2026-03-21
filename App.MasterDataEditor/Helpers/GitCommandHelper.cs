@@ -7,6 +7,7 @@ namespace App.MasterDataEditor
 	/// <summary>
 	/// gitコマンドを実行する共通ヘルパー
 	/// WebView2HandlerGitStatusRequest / WebView2HandlerGitShowRequest の重複を排除する
+	/// ArgumentListを使用して引数インジェクションを防止する
 	/// </summary>
 	internal static class GitCommandHelper
 	{
@@ -17,27 +18,32 @@ namespace App.MasterDataEditor
 		/// </summary>
 		public static string GetDataPrefix(string workDir)
 		{
-			var gitRoot = RunGitCommand(workDir, "rev-parse --show-toplevel").Trim();
+			var gitRoot = RunGitCommand(workDir, "rev-parse", "--show-toplevel").Trim();
 			var relWorkDir = Path.GetRelativePath(gitRoot, workDir).Replace('\\', '/');
 			return relWorkDir == "." ? "data/" : relWorkDir + "/data/";
 		}
 
 		/// <summary>
 		/// 指定した作業ディレクトリでgitコマンドを実行し、標準出力を返す
+		/// ProcessStartInfo.ArgumentListを使用し、各引数を個別に渡すことで引数インジェクションを防止する
 		/// コマンドが失敗した場合（終了コードが0以外）は InvalidOperationException をスローする
 		/// </summary>
-		public static string RunGitCommand(string workDir, string arguments)
+		public static string RunGitCommand(string workDir, params string[] arguments)
 		{
 			var startInfo = new ProcessStartInfo
 			{
 				FileName = "git",
-				Arguments = arguments,
 				WorkingDirectory = workDir,
 				RedirectStandardOutput = true,
 				RedirectStandardError = true,
 				UseShellExecute = false,
 				CreateNoWindow = true,
 			};
+
+			foreach (var arg in arguments)
+			{
+				startInfo.ArgumentList.Add(arg);
+			}
 
 			using var process = Process.Start(startInfo);
 			if (process == null) throw new InvalidOperationException("Failed to start git process.");

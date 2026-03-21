@@ -2426,3 +2426,16 @@ display:none 復帰時の scrollLeft リセットと scroll イベント未発�
 `display: none` で要素を非表示にする際は、ブラウザが `scrollLeft`/`scrollTop` を 0 にリセットし scroll イベントを発火しないことを前提に設計する。非表示前にスクロール位置を保存し、再表示後に明示的に復元し、依存する視覚状態（行ヘッダー等）を強制同期する。
 
 ---
+
+## 167. [d8f936d] — Path.Combineの絶対パス上書き挙動によるパストラバーサル脆弱性とgit引数インジェクションを修正
+
+### 不具合原因名
+Path.Combineの絶対パス上書き挙動によるbaseDir脱出、およびProcessStartInfo.Argumentsによる引数インジェクション
+
+### なぜそうなったのか
+`HelperFile.IsValidFilename()` は `..` によるパストラバーサルのみを防いでいたが、`Path.Combine(workDir, filename)` は第2引数が絶対パスの場合に第1引数を完全に無視する.NET仕様がある。そのため `C:\Windows\System32\...` や `\\server\share\...` のような絶対パス・UNCパスを送信すると、workDir外の任意ファイルを読み書き・削除できる状態だった。また `GitCommandHelper.RunGitCommand()` が `ProcessStartInfo.Arguments` に単一文字列で引数を渡しており、パス内のスペースが引数区切りとして解釈され、git引数を注入できた。
+
+### どうしたら今後は再発しないか
+外部入力由来のパスを `Path.Combine` で結合した後は、必ず `Path.GetFullPath` で正規化し、`StartsWith` でbaseDir配下に収まることを確認する（`ResolveSafePath` パターン）。入力バリデーション（`IsValidFilename`）だけに頼らず、結合後の正規化検証を第2防御層として必ず設ける。外部プロセスの起動には `ProcessStartInfo.Arguments`（単一文字列）ではなく `ProcessStartInfo.ArgumentList`（個別追加）を使用して引数インジェクションを防止する。
+
+---

@@ -39,7 +39,18 @@ namespace App.MasterDataEditor
 
 				var workDir = AppEnvironment.GetWorkDir();
 				Directory.CreateDirectory(workDir);
-				var dirPath = Path.Combine(workDir, directory);
+				var dirPath = HelperFile.ResolveSafePath(workDir, directory);
+
+				if (dirPath == null)
+				{
+					Logger.Warning($"ファイル一覧取得拒否: workDir外へのアクセス {directory}");
+					return new
+					{
+						type = "find_files_response",
+						success = false,
+						error = "Invalid directory"
+					};
+				}
 
 				var files = new List<object>();
 				var dirs = new List<object>();

@@ -59,7 +59,8 @@ namespace App.MasterDataEditor
 				}
 
 				// git show にはgitルート相対パスをそのまま渡す（entry.pathはgitルート相対なので正しい）
-				var output = GitCommandHelper.RunGitCommand(workDir, $"show HEAD:{path}");
+				// ArgumentListにより引数インジェクションを防止する
+				var output = GitCommandHelper.RunGitCommand(workDir, "show", $"HEAD:{path}");
 
 				return new
 				{

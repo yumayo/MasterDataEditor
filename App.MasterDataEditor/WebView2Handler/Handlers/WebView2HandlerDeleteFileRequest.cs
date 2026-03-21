@@ -35,7 +35,18 @@ namespace App.MasterDataEditor
 				}
 
 				var workDir = AppEnvironment.GetWorkDir();
-				var filePath = Path.Combine(workDir, filename);
+				var filePath = HelperFile.ResolveSafePath(workDir, filename);
+
+				if (filePath == null)
+				{
+					Logger.Warning($"ファイル削除拒否: workDir外へのアクセス {filename}");
+					return new
+					{
+						type = "delete_file_response",
+						success = false,
+						error = "Invalid filename"
+					};
+				}
 
 				if (!File.Exists(filePath))
 				{

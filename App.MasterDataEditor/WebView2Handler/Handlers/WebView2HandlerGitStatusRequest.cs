@@ -12,7 +12,7 @@ namespace App.MasterDataEditor
 			try
 			{
 				var workDir = AppEnvironment.GetWorkDir();
-				var output = GitCommandHelper.RunGitCommand(workDir, "status --porcelain");
+				var output = GitCommandHelper.RunGitCommand(workDir, "status", "--porcelain");
 				var changes = new List<object>();
 				var staged = new List<object>();
 

@@ -48,7 +48,18 @@ namespace App.MasterDataEditor
 
 				var workDir = AppEnvironment.GetWorkDir();
 				Directory.CreateDirectory(workDir);
-				var filePath = Path.Combine(workDir, filename);
+				var filePath = HelperFile.ResolveSafePath(workDir, filename);
+
+				if (filePath == null)
+				{
+					Logger.Warning($"ファイル書き込み拒否: workDir外へのアクセス {filename}");
+					return new
+					{
+						type = "write_file_response",
+						success = false,
+						error = "Invalid filename"
+					};
+				}
 
 				var data = dataElement.GetString();
 				File.WriteAllText(filePath, data);
