@@ -297,8 +297,8 @@ export class DropdownQuickView {
 
     /**
      * クイックビューの表示位置を決定する（position:fixed のビューポート座標を使用）。
-     * デフォルトはドロップダウンリストの右側。
-     * ビューポートの右端にはみ出す場合は左側に配置する。
+     * ドロップダウンリストの左右のビューポート余白を比較し、広い方に配置する。
+     * 同値の場合は右側優先。はみ出す場合は maxWidth で制約する。
      */
     private positionElement(anchorElement: HTMLElement): void {
         // position:fixed なのでビューポート座標（getBoundingClientRect の結果）をそのまま使う
@@ -309,27 +309,24 @@ export class DropdownQuickView {
         this.element.style.maxWidth = '';
         this.element.style.maxHeight = '';
 
-        // まずドロップダウンリストの右側に配置を試みる
-        this.element.style.left = listRect.right + 'px';
         this.element.style.top = anchorRect.top + 'px';
 
-        // ビューポートの右端をはみ出す場合はドロップダウンリストの左側に配置する。
-        // 左側にも十分なスペースがない場合の挙動は listRect.left の大きさで分岐する:
-        //   - CSS の min-width（200px）未満: 左側に配置しても QV がほぼ表示できないため、
-        //     右側に留まったまま maxWidth でビューポート内に収める（左フォールバックを諦める）。
-        //   - min-width 以上: QV の幅を listRect.left に制約して左端 0 から配置する。
-        //     これにより QV の right === listRect.left となりドロップダウンと水平方向で重ならない。
-        const minWidthThreshold = 200;
-        const quickViewRect = this.element.getBoundingClientRect();
-        if (quickViewRect.right > window.innerWidth) {
-            const leftAligned = listRect.left - this.element.offsetWidth;
-            if (listRect.left < minWidthThreshold) {
-                // 左側スペースが小さすぎて左フォールバックが無意味な場合は、
-                // 右側配置のまま maxWidth でビューポート右端に収める。
+        // ドロップダウンリストの左右のビューポート余白を比較して配置方向を決定する
+        const leftSpace = listRect.left;
+        const rightSpace = window.innerWidth - listRect.right;
+
+        if (rightSpace >= leftSpace) {
+            // 右側に配置（右側の余白が広いか同じ）
+            this.element.style.left = listRect.right + 'px';
+            // 右端はみ出し時は maxWidth で制約する
+            if (listRect.right + this.element.offsetWidth > window.innerWidth) {
                 this.element.style.maxWidth = Math.max(0, window.innerWidth - listRect.right) + 'px';
-            } else if (leftAligned < 0) {
-                // 左側スペースが min-width 以上あるが QV 幅に足りない場合、
-                // QV の幅を listRect.left に制約して左端 0 から配置する。
+            }
+        } else {
+            // 左側に配置（左側の余白が広い）
+            const leftAligned = listRect.left - this.element.offsetWidth;
+            if (leftAligned < 0) {
+                // QV幅が左側スペースに収まらない場合、maxWidth で制約して左端 0 から配置する
                 this.element.style.maxWidth = listRect.left + 'px';
                 this.element.style.left = '0px';
             } else {

@@ -24,7 +24,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   5. 矢印キーでの選択移動でクイックビューが更新される
 //   6. ドロップダウンを閉じるとクイックビューも消える
 //   7. 素早く別のアイテムへ移動すると最後にホバーしたアイテムのデータが表示される
-//   8. クイックビューはドロップダウンの右側に表示される
+//   8. クイックビューはドロップダウンの左右の広い方に表示される
 //   9. クイックビューにRelationsPanel風のセクションヘッダーが表示される
 //  10. クイックビューにテーブルヘッダー（テーブル名・参照種別タグ・行数）が表示される
 //  11. クイックビューにマウスオーバーすると表示が維持される
@@ -35,6 +35,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // BUG_0026:
 //  16. クイックビューはビューポート下端付近でも 2D AABB 判定でドロップダウンリストの領域に重ならない
 //  17. 右端フォールバック時にクイックビューはドロップダウンリストの領域に水平方向で被らない
+//  18. ドロップダウンが右寄りのとき、クイックビューは左側に表示される（左側余白が広い）
+//  19. 左右余白が同じとき、クイックビューは右側に表示される（同値は右優先）
 // =============================================================================
 
 // =============================================================================
@@ -326,10 +328,19 @@ test.describe('ドロップダウン クイックビュー', () => {
     );
 
     test(
-        'クイックビューはドロップダウンの右側に表示される',
+        'クイックビューはドロップダウンの左右の広い方に表示される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'quest');
             const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンを左寄り（left:100px）に強制配置して右側余白 > 左側余白にする
+            await page.evaluate(() => {
+                const dropdownEl = document.querySelector('.editor-left-pane .grid-dropdown') as HTMLElement | null;
+                if (!dropdownEl) throw new Error('.grid-dropdown が見つかりません');
+                dropdownEl.style.position = 'fixed';
+                dropdownEl.style.left = '100px';
+                dropdownEl.style.top = '200px';
+            });
 
             const firstItem = dropdown.locator('.grid-dropdown-item').first();
             await firstItem.hover();
@@ -337,7 +348,7 @@ test.describe('ドロップダウン クイックビュー', () => {
             const quickView = page.locator('body > .dropdown-quick-view');
             await expect(quickView).toBeVisible();
 
-            // クイックビューがドロップダウンリストの右側に配置されている
+            // 右側余白が広いため、クイックビューがドロップダウンリストの右側に配置されている
             const listBox = await dropdown.boundingBox();
             const quickViewBox = await quickView.boundingBox();
             if (!listBox || !quickViewBox) {
@@ -697,6 +708,86 @@ test.describe('ドロップダウン クイックビュー', () => {
 
             // 2D AABB 重なり判定: クイックビューがドロップダウンリストと重ならないことを検証する
             assertNoAABBOverlap(quickViewBox, dropdownBox);
+        },
+    );
+
+    // =========================================================================
+    // クイックビュー左右配置切り替えのテスト
+    //
+    // ドロップダウンリストの左右のビューポート余白を比較し、広い方に配置する。
+    // 同値の場合は右側優先。
+    // 「ドロップダウンが左寄りのとき右側に配置される」ケースはテスト8で検証済み。
+    // =========================================================================
+
+    test(
+        'ドロップダウンが右寄りのとき、クイックビューは左側に表示される（左側余白が広い）',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンをビューポート右端付近に強制配置する。
+            // 右側余白が小さく左側余白が大きいため、左側に配置されるべき。
+            await page.evaluate(() => {
+                const dropdownEl = document.querySelector('.editor-left-pane .grid-dropdown') as HTMLElement | null;
+                if (!dropdownEl) throw new Error('.grid-dropdown が見つかりません');
+                dropdownEl.style.position = 'fixed';
+                // ビューポート右端 - 200px に配置（左側余白が圧倒的に大きい）
+                dropdownEl.style.left = (window.innerWidth - 200) + 'px';
+                dropdownEl.style.top = '200px';
+            });
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            const listBox = await dropdown.boundingBox();
+            const quickViewBox = await quickView.boundingBox();
+            if (!listBox || !quickViewBox) {
+                throw new Error('boundingBox が取得できません');
+            }
+
+            // クイックビューの右端 <= ドロップダウンリストの左端（左側に配置されている）
+            expect(quickViewBox.x + quickViewBox.width).toBeLessThanOrEqual(listBox.x + 1);
+        },
+    );
+
+    test(
+        '左右余白が同じとき、クイックビューは右側に表示される（同値は右優先）',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'quest');
+            const dropdown = await openFkDropdownAsync(page, table, 0, 2);
+
+            // ドロップダウンリストの幅を取得してビューポート中央に配置する
+            const listWidth = await dropdown.evaluate(el => el.getBoundingClientRect().width);
+
+            await page.evaluate((dropdownListWidth: number) => {
+                const dropdownEl = document.querySelector('.editor-left-pane .grid-dropdown') as HTMLElement | null;
+                if (!dropdownEl) throw new Error('.grid-dropdown が見つかりません');
+                dropdownEl.style.position = 'fixed';
+                // ドロップダウンリストがビューポート中央に来るように配置する。
+                // leftSpace = centerLeft, rightSpace = innerWidth - (centerLeft + listWidth) = centerLeft
+                // → 左右余白が等しくなる
+                const centerLeft = (window.innerWidth - dropdownListWidth) / 2;
+                dropdownEl.style.left = centerLeft + 'px';
+                dropdownEl.style.top = '200px';
+            }, listWidth);
+
+            const firstItem = dropdown.locator('.grid-dropdown-item').first();
+            await firstItem.hover();
+
+            const quickView = page.locator('body > .dropdown-quick-view');
+            await expect(quickView).toBeVisible();
+
+            const listBox = await dropdown.boundingBox();
+            const quickViewBox = await quickView.boundingBox();
+            if (!listBox || !quickViewBox) {
+                throw new Error('boundingBox が取得できません');
+            }
+
+            // 同値の場合は右側優先: クイックビューの左端 >= ドロップダウンリストの右端
+            expect(quickViewBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
         },
     );
 });
