@@ -17,6 +17,7 @@ import {SchemaJson, buildDiffRows, buildMergedData} from "./diff-rows";
 import {TabReference} from "./tab-reference";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {NotificationToast} from "./notification";
+import {ValidationPanel} from "./validation-panel";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -78,6 +79,9 @@ export class DiffTab {
      */
     private readonly headRowValuesPerDomRow: ReadonlyArray<string[] | null>;
 
+    /** destroy() 時のスキーマ登録解除に必要なバリデーションパネル参照（staged時は false） */
+    private readonly validationPanel: ValidationPanel | false;
+
     /** DOM列インデックス → CSV列インデックスの順引きマップ（動的更新で使用） */
     private readonly domIndexToCsvIndex: ReadonlyMap<number, number>;
 
@@ -96,7 +100,8 @@ export class DiffTab {
         tabButton: TabButton,
         tabReference: TabReference,
         openEditorTables: Map<string, EditorTable>,
-        notification: NotificationToast
+        notification: NotificationToast,
+        validationPanel: ValidationPanel | false
     ) {
         this.isSyncing = false;
         this.dragMouseMove = null;
@@ -239,6 +244,21 @@ export class DiffTab {
         // 右ペインの参照ヒントを設定する（通常テーブルと同パターン）
         tabReference.preloadReferenceTables(rightResult.tableData, this.rightEditorTable);
         tabReference.resolveReverseReferencesAsync(tableName, this.rightEditorTable);
+
+        // ValidationPanel が接続されており、かつ staged でない場合のみ右ペインにバリデーションを接続する。
+        // staged 状態では右ペインも makeReadOnly() で読み取り専用のためバリデーション不要。
+        // 左ペインは常に読み取り専用のためバリデーション不要。
+        if (validationPanel !== false && !isStaged) {
+            validationPanel.registerSchema(
+                rightTableKey,
+                rightResult.tableData.primaryKeyColumns,
+                rightResult.tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference }))
+            );
+            this.rightEditorTable.connectValidationPanel(validationPanel);
+            this.validationPanel = validationPanel;
+        } else {
+            this.validationPanel = false;
+        }
 
         // 左右EditorTableに自身（DiffTab）を接続する（排他制御のため）
         // RelationsPanel.connectEditorTable() と対称的なパターン
@@ -567,6 +587,10 @@ export class DiffTab {
         // Historyをストアのhistoryレジストリから登録解除する
         this.leftHistory.unregister();
         this.rightHistory.unregister();
+        // バリデーションスキーマを登録解除する（DiffTab開閉でスキーマが残留するのを防ぐ）
+        if (this.validationPanel !== false) {
+            this.validationPanel.unregisterSchema(this.rightTableKey);
+        }
         // ストアのテーブルデータも削除する（差分タブ専用キーなのでDirty状態は無視して強制削除）
         store.unregisterTable(this.leftTableKey);
         store.unregisterTable(this.rightTableKey);

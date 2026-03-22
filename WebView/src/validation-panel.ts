@@ -70,12 +70,29 @@ export class ValidationPanel {
     }
 
     /**
+     * テーブルのスキーマ情報を登録解除する。
+     * DiffTab.destroy() でスキーマ残留を防ぐために呼ばれる。
+     */
+    unregisterSchema(tableName: string): void {
+        this.engine.unregisterSchema(tableName);
+    }
+
+    /**
      * 指定テーブルのPK重複エラーのみをストア全体から検出して返す。
      * ミニテーブル用の独立したバリデーションパス（ValidationPanel 未接続の EditorTable から呼ばれる）。
      * スキーマ未登録の場合は空配列を返す。
      */
     validatePkDuplicatesForTable(tableName: string): ValidationError[] {
         return this.engine.validatePkDuplicatesForTable(tableName);
+    }
+
+    /**
+     * 指定テーブルのPK重複 + 型不一致エラーをストアから検出して返す。
+     * DiffTab右ペインのように openEditorTables に登録されないが全バリデーションが必要な
+     * ミニテーブルが独立してバリデーションを行うための公開パス。
+     */
+    validateForTable(tableName: string): ValidationError[] {
+        return this.engine.validateForTable(tableName);
     }
 
     /**

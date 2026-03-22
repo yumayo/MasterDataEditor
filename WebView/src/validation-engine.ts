@@ -81,6 +81,14 @@ export class ValidationEngine {
     }
 
     /**
+     * テーブルのスキーマ情報を登録解除する。
+     * DiffTab.destroy() でスキーマ残留を防ぐために呼ばれる。
+     */
+    unregisterSchema(tableName: string): void {
+        this.schemas.delete(tableName);
+    }
+
+    /**
      * 行のPK値を取得する（エラー生成時の事前計算用）。
      * header と rows は呼び出し元で既に取得済みなので引数で受け取る。
      * PK列なし・PK値が空文字の場合は null を返す。
@@ -95,20 +103,44 @@ export class ValidationEngine {
     }
 
     /**
+     * 指定テーブルのスキーマとストアデータを解決する共通ヘルパー。
+     * スキーマ未登録またはストアにデータがない場合は null を返す。
+     */
+    private resolveSchemaAndData(tableName: string): { schema: TableSchema; header: string[]; rows: string[][] } | null {
+        const schema = this.schemas.get(tableName);
+        if (schema === undefined) return null;
+        const header = this.store.getHeader(tableName);
+        const rows = this.store.getRows(tableName);
+        if (header === false || rows === false) return null;
+        return { schema, header, rows };
+    }
+
+    /**
      * 指定テーブルのPK重複エラーのみをストア全体から検出して返す。
      * ミニテーブルのように ValidationPanel が接続されていない EditorTable が
      * 独立してPKバリデーションを行うための公開パス。
      * スキーマ未登録のテーブルは空配列を返す。
      */
     validatePkDuplicatesForTable(tableName: string): ValidationError[] {
-        if (!this.schemas.has(tableName)) return [];
-        const schema = this.schemas.get(tableName);
-        if (schema === undefined) return [];
-        const header = this.store.getHeader(tableName);
-        const rows = this.store.getRows(tableName);
-        if (header === false || rows === false) return [];
+        const resolved = this.resolveSchemaAndData(tableName);
+        if (resolved === null) return [];
         const errors: ValidationError[] = [];
-        this.validatePkDuplicates(tableName, schema, header, rows, errors);
+        this.validatePkDuplicates(tableName, resolved.schema, resolved.header, resolved.rows, errors);
+        return errors;
+    }
+
+    /**
+     * 指定テーブルのPK重複 + 型不一致エラーをストアから検出して返す。
+     * DiffTab右ペインのように openEditorTables に登録されないが全バリデーションが必要な
+     * ミニテーブル（isMiniTable=true）が独立してバリデーションを行うための公開パス。
+     * FK参照切れは参照先テーブルのロード状態に依存するため含めない。
+     */
+    validateForTable(tableName: string): ValidationError[] {
+        const resolved = this.resolveSchemaAndData(tableName);
+        if (resolved === null) return [];
+        const errors: ValidationError[] = [];
+        this.validatePkDuplicates(tableName, resolved.schema, resolved.header, resolved.rows, errors);
+        this.validateTypeMatch(tableName, resolved.schema, resolved.header, resolved.rows, errors);
         return errors;
     }
 

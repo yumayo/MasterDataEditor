@@ -888,7 +888,7 @@ export class Tab {
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
-            this.reference, this.openEditorTables, this.notification
+            this.reference, this.openEditorTables, this.notification, this.validationPanel
         );
         // 新規作成時点では diffTabs にキーが存在しないことが保証される（上の早期リターンで確認済み）
         this.diffTabs.set(diffTabName, diffTab);

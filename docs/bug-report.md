@@ -2593,3 +2593,16 @@ RFC4180非準拠CSVパーサーによる差分計算の列ずれ
 - **非同期の初期化処理（`refreshGitDiffAsync` 等）は、前提条件（`storeRowIndices` の設定等）が確定した後に呼び出し元が明示的に実行する設計とし、`createMiniEditorTable` のような共通関数内でfire-and-forgetしない。**
 
 ---
+
+## 179. [7cd364e] — 差分ビューでのデータ編集時にバリデーション（型チェック・PK重複判定）が実行されない問題を修正
+
+### 不具合原因名
+DiffTab生成時のValidationPanel接続漏れ
+
+### なぜそうなったのか
+`diff-tab.ts` の `buildDiffEditorTable()` は `tab.ts` の `createEditorTable()` / `createMiniEditorTable()` を参考に独自実装されたが、ValidationPanelの接続（`registerSchema` + `connectValidationPanel`）が転記されなかった。また `runValidation()` のミニテーブルパスは `validatePkDuplicatesForTable()`（PK重複のみ）しか呼ばず、DiffTab右ペインで必要な型不一致チェック（`validateTypeMatch`）が実行されないという二重の欠落があった。
+
+### どうしたら今後は再発しないか
+- **編集可能なEditorTableを新規に生成する箇所を追加する場合、既存の生成パス（`createEditorTable` / `createMiniEditorTable`）の後処理チェックリスト（ValidationPanel接続、git差分ハイライト、参照ヒント設定、ドロップダウン接続等）を照合し、必要な項目が漏れていないか確認する。** DiffTabの `buildDiffEditorTable` は独自生成パスであるため、通常テーブル・ミニテーブルの後処理と対称的であることを保証する。
+
+---

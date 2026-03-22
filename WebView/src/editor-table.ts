@@ -2135,8 +2135,8 @@ export class EditorTable {
      *   ValidationPanel 側が全 EditorTable に applyValidationErrors() を呼ぶ。
      *
      * ミニテーブル（ValidationPanel 接続済みだが openEditorTables 未登録）:
-     *   validationPanel.validatePkDuplicatesForTable() でストア全体からPK重複のみを検出し、
-     *   自分自身の DOM に applyValidationErrors() を適用する独立したバリデーションパス。
+     *   通常ミニテーブル: PK重複のみ検出して自身のDOMに適用する。
+     *   DiffTab右ペイン: PK重複 + 型不一致を検出して自身のDOMに適用する。
      *   runAndUpdate() は呼ばない（全テーブル再バリデーションのコストを避けるため）。
      *
      * ValidationPanel 未接続: 何もしない。
@@ -2144,8 +2144,11 @@ export class EditorTable {
     runValidation(): void {
         if (this.validationPanel === false) return;
         if (this.isMiniTable) {
-            // ミニテーブル用独立パス: ストア全体でPK重複を検出して自身のDOMに適用する
-            const errors = this.validationPanel.validatePkDuplicatesForTable(this.tableName);
+            // DiffTab右ペインはPK重複 + 型不一致の全バリデーションを実行する。
+            // 通常ミニテーブル（RelationsPanel配下）はPK重複のみで十分。
+            const errors = this.diffTab !== false
+                ? this.validationPanel.validateForTable(this.tableName)
+                : this.validationPanel.validatePkDuplicatesForTable(this.tableName);
             this.applyValidationErrors(errors);
         } else {
             this.validationPanel.runAndUpdate();
