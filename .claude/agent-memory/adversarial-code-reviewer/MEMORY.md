@@ -11,6 +11,15 @@
 - ResolveSafePath: symlink/ADS 未対応、ex.Message 情報漏洩が既知の攻撃面
 - GitCommandHelper: ArgumentList でインジェクション防止済み、git内部構文は別問題
 
+## MCP Tools Patterns
+- `/App.MasterDataEditor/Mcp/Tools/TableEditTool.cs` - セル編集MCPツール
+- `/App.MasterDataEditor/Mcp/Tools/TableInfoTool.cs` - テーブル情報取得MCPツール
+- `/App.MasterDataEditor/Mcp/McpHttpServer.cs` - MCPサーバー（Kestrel HTTP）
+- `/App.MasterDataEditor/Mcp/EditorApiBridge.cs` - C#↔WebView2ブリッジ
+- **MCPツールにtry/catch必須**: _bridge.RequestAsync は TS例外→InvalidOperationException、WebView2未接続→InvalidOperationException、タイムアウト→TaskCanceledException をスローする。MCPは外部インターフェースのため内部情報漏洩防止が必須
+- **TOCTOU (getHeader→setCellValue間)**: 列名→インデックス変換後にユーザーが列追加/削除すると誤った列に書き込む
+- **TableInfoTool.FormatDataRows にデフォルト引数**: CLAUDE.md違反が既存で残存
+
 ## Key Files
 - `/WebView/src/editor.ts` - Editor area (nav bar + content area with left/right slots)
 - `/WebView/src/editor-table.ts` - Core table + storeRowIndices (DOM->store row mapping)
