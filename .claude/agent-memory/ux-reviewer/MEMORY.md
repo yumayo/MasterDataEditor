@@ -145,6 +145,18 @@
 - 残存(🟡): エラー解消後も validation-panel が display:block のまま（エラー0件で自動閉じ推奨）
 - 知見: 空文字はint型バリデーションをスキップする仕様（バッファ行の空セルにエラー出ない）。validation-engine.tsのコメントへの明記推奨
 
+#### ISSUE_0101 ミニテーブルgit差分ハイライト反映（2026-03-22レビュー）評価: A
+- 修正済み: createMiniEditorTable() 末尾に refreshGitDiffAsync() を fire-and-forget で追加
+- DOMで確認（テスト1）: ミニテーブル内 `data-col="1"` セルに `cell-git-changed` が正確に付与（メインテーブルの同セルと一致）
+- DOMで確認（テスト2）: 変更のないセル（id列）に cell-git-changed が付与されない（誤検出ゼロ）
+- DOMで確認（テスト3）: 変更のない enemy 行（id=2/ドラゴン）参照時、ミニテーブル全セルに cell-git-changed なし
+- 正常: メインテーブル（enemy タブ）とミニテーブル（quest RelationsPanel）の cell-git-changed 付与が完全一致
+- 正常: relations-table-dirty（●）がミニテーブルのヘッダーに表示されており、参照先テーブルの変更状態も通知済み
+- 残存(🟡): ミニテーブルの fill-handle が display:block で表示（非アクティブテーブルに fill-handle は不要か要確認）
+- 残存(🟡): ミニテーブルの grid-textfield に contenteditable="true" が残存（editor-table--inactive でも露出）
+- 残存(🟡): ミニテーブルの row-resize-handle がバッファ行（editor-table-empty-row）に残存（継続パターン）
+- 知見: fire-and-forget の refreshGitDiffAsync は非同期競合を requestId パターンで防止済み（bug-report.md #ミニテーブルスキップ言及）
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）

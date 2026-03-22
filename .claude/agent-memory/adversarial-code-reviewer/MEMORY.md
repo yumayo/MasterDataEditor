@@ -48,6 +48,7 @@
 - **Number()のJS特有挙動**: Number("Infinity")=Infinity(isNaN=false), Number("0x1f")=31, Number("0b101")=5 → C#パースと不整合。型バリデーションにはNumber.isFinite()+正規表現が必須
 - **document listener leak on re-instantiation**: 無名リスナーはremoveEventListener不可
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される
+- **fire-and-forget Promise without .catch()**: createMiniEditorTable内のrefreshGitDiffAsync()がcatchなし。EditorTableHandler.markSavedAndUpdatePanel L719-720に既存パターンあり。破棄済みDOMアクセスでUnhandled Rejectionになる (ISSUE_0101)
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
 
 ## FEAT_0040 Background Search Known Patterns
