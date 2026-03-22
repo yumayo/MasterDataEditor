@@ -65,6 +65,9 @@
 - **生焼けオブジェクト | false + connect パターン**: 4回再発（FEAT_0043 EditorTable.tab → FEAT_0047 NavigationHistory → EditorAPI Tab.editorApi → RelationsPanel Toggle RelationsPanel.editor）。コンストラクタ引数化を徹底せよ
 - **registerSchema / unregisterSchema 非対称**: ISSUE_0107でDiffTab右ペインのスキーマがValidationEngine.schemasに登録されるがdestroy()で解除されない。validate()全走査でDiffTabスキーマが混入しPROBLEMSパネルにゴーストエラーが表示される。registerがあればunregisterが必要（bug-report.mdパターン2）
 - **validateForTable / validatePkDuplicatesForTable コピペ**: validation-engine.ts L103-132。スキーマ解決ロジック6行が完全重複。resolveSchemaAndData()ヘルパー抽出で解消すべき
+- **serialize ラウンドトリップの型喪失**: ISSUE_0112 で default フィールドが number/boolean → String() → serialize で文字列出力。C#側が元の型を期待する場合に壊れる（bug-report.md #1 と同構造）
+- **createSchemaEntryFromJson と EditorTableData.parse の入力パース不一致**: default: null の扱いが異なる（前者は null→null、後者は null→"null"）。同一スキーマの2つのパースパスは同じ意味論を持つべき
+- **undefined 使用禁止ルール抵触**: Record のインデックスアクセスで undefined と比較するパターンが再発（validation-engine.ts isFkDefaultValue, editor-table-data.ts parse）。Map + has() パターンを使うこと
 
 ## FEAT_0040 Background Search Known Patterns
 - **CRITICAL**: loadAllTableNamesAsync 後に requestId チェックなし → 無駄な Promise.all 実行

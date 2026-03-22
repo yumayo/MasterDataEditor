@@ -5,7 +5,7 @@
 ### UXレビュー実績アーカイブ
 - ファイル: project_review_archive_mar2026.md
 - 2026-03-15〜23 全レビューの要約と横断的継続課題リストを収録
-- ISSUE_0108まで含む最新版
+- ISSUE_0112まで含む最新版
 
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）
@@ -16,6 +16,16 @@
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
 ### 最新レビュー結果（2026-03-23）
+
+#### ISSUE_0112 FKデフォルト値スキップ 評価: A
+- 修正済み: category_id=0（int型デフォルト）を入力してもcell-errorなし・PROBLEMSパネル「エラーはありません」・status-bar data-error-count="0" を確認
+- 修正済み: category_id を空（""）にしてもエラーなし（空文字列もデフォルトとして扱われている可能性あり）
+- 修正済み: default=999 を明示設定したFK列で999入力時もエラーなし。それ以外の888入力でcell-errorクラス付与・FK切れエラー正確表示を確認
+- 修正済み: 動的参照FK列（reward_record_id、FK式: $(table.id == $reward_table_id).master.id）でも0入力時はエラーなし
+- 残存(🟡): デフォルト値スキップが適用されていることをプランナーが視覚的に認識できる手段がない。FK列ヘッダーのtitle属性に「FK: category.id を参照（デフォルト:0はスキップ）」のような補足があると誤入力を防止できる
+- 残存(🟡): cell-error セルに aria-invalid="true"/aria-describedby がない（全サイクル継続）
+- 残存(🟡): ミニテーブルの fill-handle が editor-table--inactive でも display:block で残存（継続）
+- 残存(🟡): ミニテーブルの row-resize-handle が残存（継続）
 
 #### ISSUE_0111 全文検索ローマ字途中入力・長音符正規化 評価: A
 - 修正済み: `findNormalizedMatchIndex` に末尾子音除去ロジック追加（`isTrailingConsonant` + trim）
