@@ -27,6 +27,18 @@ export interface EditorDataAPI {
     getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null>;
     /** 関連テーブル（N:1参照先 + 1:N逆参照元）のデータを取得する */
     getRelatedTablesAsync(tableName: string): Promise<RelatedTableInfo[] | null>;
+    /** 全テーブルのバリデーションエラー一覧を取得する */
+    getValidationErrors(): ValidationErrorInfo[];
+}
+
+/** バリデーションエラー情報（外部API用、内部フィールドを除外した公開型） */
+export interface ValidationErrorInfo {
+    tableName: string;
+    rowIndex: number;
+    columnName: string;
+    value: string;
+    kind: 'pk-duplicate' | 'fk-broken' | 'type-mismatch';
+    message: string;
 }
 
 /** 関連テーブル情報（MCP API用） */

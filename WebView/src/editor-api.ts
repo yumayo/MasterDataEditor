@@ -4,7 +4,8 @@ import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from 
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
 import {determineDisplayColumnName} from "./config";
-import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo} from "./editor-api-types";
+import {ValidationEngine} from "./validation-engine";
+import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, ValidationErrorInfo} from "./editor-api-types";
 
 /**
  * EditorAPI の実装
@@ -26,7 +27,7 @@ export class EditorApiImpl implements EditorAPI {
     private readonly tableSavedHandlers: Array<(event: { tableName: string }) => void>;
     private readonly rowSelectedHandlers: Array<(event: { tableName: string; rowIndex: number }) => void>;
 
-    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>) {
+    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>, validationEngine: ValidationEngine) {
         this.cellChangedHandlers = [];
         this.tableOpenedHandlers = [];
         this.tableClosedHandlers = [];
@@ -194,6 +195,16 @@ export class EditorApiImpl implements EditorAPI {
                     }
                 }
                 return results;
+            },
+            getValidationErrors(): ValidationErrorInfo[] {
+                // MCP呼び出し時は最新状態を反映するため、preservableErrors の引き継ぎなしで実行する
+                const result = validationEngine.validate([]);
+                const out: ValidationErrorInfo[] = [];
+                for (let i = 0; i < result.errors.length; ++i) {
+                    const e = result.errors[i];
+                    out.push({ tableName: e.tableName, rowIndex: e.rowIndex, columnName: e.columnName, value: e.value, kind: e.kind, message: e.message });
+                }
+                return out;
             },
         };
 
