@@ -50,6 +50,7 @@
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される
 - **fire-and-forget Promise without .catch()**: createMiniEditorTable内のrefreshGitDiffAsync()がcatchなし。EditorTableHandler.markSavedAndUpdatePanel L719-720に既存パターンあり。破棄済みDOMアクセスでUnhandled Rejectionになる (ISSUE_0101)
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
+- **bug-report.md 既修正不具合の回帰**: ISSUE_0103でbug-report#75(px→%変更)を逆方向に戻した。修正時はbug-reportの過去エントリを必ず確認し、同一箇所の過去修正と矛盾しないか検証せよ
 
 ## FEAT_0040 Background Search Known Patterns
 - **CRITICAL**: loadAllTableNamesAsync 後に requestId チェックなし → 無駄な Promise.all 実行
