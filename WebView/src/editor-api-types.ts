@@ -21,6 +21,8 @@ export interface EditorDataAPI {
     getRows(tableName: string): string[][] | null;
     getRowCount(tableName: string): number | null;
     getCellValue(tableName: string, row: number, column: number): string | null;
+    /** テーブルデータを読み取る。ストアにあればストアから、なければCSVファイルから読む */
+    readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null>;
 }
 
 /** スキーマAPI */

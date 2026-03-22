@@ -1,6 +1,8 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {Tab} from "./tab";
 import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from "./command";
+import {readFileAsync} from "./api";
+import {Csv} from "./csv";
 import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry} from "./editor-api-types";
 
 /**
@@ -57,6 +59,23 @@ export class EditorApiImpl implements EditorAPI {
                 const rowData = rows[row];
                 if (column < 0 || column >= rowData.length) return null;
                 return rowData[column];
+            },
+            async readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
+                // ストアにテーブルが存在する場合はストアからディープコピーで返す（SSOT優先）
+                const storeHeader = store.getHeader(tableName);
+                if (storeHeader !== false) {
+                    const storeRows = store.getRows(tableName);
+                    // header が存在するなら rows も必ず存在する（ストアの不変条件）
+                    if (storeRows === false) throw new Error('[readTableDataAsync] ストアの不変条件違反: header は存在するが rows が取得できません');
+                    return { header: [...storeHeader], rows: storeRows.map(r => [...r]) };
+                }
+                // ストアにない場合はCSVファイルから読む
+                // readFileAsync はファイルが存在しない場合に空文字を返す（C#側の仕様）
+                const content = await readFileAsync('data/' + tableName + '.csv');
+                if (content === '') return null;
+                const csv = new Csv();
+                csv.load(content);
+                return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
             },
         };
 

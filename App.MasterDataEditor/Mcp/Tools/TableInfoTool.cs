@@ -9,7 +9,9 @@ namespace App.MasterDataEditor.Mcp.Tools;
 
 /// <summary>
 /// テーブル情報を取得するMCPツール。
-/// EditorApiBridge経由でWebView2のInMemoryTableStore（SSOT）からデータを読み取る。
+/// EditorApiBridge経由でWebView2のEditorAPIからデータを読み取る。
+/// InMemoryTableStoreに登録されたテーブルだけでなく、
+/// スキーマレジストリに存在する全テーブルのデータを取得できる。
 /// </summary>
 [McpServerToolType]
 public sealed class TableInfoTool
@@ -21,29 +23,34 @@ public sealed class TableInfoTool
 		_bridge = bridge;
 	}
 
-	[McpServerTool, Description("現在開いているテーブルの一覧を取得します。")]
+	[McpServerTool, Description("利用可能なテーブルの一覧を取得します。開いているテーブルも開いていないテーブルも含まれます。")]
 	public async Task<string> ListTablesAsync(CancellationToken cancellationToken)
 	{
-		var result = await _bridge.RequestAsync("data.getTableNames", new { }, cancellationToken);
-		var tableNames = result.Deserialize<string[]>()!;
+		// スキーマレジストリと開いているテーブルを並列取得
+		var allTablesTask = _bridge.RequestAsync("schema.getSchemaTableNames", new { }, cancellationToken);
+		var openTablesTask = _bridge.RequestAsync("data.getTableNames", new { }, cancellationToken);
+		await Task.WhenAll(allTablesTask, openTablesTask);
 
-		if (tableNames.Length == 0)
+		// TypeScript側のgetSchemaTableNames/getTableNamesは必ず配列を返す（nullにならない）
+		var allTableNames = allTablesTask.Result.Deserialize<string[]>()!;
+		var openTableNames = new System.Collections.Generic.HashSet<string>(openTablesTask.Result.Deserialize<string[]>()!);
+
+		if (allTableNames.Length == 0)
 		{
-			return "現在開いているテーブルはありません。テーブルを開いてから再度お試しください。";
+			return "利用可能なテーブルはありません。";
 		}
 
 		var sb = new StringBuilder();
-		sb.AppendLine($"開いているテーブル ({tableNames.Length}件):");
-		foreach (var name in tableNames)
+		sb.AppendLine($"利用可能なテーブル ({allTableNames.Length}件):");
+		foreach (var name in allTableNames)
 		{
-			var rowCountResult = await _bridge.RequestAsync("data.getRowCount", new { tableName = name }, cancellationToken);
-			var rowCount = rowCountResult.ValueKind == JsonValueKind.Number ? rowCountResult.GetInt32() : 0;
-			sb.AppendLine($"  - {name} ({rowCount}行)");
+			var status = openTableNames.Contains(name) ? "開いている" : "未開";
+			sb.AppendLine($"  - {name} ({status})");
 		}
 		return sb.ToString();
 	}
 
-	[McpServerTool, Description("指定したテーブルのスキーマ（カラム定義・主キー・外部キー参照）とデータを取得します。テーブルの内容について質問するときに使ってください。")]
+	[McpServerTool, Description("指定したテーブルのスキーマ（カラム定義・主キー・外部キー参照）とデータを取得します。テーブルが開いていなくてもCSVファイルから読み取ります。テーブルの内容について質問するときに使ってください。")]
 	public async Task<string> DescribeTableAsync(
 		[Description("テーブル名")] string tableName,
 		CancellationToken cancellationToken)
@@ -51,19 +58,18 @@ public sealed class TableInfoTool
 		var param = new { tableName };
 
 		// スキーマとデータを並列取得
+		// readTableDataAsync: ストアにあればストアから、なければCSVファイルから読み取る
 		var columnsTask = _bridge.RequestAsync("schema.getColumns", param, cancellationToken);
 		var primaryKeysTask = _bridge.RequestAsync("schema.getPrimaryKeys", param, cancellationToken);
 		var referencesTask = _bridge.RequestAsync("schema.getReferences", param, cancellationToken);
-		var headerTask = _bridge.RequestAsync("data.getHeader", param, cancellationToken);
-		var rowsTask = _bridge.RequestAsync("data.getRows", param, cancellationToken);
+		var tableDataTask = _bridge.RequestAsync("data.readTableDataAsync", param, cancellationToken);
 
-		await Task.WhenAll(columnsTask, primaryKeysTask, referencesTask, headerTask, rowsTask);
+		await Task.WhenAll(columnsTask, primaryKeysTask, referencesTask, tableDataTask);
 
 		var columns = columnsTask.Result;
 		var primaryKeys = primaryKeysTask.Result;
 		var references = referencesTask.Result;
-		var header = headerTask.Result;
-		var rows = rowsTask.Result;
+		var tableData = tableDataTask.Result;
 
 		var sb = new StringBuilder();
 
@@ -92,7 +98,16 @@ public sealed class TableInfoTool
 
 		// データ
 		sb.AppendLine("## データ");
-		FormatDataRows(sb, header, rows);
+		if (tableData.ValueKind == JsonValueKind.Null)
+		{
+			sb.AppendLine("(CSVファイルが見つかりません)");
+		}
+		else
+		{
+			var header = tableData.GetProperty("header");
+			var rows = tableData.GetProperty("rows");
+			FormatDataRows(sb, header, rows);
+		}
 
 		return sb.ToString();
 	}

@@ -23,7 +23,7 @@ export class EditorApiBridge {
                 return;
             }
             if (data['type'] !== 'editor_api_request') return;
-            this.handleRequest(
+            this.handleRequestAsync(
                 data['requestId'] as string,
                 data['method'] as string,
                 data['params'] as Record<string, unknown>,
@@ -39,10 +39,12 @@ export class EditorApiBridge {
         this.listener = false;
     }
 
-    /** リクエストをディスパッチしてレスポンスを返す */
-    private handleRequest(requestId: string, method: string, params: Record<string, unknown>): void {
+    /** リクエストをディスパッチしてレスポンスを返す（非同期メソッドにも対応） */
+    private async handleRequestAsync(requestId: string, method: string, params: Record<string, unknown>): Promise<void> {
         try {
-            const result = this.dispatch(method, params);
+            const result = await this.dispatch(method, params);
+            // awaitポイント後にdispose済みの場合は応答を捨てる（WebView2ライフサイクル保護）
+            if (this.listener === false) return;
             window.chrome.webview.postMessage(JSON.stringify({
                 type: 'editor_api_response',
                 requestId,
@@ -50,6 +52,7 @@ export class EditorApiBridge {
                 data: result,
             }));
         } catch (e) {
+            if (this.listener === false) return;
             window.chrome.webview.postMessage(JSON.stringify({
                 type: 'editor_api_response',
                 requestId,
@@ -60,7 +63,7 @@ export class EditorApiBridge {
     }
 
     /** メソッド名を名前空間.メソッド名に分割してディスパッチする */
-    private dispatch(method: string, params: Record<string, unknown>): unknown {
+    private dispatch(method: string, params: Record<string, unknown>): unknown | Promise<unknown> {
         const dotIndex = method.indexOf('.');
         if (dotIndex === -1) throw new Error('Invalid API method format: ' + method);
         const namespace = method.substring(0, dotIndex);
@@ -74,13 +77,14 @@ export class EditorApiBridge {
     }
 
     /** data 名前空間のディスパッチ */
-    private dispatchData(methodName: string, params: Record<string, unknown>): unknown {
+    private dispatchData(methodName: string, params: Record<string, unknown>): unknown | Promise<unknown> {
         switch (methodName) {
             case 'getTableNames': return this.api.data.getTableNames();
             case 'getHeader': return this.api.data.getHeader(this.requireString(params, 'tableName'));
             case 'getRows': return this.api.data.getRows(this.requireString(params, 'tableName'));
             case 'getRowCount': return this.api.data.getRowCount(this.requireString(params, 'tableName'));
             case 'getCellValue': return this.api.data.getCellValue(this.requireString(params, 'tableName'), this.requireNumber(params, 'row'), this.requireNumber(params, 'column'));
+            case 'readTableDataAsync': return this.api.data.readTableDataAsync(this.requireString(params, 'tableName'));
             default: throw new Error('Unknown data method: ' + methodName);
         }
     }
