@@ -40,7 +40,7 @@
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040, DiffTabSaveHighlight, ISSUE_0089, ISSUE_0091, ISSUE_0090で再発 **7回目**。catchブロック内も漏れやすい。新しいawaitを追加するたびに漏れる。正常系にはチェックがあるのにcatch側に忘れるパターンが定着)
-- **CSS hardcoded colors**: 11回再発 — CSS変数使用を徹底せよ (ISSUE_0090: sidebar.css badge に #007acc/white ハードコード)
+- **CSS hardcoded colors**: 13回再発 — CSS変数使用を徹底せよ (RelationsPanel Toggle: editor.css/toolbar.css にrgbaハードコード追加)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所に存在、片方の修正漏れリスク
 - **参照式の独自パース**: parseReferenceExpression を使わずdotIndex手動パース (search-panel.ts)
@@ -51,6 +51,7 @@
 - **fire-and-forget Promise without .catch()**: createMiniEditorTable内のrefreshGitDiffAsync()がcatchなし。EditorTableHandler.markSavedAndUpdatePanel L719-720に既存パターンあり。破棄済みDOMアクセスでUnhandled Rejectionになる (ISSUE_0101)
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
 - **bug-report.md 既修正不具合の回帰**: ISSUE_0103でbug-report#75(px→%変更)を逆方向に戻した。修正時はbug-reportの過去エントリを必ず確認し、同一箇所の過去修正と矛盾しないか検証せよ
+- **生焼けオブジェクト | false + connect パターン**: 4回再発（FEAT_0043 EditorTable.tab → FEAT_0047 NavigationHistory → EditorAPI Tab.editorApi → RelationsPanel Toggle RelationsPanel.editor）。コンストラクタ引数化を徹底せよ
 
 ## FEAT_0040 Background Search Known Patterns
 - **CRITICAL**: loadAllTableNamesAsync 後に requestId チェックなし → 無駄な Promise.all 実行

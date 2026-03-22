@@ -173,8 +173,22 @@
 - 残存(🟡): ミニテーブルの row-resize-handle がバッファ行（editor-table-empty-row）に残存（継続パターン）
 - 知見: fire-and-forget の refreshGitDiffAsync は非同期競合を requestId パターンで防止済み（bug-report.md #ミニテーブルスキップ言及）
 
+#### RelationsPanelトグル機能（2026-03-22レビュー）評価: B+
+- 正常: 4操作手段（ツールバー・«閉じる・»開く・ダブルクリック）すべてで right-slot/open-tab/toggle-btn 三点連動が完全一致
+- 正常: visibility:hidden + flex:0 0 6px でリサイズハンドルだけ操作可能にする設計が正しく機能
+- 正常: savedRightSlotFlexBasis による前回幅復元が全テストで確認済み
+- 正常: ツールバートグルボタンが <button> 要素で実装（キーボード操作可能）
+- 残存(🔴): relations-panel-open-tab が <div> 要素 — role="button"/tabindex="0"/aria-label なし
+- 残存(🔴): relations-panel-close-button に aria-label なし（« のみではスクリーンリーダー不可）
+- 残存(🔴): relations-panel-open-tab の show/hide が非対称（非表示=display:none、表示=style="" の空文字）— bug-report #3/#32/#77/#84 パターン継続
+- 残存(🟡): »タブが幅20px+opacity:0.6で視認困難（スクリーンショットで判別しにくい）
+- 残存(🟡): ツールバーアクティブ状態のコントラストが低い（rgba(128,128,128,0.25) のみ）
+- 残存(🟡): relations-panel-section-header の opacity:0.5 で「RELATIONS」テキストが淡い
+- 残存(🟡): relations-panel-close-button のクリックターゲットが狭い（padding:0 4px のみ）
+- 知見: editor-right-slot の style 属性が「なし/空文字/非表示スタイル」の三態になる（タブ未開封/表示済み/非表示の区別が style の有無に出てしまう設計）
+
 ### 横断的な継続課題（最新）
-- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
+- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell, relations-panel-open-tab ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
 - 差分ビュー左ペインに aria-readonly がない（BUG_0021から継続）
 - row-resize-handle がミニテーブル・バッファ行・差分削除行に残存
@@ -182,3 +196,4 @@
 - cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080から全サイクル継続）
 - validation-panel-group-header に role/aria-label なし（全サイクル継続）
 - 列ヘッダーに型情報バッジがない（型バリデーション機能追加に伴う新規課題）
+- show/hide 非対称パターン（style.display='' での表示復元）が再発（open-tab）— bug-report #3/#32/#77/#84

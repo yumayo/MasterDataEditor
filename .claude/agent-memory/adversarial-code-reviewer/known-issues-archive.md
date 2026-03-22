@@ -117,3 +117,12 @@ type: project
 - **IMPORTANT**: disposeテストがsetTimeout(300)依存（CI環境で偽陽性リスク）
 - **PATTERN**: emit/subscribeコピペが5重複（共通ヘルパー化すべき）
 - **PATTERN**: EditorTable.emitTableSaved はTab へのパススルーのみ（責務の適切性に疑問）
+
+## RelationsPanel Toggle (2026-03-22)
+- **CRITICAL**: `RelationsPanel.editor` が `| false` 初期値 → 生焼けオブジェクトパターン（FEAT_0043 EditorTable.tab、FEAT_0047 NavigationHistory と同構造の4回目再発）
+- **CRITICAL**: `setVisiblePanes()` が RelationsPanel トグル状態（visibility:hidden, flexBasis:6px）を考慮しない → ペインスタックナビゲーション時に rightSlot が折りたたみ状態のまま残存
+- **CRITICAL**: 閉じるボタン（ laquo ）が `renderAsync()` 内でのみ生成 → プレースホルダー表示時（行未選択・参照なし）に閉じるボタンが存在しない
+- **IMPORTANT**: `Editor.visibilityListener` が `| false` で生焼けオブジェクト + 単一リスナーのみ保持可能
+- **IMPORTANT**: `isRelationsPanelVisible()` がgetter相当 + 呼び出し箇所なし（デッドコード）
+- **PATTERN**: CSS hardcoded colors: editor.css `rgba(128,128,128,0.15)`, toolbar.css `rgba(128,128,128,0.25)` （CSS hardcoded 13回目）
+- **PATTERN**: `renderAsync()` が毎回閉じるボタンを新規DOM生成 → コンストラクタで1回生成してclearContentArea対象外にすべき（resize-handleパターン）
