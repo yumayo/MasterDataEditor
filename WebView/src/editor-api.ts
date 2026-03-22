@@ -2,6 +2,7 @@ import {InMemoryTableStore} from "./in-memory-table-store";
 import {Tab} from "./tab";
 import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from "./command";
 import {readFileAsync} from "./api";
+import {saveTableDataFromStoreAsync} from "./editor-actions";
 import {Csv} from "./csv";
 import {determineDisplayColumnName} from "./config";
 import {ValidationEngine} from "./validation-engine";
@@ -336,6 +337,11 @@ export class EditorApiImpl implements EditorAPI {
             },
             openTableAsync(tableName: string): Promise<boolean> {
                 return tab.openTableAsync(tableName);
+            },
+            async saveTableAsync(tableName: string): Promise<boolean> {
+                if (store.getHeader(tableName) === false) return false;
+                await saveTableDataFromStoreAsync(tableName, store);
+                return true;
             },
         };
 

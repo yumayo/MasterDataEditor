@@ -111,6 +111,7 @@ export class EditorApiBridge {
             case 'insertRow': return this.api.edit.insertRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
             case 'deleteRow': return this.api.edit.deleteRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
             case 'openTableAsync': return this.api.edit.openTableAsync(this.requireString(params, 'tableName'));
+            case 'saveTableAsync': return this.api.edit.saveTableAsync(this.requireString(params, 'tableName'));
             default: throw new Error('Unknown edit method: ' + methodName);
         }
     }

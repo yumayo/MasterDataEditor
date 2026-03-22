@@ -79,6 +79,8 @@ export interface EditorEditAPI {
     deleteRow(tableName: string, rowIndex: number): boolean;
     /** テーブルをタブで開く。既に開いている場合は即座に成功する */
     openTableAsync(tableName: string): Promise<boolean>;
+    /** テーブルデータをCSVファイルに保存する */
+    saveTableAsync(tableName: string): Promise<boolean>;
 }
 
 /** イベントAPI */

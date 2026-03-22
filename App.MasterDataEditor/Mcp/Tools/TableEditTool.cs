@@ -71,6 +71,7 @@ public sealed class TableEditTool
 				return $"エラー: セルの更新に失敗しました（テーブル: {tableName}, 行: {row}, カラム: {columnName}）。テーブルが閉じられたか、行インデックスが範囲外の可能性があります。";
 			}
 
+			await SaveTableAsync(tableName, cancellationToken);
 			return $"セルを更新しました: {tableName}[{row}].{columnName} = \"{value}\"";
 		}
 		catch (OperationCanceledException)
@@ -166,6 +167,7 @@ public sealed class TableEditTool
 				return $"エラー: セルの一括更新に失敗しました（テーブル: {tableName}）。テーブルが閉じられたか、行インデックスが範囲外の可能性があります。";
 			}
 
+			await SaveTableAsync(tableName, cancellationToken);
 			return $"{changeCount}件のセルを更新しました（テーブル: {tableName}）";
 		}
 		catch (OperationCanceledException)
@@ -179,6 +181,88 @@ public sealed class TableEditTool
 		catch (Exception)
 		{
 			return $"エラー: セルの一括更新中に内部エラーが発生しました（テーブル: {tableName}）。";
+		}
+	}
+
+	[McpServerTool, Description("指定テーブルに新しい空行を挿入します。挿入位置より後の行はインデックスが1つずれます。テーブルが開いていない場合は自動的にタブで開きます。")]
+	public async Task<string> InsertRowAsync(
+		[Description("テーブル名")] string tableName,
+		[Description("挿入位置の行インデックス（0始まり）。既存行数と同じ値を指定すると末尾に追加")] int rowIndex,
+		CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(tableName))
+		{
+			return "エラー: テーブル名を指定してください。";
+		}
+
+		try
+		{
+			var openError = await EnsureTableOpenAsync(tableName, cancellationToken);
+			if (openError != null) return openError;
+
+			// 戻り値は boolean（TypeScript側の契約）
+			var result = await _bridge.RequestAsync("edit.insertRow", new { tableName, rowIndex }, cancellationToken);
+			var success = result.GetBoolean();
+			if (!success)
+			{
+				return $"エラー: 行の挿入に失敗しました（テーブル: {tableName}, 行: {rowIndex}）。行インデックスが範囲外の可能性があります。";
+			}
+
+			await SaveTableAsync(tableName, cancellationToken);
+			return $"行を挿入しました: {tableName}[{rowIndex}]";
+		}
+		catch (OperationCanceledException)
+		{
+			return "エラー: リクエストがキャンセルまたはタイムアウトしました。";
+		}
+		catch (InvalidOperationException ex) when (ex.Message.Contains("WebView2"))
+		{
+			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
+		}
+		catch (Exception)
+		{
+			return $"エラー: 行の挿入中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。";
+		}
+	}
+
+	[McpServerTool, Description("指定テーブルの行を削除します。削除位置より後の行はインデックスが1つ前にずれます。テーブルが開いていない場合は自動的にタブで開きます。")]
+	public async Task<string> DeleteRowAsync(
+		[Description("テーブル名")] string tableName,
+		[Description("削除する行のインデックス（0始まり）")] int rowIndex,
+		CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(tableName))
+		{
+			return "エラー: テーブル名を指定してください。";
+		}
+
+		try
+		{
+			var openError = await EnsureTableOpenAsync(tableName, cancellationToken);
+			if (openError != null) return openError;
+
+			// 戻り値は boolean（TypeScript側の契約）
+			var result = await _bridge.RequestAsync("edit.deleteRow", new { tableName, rowIndex }, cancellationToken);
+			var success = result.GetBoolean();
+			if (!success)
+			{
+				return $"エラー: 行の削除に失敗しました（テーブル: {tableName}, 行: {rowIndex}）。行インデックスが範囲外の可能性があります。";
+			}
+
+			await SaveTableAsync(tableName, cancellationToken);
+			return $"行を削除しました: {tableName}[{rowIndex}]";
+		}
+		catch (OperationCanceledException)
+		{
+			return "エラー: リクエストがキャンセルまたはタイムアウトしました。";
+		}
+		catch (InvalidOperationException ex) when (ex.Message.Contains("WebView2"))
+		{
+			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
+		}
+		catch (Exception)
+		{
+			return $"エラー: 行の削除中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。";
 		}
 	}
 
@@ -197,6 +281,15 @@ public sealed class TableEditTool
 			return $"エラー: テーブル \"{tableName}\" を開けませんでした。スキーマファイルが存在しない可能性があります。";
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// テーブルデータをCSVファイルに保存する。
+	/// 保存失敗時は例外をスローせず、ログ出力のみ行う（編集自体は成功しているため）。
+	/// </summary>
+	private async Task SaveTableAsync(string tableName, CancellationToken cancellationToken)
+	{
+		await _bridge.RequestAsync("edit.saveTableAsync", new { tableName }, cancellationToken);
 	}
 
 	/// <summary>
