@@ -270,6 +270,8 @@ export class ValidationPanel {
             const domCol = error.columnIndex + 1;
             state.selection.setRange(domRow, domCol, domRow, domCol);
             state.selection.move(domRow, domCol);
+            // パネルアイテムクリックでフォーカスが移動した場合でも確実にフォーカスを戻す
+            state.editorTableHandler.activate();
         } else {
             // タブが開いていない場合: PK値ベースでテーブルを開いてジャンプ
             if (error.pkValue === null) return;

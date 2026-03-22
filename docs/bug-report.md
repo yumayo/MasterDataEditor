@@ -2517,3 +2517,16 @@ StandardOutput のエンコーディング未指定による文字化け
 EditorTableを生成する箇所（createTabState / createMiniEditorTable）は同じ初期化処理セット（validation登録、reference解決、git diff初期化）を対称的に持つことを確認すること。一方にのみ存在する初期化処理はバグの温床になる。新しいEditorTable初期化処理を追加する際は、両方の生成パスに適用されるか必ず確認する。
 
 ---
+
+## 174. [0860040] — PROBLEMSパネルからジャンプ後にキー入力で入力状態にならない
+
+### 不具合原因名
+外部UIからのジャンプ後のブラウザフォーカス未返却
+
+### なぜそうなったのか
+PROBLEMSパネル・SearchPanel・ReferencesPanelのアイテムをクリックすると、ブラウザのフォーカスがクリック先の要素に移動する。ジャンプ処理（jumpToError, navigateToRow, navigateToCell）では selection.setRange/move でセル選択を更新していたが、grid-textfield へのフォーカス返却処理がなかった。editorTableHandler.enable() は既にアクティブなタブでは if (this.active) return のガードでフォーカス取得をスキップするため、同一タブ内ジャンプでフォーカスが戻らなかった。
+
+### どうしたら今後は再発しないか
+ユーザー操作（クリック等）によってブラウザフォーカスがEditorTable外の要素に移動した後、プログラム的にセル選択を変更する処理を実装する際は、必ず editorTableHandler.activate() を呼んでフォーカスを grid-textfield に返却すること。enable() はタブ切替時の初期化用であり、フォーカス再取得には activate() を使う。
+
+---

@@ -341,6 +341,8 @@ export class Tab {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, 1, r, 1);
                 state.selection.move(r, 1);
+                // サイドバー等からのジャンプでフォーカスが移動した場合でも確実にフォーカスを戻す
+                state.editorTableHandler.activate();
                 return;
             }
         }
@@ -358,6 +360,8 @@ export class Tab {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, col, r, col);
                 state.selection.move(r, col);
+                // サイドバー等からのジャンプでフォーカスが移動した場合でも確実にフォーカスを戻す
+                state.editorTableHandler.activate();
                 return;
             }
         }
