@@ -106,9 +106,19 @@ public partial class App : Application
 
 	protected override void OnExit(ExitEventArgs e)
 	{
-		// MCPサーバーの起動完了を待ち、確実にDisposeする
-		var mcpServer = _mcpServerStartup.GetAwaiter().GetResult();
-		mcpServer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+		// MCPサーバーの停止をスレッドプールで実行する。
+		// OnExitはUIスレッド（DispatcherSynchronizationContext）上で呼ばれるため、
+		// ここで直接 .GetAwaiter().GetResult() すると、ASP.NET Core内部のawait継続が
+		// UIスレッドにポストしようとしてデッドロックする。
+		// Task.Runでスレッドプールに移すことでSynchronizationContextの問題を完全に回避する。
+		Task.Run(async () =>
+		{
+			var mcpServer = await _mcpServerStartup;
+			if (mcpServer != null)
+			{
+				await mcpServer.DisposeAsync();
+			}
+		}).GetAwaiter().GetResult();
 
 		Logger.Close();
 		base.OnExit(e);
