@@ -91,25 +91,3 @@
     position: relative;
 }
 
-/* ─── RelationsPanel 開くタブ（「»」）─── */
-
-.relations-panel-open-tab {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    background-color: var(--background-color);
-    border-left: 1px solid var(--border-color);
-    cursor: pointer;
-    color: var(--font-color);
-    font-size: 14px;
-    user-select: none;
-    opacity: 0.6;
-    writing-mode: vertical-rl;
-}
-
-.relations-panel-open-tab:hover {
-    opacity: 1;
-    background-color: rgba(128, 128, 128, 0.15);
-}

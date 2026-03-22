@@ -44,9 +44,6 @@ export class Editor {
     /** 折りたたみ前の右スロットの flex-basis 値（展開時に復元するため記憶する） */
     private savedRightSlotFlexBasis: string;
 
-    /** RelationsPanel 非表示時に表示する「»」開くタブ要素 */
-    private readonly openTab: HTMLElement;
-
     /** RelationsPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
     private visibilityListener: RelationsPanelVisibilityListener | false;
 
@@ -110,18 +107,6 @@ export class Editor {
         contentArea.appendChild(rightSlot);
         this.rightSlot = rightSlot;
 
-        // RelationsPanel 非表示時に表示する「»」開くタブ（右端の縦タブ）
-        // editor-content の子として rightSlot の後に配置する
-        const openTab = document.createElement('div');
-        openTab.classList.add('relations-panel-open-tab');
-        openTab.textContent = '»';
-        openTab.style.display = 'none';
-        openTab.setAttribute('role', 'button');
-        openTab.setAttribute('tabindex', '0');
-        openTab.setAttribute('aria-label', 'RelationsPanelを開く');
-        openTab.addEventListener('click', () => { this.showRelationsPanel(); });
-        contentArea.appendChild(openTab);
-        this.openTab = openTab;
     }
 
     /** Tab を接続する（ナビゲーションボタンのクリックハンドラ用） */
@@ -242,7 +227,6 @@ export class Editor {
 
         // 右スロットを非表示にして差分ビューを全幅で表示する
         this.rightSlot.style.display = 'none';
-        this.openTab.style.display = 'none';
     }
 
     /**
@@ -267,7 +251,6 @@ export class Editor {
      */
     enterSettingsMode(): void {
         this.rightSlot.style.display = 'none';
-        this.openTab.style.display = 'none';
         this.navigationBar.style.display = 'none';
     }
 
@@ -346,7 +329,7 @@ export class Editor {
     }
 
     /**
-     * 現在の relationsPanelVisible 状態に基づいて右スロット・開くタブの CSS を更新する。
+     * 現在の relationsPanelVisible 状態に基づいて右スロットの CSS を更新する。
      * showRelationsPanel / hideRelationsPanel / hideDiffView / leaveSettingsMode から呼ばれる共通メソッド。
      *
      * 非表示時は display:none ではなく visibility:hidden + flex-basis:6px にする。
@@ -362,8 +345,6 @@ export class Editor {
             this.rightSlot.style.flexShrink = '';
             // 記憶していた flex-basis を復元する（空文字の場合は CSS のデフォルト値が適用される）
             this.rightSlot.style.flexBasis = this.savedRightSlotFlexBasis;
-            // 開くタブを非表示にする
-            this.openTab.style.display = 'none';
         } else {
             // 右スロットを visibility:hidden にしてリサイズハンドルだけ操作可能にする。
             // flex-basis を 6px にしてリサイズハンドル（4px幅）が収まる最小幅にする。
@@ -373,8 +354,6 @@ export class Editor {
             this.rightSlot.style.flexGrow = '0';
             this.rightSlot.style.flexShrink = '0';
             this.rightSlot.style.flexBasis = '6px';
-            // 開くタブを表示する（display:none との対称性を保つため明示的に 'flex' を指定する）
-            this.openTab.style.display = 'flex';
         }
     }
 

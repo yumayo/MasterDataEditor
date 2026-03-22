@@ -133,7 +133,7 @@ export class RelationsPanel {
         });
         resizeHandle.prependTo(this.panelElement);
 
-        // 固定ヘッダー: RELATIONS ラベルと「«」閉じるボタンをコンテンツの表示状態に関わらず常に表示する。
+        // 固定ヘッダー: RELATIONS ラベルと「»」閉じるボタンをコンテンツの表示状態に関わらず常に表示する。
         // renderAsync() / renderMessage() による clearContentArea() で削除されないよう
         // relations-panel-fixed-header クラスで保護する。
         const fixedHeader = document.createElement('div');
@@ -143,7 +143,7 @@ export class RelationsPanel {
         fixedHeader.appendChild(sectionLabel);
         const closeButton = document.createElement('button');
         closeButton.classList.add('relations-panel-close-button');
-        closeButton.textContent = '«';
+        closeButton.textContent = '»';
         closeButton.setAttribute('aria-label', 'RelationsPanelを閉じる');
         closeButton.addEventListener('click', () => {
             if (this.editor !== false) this.editor.hideRelationsPanel();

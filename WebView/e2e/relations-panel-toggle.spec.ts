@@ -6,11 +6,10 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // RelationsPanel トグル機能のテスト
 //
 // 機能概要:
-//   RelationsPanelの表示/非表示をトグルする4つの手段を検証する。
+//   RelationsPanelの表示/非表示をトグルする3つの手段を検証する。
 //   1. ツールバーのRelationsトグルボタン
-//   2. RelationsPanelヘッダーの「«」閉じるボタン
-//   3. 非表示時の「»」開くタブ（エディター右端の縦タブ）
-//   4. リサイズハンドルのダブルクリックによる折りたたみ/展開
+//   2. RelationsPanelヘッダーの「»」閉じるボタン
+//   3. リサイズハンドルのダブルクリックによる折りたたみ/展開
 //
 //   非表示時は左ペインが全幅を使うことも検証する。
 // =============================================================================
@@ -148,7 +147,7 @@ test.describe('RelationsPanel トグルボタン', () => {
 });
 
 // =============================================================================
-// 2. RelationsPanelヘッダーの「«」閉じるボタン
+// 2. RelationsPanelヘッダーの「»」閉じるボタン
 // =============================================================================
 
 test.describe('RelationsPanel ヘッダー閉じるボタン', () => {
@@ -157,17 +156,17 @@ test.describe('RelationsPanel ヘッダー閉じるボタン', () => {
         await page.goto('/');
     });
 
-    test('RelationsPanelヘッダーに「«」閉じるボタンが存在すること', async ({ page }) => {
+    test('RelationsPanelヘッダーに「»」閉じるボタンが存在すること', async ({ page }) => {
         await setupRelationsPanelAsync(page);
 
         // RELATIONS セクションヘッダー内に閉じるボタンが配置されている
         const closeButton = page.locator('.relations-panel-section-header .relations-panel-close-button');
         await expect(closeButton).toBeVisible();
-        // ボタンのテキストが「«」であること
-        await expect(closeButton).toHaveText('«');
+        // ボタンのテキストが「»」であること
+        await expect(closeButton).toHaveText('»');
     });
 
-    test('「«」閉じるボタンクリックでRelationsPanelが非表示になること', async ({ page }) => {
+    test('「»」閉じるボタンクリックでRelationsPanelが非表示になること', async ({ page }) => {
         await setupRelationsPanelAsync(page);
 
         const relationsPanel = page.locator('.relations-panel');
@@ -181,7 +180,7 @@ test.describe('RelationsPanel ヘッダー閉じるボタン', () => {
         await expect(relationsPanel).not.toBeVisible();
     });
 
-    test('「«」閉じるボタンクリック後にツールバーのトグルボタンも非アクティブになること', async ({ page }) => {
+    test('「»」閉じるボタンクリック後にツールバーのトグルボタンも非アクティブになること', async ({ page }) => {
         await setupRelationsPanelAsync(page);
 
         // 閉じるボタンをクリック
@@ -195,72 +194,7 @@ test.describe('RelationsPanel ヘッダー閉じるボタン', () => {
 });
 
 // =============================================================================
-// 3. 非表示時の「»」開くタブ
-// =============================================================================
-
-test.describe('RelationsPanel 開くタブ', () => {
-    test.beforeEach(async ({ page }) => {
-        await installMockApiAsync(page, createToggleTestFileSystem());
-        await page.goto('/');
-    });
-
-    test('RelationsPanel表示中は「»」開くタブが表示されないこと', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // パネル表示中は開くタブは不要なので非表示
-        const openTab = page.locator('.relations-panel-open-tab');
-        await expect(openTab).not.toBeVisible();
-    });
-
-    test('RelationsPanel非表示時に「»」開くタブが表示されること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // トグルボタンで非表示にする
-        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
-        await toggleButton.click();
-
-        // エディター右端に「»」開くタブが表示されること
-        const openTab = page.locator('.relations-panel-open-tab');
-        await expect(openTab).toBeVisible();
-        await expect(openTab).toHaveText('»');
-    });
-
-    test('「»」開くタブクリックでRelationsPanelが再表示されること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        const relationsPanel = page.locator('.relations-panel');
-
-        // 非表示にする
-        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
-        await toggleButton.click();
-        await expect(relationsPanel).not.toBeVisible();
-
-        // 「»」開くタブをクリック
-        const openTab = page.locator('.relations-panel-open-tab');
-        await openTab.click();
-
-        // RelationsPanelが再表示されること
-        await expect(relationsPanel).toBeVisible();
-    });
-
-    test('「»」開くタブで再表示後に開くタブ自体が非表示になること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // 非表示にする
-        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
-        await toggleButton.click();
-
-        // 開くタブで再表示する
-        const openTab = page.locator('.relations-panel-open-tab');
-        await openTab.click();
-
-        // 開くタブは再び非表示になること
-        await expect(openTab).not.toBeVisible();
-    });
-});
-
-// =============================================================================
-// 4. リサイズハンドルダブルクリックによる折りたたみ/展開
+// 3. リサイズハンドルダブルクリックによる折りたたみ/展開
 // =============================================================================
 
 test.describe('RelationsPanel リサイズハンドルダブルクリック', () => {
@@ -329,7 +263,7 @@ test.describe('RelationsPanel リサイズハンドルダブルクリック', ()
 });
 
 // =============================================================================
-// 5. 左ペインの全幅化
+// 4. 左ペインの全幅化
 // =============================================================================
 
 test.describe('RelationsPanel 非表示時の左ペイン全幅化', () => {
@@ -370,7 +304,7 @@ test.describe('RelationsPanel 非表示時の左ペイン全幅化', () => {
         });
 
         // 左ペインがエディターコンテンツ領域のほぼ全幅を使っていること
-        // （開くタブの幅分の微小な差は許容する）
+        // （リサイズハンドル幅分の微小な差は許容する）
         expect(leftWidthAfter).toBeGreaterThan(contentWidth - 30);
     });
 
