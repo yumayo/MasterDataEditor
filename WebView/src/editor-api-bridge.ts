@@ -104,12 +104,13 @@ export class EditorApiBridge {
     }
 
     /** edit 名前空間のディスパッチ */
-    private dispatchEdit(methodName: string, params: Record<string, unknown>): unknown {
+    private dispatchEdit(methodName: string, params: Record<string, unknown>): unknown | Promise<unknown> {
         switch (methodName) {
             case 'setCellValue': return this.api.edit.setCellValue(this.requireString(params, 'tableName'), this.requireNumber(params, 'row'), this.requireNumber(params, 'column'), this.requireString(params, 'value'));
             case 'setCellValues': return this.api.edit.setCellValues(this.requireString(params, 'tableName'), this.requireArray(params, 'changes'));
             case 'insertRow': return this.api.edit.insertRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
             case 'deleteRow': return this.api.edit.deleteRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
+            case 'openTableAsync': return this.api.edit.openTableAsync(this.requireString(params, 'tableName'));
             default: throw new Error('Unknown edit method: ' + methodName);
         }
     }

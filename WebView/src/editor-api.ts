@@ -334,6 +334,9 @@ export class EditorApiImpl implements EditorAPI {
                 tabState.history.executeCommand(command, range, range);
                 return true;
             },
+            openTableAsync(tableName: string): Promise<boolean> {
+                return tab.openTableAsync(tableName);
+            },
         };
 
         // events 名前空間: イベント購読

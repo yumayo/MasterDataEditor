@@ -164,6 +164,9 @@ export class Tab {
     /** EditorAPI（connectEditorApi で後から接続する。未接続時は false） */
     private editorApi: EditorAPI | false;
 
+    /** openTableAsync() で待機中の resolve 関数を保持するマップ（キー: テーブル名） */
+    private readonly pendingTableOpens: Map<string, (success: boolean) => void>;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -189,6 +192,7 @@ export class Tab {
         this.currentFormPanel = false;
         this.validationPanel = false;
         this.editorApi = false;
+        this.pendingTableOpens = new Map();
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -1327,6 +1331,13 @@ export class Tab {
             };
             this.tabStates.set(name, state);
 
+            // openTableAsync() で待機中の呼び出し元に完了を通知する
+            const pendingResolve = this.pendingTableOpens.get(name);
+            if (pendingResolve !== null && pendingResolve !== undefined) {
+                this.pendingTableOpens.delete(name);
+                pendingResolve(true);
+            }
+
             // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
             this.activateTabState(state);
             this.activeTabName = name;
@@ -1349,6 +1360,13 @@ export class Tab {
             }
 
             this.consumePendingNavigation(state);
+        }).catch(() => {
+            // スキーマ読み込み失敗時にpending解決を通知する
+            const pendingResolve = this.pendingTableOpens.get(name);
+            if (pendingResolve !== null && pendingResolve !== undefined) {
+                this.pendingTableOpens.delete(name);
+                pendingResolve(false);
+            }
         });
     }
 
@@ -1594,6 +1612,29 @@ export class Tab {
         const state = this.tabStates.get(tableName);
         if (!state) return null;
         return state;
+    }
+
+    /**
+     * テーブルをプログラム的に開く。
+     * 既にタブが開いている場合は即座にアクティブ化して true を返す。
+     * まだ開かれていなければタブを作成し、TabState の構築完了後に true を返す。
+     * スキーマ読み込み失敗時は false を返す。
+     */
+    openTableAsync(tableName: string): Promise<boolean> {
+        // 既にTabStateが存在する場合は即座にアクティブ化して成功を返す
+        if (this.tabStates.has(tableName)) {
+            this.enableTabButton(tableName);
+            return Promise.resolve(true);
+        }
+
+        return new Promise<boolean>((resolve) => {
+            // pending解決を登録する
+            this.pendingTableOpens.set(tableName, resolve);
+            // TabButton を作成（既存なら取得）して有効化する
+            // description は null で良い（createTabState内でスキーマから後付けされる）
+            this.append(tableName, null);
+            this.enableTabButton(tableName);
+        });
     }
 
     /** EditorAPI を後から接続する（main.ts で EditorAPI 構築後に呼ばれる） */

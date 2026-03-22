@@ -77,6 +77,8 @@ export interface EditorEditAPI {
     setCellValues(tableName: string, changes: Array<{ row: number; column: number; value: string }>): boolean;
     insertRow(tableName: string, rowIndex: number): boolean;
     deleteRow(tableName: string, rowIndex: number): boolean;
+    /** テーブルをタブで開く。既に開いている場合は即座に成功する */
+    openTableAsync(tableName: string): Promise<boolean>;
 }
 
 /** イベントAPI */

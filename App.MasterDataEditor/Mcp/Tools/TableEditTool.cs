@@ -26,7 +26,7 @@ public sealed class TableEditTool
 		_bridge = bridge;
 	}
 
-	[McpServerTool, Description("指定テーブルの指定セルの値を更新します。列はカラム名で指定します。テーブルが開いている（タブで表示中）必要があります。")]
+	[McpServerTool, Description("指定テーブルの指定セルの値を更新します。列はカラム名で指定します。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> UpdateCellAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("行インデックス（0始まり）")] int row,
@@ -45,11 +45,15 @@ public sealed class TableEditTool
 
 		try
 		{
+			// テーブルが開いていなければ自動的にタブで開く
+			var openError = await EnsureTableOpenAsync(tableName, cancellationToken);
+			if (openError != null) return openError;
+
 			// ヘッダーを取得して列名→列インデックスに変換する
 			var headerResult = await _bridge.RequestAsync("data.getHeader", new { tableName }, cancellationToken);
 			if (headerResult.ValueKind == JsonValueKind.Null)
 			{
-				return $"エラー: テーブル \"{tableName}\" は開いていません。先にタブで開いてください。";
+				return $"エラー: テーブル \"{tableName}\" を開けませんでした。";
 			}
 
 			var columnIndex = FindColumnIndex(headerResult, columnName);
@@ -83,7 +87,7 @@ public sealed class TableEditTool
 		}
 	}
 
-	[McpServerTool, Description("指定テーブルの複数セルの値を一括更新します。列はカラム名で指定します。1回のUndo操作でまとめて元に戻せます。テーブルが開いている（タブで表示中）必要があります。")]
+	[McpServerTool, Description("指定テーブルの複数セルの値を一括更新します。列はカラム名で指定します。1回のUndo操作でまとめて元に戻せます。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> UpdateCellsAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("変更リスト。各要素は { row: 行インデックス(0始まり), columnName: カラム名, value: 新しい値 } の形式")] JsonElement changes,
@@ -112,11 +116,15 @@ public sealed class TableEditTool
 
 		try
 		{
+			// テーブルが開いていなければ自動的にタブで開く
+			var openError = await EnsureTableOpenAsync(tableName, cancellationToken);
+			if (openError != null) return openError;
+
 			// ヘッダーを取得して列名→列インデックスに変換する
 			var headerResult = await _bridge.RequestAsync("data.getHeader", new { tableName }, cancellationToken);
 			if (headerResult.ValueKind == JsonValueKind.Null)
 			{
-				return $"エラー: テーブル \"{tableName}\" は開いていません。先にタブで開いてください。";
+				return $"エラー: テーブル \"{tableName}\" を開けませんでした。";
 			}
 
 			// 各変更の列名をインデックスに変換する
@@ -172,6 +180,23 @@ public sealed class TableEditTool
 		{
 			return $"エラー: セルの一括更新中に内部エラーが発生しました（テーブル: {tableName}）。";
 		}
+	}
+
+	/// <summary>
+	/// テーブルが開いていなければ自動的にタブで開く。
+	/// 成功時は null を返し、失敗時はエラーメッセージを返す。
+	/// </summary>
+	private async Task<string?> EnsureTableOpenAsync(string tableName, CancellationToken cancellationToken)
+	{
+		// edit.openTableAsync を呼び出す（既に開いていれば即座に true が返る）
+		// 戻り値は boolean（TypeScript側の契約）
+		var openResult = await _bridge.RequestAsync("edit.openTableAsync", new { tableName }, cancellationToken);
+		var opened = openResult.GetBoolean();
+		if (!opened)
+		{
+			return $"エラー: テーブル \"{tableName}\" を開けませんでした。スキーマファイルが存在しない可能性があります。";
+		}
+		return null;
 	}
 
 	/// <summary>
