@@ -160,15 +160,20 @@ public sealed class TableEditTool
 		}
 	}
 
-	[McpServerTool, Description("指定テーブルに新しい空行を挿入します。挿入後はUpdateCellsで各セルに値を設定してください。複数行を追加する場合はInsertRowを複数回呼んでからUpdateCellsで一括設定すると効率的です。テーブルが開いていない場合は自動的にタブで開きます。")]
+	[McpServerTool, Description("指定テーブルに空行を挿入します。countで複数行を一度に追加できます。挿入後はUpdateCellsで各セルに値を一括設定してください。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> InsertRowAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("挿入位置の行インデックス（0始まり）。既存行数と同じ値を指定すると末尾に追加")] int rowIndex,
+		[Description("挿入する行数（1以上）")] int count,
 		CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(tableName))
 		{
 			return "エラー: テーブル名を指定してください。";
+		}
+		if (count < 1)
+		{
+			return "エラー: count は1以上を指定してください。";
 		}
 
 		try
@@ -176,16 +181,21 @@ public sealed class TableEditTool
 			var openError = await EnsureTableOpenAsync(tableName, cancellationToken);
 			if (openError != null) return openError;
 
-			// 戻り値は boolean（TypeScript側の契約）
-			var result = await _bridge.RequestAsync("edit.insertRow", new { tableName, rowIndex }, cancellationToken);
-			var success = result.GetBoolean();
-			if (!success)
+			// count回分の行を同じ位置に挿入する（後の行が押し下げられる）
+			for (var i = 0; i < count; i++)
 			{
-				return $"エラー: 行の挿入に失敗しました（テーブル: {tableName}, 行: {rowIndex}）。行インデックスが範囲外の可能性があります。";
+				var result = await _bridge.RequestAsync("edit.insertRow", new { tableName, rowIndex }, cancellationToken);
+				var success = result.GetBoolean();
+				if (!success)
+				{
+					return $"エラー: 行の挿入に失敗しました（テーブル: {tableName}, 行: {rowIndex}, {i + 1}行目）。行インデックスが範囲外の可能性があります。";
+				}
 			}
 
 			await SaveTableAsync(tableName, cancellationToken);
-			return $"行を挿入しました: {tableName}[{rowIndex}]";
+			return count == 1
+				? $"行を挿入しました: {tableName}[{rowIndex}]"
+				: $"{count}行を挿入しました: {tableName}[{rowIndex}〜{rowIndex + count - 1}]";
 		}
 		catch (OperationCanceledException)
 		{
