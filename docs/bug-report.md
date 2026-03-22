@@ -2504,3 +2504,16 @@ StandardOutput のエンコーディング未指定による文字化け
 `Process.StandardOutput` を `RedirectStandardOutput = true` でリダイレクトする際は、必ず `StandardOutputEncoding` を明示的に指定する。同様に `RedirectStandardError = true` の場合は `StandardErrorEncoding` も明示的に指定する。git をはじめとする外部コマンドは UTF-8 で出力することが多いため、特別な理由がない限り `StandardOutputEncoding` と `StandardErrorEncoding` の両方に `System.Text.Encoding.UTF8` を設定する。`File.ReadAllText` と `Process.StandardOutput.ReadToEnd()` でエンコーディング挙動が異なることを意識し、同一データを複数の読み取り経路で扱う場合は両方のエンコーディングが一致していることを確認する。
 
 ---
+
+## 173. [2958c67] — ミニテーブル・クイックビューにメインテーブルの差分ハイライトが反映されない
+
+### 不具合原因名
+ミニテーブル生成パスへのgit差分初期化呼び出し漏れ
+
+### なぜそうなったのか
+通常タブのオープン処理（createTabState）では `await editorTable.refreshGitDiffAsync()` を呼んでGitDiffTrackerを構築・ハイライト適用していたが、ミニテーブル生成処理（createMiniEditorTable）にはこの呼び出しが存在しなかった。結果として `gitDiffTracker` が `false` のままとなり、`applyGitDiffHighlight()` が全セルからクラスを除去するだけになっていた。2つの生成パスを持つEditorTableの初期化チェックリストが不統一だったことが根本原因。
+
+### どうしたら今後は再発しないか
+EditorTableを生成する箇所（createTabState / createMiniEditorTable）は同じ初期化処理セット（validation登録、reference解決、git diff初期化）を対称的に持つことを確認すること。一方にのみ存在する初期化処理はバグの温床になる。新しいEditorTable初期化処理を追加する際は、両方の生成パスに適用されるか必ず確認する。
+
+---
