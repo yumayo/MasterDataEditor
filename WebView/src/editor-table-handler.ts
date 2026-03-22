@@ -724,8 +724,6 @@ export class EditorTableHandler {
                     // リサイズとドロップダウンフィルタリングを実行する
                     this.onInput();
                 }
-            }).catch((e: unknown) => {
-                console.error('[EditorTableHandler] enableCellEditModeWithDropdownAsync failed:', e);
             });
             return;
         }
