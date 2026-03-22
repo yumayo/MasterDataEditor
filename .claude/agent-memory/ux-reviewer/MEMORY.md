@@ -173,6 +173,18 @@
 - 残存(🟡): ミニテーブルの row-resize-handle がバッファ行（editor-table-empty-row）に残存（継続パターン）
 - 知見: fire-and-forget の refreshGitDiffAsync は非同期競合を requestId パターンで防止済み（bug-report.md #ミニテーブルスキップ言及）
 
+#### ISSUE_0105 DiffTabカンマ含有フィールド未変更行誤検出修正（2026-03-23レビュー）評価: A
+- 修正済み: diff-rows.ts の parseCsv を RFC4180準拠の Csv.load() に置換
+- DOMで確認: 左ペイン行1 data-col="2" に diff-cell-deleted、右ペイン行1 data-col="2" に diff-cell-added が正確に付与
+- DOMで確認: 行2（name="foo,bar", value=200）に差分クラスなし（未変更行の誤検出ゼロ）
+- 修正済み: DropdownQuickView の createMiniEditorTable から refreshGitDiffAsync() を削除（QVはReadOnly専用のため不要）
+- 正常: RelationsPanelのミニテーブルには refreshGitDiffAsync() を明示的に呼ぶ設計分離が維持されている
+- 残存(🔴): 左ペイン grid-textfield に contenteditable="true" が残存（makeReadOnly() 推奨、2026-03-21から継続）
+- 残存(🔴): 左ペイン editor-table に aria-readonly="true" がない（BUG_0021から継続）
+- 残存(🟡): diff-resize-handle に role/aria-orientation/aria-label がない（継続）
+- 残存(🟡): 左ペインに fill-handle が display:block（読み取り専用ペインに不要、継続）
+- 残存(🟡): name列（foo,bar等カンマ含有値）が51px幅で切り詰め表示される（視認性低下）
+
 #### RelationsPanelトグル機能（2026-03-22レビュー）評価: B+
 - 正常: 4操作手段（ツールバー・«閉じる・»開く・ダブルクリック）すべてで right-slot/open-tab/toggle-btn 三点連動が完全一致
 - 正常: visibility:hidden + flex:0 0 6px でリサイズハンドルだけ操作可能にする設計が正しく機能

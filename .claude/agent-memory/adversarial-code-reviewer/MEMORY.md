@@ -58,6 +58,8 @@
 - **document listener leak on re-instantiation**: 無名リスナーはremoveEventListener不可
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される
 - **fire-and-forget Promise without .catch()**: createMiniEditorTable内のrefreshGitDiffAsync()がcatchなし。EditorTableHandler.markSavedAndUpdatePanel L719-720に既存パターンあり。破棄済みDOMアクセスでUnhandled Rejectionになる (ISSUE_0101)
+- **createMiniEditorTable呼び出し元の網羅漏れ**: ISSUE_0105でrefreshGitDiffAsyncをcreateMiniEditorTableから削除し呼び出し元責任にしたが、DropdownQuickViewの呼び出しパスを見落とした。createMiniEditorTableの呼び出し元はRelationsPanel + DropdownQuickViewの2箇所ある
+- **diff-view.ts と diff-rows.ts のコピペ parseCsv**: 2ファイルに同一のparseCsv+DiffRow+SchemaJson重複。diff-rows.tsのみ修正しdiff-view.tsを放置するパターンがISSUE_0105で発生
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
 - **bug-report.md 既修正不具合の回帰**: ISSUE_0103でbug-report#75(px→%変更)を逆方向に戻した。修正時はbug-reportの過去エントリを必ず確認し、同一箇所の過去修正と矛盾しないか検証せよ
 - **生焼けオブジェクト | false + connect パターン**: 4回再発（FEAT_0043 EditorTable.tab → FEAT_0047 NavigationHistory → EditorAPI Tab.editorApi → RelationsPanel Toggle RelationsPanel.editor）。コンストラクタ引数化を徹底せよ
