@@ -1,50 +1,37 @@
 using App.MasterDataEditor.Mcp.Tools;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using System;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace App.MasterDataEditor.Mcp;
 
 /// <summary>
-/// WPFアプリケーション内でMCPサーバーをHTTPトランスポートでホストする。
-/// バックグラウンドでKestrelを起動し、AIツールからのMCPリクエストを受け付ける。
+/// MCPサーバーをstdioトランスポートでホストする。
+/// MCPクライアント（Claude Desktop等）が本プロセスを子プロセスとして起動し、
+/// stdin/stdoutでJSON-RPCメッセージをやり取りする。
 /// </summary>
-public sealed class McpServerHost : IAsyncDisposable
+public static class McpServerHost
 {
-	private readonly WebApplication _app;
-
-	private McpServerHost(WebApplication app)
-	{
-		_app = app;
-	}
-
 	/// <summary>
-	/// MCPサーバーを構築し、起動する。
+	/// MCPサーバーをstdioモードで起動し、stdinが閉じるまでブロックする。
 	/// </summary>
-	public static async Task<McpServerHost> CreateAndStartAsync(CancellationToken cancellationToken)
+	public static async Task RunAsync(CancellationToken cancellationToken)
 	{
-		var builder = WebApplication.CreateBuilder();
+		var builder = Host.CreateApplicationBuilder();
 
 		builder.Services.AddMcpServer()
-			.WithHttpTransport()
+			.WithStdioServerTransport()
 			.WithTools<HelloWorldTool>();
 
-		var app = builder.Build();
-		app.Urls.Add("http://localhost:3001");
-		app.MapMcp();
+		// stdoutはMCPプロトコルが占有するため、ログはstderrへ出力
+		builder.Logging.AddConsole(options =>
+		{
+			options.LogToStandardErrorThreshold = LogLevel.Trace;
+		});
 
-		await app.StartAsync(cancellationToken);
-		Logger.Info("MCP Server started on http://localhost:3001");
-
-		return new McpServerHost(app);
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		await _app.StopAsync();
-		await _app.DisposeAsync();
-		Logger.Info("MCP Server stopped");
+		using var host = builder.Build();
+		await host.RunAsync(cancellationToken);
 	}
 }

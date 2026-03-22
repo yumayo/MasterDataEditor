@@ -1,5 +1,6 @@
-﻿using App.MasterDataEditor.Mcp;
+using App.MasterDataEditor.Mcp;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -10,11 +11,16 @@ namespace App.MasterDataEditor;
 /// </summary>
 public partial class App : Application
 {
-	private McpServerHost? _mcpServerHost;
-
 	[STAThread]
-	public static void Main()
+	public static void Main(string[] args)
 	{
+		// --mcp 引数でstdio MCPサーバーモードとして起動
+		if (Array.Exists(args, arg => arg == "--mcp"))
+		{
+			McpServerHost.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+			return;
+		}
+
 		App app = new App();
 		app.InitializeComponent();
 		app.Run();
@@ -30,9 +36,6 @@ public partial class App : Application
 		// グローバル例外ハンドラーを設定
 		SetupGlobalExceptionHandlers();
 		Logger.Info("Global exception handlers set up");
-
-		// MCPサーバーをバックグラウンドで起動
-		_ = StartMcpServerAsync();
 
 		base.OnStartup(e);
 		Logger.Info("WPF base.OnStartup completed");
@@ -62,25 +65,8 @@ public partial class App : Application
 		};
 	}
 
-	private async Task StartMcpServerAsync()
-	{
-		try
-		{
-			_mcpServerHost = await McpServerHost.CreateAndStartAsync(default);
-		}
-		catch (Exception ex)
-		{
-			Logger.Error(ex, "MCP Server startup");
-		}
-	}
-
 	protected override void OnExit(ExitEventArgs e)
 	{
-		if (_mcpServerHost != null)
-		{
-			_mcpServerHost.DisposeAsync().AsTask().GetAwaiter().GetResult();
-		}
-
 		Logger.Close();
 		base.OnExit(e);
 	}
