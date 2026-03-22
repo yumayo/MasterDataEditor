@@ -145,6 +145,19 @@
 - 残存(🟡): エラー解消後も validation-panel が display:block のまま（エラー0件で自動閉じ推奨）
 - 知見: 空文字はint型バリデーションをスキップする仕様（バッファ行の空セルにエラー出ない）。validation-engine.tsのコメントへの明記推奨
 
+#### ISSUE_0102 PROBLEMSパネルジャンプ後フォーカス修正（2026-03-22レビュー）評価: A
+- jumpToError() 内で handler.activate() を呼んでフォーカスを grid-textfield に確実に戻す修正
+- DOMで確認（FK切れ）: grid-textfield-active(top:21/left:210) と selection(top:20/left:210) が完全整合
+- DOMで確認（FK切れ）: cell-error + editor-table-cell-focused が category_id セルに正確に付与
+- DOMで確認（FK切れ）: grid-dropdown.visible が同時表示され FK修正フローが一操作で開始できる
+- DOMで確認（PK重複）: grid-textfield-active(top:21/left:52) と selection(top:20/left:52) が完全整合
+- DOMで確認（PK重複）: cell-pk-duplicate + cell-error + editor-table-cell-focused が行1 id セルに正確に付与
+- 残存(🔴): cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080から継続）
+- 残存(🟡): テスト1スクリーンショットで name 列が画面外に切れている（FK参照切れでの列幅ピンチ）
+- 残存(🟡): validation-panel-group-header に role/aria-label なし（全サイクル継続）
+- 残存(🟡): ミニテーブルの fill-handle が editor-table--inactive でも display:block（継続パターン）
+- 残存(🟡): ミニテーブルの grid-textfield に contenteditable="true" が残存（editor-table--inactive でも露出）
+
 #### ISSUE_0101 ミニテーブルgit差分ハイライト反映（2026-03-22レビュー）評価: A
 - 修正済み: createMiniEditorTable() 末尾に refreshGitDiffAsync() を fire-and-forget で追加
 - DOMで確認（テスト1）: ミニテーブル内 `data-col="1"` セルに `cell-git-changed` が正確に付与（メインテーブルの同セルと一致）
