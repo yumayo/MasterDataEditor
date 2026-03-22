@@ -2579,3 +2579,17 @@ McpStdioProxyのstdinループ内で、HTTP POST失敗時に `catch (HttpRequest
 3. **async の `.then()` コールバック内では状態ガードを入れる**: `if (!this.active) return;` や `if (this.readOnly) return;` で、非同期完了時に前提条件が変わっていないことを確認する。
 
 ---
+
+## 178. [fc09379] — DiffTabのCSV差分計算でRFC4180非準拠のparseCsvがカンマ含有フィールドで列ずれを起こし未変更行が変更扱いになる問題を修正
+
+### 不具合原因名
+RFC4180非準拠CSVパーサーによる差分計算の列ずれ
+
+### なぜそうなったのか
+`diff-rows.ts` の `parseCsv()` 関数が `split(',')` でフィールドを分割していたため、ダブルクォートで囲まれたカンマ含有フィールド（例: `"hello,world"`）が複数列に分裂した。HEAD版とCurrent版でカンマ含有フィールドの有無が異なる場合、列インデックスがずれて `buildDiffRows` の `===` 比較が誤った列同士を比較し、未変更行のセルが `modified` と判定された。また、`createMiniEditorTable()` が全ミニテーブルに対して `refreshGitDiffAsync()` を fire-and-forget で呼んでいたため、`storeRowIndices` が未確定の状態で差分判定が実行される副次的な問題もあった。
+
+### どうしたら今後は再発しないか
+- **CSVパースは必ず `Csv.load()` を使用し、独自の `split(',')` パーサーを作らない。** 既に `csv.ts` にRFC4180準拠のパーサーが存在するため、同じ処理の再実装を禁止する。
+- **非同期の初期化処理（`refreshGitDiffAsync` 等）は、前提条件（`storeRowIndices` の設定等）が確定した後に呼び出し元が明示的に実行する設計とし、`createMiniEditorTable` のような共通関数内でfire-and-forgetしない。**
+
+---

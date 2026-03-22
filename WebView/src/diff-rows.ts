@@ -1,3 +1,4 @@
+import {Csv} from "./csv";
 import {GitDiffTracker} from "./git-diff-tracker";
 
 /**
@@ -28,13 +29,12 @@ export interface SchemaJson {
 
 /**
  * CSVを行と列に分割する（ヘッダー行とデータ行に分割）
+ * RFC4180準拠のCsvクラスを使い、ダブルクォートで囲まれたカンマ含有フィールドを正しくパースする。
  */
 function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
-    const lines = csvText.split('\n').filter(l => l.trim() !== '');
-    if (lines.length === 0) return { header: [], rows: [] };
-    const header = lines[0].split(',').map(c => c.trim());
-    const rows = lines.slice(1).map(l => l.split(',').map(c => c.trim()));
-    return { header, rows };
+    const csv = new Csv();
+    csv.load(csvText);
+    return { header: csv.header, rows: csv.body };
 }
 
 /**

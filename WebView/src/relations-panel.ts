@@ -859,6 +859,10 @@ export class RelationsPanel {
         // N:1は参照先テーブルの一致行のみ表示するため、initialize() のデフォルト [0,1,...] では実際と一致しない。
         // 1:N も同様にフィルタリングされた行のインデックスを使う。
         editorTable.setStoreRowIndices(entry.storeRowIndices);
+        // storeRowIndices が正しく設定された後にgit差分ハイライトを適用する。
+        // createMiniEditorTable() ではデフォルトのstoreRowIndicesで誤判定するため、ここで呼ぶ。
+        editorTable.refreshGitDiffAsync()
+            .catch((e: unknown) => { console.error('[RelationsPanel] refreshGitDiffAsync failed:', e); });
         // 1:NエントリのFK自動埋め込み情報を設定する（行追加時にFK列が自動入力される）。N:1参照先テーブルには適用しない。
         if (entry.relationType === '1:N' && entry.fkColumnName !== '' && entry.fkValue !== '') {
             editorTable.setAutoFillEntries([{ columnName: entry.fkColumnName, value: entry.fkValue }]);

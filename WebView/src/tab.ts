@@ -1587,10 +1587,8 @@ export class Tab {
             editorTable.connectValidationPanel(this.validationPanel);
         }
 
-        // git statusを取得してこのミニテーブルのGitDiffTrackerを構築し、全セルのハイライトを適用する。
-        // fire-and-forget で呼ぶことでUIの描画をブロックしない。
-        editorTable.refreshGitDiffAsync()
-            .catch((e: unknown) => { console.error('[Tab] createMiniEditorTable refreshGitDiffAsync failed:', e); });
+        // git差分ハイライト（refreshGitDiffAsync）は呼び出し元が適切なタイミングで呼ぶ。
+        // RelationsPanelはsetStoreRowIndices()後に呼び、DropdownQuickViewはReadOnly専用のため呼ばない。
 
         return {editorTable, fillController, areaResizer, history};
     }
