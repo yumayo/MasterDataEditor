@@ -49,11 +49,11 @@
 ## Recurring Review Patterns
 - **Operation path coverage gap**: ALL paths must be secured when adding new features
 - **awaitポイント後のrequestIdチェック**: 全awaitポイントでrequestIdチェック必須 (FEAT_0038, FEAT_0040, DiffTabSaveHighlight, ISSUE_0089, ISSUE_0091, ISSUE_0090で再発 **7回目**。catchブロック内も漏れやすい。新しいawaitを追加するたびに漏れる。正常系にはチェックがあるのにcatch側に忘れるパターンが定着)
-- **CSS hardcoded colors**: 13回再発 — CSS変数使用を徹底せよ (RelationsPanel Toggle: editor.css/toolbar.css にrgbaハードコード追加)
+- **CSS hardcoded colors**: 14回再発 — CSS変数使用を徹底せよ (ISSUE_0113: source-control-panel.css にrgbaハードコード追加)
 - **CSS class defined in JS but missing in CSS**: search-result-pk がTSで使用されCSSに未定義 (FEAT_0038)
 - **fuzzyMatch/fuzzyMatchHighlight重複実装**: マッチングロジックが2箇所→3箇所に増殖（findNormalizedMatchIndex + computeMatchLength + fuzzyMatch/fuzzyMatchHighlight）。ISSUE_0111で末尾子音除去ロジックが追加され重複が悪化。MatchResult{index,length}統合で解消すべき
 - **参照式の独自パース**: parseReferenceExpression を使わずdotIndex手動パース (search-panel.ts)
-- **フォールバック禁止**: `??` 演算子はCLAUDE.mdで禁止。15回以上再発（reference-data-cache.ts, form-panel.ts, filter-dropdown.ts, type-validation.spec.ts等）
+- **フォールバック禁止**: `??` 演算子はCLAUDE.mdで禁止。16回以上再発（reference-data-cache.ts, form-panel.ts, filter-dropdown.ts, type-validation.spec.ts, source-control-panel.ts等）
 - **Number()のJS特有挙動**: Number("Infinity")=Infinity(isNaN=false), Number("0x1f")=31, Number("0b101")=5 → C#パースと不整合。型バリデーションにはNumber.isFinite()+正規表現が必須
 - **document listener leak on re-instantiation**: 無名リスナーはremoveEventListener不可
 - **previewCache key must include tableName**: itemIdのみのキーは複数テーブル跨ぎで汚染される

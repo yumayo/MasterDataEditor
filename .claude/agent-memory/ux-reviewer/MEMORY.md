@@ -17,6 +17,15 @@
 
 ### 最新レビュー結果（2026-03-23）
 
+#### ISSUE_0113 SOURCE CONTROLパネルstage/discard/unstageボタン 評価: B+
+- 修正済み: changesセクションにstage(+)/discard(←矢印)ボタン、stagedセクションにunstage(-)/discard(←矢印)ボタン表示確認
+- 修正済み: stage→STAGED移動・unstage→CHANGES移動・changesのdiscard→CHANGES消去の各操作動作確認
+- 残存(🔴): discardボタンに確認ダイアログなし（git checkoutは取り消し不可能な破壊的操作）
+- 残存(🔴): source-control-action-btn に role="button"/aria-label/title がない（SVGのみ）
+- 残存(🟡): キーボード操作でのボタンアクセス手段なし（ホバー表示のみ）
+- 残存(🟡): stagedのdiscardアイコンがchangesと同一（左矢印）でunstageと混同しやすい
+- 残存(🟡): activity-bar-badge がdiscard後も "2" のまま（ファイル数バッジ未更新）
+
 #### ISSUE_0112 FKデフォルト値スキップ 評価: A
 - 修正済み: category_id=0（int型デフォルト）を入力してもcell-errorなし・PROBLEMSパネル「エラーはありません」・status-bar data-error-count="0" を確認
 - 修正済み: category_id を空（""）にしてもエラーなし（空文字列もデフォルトとして扱われている可能性あり）

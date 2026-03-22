@@ -59,6 +59,17 @@ type: project
 - **ISSUE_0107 差分ビューバリデーション**: 評価 B。残存: PROBLEMSカウント0・ValidationPanel未接続の疑い
 - **ISSUE_0108 差分ビュー再表示時最新データ反映**: 評価 A。再作成方式でvalue=250が正確に反映確認済み
 
+## 2026-03-23 レビュー（ISSUE_0113）
+
+- **ISSUE_0113 SOURCE CONTROLパネルstage/discard/unstageボタン追加**: 評価 B+。
+  - 修正済み: changesセクションに stage(+)/discard(←矢印) ボタン表示確認。stagedセクションに unstage(-)/discard(←矢印) ボタン表示確認。
+  - 修正済み: stage→STAGED移動、unstage→CHANGES移動、changesのdiscard→CHANGES消去の各操作動作確認。
+  - 残存(🔴): discardボタンに確認ダイアログなし。git checkoutは取り消し不可能な破壊的操作（bug-reportに追記推奨）
+  - 残存(🔴): source-control-action-btn に role="button" / aria-label / title がない（SVGのみでアイコンの意味が伝わらない）
+  - 残存(🟡): ボタンはホバー時のみ表示（常時非表示→行にhover時表示）→スクリーンショット上ではホバー状態のみ確認。キーボード操作でのボタンアクセス手段なし
+  - 残存(🟡): stagedのdiscardボタンがchangesと同じSVGアイコン（左矢印）であり、unstageの「-」と混同しやすい。VS Codeでは staged discard も別アイコン（ゴミ箱）
+  - 残存(🟡): activity-bar-badge が discard後も "2" のまま（ファイル数バッジ未更新）— 推測（DOMダンプ確認済み: 常に2）
+
 ## 横断的な継続課題（未修正リスト）
 
 ### 🔴 優先度高
