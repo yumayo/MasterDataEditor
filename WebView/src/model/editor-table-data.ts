@@ -57,14 +57,17 @@ export class EditorTableData {
             throw new Error('[EditorTableData.parse] primary_key が空です');
         }
 
-        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string; width?: number; renderAsHtml?: boolean}>;
+        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string; default?: number | string | boolean | null; width?: number; renderAsHtml?: boolean}>;
         const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
+            // スキーマの default フィールドを文字列化して保持する（未指定・null の場合は null → 型デフォルトが使われる）
+            const defaultValue = (column.default !== undefined && column.default !== null) ? String(column.default) : null;
             columns.push(new EditorTableDataColumn(
                 column.key, column.name, column.type,
                 column.comment !== undefined ? column.comment : null,
                 column.reference !== undefined ? column.reference : null,
+                defaultValue,
                 column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name, hasIcons),
                 column.renderAsHtml === true
             ));

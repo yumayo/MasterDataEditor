@@ -244,9 +244,9 @@ export class ValidationEngine {
             const colIdx = header.indexOf(col.name);
             if (colIdx === -1) continue;
             if (isSimpleReference(expr)) {
-                this.validateSimpleReference(tableName, schema, header, col.name, colIdx, expr.tableName, expr.columnName, rows, errors, previousErrors, preservableErrors);
+                this.validateSimpleReference(tableName, schema, header, col.name, colIdx, col.type, col.defaultValue, expr.tableName, expr.columnName, rows, errors, previousErrors, preservableErrors);
             } else if (isDynamicReference(expr)) {
-                this.validateDynamicReference(tableName, schema, col.name, colIdx, expr, header, rows, errors, previousErrors, preservableErrors);
+                this.validateDynamicReference(tableName, schema, col.name, colIdx, col.type, col.defaultValue, expr, header, rows, errors, previousErrors, preservableErrors);
             }
         }
     }
@@ -254,6 +254,7 @@ export class ValidationEngine {
     /**
      * 単純参照（SimpleReference）のFK検証。
      * 参照先テーブルの指定列に値が存在しないセルをエラーとして登録する。
+     * 空値とデフォルト値はFK検証をスキップする。
      * 参照先テーブルが未ロードの場合: previousErrors の中から現在のストア値と一致する行のエラーのみを
      * preservableErrors に追加して引き継ぐ（値が変わっていればエラーは引き継がない）。
      */
@@ -263,6 +264,8 @@ export class ValidationEngine {
         header: string[],
         colName: string,
         colIdx: number,
+        colType: string,
+        colDefaultValue: string | null,
         refTableName: string,
         refColumnName: string,
         rows: string[][],
@@ -306,6 +309,8 @@ export class ValidationEngine {
             const cellValue = rows[r][colIdx];
             // 空値は未入力扱いでエラー対象外
             if (cellValue === '') continue;
+            // デフォルト値はFK検証をスキップする（「参照なし」を意味する値）
+            if (isFkDefaultValue(cellValue, colType, colDefaultValue)) continue;
             if (!validValues.has(cellValue)) {
                 errors.push({
                     tableName,
@@ -329,6 +334,7 @@ export class ValidationEngine {
      *   2. filter.tableName テーブルで filter.filterColumn == その値 の行を線形検索
      *   3. 一致行の lookupColumn 値（= 参照先テーブル名）を取得
      *   4. そのテーブルの targetColumn に cellValue が存在するか検証
+     * 空値とデフォルト値はFK検証をスキップする。
      * フィルタテーブルまたは最終テーブルが未ロードの場合:
      *   現在のストア値と一致する previousErrors のエラーのみを preservableErrors に追加して引き継ぐ。
      */
@@ -337,6 +343,8 @@ export class ValidationEngine {
         schema: TableSchema,
         colName: string,
         colIdx: number,
+        colType: string,
+        colDefaultValue: string | null,
         expr: DynamicReference,
         header: string[],
         rows: string[][],
@@ -385,6 +393,8 @@ export class ValidationEngine {
             const cellValue = rows[r][colIdx];
             // 空値は未入力扱いでエラー対象外
             if (cellValue === '') continue;
+            // デフォルト値はFK検証をスキップする（「参照なし」を意味する値）
+            if (isFkDefaultValue(cellValue, colType, colDefaultValue)) continue;
             const filterValue = rows[r][valueColIdx];
             // 依存カラム（valueColumn）が空なのに動的参照カラムに値がある場合は参照解決不能のためエラー
             if (filterValue === '') {
@@ -548,5 +558,38 @@ export interface TableSchema {
     /** 複合主キー列名の配列 */
     primaryKeyColumns: readonly string[];
     /** 列情報の配列 */
-    columns: ReadonlyArray<{ name: string; type: string; reference: string | null }>;
+    columns: ReadonlyArray<TableSchemaColumn>;
+}
+
+/** TableSchema 内の列定義 */
+export interface TableSchemaColumn {
+    name: string;
+    type: string;
+    reference: string | null;
+    /** スキーマで明示指定されたデフォルト値（文字列化済み）。未指定の場合は null（型デフォルトが使われる） */
+    defaultValue: string | null;
+}
+
+/**
+ * 型ごとのデフォルト値マップ。
+ * スキーマに default 指定がない場合、この型デフォルトと一致する値はFK検証をスキップする。
+ * string型の空値は呼び出し元で `cellValue === ''` として既にスキップ済みのため含めない。
+ */
+const TYPE_DEFAULT_VALUES: Readonly<Record<string, string>> = {
+    'int': '0',
+    'float': '0',
+    'double': '0',
+    'bool': 'false',
+};
+
+/**
+ * セル値がFK検証をスキップすべきデフォルト値であるかを判定する。
+ * スキーマに default が明示されていればそれと比較し、なければ型デフォルトと比較する。
+ * 注意: string型の空値（""）は呼び出し元で既にスキップされるため、この関数では扱わない。
+ */
+function isFkDefaultValue(cellValue: string, type: string, schemaDefault: string | null): boolean {
+    if (schemaDefault !== null) return cellValue === schemaDefault;
+    const typeDefault = TYPE_DEFAULT_VALUES[type];
+    if (typeDefault === undefined) return false;
+    return cellValue === typeDefault;
 }

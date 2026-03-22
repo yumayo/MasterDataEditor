@@ -65,7 +65,7 @@ export class ValidationPanel {
     /**
      * ValidationEngine にスキーマを登録する（Tab がテーブルを開いた後に呼ぶ）
      */
-    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; type: string; reference: string | null}>): void {
+    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; type: string; reference: string | null; defaultValue: string | null}>): void {
         this.engine.registerSchema(tableName, { primaryKeyColumns, columns });
     }
 

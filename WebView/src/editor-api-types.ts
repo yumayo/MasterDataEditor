@@ -62,6 +62,8 @@ export interface EditorSchemaAPI {
 export interface EditorSchemaColumn {
     name: string;
     type: string;
+    /** スキーマで明示指定されたデフォルト値（文字列化済み）。未指定の場合は null（型デフォルトが使われる） */
+    defaultValue: string | null;
 }
 
 /** スキーマFK参照定義 */
@@ -131,7 +133,10 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
         if (typeof name !== 'string' || typeof type !== 'string') {
             throw new Error('[createSchemaEntryFromJson] header[' + i + '] に name または type が存在しません');
         }
-        columns.push({ name, type });
+        // スキーマの default フィールドを文字列化して保持する（未指定は null）
+        const defaultRaw = col['default'];
+        const defaultValue = (defaultRaw !== undefined && defaultRaw !== null) ? String(defaultRaw) : null;
+        columns.push({ name, type, defaultValue });
         // reference フィールドが存在し非空文字列の場合のみ FK 参照として登録する
         const refRaw = col['reference'];
         if (typeof refRaw === 'string' && refRaw.length > 0) {

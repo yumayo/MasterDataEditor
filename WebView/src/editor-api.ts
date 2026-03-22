@@ -214,10 +214,10 @@ export class EditorApiImpl implements EditorAPI {
             getSchemaTableNames(): string[] {
                 return [...schemaRegistry.keys()];
             },
-            getColumns(tableName: string): Array<{ name: string; type: string }> | null {
+            getColumns(tableName: string): Array<{ name: string; type: string; defaultValue: string | null }> | null {
                 const entry = schemaRegistry.get(tableName);
                 if (!entry) return null;
-                return entry.columns.map(c => ({ name: c.name, type: c.type }));
+                return entry.columns.map(c => ({ name: c.name, type: c.type, defaultValue: c.defaultValue }));
             },
             getPrimaryKeys(tableName: string): string[] | null {
                 const entry = schemaRegistry.get(tableName);

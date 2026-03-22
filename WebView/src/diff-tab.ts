@@ -252,7 +252,7 @@ export class DiffTab {
             validationPanel.registerSchema(
                 rightTableKey,
                 rightResult.tableData.primaryKeyColumns,
-                rightResult.tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference }))
+                rightResult.tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference, defaultValue: col.defaultValue }))
             );
             this.rightEditorTable.connectValidationPanel(validationPanel);
             this.validationPanel = validationPanel;

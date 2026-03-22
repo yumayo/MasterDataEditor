@@ -1463,7 +1463,7 @@ export class Tab {
             this.validationPanel.registerSchema(
                 name,
                 tableData.primaryKeyColumns,
-                tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference }))
+                tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference, defaultValue: col.defaultValue }))
             );
             editorTable.connectValidationPanel(this.validationPanel);
         }
@@ -1594,7 +1594,7 @@ export class Tab {
             this.validationPanel.registerSchema(
                 tableKey,
                 tableData.primaryKeyColumns,
-                tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference }))
+                tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference, defaultValue: col.defaultValue }))
             );
             editorTable.connectValidationPanel(this.validationPanel);
         }

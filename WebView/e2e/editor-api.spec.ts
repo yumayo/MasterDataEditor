@@ -147,12 +147,12 @@ test.describe('Phase 1: スキーマAPI', () => {
 
     test('getColumns はカラム定義一覧を返す', async ({ mockFileSystem, page }) => {
         const columns = await page.evaluate(() => {
-            return (window as unknown as { editorApi: { schema: { getColumns(name: string): Array<{ name: string; type: string }> | null } } }).editorApi.schema.getColumns('test');
+            return (window as unknown as { editorApi: { schema: { getColumns(name: string): Array<{ name: string; type: string; defaultValue: string | null }> | null } } }).editorApi.schema.getColumns('test');
         });
         expect(columns).toEqual([
-            { name: 'id', type: 'int' },
-            { name: 'name', type: 'string' },
-            { name: 'value', type: 'int' },
+            { name: 'id', type: 'int', defaultValue: null },
+            { name: 'name', type: 'string', defaultValue: null },
+            { name: 'value', type: 'int', defaultValue: null },
         ]);
     });
 
