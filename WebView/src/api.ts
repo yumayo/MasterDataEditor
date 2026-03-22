@@ -64,6 +64,27 @@ export async function gitShowAsync(path: string): Promise<string> {
 }
 
 /**
+ * git add でファイルをステージする
+ */
+export async function gitAddAsync(path: string): Promise<void> {
+    return postMessageAsync('git_add', { path });
+}
+
+/**
+ * git reset でファイルをアンステージする
+ */
+export async function gitResetAsync(path: string): Promise<void> {
+    return postMessageAsync('git_reset', { path });
+}
+
+/**
+ * git checkout -- でファイルの変更を破棄する
+ */
+export async function gitDiscardAsync(path: string): Promise<void> {
+    return postMessageAsync('git_discard', { path });
+}
+
+/**
  * リクエストキュー
  * WebView2のメッセージAPIにはリクエストIDがないため、
  * 同じ種類のリクエストが同時に飛ぶとレスポンスが取り違えられる。

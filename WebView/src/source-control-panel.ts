@@ -1,4 +1,4 @@
-import { gitStatusAsync, gitShowAsync, GitStatusEntry } from './api';
+import { gitStatusAsync, gitShowAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry } from './api';
 import { readFileAsync } from './api';
 import { Tab } from './tab';
 import { extractFirstLineFromDescription } from './description-utils';
@@ -122,11 +122,15 @@ export class SourceControlPanel {
         const item = document.createElement('div');
         item.classList.add('source-control-file-item');
 
+        // テキスト領域（テーブル名 + description）を左側に配置する
+        const textArea = document.createElement('div');
+        textArea.classList.add('source-control-file-text');
+
         // テーブル名は上段（主情報）に表示する
         const nameEl = document.createElement('span');
         nameEl.classList.add('explorer-file-name');
         nameEl.textContent = entry.tableName;
-        item.appendChild(nameEl);
+        textArea.appendChild(nameEl);
 
         // description が存在する場合は1行目のみ使用して下段（補助情報）に表示する
         if (description !== '') {
@@ -135,9 +139,47 @@ export class SourceControlPanel {
                 const descEl = document.createElement('span');
                 descEl.classList.add('explorer-file-description');
                 descEl.textContent = firstLine;
-                item.appendChild(descEl);
+                textArea.appendChild(descEl);
             }
         }
+        item.appendChild(textArea);
+
+        // アクションボタン領域（ホバー時に表示）
+        const actions = document.createElement('div');
+        actions.classList.add('source-control-actions');
+
+        if (isStaged) {
+            // stagedセクション: 「-」ボタン（unstage）のみ
+            // git checkout -- はステージを解除しないためdiscardボタンは置かない
+            actions.appendChild(this.createActionButton(
+                '<svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg>',
+                'unstage', 'ステージ解除',
+                (e: MouseEvent) => {
+                    e.stopPropagation();
+                    this.executeActionAsync(() => gitResetAsync(entry.path));
+                },
+            ));
+        } else {
+            // changesセクション: 「+」ボタン（stage）+ 「戻る矢印」ボタン（discard）
+            actions.appendChild(this.createActionButton(
+                '<svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5"/></svg>',
+                'stage', 'ステージ',
+                (e: MouseEvent) => {
+                    e.stopPropagation();
+                    this.executeActionAsync(() => gitAddAsync(entry.path));
+                },
+            ));
+            actions.appendChild(this.createActionButton(
+                '<svg viewBox="0 0 16 16"><path d="M3 8h8M7 4l-4 4 4 4" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>',
+                'discard', '変更を破棄',
+                (e: MouseEvent) => {
+                    e.stopPropagation();
+                    if (!window.confirm('変更を破棄しますか？この操作は元に戻せません。')) return;
+                    this.executeActionAsync(() => gitDiscardAsync(entry.path));
+                },
+            ));
+        }
+        item.appendChild(actions);
 
         item.addEventListener('click', () => {
             // DOMをSSOTとしてアクティブクラスを切り替える
@@ -149,6 +191,32 @@ export class SourceControlPanel {
             this.openDiffTabAsync(entry, isStaged).catch(e => { console.error('差分タブ表示失敗', e); });
         });
         return item;
+    }
+
+    /**
+     * アクションボタン（SVGアイコン付き）を生成する
+     */
+    private createActionButton(svgHtml: string, label: string, tooltip: string, onClick: (e: MouseEvent) => void): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.classList.add('source-control-action-btn');
+        btn.setAttribute('data-action', label);
+        btn.title = tooltip;
+        btn.setAttribute('aria-label', tooltip);
+        btn.innerHTML = svgHtml;
+        btn.addEventListener('click', onClick);
+        return btn;
+    }
+
+    /**
+     * git操作を実行し、操作中はパネル内のアクションボタンを無効化する
+     * 完了後にrefreshAsyncでパネルを再描画する
+     */
+    private executeActionAsync(action: () => Promise<void>): void {
+        this.element.classList.add('source-control-busy');
+        action()
+            .then(() => this.refreshAsync())
+            .catch(err => { console.error('git操作失敗', err); })
+            .finally(() => { this.element.classList.remove('source-control-busy'); });
     }
 
     /**

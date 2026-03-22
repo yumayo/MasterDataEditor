@@ -19,10 +19,55 @@
 
 .source-control-file-item {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
     padding: 4px 16px;
     cursor: pointer;
     color: var(--font-color);
+}
+
+.source-control-file-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.source-control-actions {
+    display: none;
+    flex-shrink: 0;
+    gap: 2px;
+}
+
+.source-control-file-item:hover .source-control-actions {
+    display: flex;
+}
+
+.source-control-action-btn {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--font-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+}
+
+.source-control-action-btn:hover {
+    background-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] .source-control-action-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.source-control-action-btn svg {
+    width: 14px;
+    height: 14px;
 }
 
 .source-control-file-item:hover {
@@ -47,4 +92,9 @@
 
 [data-theme="dark"] .source-control-file-item-active:hover {
     background-color: rgba(255, 255, 255, 0.1);
+}
+
+.source-control-busy .source-control-action-btn {
+    pointer-events: none;
+    opacity: 0.5;
 }

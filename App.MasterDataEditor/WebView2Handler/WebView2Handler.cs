@@ -252,6 +252,18 @@ public class WebView2Handler : IDisposable
 							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root));
 							break;
 
+						case "git_add_request":
+							SendMessageToWebView(WebView2HandlerGitAddRequest.Invoke(root));
+							break;
+
+						case "git_reset_request":
+							SendMessageToWebView(WebView2HandlerGitResetRequest.Invoke(root));
+							break;
+
+						case "git_discard_request":
+							SendMessageToWebView(WebView2HandlerGitDiscardRequest.Invoke(root));
+							break;
+
 						case "editor_api_response":
 							HandleEditorApiResponse(root);
 							break;

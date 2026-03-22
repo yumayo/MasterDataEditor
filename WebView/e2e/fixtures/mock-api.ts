@@ -249,6 +249,58 @@ export async function installMockApiAsync(
                     }
                     return;
                 }
+
+                // git add: changesからstagedに対象エントリを移動する
+                if (type === "git_add_request") {
+                    const path = request.path as string;
+                    type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
+                    const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
+                    if (mockStatus === undefined) {
+                        dispatch({ type: "git_add_response", success: false, error: "not a git repository" });
+                        return;
+                    }
+                    const idx = mockStatus.changes.findIndex(e => e.path === path);
+                    if (idx !== -1) {
+                        const entry = mockStatus.changes.splice(idx, 1)[0];
+                        mockStatus.staged.push(entry);
+                    }
+                    dispatch({ type: "git_add_response", success: true });
+                    return;
+                }
+
+                // git reset: stagedからchangesに対象エントリを移動する
+                if (type === "git_reset_request") {
+                    const path = request.path as string;
+                    type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
+                    const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
+                    if (mockStatus === undefined) {
+                        dispatch({ type: "git_reset_response", success: false, error: "not a git repository" });
+                        return;
+                    }
+                    const idx = mockStatus.staged.findIndex(e => e.path === path);
+                    if (idx !== -1) {
+                        const entry = mockStatus.staged.splice(idx, 1)[0];
+                        mockStatus.changes.push(entry);
+                    }
+                    dispatch({ type: "git_reset_response", success: true });
+                    return;
+                }
+
+                // git discard: changesから対象エントリを削除する（変更破棄）
+                // git checkout -- はステージを解除しないためstagedは操作しない
+                if (type === "git_discard_request") {
+                    const path = request.path as string;
+                    type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
+                    const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
+                    if (mockStatus === undefined) {
+                        dispatch({ type: "git_discard_response", success: false, error: "not a git repository" });
+                        return;
+                    }
+                    const changesIdx = mockStatus.changes.findIndex(e => e.path === path);
+                    if (changesIdx !== -1) { mockStatus.changes.splice(changesIdx, 1); }
+                    dispatch({ type: "git_discard_response", success: true });
+                    return;
+                }
             }
 
             window.chrome = {
