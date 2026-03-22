@@ -91,7 +91,7 @@ public sealed class TableEditTool
 	[McpServerTool, Description("指定テーブルの複数セルの値を一括更新します。行追加後のデータ投入や複数行の修正など、2つ以上のセルを変更する場合は常にこのツールを使ってください。異なる行のセルも1回の呼び出しでまとめて更新できます。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> UpdateCellsAsync(
 		[Description("テーブル名")] string tableName,
-		[Description("変更リスト。各要素は { row: 行インデックス(0始まり), columnName: カラム名, value: 新しい値 } の形式")] JsonElement changes,
+		[Description("変更リスト")] CellChangeEntry[] changes,
 		CancellationToken cancellationToken)
 	{
 		if (string.IsNullOrWhiteSpace(tableName))
@@ -99,20 +99,13 @@ public sealed class TableEditTool
 			return "エラー: テーブル名を指定してください。";
 		}
 
-		// 変更リストが配列であることを検証する
-		if (changes.ValueKind != JsonValueKind.Array)
-		{
-			return "エラー: changes は配列で指定してください。";
-		}
-
-		var changeCount = changes.GetArrayLength();
-		if (changeCount == 0)
+		if (changes.Length == 0)
 		{
 			return "エラー: changes が空です。変更するセルを1件以上指定してください。";
 		}
-		if (changeCount > MaxChangesPerRequest)
+		if (changes.Length > MaxChangesPerRequest)
 		{
-			return $"エラー: 一度に更新できるセル数は{MaxChangesPerRequest}件までです（{changeCount}件が指定されました）。";
+			return $"エラー: 一度に更新できるセル数は{MaxChangesPerRequest}件までです（{changes.Length}件が指定されました）。";
 		}
 
 		try
@@ -130,32 +123,15 @@ public sealed class TableEditTool
 
 			// 各変更の列名をインデックスに変換する
 			var convertedChanges = new System.Collections.Generic.List<object>();
-			var changeIndex = 0;
-			foreach (var change in changes.EnumerateArray())
+			for (var i = 0; i < changes.Length; i++)
 			{
-				if (!change.TryGetProperty("row", out var rowElem) || rowElem.ValueKind != JsonValueKind.Number)
-				{
-					return $"エラー: changes[{changeIndex}] には数値の \"row\" プロパティが必要です。";
-				}
-				if (!change.TryGetProperty("columnName", out var colNameElem) || colNameElem.ValueKind != JsonValueKind.String)
-				{
-					return $"エラー: changes[{changeIndex}] には文字列の \"columnName\" プロパティが必要です。";
-				}
-				if (!change.TryGetProperty("value", out var valueElem) || valueElem.ValueKind != JsonValueKind.String)
-				{
-					return $"エラー: changes[{changeIndex}] には文字列の \"value\" プロパティが必要です。";
-				}
-
-				// ValueKind == String 確認済みのため GetString() は null を返さない
-				var colName = colNameElem.GetString()!;
-				var columnIndex = FindColumnIndex(headerResult, colName);
+				var change = changes[i];
+				var columnIndex = FindColumnIndex(headerResult, change.ColumnName);
 				if (columnIndex < 0)
 				{
-					return $"エラー: テーブル \"{tableName}\" にカラム \"{colName}\" は存在しません（changes[{changeIndex}]）。";
+					return $"エラー: テーブル \"{tableName}\" にカラム \"{change.ColumnName}\" は存在しません（changes[{i}]）。";
 				}
-
-				convertedChanges.Add(new { row = rowElem.GetInt32(), column = columnIndex, value = valueElem.GetString()! });
-				changeIndex++;
+				convertedChanges.Add(new { row = change.Row, column = columnIndex, value = change.Value });
 			}
 
 			// edit.setCellValues を呼び出す
@@ -168,7 +144,7 @@ public sealed class TableEditTool
 			}
 
 			await SaveTableAsync(tableName, cancellationToken);
-			return $"{changeCount}件のセルを更新しました（テーブル: {tableName}）";
+			return $"{changes.Length}件のセルを更新しました（テーブル: {tableName}）";
 		}
 		catch (OperationCanceledException)
 		{
@@ -308,3 +284,13 @@ public sealed class TableEditTool
 		return -1;
 	}
 }
+
+/// <summary>
+/// UpdateCells の変更エントリ。
+/// MCP SDK が JSON Schema を正しく生成できるよう、型付きレコードで定義する。
+/// </summary>
+public sealed record CellChangeEntry(
+	[property: Description("行インデックス（0始まり）")] int Row,
+	[property: Description("カラム名")] string ColumnName,
+	[property: Description("新しい値")] string Value
+);
