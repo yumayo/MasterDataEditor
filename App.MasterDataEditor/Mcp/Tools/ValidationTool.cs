@@ -23,10 +23,10 @@ public sealed class ValidationTool
 		_bridge = bridge;
 	}
 
-	[McpServerTool, Description("全テーブルのバリデーションエラー一覧を取得します（PK重複・FK参照切れ・型不一致）。テーブル名を指定すると、そのテーブルのエラーのみに絞り込めます。")]
+	[McpServerTool, Description("開いているテーブルのバリデーションエラー一覧を取得します（PK重複・FK参照切れ・型不一致）。まだタブで開いていないテーブルはバリデーション対象外です。FK参照切れの検出は参照先テーブルが開いているかキャッシュ済みの場合のみ有効です。テーブル名を指定すると、そのテーブルのエラーのみに絞り込めます。")]
 	public async Task<string> GetValidationErrorsAsync(
 		[Description("テーブル名（省略時は全テーブル対象）")] string? tableName = null,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken = default)
 	{
 		try
 		{
@@ -64,7 +64,7 @@ public sealed class ValidationTool
 					_ => kind
 				};
 
-				sb.AppendLine($"[{kindLabel}] {errorTableName} 行{rowIndex} 列 \"{columnName}\": 値 \"{value}\" — {message}");
+				sb.AppendLine($"[{kindLabel}] {errorTableName} 行{rowIndex + 1} (rowIndex={rowIndex}) 列 \"{columnName}\": 値 \"{value}\" — {message}");
 				totalCount++;
 			}
 
