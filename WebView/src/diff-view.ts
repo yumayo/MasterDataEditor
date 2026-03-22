@@ -229,7 +229,7 @@ export class DiffView {
         }
 
         if (row.kind === 'added') {
-            // 追加行: 左に空白行(.diff-row-empty)、右にデータ行(.diff-row-added)
+            // 追加行: 左に空白行(.diff-row-empty)、右にデータ行（全セルに.diff-cell-added）
             const leftRow = document.createElement('div');
             leftRow.classList.add('diff-row-empty');
             const rightRow = this.buildDataRow(row.currentValues, columns, new Set(), 'added');
@@ -264,8 +264,6 @@ export class DiffView {
 
         if (highlightMode === 'deleted') {
             row.classList.add('diff-row-deleted');
-        } else if (highlightMode === 'added') {
-            row.classList.add('diff-row-added');
         }
 
         for (let i = 0; i < columns.length; i++) {
@@ -274,7 +272,10 @@ export class DiffView {
             // 配列長チェックで範囲外アクセスを回避する（undefined を使わない）
             cell.textContent = i < values.length ? values[i] : '';
 
-            if (highlightMode === 'deleted-cell' && changedIndices.has(i)) {
+            // 追加行は全セルに diff-cell-added を付与する（行クラスではなくセルクラスで統一）
+            if (highlightMode === 'added') {
+                cell.classList.add('diff-cell-added');
+            } else if (highlightMode === 'deleted-cell' && changedIndices.has(i)) {
                 cell.classList.add('diff-cell-deleted');
             } else if (highlightMode === 'added-cell' && changedIndices.has(i)) {
                 cell.classList.add('diff-cell-added');

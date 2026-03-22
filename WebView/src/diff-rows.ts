@@ -160,7 +160,7 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
  * - leftEmptyRowIndices: 左ペインで .diff-row-empty を付与すべきデータ行インデックス（0始まり）
  * - rightEmptyRowIndices: 右ペインで .diff-row-empty を付与すべきデータ行インデックス（0始まり）
  * - leftDeletedRowIndices: 左ペインで .diff-row-deleted を付与すべきデータ行インデックス
- * - rightAddedRowIndices: 右ペインで .diff-row-added を付与すべきデータ行インデックス
+ * - rightAddedRowIndices: 右ペインで全セルに .diff-cell-added を付与すべきデータ行インデックス
  * - leftModifiedCells: 左ペインで .diff-cell-deleted を付与すべき {rowIndex, colIndex} ペア
  * - rightModifiedCells: 右ペインで .diff-cell-added を付与すべき {rowIndex, colIndex} ペア
  */

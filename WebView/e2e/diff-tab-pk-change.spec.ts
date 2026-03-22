@@ -12,7 +12,7 @@ import { MockFileSystem, installMockApiAsync } from './fixtures/mock-api';
 //   - 左ペインに HEAD版の全行（id=1, id=2, id=3）が表示されること
 //   - id=3 の行は削除行（.diff-row-deleted）としてハイライトされること
 //   - 右ペインに 現在版の全行（id=1, id=2, id=4）が表示されること
-//   - id=4 の行は追加行（.diff-row-added）としてハイライトされること
+//   - id=4 の行は追加行（全セルに.diff-cell-added）としてハイライトされること
 //
 // 検証シナリオ:
 //   HEAD版CSV: id,name\n1,A\n2,B\n3,C
@@ -136,7 +136,7 @@ test.describe('主キー変更時の差分タブ表示', () => {
     // HEAD版に存在しない行を added として末尾に追加する。
     // -------------------------------------------------------------------------
     test(
-        '右ペインに現在版の追加行（id=4, name=D）が diff-row-added として表示されること',
+        '右ペインに現在版の追加行（id=4, name=D）の全セルに diff-cell-added が付与されること',
         async ({ page, pkChangePage: _pkChangePage }) => {
             // ソース管理パネルを開く
             await page.locator('[data-panel="sourceControl"]').click();
@@ -152,14 +152,17 @@ test.describe('主キー変更時の差分タブ表示', () => {
             const rightPane = diffTab.locator('.diff-pane-right');
             await expect(rightPane).toBeVisible();
 
-            // diff-row-added クラスを持つ行が1つ存在すること
-            const addedRows = rightPane.locator('.diff-row-added');
-            await expect(addedRows).toHaveCount(1);
+            // 追加行は行ヘッダーに diff-cell-added が付与された行として特定する
+            const addedRowHeaders = rightPane.locator('.editor-table-row-header.diff-cell-added');
+            await expect(addedRowHeaders).toHaveCount(1);
 
-            // 追加行のセル内容が id=4, name=D であること
-            const addedCells = addedRows.locator('.editor-table-cell:not(.editor-table-row-header)');
+            // 追加行の全データセルにも diff-cell-added が付与されていること
+            const addedRow = addedRowHeaders.locator('..');
+            const addedCells = addedRow.locator('.editor-table-cell:not(.editor-table-row-header)');
             await expect(addedCells.nth(0)).toHaveText('4');
             await expect(addedCells.nth(1)).toHaveText('D');
+            await expect(addedCells.nth(0)).toHaveClass(/diff-cell-added/);
+            await expect(addedCells.nth(1)).toHaveClass(/diff-cell-added/);
         },
     );
 

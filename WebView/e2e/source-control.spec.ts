@@ -397,7 +397,7 @@ test.describe('ソース管理パネル', () => {
     // テスト7: 行追加の差分表示（右緑のみ）
     // -------------------------------------------------------------------------
     test(
-        '追加された行は右ペインに緑背景行（.diff-row-added）・左ペインに空白行（.diff-row-empty）が表示されること',
+        '追加された行は右ペインに緑背景セル（.diff-cell-added）・左ペインに空白行（.diff-row-empty）が表示されること',
         async ({ page, sourceControlPage: _sourceControlPage }) => {
             // id=4 が現在版にのみ存在する（新規追加行）
             await page.locator('[data-panel="sourceControl"]').click();
@@ -407,9 +407,8 @@ test.describe('ソース管理パネル', () => {
             const leftPane = diffTab.locator('.diff-pane-left');
             const rightPane = diffTab.locator('.diff-pane-right');
 
-            // 右ペインに追加行（.diff-row-added）が存在することを確認する
-            // FEAT_0008: EditorTableの行レベルで差分クラスが付与される（RED: 未実装）
-            await expect(rightPane.locator('.diff-row-added').first()).toBeVisible();
+            // 右ペインに追加行の行ヘッダーに diff-cell-added が付与されていることを確認する
+            await expect(rightPane.locator('.editor-table-row-header.diff-cell-added').first()).toBeVisible();
 
             // 左ペインに対応する空白行（.diff-row-empty）が存在することを確認する
             await expect(leftPane.locator('.diff-row-empty').first()).toBeVisible();
@@ -516,11 +515,12 @@ test.describe('ソース管理パネル', () => {
             // index=0: id=1（変更あり、diff-row-modified）
             // index=1: id=2（変更なし）
             // index=2: 空行（diff-row-empty）— 左ペインの id=3 削除行に対応する右ペインの埋め合わせ行
-            // index=3: id=4（追加行、diff-row-added）
+            // index=3: id=4（追加行、全セルに diff-cell-added）
             const thirdDataRow = dataRows.nth(2);
             await expect(thirdDataRow).toHaveClass(/diff-row-empty/);
+            // 追加行は行ヘッダーに diff-cell-added が付与される（diff-row-added は廃止）
             const fourthDataRow = dataRows.nth(3);
-            await expect(fourthDataRow).toHaveClass(/diff-row-added/);
+            await expect(fourthDataRow.locator('.editor-table-row-header')).toHaveClass(/diff-cell-added/);
         },
     );
 

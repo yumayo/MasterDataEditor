@@ -56,10 +56,6 @@
     background-color: rgba(240, 50, 50, 0.2);
 }
 
-.diff-row-added .diff-cell {
-    background-color: rgba(81, 184, 81, 0.2);
-}
-
 .diff-row-empty {
     min-height: 20px;
     border-bottom: 1px solid var(--border-color);
@@ -119,11 +115,6 @@
     background-color: rgba(240, 50, 50, 0.2);
 }
 
-.diff-pane-right .editor-table-row.diff-row-added .editor-table-cell,
-.diff-pane-right .editor-table-row.diff-row-added .editor-table-row-header {
-    background-color: rgba(0, 255, 0, 0.15);
-}
-
 .diff-pane-left .editor-table-row.diff-row-empty .editor-table-cell,
 .diff-pane-left .editor-table-row.diff-row-empty .editor-table-row-header,
 .diff-pane-right .editor-table-row.diff-row-empty .editor-table-cell,
@@ -137,7 +128,8 @@
     background-color: rgba(240, 50, 50, 0.2);
 }
 
-.diff-pane-right .editor-table-cell.diff-cell-added {
+.diff-pane-right .editor-table-cell.diff-cell-added,
+.diff-pane-right .editor-table-row-header.diff-cell-added {
     background-color: rgba(81, 184, 81, 0.2);
 }
 

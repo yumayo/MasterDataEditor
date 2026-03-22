@@ -709,9 +709,12 @@ export class DiffTab {
             (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-deleted');
         }
 
-        // 右ペインの追加行
+        // 右ペインの追加行: 行内の全セル（行ヘッダー含む）に diff-cell-added を付与する
         for (const rowIdx of rightAddedRowIndices) {
-            (rightElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-added');
+            const rowElement = rightElement.children[rowIdx + 1] as HTMLElement;
+            for (let i = 0; i < rowElement.children.length; i++) {
+                (rowElement.children[i] as HTMLElement).classList.add('diff-cell-added');
+            }
         }
 
         // 左ペインの変更セル（.diff-cell-deleted）
