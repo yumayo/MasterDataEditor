@@ -96,32 +96,33 @@ export class RelationsPanel {
         this.panelElement = panel;
 
         // リサイズハンドルをパネル先頭に配置する
-        // delta が正（右移動）= ハンドルを右に動かす = 右ペイン幅縮小なので -delta で幅を加算する
+        // delta が正（右移動）= ハンドルを右に動かす = 右ペイン幅縮小なので currentWidth - delta で縮小する
         const resizeHandle = new ResizeHandle('horizontal', (delta: number): number => {
             // panelElement の親要素（rightSlot）をDOMから取得する。
             // appendTo() 経由でも setVisiblePanes() 経由でも rightSlot に追加されるため、
             // appendTo() が呼ばれていないペインスタック上のRPでも正しく動作する。
             const parent = this.panelElement.parentElement;
             if (parent === null) throw new Error('[RelationsPanel] resizeHandle: panelElement が DOM に追加されていません');
-            // parent（rightSlot）の親要素（contentArea）の右端を基準に幅を算出する
+            // parent（rightSlot）の親要素（contentArea）の右端を基準にクランプ幅を算出する
             const grandParent = parent.parentElement;
             if (grandParent === null) throw new Error('[RelationsPanel] resizeHandle: panelElement の祖父要素が存在しません');
-            const rect = grandParent.getBoundingClientRect();
-            if (rect.width === 0) return 0;
-            // 現在の幅から delta を引く（左へドラッグ = 負の delta = 幅増加）
-            const currentWidth = this.panelElement.getBoundingClientRect().width;
-            const newWidth = currentWidth - delta;
-            // 先にピクセルでクランプし、そこから percentage を逆算する。
-            // percentage から clampedNewWidth を求めると丸め誤差が蓄積するため逆順にする。
-            const minWidth = rect.width * 0.1;
-            const maxWidth = rect.width * 0.9;
-            const clampedNewWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
-            const percentage = Math.round((clampedNewWidth / rect.width) * 100 * 10) / 10;
+            const grandParentWidth = grandParent.getBoundingClientRect().width;
+            if (grandParentWidth === 0) return 0;
+            // panelElement ではなく parent（rightSlot）の幅を基準にする。
+            // panelElement は border-left を持つため getBoundingClientRect() が parent.width と
+            // 微妙に異なり、取得対象と設定対象の不一致で倍速ドラッグになる。
+            const currentWidth = parent.getBoundingClientRect().width;
+            const minWidth = grandParentWidth * 0.1;
+            const maxWidth = grandParentWidth * 0.9;
+            const newWidth = Math.max(minWidth, Math.min(maxWidth, currentWidth - delta));
+            // パーセンテージで設定する（ウィンドウリサイズ時に左右ペイン比率を維持するため）。
+            // 丸めは行わない — ブラウザのCSS解釈に高精度の値を直接渡すことで蓄積誤差を防ぐ。
+            const percentage = (newWidth / grandParentWidth) * 100;
             parent.style.flexGrow = '0';
             parent.style.flexShrink = '0';
             parent.style.flexBasis = `${percentage}%`;
             // 実際に変化した量を返す。ハンドル右移動(delta正)で幅縮小のため正の値になる。
-            return currentWidth - clampedNewWidth;
+            return currentWidth - newWidth;
         });
         resizeHandle.prependTo(this.panelElement);
 

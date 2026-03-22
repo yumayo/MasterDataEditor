@@ -2530,3 +2530,16 @@ PROBLEMSパネル・SearchPanel・ReferencesPanelのアイテムをクリック�
 ユーザー操作（クリック等）によってブラウザフォーカスがEditorTable外の要素に移動した後、プログラム的にセル選択を変更する処理を実装する際は、必ず editorTableHandler.activate() を呼んでフォーカスを grid-textfield に返却すること。enable() はタブ切替時の初期化用であり、フォーカス再取得には activate() を使う。
 
 ---
+
+## 175. [a0f9a75] — Relationsパネルの幅調節で低速ドラッグ時に倍の距離調整される問題を修正
+
+### 不具合原因名
+リサイズ幅基準要素の誤選択とパーセント変換丸め誤差の複合的な倍速ドラッグ
+
+### なぜそうなったのか
+onResizeコールバックで `panelElement.getBoundingClientRect().width`（border-left 1px含む）を現在幅として使い、その差分から求めた newWidth を parent（rightSlot）の flexBasis にパーセント指定で設定していた。panelElement は border-left を持つため getBoundingClientRect() が parent.width よりわずかに大きく、フレームごとに誤差が蓄積した。加えて `Math.round(... * 10) / 10`（0.1%単位丸め）が低速ドラッグの小ステップで連続累積し、約2倍の距離が移動した。
+
+### どうしたら今後は再発しないか
+リサイズコールバックでは「flexBasisを設定している要素自身」の getBoundingClientRect().width を現在幅として読み取ること。子要素の幅を基準にすると border 分の誤差が蓄積する。また flexBasis のパーセンテージ変換では Math.round 等の丸めを入れず、ブラウザのCSS解釈に高精度の値を直接渡すこと。なお flexBasis はパーセンテージで設定し、px直接指定にしないこと（bug-report.md #75 で「px指定はウィンドウリサイズ時にレイアウトが崩れる」と記録済み）。
+
+---
