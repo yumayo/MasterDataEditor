@@ -82,9 +82,9 @@ public sealed class TableEditTool
 		{
 			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
-			return $"エラー: セルの更新中に内部エラーが発生しました（テーブル: {tableName}, 行: {row}, カラム: {columnName}）。";
+			return $"エラー: セルの更新中に内部エラーが発生しました（テーブル: {tableName}, 行: {row}, カラム: {columnName}）。詳細: {ex.Message}";
 		}
 	}
 
@@ -154,9 +154,9 @@ public sealed class TableEditTool
 		{
 			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
-			return $"エラー: セルの一括更新中に内部エラーが発生しました（テーブル: {tableName}）。";
+			return $"エラー: セルの一括更新中に内部エラーが発生しました（テーブル: {tableName}）。詳細: {ex.Message}";
 		}
 	}
 
@@ -195,9 +195,9 @@ public sealed class TableEditTool
 		{
 			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
-			return $"エラー: 行の挿入中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。";
+			return $"エラー: 行の挿入中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。詳細: {ex.Message}";
 		}
 	}
 
@@ -236,9 +236,9 @@ public sealed class TableEditTool
 		{
 			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
-			return $"エラー: 行の削除中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。";
+			return $"エラー: 行の削除中に内部エラーが発生しました（テーブル: {tableName}, 行: {rowIndex}）。詳細: {ex.Message}";
 		}
 	}
 

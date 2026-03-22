@@ -91,9 +91,9 @@ public sealed class ValidationTool
 		{
 			return "エラー: エディタがまだ起動していません。アプリケーションのメインウィンドウを開いてください。";
 		}
-		catch (Exception)
+		catch (Exception ex)
 		{
-			return "エラー: バリデーションエラー取得中に内部エラーが発生しました。";
+			return $"エラー: バリデーションエラー取得中に内部エラーが発生しました。詳細: {ex.Message}";
 		}
 	}
 }
