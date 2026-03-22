@@ -42,3 +42,9 @@
 .toolbar-button-copied {
     animation: toolbar-copied-flash 0.6s ease-out;
 }
+
+/* ─── RelationsPanel トグルボタン ─── */
+
+.toolbar-button-relations-active {
+    background-color: rgba(128, 128, 128, 0.25);
+}

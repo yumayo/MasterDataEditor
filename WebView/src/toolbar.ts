@@ -1,4 +1,5 @@
 import {Tab} from "./tab";
+import {Editor} from "./editor";
 import {EditorTable} from "./editor-table";
 
 /**
@@ -8,12 +9,35 @@ import {EditorTable} from "./editor-table";
  */
 export class Toolbar {
     private readonly tab: Tab;
+    private readonly editor: Editor;
+    private readonly relationsToggleButton: HTMLButtonElement;
 
-    constructor(containerElement: HTMLElement, tab: Tab) {
+    constructor(containerElement: HTMLElement, tab: Tab, editor: Editor) {
         this.tab = tab;
+        this.editor = editor;
+
+        // CSV エクスポートボタン
         const csvExportButton = this.createButton('CSVをクリップボードにコピー', createCopyIcon());
         csvExportButton.addEventListener('click', () => this.exportCsvToClipboard(csvExportButton));
         containerElement.appendChild(csvExportButton);
+
+        // RelationsPanel トグルボタン
+        const relationsToggle = this.createButton('RelationsPanel を開く/閉じる', createRelationsIcon());
+        relationsToggle.classList.add('toolbar-button-relations-toggle');
+        // 初期状態: RelationsPanel は表示されているのでアクティブクラスを付与する
+        relationsToggle.classList.add('toolbar-button-relations-active');
+        relationsToggle.addEventListener('click', () => { this.editor.toggleRelationsPanel(); });
+        containerElement.appendChild(relationsToggle);
+        this.relationsToggleButton = relationsToggle;
+
+        // Editor から表示/非表示変更の通知を受け取り、ボタンのアクティブ状態を連動させる
+        this.editor.connectVisibilityListener((visible: boolean) => {
+            if (visible) {
+                this.relationsToggleButton.classList.add('toolbar-button-relations-active');
+            } else {
+                this.relationsToggleButton.classList.remove('toolbar-button-relations-active');
+            }
+        });
     }
 
     private createButton(title: string, icon: SVGSVGElement): HTMLButtonElement {
@@ -117,5 +141,38 @@ function createCopyIcon(): SVGSVGElement {
     front.setAttribute('stroke', 'currentColor');
     front.setAttribute('stroke-width', '1.2');
     svg.appendChild(front);
+    return svg;
+}
+
+/**
+ * Relationsパネルアイコン（左右パネル分割のイメージ）をSVGで作成する
+ * VSCodeの「パネルを右に分割」アイコンに似たデザイン
+ */
+function createRelationsIcon(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.classList.add('toolbar-icon');
+    // 外枠
+    const outer = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    outer.setAttribute('x', '1');
+    outer.setAttribute('y', '2');
+    outer.setAttribute('width', '14');
+    outer.setAttribute('height', '12');
+    outer.setAttribute('rx', '1');
+    outer.setAttribute('fill', 'none');
+    outer.setAttribute('stroke', 'currentColor');
+    outer.setAttribute('stroke-width', '1.2');
+    svg.appendChild(outer);
+    // 中央の縦分割線（左右パネルの境界を表す）
+    const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    divider.setAttribute('x1', '9');
+    divider.setAttribute('y1', '2');
+    divider.setAttribute('x2', '9');
+    divider.setAttribute('y2', '14');
+    divider.setAttribute('stroke', 'currentColor');
+    divider.setAttribute('stroke-width', '1.2');
+    svg.appendChild(divider);
     return svg;
 }

@@ -51,8 +51,8 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
 
-    // ツールバーを初期化（タブへの密結合。コンストラクタ内でDOMイベントをバインドするため変数保持不要）
-    new Toolbar(document.getElementById('toolbar')!, tab);
+    // ツールバーを初期化（タブ・エディタへの密結合。コンストラクタ内でDOMイベントをバインドするため変数保持不要）
+    new Toolbar(document.getElementById('toolbar')!, tab, editor);
 
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);

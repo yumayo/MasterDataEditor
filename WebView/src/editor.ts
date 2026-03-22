@@ -4,6 +4,12 @@ import {DiffView} from "./diff-view";
 import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
 
+/**
+ * RelationsPanel の表示/非表示トグル状態変更を通知するリスナー型。
+ * Toolbar のアクティブ状態更新に使用する。
+ */
+export type RelationsPanelVisibilityListener = (visible: boolean) => void;
+
 export class Editor {
 
     private readonly element: HTMLElement;
@@ -32,9 +38,24 @@ export class Editor {
     /** Tab への参照。connectTab() で設定される（ボタンクリック時にナビゲーション呼び出し用） */
     private tab: Tab | false;
 
+    /** RelationsPanel の表示/非表示状態（SSOT） */
+    private relationsPanelVisible: boolean;
+
+    /** 折りたたみ前の右スロットの flex-basis 値（展開時に復元するため記憶する） */
+    private savedRightSlotFlexBasis: string;
+
+    /** RelationsPanel 非表示時に表示する「»」開くタブ要素 */
+    private readonly openTab: HTMLElement;
+
+    /** RelationsPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
+    private visibilityListener: RelationsPanelVisibilityListener | false;
+
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
         this.tab = false;
+        this.relationsPanelVisible = true;
+        this.savedRightSlotFlexBasis = '';
+        this.visibilityListener = false;
 
         // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
         const navigationBar = document.createElement('div');
@@ -88,11 +109,29 @@ export class Editor {
         rightSlot.classList.add('editor-right-slot');
         contentArea.appendChild(rightSlot);
         this.rightSlot = rightSlot;
+
+        // RelationsPanel 非表示時に表示する「»」開くタブ（右端の縦タブ）
+        // editor-content の子として rightSlot の後に配置する
+        const openTab = document.createElement('div');
+        openTab.classList.add('relations-panel-open-tab');
+        openTab.textContent = '»';
+        openTab.style.display = 'none';
+        openTab.setAttribute('role', 'button');
+        openTab.setAttribute('tabindex', '0');
+        openTab.setAttribute('aria-label', 'RelationsPanelを開く');
+        openTab.addEventListener('click', () => { this.showRelationsPanel(); });
+        contentArea.appendChild(openTab);
+        this.openTab = openTab;
     }
 
     /** Tab を接続する（ナビゲーションボタンのクリックハンドラ用） */
     connectTab(tab: Tab): void {
         this.tab = tab;
+    }
+
+    /** RelationsPanel 表示/非表示変更時のリスナーを設定する（Toolbar から呼ばれる） */
+    connectVisibilityListener(listener: RelationsPanelVisibilityListener): void {
+        this.visibilityListener = listener;
     }
 
     /** leftPane への要素追加（TabからEditorTableのwrapperを追加する） */
@@ -103,9 +142,15 @@ export class Editor {
     /**
      * リレーションパネルをコンテンツ領域（右スロット）に追加する
      * 初期配置: rightSlot に追加する
+     * リサイズハンドルのダブルクリックによるトグルもここで登録する（Editor が rightSlot を所有しているため）
      */
     appendRelationsPanel(panel: RelationsPanel): void {
         panel.appendTo(this.rightSlot);
+        // リサイズハンドルのダブルクリックでRelationsPanelを折りたたみ/展開する
+        const resizeHandle = this.rightSlot.querySelector('.resize-handle[data-direction="horizontal"]');
+        if (resizeHandle !== null) {
+            resizeHandle.addEventListener('dblclick', () => { this.toggleRelationsPanel(); });
+        }
     }
 
     /**
@@ -124,6 +169,10 @@ export class Editor {
             this.rightSlot.removeChild(this.rightSlot.firstChild);
         }
         this.rightSlot.appendChild(rightElement);
+
+        // ペインスタックナビゲーションで右スロットの内容が差し替わるため、
+        // 現在のトグル状態（表示/非表示）を反映する
+        this.applyRelationsPanelVisibility();
     }
 
     /**
@@ -193,6 +242,7 @@ export class Editor {
 
         // 右スロットを非表示にして差分ビューを全幅で表示する
         this.rightSlot.style.display = 'none';
+        this.openTab.style.display = 'none';
     }
 
     /**
@@ -206,8 +256,8 @@ export class Editor {
             this.leftSlot.removeChild(this.leftSlot.firstChild);
         }
         this.leftSlot.appendChild(this.leftPane);
-        // 右スロットを再表示する
-        this.rightSlot.style.display = '';
+        // RelationsPanel のトグル状態を尊重して右スロットの表示を復元する
+        this.applyRelationsPanelVisibility();
     }
 
     /**
@@ -217,17 +267,18 @@ export class Editor {
      */
     enterSettingsMode(): void {
         this.rightSlot.style.display = 'none';
+        this.openTab.style.display = 'none';
         this.navigationBar.style.display = 'none';
     }
 
     /**
      * 設定タブ表示モードを解除して通常のエディター状態に戻す。
-     * rightSlot を再表示する（後続の updateVisiblePanes() で正しい内容が設定される）。
+     * RelationsPanel のトグル状態を尊重して右スロットの表示を復元する。
      * 後続の updateNavigationBar() が paneStack.length に基づいて適切に表示制御するため、
-     * ここでは非表示のまま維持する。
+     * ナビゲーションバーは非表示のまま維持する。
      */
     leaveSettingsMode(): void {
-        this.rightSlot.style.display = '';
+        this.applyRelationsPanelVisibility();
         this.navigationBar.style.display = 'none';
     }
 
@@ -254,4 +305,83 @@ export class Editor {
         this.element.style.width = 'calc(100vw - ' + widthPx + ')';
     }
 
+    // =========================================================================
+    // RelationsPanel 表示/非表示トグル
+    // =========================================================================
+
+    /**
+     * RelationsPanel の表示/非表示をトグルする。
+     * ツールバーのトグルボタンやリサイズハンドルのダブルクリックから呼ばれる。
+     */
+    toggleRelationsPanel(): void {
+        if (this.relationsPanelVisible) {
+            this.hideRelationsPanel();
+        } else {
+            this.showRelationsPanel();
+        }
+    }
+
+    /**
+     * RelationsPanel を非表示にする。
+     * 右スロットの現在の flex-basis を記憶してから非表示にし、左ペインを全幅化する。
+     */
+    hideRelationsPanel(): void {
+        if (!this.relationsPanelVisible) return;
+        // 現在の flex-basis を記憶する（展開時に復元するため）
+        this.savedRightSlotFlexBasis = this.rightSlot.style.flexBasis;
+        this.relationsPanelVisible = false;
+        this.applyRelationsPanelVisibility();
+        this.notifyVisibilityListener();
+    }
+
+    /**
+     * RelationsPanel を表示する。
+     * 記憶した flex-basis を復元して右スロットを再表示し、左ペインを元の幅に戻す。
+     */
+    showRelationsPanel(): void {
+        if (this.relationsPanelVisible) return;
+        this.relationsPanelVisible = true;
+        this.applyRelationsPanelVisibility();
+        this.notifyVisibilityListener();
+    }
+
+    /**
+     * 現在の relationsPanelVisible 状態に基づいて右スロット・開くタブの CSS を更新する。
+     * showRelationsPanel / hideRelationsPanel / hideDiffView / leaveSettingsMode から呼ばれる共通メソッド。
+     *
+     * 非表示時は display:none ではなく visibility:hidden + flex-basis:6px にする。
+     * これにより .relations-panel は Playwright の toBeVisible() で not visible と判定されるが、
+     * リサイズハンドル（visibility:visible を個別設定）はダブルクリック操作可能な状態を維持する。
+     */
+    private applyRelationsPanelVisibility(): void {
+        if (this.relationsPanelVisible) {
+            // 右スロットを表示する（showDiffView/enterSettingsMode で display:none になっている可能性があるためリセット）
+            this.rightSlot.style.display = '';
+            this.rightSlot.style.visibility = '';
+            this.rightSlot.style.flexGrow = '';
+            this.rightSlot.style.flexShrink = '';
+            // 記憶していた flex-basis を復元する（空文字の場合は CSS のデフォルト値が適用される）
+            this.rightSlot.style.flexBasis = this.savedRightSlotFlexBasis;
+            // 開くタブを非表示にする
+            this.openTab.style.display = 'none';
+        } else {
+            // 右スロットを visibility:hidden にしてリサイズハンドルだけ操作可能にする。
+            // flex-basis を 6px にしてリサイズハンドル（4px幅）が収まる最小幅にする。
+            // display はリセットして flex レイアウトに参加させる（display:none だとリサイズハンドルが操作不可になる）。
+            this.rightSlot.style.display = '';
+            this.rightSlot.style.visibility = 'hidden';
+            this.rightSlot.style.flexGrow = '0';
+            this.rightSlot.style.flexShrink = '0';
+            this.rightSlot.style.flexBasis = '6px';
+            // 開くタブを表示する（display:none との対称性を保つため明示的に 'flex' を指定する）
+            this.openTab.style.display = 'flex';
+        }
+    }
+
+    /** リスナーに表示/非表示の変更を通知する */
+    private notifyVisibilityListener(): void {
+        if (this.visibilityListener !== false) {
+            this.visibilityListener(this.relationsPanelVisible);
+        }
+    }
 }
