@@ -1,4 +1,5 @@
-﻿using System;
+using App.MasterDataEditor.Mcp;
+using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -15,6 +16,13 @@ public class WebView2Handler : IDisposable
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
 	private readonly IDisposable _fileWatcherHandle;
+	/// <summary>
+	/// MCP ToolとWebView2間の非同期ブリッジ。
+	/// editor_api_response メッセージをブリッジに転送する。
+	/// ConnectEditorApiBridge() で本番のブリッジインスタンスに差し替えられるまで、
+	/// 未接続状態の例外スローで初期化する。
+	/// </summary>
+	private EditorApiBridge _editorApiBridge = new();
 
 	public WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
 	{
@@ -145,6 +153,16 @@ public class WebView2Handler : IDisposable
 		return new WebView2Handler(dispatcher, webView2, consoleLogPath);
 	}
 
+	/// <summary>
+	/// EditorApiBridgeを接続し、editor_api_responseの転送とリクエスト送信を有効にする。
+	/// </summary>
+	public void ConnectEditorApiBridge(EditorApiBridge bridge)
+	{
+		_editorApiBridge = bridge;
+		bridge.ConnectWebView2(SendMessageToWebView);
+		Logger.Info("WebView2Handler: EditorApiBridge connected");
+	}
+
 	public void Dispose()
 	{
 		_fileWatcherHandle.Dispose();
@@ -152,7 +170,7 @@ public class WebView2Handler : IDisposable
 
 	public void SendMessageToWebView(object data)
 	{
-		_dispatcher.Invoke(() =>
+		_dispatcher.InvokeAsync(() =>
 		{
 			try
 			{
@@ -234,6 +252,10 @@ public class WebView2Handler : IDisposable
 							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root));
 							break;
 
+						case "editor_api_response":
+							HandleEditorApiResponse(root);
+							break;
+
 						default:
 							Logger.Info($"未知のメッセージタイプ: {messageType}");
 							break;
@@ -244,6 +266,28 @@ public class WebView2Handler : IDisposable
 		catch (Exception ex)
 		{
 			Logger.Error(ex, "WebView2メッセージ処理時にエラーが発生しました。");
+		}
+	}
+
+	/// <summary>
+	/// TypeScript EditorApiBridgeからのeditor_api_responseを受信し、C# EditorApiBridgeに転送する。
+	/// </summary>
+	private void HandleEditorApiResponse(JsonElement root)
+	{
+		var requestId = root.GetProperty("requestId").GetString()!;
+		var success = root.GetProperty("success").GetBoolean();
+
+		if (success)
+		{
+			// データをCloneして独立したJsonElementにする（JsonDocumentのDispose後も安全に使用できるように）
+			var data = root.GetProperty("data").Clone();
+			_editorApiBridge.HandleResponse(requestId, true, data, "");
+		}
+		else
+		{
+			// TypeScript側のEditorApiBridgeはsuccess:false時に必ずerrorプロパティを含む
+			var error = root.GetProperty("error").GetString()!;
+			_editorApiBridge.HandleResponse(requestId, false, default, error);
 		}
 	}
 }

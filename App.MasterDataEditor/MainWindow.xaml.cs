@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -27,5 +27,8 @@ public partial class MainWindow : Window
 	{
 		var consoleLogPath = AppEnvironment.GetConsoleLogPath();
 		_webView2Handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
+
+		// EditorApiBridgeをWebView2Handlerに接続し、MCPツールからのAPI呼び出しを有効にする
+		((App)Application.Current).ConnectEditorApiBridge(_webView2Handler);
 	}
 }

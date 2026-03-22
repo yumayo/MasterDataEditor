@@ -24,13 +24,19 @@ public sealed class McpHttpServer : IAsyncDisposable
 	/// <summary>
 	/// MCPサーバーを構築し、HTTP Streamable HTTPトランスポートで起動する。
 	/// </summary>
-	public static async Task<McpHttpServer> CreateAndStartAsync(CancellationToken cancellationToken)
+	/// <param name="editorApiBridge">WebView2との非同期通信ブリッジ（MCPツールがEditorAPIを呼び出すために使用）</param>
+	/// <param name="cancellationToken">キャンセルトークン</param>
+	public static async Task<McpHttpServer> CreateAndStartAsync(EditorApiBridge editorApiBridge, CancellationToken cancellationToken)
 	{
 		var builder = WebApplication.CreateBuilder();
 
+		// EditorApiBridgeをDIコンテナに登録（MCPツールがコンストラクタインジェクションで受け取る）
+		builder.Services.AddSingleton(editorApiBridge);
+
 		builder.Services.AddMcpServer()
 			.WithHttpTransport()
-			.WithTools<HelloWorldTool>();
+			.WithTools<HelloWorldTool>()
+			.WithTools<TableInfoTool>();
 
 		var app = builder.Build();
 		app.Urls.Add("http://localhost:3001");

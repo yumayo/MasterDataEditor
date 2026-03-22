@@ -12,6 +12,12 @@ namespace App.MasterDataEditor;
 public partial class App : Application
 {
 	/// <summary>
+	/// WebView2とMCPツール間の非同期通信ブリッジ。
+	/// アプリケーション起動時に作成し、McpHttpServerとWebView2Handlerの両方に接続する。
+	/// </summary>
+	private readonly EditorApiBridge _editorApiBridge = new();
+
+	/// <summary>
 	/// MCPサーバー起動タスク。OnExitでawaitして確実にDisposeするために保持する。
 	/// Task.FromResult(null) で初期化し、OnStartupで実際の起動タスクに差し替える。
 	/// </summary>
@@ -45,18 +51,27 @@ public partial class App : Application
 		SetupGlobalExceptionHandlers();
 		Logger.Info("Global exception handlers set up");
 
-		// MCPサーバーをバックグラウンドで起動（タスクを保持してOnExitで安全にDispose）
-		_mcpServerStartup = StartMcpHttpServerAsync();
+		// MCPサーバーをバックグラウンドで起動（EditorApiBridgeをDI登録）
+		_mcpServerStartup = StartMcpHttpServerAsync(_editorApiBridge);
 
 		base.OnStartup(e);
 		Logger.Info("WPF base.OnStartup completed");
 	}
 
-	private static async Task<McpHttpServer?> StartMcpHttpServerAsync()
+	/// <summary>
+	/// WebView2Handler初期化後にEditorApiBridgeを接続する。
+	/// MainWindow.InitializeWebView2handlerから呼ばれる。
+	/// </summary>
+	internal void ConnectEditorApiBridge(WebView2Handler handler)
+	{
+		handler.ConnectEditorApiBridge(_editorApiBridge);
+	}
+
+	private static async Task<McpHttpServer?> StartMcpHttpServerAsync(EditorApiBridge bridge)
 	{
 		try
 		{
-			return await McpHttpServer.CreateAndStartAsync(default);
+			return await McpHttpServer.CreateAndStartAsync(bridge, default);
 		}
 		catch (Exception ex)
 		{
