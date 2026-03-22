@@ -401,13 +401,13 @@ export class ReferenceDataCache {
      * キャッシュ内の指定テーブル・指定IDの表示テキストを更新する
      * 逆参照チェーンで解決された表示テキストを即座に反映するために使用
      *
-     * 呼び出し元でキャッシュの存在とIDの有効性を事前検証済みである前提
+     * テーブルやIDがキャッシュに存在しない場合はスキップする（新規ID挿入時に到達しうるため）
      */
     updateDisplayText(tableName: string, id: string, newDisplayText: string): void {
         const data = this.cache.get(tableName);
-        if (!data) throw new Error(`キャッシュにテーブルが存在しません: ${tableName}`);
+        if (!data) return;
         const item = data.items.find(item => item.id === id);
-        if (!item) throw new Error(`キャッシュにIDが存在しません: tableName=${tableName}, id=${id}`);
+        if (!item) return;
         item.displayText = newDisplayText;
     }
 
