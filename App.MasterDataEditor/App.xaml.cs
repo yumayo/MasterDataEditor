@@ -11,13 +11,21 @@ namespace App.MasterDataEditor;
 /// </summary>
 public partial class App : Application
 {
+	/// <summary>
+	/// MCPサーバー起動タスク。OnExitでawaitして確実にDisposeするために保持する。
+	/// Task.FromResult(null) で初期化し、OnStartupで実際の起動タスクに差し替える。
+	/// </summary>
+	private Task<McpHttpServer?> _mcpServerStartup = Task.FromResult<McpHttpServer?>(null);
+
 	[STAThread]
 	public static void Main(string[] args)
 	{
-		// --mcp 引数でstdio MCPサーバーモードとして起動
+		// --mcp 引数: stdioプロキシモードとして起動（GUIなし）
+		// Claude Desktopが本プロセスを子プロセスとして起動し、
+		// stdin/stdoutをメインアプリのHTTP MCPサーバーに中継する
 		if (Array.Exists(args, arg => arg == "--mcp"))
 		{
-			McpServerHost.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+			McpStdioProxy.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
 			return;
 		}
 
@@ -37,8 +45,24 @@ public partial class App : Application
 		SetupGlobalExceptionHandlers();
 		Logger.Info("Global exception handlers set up");
 
+		// MCPサーバーをバックグラウンドで起動（タスクを保持してOnExitで安全にDispose）
+		_mcpServerStartup = StartMcpHttpServerAsync();
+
 		base.OnStartup(e);
 		Logger.Info("WPF base.OnStartup completed");
+	}
+
+	private static async Task<McpHttpServer?> StartMcpHttpServerAsync()
+	{
+		try
+		{
+			return await McpHttpServer.CreateAndStartAsync(default);
+		}
+		catch (Exception ex)
+		{
+			Logger.Error(ex, "MCP HTTP Server startup");
+			return null;
+		}
 	}
 
 	private void SetupGlobalExceptionHandlers()
@@ -67,6 +91,10 @@ public partial class App : Application
 
 	protected override void OnExit(ExitEventArgs e)
 	{
+		// MCPサーバーの起動完了を待ち、確実にDisposeする
+		var mcpServer = _mcpServerStartup.GetAwaiter().GetResult();
+		mcpServer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
 		Logger.Close();
 		base.OnExit(e);
 	}
