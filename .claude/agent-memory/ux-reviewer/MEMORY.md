@@ -17,6 +17,13 @@
 
 ### 最新レビュー結果（2026-03-23）
 
+#### ISSUE_0111 全文検索ローマ字途中入力・長音符正規化 評価: A
+- 修正済み: `findNormalizedMatchIndex` に末尾子音除去ロジック追加（`isTrailingConsonant` + trim）
+- 修正済み: `normalizeInternal` で長音符ー(U+30FC)・全角ハイフン－(U+FF0D)→半角ハイフン-（caseSensitiveにも適用）
+- 残存(🟡): `fuzzy-search.spec.ts` のテストがUIを起動しないため autoDump が空白ページ記録のみ。ハイライト表示のE2E確認が取れていない
+- 残存(🟡): `computeMatchLength` の末尾子音除去マッチ時のハイライト長算出（`trimmed.length`）は正しいが、ローマ字変換後の「あい」と元文字列の「あい」が1:1対応している前提。全角変換後に文字数が変わる場合（拗音など）は要注意
+- 残存(🟡): `matchesQuery` の wholeWord+caseSensitive=false ブロック内でローマ字変換は行われるが、長音符正規化後の完全一致は機能しない（仕様上正しい挙動だが、「ー」単独でwholeWord検索できないことはプランナーに説明不要なツールチップで補足したい）
+
 #### ISSUE_0107 差分ビューバリデーション 評価: B
 - 修正済み: diff-cell-added cell-error の複合クラス正確付与・誤検出ゼロ確認
 - 残存(🔴): PROBLEMSパネルが data-error-count="0"・「エラーはありません」で矛盾。DiffTab未接続の疑い
