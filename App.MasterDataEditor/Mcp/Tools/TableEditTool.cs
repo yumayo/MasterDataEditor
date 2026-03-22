@@ -26,7 +26,7 @@ public sealed class TableEditTool
 		_bridge = bridge;
 	}
 
-	[McpServerTool, Description("指定テーブルの指定セルの値を更新します。列はカラム名で指定します。テーブルが開いていない場合は自動的にタブで開きます。")]
+	[McpServerTool, Description("指定テーブルの1つのセルの値を更新します。複数セルを変更する場合はUpdateCellsを使ってください（1回の呼び出しで複数セルを一括更新でき、ツール呼び出し回数を節約できます）。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> UpdateCellAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("行インデックス（0始まり）")] int row,
@@ -88,7 +88,7 @@ public sealed class TableEditTool
 		}
 	}
 
-	[McpServerTool, Description("指定テーブルの複数セルの値を一括更新します。列はカラム名で指定します。1回のUndo操作でまとめて元に戻せます。テーブルが開いていない場合は自動的にタブで開きます。")]
+	[McpServerTool, Description("指定テーブルの複数セルの値を一括更新します。行追加後のデータ投入や複数行の修正など、2つ以上のセルを変更する場合は常にこのツールを使ってください。異なる行のセルも1回の呼び出しでまとめて更新できます。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> UpdateCellsAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("変更リスト。各要素は { row: 行インデックス(0始まり), columnName: カラム名, value: 新しい値 } の形式")] JsonElement changes,
@@ -184,7 +184,7 @@ public sealed class TableEditTool
 		}
 	}
 
-	[McpServerTool, Description("指定テーブルに新しい空行を挿入します。挿入位置より後の行はインデックスが1つずれます。テーブルが開いていない場合は自動的にタブで開きます。")]
+	[McpServerTool, Description("指定テーブルに新しい空行を挿入します。挿入後はUpdateCellsで各セルに値を設定してください。複数行を追加する場合はInsertRowを複数回呼んでからUpdateCellsで一括設定すると効率的です。テーブルが開いていない場合は自動的にタブで開きます。")]
 	public async Task<string> InsertRowAsync(
 		[Description("テーブル名")] string tableName,
 		[Description("挿入位置の行インデックス（0始まり）。既存行数と同じ値を指定すると末尾に追加")] int rowIndex,
