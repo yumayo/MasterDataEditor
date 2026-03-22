@@ -63,6 +63,8 @@
 - **Factory method must complete ALL setup**: 参照ヒント+ドロップダウン設定を外部に出さない
 - **bug-report.md 既修正不具合の回帰**: ISSUE_0103でbug-report#75(px→%変更)を逆方向に戻した。修正時はbug-reportの過去エントリを必ず確認し、同一箇所の過去修正と矛盾しないか検証せよ
 - **生焼けオブジェクト | false + connect パターン**: 4回再発（FEAT_0043 EditorTable.tab → FEAT_0047 NavigationHistory → EditorAPI Tab.editorApi → RelationsPanel Toggle RelationsPanel.editor）。コンストラクタ引数化を徹底せよ
+- **registerSchema / unregisterSchema 非対称**: ISSUE_0107でDiffTab右ペインのスキーマがValidationEngine.schemasに登録されるがdestroy()で解除されない。validate()全走査でDiffTabスキーマが混入しPROBLEMSパネルにゴーストエラーが表示される。registerがあればunregisterが必要（bug-report.mdパターン2）
+- **validateForTable / validatePkDuplicatesForTable コピペ**: validation-engine.ts L103-132。スキーマ解決ロジック6行が完全重複。resolveSchemaAndData()ヘルパー抽出で解消すべき
 
 ## FEAT_0040 Background Search Known Patterns
 - **CRITICAL**: loadAllTableNamesAsync 後に requestId チェックなし → 無駄な Promise.all 実行

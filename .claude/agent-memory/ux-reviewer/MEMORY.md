@@ -199,6 +199,19 @@
 - 残存(🟡): relations-panel-close-button のクリックターゲットが狭い（padding:0 4px のみ）
 - 知見: editor-right-slot の style 属性が「なし/空文字/非表示スタイル」の三態になる（タブ未開封/表示済み/非表示の区別が style の有無に出てしまう設計）
 
+#### ISSUE_0107 差分ビューバリデーション（2026-03-23レビュー）評価: B
+- 修正済み: DiffTab右ペイン行1 value列に `diff-cell-added cell-error` の複合クラスが正確に付与
+- 修正済み: 変更のない行2に誤検出なし（誤検出ゼロ確認）
+- 修正済み: diff-cell-deleted（左ペイン）と diff-cell-added cell-error（右ペイン）の行対応が正確
+- 残存(🔴): PROBLEMSパネルの `data-error-count="0"` + `validation-panel-empty` 表示が不正 — cell-error があるのにバッジカウント0・「エラーはありません」は矛盾。DiffTabがValidationPanelの更新フックに未接続の疑い
+- 残存(🔴): cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080から全サイクル継続）
+- 残存(🔴): 左ペイン grid-textfield に contenteditable="true" が残存（2026-03-21から継続未対処）
+- 残存(🟡): 左ペイン editor-table に aria-readonly="true" がない（BUG_0021継続）
+- 残存(🟡): 左ペインに fill-handle が display:block（読み取り専用ペインに不要、継続）
+- 残存(🟡): diff-resize-handle に role/aria-orientation/aria-label がない（継続）
+- 残存(🟡): diff-cell-added cell-error の視覚的優先順位（緑＋赤混在）が混乱を招く可能性。エラー>差分 の color coding 優先順位定義を推奨
+- 知見: DiffTabは通常タブのValidationEngineサブスクリプション外にある可能性。バリデーション連携を追加する際は DiffTab 独自の InMemoryTableStore への接続経路を確認すること
+
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell, relations-panel-open-tab ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
