@@ -2556,3 +2556,26 @@ McpStdioProxyのstdinループ内で、HTTP POST失敗時に `catch (HttpRequest
 プロキシ層でHTTPエラーをキャッチした場合、プロトコル層（JSON-RPC）のレスポンス義務を常に意識すること。stdoutに何も返さない `continue` はJSON-RPCリクエストに対しては禁止。通知（idフィールドなし）の場合のみレスポンス不要。また、JsonDocumentのlifetimeとJsonElementの依存関係に注意し、`using` スコープ内でGetRawText()等を使って値をコピーしてからスコープ外で使用すること。
 
 ---
+
+## 177. [2648821] — PROBLEMSパネルからジャンプ後にキー入力した文字がテキストフィールドに反映されない問題を修正
+
+### 不具合原因名
+非同期境界による入力文字消失
+
+### なぜそうなったのか
+`handleNavigationKeydown()` で文字キーが押されたとき、`enableCellEditModeWithDropdownAsync(false)` が async であるため、以下の時系列で入力文字が消失した:
+1. keydown イベント発火 → ハンドラ内で async 関数を呼び出し
+2. await により制御がブラウザに戻る
+3. ブラウザのデフォルトアクションで文字が contenteditable に挿入される
+4. async が解決 → `show()` が呼ばれ `textContent = null` で全文字がクリアされる
+
+特に `referenceDataCache.get()` が uncached の場合、`readFileAsync()` でC#バックエンド通信が発生し、真に非同期な遅延が生じる。このとき確実にブラウザの文字挿入が先行し、`show()` のクリアで消失する。
+
+以前の修正（ISSUE_0102の初回修正）ではテキストフィールドの表示とフォーカスのみを修正し、テストも可視性とフォーカスの検証に留まっていたため、入力文字の消失が検出されなかった。
+
+### どうしたら今後は再発しないか
+1. **async/await と DOM のデフォルトアクションの干渉を意識する**: `keydown` ハンドラ内で async 関数を呼ぶ場合、`preventDefault()` でブラウザのデフォルト動作を止め、async 完了後に手動で同等の処理を実行する。
+2. **テストは「ユーザーが体験する結果」を検証する**: テキストフィールドが「表示される」だけでなく「入力した文字が反映されている」ことまで検証する。可視性やフォーカスだけでは不十分。
+3. **async の `.then()` コールバック内では状態ガードを入れる**: `if (!this.active) return;` や `if (this.readOnly) return;` で、非同期完了時に前提条件が変わっていないことを確認する。
+
+---

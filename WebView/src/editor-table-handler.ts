@@ -692,13 +692,40 @@ export class EditorTableHandler {
         // Ctrl/Meta+キーの組み合わせはショートカットなので編集モードを開始しない
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
+            if (this.readOnly) return;
             if (!this.textField) return;
+            // ブラウザのデフォルト文字挿入を防ぐ。
+            // enableCellEditModeWithDropdownAsync が非同期のため、
+            // preventDefault しないと keydown → ブラウザが文字挿入 → async完了後に show() で textContent=null クリア
+            // という順序で入力文字が消えてしまう。
+            keyboardEvent.preventDefault();
+            // Process キー（IME開始）の場合は文字挿入をスキップする
+            const inputChar = keyboardEvent.key === 'Process' ? null : keyboardEvent.key;
             // 参照列の場合はドロップダウンを表示
             this.enableCellEditModeWithDropdownAsync(false).then((handled) => {
+                // 非同期完了までにユーザーが別の操作をした場合は中断する
+                if (!this.active) return;
                 if (!handled) {
                     // ドロップダウンで処理されなかった場合は通常の編集モード
                     this.enableCellEditMode(false);
                 }
+                // show() 完了後に最初のキー文字をテキストフィールドに手動挿入する
+                if (inputChar !== null) {
+                    this.element.textContent = inputChar;
+                    // カーソルを末尾に移動する
+                    const range = document.createRange();
+                    range.selectNodeContents(this.element);
+                    range.collapse(false);
+                    const windowSelection = window.getSelection();
+                    if (windowSelection) {
+                        windowSelection.removeAllRanges();
+                        windowSelection.addRange(range);
+                    }
+                    // リサイズとドロップダウンフィルタリングを実行する
+                    this.onInput();
+                }
+            }).catch((e: unknown) => {
+                console.error('[EditorTableHandler] enableCellEditModeWithDropdownAsync failed:', e);
             });
             return;
         }

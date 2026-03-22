@@ -163,6 +163,10 @@ test.describe('ISSUE_0102: PROBLEMSパネルからジャンプ後のキー入力
                 return active !== null && active.classList.contains('grid-textfield');
             });
             expect(hasFocus).toBe(true);
+
+            // 9. 入力した文字がテキストフィールドに実際に反映されていることを検証する
+            //    async完了後にshow()でtextContentがnullクリアされるバグを検出するためのアサーション
+            await expect(editField).toHaveText('a');
         },
     );
 
@@ -206,6 +210,10 @@ test.describe('ISSUE_0102: PROBLEMSパネルからジャンプ後のキー入力
                 return active !== null && active.classList.contains('grid-textfield');
             });
             expect(hasFocus).toBe(true);
+
+            // 8. 入力した文字がテキストフィールドに実際に反映されていることを検証する
+            //    async完了後にshow()でtextContentがnullクリアされるバグを検出するためのアサーション
+            await expect(editField).toHaveText('x');
         },
     );
 });
