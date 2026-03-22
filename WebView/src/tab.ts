@@ -865,7 +865,7 @@ export class Tab {
 
     /**
      * 差分タブをタブバーに開く。
-     * 同一テーブルの差分タブが既に開かれている場合は既存タブをアクティブ化するだけにする。
+     * 同一テーブルの差分タブが既に開かれている場合は破棄して再作成する（最新CSVデータを反映するため）。
      * SourceControlPanel.openDiffTabAsync から呼ばれる。
      * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
      *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
@@ -873,11 +873,24 @@ export class Tab {
     openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string): void {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
 
-        // 既存の差分タブが開いている場合はアクティブ化するだけにする
-        // 再作成するとタブのスクロール位置・編集状態が失われるため再利用する
+        // 既存の差分タブが開いている場合は破棄して再作成する（最新データで差分表示するため）
+        // performCloseTab のDiffTab破棄パスと closeAllDiffTabs を参考にしたクリーンアップ
         if (this.diffTabs.has(diffTabName)) {
-            this.enableTabButton(diffTabName);
-            return;
+            // Dirty状態（右ペインに未保存の編集がある）の場合は破棄せずアクティブ化する
+            const existingButton = this.tabButtons.find(btn => btn.name === diffTabName);
+            if (existingButton !== undefined && existingButton.isDirty()) {
+                this.enableTabButton(diffTabName);
+                return;
+            }
+            // アクティブな差分タブの場合は leaveSettingsMode で rightSlot を復元する
+            if (this.activeTabName === diffTabName) {
+                this.editor.leaveSettingsMode();
+                this.activeTabName = false;
+            }
+            const existingDiffTab = this.diffTabs.get(diffTabName)!;
+            existingDiffTab.destroy(this.store);
+            this.diffTabs.delete(diffTabName);
+            this.removeTabButton(diffTabName);
         }
 
         // 差分タブのタブボタンを追加する
@@ -890,7 +903,6 @@ export class Tab {
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference, this.openEditorTables, this.notification, this.validationPanel
         );
-        // 新規作成時点では diffTabs にキーが存在しないことが保証される（上の早期リターンで確認済み）
         this.diffTabs.set(diffTabName, diffTab);
 
         // タブボタンをクリックしてアクティブ化する
