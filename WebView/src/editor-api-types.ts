@@ -23,6 +23,19 @@ export interface EditorDataAPI {
     getCellValue(tableName: string, row: number, column: number): string | null;
     /** テーブルデータを読み取る。ストアにあればストアから、なければCSVファイルから読む */
     readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null>;
+    /** FK列の参照ヒントを取得する。columnName → { fkValue → displayText } のマップを返す */
+    getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null>;
+    /** 関連テーブル（N:1参照先 + 1:N逆参照元）のデータを取得する */
+    getRelatedTablesAsync(tableName: string): Promise<RelatedTableInfo[] | null>;
+}
+
+/** 関連テーブル情報（MCP API用） */
+export interface RelatedTableInfo {
+    relationType: 'N:1' | '1:N';
+    label: string;       // 例: "weapon (weapon_id → weapon.id)" or "order (order.product_id → product.id)"
+    tableName: string;   // 関連テーブル名
+    header: string[];    // 関連テーブルのヘッダー
+    rows: string[][];    // フィルタ済み行データ
 }
 
 /** スキーマAPI */

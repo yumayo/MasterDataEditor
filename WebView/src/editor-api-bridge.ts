@@ -85,6 +85,8 @@ export class EditorApiBridge {
             case 'getRowCount': return this.api.data.getRowCount(this.requireString(params, 'tableName'));
             case 'getCellValue': return this.api.data.getCellValue(this.requireString(params, 'tableName'), this.requireNumber(params, 'row'), this.requireNumber(params, 'column'));
             case 'readTableDataAsync': return this.api.data.readTableDataAsync(this.requireString(params, 'tableName'));
+            case 'getReferenceHintsAsync': return this.api.data.getReferenceHintsAsync(this.requireString(params, 'tableName'));
+            case 'getRelatedTablesAsync': return this.api.data.getRelatedTablesAsync(this.requireString(params, 'tableName'));
             default: throw new Error('Unknown data method: ' + methodName);
         }
     }

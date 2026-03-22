@@ -3,7 +3,8 @@ import {Tab} from "./tab";
 import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from "./command";
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
-import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry} from "./editor-api-types";
+import {determineDisplayColumnName} from "./config";
+import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo} from "./editor-api-types";
 
 /**
  * EditorAPI の実装
@@ -31,6 +32,22 @@ export class EditorApiImpl implements EditorAPI {
         this.tableClosedHandlers = [];
         this.tableSavedHandlers = [];
         this.rowSelectedHandlers = [];
+
+        // テーブルデータ読み取りの共通ヘルパー（ストア優先→CSV フォールバック）
+        // data 名前空間の readTableDataAsync と新メソッドの両方から使う
+        async function resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
+            const storeHeader = store.getHeader(tableName);
+            if (storeHeader !== false) {
+                const storeRows = store.getRows(tableName);
+                if (storeRows === false) throw new Error('[resolveTableDataAsync] ストアの不変条件違反: header は存在するが rows が取得できません');
+                return { header: [...storeHeader], rows: storeRows.map(r => [...r]) };
+            }
+            const content = await readFileAsync('data/' + tableName + '.csv');
+            if (content === '') return null;
+            const csv = new Csv();
+            csv.load(content);
+            return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
+        }
 
         // data 名前空間: ストアからの読み取り（ディープコピーを返して内部データを保護する）
         this.data = {
@@ -61,21 +78,122 @@ export class EditorApiImpl implements EditorAPI {
                 return rowData[column];
             },
             async readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
-                // ストアにテーブルが存在する場合はストアからディープコピーで返す（SSOT優先）
-                const storeHeader = store.getHeader(tableName);
-                if (storeHeader !== false) {
-                    const storeRows = store.getRows(tableName);
-                    // header が存在するなら rows も必ず存在する（ストアの不変条件）
-                    if (storeRows === false) throw new Error('[readTableDataAsync] ストアの不変条件違反: header は存在するが rows が取得できません');
-                    return { header: [...storeHeader], rows: storeRows.map(r => [...r]) };
+                return resolveTableDataAsync(tableName);
+            },
+            async getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null> {
+                // スキーマが存在しないテーブルは null を返す
+                const entry = schemaRegistry.get(tableName);
+                if (!entry) return null;
+                const result: Record<string, Record<string, string>> = {};
+                // FK参照がない場合は空オブジェクトを返す
+                for (let i = 0; i < entry.references.length; ++i) {
+                    const ref = entry.references[i];
+                    // 参照先テーブルのデータを取得する
+                    const targetData = await resolveTableDataAsync(ref.targetTable);
+                    if (targetData === null) continue;
+                    // PK列（参照先のターゲット列）と表示列を決定する
+                    const pkColumn = ref.targetColumn;
+                    const displayColumn = determineDisplayColumnName(targetData.header);
+                    // 表示列が空（見つからない）またはPK列と同じ場合は有意な表示テキストがないのでスキップする
+                    if (displayColumn === '' || displayColumn === pkColumn) continue;
+                    // PK列と表示列のインデックスを取得する
+                    const pkColIndex = targetData.header.indexOf(pkColumn);
+                    const displayColIndex = targetData.header.indexOf(displayColumn);
+                    if (pkColIndex === -1 || displayColIndex === -1) continue;
+                    // PK値 → 表示テキスト のマップを構築する
+                    const hints: Record<string, string> = {};
+                    for (let j = 0; j < targetData.rows.length; ++j) {
+                        const row = targetData.rows[j];
+                        hints[row[pkColIndex]] = row[displayColIndex];
+                    }
+                    result[ref.columnName] = hints;
                 }
-                // ストアにない場合はCSVファイルから読む
-                // readFileAsync はファイルが存在しない場合に空文字を返す（C#側の仕様）
-                const content = await readFileAsync('data/' + tableName + '.csv');
-                if (content === '') return null;
-                const csv = new Csv();
-                csv.load(content);
-                return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
+                return result;
+            },
+            async getRelatedTablesAsync(tableName: string): Promise<RelatedTableInfo[] | null> {
+                // スキーマが存在しないテーブルは null を返す
+                const entry = schemaRegistry.get(tableName);
+                if (!entry) return null;
+                const results: RelatedTableInfo[] = [];
+                // 現テーブルのデータを取得する（FK値収集・PK値収集のため）
+                const currentData = await resolveTableDataAsync(tableName);
+                // --- N:1（このテーブルが参照している親テーブル） ---
+                for (let i = 0; i < entry.references.length; ++i) {
+                    const ref = entry.references[i];
+                    const targetData = await resolveTableDataAsync(ref.targetTable);
+                    if (targetData === null) continue;
+                    // 現テーブルから当該FK列の値を収集する（重複除去）
+                    const fkValues = new Set<string>();
+                    if (currentData !== null) {
+                        const fkColIndex = currentData.header.indexOf(ref.columnName);
+                        if (fkColIndex !== -1) {
+                            for (let j = 0; j < currentData.rows.length; ++j) {
+                                const v = currentData.rows[j][fkColIndex];
+                                if (v !== '') fkValues.add(v);
+                            }
+                        }
+                    }
+                    // 参照先テーブルのPK列インデックスを取得してフィルタする
+                    const targetPkColIndex = targetData.header.indexOf(ref.targetColumn);
+                    const filteredRows: string[][] = [];
+                    if (targetPkColIndex !== -1) {
+                        for (let j = 0; j < targetData.rows.length; ++j) {
+                            if (fkValues.has(targetData.rows[j][targetPkColIndex])) {
+                                filteredRows.push(targetData.rows[j]);
+                            }
+                        }
+                    }
+                    results.push({
+                        relationType: 'N:1',
+                        label: ref.targetTable + ' (' + ref.columnName + ' → ' + ref.targetTable + '.' + ref.targetColumn + ')',
+                        tableName: ref.targetTable,
+                        header: targetData.header,
+                        rows: filteredRows,
+                    });
+                }
+                // --- 1:N（このテーブルを参照している子テーブル） ---
+                // 現テーブルのPK値を収集する
+                const pkValues = new Set<string>();
+                if (currentData !== null) {
+                    // 最初のPK列を使う
+                    const pkColName = entry.primaryKeys.length > 0 ? entry.primaryKeys[0] : '';
+                    const pkColIndex = pkColName !== '' ? currentData.header.indexOf(pkColName) : -1;
+                    if (pkColIndex !== -1) {
+                        for (let j = 0; j < currentData.rows.length; ++j) {
+                            const v = currentData.rows[j][pkColIndex];
+                            if (v !== '') pkValues.add(v);
+                        }
+                    }
+                }
+                // 全テーブルのスキーマを走査して、このテーブルを参照している子テーブルを見つける
+                for (const [childTableName, childEntry] of schemaRegistry) {
+                    if (childTableName === tableName) continue;
+                    for (let i = 0; i < childEntry.references.length; ++i) {
+                        const childRef = childEntry.references[i];
+                        if (childRef.targetTable !== tableName) continue;
+                        // 子テーブルのデータを取得する
+                        const childData = await resolveTableDataAsync(childTableName);
+                        if (childData === null) continue;
+                        // 子テーブルのFK列で現テーブルのPK値に含まれる行のみフィルタする
+                        const childFkColIndex = childData.header.indexOf(childRef.columnName);
+                        const filteredRows: string[][] = [];
+                        if (childFkColIndex !== -1) {
+                            for (let j = 0; j < childData.rows.length; ++j) {
+                                if (pkValues.has(childData.rows[j][childFkColIndex])) {
+                                    filteredRows.push(childData.rows[j]);
+                                }
+                            }
+                        }
+                        results.push({
+                            relationType: '1:N',
+                            label: childTableName + ' (' + childTableName + '.' + childRef.columnName + ' → ' + tableName + '.' + childRef.targetColumn + ')',
+                            tableName: childTableName,
+                            header: childData.header,
+                            rows: filteredRows,
+                        });
+                    }
+                }
+                return results;
             },
         };
 

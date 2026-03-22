@@ -687,3 +687,204 @@ test.describe('Phase 4: C# ↔ WebView ブリッジ', () => {
         });
     });
 });
+
+// =============================================================================
+// Phase 5: 参照ヒント・関連テーブルAPI (editorApi.data)
+// =============================================================================
+
+/**
+ * FK参照を持つテーブル群のテスト用ファイルシステム
+ * weapon（親）← shop_product（子）← order_detail（孫）の3階層
+ */
+function createReferenceFileSystem(): MockFileSystem {
+    return {
+        // weapon テーブル（参照先・親）— ja 列が表示列として使われる
+        "schema/weapon.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+                { key: 2, name: "attack", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/weapon.csv": "id,ja,attack\n1,炎の剣,150\n2,氷の杖,120\n3,雷の槍,180",
+        // shop_product テーブル（weapon を参照する子テーブル）
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+                { key: 2, name: "weapon_id", type: "int", reference: "weapon.id" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/shop_product.csv": "id,ja,weapon_id\n1,商品A,1\n2,商品B,2",
+        // order_detail テーブル（shop_product を参照する孫テーブル）
+        "schema/order_detail.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "product_id", type: "int", reference: "shop_product.id" },
+                { key: 2, name: "quantity", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/order_detail.csv": "id,product_id,quantity\n10,1,5\n11,2,3\n12,1,2",
+    };
+}
+
+/** 参照テスト用ページセットアップ（アプリ初期化完了まで待機する） */
+async function setupReferenceTestAsync(page: Page): Promise<void> {
+    const fs = createReferenceFileSystem();
+    await installMockApiAsync(page, fs);
+    await page.goto('/');
+    // main.ts の非同期初期化が完了して editorApi が公開されるまで待機する
+    await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+}
+
+// --- getReferenceHintsAsync テスト ---
+
+test.describe('Phase 5: getReferenceHintsAsync', () => {
+    test('shop_product の参照ヒントを返す', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        const hints = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceHintsAsync(name: string): Promise<Record<string, Record<string, string>> | null> } } }).editorApi.data.getReferenceHintsAsync('shop_product');
+        });
+        // weapon_id 列の FK値 → 表示テキスト（ja列）のマッピング
+        expect(hints).toEqual({
+            weapon_id: {
+                '1': '炎の剣',
+                '2': '氷の杖',
+                '3': '雷の槍',
+            },
+        });
+    });
+
+    test('FK参照のないテーブルは空オブジェクトを返す', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        const hints = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceHintsAsync(name: string): Promise<Record<string, Record<string, string>> | null> } } }).editorApi.data.getReferenceHintsAsync('weapon');
+        });
+        expect(hints).toEqual({});
+    });
+
+    test('未登録テーブルは null を返す', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        const hints = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceHintsAsync(name: string): Promise<Record<string, Record<string, string>> | null> } } }).editorApi.data.getReferenceHintsAsync('nonexistent');
+        });
+        expect(hints).toBeNull();
+    });
+});
+
+// --- getRelatedTablesAsync テスト ---
+
+test.describe('Phase 5: getRelatedTablesAsync', () => {
+    test('shop_product の関連テーブルを返す', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        type RelatedTableInfo = { relationType: string; label: string; tableName: string; header: string[]; rows: string[][] };
+        const related = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<{ relationType: string; label: string; tableName: string; header: string[]; rows: string[][] }> | null> } } }).editorApi.data.getRelatedTablesAsync('shop_product');
+        }) as RelatedTableInfo[];
+        // N:1 に weapon、1:N に order_detail が含まれること
+        const n1 = related.filter(r => r.relationType === 'N:1');
+        const oneN = related.filter(r => r.relationType === '1:N');
+        expect(n1.length).toBe(1);
+        expect(n1[0].tableName).toBe('weapon');
+        expect(n1[0].label).toBe('weapon (weapon_id → weapon.id)');
+        expect(oneN.length).toBe(1);
+        expect(oneN[0].tableName).toBe('order_detail');
+        expect(oneN[0].label).toBe('order_detail (order_detail.product_id → shop_product.id)');
+    });
+
+    test('N:1 関連テーブルはFK値でフィルタされた行のみ含む', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        type RelatedTableInfo = { relationType: string; label: string; tableName: string; header: string[]; rows: string[][] };
+        const related = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<{ relationType: string; label: string; tableName: string; header: string[]; rows: string[][] }> | null> } } }).editorApi.data.getRelatedTablesAsync('shop_product');
+        }) as RelatedTableInfo[];
+        const weapon = related.find(r => r.tableName === 'weapon')!;
+        // shop_product は weapon_id=1, 2 を参照 → weapon の id=1, 2 のみ含まれる（id=3 は除外）
+        expect(weapon.header).toEqual(['id', 'ja', 'attack']);
+        expect(weapon.rows).toEqual([
+            ['1', '炎の剣', '150'],
+            ['2', '氷の杖', '120'],
+        ]);
+    });
+
+    test('1:N 関連テーブルはPK値でフィルタされた行のみ含む', async ({ page }) => {
+        // order_detail に shop_product のPK値に含まれない product_id=99 の行を追加したデータで検証する
+        const fs: MockFileSystem = {
+            "schema/weapon.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "ja", type: "string" },
+                    { key: 2, name: "attack", type: "int" },
+                ],
+                primary_key: ["id"],
+            }),
+            "data/weapon.csv": "id,ja,attack\n1,炎の剣,150\n2,氷の杖,120\n3,雷の槍,180",
+            "schema/shop_product.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "ja", type: "string" },
+                    { key: 2, name: "weapon_id", type: "int", reference: "weapon.id" },
+                ],
+                primary_key: ["id"],
+            }),
+            "data/shop_product.csv": "id,ja,weapon_id\n1,商品A,1\n2,商品B,2",
+            "schema/order_detail.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "product_id", type: "int", reference: "shop_product.id" },
+                    { key: 2, name: "quantity", type: "int" },
+                ],
+                primary_key: ["id"],
+            }),
+            // product_id=99 は shop_product に存在しない → フィルタで除外されるべき
+            "data/order_detail.csv": "id,product_id,quantity\n10,1,5\n11,2,3\n12,1,2\n13,99,1",
+        };
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+        type RelatedTableInfo = { relationType: string; label: string; tableName: string; header: string[]; rows: string[][] };
+        const related = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<{ relationType: string; label: string; tableName: string; header: string[]; rows: string[][] }> | null> } } }).editorApi.data.getRelatedTablesAsync('shop_product');
+        }) as RelatedTableInfo[];
+        const orderDetail = related.find(r => r.tableName === 'order_detail')!;
+        expect(orderDetail.header).toEqual(['id', 'product_id', 'quantity']);
+        // product_id=99 の行はフィルタで除外され、PK値に含まれる行のみ返される
+        expect(orderDetail.rows).toEqual([
+            ['10', '1', '5'],
+            ['11', '2', '3'],
+            ['12', '1', '2'],
+        ]);
+    });
+
+    test('FK参照も逆参照もないテーブルは空配列を返す', async ({ page }) => {
+        // 孤立テーブルを作成する
+        const fs: MockFileSystem = {
+            "schema/isolated.json": JSON.stringify({
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "value", type: "string" },
+                ],
+                primary_key: ["id"],
+            }),
+            "data/isolated.csv": "id,value\n1,test",
+        };
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+        const related = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<unknown> | null> } } }).editorApi.data.getRelatedTablesAsync('isolated');
+        });
+        expect(related).toEqual([]);
+    });
+
+    test('未登録テーブルは null を返す', async ({ page }) => {
+        await setupReferenceTestAsync(page);
+        const related = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<unknown> | null> } } }).editorApi.data.getRelatedTablesAsync('nonexistent');
+        });
+        expect(related).toBeNull();
+    });
+});

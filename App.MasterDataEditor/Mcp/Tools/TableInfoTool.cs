@@ -50,26 +50,29 @@ public sealed class TableInfoTool
 		return sb.ToString();
 	}
 
-	[McpServerTool, Description("指定したテーブルのスキーマ（カラム定義・主キー・外部キー参照）とデータを取得します。テーブルが開いていなくてもCSVファイルから読み取ります。テーブルの内容について質問するときに使ってください。")]
+	[McpServerTool, Description("指定したテーブルのスキーマ・データ・参照ヒント・関連テーブルを一括取得します。テーブルが開いていなくてもCSVファイルから読み取ります。FK列にはヒント句（人間可読な表示テキスト）が付与され、N:1参照先テーブルと1:N逆参照元テーブルのデータも含まれます。")]
 	public async Task<string> DescribeTableAsync(
 		[Description("テーブル名")] string tableName,
 		CancellationToken cancellationToken)
 	{
 		var param = new { tableName };
 
-		// スキーマとデータを並列取得
-		// readTableDataAsync: ストアにあればストアから、なければCSVファイルから読み取る
+		// スキーマ・データ・参照ヒント・関連テーブルを並列取得
 		var columnsTask = _bridge.RequestAsync("schema.getColumns", param, cancellationToken);
 		var primaryKeysTask = _bridge.RequestAsync("schema.getPrimaryKeys", param, cancellationToken);
 		var referencesTask = _bridge.RequestAsync("schema.getReferences", param, cancellationToken);
 		var tableDataTask = _bridge.RequestAsync("data.readTableDataAsync", param, cancellationToken);
+		var hintsTask = _bridge.RequestAsync("data.getReferenceHintsAsync", param, cancellationToken);
+		var relatedTask = _bridge.RequestAsync("data.getRelatedTablesAsync", param, cancellationToken);
 
-		await Task.WhenAll(columnsTask, primaryKeysTask, referencesTask, tableDataTask);
+		await Task.WhenAll(columnsTask, primaryKeysTask, referencesTask, tableDataTask, hintsTask, relatedTask);
 
 		var columns = columnsTask.Result;
 		var primaryKeys = primaryKeysTask.Result;
 		var references = referencesTask.Result;
 		var tableData = tableDataTask.Result;
+		var hints = hintsTask.Result;
+		var related = relatedTask.Result;
 
 		var sb = new StringBuilder();
 
@@ -96,7 +99,7 @@ public sealed class TableInfoTool
 			sb.AppendLine();
 		}
 
-		// データ
+		// データ（ヒント句付き）
 		sb.AppendLine("## データ");
 		if (tableData.ValueKind == JsonValueKind.Null)
 		{
@@ -106,7 +109,26 @@ public sealed class TableInfoTool
 		{
 			var header = tableData.GetProperty("header");
 			var rows = tableData.GetProperty("rows");
-			FormatDataRows(sb, header, rows);
+			FormatDataRows(sb, header, rows, hints);
+		}
+
+		// 関連テーブル
+		if (related.ValueKind == JsonValueKind.Array && related.GetArrayLength() > 0)
+		{
+			sb.AppendLine();
+			sb.AppendLine("## 関連テーブル");
+			sb.AppendLine();
+			foreach (var entry in related.EnumerateArray())
+			{
+				var relationType = entry.GetProperty("relationType").GetString()!;
+				var label = entry.GetProperty("label").GetString()!;
+				var relHeader = entry.GetProperty("header");
+				var relRows = entry.GetProperty("rows");
+				var rowCount = relRows.ValueKind == JsonValueKind.Array ? relRows.GetArrayLength() : 0;
+				sb.AppendLine($"### {relationType} {label} ({rowCount}行)");
+				FormatDataRows(sb, relHeader, relRows);
+				sb.AppendLine();
+			}
 		}
 
 		return sb.ToString();
@@ -138,7 +160,12 @@ public sealed class TableInfoTool
 		}
 	}
 
-	private static void FormatDataRows(StringBuilder sb, JsonElement header, JsonElement rows)
+	/// <summary>
+	/// データ行をマークダウンテーブルとしてフォーマットする。
+	/// hints が有効なJSONオブジェクトの場合、FK列の値に対応する表示テキストを "値 (表示テキスト)" の形式で付与する。
+	/// hints が Undefined（default）の場合はヒントなしで出力する。
+	/// </summary>
+	private static void FormatDataRows(StringBuilder sb, JsonElement header, JsonElement rows, JsonElement hints = default)
 	{
 		if (header.ValueKind != JsonValueKind.Array || rows.ValueKind != JsonValueKind.Array)
 		{
@@ -150,29 +177,51 @@ public sealed class TableInfoTool
 		sb.AppendLine($"({rowCount}行)");
 		sb.AppendLine();
 
-		// ヘッダー行
-		sb.Append('|');
+		// ヘッダー列名を配列に展開する（ヒント句解決のためインデックスアクセスが必要）
+		var headerNames = new System.Collections.Generic.List<string>();
 		foreach (var col in header.EnumerateArray())
 		{
-			sb.Append($" {col.GetString()} |");
+			headerNames.Add(col.GetString()!);
+		}
+
+		// ヘッダー行
+		sb.Append('|');
+		for (var i = 0; i < headerNames.Count; i++)
+		{
+			sb.Append($" {headerNames[i]} |");
 		}
 		sb.AppendLine();
 
 		// セパレーター
 		sb.Append('|');
-		foreach (var _ in header.EnumerateArray())
+		for (var i = 0; i < headerNames.Count; i++)
 		{
 			sb.Append("------|");
 		}
 		sb.AppendLine();
 
-		// データ行
+		// データ行（hints が有効な場合はFK列にヒント句を付与する）
+		var hasHints = hints.ValueKind == JsonValueKind.Object;
 		foreach (var row in rows.EnumerateArray())
 		{
 			sb.Append('|');
+			var colIndex = 0;
 			foreach (var cell in row.EnumerateArray())
 			{
-				sb.Append($" {cell.GetString()} |");
+				var cellValue = cell.GetString()!;
+				var displayValue = cellValue;
+				// ヒント句の解決: hints[columnName][cellValue] が存在すれば "値 (表示テキスト)" にする
+				if (hasHints
+					&& colIndex < headerNames.Count
+					&& hints.TryGetProperty(headerNames[colIndex], out var columnHints)
+					&& columnHints.ValueKind == JsonValueKind.Object
+					&& columnHints.TryGetProperty(cellValue, out var hintText)
+					&& hintText.ValueKind == JsonValueKind.String)
+				{
+					displayValue = $"{cellValue} ({hintText.GetString()})";
+				}
+				sb.Append($" {displayValue} |");
+				colIndex++;
 			}
 			sb.AppendLine();
 		}
