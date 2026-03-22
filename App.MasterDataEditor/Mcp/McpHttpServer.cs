@@ -36,7 +36,8 @@ public sealed class McpHttpServer : IAsyncDisposable
 		builder.Services.AddMcpServer()
 			.WithHttpTransport()
 			.WithTools<HelloWorldTool>()
-			.WithTools<TableInfoTool>();
+			.WithTools<TableInfoTool>()
+			.WithTools<TableEditTool>();
 
 		var app = builder.Build();
 		app.Urls.Add("http://localhost:3001");
