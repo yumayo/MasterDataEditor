@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,7 +24,9 @@ public static class McpStdioProxy
 	private const string McpHttpServerUrl = "http://localhost:3001/";
 	private const string SseDataPrefix = "data: ";
 	private const int MaxRetryCount = 10;
+	private const int PostRetryCount = 3;
 	private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
+	private static readonly TimeSpan PostRetryInterval = TimeSpan.FromSeconds(1);
 
 	/// <summary>
 	/// stdioプロキシを起動し、stdinが閉じるまでブロックする。
@@ -34,7 +37,8 @@ public static class McpStdioProxy
 		Console.InputEncoding = Encoding.UTF8;
 		Console.OutputEncoding = Encoding.UTF8;
 
-		using var httpClient = new HttpClient();
+		// リクエストあたり3秒タイムアウト × 3回リトライ + wait2秒 ≒ 最大約11秒で応答を返す
+		using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
 		string? sessionId = null;
 
 		await WaitForServerAsync(httpClient, cancellationToken);
@@ -47,24 +51,47 @@ public static class McpStdioProxy
 				break;
 			}
 
-			using var request = new HttpRequestMessage(HttpMethod.Post, McpHttpServerUrl);
-			request.Content = new StringContent(line, Encoding.UTF8, "application/json");
-			request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-			request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-			if (sessionId != null)
+			// HTTP POST をリトライ付きで送信する（一時的な接続不可に対する耐性）
+			HttpResponseMessage? response = null;
+			for (var retry = 0; retry < PostRetryCount; retry++)
 			{
-				request.Headers.Add("Mcp-Session-Id", sessionId);
+				using var request = new HttpRequestMessage(HttpMethod.Post, McpHttpServerUrl);
+				request.Content = new StringContent(line, Encoding.UTF8, "application/json");
+				request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+				request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+				if (sessionId != null)
+				{
+					request.Headers.Add("Mcp-Session-Id", sessionId);
+				}
+				try
+				{
+					response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+					break;
+				}
+				catch (HttpRequestException ex)
+				{
+					Console.Error.WriteLine($"[McpStdioProxy] HTTP request failed (attempt {retry + 1}/{PostRetryCount}): {ex.Message}");
+					if (retry < PostRetryCount - 1)
+					{
+						await Task.Delay(PostRetryInterval, cancellationToken);
+					}
+					cancellationToken.ThrowIfCancellationRequested();
+				}
+				catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+				{
+					// HttpClient.Timeout 超過（シャットダウンではなくタイムアウト）
+					Console.Error.WriteLine($"[McpStdioProxy] HTTP request timed out (attempt {retry + 1}/{PostRetryCount})");
+					if (retry < PostRetryCount - 1)
+					{
+						await Task.Delay(PostRetryInterval, cancellationToken);
+					}
+				}
 			}
 
-			HttpResponseMessage response;
-			try
+			// 全リトライ失敗: JSON-RPCエラーレスポンスをstdoutに返してClaude Desktopのハングを防ぐ
+			if (response == null)
 			{
-				response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-			}
-			catch (HttpRequestException ex)
-			{
-				Console.Error.WriteLine($"[McpStdioProxy] HTTP request failed: {ex.Message}");
+				await SendConnectionErrorAsync(line);
 				continue;
 			}
 
@@ -89,6 +116,11 @@ public static class McpStdioProxy
 				{
 					var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
 					Console.Error.WriteLine($"[McpStdioProxy] Server returned {statusCode}: {errorBody}");
+					// 404: セッションが無効化されている。古いIDを送り続けないようリセットする
+					if (statusCode == 404)
+					{
+						sessionId = null;
+					}
 					// サーバーからJSON-RPCエラーが返された場合はそのまま転送
 					if (!string.IsNullOrEmpty(errorBody))
 					{
@@ -151,6 +183,41 @@ public static class McpStdioProxy
 			await Console.Out.WriteLineAsync(body);
 			await Console.Out.FlushAsync();
 		}
+	}
+
+	/// <summary>
+	/// HTTP接続失敗時にJSON-RPCエラーレスポンスをstdoutに返す。
+	/// リクエストが通知（idフィールド自体が存在しない）の場合はレスポンス不要なので何もしない。
+	/// JSON-RPC 2.0仕様: "id": null は通知ではなくリクエストであり、レスポンスが必要。
+	/// </summary>
+	private static async Task SendConnectionErrorAsync(string requestLine)
+	{
+		string idRawText;
+		try
+		{
+			using var doc = JsonDocument.Parse(requestLine);
+			// JSON-RPCの id フィールドが存在しない場合は通知（レスポンス不要）
+			if (!doc.RootElement.TryGetProperty("id", out var requestId))
+			{
+				return;
+			}
+			// JsonDocument が生存中に id の生JSON表現をコピーする（Use-After-Dispose 防止）
+			// GetRawText() は数値・文字列・null いずれも元の表現を保持する
+			idRawText = requestId.GetRawText();
+		}
+		catch (JsonException)
+		{
+			// JSONパース失敗: リクエスト自体が不正なのでエラーレスポンスを返せない
+			return;
+		}
+
+		// JSON-RPCエラーレスポンスをstdoutに返す
+		// id の型（数値・文字列・null）を変換せずそのまま埋め込むため文字列結合で構築する
+		// -32000: JSON-RPC 2.0 の Server Error 範囲 (-32000 ～ -32099)
+		var errorResponse = "{\"jsonrpc\":\"2.0\",\"id\":" + idRawText
+			+ ",\"error\":{\"code\":-32000,\"message\":\"Cannot connect to MasterDataEditor. Please ensure the application is running.\"}}";
+		await Console.Out.WriteLineAsync(errorResponse);
+		await Console.Out.FlushAsync();
 	}
 
 	/// <summary>

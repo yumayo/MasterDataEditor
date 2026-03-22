@@ -2543,3 +2543,16 @@ onResizeコールバックで `panelElement.getBoundingClientRect().width`（bor
 リサイズコールバックでは「flexBasisを設定している要素自身」の getBoundingClientRect().width を現在幅として読み取ること。子要素の幅を基準にすると border 分の誤差が蓄積する。また flexBasis のパーセンテージ変換では Math.round 等の丸めを入れず、ブラウザのCSS解釈に高精度の値を直接渡すこと。なお flexBasis はパーセンテージで設定し、px直接指定にしないこと（bug-report.md #75 で「px指定はウィンドウリサイズ時にレイアウトが崩れる」と記録済み）。
 
 ---
+
+## 176. [f89b28e] — MCPプロキシがHTTP接続失敗時にClaude Desktopをハングさせる
+
+### 不具合原因名
+HTTP接続失敗時のJSON-RPCレスポンス欠落によるクライアントハング
+
+### なぜそうなったのか
+McpStdioProxyのstdinループ内で、HTTP POST失敗時に `catch (HttpRequestException)` でstderrにログを出して `continue` するだけで、stdoutには何も返していなかった。JSON-RPCプロトコルではリクエスト（id付き）に対してレスポンスを返す義務があるが、HTTP転送層の例外処理でプロトコル層の義務が見落とされていた。その結果Claude Desktopはレスポンスを永遠に待ち続けハング状態になり、ユーザーはClaude Desktopを再起動する必要があった。
+
+### どうしたら今後は再発しないか
+プロキシ層でHTTPエラーをキャッチした場合、プロトコル層（JSON-RPC）のレスポンス義務を常に意識すること。stdoutに何も返さない `continue` はJSON-RPCリクエストに対しては禁止。通知（idフィールドなし）の場合のみレスポンス不要。また、JsonDocumentのlifetimeとJsonElementの依存関係に注意し、`using` スコープ内でGetRawText()等を使って値をコピーしてからスコープ外で使用すること。
+
+---
