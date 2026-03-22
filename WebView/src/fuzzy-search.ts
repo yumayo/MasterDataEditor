@@ -186,6 +186,11 @@ function normalizeInternal(text: string, lowercaseAlpha: boolean): string {
             result += String.fromCharCode(code - 0x60);
             continue;
         }
+        // 長音符（U+30FC）・全角ハイフン（U+FF0D）→ 半角ハイフン（U+002D）に統一
+        if (code === 0x30FC || code === 0xFF0D) {
+            result += '-';
+            continue;
+        }
         // その他はそのまま
         result += text[i];
     }
@@ -215,23 +220,46 @@ export function normalizeForSearchCaseSensitive(text: string): string {
 }
 
 /**
- * 正規化済みのhaystack内でneedleが最初に出現する位置を返す内部ヘルパー。
- * ローマ字→ひらがな変換も試みる。
- * マッチしない場合は -1 を返す。
+ * ファジーマッチの結果（マッチ位置と長さ）
+ */
+interface NormalizedMatch { index: number; length: number; }
+
+/**
+ * 正規化済みのhaystack内でneedleの最初のマッチ位置と長さを返す内部ヘルパー。
+ * 直接マッチ → ローマ字変換マッチ → 末尾アルファベット除去マッチ の優先順で試みる。
  *
  * @param normalizedHaystack normalizeForSearch 適用済みの検索対象文字列
  * @param needle 検索文字列（未正規化）
- * @returns マッチ開始インデックス（マッチしない場合は -1）
+ * @returns マッチ情報（マッチしない場合は null）
  */
-function findNormalizedMatchIndex(normalizedHaystack: string, needle: string): number {
+function findNormalizedMatch(normalizedHaystack: string, needle: string): NormalizedMatch | null {
     const normalizedNeedle = normalizeForSearch(needle);
     // 通常の部分一致（正規化後）
     const directIndex = normalizedHaystack.indexOf(normalizedNeedle);
-    if (directIndex !== -1) return directIndex;
+    if (directIndex !== -1) return {index: directIndex, length: normalizedNeedle.length};
     // ローマ字→ひらがな変換後の部分一致
     const romajiConverted = normalizeForSearch(romajiToHiragana(needle));
-    if (romajiConverted !== normalizedNeedle) return normalizedHaystack.indexOf(romajiConverted);
-    return -1;
+    if (romajiConverted !== normalizedNeedle) {
+        const romajiIndex = normalizedHaystack.indexOf(romajiConverted);
+        if (romajiIndex !== -1) return {index: romajiIndex, length: romajiConverted.length};
+    }
+    // 末尾未変換アルファベットの除去: "aish"→"あいsh"の末尾"sh"を除いた"あい"でマッチを試みる
+    const trimmed = trimTrailingAlpha(romajiConverted);
+    if (trimmed.length > 0 && trimmed.length < romajiConverted.length) {
+        const trimmedIndex = normalizedHaystack.indexOf(trimmed);
+        if (trimmedIndex !== -1) return {index: trimmedIndex, length: trimmed.length};
+    }
+    return null;
+}
+
+/**
+ * ローマ字変換結果の末尾に残った連続アルファベットをすべて除去する。
+ * "あいsh" → "あい"、"あいてm" → "あいて" のように途中入力の未変換部分を取り除く。
+ */
+function trimTrailingAlpha(converted: string): string {
+    let end = converted.length;
+    while (end > 0 && converted.charCodeAt(end - 1) >= 0x61 && converted.charCodeAt(end - 1) <= 0x7A) end--;
+    return converted.substring(0, end);
 }
 
 /**
@@ -244,7 +272,7 @@ function findNormalizedMatchIndex(normalizedHaystack: string, needle: string): n
  */
 export function fuzzyMatch(haystack: string, needle: string): boolean {
     if (needle === '' || haystack === '') return false;
-    return findNormalizedMatchIndex(normalizeForSearch(haystack), needle) !== -1;
+    return findNormalizedMatch(normalizeForSearch(haystack), needle) !== null;
 }
 
 /**
@@ -267,15 +295,9 @@ export interface HighlightSegment {
 export function fuzzyMatchHighlight(haystack: string, needle: string): Array<HighlightSegment> {
     if (needle === '' || haystack === '') return [{text: haystack, highlight: false}];
     const normalizedHaystack = normalizeForSearch(haystack);
-    const matchIndex = findNormalizedMatchIndex(normalizedHaystack, needle);
-    if (matchIndex === -1) return [{text: haystack, highlight: false}];
-    // マッチした needle の長さを正規化後の文字列から算出する
-    const normalizedNeedle = normalizeForSearch(needle);
-    const romajiConverted = normalizeForSearch(romajiToHiragana(needle));
-    const matchLength = normalizedHaystack.startsWith(normalizedNeedle, matchIndex)
-        ? normalizedNeedle.length
-        : romajiConverted.length;
-    return buildSegments(haystack, matchIndex, matchIndex + matchLength);
+    const match = findNormalizedMatch(normalizedHaystack, needle);
+    if (match === null) return [{text: haystack, highlight: false}];
+    return buildSegments(haystack, match.index, match.index + match.length);
 }
 
 /**

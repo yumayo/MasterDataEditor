@@ -282,4 +282,34 @@ test.describe('fuzzyMatch: ファジーマッチング', () => {
     test('"shi" が "シ" にマッチする', () => {
         expect(fuzzyMatch('シ', 'shi')).toBe(true);
     });
+
+    // ローマ字途中入力（末尾未変換子音の除去）
+    test('ローマ字途中入力: "ait" が "あいてむ" にマッチする（末尾子音tを除去）', () => {
+        expect(fuzzyMatch('あいてむ', 'ait')).toBe(true);
+    });
+
+    test('ローマ字途中入力: "aitem" が "あいてむ" にマッチする（末尾子音mを除去）', () => {
+        expect(fuzzyMatch('あいてむ', 'aitem')).toBe(true);
+    });
+
+    test('ローマ字途中入力: "suk" が "すきる" にマッチする（末尾子音kを除去）', () => {
+        expect(fuzzyMatch('すきる', 'suk')).toBe(true);
+    });
+
+    test('ローマ字途中入力: "aish" が "あいてむ" にマッチする（末尾2文字子音shを除去）', () => {
+        expect(fuzzyMatch('あいてむ', 'aish')).toBe(true);
+    });
+
+    // 長音符・ハイフン正規化
+    test('長音符正規化: ハイフン "-" で長音符 "ー" 含有データにヒットする', () => {
+        expect(fuzzyMatch('スーパー', '-')).toBe(true);
+    });
+
+    test('長音符正規化: 長音符 "ー" でハイフン "-" 含有データにヒットする', () => {
+        expect(fuzzyMatch('HP-100', 'ー')).toBe(true);
+    });
+
+    test('長音符正規化: 全角ハイフン "－" で長音符 "ー" 含有データにヒットする', () => {
+        expect(fuzzyMatch('スーパー', '－')).toBe(true);
+    });
 });
