@@ -115,8 +115,8 @@ export interface GitStatusResult {
 // =========================================================================
 let gitStatusCache: GitStatusResult | false = false;
 
-/** git status キャッシュを無効化する。writeFileAsync / git操作後に呼ばれる。 */
-function invalidateGitStatusCache(): void {
+/** git status キャッシュを無効化する。writeFileAsync / git操作 / ファイルウォッチャー / gitアイコンクリック後に呼ばれる。 */
+export function invalidateGitStatusCache(): void {
     gitStatusCache = false;
 }
 
@@ -131,11 +131,38 @@ export async function gitStatusAsync(): Promise<GitStatusResult> {
     return result;
 }
 
+// =========================================================================
+// git show キャッシュ
+// パスごとにHEAD版の内容をキャッシュする。
+// ファイルウォッチャー・git操作で全無効化し、差分ビュー表示時はキャッシュをバイパスする。
+// =========================================================================
+const gitShowCache = new Map<string, string>();
+
+/** git show キャッシュを全無効化する。ファイルウォッチャー / git操作後に呼ばれる。 */
+export function invalidateGitShowCache(): void {
+    gitShowCache.clear();
+}
+
 /**
- * git show HEAD:path でHEAD時点のファイル内容を返す
+ * git show HEAD:path でHEAD時点のファイル内容を返す。
+ * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function gitShowAsync(path: string): Promise<string> {
-    return postMessageAsync<string>('git_show', { path });
+    const cached = gitShowCache.get(path);
+    if (cached !== undefined) return cached;
+    const result = await postMessageAsync<string>('git_show', { path });
+    gitShowCache.set(path, result);
+    return result;
+}
+
+/**
+ * git show HEAD:path でHEAD時点のファイル内容を返す。キャッシュをバイパスして常にC#へ問い合わせる。
+ * 差分ビュー表示時に使用する。取得結果でキャッシュを更新する。
+ */
+export async function gitShowFreshAsync(path: string): Promise<string> {
+    const result = await postMessageAsync<string>('git_show', { path });
+    gitShowCache.set(path, result);
+    return result;
 }
 
 /**
@@ -144,6 +171,7 @@ export async function gitShowAsync(path: string): Promise<string> {
 export async function gitAddAsync(path: string): Promise<void> {
     await postMessageAsync('git_add', { path });
     invalidateGitStatusCache();
+    invalidateGitShowCache();
 }
 
 /**
@@ -152,6 +180,7 @@ export async function gitAddAsync(path: string): Promise<void> {
 export async function gitResetAsync(path: string): Promise<void> {
     await postMessageAsync('git_reset', { path });
     invalidateGitStatusCache();
+    invalidateGitShowCache();
 }
 
 /**
@@ -160,6 +189,7 @@ export async function gitResetAsync(path: string): Promise<void> {
 export async function gitDiscardAsync(path: string): Promise<void> {
     await postMessageAsync('git_discard', { path });
     invalidateGitStatusCache();
+    invalidateGitShowCache();
 }
 
 /**

@@ -9,6 +9,7 @@ import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
 import {ResizeHandle} from "./resize-handle";
+import {invalidateGitStatusCache, invalidateGitShowCache} from "./api";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -96,6 +97,8 @@ export class Sidebar {
                 return;
             }
             if (data.type !== 'file_changed') return;
+            invalidateGitStatusCache();
+            invalidateGitShowCache();
             this.sourceControlPanel.refreshAsync().catch(e => { console.error('バッジ更新失敗', e); });
         });
 

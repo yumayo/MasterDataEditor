@@ -1,4 +1,4 @@
-import { gitStatusAsync, gitShowAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry } from './api';
+import { gitStatusAsync, gitShowFreshAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry, invalidateGitStatusCache, invalidateGitShowCache } from './api';
 import { readFileAsync } from './api';
 import { Tab } from './tab';
 import { ActivityBar } from './activity-bar';
@@ -65,7 +65,9 @@ export class SourceControlPanel {
      */
     show(): void {
         this.element.classList.add('sidebar-panel-active');
-        // 表示時に毎回最新の状態を取得する（fire-and-forget、エラーは握り潰さない）
+        // gitアイコンクリック時はキャッシュをクリアして最新の状態を取得する
+        invalidateGitStatusCache();
+        invalidateGitShowCache();
         this.refreshAsync().catch(e => { console.error('git status 取得失敗', e); });
     }
 
@@ -253,7 +255,7 @@ export class SourceControlPanel {
             const [schemaJson, currentCsv, headCsv] = await Promise.all([
                 readFileAsync(`schema/${tableName}.json`),
                 readFileAsync(`data/${tableName}.csv`),
-                gitShowAsync(entry.path),
+                gitShowFreshAsync(entry.path),
             ]);
             if (requestId !== this.currentRequestId) return;
             this.tab.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path);
