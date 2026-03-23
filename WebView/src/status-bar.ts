@@ -1,43 +1,62 @@
-import type {ValidationPanel} from "./validation-panel";
+import type {BottomPanel} from "./bottom-panel";
 import type {NotificationToast} from "./notification";
-import type {DebugConsole} from "./debug-console";
 
 /**
  * ステータスバー
  *
  * 画面最下部に常時表示される。
- * 左端: エラー件数バッジ（クリックでバリデーションパネルの表示/非表示をトグル）
- * 左寄り: DEBUG ボタン（クリックで DEBUGコンソールの表示/非表示をトグル）
+ * 左端: エラー件数バッジ（クリックでBottomPanelのPROBLEMSタブをトグル）
  * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
  * 右端: 通知ベルアイコン（NotificationToastが配置される）
  * エラー0件でも "0" を表示する。
  *
- * 循環参照（StatusBar ↔ ValidationPanel）は Object.assign パターンで解決する。
+ * 循環参照（StatusBar ↔ ValidationPanel → StatusBar）は Object.assign パターンで解決する。
  * main.ts で `const statusBar = {} as StatusBar` を先に作り、
- * ValidationPanel コンストラクタに渡した後、`new StatusBar(validationPanel, notification)` で生成する。
+ * ValidationPanel・BottomPanel を生成した後、`new StatusBar(bottomPanel, notification)` で生成する。
  */
 export class StatusBar {
 
     private readonly element: HTMLElement;
     private readonly badge: HTMLElement;
     private readonly badgeCount: HTMLElement;
-    private readonly validationPanel: ValidationPanel;
-    private readonly debugConsole: DebugConsole;
+    private readonly bottomPanel: BottomPanel;
     private readonly backgroundIndicator: HTMLElement;
     private readonly backgroundCount: HTMLElement;
     private readonly backgroundPopover: HTMLElement;
     private backgroundPopoverVisible: boolean;
 
-    constructor(validationPanel: ValidationPanel, notification: NotificationToast, debugConsole: DebugConsole) {
-        this.validationPanel = validationPanel;
-        this.debugConsole = debugConsole;
+    constructor(bottomPanel: BottomPanel, notification: NotificationToast) {
+        this.bottomPanel = bottomPanel;
         this.backgroundPopoverVisible = false;
 
         const bar = document.createElement('div');
         bar.classList.add('status-bar');
         this.element = bar;
 
-        // バックグラウンドタスクインジケーター（左端）— 実行中タスクがある場合のみ表示
+        // エラー件数バッジ（左端）— エラーアイコン + 件数でPROBLEMSパネルであることを示す
+        // margin-right: auto で残りスペースをすべて占有し、後続要素を右端に押し出す
+        const badge = document.createElement('div');
+        badge.classList.add('status-bar-badge');
+        badge.setAttribute('role', 'button');
+        badge.setAttribute('tabindex', '0');
+        badge.setAttribute('aria-label', 'PROBLEMSパネルを表示');
+        badge.dataset.errorCount = '0';
+        const errorIcon = document.createElement('span');
+        errorIcon.classList.add('status-bar-badge-icon');
+        errorIcon.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>`;
+        badge.appendChild(errorIcon);
+        const countSpan = document.createElement('span');
+        countSpan.classList.add('status-bar-badge-count');
+        countSpan.textContent = '0';
+        badge.appendChild(countSpan);
+        badge.addEventListener('click', () => { this.bottomPanel.toggleTab('problems'); });
+        badge.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.bottomPanel.toggleTab('problems'); });
+        bar.appendChild(badge);
+        this.badge = badge;
+        this.badgeCount = countSpan;
+
+        // バックグラウンドタスクインジケーター（通知ベルの左隣、右寄り）
+        // badge の margin-right:auto によって右端グループに押し出される
         const bgIndicator = document.createElement('div');
         bgIndicator.classList.add('status-bar-background-indicator');
         bgIndicator.setAttribute('role', 'button');
@@ -68,46 +87,10 @@ export class StatusBar {
             }
         });
 
+        bar.appendChild(bgIndicator);
         this.backgroundIndicator = bgIndicator;
         this.backgroundCount = bgCountSpan;
         this.backgroundPopover = bgPopover;
-
-        // エラー件数バッジ（左寄り）— エラーアイコン + 件数でPROBLEMSパネルであることを示す
-        // margin-right: auto で残りスペースをすべて占有し、後続要素を右端に押し出す
-        const badge = document.createElement('div');
-        badge.classList.add('status-bar-badge');
-        badge.setAttribute('role', 'button');
-        badge.setAttribute('tabindex', '0');
-        badge.setAttribute('aria-label', 'PROBLEMSパネルを表示');
-        badge.dataset.errorCount = '0';
-        const errorIcon = document.createElement('span');
-        errorIcon.classList.add('status-bar-badge-icon');
-        errorIcon.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>`;
-        badge.appendChild(errorIcon);
-        const countSpan = document.createElement('span');
-        countSpan.classList.add('status-bar-badge-count');
-        countSpan.textContent = '0';
-        badge.appendChild(countSpan);
-        badge.addEventListener('click', () => { this.validationPanel.toggleVisibility(); });
-        badge.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.validationPanel.toggleVisibility(); });
-        bar.appendChild(badge);
-        this.badge = badge;
-        this.badgeCount = countSpan;
-
-        // DEBUG ボタン（エラーバッジの右隣）— クリックで DEBUGコンソールをトグル
-        const debugBtn = document.createElement('div');
-        debugBtn.classList.add('status-bar-debug-button');
-        debugBtn.setAttribute('role', 'button');
-        debugBtn.setAttribute('tabindex', '0');
-        debugBtn.setAttribute('aria-label', 'DEBUGコンソールを表示');
-        debugBtn.textContent = 'DEBUG';
-        debugBtn.addEventListener('click', () => { this.debugConsole.toggleVisibility(); });
-        debugBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.debugConsole.toggleVisibility(); });
-        bar.appendChild(debugBtn);
-
-        // バックグラウンドタスクインジケーター（通知ベルの左隣、右寄り）
-        // badge の margin-right:auto によって右端グループに押し出される
-        bar.appendChild(bgIndicator);
 
         // 通知ベルアイコンをステータスバー右端に配置する
         notification.appendTo(bar);
@@ -130,7 +113,6 @@ export class StatusBar {
      */
     updateBackgroundTasks(tasks: ReadonlyMap<number, string>): void {
         const count = tasks.size;
-        // ポップオーバーの内容は常に最新に保つ（開閉状態に関わらず）
         this.renderPopoverContent(tasks);
         if (count === 0) {
             this.backgroundIndicator.style.display = 'none';
@@ -142,7 +124,7 @@ export class StatusBar {
     }
 
     /**
-     * ステータスバーを親要素に追加する（Editor から呼ばれる）
+     * ステータスバーを親要素に追加する（main.ts から呼ばれる）
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
@@ -174,7 +156,6 @@ export class StatusBar {
         title.classList.add('status-bar-background-popover-title');
         title.textContent = `バックグラウンド処理 (${tasks.size}件)`;
         this.backgroundPopover.appendChild(title);
-        // タスク一覧はスクロール可能なラッパーにまとめる
         const list = document.createElement('div');
         list.classList.add('status-bar-background-popover-list');
         tasks.forEach((label) => {

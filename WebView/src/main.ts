@@ -13,6 +13,7 @@ import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
 import {BackgroundTaskTracker} from "./background-task-tracker";
 import {DebugConsole} from "./debug-console";
+import {BottomPanel} from "./bottom-panel";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
@@ -62,12 +63,14 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
     // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
     // Tab ↔ Sidebar と同じパターン。
+    // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
+    // 生成順: statusBar(stub) → validationPanel → debugConsole → bottomPanel → realStatusBar → assign
     const validationEngine = new ValidationEngine(store, referenceDataCache);
-    // DEBUGコンソールは StatusBar より先に生成する（StatusBar のコンストラクタに渡すため）
-    const debugConsole = new DebugConsole();
     const statusBar = {} as StatusBar;
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
-    const realStatusBar = new StatusBar(validationPanel, notification, debugConsole);
+    const debugConsole = new DebugConsole();
+    const bottomPanel = new BottomPanel(validationPanel, debugConsole);
+    const realStatusBar = new StatusBar(bottomPanel, notification);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
     // バックグラウンドタスクトラッカーを初期化する（api.ts の全 C# 通信を追跡対象にする）
@@ -75,10 +78,8 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     configureBackgroundTracker(backgroundTaskTracker);
 
     tab.connectValidationPanel(validationPanel);
-    // editor 直下の下段に配置する（flex-direction: column のため自然に下段になる）
-    editor.appendValidationPanel(validationPanel);
-    // DEBUGコンソールをバリデーションパネルの下に配置する
-    editor.appendDebugConsole(debugConsole);
+    // ボトムパネル（PROBLEMS / DEBUG CONSOLE）を editor 下段に配置する
+    editor.appendBottomPanel(bottomPanel);
     // ステータスバーは画面幅いっぱいに表示するため body 直下に配置する
     statusBar.appendTo(document.body);
 

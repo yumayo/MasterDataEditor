@@ -1,18 +1,13 @@
 import {ValidationEngine, ValidationError} from "./validation-engine";
 import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
-import {ResizeHandle} from "./resize-handle";
 
 /**
  * バリデーションエラーパネル
  *
- * 画面下段に表示され、全テーブルのバリデーションエラーを一覧表示する。
- * テーブル名ヘッダー + エラー項目のグループ構造で表示する。
- * エラー項目クリックで該当テーブルタブに切り替え、対象セルにフォーカスジャンプする。
- *
- * バリデーション実行の責務も担う（ValidationEngine を保持する）。
- * runAndUpdate() を呼ぶと全テーブルのバリデーションを実行し、
- * UI更新 + 各EditorTableへのエラークラス付与を行う。
+ * BottomPanel の PROBLEMS タブのコンテンツとして表示される。
+ * タイトルバー・ResizeHandle・閉じるボタンは BottomPanel が担当するため、
+ * このクラスはエラーリストの表示と、バリデーション実行ロジックのみを担う。
  *
  * 循環参照（ValidationPanel ↔ StatusBar）は Object.assign パターンで解決する。
  * main.ts で `const statusBar = {} as StatusBar` を先に作り、
@@ -24,8 +19,6 @@ export class ValidationPanel {
     private readonly engine: ValidationEngine;
     private readonly tab: Tab;
     private readonly statusBar: StatusBar;
-    /** 縦方向リサイズハンドル。render() でコンテンツをクリアした後に再 prependTo する */
-    private readonly resizeHandle: ResizeHandle;
     /** 現在のエラーリスト */
     private currentErrors: ValidationError[];
 
@@ -37,29 +30,25 @@ export class ValidationPanel {
 
         const panel = document.createElement('div');
         panel.classList.add('validation-panel');
-        // 初期状態は非表示（ステータスバーのバッジクリックで表示する）
         panel.style.display = 'none';
         this.element = panel;
 
-        // 縦方向リサイズハンドル: 上端に配置し、上方向へドラッグすることで高さを増やす
-        // delta が正（下移動）= 高さ縮小、負（上移動）= 高さ増加 なので -delta を加算する
-        this.resizeHandle = new ResizeHandle('vertical', (delta: number): number => {
-            const currentHeight = this.element.getBoundingClientRect().height;
-            const newHeight = Math.max(80, currentHeight - delta);
-            this.element.style.height = `${newHeight}px`;
-            // 上方向ドラッグ(delta負)で高さ増加のため、消費delta = currentHeight - newHeight（delta反転後の変化量）
-            return currentHeight - newHeight;
-        });
-
-        // 初期表示を構築する（PROBLEMSヘッダー + 「エラーはありません」）
+        // 初期表示を構築する（「エラーはありません」）
         this.render();
     }
 
     /**
-     * パネルを親要素に追加する（Editor から呼ばれる）
+     * パネルを親要素に追加する（BottomPanel から呼ばれる）
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+    }
+
+    /**
+     * 表示/非表示を切り替える（BottomPanel から呼ばれる）
+     */
+    setVisible(visible: boolean): void {
+        this.element.style.display = visible ? '' : 'none';
     }
 
     /**
@@ -113,24 +102,12 @@ export class ValidationPanel {
      * 値が変わっていればエラーは引き継がず消える（テストケース6の修正）。
      */
     runAndUpdate(): void {
-        // 現在のエラーリストを渡してエンジン側でスキップ行の値変化を検知させる
         const result = this.engine.validate(this.currentErrors);
-        // preservableErrors: 参照先テーブルが未ロードだが現在のストア値が変わっていないエラーのみ引き継ぐ
         const mergedErrors = [...result.errors, ...result.preservableErrors];
         this.currentErrors = mergedErrors;
         this.render();
         this.statusBar.updateCount(mergedErrors.length);
-        // 全EditorTableにエラー情報を適用してセルのDOMクラスを更新する
         this.applyErrorClassesToAllEditorTables(mergedErrors);
-    }
-
-    /** パネルの表示/非表示をトグルする（ステータスバーのバッジクリックから呼ばれる） */
-    toggleVisibility(): void {
-        if (this.element.style.display === 'none') {
-            this.element.style.display = 'block';
-        } else {
-            this.element.style.display = 'none';
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -138,29 +115,9 @@ export class ValidationPanel {
     // -------------------------------------------------------------------------
 
     private render(): void {
-        // 既存の内容をクリアする
         while (this.element.firstChild) {
             this.element.removeChild(this.element.firstChild);
         }
-        // クリア後にリサイズハンドルを先頭に戻す（render のたびに削除されるため）
-        this.resizeHandle.prependTo(this.element);
-
-        // PROBLEMSタイトルバー
-        const header = document.createElement('div');
-        header.classList.add('validation-panel-header');
-        const title = document.createElement('span');
-        title.textContent = 'PROBLEMS';
-        header.appendChild(title);
-        // 閉じるボタン（×）
-        const closeBtn = document.createElement('div');
-        closeBtn.classList.add('validation-panel-close');
-        closeBtn.setAttribute('role', 'button');
-        closeBtn.setAttribute('tabindex', '0');
-        closeBtn.setAttribute('aria-label', 'PROBLEMSパネルを閉じる');
-        closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708z"/></svg>`;
-        closeBtn.addEventListener('click', () => { this.element.style.display = 'none'; });
-        header.appendChild(closeBtn);
-        this.element.appendChild(header);
 
         // エラーがなければ「エラーはありません」を表示して終了
         if (this.currentErrors.length === 0) {
@@ -202,7 +159,6 @@ export class ValidationPanel {
                 item.setAttribute('role', 'button');
                 item.setAttribute('tabindex', '0');
 
-                // エラー種別バッジ
                 const kindSpan = document.createElement('span');
                 kindSpan.classList.add('validation-panel-item-kind');
                 if (error.kind === 'pk-duplicate') {
@@ -216,12 +172,10 @@ export class ValidationPanel {
                     kindSpan.textContent = 'FK切れ';
                 }
 
-                // 位置情報（行番号・列名）
                 const locationSpan = document.createElement('span');
                 locationSpan.classList.add('validation-panel-item-location');
                 locationSpan.textContent = `${tableName} 行${error.rowIndex + 1} ${error.columnName}:`;
 
-                // エラーメッセージ
                 const messageSpan = document.createElement('span');
                 messageSpan.classList.add('validation-panel-item-message');
                 messageSpan.textContent = error.message;
@@ -230,7 +184,6 @@ export class ValidationPanel {
                 item.appendChild(locationSpan);
                 item.appendChild(messageSpan);
 
-                // クリックとEnterキーで該当セルにジャンプする
                 item.addEventListener('click', () => { this.jumpToError(error); });
                 item.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.jumpToError(error); });
 
@@ -244,7 +197,6 @@ export class ValidationPanel {
     // -------------------------------------------------------------------------
 
     private applyErrorClassesToAllEditorTables(errors: ValidationError[]): void {
-        // テーブル名ごとにエラーをグループ化する
         const errorsByTable = new Map<string, ValidationError[]>();
         for (const error of errors) {
             if (errorsByTable.has(error.tableName)) {
@@ -253,7 +205,6 @@ export class ValidationPanel {
                 errorsByTable.set(error.tableName, [error]);
             }
         }
-        // 全EditorTableに直接エラー情報を適用する（密結合: ValidationPanel → Tab → EditorTable）
         for (const [tableName, editorTable] of this.tab.getOpenEditorTables()) {
             const tableErrors = errorsByTable.has(tableName) ? errorsByTable.get(tableName)! : [];
             editorTable.applyValidationErrors(tableErrors);
@@ -266,31 +217,20 @@ export class ValidationPanel {
 
     /**
      * エラー項目クリック時に該当テーブルタブを開き、対象セルにフォーカスする。
-     *
-     * タブが開いている場合: ストア行インデックスで正確にジャンプする。
-     *   PK重複エラーは同じPK値を持つ複数行が存在するため、PK値検索では2行目以降を特定できない。
-     *   storeRowToDomRow() でストア行→DOM行を直接マッピングすることで正確な行にジャンプする。
-     *
-     * タブが開いていない場合: PK値ベースで navigateToTableCell を使いテーブルを新規作成してジャンプする。
-     *   PK重複の場合は最初の一致行にしかジャンプできないが、テーブルは開かれる。
      */
     private jumpToError(error: ValidationError): void {
         const tableName = error.tableName;
         const tabStates = this.tab.getTabStates();
         const state = tabStates.get(tableName);
         if (state) {
-            // タブが開いている場合: ストア行インデックスからDOM行を正確に特定する
             this.tab.switchToExistingTab(tableName);
             const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
-            if (domRow === null) return; // フィルター非表示行はスキップ
-            // columnIndex はCSVの0始まり列 → DOM上は +1（行ヘッダー列分）
+            if (domRow === null) return;
             const domCol = error.columnIndex + 1;
             state.selection.setRange(domRow, domCol, domRow, domCol);
             state.selection.move(domRow, domCol);
-            // パネルアイテムクリックでフォーカスが移動した場合でも確実にフォーカスを戻す
             state.editorTableHandler.activate();
         } else {
-            // タブが開いていない場合: PK値ベースでテーブルを開いてジャンプ
             if (error.pkValue === null) return;
             this.tab.navigateToTableCell(tableName, error.pkValue, error.columnIndex);
         }

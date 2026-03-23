@@ -1,9 +1,8 @@
 import {RelationsPanel} from "./relations-panel";
 import {Tab} from "./tab";
 import {DiffView} from "./diff-view";
-import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
-import {DebugConsole} from "./debug-console";
+import {BottomPanel} from "./bottom-panel";
 
 /**
  * RelationsPanel の表示/非表示トグル状態変更を通知するリスナー型。
@@ -262,23 +261,15 @@ export class Editor {
     }
 
     /**
-     * バリデーションエラーパネルを editor 直下（コンテンツ領域の下）に追加する。
+     * ボトムパネル（PROBLEMS / DEBUG CONSOLE）を editor 直下に追加する。
      * editor は flex-direction: column のため、contentArea の下段に配置される。
      */
-    appendValidationPanel(panel: ValidationPanel): void {
+    appendBottomPanel(panel: BottomPanel): void {
         panel.appendTo(this.element);
     }
 
     /**
-     * DEBUGコンソールを editor 直下（ValidationPanelの下）に追加する。
-     */
-    appendDebugConsole(console: DebugConsole): void {
-        console.appendTo(this.element);
-    }
-
-    /**
      * ステータスバーを editor 直下の最下部に追加する。
-     * バリデーションパネルの後に追加することで最下段に配置される。
      */
     appendStatusBar(statusBar: StatusBar): void {
         statusBar.appendTo(this.element);

@@ -1,20 +1,18 @@
-import {ResizeHandle} from "./resize-handle";
-
 /**
  * DEBUGコンソール
  *
- * バックグラウンドタスクの発行履歴（ラベル・経過時間・成否）を最大1000件表示する。
- * 画面下段に表示され、ValidationPanelと同様のパネル構造を持つ。
- * ステータスバーの DEBUG ボタンクリックで表示/非表示をトグルする。
+ * BottomPanel の DEBUG CONSOLE タブのコンテンツとして表示される。
+ * タイトルバー・ResizeHandle・閉じるボタンは BottomPanel が担当するため、
+ * このクラスはログリストの管理と表示のみを担う。
  *
- * 1000件超過時は先頭エントリと対応するDOM行を同時に削除して上限を維持する。
- * 新規エントリ追加時はリストの末尾へ自動スクロールする。
+ * バックグラウンドタスクの発行履歴（ラベル・経過時間・成否）を最大1000件表示する。
+ * 1000件超過時は先頭エントリ（最古のもの）を削除して上限を維持する。
+ * 新規エントリ追加時はリスト末尾へ自動スクロールする。
  */
 export class DebugConsole {
 
     private readonly element: HTMLElement;
     private readonly list: HTMLElement;
-    private readonly resizeHandle: ResizeHandle;
     /** ログエントリの件数カウンター（DOM先頭削除と同期して管理） */
     private entryCount: number;
 
@@ -27,48 +25,6 @@ export class DebugConsole {
         panel.classList.add('debug-console');
         panel.style.display = 'none';
         this.element = panel;
-
-        // 縦方向リサイズハンドル（ValidationPanelと同じパターン）
-        this.resizeHandle = new ResizeHandle('vertical', (delta: number): number => {
-            const currentHeight = this.element.getBoundingClientRect().height;
-            const newHeight = Math.max(80, currentHeight - delta);
-            this.element.style.height = `${newHeight}px`;
-            return currentHeight - newHeight;
-        });
-        this.resizeHandle.prependTo(this.element);
-
-        // タイトルバー
-        const header = document.createElement('div');
-        header.classList.add('debug-console-header');
-        const title = document.createElement('span');
-        title.textContent = 'DEBUG CONSOLE';
-        header.appendChild(title);
-
-        // クリアボタン（ゴミ箱アイコン）
-        const clearBtn = document.createElement('div');
-        clearBtn.classList.add('debug-console-action');
-        clearBtn.setAttribute('role', 'button');
-        clearBtn.setAttribute('tabindex', '0');
-        clearBtn.setAttribute('title', 'ログをクリア');
-        clearBtn.setAttribute('aria-label', 'ログをクリア');
-        clearBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M6 2h4l1 1H5L6 2zM4 4h8v9l-1 1H5l-1-1V4zm2 2v6h1V6H6zm3 0v6h1V6H9z"/></svg>`;
-        clearBtn.addEventListener('click', () => { this.clear(); });
-        clearBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.clear(); });
-        header.appendChild(clearBtn);
-
-        // 閉じるボタン（ValidationPanelと同じアイコン）
-        const closeBtn = document.createElement('div');
-        closeBtn.classList.add('debug-console-action');
-        closeBtn.setAttribute('role', 'button');
-        closeBtn.setAttribute('tabindex', '0');
-        closeBtn.setAttribute('title', 'DEBUGコンソールを閉じる');
-        closeBtn.setAttribute('aria-label', 'DEBUGコンソールを閉じる');
-        closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708z"/></svg>`;
-        closeBtn.addEventListener('click', () => { this.element.style.display = 'none'; });
-        closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.element.style.display = 'none'; });
-        header.appendChild(closeBtn);
-
-        panel.appendChild(header);
 
         // カラムヘッダー行
         const columnHeader = document.createElement('div');
@@ -90,7 +46,6 @@ export class DebugConsole {
      * 追加後はリスト末尾へ自動スクロールする。
      */
     appendEntry(label: string, durationMs: number, status: 'success' | 'error'): void {
-        // 上限超過時は先頭行（最古）を削除する
         if (this.entryCount >= DebugConsole.MAX_ENTRIES) {
             if (this.list.firstChild) {
                 this.list.removeChild(this.list.firstChild);
@@ -99,33 +54,31 @@ export class DebugConsole {
         }
         this.list.appendChild(this.createRow(label, durationMs, status));
         this.entryCount++;
-        // 最新行が常に見えるようにスクロールする
         this.list.scrollTop = this.list.scrollHeight;
     }
 
     /**
-     * パネルの表示/非表示をトグルする（ステータスバーの DEBUG ボタンから呼ばれる）
+     * ログを全件クリアする（BottomPanel のクリアボタンから呼ばれる）
      */
-    toggleVisibility(): void {
-        if (this.element.style.display === 'none') {
-            this.element.style.display = '';
-        } else {
-            this.element.style.display = 'none';
-        }
-    }
-
-    /**
-     * パネルを親要素に追加する（Editor から呼ばれる）
-     */
-    appendTo(parent: HTMLElement): void {
-        parent.appendChild(this.element);
-    }
-
-    private clear(): void {
+    clear(): void {
         while (this.list.firstChild) {
             this.list.removeChild(this.list.firstChild);
         }
         this.entryCount = 0;
+    }
+
+    /**
+     * 表示/非表示を切り替える（BottomPanel から呼ばれる）
+     */
+    setVisible(visible: boolean): void {
+        this.element.style.display = visible ? '' : 'none';
+    }
+
+    /**
+     * パネルを親要素に追加する（BottomPanel から呼ばれる）
+     */
+    appendTo(parent: HTMLElement): void {
+        parent.appendChild(this.element);
     }
 
     private createRow(label: string, durationMs: number, status: 'success' | 'error'): HTMLElement {
