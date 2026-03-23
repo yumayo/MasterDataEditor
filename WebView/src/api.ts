@@ -11,18 +11,56 @@ export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
     tracker = t;
 }
 
+// =========================================================================
+// ファイルキャッシュ
+// 起動時に全ファイルを一括読み込みし、以降はキャッシュから同期的に返す。
+// writeFileAsync / deleteFileAsync でキャッシュも同期的に更新する。
+// =========================================================================
+const fileCache = new Map<string, string>();
+const dirCache = new Map<string, File[]>();
+
+/**
+ * 起動時に schema/ と data/ 以下の全ファイルを一括読み込みしてキャッシュに格納する。
+ * main.ts の初期化冒頭で呼び出すこと。
+ */
+export async function preloadAllFilesAsync(): Promise<void> {
+    const schemaFiles = await postMessageAsync<File[]>('find_files', { directory: 'schema' });
+    dirCache.set('schema', schemaFiles);
+    const dataFiles = await postMessageAsync<File[]>('find_files', { directory: 'data' });
+    dirCache.set('data', dataFiles);
+    for (const file of schemaFiles) {
+        if (file.type !== 'file') continue;
+        const path = `schema/${file.name}`;
+        const content = await postMessageAsync<string>('read_file', { filename: path });
+        fileCache.set(path, content);
+    }
+    for (const file of dataFiles) {
+        if (file.type !== 'file') continue;
+        const path = `data/${file.name}`;
+        const content = await postMessageAsync<string>('read_file', { filename: path });
+        fileCache.set(path, content);
+    }
+}
+
 /**
  * ファイルに文字列データを書き込む（汎用API）
+ * 書き込み後にキャッシュも更新する。
  */
 export async function writeFileAsync(filename: string, data: string): Promise<void> {
-    return postMessageAsync('write_file', { filename, data });
+    await postMessageAsync('write_file', { filename, data });
+    fileCache.set(filename, data);
 }
 
 /**
  * ファイルから文字列データを読み込む（汎用API）
+ * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function readFileAsync(filename: string): Promise<string> {
-    return postMessageAsync<string>('read_file', { filename });
+    const cached = fileCache.get(filename);
+    if (cached !== undefined) return cached;
+    const result = await postMessageAsync<string>('read_file', { filename });
+    fileCache.set(filename, result);
+    return result;
 }
 
 interface File {
@@ -32,16 +70,23 @@ interface File {
 
 /**
  * ファイルを削除する（汎用API）
+ * 削除後にキャッシュからも除去する。
  */
 export async function deleteFileAsync(filename: string): Promise<void> {
-    return postMessageAsync('delete_file', { filename });
+    await postMessageAsync('delete_file', { filename });
+    fileCache.delete(filename);
 }
 
 /**
  * 指定したディレクトリ以下のファイル一覧を列挙する
+ * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function findFilesAsync(directory: string): Promise<File[]> {
-    return postMessageAsync<File[]>('find_files', { directory });
+    const cached = dirCache.get(directory);
+    if (cached !== undefined) return cached;
+    const result = await postMessageAsync<File[]>('find_files', { directory });
+    dirCache.set(directory, result);
+    return result;
 }
 
 /**

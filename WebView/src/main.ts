@@ -1,4 +1,4 @@
-import {findFilesAsync, readFileAsync, configureBackgroundTracker} from "./api";
+import {findFilesAsync, readFileAsync, configureBackgroundTracker, preloadAllFilesAsync} from "./api";
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
@@ -21,6 +21,10 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
     applyStoredTheme();
+
+    // 起動時に schema/ と data/ 以下の全ファイルをキャッシュに一括読み込みする。
+    // 以降の readFileAsync / findFilesAsync はキャッシュから即座に返るため C# への問い合わせが不要になる。
+    await preloadAllFilesAsync();
 
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
