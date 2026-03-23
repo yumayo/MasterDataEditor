@@ -67,23 +67,30 @@
 }
 
 /* スピナーアニメーション */
+/* display:block で inline baseline の揺れを防ぐ */
 .status-bar-background-spinner {
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .status-bar-background-spinner svg {
+    display: block;
     animation: status-bar-spin 1s linear infinite;
+    transform-origin: center;
 }
 
 @keyframes status-bar-spin {
     to { transform: rotate(360deg); }
 }
 
-/* タスク件数テキスト */
+/* タスク件数テキスト — 固定幅で数字が変わってもスピナーが動かない */
 .status-bar-background-count {
     font-size: 11px;
-    min-width: 8px;
+    width: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
 }
 
 /* バックグラウンドタスクポップオーバー（インジケーターの右端に揃えて上方展開） */
