@@ -2,19 +2,17 @@ import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // =============================================================================
-// ISSUE-0106: フィルハンドルの色を非アクティブselectionと同色（灰色系）にする
+// ISSUE-0106: フィルハンドルの色がselectionと同じ青色系であること
 //
-// フィルハンドル（.fill-handle）のアクティブ時の背景色が灰色系であることを検証する。
-// 従来は青色（rgba(0, 120, 215, ...)）だったが、非アクティブselectionと同色の
-// 灰色系（rgba(128, 128, 128, ...)）に変更する。
+// フィルハンドル（.fill-handle）の背景色がselectionのボーダー色と統一された
+// 青色系（rgba(0, 120, 215, ...)）であることを検証する。
 //
 // テーブル構成:
 //   item: id, name（単純な2列テーブル）
 //
 // テストシナリオ:
 //   1. テーブルを開き、セルをクリックしてフィルハンドルを表示させる
-//   2. フィルハンドルの background-color が灰色系であることを検証
-//   3. 青系でないことを検証
+//   2. フィルハンドルの background-color が青色系であることを検証
 // =============================================================================
 
 /** テスト用の最小限ファイルシステム */
@@ -64,7 +62,7 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		await page.goto('/');
 	});
 
-	test('アクティブ時のフィルハンドルの背景色が灰色系であること', async ({ page }) => {
+	test('アクティブ時のフィルハンドルの背景色が青色系であること', async ({ page }) => {
 		// テーブルを開いてデータセルをクリックし、フィルハンドルを表示させる
 		const table = await openTableAsync(page, 'item');
 		const dataCell = table.locator(DATA_CELL_SELECTOR).first();
@@ -75,14 +73,11 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		const fillHandle = page.locator('.fill-handle');
 		await expect(fillHandle).toBeVisible();
 
-		// フィルハンドルの background-color が灰色系（128, 128, 128）であることを検証する
-		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '128, 128, 128')).toBe(true);
-
-		// 青系（0, 120, 215）でないことを検証する
-		expect(await hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(false);
+		// フィルハンドルの background-color が青色系（0, 120, 215）であることを検証する
+		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(true);
 	});
 
-	test('フィルハンドルのホバー時も灰色系であること', async ({ page }) => {
+	test('フィルハンドルのホバー時も青色系であること', async ({ page }) => {
 		// テーブルを開いてデータセルをクリックし、フィルハンドルを表示させる
 		const table = await openTableAsync(page, 'item');
 		const dataCell = table.locator(DATA_CELL_SELECTOR).first();
@@ -96,10 +91,7 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		// フィルハンドルにホバーする
 		await fillHandle.hover();
 
-		// ホバー時も灰色系（128, 128, 128）であることを検証する
-		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '128, 128, 128')).toBe(true);
-
-		// 青系（0, 120, 215）でないことを検証する
-		expect(await hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(false);
+		// ホバー時も青色系（0, 120, 215）であることを検証する
+		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(true);
 	});
 });
