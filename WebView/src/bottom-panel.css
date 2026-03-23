@@ -3,6 +3,7 @@
 .bottom-panel {
     flex-shrink: 0;
     height: 300px;
+    box-sizing: border-box;
     background-color: var(--background-color);
     font-size: 12px;
     color: var(--font-color);

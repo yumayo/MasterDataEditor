@@ -24,6 +24,28 @@
     flex-shrink: 0;
 }
 
+/* リサイズ可能なヘッダーセルはハンドルを絶対配置するため relative */
+.debug-console-column-header .debug-console-col-time,
+.debug-console-column-header .debug-console-col-caller,
+.debug-console-column-header .debug-console-col-duration {
+    position: relative;
+}
+
+/* 列幅リサイズハンドル（ヘッダー右端のドラッグ領域） */
+.debug-console-col-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+}
+
+.debug-console-col-resize-handle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
 /* ログリスト（スクロール可能） */
 .debug-console-list {
     overflow-y: auto;
@@ -58,6 +80,17 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding-right: 8px;
+}
+
+.debug-console-col-caller {
+    width: 160px;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: 8px;
+    opacity: 0.6;
+    font-style: italic;
 }
 
 .debug-console-col-duration {

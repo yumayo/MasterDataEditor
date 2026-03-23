@@ -24,23 +24,49 @@ export class BackgroundTaskTracker {
     /**
      * 非同期処理をラップしてタスクを追跡する。
      * 処理開始時にラベルを登録し、完了時（成功・失敗問わず）に削除する。
-     * 完了後は経過時間と成否を DebugConsole に記録する。
+     * 完了後は経過時間・成否・呼び出し元情報を DebugConsole に記録する。
      */
     async trackAsync<T>(label: string, promise: Promise<T>): Promise<T> {
+        // await 前にスタックを取得しないと呼び出し元情報が消える
+        const caller = this.parseCallerInfo();
         const id = this.nextId++;
         const startTime = Date.now();
         this.tasks.set(id, label);
         this.statusBar.updateBackgroundTasks(this.tasks);
         try {
             const result = await promise;
-            this.debugConsole.appendEntry(label, Date.now() - startTime, 'success');
+            this.debugConsole.appendEntry(label, Date.now() - startTime, 'success', caller);
             return result;
         } catch (e: unknown) {
-            this.debugConsole.appendEntry(label, Date.now() - startTime, 'error');
+            this.debugConsole.appendEntry(label, Date.now() - startTime, 'error', caller);
             throw e;
         } finally {
             this.tasks.delete(id);
             this.statusBar.updateBackgroundTasks(this.tasks);
         }
+    }
+
+    /**
+     * 現在のスタックトレースから、ラッパー層（BackgroundTaskTracker / api）を除いた
+     * 最初の呼び出し元フレームを特定する。
+     * スキップ対象フレームを含まない最初の "at ..." 行を返す。
+     * 例: "editor-table.ts:123"
+     */
+    private parseCallerInfo(): string {
+        const SKIP_PATTERNS = ['background-task-tracker', '/api.'];
+        const stack = new Error().stack;
+        if (!stack) return '';
+        for (const line of stack.split('\n')) {
+            if (!line.trim().startsWith('at ')) continue;
+            if (SKIP_PATTERNS.some(p => line.includes(p))) continue;
+            // Chromium 形式: "    at funcName (path/to/file.ts:line:col)"
+            // または:       "    at path/to/file.ts:line:col"
+            const match = line.match(/\((.+):(\d+):\d+\)/) ?? line.match(/at\s+(.+):(\d+):\d+/);
+            if (!match) continue;
+            const rawName = match[1].split('/').pop() ?? match[1];
+            const fileName = rawName.split('?')[0];
+            return `${fileName}:${match[2]}`;
+        }
+        return '';
     }
 }
