@@ -50,7 +50,7 @@ export class Editor {
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
         this.tab = false;
-        this.relationsPanelVisible = true;
+        this.relationsPanelVisible = false;
         this.savedRightSlotFlexBasis = '';
         this.visibilityListener = false;
 
@@ -125,17 +125,12 @@ export class Editor {
     }
 
     /**
-     * リレーションパネルをコンテンツ領域（右スロット）に追加する
-     * 初期配置: rightSlot に追加する
-     * リサイズハンドルのダブルクリックによるトグルもここで登録する（Editor が rightSlot を所有しているため）
+     * リレーションパネルをコンテンツ領域（右スロット）に追加する。
+     * 追加後に初期表示状態（デフォルト非表示）を DOM に反映する。
      */
     appendRelationsPanel(panel: RelationsPanel): void {
         panel.appendTo(this.rightSlot);
-        // リサイズハンドルのダブルクリックでRelationsPanelを折りたたみ/展開する
-        const resizeHandle = this.rightSlot.querySelector('.resize-handle[data-direction="horizontal"]');
-        if (resizeHandle !== null) {
-            resizeHandle.addEventListener('dblclick', () => { this.toggleRelationsPanel(); });
-        }
+        this.applyRelationsPanelVisibility();
     }
 
     /**
@@ -332,9 +327,9 @@ export class Editor {
      * 現在の relationsPanelVisible 状態に基づいて右スロットの CSS を更新する。
      * showRelationsPanel / hideRelationsPanel / hideDiffView / leaveSettingsMode から呼ばれる共通メソッド。
      *
-     * 非表示時は display:none ではなく visibility:hidden + flex-basis:6px にする。
-     * これにより .relations-panel は Playwright の toBeVisible() で not visible と判定されるが、
-     * リサイズハンドル（visibility:visible を個別設定）はダブルクリック操作可能な状態を維持する。
+     * 非表示時は visibility:hidden + flex-basis:0 にする。
+     * これにより .relations-panel は Playwright の toBeVisible() で not visible と判定され、
+     * リサイズハンドルも visibility が継承されて当たり判定がなくなる。
      */
     private applyRelationsPanelVisibility(): void {
         if (this.relationsPanelVisible) {
@@ -346,14 +341,13 @@ export class Editor {
             // 記憶していた flex-basis を復元する（空文字の場合は CSS のデフォルト値が適用される）
             this.rightSlot.style.flexBasis = this.savedRightSlotFlexBasis;
         } else {
-            // 右スロットを visibility:hidden にしてリサイズハンドルだけ操作可能にする。
-            // flex-basis を 6px にしてリサイズハンドル（4px幅）が収まる最小幅にする。
-            // display はリセットして flex レイアウトに参加させる（display:none だとリサイズハンドルが操作不可になる）。
+            // 右スロットを visibility:hidden にして完全に隠す。
+            // flex-basis を 0 にして右端の無駄な空きスペースをなくす。
             this.rightSlot.style.display = '';
             this.rightSlot.style.visibility = 'hidden';
             this.rightSlot.style.flexGrow = '0';
             this.rightSlot.style.flexShrink = '0';
-            this.rightSlot.style.flexBasis = '6px';
+            this.rightSlot.style.flexBasis = '0';
         }
     }
 

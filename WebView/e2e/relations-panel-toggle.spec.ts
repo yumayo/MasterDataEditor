@@ -6,10 +6,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // RelationsPanel トグル機能のテスト
 //
 // 機能概要:
-//   RelationsPanelの表示/非表示をトグルする3つの手段を検証する。
+//   RelationsPanelの表示/非表示をトグルする手段を検証する。
 //   1. ツールバーのRelationsトグルボタン
-//   2. RelationsPanelヘッダーの「»」閉じるボタン
-//   3. リサイズハンドルのダブルクリックによる折りたたみ/展開
 //
 //   非表示時は左ペインが全幅を使うことも検証する。
 // =============================================================================
@@ -71,10 +69,12 @@ async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
 }
 
 /**
- * quest テーブルを開いて1行目を選択し、RelationsPanel にコンテンツを表示させる
+ * quest テーブルを開いてパネルを表示し1行目を選択して、RelationsPanel にコンテンツを表示させる
  */
 async function setupRelationsPanelAsync(page: Page): Promise<Locator> {
     const table = await openTableAsync(page, 'quest');
+    // デフォルト非表示のためトグルボタンで表示する
+    await page.locator('#toolbar .toolbar-button-relations-toggle').click();
     await selectRowAsync(table, 0);
     await expect(page.locator('.relations-panel-content')).toBeVisible();
     return table;
@@ -147,123 +147,7 @@ test.describe('RelationsPanel トグルボタン', () => {
 });
 
 // =============================================================================
-// 2. RelationsPanelヘッダーの「»」閉じるボタン
-// =============================================================================
-
-test.describe('RelationsPanel ヘッダー閉じるボタン', () => {
-    test.beforeEach(async ({ page }) => {
-        await installMockApiAsync(page, createToggleTestFileSystem());
-        await page.goto('/');
-    });
-
-    test('RelationsPanelヘッダーに「»」閉じるボタンが存在すること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // RELATIONS セクションヘッダー内に閉じるボタンが配置されている
-        const closeButton = page.locator('.relations-panel-section-header .relations-panel-close-button');
-        await expect(closeButton).toBeVisible();
-        // ボタンのテキストが「»」であること
-        await expect(closeButton).toHaveText('»');
-    });
-
-    test('「»」閉じるボタンクリックでRelationsPanelが非表示になること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        const relationsPanel = page.locator('.relations-panel');
-        await expect(relationsPanel).toBeVisible();
-
-        // 閉じるボタンをクリック
-        const closeButton = page.locator('.relations-panel-section-header .relations-panel-close-button');
-        await closeButton.click();
-
-        // RelationsPanelが非表示になること
-        await expect(relationsPanel).not.toBeVisible();
-    });
-
-    test('「»」閉じるボタンクリック後にツールバーのトグルボタンも非アクティブになること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // 閉じるボタンをクリック
-        const closeButton = page.locator('.relations-panel-section-header .relations-panel-close-button');
-        await closeButton.click();
-
-        // ツールバーのトグルボタンも非アクティブになっていること
-        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
-        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
-    });
-});
-
-// =============================================================================
-// 3. リサイズハンドルダブルクリックによる折りたたみ/展開
-// =============================================================================
-
-test.describe('RelationsPanel リサイズハンドルダブルクリック', () => {
-    test.beforeEach(async ({ page }) => {
-        await installMockApiAsync(page, createToggleTestFileSystem());
-        await page.goto('/');
-    });
-
-    test('リサイズハンドルダブルクリックでRelationsPanelが折りたたまれること', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        const relationsPanel = page.locator('.relations-panel');
-
-        // 折りたたみ前のパネル幅を記録する
-        const beforeWidth = await page.evaluate(() => {
-            const el = document.querySelector('.editor-right-slot');
-            if (!el) throw new Error('.editor-right-slot が見つかりません');
-            return el.getBoundingClientRect().width;
-        });
-        // 初期状態では十分な幅があること
-        expect(beforeWidth).toBeGreaterThan(50);
-
-        // リサイズハンドルをダブルクリック
-        const resizeHandle = page.locator('.relations-panel .resize-handle[data-direction="horizontal"]');
-        await resizeHandle.dblclick();
-
-        // 折りたたまれた状態: RelationsPanelが非表示になるか、幅がほぼ0になること
-        await expect(relationsPanel).not.toBeVisible();
-    });
-
-    test('折りたたみ状態でリサイズハンドルダブルクリックで展開されること（前回幅復元）', async ({ page }) => {
-        await setupRelationsPanelAsync(page);
-
-        // 折りたたみ前のパネル幅を記録する
-        const originalWidth = await page.evaluate(() => {
-            const el = document.querySelector('.editor-right-slot');
-            if (!el) throw new Error('.editor-right-slot が見つかりません');
-            return el.getBoundingClientRect().width;
-        });
-
-        // リサイズハンドルをダブルクリックして折りたたむ
-        const resizeHandle = page.locator('.relations-panel .resize-handle[data-direction="horizontal"]');
-        await resizeHandle.dblclick();
-
-        // もう一度ダブルクリックして展開する
-        // 折りたたみ後はハンドルの位置が変わる可能性があるため、
-        // 開くタブ経由またはトグルボタン経由で再表示してからダブルクリックで展開するパターンもあるが、
-        // ここではリサイズハンドルのダブルクリックが折りたたみ/展開のトグルになることを検証する。
-        // 折りたたみ時にリサイズハンドルまたは代替のクリック対象が残っていることを前提とする。
-        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
-        await toggleButton.click();
-
-        // 再度リサイズハンドルをダブルクリックして折りたたみ → 展開
-        const resizeHandleAfter = page.locator('.relations-panel .resize-handle[data-direction="horizontal"]');
-        await resizeHandleAfter.dblclick();
-        await resizeHandleAfter.dblclick();
-
-        // 展開後のパネル幅が元の幅と近い値に復元されること（許容誤差10px）
-        const restoredWidth = await page.evaluate(() => {
-            const el = document.querySelector('.editor-right-slot');
-            if (!el) throw new Error('.editor-right-slot が見つかりません');
-            return el.getBoundingClientRect().width;
-        });
-        expect(Math.abs(restoredWidth - originalWidth)).toBeLessThanOrEqual(10);
-    });
-});
-
-// =============================================================================
-// 4. 左ペインの全幅化
+// 2. 左ペインの全幅化
 // =============================================================================
 
 test.describe('RelationsPanel 非表示時の左ペイン全幅化', () => {

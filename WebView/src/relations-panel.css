@@ -22,8 +22,6 @@
     right: auto;
     left: 0;
     z-index: var(--z-index-relations-panel-resize-handle);
-    /* 折りたたみ時（親が visibility:hidden）でもリサイズハンドルはダブルクリック操作可能にする */
-    visibility: visible;
 }
 
 /* ─── プレースホルダー（行未選択・参照なし） ─── */
@@ -64,23 +62,6 @@
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
     user-select: none;
-}
-
-/* ─── 閉じるボタン（「«」） ─── */
-
-.relations-panel-close-button {
-    background: none;
-    border: none;
-    color: var(--font-color);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 0 4px;
-    opacity: 0.6;
-    line-height: 1;
-}
-
-.relations-panel-close-button:hover {
-    opacity: 1;
 }
 
 /* ─── 参照種別タグ ─── */

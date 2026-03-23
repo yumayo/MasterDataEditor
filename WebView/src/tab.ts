@@ -205,8 +205,6 @@ export class Tab {
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
-        // Editor参照を接続する（閉じるボタン・リサイズハンドルダブルクリックで使用）
-        this.relationsPanel.connectEditor(this.editor);
         // Editorにこの Tab を接続してナビゲーションボタンのクリックを受け取れるようにする
         this.editor.connectTab(this);
 
@@ -1203,7 +1201,6 @@ export class Tab {
         // 新しい RelationsPanel を生成してスタックに追加する
         const rp = new RelationsPanel(this.store, this.notification);
         rp.connectTab(this);
-        rp.connectEditor(this.editor);
         const rpElement = rp.getPanelElement();
         this.paneStack.push({ element: rpElement, panel: rp });
 

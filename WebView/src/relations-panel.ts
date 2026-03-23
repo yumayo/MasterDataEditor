@@ -11,7 +11,6 @@ import {History} from "./history";
 import {ReverseReferenceResolver, ReverseReferenceRow} from "./reverse-reference-resolver";
 import {ResizeHandle} from "./resize-handle";
 import {NotificationToast} from "./notification";
-import {Editor} from "./editor";
 
 /**
  * リレーションパネルに表示する参照エントリ
@@ -77,12 +76,6 @@ export class RelationsPanel {
     private miniTableNames: string[];
     /** showForTableRowAsync() で登録したベーステーブル名。ペインスタック破棄時に unregisterTable するため記録する */
     private baseTableName: string | false;
-    /**
-     * Editor への参照。閉じるボタンクリック時にトグルメソッドを呼ぶために使用する。
-     * connectEditor() で設定される。appendTo() より後に呼ばれるため false 初期値を持つ。
-     */
-    private editor: Editor | false;
-
     constructor(store: InMemoryTableStore, notification: NotificationToast) {
         this.store = store;
         this.notification = notification;
@@ -96,7 +89,6 @@ export class RelationsPanel {
         this.miniHistories = [];
         this.miniTableNames = [];
         this.baseTableName = false;
-        this.editor = false;
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -133,7 +125,7 @@ export class RelationsPanel {
         });
         resizeHandle.prependTo(this.panelElement);
 
-        // 固定ヘッダー: RELATIONS ラベルと「»」閉じるボタンをコンテンツの表示状態に関わらず常に表示する。
+        // 固定ヘッダー: RELATIONS ラベルをコンテンツの表示状態に関わらず常に表示する。
         // renderAsync() / renderMessage() による clearContentArea() で削除されないよう
         // relations-panel-fixed-header クラスで保護する。
         const fixedHeader = document.createElement('div');
@@ -141,14 +133,6 @@ export class RelationsPanel {
         const sectionLabel = document.createElement('span');
         sectionLabel.textContent = 'RELATIONS';
         fixedHeader.appendChild(sectionLabel);
-        const closeButton = document.createElement('button');
-        closeButton.classList.add('relations-panel-close-button');
-        closeButton.textContent = '»';
-        closeButton.setAttribute('aria-label', 'RelationsPanelを閉じる');
-        closeButton.addEventListener('click', () => {
-            if (this.editor !== false) this.editor.hideRelationsPanel();
-        });
-        fixedHeader.appendChild(closeButton);
         this.panelElement.appendChild(fixedHeader);
 
         // 初期状態: プレースホルダーを表示
@@ -173,13 +157,6 @@ export class RelationsPanel {
         this.tab = tab;
     }
 
-    /**
-     * Editor参照を接続する（Tab コンストラクタおよび pushRelationsPanel で呼ばれる）
-     * 閉じるボタンクリック時にEditor.hideRelationsPanel()を呼ぶために使用する。
-     */
-    connectEditor(editor: Editor): void {
-        this.editor = editor;
-    }
 
     /**
      * EditorTableを接続する（タブがアクティブになったとき）
