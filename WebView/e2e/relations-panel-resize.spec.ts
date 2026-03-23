@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ISSUE_0103: Relationsパネルの幅調節で低速ドラッグ時に倍の距離調整される問題
@@ -76,6 +77,7 @@ test.describe('ISSUE_0103: Relationsパネルのリサイズが1:1追従する�
     test.beforeEach(async ({ page }) => {
         await installMockApiAsync(page, createResizeTestFileSystem());
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

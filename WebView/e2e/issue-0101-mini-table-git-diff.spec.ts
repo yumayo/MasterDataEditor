@@ -1,7 +1,7 @@
 import { test as base, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { MockFileSystem, installMockApiAsync } from './fixtures/mock-api';
-import { getDataCell } from './fixtures/test-utils';
+import { getDataCell, enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ISSUE_0101: メインテーブルで編集した差分がミニテーブル・クイックビューに反映されない
@@ -141,6 +141,7 @@ const test = base.extend<MiniTableGitDiffFixtures>({
 
         await installMockApiAsync(page, createMiniTableGitDiffFileSystem());
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
         await use();
     },
 });

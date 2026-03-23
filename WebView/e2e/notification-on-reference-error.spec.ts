@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 参照データ読み込み失敗時の NotificationToast 通知テスト
@@ -63,6 +64,7 @@ test.describe('参照データ読み込みエラーの通知', () => {
         const fs = createFileSystemWithMissingReferenceCsv();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
 
         // product テーブルを開く（category.id を FK 参照している）
         await openTableAsync(page, 'product');

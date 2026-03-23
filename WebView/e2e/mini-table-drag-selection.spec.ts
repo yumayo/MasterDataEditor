@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニEditorTableでマウスドラッグによる範囲選択の動作検証
@@ -156,6 +157,7 @@ test.describe('ミニEditorTableのマウスドラッグ範囲選択', () => {
         const fs = createDragSelectionTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // バグ5: ミニEditorTableで列幅リサイズが機能しない問題
@@ -95,6 +96,7 @@ test.describe('バグ5: ミニEditorTableの列幅リサイズが機能するこ
         const fs = createMiniTableResizeFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニテーブルのドリルダウン動作テスト
@@ -111,6 +112,7 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(
@@ -198,6 +200,7 @@ test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリ
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

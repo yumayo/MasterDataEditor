@@ -2,6 +2,13 @@ import { Locator, Page, expect } from '@playwright/test';
 import { readMockFileAsync } from './mock-api';
 
 /**
+ * RelationsPanelを有効化する（デフォルト非表示のためトグルボタンで表示する）
+ */
+export async function enableRelationsPanelAsync(page: Page): Promise<void> {
+    await page.locator('#toolbar .toolbar-button-relations-toggle').click();
+}
+
+/**
  * 指定した行・列のデータセルを返す
  * rowIndex: 0始まり（ヘッダー行を除く）, colIndex: 0始まり（行ヘッダーを除く）
  */

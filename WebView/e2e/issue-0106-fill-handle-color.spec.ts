@@ -1,7 +1,6 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
-
 // =============================================================================
 // ISSUE-0106: フィルハンドルの色を非アクティブselectionと同色（灰色系）にする
 //

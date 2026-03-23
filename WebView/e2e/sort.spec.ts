@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ソート機能のテスト
@@ -506,6 +507,7 @@ test.describe('ソート機能', () => {
             const fs = createMiniTableSortTestFileSystem();
             await installMockApiAsync(page, fs);
             await page.goto('/');
+            await enableRelationsPanelAsync(page);
         });
 
         test(

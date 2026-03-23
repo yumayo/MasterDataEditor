@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 1:N逆参照の parentColumnName バグ再現テスト
@@ -141,6 +142,7 @@ test.describe('テスト1: ReverseReferenceEntry に parentColumnName が含ま�
         const fs = createTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -250,6 +252,7 @@ test.describe('テスト2: E2E — shop_product行2選択時に正しいshopレ�
         const fs = createTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

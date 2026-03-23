@@ -23,7 +23,7 @@
     position: absolute;
     width: 8px;
     height: 8px;
-    background-color: rgba(0, 120, 215, 0.9);
+    background-color: rgba(128, 128, 128, 0.9);
     border: 1px solid white;
     cursor: crosshair;
     z-index: var(--z-index-selection-range-bg);
@@ -31,7 +31,7 @@
 }
 
 .fill-handle:hover {
-    background-color: rgba(0, 120, 215, 1);
+    background-color: rgba(128, 128, 128, 1);
 }
 
 /* フィルプレビュー範囲表示用の独立した要素 */

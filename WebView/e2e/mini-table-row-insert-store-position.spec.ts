@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem, readMockFileAsync } from './fixtures/mock-api';
-import { expectCsvAsync } from './fixtures/test-utils';
+import { expectCsvAsync, enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニテーブル行追加時のストア挿入位置バグ検証
@@ -156,6 +156,7 @@ test.describe('ミニテーブル行追加時のストア挿入位置バグ', ()
 		const fs = createMiniTableRowInsertFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // RelationsPanelナビゲーション履歴リセットテスト
@@ -122,6 +123,7 @@ test.describe('メインテーブルで別の行を選択したら、RelationsPa
 		const fs = createNavigationResetTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------

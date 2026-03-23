@@ -111,9 +111,10 @@ test.describe('BUG_0108: 差分タブの再表示で最新データが反映さ�
             // getDataCell: rowIndex=0（データ1行目=id=1）、colIndex=2（value列）
             await expect(getDataCell(rightTable, 0, 2)).toHaveText('150');
 
-            // mock ファイルシステムの現在版CSVを v2 に書き換える
+            // mock ファイルシステムの現在版CSVを v2 に書き換え、ファイルキャッシュも無効化する
             await page.evaluate((csv) => {
                 (window as unknown as { __mockFs: { [key: string]: string } }).__mockFs['data/test.csv'] = csv;
+                (window as unknown as { __invalidateFileCacheEntry: (filename: string) => void }).__invalidateFileCacheEntry('data/test.csv');
             }, CURRENT_CSV_V2);
 
             // 2回目: 同じテーブルをクリックして差分タブを再度開く

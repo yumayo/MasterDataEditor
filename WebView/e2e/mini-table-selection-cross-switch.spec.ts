@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 異なるミニテーブル間を切り替えた後に同じ行インデックスをクリックしても
@@ -159,6 +160,7 @@ test.describe('異なるミニテーブル間を切り替えた後のRelationsPa
 		const fs = createCrossMiniTableSwitchFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 主キーバリデーション機能のテスト
@@ -354,6 +355,7 @@ test.describe('テストケース5: ストア全体で重複判定される（�
         const fs = createMiniTableStoreWideDuplicateFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

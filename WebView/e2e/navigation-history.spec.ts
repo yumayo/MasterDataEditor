@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ブラウザ History API によるナビゲーション履歴テスト (RED)
@@ -218,6 +219,7 @@ test.describe('ブラウザ History API によるタブナビゲーション', (
 		const fs = createNavigationTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -302,6 +304,7 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 		const fs = createDefinitionJumpTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -403,6 +406,7 @@ test.describe('REFERENCESパネルからのジャンプの履歴記録', () => {
 		const fs = createReferencesJumpTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -499,6 +503,7 @@ test.describe('検索パネルからのジャンプの履歴記録', () => {
 		const fs = createReferencesJumpTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -575,6 +580,7 @@ test.describe('フォームパネル開閉の履歴記録', () => {
 		const fs = createReferencesJumpTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------
@@ -659,6 +665,7 @@ test.describe('フォームパネルのドリルダウン履歴記録', () => {
 		const fs = createReferencesJumpTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	/**

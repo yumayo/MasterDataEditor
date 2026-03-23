@@ -1,4 +1,7 @@
-import {findFilesAsync, readFileAsync, configureBackgroundTracker, preloadAllFilesAsync} from "./api";
+import {findFilesAsync, readFileAsync, configureBackgroundTracker, preloadAllFilesAsync, invalidateFileCacheEntry} from "./api";
+
+// テスト用: ファイルキャッシュの特定エントリを無効化する関数をグローバルに公開する
+(window as unknown as { __invalidateFileCacheEntry: (filename: string) => void }).__invalidateFileCacheEntry = invalidateFileCacheEntry;
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";

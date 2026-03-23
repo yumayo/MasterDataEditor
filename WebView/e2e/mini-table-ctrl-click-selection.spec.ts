@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニテーブルのCtrl+クリック後に選択ボーダーが表示されることを検証するテスト
@@ -150,6 +151,7 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 		const fs = createCtrlClickSelectionTestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // FEAT_0043: フォームビューテスト
@@ -106,6 +107,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const fs = createFormPanelTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     // -------------------------------------------------------------------------

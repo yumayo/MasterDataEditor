@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 共通ヘルパー
@@ -96,6 +97,7 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
         const fs = createNto1MultiRowFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -237,6 +239,7 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
         const fs = createMiniTableKeyboardFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -395,6 +398,7 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
         const fs = createOneToNUnloadedChildFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -556,6 +560,7 @@ test.describe('バグ5: N:1ミニテーブルで参照対象列（PK列）がす
         const fs = createN1AllColumnsVisibleFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -685,6 +690,7 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
         const fs = createOneToNFkColumnVisibleFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -859,6 +865,7 @@ test.describe('バグ7: N:1ミニテーブルにバッファ行（editor-table-e
         const fs = createN1EmptyRowFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -970,6 +977,7 @@ test.describe('ミニテーブルの .selection 要素の left/top が -1px に�
         const fs = createMiniTableKeyboardFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニテーブルの逆参照ヒント表示テスト（REDテスト）
@@ -122,6 +123,7 @@ test.describe('ミニテーブルの逆参照ヒント表示', () => {
     test.beforeEach(async ({ page }) => {
         await installMockApiAsync(page, createFileSystem());
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

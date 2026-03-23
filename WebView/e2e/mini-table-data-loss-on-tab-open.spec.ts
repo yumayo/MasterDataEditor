@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニEditorTableで編集したデータが、同テーブルをタブで開くと失われる問題のテスト
@@ -157,6 +158,7 @@ test.describe('ミニEditorTableで編集したデータがタブを開くと失
         const fs = createShopProductFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

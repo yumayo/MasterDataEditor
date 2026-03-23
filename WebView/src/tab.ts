@@ -1201,6 +1201,8 @@ export class Tab {
         // 新しい RelationsPanel を生成してスタックに追加する
         const rp = new RelationsPanel(this.store, this.notification);
         rp.connectTab(this);
+        // ペインスタック経由で表示される RP は即座に visible にする（visibleガードを通過させるため）
+        rp.notifyVisibilityChanged(true);
         const rpElement = rp.getPanelElement();
         this.paneStack.push({ element: rpElement, panel: rp });
 
@@ -1347,15 +1349,17 @@ export class Tab {
                 pendingResolve(true);
             }
 
+            // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
+            // activateTabState の前にチェックする理由:
+            //   activateTabState → RelationsPanel更新 → 旧ミニテーブルのHistory破棄 という流れで
+            //   ミニテーブルのDirty Historyが失われるため、破棄前にチェックする必要がある。
+            const isDirtyOnCreate = this.store.isTableDirty(name);
+
             // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
             this.activateTabState(state);
             this.activeTabName = name;
 
-            // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
-            // これにより、ミニテーブルで編集→破棄→タブで開く、という操作でもDirtyマークが表示される。
-            // ミニテーブルのHistory破棄時に isDirty() ならば dirtyTableNames に残るため、
-            // 新しいHistoryが作られた後も isTableDirty() が true を返す。
-            if (this.store.isTableDirty(name)) {
+            if (isDirtyOnCreate) {
                 tabButton.setDirty(true);
             }
 

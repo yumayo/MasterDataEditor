@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // RelationsPanel 初期表示バグのテスト
@@ -91,6 +92,7 @@ test.describe('テーブルを新規に開いた直後に RelationsPanel が自�
         const fs = createInitialDisplayTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -149,6 +151,7 @@ test.describe('タブを切り替えたときに RelationsPanel が自動更新�
         const fs = createInitialDisplayTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // バグ: N:1ミニテーブルのヘッダーにFK名とFK値のコンテキストヒントが表示されない問題
@@ -113,6 +114,7 @@ test.describe('バグ: N:1ミニテーブルのヘッダーにFK名とFK値の�
         const fs = createN1ContextHintTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

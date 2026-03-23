@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // フィルター機能のテスト
@@ -589,6 +590,7 @@ test.describe('フィルター機能', () => {
             const fs = createMiniTableFilterTestFileSystem();
             await installMockApiAsync(page, fs);
             await page.goto('/');
+            await enableRelationsPanelAsync(page);
         });
 
         test(

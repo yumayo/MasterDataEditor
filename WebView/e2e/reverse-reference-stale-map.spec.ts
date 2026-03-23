@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // リグレッションテスト: バッファ空行に追加した行がミニテーブルに反映されないバグ
@@ -163,6 +164,7 @@ test.describe('バッファ空行に追加した行がミニテーブルに反�
 		const fs = createFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

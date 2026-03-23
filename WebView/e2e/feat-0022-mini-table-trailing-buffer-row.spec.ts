@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // FEAT_0022: ミニテーブルは常にバッファ行を末尾に表示すること
@@ -132,6 +133,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 		const fs = createFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // リグレッションテスト: N:1ミニテーブルがキャッシュ陳腐化により新規追加行を表示しないバグ
@@ -176,6 +177,7 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 		const fs = createFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

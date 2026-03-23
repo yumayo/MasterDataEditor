@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
-import { expectTableDataAsync } from './fixtures/test-utils';
+import { expectTableDataAsync, enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // ミニテーブルで行削除後に左ペインEditorTableのstoreRowIndicesが破損するバグ
@@ -174,6 +174,7 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
         const fs = createQuestRewardCorruptionFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

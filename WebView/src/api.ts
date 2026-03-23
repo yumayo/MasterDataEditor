@@ -52,6 +52,11 @@ export async function writeFileAsync(filename: string, data: string): Promise<vo
     invalidateGitStatusCache();
 }
 
+/** ファイルキャッシュの特定エントリを無効化する。テストやファイルウォッチャーで外部変更された場合に呼ぶ。 */
+export function invalidateFileCacheEntry(filename: string): void {
+    fileCache.delete(filename);
+}
+
 /**
  * ファイルから文字列データを読み込む（汎用API）
  * キャッシュにヒットすればC#への問い合わせをスキップする。

@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // 非アクティブテーブルのセル選択色が灰色になることを検証するテスト
@@ -127,6 +128,7 @@ test.describe('非アクティブテーブルのセル選択色', () => {
         const fs = createInactiveColorTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     // ---------------------------------------------------------------------------

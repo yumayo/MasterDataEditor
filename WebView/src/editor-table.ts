@@ -20,7 +20,7 @@ import {ValidationPanel} from "./validation-panel";
 import {ValidationError} from "./validation-engine";
 import {DiffTab} from "./diff-tab";
 import {GitDiffTracker} from "./git-diff-tracker";
-import {gitStatusAsync, gitShowAsync, GitStatusResult} from "./api";
+import {gitStatusAsync, gitShowAsync, gitShowFreshAsync, GitStatusResult} from "./api";
 import {ColumnSorter} from "./column-sorter";
 import {ColumnFilter} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
@@ -1860,11 +1860,12 @@ export class EditorTable {
             pkColumnIndices.push(idx);
         }
         // gitPath（gitルート相対パス）を使ってHEAD版CSVを取得する。
-        // source-control-panel.ts の openDiffTabAsync で gitShowAsync(entry.path) が成功しているため、
-        // 同じパスを使えばサブディレクトリ環境でも正しく動作する。
+        // 保存直後の再取得のためキャッシュをバイパスしてC#へ直接問い合わせる。
+        // キャッシュ済みの古いHEAD版CSVを返すと、保存後のエラー注入や
+        // HEAD版の変化を検出できなくなるため gitShowFreshAsync を使用する。
         let headCsv: string;
         try {
-            headCsv = await gitShowAsync(gitPath);
+            headCsv = await gitShowFreshAsync(gitPath);
         } catch (e) {
             // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
             if (requestId !== this.refreshGitDiffRequestId) return;

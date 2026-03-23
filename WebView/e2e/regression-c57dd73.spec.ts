@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
-import { expectCsvAsync } from './fixtures/test-utils';
+import { expectCsvAsync, enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // リグレッションテスト: コミット c57dd73 で発生したリグレッション
@@ -129,6 +129,7 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 		const fs = createNonConsecutiveFkFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(
@@ -310,6 +311,7 @@ test.describe('バッファ空行への入力が保存されること', () => {
 		const fs = createBufferRowFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(
@@ -449,6 +451,7 @@ test.describe('Fill操作でバッファ空行にデータがフィルされた�
 		const fs = createBufferRowFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(
@@ -522,6 +525,7 @@ test.describe('リグレッション2: 通常テーブルの最下行データ�
 		const fs = createLastRowSaveFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	test(

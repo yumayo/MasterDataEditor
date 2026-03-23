@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // BUG_0009: 設定画面が表示されないことがある問題
@@ -118,6 +119,7 @@ test.describe('BUG_0009: 設定タブ表示時のレイアウト問題', () => {
 		const fs = createBug0009TestFileSystem();
 		await installMockApiAsync(page, fs);
 		await page.goto('/');
+		await enableRelationsPanelAsync(page);
 	});
 
 	// ---------------------------------------------------------------------------

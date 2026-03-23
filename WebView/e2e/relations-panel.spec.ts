@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 /**
  * リレーションパネルテスト用のファイルシステムを生成する
@@ -75,6 +76,7 @@ test.describe('RelationsPanel', () => {
         const fs = createRelationsPanelTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -161,6 +163,7 @@ test.describe('RelationsPanel リサイザー', () => {
         const fs = createRelationsPanelTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -236,6 +239,7 @@ test.describe('RelationsPanel 全テーブル常時表示', () => {
         const fs = createRelationsPanelTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -275,6 +279,7 @@ test.describe('RelationsPanel EditorTable流用', () => {
         const fs = createRelationsPanelTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

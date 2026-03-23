@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // RelationsPanel 動的参照（DynamicReference）のN:1ミニテーブル表示テスト
@@ -232,6 +233,7 @@ test.describe('ペインスタック上のRelationsPanelで動的参照を持つ
         const fs = createPaneStackDynamicReferenceTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(
@@ -283,6 +285,7 @@ test.describe('RelationsPanel 動的参照のN:1ミニテーブル表示', () =>
         const fs = createDynamicReferenceTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

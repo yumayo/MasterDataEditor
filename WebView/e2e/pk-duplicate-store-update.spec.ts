@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem, readMockFileAsync } from './fixtures/mock-api';
-import { expectCsvAsync } from './fixtures/test-utils';
+import { expectCsvAsync, enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
 // PK重複時のストア更新バグ検証
@@ -106,6 +106,7 @@ test.describe('PK重複時のストア更新バグ', () => {
             const fs = createPkDuplicateFileSystem();
             await installMockApiAsync(page, fs);
             await page.goto('/');
+            await enableRelationsPanelAsync(page);
         });
 
         test(
@@ -314,6 +315,7 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
         const fs = createMiniTablePkDuplicateFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await enableRelationsPanelAsync(page);
     });
 
     test(

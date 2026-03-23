@@ -256,12 +256,20 @@ export class InMemoryTableStore {
 
     /**
      * テーブル名からHistoryを登録解除する（History破棄時に呼ぶ）
+     * 破棄されるHistoryがdirtyの場合は dirtyTableNames に記録して状態を保全する。
+     * これにより、ミニテーブル破棄後にタブで同テーブルを開いた際、
+     * registerHistory → markInitiallyDirty で新Historyに dirty 状態が引き継がれる。
      */
     unregisterHistory(tableName: string, history: IHistory): void {
         const set = this.historyRegistry.get(tableName);
         if (!set) throw new Error('[InMemoryTableStore] unregisterHistory: テーブル "' + tableName + '" のHistoryレジストリが存在しません');
+        const wasDirty = history.isDirty();
         set.delete(history);
         if (set.size === 0) this.historyRegistry.delete(tableName);
+        // dirty なHistoryが破棄された場合、他にdirty Historyが残っていなければ dirtyTableNames に記録する
+        if (wasDirty && !this.isTableDirty(tableName)) {
+            this.dirtyTableNames.add(tableName);
+        }
     }
 
     /**
