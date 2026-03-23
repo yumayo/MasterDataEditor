@@ -159,11 +159,15 @@ export class StatusBar {
         title.classList.add('status-bar-background-popover-title');
         title.textContent = `バックグラウンド処理 (${tasks.size}件)`;
         this.backgroundPopover.appendChild(title);
+        // タスク一覧はスクロール可能なラッパーにまとめる
+        const list = document.createElement('div');
+        list.classList.add('status-bar-background-popover-list');
         tasks.forEach((label) => {
             const item = document.createElement('div');
             item.classList.add('status-bar-background-popover-item');
             item.textContent = label;
-            this.backgroundPopover.appendChild(item);
+            list.appendChild(item);
         });
+        this.backgroundPopover.appendChild(list);
     }
 }
