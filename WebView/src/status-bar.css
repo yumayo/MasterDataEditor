@@ -48,13 +48,16 @@
     color: var(--error-color);
 }
 
-/* バックグラウンドタスクインジケーター */
+/* バックグラウンドタスクインジケーター（通知ベルの左隣・右寄り） */
+/* 幅を固定してスピナー件数が変わっても周囲のレイアウトがずれないようにする */
 .status-bar-background-indicator {
     height: 100%;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 0 8px;
+    width: 48px;
+    flex-shrink: 0;
     cursor: pointer;
     position: relative;
 }
@@ -83,11 +86,11 @@
     min-width: 8px;
 }
 
-/* バックグラウンドタスクポップオーバー */
+/* バックグラウンドタスクポップオーバー（インジケーターの右端に揃えて上方展開） */
 .status-bar-background-popover {
     position: absolute;
     bottom: calc(100% + 4px);
-    left: 0;
+    right: 0;
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 4px;

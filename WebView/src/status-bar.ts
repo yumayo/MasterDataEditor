@@ -5,8 +5,8 @@ import type {NotificationToast} from "./notification";
  * ステータスバー
  *
  * 画面最下部に常時表示される。
- * 左端: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
- * 左寄り: エラー件数バッジ（クリックでバリデーションパネルの表示/非表示をトグル）
+ * 左端: エラー件数バッジ（クリックでバリデーションパネルの表示/非表示をトグル）
+ * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
  * 右端: 通知ベルアイコン（NotificationToastが配置される）
  * エラー0件でも "0" を表示する。
  *
@@ -64,13 +64,12 @@ export class StatusBar {
             }
         });
 
-        bar.appendChild(bgIndicator);
         this.backgroundIndicator = bgIndicator;
         this.backgroundCount = bgCountSpan;
         this.backgroundPopover = bgPopover;
 
         // エラー件数バッジ（左寄り）— エラーアイコン + 件数でPROBLEMSパネルであることを示す
-        // margin-right: auto で通知ベルを右端に押し出す
+        // margin-right: auto で残りスペースをすべて占有し、後続要素を右端に押し出す
         const badge = document.createElement('div');
         badge.classList.add('status-bar-badge');
         badge.setAttribute('role', 'button');
@@ -91,7 +90,11 @@ export class StatusBar {
         this.badge = badge;
         this.badgeCount = countSpan;
 
-        // 通知ベルアイコンをステータスバー右端に配置する（badgeのmargin-right:autoでベルが右端に押し出される）
+        // バックグラウンドタスクインジケーター（通知ベルの左隣、右寄り）
+        // badge の margin-right:auto によって右端グループに押し出される
+        bar.appendChild(bgIndicator);
+
+        // 通知ベルアイコンをステータスバー右端に配置する
         notification.appendTo(bar);
     }
 
