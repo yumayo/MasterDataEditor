@@ -20,15 +20,12 @@ namespace App.MasterDataEditor
 		}
 
 		/// <summary>
-		/// workDirからgitリポジトリルートへの相対パスを算出し、data/ディレクトリのプレフィックスを返す
-		/// git status --porcelain の出力パスはリポジトリルート相対のため、フィルタリングにはこのプレフィックスを使う
-		/// workDirがリポジトリルートそのものの場合は "data/"、サブディレクトリの場合は "subdir/data/" となる
+		/// data/ディレクトリのプレフィックスを返す
+		/// git status --porcelain の出力パスはリポジトリルート相対であり、データは常にgitルート直下の data/ に配置される
 		/// </summary>
-		public static string GetDataPrefix(string workDir)
+		public static string GetDataPrefix()
 		{
-			var gitRoot = GetGitRoot(workDir);
-			var relWorkDir = Path.GetRelativePath(gitRoot, workDir).Replace('\\', '/');
-			return relWorkDir == "." ? "data/" : relWorkDir + "/data/";
+			return "data/";
 		}
 
 		/// <summary>

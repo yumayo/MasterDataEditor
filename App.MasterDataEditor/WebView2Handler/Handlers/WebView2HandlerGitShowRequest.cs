@@ -42,12 +42,11 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				// gitルート相対のdata/ディレクトリのプレフィックスを取得する
-				// フロントエンドからはgitルート相対パス（entry.path）が渡されるため、バリデーションもそれに合わせる
-				var workDir = AppEnvironment.GetWorkDir();
-				var dataPrefix = GitCommandHelper.GetDataPrefix(workDir);
+				// data/ディレクトリ内の.csvファイルのみを許可する
+				var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
+				var dataPrefix = GitCommandHelper.GetDataPrefix();
 
-				// gitルート相対のdata/ディレクトリ内の.csvファイルのみを許可する
+				// data/ディレクトリ内の.csvファイルのみを許可する
 				if (!path.StartsWith(dataPrefix) || !path.EndsWith(".csv"))
 				{
 					return new
@@ -58,9 +57,7 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				// git show にはgitルート相対パスをそのまま渡す（entry.pathはgitルート相対なので正しい）
-				// ArgumentListにより引数インジェクションを防止する
-				var output = GitCommandHelper.RunGitCommand(workDir, "show", $"HEAD:{path}");
+				var output = GitCommandHelper.RunGitCommand(gitRoot, "show", $"HEAD:{path}");
 
 				return new
 				{

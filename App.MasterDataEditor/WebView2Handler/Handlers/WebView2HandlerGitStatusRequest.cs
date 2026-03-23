@@ -11,14 +11,13 @@ namespace App.MasterDataEditor
 		{
 			try
 			{
-				var workDir = AppEnvironment.GetWorkDir();
-				var output = GitCommandHelper.RunGitCommand(workDir, "status", "--porcelain");
+				var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
+				var output = GitCommandHelper.RunGitCommand(gitRoot, "status", "--porcelain");
 				var changes = new List<object>();
 				var staged = new List<object>();
 
-				// gitルート相対のdata/ディレクトリのプレフィックスを取得する
-				// git status --porcelain の出力パスはgitリポジトリルート相対のため、フィルタリングにはこのプレフィックスを使う
-				var dataPrefix = GitCommandHelper.GetDataPrefix(workDir);
+				// data/ディレクトリ内の.csvファイルのみをフィルタリングする
+				var dataPrefix = GitCommandHelper.GetDataPrefix();
 
 				foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
 				{
@@ -27,7 +26,7 @@ namespace App.MasterDataEditor
 					var workTreeStatus = line[1];
 					var filePath = line.Substring(3).Trim();
 
-					// gitルート相対のdata/ディレクトリ内の.csvファイルのみを対象とする
+					// data/ディレクトリ内の.csvファイルのみを対象とする
 					if (!filePath.StartsWith(dataPrefix) || !filePath.EndsWith(".csv")) continue;
 
 					// テーブル名を抽出: {dataPrefix}xxx.csv → xxx

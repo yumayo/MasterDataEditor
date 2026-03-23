@@ -42,10 +42,10 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				var workDir = AppEnvironment.GetWorkDir();
-				var dataPrefix = GitCommandHelper.GetDataPrefix(workDir);
+				var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
+				var dataPrefix = GitCommandHelper.GetDataPrefix();
 
-				// gitルート相対のdata/ディレクトリ内の.csvファイルのみを許可する
+				// data/ディレクトリ内の.csvファイルのみを許可する
 				if (!path.StartsWith(dataPrefix) || !path.EndsWith(".csv"))
 				{
 					return new
@@ -56,7 +56,7 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				GitCommandHelper.RunGitCommand(workDir, "add", path);
+				GitCommandHelper.RunGitCommand(gitRoot, "add", path);
 
 				return new
 				{
