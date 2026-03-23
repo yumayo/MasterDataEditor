@@ -17,40 +17,35 @@
 
 ### 最新レビュー結果（2026-03-24）
 
+#### RelationsPanelトグル（非表示時ミニテーブル構築スキップ）評価: B+
+- 良い点: 非表示中のミニテーブル構築スキップが正確に機能（relations-panel-content が空）。再表示時の自動リフレッシュが正常（enemy_id=2行選択→「ドラゴン」が即時表示）。ツールバートグルボタンのアクティブ/非アクティブ切替（toolbar-button-relations-active クラス付与/除去）が正確。«/»ボタンに aria-label="RelationsPanelを閉じる/開く" 設定済み。relations-panel-open-tab に role="button"/tabindex="0" あり。
+- 修正必須(🔴): 非表示時に editor-right-slot が visibility:hidden + flex:0 0 6px となり6px幅の透明スロットが残留。左ペインが「全幅」にならない。display:none または flex:0 0 0px が正しい
+- 修正必須(🔴): 非表示時のミニテーブルDOMが relations-panel-content 内に残留（visibility:hidden で隠しているだけ）。前の行のデータがメモリに残り続け、タブ数が増えると不要なEditorTableインスタンスが蓄積する
+- 修正必須(🔴): 「ツールバーにRelationsトグルボタンが存在すること」テストのスクリーンショットでタブが開かれていない（空エディタ状態）。トグルボタン自体は toolbar に存在するが、テストがタブを開かずに検証している可能性。実際の動作に疑問が残る
+- 修正必須(🔴): relations-panel-close-button（«ボタン）が非表示状態のDOMに残留したまま（visibility:hiddenの親の中）。tabindex が指定されていないためフォーカストラップは起きないが、スクリーンリーダーからは到達可能
+- 改善推奨(🟡): fill-handle が非表示時のミニテーブル内に display:block で残存（継続課題）
+- 改善推奨(🟡): row-resize-handle が非表示時のミニテーブル内に残存（継続課題）
+- 改善推奨(🟡): relations-panel-close-button に tabindex="-1" を付与して非表示時はフォーカスから外す
+
 #### 起動時全テーブルバリデーションスキャン（DOMダンプなし、実装レビューのみ）評価: B+
-- テスト未実行のためDOMダンプなし。validation-panel.ts / status-bar.ts / validation-engine.ts / bottom-panel.ts / main.ts の実装コードから評価
-- 良い点: status-bar-badge に role="button"/tabindex="0"/aria-label 揃っている。data-errorCount 属性でE2Eテスト対応。グループ別表示構造。jumpToError が未開タブにも対応
-- 修正必須(🔴): スキャン中であることをプランナーが認識できない（「0件」がスキャン前なのか確定済みなのか区別不能）。BackgroundTaskTracker.trackAsync でスキャンをラップするだけで対応可能
+- 修正必須(🔴): スキャン中であることをプランナーが認識できない
 - 修正必須(🔴): テストケースにFKエラーの起動時検出が含まれない（PK重複のみ）
 - 修正必須(🔴): validation-panel-group-header に role/aria-label なし（全サイクル継続）
-- 改善推奨(🟡): data-error-count="0" 時のバッジ視覚状態（グリーン/グレー系）の分化
-- 改善推奨(🟡): グループヘッダークリックでテーブルタブを開く動線
-- 改善推奨(🟡): cell-error セルに aria-invalid="true" なし（全サイクル継続）
-- リスク: runInitialScanAsync 完了前にユーザーがタブを開いた場合のレースコンディション（未検証）
-- リスク: 通常タブクローズ時に unregisterSchema が呼ばれる経路があれば起動時スキャン結果が消える（tab.ts の close処理要確認）
-- BottomPanel の closeBtn が element.style.display='none' を直接操作しており toggleTab を経由しないため activeTab 状態と同期崩れの可能性
 
 #### ISSUE_0113 SOURCE CONTROLパネルstage/discard/unstageボタン 評価: B+
-- 残存(🔴): discardボタンに確認ダイアログなし（git checkoutは取り消し不可能な破壊的操作）
-- 残存(🔴): source-control-action-btn に role="button"/aria-label/title がない（SVGのみ）
-
-#### ISSUE_0112 FKデフォルト値スキップ 評価: A
-- 残存(🟡): cell-error セルに aria-invalid="true"/aria-describedby がない（全サイクル継続）
+- 残存(🔴): discardボタンに確認ダイアログなし
+- 残存(🔴): source-control-action-btn に role="button"/aria-label/title がない
 
 #### ISSUE_0107 差分ビューバリデーション 評価: B
-- 残存(🔴): PROBLEMSパネルが data-error-count="0"・「エラーはありません」で矛盾。DiffTab未接続の疑い
+- 残存(🔴): PROBLEMSパネルが data-error-count="0"・「エラーはありません」で矛盾
 - 残存(🔴): 左ペイン grid-textfield に contenteditable="true" が残存
 
-#### ISSUE_0108 差分ビュー再表示時最新データ反映 評価: A
-- 残存(🔴): 再作成方式によりスクロール位置がリセットされる
-
 ### 横断的な継続課題（最新）
-- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell, relations-panel-open-tab ほか）
+- インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
 - SVG に aria-hidden="true" がない（filter-icon, sort-icon, activity-bar SVG）
-- 差分ビュー左ペインに aria-readonly がない（BUG_0021から継続）・contenteditable="true" 残存
 - row-resize-handle がミニテーブル・バッファ行・差分削除行に残存
 - cell-error セルに aria-invalid="true"/aria-describedby がない（ISSUE_0080から全サイクル継続）
 - validation-panel-group-header に role/aria-label なし（全サイクル継続）
-- show/hide 非対称パターン（style.display='' での表示復元）が再発 — bug-report #3/#32/#77/#84
-- fill-handle が読み取り専用ペイン（差分左ペイン・ミニテーブル inactive）に display:block で残存
-- 起動時スキャン中であることを示すインジケーターなし（新規、2026-03-24）
+- fill-handle が非表示・inactive ペインに display:block で残存
+- 起動時スキャン中であることを示すインジケーターなし（2026-03-24）
+- editor-right-slot の非表示時に 6px 幅の透明スロットが残留（relations-panel-toggle で新規発見、2026-03-24）

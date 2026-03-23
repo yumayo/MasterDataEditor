@@ -23,8 +23,9 @@
 - **awaitポイント後のrequestIdチェック**: **8回再発** (FEAT_0038,0040,DiffTab,ISSUE_0089-0091,InitialScan)
 - **register/unregister 非対称**: **3回再発** (ISSUE_0107 DiffTab schema, InitialScan refCount)。registerがあればunregisterが必須（bug-report.md パターン2）
 - **CSS hardcoded colors**: 14+ 回再発
-- **フォールバック禁止 (??)**: 16+ 回再発
-- **生焼けオブジェクト | false + connect パターン**: 5回再発
+- **フォールバック禁止 (??)**: 17+ 回再発 (source-control-panel.ts L99 追加)
+- **生焼けオブジェクト | false + connect パターン**: 6回再発 (Editor.relationsPanel 追加)
+- **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined パターン追加
 - **fire-and-forget Promise without .catch()**: 複数箇所
 - **document listener leak (anonymous arrow)**: removeEventListener不可
 - **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決ロジック等
@@ -64,8 +65,15 @@
 - Defined: --font-color, --background-color, --background-sub-color, --border-color, --selection-color, --selection-font-color, --scroll-bar-background-color, --focus-border
 - NOT defined: --selected-color, --tab-background, --list-hover-background, --text-muted-color, --text-color-secondary, --cell-background-color, --hover-color
 
+## RelationsPanel Visibility Toggle Known Patterns (2026-03-24)
+- Editor.relationsPanel は生焼けオブジェクト（false初期化→後からappendRelationsPanel）
+- notifyVisibilityChanged(true)のrefreshCurrentRowはvisibleガード通過が順序依存
+- ペインスタックRPのshowForTableRowAsyncにはvisibleガードなし（設計判断として明示必要）
+- 非表示→破棄時のdestroyMiniEditorTables+clearContentAreaが冗長（renderMessageで統一可能）
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-24) RP Visibility Toggle: 致命的3件（生焼けEditor.relationsPanel/順序依存visible/ペインスタックガード漏れ）、重要4件、軽微3件
 - (2026-03-24) Initial Scan: 致命的4件（refCountリーク/Dirty判定不能/レースコンディション/例外で中途半端状態）、重要4件、軽微2件
 - (2026-03-21) Diff Tab Save Highlight: 致命的3件、重要3件、軽微2件
 - (2026-03-21) FormPanel Drilldown: 致命的4件、重要5件、軽微3件
