@@ -147,6 +147,32 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
     }
 
+    // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。
+    // 全CSVをストアにロード（refCount=1で常駐）し、スキーマを登録して一括検証する。
+    // refCountを維持することで、タブ未オープンのテーブルも継続的にバリデーション対象に含める。
+    (async () => {
+        for (const [tableName, entry] of schemaRegistry) {
+            try {
+                await store.registerTableAsync(tableName);
+                const referenceMap = new Map<string, string>();
+                for (const ref of entry.references) {
+                    referenceMap.set(ref.columnName, ref.targetTable + '.' + ref.targetColumn);
+                }
+                validationPanel.registerSchema(tableName, entry.primaryKeys, entry.columns.map(col => ({
+                    name: col.name,
+                    type: col.type,
+                    reference: referenceMap.has(col.name) ? referenceMap.get(col.name)! : null,
+                    defaultValue: col.defaultValue,
+                })));
+            } catch (e: unknown) {
+                console.error('[main] 起動時バリデーションスキャン: テーブル "' + tableName + '" のロードに失敗:', String(e));
+            }
+        }
+        validationPanel.runAndUpdate();
+    })().catch((e: unknown) => {
+        console.error('[main] 起動時バリデーションスキャン失敗:', String(e));
+    });
+
     // EditorAPI を構築して window.editorApi として公開する
     const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine);
     tab.connectEditorApi(editorApi);
