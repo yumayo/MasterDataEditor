@@ -1441,6 +1441,7 @@ export class Tab {
         wrapperElement.appendChild(selection.element);
         wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
+        wrapperElement.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(wrapperElement);
 
         // AreaResizer に EditorTable を設定
@@ -1545,6 +1546,7 @@ export class Tab {
         wrapperElement.appendChild(selection.element);
         wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
+        wrapperElement.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(wrapperElement);
 
         areaResizer.setEditorTable(editorTable);

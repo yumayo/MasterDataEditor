@@ -56,7 +56,7 @@ export class FillController {
      * EditorTable.initialize() 後に呼び出す
      */
     initialize(): void {
-        const fillHandle = this.selection.getFillHandle();
+        const fillHandle = this.selection.fillHandle;
 
         // フィルハンドルのドラッグ開始
         fillHandle.addEventListener('mousedown', (e) => {

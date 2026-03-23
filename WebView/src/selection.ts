@@ -51,7 +51,7 @@ export class Selection {
 
     private copyRange: CellRange;
 
-    private fillHandle: HTMLElement;
+    fillHandle: HTMLElement;
 
     private filling: boolean;
 
@@ -115,10 +115,9 @@ export class Selection {
         fillPreviewElement.classList.add('fill-preview');
         this.fillPreviewElement = fillPreviewElement;
 
-        // フィルハンドル要素を作成
+        // フィルハンドル要素を作成（DOM追加はtab.ts側で行う — editor-tableの後に配置する必要があるため）
         this.fillHandle = document.createElement('div');
         this.fillHandle.classList.add('fill-handle');
-        this.editorElement.appendChild(this.fillHandle);
     }
 
     /**
@@ -698,10 +697,6 @@ export class Selection {
 
     private hideCopyBorder(): void {
         this.copyBorderElement.style.display = 'none';
-    }
-
-    getFillHandle(): HTMLElement {
-        return this.fillHandle;
     }
 
     startFill(row: number, column: number, mouseX: number, mouseY: number): void {
