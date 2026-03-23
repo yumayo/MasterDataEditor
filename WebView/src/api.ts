@@ -49,6 +49,7 @@ export async function preloadAllFilesAsync(): Promise<void> {
 export async function writeFileAsync(filename: string, data: string): Promise<void> {
     await postMessageAsync('write_file', { filename, data });
     fileCache.set(filename, data);
+    invalidateGitStatusCache();
 }
 
 /**
@@ -75,6 +76,7 @@ interface File {
 export async function deleteFileAsync(filename: string): Promise<void> {
     await postMessageAsync('delete_file', { filename });
     fileCache.delete(filename);
+    invalidateGitStatusCache();
 }
 
 /**
@@ -107,11 +109,26 @@ export interface GitStatusResult {
     staged: GitStatusEntry[];
 }
 
+// =========================================================================
+// git status キャッシュ
+// ファイル書き込み・git操作で無効化し、それ以外はキャッシュを返す。
+// =========================================================================
+let gitStatusCache: GitStatusResult | false = false;
+
+/** git status キャッシュを無効化する。writeFileAsync / git操作後に呼ばれる。 */
+function invalidateGitStatusCache(): void {
+    gitStatusCache = false;
+}
+
 /**
- * git status を実行し、変更ファイル・ステージ済みファイルの一覧を返す
+ * git status を実行し、変更ファイル・ステージ済みファイルの一覧を返す。
+ * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function gitStatusAsync(): Promise<GitStatusResult> {
-    return postMessageAsync<GitStatusResult>('git_status', {});
+    if (gitStatusCache !== false) return gitStatusCache;
+    const result = await postMessageAsync<GitStatusResult>('git_status', {});
+    gitStatusCache = result;
+    return result;
 }
 
 /**
@@ -125,21 +142,24 @@ export async function gitShowAsync(path: string): Promise<string> {
  * git add でファイルをステージする
  */
 export async function gitAddAsync(path: string): Promise<void> {
-    return postMessageAsync('git_add', { path });
+    await postMessageAsync('git_add', { path });
+    invalidateGitStatusCache();
 }
 
 /**
  * git reset でファイルをアンステージする
  */
 export async function gitResetAsync(path: string): Promise<void> {
-    return postMessageAsync('git_reset', { path });
+    await postMessageAsync('git_reset', { path });
+    invalidateGitStatusCache();
 }
 
 /**
  * git checkout -- でファイルの変更を破棄する
  */
 export async function gitDiscardAsync(path: string): Promise<void> {
-    return postMessageAsync('git_discard', { path });
+    await postMessageAsync('git_discard', { path });
+    invalidateGitStatusCache();
 }
 
 /**
