@@ -76,6 +76,8 @@ export class RelationsPanel {
     private miniTableNames: string[];
     /** showForTableRowAsync() で登録したベーステーブル名。ペインスタック破棄時に unregisterTable するため記録する */
     private baseTableName: string | false;
+    /** パネルの表示/非表示状態。非表示時はミニテーブルの構築・更新をスキップしてリソースを節約する */
+    private visible: boolean;
     constructor(store: InMemoryTableStore, notification: NotificationToast) {
         this.store = store;
         this.notification = notification;
@@ -89,6 +91,7 @@ export class RelationsPanel {
         this.miniHistories = [];
         this.miniTableNames = [];
         this.baseTableName = false;
+        this.visible = false;
 
         const panel = document.createElement('div');
         panel.classList.add('relations-panel');
@@ -157,6 +160,26 @@ export class RelationsPanel {
         this.tab = tab;
     }
 
+
+    /**
+     * パネルの表示/非表示状態変更を通知する（Editor から呼ばれる）。
+     * 表示に切り替わったとき: 現在接続中のEditorTableがあれば、フォーカス行で自動リフレッシュする。
+     * 非表示に切り替わったとき: ミニEditorTable群を破棄してメモリを解放する。
+     */
+    notifyVisibilityChanged(visible: boolean): void {
+        this.visible = visible;
+        if (visible) {
+            // 表示に切り替わった: 接続中のEditorTableがあればフォーカス行で関連データを再描画する
+            if (this.currentEditorTable !== false) {
+                const focusRow = this.currentEditorTable.getSelection().getFocus().row;
+                this.refreshCurrentRow(focusRow);
+            }
+        } else {
+            // 非表示に切り替わった: ミニEditorTable群を破棄してDOMとメモリを解放する
+            this.destroyMiniEditorTables();
+            this.clearContentArea();
+        }
+    }
 
     /**
      * EditorTableを接続する（タブがアクティブになったとき）
@@ -295,6 +318,7 @@ export class RelationsPanel {
      * 定義ジャンプで深化したペインスタックをルートにリセットしてから refreshCurrentRow() に委譲する。
      */
     updateForRow(rowIndex: number): void {
+        if (!this.visible) return;
         if (this.tab === false) throw new Error('[RelationsPanel] updateForRow: tab が未接続の状態で呼ばれました');
         this.tab.resetPaneStackToRoot();
         this.refreshCurrentRow(rowIndex);
@@ -306,6 +330,7 @@ export class RelationsPanel {
      * 行を変更しない操作（セル編集後の同一行リフレッシュ）からのみ呼ぶこと。
      */
     refreshCurrentRow(rowIndex: number): void {
+        if (!this.visible) return;
         if (this.currentEditorTable === false) return;
         this.updateForRowAsync(rowIndex, this.currentEditorTable).catch(err => {
             console.error('[RelationsPanel] refreshCurrentRow 失敗:', err);
@@ -925,6 +950,7 @@ export class RelationsPanel {
      * refCountリークを防止する。別テーブルへ切り替わる場合は旧テーブルを先に unregister する。
      */
     async showForTableRowAsync(tableName: string, pkValue: string): Promise<void> {
+        if (!this.visible) return;
         const requestId = ++this.currentRequestId;
 
         // テーブルが切り替わる場合のみ register/unregister を行う（refCountリーク防止）

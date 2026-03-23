@@ -10,6 +10,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   1. ツールバーのRelationsトグルボタン
 //
 //   非表示時は左ペインが全幅を使うことも検証する。
+//   非表示時はミニテーブルの構築をスキップし、再表示時に自動リフレッシュする。
 // =============================================================================
 
 /**
@@ -214,5 +215,69 @@ test.describe('RelationsPanel 非表示時の左ペイン全幅化', () => {
             return el.getBoundingClientRect().width;
         });
         expect(Math.abs(leftWidthAfter - leftWidthBefore)).toBeLessThanOrEqual(5);
+    });
+});
+
+// =============================================================================
+// 3. 非表示時のミニテーブル構築スキップ
+// =============================================================================
+
+test.describe('RelationsPanel 非表示時のミニテーブル構築スキップ', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createToggleTestFileSystem());
+        await page.goto('/');
+    });
+
+    test('非表示中に行を選択してもミニテーブルが構築されないこと', async ({ page }) => {
+        const table = await setupRelationsPanelAsync(page);
+
+        // 前提条件: パネル表示中は .relations-table-section が存在する
+        const sections = page.locator('.relations-table-section');
+        await expect(sections.first()).toBeVisible();
+
+        // RelationsPanel を非表示にする
+        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
+        await toggleButton.click();
+
+        // 非表示中に別の行を選択する（2行目: second_quest, enemy_id=2）
+        await selectRowAsync(table, 1);
+
+        // パネルが非表示の間は、ミニテーブルセクションが DOM 上に構築されないこと。
+        // visibleガードにより updateForRow / showForTableRowAsync が早期リターンするため、
+        // .relations-panel-content 内にセクションが0件であることを確認する。
+        const relationsContent = page.locator('.relations-panel-content');
+        const sectionCount = await relationsContent.locator('.relations-table-section').count();
+        expect(sectionCount).toBe(0);
+    });
+
+    test('非表示から再表示したとき現在の選択行に対応するミニテーブルが自動表示されること', async ({ page }) => {
+        const table = await setupRelationsPanelAsync(page);
+
+        // 前提条件: 1行目選択中にenemy のミニテーブルが表示されている
+        await expect(page.locator('.relations-table-section').first()).toBeVisible();
+
+        // RelationsPanel を非表示にする
+        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
+        await toggleButton.click();
+
+        // 非表示中に2行目を選択する（enemy_id=2 → ドラゴン）
+        await selectRowAsync(table, 1);
+
+        // RelationsPanel を再表示する
+        await toggleButton.click();
+
+        // 再表示後、現在の選択行（2行目: enemy_id=2）に対応するミニテーブルが
+        // 自動的にリフレッシュされ、.relations-table-section が表示されること。
+        // ミニテーブル内に「ドラゴン」のデータが表示されていることを確認する。
+        const sections = page.locator('.relations-table-section');
+        await expect(sections.first()).toBeVisible();
+
+        // enemy テーブルのミニEditorTable内に enemy_id=2 に対応する「ドラゴン」が表示されること。
+        // 再表示時に自動リフレッシュが行われないと、1行目選択時のデータ（スライム）のまま、
+        // あるいはコンテンツが空のままになるため、2行目のデータが反映されていることを検証する。
+        const miniTableCell = page.locator('.relations-panel .editor-table .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)');
+        // enemy テーブルは id, ja の2列。2行目(enemy_id=2)の参照先は id=2, ja=ドラゴン
+        // ミニテーブルのデータセルに「ドラゴン」が含まれるか確認する
+        await expect(miniTableCell.filter({ hasText: 'ドラゴン' }).first()).toBeVisible();
     });
 });

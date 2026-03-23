@@ -47,12 +47,16 @@ export class Editor {
     /** RelationsPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
     private visibilityListener: RelationsPanelVisibilityListener | false;
 
+    /** RelationsPanelへの参照。appendRelationsPanel() で設定される */
+    private relationsPanel: RelationsPanel | false;
+
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
         this.tab = false;
         this.relationsPanelVisible = false;
         this.savedRightSlotFlexBasis = '';
         this.visibilityListener = false;
+        this.relationsPanel = false;
 
         // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
         const navigationBar = document.createElement('div');
@@ -129,6 +133,7 @@ export class Editor {
      * 追加後に初期表示状態（デフォルト非表示）を DOM に反映する。
      */
     appendRelationsPanel(panel: RelationsPanel): void {
+        this.relationsPanel = panel;
         panel.appendTo(this.rightSlot);
         this.applyRelationsPanelVisibility();
     }
@@ -309,6 +314,8 @@ export class Editor {
         this.relationsPanelVisible = false;
         this.applyRelationsPanelVisibility();
         this.notifyVisibilityListener();
+        // RelationsPanelにミニテーブル破棄を通知してリソースを解放する
+        if (this.relationsPanel !== false) this.relationsPanel.notifyVisibilityChanged(false);
     }
 
     /**
@@ -320,6 +327,8 @@ export class Editor {
         this.relationsPanelVisible = true;
         this.applyRelationsPanelVisibility();
         this.notifyVisibilityListener();
+        // RelationsPanelに表示を通知して、接続中のEditorTableがあれば自動リフレッシュする
+        if (this.relationsPanel !== false) this.relationsPanel.notifyVisibilityChanged(true);
     }
 
     /**
