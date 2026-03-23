@@ -12,6 +12,7 @@ import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
 import {BackgroundTaskTracker} from "./background-task-tracker";
+import {DebugConsole} from "./debug-console";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
@@ -62,18 +63,22 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
     // Tab ↔ Sidebar と同じパターン。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
+    // DEBUGコンソールは StatusBar より先に生成する（StatusBar のコンストラクタに渡すため）
+    const debugConsole = new DebugConsole();
     const statusBar = {} as StatusBar;
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
-    const realStatusBar = new StatusBar(validationPanel, notification);
+    const realStatusBar = new StatusBar(validationPanel, notification, debugConsole);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
     // バックグラウンドタスクトラッカーを初期化する（api.ts の全 C# 通信を追跡対象にする）
-    const backgroundTaskTracker = new BackgroundTaskTracker(statusBar);
+    const backgroundTaskTracker = new BackgroundTaskTracker(statusBar, debugConsole);
     configureBackgroundTracker(backgroundTaskTracker);
 
     tab.connectValidationPanel(validationPanel);
     // editor 直下の下段に配置する（flex-direction: column のため自然に下段になる）
     editor.appendValidationPanel(validationPanel);
+    // DEBUGコンソールをバリデーションパネルの下に配置する
+    editor.appendDebugConsole(debugConsole);
     // ステータスバーは画面幅いっぱいに表示するため body 直下に配置する
     statusBar.appendTo(document.body);
 

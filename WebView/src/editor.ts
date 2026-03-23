@@ -3,6 +3,7 @@ import {Tab} from "./tab";
 import {DiffView} from "./diff-view";
 import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
+import {DebugConsole} from "./debug-console";
 
 /**
  * RelationsPanel の表示/非表示トグル状態変更を通知するリスナー型。
@@ -266,6 +267,13 @@ export class Editor {
      */
     appendValidationPanel(panel: ValidationPanel): void {
         panel.appendTo(this.element);
+    }
+
+    /**
+     * DEBUGコンソールを editor 直下（ValidationPanelの下）に追加する。
+     */
+    appendDebugConsole(console: DebugConsole): void {
+        console.appendTo(this.element);
     }
 
     /**

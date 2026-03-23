@@ -1,11 +1,13 @@
 import type {ValidationPanel} from "./validation-panel";
 import type {NotificationToast} from "./notification";
+import type {DebugConsole} from "./debug-console";
 
 /**
  * ステータスバー
  *
  * 画面最下部に常時表示される。
  * 左端: エラー件数バッジ（クリックでバリデーションパネルの表示/非表示をトグル）
+ * 左寄り: DEBUG ボタン（クリックで DEBUGコンソールの表示/非表示をトグル）
  * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
  * 右端: 通知ベルアイコン（NotificationToastが配置される）
  * エラー0件でも "0" を表示する。
@@ -20,13 +22,15 @@ export class StatusBar {
     private readonly badge: HTMLElement;
     private readonly badgeCount: HTMLElement;
     private readonly validationPanel: ValidationPanel;
+    private readonly debugConsole: DebugConsole;
     private readonly backgroundIndicator: HTMLElement;
     private readonly backgroundCount: HTMLElement;
     private readonly backgroundPopover: HTMLElement;
     private backgroundPopoverVisible: boolean;
 
-    constructor(validationPanel: ValidationPanel, notification: NotificationToast) {
+    constructor(validationPanel: ValidationPanel, notification: NotificationToast, debugConsole: DebugConsole) {
         this.validationPanel = validationPanel;
+        this.debugConsole = debugConsole;
         this.backgroundPopoverVisible = false;
 
         const bar = document.createElement('div');
@@ -89,6 +93,17 @@ export class StatusBar {
         bar.appendChild(badge);
         this.badge = badge;
         this.badgeCount = countSpan;
+
+        // DEBUG ボタン（エラーバッジの右隣）— クリックで DEBUGコンソールをトグル
+        const debugBtn = document.createElement('div');
+        debugBtn.classList.add('status-bar-debug-button');
+        debugBtn.setAttribute('role', 'button');
+        debugBtn.setAttribute('tabindex', '0');
+        debugBtn.setAttribute('aria-label', 'DEBUGコンソールを表示');
+        debugBtn.textContent = 'DEBUG';
+        debugBtn.addEventListener('click', () => { this.debugConsole.toggleVisibility(); });
+        debugBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.debugConsole.toggleVisibility(); });
+        bar.appendChild(debugBtn);
 
         // バックグラウンドタスクインジケーター（通知ベルの左隣、右寄り）
         // badge の margin-right:auto によって右端グループに押し出される
