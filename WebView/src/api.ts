@@ -1,3 +1,16 @@
+import type {BackgroundTaskTracker} from "./background-task-tracker";
+
+/** postMessageAsync に統合されるバックグラウンドタスクトラッカー（main.ts で設定される） */
+let tracker: BackgroundTaskTracker | false = false;
+
+/**
+ * バックグラウンドタスクトラッカーを設定する。
+ * main.ts で StatusBar 生成後に呼び出し、C# との全通信を追跡対象にする。
+ */
+export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
+    tracker = t;
+}
+
 /**
  * ファイルに文字列データを書き込む（汎用API）
  */
@@ -99,6 +112,10 @@ async function postMessageAsync<T>(
     const result: Promise<T> = requestQueue.then(() => sendRequest<T>(apiName, requestData));
     // エラーが発生してもキューを停止させない
     requestQueue = result.then(() => {}, () => {});
+    // トラッカーが設定されている場合はバックグラウンドタスクとして追跡する
+    if (tracker !== false) {
+        return tracker.trackAsync(apiName, result);
+    }
     return result;
 }
 

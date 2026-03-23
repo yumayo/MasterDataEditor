@@ -1,4 +1,4 @@
-import {findFilesAsync, readFileAsync} from "./api";
+import {findFilesAsync, readFileAsync, configureBackgroundTracker} from "./api";
 import {Sidebar} from "./sidebar";
 import {Tab} from "./tab";
 import {Editor} from "./editor";
@@ -11,6 +11,7 @@ import {NotificationToast} from "./notification";
 import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
 import {StatusBar} from "./status-bar";
+import {BackgroundTaskTracker} from "./background-task-tracker";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
@@ -66,6 +67,10 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     const realStatusBar = new StatusBar(validationPanel, notification);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
+    // バックグラウンドタスクトラッカーを初期化する（api.ts の全 C# 通信を追跡対象にする）
+    const backgroundTaskTracker = new BackgroundTaskTracker(statusBar);
+    configureBackgroundTracker(backgroundTaskTracker);
+
     tab.connectValidationPanel(validationPanel);
     // editor 直下の下段に配置する（flex-direction: column のため自然に下段になる）
     editor.appendValidationPanel(validationPanel);

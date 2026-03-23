@@ -48,3 +48,70 @@
     color: var(--error-color);
 }
 
+/* バックグラウンドタスクインジケーター */
+.status-bar-background-indicator {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    cursor: pointer;
+    position: relative;
+}
+
+.status-bar-background-indicator:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* スピナーアニメーション */
+.status-bar-background-spinner {
+    display: flex;
+    align-items: center;
+}
+
+.status-bar-background-spinner svg {
+    animation: status-bar-spin 1s linear infinite;
+}
+
+@keyframes status-bar-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* タスク件数テキスト */
+.status-bar-background-count {
+    font-size: 11px;
+    min-width: 8px;
+}
+
+/* バックグラウンドタスクポップオーバー */
+.status-bar-background-popover {
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 8px;
+    min-width: 200px;
+    max-width: 400px;
+    z-index: var(--z-index-notification);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.status-bar-background-popover-title {
+    font-size: 10px;
+    opacity: 0.6;
+    margin-bottom: 4px;
+    user-select: none;
+}
+
+.status-bar-background-popover-item {
+    padding: 1px 0;
+    font-family: monospace;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
