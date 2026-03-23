@@ -1,0 +1,29 @@
+{
+    "description": "エリアマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "difficulty",
+            "type": "int",
+            "comment": "難易度",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "required_player_level",
+            "type": "int",
+            "comment": "必要プレイヤーレベル",
+            "width": 180
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

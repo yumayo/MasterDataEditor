@@ -1,0 +1,53 @@
+{
+    "description": "ガチャアイテムマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "gacha_id",
+            "type": "int",
+            "comment": "ガチャID",
+            "reference": "gacha.id",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "table_id",
+            "type": "int",
+            "comment": "テーブルID",
+            "reference": "table.id",
+            "width": 120
+        },
+        {
+            "key": 3,
+            "name": "record_id",
+            "type": "int",
+            "comment": "レコードID",
+            "reference": "$(table.id == $table_id).master.id",
+            "width": 130
+        },
+        {
+            "key": 4,
+            "name": "weight",
+            "type": "int",
+            "comment": "排出重み",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "rarity",
+            "type": "int",
+            "comment": "レアリティ",
+            "width": 100
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

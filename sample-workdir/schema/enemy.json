@@ -1,0 +1,64 @@
+{
+    "description": "エネミーマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "level",
+            "type": "int",
+            "comment": "レベル",
+            "width": 80
+        },
+        {
+            "key": 2,
+            "name": "hp",
+            "type": "int",
+            "comment": "HP",
+            "width": 100
+        },
+        {
+            "key": 3,
+            "name": "attack",
+            "type": "int",
+            "comment": "攻撃力",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "defence",
+            "type": "int",
+            "comment": "防御力",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "speed",
+            "type": "int",
+            "comment": "速度",
+            "width": 80
+        },
+        {
+            "key": 6,
+            "name": "exp",
+            "type": "int",
+            "comment": "経験値",
+            "width": 80
+        },
+        {
+            "key": 7,
+            "name": "gold",
+            "type": "int",
+            "comment": "ゴールド",
+            "width": 80
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

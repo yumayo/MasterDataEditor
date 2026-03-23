@@ -1,0 +1,37 @@
+{
+    "description": "ステージマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "area_id",
+            "type": "int",
+            "comment": "エリアID",
+            "reference": "area.id",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "stage_order",
+            "type": "int",
+            "comment": "ステージ順",
+            "width": 120
+        },
+        {
+            "key": 3,
+            "name": "stamina_cost",
+            "type": "int",
+            "comment": "スタミナ消費",
+            "width": 130
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

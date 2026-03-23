@@ -1,0 +1,29 @@
+{
+    "description": "ガチャマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "cost",
+            "type": "int",
+            "comment": "ガチャコスト",
+            "width": 120
+        },
+        {
+            "key": 2,
+            "name": "max_rarity",
+            "type": "int",
+            "comment": "最高レアリティ",
+            "width": 130
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

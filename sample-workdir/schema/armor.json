@@ -1,0 +1,44 @@
+{
+    "description": "防具マスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "defence",
+            "type": "int",
+            "comment": "防御力",
+            "width": 100
+        },
+        {
+            "key": 2,
+            "name": "hp_bonus",
+            "type": "int",
+            "comment": "HP補正",
+            "width": 100
+        },
+        {
+            "key": 3,
+            "name": "skill_id",
+            "type": "int",
+            "comment": "スキルID",
+            "reference": "skill.id",
+            "width": 120
+        },
+        {
+            "key": 4,
+            "name": "selling_price",
+            "type": "int",
+            "comment": "売却価格",
+            "width": 110
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

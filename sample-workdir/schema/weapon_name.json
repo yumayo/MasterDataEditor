@@ -1,0 +1,23 @@
+{
+    "description": "武器名マスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "reference": "weapon.id",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "ja",
+            "type": "string",
+            "comment": "名前(日本語)",
+            "width": 200
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

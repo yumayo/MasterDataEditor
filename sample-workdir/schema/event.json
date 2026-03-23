@@ -1,0 +1,31 @@
+{
+    "description": "イベントマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "quest_id",
+            "type": "int",
+            "comment": "クエストID",
+            "reference": "quest.id",
+            "width": 120
+        },
+        {
+            "key": 2,
+            "name": "reward_group_id",
+            "type": "int",
+            "comment": "報酬グループID",
+            "reference": "quest_reward.group_id",
+            "width": 160
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

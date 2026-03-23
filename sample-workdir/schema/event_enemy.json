@@ -1,0 +1,38 @@
+{
+    "description": "イベントエネミーマスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "event_id",
+            "type": "int",
+            "comment": "イベントID",
+            "reference": "event.id",
+            "width": 120
+        },
+        {
+            "key": 2,
+            "name": "enemy_id",
+            "type": "int",
+            "comment": "エネミーID",
+            "reference": "enemy.id",
+            "width": 120
+        },
+        {
+            "key": 3,
+            "name": "sort_order",
+            "type": "int",
+            "comment": "出現順",
+            "width": 100
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}

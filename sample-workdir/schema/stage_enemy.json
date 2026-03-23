@@ -1,0 +1,52 @@
+{
+    "description": "ステージエネミー配置マスター",
+    "header": [
+        {
+            "key": 0,
+            "name": "id",
+            "type": "int",
+            "comment": "ID",
+            "width": 80
+        },
+        {
+            "key": 1,
+            "name": "stage_id",
+            "type": "int",
+            "comment": "ステージID",
+            "reference": "stage.id",
+            "width": 110
+        },
+        {
+            "key": 2,
+            "name": "enemy_id",
+            "type": "int",
+            "comment": "エネミーID",
+            "reference": "enemy.id",
+            "width": 110
+        },
+        {
+            "key": 3,
+            "name": "pos_x",
+            "type": "int",
+            "comment": "X座標",
+            "width": 100
+        },
+        {
+            "key": 4,
+            "name": "pos_y",
+            "type": "int",
+            "comment": "Y座標",
+            "width": 100
+        },
+        {
+            "key": 5,
+            "name": "level_override",
+            "type": "int",
+            "comment": "レベルオーバーライド",
+            "width": 170
+        }
+    ],
+    "primary_key": [
+        "id"
+    ]
+}
