@@ -1,6 +1,7 @@
 import { gitStatusAsync, gitShowAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry } from './api';
 import { readFileAsync } from './api';
 import { Tab } from './tab';
+import { ActivityBar } from './activity-bar';
 import { extractFirstLineFromDescription } from './description-utils';
 
 /**
@@ -13,12 +14,14 @@ export class SourceControlPanel {
     private readonly changesSection: HTMLElement;
     private readonly stagedSection: HTMLElement;
     private readonly tab: Tab;
+    private readonly activityBar: ActivityBar;
 
-    /** 差分タブ表示リクエストの競合状態を防ぐためのリクエストID */
+    /** refreshAsync / openDiffTabAsync の競合状態を防ぐためのリクエストID */
     private currentRequestId: number;
 
-    constructor(tab: Tab) {
+    constructor(tab: Tab, activityBar: ActivityBar) {
         this.tab = tab;
+        this.activityBar = activityBar;
         this.currentRequestId = 0;
 
         this.element = document.createElement('div');
@@ -110,6 +113,9 @@ export class SourceControlPanel {
         result.changes.forEach((entry, index) => {
             this.changesSection.appendChild(this.createFileItem(entry, false, descriptions[result.staged.length + index]));
         });
+
+        // アクティビティバーのバッジを changes + staged の合計件数で更新する
+        this.activityBar.updateSourceControlBadge(result.changes.length + result.staged.length);
     }
 
     /**
