@@ -12,13 +12,21 @@ namespace App.MasterDataEditor
 	internal static class GitCommandHelper
 	{
 		/// <summary>
+		/// workDirのgitリポジトリルートの絶対パスを返す
+		/// </summary>
+		public static string GetGitRoot(string workDir)
+		{
+			return RunGitCommand(workDir, "rev-parse", "--show-toplevel").Trim();
+		}
+
+		/// <summary>
 		/// workDirからgitリポジトリルートへの相対パスを算出し、data/ディレクトリのプレフィックスを返す
 		/// git status --porcelain の出力パスはリポジトリルート相対のため、フィルタリングにはこのプレフィックスを使う
 		/// workDirがリポジトリルートそのものの場合は "data/"、サブディレクトリの場合は "subdir/data/" となる
 		/// </summary>
 		public static string GetDataPrefix(string workDir)
 		{
-			var gitRoot = RunGitCommand(workDir, "rev-parse", "--show-toplevel").Trim();
+			var gitRoot = GetGitRoot(workDir);
 			var relWorkDir = Path.GetRelativePath(gitRoot, workDir).Replace('\\', '/');
 			return relWorkDir == "." ? "data/" : relWorkDir + "/data/";
 		}

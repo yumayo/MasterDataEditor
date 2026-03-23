@@ -57,7 +57,9 @@ namespace App.MasterDataEditor
 				}
 
 				// git checkout -- <path> でワーキングツリーの変更を破棄する
-				GitCommandHelper.RunGitCommand(workDir, "checkout", "--", path);
+				// checkout はカレントディレクトリ相対でパスを解決するため、gitルートから実行する
+				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
+				GitCommandHelper.RunGitCommand(gitRoot, "checkout", "--", path);
 
 				return new
 				{

@@ -63,24 +63,8 @@ internal static class AppEnvironment
 		}
 
 		// NOTE: ガイドラインよりも実行のしやすさを優先するため特別にフォールバックを許可
-		var repoRoot = GetRepositoryRoot();
+		var repoRoot = GitCommandHelper.GetGitRoot(AppDomain.CurrentDomain.BaseDirectory);
 		return Path.Combine(repoRoot, "sample-workdir");
-	}
-
-	private static string GetRepositoryRoot()
-	{
-		var directory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-		while (directory != null)
-		{
-			if (Directory.Exists(Path.Combine(directory.FullName, ".git")))
-			{
-				return directory.FullName;
-			}
-
-			directory = directory.Parent;
-		}
-
-		throw new InvalidOperationException("Repository root not found. Set 'MASTER_DATA_EDITOR_WORKDIR' environment variable.");
 	}
 
 	public static int GetDevPort()
