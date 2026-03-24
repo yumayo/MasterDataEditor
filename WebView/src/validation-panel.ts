@@ -2,6 +2,7 @@ import {ValidationEngine, ValidationError} from "./validation-engine";
 import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
 import {InMemoryTableStore} from "./in-memory-table-store";
+import {DebugConsole} from "./debug-console";
 import type {PluginValidationRunner, PluginValidationError} from "./plugin-validation-runner";
 
 /**
@@ -22,6 +23,7 @@ export class ValidationPanel {
     private readonly tab: Tab;
     private readonly statusBar: StatusBar;
     private readonly store: InMemoryTableStore;
+    private readonly debugConsole: DebugConsole;
     /** 現在のエラーリスト */
     private currentErrors: ValidationError[];
     /** プラグインバリデーションランナー */
@@ -29,11 +31,12 @@ export class ValidationPanel {
     /** プラグイン非同期リクエストの陳腐化防止用カウンタ */
     private pluginRequestId = 0;
 
-    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, store: InMemoryTableStore, pluginRunner: PluginValidationRunner) {
+    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, store: InMemoryTableStore, debugConsole: DebugConsole, pluginRunner: PluginValidationRunner) {
         this.engine = engine;
         this.tab = tab;
         this.statusBar = statusBar;
         this.store = store;
+        this.debugConsole = debugConsole;
         this.pluginRunner = pluginRunner;
         this.currentErrors = [];
 
@@ -114,17 +117,25 @@ export class ValidationPanel {
      * 非同期競合は pluginRequestId で防止する。
      */
     runAndUpdate(): void {
+        const engineStart = performance.now();
         const result = this.engine.validate(this.currentErrors);
         const mergedErrors = [...result.errors, ...result.preservableErrors];
+        const engineDurationUs = Math.round((performance.now() - engineStart) * 1000);
+        this.debugConsole.appendEntry('validate (engine)', engineDurationUs, 'success', 'validation-panel.ts');
         // プラグインバリデーションは非同期で実行し、結果をマージする。
         // findFilesAsync/readFileAsync は preloadAllFilesAsync でキャッシュ済みのため実質同期的に返る。
         // requestId で非同期競合を防止する（新しいリクエストが来たら古い結果は破棄する）。
         const requestId = ++this.pluginRequestId;
+        const pluginStart = performance.now();
         this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
             if (requestId !== this.pluginRequestId) return; // 陳腐化した結果は破棄
+            const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
+            this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'success', 'validation-panel.ts');
             this.applyErrors([...mergedErrors, ...convertPluginErrors(pluginErrors, this.store, this.engine)]);
         }).catch((e: unknown) => {
             if (requestId !== this.pluginRequestId) return;
+            const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
+            this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'error', 'validation-panel.ts');
             // プラグイン実行失敗をプラグインエラーとして表面化する（フォールバック禁止）
             const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e), tableName: null, rowIndex: -1, columnName: null }];
             this.applyErrors([...mergedErrors, ...convertPluginErrors(failError, this.store, this.engine)]);
