@@ -132,6 +132,9 @@ test(
         await page.keyboard.insertText('999');
         await page.keyboard.press('Enter');
 
+        // focusout → element.focus({ preventScroll }) のスクロール副作用が収まるまで待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
         // 確定後のスクロール位置を取得する
         const scrollAfter = await getScrollPositionAsync(page);
 
@@ -183,6 +186,9 @@ test(
         await page.keyboard.press('Control+a');
         await page.keyboard.insertText('test_hero');
         await page.keyboard.press('Tab');
+
+        // focusout → element.focus({ preventScroll }) のスクロール副作用が収まるまで待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
 
         const scrollAfter = await getScrollPositionAsync(page);
 

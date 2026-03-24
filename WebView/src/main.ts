@@ -42,9 +42,10 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     const backgroundTaskTracker = new BackgroundTaskTracker(statusBar, debugConsole);
     configureBackgroundTracker(backgroundTaskTracker);
 
-    // 起動時に schema/ と data/ 以下の全ファイルをキャッシュに一括読み込みする。
-    // 以降の readFileAsync / findFilesAsync はキャッシュから即座に返るため C# への問い合わせが不要になる。
-    await preloadAllFilesAsync();
+    // 起動時に schema/ と data/ 以下の全ファイルをキャッシュにバックグラウンドで読み込む。
+    // awaitしない: UI初期化を先に進め、schema ループ開始前に完了を待つ。
+    // readFileAsync / findFilesAsync はキャッシュミス時にC#へ個別問い合わせするため機能的に問題ない。
+    const preloading = preloadAllFilesAsync();
 
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
@@ -137,10 +138,27 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
         }
     }, true);
 
+    // schemaRegistry は Map 参照を EditorApiImpl に渡すだけなので、中身が空でも先に構築できる。
+    // schema ループで後から set() すれば同じインスタンスを参照している EditorApiImpl に自然と反映される。
+    const schemaRegistry = new Map<string, SchemaEntry>();
+
+    // EditorAPI を構築して window.editorApi として公開する
+    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine);
+    tab.connectEditorApi(editorApi);
+    (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
+
+    // C# ↔ WebView ブリッジを構築する（コンストラクタでリスナー登録完了）
+    const bridge = new EditorApiBridge(editorApi);
+
+    // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
+    (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;
+
+    // バックグラウンド preload の完了を待つ（並列読み込みがUI初期化中に進行している）
+    await preloading;
+
     // スキーマファイルを読み込み
     // 各スキーマJSONを読み込んでdescriptionを取得し、エクスプローラーに2行表示する
     // 同時に schemaRegistry を構築する（EditorAPI.schema の情報源となる）
-    const schemaRegistry = new Map<string, SchemaEntry>();
     const files = await findFilesAsync("schema");
     for (let i = 0; i < files.length; ++i) {
         const file = files[i];
@@ -186,15 +204,4 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     })().catch((e: unknown) => {
         console.error('[main] 起動時バリデーションスキャン失敗:', String(e));
     });
-
-    // EditorAPI を構築して window.editorApi として公開する
-    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine);
-    tab.connectEditorApi(editorApi);
-    (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
-
-    // C# ↔ WebView ブリッジを構築する（コンストラクタでリスナー登録完了）
-    const bridge = new EditorApiBridge(editorApi);
-
-    // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
-    (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;
 })();

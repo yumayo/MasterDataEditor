@@ -233,16 +233,28 @@ public class WebView2Handler : IDisposable
 				switch (messageType)
 					{
 						case "read_file_request":
-							SendMessageToWebView(WebView2HandlerReadFileRequest.Invoke(root, requestId));
+						{
+							// UIスレッドをブロックせずバックグラウンドでファイルI/Oを実行する。
+							// root は using スコープの JsonDocument に紐づくため Clone() で独立させる。
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerReadFileRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
 							break;
+						}
 
 						case "write_file_request":
 							SendMessageToWebView(WebView2HandlerWriteFileRequest.Invoke(root, requestId));
 							break;
 
 						case "find_files_request":
-							SendMessageToWebView(WebView2HandlerFindFilesRequest.Invoke(root, requestId));
+						{
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerFindFilesRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
 							break;
+						}
 
 						case "delete_file_request":
 							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root, requestId));

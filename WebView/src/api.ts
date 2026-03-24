@@ -38,7 +38,7 @@ export async function preloadAllFilesAsync(): Promise<void> {
     dirCache.set('data', dataFiles);
     if (pluginFilesResult.found) dirCache.set('plugins', pluginFilesResult.files);
 
-    // 全ディレクトリのファイル読み込みを並列実行する
+    // 全ディレクトリのファイル読み込みを並列実行する（C#側がバックグラウンドスレッドで処理する）
     const readTasks: Promise<void>[] = [];
     for (const file of schemaFiles) {
         if (file.type !== 'file') continue;
