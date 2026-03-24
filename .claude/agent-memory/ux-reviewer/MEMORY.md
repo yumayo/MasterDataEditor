@@ -15,30 +15,19 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-24）
+### 最新レビュー結果（2026-03-25）
+
+#### プラグインバリデーション機能 評価: B
+- 良い点: プラグインバッジ（validation-panel-item-kind-plugin）が警告色（#cda632/黄金色）でPK重複・FK切れの赤バッジと明確に差別化されている。convertPluginErrors()でtableName="(plugin)"グループに分離し、PKエラーグループと視覚的に分断できている。PluginValidationRunnerのrunAllPluginsAsync()が構文エラーをcatchしてプラグインエラーとして報告するフォールスルー設計が適切。executePlugin()がnew Functionで実行スコープをtables/assertに限定しており安全。
+- 修正必須(🔴): クリックジャンプ不可の視覚的表現がない。role="button"/tabindex="0"が設定されているにもかかわらず何も起きないアイテムが存在し、プランナーが「壊れている」と誤認する。cursor:default + pointer-events:none の追加またはrole/tabindex の除去が必須。
+- 修正必須(🔴): グループ名が "(plugin)" という内部識別子そのまま。プランナー向けには「プラグイン」または「カスタムチェック」等の日本語が適切。
+- 修正必須(🔴): location表示が "(plugin):" のみでプラグインファイル名が重複表示される（message側にも "[balance-check.js]" が含まれるため）。locationはプラグインファイル名のみにし、messageにはassertメッセージのみを表示する分離が必要。
+- 修正必須(🔴): DOMダンプが存在しない（テストが実行されていない）。plugin-validation.spec.tsは存在するがautoDumpが機能していない。テスト実行後にDOMダンプを確認してビジュアル検証が必要。
+- 改善推奨(🟡): validation-panel-group-header に role/aria-label なし（全サイクル継続課題）。
+- 改善推奨(🟡): プラグインエラーにはcell-errorクラスが付与されない（セル特定不能）が、エラー件数バッジには計上される。プランナーが「赤バッジが出ているのにどのセルも赤くない」と混乱する可能性。
 
 #### RelationsPanelトグル（非表示時ミニテーブル構築スキップ）評価: B+
-- 良い点: 非表示中のミニテーブル構築スキップが正確に機能（relations-panel-content が空）。再表示時の自動リフレッシュが正常（enemy_id=2行選択→「ドラゴン」が即時表示）。ツールバートグルボタンのアクティブ/非アクティブ切替（toolbar-button-relations-active クラス付与/除去）が正確。«/»ボタンに aria-label="RelationsPanelを閉じる/開く" 設定済み。relations-panel-open-tab に role="button"/tabindex="0" あり。
-- 修正必須(🔴): 非表示時に editor-right-slot が visibility:hidden + flex:0 0 6px となり6px幅の透明スロットが残留。左ペインが「全幅」にならない。display:none または flex:0 0 0px が正しい
-- 修正必須(🔴): 非表示時のミニテーブルDOMが relations-panel-content 内に残留（visibility:hidden で隠しているだけ）。前の行のデータがメモリに残り続け、タブ数が増えると不要なEditorTableインスタンスが蓄積する
-- 修正必須(🔴): 「ツールバーにRelationsトグルボタンが存在すること」テストのスクリーンショットでタブが開かれていない（空エディタ状態）。トグルボタン自体は toolbar に存在するが、テストがタブを開かずに検証している可能性。実際の動作に疑問が残る
-- 修正必須(🔴): relations-panel-close-button（«ボタン）が非表示状態のDOMに残留したまま（visibility:hiddenの親の中）。tabindex が指定されていないためフォーカストラップは起きないが、スクリーンリーダーからは到達可能
-- 改善推奨(🟡): fill-handle が非表示時のミニテーブル内に display:block で残存（継続課題）
-- 改善推奨(🟡): row-resize-handle が非表示時のミニテーブル内に残存（継続課題）
-- 改善推奨(🟡): relations-panel-close-button に tabindex="-1" を付与して非表示時はフォーカスから外す
-
-#### 起動時全テーブルバリデーションスキャン（DOMダンプなし、実装レビューのみ）評価: B+
-- 修正必須(🔴): スキャン中であることをプランナーが認識できない
-- 修正必須(🔴): テストケースにFKエラーの起動時検出が含まれない（PK重複のみ）
-- 修正必須(🔴): validation-panel-group-header に role/aria-label なし（全サイクル継続）
-
-#### ISSUE_0113 SOURCE CONTROLパネルstage/discard/unstageボタン 評価: B+
-- 残存(🔴): discardボタンに確認ダイアログなし
-- 残存(🔴): source-control-action-btn に role="button"/aria-label/title がない
-
-#### ISSUE_0107 差分ビューバリデーション 評価: B
-- 残存(🔴): PROBLEMSパネルが data-error-count="0"・「エラーはありません」で矛盾
-- 残存(🔴): 左ペイン grid-textfield に contenteditable="true" が残存
+- 前回(2026-03-24)から変化なし。未修正課題が継続。
 
 ### 横断的な継続課題（最新）
 - インタラクティブな div/span 要素に role="button"/tabindex がない（activity-bar-item, notification-bell ほか）
@@ -49,3 +38,4 @@
 - fill-handle が非表示・inactive ペインに display:block で残存
 - 起動時スキャン中であることを示すインジケーターなし（2026-03-24）
 - editor-right-slot の非表示時に 6px 幅の透明スロットが残留（relations-panel-toggle で新規発見、2026-03-24）
+- プラグインエラーのvalidation-panel-itemにrole="button"が付いているが、クリックしても何も起きない（2026-03-25新規発見）
