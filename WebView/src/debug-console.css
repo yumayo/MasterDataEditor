@@ -15,10 +15,9 @@
 .debug-console-column-header {
     display: flex;
     align-items: center;
-    padding: 2px 12px;
-    font-size: 10px;
-    font-weight: 600;
-    opacity: 0.5;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 11px;
     user-select: none;
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
@@ -70,8 +69,6 @@
 .debug-console-col-time {
     width: 96px;
     flex-shrink: 0;
-    color: var(--font-color);
-    opacity: 0.5;
 }
 
 .debug-console-col-label {
@@ -89,8 +86,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding-right: 8px;
-    opacity: 0.6;
-    font-style: italic;
 }
 
 .debug-console-col-duration {
@@ -98,12 +93,11 @@
     flex-shrink: 0;
     text-align: right;
     padding-right: 12px;
-    opacity: 0.7;
     font-variant-numeric: tabular-nums;
 }
 
 .debug-console-col-status {
-    width: 16px;
+    width: 24px;
     flex-shrink: 0;
     text-align: center;
 }
