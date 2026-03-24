@@ -348,6 +348,15 @@ export class EditorTableHandler {
             return;
         }
 
+        // フォーカス先がデバッグコンソール内の場合はフォーカスを奪わない（テキスト選択を許可する）
+        if (focusTarget instanceof HTMLElement && focusTarget.closest('.debug-console')) {
+            if (this.visible) {
+                this.submitText();
+                this.hide();
+            }
+            return;
+        }
+
         // アクティブ中はセルを常に有効にし続けます。
         // IMEを使用していてキー入力の一文字目から日本語を使用できるようになります。
         // フォーカスアウト時点のスクロール位置を先に読んでから focus() を呼ぶ（DOM変更前なので正しい値）。

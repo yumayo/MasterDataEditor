@@ -27,6 +27,9 @@ export class DebugConsole {
         const panel = document.createElement('div');
         panel.classList.add('debug-console');
         panel.style.display = 'none';
+        // tabindex を付与してフォーカス可能にする。grid-textfield の onFocusout で
+        // relatedTarget が null にならず、デバッグコンソールへのフォーカス移動を判定できる。
+        panel.setAttribute('tabindex', '-1');
         this.element = panel;
 
         // カラムヘッダー行（各セルは個別生成してリサイズハンドルを付与）
