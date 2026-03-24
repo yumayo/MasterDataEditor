@@ -47,15 +47,25 @@ null/undefined 禁止 → boolean `false` や空文字 `""` をセンチネル�
 ### 非同期競合防止
 `currentRequestId` パターン: 呼び出し元でインクリメント、`renderAsync` 自身はインクリメントしない。
 
-### 動的参照（DynamicReference）の解決パターン
-`$(table.id == $reward_table_id).master.id` 形式の動的参照を解決する手順:
-1. 同一行から `expr.filter.valueColumn` の値を取得（`editorTable.getCellValueByColumnName`）
-2. フィルタテーブルを `resolveTableDataAsync()` で取得し、`expr.filter.filterColumn` で線形検索（`Array.find`）
+### 動的参照（DynamicReference）のスキーマ形式と解決パターン
+スキーマJSON上の動的参照は `DynamicReferenceSchema` オブジェクト形式で記述する（旧文字列形式は廃止）:
+```json
+"reference": {
+    "sourceTable": "table",
+    "sourceMatchColumn": "id",
+    "sourceMatchValue": "$reward_table_id",
+    "destTable": "master",
+    "destColumn": "id"
+}
+```
+`parseReferenceExpression(string | DynamicReferenceSchema)` がオブジェクトを受け取ると `DynamicReference` に変換する。
+`EditorTableDataColumn.reference` の型は `string | DynamicReferenceSchema | null`。
+
+解決手順:
+1. 同一行から `expr.filter.valueColumn` の値を取得
+2. フィルタテーブルを取得し、`expr.filter.filterColumn` で線形検索
 3. その行の `expr.lookupColumn` 値 = 最終テーブル名を取得
-4. この列自身の値（`getCellValueByColumnName(rowIndex, col.name)`）= FK値を取得
-5. 最終テーブルを `resolveTableDataAsync()` で取得し `expr.targetColumn == fkValue` でフィルタ
-フィルタテーブルの行検索には `referenceDataCache.findRowByColumn` は使わず（型の制約があるため）、
-`resolveTableDataAsync()` で取得した rows に対して `Array.find` で自前線形検索する。
+4. 最終テーブルを取得し `expr.targetColumn == fkValue` でフィルタ
 
 ## Recurring Implementation Mistakes
 

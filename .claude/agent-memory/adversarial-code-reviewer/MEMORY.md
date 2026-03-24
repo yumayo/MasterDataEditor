@@ -19,6 +19,8 @@
 - `/WebView/src/relations-panel.ts` - Right pane relations
 - `/WebView/src/reference-data-cache.ts` - FK reference cache
 - `/WebView/src/plugin-validation-runner.ts` - Plugin validation (new Function execution)
+- `/WebView/src/reference-expression.ts` - DynamicReferenceSchema + parseReferenceExpression
+- `/WebView/src/model/editor-table-data-column.ts` - Column model with reference: string | DynamicReferenceSchema | null
 
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
@@ -32,6 +34,15 @@
 - **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決ロジック等
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
+- **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
+
+## DynamicReferenceSchema Migration Patterns (2026-03-25)
+- reference型は `string | DynamicReferenceSchema | null` に統一済み
+- **未更新箇所**: relations-panel.ts L1003 `reference?: string` (致命的)
+- **main.ts起動バリデーション**: createSchemaEntryFromJson が動的参照をスキップ→起動時FKバリデーション漏れ
+- **serialize() roundtrip**: reference: null がJSONに出力され元スキーマを汚染
+- reference-data-cache.ts: Record<string, unknown>→as DynamicReferenceSchemaキャスト (型安全性不足)
+- search-data-provider.ts: 動的参照→空文字列変換が2箇所でコピペ
 
 ## Plugin Validation Known Patterns (2026-03-25)
 - new Function() is NOT sandboxed — full access to window/document/globalThis
@@ -45,6 +56,7 @@
 - **store.getHeader/getRows returns internal reference**: caller mutation corrupts store
 - **Csv class**: half-baked object pattern (10+ instances)
 - **GridDropdownInput.element is public HTMLElement**: legacy debt
+- **SchemaEntry.references omits dynamic refs**: createSchemaEntryFromJson only handles string references
 
 ## CSS Variables
 - Defined: --font-color, --background-color, --background-sub-color, --border-color, --selection-color, --selection-font-color, --scroll-bar-background-color, --focus-border, --error-color, --error-bg, --error-border
@@ -52,6 +64,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-25) DynamicReferenceSchema Migration: 致命的2件、重要4件、軽微3件
 - (2026-03-25) Plugin Validation: 致命的4件、重要5件、軽微4件
 - (2026-03-24) RP Visibility Toggle: 致命的3件、重要4件、軽微3件
 - (2026-03-24) Initial Scan: 致命的4件、重要4件、軽微2件
