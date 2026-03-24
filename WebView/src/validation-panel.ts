@@ -1,6 +1,7 @@
 import {ValidationEngine, ValidationError} from "./validation-engine";
 import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
+import {InMemoryTableStore} from "./in-memory-table-store";
 import type {PluginValidationRunner, PluginValidationError} from "./plugin-validation-runner";
 
 /**
@@ -20,6 +21,7 @@ export class ValidationPanel {
     private readonly engine: ValidationEngine;
     private readonly tab: Tab;
     private readonly statusBar: StatusBar;
+    private readonly store: InMemoryTableStore;
     /** 現在のエラーリスト */
     private currentErrors: ValidationError[];
     /** プラグインバリデーションランナー */
@@ -27,10 +29,11 @@ export class ValidationPanel {
     /** プラグイン非同期リクエストの陳腐化防止用カウンタ */
     private pluginRequestId = 0;
 
-    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, pluginRunner: PluginValidationRunner) {
+    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, store: InMemoryTableStore, pluginRunner: PluginValidationRunner) {
         this.engine = engine;
         this.tab = tab;
         this.statusBar = statusBar;
+        this.store = store;
         this.pluginRunner = pluginRunner;
         this.currentErrors = [];
 
@@ -119,12 +122,12 @@ export class ValidationPanel {
         const requestId = ++this.pluginRequestId;
         this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
             if (requestId !== this.pluginRequestId) return; // 陳腐化した結果は破棄
-            this.applyErrors([...mergedErrors, ...convertPluginErrors(pluginErrors)]);
+            this.applyErrors([...mergedErrors, ...convertPluginErrors(pluginErrors, this.store, this.engine)]);
         }).catch((e: unknown) => {
             if (requestId !== this.pluginRequestId) return;
             // プラグイン実行失敗をプラグインエラーとして表面化する（フォールバック禁止）
-            const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e) }];
-            this.applyErrors([...mergedErrors, ...convertPluginErrors(failError)]);
+            const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e), tableName: null, rowIndex: -1, columnName: null }];
+            this.applyErrors([...mergedErrors, ...convertPluginErrors(failError, this.store, this.engine)]);
         });
     }
 
@@ -203,9 +206,13 @@ export class ValidationPanel {
 
                 const locationSpan = document.createElement('span');
                 locationSpan.classList.add('validation-panel-item-location');
-                // プラグインエラーはファイル名を表示、それ以外はテーブル名・行番号・列名を表示する
-                if (error.kind === 'plugin') {
+                // プラグインエラーでジャンプ先がある場合はテーブル名・行番号を表示する
+                // ジャンプ先がない場合はファイル名のみ表示する
+                // 通常エラーはテーブル名・行番号・列名を表示する
+                if (error.kind === 'plugin' && error.rowIndex === -1) {
                     locationSpan.textContent = `${error.columnName}:`;
+                } else if (error.kind === 'plugin') {
+                    locationSpan.textContent = `${error.tableName} 行${error.rowIndex + 1}:`;
                 } else {
                     locationSpan.textContent = `${tableName} 行${error.rowIndex + 1} ${error.columnName}:`;
                 }
@@ -218,8 +225,9 @@ export class ValidationPanel {
                 item.appendChild(locationSpan);
                 item.appendChild(messageSpan);
 
-                // プラグインエラー以外にのみクリックジャンプ機能を付与する
-                if (error.kind !== 'plugin') {
+                // ジャンプ先が特定できるエラーにのみクリックジャンプ機能を付与する
+                const canJump = error.kind !== 'plugin' || error.rowIndex !== -1;
+                if (canJump) {
                     item.setAttribute('role', 'button');
                     item.setAttribute('tabindex', '0');
                     item.addEventListener('click', () => { this.jumpToError(error); });
@@ -278,23 +286,40 @@ export class ValidationPanel {
 
 /**
  * PluginValidationError を ValidationError に変換する。
- * プラグインエラーは tableName="プラグイン"、rowIndex=-1、columnIndex=-1 で
- * セル特定不能を表現する。columnName にプラグインファイル名を格納する。
+ * assertに行オブジェクト・列名が渡されている場合はジャンプ先として利用する。
+ * ジャンプ先が指定されていないエラーは tableName="プラグイン"、rowIndex=-1 でセル特定不能を表現する。
  */
-function convertPluginErrors(pluginErrors: PluginValidationError[]): ValidationError[] {
+function convertPluginErrors(pluginErrors: PluginValidationError[], store: InMemoryTableStore, engine: ValidationEngine): ValidationError[] {
     const result: ValidationError[] = [];
     for (const pe of pluginErrors) {
-        result.push({
-            tableName: 'プラグイン',
-            rowIndex: -1,
-            columnIndex: -1,
-            columnName: pe.pluginName,
-            value: '',
-            kind: 'plugin',
-            message: pe.message,
-            filterValue: null,
-            pkValue: null,
-        });
+        // ジャンプ先コンテキストがある場合はテーブル名・行・列を解決する
+        if (pe.tableName !== null && pe.rowIndex !== -1) {
+            const header = store.getHeader(pe.tableName);
+            const columnIndex = (header !== false && pe.columnName !== null) ? header.indexOf(pe.columnName) : -1;
+            result.push({
+                tableName: pe.tableName,
+                rowIndex: pe.rowIndex,
+                columnIndex,
+                columnName: pe.columnName !== null ? pe.columnName : '',
+                value: '',
+                kind: 'plugin',
+                message: '[' + pe.pluginName + '] ' + pe.message,
+                filterValue: null,
+                pkValue: engine.resolvePkValue(pe.tableName, pe.rowIndex),
+            });
+        } else {
+            result.push({
+                tableName: 'プラグイン',
+                rowIndex: -1,
+                columnIndex: -1,
+                columnName: pe.pluginName,
+                value: '',
+                kind: 'plugin',
+                message: pe.message,
+                filterValue: null,
+                pkValue: null,
+            });
+        }
     }
     return result;
 }

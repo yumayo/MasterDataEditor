@@ -103,6 +103,17 @@ export class ValidationEngine {
     }
 
     /**
+     * 指定テーブル・行のPK値を取得する。
+     * プラグインバリデーションエラーのジャンプ先PK値を解決するために使用する。
+     * スキーマ未登録・PK列なし・PK値空文字の場合は null を返す。
+     */
+    resolvePkValue(tableName: string, rowIndex: number): string | null {
+        const resolved = this.resolveSchemaAndData(tableName);
+        if (resolved === null) return null;
+        return this.resolvePkValueForRow(resolved.schema, resolved.header, resolved.rows, rowIndex);
+    }
+
+    /**
      * 指定テーブルのスキーマとストアデータを解決する共通ヘルパー。
      * スキーマ未登録またはストアにデータがない場合は null を返す。
      */

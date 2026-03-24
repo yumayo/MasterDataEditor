@@ -1,12 +1,28 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {findFilesAsync, readFileAsync} from "./api";
 
+/** 行オブジェクトに埋め込むメタデータのSymbolキー */
+const ROW_META_KEY = Symbol('pluginRowMeta');
+
+/** 行オブジェクトに埋め込むメタデータ */
+interface RowMeta {
+    tableName: string;
+    /** ストア上の行インデックス（0始まり） */
+    rowIndex: number;
+}
+
 /** プラグインバリデーションエラー */
 export interface PluginValidationError {
     /** プラグインファイル名（例: "balance-check.js"） */
     pluginName: string;
     /** assertメッセージ */
     message: string;
+    /** ジャンプ先テーブル名（行オブジェクトから自動解決。指定なしの場合は null） */
+    tableName: string | null;
+    /** ジャンプ先ストア行インデックス（行オブジェクトから自動解決。指定なしの場合は -1） */
+    rowIndex: number;
+    /** ジャンプ先列名（assert第4引数から。指定なしの場合は null） */
+    columnName: string | null;
 }
 
 /**
@@ -76,6 +92,9 @@ export class PluginValidationRunner {
                 allErrors.push({
                     pluginName,
                     message: 'プラグインの読み込みに失敗しました: ' + String(e),
+                    tableName: null,
+                    rowIndex: -1,
+                    columnName: null,
                 });
             }
         }
@@ -95,9 +114,18 @@ export class PluginValidationRunner {
         const errors: PluginValidationError[] = [];
 
         // assert関数: conditionがfalseの場合にエラーを収集する
-        const assertFn = (condition: boolean, message: string): void => {
+        // 第3引数に行オブジェクトを渡すとジャンプ先テーブル・行を自動解決する
+        // 第4引数に列名を渡すとジャンプ先列も指定できる
+        const assertFn = (condition: boolean, message: string, row?: Record<string, string>, columnName?: string): void => {
             if (!condition) {
-                errors.push({ pluginName, message });
+                const meta = extractRowMeta(row);
+                errors.push({
+                    pluginName,
+                    message,
+                    tableName: meta !== null ? meta.tableName : null,
+                    rowIndex: meta !== null ? meta.rowIndex : -1,
+                    columnName: typeof columnName === 'string' ? columnName : null,
+                });
             }
         };
 
@@ -111,6 +139,9 @@ export class PluginValidationRunner {
             errors.push({
                 pluginName,
                 message: 'プラグイン実行エラー: ' + String(e),
+                tableName: null,
+                rowIndex: -1,
+                columnName: null,
             });
         }
 
@@ -157,6 +188,7 @@ export class PluginValidationRunner {
 /**
  * ストアのテーブルデータをRecord<string, string>[]に変換する。
  * ヘッダー配列をキーとして各行を列名→値のオブジェクトにマッピングする。
+ * 各行オブジェクトには ROW_META_KEY Symbolでテーブル名・行インデックスを埋め込む。
  * テーブルがストアに存在しない場合は空配列を返す。
  */
 function buildRowObjects(store: InMemoryTableStore, tableName: string): Record<string, string>[] {
@@ -164,12 +196,26 @@ function buildRowObjects(store: InMemoryTableStore, tableName: string): Record<s
     const rows = store.getRows(tableName);
     if (header === false || rows === false) return [];
     const result: Record<string, string>[] = [];
-    for (const row of rows) {
+    for (let r = 0; r < rows.length; r++) {
+        const row = rows[r];
         const obj: Record<string, string> = {};
         for (let i = 0; i < header.length; i++) {
             obj[header[i]] = row[i];
         }
+        // Symbolキーでメタデータを埋め込む（プラグインからは見えないがassertで読み取れる）
+        (obj as Record<string | symbol, unknown>)[ROW_META_KEY] = { tableName, rowIndex: r } satisfies RowMeta;
         result.push(obj);
     }
     return result;
+}
+
+/**
+ * 行オブジェクトからメタデータを読み取る。
+ * ROW_META_KEY Symbolが存在しない場合（行オブジェクトが渡されなかった等）は null を返す。
+ */
+function extractRowMeta(row: Record<string, string> | undefined): RowMeta | null {
+    if (row === undefined) return null;
+    const meta = (row as Record<string | symbol, unknown>)[ROW_META_KEY];
+    if (meta === undefined) return null;
+    return meta as RowMeta;
 }

@@ -47,7 +47,7 @@ function createPluginFileSystem(): MockFileSystem {
             "for (const chara of tables.chara.all()) {",
             "    if (chara.attack === '' || chara.defence === '') continue;",
             "    const total = Number(chara.attack) + Number(chara.defence);",
-            "    assert(total < 100, 'chara id=' + chara.id + ': 合計値' + total + 'が100以上です');",
+            "    assert(total < 100, '合計値' + total + 'が100以上です', chara, 'attack');",
             "}",
         ].join("\n"),
     };
@@ -76,7 +76,7 @@ function createPluginNoErrorFileSystem(): MockFileSystem {
             "for (const chara of tables.chara.all()) {",
             "    if (chara.attack === '' || chara.defence === '') continue;",
             "    const total = Number(chara.attack) + Number(chara.defence);",
-            "    assert(total < 100, 'chara id=' + chara.id + ': 合計値' + total + 'が100以上です');",
+            "    assert(total < 100, '合計値' + total + 'が100以上です', chara, 'attack');",
             "}",
         ].join("\n"),
     };
@@ -164,6 +164,15 @@ function createSyntaxErrorPluginFileSystem(): MockFileSystem {
 // =============================================================================
 // テストヘルパー関数
 // =============================================================================
+
+/** エクスプローラーのテーブル名をクリックしてテーブルを開き、EditorTableのLocatorを返す */
+async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
+    const explorer = page.locator('#explorer');
+    await explorer.getByText(tableName, { exact: true }).click();
+    const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
+    await expect(table).toBeVisible();
+    return table;
+}
 
 /** ステータスバーのエラーバッジを返す */
 function getStatusBarBadge(page: Page): Locator {
@@ -339,6 +348,47 @@ test.describe('プラグインバリデーション: 構文エラーのプラグ
             // 構文エラーのプラグインファイル名が表示されている
             const brokenPluginError = items.filter({ hasText: 'broken.js' });
             await expect(brokenPluginError.first()).toBeVisible();
+        },
+    );
+});
+
+// =============================================================================
+// テストケース6: assertに行オブジェクトを渡すとエラーをクリックして該当セルにジャンプできる
+// =============================================================================
+
+test.describe('プラグインバリデーション: assertのコンテキスト付きエラーでセルジャンプ', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createPluginFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        'コンテキスト付きプラグインエラーをクリックするとテーブルが開かれ該当セルにジャンプする',
+        async ({ page }) => {
+            // 起動時バリデーション完了を待機する
+            const badge = getStatusBarBadge(page);
+            await expect(badge.locator('.status-bar-badge-count')).not.toHaveText('0', { timeout: 10000 });
+
+            // PROBLEMSパネルを開く
+            await openValidationPanelAsync(page);
+
+            // プラグインエラー項目をクリックする（chara テーブルの行2, attack列）
+            const items = getValidationPanelItems(page);
+            const pluginItem = items.filter({ hasText: '合計値110が100以上です' });
+            await expect(pluginItem.first()).toBeVisible();
+
+            // エラーの location にテーブル名と行番号が表示されていること
+            const locationText = pluginItem.first().locator('.validation-panel-item-location');
+            await expect(locationText).toHaveText('chara 行2:');
+
+            // エラーをクリックしてジャンプする
+            await pluginItem.first().click();
+
+            // chara テーブルが開かれ、該当セルにフォーカスが移動する
+            const table = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="chara"] .editor-table');
+            await expect(table).toBeVisible();
+            const focusedCell = table.locator('.editor-table-cell-focused');
+            await expect(focusedCell).toBeVisible();
         },
     );
 });

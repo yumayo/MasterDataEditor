@@ -89,7 +89,7 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // Object.assign + setPrototypeOf で stub を本物に昇格させる（Tab ↔ Sidebar と同じパターン）。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
     const pluginValidationRunner = new PluginValidationRunner(store);
-    const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, pluginValidationRunner);
+    const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, pluginValidationRunner);
     const bottomPanel = new BottomPanel(validationPanel, debugConsole);
     const realStatusBar = new StatusBar(bottomPanel, notification);
     Object.assign(statusBar, realStatusBar);
