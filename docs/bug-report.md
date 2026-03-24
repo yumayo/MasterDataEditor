@@ -2633,3 +2633,17 @@ DiffTab再利用時のCSVデータ未更新
 - **初期化順序の変更時は、DEBUG CONSOLE のエントリ数を検証する e2e テストで計測漏れを自動検出する。**
 
 ---
+
+## 182. [f7071ca] — 差分ビューの右ペインでCtrl+S保存のREDテストを非同期待機追加でGREENにした
+
+### 不具合原因名
+テストの非同期待機不足（fire-and-forget保存の完了前にアサーション実行）
+
+### なぜそうなったのか
+差分ビューの右ペイン保存機能（`configureDiffRightPane` + `saveDiffTableDataFromStoreAsync`）は既に実装済みだったが、テスト（TDD RED テスト）が `page.keyboard.press('Control+s')` 後に即座に `expectCsvAsync` を呼んでいた。保存処理はキーボードハンドラ内で fire-and-forget（Promise を await せず `.then()` チェーン）で実行されるため、mock API の `setTimeout(0)` によるレスポンス配信が完了する前にアサーションが走り、元の値のままと判定されていた。
+
+### どうしたら今後は再発しないか
+- **fire-and-forget の非同期処理を検証するテストでは、処理完了を示す副作用（DOM変化等）を待機してからアサーションする。** 今回は `store.markAllSaved` → `TabButton.setDirty(false)` による Dirty マーク消去を保存完了シグナルとして使用した。
+- **`page.keyboard.press()` の戻りは「キーイベントの配信完了」であり「イベントハンドラ内の非同期処理の完了」ではないことを認識する。**
+
+---

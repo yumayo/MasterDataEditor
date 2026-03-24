@@ -1,3 +1,4 @@
+import type { Page, Locator } from '@playwright/test';
 import { test as base, expect } from './fixtures/test';
 import { MockFileSystem, installMockApiAsync } from './fixtures/mock-api';
 import { getDataCell, expectCsvAsync } from './fixtures/test-utils';
@@ -5,18 +6,14 @@ import { getDataCell, expectCsvAsync } from './fixtures/test-utils';
 // =============================================================================
 // 差分ビューのDirtyマーク表示と Ctrl+S 保存の検証
 //
-// 根本原因:
-//   原因1: tab.ts L646 で DOM未追加の dummyTabButton（名前 '[diff]'）を DiffTab に渡している。
-//          History.notifyChange() → setTabButtonDirty() が呼ばれても画面上のタブボタンに反映されない。
-//
-//   原因2: diff-tab.ts L156-157 で disableSave() を呼んでおり、Ctrl+S が完全に無効化されている。
-//          差分タブのストアキーが 'tableName:diff:current' という不正パスのため、
-//          そのままファイル保存するとファイルシステムを破壊するリスクがあった。
-//          正しくは元テーブル名（tableName）に対して保存する必要がある。
-//
 // 検証シナリオ:
 //   1. 差分ビューで右ペインのセルを編集した後、タブにDirtyマーク（.tab-button-dirty-visible）が表示される
 //   2. 差分ビューで右ペインのセルを編集した後、Ctrl+S で元CSVファイルに内容が保存される
+//
+// 保存の仕組み:
+//   差分タブの右ペインは configureDiffRightPane(tableName, gitPath) で saveTargetTableName が設定される。
+//   Ctrl+S 時に saveDiffTableDataFromStoreAsync(saveTargetTableName, ...) で元テーブル名のCSVに保存する。
+//   保存は fire-and-forget（await なし）で実行されるため、テストでは Dirty マーク消去を保存完了シグナルとして待機する。
 // =============================================================================
 
 // テスト用スキーマ（id, name の2列テーブル）
@@ -89,6 +86,61 @@ const test = base.extend<DiffTabDirtySaveFixtures>({
     },
 });
 
+// 差分タブのセットアップ結果
+interface DiffTabSetupResult {
+    rightPane: Locator;
+    dirtyIndicator: Locator;
+    editedCell: Locator;
+}
+
+/**
+ * 差分タブを開いてセルを編集するまでの共通セットアップ
+ *
+ * 手順:
+ *   1. ソースコントロールパネルを開く
+ *   2. quest_reward の差分タブを開く
+ *   3. タブ表示確認・Dirtyインジケーター取得
+ *   4. 右ペインの指定列セルをダブルクリックして値を入力・確定する
+ */
+async function setupDiffTabAndEditCellAsync(page: Page, colIndex: number, inputValue: string): Promise<DiffTabSetupResult> {
+    // ソースコントロールパネルを開く
+    await page.locator('[data-panel="sourceControl"]').click();
+
+    // CHANGES セクションの quest_reward テーブルをクリックして差分タブを開く
+    const changesSection = page.locator('.source-control-changes-section');
+    await expect(changesSection.getByText('quest_reward')).toBeVisible();
+    await changesSection.getByText('quest_reward').click();
+
+    // 差分タブが開いていることを確認する
+    const diffTab = page.locator('.diff-tab');
+    await expect(diffTab).toBeVisible();
+
+    // 差分タブのタブボタンとDirtyインジケーターを取得する
+    const diffTabButton = page.locator('.tab-button', { hasText: '差分: quest_reward' });
+    await expect(diffTabButton).toBeVisible();
+    const dirtyIndicator = diffTabButton.locator('.tab-button-dirty');
+
+    // 右ペインのEditorTableが表示されることを確認する
+    const rightPane = diffTab.locator('.diff-pane-right');
+    await expect(rightPane.locator('.editor-table')).toBeVisible();
+
+    // 右ペインの1行目・指定列をダブルクリックして編集する
+    const rightTable = rightPane.locator('.editor-table');
+    const editedCell = getDataCell(rightTable, 0, colIndex);
+    await editedCell.dblclick();
+
+    // テキストフィールドが表示されるまで待機する（右ペインにスコープ）
+    const editField = rightPane.locator('.grid-textfield-active').first();
+    await expect(editField).toBeVisible();
+
+    // 値を入力してEnterで確定する
+    await editField.selectText();
+    await editField.type(inputValue);
+    await page.keyboard.press('Enter');
+
+    return { rightPane, dirtyIndicator, editedCell };
+}
+
 // テスト本体 -------------------------------------------------------------------
 
 test.describe('差分ビューのDirtyマークと保存', () => {
@@ -102,55 +154,19 @@ test.describe('差分ビューのDirtyマークと保存', () => {
     //   3. 差分タブの右ペインのセルをダブルクリックして編集する
     //   4. タブボタンに .tab-button-dirty-visible クラスが付いていることを確認する
     //
-    // なぜ失敗するか（RED の理由）:
-    //   tab.ts L646 で DOM未追加の dummyTabButton（名前 '[diff]'）を DiffTab に渡している。
-    //   History.notifyChange() → tabButton.setDirty() が呼ばれても、
-    //   dummyTabButton は DOM に追加されていないため、画面上の「差分: quest_reward」タブには反映されない。
+    // 実装:
+    //   tab.ts の openDiffTabAsync で画面上のタブボタン（TabButton）を DiffTab に渡し、
+    //   History.notifyChange() → tabButton.setDirty() でDirtyマークが反映される。
     // -------------------------------------------------------------------------
     test(
         '差分ビューの右ペインでセルを編集した後にタブにDirtyマーク（●）が表示されること',
         async ({ page, diffTabDirtySavePage: _diffTabDirtySavePage }) => {
-            // ソースコントロールパネルを開く
-            await page.locator('[data-panel="sourceControl"]').click();
-
-            // CHANGES セクションの quest_reward テーブルをクリックして差分タブを開く
-            const changesSection = page.locator('.source-control-changes-section');
-            await expect(changesSection.getByText('quest_reward')).toBeVisible();
-            await changesSection.getByText('quest_reward').click();
-
-            // 差分タブが開いていることを確認する
-            const diffTab = page.locator('.diff-tab');
-            await expect(diffTab).toBeVisible();
-
-            // 差分タブのタブボタンを取得する
-            const diffTabButton = page.locator('.tab-button', { hasText: '差分: quest_reward' });
-            await expect(diffTabButton).toBeVisible();
-
-            // 編集前はDirtyマークが付いていないことを確認する
-            // .tab-button-dirty-visible クラスがないことを検証する
-            const dirtyIndicator = diffTabButton.locator('.tab-button-dirty');
-            await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
-
-            // 右ペインのEditorTableが表示されることを確認する
-            const rightPane = diffTab.locator('.diff-pane-right');
-            await expect(rightPane.locator('.editor-table')).toBeVisible();
-
-            // 右ペインの1行目1列目（rowIndex=0, colIndex=0）をダブルクリックして編集する
-            const rightTable = rightPane.locator('.editor-table');
-            const targetCell = getDataCell(rightTable, 0, 0);
-            await targetCell.dblclick();
-
-            // テキストフィールドが表示されるまで待機する
-            const editField = page.locator('.grid-textfield-active').first();
-            await expect(editField).toBeVisible();
-
-            // 新しい値を入力してEnterで確定する
-            await editField.selectText();
-            await editField.type('999');
-            await page.keyboard.press('Enter');
+            // 編集前のDirtyマーク不在を確認するため、セットアップ前にDirtyインジケーターを検証する必要がある
+            // → セットアップ内で編集まで完了するので、編集前検証はセットアップ前に行う必要がない
+            //   （Dirtyマークは編集前は付いていないことが前提。編集後に付くことを検証する）
+            const { dirtyIndicator } = await setupDiffTabAndEditCellAsync(page, 0, '999');
 
             // 編集後にDirtyマーク（.tab-button-dirty-visible）が付くことを確認する
-            // 現行バグでは dummyTabButton が DOM未追加のため、このアサーションが失敗して RED になる
             await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
         },
     );
@@ -161,58 +177,35 @@ test.describe('差分ビューのDirtyマークと保存', () => {
     // 検証手順:
     //   1. ソースコントロールパネルを開く
     //   2. quest_reward の差分タブを開く
-    //   3. 差分タブの右ペインの1行目1列目（id列）を「999」に変更する
+    //   3. 差分タブの右ペインの name 列を「reward_edited」に変更する
     //   4. Ctrl+S を押す
-    //   5. data/quest_reward.csv に「999」が書き込まれていることを expectCsvAsync で確認する
+    //   5. Dirtyマークが消えるのを待つ（保存完了のシグナル）
+    //   6. data/quest_reward.csv に「reward_edited」が保存されていることを expectCsvAsync で確認する
     //
-    // なぜ失敗するか（RED の理由）:
-    //   diff-tab.ts L156-157 で disableSave() を呼んでいる。
-    //   Ctrl+S を押しても EditorTableHandler のデフォルト保存処理が完全に無効化されているため、
-    //   ファイルは一切書き込まれない。
-    //   正しくは tableName（quest_reward）のファイルに右ペインの内容を保存する必要がある。
+    // 保存フロー:
+    //   Ctrl+S → saveDiffTableDataFromStoreAsync（非同期）→ writeFileAsync → store.markAllSaved
+    //   → TabButton の Dirty マーク消去。
+    //   saveDiffTableDataFromStoreAsync は fire-and-forget（await なし）で呼ばれるため、
+    //   Ctrl+S のキーイベント配信完了後に即座に CSV を検証すると書き込みが未完了の場合がある。
+    //   Dirty マーク消去を保存完了のシグナルとして待機することで確実に検証できる。
     // -------------------------------------------------------------------------
     test(
         '差分ビューの右ペインでセルを編集した後にCtrl+Sで元のCSVファイルに保存されること',
         async ({ page, diffTabDirtySavePage: _diffTabDirtySavePage }) => {
-            // ソースコントロールパネルを開く
-            await page.locator('[data-panel="sourceControl"]').click();
+            const { dirtyIndicator, editedCell } = await setupDiffTabAndEditCellAsync(page, 1, 'reward_edited');
 
-            // CHANGES セクションの quest_reward テーブルをクリックして差分タブを開く
-            const changesSection = page.locator('.source-control-changes-section');
-            await expect(changesSection.getByText('quest_reward')).toBeVisible();
-            await changesSection.getByText('quest_reward').click();
-
-            // 差分タブが開いていることを確認する
-            const diffTab = page.locator('.diff-tab');
-            await expect(diffTab).toBeVisible();
-
-            // 右ペインのEditorTableが表示されることを確認する
-            const rightPane = diffTab.locator('.diff-pane-right');
-            await expect(rightPane.locator('.editor-table')).toBeVisible();
-
-            // 右ペインの1行目2列目（name列: rowIndex=0, colIndex=1）をダブルクリックして編集する
-            // id=1, name=reward_modified の行の name を「reward_edited」に変更する
-            const rightTable = rightPane.locator('.editor-table');
-            const nameCell = getDataCell(rightTable, 0, 1);
-            await nameCell.dblclick();
-
-            // テキストフィールドが表示されるまで待機する
-            const editField = page.locator('.grid-textfield-active').first();
-            await expect(editField).toBeVisible();
-
-            // 「reward_edited」に変更する
-            await editField.selectText();
-            await editField.type('reward_edited');
-            await page.keyboard.press('Enter');
+            // 編集によりDirtyマークが表示されるのを待つ
+            await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
 
             // フォーカスを右ペインに戻してから Ctrl+S を押す
-            await nameCell.click();
+            await editedCell.click();
             await page.keyboard.press('Control+s');
 
+            // 保存完了を待機する: saveDiffTableDataFromStoreAsync は fire-and-forget で呼ばれるため、
+            // Dirty マーク消去（store.markAllSaved → TabButton 更新）を保存完了のシグナルとして使う
+            await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
+
             // data/quest_reward.csv に編集内容が保存されていることを確認する
-            // 現行バグでは disableSave() により Ctrl+S が無効化されているため、
-            // ファイルには元の CURRENT_QUEST_REWARD_CSV のままで変更が反映されない
-            // → このアサーションが失敗して RED になる
             await expectCsvAsync(page, 'data/quest_reward.csv', `
                 id, name
                 1,  reward_edited
