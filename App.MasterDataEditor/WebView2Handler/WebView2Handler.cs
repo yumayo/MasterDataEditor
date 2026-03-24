@@ -120,8 +120,8 @@ public class WebView2Handler : IDisposable
 				var allowedPort = AppEnvironment.GetDevPort();
 				if ((uri.Scheme == "http" || uri.Scheme == "ws") && uri.Host == "localhost" && uri.Port == allowedPort) return;
 #else
-				// RELEASEビルド: file:// スキームのリクエストのみ許可
-				if (uri.Scheme == "file") return;
+				// RELEASEビルド: 仮想ホスト app.local へのリクエストのみ許可
+				if (uri.Host == "app.local") return;
 #endif
 
 				// 上記以外の外部リクエストはすべてブロック
@@ -134,13 +134,14 @@ public class WebView2Handler : IDisposable
 			var devUri = new Uri($"http://localhost:{devPort}");
 			webView2.CoreWebView2.Navigate(devUri.ToString());
 #else
-			// HTMLファイルのパスを取得
-			var htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebView", "index.html");
-			var htmlUri = new Uri($"file:///{htmlPath.Replace('\\', '/')}");
-			Logger.Info($"Loading HTML from: {htmlUri}");
+			// 仮想ホスト app.local を WebView フォルダにマッピングし、file:// の同一オリジン制約を回避する
+			var webViewFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebView");
+			webView2.CoreWebView2.SetVirtualHostNameToFolderMapping(
+				"app.local", webViewFolder, CoreWebView2HostResourceAccessKind.Allow);
+			var appUri = "https://app.local/index.html";
+			Logger.Info($"Loading HTML from: {appUri} (mapped to {webViewFolder})");
 
-			// HTMLファイルを読み込み
-			webView2.CoreWebView2.Navigate(htmlUri.ToString());
+			webView2.CoreWebView2.Navigate(appUri);
 #endif
 
 			Logger.Info("WebView2初期化完了 - NavigationCompletedイベントを待機中");
