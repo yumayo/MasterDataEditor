@@ -1,4 +1,25 @@
 services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile
+    working_dir: /app
+    volumes:
+      - ./build.ts:/app/build.ts:ro
+      - ./.env:/app/.env:ro
+      # WPF ビルドが一時ファイル(_wpftmp.csproj)をソースディレクトリに書くため rw が必要
+      - ./App.MasterDataEditor/:/app/App.MasterDataEditor/
+      - ./App.MasterDataEditor.sln:/app/App.MasterDataEditor.sln:ro
+      - ./WebView/src/:/app/WebView/src/:ro
+      - ./WebView/index.html:/app/WebView/index.html:ro
+      - ./WebView/index.css:/app/WebView/index.css:ro
+      - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
+      - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
+      - ./dist:/app/dist
+    environment:
+      - NODE_ENV=production
+    entrypoint: ["node", "build.ts"]
+
   playwright:
     build:
       context: .

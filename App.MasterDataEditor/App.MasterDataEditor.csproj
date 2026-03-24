@@ -12,6 +12,8 @@
         <DebugType>none</DebugType>
         <DebugSymbols>false</DebugSymbols>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <!-- Linux コンテナからの Windows 向けクロスビルドを有効化 -->
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
     </PropertyGroup>
 
     <ItemGroup>
