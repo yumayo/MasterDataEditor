@@ -30,20 +30,30 @@ export class BackgroundTaskTracker {
         // await 前にスタックを取得しないと呼び出し元情報が消える
         const caller = this.parseCallerInfo();
         const id = this.nextId++;
-        const startTime = Date.now();
+        const startTime = performance.now();
         this.tasks.set(id, label);
         this.statusBar.updateBackgroundTasks(this.tasks);
         try {
             const result = await promise;
-            this.debugConsole.appendEntry(label, Date.now() - startTime, 'success', caller);
+            this.debugConsole.appendEntry(label, Math.round((performance.now() - startTime) * 1000), 'success', caller);
             return result;
         } catch (e: unknown) {
-            this.debugConsole.appendEntry(label, Date.now() - startTime, 'error', caller);
+            this.debugConsole.appendEntry(label, Math.round((performance.now() - startTime) * 1000), 'error', caller);
             throw e;
         } finally {
             this.tasks.delete(id);
             this.statusBar.updateBackgroundTasks(this.tasks);
         }
+    }
+
+    /**
+     * キャッシュヒット時の記録をデバッグコンソールに追加する。
+     * C#への通信は発生しないため同期的に即座に記録する。
+     */
+    recordCacheHit(label: string, startTime: number): void {
+        const caller = this.parseCallerInfo();
+        const elapsedUs = Math.round((performance.now() - startTime) * 1000);
+        this.debugConsole.appendEntry(`${label} (cache)`, elapsedUs, 'success', caller);
     }
 
     /**

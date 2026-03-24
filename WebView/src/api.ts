@@ -62,8 +62,12 @@ export function invalidateFileCacheEntry(filename: string): void {
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function readFileAsync(filename: string): Promise<string> {
+    const startTime = performance.now();
     const cached = fileCache.get(filename);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        if (tracker !== false) tracker.recordCacheHit('read_file', startTime);
+        return cached;
+    }
     const result = await postMessageAsync<string>('read_file', { filename });
     fileCache.set(filename, result);
     return result;
@@ -89,8 +93,12 @@ export async function deleteFileAsync(filename: string): Promise<void> {
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function findFilesAsync(directory: string): Promise<File[]> {
+    const startTime = performance.now();
     const cached = dirCache.get(directory);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        if (tracker !== false) tracker.recordCacheHit('find_files', startTime);
+        return cached;
+    }
     const result = await postMessageAsync<File[]>('find_files', { directory });
     dirCache.set(directory, result);
     return result;
@@ -130,7 +138,11 @@ export function invalidateGitStatusCache(): void {
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function gitStatusAsync(): Promise<GitStatusResult> {
-    if (gitStatusCache !== false) return gitStatusCache;
+    const startTime = performance.now();
+    if (gitStatusCache !== false) {
+        if (tracker !== false) tracker.recordCacheHit('git_status', startTime);
+        return gitStatusCache;
+    }
     const result = await postMessageAsync<GitStatusResult>('git_status', {});
     gitStatusCache = result;
     return result;
@@ -153,8 +165,12 @@ export function invalidateGitShowCache(): void {
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function gitShowAsync(path: string): Promise<string> {
+    const startTime = performance.now();
     const cached = gitShowCache.get(path);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+        if (tracker !== false) tracker.recordCacheHit('git_show', startTime);
+        return cached;
+    }
     const result = await postMessageAsync<string>('git_show', { path });
     gitShowCache.set(path, result);
     return result;

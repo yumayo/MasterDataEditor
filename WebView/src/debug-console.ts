@@ -62,20 +62,21 @@ export class DebugConsole {
     }
 
     /**
-     * ログエントリを1件追加する。
+     * ログエントリを1件追加する。経過時間はマイクロ秒単位で受け取り、自動フォーマットする。
      * 1000件を超えた場合は先頭エントリ（最古のもの）を削除する。
      * パネルが非表示でもエントリは蓄積される。
      * 追加後はリスト末尾へ自動スクロールする。
+     * @param durationUs 経過時間（マイクロ秒）
      * @param caller 呼び出し元情報（"filename.ts:行番号" 形式）
      */
-    appendEntry(label: string, durationMs: number, status: 'success' | 'error', caller: string): void {
+    appendEntry(label: string, durationUs: number, status: 'success' | 'error', caller: string): void {
         if (this.entryCount >= DebugConsole.MAX_ENTRIES) {
             if (this.list.firstChild) {
                 this.list.removeChild(this.list.firstChild);
             }
             this.entryCount--;
         }
-        this.list.appendChild(this.createRow(label, durationMs, status, caller));
+        this.list.appendChild(this.createRow(label, this.formatDuration(durationUs), status, caller));
         this.entryCount++;
         this.list.scrollTop = this.list.scrollHeight;
     }
@@ -150,7 +151,7 @@ export class DebugConsole {
         });
     }
 
-    private createRow(label: string, durationMs: number, status: 'success' | 'error', caller: string): HTMLElement {
+    private createRow(label: string, durationText: string, status: 'success' | 'error', caller: string): HTMLElement {
         const row = document.createElement('div');
         row.classList.add('debug-console-row', status === 'success' ? 'debug-console-row-success' : 'debug-console-row-error');
 
@@ -177,7 +178,7 @@ export class DebugConsole {
 
         const durationSpan = document.createElement('span');
         durationSpan.classList.add('debug-console-col-duration');
-        durationSpan.textContent = `${durationMs}ms`;
+        durationSpan.textContent = durationText;
         const currentDurationWidth = this.element.querySelector<HTMLElement>('.debug-console-col-duration')?.style.width;
         if (currentDurationWidth) durationSpan.style.width = currentDurationWidth;
         row.appendChild(durationSpan);
@@ -188,6 +189,13 @@ export class DebugConsole {
         row.appendChild(statusSpan);
 
         return row;
+    }
+
+    /** マイクロ秒値を適切な単位にフォーマットする（μs → ms → s） */
+    private formatDuration(us: number): string {
+        if (us < 1000) return `${us}μs`;
+        if (us < 1000000) return `${Math.round(us / 1000)}ms`;
+        return `${(us / 1000000).toFixed(1)}s`;
     }
 
     private formatTimestamp(date: Date): string {
