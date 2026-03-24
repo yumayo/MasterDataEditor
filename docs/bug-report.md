@@ -2619,3 +2619,17 @@ DiffTab再利用時のCSVデータ未更新
 - **外部からデータが注入される操作パス（差分タブ表示など）では、「既存タブの再利用」ではなく「破棄して再作成」を原則とする。** ただしDirty状態（未保存の編集がある）の場合は既存タブを保護し、破棄せずアクティブ化するガードを必ず併設する。
 
 ---
+
+## 181. [1eec20e] — 初回起動時のpreload API通信がDEBUG CONSOLEに記録されない問題を修正
+
+### 不具合原因名
+初期化順序の誤り（追跡基盤より先にトラッキング対象処理が実行される）
+
+### なぜそうなったのか
+`main.ts` で `BackgroundTaskTracker` と `configureBackgroundTracker()` の設定が `preloadAllFilesAsync()` より後に配置されていた。`preloadAllFilesAsync()` 内の C# 通信（`find_files` × 2、`read_file` × N）はトラッカー設定前に実行されるため、`DebugConsole` に記録されなかった。`StatusBar` は `BottomPanel` → `ValidationPanel` → `Tab` → DOM要素取得という深い依存チェーンを持ち、本物のインスタンスを `preloadAllFilesAsync()` の前に生成することが構造上不可能だったため、`BackgroundTaskTracker` の前倒し生成が見送られていた。
+
+### どうしたら今後は再発しないか
+- **追跡基盤（トラッカー・ロガー）は、追跡対象処理より必ず先に初期化する。** 依存先が未生成の場合は `Object.create({...})` で全公開メソッドの no-op stub を用意し、後から `Object.assign` + `Object.setPrototypeOf` で本物に昇格させる。
+- **初期化順序の変更時は、DEBUG CONSOLE のエントリ数を検証する e2e テストで計測漏れを自動検出する。**
+
+---

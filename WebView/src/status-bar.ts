@@ -11,7 +11,7 @@ import type {NotificationToast} from "./notification";
  * エラー0件でも "0" を表示する。
  *
  * 循環参照（StatusBar ↔ ValidationPanel → StatusBar）は Object.assign パターンで解決する。
- * main.ts で `const statusBar = {} as StatusBar` を先に作り、
+ * main.ts で `Object.create({...})` による no-op stub を先に作り、
  * ValidationPanel・BottomPanel を生成した後、`new StatusBar(bottomPanel, notification)` で生成する。
  */
 export class StatusBar {

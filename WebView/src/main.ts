@@ -25,6 +25,22 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
     applyStoredTheme();
 
+    // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
+    // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を
+    // BackgroundTaskTracker 経由で DEBUG CONSOLE に記録するため、先に生成する必要がある。
+    // StatusBar は BottomPanel 生成後でないと本物を作れないため、
+    // updateBackgroundTasks() の no-op をプロトタイプに持つ stub を用意する。
+    // 後で Object.setPrototypeOf(statusBar, StatusBar.prototype) が呼ばれると
+    // プロトタイプが差し替わり本物のメソッドが有効になる。
+    const debugConsole = new DebugConsole();
+    const statusBar = Object.create({
+        updateBackgroundTasks() {},
+        updateCount() {},
+        appendTo() {},
+    }) as StatusBar;
+    const backgroundTaskTracker = new BackgroundTaskTracker(statusBar, debugConsole);
+    configureBackgroundTracker(backgroundTaskTracker);
+
     // 起動時に schema/ と data/ 以下の全ファイルをキャッシュに一括読み込みする。
     // 以降の readFileAsync / findFilesAsync はキャッシュから即座に返るため C# への問い合わせが不要になる。
     await preloadAllFilesAsync();
@@ -67,22 +83,15 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // コマンドパレットを初期化（タブへの密結合）
     const commandPalette = new CommandPalette(tab, document.body);
 
-    // バリデーションエンジン・パネル・ステータスバーを初期化する（アプリ全体で1セット）
-    // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
-    // Tab ↔ Sidebar と同じパターン。
-    // ValidationPanel ↔ StatusBar の循環参照を Object.assign パターンで解決する。
-    // 生成順: statusBar(stub) → validationPanel → debugConsole → bottomPanel → realStatusBar → assign
+    // statusBar stub は preload 前に生成済み（DEBUG CONSOLE 追跡基盤として）。
+    // ここでは validationPanel → bottomPanel → realStatusBar の順で生成し、
+    // Object.assign + setPrototypeOf で stub を本物に昇格させる（Tab ↔ Sidebar と同じパターン）。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
-    const statusBar = {} as StatusBar;
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
-    const debugConsole = new DebugConsole();
     const bottomPanel = new BottomPanel(validationPanel, debugConsole);
     const realStatusBar = new StatusBar(bottomPanel, notification);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
-    // バックグラウンドタスクトラッカーを初期化する（api.ts の全 C# 通信を追跡対象にする）
-    const backgroundTaskTracker = new BackgroundTaskTracker(statusBar, debugConsole);
-    configureBackgroundTracker(backgroundTaskTracker);
 
     tab.connectValidationPanel(validationPanel);
     // ボトムパネル（PROBLEMS / DEBUG CONSOLE）を editor 下段に配置する

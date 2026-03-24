@@ -10,7 +10,7 @@ import {StatusBar} from "./status-bar";
  * このクラスはエラーリストの表示と、バリデーション実行ロジックのみを担う。
  *
  * 循環参照（ValidationPanel ↔ StatusBar）は Object.assign パターンで解決する。
- * main.ts で `const statusBar = {} as StatusBar` を先に作り、
+ * main.ts で `Object.create({...})` による no-op stub を先に作り、
  * `new ValidationPanel(engine, tab, statusBar)` でコンストラクタ完了時から全フィールドが有効になる。
  */
 export class ValidationPanel {
