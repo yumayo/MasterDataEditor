@@ -243,3 +243,9 @@ Undo/Redo の対称性はDOMのクラス状態（`diff-row-padding-inserted`）�
 - `rgba(...)` は `/rgb\(25[0-5]/` にマッチしない → `rgb(255, 60, 60)` を使う
 - `editor-table-cell-focused` は `Selection.updateRenderer()` で付与・除去する
 - `ValidationPanel → Tab → EditorTable` の1段経由で循環参照を回避する
+
+### fire-and-forget 非同期保存テストの待機パターン
+Ctrl+S の保存処理（`saveDiffTableDataFromStoreAsync` 等）は fire-and-forget（`.then()` で await なし）。
+mock API の `postMessage` は `setTimeout(0)` で応答するため、`page.keyboard.press('Control+s')` 後に
+即座に `expectCsvAsync` を呼ぶと書き込み未完了になる。`waitForTimeout` ではなく
+**Dirty マーク消去を保存完了シグナルとして `expect(dirtyIndicator).not.toHaveClass(...)` で待機する**。
