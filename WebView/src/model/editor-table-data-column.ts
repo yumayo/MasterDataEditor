@@ -1,3 +1,5 @@
+import {DynamicReferenceSchema} from "../reference-expression";
+
 export class EditorTableDataColumn {
 
     key: number;
@@ -8,7 +10,8 @@ export class EditorTableDataColumn {
 
     comment: string | null;
 
-    reference: string | null;
+    /** 参照式。単純参照は文字列（"table.id"）、動的参照は DynamicReferenceSchema オブジェクト、参照なしは null */
+    reference: string | DynamicReferenceSchema | null;
 
     /** スキーマで明示指定されたデフォルト値（文字列化済み）。未指定の場合は null（型デフォルトが使われる） */
     defaultValue: string | null;
@@ -18,7 +21,7 @@ export class EditorTableDataColumn {
     /** セル内の `<br>` をHTML改行として描画するかどうか */
     renderAsHtml: boolean;
 
-    constructor(key: number, name: string, type: string, comment: string | null, reference: string | null, defaultValue: string | null, width: string, renderAsHtml: boolean) {
+    constructor(key: number, name: string, type: string, comment: string | null, reference: string | DynamicReferenceSchema | null, defaultValue: string | null, width: string, renderAsHtml: boolean) {
         this.key = key;
         this.name = name;
         this.type = type;
@@ -42,9 +45,12 @@ export class EditorTableDataColumn {
             name: this.name,
             type: this.type,
             comment: this.comment,
-            reference: this.reference,
             width: parseInt(this.width),
         };
+        // reference が null の場合はキー自体を出力しない（元スキーマに存在しないキーを汚染しない）
+        if (this.reference !== null) {
+            result['reference'] = this.reference;
+        }
         // defaultValue が null の場合はキー自体を出力しない（元スキーマに存在しないキーを汚染しない）
         // 型に基づいて元のスキーマ型（number/boolean/string）に復元して出力する
         if (this.defaultValue !== null) {

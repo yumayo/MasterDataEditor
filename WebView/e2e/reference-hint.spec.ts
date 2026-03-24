@@ -149,9 +149,13 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         key: 2,
                         name: "item_id",
                         type: "int",
-                        reference:
-                            "$(type_map.id == $type_id)"
-                            + ".master_table.ja",
+                        reference: {
+                            sourceTable: "type_map",
+                            sourceMatchColumn: "id",
+                            sourceMatchValue: "$type_id",
+                            destTable: "master_table",
+                            destColumn: "ja",
+                        },
                     },
                 ],
                 primary_key: ["id"],

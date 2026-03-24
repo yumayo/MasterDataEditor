@@ -2,9 +2,15 @@
  * 参照式（reference expression）をパース・評価するモジュール
  *
  * 対応する構文：
- * 1. 単純参照: "テーブル名.列名" (例: "table.id")
- * 2. 動的参照: "$(フィルタテーブル.フィルタ列 == $同一行の列名).取得列.対象列"
- *    (例: "$(table.id == $column).master.id")
+ * 1. 単純参照: "テーブル名.列名" (例: "table.id") — 文字列で記述
+ * 2. 動的参照: JSON オブジェクト形式
+ *    {
+ *      "sourceTable": "table",
+ *      "sourceMatchColumn": "id",
+ *      "sourceMatchValue": "$reward_table_id",
+ *      "destTable": "master",
+ *      "destColumn": "id"
+ *    }
  */
 
 /**
@@ -18,14 +24,8 @@ export interface SimpleReference {
 }
 
 /**
- * 動的参照の型
- * 例: "$(table.id == $column).master.id"
- * → {
- *     type: 'dynamic',
- *     filter: { tableName: 'table', filterColumn: 'id', valueColumn: 'column' },
- *     lookupColumn: 'master',
- *     targetColumn: 'id'
- *   }
+ * 動的参照の型（パース結果の内部表現）
+ * DynamicReferenceSchema をパースした結果として生成される。
  */
 export interface DynamicReference {
     type: 'dynamic';
@@ -41,17 +41,36 @@ export interface DynamicReference {
 export type ReferenceExpression = SimpleReference | DynamicReference;
 
 /**
- * 動的参照の正規表現パターン
- * 形式: $(テーブル名.列名 == $変数名).取得列.対象列
- *
- * グループ:
- * 1: テーブル名 (table)
- * 2: フィルタ列 (id)
- * 3: 変数名 (column)
- * 4: 取得列 (master)
- * 5: 対象列 (id)
+ * スキーマJSON上の動的参照オブジェクト形式
+ * 例:
+ * {
+ *   "sourceTable": "table",
+ *   "sourceMatchColumn": "id",
+ *   "sourceMatchValue": "$reward_table_id",
+ *   "destTable": "master",
+ *   "destColumn": "id"
+ * }
  */
-const DYNAMIC_REFERENCE_PATTERN = /^\$\((\w+)\.(\w+)\s*==\s*\$(\w+)\)\.(\w+)\.(\w+)$/;
+export interface DynamicReferenceSchema {
+    sourceTable: string;
+    sourceMatchColumn: string;
+    sourceMatchValue: string;  // "$reward_table_id" 形式（$付き）
+    destTable: string;
+    destColumn: string;
+}
+
+/**
+ * 値が DynamicReferenceSchema オブジェクトかどうかを判定する型ガード
+ */
+export function isDynamicReferenceSchema(value: unknown): value is DynamicReferenceSchema {
+    if (typeof value !== 'object' || value === null) return false;
+    const obj = value as Record<string, unknown>;
+    return typeof obj['sourceTable'] === 'string'
+        && typeof obj['sourceMatchColumn'] === 'string'
+        && typeof obj['sourceMatchValue'] === 'string'
+        && typeof obj['destTable'] === 'string'
+        && typeof obj['destColumn'] === 'string';
+}
 
 /**
  * 単純参照の正規表現パターン
@@ -61,26 +80,28 @@ const SIMPLE_REFERENCE_PATTERN = /^(\w+)\.(\w+)$/;
 
 /**
  * 参照式をパースする
- * @param expression 参照式の文字列
- * @returns パース結果（SimpleReference または DynamicReference）。パース失敗時は警告を出力して SimpleReference として解釈を試みる
+ * @param expression 参照式の文字列（単純参照）または DynamicReferenceSchema オブジェクト（動的参照）
+ * @returns パース結果（SimpleReference または DynamicReference）
  */
-export function parseReferenceExpression(expression: string): ReferenceExpression {
-    // 動的参照のパターンをチェック
-    const dynamicMatch = expression.match(DYNAMIC_REFERENCE_PATTERN);
-    if (dynamicMatch) {
+export function parseReferenceExpression(expression: string | DynamicReferenceSchema): ReferenceExpression {
+    // DynamicReferenceSchema オブジェクトの場合は直接 DynamicReference に変換する
+    if (typeof expression !== 'string') {
         return {
             type: 'dynamic',
             filter: {
-                tableName: dynamicMatch[1],
-                filterColumn: dynamicMatch[2],
-                valueColumn: dynamicMatch[3]
+                tableName: expression.sourceTable,
+                filterColumn: expression.sourceMatchColumn,
+                // sourceMatchValue は "$reward_table_id" 形式なので先頭の $ を除去する
+                valueColumn: expression.sourceMatchValue.startsWith('$')
+                    ? expression.sourceMatchValue.substring(1)
+                    : expression.sourceMatchValue
             },
-            lookupColumn: dynamicMatch[4],
-            targetColumn: dynamicMatch[5]
+            lookupColumn: expression.destTable,
+            targetColumn: expression.destColumn
         };
     }
 
-    // 単純参照のパターンをチェック
+    // 文字列の場合は単純参照のパターンをチェック
     const simpleMatch = expression.match(SIMPLE_REFERENCE_PATTERN);
     if (simpleMatch) {
         return {

@@ -4,6 +4,7 @@ import {StatusBar} from "./status-bar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {DebugConsole} from "./debug-console";
 import type {PluginValidationRunner, PluginValidationError} from "./plugin-validation-runner";
+import {DynamicReferenceSchema} from "./reference-expression";
 
 /**
  * バリデーションエラーパネル
@@ -66,7 +67,7 @@ export class ValidationPanel {
     /**
      * ValidationEngine にスキーマを登録する（Tab がテーブルを開いた後に呼ぶ）
      */
-    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; type: string; reference: string | null; defaultValue: string | null}>): void {
+    registerSchema(tableName: string, primaryKeyColumns: readonly string[], columns: ReadonlyArray<{name: string; type: string; reference: string | DynamicReferenceSchema | null; defaultValue: string | null}>): void {
         this.engine.registerSchema(tableName, { primaryKeyColumns, columns });
     }
 

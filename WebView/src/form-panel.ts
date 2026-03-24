@@ -4,7 +4,7 @@ import {determineDisplayColumnName} from "./config";
 import {readFileAsync} from "./api";
 import {Csv} from "./csv";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, DynamicReferenceSchema} from "./reference-expression";
 import {Tab} from "./tab";
 import {NotificationToast} from "./notification";
 
@@ -562,7 +562,7 @@ export class FormPanel {
  * 実際のスキーマJSONは "header" キーを使用している
  */
 interface SchemaJson {
-    header: Array<{ name: string; reference?: string }>;
+    header: Array<{ name: string; reference?: string | DynamicReferenceSchema }>;
     primary_key: string | string[];
     /** JSONパース結果なので任意のキーが存在しうる（extractFirstPrimaryKeyColumn との互換性に必要） */
     [key: string]: unknown;

@@ -3,7 +3,7 @@ import {determineDisplayColumnName} from "./config";
 import {Csv} from "./csv";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "./schema-utils";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, DynamicReferenceSchema} from "./reference-expression";
 import {readReverseReferencePriority} from "./reverse-reference-resolver";
 
 /**
@@ -223,7 +223,7 @@ export class ReferenceDataCache {
 
         // id列のスキーマ定義に参照がある場合、参照先テーブルから表示テキストを再帰的に解決する
         const idColumnSchemaEntry = schema.header.find(
-            (h: {name: string; reference?: string}) => h.name === pkColumnName
+            (h: {name: string; reference?: string | DynamicReferenceSchema}) => h.name === pkColumnName
         );
         if (idColumnSchemaEntry && idColumnSchemaEntry.reference) {
             const refExpr = parseReferenceExpression(idColumnSchemaEntry.reference);
@@ -321,7 +321,7 @@ export class ReferenceDataCache {
                     childSchema.header.find(
                         (h: {
                             name: string;
-                            reference?: string;
+                            reference?: string | DynamicReferenceSchema;
                         }) =>
                             h.name === childPkColumnName
                     );

@@ -1,6 +1,6 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
-import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference, DynamicReferenceSchema} from "./reference-expression";
 
 /** バリデーションエラーの種別 */
 export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
@@ -576,7 +576,8 @@ export interface TableSchema {
 export interface TableSchemaColumn {
     name: string;
     type: string;
-    reference: string | null;
+    /** 参照式。単純参照は文字列、動的参照は DynamicReferenceSchema オブジェクト、参照なしは null */
+    reference: string | DynamicReferenceSchema | null;
     /** スキーマで明示指定されたデフォルト値（文字列化済み）。未指定の場合は null（型デフォルトが使われる） */
     defaultValue: string | null;
 }

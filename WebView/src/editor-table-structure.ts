@@ -5,6 +5,7 @@ import {Command, InsertColumnCommand, InsertColumnsCommand, InsertRowCommand, In
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {Utility} from "./utility";
+import {DynamicReferenceSchema} from "./reference-expression";
 
 /**
  * テーブル構造操作モジュール
@@ -399,7 +400,7 @@ export class EditorTableStructure {
      * isPrimaryKey が true の場合は PK バッジを、reference が非null の場合は FK バッジを nameSpan の直後に追加する。
      * comment に \n が含まれる場合は最初の行のみ表示する。
      */
-    createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string, isPrimaryKey: boolean, reference: string | null): HTMLElement {
+    createColumnHeaderCell(name: string, comment: string | null, columnIndex: number, width: string, isPrimaryKey: boolean, reference: string | DynamicReferenceSchema | null): HTMLElement {
         const columnHeaderCell = document.createElement('div');
         columnHeaderCell.classList.add('editor-table-cell', 'editor-table-column-header');
         if (comment !== null) {
@@ -605,7 +606,7 @@ function createBadge(cssModifier: string, label: string, title: string): HTMLEle
  * PKかつFKの列では両バッジをコンテナ内に縦並びで表示する。どちらでもない場合は何もしない。
  * バッジが付与された場合は has-badge クラスをヘッダーセルに付与する。
  */
-function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolean, reference: string | null): void {
+function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolean, reference: string | DynamicReferenceSchema | null): void {
     if (!isPrimaryKey && reference === null) return;
     const badgeArea = document.createElement('div');
     badgeArea.classList.add('column-header-badge-area');
@@ -613,7 +614,11 @@ function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolea
         badgeArea.appendChild(createBadge('pk', 'PK', 'このテーブルの主キー列です'));
     }
     if (reference !== null) {
-        badgeArea.appendChild(createBadge('fk', 'FK', `FK: ${reference} を参照`));
+        // 動的参照オブジェクトの場合はソーステーブルとデスト情報を表示する
+        const fkTitle = typeof reference === 'string'
+            ? `FK: ${reference} を参照`
+            : `FK: 動的参照 (${reference.sourceTable} → ${reference.destTable}.${reference.destColumn})`;
+        badgeArea.appendChild(createBadge('fk', 'FK', fkTitle));
     }
     // ヘッダーセルの先頭に挿入することで、列名テキストより左（絶対配置）に表示される
     columnHeaderCell.insertBefore(badgeArea, columnHeaderCell.firstChild);

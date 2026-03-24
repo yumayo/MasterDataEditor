@@ -81,7 +81,7 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 1, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_idの値でtableテーブルを検索し、masterカラムの値（テーブル名）を取得、
                 // そのテーブルのidカラムを参照する
-                { key: 2, name: "reward_record_id", type: "int", reference: "$(table.id == $reward_table_id).master.id" },
+                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "$reward_table_id", destTable: "master", destColumn: "id" } },
                 // quest_rewardのgroup_idを参照（通常の単純参照）
                 { key: 3, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
             ],
@@ -216,7 +216,7 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 2, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_id の値で table テーブルを検索し master カラムの値（テーブル名）を取得、
                 // そのテーブルの id カラムを参照する
-                { key: 3, name: "reward_record_id", type: "int", reference: "$(table.id == $reward_table_id).master.id" },
+                { key: 3, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "$reward_table_id", destTable: "master", destColumn: "id" } },
             ],
             primary_key: ["id"],
         }),

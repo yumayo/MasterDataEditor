@@ -7,7 +7,8 @@ import {
     parseReferenceExpression,
     isSimpleReference,
     isDynamicReference,
-    DynamicReference
+    DynamicReference,
+    DynamicReferenceSchema
 } from "./reference-expression";
 
 /**
@@ -198,7 +199,7 @@ export class ReverseReferenceResolver {
 
         const headerDefs = schema.header as Array<{
             name: string;
-            reference?: string;
+            reference?: string | DynamicReferenceSchema;
         }>;
 
         // parentTableName を参照しているFK列を探す

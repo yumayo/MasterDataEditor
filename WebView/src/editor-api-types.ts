@@ -138,6 +138,7 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
         const defaultValue = (defaultRaw !== undefined && defaultRaw !== null) ? String(defaultRaw) : null;
         columns.push({ name, type, defaultValue });
         // reference フィールドが存在し非空文字列の場合のみ FK 参照として登録する
+        // 動的参照（DynamicReferenceSchema オブジェクト）はここでは EditorSchemaReference に変換できないためスキップ
         const refRaw = col['reference'];
         if (typeof refRaw === 'string' && refRaw.length > 0) {
             const dotIndex = refRaw.indexOf('.');

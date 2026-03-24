@@ -29,7 +29,13 @@
             "name": "record_id",
             "type": "int",
             "comment": "レコードID",
-            "reference": "$(table.id == $table_id).master.id",
+            "reference": {
+                "sourceTable": "table",
+                "sourceMatchColumn": "id",
+                "sourceMatchValue": "$table_id",
+                "destTable": "master",
+                "destColumn": "id"
+            },
             "width": 130
         },
         {

@@ -104,7 +104,8 @@ export class SearchDataProvider {
             header.push({
                 name: col.name,
                 type: col.type,
-                reference: col.reference ? col.reference : '',
+                // 動的参照（オブジェクト）は検索パネルでは使わないため空文字列にする
+                reference: typeof col.reference === 'string' ? col.reference : '',
             });
         }
         return {
@@ -133,7 +134,8 @@ export class SearchDataProvider {
             header.push({
                 name: col.name,
                 type: col.type,
-                reference: col.reference ? col.reference : '',
+                // 動的参照（オブジェクト）は検索パネルでは使わないため空文字列にする
+                reference: typeof col.reference === 'string' ? col.reference : '',
             });
         }
         // スキーマの primary_key から最初のPK列名を取得する

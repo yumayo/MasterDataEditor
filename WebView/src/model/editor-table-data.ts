@@ -2,6 +2,7 @@ import {EditorTableDataRow} from "./editor-table-data-row";
 import {EditorTableDataColumn} from "./editor-table-data-column";
 import {Csv} from "../csv";
 import {Utility} from "../utility";
+import {DynamicReferenceSchema} from "../reference-expression";
 
 export class EditorTableData {
 
@@ -57,7 +58,7 @@ export class EditorTableData {
             throw new Error('[EditorTableData.parse] primary_key が空です');
         }
 
-        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string; default?: number | string | boolean | null; width?: number; renderAsHtml?: boolean}>;
+        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string | DynamicReferenceSchema; default?: number | string | boolean | null; width?: number; renderAsHtml?: boolean}>;
         const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
