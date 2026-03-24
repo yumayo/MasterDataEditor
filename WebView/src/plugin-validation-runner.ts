@@ -1,5 +1,6 @@
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {findFilesAsync, readFileAsync} from "./api";
+import SandboxWorker from "./plugin-sandbox?worker&inline";
 
 /** プラグインバリデーションエラー */
 export interface PluginValidationError {
@@ -19,97 +20,10 @@ export interface PluginValidationError {
 const WORKER_TIMEOUT_MS = 10000;
 
 /**
- * Web Worker 内で実行されるサンドボックススクリプト。
- * Worker スコープには window / document / localStorage が存在しないため、
- * プラグインコードから DOM やストレージにアクセスすることはできない。
- *
- * メインスレッドから { plugins, tableData } を受信し、
- * 各プラグインを実行して収集したエラーを { errors } で返す。
- */
-const WORKER_SCRIPT = `'use strict';
-var ROW_META = Symbol('meta');
-
-function buildRows(tableName, header, rows) {
-    var result = [];
-    for (var r = 0; r < rows.length; r++) {
-        var obj = {};
-        for (var i = 0; i < header.length; i++) obj[header[i]] = rows[r][i];
-        obj[ROW_META] = { tableName: tableName, rowIndex: r };
-        result.push(obj);
-    }
-    return result;
-}
-
-self.onmessage = function(e) {
-    var plugins = e.data.plugins;
-    var tableData = e.data.tableData;
-
-    var tables = new Proxy({}, {
-        get: function(_, prop) {
-            if (typeof prop !== 'string') return undefined;
-            var data = tableData[prop];
-            if (!data) return {
-                all: function() { return []; },
-                where: function() { return []; },
-                find: function() { return null; },
-                count: function() { return 0; }
-            };
-            return {
-                all: function() { return buildRows(prop, data.header, data.rows); },
-                where: function(pred) { return buildRows(prop, data.header, data.rows).filter(pred); },
-                find: function(pred) {
-                    var rows = buildRows(prop, data.header, data.rows);
-                    for (var i = 0; i < rows.length; i++) { if (pred(rows[i])) return rows[i]; }
-                    return null;
-                },
-                count: function() { return data.rows.length; }
-            };
-        }
-    });
-
-    var allErrors = [];
-    for (var p = 0; p < plugins.length; p++) {
-        var plugin = plugins[p];
-        var errors = [];
-        var assertFn = (function(pluginName, pluginErrors) {
-            return function(condition, message, row, columnName) {
-                if (!condition) {
-                    var meta = (row && row[ROW_META]) ? row[ROW_META] : null;
-                    pluginErrors.push({
-                        pluginName: pluginName,
-                        message: String(message),
-                        tableName: meta ? meta.tableName : null,
-                        rowIndex: meta ? meta.rowIndex : -1,
-                        columnName: typeof columnName === 'string' ? columnName : null
-                    });
-                }
-            };
-        })(plugin.name, errors);
-
-        try {
-            var fn = new Function('tables', 'assert', plugin.content);
-            fn(tables, assertFn);
-        } catch (err) {
-            errors.push({
-                pluginName: plugin.name,
-                message: String(err),
-                tableName: null,
-                rowIndex: -1,
-                columnName: null
-            });
-        }
-        for (var i = 0; i < errors.length; i++) allErrors.push(errors[i]);
-    }
-
-    self.postMessage({ errors: allErrors });
-};
-`;
-
-/**
  * プラグインバリデーションランナー
  *
  * plugins/ ディレクトリに配置されたJSファイルを読み込み、
- * Web Worker 内のサンドボックスで実行する。
+ * Web Worker 内のサンドボックス（plugin-sandbox.ts）で実行する。
  * Worker スコープでは window / document / localStorage にアクセスできないため、
  * プラグインが DOM を破壊したりストレージを消去するリスクがない。
  * プラグイン内の assert() で収集したエラーを PluginValidationError[] として返す。
@@ -117,12 +31,9 @@ self.onmessage = function(e) {
 export class PluginValidationRunner {
 
     private readonly store: InMemoryTableStore;
-    /** Worker スクリプトの Blob URL（インスタンス生存期間中再利用する） */
-    private readonly workerBlobUrl: string;
 
     constructor(store: InMemoryTableStore) {
         this.store = store;
-        this.workerBlobUrl = URL.createObjectURL(new Blob([WORKER_SCRIPT], { type: 'application/javascript' }));
     }
 
     /**
@@ -179,6 +90,7 @@ export class PluginValidationRunner {
 
     /**
      * プラグインを Web Worker 内で実行し、エラーを受信する。
+     * Vite のネイティブ Worker サポートにより plugin-sandbox.ts を直接ワーカーとして起動する。
      * タイムアウト・Worker エラー時はエラー情報を返す（reject しない）。
      */
     private executeInWorkerAsync(
@@ -186,7 +98,7 @@ export class PluginValidationRunner {
         tableData: Record<string, { header: string[]; rows: string[][] }>,
     ): Promise<PluginValidationError[]> {
         return new Promise((resolve) => {
-            const worker = new Worker(this.workerBlobUrl);
+            const worker = new SandboxWorker();
 
             const timeoutId = setTimeout(() => {
                 worker.terminate();
