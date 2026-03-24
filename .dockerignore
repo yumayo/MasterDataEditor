@@ -1,0 +1,13 @@
+dist/
+.git/
+.CONTEXT/
+WebView/node_modules/
+WebView/dist/
+WebView/test-results/
+App.MasterDataEditor/bin/
+App.MasterDataEditor/obj/
+logs/
+demos/
+docs/
+issues/
+sample-workdir/

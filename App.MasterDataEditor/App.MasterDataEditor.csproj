@@ -6,14 +6,15 @@
         <Nullable>enable</Nullable>
         <UseWPF>true</UseWPF>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+        <!-- Linux コンテナからの Windows 向けクロスビルドを有効化 -->
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
+        <SatelliteResourceLanguages>ja</SatelliteResourceLanguages>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)' == 'Release'">
         <DebugType>none</DebugType>
         <DebugSymbols>false</DebugSymbols>
         <GenerateDocumentationFile>false</GenerateDocumentationFile>
-        <!-- Linux コンテナからの Windows 向けクロスビルドを有効化 -->
-        <EnableWindowsTargeting>true</EnableWindowsTargeting>
     </PropertyGroup>
 
     <ItemGroup>

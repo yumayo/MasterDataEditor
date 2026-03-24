@@ -7,9 +7,7 @@ services:
     volumes:
       - ./build.ts:/app/build.ts:ro
       - ./.env:/app/.env:ro
-      # WPF ビルドが一時ファイル(_wpftmp.csproj)をソースディレクトリに書くため rw が必要
-      - ./App.MasterDataEditor/:/app/App.MasterDataEditor/
-      - ./App.MasterDataEditor.sln:/app/App.MasterDataEditor.sln:ro
+      # C# ソースはイメージ内にCOPY済み（WPFビルドが一時ファイルを書くためマウント不可）
       - ./WebView/src/:/app/WebView/src/:ro
       - ./WebView/index.html:/app/WebView/index.html:ro
       - ./WebView/index.css:/app/WebView/index.css:ro

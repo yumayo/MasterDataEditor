@@ -17,9 +17,15 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 RUN mkdir -p /app && chown -R node:node /app
 WORKDIR /app
 
+# C# ソースをコピー（WPFビルドが一時ファイルを書くためマウントではなくCOPY）
+COPY --chown=node:node App.MasterDataEditor/ ./App.MasterDataEditor/
+COPY --chown=node:node App.MasterDataEditor.sln ./
+
+# C# 依存パッケージの復元
+RUN dotnet restore App.MasterDataEditor/App.MasterDataEditor.csproj
+
 # WebView の依存をインストール
 COPY --chown=node:node WebView/package.json WebView/package-lock.json ./WebView/
-USER node
 RUN cd WebView && npm ci
 
 USER node

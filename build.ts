@@ -28,7 +28,7 @@ if (rawDist === null || rawDist === undefined || rawDist === "") {
     console.error("警告: .env に MASTER_DATA_EDITOR_DIST が未設定のため dist/ を使用します。");
 }
 
-const csprojDir = resolve(ROOT, "App.MasterDataEditor");
+const csprojFile = resolve(ROOT, "App.MasterDataEditor", "App.MasterDataEditor.csproj");
 const webViewDir = resolve(ROOT, "WebView");
 
 function run(command: string, cwd: string): void {
@@ -50,25 +50,18 @@ if (existsSync(distPath)) {
 console.log("\n=== C# ビルド (Release) ===");
 const objDir = resolve(distPath, "obj");
 const binDir = resolve(distPath, "bin");
-run(`dotnet build "${csprojDir}" --configuration Release -o "${binDir}" -p:BaseIntermediateOutputPath="${objDir}/"`, ROOT);
+run(`dotnet publish "${csprojFile}" --configuration Release --self-contained --runtime win-x64 -o "${binDir}" -p:BaseIntermediateOutputPath="${objDir}/"`, ROOT);
 
-// 中間ファイルを除去（dist/obj + ソースディレクトリに残る obj/bin/_wpftmp）
+// 中間ファイルを除去
 rmSync(objDir, { recursive: true, force: true });
-rmSync(resolve(csprojDir, "obj"), { recursive: true, force: true });
-rmSync(resolve(csprojDir, "bin"), { recursive: true, force: true });
-for (const entry of readdirSync(csprojDir)) {
-    if (entry.endsWith("_wpftmp.csproj")) {
-        rmSync(resolve(csprojDir, entry));
-    }
-}
 
 // --- 3. WebView ビルド ---
 console.log("\n=== WebView ビルド ===");
 run("npm run build", webViewDir);
 
-// --- 4. WebView 成果物を dist/WebView にコピー ---
+// --- 4. WebView 成果物を dist/bin/WebView にコピー ---
 const webViewDist = resolve(webViewDir, "dist");
-const webViewOut = resolve(distPath, "WebView");
+const webViewOut = resolve(binDir, "WebView");
 console.log(`\n=== WebView 成果物コピー: ${webViewDist} → ${webViewOut} ===`);
 mkdirSync(webViewOut, { recursive: true });
 cpSync(webViewDist, webViewOut, { recursive: true });
