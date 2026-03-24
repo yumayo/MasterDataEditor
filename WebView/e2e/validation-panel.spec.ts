@@ -398,9 +398,8 @@ test.describe('テストケース7: エラーがある場合、ステータス�
             await editCellAsync(table, page, 1, 0, '1');
 
             // エラー件数が 1 以上になることを確認する（PK重複は2セルで2件）
-            const badgeText = await badge.textContent();
-            const count = parseInt(badgeText ?? '0', 10);
-            expect(count).toBeGreaterThanOrEqual(1);
+            // runAndUpdate() は setTimeout(0) で遅延実行されるため自動リトライ付きアサーションで待機する
+            await expect(badge).not.toHaveText('0', { timeout: 5000 });
         },
     );
 });
