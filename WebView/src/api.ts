@@ -40,6 +40,19 @@ export async function preloadAllFilesAsync(): Promise<void> {
         const content = await postMessageAsync<string>('read_file', { filename: path });
         fileCache.set(path, content);
     }
+    // plugins/ ディレクトリのプリロード（存在しない場合はスキップ）
+    try {
+        const pluginFiles = await postMessageAsync<File[]>('find_files', { directory: 'plugins' });
+        dirCache.set('plugins', pluginFiles);
+        for (const file of pluginFiles) {
+            if (file.type !== 'file') continue;
+            const path = `plugins/${file.name}`;
+            const content = await postMessageAsync<string>('read_file', { filename: path });
+            fileCache.set(path, content);
+        }
+    } catch {
+        // plugins/ ディレクトリが存在しない場合はスキップする
+    }
 }
 
 /**

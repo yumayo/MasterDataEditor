@@ -452,10 +452,10 @@ test.describe('テストケース9: エラーが0件になるとバッジの件�
             const badge = getStatusBarBadge(page);
 
             // PK重複を発生させてエラー件数が増えることを確認する
+            // runAndUpdate() はプラグインバリデーションの非同期実行後にバッジを更新するため、
+            // 自動リトライ付きアサーションで待機する
             await editCellAsync(table, page, 1, 0, '1');
-            const badgeText = await badge.textContent();
-            const count = parseInt(badgeText ?? '0', 10);
-            expect(count).toBeGreaterThanOrEqual(1);
+            await expect(badge).not.toHaveText('0', { timeout: 5000 });
 
             // 重複を解消する
             await editCellAsync(table, page, 1, 0, '99');

@@ -1,6 +1,7 @@
 import {ValidationEngine, ValidationError} from "./validation-engine";
 import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
+import type {PluginValidationRunner, PluginValidationError} from "./plugin-validation-runner";
 
 /**
  * バリデーションエラーパネル
@@ -21,11 +22,16 @@ export class ValidationPanel {
     private readonly statusBar: StatusBar;
     /** 現在のエラーリスト */
     private currentErrors: ValidationError[];
+    /** プラグインバリデーションランナー */
+    private readonly pluginRunner: PluginValidationRunner;
+    /** プラグイン非同期リクエストの陳腐化防止用カウンタ */
+    private pluginRequestId = 0;
 
-    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar) {
+    constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, pluginRunner: PluginValidationRunner) {
         this.engine = engine;
         this.tab = tab;
         this.statusBar = statusBar;
+        this.pluginRunner = pluginRunner;
         this.currentErrors = [];
 
         const panel = document.createElement('div');
@@ -100,14 +106,36 @@ export class ValidationPanel {
      * 参照先テーブルが未ロードのためFKチェックがスキップされた列については、
      * 現在のストア値がエラー発生時の値と同じ場合のみエラーを引き継ぐ。
      * 値が変わっていればエラーは引き継がず消える（テストケース6の修正）。
+     *
+     * プラグインバリデーションも毎回実行する（プラグイン結果は揮発性）。
+     * 非同期競合は pluginRequestId で防止する。
      */
     runAndUpdate(): void {
         const result = this.engine.validate(this.currentErrors);
         const mergedErrors = [...result.errors, ...result.preservableErrors];
-        this.currentErrors = mergedErrors;
+        // プラグインバリデーションは非同期で実行し、結果をマージする。
+        // findFilesAsync/readFileAsync は preloadAllFilesAsync でキャッシュ済みのため実質同期的に返る。
+        // requestId で非同期競合を防止する（新しいリクエストが来たら古い結果は破棄する）。
+        const requestId = ++this.pluginRequestId;
+        this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
+            if (requestId !== this.pluginRequestId) return; // 陳腐化した結果は破棄
+            this.applyErrors([...mergedErrors, ...convertPluginErrors(pluginErrors)]);
+        }).catch((e: unknown) => {
+            if (requestId !== this.pluginRequestId) return;
+            // プラグイン実行失敗をプラグインエラーとして表面化する（フォールバック禁止）
+            const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e) }];
+            this.applyErrors([...mergedErrors, ...convertPluginErrors(failError)]);
+        });
+    }
+
+    /**
+     * エラーリストをパネル・ステータスバー・EditorTableに一括反映する共通処理
+     */
+    private applyErrors(errors: ValidationError[]): void {
+        this.currentErrors = errors;
         this.render();
-        this.statusBar.updateCount(mergedErrors.length);
-        this.applyErrorClassesToAllEditorTables(mergedErrors);
+        this.statusBar.updateCount(errors.length);
+        this.applyErrorClassesToAllEditorTables(errors);
     }
 
     // -------------------------------------------------------------------------
@@ -156,8 +184,6 @@ export class ValidationPanel {
             for (const error of tableErrors) {
                 const item = document.createElement('div');
                 item.classList.add('validation-panel-item');
-                item.setAttribute('role', 'button');
-                item.setAttribute('tabindex', '0');
 
                 const kindSpan = document.createElement('span');
                 kindSpan.classList.add('validation-panel-item-kind');
@@ -167,6 +193,9 @@ export class ValidationPanel {
                 } else if (error.kind === 'type-mismatch') {
                     kindSpan.classList.add('validation-panel-item-kind-type');
                     kindSpan.textContent = '型不一致';
+                } else if (error.kind === 'plugin') {
+                    kindSpan.classList.add('validation-panel-item-kind-plugin');
+                    kindSpan.textContent = 'プラグイン';
                 } else {
                     kindSpan.classList.add('validation-panel-item-kind-fk');
                     kindSpan.textContent = 'FK切れ';
@@ -174,7 +203,12 @@ export class ValidationPanel {
 
                 const locationSpan = document.createElement('span');
                 locationSpan.classList.add('validation-panel-item-location');
-                locationSpan.textContent = `${tableName} 行${error.rowIndex + 1} ${error.columnName}:`;
+                // プラグインエラーはファイル名を表示、それ以外はテーブル名・行番号・列名を表示する
+                if (error.kind === 'plugin') {
+                    locationSpan.textContent = `${error.columnName}:`;
+                } else {
+                    locationSpan.textContent = `${tableName} 行${error.rowIndex + 1} ${error.columnName}:`;
+                }
 
                 const messageSpan = document.createElement('span');
                 messageSpan.classList.add('validation-panel-item-message');
@@ -184,8 +218,13 @@ export class ValidationPanel {
                 item.appendChild(locationSpan);
                 item.appendChild(messageSpan);
 
-                item.addEventListener('click', () => { this.jumpToError(error); });
-                item.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.jumpToError(error); });
+                // プラグインエラー以外にのみクリックジャンプ機能を付与する
+                if (error.kind !== 'plugin') {
+                    item.setAttribute('role', 'button');
+                    item.setAttribute('tabindex', '0');
+                    item.addEventListener('click', () => { this.jumpToError(error); });
+                    item.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.jumpToError(error); });
+                }
 
                 this.element.appendChild(item);
             }
@@ -235,4 +274,27 @@ export class ValidationPanel {
             this.tab.navigateToTableCell(tableName, error.pkValue, error.columnIndex);
         }
     }
+}
+
+/**
+ * PluginValidationError を ValidationError に変換する。
+ * プラグインエラーは tableName="プラグイン"、rowIndex=-1、columnIndex=-1 で
+ * セル特定不能を表現する。columnName にプラグインファイル名を格納する。
+ */
+function convertPluginErrors(pluginErrors: PluginValidationError[]): ValidationError[] {
+    const result: ValidationError[] = [];
+    for (const pe of pluginErrors) {
+        result.push({
+            tableName: 'プラグイン',
+            rowIndex: -1,
+            columnIndex: -1,
+            columnName: pe.pluginName,
+            value: '',
+            kind: 'plugin',
+            message: pe.message,
+            filterValue: null,
+            pkValue: null,
+        });
+    }
+    return result;
 }

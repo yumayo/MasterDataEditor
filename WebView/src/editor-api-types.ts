@@ -37,7 +37,7 @@ export interface ValidationErrorInfo {
     rowIndex: number;
     columnName: string;
     value: string;
-    kind: 'pk-duplicate' | 'fk-broken' | 'type-mismatch';
+    kind: 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
     message: string;
 }
 

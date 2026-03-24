@@ -13,6 +13,7 @@ import {applyStoredTheme} from "./settings-panel";
 import {NotificationToast} from "./notification";
 import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
+import {PluginValidationRunner} from "./plugin-validation-runner";
 import {StatusBar} from "./status-bar";
 import {BackgroundTaskTracker} from "./background-task-tracker";
 import {DebugConsole} from "./debug-console";
@@ -84,10 +85,11 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     const commandPalette = new CommandPalette(tab, document.body);
 
     // statusBar stub は preload 前に生成済み（DEBUG CONSOLE 追跡基盤として）。
-    // ここでは validationPanel → bottomPanel → realStatusBar の順で生成し、
+    // ここでは pluginRunner → validationPanel → bottomPanel → realStatusBar の順で生成し、
     // Object.assign + setPrototypeOf で stub を本物に昇格させる（Tab ↔ Sidebar と同じパターン）。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
-    const validationPanel = new ValidationPanel(validationEngine, tab, statusBar);
+    const pluginValidationRunner = new PluginValidationRunner(store);
+    const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, pluginValidationRunner);
     const bottomPanel = new BottomPanel(validationPanel, debugConsole);
     const realStatusBar = new StatusBar(bottomPanel, notification);
     Object.assign(statusBar, realStatusBar);

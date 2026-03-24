@@ -3,7 +3,7 @@ import {ReferenceDataCache} from "./reference-data-cache";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 
 /** バリデーションエラーの種別 */
-export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch';
+export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
 
 /** バリデーションエラー情報 */
 export interface ValidationError {

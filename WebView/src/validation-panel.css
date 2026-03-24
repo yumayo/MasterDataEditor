@@ -68,6 +68,13 @@
     border: 1px solid var(--error-border);
 }
 
+/* プラグインバリデーションエラー: 警告色で差別化する */
+.validation-panel-item-kind-plugin {
+    background-color: rgba(205, 155, 50, 0.15);
+    color: #cda632;
+    border: 1px solid rgba(205, 155, 50, 0.3);
+}
+
 .validation-panel-item-location {
     color: rgba(200, 200, 200, 0.7);
     flex-shrink: 0;
