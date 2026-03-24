@@ -6,7 +6,7 @@ namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerGitResetRequest
 	{
-		public static object Invoke(JsonElement root)
+		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
 			{
@@ -15,6 +15,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "git_reset_response",
+						requestId,
 						success = false,
 						error = "path is required",
 					};
@@ -26,6 +27,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "git_reset_response",
+						requestId,
 						success = false,
 						error = "path is empty",
 					};
@@ -37,6 +39,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "git_reset_response",
+						requestId,
 						success = false,
 						error = "invalid path",
 					};
@@ -51,6 +54,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "git_reset_response",
+						requestId,
 						success = false,
 						error = "path must be " + dataPrefix + "*.csv",
 					};
@@ -61,6 +65,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "git_reset_response",
+					requestId,
 					success = true,
 				};
 			}
@@ -70,6 +75,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "git_reset_response",
+					requestId,
 					success = false,
 					error = ex.Message,
 				};

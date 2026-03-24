@@ -22,37 +22,40 @@ const dirCache = new Map<string, File[]>();
 /**
  * 起動時に schema/ と data/ 以下の全ファイルを一括読み込みしてキャッシュに格納する。
  * main.ts の初期化冒頭で呼び出すこと。
+ * ディレクトリ列挙・ファイル読み込みを並列で実行し、起動時間を短縮する。
  */
 export async function preloadAllFilesAsync(): Promise<void> {
-    const schemaFiles = await postMessageAsync<File[]>('find_files', { directory: 'schema' });
+    // schema/, data/, plugins/ のディレクトリ列挙を並列実行する
+    const [schemaFiles, dataFiles, pluginFilesResult] = await Promise.all([
+        postMessageAsync<File[]>('find_files', { directory: 'schema' }),
+        postMessageAsync<File[]>('find_files', { directory: 'data' }),
+        postMessageAsync<File[]>('find_files', { directory: 'plugins' }).then(
+            (files) => ({ files, found: true as const }),
+            () => ({ files: [] as File[], found: false as const }),
+        ),
+    ]);
     dirCache.set('schema', schemaFiles);
-    const dataFiles = await postMessageAsync<File[]>('find_files', { directory: 'data' });
     dirCache.set('data', dataFiles);
+    if (pluginFilesResult.found) dirCache.set('plugins', pluginFilesResult.files);
+
+    // 全ディレクトリのファイル読み込みを並列実行する
+    const readTasks: Promise<void>[] = [];
     for (const file of schemaFiles) {
         if (file.type !== 'file') continue;
         const path = `schema/${file.name}`;
-        const content = await postMessageAsync<string>('read_file', { filename: path });
-        fileCache.set(path, content);
+        readTasks.push(postMessageAsync<string>('read_file', { filename: path }).then((content) => { fileCache.set(path, content); }));
     }
     for (const file of dataFiles) {
         if (file.type !== 'file') continue;
         const path = `data/${file.name}`;
-        const content = await postMessageAsync<string>('read_file', { filename: path });
-        fileCache.set(path, content);
+        readTasks.push(postMessageAsync<string>('read_file', { filename: path }).then((content) => { fileCache.set(path, content); }));
     }
-    // plugins/ ディレクトリのプリロード（存在しない場合はスキップ）
-    try {
-        const pluginFiles = await postMessageAsync<File[]>('find_files', { directory: 'plugins' });
-        dirCache.set('plugins', pluginFiles);
-        for (const file of pluginFiles) {
-            if (file.type !== 'file') continue;
-            const path = `plugins/${file.name}`;
-            const content = await postMessageAsync<string>('read_file', { filename: path });
-            fileCache.set(path, content);
-        }
-    } catch {
-        // plugins/ ディレクトリが存在しない場合はスキップする
+    for (const file of pluginFilesResult.files) {
+        if (file.type !== 'file') continue;
+        const path = `plugins/${file.name}`;
+        readTasks.push(postMessageAsync<string>('read_file', { filename: path }).then((content) => { fileCache.set(path, content); }));
     }
+    await Promise.all(readTasks);
 }
 
 /**
@@ -227,42 +230,40 @@ export async function gitDiscardAsync(path: string): Promise<void> {
 }
 
 /**
- * リクエストキュー
- * WebView2のメッセージAPIにはリクエストIDがないため、
- * 同じ種類のリクエストが同時に飛ぶとレスポンスが取り違えられる。
- * リクエストを直列化することでこの問題を回避する。
+ * リクエストIDカウンター
+ * 各リクエストにユニークIDを付与し、レスポンスをIDで照合する。
+ * これにより同じ種類のリクエストを並列に送信しても取り違えが起きない。
  */
-let requestQueue: Promise<unknown> = Promise.resolve();
+let nextRequestId = 1;
 
-async function postMessageAsync<T>(
+function postMessageAsync<T>(
     apiName: string,
     requestData: Record<string, unknown>
 ): Promise<T> {
-    const result: Promise<T> = requestQueue.then(() => sendRequest<T>(apiName, requestData));
-    // エラーが発生してもキューを停止させない
-    requestQueue = result.then(() => {}, () => {});
+    const promise = sendRequest<T>(apiName, requestData);
     // トラッカーが設定されている場合はバックグラウンドタスクとして追跡する
     if (tracker !== false) {
-        return tracker.trackAsync(apiName, result);
+        return tracker.trackAsync(apiName, promise);
     }
-    return result;
+    return promise;
 }
 
 function sendRequest<T>(
     apiName: string,
     requestData: Record<string, unknown>
 ): Promise<T> {
+    const requestId = String(nextRequestId++);
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             window.chrome.webview.removeEventListener('message', responseHandler);
-            reject(new Error(`${apiName} timeout`));
+            reject(new Error(`${apiName} timeout (requestId=${requestId})`));
         }, 10000);
 
         const responseHandler = (event: MessageEvent) => {
             try {
                 const responseData = JSON.parse(event.data);
-                // 関係のないメッセージは無視して待ち続ける
-                if (!responseData || responseData.type !== `${apiName}_response`) {
+                // リクエストIDで照合する。IDが一致しないメッセージは無視して待ち続ける。
+                if (!responseData || responseData.type !== `${apiName}_response` || responseData.requestId !== requestId) {
                     return;
                 }
 
@@ -286,6 +287,7 @@ function sendRequest<T>(
             window.chrome.webview.addEventListener('message', responseHandler);
             window.chrome.webview.postMessage(JSON.stringify({
                 type: `${apiName}_request`,
+                requestId,
                 ...requestData
             }));
         } catch (error) {

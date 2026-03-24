@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 
@@ -6,7 +6,7 @@ namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerReadFileRequest
 	{
-		public static object Invoke(JsonElement root)
+		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
 			{
@@ -16,6 +16,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "read_file_response",
+						requestId,
 						success = false,
 						error = "Invalid filename",
 					};
@@ -29,6 +30,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "read_file_response",
+						requestId,
 						success = false,
 						error = "Invalid filename",
 					};
@@ -44,6 +46,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "read_file_response",
+						requestId,
 						success = false,
 						error = "Invalid filename",
 					};
@@ -58,6 +61,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "read_file_response",
+					requestId,
 					success = true,
 					data
 				};
@@ -68,6 +72,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "read_file_response",
+					requestId,
 					success = false,
 					error = ex.Message,
 				};

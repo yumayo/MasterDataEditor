@@ -226,42 +226,45 @@ public class WebView2Handler : IDisposable
 				{
 					var messageType = typeElement.GetString();
 
-					switch (messageType)
+					// リクエストIDを抽出する（並列リクエストのレスポンス照合に使用）
+				var requestId = root.TryGetProperty("requestId", out var ridElement) ? ridElement.GetString() ?? "" : "";
+
+				switch (messageType)
 					{
 						case "read_file_request":
-							SendMessageToWebView(WebView2HandlerReadFileRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerReadFileRequest.Invoke(root, requestId));
 							break;
 
 						case "write_file_request":
-							SendMessageToWebView(WebView2HandlerWriteFileRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerWriteFileRequest.Invoke(root, requestId));
 							break;
 
 						case "find_files_request":
-							SendMessageToWebView(WebView2HandlerFindFilesRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerFindFilesRequest.Invoke(root, requestId));
 							break;
 
 						case "delete_file_request":
-							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root, requestId));
 							break;
 
 						case "git_status_request":
-							SendMessageToWebView(WebView2HandlerGitStatusRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerGitStatusRequest.Invoke(root, requestId));
 							break;
 
 						case "git_show_request":
-							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root, requestId));
 							break;
 
 						case "git_add_request":
-							SendMessageToWebView(WebView2HandlerGitAddRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerGitAddRequest.Invoke(root, requestId));
 							break;
 
 						case "git_reset_request":
-							SendMessageToWebView(WebView2HandlerGitResetRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerGitResetRequest.Invoke(root, requestId));
 							break;
 
 						case "git_discard_request":
-							SendMessageToWebView(WebView2HandlerGitDiscardRequest.Invoke(root));
+							SendMessageToWebView(WebView2HandlerGitDiscardRequest.Invoke(root, requestId));
 							break;
 
 						case "editor_api_response":

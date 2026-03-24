@@ -6,7 +6,7 @@ namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerDeleteFileRequest
 	{
-		public static object Invoke(JsonElement root)
+		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
 			{
@@ -16,6 +16,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "delete_file_response",
+						requestId,
 						success = false,
 						error = "Required filename"
 					};
@@ -29,6 +30,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "delete_file_response",
+						requestId,
 						success = false,
 						error = "Invalid filename"
 					};
@@ -43,6 +45,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "delete_file_response",
+						requestId,
 						success = false,
 						error = "Invalid filename"
 					};
@@ -53,6 +56,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "delete_file_response",
+						requestId,
 						success = false,
 						error = "File not found"
 					};
@@ -63,6 +67,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "delete_file_response",
+					requestId,
 					success = true
 				};
 			}
@@ -72,6 +77,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "delete_file_response",
+					requestId,
 					success = false,
 					error = ex.Message,
 				};

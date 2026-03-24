@@ -39,6 +39,7 @@ export function createDefaultFileSystem(): MockFileSystem {
     return {
         "schema/test.json": schema,
         "data/test.csv": csv,
+        "plugins/.gitkeep": "",
     };
 }
 
@@ -123,6 +124,8 @@ export async function installMockApiAsync(
             function handleRequest(message: string): void {
                 const request = JSON.parse(message);
                 const type = request.type as string;
+                // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
+                const requestId = request.requestId as string | undefined;
 
                 // editor_api_request は C# → WebView の逆方向通信。
                 // ブリッジが addEventListener で登録したリスナーに配信する。
@@ -150,6 +153,7 @@ export async function installMockApiAsync(
                         const files = findFiles(request.directory);
                         dispatch({
                             type: "find_files_response",
+                            requestId,
                             success: true,
                             data: files,
                         });
@@ -158,6 +162,7 @@ export async function installMockApiAsync(
                             ? e.message : String(e);
                         dispatch({
                             type: "find_files_response",
+                            requestId,
                             success: false,
                             error: msg,
                         });
@@ -170,12 +175,14 @@ export async function installMockApiAsync(
                     if (filename in fs) {
                         dispatch({
                             type: "read_file_response",
+                            requestId,
                             success: true,
                             data: fs[filename],
                         });
                     } else {
                         dispatch({
                             type: "read_file_response",
+                            requestId,
                             success: false,
                             error: "File not found: " + filename,
                         });
@@ -189,6 +196,7 @@ export async function installMockApiAsync(
                     fs[filename] = data;
                     dispatch({
                         type: "write_file_response",
+                        requestId,
                         success: true,
                     });
                     // ファイル書き込み後フック: テストから登録することで保存後の状態を動的に変更できる
@@ -199,17 +207,29 @@ export async function installMockApiAsync(
                     return;
                 }
 
+                if (type === "delete_file_request") {
+                    const filename = request.filename as string;
+                    if (filename in fs) {
+                        delete fs[filename];
+                        dispatch({ type: "delete_file_response", requestId, success: true });
+                    } else {
+                        dispatch({ type: "delete_file_response", requestId, success: false, error: "File not found" });
+                    }
+                    return;
+                }
+
                 // git差分機能: 変更/ステージ済みファイル一覧を返す
                 // __mockGitStatus が未設定の場合は git リポジトリ外環境を模してエラーを返す
                 if (type === "git_status_request") {
                     type GitStatusWindow = { __mockGitStatus: { changes: object[]; staged: object[] } | undefined };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
                     if (mockStatus === undefined) {
-                        dispatch({ type: "git_status_response", success: false, error: "not a git repository" });
+                        dispatch({ type: "git_status_response", requestId, success: false, error: "not a git repository" });
                         return;
                     }
                     dispatch({
                         type: "git_status_response",
+                        requestId,
                         success: true,
                         data: mockStatus,
                     });
@@ -225,24 +245,26 @@ export async function installMockApiAsync(
                     // プロパティ未設定の既存テストではスキップし、設定済みの場合のみエラーを返す
                     if ('__mockGitShowError' in window) {
                         const forcedError = (window as unknown as { __mockGitShowError: string }).__mockGitShowError;
-                        dispatch({ type: "git_show_response", success: false, error: forcedError });
+                        dispatch({ type: "git_show_response", requestId, success: false, error: forcedError });
                         return;
                     }
                     type GitHeadFilesWindow = { __mockGitHeadFiles: Record<string, string> | undefined };
                     const headFiles = (window as unknown as GitHeadFilesWindow).__mockGitHeadFiles;
                     if (headFiles === undefined) {
-                        dispatch({ type: "git_show_response", success: false, error: "not a git repository" });
+                        dispatch({ type: "git_show_response", requestId, success: false, error: "not a git repository" });
                         return;
                     }
                     if (path in headFiles) {
                         dispatch({
                             type: "git_show_response",
+                            requestId,
                             success: true,
                             data: headFiles[path],
                         });
                     } else {
                         dispatch({
                             type: "git_show_response",
+                            requestId,
                             success: false,
                             error: "fatal: path '" + path + "' does not exist in 'HEAD'",
                         });
@@ -256,7 +278,7 @@ export async function installMockApiAsync(
                     type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
                     if (mockStatus === undefined) {
-                        dispatch({ type: "git_add_response", success: false, error: "not a git repository" });
+                        dispatch({ type: "git_add_response", requestId, success: false, error: "not a git repository" });
                         return;
                     }
                     const idx = mockStatus.changes.findIndex(e => e.path === path);
@@ -264,7 +286,7 @@ export async function installMockApiAsync(
                         const entry = mockStatus.changes.splice(idx, 1)[0];
                         mockStatus.staged.push(entry);
                     }
-                    dispatch({ type: "git_add_response", success: true });
+                    dispatch({ type: "git_add_response", requestId, success: true });
                     return;
                 }
 
@@ -274,7 +296,7 @@ export async function installMockApiAsync(
                     type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
                     if (mockStatus === undefined) {
-                        dispatch({ type: "git_reset_response", success: false, error: "not a git repository" });
+                        dispatch({ type: "git_reset_response", requestId, success: false, error: "not a git repository" });
                         return;
                     }
                     const idx = mockStatus.staged.findIndex(e => e.path === path);
@@ -282,7 +304,7 @@ export async function installMockApiAsync(
                         const entry = mockStatus.staged.splice(idx, 1)[0];
                         mockStatus.changes.push(entry);
                     }
-                    dispatch({ type: "git_reset_response", success: true });
+                    dispatch({ type: "git_reset_response", requestId, success: true });
                     return;
                 }
 
@@ -293,12 +315,12 @@ export async function installMockApiAsync(
                     type GitStatusWindow = { __mockGitStatus: { changes: { path: string; tableName: string; isNew: boolean }[]; staged: { path: string; tableName: string; isNew: boolean }[] } | undefined };
                     const mockStatus = (window as unknown as GitStatusWindow).__mockGitStatus;
                     if (mockStatus === undefined) {
-                        dispatch({ type: "git_discard_response", success: false, error: "not a git repository" });
+                        dispatch({ type: "git_discard_response", requestId, success: false, error: "not a git repository" });
                         return;
                     }
                     const changesIdx = mockStatus.changes.findIndex(e => e.path === path);
                     if (changesIdx !== -1) { mockStatus.changes.splice(changesIdx, 1); }
-                    dispatch({ type: "git_discard_response", success: true });
+                    dispatch({ type: "git_discard_response", requestId, success: true });
                     return;
                 }
             }

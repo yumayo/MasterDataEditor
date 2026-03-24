@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,17 +8,18 @@ namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerFindFilesRequest
 	{
-		public static object Invoke(JsonElement root)
+		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
 			{
-				
+
 				if (!root.TryGetProperty("directory", out var directoryElement))
 				{
 					Logger.Warning("ファイル一覧取得拒否");
 					return new
 					{
 						type = "find_files_response",
+						requestId,
 						success = false,
 						error = "Required directory"
 					};
@@ -32,6 +33,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "find_files_response",
+						requestId,
 						success = false,
 						error = "Invalid directory"
 					};
@@ -47,6 +49,7 @@ namespace App.MasterDataEditor
 					return new
 					{
 						type = "find_files_response",
+						requestId,
 						success = false,
 						error = "Invalid directory"
 					};
@@ -79,6 +82,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "find_files_response",
+					requestId,
 					success = true,
 					data = items
 				};
@@ -89,6 +93,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "find_files_response",
+					requestId,
 					success = false,
 					error = ex.Message,
 				};

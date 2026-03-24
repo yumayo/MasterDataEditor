@@ -7,7 +7,7 @@ namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerGitStatusRequest
 	{
-		public static object Invoke(JsonElement root)
+		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
 			{
@@ -56,6 +56,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "git_status_response",
+					requestId,
 					success = true,
 					data = new { changes, staged }
 				};
@@ -66,6 +67,7 @@ namespace App.MasterDataEditor
 				return new
 				{
 					type = "git_status_response",
+					requestId,
 					success = false,
 					error = ex.Message,
 				};
