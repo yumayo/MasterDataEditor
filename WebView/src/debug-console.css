@@ -67,7 +67,7 @@
 
 /* カラム定義 */
 .debug-console-col-time {
-    width: 96px;
+    width: 170px;
     flex-shrink: 0;
 }
 
@@ -80,7 +80,7 @@
 }
 
 .debug-console-col-caller {
-    width: 160px;
+    width: 220px;
     flex-shrink: 0;
     overflow: hidden;
     text-overflow: ellipsis;

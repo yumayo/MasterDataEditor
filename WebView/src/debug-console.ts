@@ -191,18 +191,19 @@ export class DebugConsole {
         return row;
     }
 
-    /** マイクロ秒値を適切な単位にフォーマットする（μs → ms → s） */
+    /** マイクロ秒値をms単位にフォーマットする（小数点第一位表示） */
     private formatDuration(us: number): string {
-        if (us < 1000) return `${us}μs`;
-        if (us < 1000000) return `${Math.round(us / 1000)}ms`;
-        return `${(us / 1000000).toFixed(1)}s`;
+        return `${(us / 1000).toFixed(1)}ms`;
     }
 
     private formatTimestamp(date: Date): string {
+        const Y = date.getFullYear();
+        const M = String(date.getMonth() + 1).padStart(2, '0');
+        const D = String(date.getDate()).padStart(2, '0');
         const h = String(date.getHours()).padStart(2, '0');
         const m = String(date.getMinutes()).padStart(2, '0');
         const s = String(date.getSeconds()).padStart(2, '0');
         const ms = String(date.getMilliseconds()).padStart(3, '0');
-        return `${h}:${m}:${s}.${ms}`;
+        return `${Y}-${M}-${D} ${h}:${m}:${s}.${ms}`;
     }
 }
