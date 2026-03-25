@@ -245,8 +245,9 @@ export class EditorApiImpl implements EditorAPI {
             },
         };
 
-        // edit 名前空間のクロージャから cellChangedHandlers にアクセスするためのキャプチャ
+        // edit 名前空間のクロージャからイベントハンドラーにアクセスするためのキャプチャ
         const cellChangedHandlers = this.cellChangedHandlers;
+        const tableSavedHandlers = this.tableSavedHandlers;
 
         // edit 名前空間: コマンドパターンを使った書き込み操作（Undo/Redo 対応）
         // EditorAPI の row/column はストアインデックス（0始まり）だが、
@@ -270,6 +271,11 @@ export class EditorApiImpl implements EditorAPI {
                 const range = { startRow: domRow, startColumn: domColumn, endRow: domRow, endColumn: domColumn };
                 const command = new CellChangeCommand(tabState.editorTable, changes, range, range);
                 tabState.history.executeCommand(command, range, range);
+                // タブを最前面にして更新セルを選択状態にする
+                tab.switchToExistingTab(tableName);
+                tabState.selection.setRange(domRow, domColumn, domRow, domColumn);
+                tabState.selection.move(domRow, domColumn);
+                tabState.editorTableHandler.activate();
                 // セル変更イベントはストアインデックスで発火する（外部API視点）
                 // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
                 const handlers = [...cellChangedHandlers];
@@ -305,6 +311,12 @@ export class EditorApiImpl implements EditorAPI {
                 const range = { startRow: minRow, startColumn: minCol, endRow: maxRow, endColumn: maxCol };
                 const command = new CellChangeCommand(tabState.editorTable, cellChanges, range, range);
                 tabState.history.executeCommand(command, range, range);
+                // タブを最前面にして最後の変更セルを選択状態にする
+                tab.switchToExistingTab(tableName);
+                const lastChange = cellChanges[cellChanges.length - 1];
+                tabState.selection.setRange(lastChange.row, lastChange.column, lastChange.row, lastChange.column);
+                tabState.selection.move(lastChange.row, lastChange.column);
+                tabState.editorTableHandler.activate();
                 // セル変更イベントはストアインデックスで発火する（外部API視点）
                 // oldValue は cellChanges から取得する（executeCommand 後はストアが更新済みのため rows を参照してはならない）
                 // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
@@ -355,6 +367,16 @@ export class EditorApiImpl implements EditorAPI {
             async saveTableAsync(tableName: string): Promise<boolean> {
                 if (store.getHeader(tableName) === false) return false;
                 await saveTableDataFromStoreAsync(tableName, store);
+                // Dirty状態をクリアする（タブが開いている場合のみ: Historyレジストリが必要）
+                const tabState = tab.getTabStateByName(tableName);
+                if (tabState) {
+                    store.markAllSaved(tableName);
+                }
+                // テーブル保存イベントを発火する
+                const snapshot = [...tableSavedHandlers];
+                for (let i = 0; i < snapshot.length; ++i) {
+                    try { snapshot[i]({ tableName }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+                }
                 return true;
             },
         };
