@@ -16,6 +16,7 @@ public class WebView2Handler : IDisposable
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
 	private readonly IDisposable _fileWatcherHandle;
+	private readonly IDisposable _gitWatcherHandle;
 	/// <summary>
 	/// MCP ToolとWebView2間の非同期ブリッジ。
 	/// editor_api_response メッセージをブリッジに転送する。
@@ -50,6 +51,23 @@ public class WebView2Handler : IDisposable
 		{
 			_fileWatcherHandle = NullDisposable.Instance;
 			Logger.Info($"data/ ディレクトリが存在しないためファイル監視をスキップ: {dataDirectory}");
+		}
+
+		// .git/ ディレクトリ全体を監視し、git操作時に git_changed メッセージを送信する
+		var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
+		var gitDirectory = Path.Combine(gitRoot, ".git");
+		if (Directory.Exists(gitDirectory))
+		{
+			_gitWatcherHandle = new GitWatcher(gitDirectory, () =>
+			{
+				SendMessageToWebView(new { type = "git_changed" });
+			});
+			Logger.Info($"Git監視を開始: {gitDirectory}");
+		}
+		else
+		{
+			_gitWatcherHandle = NullDisposable.Instance;
+			Logger.Info($".git/ が存在しないためGit監視をスキップ: {gitDirectory}");
 		}
 	}
 
@@ -167,6 +185,7 @@ public class WebView2Handler : IDisposable
 	public void Dispose()
 	{
 		_fileWatcherHandle.Dispose();
+		_gitWatcherHandle.Dispose();
 	}
 
 	public void SendMessageToWebView(object data)

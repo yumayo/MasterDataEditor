@@ -87,7 +87,7 @@ export class Sidebar {
         });
         resizeHandle.appendTo(explorerElement);
 
-        // C# FileSystemWatcher からの file_changed プッシュ通知を受信してバッジとパネルを更新する
+        // C# FileSystemWatcher / GitWatcher からのプッシュ通知を受信してバッジとパネルを更新する
         window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
             if (typeof event.data !== 'string') return;
             let data: { type: string };
@@ -96,10 +96,14 @@ export class Sidebar {
             } catch {
                 return;
             }
-            if (data.type !== 'file_changed') return;
+            if (data.type !== 'file_changed' && data.type !== 'git_changed') return;
             invalidateGitStatusCache();
             invalidateGitShowCache();
             this.sourceControlPanel.refreshAsync().catch(e => { console.error('バッジ更新失敗', e); });
+            // git操作によりHEADやステージが変わるため、通常テーブルのgit差分ハイライトを再計算する
+            if (data.type === 'git_changed') {
+                this.refreshAllGitDiffAsync().catch(e => { console.error('git差分ハイライト更新失敗', e); });
+            }
         });
 
         // ウィンドウフォーカス時にバッジを更新する（外部ツールでのgitコミット後の反映）
@@ -109,6 +113,19 @@ export class Sidebar {
 
         // 初回起動時にバッジを表示する（gitリポジトリ外の場合はエラーになるためスキップする）
         this.sourceControlPanel.refreshAsync().catch(e => { console.warn('初回バッジ取得をスキップ', e); });
+    }
+
+    /**
+     * 開いている全通常テーブルのgit差分ハイライトを再計算する
+     * コミット検知時にHEADが変わるため、全テーブルの差分状態を最新にする
+     */
+    private async refreshAllGitDiffAsync(): Promise<void> {
+        const editorTables = this.tab.getOpenEditorTables();
+        const promises: Promise<void>[] = [];
+        editorTables.forEach(editorTable => {
+            promises.push(editorTable.refreshGitDiffAsync());
+        });
+        await Promise.all(promises);
     }
 
     /**
