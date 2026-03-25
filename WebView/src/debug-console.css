@@ -42,7 +42,7 @@
 }
 
 .debug-console-col-resize-handle:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--hover-color-strong);
 }
 
 /* ログリスト（スクロール可能） */
@@ -58,11 +58,11 @@
     padding: 1px 12px;
     font-family: monospace;
     font-size: 11px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--subtle-border-color);
 }
 
 .debug-console-row:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--hover-color);
 }
 
 /* カラム定義 */

@@ -27,7 +27,7 @@
 }
 
 .notification-bell:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--hover-color);
 }
 
 /* トースト表示エリア（ステータスバーの上方に展開） */
