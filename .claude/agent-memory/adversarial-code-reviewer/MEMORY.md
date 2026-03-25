@@ -16,9 +16,10 @@
 - `/WebView/src/validation-engine.ts` - PK/FK/type validation logic
 - `/WebView/src/validation-panel.ts` - Validation UI + runAndUpdate + runInitialScanAsync
 - `/WebView/src/editor-api-types.ts` - SchemaEntry, EditorAPI types
+- `/WebView/src/editor-api.ts` - EditorAPI impl (data/schema/edit/events namespaces)
 - `/WebView/src/relations-panel.ts` - Right pane relations
 - `/WebView/src/reference-data-cache.ts` - FK reference cache
-- `/WebView/src/plugin-validation-runner.ts` - Plugin validation (new Function execution)
+- `/WebView/src/plugin-validation-runner.ts` - Plugin validation (Web Worker sandbox)
 - `/WebView/src/reference-expression.ts` - DynamicReferenceSchema + parseReferenceExpression
 - `/WebView/src/model/editor-table-data-column.ts` - Column model with reference: string | DynamicReferenceSchema | null
 
@@ -31,10 +32,11 @@
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所
 - **document listener leak (anonymous arrow)**: removeEventListener不可
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決ロジック等
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換(editor-api.ts vs validation-panel.ts)**
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
 - **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
+- **C# MCP出力のエッジケース未対応**: rowIndex=-1時のフォーマット崩壊 (ValidationTool.cs)
 
 ## DynamicReferenceSchema Migration Patterns (2026-03-25)
 - reference型は `string | DynamicReferenceSchema | null` に統一済み
@@ -45,12 +47,14 @@
 - search-data-provider.ts: 動的参照→空文字列変換が2箇所でコピペ
 
 ## Plugin Validation Known Patterns (2026-03-25)
-- new Function() is NOT sandboxed — full access to window/document/globalThis
+- Plugin runs in Web Worker sandbox (plugin-sandbox.ts) — no window/document access
 - runAndUpdate() sync→async via .then() without requestId guard (9th recurrence)
 - pluginRunner = false + connectPluginRunner() is half-baked object (7th recurrence)
 - Proxy get handler typed as string but prop can be symbol
-- No infinite loop protection for plugin code
+- No infinite loop protection for plugin code (timeout 10s via Worker terminate)
 - buildRowObjects has no caching — O(n) per all()/where()/find() call per plugin
+- **convertPluginErrors duplicated**: editor-api.ts L209-233 vs validation-panel.ts L307-340 (value field diverged)
+- **editor-api.ts plugin error conversion has no try/catch**: engine results lost on runAllPluginsAsync rejection
 
 ## Structural Concerns
 - **store.getHeader/getRows returns internal reference**: caller mutation corrupts store
@@ -64,6 +68,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-25) EditorAPI getValidationErrorsAsync + Plugin: 致命的2件、重要4件、軽微3件
 - (2026-03-25) DynamicReferenceSchema Migration: 致命的2件、重要4件、軽微3件
 - (2026-03-25) Plugin Validation: 致命的4件、重要5件、軽微4件
 - (2026-03-24) RP Visibility Toggle: 致命的3件、重要4件、軽微3件
