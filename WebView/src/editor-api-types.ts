@@ -27,8 +27,8 @@ export interface EditorDataAPI {
     getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null>;
     /** 関連テーブル（N:1参照先 + 1:N逆参照元）のデータを取得する */
     getRelatedTablesAsync(tableName: string): Promise<RelatedTableInfo[] | null>;
-    /** 全テーブルのバリデーションエラー一覧を取得する */
-    getValidationErrors(): ValidationErrorInfo[];
+    /** 全テーブルのバリデーションエラー一覧を取得する（プラグインエラーを含む） */
+    getValidationErrorsAsync(): Promise<ValidationErrorInfo[]>;
 }
 
 /** バリデーションエラー情報（外部API用、内部フィールドを除外した公開型） */

@@ -16,6 +16,47 @@ export interface PluginValidationError {
     columnName: string | null;
 }
 
+/** プラグインエラーの解決済み中間表現。消費者（ValidationPanel, EditorAPI）が自身の型に変換するための共通構造。 */
+export interface ResolvedPluginError {
+    tableName: string;
+    rowIndex: number;
+    columnName: string;
+    value: string;
+    pluginName: string;
+    message: string;
+}
+
+/**
+ * PluginValidationError をストア参照で解決し、テーブル名・行・列・セル値を確定させる。
+ * コンテキスト付きエラー（行オブジェクトが渡された assert）はストアから列インデックスとセル値を解決する。
+ * コンテキストなしエラー（構文エラー等）は tableName='プラグイン', rowIndex=-1 として返す。
+ * message には常にプラグイン名プレフィックスを含める。
+ */
+export function resolvePluginErrors(pluginErrors: PluginValidationError[], store: InMemoryTableStore): ResolvedPluginError[] {
+    const result: ResolvedPluginError[] = [];
+    for (let i = 0; i < pluginErrors.length; ++i) {
+        const pe = pluginErrors[i];
+        if (pe.tableName !== null && pe.rowIndex !== -1) {
+            const header = store.getHeader(pe.tableName);
+            const columnName = pe.columnName !== null ? pe.columnName : '';
+            let cellValue = '';
+            if (header !== false && pe.columnName !== null) {
+                const colIdx = header.indexOf(pe.columnName);
+                if (colIdx !== -1) {
+                    const rows = store.getRows(pe.tableName);
+                    if (rows !== false && pe.rowIndex < rows.length) {
+                        cellValue = rows[pe.rowIndex][colIdx];
+                    }
+                }
+            }
+            result.push({ tableName: pe.tableName, rowIndex: pe.rowIndex, columnName, value: cellValue, pluginName: pe.pluginName, message: '[' + pe.pluginName + '] ' + pe.message });
+        } else {
+            result.push({ tableName: 'プラグイン', rowIndex: -1, columnName: pe.pluginName, value: '', pluginName: pe.pluginName, message: '[' + pe.pluginName + '] ' + pe.message });
+        }
+    }
+    return result;
+}
+
 /** プラグイン実行のタイムアウト（ミリ秒） */
 const WORKER_TIMEOUT_MS = 10000;
 

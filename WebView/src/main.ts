@@ -143,7 +143,7 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     const schemaRegistry = new Map<string, SchemaEntry>();
 
     // EditorAPI を構築して window.editorApi として公開する
-    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine);
+    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine, pluginValidationRunner);
     tab.connectEditorApi(editorApi);
     (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
 

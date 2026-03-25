@@ -87,7 +87,7 @@ export class EditorApiBridge {
             case 'readTableDataAsync': return this.api.data.readTableDataAsync(this.requireString(params, 'tableName'));
             case 'getReferenceHintsAsync': return this.api.data.getReferenceHintsAsync(this.requireString(params, 'tableName'));
             case 'getRelatedTablesAsync': return this.api.data.getRelatedTablesAsync(this.requireString(params, 'tableName'));
-            case 'getValidationErrors': return this.api.data.getValidationErrors();
+            case 'getValidationErrorsAsync': return this.api.data.getValidationErrorsAsync();
             default: throw new Error('Unknown data method: ' + methodName);
         }
     }

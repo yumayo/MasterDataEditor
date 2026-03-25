@@ -3,6 +3,7 @@ import {Tab} from "./tab";
 import {StatusBar} from "./status-bar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {DebugConsole} from "./debug-console";
+import {resolvePluginErrors} from "./plugin-validation-runner";
 import type {PluginValidationRunner, PluginValidationError} from "./plugin-validation-runner";
 import {DynamicReferenceSchema} from "./reference-expression";
 
@@ -301,40 +302,33 @@ export class ValidationPanel {
 
 /**
  * PluginValidationError を ValidationError に変換する。
- * assertに行オブジェクト・列名が渡されている場合はジャンプ先として利用する。
- * ジャンプ先が指定されていないエラーは tableName="プラグイン"、rowIndex=-1 でセル特定不能を表現する。
+ * ストア参照によるセル値解決は resolvePluginErrors（共通関数）に委譲する。
+ * columnIndex と pkValue は ValidationPanel 固有の関心事のためここで解決する。
  */
 function convertPluginErrors(pluginErrors: PluginValidationError[], store: InMemoryTableStore, engine: ValidationEngine): ValidationError[] {
+    const resolved = resolvePluginErrors(pluginErrors, store);
     const result: ValidationError[] = [];
-    for (const pe of pluginErrors) {
-        // ジャンプ先コンテキストがある場合はテーブル名・行・列を解決する
-        if (pe.tableName !== null && pe.rowIndex !== -1) {
-            const header = store.getHeader(pe.tableName);
-            const columnIndex = (header !== false && pe.columnName !== null) ? header.indexOf(pe.columnName) : -1;
-            result.push({
-                tableName: pe.tableName,
-                rowIndex: pe.rowIndex,
-                columnIndex,
-                columnName: pe.columnName !== null ? pe.columnName : '',
-                value: '',
-                kind: 'plugin',
-                message: '[' + pe.pluginName + '] ' + pe.message,
-                filterValue: null,
-                pkValue: engine.resolvePkValue(pe.tableName, pe.rowIndex),
-            });
-        } else {
-            result.push({
-                tableName: 'プラグイン',
-                rowIndex: -1,
-                columnIndex: -1,
-                columnName: pe.pluginName,
-                value: '',
-                kind: 'plugin',
-                message: pe.message,
-                filterValue: null,
-                pkValue: null,
-            });
+    for (let i = 0; i < resolved.length; ++i) {
+        const r = resolved[i];
+        // columnIndex はコンテキスト付きエラーでのみ解決する（ジャンプ先セル特定用）
+        let columnIndex = -1;
+        if (r.rowIndex !== -1 && r.columnName !== '') {
+            const header = store.getHeader(r.tableName);
+            if (header !== false) {
+                columnIndex = header.indexOf(r.columnName);
+            }
         }
+        result.push({
+            tableName: r.tableName,
+            rowIndex: r.rowIndex,
+            columnIndex,
+            columnName: r.columnName,
+            value: r.value,
+            kind: 'plugin',
+            message: r.message,
+            filterValue: null,
+            pkValue: r.rowIndex !== -1 ? engine.resolvePkValue(r.tableName, r.rowIndex) : null,
+        });
     }
     return result;
 }

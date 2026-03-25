@@ -6,6 +6,8 @@ import {saveTableDataFromStoreAsync} from "./editor-actions";
 import {Csv} from "./csv";
 import {determineDisplayColumnName} from "./config";
 import {ValidationEngine} from "./validation-engine";
+import type {PluginValidationRunner} from "./plugin-validation-runner";
+import {resolvePluginErrors} from "./plugin-validation-runner";
 import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, ValidationErrorInfo} from "./editor-api-types";
 
 /**
@@ -28,7 +30,7 @@ export class EditorApiImpl implements EditorAPI {
     private readonly tableSavedHandlers: Array<(event: { tableName: string }) => void>;
     private readonly rowSelectedHandlers: Array<(event: { tableName: string; rowIndex: number }) => void>;
 
-    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>, validationEngine: ValidationEngine) {
+    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>, validationEngine: ValidationEngine, pluginRunner: PluginValidationRunner) {
         this.cellChangedHandlers = [];
         this.tableOpenedHandlers = [];
         this.tableClosedHandlers = [];
@@ -197,13 +199,25 @@ export class EditorApiImpl implements EditorAPI {
                 }
                 return results;
             },
-            getValidationErrors(): ValidationErrorInfo[] {
+            async getValidationErrorsAsync(): Promise<ValidationErrorInfo[]> {
                 // MCP呼び出し時は最新状態を反映するため、preservableErrors の引き継ぎなしで実行する
                 const result = validationEngine.validate([]);
                 const out: ValidationErrorInfo[] = [];
                 for (let i = 0; i < result.errors.length; ++i) {
                     const e = result.errors[i];
                     out.push({ tableName: e.tableName, rowIndex: e.rowIndex, columnName: e.columnName, value: e.value, kind: e.kind, message: e.message });
+                }
+                // プラグインバリデーションを実行してエラーをマージする。
+                // runAllPluginsAsync が reject した場合でもエンジン結果は保持し、システムエラー1件を追加する。
+                try {
+                    const pluginErrors = await pluginRunner.runAllPluginsAsync();
+                    const resolved = resolvePluginErrors(pluginErrors, store);
+                    for (let i = 0; i < resolved.length; ++i) {
+                        const r = resolved[i];
+                        out.push({ tableName: r.tableName, rowIndex: r.rowIndex, columnName: r.columnName, value: r.value, kind: 'plugin', message: r.message });
+                    }
+                } catch (e: unknown) {
+                    out.push({ tableName: 'プラグイン', rowIndex: -1, columnName: '(system)', value: '', kind: 'plugin', message: '[system] プラグインバリデーション実行失敗: ' + String(e) });
                 }
                 return out;
             },

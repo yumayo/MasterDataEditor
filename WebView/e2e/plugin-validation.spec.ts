@@ -392,3 +392,59 @@ test.describe('プラグインバリデーション: assertのコンテキスト
         },
     );
 });
+
+// =============================================================================
+// テストケース7: EditorAPI の getValidationErrorsAsync がプラグインエラーを含む
+// =============================================================================
+
+test.describe('プラグインバリデーション: EditorAPI(非同期) がプラグインエラーを返す', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createPluginFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        'EditorAPI の getValidationErrorsAsync がプラグインエラーを含む',
+        async ({ page }) => {
+            // テーブルを開く（getValidationErrorsAsync はストア上のデータを対象にするため）
+            await openTableAsync(page, 'chara');
+
+            // プラグインバリデーションは Web Worker 非同期で実行されるため完了を待機する
+            await waitForInitialScanAsync(page);
+
+            // EditorAPI 経由でバリデーションエラーを取得する（非同期: プラグインエラーを含む）
+            const errors = await page.evaluate(async () => {
+                return await (window as unknown as {
+                    editorApi: {
+                        data: {
+                            getValidationErrorsAsync(): Promise<Array<{
+                                tableName: string;
+                                rowIndex: number;
+                                columnName: string;
+                                value: string;
+                                kind: string;
+                                message: string;
+                            }>>;
+                        };
+                    };
+                }).editorApi.data.getValidationErrorsAsync();
+            });
+
+            // kind === 'plugin' のエラーが含まれることを検証する
+            // chara id=2 は attack=60 + defence=50 = 110 >= 100 なのでプラグインエラーが1件発生する
+            const pluginErrors = errors.filter(e => e.kind === 'plugin');
+            expect(pluginErrors.length).toBeGreaterThanOrEqual(1);
+
+            // プラグインエラーのメッセージに assert で指定した内容が含まれることを検証する
+            const balanceError = pluginErrors.find(e => e.message.includes('合計値110が100以上です'));
+            expect(balanceError).toBeTruthy();
+
+            // コンテキスト付きエラーの tableName, rowIndex, columnName, value を検証する
+            // chara id=2（行インデックス1）の attack=60 + defence=50 = 110 >= 100
+            expect(balanceError!.tableName).toBe('chara');
+            expect(balanceError!.rowIndex).toBe(1);
+            expect(balanceError!.columnName).toBe('attack');
+            expect(balanceError!.value).toBe('60');
+        },
+    );
+});

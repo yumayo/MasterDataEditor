@@ -23,14 +23,14 @@ public sealed class ValidationTool
 		_bridge = bridge;
 	}
 
-	[McpServerTool, Description("開いているテーブルのバリデーションエラー一覧を取得します（PK重複・FK参照切れ・型不一致）。まだタブで開いていないテーブルはバリデーション対象外です。FK参照切れの検出は参照先テーブルが開いているかキャッシュ済みの場合のみ有効です。テーブル名を指定すると、そのテーブルのエラーのみに絞り込めます。")]
+	[McpServerTool, Description("開いているテーブルのバリデーションエラー一覧を取得します（PK重複・FK参照切れ・型不一致・プラグイン）。まだタブで開いていないテーブルはバリデーション対象外です。FK参照切れの検出は参照先テーブルが開いているかキャッシュ済みの場合のみ有効です。テーブル名を指定すると、そのテーブルのエラーのみに絞り込めます。")]
 	public async Task<string> GetValidationErrorsAsync(
 		[Description("テーブル名（省略時は全テーブル対象）")] string? tableName = null,
 		CancellationToken cancellationToken = default)
 	{
 		try
 		{
-			var result = await _bridge.RequestAsync("data.getValidationErrors", new { }, cancellationToken);
+			var result = await _bridge.RequestAsync("data.getValidationErrorsAsync", new { }, cancellationToken);
 
 			if (result.ValueKind != JsonValueKind.Array)
 			{
@@ -61,10 +61,19 @@ public sealed class ValidationTool
 					"pk-duplicate" => "PK重複",
 					"fk-broken" => "FK参照切れ",
 					"type-mismatch" => "型不一致",
+					"plugin" => "プラグイン",
 					_ => kind
 				};
 
-				sb.AppendLine($"[{kindLabel}] {errorTableName} 行{rowIndex + 1} (rowIndex={rowIndex}) 列 \"{columnName}\": 値 \"{value}\" — {message}");
+					// rowIndex=-1 はジャンプ先が特定できないエラー（プラグインの構文エラー等）のため位置情報なしのフォーマットにする
+				if (rowIndex == -1)
+				{
+					sb.AppendLine($"[{kindLabel}] {message}");
+				}
+				else
+				{
+					sb.AppendLine($"[{kindLabel}] {errorTableName} 行{rowIndex + 1} (rowIndex={rowIndex}) 列 \"{columnName}\": 値 \"{value}\" — {message}");
+				}
 				totalCount++;
 			}
 
