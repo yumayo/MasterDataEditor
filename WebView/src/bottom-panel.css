@@ -51,7 +51,7 @@
 
 .bottom-panel-tab-active {
     opacity: 1;
-    border-bottom-color: var(--font-color);
+    border-bottom-color: var(--selection-color, #007fd4);
 }
 
 /* クリア・閉じるボタン（右端グループ） */
@@ -73,8 +73,10 @@
     background-color: rgba(255, 255, 255, 0.1);
 }
 
-/* 閉じるボタンを右端に寄せる */
-.bottom-panel-close {
+/* アクションボタン群を右端に寄せる */
+.bottom-panel-actions {
+    display: flex;
+    align-items: center;
     margin-left: auto;
     margin-right: 4px;
 }

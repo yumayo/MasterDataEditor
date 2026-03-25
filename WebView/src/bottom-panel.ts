@@ -63,12 +63,11 @@ export class BottomPanel {
         clearBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M6 2h4l1 1H5L6 2zM4 4h8v9l-1 1H5l-1-1V4zm2 2v6h1V6H6zm3 0v6h1V6H9z"/></svg>`;
         clearBtn.addEventListener('click', () => { this.debugConsole.clear(); });
         clearBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.debugConsole.clear(); });
-        tabBar.appendChild(clearBtn);
         this.clearBtn = clearBtn;
 
-        // 閉じるボタン（右端）
+        // 閉じるボタン
         const closeBtn = document.createElement('div');
-        closeBtn.classList.add('bottom-panel-action', 'bottom-panel-close');
+        closeBtn.classList.add('bottom-panel-action');
         closeBtn.setAttribute('role', 'button');
         closeBtn.setAttribute('tabindex', '0');
         closeBtn.setAttribute('title', 'パネルを閉じる');
@@ -76,7 +75,13 @@ export class BottomPanel {
         closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708z"/></svg>`;
         closeBtn.addEventListener('click', () => { this.element.style.display = 'none'; });
         closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.element.style.display = 'none'; });
-        tabBar.appendChild(closeBtn);
+
+        // アクションボタン群を右寄せグループにまとめる
+        const actions = document.createElement('div');
+        actions.classList.add('bottom-panel-actions');
+        actions.appendChild(clearBtn);
+        actions.appendChild(closeBtn);
+        tabBar.appendChild(actions);
 
         panel.appendChild(tabBar);
 
