@@ -148,7 +148,7 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
 
     // C# ↔ WebView ブリッジを構築する（コンストラクタでリスナー登録完了）
-    const bridge = new EditorApiBridge(editorApi);
+    const bridge = new EditorApiBridge(editorApi, debugConsole);
 
     // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
     (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;

@@ -1,3 +1,4 @@
+import type {DebugConsole} from "./debug-console";
 import type {EditorAPI} from "./editor-api-types";
 
 /**
@@ -6,14 +7,17 @@ import type {EditorAPI} from "./editor-api-types";
  * C# 側から postMessage で送信された editor_api_request を受信し、
  * EditorAPI のメソッドを呼び出してレスポンスを返す。
  * コンストラクタで window.chrome.webview にリスナーを登録する。
+ * MCP経由の呼び出しも DebugConsole に記録する。
  */
 export class EditorApiBridge {
     private readonly api: EditorAPI;
+    private readonly debugConsole: DebugConsole;
     /** リスナー関数。dispose() 後は false（センチネル値） */
     private listener: ((event: MessageEvent) => void) | false;
 
-    constructor(api: EditorAPI) {
+    constructor(api: EditorAPI, debugConsole: DebugConsole) {
         this.api = api;
+        this.debugConsole = debugConsole;
         // コンストラクタ完了時に有効な状態を保証する（生焼けオブジェクト防止）
         this.listener = (event: MessageEvent) => {
             let data: Record<string, unknown>;
@@ -41,8 +45,11 @@ export class EditorApiBridge {
 
     /** リクエストをディスパッチしてレスポンスを返す（非同期メソッドにも対応） */
     private async handleRequestAsync(requestId: string, method: string, params: Record<string, unknown>): Promise<void> {
+        const startTime = performance.now();
         try {
             const result = await this.dispatch(method, params);
+            const elapsedUs = Math.round((performance.now() - startTime) * 1000);
+            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'success', 'C#→WebView');
             // awaitポイント後にdispose済みの場合は応答を捨てる（WebView2ライフサイクル保護）
             if (this.listener === false) return;
             window.chrome.webview.postMessage(JSON.stringify({
@@ -52,6 +59,8 @@ export class EditorApiBridge {
                 data: result,
             }));
         } catch (e) {
+            const elapsedUs = Math.round((performance.now() - startTime) * 1000);
+            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'error', 'C#→WebView');
             if (this.listener === false) return;
             window.chrome.webview.postMessage(JSON.stringify({
                 type: 'editor_api_response',
