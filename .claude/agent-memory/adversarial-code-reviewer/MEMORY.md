@@ -22,6 +22,7 @@
 - `/WebView/src/plugin-validation-runner.ts` - Plugin validation (Web Worker sandbox)
 - `/WebView/src/reference-expression.ts` - DynamicReferenceSchema + parseReferenceExpression
 - `/WebView/src/model/editor-table-data-column.ts` - Column model with reference: string | DynamicReferenceSchema | null
+- `/WebView/src/editor-table-handler.ts` - Keyboard/mouse handler, markSavedAndUpdatePanel
 
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
@@ -32,11 +33,19 @@
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所
 - **document listener leak (anonymous arrow)**: removeEventListener不可
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換(editor-api.ts vs validation-panel.ts)**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
 - **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
 - **C# MCP出力のエッジケース未対応**: rowIndex=-1時のフォーマット崩壊 (ValidationTool.cs)
+- **MCP保存パスの後処理不足**: markSavedAndUpdatePanel相当の処理がMCPパスに未実装 (2026-03-26)
+
+## MCP Save Path vs Normal Save Path (2026-03-26)
+-> See `mcp-save-path-analysis.md`
+- markSavedAndUpdatePanel (normal): markAllSaved + updateDirtyMark + refreshGitDiffAsync + emitTableSaved
+- MCP saveTableAsync: markAllSaved + refreshGitDiffAsync only (missing updateDirtyMark, saveSchemaDataAsync)
+- Tab-closed case: dirtyTableNames not cleared after MCP save
+- Mini EditorTable git diff not updated (emitTableSaved goes to handlers only, not Tab)
 
 ## DynamicReferenceSchema Migration Patterns (2026-03-25)
 - reference型は `string | DynamicReferenceSchema | null` に統一済み
@@ -68,6 +77,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-26) MCP Save Git Diff: 致命的2件、重要2件、軽微3件
 - (2026-03-25) EditorAPI getValidationErrorsAsync + Plugin: 致命的2件、重要4件、軽微3件
 - (2026-03-25) DynamicReferenceSchema Migration: 致命的2件、重要4件、軽微3件
 - (2026-03-25) Plugin Validation: 致命的4件、重要5件、軽微4件
