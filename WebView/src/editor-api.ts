@@ -371,6 +371,13 @@ export class EditorApiImpl implements EditorAPI {
                 const tabState = tab.getTabStateByName(tableName);
                 if (tabState) {
                     store.markAllSaved(tableName);
+                    // RelationsPanel のDirtyマークを更新する（通常保存パスと同等の後処理）
+                    if (tabState.editorTable.relationsPanel !== false) {
+                        tabState.editorTable.relationsPanel.updateDirtyMark(tableName, false);
+                    }
+                    // 保存完了後にgit差分を再取得してセルのハイライトを更新する
+                    tabState.editorTable.refreshGitDiffAsync()
+                        .catch((e: unknown) => { console.error('[EditorAPI] refreshGitDiffAsync failed:', e); });
                 }
                 // テーブル保存イベントを発火する
                 const snapshot = [...tableSavedHandlers];

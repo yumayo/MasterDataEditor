@@ -2647,3 +2647,16 @@ DiffTab再利用時のCSVデータ未更新
 - **`page.keyboard.press()` の戻りは「キーイベントの配信完了」であり「イベントハンドラ内の非同期処理の完了」ではないことを認識する。**
 
 ---
+
+## 183. [d6bed8a] — MCP経由のsaveTableAsync保存後にgit差分ハイライトが更新されない問題を修正した
+
+### 不具合原因名
+操作パスの網羅漏れ（MCP保存パスの後処理欠落）
+
+### なぜそうなったのか
+通常の保存パス（Ctrl+S → editor-table-handler.ts の markSavedAndUpdatePanel）では `refreshGitDiffAsync()` と `relationsPanel.updateDirtyMark()` が呼ばれてセルのgit差分ハイライトとRelationsPanelのDirtyマークが正しく更新される。しかし、MCP経由の保存パス（editor-api.ts の saveTableAsync）は独立した保存パスとして実装されており、markSavedAndUpdatePanel と同等の後処理が追加されないまま残っていた。これはbug-report.md #7（94e0f41）と同じ構造的パターン「操作パスが複数ある場合に片方のパスでのみ副作用処理が実装される」の再発である。
+
+### どうしたら今後は再発しないか
+保存パスが複数存在する場合（Ctrl+Sパス、MCPパス、差分タブ保存パス等）、保存後の副作用処理（git差分更新・Dirtyマーク解除等）を追加する際は、必ず全保存パスで同等の後処理が実行されることを確認する。理想的には共通の後処理メソッドに集約して各パスが同じ処理を通す設計にすべき。新しい保存パスを追加する際のチェックリストとして「markSavedAndUpdatePanel の全処理と対称であるか」を確認すること。
+
+---
