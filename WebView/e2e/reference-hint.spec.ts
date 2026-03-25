@@ -152,7 +152,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         reference: {
                             sourceTable: "type_map",
                             sourceMatchColumn: "id",
-                            sourceMatchValue: "$type_id",
+                            sourceMatchValue: "type_id",
                             destTable: "master_table",
                             destColumn: "ja",
                         },

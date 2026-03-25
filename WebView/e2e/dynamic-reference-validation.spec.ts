@@ -98,7 +98,7 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 { key: 1, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_idの値でtableテーブルを検索し、masterカラムの値（テーブル名）を取得、
                 // そのテーブルのidカラムを参照する
-                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "$reward_table_id", destTable: "master", destColumn: "id" } },
+                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "id" } },
             ],
             primary_key: ["id"],
         }),

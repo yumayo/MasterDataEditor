@@ -225,7 +225,7 @@ test.describe('動的参照の逆参照ヒント表示', () => {
                     reference: {
                         sourceTable: "type_map",
                         sourceMatchColumn: "id",
-                        sourceMatchValue: "$type_id",
+                        sourceMatchValue: "type_id",
                         destTable: "master_table",
                         destColumn: "id",
                     },

@@ -32,7 +32,7 @@
             "reference": {
                 "sourceTable": "table",
                 "sourceMatchColumn": "id",
-                "sourceMatchValue": "$table_id",
+                "sourceMatchValue": "table_id",
                 "destTable": "master",
                 "destColumn": "id"
             },

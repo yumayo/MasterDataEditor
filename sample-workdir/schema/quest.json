@@ -24,7 +24,7 @@
             "reference": {
                 "sourceTable": "table",
                 "sourceMatchColumn": "id",
-                "sourceMatchValue": "$first_clear_reward_table_id",
+                "sourceMatchValue": "first_clear_reward_table_id",
                 "destTable": "master",
                 "destColumn": "id"
             },

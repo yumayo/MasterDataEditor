@@ -53,7 +53,7 @@ null/undefined 禁止 → boolean `false` や空文字 `""` をセンチネル�
 "reference": {
     "sourceTable": "table",
     "sourceMatchColumn": "id",
-    "sourceMatchValue": "$reward_table_id",
+    "sourceMatchValue": "reward_table_id",
     "destTable": "master",
     "destColumn": "id"
 }

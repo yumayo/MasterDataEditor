@@ -670,7 +670,7 @@ function createDynamicRefFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "table_id", type: "int", reference: "table.id" },
-                { key: 2, name: "record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "$table_id", destTable: "master", destColumn: "id" } },
+                { key: 2, name: "record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "table_id", destTable: "master", destColumn: "id" } },
                 { key: 3, name: "price", type: "int" },
             ],
             primary_key: ["id"],

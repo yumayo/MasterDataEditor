@@ -151,7 +151,7 @@ function createDynamicRefDefaultFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "reward_table_id", type: "int", reference: "table.id" },
-                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "$reward_table_id", destTable: "master", destColumn: "id" } },
+                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "id" } },
             ],
             primary_key: ["id"],
         }),

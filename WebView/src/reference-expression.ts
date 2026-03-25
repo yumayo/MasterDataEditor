@@ -7,7 +7,7 @@
  *    {
  *      "sourceTable": "table",
  *      "sourceMatchColumn": "id",
- *      "sourceMatchValue": "$reward_table_id",
+ *      "sourceMatchValue": "reward_table_id",
  *      "destTable": "master",
  *      "destColumn": "id"
  *    }
@@ -46,7 +46,7 @@ export type ReferenceExpression = SimpleReference | DynamicReference;
  * {
  *   "sourceTable": "table",
  *   "sourceMatchColumn": "id",
- *   "sourceMatchValue": "$reward_table_id",
+ *   "sourceMatchValue": "reward_table_id",
  *   "destTable": "master",
  *   "destColumn": "id"
  * }
@@ -54,7 +54,7 @@ export type ReferenceExpression = SimpleReference | DynamicReference;
 export interface DynamicReferenceSchema {
     sourceTable: string;
     sourceMatchColumn: string;
-    sourceMatchValue: string;  // "$reward_table_id" 形式（$付き）
+    sourceMatchValue: string;  // "reward_table_id" 形式（列名をそのまま指定）
     destTable: string;
     destColumn: string;
 }
@@ -91,10 +91,7 @@ export function parseReferenceExpression(expression: string | DynamicReferenceSc
             filter: {
                 tableName: expression.sourceTable,
                 filterColumn: expression.sourceMatchColumn,
-                // sourceMatchValue は "$reward_table_id" 形式なので先頭の $ を除去する
-                valueColumn: expression.sourceMatchValue.startsWith('$')
-                    ? expression.sourceMatchValue.substring(1)
-                    : expression.sourceMatchValue
+                valueColumn: expression.sourceMatchValue
             },
             lookupColumn: expression.destTable,
             targetColumn: expression.destColumn
