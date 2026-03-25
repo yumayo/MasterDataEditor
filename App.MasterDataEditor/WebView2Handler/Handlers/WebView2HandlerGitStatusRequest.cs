@@ -11,13 +11,14 @@ namespace App.MasterDataEditor
 		{
 			try
 			{
-				var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
+				var workDir = AppEnvironment.GetWorkDir();
+				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var output = GitCommandHelper.RunGitCommand(gitRoot, "status", "--porcelain");
 				var changes = new List<object>();
 				var staged = new List<object>();
 
 				// data/ディレクトリ内の.csvファイルのみをフィルタリングする
-				var dataPrefix = GitCommandHelper.GetDataPrefix();
+				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
 
 				foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
 				{

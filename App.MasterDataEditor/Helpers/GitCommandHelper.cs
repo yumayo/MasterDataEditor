@@ -21,11 +21,31 @@ namespace App.MasterDataEditor
 
 		/// <summary>
 		/// data/ディレクトリのプレフィックスを返す
-		/// git status --porcelain の出力パスはリポジトリルート相対であり、データは常にgitルート直下の data/ に配置される
+		/// git status --porcelain の出力パスはリポジトリルート相対であるため、
+		/// gitルートからworkDirまでの相対パスを含めたプレフィックスを返す
+		/// 例: gitRoot=/repo, workDir=/repo/sample-workdir → "sample-workdir/data/"
 		/// </summary>
-		public static string GetDataPrefix()
+		public static string GetDataPrefix(string gitRoot, string workDir)
 		{
-			return "data/";
+			var relativePath = Path.GetRelativePath(gitRoot, workDir).Replace('\\', '/');
+			if (relativePath == ".")
+			{
+				return "data/";
+			}
+			return relativePath + "/data/";
+		}
+
+		/// <summary>
+		/// git操作対象パスのバリデーションを行う
+		/// パストラバーサル防止・data/ディレクトリ内の.csvファイル制限を一元的にチェックする
+		/// 不正なパスの場合はエラーメッセージを返し、正常なら null を返す
+		/// </summary>
+		public static string ValidateDataPath(string path, string dataPrefix)
+		{
+			if (string.IsNullOrEmpty(path)) return "path is empty";
+			if (path.Contains("..") || Path.IsPathRooted(path)) return "invalid path";
+			if (!path.StartsWith(dataPrefix) || !path.EndsWith(".csv")) return "path must be " + dataPrefix + "*.csv";
+			return null;
 		}
 
 		/// <summary>

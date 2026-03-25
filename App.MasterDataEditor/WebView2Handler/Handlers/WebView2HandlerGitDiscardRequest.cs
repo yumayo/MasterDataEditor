@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Text.Json;
 
 namespace App.MasterDataEditor
@@ -12,52 +11,17 @@ namespace App.MasterDataEditor
 			{
 				if (!root.TryGetProperty("path", out var pathElement))
 				{
-					return new
-					{
-						type = "git_discard_response",
-						requestId,
-						success = false,
-						error = "path is required",
-					};
+					return new { type = "git_discard_response", requestId, success = false, error = "path is required" };
 				}
 
 				var path = pathElement.GetString();
-				if (string.IsNullOrEmpty(path))
+				var workDir = AppEnvironment.GetWorkDir();
+				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
+				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
+				var validationError = GitCommandHelper.ValidateDataPath(path, dataPrefix);
+				if (validationError != null)
 				{
-					return new
-					{
-						type = "git_discard_response",
-						requestId,
-						success = false,
-						error = "path is empty",
-					};
-				}
-
-				// パストラバーサル防止: ".." を含むパスや絶対パスは拒否する
-				if (path.Contains("..") || Path.IsPathRooted(path))
-				{
-					return new
-					{
-						type = "git_discard_response",
-						requestId,
-						success = false,
-						error = "invalid path",
-					};
-				}
-
-				var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
-				var dataPrefix = GitCommandHelper.GetDataPrefix();
-
-				// data/ディレクトリ内の.csvファイルのみを許可する
-				if (!path.StartsWith(dataPrefix) || !path.EndsWith(".csv"))
-				{
-					return new
-					{
-						type = "git_discard_response",
-						requestId,
-						success = false,
-						error = "path must be " + dataPrefix + "*.csv",
-					};
+					return new { type = "git_discard_response", requestId, success = false, error = validationError };
 				}
 
 				GitCommandHelper.RunGitCommand(gitRoot, "checkout", "--", path);
