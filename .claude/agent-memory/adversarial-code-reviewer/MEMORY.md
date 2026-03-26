@@ -47,10 +47,12 @@
 - Tab-closed case: dirtyTableNames not cleared after MCP save
 - Mini EditorTable git diff not updated (emitTableSaved goes to handlers only, not Tab)
 
-## DynamicReferenceSchema Migration Patterns (2026-03-25)
+## DynamicReferenceSchema Migration Patterns (2026-03-25, updated 2026-03-27)
 - reference型は `string | DynamicReferenceSchema | null` に統一済み
-- **未更新箇所**: relations-panel.ts L1003 `reference?: string` (致命的)
-- **main.ts起動バリデーション**: createSchemaEntryFromJson が動的参照をスキップ→起動時FKバリデーション漏れ
+- **destColumn動的解決 (2026-03-27)**: destColumnも動的解決に変更。セマンティクスが「列名そのもの」→「列名を格納するカラム名」に変化
+- **未更新箇所**: FKバッジのツールチップ(editor-table-structure.ts L620)がdestColumn間接参照の意味を反映していない
+- **main.ts起動バリデーション**: createSchemaEntryFromJson が動的参照をスキップ→起動時FKバリデーション漏れ（**依然未修正**）
+- **EditorAPI**: getReferences/getRelatedTablesAsync が動的参照列を完全に無視（SchemaEntry.references由来のため）
 - **serialize() roundtrip**: reference: null がJSONに出力され元スキーマを汚染
 - reference-data-cache.ts: Record<string, unknown>→as DynamicReferenceSchemaキャスト (型安全性不足)
 - search-data-provider.ts: 動的参照→空文字列変換が2箇所でコピペ
@@ -77,6 +79,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-27) destColumn動的解決: 致命的2件、重要5件、軽微3件
 - (2026-03-26) MCP Save Git Diff: 致命的2件、重要2件、軽微3件
 - (2026-03-25) EditorAPI getValidationErrorsAsync + Plugin: 致命的2件、重要4件、軽微3件
 - (2026-03-25) DynamicReferenceSchema Migration: 致命的2件、重要4件、軽微3件

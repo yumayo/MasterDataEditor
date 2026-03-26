@@ -15,7 +15,17 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-25）
+### 最新レビュー結果（2026-03-27）
+
+#### destColumn動的解決（dynamicReference） 評価: A
+- 良い点: reward_record_id ヘッダーの title="FK: 動的参照 (table → master.column)" で通常FKと区別できている。cell-error が動的参照のバリデーション失敗時に正確に付与される。2種類のエラーメッセージ（「参照先に値なし」と「参照元カラムが空」）が適切に区別されており、プランナーが問題を診断しやすい。RelationsPanelが行切替で動的に参照先テーブルを切り替える（quest id=1でchara、id=2でitem）。RP2（定義ジャンプ後）でも動的参照が正しく解決されている。Undoのバリデーション再計算が正確。
+- 修正必須(🔴): 動的参照が解決されている行で cell-reference-hint が表示されない。reward_table_id セルは「キャラ」と表示されるが、reward_record_id=3 は数字のまま。参照先の人間可読な値（例: まんぼう）をhintとして表示すべき。
+- 改善推奨(🟡): cell-error セルに aria-invalid/aria-describedby がない（継続課題）。
+- 改善推奨(🟡): fill-handle がミニテーブルに display:block で残存（継続課題）。
+- 改善推奨(🟡): relations-table-dirty（●）がエラーなし状態でも全セクションに表示。未保存変更がない場合は非表示にすべき。
+- 未確認: reward_record_id ドロップダウン候補が reward_table_id の値に応じて動的に切り替わるかのDOMダンプが存在しない。
+
+### 過去のレビュー結果（2026-03-25）
 
 #### プラグインバリデーション機能 評価: B
 - 良い点: プラグインバッジ（validation-panel-item-kind-plugin）が警告色（#cda632/黄金色）でPK重複・FK切れの赤バッジと明確に差別化されている。convertPluginErrors()でtableName="(plugin)"グループに分離し、PKエラーグループと視覚的に分断できている。PluginValidationRunnerのrunAllPluginsAsync()が構文エラーをcatchしてプラグインエラーとして報告するフォールスルー設計が適切。executePlugin()がnew Functionで実行スコープをtables/assertに限定しており安全。
