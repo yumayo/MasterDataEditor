@@ -16,12 +16,13 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //          バリデーションを無条件スキップしてエラーが出ない。
 //
 // テーブル構成:
-//   table: id, enum, comment, master（テーブルリスト。masterカラムに実テーブル名が入る）
+//   table: id, enum, comment, master, column（テーブルリスト。masterカラムに実テーブル名、columnカラムに参照先列名が入る）
 //   chara: id, name（キャラマスター）
 //   item:  id, name（アイテムマスター）
 //   quest: id, reward_table_id, reward_record_id
 //     reward_table_id   → reference: "table.id"
-//     reward_record_id  → reference: "$(table.id == $reward_table_id).master.id"
+//     reward_record_id  → reference: { destTable: "master", destColumn: "column" }
+//                         （masterカラムの値→テーブル名、columnカラムの値→列名、の両方を動的解決する）
 //
 // テストデータ:
 //   quest id=1: reward_table_id=1（chara）, reward_record_id=3（まんぼう）→ 有効
@@ -57,13 +58,15 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 { key: 1, name: "enum", type: "string" },
                 { key: 2, name: "comment", type: "string" },
                 { key: 3, name: "master", type: "string" },
+                // destColumn動的解決用: 参照先テーブルで使用するカラム名を格納する列
+                { key: 4, name: "column", type: "string" },
             ],
             primary_key: ["id"],
         }),
         "data/table.csv": [
-            "id,enum,comment,master",
-            "1,chara,キャラ,chara",
-            "2,item,アイテム,item",
+            "id,enum,comment,master,column",
+            "1,chara,キャラ,chara,id",
+            "2,item,アイテム,item,id",
         ].join("\n"),
         "schema/chara.json": JSON.stringify({
             header: [
@@ -97,8 +100,8 @@ function createDynamicRefValidationFileSystem(): MockFileSystem {
                 // tableテーブルのidを参照（どのテーブルかを指定する列）
                 { key: 1, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_idの値でtableテーブルを検索し、masterカラムの値（テーブル名）を取得、
-                // そのテーブルのidカラムを参照する
-                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "id" } },
+                // さらにcolumnカラムの値（列名）を動的に取得してそのテーブルの該当列を参照する
+                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "column" } },
             ],
             primary_key: ["id"],
         }),

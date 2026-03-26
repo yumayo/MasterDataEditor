@@ -21,6 +21,11 @@
             "key": 3,
             "name": "master",
             "type": "string"
+        },
+        {
+            "key": 4,
+            "name": "column",
+            "type": "string"
         }
     ],
     "primary_key": ["id"]

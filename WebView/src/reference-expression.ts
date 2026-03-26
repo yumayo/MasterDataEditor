@@ -9,7 +9,7 @@
  *      "sourceMatchColumn": "id",
  *      "sourceMatchValue": "reward_table_id",
  *      "destTable": "master",
- *      "destColumn": "id"
+ *      "destColumn": "column"
  *    }
  */
 
@@ -35,7 +35,7 @@ export interface DynamicReference {
         valueColumn: string;    // 同一行から取得する値の列名（$なしで格納）
     };
     lookupColumn: string;       // フィルタ結果から取得するカラム（テーブル名が入っている）
-    targetColumn: string;       // 最終的に参照する列
+    targetColumn: string;       // フィルタ結果から取得する参照先列名のカラム（列名が入っている）
 }
 
 export type ReferenceExpression = SimpleReference | DynamicReference;
@@ -48,7 +48,7 @@ export type ReferenceExpression = SimpleReference | DynamicReference;
  *   "sourceMatchColumn": "id",
  *   "sourceMatchValue": "reward_table_id",
  *   "destTable": "master",
- *   "destColumn": "id"
+ *   "destColumn": "column"
  * }
  */
 export interface DynamicReferenceSchema {
@@ -56,7 +56,7 @@ export interface DynamicReferenceSchema {
     sourceMatchColumn: string;
     sourceMatchValue: string;  // "reward_table_id" 形式（列名をそのまま指定）
     destTable: string;
-    destColumn: string;
+    destColumn: string;        // 参照先テーブルの列名を示すカラム名
 }
 
 /**

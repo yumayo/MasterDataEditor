@@ -397,9 +397,9 @@ export class RelationsPanel {
      * 解決ステップ:
      *   1. targetRow から expr.filter.valueColumn の値を取得（例: reward_table_id の値 "1"）
      *   2. フィルタテーブル（expr.filter.tableName）から expr.filter.filterColumn == 手順1の値 の行を線形検索
-     *   3. その行の expr.lookupColumn の値を取得（= 最終テーブル名、例: "chara"）
-     *   4. targetRow からこの列自身の値（= 最終テーブルの targetColumn で絞り込むFK値）を取得する
-     *   5. 最終テーブルのデータを取得し、expr.targetColumn == fkValue の行を絞り込む
+     *   3. その行の expr.lookupColumn / expr.targetColumn の値を動的取得する（= 最終テーブル名 / 最終参照列名）
+     *   4. targetRow からこの列自身の値（= 最終テーブルの resolvedTargetColumn で絞り込むFK値）を取得する
+     *   5. 最終テーブルのデータを取得し、resolvedTargetColumn == fkValue の行を絞り込む
      *   6. RelationEntry として返す
      *
      * 解決できない場合（列が存在しない、値が空、テーブルが取得できない等）は null を返す。
@@ -427,28 +427,31 @@ export class RelationsPanel {
         if (filterRowIdx === -1) return null;
         const filterRow = filterTableData.rows[filterRowIdx];
 
-        // 手順3: フィルタ結果の行から lookupColumn の値を取得する（= 最終テーブル名）
+        // 手順3: フィルタ結果の行から lookupColumn / targetColumn の値を動的取得する
         const lookupColIdx = filterTableData.header.indexOf(expr.lookupColumn);
-        if (lookupColIdx === -1) return null;
+        const targetColumnColIdx = filterTableData.header.indexOf(expr.targetColumn);
+        if (lookupColIdx === -1 || targetColumnColIdx === -1) return null;
         const targetTableName = filterRow[lookupColIdx];
         if (targetTableName === '') return null;
+        const resolvedTargetColumn = filterRow[targetColumnColIdx];
+        if (resolvedTargetColumn === '') return null;
 
-        // 手順4: 同一行からこの列自身の値（= 最終テーブルの targetColumn で絞り込むFK値）を取得する
+        // 手順4: 同一行からこの列自身の値（= 最終テーブルの resolvedTargetColumn で絞り込むFK値）を取得する
         const fkColIdx = rowHeader.indexOf(columnLabel);
         if (fkColIdx === -1) return null;
         const fkValue = targetRow[fkColIdx];
         if (fkValue === '') return null;
 
-        // 手順5: 最終テーブルのデータを取得して targetColumn == fkValue の行に絞り込む
+        // 手順5: 最終テーブルのデータを取得して resolvedTargetColumn == fkValue の行に絞り込む
         const targetTableData = await this.resolveTableDataAsync(targetTableName);
         // await 後に別リクエストが割り込んでいないか確認する
         if (requestId !== this.currentRequestId) return null;
-        const targetColIdx = targetTableData.header.indexOf(expr.targetColumn);
+        const targetColIdx = targetTableData.header.indexOf(resolvedTargetColumn);
         if (targetColIdx === -1) return null;
 
         // FK列値でフィルタし、実際のストアインデックスも収集する
         const { filteredRows: rows, filteredStoreRowIndices: storeRowIndices } =
-            this.filterRowsByColumn(targetTableData.rows, targetTableData.header, expr.targetColumn, fkValue);
+            this.filterRowsByColumn(targetTableData.rows, targetTableData.header, resolvedTargetColumn, fkValue);
 
         return {
             label: columnLabel,

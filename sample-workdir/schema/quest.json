@@ -26,7 +26,7 @@
                 "sourceMatchColumn": "id",
                 "sourceMatchValue": "first_clear_reward_table_id",
                 "destTable": "master",
-                "destColumn": "id"
+                "destColumn": "column"
             },
             "width": 224
         },

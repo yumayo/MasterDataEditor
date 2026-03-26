@@ -1114,10 +1114,15 @@ export class EditorTableHandler {
             return undefined;
         }
 
-        // 3. フィルタ列（filterColumn）で値を検索し、lookupColumn の値を取得
+        // 3. フィルタ列（filterColumn）で値を検索し、lookupColumn / targetColumn の値を取得
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
         if (lookupColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' not found in table '${expr.filter.tableName}'`);
+            return undefined;
+        }
+        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
+        if (targetColumnIndex === -1) {
+            console.warn(`Dynamic reference: column '${expr.targetColumn}' not found in table '${expr.filter.tableName}'`);
             return undefined;
         }
 
@@ -1132,11 +1137,16 @@ export class EditorTableHandler {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' is empty for '${expr.filter.filterColumn}'='${cellValue}'`);
             return undefined;
         }
+        const resolvedTargetColumn = row[targetColumnIndex];
+        if (resolvedTargetColumn === '') {
+            console.warn(`Dynamic reference: column '${expr.targetColumn}' is empty for '${expr.filter.filterColumn}'='${cellValue}'`);
+            return undefined;
+        }
 
         // 4. 解決した参照を返す
         return {
             tableName: targetTableName,
-            columnName: expr.targetColumn
+            columnName: resolvedTargetColumn
         };
     }
 

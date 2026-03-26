@@ -344,7 +344,7 @@ export class ValidationEngine {
      *   1. 同一行の filter.valueColumn 値を取得（空かつセル値が非空ならエラー）
      *   2. filter.tableName テーブルで filter.filterColumn == その値 の行を線形検索
      *   3. 一致行の lookupColumn 値（= 参照先テーブル名）を取得
-     *   4. そのテーブルの targetColumn に cellValue が存在するか検証
+     *   4. そのテーブルの resolvedTargetColumn（動的解決済み列名）に cellValue が存在するか検証
      * 空値とデフォルト値はFK検証をスキップする。
      * フィルタテーブルまたは最終テーブルが未ロードの場合:
      *   現在のストア値と一致する previousErrors のエラーのみを preservableErrors に追加して引き継ぐ。
@@ -375,6 +375,7 @@ export class ValidationEngine {
         let filterRows: string[][] | null = null;
         let filterColIdx = -1;
         let lookupColIdx = -1;
+        let targetColumnColIdx = -1;
         const storeFilterHeader = this.store.getHeader(expr.filter.tableName);
         const storeFilterRows = this.store.getRows(expr.filter.tableName);
         if (storeFilterHeader !== false && storeFilterRows !== false) {
@@ -390,8 +391,9 @@ export class ValidationEngine {
         if (filterHeader !== null) {
             filterColIdx = filterHeader.indexOf(expr.filter.filterColumn);
             lookupColIdx = filterHeader.indexOf(expr.lookupColumn);
-            // フィルタ列またはlookup列がフィルタテーブルに存在しなければフィルタ解決不能
-            if (filterColIdx === -1 || lookupColIdx === -1) {
+            targetColumnColIdx = filterHeader.indexOf(expr.targetColumn);
+            // フィルタ列・lookup列・targetColumn列がフィルタテーブルに存在しなければフィルタ解決不能
+            if (filterColIdx === -1 || lookupColIdx === -1 || targetColumnColIdx === -1) {
                 filterHeader = null;
                 filterRows = null;
             }
@@ -449,38 +451,41 @@ export class ValidationEngine {
                 continue;
             }
 
-            // lookupColumn の値が参照先テーブル名
+            // lookupColumn / targetColumn の値をフィルタ行から動的取得する
             const targetTableName = filterRows[filterRowIndex][lookupColIdx];
             if (targetTableName === '') continue;
+            const resolvedTargetColumn = filterRows[filterRowIndex][targetColumnColIdx];
+            if (resolvedTargetColumn === '') continue;
 
-            // キャッシュにあればそれを使う
-            if (!targetValidValuesCache.has(targetTableName)) {
+            // キャッシュキーはテーブル名と列名の組み合わせ（同一テーブルでも列が異なる場合がある）
+            const cacheKey = `${targetTableName}.${resolvedTargetColumn}`;
+            if (!targetValidValuesCache.has(cacheKey)) {
                 // まずストアを参照し、未ロードならReferenceDataCacheにフォールバックする
                 const targetHeader = this.store.getHeader(targetTableName);
                 const targetRows = this.store.getRows(targetTableName);
                 if (targetHeader !== false && targetRows !== false) {
                     // ストアにロード済み: ストアのデータで有効値セットを構築する
-                    const targetColIdx = targetHeader.indexOf(expr.targetColumn);
+                    const targetColIdx = targetHeader.indexOf(resolvedTargetColumn);
                     if (targetColIdx === -1) {
-                        targetValidValuesCache.set(targetTableName, null);
+                        targetValidValuesCache.set(cacheKey, null);
                     } else {
                         const validValues = new Set<string>();
                         for (const targetRow of targetRows) {
                             const val = targetRow[targetColIdx];
                             if (val !== '') validValues.add(val);
                         }
-                        targetValidValuesCache.set(targetTableName, validValues);
+                        targetValidValuesCache.set(cacheKey, validValues);
                     }
                 } else {
                     // ストア未ロード: ReferenceDataCacheからプリロード済みデータを取得する
                     const fullData = this.referenceDataCache.getFullDataSync(targetTableName);
                     if (fullData === false) {
                         // キャッシュにも存在しない: 現在値一致チェックで前回エラーを引き継ぐ
-                        targetValidValuesCache.set(targetTableName, null);
+                        targetValidValuesCache.set(cacheKey, null);
                     } else {
-                        const targetColIdx = fullData.header.indexOf(expr.targetColumn);
+                        const targetColIdx = fullData.header.indexOf(resolvedTargetColumn);
                         if (targetColIdx === -1) {
-                            targetValidValuesCache.set(targetTableName, null);
+                            targetValidValuesCache.set(cacheKey, null);
                         } else {
                             // ReferenceTableFullData.rows は Map<string, string[]> なので values() を走査する
                             const validValues = new Set<string>();
@@ -488,14 +493,14 @@ export class ValidationEngine {
                                 const val = row[targetColIdx];
                                 if (val !== '') validValues.add(val);
                             }
-                            targetValidValuesCache.set(targetTableName, validValues);
+                            targetValidValuesCache.set(cacheKey, validValues);
                         }
                     }
                 }
             }
 
-            const validValues = targetValidValuesCache.get(targetTableName);
-            // Map.get() は undefined を返しうるが、上の has() ガードで必ず set 済み。null は未解決テーブルを示す。
+            const validValues = targetValidValuesCache.get(cacheKey);
+            // Map.get() は undefined を返しうるが、上の has() ガードで必ず set 済み。null は未解決テーブル/列を示す。
             if (validValues == null) {
                 // 未解決テーブル: 現在値と filterValue の両方が一致する前回エラーのみ引き継ぐ
                 // filterValue が変わっていれば参照先テーブルが切り替わったので古いエラーは引き継がない
@@ -512,7 +517,7 @@ export class ValidationEngine {
                     columnName: colName,
                     value: cellValue,
                     kind: 'fk-broken',
-                    message: `参照先 ${targetTableName}.${expr.targetColumn} に値 "${cellValue}" が存在しません`,
+                    message: `参照先 ${targetTableName}.${resolvedTargetColumn} に値 "${cellValue}" が存在しません`,
                     filterValue,
                     pkValue: this.resolvePkValueForRow(schema, header, rows, r),
                 });

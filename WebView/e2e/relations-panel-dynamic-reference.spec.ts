@@ -15,13 +15,13 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   という仕様を検証する。
 //
 // テーブル構成:
-//   table: id, enum, comment, master（テーブルリスト。masterカラムに実テーブル名が入る）
+//   table: id, enum, comment, master, column（テーブルリスト。masterカラムに実テーブル名、columnカラムに参照先列名が入る）
 //   chara: id, name（キャラマスター）
 //   item:  id, name（アイテムマスター）
 //   quest: id, reward_table_id, reward_record_id, quest_reward_group_id
 //     reward_table_id     → reference: "table.id"（どのテーブルかを指定）
-//     reward_record_id    → reference: "$(table.id == $reward_table_id).master.id"
-//                           （reward_table_id の値でtableテーブルを検索しmasterカラムを取得 → そのテーブルのidを参照）
+//     reward_record_id    → reference: { destTable: "master", destColumn: "column" }
+//                           （masterカラムの値→テーブル名、columnカラムの値→列名、の両方を動的解決する）
 //     quest_reward_group_id → reference: "quest_reward.group_id"（通常の逆参照）
 //   quest_reward: id, group_id, reward_name
 //
@@ -41,13 +41,15 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 { key: 1, name: "enum", type: "string" },
                 { key: 2, name: "comment", type: "string" },
                 { key: 3, name: "master", type: "string" },
+                // destColumn動的解決用: 参照先テーブルで使用するカラム名を格納する列
+                { key: 4, name: "column", type: "string" },
             ],
             primary_key: ["id"],
         }),
         "data/table.csv": [
-            "id,enum,comment,master",
-            "1,chara,キャラ,chara",
-            "2,item,アイテム,item",
+            "id,enum,comment,master,column",
+            "1,chara,キャラ,chara,id",
+            "2,item,アイテム,item,id",
         ].join("\n"),
         "schema/chara.json": JSON.stringify({
             header: [
@@ -80,8 +82,8 @@ function createDynamicReferenceTestFileSystem(): MockFileSystem {
                 // tableテーブルのidを参照（どのテーブルかを指定する列）
                 { key: 1, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_idの値でtableテーブルを検索し、masterカラムの値（テーブル名）を取得、
-                // そのテーブルのidカラムを参照する
-                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "id" } },
+                // さらにcolumnカラムの値（列名）を動的に取得してそのテーブルの該当列を参照する
+                { key: 2, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "column" } },
                 // quest_rewardのgroup_idを参照（通常の単純参照）
                 { key: 3, name: "quest_reward_group_id", type: "int", reference: "quest_reward.group_id" },
             ],
@@ -156,11 +158,11 @@ function getRelationSection(page: Page, tableName: string): Locator {
 //      chara セクションが表示されない → このアサーションが RED で失敗する
 //
 // フィクスチャ構成（ペインスタックドリルダウン専用）:
-//   table: id, master（テーブルリスト。master カラムに実テーブル名が入る）
+//   table: id, master, column（テーブルリスト。masterカラムに実テーブル名、columnカラムに参照先列名が入る）
 //   chara: id, name（キャラマスター）
 //   quest: id, name（クエストマスター）
 //   quest_reward: id, quest_id（→ quest.id 参照）, reward_table_id（→ table.id 参照）,
-//                 reward_record_id（動的参照: $(table.id == $reward_table_id).master.id → chara.id）
+//                 reward_record_id（動的参照: { destTable: "master", destColumn: "column" } → chara.id）
 //
 //   quest_reward id=1: quest_id=1, reward_table_id=1 → master="chara" → chara.id=2
 //   quest_reward id=2: quest_id=1, reward_table_id=1 → master="chara" → chara.id=3
@@ -175,12 +177,14 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "master", type: "string" },
+                // destColumn動的解決用: 参照先テーブルで使用するカラム名を格納する列
+                { key: 2, name: "column", type: "string" },
             ],
             primary_key: ["id"],
         }),
         "data/table.csv": [
-            "id,master",
-            "1,chara",
+            "id,master,column",
+            "1,chara,id",
         ].join("\n"),
         "schema/chara.json": JSON.stringify({
             header: [
@@ -215,8 +219,8 @@ function createPaneStackDynamicReferenceTestFileSystem(): MockFileSystem {
                 // table.id への参照（どのテーブルかを指定する列）
                 { key: 2, name: "reward_table_id", type: "int", reference: "table.id" },
                 // 動的参照: reward_table_id の値で table テーブルを検索し master カラムの値（テーブル名）を取得、
-                // そのテーブルの id カラムを参照する
-                { key: 3, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "id" } },
+                // さらに column カラムの値（列名）を動的に取得してそのテーブルの該当列を参照する
+                { key: 3, name: "reward_record_id", type: "int", reference: { sourceTable: "table", sourceMatchColumn: "id", sourceMatchValue: "reward_table_id", destTable: "master", destColumn: "column" } },
             ],
             primary_key: ["id"],
         }),
