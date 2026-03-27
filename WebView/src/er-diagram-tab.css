@@ -1,0 +1,101 @@
+/* ER図タブのスタイル */
+
+.er-diagram-container {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #1e1e1e;
+}
+
+.er-diagram-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ノード */
+.er-node {
+    cursor: pointer;
+}
+
+.er-node-bg {
+    fill: #252526;
+    stroke: #3c3c3c;
+    stroke-width: 1.5;
+}
+
+.er-node-selected .er-node-bg {
+    stroke: #007acc;
+    stroke-width: 2.5;
+}
+
+.er-node-title {
+    fill: #e0e0e0;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.er-node-column {
+    fill: #aaa;
+    font-size: 12px;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+/* PK列: 太字 */
+.er-node-column-pk {
+    fill: #dcdcaa;
+    font-weight: bold;
+}
+
+/* FK列: 色付き */
+.er-node-column-fk {
+    fill: #569cd6;
+}
+
+/* 単純参照エッジ: 実線青 */
+.er-edge-simple {
+    stroke: #569cd6;
+    stroke-width: 1.5;
+    fill: none;
+}
+
+/* 動的参照エッジ: 破線オレンジ */
+.er-edge-dynamic {
+    stroke: #ce9178;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 3;
+    fill: none;
+}
+
+/* ハイライトエッジ */
+.er-edge-highlighted {
+    stroke-width: 3;
+    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.3));
+}
+
+/* ノード内テキスト: マウスイベントを背景矩形に透過させる */
+.er-node-title, .er-node-column {
+    pointer-events: none;
+}
+
+/* 凡例 */
+.er-legend {
+    pointer-events: none;
+}
+
+/* 凡例背景（テーマ対応） */
+.er-legend-bg {
+    fill: var(--background-color, #1e1e1e);
+    fill-opacity: 0.85;
+    stroke: #555;
+}
+
+/* 凡例テキスト（テーマ対応） */
+.er-legend-text {
+    fill: var(--font-color, #ccc);
+    font-size: 12px;
+}
+
+[data-theme="dark"] .er-legend-bg { stroke: #555; }
+[data-theme="light"] .er-legend-bg { stroke: #ccc; }

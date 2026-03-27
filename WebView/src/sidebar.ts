@@ -202,6 +202,13 @@ export class Sidebar {
     }
 
     private switchPanel(item: ActivityBarItem): void {
+        // ER図はサイドバーパネルではなく専用タブを開く特別扱い
+        // アクティビティバーの active 状態は変更しない（前のパネルのまま維持する）
+        if (item === 'erDiagram') {
+            this.tab.openErDiagramTab();
+            return;
+        }
+
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.referencesPanel.hide();
         this.searchPanel.hide();

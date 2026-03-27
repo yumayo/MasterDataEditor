@@ -26,12 +26,16 @@ import {FormPanel} from "./form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "./notification";
 import type {EditorAPI} from "./editor-api-types";
+import {ErDiagramTab} from "./er-diagram-tab";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
 
 /** 差分タブ名のプレフィックス */
 const DIFF_TAB_PREFIX = '差分: ';
+
+/** ER図タブの固定名 */
+const ER_DIAGRAM_TAB_NAME = 'ER Diagram';
 
 /**
  * タブごとの状態を保持するインターフェース
@@ -133,6 +137,12 @@ export class Tab {
     /** 差分タブのDiffTabインスタンスマップ（キー: 差分タブ名 = DIFF_TAB_PREFIX + tableName） */
     private readonly diffTabs: Map<string, DiffTab>;
 
+    /** ER図タブのラッパー要素（ER図タブが開かれた後に生成される。未生成時は false） */
+    private erDiagramWrapperElement: HTMLElement | false;
+
+    /** ER図タブのインスタンス（未生成時は false） */
+    private erDiagramTab: ErDiagramTab | false;
+
     /**
      * 現在表示中のフォームパネル（PKセル右クリック→「フォームビューを表示」で生成）
      * 表示中でない場合は false
@@ -189,6 +199,8 @@ export class Tab {
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
         this.diffTabs = new Map();
+        this.erDiagramWrapperElement = false;
+        this.erDiagramTab = false;
         this.currentFormPanel = false;
         this.validationPanel = false;
         this.editorApi = false;
@@ -449,8 +461,8 @@ export class Tab {
 
         this.removeTabButton(name);
 
-        // テーブルクローズイベントを発火する（設定タブ・差分タブは通常テーブルではないため除外する）
-        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
+        // テーブルクローズイベントを発火する（設定タブ・差分タブ・ER図タブは通常テーブルではないため除外する）
+        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && name !== ER_DIAGRAM_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
             this.editorApi.emitTableClosed(name);
         }
 
@@ -468,6 +480,21 @@ export class Tab {
             }
             this.settingsPanel = false;
             this.settingsWrapperElement = false;
+        }
+
+        // ER図タブが閉じられた場合: document リスナーを解除し DOM からラッパー要素を除去してフィールドをリセットする
+        if (name === ER_DIAGRAM_TAB_NAME) {
+            if (wasActive) {
+                this.editor.leaveSettingsMode();
+            }
+            if (this.erDiagramTab !== false) {
+                this.erDiagramTab.destroy();
+            }
+            if (this.erDiagramWrapperElement !== false) {
+                this.erDiagramWrapperElement.remove();
+            }
+            this.erDiagramTab = false;
+            this.erDiagramWrapperElement = false;
         }
 
         // 差分タブが閉じられた場合: 対象の DiffTab を破棄してマップから除去する
@@ -703,8 +730,8 @@ export class Tab {
         tabButton.enable();
 
         // エクスプローラーのハイライトを更新する
-        // 設定タブ・差分タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
-        if (name === SETTINGS_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
+        // 設定タブ・差分タブ・ER図タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
+        if (name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
             this.sidebar.clearExplorerHighlight();
         } else {
             this.sidebar.highlightExplorerFile(name);
@@ -716,21 +743,32 @@ export class Tab {
             return;
         }
 
+        // ER図タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
+        if (name === ER_DIAGRAM_TAB_NAME) {
+            this.activateErDiagramTab();
+            return;
+        }
+
         // 設定タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name === SETTINGS_TAB_NAME) {
             this.activateSettingsTab();
             return;
         }
 
-        // 設定タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
+        // 設定タブ・ER図タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
         // この判定は activateTabState() より前で行う必要がある（activateTabState 内は常に通常タブの文脈）
-        if (this.activeTabName === SETTINGS_TAB_NAME) {
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
         // 設定タブが表示中であれば非表示にする
         if (this.settingsWrapperElement !== false) {
             this.settingsWrapperElement.style.display = 'none';
+        }
+
+        // ER図タブが表示中であれば非表示にする
+        if (this.erDiagramWrapperElement !== false) {
+            this.erDiagramWrapperElement.style.display = 'none';
         }
 
         // 現在アクティブなタブが差分タブの場合のみ非表示にして leaveSettingsMode() を呼ぶ
@@ -794,6 +832,81 @@ export class Tab {
     }
 
     /**
+     * ER図タブをタブバーに開く。
+     * 既に存在する場合は単純にアクティブ化する。
+     * アクティビティバーの erDiagram アイコンクリック時に Sidebar 経由で呼ばれる。
+     */
+    openErDiagramTab(): void {
+        const tabButton = this.append(ER_DIAGRAM_TAB_NAME, null);
+        tabButton.click();
+    }
+
+    /**
+     * ER図タブをアクティブ化する。
+     * enableTabButton('ER Diagram') から呼ばれる。
+     * ErDiagramTab の初回生成・再表示を担う。
+     * 設定タブと同様に全幅表示する。
+     */
+    private activateErDiagramTab(): void {
+        // 設定タブ・差分タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
+        if (this.activeTabName === SETTINGS_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+            this.editor.leaveSettingsMode();
+        }
+
+        // 差分タブがアクティブだった場合: 全差分タブを非表示にする
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabs.forEach(diffTab => diffTab.hide());
+        }
+
+        // 通常テーブルタブがアクティブなら非アクティブ化する
+        if (this.activeTabName && this.activeTabName !== ER_DIAGRAM_TAB_NAME) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+
+        // 設定タブが表示中であれば非表示にする
+        if (this.settingsWrapperElement !== false) {
+            this.settingsWrapperElement.style.display = 'none';
+        }
+
+        this.activeTabName = ER_DIAGRAM_TAB_NAME;
+
+        // 初回のみ ErDiagramTab とラッパーを生成する
+        if (this.erDiagramWrapperElement === false) {
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('tab-wrapper', 'er-diagram-tab-wrapper');
+            this.editor.appendChild(wrapper);
+            this.erDiagramWrapperElement = wrapper;
+
+            this.erDiagramTab = new ErDiagramTab(this);
+            this.erDiagramTab.appendTo(wrapper);
+            // スキーマ読み込みと SVG 描画を非同期で開始する
+            this.erDiagramTab.buildAsync().catch(e => { console.error('ER図構築エラー', e); });
+        }
+
+        // RelationsPanel を非表示にする（ER図画面に不要）
+        this.relationsPanel.disconnectEditorTable();
+
+        // editor-right-slot とナビゲーションバーを非表示にする（ER図を全幅表示するため）
+        this.editor.enterSettingsMode();
+
+        // ER図パネルを表示する
+        this.erDiagramWrapperElement.style.display = '';
+    }
+
+    /**
+     * ER図ノードクリックからテーブルタブを開く（ErDiagramTab から呼ばれる）
+     * エクスプローラーのクリックと同じように、タブを作成してアクティブにする
+     */
+    openTableByErDiagram(tableName: string): void {
+        this.append(tableName, null);
+        this.enableTabButton(tableName);
+    }
+
+    /**
      * 設定タブをアクティブ化する。
      * enableTabButton('設定') から呼ばれる。
      * SettingsPanel の初回生成・再表示を担う。
@@ -804,6 +917,11 @@ export class Tab {
         // 差分タブがアクティブだった場合: 全差分タブを非表示にする
         if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             this.diffTabs.forEach(diffTab => diffTab.hide());
+        }
+
+        // ER図タブが表示中であれば非表示にする
+        if (this.erDiagramWrapperElement !== false) {
+            this.erDiagramWrapperElement.style.display = 'none';
         }
 
         // 通常テーブルタブがアクティブなら非アクティブ化する
@@ -914,22 +1032,27 @@ export class Tab {
      */
     private activateDiffTab(diffTabName: string): void {
         // 通常テーブルタブがアクティブなら非アクティブ化する
-        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME) {
+        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME && this.activeTabName !== ER_DIAGRAM_TAB_NAME) {
             const previousState = this.tabStates.get(this.activeTabName);
             if (previousState) {
                 this.deactivateTabState(previousState);
             }
         }
 
-        // 設定タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // 設定タブ・ER図タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
         // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
-        if (this.activeTabName === SETTINGS_TAB_NAME) {
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
         // 設定タブが表示中であれば非表示にする
         if (this.settingsWrapperElement !== false) {
             this.settingsWrapperElement.style.display = 'none';
+        }
+
+        // ER図タブが表示中であれば非表示にする
+        if (this.erDiagramWrapperElement !== false) {
+            this.erDiagramWrapperElement.style.display = 'none';
         }
 
         this.activeTabName = diffTabName;
@@ -978,7 +1101,7 @@ export class Tab {
         // enableTabButton は highlightExplorerFile / activateTabState も内包するため、
         // ハイライト・スクロール位置復元・activeTabName の更新がすべてここで完結する。
         const remainingNormal = this.tabButtons.find(
-            btn => btn.name !== SETTINGS_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
+            btn => btn.name !== SETTINGS_TAB_NAME && btn.name !== ER_DIAGRAM_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
         );
         if (remainingNormal) {
             this.enableTabButton(remainingNormal.name);

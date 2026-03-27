@@ -1,0 +1,254 @@
+import {test, expect} from './fixtures/test';
+import {Page, Locator} from '@playwright/test';
+import {installMockApiAsync, MockFileSystem} from './fixtures/mock-api';
+
+// =============================================================================
+// ER図機能テスト
+//
+// アクティビティバーの ER 図アイコンをクリックするとエディター領域に
+// 「ER Diagram」タブが開き、SVG キャンバスでテーブル間のリレーションを
+// ノード・エッジとして描画する。設定タブ（openSettingsTab）と同じパターン。
+//
+// テストデータ構成:
+//   item: id(PK), name, weapon_id(FK→weapon.id) — 単純参照
+//   weapon: id(PK), name, type — 被参照テーブル
+//   quest: id(PK), name, reward_type(動的参照→reward_config経由) — 動的参照
+//   reward_config: id(PK), reward_type, target_table, target_column — 中間テーブル
+// =============================================================================
+
+/**
+ * ER図テスト用のファイルシステムを生成する
+ *
+ * 4テーブル構成:
+ *   item → weapon（単純参照: weapon_id → weapon.id）
+ *   quest → reward_config（動的参照: reward_type 経由）
+ */
+function createErDiagramTestFileSystem(): MockFileSystem {
+    return {
+        "schema/item.json": JSON.stringify({
+            description: "アイテム",
+            primary_key: ["id"],
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "weapon_id", type: "int", reference: "weapon.id"},
+            ],
+        }),
+        "data/item.csv": [
+            "id,name,weapon_id",
+            "1,Iron Sword,1",
+            "2,Steel Sword,2",
+        ].join("\n"),
+        "schema/weapon.json": JSON.stringify({
+            description: "武器",
+            primary_key: ["id"],
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "type", type: "string"},
+            ],
+        }),
+        "data/weapon.csv": [
+            "id,name,type",
+            "1,Short Sword,sword",
+            "2,Long Sword,sword",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            description: "クエスト",
+            primary_key: ["id"],
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "reward_type", type: "int", reference: {
+                    sourceTable: "reward_config",
+                    sourceMatchColumn: "id",
+                    sourceMatchValue: "reward_type",
+                    destTable: "target_table",
+                    destColumn: "target_column",
+                }},
+            ],
+        }),
+        "data/quest.csv": [
+            "id,name,reward_type",
+            "1,Dragon Quest,1",
+            "2,Final Quest,2",
+        ].join("\n"),
+        "schema/reward_config.json": JSON.stringify({
+            description: "報酬設定",
+            primary_key: ["id"],
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "reward_type", type: "string"},
+                {key: 2, name: "target_table", type: "string"},
+                {key: 3, name: "target_column", type: "string"},
+            ],
+        }),
+        "data/reward_config.csv": [
+            "id,reward_type,target_table,target_column",
+            "1,weapon,weapon,id",
+            "2,item,item,id",
+        ].join("\n"),
+    };
+}
+
+/**
+ * アクティビティバーのER図アイコンをクリックしてER図タブを開く
+ */
+async function openErDiagramAsync(page: Page): Promise<void> {
+    await page.locator('.activity-bar-item[data-panel="erDiagram"]').click();
+}
+
+/**
+ * ER図タブ内のSVGキャンバスを取得する
+ */
+function getErDiagramSvg(page: Page): Locator {
+    return page.locator('.er-diagram-svg');
+}
+
+/**
+ * テーブルを開いてエディターテーブルが表示されるまで待機する
+ */
+async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
+    const explorer = page.locator('#explorer');
+    await explorer.getByText(tableName, {exact: true}).click();
+    const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
+    await expect(table).toBeVisible();
+    return table;
+}
+
+test.describe('ER図機能', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createErDiagramTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('アクティビティバーにerDiagramアイコンが表示される', async ({page}) => {
+        // erDiagram アイコンが存在すること
+        const erDiagramIcon = page.locator('.activity-bar-item[data-panel="erDiagram"]');
+        await expect(erDiagramIcon).toBeVisible();
+        // BOOKMARKS と SOURCE CONTROL の間に配置されていることを検証する
+        const items = page.locator('.activity-bar .activity-bar-item:not(.activity-bar-settings)');
+        const panelNames: string[] = [];
+        const count = await items.count();
+        for (let i = 0; i < count; i++) {
+            const panel = await items.nth(i).getAttribute('data-panel');
+            if (panel) panelNames.push(panel);
+        }
+        const erDiagramIndex = panelNames.indexOf('erDiagram');
+        const bookmarksIndex = panelNames.indexOf('bookmarks');
+        const sourceControlIndex = panelNames.indexOf('sourceControl');
+        expect(erDiagramIndex).toBeGreaterThan(bookmarksIndex);
+        expect(erDiagramIndex).toBeLessThan(sourceControlIndex);
+    });
+
+    test('erDiagramアイコンクリックでER図タブが開く', async ({page}) => {
+        await openErDiagramAsync(page);
+        // 「ER Diagram」タブがタブバーに追加されていること
+        const tabButton = page.locator('.tab-button', {hasText: 'ER Diagram'});
+        await expect(tabButton).toBeVisible();
+        // SVG キャンバスが表示されること
+        const svg = getErDiagramSvg(page);
+        await expect(svg).toBeVisible();
+    });
+
+    test('テーブルがノードとして表示される', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // 4テーブル分のノードが表示されること（item, weapon, quest, reward_config）
+        const nodes = svg.locator('.er-node');
+        await expect(nodes).toHaveCount(4);
+        // 各ノードにテーブル名が表示されること
+        const nodeNames: string[] = [];
+        const nodeCount = await nodes.count();
+        for (let i = 0; i < nodeCount; i++) {
+            const title = await nodes.nth(i).locator('.er-node-title').textContent();
+            if (title) nodeNames.push(title.trim());
+        }
+        expect(nodeNames).toContain('item');
+        expect(nodeNames).toContain('weapon');
+        expect(nodeNames).toContain('quest');
+        expect(nodeNames).toContain('reward_config');
+        // item ノードの列一覧を検証する
+        const itemNode = svg.locator('.er-node', {has: page.locator('.er-node-title', {hasText: 'item'})});
+        const itemColumns = itemNode.locator('.er-node-column');
+        await expect(itemColumns).toHaveCount(3); // id, name, weapon_id
+        // PK列（id）に pk クラスが付与されること
+        const pkColumn = itemNode.locator('.er-node-column-pk');
+        await expect(pkColumn).toHaveCount(1);
+        await expect(pkColumn).toHaveText(/id/);
+        // FK列（weapon_id）に fk クラスが付与されること
+        const fkColumn = itemNode.locator('.er-node-column-fk');
+        await expect(fkColumn).toHaveCount(1);
+        await expect(fkColumn).toHaveText(/weapon_id/);
+    });
+
+    test('単純参照が実線エッジで表示される', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // item.weapon_id → weapon.id の単純参照エッジが存在すること
+        const simpleEdges = svg.locator('.er-edge-simple');
+        // 少なくとも1本の単純参照エッジがあること
+        const simpleEdgeCount = await simpleEdges.count();
+        expect(simpleEdgeCount).toBeGreaterThanOrEqual(1);
+        // item → weapon のエッジがあることを data 属性で検証する
+        const itemWeaponEdge = svg.locator('.er-edge-simple[data-from="item"][data-to="weapon"]');
+        await expect(itemWeaponEdge).toHaveCount(1);
+    });
+
+    test('動的参照が破線エッジで表示される', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // quest.reward_type の動的参照エッジが存在すること
+        const dynamicEdges = svg.locator('.er-edge-dynamic');
+        // 少なくとも1本の動的参照エッジがあること
+        const dynamicEdgeCount = await dynamicEdges.count();
+        expect(dynamicEdgeCount).toBeGreaterThanOrEqual(1);
+        // quest → reward_config のエッジがあることを data 属性で検証する
+        const questRewardEdge = svg.locator('.er-edge-dynamic[data-from="quest"][data-to="reward_config"]');
+        await expect(questRewardEdge).toHaveCount(1);
+    });
+
+    test('ノードクリックで該当テーブルがタブで開く', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // weapon ノードをクリックする
+        const weaponNode = svg.locator('.er-node', {has: page.locator('.er-node-title', {hasText: 'weapon'})});
+        await weaponNode.click();
+        // weapon テーブルがエディター領域でタブとして開かれること
+        const weaponTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="weapon"] .editor-table`);
+        await expect(weaponTable).toBeVisible();
+        // タブバーに weapon タブが追加されていること
+        const weaponTabButton = page.locator('.tab-button', {hasText: 'weapon'});
+        await expect(weaponTabButton).toBeVisible();
+    });
+
+    test('凡例が表示される', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // 凡例要素が存在すること
+        const legend = svg.locator('.er-legend');
+        await expect(legend).toBeVisible();
+        // 「単純参照」の説明が表示されること
+        await expect(legend).toContainText('単純参照');
+        // 「動的参照」の説明が表示されること
+        await expect(legend).toContainText('動的参照');
+    });
+
+    test('ノード選択で関連エッジがハイライトされる', async ({page}) => {
+        await openErDiagramAsync(page);
+        const svg = getErDiagramSvg(page);
+        // item ノードをクリックして選択する
+        const itemNode = svg.locator('.er-node', {has: page.locator('.er-node-title', {hasText: 'item'})});
+        await itemNode.click();
+        // item ノードに selected クラスが付与されること
+        await expect(itemNode).toHaveClass(/er-node-selected/);
+        // item に関連するエッジ（item → weapon）に highlighted クラスが付与されること
+        const highlightedEdges = svg.locator('.er-edge-highlighted');
+        const highlightedCount = await highlightedEdges.count();
+        expect(highlightedCount).toBeGreaterThanOrEqual(1);
+        // item → weapon のエッジがハイライトされていること
+        const itemWeaponEdge = svg.locator('.er-edge-simple[data-from="item"][data-to="weapon"]');
+        await expect(itemWeaponEdge).toHaveClass(/er-edge-highlighted/);
+    });
+});
