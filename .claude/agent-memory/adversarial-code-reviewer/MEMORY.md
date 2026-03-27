@@ -11,7 +11,9 @@
 
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table + storeRowIndices
-- `/WebView/src/tab.ts` - Tab management, EditorTable factory, pane stack
+- `/WebView/src/tab.ts` - Tab management, EditorTable factory, pane stack, special tabs (settings/diff/ER diagram)
+- `/WebView/src/er-diagram-tab.ts` - ER diagram SVG tab (schema→node/edge→SVG)
+- `/WebView/src/er-diagram-layout.ts` - Grid layout for ER diagram nodes
 - `/WebView/src/in-memory-table-store.ts` - Central data store + refCount + Dirty management
 - `/WebView/src/validation-engine.ts` - PK/FK/type validation logic
 - `/WebView/src/validation-panel.ts` - Validation UI + runAndUpdate + runInitialScanAsync
@@ -27,12 +29,12 @@
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
 - **register/unregister 非対称**: **3回再発**
-- **CSS hardcoded colors**: 17+ 回再発 (+plugin validation-panel.css L72-76)
+- **CSS hardcoded colors**: 18+ 回再発 (+er-diagram-tab.css 全色ハードコード)
 - **フォールバック禁止 (??)**: 17+ 回再発
-- **生焼けオブジェクト | false + connect パターン**: 7回再発 (+ValidationPanel.pluginRunner)
+- **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所
-- **document listener leak (anonymous arrow)**: removeEventListener不可
+- **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
 - **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
@@ -80,8 +82,17 @@
 - Defined: --font-color, --background-color, --background-sub-color, --border-color, --selection-color, --selection-font-color, --scroll-bar-background-color, --focus-border, --error-color, --error-bg, --error-border
 - NOT defined: --warning-color, --warning-bg, --warning-border (needed for plugin errors)
 
+## ER Diagram Tab Patterns (2026-03-28)
+- tab.ts 特殊タブ分岐(settings/diff/ER): 条件分岐が4種(通常/設定/差分/ER)に増殖、leaveSettingsMode漏れリスク高
+- ErDiagramTab: document listener leak (mousemove/mouseup), 生焼けオブジェクト(tables/edges空), fire-and-forget buildAsync
+- activateErDiagramTab: 設定タブ→ER図遷移時のleaveSettingsMode欠落
+- performCloseTab ER図パス: activeTabName=false 未設定
+- CSS全色ハードコード、SVGにviewBox未設定(pan/zoom不可)
+- エッジY座標マジックナンバー(40)が3箇所コピペ
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ER Diagram Tab: 致命的2件、重要5件、軽微3件 (document listener leak, 生焼け, leaveSettingsMode欠落, parseSchemaクラッシュ)
 - (2026-03-27) destColumn動的解決 3rd review (参照ヒント実装): 致命的2件、重要3件、軽微3件 (サンプルデータ破壊、非PK列テスト欠落、PK/非PK非対称性)
 - (2026-03-27) destColumn動的解決 2nd review: 致命的2件、重要5件、軽微3件 (FormPanel/RP2パス未対応、参照ヒント未対応)
 - (2026-03-27) destColumn動的解決: 致命的2件、重要5件、軽微3件
