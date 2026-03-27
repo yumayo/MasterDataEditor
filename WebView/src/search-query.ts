@@ -77,6 +77,43 @@ export function parseSearchQuery(input: string, options: SearchOptions): SearchQ
 }
 
 /**
+ * セル値の検索一致部分を置換テキストで置き換える。
+ * 正規表現ON時はキャプチャグループ（$1, $2 等）の展開を行う。
+ * 正規表現OFF時は最初に一致した部分文字列を単純置換する。
+ */
+export function replaceWithQuery(value: string, searchText: string, replaceText: string, options: SearchOptions): string {
+    if (searchText === '') return value;
+    if (options.useRegex) {
+        try {
+            const flags = options.caseSensitive ? 'g' : 'gi';
+            const regex = new RegExp(searchText, flags);
+            return value.replace(regex, replaceText);
+        } catch {
+            return value;
+        }
+    }
+    // 非正規表現: wholeWord の場合はセル値全体が一致するときのみ全体を置換する
+    if (options.wholeWord) {
+        if (options.caseSensitive) {
+            return value === searchText ? replaceText : value;
+        }
+        return value.toLowerCase() === searchText.toLowerCase() ? replaceText : value;
+    }
+    // 部分一致: 大文字小文字を区別しない場合も含めて最初の一致を置換する
+    if (options.caseSensitive) {
+        const idx = value.indexOf(searchText);
+        if (idx === -1) return value;
+        return value.substring(0, idx) + replaceText + value.substring(idx + searchText.length);
+    }
+    // caseSensitive=false: 大文字小文字を無視して最初の一致を検索する
+    const lowerValue = value.toLowerCase();
+    const lowerSearch = searchText.toLowerCase();
+    const idx = lowerValue.indexOf(lowerSearch);
+    if (idx === -1) return value;
+    return value.substring(0, idx) + replaceText + value.substring(idx + searchText.length);
+}
+
+/**
  * セル値が検索条件に一致するかを判定する
  */
 export function matchesQuery(cellValue: string, searchText: string, options: SearchOptions): boolean {

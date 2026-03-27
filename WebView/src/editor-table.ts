@@ -1,9 +1,9 @@
 import {EditorTableData} from "./model/editor-table-data";
-import {Selection, CellPosition} from "./selection";
+import {Selection, CellPosition, CellRange} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
-import {CellChange, RenderAsHtmlToggleCommand} from "./command";
+import {Command, CellChange, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_LEFT_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -812,6 +812,26 @@ export class EditorTable {
         const copyRange = this.selection.getCopyRange();
         const range = {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column};
         this.history.executeCommand(cmd, range, copyRange);
+    }
+
+    /**
+     * 外部から Command を実行して履歴に追加する（検索置換パネル等から呼ばれる）。
+     * 呼び出し元が正確な range を渡す。コピー範囲は現在の Selection 状態を使う。
+     */
+    executeExternalCommand(command: Command, range: CellRange): void {
+        const copyRange = this.selection.getCopyRange();
+        this.history.executeCommand(command, range, copyRange);
+    }
+
+    /**
+     * PK値から DOM 行インデックス（1始まり）を検索する。見つからない場合は -1 を返す。
+     */
+    findDomRowByPkValue(pkValue: string): number {
+        const rowCount = this.getRowCount();
+        for (let r = 1; r < rowCount; r++) {
+            if (this.getRowPkValue(r) === pkValue) return r;
+        }
+        return -1;
     }
 
     /**

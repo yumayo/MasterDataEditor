@@ -1,9 +1,11 @@
 import {Tab} from "./tab";
 import {SearchDataProvider, TableSearchData} from "./search-data-provider";
-import {parseSearchQuery, matchesQuery, SearchOptions, SearchQuery} from "./search-query";
+import {parseSearchQuery, matchesQuery, replaceWithQuery, SearchOptions, SearchQuery} from "./search-query";
 import {EditorTable} from "./editor-table";
 import {determineDisplayColumnName} from "./config";
 import {appendHighlightedSegments} from "./fuzzy-search";
+import {CellChange, CellChangeCommand, CompositeCommand} from "./command";
+import {CellRange} from "./selection";
 
 /**
  * 検索結果1件分の情報
@@ -20,6 +22,7 @@ interface SearchResult {
 /**
  * SEARCHパネル
  * テーブル横断の全文検索とクエリ式フィルタを提供する
+ * 置換モード時は開いているテーブルのセルを一括/個別置換できる
  */
 export class SearchPanel {
     private readonly element: HTMLElement;
@@ -39,6 +42,20 @@ export class SearchPanel {
     private searchRequestId: number;
     /** wholeWordボタン要素（自動ON/OFFで状態更新するためフィールドで保持） */
     private readonly wholeWordButton: HTMLElement;
+    /** 置換入力行のコンテナ */
+    private readonly replaceRowElement: HTMLElement;
+    /** 置換入力欄 */
+    private readonly replaceInputElement: HTMLInputElement;
+    /** 1件置換ボタン */
+    private readonly replaceButton: HTMLButtonElement;
+    /** すべて置換ボタン */
+    private readonly replaceAllButton: HTMLButtonElement;
+    /** 置換モードかどうか */
+    private replaceMode: boolean;
+    /** カレントマッチのインデックス（-1で未選択） */
+    private focusedResultIndex: number;
+    /** 最新の検索結果（置換実行時に参照する） */
+    private currentResults: SearchResult[];
 
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
@@ -50,6 +67,9 @@ export class SearchPanel {
         this.useRegex = false;
         this.debounceTimer = false;
         this.searchRequestId = 0;
+        this.replaceMode = false;
+        this.focusedResultIndex = -1;
+        this.currentResults = [];
 
         // パネルルート
         this.element = document.createElement('div');
@@ -66,7 +86,7 @@ export class SearchPanel {
         controlsElement.classList.add('search-panel-controls');
         this.element.appendChild(controlsElement);
 
-        // 入力行
+        // 検索入力行
         const inputRow = document.createElement('div');
         inputRow.classList.add('search-panel-input-row');
         controlsElement.appendChild(inputRow);
@@ -79,6 +99,41 @@ export class SearchPanel {
             this.handleInputChange();
         });
         inputRow.appendChild(this.inputElement);
+
+        // 置換入力行（初期状態では非表示）
+        this.replaceRowElement = document.createElement('div');
+        this.replaceRowElement.classList.add('search-panel-replace-row');
+        this.replaceRowElement.style.display = 'none';
+        controlsElement.appendChild(this.replaceRowElement);
+
+        this.replaceInputElement = document.createElement('input');
+        this.replaceInputElement.classList.add('search-panel-replace-input');
+        this.replaceInputElement.type = 'text';
+        this.replaceInputElement.placeholder = '置換...';
+        this.replaceInputElement.setAttribute('aria-label', '置換後のテキスト');
+        // 置換テキスト変更時にプレビューを更新する
+        this.replaceInputElement.addEventListener('input', () => {
+            this.updateReplacePreviews();
+        });
+        this.replaceRowElement.appendChild(this.replaceInputElement);
+
+        this.replaceButton = document.createElement('button');
+        this.replaceButton.classList.add('search-replace-button');
+        this.replaceButton.textContent = '置換';
+        this.replaceButton.setAttribute('aria-label', '現在のマッチを1件置換');
+        this.replaceButton.addEventListener('click', () => {
+            this.replaceCurrentMatch();
+        });
+        this.replaceRowElement.appendChild(this.replaceButton);
+
+        this.replaceAllButton = document.createElement('button');
+        this.replaceAllButton.classList.add('search-replace-all-button');
+        this.replaceAllButton.textContent = 'すべて置換';
+        this.replaceAllButton.setAttribute('aria-label', 'すべてのマッチを一括置換');
+        this.replaceAllButton.addEventListener('click', () => {
+            this.replaceAllMatches();
+        });
+        this.replaceRowElement.appendChild(this.replaceAllButton);
 
         // オプションボタン
         const optionsRow = document.createElement('div');
@@ -124,6 +179,22 @@ export class SearchPanel {
      */
     focus(): void {
         this.inputElement.focus();
+    }
+
+    /**
+     * 置換モードを表示する（Ctrl+H から呼ばれる）
+     */
+    showReplaceMode(): void {
+        this.replaceMode = true;
+        this.replaceRowElement.style.display = '';
+    }
+
+    /**
+     * 置換モードを非表示にする（Ctrl+Shift+F から呼ばれる）
+     */
+    hideReplaceMode(): void {
+        this.replaceMode = false;
+        this.replaceRowElement.style.display = 'none';
     }
 
     /**
@@ -196,6 +267,17 @@ export class SearchPanel {
     }
 
     /**
+     * 現在の検索オプションを返す
+     */
+    private getCurrentSearchOptions(): SearchOptions {
+        return {
+            caseSensitive: this.caseSensitive,
+            wholeWord: this.wholeWordManual || this.wholeWordAuto,
+            useRegex: this.useRegex,
+        };
+    }
+
+    /**
      * 検索を実行して結果をDOMに反映する。
      * searchRequestId パターンで古いリクエストの結果を破棄してレースコンディションを防ぐ。
      */
@@ -204,20 +286,21 @@ export class SearchPanel {
         const inputText = this.inputElement.value.trim();
         if (inputText === '') {
             this.resultsElement.replaceChildren();
+            this.currentResults = [];
+            this.focusedResultIndex = -1;
             return;
         }
         // 空文字でないことが確定してからローディング表示を開始する
         this.resultsElement.classList.add('searching');
         try {
-            const options: SearchOptions = {
-                caseSensitive: this.caseSensitive,
-                wholeWord: this.wholeWordManual || this.wholeWordAuto,
-                useRegex: this.useRegex,
-            };
+            const options = this.getCurrentSearchOptions();
             const query = parseSearchQuery(inputText, options);
             const results = await this.searchAsync(query, requestId);
             // await の間に新しい検索が始まっていた場合は結果を破棄する
             if (requestId !== this.searchRequestId) return;
+            this.currentResults = results;
+            // 検索結果再描画時にフォーカスをリセットする
+            this.focusedResultIndex = -1;
             this.renderResults(results, inputText);
         } finally {
             // 自分が最新リクエストの場合のみ除去する（新しいリクエストが既に付与している場合は触らない）
@@ -353,6 +436,162 @@ export class SearchPanel {
         return '';
     }
 
+    // =========================================================================
+    // 置換ロジック
+    // =========================================================================
+
+    /**
+     * カレントマッチ1件を置換する。置換後、次のマッチをフォーカスする。
+     */
+    private replaceCurrentMatch(): void {
+        if (this.focusedResultIndex < 0 || this.focusedResultIndex >= this.currentResults.length) {
+            throw new Error('replaceCurrentMatch: フォーカスされた検索結果がありません');
+        }
+        const result = this.currentResults[this.focusedResultIndex];
+        const editorTable = this.openEditorTables.get(result.tableName);
+        // 置換対象は開いているテーブルのみ
+        if (!editorTable) return;
+        const domRow = editorTable.findDomRowByPkValue(result.pkValue);
+        if (domRow === -1) return;
+        // DOM列インデックス（1始まり、行ヘッダー含む）
+        const domColumn = result.columnIndex + 1;
+        const oldValue = editorTable.getCellValueAt(domRow, domColumn);
+        const searchText = this.inputElement.value.trim();
+        const replaceText = this.replaceInputElement.value;
+        const options = this.getCurrentSearchOptions();
+        const newValue = replaceWithQuery(oldValue, searchText, replaceText, options);
+        if (oldValue === newValue) return;
+        // CellChangeCommand を構築して実行する
+        const change: CellChange = {row: domRow, column: domColumn, oldValue, newValue};
+        const range: CellRange = {startRow: domRow, startColumn: domColumn, endRow: domRow, endColumn: domColumn};
+        const command = new CellChangeCommand(editorTable, [change], range, {startRow: 0, startColumn: 0, endRow: -1, endColumn: -1});
+        editorTable.executeExternalCommand(command, range);
+        // 検索結果から置換済みアイテムを除去し、全件再描画してクロージャのインデックスを正しく保つ
+        this.currentResults.splice(this.focusedResultIndex, 1);
+        if (this.currentResults.length === 0) {
+            this.focusedResultIndex = -1;
+        } else if (this.focusedResultIndex >= this.currentResults.length) {
+            this.focusedResultIndex = 0;
+        }
+        // 全件再描画（各アイテムのクリックハンドラが正しいインデックスを参照するようにする）
+        this.renderResults(this.currentResults, searchText);
+        if (this.focusedResultIndex >= 0) {
+            this.applyFocusToResultItem(this.focusedResultIndex);
+        }
+        // 置換後に EditorTable にフォーカスを戻す。
+        // 後続の Ctrl+Z/Ctrl+S が EditorTableHandler の keydown ハンドラに到達するようにする。
+        this.tab.focusActiveEditorTable();
+    }
+
+    /**
+     * 全マッチを一括置換する。CompositeCommand で実行し、Undo で一括復元できる。
+     * 確認ダイアログは使わない（Undo可能なため過剰防衛。同期ブロッキングAPI window.confirm は
+     * Playwright のダイアログハンドリングとタイミング問題を起こすため廃止した）。
+     */
+    private replaceAllMatches(): void {
+        if (this.currentResults.length === 0) return;
+        const searchText = this.inputElement.value.trim();
+        const replaceText = this.replaceInputElement.value;
+        const options = this.getCurrentSearchOptions();
+        // テーブルごとに CellChangeCommand をまとめて CompositeCommand で実行する
+        // 全件を1つの EditorTable の history に登録する（1回の Undo で全件戻る）
+        // 複数テーブルにまたがる場合は最初のテーブルの history を使う
+        const commandsByTable = new Map<string, {editorTable: EditorTable; changes: CellChange[]}>();
+        for (const result of this.currentResults) {
+            const editorTable = this.openEditorTables.get(result.tableName);
+            if (!editorTable) continue;
+            const domRow = editorTable.findDomRowByPkValue(result.pkValue);
+            if (domRow === -1) continue;
+            const domColumn = result.columnIndex + 1;
+            const oldValue = editorTable.getCellValueAt(domRow, domColumn);
+            const newValue = replaceWithQuery(oldValue, searchText, replaceText, options);
+            if (oldValue === newValue) continue;
+            let entry = commandsByTable.get(result.tableName);
+            if (!entry) {
+                entry = {editorTable, changes: []};
+                commandsByTable.set(result.tableName, entry);
+            }
+            entry.changes.push({row: domRow, column: domColumn, oldValue, newValue});
+        }
+        // 変更がなければ何もしない
+        if (commandsByTable.size === 0) return;
+        // テーブルごとに CellChangeCommand を作り、CompositeCommand でラップする
+        const commands: CellChangeCommand[] = [];
+        const emptyRange: CellRange = {startRow: 0, startColumn: 0, endRow: -1, endColumn: -1};
+        for (const entry of commandsByTable.values()) {
+            const range: CellRange = {
+                startRow: entry.changes[0].row, startColumn: entry.changes[0].column,
+                endRow: entry.changes[entry.changes.length - 1].row,
+                endColumn: entry.changes[entry.changes.length - 1].column,
+            };
+            commands.push(new CellChangeCommand(entry.editorTable, entry.changes, range, emptyRange));
+        }
+        // 全 CellChangeCommand を CompositeCommand でラップして、最初のテーブルの history に登録する
+        const compositeCommand = new CompositeCommand(commands);
+        const firstEntry = commandsByTable.values().next().value;
+        if (!firstEntry) return;
+        // 最初のテーブルの変更範囲を range として渡す
+        const compositeRange: CellRange = {
+            startRow: firstEntry.changes[0].row, startColumn: firstEntry.changes[0].column,
+            endRow: firstEntry.changes[firstEntry.changes.length - 1].row,
+            endColumn: firstEntry.changes[firstEntry.changes.length - 1].column,
+        };
+        firstEntry.editorTable.executeExternalCommand(compositeCommand, compositeRange);
+        // 検索結果をクリアする（全件置換済み）
+        this.currentResults = [];
+        this.focusedResultIndex = -1;
+        this.resultsElement.replaceChildren();
+        // 置換後に EditorTable にフォーカスを戻す。
+        // 後続の Ctrl+Z/Ctrl+S が EditorTableHandler の keydown ハンドラに到達するようにする。
+        this.tab.focusActiveEditorTable();
+    }
+
+    /**
+     * 指定インデックスの検索結果アイテムにフォーカスを適用する
+     */
+    private applyFocusToResultItem(index: number): void {
+        // 既存のフォーカスを全解除する
+        const items = this.resultsElement.querySelectorAll('.search-result-item');
+        for (let i = 0; i < items.length; i++) {
+            items[i].classList.remove('search-result-item-focused');
+        }
+        // 新しいフォーカスを適用する
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('search-result-item-focused');
+        }
+    }
+
+    /**
+     * 置換プレビューを全検索結果アイテムに反映する
+     */
+    private updateReplacePreviews(): void {
+        const replaceText = this.replaceInputElement.value;
+        const searchText = this.inputElement.value.trim();
+        const options = this.getCurrentSearchOptions();
+        const items = this.resultsElement.querySelectorAll('.search-result-item');
+        for (let i = 0; i < items.length && i < this.currentResults.length; i++) {
+            const item = items[i];
+            // 既存のプレビュー要素を除去する
+            const existingPreview = item.querySelector('.search-result-replace-preview');
+            if (existingPreview) existingPreview.remove();
+            // 置換テキストが空の場合はプレビューを表示しない
+            if (replaceText === '') continue;
+            // 置換後の値を計算する
+            const result = this.currentResults[i];
+            const replacedValue = replaceWithQuery(result.value, searchText, replaceText, options);
+            // プレビュー要素を追加する
+            const preview = document.createElement('span');
+            preview.classList.add('search-result-replace-preview');
+            preview.textContent = `→ ${replacedValue}`;
+            preview.setAttribute('aria-label', `置換後: ${replacedValue}`);
+            item.appendChild(preview);
+        }
+    }
+
+    // =========================================================================
+    // 検索結果描画
+    // =========================================================================
+
     /**
      * 検索結果をDOMに描画する
      *
@@ -361,7 +600,9 @@ export class SearchPanel {
      */
     private renderResults(results: SearchResult[], searchText: string): void {
         this.resultsElement.replaceChildren();
-        for (const result of results) {
+        for (let i = 0; i < results.length; i++) {
+            const result = results[i];
+            const resultIndex = i;
             const item = document.createElement('div');
             item.classList.add('search-result-item');
             // 場所表示
@@ -387,11 +628,17 @@ export class SearchPanel {
                 hint.textContent = `(${result.referenceDisplayText})`;
                 item.appendChild(hint);
             }
-            // クリックで該当セルにジャンプ
+            // クリックで該当セルにジャンプ + カレントマッチ設定
             item.addEventListener('click', () => {
+                this.focusedResultIndex = resultIndex;
+                this.applyFocusToResultItem(resultIndex);
                 this.tab.navigateToTableCell(result.tableName, result.pkValue, result.columnIndex);
             });
             this.resultsElement.appendChild(item);
+        }
+        // 置換モード時はプレビューを表示する
+        if (this.replaceMode && this.replaceInputElement.value !== '') {
+            this.updateReplacePreviews();
         }
     }
 

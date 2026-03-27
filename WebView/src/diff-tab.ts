@@ -516,6 +516,13 @@ export class DiffTab {
     }
 
     /**
+     * グローバル Ctrl+S から呼ばれる保存処理。右ペインの EditorTableHandler.save() に委譲する。
+     */
+    saveRightPane(): void {
+        this.rightEditorTableHandler.save();
+    }
+
+    /**
      * 差分タブのラッパー要素を表示する。
      * hide() で保存したスクロール位置を復元し、行ヘッダーを現在のscrollLeftに同期する。
      * display:none → display:'' ではブラウザがscrollLeftを0にリセットするが

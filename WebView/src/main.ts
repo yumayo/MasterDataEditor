@@ -121,20 +121,30 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
             e.preventDefault();
             sidebar.activateSearchPanel();
         }
+        if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
+            e.preventDefault();
+            sidebar.activateSearchPanelWithReplace();
+        }
         if (e.ctrlKey && !e.shiftKey && e.key === 'p') {
             e.preventDefault();
             commandPalette.show();
         }
     });
 
-    // 設定タブの Ctrl+S はキャプチャフェーズで処理する。
-    // 設定画面の <select> 要素にフォーカスがある場合、バブリングフェーズでは
-    // select 要素がキーボードイベントを消費してしまうため、キャプチャフェーズで先に捕捉する。
-    // EditorTable の Ctrl+S は EditorTableHandler 内でバブリングフェーズで処理されるため競合しない。
+    // グローバル Ctrl+S をキャプチャフェーズで処理する。
+    // EditorTable 内にフォーカスがある場合は EditorTableHandler のバブリングハンドラに任せ、
+    // それ以外（設定タブ、サイドバー、検索パネル等）はここで処理する。
     document.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.ctrlKey && !e.shiftKey && e.key === 's' && tab.isSettingsTabActive()) {
+        if (e.ctrlKey && !e.shiftKey && e.key === 's') {
+            const target = e.target as HTMLElement;
+            // EditorTable 内にフォーカスがある場合は既存ハンドラに委ねる
+            if (target.closest('.editor-table')) return;
             e.preventDefault();
-            tab.saveSettings();
+            if (tab.isSettingsTabActive()) {
+                tab.saveSettings();
+            } else {
+                tab.saveActiveTable();
+            }
         }
     }, true);
 

@@ -980,6 +980,43 @@ export class Tab {
     }
 
     /**
+     * アクティブなタブの EditorTableHandler にフォーカスを戻す。
+     * 検索置換パネルからの置換実行後に呼ばれ、後続の Ctrl+Z/Ctrl+S が
+     * EditorTableHandler の keydown ハンドラに自然に到達するようにする。
+     * 設定タブ・ER図タブ・差分タブの場合は何もしない。
+     */
+    focusActiveEditorTable(): void {
+        if (this.activeTabName === false) return;
+        if (this.activeTabName === SETTINGS_TAB_NAME) return;
+        if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
+        if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) return;
+        const state = this.tabStates.get(this.activeTabName);
+        if (!state) throw new Error(`focusActiveEditorTable: タブ '${this.activeTabName}' の状態が見つかりません`);
+        state.editorTableHandler.activate();
+    }
+
+    /**
+     * アクティブなテーブルを保存する。
+     * グローバル Ctrl+S ハンドラ（main.ts キャプチャフェーズ）から呼ばれる。
+     * EditorTable 外にフォーカスがある場合に使用される。
+     */
+    saveActiveTable(): void {
+        if (this.activeTabName === false) return;
+        if (this.activeTabName === SETTINGS_TAB_NAME) return;
+        if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
+        // 差分タブの場合
+        if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            const diffTab = this.diffTabs.get(this.activeTabName);
+            if (diffTab) diffTab.saveRightPane();
+            return;
+        }
+        // 通常テーブルの場合
+        const state = this.tabStates.get(this.activeTabName);
+        if (!state) throw new Error(`saveActiveTable: タブ '${this.activeTabName}' の状態が見つかりません`);
+        state.editorTableHandler.save();
+    }
+
+    /**
      * 差分タブをタブバーに開く。
      * 同一テーブルの差分タブが既に開かれている場合は破棄して再作成する（最新CSVデータを反映するため）。
      * SourceControlPanel.openDiffTabAsync から呼ばれる。

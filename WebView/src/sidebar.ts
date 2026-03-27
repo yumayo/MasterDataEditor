@@ -168,11 +168,23 @@ export class Sidebar {
 
     /**
      * SEARCHパネルをアクティブにしてフォーカスする
-     * Ctrl+Shift+F から呼ばれる
+     * Ctrl+Shift+F から呼ばれる（検索のみモード）
      */
     activateSearchPanel(): void {
         this.activityBar.activateItem('search');
         this.switchPanel('search');
+        this.searchPanel.hideReplaceMode();
+        this.searchPanel.focus();
+    }
+
+    /**
+     * SEARCHパネルを置換モードで起動する
+     * Ctrl+H から呼ばれる
+     */
+    activateSearchPanelWithReplace(): void {
+        this.activityBar.activateItem('search');
+        this.switchPanel('search');
+        this.searchPanel.showReplaceMode();
         this.searchPanel.focus();
     }
 
