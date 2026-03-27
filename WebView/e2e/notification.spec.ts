@@ -2,14 +2,13 @@ import { test, expect } from './fixtures/test';
 import type { Page } from '@playwright/test';
 
 // =============================================================================
-// FEAT_0045: システムエラー通知
-// FEAT_0045b: NotificationToast メッセージバー化
+// FEAT_0045: システムエラー通知ポップアップ
 //
 // 機能概要:
-//   window.notification.show(message) でステータスバー内の
-//   .notification-message に最新メッセージを表示する。
+//   window.notification.show(message) でトーストポップアップを右下に表示する。
+//   最大3つまでスタック可能で、4つ目を追加すると最も古いものが消える。
 //   show() 呼び出し時に DEBUG CONSOLE にもエントリを追加する。
-//   旧仕様のベルマーク・履歴パネル・トーストポップアップは廃止。
+//   旧仕様のベルマーク・履歴パネル・メッセージ欄は廃止。
 //
 // テスト対象:
 //   WebView/src/notification.ts — NotificationToast クラス
@@ -29,29 +28,51 @@ async function showNotificationAsync(page: Page, message: string): Promise<void>
 test.describe('Notification', () => {
 
     // -------------------------------------------------------------------------
-    // ステータスバーのメッセージ欄
+    // 既存仕様の維持: トーストポップアップ
     // -------------------------------------------------------------------------
 
-    test('show()を呼ぶとステータスバーのメッセージ欄にテキストが表示される', async ({ page, mockFileSystem }) => {
-        await showNotificationAsync(page, 'ステータスバーメッセージ');
+    test('エラー通知を表示するとトーストポップアップが表示される', async ({ page, mockFileSystem }) => {
+        await showNotificationAsync(page, 'テストエラー');
 
-        // .status-bar 内の .notification-message 要素にテキストが反映されること
-        const messageElement = page.locator('.status-bar .notification-message');
-        await expect(messageElement).toBeVisible();
-        await expect(messageElement).toHaveText('ステータスバーメッセージ');
+        // .notification-toast 要素が表示されること
+        const toast = page.locator('.notification-toast').first();
+        await expect(toast).toBeVisible();
+        await expect(toast).toContainText('テストエラー');
     });
 
-    test('複数回show()を呼ぶと最後のメッセージで上書きされる', async ({ page, mockFileSystem }) => {
-        await showNotificationAsync(page, '最初のメッセージ');
-        await showNotificationAsync(page, '2番目のメッセージ');
-        await showNotificationAsync(page, '最後のメッセージ');
+    test('通知は最大3つまでスタックし4つ目を追加すると最古が消える', async ({ page, mockFileSystem }) => {
+        await showNotificationAsync(page, '通知1');
+        await showNotificationAsync(page, '通知2');
+        await showNotificationAsync(page, '通知3');
+        await showNotificationAsync(page, '通知4');
 
-        // .notification-message には最後のメッセージだけが表示されること
-        const messageElement = page.locator('.status-bar .notification-message');
-        await expect(messageElement).toHaveText('最後のメッセージ');
-        // 過去のメッセージは含まれないこと
-        await expect(messageElement).not.toContainText('最初のメッセージ');
-        await expect(messageElement).not.toContainText('2番目のメッセージ');
+        // .notification-toast が3つ以下であること
+        const toasts = page.locator('.notification-toast');
+        const count = await toasts.count();
+        expect(count).toBeLessThanOrEqual(3);
+
+        // 最古の「通知1」は消えていること
+        await expect(page.locator('.notification-toast', { hasText: '通知1' })).toHaveCount(0);
+        // 最新の「通知4」は存在すること
+        await expect(page.locator('.notification-toast', { hasText: '通知4' })).toHaveCount(1);
+    });
+
+    test('トーストエリアがステータスバーの上方に表示される', async ({ page, mockFileSystem }) => {
+        await showNotificationAsync(page, '位置確認トースト');
+
+        const toastArea = page.locator('.notification-toast-area');
+        await expect(toastArea).toBeVisible();
+
+        // トーストエリアの bottom がステータスバーの top 以下であること
+        const toastAreaBox = await toastArea.boundingBox();
+        const statusBarBox = await page.locator('.status-bar').boundingBox();
+        expect(toastAreaBox).not.toBeNull();
+        expect(statusBarBox).not.toBeNull();
+        const toastAreaBottom = (toastAreaBox as NonNullable<typeof toastAreaBox>).y
+            + (toastAreaBox as NonNullable<typeof toastAreaBox>).height;
+        const statusBarTop = (statusBarBox as NonNullable<typeof statusBarBox>).y;
+        // border-top 1px のサブピクセル誤差を許容するため 2px のマージンを設ける
+        expect(toastAreaBottom).toBeLessThanOrEqual(statusBarTop + 2);
     });
 
     // -------------------------------------------------------------------------
@@ -78,7 +99,7 @@ test.describe('Notification', () => {
     });
 
     // -------------------------------------------------------------------------
-    // 新仕様: ベルマーク・履歴パネルの廃止
+    // 廃止済み要素の非存在確認
     // -------------------------------------------------------------------------
 
     test('ベルマーク要素が存在しないこと', async ({ page, mockFileSystem }) => {
@@ -89,11 +110,5 @@ test.describe('Notification', () => {
     test('履歴パネル要素が存在しないこと', async ({ page, mockFileSystem }) => {
         // .notification-history 要素がDOM上に存在しないこと
         await expect(page.locator('.notification-history')).toHaveCount(0);
-    });
-
-    test('トースト要素が存在しないこと', async ({ page, mockFileSystem }) => {
-        await showNotificationAsync(page, 'トースト非存在確認');
-        await expect(page.locator('.notification-toast')).toHaveCount(0);
-        await expect(page.locator('.notification-toast-area')).toHaveCount(0);
     });
 });

@@ -7,7 +7,6 @@ import type {NotificationToast} from "./notification";
  * 画面最下部に常時表示される。
  * 左端: エラー件数バッジ（クリックでBottomPanelのPROBLEMSタブをトグル）
  * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
- * 中央〜右寄り: 通知メッセージ欄（NotificationToast がメッセージを表示する）
  * エラー0件でも "0" を表示する。
  *
  * 循環参照（StatusBar ↔ ValidationPanel → StatusBar）は Object.assign パターンで解決する。
@@ -55,12 +54,10 @@ export class StatusBar {
         this.badge = badge;
         this.badgeCount = countSpan;
 
-        // 通知メッセージ欄をエラーバッジとスピナーの間に配置する
-        // badge の margin-right:auto によって右端グループに押し出される
+        // 通知コンテナをエラーバッジとスピナーの間に配置する
         notification.appendTo(bar);
 
-        // バックグラウンドタスクインジケーター（通知メッセージ欄の右隣、右寄り）
-        // badge の margin-right:auto によって右端グループに押し出される
+        // バックグラウンドタスクインジケーター（右寄り）
         const bgIndicator = document.createElement('div');
         bgIndicator.classList.add('status-bar-background-indicator');
         bgIndicator.setAttribute('role', 'button');
