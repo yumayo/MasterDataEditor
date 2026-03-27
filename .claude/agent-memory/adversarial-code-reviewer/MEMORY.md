@@ -35,7 +35,9 @@
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理
+- **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
+- **public API漏出→呼び出しパターン拡散**: applyTypedCellStyle が public で createCell/setCellValue の2箇所から個別呼出 (applyTextOrHtml+applyTypedCellStyleペア)
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
 - **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
@@ -98,8 +100,16 @@
 - saveActiveTableAsync: 同期メソッドなのにAsync命名（命名規則違反）
 - findDomRowByPkValue: PK空文字列時に全行が同一行にマッチ
 
+## Typed Input Control Patterns (2026-03-28)
+- bool型セル: SVG表示 + data-rawValue でgetCellValueと整合。ただし文字入力経路がブロックされていない（致命的）
+- int/float/double: ArrowUp/Down インクリメント（editMode中のみ）。Undo未記録（submitTextで一括確定）
+- float精度問題: parseFloat+1→String でIEEE 754精度劣化。toFixed等で桁数保持が必要
+- 数値入力フィルタ: keydown で isAllowedNumericKey。ただしIME composing中はスキップ
+- applyTypedCellStyle: public で createCell + setCellValue の2経路から呼出（パターン拡散リスク）
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) Typed Input Control: 致命的2件、重要5件、軽微3件 (bool文字入力漏れ, float精度破壊, Undo未記録, publicメソッド漏出)
 - (2026-03-28) Search Replace: 致命的2件、重要5件、軽微3件 (wholeWord無視, 複数テーブルUndo破壊, 列ソート非対応)
 - (2026-03-28) ER Diagram Tab: 致命的2件、重要5件、軽微3件 (document listener leak, 生焼け, leaveSettingsMode欠落, parseSchemaクラッシュ)
 - (2026-03-27) destColumn動的解決 3rd review (参照ヒント実装): 致命的2件、重要3件、軽微3件 (サンプルデータ破壊、非PK列テスト欠落、PK/非PK非対称性)

@@ -15,7 +15,21 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 検索と置換機能）
+### 最新レビュー結果（2026-03-28 データ型別入力コントロール）
+
+#### データ型別入力コントロール 評価: B+
+- 変更内容: boolチェックボックス（cell-bool-check/uncheck SVG）、数値型右寄せ（cell-numeric）、int型入力フィルタ（文字・小数点をkeydownでブロック）、上下矢印インクリメント/デクリメント、FK参照列は型別コントロール適用除外。
+- 良い点: cell-bool-check SVG（チェックマーク）/ cell-bool-uncheck SVG（透明チェックマーク）の視覚的区別が明確。data-raw-value="true/false" 属性でDOM値と表示を分離しておりSSOT設計が正しい。cell-numeric クラスが id/count/rate/score の全数値列に付与されており、右寄せが一貫している。FK参照列（category_id, data-col="1"）には cell-numeric が付与されず仕様通り。バッファ行（data-row="2", editor-table-empty-row）のbool列にも cell-bool-uncheck SVG が表示されており、空行でも型表示が統一されている。Undo/Redo のCommandパターン対応が確認できる（Ctrl+Z/Y テスト通過）。
+- 修正必須(🔴): バッファ行（editor-table-empty-row, data-row="2"）のbool列（data-raw-value=""）に cell-bool-uncheck SVG が表示されている。これはデータが空（未入力）なのに「Falseチェック」を表示しているように見える。プランナーが「行3のactiveはFalseが入力されている」と誤解する。空値の場合は SVG を表示しないか、もしくは空値専用の cell-bool-empty クラスを用意してグレーアウト表示にすべき。
+- 修正必須(🔴): bool型セルに role="checkbox" / aria-checked 属性がない。DOMを見ると `<svg class="cell-bool-check">` または `<svg class="cell-bool-uncheck">` だけで、スクリーンリーダーはこれをチェックボックスとして認識できない。親の `editor-table-cell` に `role="checkbox"` と `aria-checked="true/false"` を付けるべき。data-raw-value 属性は存在するので aria-checked="true/false" への変換は容易なはず。
+- 修正必須(🔴): bool型セルを Spaceキーでトグルする操作が「選択セルでSpace押下 = トグル」という非標準のキーバインドになっている。テスト仕様を見ると `selectCellAsync` + `page.keyboard.press('Space')` で動作するが、この挙動がプランナーに発見可能かが問題。他のセルでは Spaceキーは何もしないのに bool 型セルだけ特殊動作するため、UI上にキーボードヒントがない。ヘッダーの tooltip や セル hover 時の cursor:pointer への変更（現在の cursor が不明）があると操作の手がかりになる。
+- 修正必須(🔴): cell-bool-uncheck の SVG が cell-bool-check の SVG と全く同じ `<path>` データを持っている（DOMダンプ上では `d="M6 11.2L2.5 7.7l1.4-1.4L6 8.4l6.1-6.1 1.4 1.4L6 11.2z"` が両者同一）。視覚的な区別は CSS の fill/opacity で行っていると推測されるが、スクリーンショットでは false 行のチェックマークが薄く見える（暗い色？）だけであり、色覚異常のプランナーには両者が同じに見える可能性がある。アイコン形状自体を変えるか（× または空ボックス）、aria-label で「チェック済み」「未チェック」を明示すること。
+- 改善推奨(🟡): int/float/double 型セルの上下矢印インクリメント/デクリメント機能がセル外部から発見できない。ダブルクリックして編集モードに入った後に ArrowUp を押す操作フローであり、プランナーが偶然発見するまで存在に気づかない。ヘッダーの type バッジ（現在は PK/FK バッジのみ）に「int」「float」等の型名を表示し、tooltip で「上下矢印で±1増減可能」と説明するか、編集中に「↑↓」ヒントをセル内に表示すると発見性が向上する。
+- 改善推奨(🟡): activity-bar SVG に aria-hidden="true" がない（全サイクル継続課題）。
+- 改善推奨(🟡): fill-handle が display:block で残存（left:207px, top:38px）（全サイクル継続課題）。
+- 参考: 今回追加されたセル値変更パスが bug-report #7（applyViewAwareCellChanges 統合の背景）に記録された「4操作パスの網羅」の原則に沿っているか要確認。bool型トグルは Commandパターン経由であれば問題ないが、追加された操作パスがテキスト確定・ドロップダウン・Delete・ペースト・Fillの既存パスと共通基盤を使っているか確認を推奨する。
+
+### 過去のレビュー結果（2026-03-28 検索と置換機能）
 
 #### 検索と置換機能 評価: B+
 - 変更内容: Ctrl+Hで置換モード起動、SEARCHパネルに置換入力欄（`search-panel-replace-row`）と「置換」「すべて置換」ボタンを統合。検索結果に置換プレビュー（`search-result-replace-preview`）を表示。Ctrl+Shift+Fでは置換欄を非表示。正規表現キャプチャグループ対応。Undo/Redo対応。
@@ -144,3 +158,6 @@
 - search-result-replace-preview の span に aria-hidden がなく、スクリーンリーダーが「元の値 → 置換後」を区別できない（2026-03-28 検索置換機能で新規発見）
 - search-panel-replace-row の show/hide が style="" 空文字制御で、hidden 属性または CSS クラスより壊れやすい（2026-03-28 検索置換機能で新規発見）
 - regex オプションボタン（.*）に title 属性がなく、Aa / |ab| と一貫性がない（2026-03-28 検索置換機能で新規発見）
+- バッファ行（editor-table-empty-row）のbool列にcell-bool-uncheck SVGが表示されており空値とFalse値が視覚的に区別できない（2026-03-28 型別入力コントロールで新規発見）
+- cell-bool-check/uncheck セルに role="checkbox"/aria-checked がなく、スクリーンリーダーがチェックボックスとして認識できない（2026-03-28 型別入力コントロールで新規発見）
+- cell-bool-check と cell-bool-uncheck の SVG path が同一形状で色/透明度のみの区別（色覚異常対応が不十分）（2026-03-28 型別入力コントロールで新規発見）
