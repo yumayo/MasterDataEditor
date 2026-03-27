@@ -47,7 +47,7 @@ export class TabReference {
      * 逆参照を非同期で解決し、ヒントを更新する
      */
     resolveReverseReferencesAsync(tableName: string, editorTable: EditorTable): void {
-        const resolver = new ReverseReferenceResolver(this.store);
+        const resolver = new ReverseReferenceResolver(this.store, this.notification);
         resolver.resolveAsync(tableName).then(reverseMap => {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {

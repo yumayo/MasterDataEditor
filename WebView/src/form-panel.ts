@@ -66,7 +66,7 @@ export class FormPanel {
 
     constructor(store: InMemoryTableStore, tab: Tab, notification: NotificationToast) {
         this.store = store;
-        this.reverseReferenceResolver = new ReverseReferenceResolver(store);
+        this.reverseReferenceResolver = new ReverseReferenceResolver(store, notification);
         this.tab = tab;
         this.notification = notification;
         this.navStack = [];

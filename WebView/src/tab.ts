@@ -1433,7 +1433,7 @@ export class Tab {
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
         // 分割先モジュールを生成・注入（Object.assign後なのでeditorTableは完全に初期化済み）
-        editorTable.initializeModules();
+        editorTable.initializeModules(this.notification);
         // Tab への参照を設定する（フォームビュー表示のための密結合）
         editorTable.tab = this;
 
@@ -1543,7 +1543,7 @@ export class Tab {
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
-        editorTable.initializeModules();
+        editorTable.initializeModules(this.notification);
 
         // 左ペインと同じ: 全要素を wrapperElement に配置する
         editorTable.appendTo(wrapperElement);

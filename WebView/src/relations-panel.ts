@@ -413,7 +413,11 @@ export class RelationsPanel {
     ): Promise<RelationEntry | null> {
         // 手順1: 同一行から動的解決の基準値となる列値を取得する（例: reward_table_id の値）
         const valueColIdx = rowHeader.indexOf(expr.filter.valueColumn);
-        if (valueColIdx === -1) return null;
+        if (valueColIdx === -1) {
+            console.warn(`動的参照(RelationsPanel): ヘッダーに列 '${expr.filter.valueColumn}' が見つかりません`);
+            this.notification.show(`動的参照: ヘッダーに列 '${expr.filter.valueColumn}' が見つかりません`);
+            return null;
+        }
         const valueColumnValue = targetRow[valueColIdx];
         if (valueColumnValue === '') return null;
 
@@ -422,7 +426,11 @@ export class RelationsPanel {
         // await 後に別リクエストが割り込んでいないか確認する
         if (requestId !== this.currentRequestId) return null;
         const filterColIdx = filterTableData.header.indexOf(expr.filter.filterColumn);
-        if (filterColIdx === -1) return null;
+        if (filterColIdx === -1) {
+            console.warn(`動的参照(RelationsPanel): テーブル '${expr.filter.tableName}' に列 '${expr.filter.filterColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.filter.filterColumn}' が見つかりません`);
+            return null;
+        }
         const filterRowIdx = filterTableData.rows.findIndex(row => row[filterColIdx] === valueColumnValue);
         if (filterRowIdx === -1) return null;
         const filterRow = filterTableData.rows[filterRowIdx];
@@ -430,7 +438,16 @@ export class RelationsPanel {
         // 手順3: フィルタ結果の行から lookupColumn / targetColumn の値を動的取得する
         const lookupColIdx = filterTableData.header.indexOf(expr.lookupColumn);
         const targetColumnColIdx = filterTableData.header.indexOf(expr.targetColumn);
-        if (lookupColIdx === -1 || targetColumnColIdx === -1) return null;
+        if (lookupColIdx === -1) {
+            console.warn(`動的参照(RelationsPanel): テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+            return null;
+        }
+        if (targetColumnColIdx === -1) {
+            console.warn(`動的参照(RelationsPanel): テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+            return null;
+        }
         const targetTableName = filterRow[lookupColIdx];
         if (targetTableName === '') return null;
         const resolvedTargetColumn = filterRow[targetColumnColIdx];
@@ -447,7 +464,11 @@ export class RelationsPanel {
         // await 後に別リクエストが割り込んでいないか確認する
         if (requestId !== this.currentRequestId) return null;
         const targetColIdx = targetTableData.header.indexOf(resolvedTargetColumn);
-        if (targetColIdx === -1) return null;
+        if (targetColIdx === -1) {
+            console.warn(`動的参照(RelationsPanel): テーブル '${targetTableName}' に列 '${resolvedTargetColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${targetTableName}' に列 '${resolvedTargetColumn}' が見つかりません`);
+            return null;
+        }
 
         // FK列値でフィルタし、実際のストアインデックスも収集する
         const { filteredRows: rows, filteredStoreRowIndices: storeRowIndices } =
@@ -1068,7 +1089,7 @@ export class RelationsPanel {
         }
 
         // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
-        const resolver = new ReverseReferenceResolver(this.store);
+        const resolver = new ReverseReferenceResolver(this.store, this.notification);
         const reverseMap = await resolver.resolveAsync(tableName);
         if (requestId !== this.currentRequestId) return entries;
 

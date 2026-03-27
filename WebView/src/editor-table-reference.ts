@@ -5,6 +5,7 @@ import {parseReferenceExpression, isDynamicReference, isSimpleReference} from ".
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
 import {isDisplayColumn} from "./config";
 import {sanitizeHtml} from "./html-sanitizer";
+import {NotificationToast} from "./notification";
 
 
 /**
@@ -20,13 +21,15 @@ export class EditorTableReference {
     private readonly table: EditorTable;
     private readonly tableData: EditorTableData;
     private readonly referenceDataCache: ReferenceDataCache;
+    private readonly notification: NotificationToast;
     /** 逆参照マップ（参照先列の値→逆参照エントリ配列） */
     private reverseReferenceMap: ReverseReferenceMap | false;
 
-    constructor(table: EditorTable, tableData: EditorTableData, referenceDataCache: ReferenceDataCache) {
+    constructor(table: EditorTable, tableData: EditorTableData, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.table = table;
         this.tableData = tableData;
         this.referenceDataCache = referenceDataCache;
+        this.notification = notification;
         this.reverseReferenceMap = false;
     }
 
@@ -258,7 +261,11 @@ export class EditorTableReference {
         if (!isDynamicReference(expr)) return;
         // 同一行の指定カラムの値を取得
         const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
-        if (valueColumnIndex === -1) return;
+        if (valueColumnIndex === -1) {
+            console.warn(`動的参照ヒント: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
+            return;
+        }
         // column=0は行ヘッダーなので、データ列インデックスに+1する
         const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
         if (filterValue === '') return;
@@ -266,11 +273,19 @@ export class EditorTableReference {
         const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
         if (fullData === false) return;
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
-        if (lookupColumnIndex === -1) return;
+        if (lookupColumnIndex === -1) {
+            console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+            return;
+        }
         // targetColumn（destColumn）の列インデックスを解決する
         // 中間テーブルのこの列の値が、参照先テーブルの実際の列名になる
         const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
-        if (targetColumnIndex === -1) return;
+        if (targetColumnIndex === -1) {
+            console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+            return;
+        }
         // filterColumn で行を検索（主キー以外のカラムにも対応）
         const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
         if (!row) return;

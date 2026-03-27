@@ -26,6 +26,7 @@ import {ColumnFilter} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
 import {Utility} from "./utility";
 import {Tab} from "./tab";
+import {NotificationToast} from "./notification";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -182,8 +183,8 @@ export class EditorTable {
      * applyFilterDisplay() で全行が制御されず行数カウンターが「0 / 0 行」になるバグを引き起こす。
      * そのため initializeModules() で FilterDropdown を正しい this（editorTable）で再作成する。
      */
-    initializeModules(): void {
-        this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache);
+    initializeModules(notification: NotificationToast): void {
+        this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache, notification);
         this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
         // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。

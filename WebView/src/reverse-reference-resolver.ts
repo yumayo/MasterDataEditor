@@ -10,6 +10,7 @@ import {
     DynamicReference,
     DynamicReferenceSchema
 } from "./reference-expression";
+import {NotificationToast} from "./notification";
 
 /**
  * 逆参照の子行1つ分の情報
@@ -67,9 +68,12 @@ export class ReverseReferenceResolver {
 
     /** テーブルデータの中央ストア（インメモリデータ優先取得用） */
     private readonly store: InMemoryTableStore;
+    /** エラー通知トースト */
+    private readonly notification: NotificationToast;
 
-    constructor(store: InMemoryTableStore) {
+    constructor(store: InMemoryTableStore, notification: NotificationToast) {
         this.store = store;
+        this.notification = notification;
     }
 
     /**
@@ -273,6 +277,19 @@ export class ReverseReferenceResolver {
             if (lookupIdx === -1
                 || filterIdx === -1
                 || targetColumnIdx === -1) {
+                // スキーマ設定ミス: 中間テーブルに動的参照式で指定された列が見つからない
+                if (lookupIdx === -1) {
+                    console.warn(`逆参照解決: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+                    this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+                }
+                if (filterIdx === -1) {
+                    console.warn(`逆参照解決: テーブル '${expr.filter.tableName}' に列 '${expr.filter.filterColumn}' が見つかりません`);
+                    this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.filter.filterColumn}' が見つかりません`);
+                }
+                if (targetColumnIdx === -1) {
+                    console.warn(`逆参照解決: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+                    this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+                }
                 continue;
             }
 

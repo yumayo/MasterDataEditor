@@ -1097,13 +1097,14 @@ export class EditorTableHandler {
         const valueColumnIndex = this.table.resolveValueColumnIndex(expr.filter.valueColumn, currentDataColumnIndex);
         if (valueColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.filter.valueColumn}' not found in table header`);
+            this.notification.show(`動的参照: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
             return null;
         }
 
         // column=0は行ヘッダーなので、データ列インデックスに+1する
         const cellValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
         if (cellValue === '') {
-            // 値が空の場合は参照を解決できない
+            // 値が空の場合は参照を解決できない（データ欠損であり、スキーマ設定ミスではない）
             return null;
         }
 
@@ -1111,6 +1112,7 @@ export class EditorTableHandler {
         const fullData = await this.referenceDataCache.getFullDataAsync(expr.filter.tableName);
         if (fullData.rows.size === 0) {
             console.warn(`Dynamic reference: table '${expr.filter.tableName}' has no data`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' のデータが空です`);
             return null;
         }
 
@@ -1118,17 +1120,20 @@ export class EditorTableHandler {
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
         if (lookupColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' not found in table '${expr.filter.tableName}'`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
             return null;
         }
         const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
         if (targetColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.targetColumn}' not found in table '${expr.filter.tableName}'`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
             return null;
         }
 
         const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, cellValue);
         if (!row) {
             console.warn(`Dynamic reference: value '${cellValue}' not found in column '${expr.filter.filterColumn}' of table '${expr.filter.tableName}'`);
+            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' の列 '${expr.filter.filterColumn}' で値 '${cellValue}' が見つかりません`);
             return null;
         }
 

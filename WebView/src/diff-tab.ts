@@ -659,7 +659,7 @@ export class DiffTab {
 
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
-        editorTable.initializeModules();
+        editorTable.initializeModules(notification);
 
         editorTable.appendTo(innerWrapper);
         innerWrapper.appendChild(selection.element);
