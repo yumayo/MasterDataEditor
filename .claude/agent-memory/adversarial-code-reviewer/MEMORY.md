@@ -90,8 +90,17 @@
 - CSS全色ハードコード、SVGにviewBox未設定(pan/zoom不可)
 - エッジY座標マジックナンバー(40)が3箇所コピペ
 
+## Search-Replace Known Patterns (2026-03-28)
+- replaceWithQuery が wholeWord を完全無視 — matchesQuery との非対称性（致命的）
+- replaceAllMatches: 複数テーブル変更を最初のテーブルのhistoryにのみ登録 → 2番目以降のテーブルでUndoが壊れる
+- SearchResult.columnIndex はCSV列インデックス — ColumnSorter適用後のDOMとズレてデータ破壊
+- currentResults はスナップショット — Undo後に陳腐化、splice済みの結果でインデックスがズレる
+- saveActiveTableAsync: 同期メソッドなのにAsync命名（命名規則違反）
+- findDomRowByPkValue: PK空文字列時に全行が同一行にマッチ
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) Search Replace: 致命的2件、重要5件、軽微3件 (wholeWord無視, 複数テーブルUndo破壊, 列ソート非対応)
 - (2026-03-28) ER Diagram Tab: 致命的2件、重要5件、軽微3件 (document listener leak, 生焼け, leaveSettingsMode欠落, parseSchemaクラッシュ)
 - (2026-03-27) destColumn動的解決 3rd review (参照ヒント実装): 致命的2件、重要3件、軽微3件 (サンプルデータ破壊、非PK列テスト欠落、PK/非PK非対称性)
 - (2026-03-27) destColumn動的解決 2nd review: 致命的2件、重要5件、軽微3件 (FormPanel/RP2パス未対応、参照ヒント未対応)

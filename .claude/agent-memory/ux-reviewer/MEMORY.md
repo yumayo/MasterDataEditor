@@ -15,7 +15,22 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 ER図機能新規追加）
+### 最新レビュー結果（2026-03-28 検索と置換機能）
+
+#### 検索と置換機能 評価: B+
+- 変更内容: Ctrl+Hで置換モード起動、SEARCHパネルに置換入力欄（`search-panel-replace-row`）と「置換」「すべて置換」ボタンを統合。検索結果に置換プレビュー（`search-result-replace-preview`）を表示。Ctrl+Shift+Fでは置換欄を非表示。正規表現キャプチャグループ対応。Undo/Redo対応。
+- 良い点: `search-panel-replace-row` が `search-panel-input-row` と縦に並ぶ構造で、VSCode 準拠の2段インプット配置。Ctrl+H / Ctrl+Shift+F でモード切替する設計がIDE経験者に馴染みやすい。`search-result-replace-preview`（`→ Blade` 等）が各結果項目に inline 表示されており、変更後のデータを置換実行前に確認できる安全機能として優秀。`search-result-item-focused` クラスで「次に置換されるマッチ」が視覚的に特定できる（DOMダンプ：置換ボタン後に pk=3 の項目が `.search-result-item-focused`）。置換後に即座に結果リストが更新されグリッドも更新される一気通貫の UX が確認できる（すべて置換後に Blade/Blade_EX が反映済み）。Undo後に Sword/Sword_EX に戻る Undo 動作が検証済み。正規表現キャプチャグループ (`([A-Z][a-z]+)` → `$1` で大文字化) が機能している。
+- 修正必須(🔴): `search-replace-button`（「置換」）と `search-replace-all-button`（「すべて置換」）が `<button>` 要素で適切だが、`aria-label` がない。`title` 属性もなく、スクリーンリーダーはボタンテキストの「置換」「すべて置換」をそのまま読むが、「何の」置換かというコンテキストが伝わらない。`aria-label="現在の検索結果を1件置換"` / `aria-label="すべての検索結果を一括置換"` 相当が必要。
+- 修正必須(🔴): `search-panel-replace-row` の `style=""` が空で、Ctrl+Shift+F のとき非表示になるはずが DOM ダンプでは `style=""` のまま（Ctrl+H テスト）。CSS クラスによる show/hide ではなく `style=""` / `style="display:none"` で制御している設計が見えるが、Ctrl+H テストの DOM では `search-panel-replace-row` の style が空（= display:block）になっており、「表示中」を確認できる。一方 Ctrl+Shift+F テストの DOM でも同様に `style=""` ——これは「display:none を設定せずにいる」か「初期値のまま」かが DOM から判別しにくい。スクリーンショットでは Ctrl+Shift+F 時に置換欄が消えているため機能的には正常だが、`display:none` ではなく `style=""` という空スタイルで制御している場合、CSS の詳細度が変わったタイミングで意図しない表示が起きるリスクがある。`hidden` 属性または専用 CSS クラス（`.search-replace-hidden`）での制御に変えるべき。
+- 修正必須(🔴): `search-panel-replace-input` に `aria-label` がない。placeholder「置換...」は視覚的には分かるが、スクリーンリーダーにとってはフィールドの用途が不明確。`aria-label="置換後のテキスト"` が必要。なお `search-panel-input` にも `aria-label` がなく同じ問題を持つ（これは既存の継続課題）。
+- 修正必須(🔴): `search-result-replace-preview`（`→ Blade` 等）の `span` 要素に `aria-hidden="true"` がない。スクリーンリーダーは「Sword → Blade」全体を1エントリとして読み上げてしまい、「現在の値」と「置換後の値」の区切りが不明確になる。`aria-label` で「Sword を Blade に置換」と読ませるか、プレビュー部分を `aria-hidden="true"` で隠して既存ラベルで代替する。
+- 改善推奨(🟡): 「すべて置換」ボタンが検索結果が0件でも押せる状態になっているかが DOM ダンプからは不明。通常、検索結果 0 件の場合は `disabled` 属性を付けてグレーアウトすべき。誤クリックでの意図しない空置換を防ぐためのガードレールとして重要。
+- 改善推奨(🟡): 置換後に「N 件置換しました」といった成功フィードバックがない（ステータスバーやトーストでの通知）。特に「すべて置換」は数百件を一括変更するケースがあるため、実施件数の通知がないと「本当に全部変わったのか」が確認できない。
+- 改善推奨(🟡): `search-option-button` の `data-option="regex"` ボタンのラベルが `.*` のみ。正規表現を知らないプランナーには意味不明。`title="正規表現で検索"` 属性があれば tooltip で説明できる。`data-option="caseSensitive"` の `Aa` と `data-option="wholeWord"` の `|ab|` は `title="単語単位で検索"` があるのに `.*` のみ title がない（一貫性の欠如）。
+- 改善推奨(🟡): activity-bar SVG に aria-hidden="true" がない（全サイクル継続課題）。
+- 改善推奨(🟡): fill-handle が `display:block` で残存（left:207px, top:38px）（全サイクル継続課題）。
+
+### 過去のレビュー結果（2026-03-28 ER図機能新規追加）
 
 #### ER図機能 評価: B
 - 変更内容: アクティビティバーにerDiagramアイコン、専用タブとしてSVGベースのER図を表示。テーブルをノード、FK参照を実線エッジ、動的参照を破線エッジで描画。ノードクリックでテーブルタブを開き、選択時に関連エッジをハイライト。ドラッグでノード移動可能。
@@ -124,3 +139,8 @@
 - er-node (<g>要素) に role="button"/tabindex がない（2026-03-28 ER図機能で新規発見）
 - er-diagram-svg に role="img"/aria-label がない（2026-03-28 ER図機能で新規発見）
 - er-legend の fill/stroke がCSSカスタムプロパティを使わずハードコード（テーマ切替時に破綻するリスク）
+- search-replace-button / search-replace-all-button に aria-label がない（2026-03-28 検索置換機能で新規発見）
+- search-panel-replace-input に aria-label がない（search-panel-input も同様）（2026-03-28 検索置換機能で新規発見）
+- search-result-replace-preview の span に aria-hidden がなく、スクリーンリーダーが「元の値 → 置換後」を区別できない（2026-03-28 検索置換機能で新規発見）
+- search-panel-replace-row の show/hide が style="" 空文字制御で、hidden 属性または CSS クラスより壊れやすい（2026-03-28 検索置換機能で新規発見）
+- regex オプションボタン（.*）に title 属性がなく、Aa / |ab| と一貫性がない（2026-03-28 検索置換機能で新規発見）
