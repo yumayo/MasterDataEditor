@@ -15,7 +15,16 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-27）
+### 最新レビュー結果（2026-03-27 second review）
+
+#### parentColumnName動的解決（reverse-reference-dynamic-parent-column） 評価: A
+- 良い点: id列の cell-reverse-reference-hint に「ガチャ1」「ガチャ2」が正確に表示（code値でマッチングされている）。行切替でミニテーブルフィルタが正確に追随（M001→1行, M002→1行）。bug-report #59（PK値固定ルックアップ）の再発なし。record_id列ヘッダーに title="FK: 動的参照 (table → master.column)" が表示されており通常FKと区別できる。
+- 修正必須(🔴): テストタイトル「code列に逆参照ヒントが表示されること」に対してDOMに code列（data-col="1"）へのヒントが存在しない。テスト意図と実装の乖離がある。id列への表示が正しい仕様ならテストタイトルの修正が必要。
+- 改善推奨(🟡): relations-table-dirty（●）がデータ変更なし状態でも表示（継続課題）。
+- 改善推奨(🟡): fill-handle がミニテーブル（editor-table--inactive）に display:block で残存（継続課題）。
+- 未確認: ペインスタック（定義ジャンプ後のRP2）での逆参照ヒント表示テストが存在しない（bug-report #72 再発リスク）。
+
+### 過去のレビュー結果（2026-03-27 first review）
 
 #### destColumn動的解決（dynamicReference） 評価: A
 - 良い点: reward_record_id ヘッダーの title="FK: 動的参照 (table → master.column)" で通常FKと区別できている。cell-error が動的参照のバリデーション失敗時に正確に付与される。2種類のエラーメッセージ（「参照先に値なし」と「参照元カラムが空」）が適切に区別されており、プランナーが問題を診断しやすい。RelationsPanelが行切替で動的に参照先テーブルを切り替える（quest id=1でchara、id=2でitem）。RP2（定義ジャンプ後）でも動的参照が正しく解決されている。Undoのバリデーション再計算が正確。
