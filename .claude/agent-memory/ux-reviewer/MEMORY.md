@@ -15,7 +15,18 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-27 third review）
+### 最新レビュー結果（2026-03-28 NotificationToast メッセージバー化）
+
+#### NotificationToast メッセージバー化 評価: C
+- 問題の核心: 旧実装（ベルマーク・履歴パネル）と新実装（ステータスバーメッセージ欄）が DOM 上に混在している。廃止されたはずの `notification-bell`・`notification-history` が特定の通知フロー（エラー通知）でも出現する。
+- 良い点: ステータスバー内の `notification-message` テキスト表示は正確に動作。`notification-container` がステータスバー内に配置されており、設計意図（body直下への依存排除）は達成。`notification-toast` に `role="alert"` が付与されており ARIAが正しい。DEBUG CONSOLEへのエントリ追加（caller/時刻/結果列）は有用。
+- 修正必須(🔴): `notification-bell` と `notification-history` が廃止されたにもかかわらず DOM に残存（エラー通知フロー）。「ベルマーク要素が存在しないこと」テストは通過しているが、別フロー（エラー通知）では出現しており、実装上の分岐が残っている。
+- 修正必須(🔴): 「複数回show()を呼ぶと最後のメッセージで上書きされる」テストの DOM で `notification-toast-area` に3件のトーストが蓄積している（最後のメッセージが `notification-message` に正しく反映される一方、トーストは削除されずに積み重なる）。非エラー通知でもトーストが蓄積するのは設計仕様の矛盾。
+- 改善推奨(🟡): `notification-message` テキストの文字色コントラスト。ステータスバー（暗色背景）上に表示されるが、スクリーンショット上では視認しやすいように見える。ただし長いメッセージの省略（text-overflow:ellipsis）の有無が DOM からは確認できない。
+- 改善推奨(🟡): `notification-container` の `role` 属性がない。ライブリージョンとして `aria-live="polite"` を設定すべき（トーストには個別に role="alert" があるが、ステータスバーメッセージ欄にはない）。
+- 改善推奨(🟡): activity-bar の SVG に aria-hidden="true" がない（継続課題）。
+
+### 過去のレビュー結果（2026-03-27 third review）
 
 #### destColumn動的解決の参照ヒント表示（dynamic-reference-dest-column-resolution / reference-hint） 評価: A
 - 良い点: destColumn正常系で item_id 列の全行に cell-reference-hint が正確に表示（行1=剣, 行2=槍, 行3=盾）。前回レビューで🔴指摘した「動的参照でcell-reference-hintが表示されない」問題が解消済み。destColumn=存在しない列名の場合は item_id 列の全セルからcell-reference-hintが正しく除去され、数字のみ表示される（安全なフォールバック）。item_id ヘッダーの title="FK: 動的参照 (type_map → master_table.column)" で通常FKと区別できている（正常系・異常系とも一貫）。reference-hintスペックでも単純参照・type_map参照・動的参照の3ケースすべてで cell-reference-hint が正確に表示されている。bug-report #184（destColumn PK列名固定バグ）の修正が参照ヒント表示にも正しく反映されている。
@@ -66,3 +77,5 @@
 - 起動時スキャン中であることを示すインジケーターなし（2026-03-24）
 - editor-right-slot の非表示時に 6px 幅の透明スロットが残留（relations-panel-toggle で新規発見、2026-03-24）
 - プラグインエラーのvalidation-panel-itemにrole="button"が付いているが、クリックしても何も起きない（2026-03-25新規発見）
+- notification-bell / notification-history が廃止されたはずなのにエラー通知フローで残存（2026-03-28新規発見）
+- notification-toast が非エラー通知でも蓄積してクリアされない（2026-03-28新規発見）
