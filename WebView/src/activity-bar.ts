@@ -1,7 +1,7 @@
 /**
  * アクティビティバーの項目種別
  */
-export type ActivityBarItem = 'files' | 'references' | 'search' | 'sourceControl';
+export type ActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'sourceControl';
 
 /**
  * ファイルアイコン（SVG）
@@ -24,6 +24,13 @@ const REFERENCES_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fil
  */
 const SEARCH_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M15.25 1C11.528 1 8.5 4.028 8.5 7.75C8.5 9.295 9.04 10.713 9.94 11.83L2.22 19.56L3.64 20.98L11.37 13.25C12.487 14.15 13.905 14.5 15.25 14.5C18.972 14.5 22 11.472 22 7.75C22 4.028 18.972 1 15.25 1ZM15.25 12.5C12.632 12.5 10.5 10.368 10.5 7.75C10.5 5.132 12.632 3 15.25 3C17.868 3 20 5.132 20 7.75C20 10.368 17.868 12.5 15.25 12.5Z" fill="currentColor"/>
+</svg>`;
+
+/**
+ * ブックマークアイコン（SVG — 旗/しおり形状）
+ */
+const BOOKMARKS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M17 3H7C5.9 3 5 3.9 5 5V21L12 18L19 21V5C19 3.9 18.1 3 17 3ZM17 18L12 15.82L7 18V5H17V18Z" fill="currentColor"/>
 </svg>`;
 
 /**
@@ -54,6 +61,7 @@ export class ActivityBar {
     private readonly filesButton: HTMLElement;
     private readonly referencesButton: HTMLElement;
     private readonly searchButton: HTMLElement;
+    private readonly bookmarksButton: HTMLElement;
     private readonly sourceControlButton: HTMLElement;
     private readonly onItemClick: (item: ActivityBarItem) => void;
     private readonly onSettingsClick: () => void;
@@ -69,11 +77,14 @@ export class ActivityBar {
         this.filesButton = this.createButton(FILES_ICON_SVG, 'files');
         this.referencesButton = this.createButton(REFERENCES_ICON_SVG, 'references');
         this.searchButton = this.createButton(SEARCH_ICON_SVG, 'search');
+        this.bookmarksButton = this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks');
         this.sourceControlButton = this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl');
 
+        // 配置順序: files, references, search, bookmarks, sourceControl
         this.element.appendChild(this.filesButton);
         this.element.appendChild(this.referencesButton);
         this.element.appendChild(this.searchButton);
+        this.element.appendChild(this.bookmarksButton);
         this.element.appendChild(this.sourceControlButton);
 
         // 歯車ボタンは margin-top: auto で下部固定
@@ -146,6 +157,7 @@ export class ActivityBar {
         this.filesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'files');
         this.referencesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'references');
         this.searchButton.classList.toggle('activity-bar-item-active', this.activeItem === 'search');
+        this.bookmarksButton.classList.toggle('activity-bar-item-active', this.activeItem === 'bookmarks');
         this.sourceControlButton.classList.toggle('activity-bar-item-active', this.activeItem === 'sourceControl');
     }
 }

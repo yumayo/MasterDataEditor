@@ -509,8 +509,11 @@ export class EditorTable {
             const pkValue = table.getRowPkValue(position.row);
             // フォームビュー表示はPKセルかつPK値が空でない場合のみ表示する
             const canShowFormView = isPkColumn && pkValue !== '' && table.tab !== false;
-            // 逆参照なし かつ フォームビューも表示しない場合はメニューを出さない
-            if (allEntries.length === 0 && !canShowFormView) return;
+            // ブックマーク追加/解除はPK値が取れる通常テーブル（タブあり）でのみ表示する
+            // ミニテーブル（RelationsPanel内）やDiffTabではtab===falseなので抑制される
+            const canShowBookmark = pkValue !== '' && table.tab !== false;
+            // 表示するメニュー項目がない場合はメニューを出さない
+            if (allEntries.length === 0 && !canShowFormView && !canShowBookmark) return;
             e.preventDefault();
             e.stopPropagation();
             // ドラグ状態をリセット
@@ -529,6 +532,30 @@ export class EditorTable {
                     label: 'フォームビューを表示',
                     action: () => { tabRef.showFormPanel(table.tableName, pkValue); },
                 });
+            }
+            // ブックマーク追加/解除メニュー
+            if (canShowBookmark) {
+                if (table.sidebar.hasBookmark(table.tableName, pkValue)) {
+                    menuItems.push({
+                        label: 'ブックマークを解除',
+                        action: () => { table.sidebar.removeBookmark(table.tableName, pkValue); },
+                    });
+                } else {
+                    // 表示テキスト: PK列以外の最初の列の値を使う
+                    let displayText = '';
+                    const pkColumns = table.tableData.primaryKeyColumns;
+                    const colCount = table.getColumnCount();
+                    for (let c = 0; c < colCount; c++) {
+                        const headerName = table.getColumnHeaderValue(c);
+                        if (pkColumns.includes(headerName)) continue;
+                        displayText = table.getCellValueAt(position.row, c + 1);
+                        break;
+                    }
+                    menuItems.push({
+                        label: 'ブックマークに追加',
+                        action: () => { table.sidebar.addBookmark(table.tableName, pkValue, displayText); },
+                    });
+                }
             }
             table.contextMenu.show(e.clientX, e.clientY, menuItems);
         });

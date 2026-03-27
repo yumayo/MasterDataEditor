@@ -3,6 +3,7 @@ import {Tab} from "./tab";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
 import {SearchPanel} from "./search-panel";
+import {BookmarkPanel} from "./bookmark-panel";
 import {SourceControlPanel} from "./source-control-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
@@ -15,7 +16,7 @@ import {invalidateGitStatusCache, invalidateGitShowCache} from "./api";
 /**
  * サイドバー
  * アクティビティバー（48px） + サイドバーコンテンツ（252px）の2分割構成
- * ファイルエクスプローラー・REFERENCESパネルを切り替え表示する
+ * ファイルエクスプローラー・REFERENCESパネル・ブックマークパネルを切り替え表示する
  * 右端のドラッグハンドルでリサイズ可能
  */
 export class Sidebar {
@@ -26,6 +27,7 @@ export class Sidebar {
     private readonly filesPanel: HTMLElement;
     private readonly referencesPanel: ReferencesPanel;
     private readonly searchPanel: SearchPanel;
+    private readonly bookmarkPanel: BookmarkPanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly directory: ExplorerDirectory;
     constructor(
@@ -66,6 +68,10 @@ export class Sidebar {
         // SEARCHパネル
         this.searchPanel = new SearchPanel(tab, openEditorTables);
         this.searchPanel.appendTo(sidebarContent);
+
+        // ブックマークパネル
+        this.bookmarkPanel = new BookmarkPanel(tab);
+        this.bookmarkPanel.appendTo(sidebarContent);
 
         // ソース管理パネル（差分タブを開くために Tab への参照が必要）
         this.sourceControlPanel = new SourceControlPanel(tab, this.activityBar);
@@ -170,10 +176,36 @@ export class Sidebar {
         this.searchPanel.focus();
     }
 
+    // =========================================================================
+    // ブックマーク操作（EditorTable のコンテキストメニューから呼ばれる）
+    // =========================================================================
+
+    /**
+     * ブックマークを追加する
+     */
+    addBookmark(tableName: string, pkValue: string, displayText: string): void {
+        this.bookmarkPanel.addBookmark(tableName, pkValue, displayText);
+    }
+
+    /**
+     * ブックマークを削除する
+     */
+    removeBookmark(tableName: string, pkValue: string): void {
+        this.bookmarkPanel.removeBookmark(tableName, pkValue);
+    }
+
+    /**
+     * 指定テーブル名+PK値のブックマークが存在するか確認する
+     */
+    hasBookmark(tableName: string, pkValue: string): boolean {
+        return this.bookmarkPanel.hasBookmark(tableName, pkValue);
+    }
+
     private switchPanel(item: ActivityBarItem): void {
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.referencesPanel.hide();
         this.searchPanel.hide();
+        this.bookmarkPanel.hide();
         this.sourceControlPanel.hide();
 
         if (item === 'sourceControl') {
@@ -189,9 +221,10 @@ export class Sidebar {
             this.filesPanel.classList.add('sidebar-panel-active');
         } else if (item === 'references') {
             this.referencesPanel.show();
-        } else {
-            // search
+        } else if (item === 'search') {
             this.searchPanel.show();
+        } else if (item === 'bookmarks') {
+            this.bookmarkPanel.show();
         }
     }
 

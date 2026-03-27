@@ -1,0 +1,74 @@
+/* ブックマークパネル */
+.bookmark-panel { display: none; height: 100%; overflow-y: auto; }
+.bookmark-panel.sidebar-panel-active { display: block; }
+
+/* コンテンツ領域（スクロール可能） */
+.bookmark-panel-content { overflow-y: auto; max-height: calc(100vh - 80px); }
+
+/* テーブルグループ */
+.bookmark-group { margin-bottom: 2px; }
+
+/* グループヘッダー（テーブル名で区切る） */
+.bookmark-group-header {
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: var(--font-color);
+    opacity: 0.7;
+}
+
+/* エントリ（クリック可能な行） */
+.bookmark-entry {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 16px;
+    cursor: pointer;
+    color: var(--font-color);
+}
+
+.bookmark-entry:hover { background-color: rgba(0, 0, 0, 0.1); }
+[data-theme="dark"] .bookmark-entry:hover { background-color: rgba(255, 255, 255, 0.05); }
+
+/* PK値（等幅フォント、薄い色で表示） */
+.bookmark-entry-pk {
+    font-family: monospace;
+    font-size: 0.85em;
+    color: #888;
+    flex-shrink: 0;
+}
+
+/* 表示テキスト（名前など） */
+.bookmark-entry-display {
+    flex: 1;
+    font-size: 13px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 削除ボタン（ホバー時のみ表示、右寄せ） */
+.bookmark-entry-delete {
+    display: none;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: var(--font-color);
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.bookmark-entry:hover .bookmark-entry-delete { display: flex; }
+
+.bookmark-entry-delete:hover { background-color: rgba(0, 0, 0, 0.15); }
+[data-theme="dark"] .bookmark-entry-delete:hover { background-color: rgba(255, 255, 255, 0.15); }
