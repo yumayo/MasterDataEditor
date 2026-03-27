@@ -82,8 +82,8 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     // ツールバーを初期化（タブ・エディタへの密結合。コンストラクタ内でDOMイベントをバインドするため変数保持不要）
     new Toolbar(document.getElementById('toolbar')!, tab, editor);
 
-    // コマンドパレットを初期化（タブへの密結合）
-    const commandPalette = new CommandPalette(tab, document.body);
+    // コマンドパレットを初期化（タブへの密結合、クエリ式検索でストアデータを参照するため openEditorTables を渡す）
+    const commandPalette = new CommandPalette(tab, document.body, tab.getOpenEditorTables());
 
     // statusBar stub は preload 前に生成済み（DEBUG CONSOLE 追跡基盤として）。
     // ここでは pluginRunner → validationPanel → bottomPanel → realStatusBar の順で生成し、
