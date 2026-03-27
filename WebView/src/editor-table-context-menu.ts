@@ -94,6 +94,13 @@ export class EditorTableContextMenu {
                 {label: insertLeftLabel, action: () => { this.table.insertColumns(startColumnIndex, columnCount); }},
                 {label: insertRightLabel, action: () => { this.table.insertColumns(endColumnIndex + 1, columnCount); }},
                 {label: deleteLabel, action: () => { this.table.removeColumns(startColumnIndex, columnCount); }},
+                // フリーズペイン: ミニテーブルでは固定メニューを表示しない
+                ...(this.table.isMiniTableInstance() ? [] : [
+                    {separator: true} as ContextMenuEntry,
+                    ...(this.table.getFrozenColumnCount() > 0
+                        ? [{label: '列の固定を解除', action: () => { this.table.unfreezeColumns(); }}]
+                        : [{label: `先頭からこの列まで固定 (${contextMenuColumnIndex + 1}列)`, action: () => { this.table.freezeColumns(contextMenuColumnIndex + 1); }}]),
+                ]),
             ];
             this.contextMenu.show(e.clientX, e.clientY, menuItems);
         };
@@ -161,10 +168,19 @@ export class EditorTableContextMenu {
             const insertAboveLabel = rowCount > 1 ? `上に${rowCount}行を挿入` : '上に行を挿入';
             const insertBelowLabel = rowCount > 1 ? `下に${rowCount}行を挿入` : '下に行を挿入';
             const deleteLabel = rowCount > 1 ? `${rowCount}行を削除` : '行を削除';
+            // contextMenuRowIndex は1始まり（Selection座標）だが、データ行としては0始まりに変換する
+            const dataRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!);
             this.contextMenu.show(e.clientX, e.clientY, [
                 {label: insertAboveLabel, action: () => { this.table.insertRows(startRow, rowCount); }},
                 {label: insertBelowLabel, action: () => { this.table.insertRows(endRow + 1, rowCount); }},
                 {label: deleteLabel, action: () => { this.table.removeRows(startRow, rowCount); }},
+                // フリーズペイン: ミニテーブルでは固定メニューを表示しない
+                ...(this.table.isMiniTableInstance() ? [] : [
+                    {separator: true} as ContextMenuEntry,
+                    ...(this.table.getFrozenRowCount() > 0
+                        ? [{label: '行の固定を解除', action: () => { this.table.unfreezeRows(); }}]
+                        : [{label: 'この行まで固定', action: () => { this.table.freezeRows(dataRowIndex + 1); }}]),
+                ]),
             ]);
         };
     }

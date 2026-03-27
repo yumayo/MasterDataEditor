@@ -84,6 +84,11 @@ export class EditorTable {
     /** 行数カウンター要素（フィルター適用中に「X / Y 行」を表示する） */
     private readonly filterRowCountElement: HTMLElement;
 
+    /** 固定列数（0=未固定） */
+    private frozenColumnCount: number;
+    /** 固定行数（0=未固定） */
+    private frozenRowCount: number;
+
     /** 空行数（データ行+バッファ1行） */
     private readonly emptyRowCount: number;
     /** ルート要素に付与するCSSクラス名（通常は 'editor-table'、ミニテーブルは別クラス） */
@@ -154,6 +159,8 @@ export class EditorTable {
         this.gitDiffTracker = false;
         this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
+        this.frozenColumnCount = 0;
+        this.frozenRowCount = 0;
         this.lastNotifiedRow = -1;
         this.lastFocusedRow = -1;
         this.lastFocusedCol = -1;
@@ -739,6 +746,206 @@ export class EditorTable {
         this.validationPanel = panel;
     }
 
+    // =========================================================================
+    // フリーズペイン（行/列の固定）
+    // =========================================================================
+
+    /** 現在の固定列数を返す */
+    getFrozenColumnCount(): number { return this.frozenColumnCount; }
+
+    /** 現在の固定行数を返す */
+    getFrozenRowCount(): number { return this.frozenRowCount; }
+
+    /**
+     * 先頭からcount列を固定する。
+     * 各データ行・ヘッダー行の該当セルに position:sticky + left を設定し、
+     * 最後の固定列に freeze-column-border クラスを付与する。
+     */
+    freezeColumns(count: number): void {
+        if (count === 0) { this.unfreezeColumns(); return; }
+        this.frozenColumnCount = count;
+        this.applyFreezeColumnStyles();
+    }
+
+    /**
+     * 列固定を解除する。
+     * 固定セルの sticky と left をクリアし、freeze-column-border を除去する。
+     */
+    unfreezeColumns(): void {
+        this.clearFreezeColumnStyles();
+        this.frozenColumnCount = 0;
+    }
+
+    /**
+     * 先頭からcount行を固定する。
+     * 該当行の全セルに position:sticky + top を設定し、
+     * 最後の固定行の行ヘッダーに freeze-row-border クラスを付与する。
+     */
+    freezeRows(count: number): void {
+        if (count === 0) { this.unfreezeRows(); return; }
+        this.frozenRowCount = count;
+        this.applyFreezeRowStyles();
+    }
+
+    /**
+     * 行固定を解除する。
+     * 固定行のセルの sticky と top をクリアし、freeze-row-border を除去する。
+     */
+    unfreezeRows(): void {
+        this.clearFreezeRowStyles();
+        this.frozenRowCount = 0;
+    }
+
+    /**
+     * 固定列のCSS stickyスタイルを全行に適用する。
+     * 行ヘッダー幅(40px)を基準に、各固定列の left を累積計算する。
+     */
+    applyFreezeColumnStyles(): void {
+        if (this.frozenColumnCount === 0) return;
+        const rowCount = this.element.children.length;
+        // 各固定列の left 値を事前に計算する（行ヘッダー幅 + 前の固定列幅の合計）
+        const leftValues: number[] = [];
+        let cumulativeLeft = 40; // 行ヘッダー幅
+        for (let col = 0; col < this.frozenColumnCount; col++) {
+            leftValues.push(cumulativeLeft);
+            // 列幅は列ヘッダーセルから取得する（px文字列をパース）
+            const width = parseInt(this.getColumnWidth(col));
+            cumulativeLeft += width;
+        }
+        // 全行（ヘッダー行 + データ行 + バッファ空行）に対して固定列セルにstickyを適用
+        for (let row = 0; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            for (let col = 0; col < this.frozenColumnCount; col++) {
+                // col+1: 行ヘッダー（children[0]）を除くデータ列
+                const cell = rowElement.children[col + 1] as HTMLElement;
+                if (!cell) continue;
+                cell.style.position = 'sticky';
+                cell.style.left = leftValues[col] + 'px';
+                cell.style.zIndex = `var(--z-index-freeze-column)`;
+                // 最後の固定列に影クラスを付与
+                if (col === this.frozenColumnCount - 1) {
+                    cell.classList.add('freeze-column-border');
+                }
+            }
+        }
+    }
+
+    /**
+     * 固定列のCSS stickyスタイルをクリアする。
+     */
+    private clearFreezeColumnStyles(): void {
+        const rowCount = this.element.children.length;
+        for (let row = 0; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            for (let col = 0; col < this.frozenColumnCount; col++) {
+                const cell = rowElement.children[col + 1] as HTMLElement;
+                if (!cell) continue;
+                cell.style.position = '';
+                cell.style.left = '';
+                cell.style.zIndex = '';
+                cell.classList.remove('freeze-column-border');
+            }
+        }
+    }
+
+    /**
+     * 固定行のCSS stickyスタイルを適用する。
+     * ヘッダー行の高さ(24px)を基準に、各固定行の top を累積計算する。
+     */
+    applyFreezeRowStyles(): void {
+        if (this.frozenRowCount === 0) return;
+        // 列ヘッダー行の高さを取得（スキーマの comment 有無で高さが変わる）
+        const headerRowElement = this.element.children[0] as HTMLElement;
+        const headerRowHeight = headerRowElement.getBoundingClientRect().height;
+        let cumulativeTop = headerRowHeight;
+        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
+            // DOM行インデックス: データ行0 → element.children[1]
+            const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
+            if (!rowElement) continue;
+            const cellCount = rowElement.children.length;
+            const rowHeight = rowElement.getBoundingClientRect().height;
+            for (let col = 0; col < cellCount; col++) {
+                const cell = rowElement.children[col] as HTMLElement;
+                // 行ヘッダーセルは既に sticky left:0 なので、top のみ設定する
+                if (col === 0) {
+                    cell.style.top = cumulativeTop + 'px';
+                    // 最後の固定行の行ヘッダーに影クラスを付与
+                    if (dataRowIdx === this.frozenRowCount - 1) {
+                        cell.classList.add('freeze-row-border');
+                    }
+                } else {
+                    cell.style.position = 'sticky';
+                    cell.style.top = cumulativeTop + 'px';
+                    cell.style.zIndex = `var(--z-index-freeze-row)`;
+                }
+            }
+            cumulativeTop += rowHeight;
+        }
+    }
+
+    /**
+     * 固定行のCSS stickyスタイルをクリアする。
+     */
+    private clearFreezeRowStyles(): void {
+        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
+            const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
+            if (!rowElement) continue;
+            const cellCount = rowElement.children.length;
+            for (let col = 0; col < cellCount; col++) {
+                const cell = rowElement.children[col] as HTMLElement;
+                if (col === 0) {
+                    // 行ヘッダーは top のみクリア（position:sticky left:0 は既存のまま維持）
+                    cell.style.top = '';
+                    cell.classList.remove('freeze-row-border');
+                } else {
+                    cell.style.position = '';
+                    cell.style.top = '';
+                    cell.style.zIndex = '';
+                }
+            }
+        }
+    }
+
+    /**
+     * 行/列の構造変更後にフリーズスタイルを再適用する。
+     * 一度クリアしてから再適用することで、構造変更で残った古いスタイルを確実に除去する。
+     */
+    private reapplyFreezeStylesAfterStructureChange(): void {
+        // 構造変更でセル位置がずれるため、一度全セルからフリーズスタイルを除去してから再適用する。
+        // removeColumns のクランプで frozenColumnCount が 0 になるケースがあるため、
+        // 早期リターンせず常にクリアを実行する。
+        this.clearAllFreezeStyles();
+        if (this.frozenColumnCount > 0) { this.applyFreezeColumnStyles(); }
+        if (this.frozenRowCount > 0) { this.applyFreezeRowStyles(); }
+    }
+
+    /**
+     * 全セルからフリーズ関連スタイル（sticky, left, top, zIndex, border クラス）を除去する。
+     * 構造変更後に位置がずれたセルの古いスタイル残留を防ぐため、全セルを走査する。
+     */
+    private clearAllFreezeStyles(): void {
+        const rowCount = this.element.children.length;
+        for (let row = 0; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            const cellCount = rowElement.children.length;
+            for (let col = 0; col < cellCount; col++) {
+                const cell = rowElement.children[col] as HTMLElement;
+                // 行ヘッダー（col===0）の position:sticky と left:0 は freeze とは無関係の
+                // 既存スタイルなので保持する。top のみクリアする。
+                if (col === 0) {
+                    cell.style.top = '';
+                    cell.classList.remove('freeze-row-border');
+                } else {
+                    cell.style.position = '';
+                    cell.style.left = '';
+                    cell.style.top = '';
+                    cell.style.zIndex = '';
+                    cell.classList.remove('freeze-column-border', 'freeze-row-border');
+                }
+            }
+        }
+    }
+
     /**
      * 行数を取得する（列ヘッダー行を含む）
      */
@@ -959,6 +1166,8 @@ export class EditorTable {
                 EditorTable.applyCellWidth(cell, width);
             }
         }
+        // 固定列の left 値は列幅に依存するため、列幅変更後に再計算する
+        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
     }
 
     /**
@@ -2141,6 +2350,7 @@ export class EditorTable {
     /** 複数列挿入（Commandを使用してhistoryに追加） */
     public insertColumns(columnIndex: number, count: number): void {
         this.structure.insertColumns(columnIndex, count);
+        this.reapplyFreezeStylesAfterStructureChange();
     }
 
     /** 列挿入の内部実装（Commandから呼び出される） */
@@ -2171,6 +2381,7 @@ export class EditorTable {
     /** 複数行挿入（Commandを使用してhistoryに追加） */
     public insertRows(rowIndex: number, count: number): void {
         this.structure.insertRows(rowIndex, count);
+        this.reapplyFreezeStylesAfterStructureChange();
     }
 
     /** 行挿入の内部実装（Commandから呼び出される） */
@@ -2186,6 +2397,11 @@ export class EditorTable {
     /** 複数列削除（Commandを使用してhistoryに追加） */
     public removeColumns(startColumnIndex: number, count: number): void {
         this.structure.removeColumns(startColumnIndex, count);
+        // 削除後に固定列数が列総数を超えていたらクランプする
+        if (this.frozenColumnCount > 0) {
+            this.frozenColumnCount = Math.min(this.frozenColumnCount, this.getColumnCount());
+        }
+        this.reapplyFreezeStylesAfterStructureChange();
     }
 
     /** 行削除（Commandを使用してhistoryに追加） */
@@ -2196,6 +2412,7 @@ export class EditorTable {
     /** 複数行削除（Commandを使用してhistoryに追加） */
     public removeRows(startRowIndex: number, count: number): void {
         this.structure.removeRows(startRowIndex, count);
+        this.reapplyFreezeStylesAfterStructureChange();
     }
 
     /** 列を削除する（Undo用） */

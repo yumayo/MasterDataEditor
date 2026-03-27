@@ -6,8 +6,11 @@
 :root {
     /* ─── EditorTable 内部の重なり順 ─── */
     --z-index-selection-range-bg: 10;
+    --z-index-freeze-column: 15;
     --z-index-editor-table-row-header: 20;
+    --z-index-freeze-row: 25;
     --z-index-editor-table-column-header-row: 30;
+    --z-index-freeze-corner: 35;
     --z-index-editor-table-corner: 40;
     --z-index-resize-handle: 45;
     --z-index-grid-textfield-active: 50;
