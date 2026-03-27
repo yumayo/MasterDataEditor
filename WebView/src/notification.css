@@ -3,7 +3,7 @@
    ============================================================================= */
 
 /* コンテナ: ステータスバー内に配置される相対配置ラッパー */
-/* トーストエリアと履歴パネルの position: absolute の基準点になる */
+/* トーストエリアの position: absolute の基準点になる */
 .notification-container {
     position: relative;
     display: flex;
@@ -11,23 +11,18 @@
     height: 100%;
 }
 
-/* ベルマークボタン（ステータスバーに合うフラットスタイル） */
-.notification-bell {
+/* メッセージ欄（ステータスバー内の1行テキスト表示） */
+.notification-message {
+    font-size: 12px;
+    color: var(--font-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 22px;
     height: 100%;
     display: flex;
     align-items: center;
-    justify-content: center;
     padding: 0 8px;
-    cursor: pointer;
-    background: transparent;
-    border: none;
-    color: var(--font-color, #cccccc);
-    transition: none;
-    user-select: none;
-}
-
-.notification-bell:hover {
-    background-color: var(--hover-color);
 }
 
 /* トースト表示エリア（ステータスバーの上方に展開） */
@@ -62,54 +57,4 @@
 
 .notification-toast.fading {
     opacity: 0;
-}
-
-/* 履歴パネル（ベルクリックで表示、ステータスバーの上方に展開） */
-.notification-history {
-    display: none;
-    position: absolute;
-    bottom: 100%;
-    right: 0;
-    box-sizing: border-box;
-    width: 320px;
-    max-height: 300px;
-    overflow-y: auto;
-    background: var(--background-color, #2d2d2d);
-    border: none;
-    border-radius: 4px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    padding: 0;
-    z-index: var(--z-index-notification);
-}
-
-.notification-history.visible {
-    display: block;
-}
-
-/* 履歴アイテム */
-.notification-history-item {
-    padding: 10px 14px;
-    font-size: 13px;
-    color: var(--font-color, #cccccc);
-    border-bottom: 1px solid rgba(128, 128, 128, 0.15);
-    word-break: break-word;
-}
-
-.notification-history-item:last-child {
-    border-bottom: none;
-}
-
-/* ダークテーマ上書き */
-[data-theme="dark"] .notification-bell {
-    color: #cccccc;
-}
-
-[data-theme="dark"] .notification-history {
-    background: #252526;
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .notification-history-item {
-    color: #cccccc;
-    border-bottom-color: rgba(255, 255, 255, 0.08);
 }

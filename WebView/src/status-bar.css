@@ -15,7 +15,7 @@
     font-size: 11px;
     color: var(--font-color);
     user-select: none;
-    /* notification-history などの absolute 要素がステータスバー上方に展開できるよう overflow visible を維持 */
+    /* notification-toast-area, background-popover などの absolute 要素がステータスバー上方に展開できるよう overflow visible を維持 */
     overflow: visible;
     box-sizing: border-box;
 }

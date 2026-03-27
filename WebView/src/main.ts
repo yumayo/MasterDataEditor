@@ -62,8 +62,8 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
     const referenceDataCache = new ReferenceDataCache(store);
 
     // 通知ポップアップを初期化（アプリ全体で1つ。Tab より先に生成し、Tab 経由で子コンポーネントに伝播させる）
-    // StatusBar のコンストラクタに渡してステータスバー右端に配置する
-    const notification = new NotificationToast();
+    // DebugConsole を渡して通知発行時にログ記録する。StatusBar のコンストラクタに渡してステータスバー内に配置する
+    const notification = new NotificationToast(debugConsole);
 
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
