@@ -718,6 +718,44 @@ export class DeleteRowCommand implements Command {
 }
 
 /**
+ * 行を移動するコマンド（ドラッグ移動用）
+ *
+ * fromDomDataRowIndex: 移動元のDOMデータ行インデックス（0始まり、列ヘッダー除く）
+ * toDomDataRowIndex: 移動先のDOMデータ行インデックス（移動元を除外した状態でのインデックス）
+ *
+ * execute: from → to へ移動
+ * undo: to → from へ逆移動（moveRow が「抜いてから挿入」のため、逆操作で元に戻る）
+ */
+export class MoveRowCommand implements Command {
+    private readonly editorTable: EditorTable;
+    private readonly fromDomDataRowIndex: number;
+    private readonly toDomDataRowIndex: number;
+
+    constructor(editorTable: EditorTable, fromDomDataRowIndex: number, toDomDataRowIndex: number) {
+        this.editorTable = editorTable;
+        this.fromDomDataRowIndex = fromDomDataRowIndex;
+        this.toDomDataRowIndex = toDomDataRowIndex;
+    }
+
+    execute(): void {
+        this.editorTable.moveRow(this.fromDomDataRowIndex, this.toDomDataRowIndex);
+    }
+
+    undo(): void {
+        // 逆方向に移動して元の位置に戻す
+        this.editorTable.moveRow(this.toDomDataRowIndex, this.fromDomDataRowIndex);
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `MoveRow: ${this.fromDomDataRowIndex} -> ${this.toDomDataRowIndex}`;
+    }
+}
+
+/**
  * 列の renderAsHtml フラグをトグルするコマンド
  * do/undo が対称なためトグル実装で共通化する
  */

@@ -580,6 +580,14 @@ export class EditorTableStructure {
         rowHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createRowHeaderClickHandler(rowHeaderCell));
         // 行ヘッダー右クリックでコンテキストメニュー
         rowHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createRowHeaderContextMenuHandler(rowHeaderCell));
+        // 行ドラッグ移動: mousedown で RowDragController に委譲する
+        // data-rowIndex はDOMから動的取得して列挿入/削除後の陳腐化を防ぐ
+        rowHeaderCell.addEventListener('mousedown', (e: MouseEvent) => {
+            // 左ボタンのみ反応する（右クリック・中ボタンは除外）
+            if (e.button !== 0) return;
+            const idx = Number(rowHeaderCell.dataset.rowIndex);
+            this.table.getRowDragController().onRowHeaderMouseDown(idx, e.clientY);
+        });
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('row-resize-handle');
         this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);

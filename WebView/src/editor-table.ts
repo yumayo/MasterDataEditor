@@ -8,6 +8,7 @@ import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_LEFT_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
+import {RowDragController} from "./row-drag-controller";
 import {ReferenceDataCache} from "./reference-data-cache";
 import {ReverseReferenceEntry, ReverseReferenceMap} from "./reverse-reference-resolver";
 import {Sidebar} from "./sidebar";
@@ -46,6 +47,8 @@ export class EditorTable {
     private readonly contextMenu: ContextMenu;
     private readonly history: History;
     private readonly selectionDragController: SelectionDragController;
+    /** 行ドラッグ移動コントローラー（initializeModulesで再作成されるためreadonlyではない） */
+    private rowDragController: RowDragController;
     private readonly scrollBinding: ScrollViewportController;
     private lastScrollLeft = -1;
     private readonly referenceDataCache: ReferenceDataCache;
@@ -177,6 +180,7 @@ export class EditorTable {
             selection,
             scrollBinding
         );
+        this.rowDragController = new RowDragController(this, selection, history);
     }
 
     /**
@@ -199,6 +203,10 @@ export class EditorTable {
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
         this.filterDropdown.destroy();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
+        // RowDragController も正しい this（プロキシオブジェクト）で再作成する。
+        // 旧インスタンスのインジケーター要素を document.body から除去してからの再作成。
+        this.rowDragController.destroy();
+        this.rowDragController = new RowDragController(this, this.selection, this.history);
     }
 
     // =========================================================================
@@ -230,6 +238,9 @@ export class EditorTable {
 
     /** 内部モジュール用: EditorTableHandler を取得する */
     getHandler(): EditorTableHandler { return this.handler; }
+
+    /** 内部モジュール用: RowDragController を取得する（行ヘッダー生成時のイベント接続用） */
+    getRowDragController(): RowDragController { return this.rowDragController; }
 
     /** 内部モジュール用: 自テーブルの参照データキャッシュを無効化する（行追加・削除後に呼ぶ） */
     evictOwnReferenceDataCache(): void { this.referenceDataCache.evictEntry(this.tableName); }
@@ -2423,6 +2434,87 @@ export class EditorTable {
     /** 行を削除する（Undo用） */
     public deleteRow(rowIndex: number): void {
         this.structure.deleteRow(rowIndex);
+    }
+
+    /**
+     * 行を移動する（ドラッグ移動用）
+     *
+     * fromDomDataRowIndex, toDomDataRowIndex: DOMデータ行インデックス（0始まり、列ヘッダー除く）
+     * toDomDataRowIndex は「fromを抜いた後の挿入位置」を指す。
+     *
+     * 1. ストアの行を移動する
+     * 2. DOM行要素を移動する
+     * 3. storeRowIndices を再構築する
+     * 4. 行番号を再ナンバリングする
+     */
+    public moveRow(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
+        if (fromDomDataRowIndex === toDomDataRowIndex) return;
+        // ストアの行を移動する
+        const fromStoreIndex = this.storeRowIndices[fromDomDataRowIndex];
+        // 移動先のストアインデックスを計算する:
+        // from を抜いた後に to の位置に挿入するため、store.moveRow に渡すインデックスは
+        // storeRowIndices[toDomDataRowIndex] を基準に、fromStoreIndex との前後関係で補正する
+        let toStoreIndex: number;
+        if (toDomDataRowIndex < this.storeRowIndices.length) {
+            // from を抜く前のインデックスから補正する
+            // ただし storeRowIndices は from の行を抜く前の状態なので注意が必要
+            // from < to の場合: from を抜くとインデックスが1つずれるため toDomDataRowIndex + 1 番目の値を使う
+            //                   が、storeRowIndices はまだ更新前なので toDomDataRowIndex の値がそのまま
+            //                   store.moveRow の「抜いた後のインデックス」になる
+            // from > to の場合: to の位置は from を抜いても変わらない
+            const originalToStoreIndex = this.storeRowIndices[toDomDataRowIndex];
+            if (fromStoreIndex < originalToStoreIndex) {
+                // from を抜くとストア上で originalToStoreIndex が1つ前にずれる
+                toStoreIndex = originalToStoreIndex - 1;
+            } else {
+                toStoreIndex = originalToStoreIndex;
+            }
+        } else {
+            // 末尾に挿入する場合: ストアの最終行の次
+            const lastStoreIndex = this.storeRowIndices[this.storeRowIndices.length - 1];
+            if (fromStoreIndex <= lastStoreIndex) {
+                toStoreIndex = lastStoreIndex;
+            } else {
+                toStoreIndex = lastStoreIndex + 1;
+            }
+        }
+        this.store.moveRow(this.tableName, fromStoreIndex, toStoreIndex);
+        // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
+        const fromDomIndex = fromDomDataRowIndex + 1;
+        const toDomIndex = toDomDataRowIndex + 1;
+        const rowElement = this.element.children[fromDomIndex] as HTMLElement;
+        rowElement.remove();
+        // 挿入位置のDOM要素（fromを抜いた後のインデックス）
+        const insertBefore = this.element.children[toDomIndex] as HTMLElement | null;
+        if (insertBefore) {
+            this.element.insertBefore(rowElement, insertBefore);
+        } else {
+            this.element.appendChild(rowElement);
+        }
+        // storeRowIndices を再構築する
+        // 通常テーブル: 移動後は storeRowIndices[i] = i となる
+        // ミニテーブルでは使わない前提（ドラッグ移動はミニテーブル非対応）
+        for (let i = 0; i < this.storeRowIndices.length; i++) {
+            this.storeRowIndices[i] = i;
+        }
+        // data-store-index DOM属性も更新する
+        for (let i = 0; i < this.storeRowIndices.length; i++) {
+            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            if (domRow) domRow.dataset.storeIndex = String(i);
+        }
+        // 行番号を再ナンバリングする
+        const startIndex = Math.min(fromDomIndex, toDomIndex);
+        this.structure.renumberRowsFrom(startIndex);
+        // コピー範囲をクリア（行構造が変わったため）
+        this.selection.clearCopyRange();
+        // 選択範囲を移動先に更新する
+        this.selection.updateRendererAfterResize();
+        // ソート状態をリセットする（行順が手動変更されたため）
+        this.clearSortState();
+        // git差分ハイライトを再評価する
+        this.applyGitDiffHighlight();
+        // バリデーションを再実行する
+        this.runValidation();
     }
 
     // =========================================================================

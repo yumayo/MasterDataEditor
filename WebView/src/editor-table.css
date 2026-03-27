@@ -393,3 +393,16 @@
 .freeze-row-border {
     box-shadow: 0 2px 4px rgba(0,0,0,0.15);
 }
+
+/* ==========================================================================
+   行ドラッグ移動インジケーター
+   ========================================================================== */
+
+/* ドラッグ中に表示される挿入位置の水平線（position:fixed でビューポート座標に配置） */
+.row-drag-indicator {
+    height: 2px;
+    background: var(--selection-color);
+    position: fixed;
+    z-index: 50;
+    pointer-events: none;
+}
