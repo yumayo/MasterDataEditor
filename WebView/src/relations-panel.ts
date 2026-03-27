@@ -1069,7 +1069,7 @@ export class RelationsPanel {
 
         // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
         const resolver = new ReverseReferenceResolver(this.store);
-        const reverseMap = await resolver.resolveAsync(tableName, parentPkColumnName);
+        const reverseMap = await resolver.resolveAsync(tableName);
         if (requestId !== this.currentRequestId) return entries;
 
         // PK値で逆参照エントリを取得する

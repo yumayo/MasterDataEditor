@@ -34,7 +34,7 @@
                 "sourceMatchColumn": "id",
                 "sourceMatchValue": "table_id",
                 "destTable": "master",
-                "destColumn": "id"
+                "destColumn": "column"
             },
             "width": 130
         },

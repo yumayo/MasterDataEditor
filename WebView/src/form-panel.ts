@@ -178,7 +178,7 @@ export class FormPanel {
             if (requestId !== this.currentRequestId) return;
 
             // 逆参照マップを取得する
-            const reverseMap = await this.reverseReferenceResolver.resolveAsync(page.tableName, pagePkColumnName);
+            const reverseMap = await this.reverseReferenceResolver.resolveAsync(page.tableName);
             if (requestId !== this.currentRequestId) return;
 
             // コンテンツを構築する

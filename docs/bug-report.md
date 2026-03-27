@@ -2660,3 +2660,16 @@ DiffTab再利用時のCSVデータ未更新
 保存パスが複数存在する場合（Ctrl+Sパス、MCPパス、差分タブ保存パス等）、保存後の副作用処理（git差分更新・Dirtyマーク解除等）を追加する際は、必ず全保存パスで同等の後処理が実行されることを確認する。理想的には共通の後処理メソッドに集約して各パスが同じ処理を通す設計にすべき。新しい保存パスを追加する際のチェックリストとして「markSavedAndUpdatePanel の全処理と対称であるか」を確認すること。
 
 ---
+
+## 184. [6620873] — 動的参照のdestColumnが動的解決されず逆参照マップのparentColumnNameがPK列名固定だった
+
+### 不具合原因名
+動的参照の destColumn / parentColumnName PK列名固定バグ
+
+### なぜそうなったのか
+destTableの動的解決が先行実装されたが、destColumnは固定文字列"id"のまま残存していた。reverse-reference-resolver.tsの動的参照パスでも、mergeGroupsに渡すparentColumnNameがparentPkColumnNameを固定で使用しており、中間テーブルのtargetColumn列の値を参照していなかった。gacha_item.jsonのdestColumnも"id"のまま未修正だった。
+
+### どうしたら今後は再発しないか
+動的参照の解決パスを新規追加・変更する際は、destTableとdestColumnの両方が動的解決されているかを対称的に確認する。中間テーブルの列名で間接参照する設計パターンでは、全消費者（editor-table-handler、validation-engine、relations-panel、reverse-reference-resolver）が同じ動的解決ロジックを適用しているかを網羅的にチェックする。
+
+---

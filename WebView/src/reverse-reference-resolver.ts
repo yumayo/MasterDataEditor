@@ -38,7 +38,8 @@ export interface ReverseReferenceEntry {
      * 参照先の親テーブル列名（逆参照マップのキーに使われた列）
      * 例: shop.shop_product_group_id が shop_product.group_id を参照する場合は "group_id"
      * PK列を参照している場合は親テーブルのPK列名（スキーマの primary_key から取得）
-     * 動的参照の場合も親テーブルのPK列名を設定する
+     * 動的参照の場合は中間テーブルの targetColumn 列の値から動的解決される
+     * 例: table.csv の column 列に "code" が入っていれば parentColumnName = "code"
      */
     parentColumnName: string;
     /**
@@ -75,11 +76,9 @@ export class ReverseReferenceResolver {
      * 指定テーブルを参照している全子テーブルを走査し、
      * 逆参照マップを構築する
      * @param tableName 親テーブル名
-     * @param parentPkColumnName 親テーブルのPK列名（呼び出し元がスキーマ取得済みの値を渡す）
      */
     async resolveAsync(
         tableName: string,
-        parentPkColumnName: string,
     ): Promise<ReverseReferenceMap> {
         const map: ReverseReferenceMap = new Map();
 
@@ -103,7 +102,6 @@ export class ReverseReferenceResolver {
                 this.processChildTableAsync(
                     childTableName,
                     tableName,
-                    parentPkColumnName,
                     map
                 )
             );
@@ -140,7 +138,8 @@ export class ReverseReferenceResolver {
      * グループ化された逆参照情報をマップにマージする
      * childColumnName: 単純参照のFK列名。動的参照の場合は空文字列を渡す
      * parentColumnName: 逆参照マップのキーに使った親テーブルの列名
-     *   単純参照では expr.columnName（例: "group_id"）、動的参照では親テーブルのPK列名
+     *   単純参照では expr.columnName（例: "group_id"）
+     *   動的参照では中間テーブルの targetColumn 列の値から動的解決した列名
      * childPkColumnName: 子テーブルのPK列名（スキーマの primary_key から取得）
      */
     private mergeGroups(
@@ -176,12 +175,10 @@ export class ReverseReferenceResolver {
 
     /**
      * 子テーブル1つを処理し、逆参照マップにマージする
-     * parentPkColumnName: 親テーブルのPK列名（動的参照の parentColumnName に使用）
      */
     private async processChildTableAsync(
         childTableName: string,
         parentTableName: string,
-        parentPkColumnName: string,
         map: ReverseReferenceMap
     ): Promise<void> {
         // スキーマを読み込む
@@ -246,6 +243,9 @@ export class ReverseReferenceResolver {
             valueColumnName: string;
             valueColumnIndex: number;
             matchingFilterValues: Set<string>;
+            // filterColumnValue → parentColumnName（中間テーブルの targetColumn 列の値）のマッピング
+            // 行ごとに参照先列名が異なる可能性があるため、値単位でマッピングを保持する
+            filterValueToParentColumnName: Map<string, string>;
         }> = [];
 
         for (const { colName, expr }
@@ -264,15 +264,24 @@ export class ReverseReferenceResolver {
                 intermediateCsv.header.indexOf(
                     expr.filter.filterColumn
                 );
+            // targetColumn（destColumn）の列インデックスを解決する
+            // 中間テーブルのこの列の値が、参照先テーブルの実際の列名になる
+            const targetColumnIdx =
+                intermediateCsv.header.indexOf(
+                    expr.targetColumn
+                );
             if (lookupIdx === -1
-                || filterIdx === -1) {
+                || filterIdx === -1
+                || targetColumnIdx === -1) {
                 continue;
             }
 
-            // lookupColumn の値が parentTableName と
-            // 一致する行の filterColumn 値を収集する
+            // lookupColumn の値が parentTableName と一致する行について、
+            // filterColumn 値を収集し、同時に targetColumn 値を parentColumnName としてマッピングする
             const matchingFilterValues =
                 new Set<string>();
+            const filterValueToParentColumnName =
+                new Map<string, string>();
             for (const row
                 of intermediateCsv.body) {
                 if (row[lookupIdx]
@@ -282,6 +291,13 @@ export class ReverseReferenceResolver {
                     if (filterVal !== '') {
                         matchingFilterValues.add(
                             filterVal
+                        );
+                        // 中間テーブルの targetColumn 列の値を parentColumnName として記録する
+                        // 例: table.csv の column 列に "code" が入っていれば parentColumnName = "code"
+                        const targetColumnValue =
+                            row[targetColumnIdx];
+                        filterValueToParentColumnName.set(
+                            filterVal, targetColumnValue
                         );
                     }
                 }
@@ -297,6 +313,7 @@ export class ReverseReferenceResolver {
                     expr.filter.valueColumn,
                 valueColumnIndex: -1,
                 matchingFilterValues,
+                filterValueToParentColumnName,
             });
         }
 
@@ -373,36 +390,38 @@ export class ReverseReferenceResolver {
             );
         }
 
-        // 動的参照: フィルタ値にマッチする行のみ
-        // グループ化し、表示テキストとPK値を収集
+        // 動的参照: フィルタ値にマッチする行のみグループ化し、表示テキストとPK値を収集する。
+        // parentColumnName は中間テーブルの targetColumn 列の値から行ごとに動的解決する。
+        // 行によって parentColumnName が異なる可能性があるため、parentColumnName ごとにグループを分ける。
         for (const dynFk of dynamicFkColumns) {
-            if (dynFk.index === -1
-                || dynFk.valueColumnIndex === -1) {
-                continue;
-            }
+            if (dynFk.index === -1 || dynFk.valueColumnIndex === -1) continue;
 
-            const groups =
-                new Map<string, ReverseReferenceRow[]>();
+            // parentColumnName ごとのグループ: parentColumnName → (fkValue → ReverseReferenceRow[])
+            const groupsByParentColumn = new Map<string, Map<string, ReverseReferenceRow[]>>();
 
             for (const row of csv.body) {
-                const valueColumnValue =
-                    row[dynFk.valueColumnIndex];
-                if (!dynFk.matchingFilterValues
-                    .has(valueColumnValue)) {
-                    continue;
-                }
+                const valueColumnValue = row[dynFk.valueColumnIndex];
+                if (!dynFk.matchingFilterValues.has(valueColumnValue)) continue;
 
                 const fkValue = row[dynFk.index];
                 if (fkValue === '') continue;
 
-                const displayText =
-                    displayColumnIndex !== -1
-                        ? row[displayColumnIndex]
-                        : '';
-                const pkValue =
-                    pkColumnIndex !== -1
-                        ? row[pkColumnIndex]
-                        : '';
+                // valueColumnValue（例: table_id=1）に対応する parentColumnName を動的解決する
+                // filterValueToParentColumnName は中間テーブル走査時に構築済み
+                // マッピングが見つからない場合はフォールバックせず、この行をスキップする
+                if (!dynFk.filterValueToParentColumnName.has(valueColumnValue)) continue;
+                const resolvedParentColumnName = dynFk.filterValueToParentColumnName.get(valueColumnValue)!;
+                if (resolvedParentColumnName === '') continue;
+
+                const displayText = displayColumnIndex !== -1 ? row[displayColumnIndex] : '';
+                const pkValue = pkColumnIndex !== -1 ? row[pkColumnIndex] : '';
+
+                // parentColumnName ごとのグループマップを取得/作成する
+                let groups = groupsByParentColumn.get(resolvedParentColumnName);
+                if (!groups) {
+                    groups = new Map<string, ReverseReferenceRow[]>();
+                    groupsByParentColumn.set(resolvedParentColumnName, groups);
+                }
 
                 let list = groups.get(fkValue);
                 if (!list) {
@@ -413,10 +432,12 @@ export class ReverseReferenceResolver {
             }
 
             // 動的参照: FK列名は特定できないため空文字列。
-            // lookupColumn は常に参照先テーブルのPK列を指すため parentColumnName は親テーブルのPK列名
-            this.mergeGroups(
-                groups, childTableName, priority, '', parentPkColumnName, childPkColumnName, map
-            );
+            // parentColumnName は中間テーブルの targetColumn 列の値から動的解決した値を使う
+            groupsByParentColumn.forEach((groups, resolvedParentColumnName) => {
+                this.mergeGroups(
+                    groups, childTableName, priority, '', resolvedParentColumnName, childPkColumnName, map
+                );
+            });
         }
     }
 
