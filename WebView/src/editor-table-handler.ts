@@ -427,6 +427,7 @@ export class EditorTableHandler {
             } else {
                 moveCellDownWithinSelection(this.table, this.selection);
             }
+            return;
         }
 
         // Tabキーの処理（編集中）
@@ -439,13 +440,78 @@ export class EditorTableHandler {
             } else {
                 moveCellRightWithinSelection(this.table, this.selection);
             }
+            return;
         }
 
         // ESCキーで入力をキャンセルして元に戻す
         if (keyboardEvent.key === 'Escape') {
             keyboardEvent.preventDefault();
             this.hide();
+            return;
         }
+
+        // 数値型の編集モードフィルタ（IME変換中はスキップ）
+        if (!keyboardEvent.isComposing) {
+            const focus = this.selection.getFocus();
+            const dataColIndex = focus.column - 1;
+            if (dataColIndex >= 0 && !this.table.hasColumnReference(dataColIndex)) {
+                const colType = this.table.getColumnType(dataColIndex);
+                // int型の上下矢印インクリメント/デクリメント
+                if (colType === 'int' && (keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowDown')) {
+                    keyboardEvent.preventDefault();
+                    const currentText = this.element.textContent ?? '';
+                    const currentValue = parseInt(currentText, 10);
+                    const base = isNaN(currentValue) ? 0 : currentValue;
+                    const newValue = keyboardEvent.key === 'ArrowUp' ? base + 1 : base - 1;
+                    this.element.textContent = String(newValue);
+                    // テキストフィールドをリサイズする
+                    if (this.textField) this.textField.resizeTextField(String(newValue));
+                    return;
+                }
+                // float/double型の上下矢印インクリメント/デクリメント（整数部を増減）
+                // IEEE 754 浮動小数点の精度誤差を回避するため、加算後に丸める
+                if ((colType === 'float' || colType === 'double') && (keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowDown')) {
+                    keyboardEvent.preventDefault();
+                    const currentText = this.element.textContent ?? '';
+                    const currentValue = parseFloat(currentText);
+                    const base = isNaN(currentValue) ? 0 : currentValue;
+                    const delta = keyboardEvent.key === 'ArrowUp' ? 1 : -1;
+                    const newValue = Math.round((base + delta) * 1e10) / 1e10;
+                    this.element.textContent = String(newValue);
+                    if (this.textField) this.textField.resizeTextField(String(newValue));
+                    return;
+                }
+                // int型の入力フィルタ: 数字・+・-・制御キー以外をブロック
+                if (colType === 'int') {
+                    if (!this.isAllowedNumericKey(keyboardEvent)) {
+                        keyboardEvent.preventDefault();
+                        return;
+                    }
+                }
+                // float/double型の入力フィルタ: 数字・+・-・.・e・E・制御キー以外をブロック
+                if (colType === 'float' || colType === 'double') {
+                    if (!this.isAllowedNumericKey(keyboardEvent) && !/^[.eE]$/.test(keyboardEvent.key)) {
+                        keyboardEvent.preventDefault();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 数値型の編集モードで許可される基本キーかどうかを判定する。
+     * 数字(0-9)、符号(+/-)、制御キー(Backspace/Delete/矢印/Home/End/Ctrl+A等)を許可する。
+     * int型はこのメソッドのみで判定し、float/double型は追加で小数点・指数を許可する。
+     */
+    private isAllowedNumericKey(e: KeyboardEvent): boolean {
+        // 制御キー系は常に許可する
+        if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') return true;
+        // Ctrl/Meta+キーの組み合わせは許可する（Ctrl+A, Ctrl+C等）
+        if (e.ctrlKey || e.metaKey) return true;
+        // 数字と符号を許可する
+        if (/^[0-9+\-]$/.test(e.key)) return true;
+        return false;
     }
 
     /**
@@ -632,9 +698,29 @@ export class EditorTableHandler {
             return;
         }
 
+        // Spaceキー: bool型セルの場合はトグル操作（テキスト編集モードには入らない）
+        if (keyboardEvent.key === ' ') {
+            const focus = this.selection.getFocus();
+            const dataColIndex = focus.column - 1;
+            if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
+                keyboardEvent.preventDefault();
+                this.toggleBoolCell();
+                return;
+            }
+        }
+
         // 文字入力による編集モード開始
         // Ctrl/Meta+キーの組み合わせはショートカットなので編集モードを開始しない
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
+        // bool型列（FK参照なし）では文字キーによる編集モード侵入をブロックする
+        // （Space/Delete/Backspaceのみ操作可能）
+        {
+            const focus = this.selection.getFocus();
+            const dataColIndex = focus.column - 1;
+            if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
+                return;
+            }
+        }
         if (keyboardEvent.key?.match(/^\w$/g) || keyboardEvent.key === 'Process') {
             if (this.readOnly) return;
             if (!this.textField) return;
@@ -1256,5 +1342,20 @@ export class EditorTableHandler {
      */
     isDropdownActive(): boolean {
         return this.dropdownActive;
+    }
+
+    /**
+     * bool型セルのトグル操作を行う。
+     * 現在のフォーカスセルの値を "true"↔"false" に切り替え、CellChangeCommand で履歴に記録する。
+     * ダブルクリックおよびSpaceキーから呼び出される。
+     */
+    toggleBoolCell(): void {
+        if (this.readOnly) return;
+        const target = getTarget(this.table, this.selection);
+        const oldValue = target.cellValue;
+        const newValue = oldValue === 'true' ? 'false' : 'true';
+        const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
+        const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue, newValue }];
+        this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
     }
 }

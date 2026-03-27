@@ -354,3 +354,28 @@
     min-width: 0.8em;
     text-align: center;
 }
+
+/* ==========================================================================
+   データ型別入力コントロール
+   ========================================================================== */
+
+/* 数値型セル（int/float/double、FK参照なし）: 右寄せ表示 */
+.cell-numeric {
+    text-align: right;
+}
+
+/* bool型チェックマーク（true）: 標準色のチェックマークSVG */
+.cell-bool-check {
+    display: inline-block;
+    vertical-align: middle;
+    fill: currentColor;
+    opacity: 0.9;
+}
+
+/* bool型チェックマーク（false）: 薄い色のチェックマークSVG */
+.cell-bool-uncheck {
+    display: inline-block;
+    vertical-align: middle;
+    fill: currentColor;
+    opacity: 0.25;
+}

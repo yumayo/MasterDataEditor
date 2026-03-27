@@ -72,6 +72,8 @@ export class EditorTableReference {
         if (!column || !column.reference) {
             // 参照列でなければ通常のテキストコンテンツを設定
             this.applyTextOrHtml(cell, value, column ? column.renderAsHtml : false);
+            // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
+            this.applyTypedCellStyle(cell, value, dataColumnIndex);
             // PK列の場合は逆参照ヒントを再適用（全parentColumnNameの列値でエントリを収集）
             if (column && this.tableData.primaryKeyColumns.includes(column.name)) {
                 const allEntries: ReverseReferenceEntry[] = [];
@@ -369,6 +371,82 @@ export class EditorTableReference {
             cell.style.lineHeight = '';
             cell.style.overflow = '';
         }
+    }
+
+    /**
+     * 列のデータ型に基づいたセルのスタイル・表示を適用する。
+     *
+     * - bool型（FK参照なし）: テキストの代わりにチェックマークSVGを表示し、data-raw-valueに生値を保存する
+     * - 数値型（int/float/double、FK参照なし）: .cell-numeric クラスを付与して右寄せ表示する
+     * - FK参照のある列: 型別コントロールは適用しない（ドロップダウンが優先）
+     *
+     * setCellValue と createCell の両方から呼ばれ、セルの型別表示を一元管理する。
+     */
+    applyTypedCellStyle(cell: HTMLElement, value: string, dataColumnIndex: number): void {
+        const column = this.tableData.header[dataColumnIndex];
+        if (!column) return;
+        // FK参照が設定されている列は型別コントロールを適用しない（ドロップダウンが優先）
+        if (column.reference !== null) {
+            cell.classList.remove('cell-numeric');
+            this.removeBoolDisplay(cell);
+            return;
+        }
+        if (column.type === 'bool') {
+            // bool型: テキストをSVGアイコンに置き換える
+            // true → チェックマーク ✓、false → バツ印 ×、空値 → 表示なし（バッファ空行対応）
+            this.removeBoolDisplay(cell);
+            cell.dataset.rawValue = value;
+            cell.textContent = '';
+            if (value === '') {
+                // 空値（バッファ空行等）: SVGを表示せず aria-checked も設定しない
+                cell.removeAttribute('aria-checked');
+            } else if (value === 'true') {
+                cell.setAttribute('aria-checked', 'true');
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '16');
+                svg.setAttribute('height', '16');
+                svg.setAttribute('viewBox', '0 0 16 16');
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                // チェックマーク ✓
+                path.setAttribute('d', 'M6 11.2L2.5 7.7l1.4-1.4L6 8.4l6.1-6.1 1.4 1.4L6 11.2z');
+                svg.appendChild(path);
+                svg.classList.add('cell-bool-check');
+                cell.appendChild(svg);
+            } else {
+                cell.setAttribute('aria-checked', 'false');
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '16');
+                svg.setAttribute('height', '16');
+                svg.setAttribute('viewBox', '0 0 16 16');
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                // バツ印 ×
+                path.setAttribute('d', 'M12 4.7L11.3 4 8 7.3 4.7 4 4 4.7 7.3 8 4 11.3l.7.7L8 8.7l3.3 3.3.7-.7L8.7 8z');
+                svg.appendChild(path);
+                svg.classList.add('cell-bool-uncheck');
+                cell.appendChild(svg);
+            }
+        } else if (column.type === 'int' || column.type === 'float' || column.type === 'double') {
+            // 数値型: 右寄せクラスを付与する
+            cell.classList.add('cell-numeric');
+            this.removeBoolDisplay(cell);
+        } else {
+            // それ以外: 型別スタイルを除去する
+            cell.classList.remove('cell-numeric');
+            this.removeBoolDisplay(cell);
+        }
+    }
+
+    /**
+     * セルからbool表示要素（SVG）と aria-checked 属性を除去する。
+     * data-raw-valueのクリーンアップは不要: applyTextOrHtml が先に実行されて
+     * テキストモードでは rawValue を削除済み、HTMLモードでは独自に rawValue を管理しているため。
+     */
+    private removeBoolDisplay(cell: HTMLElement): void {
+        const check = cell.querySelector('.cell-bool-check');
+        if (check) check.remove();
+        const uncheck = cell.querySelector('.cell-bool-uncheck');
+        if (uncheck) uncheck.remove();
+        cell.removeAttribute('aria-checked');
     }
 
     /**

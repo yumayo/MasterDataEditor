@@ -227,6 +227,35 @@ export class EditorTable {
     /** 内部モジュール用: 自テーブルの参照データキャッシュを無効化する（行追加・削除後に呼ぶ） */
     evictOwnReferenceDataCache(): void { this.referenceDataCache.evictEntry(this.tableName); }
 
+    /**
+     * 指定データ列のスキーマ型名を返す。
+     * 範囲外の場合は空文字を返す。
+     * @param dataColumnIndex データ列インデックス（0始まり、行ヘッダーを除く）
+     */
+    getColumnType(dataColumnIndex: number): string {
+        const col = this.tableData.header[dataColumnIndex];
+        if (!col) return '';
+        return col.type;
+    }
+
+    /**
+     * 指定データ列がFK参照を持つかどうかを返す。
+     * @param dataColumnIndex データ列インデックス（0始まり、行ヘッダーを除く）
+     */
+    hasColumnReference(dataColumnIndex: number): boolean {
+        const col = this.tableData.header[dataColumnIndex];
+        if (!col) return false;
+        return col.reference !== null;
+    }
+
+    /**
+     * bool型セルのトグル操作を handler に委譲する。
+     * createCell の dblclick ハンドラから呼ばれる（デメテルの法則: getHandler().toggleBoolCell() を避ける）。
+     */
+    toggleBoolCell(): void {
+        this.handler.toggleBoolCell();
+    }
+
     // =========================================================================
     // ライフサイクル
     // =========================================================================
@@ -449,6 +478,11 @@ export class EditorTable {
         EditorTable.applyCellWidth(cell, width);
         EditorTable.applyCellHeight(cell, height);
         cell.addEventListener('dblclick', () => {
+            // bool型（FK参照なし）の場合はトグル操作を行い、テキスト編集モードには入らない
+            if (table.getColumnType(columnIndex) === 'bool' && !table.hasColumnReference(columnIndex)) {
+                table.toggleBoolCell();
+                return;
+            }
             // 参照列の場合はドロップダウンを表示
             table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
                 if (!handled) {
@@ -565,6 +599,8 @@ export class EditorTable {
         // バッファ空行挿入時等で columnIndex がヘッダー範囲外になる場合は false（テキスト描画）でフォールバック
         const cellCol = table.tableData.header[columnIndex];
         table.reference.applyTextOrHtml(cell, strValue, cellCol ? cellCol.renderAsHtml : false);
+        // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
+        table.reference.applyTypedCellStyle(cell, strValue, columnIndex);
         return cell;
     }
 
@@ -590,11 +626,11 @@ export class EditorTable {
 
     /**
      * セルの値を取得する（参照ヒントを除外）
-     * renderAsHtml モードのセルは innerHTML でレンダリングされているため、
+     * renderAsHtml モードのセルや bool型セル（SVG表示）は innerHTML/textContent から直接値を取れないため、
      * data-raw-value に保存した生テキストを返す。
      */
     static getCellValue(cell: HTMLElement): string {
-        // renderAsHtml モードのセルは data-raw-value に生テキストが保存されている
+        // renderAsHtml モードおよび bool型セルは data-raw-value に生テキストが保存されている
         if (cell.dataset.rawValue !== undefined) return cell.dataset.rawValue;
         // .cell-value 要素があればそこから取得
         const valueElement = cell.querySelector('.cell-value');
