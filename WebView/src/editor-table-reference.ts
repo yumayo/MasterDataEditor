@@ -267,15 +267,43 @@ export class EditorTableReference {
         if (fullData === false) return;
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
         if (lookupColumnIndex === -1) return;
+        // targetColumn（destColumn）の列インデックスを解決する
+        // 中間テーブルのこの列の値が、参照先テーブルの実際の列名になる
+        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
+        if (targetColumnIndex === -1) return;
         // filterColumn で行を検索（主キー以外のカラムにも対応）
         const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
         if (!row) return;
         const targetTableName = row[lookupColumnIndex];
         if (targetTableName === '') return;
-        // 参照先テーブルの表示テキストを同期的に取得
-        const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
-        if (!displayText) return;
-        // 既存の参照ヒントを削除してから新しいヒントを追加
+        // targetColumn 列の値を動的取得する（= 参照先テーブルの実際の列名）
+        const resolvedTargetColumn = row[targetColumnIndex];
+        if (resolvedTargetColumn === '') return;
+        // 参照先テーブルのFullDataを取得して、動的解決済み列名でルックアップする
+        const targetFullData = this.referenceDataCache.getFullDataSync(targetTableName);
+        if (targetFullData === false) return;
+        // resolvedTargetColumn がPK列と一致する場合は既存のdisplayTextルックアップを使用
+        if (resolvedTargetColumn === targetFullData.primaryKeyColumnName) {
+            const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
+            if (!displayText) return;
+            this.appendReferenceHint(cell, displayText);
+            return;
+        }
+        // PK列以外の列で参照する場合: findRowByColumn で該当行を探し、表示列の値を返す
+        const matchedRow = this.referenceDataCache.findRowByColumn(targetFullData, resolvedTargetColumn, value);
+        if (!matchedRow || targetFullData.displayColumnIndex === -1) return;
+        const displayText = matchedRow[targetFullData.displayColumnIndex];
+        // 表示テキストがFK値と同じ場合はヒントが冗長なので表示しない
+        if (displayText === '' || displayText === value) return;
+        this.appendReferenceHint(cell, displayText);
+    }
+
+    /**
+     * セルに参照ヒントspanを追加する
+     * 既存の参照ヒントがあれば削除してから追加する
+     * updateDynamicReferenceHint のPK列パスと非PK列パスの両方から呼ばれる
+     */
+    private appendReferenceHint(cell: HTMLElement, displayText: string): void {
         const existingHint = cell.querySelector('.cell-reference-hint');
         if (existingHint) existingHint.remove();
         const hintSpan = document.createElement('span');

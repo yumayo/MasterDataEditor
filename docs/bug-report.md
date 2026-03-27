@@ -2673,3 +2673,22 @@ destTableの動的解決が先行実装されたが、destColumnは固定文字�
 動的参照の解決パスを新規追加・変更する際は、destTableとdestColumnの両方が動的解決されているかを対称的に確認する。中間テーブルの列名で間接参照する設計パターンでは、全消費者（editor-table-handler、validation-engine、relations-panel、reverse-reference-resolver）が同じ動的解決ロジックを適用しているかを網羅的にチェックする。
 
 ---
+
+## 185. [5570315] — 動的参照の参照ヒント表示がdestColumn（targetColumn）を無視しPK列固定でルックアップしていた
+
+### 不具合原因名
+updateDynamicReferenceHintのtargetColumn未使用
+
+### なぜそうなったのか
+editor-table-reference.tsのupdateDynamicReferenceHintメソッドは、動的参照のヒント表示時にexpr.targetColumnを一切参照せず、セルの値をそのままgetDisplayTextById（PK列前提のルックアップ）に渡していた。destTableの動的解決は実装されていたが、destColumnの動的解決が完全にスキップされていた。前回コミット（7efa2b4）でreverse-reference-resolver.ts等4箇所のdestColumn動的解決を修正したが、参照ヒント表示パス（editor-table-reference.ts）が見落とされていた。
+
+### どうしたら今後は再発しないか
+動的参照のdestColumn/destTableを消費する全パスを変更する際は、以下の5箇所を対称的にチェックすること：
+1. editor-table-handler.ts（ドロップダウン候補生成）
+2. validation-engine.ts（FK検証）
+3. relations-panel.ts（RelationsPanel表示）
+4. reverse-reference-resolver.ts（逆参照マップ構築）
+5. editor-table-reference.ts（参照ヒント表示）
+また、ネガティブテスト（存在しない列名を指定した場合にヒントが非表示になること）を必ず書くことで、パスが正しくdestColumnを参照しているか検証する。
+
+---

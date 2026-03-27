@@ -1053,21 +1053,21 @@ export class EditorTableHandler {
 
     /**
      * 現在のフォーカス列の参照を解決する（動的参照対応）
-     * @returns 解決した参照情報、または参照列でない場合は undefined
+     * @returns 解決した参照情報、または参照列でない場合は null
      */
-    private async resolveReferenceAsync(): Promise<ResolvedReference | undefined> {
-        if (!this.tableData || !this.referenceDataCache) return undefined;
+    private async resolveReferenceAsync(): Promise<ResolvedReference | null> {
+        if (!this.tableData || !this.referenceDataCache) return null;
 
         const focus = this.selection.getFocus();
         // column=0は行ヘッダーなので、データ列は1から始まる
         const columnIndex = focus.column - 1;
 
         if (columnIndex < 0 || columnIndex >= this.tableData.header.length) {
-            return undefined;
+            return null;
         }
 
         const reference = this.tableData.header[columnIndex].reference;
-        if (!reference) return undefined;
+        if (!reference) return null;
 
         const expr = parseReferenceExpression(reference);
 
@@ -1088,59 +1088,59 @@ export class EditorTableHandler {
      * @param expr 動的参照式
      * @param rowIndex 現在の行インデックス
      * @param currentDataColumnIndex 動的参照を持つ列自身のデータ列インデックス
-     * @returns 解決した参照情報、または解決できない場合は undefined
+     * @returns 解決した参照情報、または解決できない場合は null
      */
-    private async resolveDynamicReferenceAsync(expr: DynamicReference, rowIndex: number, currentDataColumnIndex: number): Promise<ResolvedReference | undefined> {
-        if (!this.tableData || !this.referenceDataCache) return undefined;
+    private async resolveDynamicReferenceAsync(expr: DynamicReference, rowIndex: number, currentDataColumnIndex: number): Promise<ResolvedReference | null> {
+        if (!this.tableData || !this.referenceDataCache) return null;
 
         // 1. 同一行の指定カラムの値を取得（ビューの合成ヘッダーではプレフィックス付きのためresolveで解決）
         const valueColumnIndex = this.table.resolveValueColumnIndex(expr.filter.valueColumn, currentDataColumnIndex);
         if (valueColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.filter.valueColumn}' not found in table header`);
-            return undefined;
+            return null;
         }
 
         // column=0は行ヘッダーなので、データ列インデックスに+1する
         const cellValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
         if (cellValue === '') {
             // 値が空の場合は参照を解決できない
-            return undefined;
+            return null;
         }
 
         // 2. フィルタテーブルの全データを取得
         const fullData = await this.referenceDataCache.getFullDataAsync(expr.filter.tableName);
         if (fullData.rows.size === 0) {
             console.warn(`Dynamic reference: table '${expr.filter.tableName}' has no data`);
-            return undefined;
+            return null;
         }
 
         // 3. フィルタ列（filterColumn）で値を検索し、lookupColumn / targetColumn の値を取得
         const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
         if (lookupColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' not found in table '${expr.filter.tableName}'`);
-            return undefined;
+            return null;
         }
         const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
         if (targetColumnIndex === -1) {
             console.warn(`Dynamic reference: column '${expr.targetColumn}' not found in table '${expr.filter.tableName}'`);
-            return undefined;
+            return null;
         }
 
         const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, cellValue);
         if (!row) {
             console.warn(`Dynamic reference: value '${cellValue}' not found in column '${expr.filter.filterColumn}' of table '${expr.filter.tableName}'`);
-            return undefined;
+            return null;
         }
 
         const targetTableName = row[lookupColumnIndex];
         if (targetTableName === '') {
             console.warn(`Dynamic reference: column '${expr.lookupColumn}' is empty for '${expr.filter.filterColumn}'='${cellValue}'`);
-            return undefined;
+            return null;
         }
         const resolvedTargetColumn = row[targetColumnIndex];
         if (resolvedTargetColumn === '') {
             console.warn(`Dynamic reference: column '${expr.targetColumn}' is empty for '${expr.filter.filterColumn}'='${cellValue}'`);
-            return undefined;
+            return null;
         }
 
         // 4. 解決した参照を返す

@@ -154,7 +154,7 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                             sourceMatchColumn: "id",
                             sourceMatchValue: "type_id",
                             destTable: "master_table",
-                            destColumn: "ja",
+                            destColumn: "column",
                         },
                     },
                 ],
@@ -179,13 +179,18 @@ test.describe('動的参照（二段リスト）の参照名表示', () => {
                         name: "master_table",
                         type: "string",
                     },
+                    {
+                        key: 3,
+                        name: "column",
+                        type: "string",
+                    },
                 ],
                 primary_key: ["id"],
             }),
             "data/type_map.csv": [
-                "id,ja,master_table",
-                "1,武器,weapon",
-                "2,防具,armor",
+                "id,ja,master_table,column",
+                "1,武器,weapon,id",
+                "2,防具,armor,id",
             ].join("\n"),
             "schema/weapon.json": JSON.stringify({
                 header: [
