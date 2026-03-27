@@ -38,7 +38,7 @@ export class DebugConsole {
 
         const timeHeader = this.createHeaderCell('時刻', 'debug-console-col-time');
         const callerHeader = this.createHeaderCell('呼び出し元', 'debug-console-col-caller');
-        const labelHeader = this.createHeaderCell('API', 'debug-console-col-label');
+        const labelHeader = this.createHeaderCell('メッセージ', 'debug-console-col-label');
         const durationHeader = this.createHeaderCell('時間', 'debug-console-col-duration');
         const statusHeader = this.createHeaderCell('結果', 'debug-console-col-status');
 

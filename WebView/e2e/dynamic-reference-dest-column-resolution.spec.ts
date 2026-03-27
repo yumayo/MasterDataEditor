@@ -244,17 +244,15 @@ test.describe('destColumn が存在しない列名の場合、参照ヒントが
     );
 
     test(
-        'destColumn に存在しない列名を指定した場合、NotificationToast に通知が表示されること',
+        'destColumn に存在しない列名を指定した場合、ステータスバーのメッセージ欄に通知が表示されること',
         async ({ page }) => {
             await openTableAsync(page, 'test');
 
-            // 動的参照の解決失敗時に NotificationToast が表示されることを検証する。
+            // 動的参照の解決失敗時にステータスバーのメッセージ欄に通知されることを検証する。
             // destColumn="nonexistent_column" は type_map に存在しない列名であるため、
             // EditorTableReference.updateDynamicReferenceHint が通知を発行する。
-            const toast = page.locator('.notification-toast');
-            await expect(toast.first()).toBeVisible({ timeout: 5000 });
-            // トーストのメッセージが動的参照の解決失敗を示す内容であることを検証する
-            await expect(toast.first()).toContainText("nonexistent_column");
+            const message = page.locator('.notification-message');
+            await expect(message).toContainText("nonexistent_column", { timeout: 5000 });
         },
     );
 });

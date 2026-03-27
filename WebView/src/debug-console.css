@@ -55,6 +55,7 @@
 .debug-console-row {
     display: flex;
     align-items: center;
+    height: 18px;
     padding: 1px 12px;
     font-family: monospace;
     font-size: 11px;

@@ -69,11 +69,8 @@ test.describe('参照データ読み込みエラーの通知', () => {
         // product テーブルを開く（category.id を FK 参照している）
         await openTableAsync(page, 'product');
 
-        // 参照データの読み込みは非同期で行われるため、トーストの出現を待つ
-        const toast = page.locator('.notification-toast').first();
-        await expect(toast).toBeVisible({ timeout: 5000 });
-
-        // トーストのメッセージに「失敗」が含まれること
-        await expect(toast).toContainText('失敗');
+        // 参照データの読み込みは非同期で行われるため、メッセージ欄への表示を待つ
+        const message = page.locator('.notification-message');
+        await expect(message).toContainText('失敗', { timeout: 5000 });
     });
 });

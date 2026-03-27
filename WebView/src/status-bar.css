@@ -15,12 +15,12 @@
     font-size: 11px;
     color: var(--font-color);
     user-select: none;
-    /* notification-toast-area, background-popover などの absolute 要素がステータスバー上方に展開できるよう overflow visible を維持 */
+    /* background-popover などの absolute 要素がステータスバー上方に展開できるよう overflow visible を維持 */
     overflow: visible;
     box-sizing: border-box;
 }
 
-/* エラー件数バッジ（margin-right: auto で通知ベルを右端に押し出す） */
+/* エラー件数バッジ（margin-right: auto で右端グループを押し出す） */
 .status-bar-badge {
     height: 100%;
     display: flex;
@@ -48,7 +48,7 @@
     color: var(--error-color);
 }
 
-/* バックグラウンドタスクインジケーター（通知ベルの左隣・右寄り） */
+/* バックグラウンドタスクインジケーター（メッセージ欄の右隣・右寄り） */
 /* 幅を固定してスピナー件数が変わっても周囲のレイアウトがずれないようにする */
 .status-bar-background-indicator {
     height: 100%;

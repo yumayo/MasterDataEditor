@@ -7,7 +7,7 @@ import type {NotificationToast} from "./notification";
  * 画面最下部に常時表示される。
  * 左端: エラー件数バッジ（クリックでBottomPanelのPROBLEMSタブをトグル）
  * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
- * 中央〜右寄り: 通知メッセージ欄（NotificationToastが配置される）
+ * 中央〜右寄り: 通知メッセージ欄（NotificationToast がメッセージを表示する）
  * エラー0件でも "0" を表示する。
  *
  * 循環参照（StatusBar ↔ ValidationPanel → StatusBar）は Object.assign パターンで解決する。

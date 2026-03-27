@@ -1,11 +1,9 @@
 /* =============================================================================
-   通知ポップアップ（notification）スタイル
+   通知メッセージバー（notification）スタイル
    ============================================================================= */
 
-/* コンテナ: ステータスバー内に配置される相対配置ラッパー */
-/* トーストエリアの position: absolute の基準点になる */
+/* コンテナ: ステータスバー内に配置されるラッパー */
 .notification-container {
-    position: relative;
     display: flex;
     align-items: center;
     height: 100%;
@@ -23,38 +21,4 @@
     display: flex;
     align-items: center;
     padding: 0 8px;
-}
-
-/* トースト表示エリア（ステータスバーの上方に展開） */
-.notification-toast-area {
-    position: absolute;
-    bottom: 100%;
-    right: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-    /* ステータスバー上方への展開なのでポインターイベントは有効のまま */
-    pointer-events: none;
-}
-
-/* 個々のトースト */
-.notification-toast {
-    pointer-events: auto;
-    box-sizing: border-box;
-    width: 320px;
-    padding: 10px 14px;
-    border-radius: 4px;
-    background: #c0392b;
-    color: #ffffff;
-    font-size: 13px;
-    line-height: 1.4;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    word-break: break-word;
-    opacity: 1;
-    transition: opacity 0.4s;
-}
-
-.notification-toast.fading {
-    opacity: 0;
 }
