@@ -15,16 +15,22 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 NotificationToast メッセージバー化）
+### 最新レビュー結果（2026-03-28 NotificationToast調整3点）
 
-#### NotificationToast メッセージバー化 評価: C
-- 問題の核心: 旧実装（ベルマーク・履歴パネル）と新実装（ステータスバーメッセージ欄）が DOM 上に混在している。廃止されたはずの `notification-bell`・`notification-history` が特定の通知フロー（エラー通知）でも出現する。
-- 良い点: ステータスバー内の `notification-message` テキスト表示は正確に動作。`notification-container` がステータスバー内に配置されており、設計意図（body直下への依存排除）は達成。`notification-toast` に `role="alert"` が付与されており ARIAが正しい。DEBUG CONSOLEへのエントリ追加（caller/時刻/結果列）は有用。
-- 修正必須(🔴): `notification-bell` と `notification-history` が廃止されたにもかかわらず DOM に残存（エラー通知フロー）。「ベルマーク要素が存在しないこと」テストは通過しているが、別フロー（エラー通知）では出現しており、実装上の分岐が残っている。
-- 修正必須(🔴): 「複数回show()を呼ぶと最後のメッセージで上書きされる」テストの DOM で `notification-toast-area` に3件のトーストが蓄積している（最後のメッセージが `notification-message` に正しく反映される一方、トーストは削除されずに積み重なる）。非エラー通知でもトーストが蓄積するのは設計仕様の矛盾。
-- 改善推奨(🟡): `notification-message` テキストの文字色コントラスト。ステータスバー（暗色背景）上に表示されるが、スクリーンショット上では視認しやすいように見える。ただし長いメッセージの省略（text-overflow:ellipsis）の有無が DOM からは確認できない。
-- 改善推奨(🟡): `notification-container` の `role` 属性がない。ライブリージョンとして `aria-live="polite"` を設定すべき（トーストには個別に role="alert" があるが、ステータスバーメッセージ欄にはない）。
+#### NotificationToast調整3点 評価: B
+- 変更内容: (1)トーストポップアップ廃止（通常通知はステータスバーメッセージ欄のみ）、(2)DEBUG CONSOLE「API」列→「メッセージ」列に改名、(3)DEBUG CONSOLE行高さ18px固定
+- 良い点: 通常通知フロー（show()）では `notification-bell` / `notification-history` が DOM に一切存在せず、旧実装の痕跡が完全排除されている。「メッセージ」列への改名でDOMダンプから `debug-console-col-label` ヘッダーが「メッセージ」になっており一貫している。`notification-message` の `text-overflow: ellipsis` が CSS で正しく設定されており、長いメッセージも安全。行高さ `height: 18px` + `padding: 1px 12px` でコンパクトに仕上がっており、多件数ログ閲覧に適した密度。
+- 修正必須(🔴): エラー通知フロー（`エラー通知を表示するとトーストポップアップが右下に表示される` テスト）で `notification-bell` / `notification-history` が依然として DOM に存在する。通常通知フローとエラー通知フローで実装パスが分岐したままであり、廃止されたはずの要素が別フローから呼び出されている。
+- 修正必須(🔴): 「トーストエリアがステータスバーの上方に表示される」テストのDOMで `notification-container` 内に `notification-toast-area` と `notification-message` が**同時に**存在する。トーストポップアップ廃止の設計意図と矛盾する。このテスト自体が廃止すべき旧仕様を検証しているか、テストの削除または期待値の修正が必要。
+- 改善推奨(🟡): DEBUG CONSOLE 行高さ 18px は11pxフォントに対して適切だが、`padding: 1px 12px` の上下1pxパディングが実効行高さ(18px = コンテンツ + padding)と干渉している可能性。`height: 18px` を `min-height: 18px` に変えないと長いメッセージが折り返せない（現状は `white-space: nowrap` でellipsisになっており問題は顕在化していないが、将来の仕様変更で壊れやすい）。
+- 改善推奨(🟡): `notification-message` に `aria-live="polite"` がない（ステータスバーのライブリージョンとして）。スクリーンリーダー利用者には通知が届かない。
 - 改善推奨(🟡): activity-bar の SVG に aria-hidden="true" がない（継続課題）。
+
+### 過去のレビュー結果（2026-03-28 旧NotificationToast メッセージバー化）
+
+#### NotificationToast メッセージバー化（第1ラウンド） 評価: C → 本ラウンドで部分修正
+- 修正済み: 通常通知フローの `notification-bell` / `notification-history` 廃止を確認
+- 未修正: エラー通知フローに `notification-bell` / `notification-history` が残存
 
 ### 過去のレビュー結果（2026-03-27 third review）
 
@@ -77,5 +83,5 @@
 - 起動時スキャン中であることを示すインジケーターなし（2026-03-24）
 - editor-right-slot の非表示時に 6px 幅の透明スロットが残留（relations-panel-toggle で新規発見、2026-03-24）
 - プラグインエラーのvalidation-panel-itemにrole="button"が付いているが、クリックしても何も起きない（2026-03-25新規発見）
-- notification-bell / notification-history が廃止されたはずなのにエラー通知フローで残存（2026-03-28新規発見）
-- notification-toast が非エラー通知でも蓄積してクリアされない（2026-03-28新規発見）
+- notification-bell / notification-history がエラー通知フローにまだ残存（2026-03-28 第2ラウンドでも未修正）
+- 「トーストエリアがステータスバーの上方に表示される」テストが旧仕様を検証しており、テスト自体の削除または期待値修正が必要（2026-03-28 第2ラウンド発見）
