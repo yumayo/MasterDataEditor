@@ -58,6 +58,13 @@ export class Sidebar {
         const filesPanelHeader = document.createElement('div');
         filesPanelHeader.classList.add('sidebar-panel-header');
         filesPanelHeader.textContent = 'EXPLORER';
+        // 「+」ボタン: 新しいテーブルを作成する
+        const addTableButton = document.createElement('button');
+        addTableButton.classList.add('explorer-add-table-button');
+        addTableButton.textContent = '+';
+        addTableButton.title = '新しいテーブルを作成';
+        addTableButton.addEventListener('click', () => { this.tab.openTableDefinitionTab(); });
+        filesPanelHeader.appendChild(addTableButton);
         this.filesPanel.appendChild(filesPanelHeader);
         sidebarContent.appendChild(this.filesPanel);
 
