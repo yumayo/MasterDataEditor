@@ -15,7 +15,15 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-27 second review）
+### 最新レビュー結果（2026-03-27 third review）
+
+#### destColumn動的解決の参照ヒント表示（dynamic-reference-dest-column-resolution / reference-hint） 評価: A
+- 良い点: destColumn正常系で item_id 列の全行に cell-reference-hint が正確に表示（行1=剣, 行2=槍, 行3=盾）。前回レビューで🔴指摘した「動的参照でcell-reference-hintが表示されない」問題が解消済み。destColumn=存在しない列名の場合は item_id 列の全セルからcell-reference-hintが正しく除去され、数字のみ表示される（安全なフォールバック）。item_id ヘッダーの title="FK: 動的参照 (type_map → master_table.column)" で通常FKと区別できている（正常系・異常系とも一貫）。reference-hintスペックでも単純参照・type_map参照・動的参照の3ケースすべてで cell-reference-hint が正確に表示されている。bug-report #184（destColumn PK列名固定バグ）の修正が参照ヒント表示にも正しく反映されている。
+- 改善推奨(🟡): type_id 列（data-col="1"）に cell-error クラスが付いているが、これはテスト用スキーマの参照先が type_map.ja ではなく type_map.id になっているため（FK切れ3件）。実際のテスト意図上は「type_idは正常、item_idを確認したい」はずなので、テストフィクスチャのFK設定が実態に合っているか確認推奨。
+- 改善推奨(🟡): cell-error セルに aria-invalid="true"/aria-describedby がない（全サイクル継続課題）。
+- 改善推奨(🟡): fill-handle が data-col="0" の位置（left:207px, top:38px）で display:block のまま残存（行1選択時に fill-handle が行2相当の位置に常時表示されている）。
+
+### 過去のレビュー結果（2026-03-27 second review）
 
 #### parentColumnName動的解決（reverse-reference-dynamic-parent-column） 評価: A
 - 良い点: id列の cell-reverse-reference-hint に「ガチャ1」「ガチャ2」が正確に表示（code値でマッチングされている）。行切替でミニテーブルフィルタが正確に追随（M001→1行, M002→1行）。bug-report #59（PK値固定ルックアップ）の再発なし。record_id列ヘッダーに title="FK: 動的参照 (table → master.column)" が表示されており通常FKと区別できる。
@@ -28,7 +36,7 @@
 
 #### destColumn動的解決（dynamicReference） 評価: A
 - 良い点: reward_record_id ヘッダーの title="FK: 動的参照 (table → master.column)" で通常FKと区別できている。cell-error が動的参照のバリデーション失敗時に正確に付与される。2種類のエラーメッセージ（「参照先に値なし」と「参照元カラムが空」）が適切に区別されており、プランナーが問題を診断しやすい。RelationsPanelが行切替で動的に参照先テーブルを切り替える（quest id=1でchara、id=2でitem）。RP2（定義ジャンプ後）でも動的参照が正しく解決されている。Undoのバリデーション再計算が正確。
-- 修正必須(🔴): 動的参照が解決されている行で cell-reference-hint が表示されない。reward_table_id セルは「キャラ」と表示されるが、reward_record_id=3 は数字のまま。参照先の人間可読な値（例: まんぼう）をhintとして表示すべき。
+- 修正済み(2026-03-27 third): 動的参照でcell-reference-hintが表示されない問題 → 解消確認。
 - 改善推奨(🟡): cell-error セルに aria-invalid/aria-describedby がない（継続課題）。
 - 改善推奨(🟡): fill-handle がミニテーブルに display:block で残存（継続課題）。
 - 改善推奨(🟡): relations-table-dirty（●）がエラーなし状態でも全セクションに表示。未保存変更がない場合は非表示にすべき。

@@ -52,7 +52,7 @@
 - **destColumn動的解決 (2026-03-27)**: destColumnも動的解決に変更。セマンティクスが「列名そのもの」→「列名を格納するカラム名」に変化
 - **FormPanel逆参照が動的参照で完全に壊れている**: form-panel.ts L237でpkValueのみでルックアップ+L248でchildColumnName=''のフィルタ失敗（2回目レビューで再指摘）
 - **RP2パス(resolveEntriesForTableRowAsync)**: L1079-1080でparentPkColumnNameのみでフィルタ→動的参照の逆参照が一切表示されない
-- **editor-table-reference.ts updateDynamicReferenceHint**: targetColumnの動的解決をせず、PK値でgetDisplayTextByIdしている→非PK列参照時ヒント非表示
+- **editor-table-reference.ts updateDynamicReferenceHint**: targetColumn動的解決を実装済み（3rd review）。ただし非PK列参照パスのテスト未検証、PK/非PK表示テキスト解決の非対称性あり
 - **未更新箇所**: FKバッジのツールチップ(editor-table-structure.ts L620)がdestColumn間接参照の意味を反映していない
 - **main.ts起動バリデーション**: createSchemaEntryFromJson が動的参照をスキップ→起動時FKバリデーション漏れ（**依然未修正**）
 - **EditorAPI**: getReferences/getRelatedTablesAsync が動的参照列を完全に無視（SchemaEntry.references由来のため）
@@ -82,6 +82,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-27) destColumn動的解決 3rd review (参照ヒント実装): 致命的2件、重要3件、軽微3件 (サンプルデータ破壊、非PK列テスト欠落、PK/非PK非対称性)
 - (2026-03-27) destColumn動的解決 2nd review: 致命的2件、重要5件、軽微3件 (FormPanel/RP2パス未対応、参照ヒント未対応)
 - (2026-03-27) destColumn動的解決: 致命的2件、重要5件、軽微3件
 - (2026-03-26) MCP Save Git Diff: 致命的2件、重要2件、軽微3件
