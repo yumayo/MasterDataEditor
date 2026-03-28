@@ -180,13 +180,19 @@
     background-color: rgba(128, 128, 128, 0.3);
 }
 
-/* ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする。
-   overflow: visible はハンドルが right: -4px / bottom: -4px で隣セルの領域に
-   はみ出す際に必須。table-cell はデフォルト visible だが Chrome では
-   隣セルが上に被さるケースがあるため明示する。 */
-.editor-table-column-header,
-.editor-table-row-header {
+/* 列ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする。
+   overflow: visible はハンドルが right: -4px で隣セルの領域にはみ出す際に必須。
+   table-cell はデフォルト visible だが Chrome では隣セルが上に被さるケースがあるため明示する。 */
+.editor-table-column-header {
     position: relative;
+    overflow: visible;
+}
+
+/* 行ヘッダーは position:sticky（左固定）を維持するため position:relative にしない。
+   sticky は absolute 子要素（リサイズハンドル）の包含ブロックとしても機能するので
+   position:relative と同等にハンドル配置が正しく動作する。
+   overflow: visible はハンドルが bottom: -4px で隣セルの領域にはみ出す際に必須。 */
+.editor-table-row-header {
     overflow: visible;
 }
 
@@ -414,6 +420,12 @@
 /* ==========================================================================
    フリーズペイン（行/列の固定）
    ========================================================================== */
+
+/* 固定セルの背景色: sticky で浮いたセルの下にスクロール内容が透けないよう不透明背景を設定する。
+   データセルは通常 transparent なので、テーブル下地色（--background-sub-color）を背景に敷く。 */
+.freeze-cell {
+    background-color: var(--background-sub-color);
+}
 
 /* 固定列の最後のセル（ヘッダー含む）に右影を表示 */
 .freeze-column-border {

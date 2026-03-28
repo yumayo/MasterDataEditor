@@ -848,6 +848,11 @@ export class EditorTable {
                 if (col === this.frozenColumnCount - 1) {
                     cell.classList.add('freeze-column-border');
                 }
+                // 透過防止: データ行のセルに不透明な背景色を付与
+                // ヘッダー行（row===0）は .editor-table-column-header で既に背景色を持つため不要
+                if (row > 0) {
+                    cell.classList.add('freeze-cell');
+                }
             }
         }
     }
@@ -866,6 +871,7 @@ export class EditorTable {
                 cell.style.left = '';
                 cell.style.zIndex = '';
                 cell.classList.remove('freeze-column-border');
+                cell.classList.remove('freeze-cell');
             }
         }
     }
@@ -888,10 +894,13 @@ export class EditorTable {
             const rowHeight = rowElement.getBoundingClientRect().height;
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
-                // 行ヘッダーセルは既に sticky left:0 なので、top のみ設定する
                 if (col === 0) {
+                    // 行ヘッダー: 縦スクロールでも固定されるよう position:sticky + top を設定。
+                    // 横スクロール固定（left:0）はCSSで既に設定済みだが、フリーズ行の行ヘッダーは
+                    // 縦横両方向で固定される必要があるため z-index をコーナーレベルに上げる。
+                    cell.style.position = 'sticky';
                     cell.style.top = cumulativeTop + 'px';
-                    // 最後の固定行の行ヘッダーに影クラスを付与
+                    cell.style.zIndex = `var(--z-index-freeze-corner)`;
                     if (dataRowIdx === this.frozenRowCount - 1) {
                         cell.classList.add('freeze-row-border');
                     }
@@ -899,6 +908,8 @@ export class EditorTable {
                     cell.style.position = 'sticky';
                     cell.style.top = cumulativeTop + 'px';
                     cell.style.zIndex = `var(--z-index-freeze-row)`;
+                    // 透過防止: 固定セルに不透明な背景色を付与
+                    cell.classList.add('freeze-cell');
                 }
             }
             cumulativeTop += rowHeight;
@@ -916,13 +927,18 @@ export class EditorTable {
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
                 if (col === 0) {
-                    // 行ヘッダーは top のみクリア（position:sticky left:0 は既存のまま維持）
+                    // 行ヘッダー: フリーズで設定した top/zIndex をクリア。
+                    // position:sticky と left:0 は CSS の .editor-table-row-header で
+                    // 定義済みなのでインラインスタイルをクリアすればCSSに戻る。
+                    cell.style.position = '';
                     cell.style.top = '';
+                    cell.style.zIndex = '';
                     cell.classList.remove('freeze-row-border');
                 } else {
                     cell.style.position = '';
                     cell.style.top = '';
                     cell.style.zIndex = '';
+                    cell.classList.remove('freeze-cell');
                 }
             }
         }
@@ -942,7 +958,7 @@ export class EditorTable {
     }
 
     /**
-     * 全セルからフリーズ関連スタイル（sticky, left, top, zIndex, border クラス）を除去する。
+     * 全セルからフリーズ関連スタイル（sticky, left, top, zIndex, border/cell クラス）を除去する。
      * 構造変更後に位置がずれたセルの古いスタイル残留を防ぐため、全セルを走査する。
      */
     private clearAllFreezeStyles(): void {
@@ -952,17 +968,20 @@ export class EditorTable {
             const cellCount = rowElement.children.length;
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
-                // 行ヘッダー（col===0）の position:sticky と left:0 は freeze とは無関係の
-                // 既存スタイルなので保持する。top のみクリアする。
                 if (col === 0) {
+                    // 行ヘッダー: フリーズで設定したインラインスタイルをすべてクリア。
+                    // CSS の .editor-table-row-header が position:sticky; left:0 を持つので
+                    // インラインを空にすればCSSの値に戻る。
+                    cell.style.position = '';
                     cell.style.top = '';
+                    cell.style.zIndex = '';
                     cell.classList.remove('freeze-row-border');
                 } else {
                     cell.style.position = '';
                     cell.style.left = '';
                     cell.style.top = '';
                     cell.style.zIndex = '';
-                    cell.classList.remove('freeze-column-border', 'freeze-row-border');
+                    cell.classList.remove('freeze-column-border', 'freeze-row-border', 'freeze-cell');
                 }
             }
         }

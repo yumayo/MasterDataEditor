@@ -20,6 +20,9 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   4. 固定列を解除するとstickyスタイルが解除される
 //   5. 行ヘッダー右クリックで「この行まで固定」メニューが表示される
 //   6. 行を固定するとstickyスタイルが適用される
+//   7. 固定行の行ヘッダーにposition:stickyが適用される
+//   8. 固定行のデータセルに不透明な背景色が設定される
+//   9. 固定列のデータセルに不透明な背景色が設定される
 // =============================================================================
 
 // =============================================================================
@@ -204,6 +207,30 @@ async function getRowCellStylesAsync(
         styles.push(style);
     }
     return styles;
+}
+
+/**
+ * 指定行の行ヘッダーの computed style を取得する
+ * rowIndex: 0始まり（ヘッダー行を除くデータ行）
+ * 戻り値: { position, top, zIndex }
+ */
+async function getRowHeaderStyleAsync(
+    table: Locator, rowIndex: number,
+): Promise<{ position: string; top: string; zIndex: string }> {
+    const row = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(rowIndex + 1);
+    const header = row.locator('.editor-table-row-header');
+    return header.evaluate((el) => {
+        const cs = window.getComputedStyle(el);
+        return { position: cs.position, top: cs.top, zIndex: cs.zIndex };
+    });
+}
+
+/**
+ * 指定セルの computed background-color を取得する
+ * 透明（rgba(0,0,0,0)）でないことの検証に使う
+ */
+async function getCellBackgroundColorAsync(cell: Locator): Promise<string> {
+    return cell.evaluate((el) => window.getComputedStyle(el).backgroundColor);
 }
 
 // =============================================================================
@@ -392,6 +419,84 @@ test.describe('フリーズペイン', () => {
                 const frozenRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
                 const frozenRowHeader = frozenRow.locator('.editor-table-row-header');
                 await expect(frozenRowHeader).toHaveClass(/freeze-row-border/);
+            },
+        );
+
+        test(
+            '固定行の行ヘッダーにposition:stickyが適用される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // 1行目（rowIndex=0、Slimeの行）を右クリックして固定
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 固定行の行ヘッダーが sticky であること（縦スクロール固定のため）
+                const headerStyle = await getRowHeaderStyleAsync(table, 0);
+                expect(headerStyle.position).toBe('sticky');
+
+                // top 値がヘッダー行の高さ分のオフセットを持つ（0pxより大きい）
+                const topPx = parseInt(headerStyle.top);
+                expect(topPx).toBeGreaterThan(0);
+            },
+        );
+    });
+
+    test.describe('固定セルの背景色', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createFreezeTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test(
+            '固定行のデータセルに不透明な背景色が設定される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // 1行目を固定
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 固定行のデータセルの背景色が透明（rgba(0, 0, 0, 0)）でないこと
+                const row = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
+                const cells = row.locator('.editor-table-cell:not(.editor-table-row-header)');
+                const count = await cells.count();
+                for (let i = 0; i < count; i++) {
+                    const bgColor = await getCellBackgroundColorAsync(cells.nth(i));
+                    expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+                }
+            },
+        );
+
+        test(
+            '固定列のデータセルに不透明な背景色が設定される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // "name"列（インデックス1）まで固定（id, name の2列）
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // 固定列のデータセル（1行目）の背景色が透明でないこと
+                const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+                const count = await dataRows.count();
+                // ヘッダー行(nth(0))は既に背景色を持つのでスキップ、データ行のみチェック
+                for (let rowIdx = 1; rowIdx < count; rowIdx++) {
+                    const row = dataRows.nth(rowIdx);
+                    // 固定列（id: colIndex=0, name: colIndex=1）のセル
+                    for (let colIdx = 0; colIdx < 2; colIdx++) {
+                        const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIdx);
+                        const bgColor = await getCellBackgroundColorAsync(cell);
+                        expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+                    }
+                }
+
+                // 非固定列（hp: colIndex=2）の背景色は透明のまま
+                const firstDataRow = dataRows.nth(1);
+                const nonFrozenCell = firstDataRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
+                const nonFrozenBg = await getCellBackgroundColorAsync(nonFrozenCell);
+                expect(nonFrozenBg).toBe('rgba(0, 0, 0, 0)');
             },
         );
     });
