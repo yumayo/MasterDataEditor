@@ -170,6 +170,13 @@ export class EditorTableContextMenu {
             const deleteLabel = rowCount > 1 ? `${rowCount}行を削除` : '行を削除';
             // contextMenuRowIndex は1始まり（Selection座標）だが、データ行としては0始まりに変換する
             const dataRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!);
+            // blame表示トグル: ミニテーブルでは表示しない
+            const blameMenuItems: ContextMenuEntry[] = this.table.isMiniTableInstance() ? [] : [
+                {separator: true} as ContextMenuEntry,
+                this.table.isBlameShown()
+                    ? {label: '変更履歴を非表示', action: () => { this.table.hideBlame(); }}
+                    : {label: '変更履歴を表示', action: () => { this.table.showBlameAsync(); }},
+            ];
             this.contextMenu.show(e.clientX, e.clientY, [
                 {label: insertAboveLabel, action: () => { this.table.insertRows(startRow, rowCount); }},
                 {label: insertBelowLabel, action: () => { this.table.insertRows(endRow + 1, rowCount); }},
@@ -181,6 +188,7 @@ export class EditorTableContextMenu {
                         ? [{label: '行の固定を解除', action: () => { this.table.unfreezeRows(); this.table.saveFreezeStateAsync(); }}]
                         : [{label: 'この行まで固定', action: () => { this.table.freezeRows(dataRowIndex + 1); this.table.saveFreezeStateAsync(); }}]),
                 ]),
+                ...blameMenuItems,
             ]);
         };
     }

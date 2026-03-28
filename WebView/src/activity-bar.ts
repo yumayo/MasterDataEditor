@@ -2,7 +2,7 @@
  * アクティビティバーの項目種別
  * erDiagram はサイドバーパネルではなく専用タブを開く特別なアイテム
  */
-export type ActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl';
+export type ActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
 
 /**
  * ファイルアイコン（SVG）
@@ -56,6 +56,14 @@ const SOURCE_CONTROL_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24"
 </svg>`;
 
 /**
+ * 履歴アイコン（SVG — 時計形状）
+ * タイムラインパネルを開くボタンに使用する
+ */
+const HISTORY_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20ZM12.5 7H11V13L16.25 16.15L17 14.92L12.5 12.25V7Z"/>
+</svg>`;
+
+/**
  * 歯車アイコン（SVG）
  */
 const SETTINGS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -75,6 +83,7 @@ export class ActivityBar {
     private readonly bookmarksButton: HTMLElement;
     private readonly erDiagramButton: HTMLElement;
     private readonly sourceControlButton: HTMLElement;
+    private readonly historyButton: HTMLElement;
     private readonly onItemClick: (item: ActivityBarItem) => void;
     private readonly onSettingsClick: () => void;
 
@@ -92,14 +101,16 @@ export class ActivityBar {
         this.bookmarksButton = this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks');
         this.erDiagramButton = this.createButton(ER_DIAGRAM_ICON_SVG, 'erDiagram');
         this.sourceControlButton = this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl');
+        this.historyButton = this.createButton(HISTORY_ICON_SVG, 'history');
 
-        // 配置順序: files, references, search, bookmarks, erDiagram, sourceControl
+        // 配置順序: files, references, search, bookmarks, erDiagram, sourceControl, history
         this.element.appendChild(this.filesButton);
         this.element.appendChild(this.referencesButton);
         this.element.appendChild(this.searchButton);
         this.element.appendChild(this.bookmarksButton);
         this.element.appendChild(this.erDiagramButton);
         this.element.appendChild(this.sourceControlButton);
+        this.element.appendChild(this.historyButton);
 
         // 歯車ボタンは margin-top: auto で下部固定
         const settingsButton = document.createElement('div');
@@ -174,5 +185,6 @@ export class ActivityBar {
         this.bookmarksButton.classList.toggle('activity-bar-item-active', this.activeItem === 'bookmarks');
         this.erDiagramButton.classList.toggle('activity-bar-item-active', this.activeItem === 'erDiagram');
         this.sourceControlButton.classList.toggle('activity-bar-item-active', this.activeItem === 'sourceControl');
+        this.historyButton.classList.toggle('activity-bar-item-active', this.activeItem === 'history');
     }
 }

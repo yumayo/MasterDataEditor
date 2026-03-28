@@ -229,6 +229,44 @@ export async function gitDiscardAsync(path: string): Promise<void> {
     invalidateGitShowCache();
 }
 
+// =========================================================================
+// git blame / git log
+// 変更履歴・監査ログ機能で使用する。キャッシュは持たない（都度取得）。
+// =========================================================================
+
+/** git blame の1行分のエントリ */
+export interface BlameEntry {
+    lineNumber: number;
+    author: string;
+    date: string;
+    commitHash: string;
+    commitMessage: string;
+}
+
+/** git log の1コミット分のエントリ */
+export interface LogEntry {
+    commitHash: string;
+    author: string;
+    date: string;
+    message: string;
+}
+
+/**
+ * git blame でファイルの各行の著者・日付・コミット情報を取得する
+ */
+export async function gitBlameAsync(filename: string): Promise<BlameEntry[]> {
+    return postMessageAsync<BlameEntry[]>('git_blame', { filename });
+}
+
+/**
+ * git log でファイルのコミット履歴を取得する
+ * @param filename 対象ファイルパス
+ * @param limit 取得するコミット数の上限
+ */
+export async function gitLogAsync(filename: string, limit: number): Promise<LogEntry[]> {
+    return postMessageAsync<LogEntry[]>('git_log', { filename, limit });
+}
+
 /**
  * リクエストIDカウンター
  * 各リクエストにユニークIDを付与し、レスポンスをIDで照合する。

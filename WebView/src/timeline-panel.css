@@ -1,0 +1,58 @@
+/* タイムラインパネル: サイドバーで git log コミット履歴を表示する */
+.timeline-panel {
+    display: none;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.timeline-panel.sidebar-panel-active {
+    display: block;
+}
+
+.timeline-entries {
+    padding: 0 8px;
+}
+
+.timeline-entry {
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: default;
+}
+
+.timeline-entry:hover {
+    background: var(--list-hover-bg);
+}
+
+.timeline-entry-message {
+    font-size: 13px;
+    color: var(--font-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-entry-author {
+    font-size: 11px;
+    color: var(--font-color);
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+.timeline-entry-date {
+    font-size: 11px;
+    color: var(--font-color);
+    opacity: 0.5;
+    margin-top: 1px;
+}
+
+/* blame情報: 行ヘッダー内に表示される author + date */
+.blame-info {
+    font-size: 10px;
+    color: var(--font-color);
+    opacity: 0.6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+    line-height: 1.2;
+}

@@ -21,7 +21,7 @@ import {ValidationPanel} from "./validation-panel";
 import {ValidationError} from "./validation-engine";
 import {DiffTab} from "./diff-tab";
 import {GitDiffTracker} from "./git-diff-tracker";
-import {gitStatusAsync, gitShowAsync, gitShowFreshAsync, GitStatusResult} from "./api";
+import {gitStatusAsync, gitShowAsync, gitShowFreshAsync, gitBlameAsync, GitStatusResult, BlameEntry} from "./api";
 import {ColumnSorter, SerializedSortKey} from "./column-sorter";
 import {ColumnFilter, SerializedFilters} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
@@ -93,6 +93,8 @@ export class EditorTable {
     private frozenColumnCount: number;
     /** 固定行数（0=未固定） */
     private frozenRowCount: number;
+    /** blame情報の表示状態（false: 非表示、true: 表示中） */
+    private isBlameVisible: boolean;
 
     /** 空行数（データ行+バッファ1行） */
     private readonly emptyRowCount: number;
@@ -166,6 +168,7 @@ export class EditorTable {
         this.autoFillEntries = [];
         this.frozenColumnCount = 0;
         this.frozenRowCount = 0;
+        this.isBlameVisible = false;
         this.lastNotifiedRow = -1;
         this.lastFocusedRow = -1;
         this.lastFocusedCol = -1;
@@ -441,6 +444,83 @@ export class EditorTable {
      */
     isMiniTableInstance(): boolean {
         return this.isMiniTable;
+    }
+
+    // =========================================================================
+    // blame（変更履歴）表示
+    // =========================================================================
+
+    /**
+     * blame情報が表示中かどうかを返す（コンテキストメニューのトグルラベル判定に使用）
+     */
+    isBlameShown(): boolean {
+        return this.isBlameVisible;
+    }
+
+    /**
+     * git blame を実行して各行ヘッダーに著者・日付情報を表示する
+     */
+    async showBlameAsync(): Promise<void> {
+        const filename = 'data/' + this.tableName + '.csv';
+        const entries = await gitBlameAsync(filename);
+        this.isBlameVisible = true;
+        // 行番号→BlameEntryの高速ルックアップマップを構築する
+        const blameMap = new Map<number, BlameEntry>();
+        for (let i = 0; i < entries.length; i++) {
+            blameMap.set(entries[i].lineNumber, entries[i]);
+        }
+        // 各行ヘッダーに blame-info 要素を追加する
+        const rowHeaders = this.element.querySelectorAll('.editor-table-row-header') as NodeListOf<HTMLElement>;
+        for (const rowHeader of Array.from(rowHeaders)) {
+            // バッファ空行（editor-table-empty-row）の行ヘッダーにはblame情報を付与しない
+            const parentRow = rowHeader.parentElement;
+            if (parentRow && parentRow.classList.contains('editor-table-empty-row')) continue;
+            const rowIndexStr = rowHeader.dataset.rowIndex;
+            if (!rowIndexStr) continue;
+            // data-rowIndex はCSVヘッダー行を除いたデータ行の0始まりインデックス。
+            // git blame の lineNumber は1始まりだが、CSVヘッダー行(lineNumber=0相当)を除外して
+            // データ行のインデックスとして直接マッピングする。
+            const lineNumber = parseInt(rowIndexStr);
+            const entry = blameMap.get(lineNumber);
+            if (!entry) continue;
+            // 既存の blame-info があれば除去してから追加する
+            const existing = rowHeader.querySelector('.blame-info');
+            if (existing) existing.remove();
+            const blameInfo = document.createElement('div');
+            blameInfo.classList.add('blame-info');
+            blameInfo.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
+            blameInfo.setAttribute('role', 'note');
+            blameInfo.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
+            const authorSpan = document.createElement('span');
+            authorSpan.classList.add('blame-author');
+            authorSpan.textContent = entry.author;
+            blameInfo.appendChild(authorSpan);
+            const dateSpan = document.createElement('span');
+            dateSpan.classList.add('blame-date');
+            dateSpan.textContent = entry.date;
+            blameInfo.appendChild(dateSpan);
+            rowHeader.appendChild(blameInfo);
+        }
+    }
+
+    /**
+     * 全行ヘッダーから blame-info 要素を除去して非表示にする
+     */
+    hideBlame(): void {
+        this.isBlameVisible = false;
+        const blameInfos = this.element.querySelectorAll('.blame-info');
+        for (const info of Array.from(blameInfos)) {
+            info.remove();
+        }
+    }
+
+    /**
+     * blame表示中であれば自動的に非表示にする。
+     * 行構造変更（ソート・フィルター・行追加/削除・行移動・タブ切替リロード）の冒頭で呼ぶ。
+     * blameはgit committed dataのため、テーブル内容が変更された時点で陳腐化する。
+     */
+    private hideBlameIfVisible(): void {
+        if (this.isBlameVisible) this.hideBlame();
     }
 
     // =========================================================================
@@ -1465,6 +1545,8 @@ export class EditorTable {
      * ミニテーブルはフィルタ条件を持つため DOM 行数同期は行わず、セル値の更新のみ行う。
      */
     reloadCellsFromStore(): void {
+        // blameはgit committed dataのため、ストアからの全面リロードで陳腐化する
+        this.hideBlameIfVisible();
         const storeRows = this.store.getRows(this.tableName);
         const storeHeader = this.store.getHeader(this.tableName);
         if (storeRows === false || storeHeader === false) return;
@@ -1884,6 +1966,8 @@ export class EditorTable {
      * @param columnIndex DOMの列インデックス（0始まり、行ヘッダーなし）
      */
     applySortForColumn(columnIndex: number): void {
+        // blameはgit committed dataのため、ソートによるDOM行並び替えで陳腐化する
+        this.hideBlameIfVisible();
         // ColumnSorterにソートを委譲して新しいstoreRowIndicesを取得する
         const newIndices = this.columnSorter.toggleSort(columnIndex, this.storeRowIndices);
         this.storeRowIndices = newIndices;
@@ -2640,6 +2724,8 @@ export class EditorTable {
 
     /** 行挿入の内部実装（Commandから呼び出される） */
     public insertRowInternal(rowIndex: number): void {
+        // blameはgit committed dataのため、行挿入でDOM行構造が変化すると陳腐化する
+        this.hideBlameIfVisible();
         this.structure.insertRowInternal(rowIndex);
     }
 
@@ -2676,6 +2762,8 @@ export class EditorTable {
 
     /** 行を削除する（Undo用） */
     public deleteRow(rowIndex: number): void {
+        // blameはgit committed dataのため、行削除でDOM行構造が変化すると陳腐化する
+        this.hideBlameIfVisible();
         this.structure.deleteRow(rowIndex);
     }
 
@@ -2692,6 +2780,8 @@ export class EditorTable {
      */
     public moveRow(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
         if (fromDomDataRowIndex === toDomDataRowIndex) return;
+        // blameはgit committed dataのため、行移動でDOM行構造が変化すると陳腐化する
+        this.hideBlameIfVisible();
         // ストアの行を移動する
         const fromStoreIndex = this.storeRowIndices[fromDomDataRowIndex];
         // 移動先のストアインデックスを計算する:

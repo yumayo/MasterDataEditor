@@ -5,6 +5,7 @@ import {ReferencesPanel} from "./references-panel";
 import {SearchPanel} from "./search-panel";
 import {BookmarkPanel, BookmarkEntry} from "./bookmark-panel";
 import {SourceControlPanel} from "./source-control-panel";
+import {TimelinePanel} from "./timeline-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
@@ -29,6 +30,7 @@ export class Sidebar {
     private readonly searchPanel: SearchPanel;
     private readonly bookmarkPanel: BookmarkPanel;
     private readonly sourceControlPanel: SourceControlPanel;
+    private readonly timelinePanel: TimelinePanel;
     private readonly directory: ExplorerDirectory;
     constructor(
         explorerElement: HTMLElement,
@@ -83,6 +85,10 @@ export class Sidebar {
         // ソース管理パネル（差分タブを開くために Tab への参照が必要）
         this.sourceControlPanel = new SourceControlPanel(tab, this.activityBar);
         this.sourceControlPanel.appendTo(sidebarContent);
+
+        // タイムラインパネル（git logベースのコミット履歴を表示する）
+        this.timelinePanel = new TimelinePanel();
+        this.timelinePanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 0);
@@ -263,14 +269,25 @@ export class Sidebar {
         this.searchPanel.hide();
         this.bookmarkPanel.hide();
         this.sourceControlPanel.hide();
+        this.timelinePanel.hide();
 
+        // history はソース管理と同様に差分タブを閉じない（closeAllDiffTabs の除外対象）
         if (item === 'sourceControl') {
-            // 差分タブはソース管理パネル内のクリックで開くため、ここでは操作しない
             this.sourceControlPanel.show();
             return;
         }
 
-        // ソース管理以外に切り替えた場合は全差分タブを閉じる
+        if (item === 'history') {
+            this.timelinePanel.show();
+            // アクティブテーブルの git log を読み込む
+            const activeTabName = this.tab.getActiveTabName();
+            if (activeTabName !== false) {
+                this.timelinePanel.loadLogAsync(activeTabName).catch(e => { console.error('タイムラインログ取得失敗', e); });
+            }
+            return;
+        }
+
+        // ソース管理・履歴以外に切り替えた場合は全差分タブを閉じる
         this.tab.closeAllDiffTabs();
 
         if (item === 'files') {

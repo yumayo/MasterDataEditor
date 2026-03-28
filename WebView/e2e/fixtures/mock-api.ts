@@ -323,6 +323,42 @@ export async function installMockApiAsync(
                     dispatch({ type: "git_discard_response", requestId, success: true });
                     return;
                 }
+
+                // git blame: __mockGitBlame[filename] のモックデータを返す
+                if (type === "git_blame_request") {
+                    const filename = request.filename as string;
+                    type BlameWindow = { __mockGitBlame: Record<string, object[]> | undefined };
+                    const mockBlame = (window as unknown as BlameWindow).__mockGitBlame;
+                    if (mockBlame === undefined) {
+                        dispatch({ type: "git_blame_response", requestId, success: false, error: "git blame not available" });
+                        return;
+                    }
+                    const entries = mockBlame[filename];
+                    if (entries) {
+                        dispatch({ type: "git_blame_response", requestId, success: true, data: entries });
+                    } else {
+                        dispatch({ type: "git_blame_response", requestId, success: true, data: [] });
+                    }
+                    return;
+                }
+
+                // git log: __mockGitLog[filename] のモックデータを返す
+                if (type === "git_log_request") {
+                    const filename = request.filename as string;
+                    type LogWindow = { __mockGitLog: Record<string, object[]> | undefined };
+                    const mockLog = (window as unknown as LogWindow).__mockGitLog;
+                    if (mockLog === undefined) {
+                        dispatch({ type: "git_log_response", requestId, success: false, error: "git log not available" });
+                        return;
+                    }
+                    const entries = mockLog[filename];
+                    if (entries) {
+                        dispatch({ type: "git_log_response", requestId, success: true, data: entries });
+                    } else {
+                        dispatch({ type: "git_log_response", requestId, success: true, data: [] });
+                    }
+                    return;
+                }
             }
 
             window.chrome = {
