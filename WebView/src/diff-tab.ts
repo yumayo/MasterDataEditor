@@ -101,7 +101,9 @@ export class DiffTab {
         tabReference: TabReference,
         openEditorTables: Map<string, EditorTable>,
         notification: NotificationToast,
-        validationPanel: ValidationPanel | false
+        validationPanel: ValidationPanel | false,
+        leftLabel: string | null,
+        rightLabel: string | null
     ) {
         this.isSyncing = false;
         this.dragMouseMove = null;
@@ -158,6 +160,14 @@ export class DiffTab {
         diffTabContent.appendChild(leftPaneElement);
         this.leftPaneElement = leftPaneElement;
 
+        // 左ペインラベル（バージョン比較時のコミット情報表示。nullの場合は非表示）
+        if (leftLabel !== null) {
+            const leftLabelElement = document.createElement('div');
+            leftLabelElement.classList.add('diff-pane-label-left');
+            leftLabelElement.textContent = leftLabel;
+            leftPaneElement.appendChild(leftLabelElement);
+        }
+
         // リサイズハンドル — 左右ペイン間に配置してドラッグで幅を調整する
         const resizeHandle = document.createElement('div');
         resizeHandle.classList.add('diff-resize-handle');
@@ -206,6 +216,14 @@ export class DiffTab {
         rightPaneElement.classList.add('diff-pane-right');
         diffTabContent.appendChild(rightPaneElement);
         this.rightPaneElement = rightPaneElement;
+
+        // 右ペインラベル（バージョン比較時のコミット情報表示。nullの場合は非表示）
+        if (rightLabel !== null) {
+            const rightLabelElement = document.createElement('div');
+            rightLabelElement.classList.add('diff-pane-label-right');
+            rightLabelElement.textContent = rightLabel;
+            rightPaneElement.appendChild(rightLabelElement);
+        }
 
         // 左右ペイン用のストアキー（差分タブ専用の名前空間を使用して通常テーブルと衝突しない）
         const leftTableKey = tableName + ':diff:head';
@@ -723,7 +741,8 @@ export class DiffTab {
         // buildMergedData が生成するインデックスとDOM構造は同期的に構築されるため、
         // インデックスの存在チェックは不要（防御的ガードを除去）
         for (const rowIdx of leftEmptyRowIndices) {
-            (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-empty'); // +1 でヘッダー行スキップ
+            const row = leftElement.children[rowIdx + 1] as HTMLElement; // +1 でヘッダー行スキップ
+            row.classList.add('diff-row-empty');
         }
 
         // 右ペインの空白行（削除行に対応する空白）: 初期パディング行であることを明示する。

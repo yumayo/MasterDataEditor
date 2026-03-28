@@ -1,6 +1,7 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {TabButton} from "./tab-button";
-import {readFileAsync} from "./api";
+import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync} from "./api";
+import {CommitSelectorDialog} from "./commit-selector-dialog";
 import {Editor} from "./editor";
 import {EditorTable} from "./editor-table";
 import {Selection} from "./selection";
@@ -200,6 +201,9 @@ export class Tab {
     /** openTableAsync() で待機中の resolve 関数を保持するマップ（キー: テーブル名） */
     private readonly pendingTableOpens: Map<string, (success: boolean) => void>;
 
+    /** コミット選択ダイアログ（バージョン比較用） */
+    private readonly commitSelectorDialog: CommitSelectorDialog;
+
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.editor = editor;
         this.element = tabContentElement;
@@ -232,6 +236,7 @@ export class Tab {
         this.errorTooltip = false;
         this.editorApi = false;
         this.pendingTableOpens = new Map();
+        this.commitSelectorDialog = new CommitSelectorDialog();
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -1100,6 +1105,107 @@ export class Tab {
     }
 
     /**
+     * タブボタンの右クリックコンテキストメニューを表示する。
+     * TabButton.onContextMenu から呼ばれる。
+     * 通常テーブルタブの場合のみ「バージョン比較...」項目を表示する。
+     */
+    showTabButtonContextMenu(tabName: string, x: number, y: number): void {
+        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブはバージョン比較の対象外
+        if (tabName === SETTINGS_TAB_NAME || tabName === ER_DIAGRAM_TAB_NAME || tabName === TABLE_DEFINITION_TAB_NAME || tabName.startsWith(DIFF_TAB_PREFIX)) return;
+        this.contextMenu.show(x, y, [
+            {
+                label: 'バージョン比較...',
+                action: () => {
+                    this.openVersionCompareFlowAsync(tabName)
+                        .catch(e => { this.notification.show('バージョン比較に失敗しました: ' + String(e)); });
+                },
+            },
+        ]);
+    }
+
+    /**
+     * バージョン比較フロー全体を制御する。
+     * コミット選択ダイアログを開き、ユーザーが比較対象を選択したら差分タブを生成して表示する。
+     * ダイアログがキャンセルされた場合は何もしない。
+     */
+    private async openVersionCompareFlowAsync(tableName: string): Promise<void> {
+        const result = await this.commitSelectorDialog.openAsync(tableName);
+        if (result === null) return;
+        await this.openVersionCompareDiffTabAsync(tableName, result.leftCommit, result.rightCommit);
+    }
+
+    /**
+     * バージョン比較差分タブを開く。
+     * コミット選択ダイアログの「比較」ボタン押下時に呼ばれる。
+     * 左右コミットのCSVを取得し、DiffTabを生成して表示する。
+     * @param tableName テーブル名
+     * @param leftCommit 左コミットハッシュ（"HEAD" | "WORKING_TREE" | コミットハッシュ）
+     * @param rightCommit 右コミットハッシュ（"HEAD" | "WORKING_TREE" | コミットハッシュ）
+     */
+    private async openVersionCompareDiffTabAsync(tableName: string, leftCommit: string, rightCommit: string): Promise<void> {
+        const path = 'data/' + tableName + '.csv';
+
+        // 左右のCSVを並列取得する
+        const [leftCsv, rightCsv, schemaJson] = await Promise.all([
+            this.fetchCsvAtCommitAsync(leftCommit, path),
+            this.fetchCsvAtCommitAsync(rightCommit, path),
+            readFileAsync('schema/' + tableName + '.json'),
+        ]);
+
+        // タブ名のフォーマット: "{テーブル名} ({leftHash} ↔ {rightHash})"
+        const leftDisplay = this.formatCommitDisplay(leftCommit);
+        const rightDisplay = this.formatCommitDisplay(rightCommit);
+        const diffTabName = DIFF_TAB_PREFIX + tableName + ' (' + leftDisplay + ' \u2194 ' + rightDisplay + ')';
+
+        // 既存の同名差分タブがあれば破棄する
+        if (this.diffTabs.has(diffTabName)) {
+            if (this.activeTabName === diffTabName) {
+                this.editor.leaveSettingsMode();
+                this.activeTabName = false;
+            }
+            const existing = this.diffTabs.get(diffTabName)!;
+            existing.destroy(this.store);
+            this.diffTabs.delete(diffTabName);
+            this.removeTabButton(diffTabName);
+        }
+
+        // 差分タブボタンを追加する
+        const tabButton = this.append(diffTabName, null);
+
+        // DiffTab を生成する（バージョン比較は両ペインとも読み取り専用）
+        const diffTab = new DiffTab(
+            tableName, schemaJson, leftCsv, rightCsv, true, '',
+            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
+            this.reference, this.openEditorTables, this.notification, false,
+            leftDisplay, rightDisplay
+        );
+        this.diffTabs.set(diffTabName, diffTab);
+
+        // タブボタンをクリックしてアクティブ化する
+        tabButton.click();
+    }
+
+    /**
+     * コミット指定に応じたCSVを取得する内部ヘルパー。
+     * "HEAD" → gitShowFreshAsync, "WORKING_TREE" → readFileAsync, それ以外 → gitShowAtCommitAsync
+     */
+    private async fetchCsvAtCommitAsync(commit: string, path: string): Promise<string> {
+        if (commit === 'HEAD') return gitShowFreshAsync(path);
+        if (commit === 'WORKING_TREE') return readFileAsync(path);
+        return gitShowAtCommitAsync(commit, path);
+    }
+
+    /**
+     * コミットハッシュの表示文字列を生成する。
+     * "HEAD" → "HEAD", "WORKING_TREE" → "作業ツリー", それ以外 → 7桁ハッシュ
+     */
+    private formatCommitDisplay(commit: string): string {
+        if (commit === 'HEAD') return 'HEAD';
+        if (commit === 'WORKING_TREE') return '作業ツリー';
+        return commit.length > 7 ? commit.substring(0, 7) : commit;
+    }
+
+    /**
      * 既存テーブルのスキーマを読み込み、テーブル定義編集タブを開く。
      * showExplorerContextMenu から呼ばれる。
      */
@@ -1369,7 +1475,8 @@ export class Tab {
         const diffTab = new DiffTab(
             tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
-            this.reference, this.openEditorTables, this.notification, this.validationPanel
+            this.reference, this.openEditorTables, this.notification, this.validationPanel,
+            null, null
         );
         this.diffTabs.set(diffTabName, diffTab);
 

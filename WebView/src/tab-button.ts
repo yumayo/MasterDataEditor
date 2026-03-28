@@ -26,6 +26,7 @@ export class TabButton {
         this.element.addEventListener('click', this.onClick.bind(this));
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
+        this.element.addEventListener('contextmenu', this.onContextMenu.bind(this));
 
         // ラベル部（テーブル名を1行目、description を2行目とする2行構造）
         const labelContainer = document.createElement('div');
@@ -143,6 +144,12 @@ export class TabButton {
 
     disable() {
         this.element.classList.remove('tab-button-active');
+    }
+
+    /** 右クリックコンテキストメニュー: Tab にイベントを委譲する */
+    private onContextMenu(ev: MouseEvent) {
+        ev.preventDefault();
+        this.tab.showTabButtonContextMenu(this.name, ev.clientX, ev.clientY);
     }
 
     private onMouseDown(ev: MouseEvent) {

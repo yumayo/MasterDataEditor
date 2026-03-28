@@ -1,0 +1,150 @@
+/* ============================================================
+ * コミット選択ダイアログ — バージョン比較機能のモーダルUI
+ * 既存のCSS変数（--background-color, --border-color, --font-color 等）を使用する。
+ * ============================================================ */
+
+/* モーダルオーバーレイ（全画面背景） */
+.commit-selector-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: var(--z-index-commit-selector-dialog);
+}
+
+/* ダイアログのコンテンツ領域 */
+.commit-selector-content {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    width: 700px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* タイトル */
+.commit-selector-title {
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--font-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* 左右ペインコンテナ（横並び） */
+.commit-selector-panes {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* 左右ペイン共通 */
+.commit-selector-left,
+.commit-selector-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 左ペインの右ボーダー */
+.commit-selector-left {
+    border-right: 1px solid var(--border-color);
+}
+
+/* ペインラベル */
+.commit-selector-pane-label {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--font-color);
+    background: var(--background-sub-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* コミットリスト */
+.commit-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* コミットリストエントリ */
+.commit-list-entry {
+    display: flex;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--font-color);
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.commit-list-entry:hover {
+    background: var(--hover-color);
+}
+
+/* 選択中のエントリ */
+.commit-list-entry.selected {
+    background: var(--selection-color);
+}
+
+/* プリセットエントリ（HEAD、作業ツリー） */
+.commit-list-entry.preset {
+    font-style: italic;
+}
+
+/* ハッシュ表示 */
+.commit-list-entry-hash {
+    font-family: monospace;
+    min-width: 70px;
+    color: var(--font-color);
+    opacity: 0.6;
+}
+
+/* メッセージ表示 */
+.commit-list-entry-message {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ボタンコンテナ */
+.commit-selector-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ボタン共通 */
+.commit-selector-compare-button,
+.commit-selector-cancel-button {
+    padding: 6px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    border-radius: 2px;
+    color: var(--font-color);
+    background: var(--background-sub-color);
+}
+
+.commit-selector-compare-button:hover:not(:disabled),
+.commit-selector-cancel-button:hover {
+    background: var(--hover-color);
+}
+
+/* 比較ボタンの無効状態 */
+.commit-selector-compare-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

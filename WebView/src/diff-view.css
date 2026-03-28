@@ -145,3 +145,14 @@
     display: flex;
     flex-direction: column;
 }
+
+/* ペインラベル（差分タブ内のコミット情報表示） */
+.diff-pane-label-left,
+.diff-pane-label-right {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--font-color);
+    background: var(--background-sub-color);
+    border-bottom: 1px solid var(--border-color);
+}

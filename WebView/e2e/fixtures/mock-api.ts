@@ -359,6 +359,25 @@ export async function installMockApiAsync(
                     }
                     return;
                 }
+
+                // git show at commit: __mockGitCommitFiles[commit][path] のモックデータを返す
+                if (type === "git_show_at_commit_request") {
+                    const commit = request.commit as string;
+                    const path = request.path as string;
+                    type CommitFilesWindow = { __mockGitCommitFiles: Record<string, Record<string, string>> | undefined };
+                    const commitFiles = (window as unknown as CommitFilesWindow).__mockGitCommitFiles;
+                    if (commitFiles === undefined) {
+                        dispatch({ type: "git_show_at_commit_response", requestId, success: false, error: "git show at commit not available" });
+                        return;
+                    }
+                    const filesAtCommit = commitFiles[commit];
+                    if (filesAtCommit && path in filesAtCommit) {
+                        dispatch({ type: "git_show_at_commit_response", requestId, success: true, data: filesAtCommit[path] });
+                    } else {
+                        dispatch({ type: "git_show_at_commit_response", requestId, success: false, error: "fatal: path '" + path + "' does not exist in '" + commit + "'" });
+                    }
+                    return;
+                }
             }
 
             window.chrome = {

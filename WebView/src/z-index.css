@@ -28,6 +28,9 @@
     --z-index-form-panel-field-label: 1;
     --z-index-filter-dropdown-overlay: 2;
 
+    /* ─── ダイアログ ─── */
+    --z-index-commit-selector-dialog: 1800;
+
     /* ─── 最前面 UI ─── */
     --z-index-filter-dropdown-container: 1000;
     --z-index-dropdown-quick-view: 1000;

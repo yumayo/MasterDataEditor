@@ -268,6 +268,16 @@ export async function gitLogAsync(filename: string, limit: number): Promise<LogE
 }
 
 /**
+ * git show commit:path で任意コミット時点のファイル内容を返す。
+ * バージョン比較機能で使用する。キャッシュは持たない（都度取得）。
+ * @param commit コミットハッシュ
+ * @param path ファイルパス
+ */
+export async function gitShowAtCommitAsync(commit: string, path: string): Promise<string> {
+    return postMessageAsync<string>('git_show_at_commit', { commit, path });
+}
+
+/**
  * リクエストIDカウンター
  * 各リクエストにユニークIDを付与し、レスポンスをIDで照合する。
  * これにより同じ種類のリクエストを並列に送信しても取り違えが起きない。
