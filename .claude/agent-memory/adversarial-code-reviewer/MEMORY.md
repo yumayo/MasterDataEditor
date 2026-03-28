@@ -32,8 +32,8 @@
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
 - **register/unregister 非対称**: **5回再発** (+TableDefinitionEditor destroy()未実装、indicator永続残留)
 - **CSS hardcoded colors**: 21+ 回再発 (+table-definition-editor #f44336, #ffffff)
-- **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊
-- **フォールバック禁止 (??)**: 17+ 回再発
+- **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**
+- **フォールバック禁止 (?? / ||)**: 22+ 回再発 (+applyOriginalSchemaToRow dynRef 5箇所)
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette)
@@ -91,6 +91,7 @@
 - Defined: --font-color, --background-color, --background-sub-color, --border-color, --selection-color, --selection-font-color, --scroll-bar-background-color, --focus-border, --error-color, --error-bg, --error-border
 - NOT defined: --warning-color, --warning-bg, --warning-border (needed for plugin errors)
 - NOT defined: --text-muted-color (used in .cell-reference-hint, .cell-reverse-reference-hint, grid-dropdown-input with fallback #888)
+- NOT defined: **--selected-color** (table-definition-editor.css 10箇所 + settings-panel.css 1箇所で使用。正しくは --selection-color)
 
 ## ER Diagram Tab Patterns (2026-03-28)
 - tab.ts 特殊タブ分岐(settings/diff/ER): 条件分岐が4種(通常/設定/差分/ER)に増殖、leaveSettingsMode漏れリスク高
@@ -149,9 +150,11 @@
 - **ISSUE_0129 スキーマフィールド消失(致命的)**: references/default等の既存フィールドが保存時に丸ごと消える
 - **ISSUE_0129 pendingEditTarget生焼け**: メンバ変数を一時的な引数受け渡し場所として使用するアンチパターン
 - **ISSUE_0129 バリデーション/キャッシュ未更新**: closeTableDefinitionAndReopenTable後にvalidationPanel/referenceDataCache無効化なし
+- **全スキーマプロパティUI(2026-03-29)**: reverseReferencePriority読み込み欠落(致命的), default値の型不一致(致命的), 動的参照バリデーション無し(致命的), width/rrp数値バリデーション無し, 単純参照形式バリデーション無し, CSSコピペ6箇所, --selected-color未定義6箇所追加
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-29) 全スキーマプロパティUI: 致命的3件、重要5件、軽微4件 (rrp読込欠落, default型不一致, 動的参照バリデーション無し, フォールバック||5箇所, width/rrp数値検証無し, 参照形式検証無し, CSSコピペ6箇所, --selected-color未定義)
 - (2026-03-28) ISSUE_0129 既存テーブル定義編集: 致命的3件、重要5件、軽微4件 (CSVパーサ不一致データ破壊, リネーム時ゴーストファイル, スキーマフィールド消失, pendingEditTarget生焼け, CRLF, バリデーション/キャッシュ未更新)
 - (2026-03-28) ISSUE_0128 列ドラッグ並び替え: 致命的3件、重要5件、軽微4件 (indicatorリーク, Redo未実装, 列削除後Undo破壊, ドラッグキャンセル未対応, lastIndicatorClientY初期値)
 - (2026-03-28) ISSUE_0127 FK列int値右揃え・ヒント左配置: 致命的2件、重要4件、軽微3件 (constant.ts列幅計算破壊, float:leftレイアウト脆弱性, CSSコメント不整合, applyTypedCellStyleパス漏れ, appendReferenceHint命名)

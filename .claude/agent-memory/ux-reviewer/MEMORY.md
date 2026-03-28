@@ -15,7 +15,23 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 ISSUE_0136 逆参照ヒントのレイアウトをFK参照ヒントと統一）
+### 最新レビュー結果（2026-03-29 テーブル定義エディタ全プロパティUI対応）
+
+#### テーブル定義エディタ全プロパティUI対応 評価: B+
+- 変更内容: comment/width常時表示、詳細パネルアコーディオン（column-detail-toggle/column-detail-panel）、参照タイプラジオ3択（none/simple/dynamic）、default/renderAsHtml/reverseReferencePriority 入力フィールド追加。
+- 良い点: comment/widthが全列で一覧できるようになり既存テーブルの全体像を一目で把握できる。ラジオボタン3択で FK 参照の設定が直感的になった。既存スキーマの reference/comment/width が詳細パネル含め正確に復元されている。保存後グリッドタブへの一気通貫遷移が機能している（write_file × 2 = schema.json + CSV）。
+- 修正必須(🔴): column-detail-toggle に aria-expanded がなくアコーディオン開閉状態がスクリーンリーダーに伝わらない。aria-expanded="true/false" + aria-controls の付与が必要。
+- 修正必須(🔴): column-detail-panel の show/hide が style="" / style="display:none;" による制御（hidden 属性未使用）。支援技術が非表示コンテンツを読み上げるリスクあり。
+- 修正必須(🔴): column-ref-dynamic-fields の5プレースホルダー（sourceTable/sourceMatchColumn/sourceMatchValue/destTable/destColumn）が英語技術用語のままで非エンジニアに理解不能。日本語プレースホルダー + グルーピングが必要。
+- 修正必須(🔴): column-render-html-wrapper の label と checkbox が id/for で関連付けられておらず、ラベルクリックでチェックが入らない（column-pk-checkbox と同じパターン）。
+- 修正必須(🔴): renderAsHtml / reverseReferencePriority のラベルテキストが英語camelCaseのままで非エンジニアのプランナーに用途不明。日本語化 + tooltip が必要。
+- 修正必須(🔴): tab-button-dirty が詳細パネル変更後に活性化されるか未確認（ISSUE_0128/0129からの継続課題）。
+- 改善推奨(🟡): 複数列の詳細パネルを同時展開すると縦スクロールが膨大になる（10列以上のテーブルで顕在化）。同時1パネル展開のアコーディオン設計を検討。
+- 改善推奨(🟡): column-default-input の placeholder が型非依存で「デフォルト値」のみ。型に応じた placeholder 動的変更が必要（bool→「false」、int→「0」等）。
+- 改善推奨(🟡): table-definition-reverse-ref-priority-input に min/max 属性がなく負数入力可能。
+- 参考: 継続未修正 — column-drag-handle / column-pk-checkbox / column-delete-button のARIA対応（ISSUE_0128から未解消）。テーブル定義タブ切替時の詳細パネル展開状態保持のテストが存在しない（ISSUE_0112パターンの潜在リスク）。
+
+### 過去のレビュー結果（2026-03-28 ISSUE_0136 逆参照ヒントのレイアウトをFK参照ヒントと統一）
 
 #### ISSUE_0136 逆参照ヒントのCSSレイアウト統一 評価: A
 - 変更内容: 逆参照ヒント（PK列）に float:left を適用。DOM挿入を cell.appendChild → cell.prepend に変更しFKヒントと同一DOM順序に統一。
@@ -263,3 +279,8 @@
 - 型変更（string→int等）の破壊的変更に対する確認ダイアログがない（ISSUE_0129で新規発見）
 - cell-reverse-reference-hint span に aria-hidden="true" がなく、スクリーンリーダーがヒントとPK値を連続テキストとして読み上げる（ISSUE_0136で新規発見、cell-reference-hintと同一パターン）
 - バッファ行への逆参照ヒント表示ポリシーが FK ヒントと統一されているか確認が必要（ISSUE_0136で新規発見）
+- column-detail-toggle に aria-expanded がなくアコーディオン開閉状態がスクリーンリーダーに伝わらない（2026-03-29 全プロパティUI対応で新規発見）
+- column-detail-panel の show/hide が hidden 属性未使用で style 属性制御（2026-03-29 全プロパティUI対応で新規発見）
+- column-ref-dynamic-fields の5プレースホルダーが英語技術用語のまま（2026-03-29 全プロパティUI対応で新規発見）
+- column-render-html-wrapper の label/checkbox が id/for 未関連付け（2026-03-29 全プロパティUI対応で新規発見）
+- renderAsHtml / reverseReferencePriority ラベルが英語camelCaseのまま（2026-03-29 全プロパティUI対応で新規発見）
