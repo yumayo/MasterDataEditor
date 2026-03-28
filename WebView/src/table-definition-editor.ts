@@ -5,6 +5,7 @@
  * - 新規テーブルのスキーマ定義UIを提供する（テーブル名、列名、型、PK指定）
  * - バリデーション（テーブル名の重複・不正文字、列名重複、PK未設定）
  * - 保存時にスキーマJSON + CSVヘッダーを生成してファイルシステムに書き込む
+ * - 列定義行のドラッグ並び替え（Undo対応）
  *
  * Tab から呼ばれて専用タブとしてエディター領域にマウントされる。
  * 設定タブ（SettingsPanel）・ER図タブ（ErDiagramTab）と同じパターン。
@@ -21,6 +22,15 @@ const COLUMN_NAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 /** 列の型選択肢 */
 const COLUMN_TYPES = ['string', 'int', 'float', 'double', 'bool'] as const;
 
+/** ドラッグ開始の閾値（px） */
+const DRAG_THRESHOLD = 5;
+
+/** 列ドラッグの Undo エントリ */
+interface ColumnMoveEntry {
+    readonly fromIndex: number;
+    readonly toIndex: number;
+}
+
 /**
  * テーブル定義エディタ
  */
@@ -34,14 +44,59 @@ export class TableDefinitionEditor {
     private readonly tab: Tab;
     /** 既存テーブル名の一覧（重複チェック用） */
     private readonly existingTableNames: ReadonlyArray<string>;
+    /** ドラッグインジケーター要素（position:fixed でbodyに追加、ドラッグ中のみ表示） */
+    private readonly indicator: HTMLElement;
+    /** 列ドラッグの Undo スタック */
+    private readonly undoStack: Array<ColumnMoveEntry>;
+    /** ドラッグ候補（mousedown後、閾値到達前の状態） */
+    private isDragPending: boolean;
+    /** ドラッグ中かどうか（閾値到達後） */
+    private isDragging: boolean;
+    /** mousedown 時点のY座標（閾値判定用） */
+    private dragStartY: number;
+    /** ドラッグ中の行要素 */
+    private dragSourceRow: HTMLElement;
+    /** document.mousemove バインド済みハンドラ */
+    private readonly onDragMouseMove: (e: MouseEvent) => void;
+    /** document.mouseup バインド済みハンドラ */
+    private readonly onDragMouseUp: () => void;
+    /** ドラッグ中に updateIndicatorPosition で計算された挿入先インデックス（mouseup 時に参照する） */
+    private currentInsertIndex: number;
 
     constructor(tab: Tab, existingTableNames: ReadonlyArray<string>) {
         this.tab = tab;
         this.existingTableNames = existingTableNames;
+        this.undoStack = [];
+        this.isDragPending = false;
+        this.isDragging = false;
+        this.dragStartY = 0;
+        this.currentInsertIndex = 0;
+        // dragSourceRow はドラッグ操作中のみ参照される。初期値としてダミー要素を設定し、メンバ変数nullを回避する
+        this.dragSourceRow = document.createElement('div');
 
-        // ルートコンテナ
+        // ドラッグインジケーター要素を生成（position:fixed でbodyに追加し、非表示で待機）
+        this.indicator = document.createElement('div');
+        this.indicator.classList.add('column-drag-indicator');
+        this.indicator.style.display = 'none';
+        document.body.appendChild(this.indicator);
+
+        // document レベルのイベントハンドラをバインド
+        this.onDragMouseMove = (e: MouseEvent) => { this.handleDragMouseMove(e.clientY); };
+        this.onDragMouseUp = () => { this.handleDragMouseUp(); };
+
+        // ルートコンテナ（tabIndex=0 でキーボードフォーカスを受け取れるようにする）
         this.container = document.createElement('div');
         this.container.classList.add('table-definition-editor');
+        this.container.tabIndex = 0;
+        // テーブル定義エディタ内の Ctrl+Z をキャプチャして Undo を実行する
+        this.container.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.key === 'z' && this.undoStack.length > 0) {
+                e.preventDefault();
+                e.stopPropagation();
+                const entry = this.undoStack.pop() as ColumnMoveEntry;
+                this.moveColumnRow(entry.toIndex, entry.fromIndex);
+            }
+        });
 
         // ヘッダーセクション（テーブル名・説明）
         const header = document.createElement('div');
@@ -81,9 +136,11 @@ export class TableDefinitionEditor {
         const columnsSection = document.createElement('div');
         columnsSection.classList.add('table-definition-columns');
 
-        // 列ヘッダー
+        // 列ヘッダー（ドラッグハンドル列用の空セルを先頭に追加）
         const columnHeader = document.createElement('div');
         columnHeader.classList.add('table-definition-column-header');
+        const colDragHeader = document.createElement('span');
+        colDragHeader.textContent = '';
         const colNameHeader = document.createElement('span');
         colNameHeader.textContent = '列名';
         const colTypeHeader = document.createElement('span');
@@ -92,6 +149,7 @@ export class TableDefinitionEditor {
         colPkHeader.textContent = 'PK';
         const colDeleteHeader = document.createElement('span');
         colDeleteHeader.textContent = '';
+        columnHeader.appendChild(colDragHeader);
         columnHeader.appendChild(colNameHeader);
         columnHeader.appendChild(colTypeHeader);
         columnHeader.appendChild(colPkHeader);
@@ -140,11 +198,37 @@ export class TableDefinitionEditor {
     }
 
     /**
+     * エディタを破棄する。
+     * タブクローズ時に呼ばれ、document レベルのイベントリスナーと
+     * body 直下のインジケーター要素を除去する（DOMリーク防止）。
+     */
+    destroy(): void {
+        document.removeEventListener('mousemove', this.onDragMouseMove);
+        document.removeEventListener('mouseup', this.onDragMouseUp);
+        if (this.isDragging || this.isDragPending) {
+            document.body.style.cursor = '';
+            this.indicator.style.display = 'none';
+        }
+        this.indicator.remove();
+    }
+
+    /**
      * 列行を1行追加する
      */
     private addColumnRow(): void {
         const row = document.createElement('div');
         row.classList.add('table-definition-column-row');
+
+        // ドラッグハンドル（先頭に配置）
+        const dragHandle = document.createElement('div');
+        dragHandle.classList.add('column-drag-handle');
+        dragHandle.textContent = '\u283f'; // ⠿ グリップアイコン
+        dragHandle.title = 'ドラッグで並び替え';
+        dragHandle.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            this.startDrag(row, e.clientY);
+        });
+        row.appendChild(dragHandle);
 
         // 列名入力
         const nameInput = document.createElement('input');
@@ -173,11 +257,134 @@ export class TableDefinitionEditor {
         // 削除ボタン
         const deleteButton = document.createElement('button');
         deleteButton.classList.add('column-delete-button');
-        deleteButton.textContent = '×';
+        deleteButton.textContent = '\u00d7'; // ×
         deleteButton.addEventListener('click', () => { row.remove(); });
         row.appendChild(deleteButton);
 
         this.columnsContainer.appendChild(row);
+    }
+
+    /**
+     * ドラッグ操作を開始する（mousedownハンドラから呼ばれる）
+     */
+    private startDrag(row: HTMLElement, clientY: number): void {
+        this.dragSourceRow = row;
+        this.dragStartY = clientY;
+        this.isDragPending = true;
+        this.isDragging = false;
+        document.addEventListener('mousemove', this.onDragMouseMove);
+        document.addEventListener('mouseup', this.onDragMouseUp);
+    }
+
+    /**
+     * ドラッグ中のmousemoveハンドラ
+     * 閾値を超えたらドラッグを開始し、インジケーターを表示・更新する
+     */
+    private handleDragMouseMove(clientY: number): void {
+        if (this.isDragPending) {
+            if (Math.abs(clientY - this.dragStartY) < DRAG_THRESHOLD) return;
+            // 閾値到達: ドラッグ開始
+            this.isDragPending = false;
+            this.isDragging = true;
+            this.dragSourceRow.classList.add('column-dragging');
+            this.indicator.style.display = '';
+            document.body.style.cursor = 'grabbing';
+        }
+        if (!this.isDragging) return;
+        this.updateIndicatorPosition(clientY);
+    }
+
+    /**
+     * ドラッグ終了のmouseupハンドラ
+     * インジケーター位置に基づいて列行を移動し、Undoスタックに記録する
+     */
+    private handleDragMouseUp(): void {
+        document.removeEventListener('mousemove', this.onDragMouseMove);
+        document.removeEventListener('mouseup', this.onDragMouseUp);
+        document.body.style.cursor = '';
+        this.indicator.style.display = 'none';
+        if (this.isDragging) {
+            this.isDragging = false;
+            this.dragSourceRow.classList.remove('column-dragging');
+            // 移動元のインデックスを算出する
+            const rows = this.columnsContainer.children;
+            let fromIndex = 0;
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i] === this.dragSourceRow) { fromIndex = i; break; }
+            }
+            // updateIndicatorPosition で計算済みの挿入先インデックスを使う
+            const toIndex = this.currentInsertIndex;
+            // 移動元と挿入先が異なる場合のみ移動する
+            if (fromIndex !== toIndex) {
+                this.moveColumnRow(fromIndex, toIndex);
+                this.undoStack.push({ fromIndex, toIndex });
+            }
+        }
+        this.isDragPending = false;
+        // ドラッグ完了後、コンテナにフォーカスを移す（Ctrl+Z Undo を受け取るため）
+        this.container.focus();
+    }
+
+    /**
+     * マウスY座標から挿入先を計算し、インジケーターを配置する。
+     * 同時に currentInsertIndex を更新する（mouseup 時に参照される）。
+     *
+     * インジケーターは position:fixed なので、ビューポート座標をそのまま top に設定する。
+     * left/width はコンテナの水平範囲と一致させる。
+     *
+     * currentInsertIndex は「fromを抜いた後のインデックス」として計算する
+     * （row-drag-controller.ts と同じロジック）。
+     */
+    private updateIndicatorPosition(clientY: number): void {
+        const rows = this.columnsContainer.children;
+        const containerRect = this.columnsContainer.getBoundingClientRect();
+        this.indicator.style.left = containerRect.left + 'px';
+        this.indicator.style.width = containerRect.width + 'px';
+        // 各行の矩形を走査して、マウス位置に最も近い行間を特定する
+        let fromIndex = 0;
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i] === this.dragSourceRow) { fromIndex = i; break; }
+        }
+        let insertIndex = 0;
+        for (let i = 0; i < rows.length; i++) {
+            const rowElement = rows[i] as HTMLElement;
+            const rect = rowElement.getBoundingClientRect();
+            const rowMidY = rect.top + rect.height / 2;
+            if (clientY > rowMidY) {
+                insertIndex = i + 1;
+            }
+        }
+        // インジケーターの top 位置をビューポート座標で設定する
+        let indicatorTop: number;
+        if (insertIndex < rows.length) {
+            const targetRow = rows[insertIndex] as HTMLElement;
+            indicatorTop = targetRow.getBoundingClientRect().top;
+        } else {
+            // 最終行の下端
+            const lastRow = rows[rows.length - 1] as HTMLElement;
+            indicatorTop = lastRow.getBoundingClientRect().bottom;
+        }
+        this.indicator.style.top = indicatorTop + 'px';
+        // fromを抜いた後のインデックスに変換して保存する（mouseup 時に参照）
+        this.currentInsertIndex = insertIndex > fromIndex ? insertIndex - 1 : insertIndex;
+    }
+
+    /**
+     * 列行を fromIndex から toIndex へ移動する（DOM操作のみ）
+     *
+     * Undo時は逆向き（toIndex → fromIndex）で呼ばれる。
+     */
+    private moveColumnRow(fromIndex: number, toIndex: number): void {
+        const rows = this.columnsContainer.children;
+        const sourceRow = rows[fromIndex] as HTMLElement;
+        // fromIndex の行を一旦除去する（除去後は後続のインデックスが1つ詰まる）
+        this.columnsContainer.removeChild(sourceRow);
+        // toIndex の位置に挿入する
+        if (toIndex >= this.columnsContainer.children.length) {
+            this.columnsContainer.appendChild(sourceRow);
+        } else {
+            this.columnsContainer.insertBefore(sourceRow, this.columnsContainer.children[toIndex]);
+        }
     }
 
     /**

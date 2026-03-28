@@ -554,10 +554,13 @@ export class Tab {
             this.erDiagramWrapperElement = false;
         }
 
-        // テーブル定義タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
+        // テーブル定義タブが閉じられた場合: document リスナー・インジケーター要素を解放し DOM からラッパー要素を除去してフィールドをリセットする
         if (name === TABLE_DEFINITION_TAB_NAME) {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
+            }
+            if (this.tableDefinitionEditor !== false) {
+                this.tableDefinitionEditor.destroy();
             }
             if (this.tableDefinitionWrapperElement !== false) {
                 this.tableDefinitionWrapperElement.remove();
@@ -1002,15 +1005,8 @@ export class Tab {
      * TableDefinitionEditor.saveAsync() から呼ばれる。
      */
     closeTableDefinitionAndOpenTable(tableName: string, description: string | null): void {
-        // テーブル定義タブを閉じる
+        // テーブル定義タブを閉じる（performCloseTab 内で destroy() + DOM除去 + フィールドリセットが行われる）
         this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
-
-        // DOM要素を除去してフィールドをリセットする
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.remove();
-        }
-        this.tableDefinitionEditor = false;
-        this.tableDefinitionWrapperElement = false;
 
         // エクスプローラーに新テーブルを追加する
         this.sidebar.appendFile(tableName, description);

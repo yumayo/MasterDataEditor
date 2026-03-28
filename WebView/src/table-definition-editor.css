@@ -60,10 +60,10 @@
     margin-bottom: 24px;
 }
 
-/* 列ヘッダー */
+/* 列ヘッダー（ドラッグハンドル分の24px列を先頭に追加） */
 .table-definition-column-header {
     display: grid;
-    grid-template-columns: 1fr 120px 40px 40px;
+    grid-template-columns: 24px 1fr 120px 40px 40px;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
@@ -74,13 +74,45 @@
     margin-bottom: 4px;
 }
 
-/* 列行 */
+/* 列行（ドラッグハンドル分の24px列を先頭に追加） */
 .table-definition-column-row {
     display: grid;
-    grid-template-columns: 1fr 120px 40px 40px;
+    grid-template-columns: 24px 1fr 120px 40px 40px;
     gap: 8px;
     padding: 4px 0;
     align-items: center;
+}
+
+/* ドラッグハンドル */
+.column-drag-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    cursor: grab;
+    opacity: 0.4;
+    font-size: 14px;
+    color: var(--font-color);
+    user-select: none;
+}
+
+.column-drag-handle:hover {
+    opacity: 0.8;
+}
+
+/* ドラッグ中のゴースト行（半透明化） */
+.table-definition-column-row.column-dragging {
+    opacity: 0.4;
+}
+
+/* ドラッグインジケーター（挿入先を示す水平線） */
+.column-drag-indicator {
+    position: fixed;
+    height: 2px;
+    background-color: var(--focus-border);
+    pointer-events: none;
+    z-index: 1000;
 }
 
 /* 列名入力 */

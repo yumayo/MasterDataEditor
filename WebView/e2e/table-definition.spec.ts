@@ -251,3 +251,149 @@ test.describe('テーブル定義エディタ', () => {
         await expect(columnRows).toHaveCount(1);
     });
 });
+
+/**
+ * テーブル定義エディタにテーブル名を設定し、3列（id, name, damage）を追加する
+ * ドラッグ並び替えテストの共通セットアップ
+ */
+async function setupThreeColumnsAsync(page: Page): Promise<void> {
+    await getAddButton(page).click();
+    await expect(getEditor(page)).toBeVisible();
+
+    // テーブル名を設定する
+    await getNameInput(page).fill('skill');
+
+    // 1列目（初期行）: id (int, PK)
+    const firstRow = page.locator('.table-definition-column-row').nth(0);
+    await firstRow.locator('.column-name-input').fill('id');
+    await firstRow.locator('.column-type-select').selectOption('int');
+    await firstRow.locator('.column-pk-checkbox').check();
+
+    // 2列目を追加: name (string)
+    await getAddColumnButton(page).click();
+    const secondRow = page.locator('.table-definition-column-row').nth(1);
+    await secondRow.locator('.column-name-input').fill('name');
+    await secondRow.locator('.column-type-select').selectOption('string');
+
+    // 3列目を追加: damage (int)
+    await getAddColumnButton(page).click();
+    const thirdRow = page.locator('.table-definition-column-row').nth(2);
+    await thirdRow.locator('.column-name-input').fill('damage');
+    await thirdRow.locator('.column-type-select').selectOption('int');
+}
+
+/**
+ * 列定義行のドラッグハンドルを掴み、別の行の上までドラッグする
+ * sourceIndex の行を targetIndex の行の位置へ移動する
+ */
+async function dragRowAboveAsync(page: Page, sourceIndex: number, targetIndex: number): Promise<void> {
+    const sourceRow = page.locator('.table-definition-column-row').nth(sourceIndex);
+    const targetRow = page.locator('.table-definition-column-row').nth(targetIndex);
+    const handle = sourceRow.locator('.column-drag-handle');
+    const handleBox = await handle.boundingBox();
+    if (handleBox === null) throw new Error('ドラッグハンドルのboundingBoxが取得できません');
+    const targetBox = await targetRow.boundingBox();
+    if (targetBox === null) throw new Error('ターゲット行のboundingBoxが取得できません');
+
+    const startX = handleBox.x + handleBox.width / 2;
+    const startY = handleBox.y + handleBox.height / 2;
+    const targetX = targetBox.x + targetBox.width / 2;
+    const targetY = targetBox.y + targetBox.height / 2;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    // 5px閾値を超えるために少しだけ移動してからターゲットへ
+    await page.mouse.move(startX, startY - 6);
+    await page.mouse.move(targetX, targetY);
+    await page.mouse.up();
+}
+
+/**
+ * 列定義行の列名が期待した順序であることを検証する
+ */
+async function expectColumnOrderAsync(page: Page, expectedNames: ReadonlyArray<string>): Promise<void> {
+    const rows = page.locator('.table-definition-column-row');
+    await expect(rows).toHaveCount(expectedNames.length);
+    for (let i = 0; i < expectedNames.length; i++) {
+        await expect(rows.nth(i).locator('.column-name-input')).toHaveValue(expectedNames[i]);
+    }
+}
+
+test.describe('テーブル定義エディタ - 列ドラッグ並び替え', () => {
+
+    test('各列定義行にドラッグハンドルが存在する', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // 列を1つ追加して計2行にする（初期行1 + 追加1）
+        await getAddColumnButton(page).click();
+        const columnRows = page.locator('.table-definition-column-row');
+        await expect(columnRows).toHaveCount(2);
+
+        // 各行にドラッグハンドルが存在すること
+        for (let i = 0; i < 2; i++) {
+            const handle = columnRows.nth(i).locator('.column-drag-handle');
+            await expect(handle).toBeVisible();
+            // グリップアイコン（⠿）が含まれていること
+            await expect(handle).toHaveText('⠿');
+        }
+    });
+
+    test('ドラッグで列の並び順を変更できる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await setupThreeColumnsAsync(page);
+        // 初期順序: id, name, damage
+        await expectColumnOrderAsync(page, ['id', 'name', 'damage']);
+
+        // damage（index=2）を name（index=1）の上にドラッグする → id, damage, name
+        await dragRowAboveAsync(page, 2, 1);
+        await expectColumnOrderAsync(page, ['id', 'damage', 'name']);
+    });
+
+    test('並び替え後の保存でスキーマJSONに反映される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await setupThreeColumnsAsync(page);
+
+        // damage（index=2）を name（index=1）の上にドラッグする → id, damage, name
+        await dragRowAboveAsync(page, 2, 1);
+        await expectColumnOrderAsync(page, ['id', 'damage', 'name']);
+
+        // 保存する
+        await getSaveButton(page).click();
+
+        // 定義エディタタブが閉じられるのを待つ
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONのheaderが並び替え後の順序であることを検証する
+        const schemaJson = await readMockFileAsync(page, 'schema/skill.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'damage', type: 'int' },
+            { key: 2, name: 'name', type: 'string' },
+        ]);
+
+        // CSVヘッダーも並び替え後の順序であること
+        const csv = await readMockFileAsync(page, 'data/skill.csv');
+        expect(csv).toBe('id,damage,name');
+    });
+
+    test('Ctrl+Zで並び替えをUndoできる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await setupThreeColumnsAsync(page);
+        // 初期順序: id, name, damage
+        await expectColumnOrderAsync(page, ['id', 'name', 'damage']);
+
+        // damage（index=2）を name（index=1）の上にドラッグする → id, damage, name
+        await dragRowAboveAsync(page, 2, 1);
+        await expectColumnOrderAsync(page, ['id', 'damage', 'name']);
+
+        // Ctrl+Z で Undo する
+        await page.keyboard.press('Control+z');
+
+        // 列順が元に戻ること: id, name, damage
+        await expectColumnOrderAsync(page, ['id', 'name', 'damage']);
+    });
+});
