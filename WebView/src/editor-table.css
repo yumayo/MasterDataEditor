@@ -234,12 +234,27 @@
     width: 100%;
 }
 
-/* 参照列のヒント表示 */
+/* 参照列のヒント表示（FK値の左側に配置される）
+   string型FK列: 通常フローでヒント→FK値の順に左揃え表示
+   数値型FK列: float:left + text-align:right により ヒント左・FK値右 のレイアウトを実現 */
 .cell-reference-hint {
     color: var(--text-muted-color, #888);
-    margin-left: 4px;
     font-size: 0.9em;
     opacity: 0.7;
+    margin-left: 0;
+    margin-right: 4px;
+}
+
+/* 数値型FK列のヒント: float:left で左配置し、ellipsis で省略対応する。
+   セル自体は text-align:right (.cell-numeric) のため FK値は右寄せ、
+   ヒントは float で左に固定される。
+   3em = FK値3桁（999）まで余裕を持たせるための確保幅。 */
+.cell-numeric .cell-reference-hint {
+    float: left;
+    max-width: calc(100% - 3em);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* 逆参照列のヒント表示 */

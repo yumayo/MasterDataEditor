@@ -5,7 +5,7 @@ import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
 import {Command, CellChange, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_LEFT_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
+import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {RowDragController} from "./row-drag-controller";
@@ -1136,7 +1136,7 @@ export class EditorTable {
             let hintWidth = 0;
             if (hintElement !== null) {
                 ctx.font = REFERENCE_HINT_FONT;
-                hintWidth = ctx.measureText(hintElement.textContent as string).width + REFERENCE_HINT_MARGIN_LEFT_PX;
+                hintWidth = ctx.measureText(hintElement.textContent as string).width + REFERENCE_HINT_MARGIN_PX;
             }
 
             // セル全体の占有幅 = テキスト幅 + ヒント幅 + パディング

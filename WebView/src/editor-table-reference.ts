@@ -105,11 +105,12 @@ export class EditorTableReference {
         // 単純参照の場合: 同期的に参照ヒントを取得
         const displayText = this.referenceDataCache.getDisplayTextById(expr.tableName, value);
         // 参照ヒントを追加（表示テキストがある場合のみ）
+        // prepend でFK値テキストの前（左側）にヒントを配置する
         if (displayText) {
             const hintSpan = document.createElement('span');
             hintSpan.classList.add('cell-reference-hint');
             hintSpan.textContent = displayText;
-            cell.appendChild(hintSpan);
+            cell.prepend(hintSpan);
         }
     }
 
@@ -318,6 +319,7 @@ export class EditorTableReference {
     /**
      * セルに参照ヒントspanを追加する
      * 既存の参照ヒントがあれば削除してから追加する
+     * prepend でFK値テキストの前（左側）にヒントを配置する
      * updateDynamicReferenceHint のPK列パスと非PK列パスの両方から呼ばれる
      */
     private appendReferenceHint(cell: HTMLElement, displayText: string): void {
@@ -326,7 +328,7 @@ export class EditorTableReference {
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reference-hint');
         hintSpan.textContent = displayText;
-        cell.appendChild(hintSpan);
+        cell.prepend(hintSpan);
     }
 
     /**
@@ -377,18 +379,22 @@ export class EditorTableReference {
      * 列のデータ型に基づいたセルのスタイル・表示を適用する。
      *
      * - bool型（FK参照なし）: テキストの代わりにチェックマークSVGを表示し、data-raw-valueに生値を保存する
-     * - 数値型（int/float/double、FK参照なし）: .cell-numeric クラスを付与して右寄せ表示する
-     * - FK参照のある列: 型別コントロールは適用しない（ドロップダウンが優先）
+     * - 数値型（int/float/double）: .cell-numeric クラスを付与して右寄せ表示する（FK参照ありでも適用）
+     * - FK参照のある列: bool型コントロール（SVGトグル）は適用しない（ドロップダウンが優先）
      *
      * setCellValue と createCell の両方から呼ばれ、セルの型別表示を一元管理する。
      */
     applyTypedCellStyle(cell: HTMLElement, value: string, dataColumnIndex: number): void {
         const column = this.tableData.header[dataColumnIndex];
         if (!column) return;
-        // FK参照が設定されている列は型別コントロールを適用しない（ドロップダウンが優先）
+        // FK参照が設定されている列: boolコントロールは不適用だが、数値型の右揃えは適用する
         if (column.reference !== null) {
-            cell.classList.remove('cell-numeric');
             this.removeBoolDisplay(cell);
+            if (column.type === 'int' || column.type === 'float' || column.type === 'double') {
+                cell.classList.add('cell-numeric');
+            } else {
+                cell.classList.remove('cell-numeric');
+            }
             return;
         }
         if (column.type === 'bool') {

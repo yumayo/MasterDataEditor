@@ -384,16 +384,262 @@ test.describe('FK参照 > 型別コントロール優先', () => {
 		await page.goto('/');
 	});
 
-	test('FK参照が設定されたint型列には .cell-numeric が付与されない', async ({ page }) => {
+	test('FK参照が設定されたint型列にも .cell-numeric が付与される（ISSUE_0127: FK列の数値型右揃え対応）', async ({ page }) => {
 		const table = await openTableAsync(page, 'fk_test');
 
-		// category_id列(colIndex=1): int型だがFK参照あり → .cell-numeric は付与されない
+		// category_id列(colIndex=1): int型かつFK参照あり → .cell-numeric が付与される（数値型は右揃え）
 		const fkCell = getDataCell(table, 0, 1);
 		await expect(fkCell).toBeVisible();
-		await expect(fkCell).not.toHaveClass(/cell-numeric/);
+		await expect(fkCell).toHaveClass(/cell-numeric/);
 
 		// id列(colIndex=0): int型でFK参照なし → .cell-numeric が付与される
 		const idCell = getDataCell(table, 0, 0);
 		await expect(idCell).toHaveClass(/cell-numeric/);
+	});
+});
+
+// =============================================================================
+// ISSUE_0127: FK列のint値を右揃えにしヒント句を値の左側に表示する
+//
+// 現在の問題:
+//   - FK列のint型セルが左揃えのまま（.cell-numericクラスが削除されている）
+//   - ヒント句（.cell-reference-hint）がFK値の右側に表示されている
+//
+// 期待する動作:
+//   - FK列のint型セルにも .cell-numeric を付与して右揃えにする
+//   - FK列のstring型セルは従来通り左揃えのまま
+//   - ヒント句をFK値の左側に配置する（DOM順序またはCSS flexboxで）
+//   - ヒント句が長い場合はellipsisで省略し、FK値の表示領域を侵食しない
+//
+// テストケース:
+//   1. FK列のint型セルが右揃え（cell-numericクラスを持つ）
+//   2. FK列のstring型セルは左揃えのまま（cell-numericクラスを持たない）
+//   3. ヒント句がFK値の左側に表示される
+//   4. ヒント句が長い場合にellipsisで省略される
+// =============================================================================
+
+/**
+ * ISSUE_0127テスト用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   region: id(int), ja(string)               — 地域マスタ（PK: int型）
+ *   tag: code(string), ja(string)             — タグマスタ（PK: string型）
+ *   product: id(int), region_id(int, → region.id), tag_code(string, → tag.code), price(int)
+ *
+ * 表示列は config.json の referenceDisplayColumnPriority: ["ja", "comment"] に従い "ja" を使用する。
+ * "name" 列は優先度リストに含まれないため表示列として認識されない。
+ *
+ * product.region_id: int型FK列 → int型PK参照 → .cell-numeric が付与されるべき
+ * product.tag_code: string型FK列 → string型PK参照 → .cell-numeric は付与されない
+ *
+ * 初期データ:
+ *   region: 1=関東, 2=関西
+ *   tag: A=武器, B=防具
+ *   product: (1, 1, A, 100), (2, 2, B, 200)
+ */
+function createFkAlignmentFileSystem(): MockFileSystem {
+	return {
+		"schema/region.json": JSON.stringify({
+			primary_key: ["id"],
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "ja", type: "string" },
+			],
+		}),
+		"data/region.csv": [
+			"id,ja",
+			"1,関東",
+			"2,関西",
+		].join("\n"),
+		"schema/tag.json": JSON.stringify({
+			primary_key: ["code"],
+			header: [
+				{ key: 0, name: "code", type: "string" },
+				{ key: 1, name: "ja", type: "string" },
+			],
+		}),
+		"data/tag.csv": [
+			"code,ja",
+			"A,武器",
+			"B,防具",
+		].join("\n"),
+		"schema/product.json": JSON.stringify({
+			primary_key: ["id"],
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "region_id", type: "int", reference: "region.id" },
+				{ key: 2, name: "tag_code", type: "string", reference: "tag.code" },
+				{ key: 3, name: "price", type: "int" },
+			],
+		}),
+		"data/product.csv": [
+			"id,region_id,tag_code,price",
+			"1,1,A,100",
+			"2,2,B,200",
+		].join("\n"),
+	};
+}
+
+/**
+ * ISSUE_0127: ヒント句の長いテスト名テスト用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   long_name_master: id(int), ja(string)     — 名前が非常に長いマスタ
+ *   long_ref: id(int), master_id(int, → long_name_master.id)
+ *
+ * 表示列は config.json の referenceDisplayColumnPriority: ["ja", "comment"] に従い "ja" を使用する。
+ * long_name_master の ja 列が表示列として使われ、非常に長い文字列がヒント句になる。
+ */
+function createFkLongHintFileSystem(): MockFileSystem {
+	return {
+		"schema/long_name_master.json": JSON.stringify({
+			primary_key: ["id"],
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "ja", type: "string" },
+			],
+		}),
+		"data/long_name_master.csv": [
+			"id,ja",
+			"1,これは非常に長い名前のマスターデータエントリでありセル幅を大きく超過する想定です",
+		].join("\n"),
+		"schema/long_ref.json": JSON.stringify({
+			primary_key: ["id"],
+			header: [
+				{ key: 0, name: "id", type: "int" },
+				{ key: 1, name: "master_id", type: "int", reference: "long_name_master.id" },
+			],
+		}),
+		"data/long_ref.csv": [
+			"id,master_id",
+			"1,1",
+		].join("\n"),
+	};
+}
+
+test.describe('ISSUE_0127: FK列の右揃えとヒント句配置', () => {
+	test.describe('FK列の数値型右揃え', () => {
+		test.beforeEach(async ({ page }) => {
+			await installMockApiAsync(page, createFkAlignmentFileSystem());
+			await page.goto('/');
+		});
+
+		// テストケース1: FK列のint型セルが右揃え（cell-numericクラスを持つ）
+		test('FK参照が設定されたint型列に .cell-numeric が付与される', async ({ page }) => {
+			const table = await openTableAsync(page, 'product');
+
+			// region_id列(colIndex=1): int型かつFK参照あり → .cell-numeric が付与されるべき
+			const fkIntCell = getDataCell(table, 0, 1);
+			await expect(fkIntCell).toBeVisible();
+			await expect(fkIntCell).toHaveClass(/cell-numeric/);
+
+			// 2行目でも同様
+			const fkIntCell2 = getDataCell(table, 1, 1);
+			await expect(fkIntCell2).toHaveClass(/cell-numeric/);
+
+			// price列(colIndex=3): int型でFK参照なし → 当然 .cell-numeric が付与される
+			const priceCell = getDataCell(table, 0, 3);
+			await expect(priceCell).toHaveClass(/cell-numeric/);
+		});
+
+		// テストケース2: FK列のstring型セルは左揃えのまま（cell-numericクラスを持たない）
+		test('FK参照が設定されたstring型列には .cell-numeric が付与されない', async ({ page }) => {
+			const table = await openTableAsync(page, 'product');
+
+			// tag_code列(colIndex=2): string型かつFK参照あり → .cell-numeric は付与されない
+			const fkStringCell = getDataCell(table, 0, 2);
+			await expect(fkStringCell).toBeVisible();
+			await expect(fkStringCell).not.toHaveClass(/cell-numeric/);
+
+			// 2行目でも同様
+			const fkStringCell2 = getDataCell(table, 1, 2);
+			await expect(fkStringCell2).not.toHaveClass(/cell-numeric/);
+		});
+	});
+
+	test.describe('ヒント句の配置', () => {
+		test.beforeEach(async ({ page }) => {
+			await installMockApiAsync(page, createFkAlignmentFileSystem());
+			await page.goto('/');
+		});
+
+		// テストケース3: ヒント句がFK値の左側に表示される
+		test('参照ヒントがFK値テキストの左側に配置される', async ({ page }) => {
+			const table = await openTableAsync(page, 'product');
+
+			// region_id列(colIndex=1): FK値 "1" に対して参照ヒント "関東" が表示される
+			const fkCell = getDataCell(table, 0, 1);
+			await expect(fkCell).toBeVisible();
+			const hint = fkCell.locator('.cell-reference-hint');
+			await expect(hint).toBeVisible();
+
+			// ヒント句のboundingRectのleftがFK値テキストのleftより小さい（ヒント句が左側にある）
+			const positions = await fkCell.evaluate((el) => {
+				const hintEl = el.querySelector('.cell-reference-hint') as HTMLElement;
+				if (!hintEl) return null;
+				// テキストノード（FK値）の位置を取得する
+				const range = document.createRange();
+				for (const node of Array.from(el.childNodes)) {
+					if (node.nodeType === Node.TEXT_NODE && node.textContent!.trim() !== '') {
+						range.selectNodeContents(node);
+						break;
+					}
+				}
+				const textRect = range.getBoundingClientRect();
+				const hintRect = hintEl.getBoundingClientRect();
+				return { hintLeft: hintRect.left, textLeft: textRect.left };
+			});
+
+			expect(positions).not.toBeNull();
+			// ヒント句のleft < FK値テキストのleft → ヒント句が左に配置されている
+			expect(positions!.hintLeft).toBeLessThan(positions!.textLeft);
+		});
+	});
+
+	test.describe('ヒント句のellipsis省略', () => {
+		test.beforeEach(async ({ page }) => {
+			await installMockApiAsync(page, createFkLongHintFileSystem());
+			await page.goto('/');
+		});
+
+		// テストケース4: ヒント句が長い場合にellipsisで省略される
+		test('長いヒント句がellipsisで省略されFK値の表示領域が侵食されない', async ({ page }) => {
+			const table = await openTableAsync(page, 'long_ref');
+
+			// master_id列(colIndex=1): FK値 "1" に対して長い参照ヒントが表示される
+			const fkCell = getDataCell(table, 0, 1);
+			await expect(fkCell).toBeVisible();
+			const hint = fkCell.locator('.cell-reference-hint');
+			await expect(hint).toBeVisible();
+
+			// ヒント句にtext-overflow: ellipsisとoverflow: hiddenが適用されている
+			const styles = await hint.evaluate((el) => {
+				const computed = window.getComputedStyle(el);
+				return {
+					textOverflow: computed.textOverflow,
+					overflow: computed.overflow,
+					whiteSpace: computed.whiteSpace,
+				};
+			});
+			expect(styles.textOverflow).toBe('ellipsis');
+			expect(styles.overflow).toBe('hidden');
+			// ellipsisが機能するにはwhite-spaceがnowrapである必要がある
+			expect(styles.whiteSpace).toBe('nowrap');
+
+			// ヒント句の描画幅がセル幅を超えていない（セル内に収まっている）
+			const overflows = await fkCell.evaluate((el) => {
+				const hintEl = el.querySelector('.cell-reference-hint') as HTMLElement;
+				if (!hintEl) return null;
+				const cellRect = el.getBoundingClientRect();
+				const hintRect = hintEl.getBoundingClientRect();
+				return {
+					hintRight: hintRect.right,
+					cellRight: cellRect.right,
+				};
+			});
+			expect(overflows).not.toBeNull();
+			// ヒント句の右端がセルの右端を超えていない
+			expect(overflows!.hintRight).toBeLessThanOrEqual(overflows!.cellRight + 1); // 1pxの誤差許容
+		});
 	});
 });
