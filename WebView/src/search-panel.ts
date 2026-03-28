@@ -52,10 +52,22 @@ export class SearchPanel {
     private readonly replaceAllButton: HTMLButtonElement;
     /** 置換モードかどうか */
     private replaceMode: boolean;
+    /** 置換モード折りたたみトグル（chevronアイコンボタン） */
+    private readonly chevronToggle: HTMLButtonElement;
     /** カレントマッチのインデックス（-1で未選択） */
     private focusedResultIndex: number;
     /** 最新の検索結果（置換実行時に参照する） */
     private currentResults: SearchResult[];
+
+    // SVGアイコン定数（16x16 viewBox、VSCode Codicons準拠のパスデータ）
+    /** chevron-right: 折りたたみ状態（置換非表示） */
+    private static readonly CHEVRON_RIGHT_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.7 13.7L5 13l5-5-5-5 .7-.7L11.4 8l-5.7 5.7z"/></svg>';
+    /** chevron-down: 展開状態（置換表示） */
+    private static readonly CHEVRON_DOWN_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.3 5.7L3 5l5 5 5-5 .7.7L8 11.4 2.3 5.7z"/></svg>';
+    /** replace: 1件置換アイコン */
+    private static readonly REPLACE_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.9 3H2v2h1V4h6v1l2-1.5L9 2v1H3.9zM14 11V9h-1v1H7V9L5 10.5 7 12v-1h6.1z"/></svg>';
+    /** replace-all: すべて置換アイコン */
+    private static readonly REPLACE_ALL_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.9 1H2v2h1V2h6v1l2-1.5L9 0v1H3.9zM3.9 5H2v2h1V6h6v1l2-1.5L9 4v1H3.9zM14 13v-2h-1v1H7v-1l-2 1.5L7 14v-1h6.1z"/></svg>';
 
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
@@ -86,10 +98,26 @@ export class SearchPanel {
         controlsElement.classList.add('search-panel-controls');
         this.element.appendChild(controlsElement);
 
-        // 検索入力行
+        // 検索入力行（chevronトグル + 入力欄の横並び）
         const inputRow = document.createElement('div');
         inputRow.classList.add('search-panel-input-row');
         controlsElement.appendChild(inputRow);
+
+        // 置換モード折りたたみトグル（chevronアイコン）
+        this.chevronToggle = document.createElement('button');
+        this.chevronToggle.classList.add('search-replace-toggle');
+        this.chevronToggle.setAttribute('aria-label', '置換モードを切り替え');
+        this.chevronToggle.setAttribute('aria-expanded', 'false');
+        this.chevronToggle.title = '置換モードを切り替え';
+        this.chevronToggle.innerHTML = SearchPanel.CHEVRON_RIGHT_SVG;
+        this.chevronToggle.addEventListener('click', () => {
+            if (this.replaceMode) {
+                this.hideReplaceMode();
+            } else {
+                this.showReplaceMode();
+            }
+        });
+        inputRow.appendChild(this.chevronToggle);
 
         this.inputElement = document.createElement('input');
         this.inputElement.classList.add('search-panel-input');
@@ -106,6 +134,11 @@ export class SearchPanel {
         this.replaceRowElement.style.display = 'none';
         controlsElement.appendChild(this.replaceRowElement);
 
+        // 置換入力行の左端にchevronと同じ幅の余白を確保してインデントを揃える
+        const replaceIndent = document.createElement('div');
+        replaceIndent.classList.add('search-panel-replace-indent');
+        this.replaceRowElement.appendChild(replaceIndent);
+
         this.replaceInputElement = document.createElement('input');
         this.replaceInputElement.classList.add('search-panel-replace-input');
         this.replaceInputElement.type = 'text';
@@ -117,19 +150,23 @@ export class SearchPanel {
         });
         this.replaceRowElement.appendChild(this.replaceInputElement);
 
+        // 1件置換ボタン（SVGアイコン）
         this.replaceButton = document.createElement('button');
         this.replaceButton.classList.add('search-replace-button');
-        this.replaceButton.textContent = '置換';
         this.replaceButton.setAttribute('aria-label', '現在のマッチを1件置換');
+        this.replaceButton.title = '置換';
+        this.replaceButton.innerHTML = SearchPanel.REPLACE_SVG;
         this.replaceButton.addEventListener('click', () => {
             this.replaceCurrentMatch();
         });
         this.replaceRowElement.appendChild(this.replaceButton);
 
+        // すべて置換ボタン（SVGアイコン）
         this.replaceAllButton = document.createElement('button');
         this.replaceAllButton.classList.add('search-replace-all-button');
-        this.replaceAllButton.textContent = 'すべて置換';
         this.replaceAllButton.setAttribute('aria-label', 'すべてのマッチを一括置換');
+        this.replaceAllButton.title = 'すべて置換';
+        this.replaceAllButton.innerHTML = SearchPanel.REPLACE_ALL_SVG;
         this.replaceAllButton.addEventListener('click', () => {
             this.replaceAllMatches();
         });
@@ -182,19 +219,25 @@ export class SearchPanel {
     }
 
     /**
-     * 置換モードを表示する（Ctrl+H から呼ばれる）
+     * 置換モードを表示する（Ctrl+H / chevronトグルから呼ばれる）
      */
     showReplaceMode(): void {
         this.replaceMode = true;
         this.replaceRowElement.style.display = '';
+        this.chevronToggle.innerHTML = SearchPanel.CHEVRON_DOWN_SVG;
+        this.chevronToggle.setAttribute('aria-expanded', 'true');
+        this.chevronToggle.classList.add('search-replace-toggle-expanded');
     }
 
     /**
-     * 置換モードを非表示にする（Ctrl+Shift+F から呼ばれる）
+     * 置換モードを非表示にする（Ctrl+Shift+F / chevronトグルから呼ばれる）
      */
     hideReplaceMode(): void {
         this.replaceMode = false;
         this.replaceRowElement.style.display = 'none';
+        this.chevronToggle.innerHTML = SearchPanel.CHEVRON_RIGHT_SVG;
+        this.chevronToggle.setAttribute('aria-expanded', 'false');
+        this.chevronToggle.classList.remove('search-replace-toggle-expanded');
     }
 
     /**

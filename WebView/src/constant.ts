@@ -40,8 +40,8 @@ export const MIN_COLUMN_WIDTH_PX = 50;
 /** サイドバーの初期幅(px) */
 export const DEFAULT_SIDEBAR_WIDTH = 300;
 
-/** サイドバーの最小幅(px) */
-export const MIN_SIDEBAR_WIDTH = 150;
+/** サイドバーの最小幅(px)。検索パネルの置換UIが見切れない幅を確保する */
+export const MIN_SIDEBAR_WIDTH = 200;
 
 /** サイドバーの最大幅(px) */
 export const MAX_SIDEBAR_WIDTH = 600;

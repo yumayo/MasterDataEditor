@@ -221,4 +221,36 @@ test.describe('検索と置換機能', () => {
         // "Sword" → "Blade" のプレビュー
         await expect(previews.first()).toContainText('Blade');
     });
+
+    test('chevronトグルクリックで置換モードが切り替わる', async ({page}) => {
+        // 検索パネルを開く（Ctrl+Shift+F: 検索のみモード）
+        await page.keyboard.press('Control+Shift+F');
+        const searchPanel = page.locator('.search-panel.sidebar-panel-active');
+        await expect(searchPanel).toBeVisible();
+        // chevronトグルボタンが存在すること
+        const toggleButton = page.locator('.search-replace-toggle');
+        await expect(toggleButton).toBeVisible();
+        // 初期状態では置換入力欄は非表示
+        const replaceRow = page.locator('.search-panel-replace-row');
+        await expect(replaceRow).not.toBeVisible();
+        // chevronをクリック → 置換入力欄が表示される
+        await toggleButton.click();
+        await expect(replaceRow).toBeVisible();
+        // 再度クリック → 置換入力欄が非表示になる
+        await toggleButton.click();
+        await expect(replaceRow).not.toBeVisible();
+    });
+
+    test('置換ボタンとすべて置換ボタンがSVGアイコンで表示される', async ({page}) => {
+        // Ctrl+H で置換モードを開く
+        await page.keyboard.press('Control+h');
+        const replaceRow = page.locator('.search-panel-replace-row');
+        await expect(replaceRow).toBeVisible();
+        // 置換ボタン内にSVGアイコンが存在すること
+        const replaceButtonSvg = page.locator('.search-replace-button svg');
+        await expect(replaceButtonSvg).toBeVisible();
+        // すべて置換ボタン内にSVGアイコンが存在すること
+        const replaceAllButtonSvg = page.locator('.search-replace-all-button svg');
+        await expect(replaceAllButtonSvg).toBeVisible();
+    });
 });

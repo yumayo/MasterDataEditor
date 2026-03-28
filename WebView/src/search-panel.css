@@ -1,15 +1,45 @@
 /* 検索パネルコントロール */
 .search-panel-controls {
     padding: 4px 12px 8px;
+    min-width: 0;
 }
 
-/* 入力行 */
+/* 入力行（chevronトグル + 入力欄の横並び） */
 .search-panel-input-row {
     display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* 置換モード折りたたみトグル（chevronアイコン） */
+.search-replace-toggle {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--font-color);
+    opacity: 0.5;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+}
+
+.search-replace-toggle:hover {
+    opacity: 1;
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.search-replace-toggle-expanded {
+    opacity: 0.8;
 }
 
 .search-panel-input {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     padding: 4px 8px;
     font-size: 13px;
@@ -113,8 +143,15 @@
     align-items: center;
 }
 
+/* 置換入力行の左端余白（chevronトグルと検索入力欄のインデントを揃える） */
+.search-panel-replace-indent {
+    flex-shrink: 0;
+    width: 20px;
+}
+
 .search-panel-replace-input {
     flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     padding: 4px 8px;
     font-size: 13px;
@@ -129,16 +166,21 @@
     border-color: #528bff;
 }
 
+/* 置換ボタン・すべて置換ボタン（SVGアイコン） */
 .search-replace-button,
 .search-replace-all-button {
-    padding: 3px 8px;
-    font-size: 11px;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 2px;
     border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 2px;
     background: transparent;
     color: var(--font-color);
     cursor: pointer;
-    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .search-replace-button:hover,
