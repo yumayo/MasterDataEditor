@@ -32,13 +32,13 @@
 - **awaitポイント後のrequestIdチェック**: **10回再発** (+showBlameAsync requestIdガードなし)
 - **register/unregister 非対称**: **5回再発** (+TableDefinitionEditor destroy()未実装、indicator永続残留)
 - **CSS hardcoded colors**: 21+ 回再発 (+table-definition-editor #f44336, #ffffff)
-- **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**, **--list-hover-bg未定義(timeline-panel.css)**
+- **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**, **--list-hover-bg未定義(timeline-panel.css)**, **--z-dialog未定義(commit-selector-dialog.css)**, **未定義CSS変数12箇所+フォールバック値乱用(commit-selector-dialog.css)**
 - **フォールバック禁止 (?? / ||)**: 22+ 回再発 (+applyOriginalSchemaToRow dynRef 5箇所)
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette, +showBlameAsync in context-menu)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
 - **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失, **blame-info要素が同じ全操作で消失**
 - **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
@@ -93,6 +93,8 @@
 - NOT defined: --text-muted-color (used in .cell-reference-hint, .cell-reverse-reference-hint, grid-dropdown-input with fallback #888)
 - NOT defined: **--selected-color** (table-definition-editor.css 10箇所 + settings-panel.css 1箇所で使用。正しくは --selection-color)
 - NOT defined: **--list-hover-bg** (timeline-panel.css 1箇所。正しくは --hover-color)
+- NOT defined: **--z-dialog** (commit-selector-dialog.css 1箇所。z-index.cssに未登録、フォールバック1000)
+- NOT defined: **--editor-background, --foreground-color, --tab-background, --list-hover-background, --list-active-selection-background, --description-foreground, --button-background, --button-hover-background** (commit-selector-dialog.css 12箇所。プロジェクト定義済み変数を使うべき)
 
 ## ER Diagram Tab Patterns (2026-03-28)
 - tab.ts 特殊タブ分岐(settings/diff/ER): 条件分岐が4種(通常/設定/差分/ER)に増殖、leaveSettingsMode漏れリスク高
@@ -153,8 +155,18 @@
 - **ISSUE_0129 バリデーション/キャッシュ未更新**: closeTableDefinitionAndReopenTable後にvalidationPanel/referenceDataCache無効化なし
 - **全スキーマプロパティUI(2026-03-29)**: reverseReferencePriority読み込み欠落(致命的), default値の型不一致(致命的), 動的参照バリデーション無し(致命的), width/rrp数値バリデーション無し, 単純参照形式バリデーション無し, CSSコピペ6箇所, --selected-color未定義6箇所追加
 
+## Version Compare (ISSUE_0123) Patterns (2026-03-29)
+- commit-selector-dialog.ts: コールバック疎結合(onCompare)、ダイアログ多重オープン防止なし、MutationObserverで過剰監視
+- --z-dialog CSS変数未定義(z-index.css未登録)→コマンドパレット等にダイアログが隠れる
+- 同一コミット比較の入力バリデーション欠如
+- fetchCsvAtCommitAsync: ファイル不存在時にPromise reject→UIフィードバック無し
+- 現在のスキーマJSONで古いCSVをパース→列構成不整合で差分表示破壊
+- dataset.commit as string 型アサーション(undefined無視)
+- DiffTab コンストラクタ18引数(leftLabel/rightLabel追加で膨張)
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-29) ISSUE_0123 バージョン比較: 致命的3件、重要5件、軽微4件 (z-index未定義ダイアログ隠れ, 同一コミット比較無検証, fetchCsvエラー握りつぶし, コールバック疎結合, CSSフォールバック12箇所, ダイアログ多重オープン, 型アサーション, スキーマ不整合)
 - (2026-03-29) ISSUE_0120 タイムライン・blame: 致命的3件、重要5件、軽微4件 (blame操作パス網羅漏れ, fire-and-forget showBlameAsync, requestIdガードなし, --list-hover-bg未定義, タブ切替時ログ未更新, lineNumberマッピングoff-by-one疑い)
 - (2026-03-29) 全スキーマプロパティUI: 致命的3件、重要5件、軽微4件 (rrp読込欠落, default型不一致, 動的参照バリデーション無し, フォールバック||5箇所, width/rrp数値検証無し, 参照形式検証無し, CSSコピペ6箇所, --selected-color未定義)
 - (2026-03-28) ISSUE_0129 既存テーブル定義編集: 致命的3件、重要5件、軽微4件 (CSVパーサ不一致データ破壊, リネーム時ゴーストファイル, スキーマフィールド消失, pendingEditTarget生焼け, CRLF, バリデーション/キャッシュ未更新)

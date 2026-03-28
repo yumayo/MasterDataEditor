@@ -15,7 +15,10 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-29 ISSUE_0120 タイムラインパネル・blameビュー）
+### 最新レビュー結果（2026-03-29 ISSUE_0123 任意コミット間バージョン比較）
+- ファイル: project_issue0123_version_compare.md — 評価B+。コミット選択ダイアログARIA欠如・選択状態表示なし・fill-handle残存が主要課題。
+
+### 以前のレビュー結果（2026-03-29 ISSUE_0120 タイムラインパネル・blameビュー）
 
 #### ISSUE_0120 変更履歴・監査ログ機能 評価: C+
 - 変更内容: アクティビティバーに history アイコン（時計SVG）追加。サイドバーに timeline-panel（TIMELINE）。行ヘッダー右クリックメニューに「変更履歴を表示/非表示」切り替え。blame-info div を editor-table-row-header 直下に追加しテキスト「著者名 日付」を表示。
