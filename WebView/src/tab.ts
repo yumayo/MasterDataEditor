@@ -1093,7 +1093,7 @@ export class Tab {
         // スキーマJSONを読み込んでパースする
         const schemaJson = await readFileAsync('schema/' + tableName + '.json');
         const schema = JSON.parse(schemaJson) as {
-            header: Array<{ key: number; name: string; type: string }>;
+            header: Array<Record<string, unknown>>;
             primary_key: string | string[];
             description?: string;
         };
@@ -1103,8 +1103,12 @@ export class Tab {
             ? schema.primary_key
             : [schema.primary_key];
 
-        // 列情報を EditTargetColumn に変換する
-        const columns = schema.header.map(col => ({ name: col.name, type: col.type }));
+        // 列情報を EditTargetColumn に変換する（元スキーマの列定義全体を originalSchema として保持する）
+        const columns = schema.header.map(col => ({
+            name: col['name'] as string,
+            type: col['type'] as string,
+            originalSchema: col,
+        }));
 
         // EditTarget を構築して pendingEditTarget にセットする
         this.pendingEditTarget = {

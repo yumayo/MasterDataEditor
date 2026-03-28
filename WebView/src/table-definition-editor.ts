@@ -13,6 +13,7 @@
  * 設定タブ（SettingsPanel）・ER図タブ（ErDiagramTab）と同じパターン。
  */
 import {readFileAsync, writeFileAsync} from "./api";
+import {Csv} from "./csv";
 import type {Tab} from "./tab";
 
 /** テーブル名の有効文字パターン: 英数字とアンダースコアのみ */
@@ -52,6 +53,12 @@ export interface EditTarget {
 export interface EditTargetColumn {
     readonly name: string;
     readonly type: string;
+    /**
+     * 元スキーマJSONの列定義オブジェクト全体を保持する。
+     * 保存時に reference, comment, default, width, renderAsHtml 等のフィールドを引き継ぐために使用する。
+     * key/name/type は UI 側の値で上書きされるため、それ以外のフィールドを復元する目的。
+     */
+    readonly originalSchema: Record<string, unknown>;
 }
 
 /**
@@ -524,34 +531,30 @@ export class TableDefinitionEditor {
         const description = this.descInput.value.trim();
 
         // 列定義を収集する
-        const rows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
-        const headerArray: Array<{ key: number; name: string; type: string }> = [];
+        const columnRows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
         const primaryKeys: string[] = [];
         const columnNames: string[] = [];
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
+        for (let i = 0; i < columnRows.length; i++) {
+            const row = columnRows[i];
             const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
-            const colType = (row.querySelector('.column-type-select') as HTMLSelectElement).value;
             const isPk = (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked;
-            headerArray.push({ key: i, name: colName, type: colType });
             columnNames.push(colName);
             if (isPk) primaryKeys.push(colName);
         }
 
-        // スキーマJSONオブジェクトを組み立てる
-        const schema: Record<string, unknown> = {
-            header: headerArray,
-            primary_key: primaryKeys,
-        };
-        if (description !== '') {
-            schema['description'] = description;
-        }
-
         if (this.editTarget !== false) {
-            // 編集モード: 既存CSVの列構造を同期して保存する
-            await this.saveEditModeAsync(this.editTarget, tableName, schema, columnNames);
+            // 編集モード: 元スキーマのメタデータを引き継いでheader配列を組み立てる
+            await this.saveEditModeAsync(this.editTarget, tableName, description, primaryKeys, columnNames, columnRows);
         } else {
-            // 新規モード: スキーマJSON + 空CSVヘッダーを保存する
+            // 新規モード: key/name/type のみの最小限header配列
+            const headerArray: Array<Record<string, unknown>> = [];
+            for (let i = 0; i < columnRows.length; i++) {
+                const colName = (columnRows[i].querySelector('.column-name-input') as HTMLInputElement).value.trim();
+                const colType = (columnRows[i].querySelector('.column-type-select') as HTMLSelectElement).value;
+                headerArray.push({ key: i, name: colName, type: colType });
+            }
+            const schema: Record<string, unknown> = { header: headerArray, primary_key: primaryKeys };
+            if (description !== '') schema['description'] = description;
             await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
             await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
             this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
@@ -560,12 +563,13 @@ export class TableDefinitionEditor {
 
     /**
      * 編集モードの保存処理。
-     * 既存CSVを読み込み、元スキーマとの列差分に基づいてCSV列構造を同期する。
+     * 既存CSVを Csv クラス（RFC4180準拠）で読み込み、元スキーマとの列差分に基づいてCSV列構造を同期する。
+     * スキーマJSONは元列定義の reference, comment, default, width, renderAsHtml 等のメタデータを引き継ぐ。
      *
      * 列マッピングの戦略:
      * - 各列行DOMの data-original-column-name 属性で元CSVの列名を特定する
-     * - この属性が存在する列 → 既存列（リネームされていてもデータをコピー）
-     * - この属性が存在しない列 → 新規追加列（空セル）
+     * - この属性が存在する列 → 既存列（リネームされていてもデータをコピー、メタデータも引き継ぐ）
+     * - この属性が存在しない列 → 新規追加列（空セル、メタデータはデフォルト）
      * - 元にあって現在のDOMにない列 → 削除列（CSVから除去）
      *
      * これにより列の追加・削除・リネーム・並び替えを一括で処理できる。
@@ -575,67 +579,91 @@ export class TableDefinitionEditor {
     private async saveEditModeAsync(
         editTarget: EditTarget,
         tableName: string,
-        schema: Record<string, unknown>,
-        newColumnNames: string[]
+        description: string,
+        primaryKeys: string[],
+        newColumnNames: string[],
+        columnRows: NodeListOf<Element>
     ): Promise<void> {
         const originalTableName = editTarget.tableName;
         const originalColumns = editTarget.columns;
 
-        // 既存CSVを読み込む
+        // 既存CSVを RFC4180準拠の Csv クラスで読み込む（カンマ・クォート含むフィールドに対応）
         const csvContent = await readFileAsync('data/' + originalTableName + '.csv');
-        // CRLF/LF 両方に対応する（プロジェクトの改行コードはCRLFだが、モックテスト等ではLFの場合もある）
-        const csvLines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
+        const csv = new Csv();
+        csv.load(csvContent);
 
         // 元の列名リスト（元スキーマから取得。CSVヘッダー行のインデックスと対応する）
         const originalColumnNames = originalColumns.map(c => c.name);
 
-        // DOM列行から元の列名マッピングを構築する
+        // 元列名 → EditTargetColumn のマップを構築する（メタデータ引き継ぎ用）
+        const originalColumnMap = new Map<string, EditTargetColumn>();
+        for (let i = 0; i < originalColumns.length; i++) {
+            originalColumnMap.set(originalColumns[i].name, originalColumns[i]);
+        }
+
+        // DOM列行から列マッピングとスキーマheader配列を構築する
         // columnMappings[i] = 新しいi番目の列に対応する元CSVの列インデックス（-1 = 新規列）
-        const columnRows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
         const columnMappings: number[] = [];
+        const headerArray: Array<Record<string, unknown>> = [];
         for (let i = 0; i < columnRows.length; i++) {
             const row = columnRows[i] as HTMLElement;
+            const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
+            const colType = (row.querySelector('.column-type-select') as HTMLSelectElement).value;
+
             if ('originalColumnName' in row.dataset) {
-                // 既存列: data-original-column-name 属性から元のCSV列名を取得する
+                // 既存列: 元スキーマのメタデータを引き継いでheaderエントリを組み立てる
                 const originalName = row.dataset['originalColumnName'] as string;
                 const originalIndex = originalColumnNames.indexOf(originalName);
                 columnMappings.push(originalIndex);
+                const originalCol = originalColumnMap.get(originalName);
+                if (originalCol) {
+                    // 元列の全フィールドをベースにし、key/name/type のみ上書きする
+                    const entry: Record<string, unknown> = { ...originalCol.originalSchema, key: i, name: colName, type: colType };
+                    headerArray.push(entry);
+                } else {
+                    headerArray.push({ key: i, name: colName, type: colType });
+                }
             } else {
-                // 新規追加列: 元CSVに対応列なし
+                // 新規追加列: 元CSVに対応列なし、メタデータもデフォルト
                 columnMappings.push(-1);
+                headerArray.push({ key: i, name: colName, type: colType });
             }
         }
 
-        // 新しい列順に基づいてCSVを再構築する
-        const newCsvLines: string[] = [];
+        // スキーマJSONオブジェクトを組み立てる（元列メタデータ引き継ぎ済みのheaderを使用）
+        const schema: Record<string, unknown> = { header: headerArray, primary_key: primaryKeys };
+        if (description !== '') schema['description'] = description;
 
-        // ヘッダー行: 新しい列名リスト
-        newCsvLines.push(newColumnNames.join(','));
-
-        // データ行: 元のCSVデータを新しい列順で再構築する
-        for (let lineIndex = 1; lineIndex < csvLines.length; lineIndex++) {
-            const cells = csvLines[lineIndex].split(',');
-            const newCells: string[] = [];
+        // 新しい列順に基づいてCSVを再構築する（Csv クラスで RFC4180準拠のシリアライズ）
+        const newCsv = new Csv();
+        newCsv.header = newColumnNames;
+        const newBody: string[][] = [];
+        for (let rowIndex = 0; rowIndex < csv.body.length; rowIndex++) {
+            const originalRow = csv.body[rowIndex];
+            const newRow: string[] = [];
             for (let colIndex = 0; colIndex < columnMappings.length; colIndex++) {
                 const originalIndex = columnMappings[colIndex];
-                if (originalIndex !== -1 && originalIndex < cells.length) {
+                if (originalIndex !== -1 && originalIndex < originalRow.length) {
                     // 既存列（リネーム含む）: 元のデータをコピー
-                    newCells.push(cells[originalIndex]);
+                    newRow.push(originalRow[originalIndex]);
                 } else {
                     // 新規列: 空セル
-                    newCells.push('');
+                    newRow.push('');
                 }
             }
-            newCsvLines.push(newCells.join(','));
+            newBody.push(newRow);
         }
+        newCsv.body = newBody;
 
         // スキーマとCSVを保存する
         await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
-        await writeFileAsync('data/' + tableName + '.csv', newCsvLines.join('\n'));
+        // Csv.toString() は末尾に改行を付与する。データ行がない場合はヘッダーのみ出力する。
+        // 元の保存形式と合わせるため、末尾改行を除去する
+        const csvString = newCsv.toString().replace(/\n$/, '');
+        await writeFileAsync('data/' + tableName + '.csv', csvString);
 
         // テーブル定義タブを閉じてテーブルを再オープンする
         // description が空文字の場合は null として渡す（新規作成の saveAsync と同じ規約）
-        const description = this.descInput.value.trim();
         this.tab.closeTableDefinitionAndReopenTable(tableName, description !== '' ? description : null);
     }
 }
