@@ -30,7 +30,7 @@
 
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
-- **register/unregister 非対称**: **3回再発**
+- **register/unregister 非対称**: **4回再発** (+RowDragController.destroy()でdocumentリスナー未解除)
 - **CSS hardcoded colors**: 19+ 回再発 (+bookmark-panel #FF8C00)
 - **フォールバック禁止 (??)**: 17+ 回再発
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
@@ -39,7 +39,8 @@
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
 - **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
-- **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undoで消失
+- **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失
+- **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
 - **public API漏出→呼び出しパターン拡散**: applyTypedCellStyle が public で createCell/setCellValue の2箇所から個別呼出, **sidebar が readonly(public)に格上げ**
 - **CSSセレクタインジェクション(新パターン)**: querySelector に data属性値を直接結合→特殊文字でクエリ破壊
 - **PK値変更によるブックマーク永続データ不整合(新パターン)**: PK編集後にbookmarks.json/DOM属性が陳腐化
@@ -122,8 +123,18 @@
 - renderQueryResultsAsync: fire-and-forget呼出し（.catch無し）
 - コンテキストメニュー: PK列/非PK列で追加メニューコード完全コピペ
 
+## Row Drag Controller Patterns (2026-03-28)
+- moveRow: 後処理がinsertRowInternal/deleteRowと比較して圧倒的に不足（キャッシュ無効化、フィルター更新、ブックマーク復元なし）
+- **ソート中のmoveRow**: storeRowIndicesを[0,1,2,...]にリセット→DOMのセル内容はソート順のまま→データ不整合（致命的）
+- **ミニテーブル/差分タブガードなし**: moveRow/onRowHeaderMouseDownに特殊コンテキストのガードが一切ない
+- destroy()でdocumentリスナー未解除（register/unregister非対称4回目）
+- stopImmediatePropagation依存: イベントリスナー登録順序への暗黙的契約
+- **操作パスの網羅漏れ(moveRow)**: insertRow系では7-8種の後処理、moveRowでは4種のみ（bug-report.md #7の再発）
+- **新規操作パス追加時の後処理チェックリスト**: evictOwnReferenceDataCache, refreshFilterDisplayIfActive, restoreBookmarkMarks, ensureTrailingBufferRow が漏れやすい
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ISSUE_0126 行ドラッグ移動: 致命的3件、重要6件、軽微3件 (ソート中データ破壊, ミニテーブルガード欠落, moveRow後処理不足, destroyリスナー漏れ)
 - (2026-03-28) ISSUE_0125 セルブックマーク: 致命的3件、重要6件、軽微3件 (CSSセレクタインジェクション, DOM属性復元漏れ, PK値不整合, sidebar公開, 型安全性, 入力検証, コピペ)
 - (2026-03-28) Typed Input Control: 致命的2件、重要5件、軽微3件 (bool文字入力漏れ, float精度破壊, Undo未記録, publicメソッド漏出)
 - (2026-03-28) Search Replace: 致命的2件、重要5件、軽微3件 (wholeWord無視, 複数テーブルUndo破壊, 列ソート非対応)
