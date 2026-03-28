@@ -35,7 +35,7 @@ const command = commands.length === 1 ? commands[0] : new CompositeCommand(comma
 
 EditorTable に実装。バッファ空行（`editor-table-empty-row`）は除外する。
 - セルテキスト幅: `CELL_FONT = '13px sans-serif'`
-- 参照ヒント幅: `REFERENCE_HINT_FONT = '11.7px sans-serif'`（0.9em）+ `REFERENCE_HINT_MARGIN_LEFT_PX = 4px`
+- 参照ヒント幅: `REFERENCE_HINT_FONT = '11.7px sans-serif'`（0.9em）+ `REFERENCE_HINT_MARGIN_PX = 4px`
 - ヘッダー幅: `Utility.calculateColumnWidth(name, !isMiniTable)` で計算
 - 最終値: `Math.max(maxCellWidth, MIN_COLUMN_WIDTH_PX)`
 

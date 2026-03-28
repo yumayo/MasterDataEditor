@@ -1,5 +1,8 @@
 # TypeScript TDD Developer Memory
 
+## Feedback
+- [テストデータの表示列命名規約](feedback_display_column_naming.md) — FK参照テストデータの表示列は ja/comment にする
+
 ## Project Architecture
 - Frontend: Vanilla TypeScript (no framework), DOM is SSOT
 - Backend: C# (WinForms + WebView2)

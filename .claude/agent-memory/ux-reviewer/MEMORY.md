@@ -15,7 +15,20 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 ISSUE_0126 行ドラッグ移動と行複数選択の操作分離）
+### 最新レビュー結果（2026-03-28 ISSUE_0127 FK列int値右揃え・ヒント句左配置）
+
+#### ISSUE_0127 FK列int値右揃え・ヒント句左配置 評価: B+
+- 変更内容: FK参照列（int型）にも `cell-numeric` クラスを付与して右寄せ適用。`cell-reference-hint` を FK 値テキストの左側に配置。長いヒント句は ellipsis で省略しFK値表示領域を保護。FK参照列（string型）には `cell-numeric` を付与しない選択的適用。
+- 良い点: ISSUE_0127 After の `category_id` 列（data-col="1"）のセルに `cell-numeric` が付与され（`<div class="editor-table-cell cell-numeric" data-col="1">`）、FK int 列の右寄せが全行（データ行・バッファ行）で統一されている。`参照ヒントがFK値テキストの左側に配置される` テストの DOM で `<span class="cell-reference-hint">関東</span>1` の順序（ヒント先頭）が正確に実装されており、スクリーンショットでも「関東 1」「関西 2」の左ヒント＋右FK値の自然な読み順になっている。`長いヒント句がellipsisで省略されFK値の表示領域が侵食されない` テストで「これは非常に長い名前のマス…」（ellipsis）と「1」が同一セル内に共存しており、127px幅セルで FK 値「1」が右端に確保されている。region_id（int FK）とtag_code（string FK）で挙動を分け、FK string 列には `cell-numeric` を付与しない選択的設計が正しい（`<div class="editor-table-cell" data-col="2">` に `cell-numeric` なし確認）。
+- 修正必須(🔴): `cell-reference-hint` と FK 値テキストが同一セル内に無構造に隣接しており（`<span class="cell-reference-hint">関東</span>1`）、ヒントと実データの区切りが DOM 上で不明確。スクリーンショットでは視覚的に「関東 1」として読めるが、「関東」がヒント（グレーアウト）で「1」が実データという情報がDOM属性で表現されていない。FK値テキストを `<span class="cell-fk-value">1</span>` のようなラッパーで囲み `aria-label="FK値: 1 (関東)"` 相当の属性をセルに付与すれば、スクリーンリーダーが「ヒント: 関東、値: 1」と区別して読み上げられる。
+- 修正必須(🔴): `cell-reference-hint` の span に `aria-hidden="true"` がない。スクリーンリーダーは「関東1」（ヒントと値を連続したテキストとして）読み上げ、FK 値が「関東1」という複合文字列に見える。ヒントは視覚補助であり実データではないため、スクリーンリーダーには「1（関東の参照）」のように構造的に伝えるか、`aria-hidden="true"` でヒントを隠してセル全体の aria-label で補完すべき。
+- 修正必須(🔴): Before テスト（`FK参照が設定されたint型列には .cell-numeric が付与されない`）が ISSUE_0127 適用前の「FK列に cell-numeric がない」仕様を検証しており、After テスト（`FK参照が設定されたint型列にも .cell-numeric が付与される（ISSUE_0127_...）`）が新仕様を検証している。Before テストがまだテストスイートに残存しているなら古い仕様を検証する死にテストになる。Before テストは削除するか、テストタイトルを「（旧仕様）」と明記して skip すべき。DOMダンプが両方存在している状況から、おそらく両テストが並行して実行されており、Before テストが失敗してグリーンになっていない可能性がある（推測）。
+- 修正必須(🔴): activity-bar SVG に aria-hidden="true" がない（全サイクル継続課題）。
+- 改善推奨(🟡): ellipsis テスト（`長いヒント句がellipsisで省略され…`）のスクリーンショットで「これは非常に長い名前のマス…」と「1」が表示されているが、「…」の後に「1」が続く配置でヒント部分と FK 値部分の視覚的区切りが色のみ。FK 値「1」を右端に固定する `text-align: right` が有効な場合、ヒント部分が伸縮しても FK 値は常に右端に固定される設計になっているはずだが、DOMダンプのインラインスタイルには `text-align` が明示されていない（CSS クラスで制御と推測）。列幅を狭めた場合にヒントが完全に消え FK 値のみになるか、それとも FK 値が押し出されて消えるかの最低幅テストがあると安心。
+- 改善推奨(🟡): FK int 列に `cell-numeric` が付与されることで右寄せになるが、`cell-reference-hint`（ヒント）は左寄せのまま（テキストノードとして先頭に配置）でFK値は右端に寄る。この「左ヒント＋右値」のレイアウトが実現できているのは `cell-reference-hint` が `display: inline` でテキストフローに乗っており、セル全体の `text-align: right` で「ヒント+値」全体が右に寄っている場合、ヒント自体も右寄りになる可能性がある。スクリーンショットの「関東 1」を見ると確かにヒントが左端にいるように見えるが、これは `cell-reference-hint` に `float: left` または `display: inline-block; margin-right: auto` 等のスタイルが当たっていると推測される。この動作が狭い列幅（50px以下）で崩れないかのテストが推奨。
+- 改善推奨(🟡): fill-handle が `display:block` で残存（left:207px, top:38px）（全サイクル継続課題）。
+
+### 過去のレビュー結果（2026-03-28 ISSUE_0126 行ドラッグ移動と行複数選択の操作分離）
 
 #### ISSUE_0126 行ドラッグ移動と複数選択の操作分離 評価: B+
 - 変更内容: 行ヘッダードラッグを「選択済み行 → 移動」「未選択行 → 複数選択」に分離。カーソルスタイル（grab/default）で状態表示。`row-drag-indicator` 要素がドラッグ中に移動先を示す。
@@ -192,3 +205,6 @@
 - row-drag-indicator がドラッグ中のスクリーンショットで確認不能（mouseup後に非表示化されるため静止画では検証困難）（ISSUE_0126で新規発見）
 - 複数行選択状態での行ドラッグ移動の一括移動可否がテストで未検証（ISSUE_0126で新規発見）
 - カーソルスタイル（grab）がスクリーンショットで撮影不能 → Playwright getCSSValue('cursor') での明示的検証が必要（ISSUE_0126で新規発見）
+- cell-reference-hint span に aria-hidden="true" がなく、スクリーンリーダーがヒントと FK 値を連続テキストとして読み上げる（ISSUE_0127で新規発見）
+- FK 値テキストに専用 span ラッパーがなく、ヒントと実データの DOM 上の区別が不明確（ISSUE_0127で新規発見）
+- Before テスト（FK列に cell-numeric がない旧仕様検証）が After テストと並存しており、どちらかが失敗している可能性がある（ISSUE_0127で新規発見）

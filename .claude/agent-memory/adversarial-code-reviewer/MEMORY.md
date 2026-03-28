@@ -31,7 +31,8 @@
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
 - **register/unregister 非対称**: **4回再発** (+RowDragController.destroy()でdocumentリスナー未解除)
-- **CSS hardcoded colors**: 19+ 回再発 (+bookmark-panel #FF8C00)
+- **CSS hardcoded colors**: 19+ 回再発 (+bookmark-panel #FF8C00, --text-muted-color未定義)
+- **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊
 - **フォールバック禁止 (??)**: 17+ 回再発
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
@@ -89,6 +90,7 @@
 ## CSS Variables
 - Defined: --font-color, --background-color, --background-sub-color, --border-color, --selection-color, --selection-font-color, --scroll-bar-background-color, --focus-border, --error-color, --error-bg, --error-border
 - NOT defined: --warning-color, --warning-bg, --warning-border (needed for plugin errors)
+- NOT defined: --text-muted-color (used in .cell-reference-hint, .cell-reverse-reference-hint, grid-dropdown-input with fallback #888)
 
 ## ER Diagram Tab Patterns (2026-03-28)
 - tab.ts 特殊タブ分岐(settings/diff/ER): 条件分岐が4種(通常/設定/差分/ER)に増殖、leaveSettingsMode漏れリスク高
@@ -112,6 +114,8 @@
 - float精度問題: parseFloat+1→String でIEEE 754精度劣化。toFixed等で桁数保持が必要
 - 数値入力フィルタ: keydown で isAllowedNumericKey。ただしIME composing中はスキップ
 - applyTypedCellStyle: public で createCell + setCellValue の2経路から呼出（パターン拡散リスク）
+- **ISSUE_0127**: FK列にcell-numericクラスを適用する変更。setCellValueの参照列パスでapplyTypedCellStyleが呼ばれない（createCellのみ）→暗黙的依存
+- **ISSUE_0127**: appendReferenceHint→prepend実装だが名称未変更、float:left+table-cellの脆さ、max-width 2emマジックナンバー
 
 ## Bookmark Feature Patterns (2026-03-28)
 - bookmark-panel.ts: DOMがSSOT、data-*属性でエントリ情報保持、永続化はbookmarks.json
@@ -134,6 +138,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ISSUE_0127 FK列int値右揃え・ヒント左配置: 致命的2件、重要4件、軽微3件 (constant.ts列幅計算破壊, float:leftレイアウト脆弱性, CSSコメント不整合, applyTypedCellStyleパス漏れ, appendReferenceHint命名)
 - (2026-03-28) ISSUE_0126 行ドラッグ移動: 致命的3件、重要6件、軽微3件 (ソート中データ破壊, ミニテーブルガード欠落, moveRow後処理不足, destroyリスナー漏れ)
 - (2026-03-28) ISSUE_0125 セルブックマーク: 致命的3件、重要6件、軽微3件 (CSSセレクタインジェクション, DOM属性復元漏れ, PK値不整合, sidebar公開, 型安全性, 入力検証, コピペ)
 - (2026-03-28) Typed Input Control: 致命的2件、重要5件、軽微3件 (bool文字入力漏れ, float精度破壊, Undo未記録, publicメソッド漏出)
