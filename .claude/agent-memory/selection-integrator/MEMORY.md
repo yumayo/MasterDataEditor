@@ -30,6 +30,14 @@
 - `updateRenderer()` はスクロールに触れない（CSSポジション更新のみ）
 - `notifyRowSelectionChanged` は `updateRenderer()` の末尾で呼ばれる（EditorTable 経由で RelationsPanel へ）
 
+## 修正済みパターン
+
+### Command実行後の選択状態更新（ISSUE_0139 / b7d656b）
+- `executeCommand()` はCommand実行とHistory記録のみ。Selection の更新は呼び出し元が担う
+- 行移動のように「対象が物理的に移動する操作」では、Command実行後に移動先行を `selectRow()` で選択するのが正しい挙動
+- `row-drag-controller.ts` の `handleMouseUp()` に `this.selection.selectRow(to + 1)` を追加して修正済み
+- `to` は「fromを抜いた後の0始まりdomDataRowIndex」→ `+1` で1始まりのselection行番号になる
+
 ## 既知のバグ（未修正）
 
 ### BUG: `scrollCellIntoView` の `requestAnimationFrame` 競合
