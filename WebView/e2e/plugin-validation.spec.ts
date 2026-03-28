@@ -224,11 +224,7 @@ test.describe('プラグインバリデーション: assertエラーがパネル
             const pluginItems = items.filter({ hasText: 'プラグイン' });
             await expect(pluginItems.first()).toBeVisible();
 
-            // エラーメッセージにプラグインファイル名が含まれている
-            const pluginErrorWithFileName = items.filter({ hasText: 'balance-check.js' });
-            await expect(pluginErrorWithFileName.first()).toBeVisible();
-
-            // エラーメッセージにassertで指定したメッセージが含まれている
+            // エラーメッセージにassertで指定したメッセージが含まれている（プラグイン名プレフィックスは ISSUE_0140 で除去済み）
             const pluginErrorWithMessage = items.filter({ hasText: '合計値110が100以上です' });
             await expect(pluginErrorWithMessage.first()).toBeVisible();
         },

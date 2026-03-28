@@ -30,7 +30,7 @@ export interface ResolvedPluginError {
  * PluginValidationError をストア参照で解決し、テーブル名・行・列・セル値を確定させる。
  * コンテキスト付きエラー（行オブジェクトが渡された assert）はストアから列インデックスとセル値を解決する。
  * コンテキストなしエラー（構文エラー等）は tableName='プラグイン', rowIndex=-1 として返す。
- * message には常にプラグイン名プレフィックスを含める。
+ * message にはプラグイン名プレフィックスを含めない（プラグイン名は columnName で参照可能）。
  */
 export function resolvePluginErrors(pluginErrors: PluginValidationError[], store: InMemoryTableStore): ResolvedPluginError[] {
     const result: ResolvedPluginError[] = [];
@@ -49,9 +49,9 @@ export function resolvePluginErrors(pluginErrors: PluginValidationError[], store
                     }
                 }
             }
-            result.push({ tableName: pe.tableName, rowIndex: pe.rowIndex, columnName, value: cellValue, pluginName: pe.pluginName, message: '[' + pe.pluginName + '] ' + pe.message });
+            result.push({ tableName: pe.tableName, rowIndex: pe.rowIndex, columnName, value: cellValue, pluginName: pe.pluginName, message: pe.message });
         } else {
-            result.push({ tableName: 'プラグイン', rowIndex: -1, columnName: pe.pluginName, value: '', pluginName: pe.pluginName, message: '[' + pe.pluginName + '] ' + pe.message });
+            result.push({ tableName: 'プラグイン', rowIndex: -1, columnName: pe.pluginName, value: '', pluginName: pe.pluginName, message: pe.message });
         }
     }
     return result;
