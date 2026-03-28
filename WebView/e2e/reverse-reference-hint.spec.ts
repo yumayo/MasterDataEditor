@@ -954,3 +954,76 @@ test.describe('逆参照の表示優先度', () => {
     );
 });
 
+// -------------------------------------------------------
+// PK列の逆参照ヒント配置テスト（ISSUE_0136）
+// -------------------------------------------------------
+test.describe('PK列の逆参照ヒント配置', () => {
+    test(
+        'PK列のint値が逆参照ヒントの右側に配置される（ISSUE_0136）',
+        async ({ page }) => {
+            // parent: id(PK, int), ja(string)
+            // child_name: id(PK), parent_id(FK→parent.id), ja(string)
+            //   parent_id=1 が1件（"名前A"）→ parent.id=1 に逆参照ヒント表示
+            const fs: MockFileSystem = {
+                "schema/parent.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "ja", type: "string" },
+                    ],
+                    primary_key: ["id"],
+                }),
+                "data/parent.csv": [
+                    "id,ja",
+                    "1,勇者",
+                ].join("\n"),
+                "schema/child_name.json": JSON.stringify({
+                    header: [
+                        { key: 0, name: "id", type: "int" },
+                        { key: 1, name: "parent_id", type: "int", reference: "parent.id" },
+                        { key: 2, name: "ja", type: "string" },
+                    ],
+                    primary_key: ["id"],
+                }),
+                "data/child_name.csv": [
+                    "id,parent_id,ja",
+                    "1,1,名前A",
+                ].join("\n"),
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'parent');
+
+            // PK列（id, int型）に逆参照ヒントが表示されるまで待機
+            const pkCell = getDataCell(table, 0, 0);
+            const hint = pkCell.locator('.cell-reverse-reference-hint');
+            await expect(hint).toBeVisible();
+            await expect(hint).toHaveText('名前A');
+
+            // PK列は int 型なので cell-numeric クラスが付与されていること
+            await expect(pkCell).toHaveClass(/cell-numeric/);
+
+            // 逆参照ヒントの boundingRect.left が PK値テキストノードの boundingRect.left より小さい
+            // → ヒントが数値の左側に配置されていること
+            const positions = await pkCell.evaluate((el) => {
+                const hintEl = el.querySelector('.cell-reverse-reference-hint') as HTMLElement;
+                if (!hintEl) return null;
+                // テキストノード（PK値）の位置を取得する
+                const range = document.createRange();
+                for (const node of Array.from(el.childNodes)) {
+                    if (node.nodeType === Node.TEXT_NODE && node.textContent!.trim() !== '') {
+                        range.selectNodeContents(node);
+                        break;
+                    }
+                }
+                const textRect = range.getBoundingClientRect();
+                const hintRect = hintEl.getBoundingClientRect();
+                return { hintLeft: hintRect.left, textLeft: textRect.left };
+            });
+
+            expect(positions).not.toBeNull();
+            // ヒントのleft < PK値テキストのleft → ヒントが数値の左に配置されている
+            expect(positions!.hintLeft).toBeLessThan(positions!.textLeft);
+        },
+    );
+});

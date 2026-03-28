@@ -266,11 +266,23 @@
 /* 逆参照列のヒント表示 */
 .cell-reverse-reference-hint {
     color: var(--text-muted-color, #888);
-    margin-left: 4px;
+    margin-right: 4px;
     font-size: 0.9em;
     opacity: 0.7;
 }
 
+/* 数値型PK列の逆参照ヒント: float:left で左配置し、ellipsis で省略対応する。
+   セル自体は text-align:right (.cell-numeric) のため PK値は右寄せ、
+   ヒントは float で左に固定される。
+   3em = PK値3桁（999）まで余裕を持たせるための確保幅。 */
+.cell-numeric .cell-reverse-reference-hint {
+    float: left;
+    margin-left: 0;
+    max-width: calc(100% - 3em);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* 結合列ヘッダーのスタイル（視覚的に区別） */
 .editor-table-joined-column-header {

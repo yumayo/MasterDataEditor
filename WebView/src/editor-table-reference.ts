@@ -345,7 +345,8 @@ export class EditorTableReference {
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reverse-reference-hint');
         hintSpan.textContent = hintText;
-        cell.appendChild(hintSpan);
+        // prepend でPK値テキストの前（左側）にヒントを配置する（FK参照ヒントと同じパターン）
+        cell.prepend(hintSpan);
     }
 
     /**
