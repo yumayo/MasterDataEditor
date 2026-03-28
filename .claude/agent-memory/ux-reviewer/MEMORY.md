@@ -15,7 +15,18 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 ISSUE_0129 既存テーブルの定義編集）
+### 最新レビュー結果（2026-03-28 ISSUE_0136 逆参照ヒントのレイアウトをFK参照ヒントと統一）
+
+#### ISSUE_0136 逆参照ヒントのCSSレイアウト統一 評価: A
+- 変更内容: 逆参照ヒント（PK列）に float:left を適用。DOM挿入を cell.appendChild → cell.prepend に変更しFKヒントと同一DOM順序に統一。
+- 良い点: weaponテーブルの id 列（data-col="0", cell-numeric付き）で `<span class="cell-reverse-reference-hint">剣</span>1` の DOM 順序が確認でき、ヒントが先頭・値が末尾という FK ヒントと同一パターンに統一されている。スクリーンショット「weaponテーブル」でヒント（小字）が左端、数値「1」「2」が右端に配置されており、ISSUE_0127 で確立した FK ヒントレイアウトと一貫している。armor テーブルも同様に「盾 1」「兜 2」という正しい左ヒント＋右値配置が実現している。test テーブルの FK 列（type_id, item_id）でも cell-reverse-reference-hint が `<span class="cell-reverse-reference-hint">武器</span>1` 形式で表示されており、FK ヒントと逆参照ヒントが同一セル内で共存しても崩れていない。プルダウンテストで grid-dropdown-list のエントリが「1 剣」「2 槍」形式（id + 逆参照名）で表示されており、PK 列編集時の選択補助として逆参照情報が活用されている。表示列編集後の即時更新（魔法使い → 新しい名前変更後に逆参照ヒントが更新）が機能しており、右→左反映の notifyMiniTableCellChanged パスが生きている。Undo後に参照ヒントが元の値に戻ることも確認済み。
+- 修正必須(🔴): `cell-reverse-reference-hint` span に `aria-hidden="true"` がない。ISSUE_0127 で `cell-reference-hint` にも同じ指摘をしたが、逆参照ヒントも同様。スクリーンリーダーは「剣1」を連続したテキストとして読み上げるため、「剣」がヒントで「1」が実データという区別が伝わらない。
+- 修正必須(🔴): activity-bar SVG に `aria-hidden="true"` がない（全サイクル継続課題）。
+- 改善推奨(🟡): バッファ行（editor-table-empty-row）の id 列（cell-numeric）に逆参照ヒントが表示されていない（スクリーンショット行3が空白）のは正しい動作だが、DOMダンプの確認では `<div class="editor-table-cell cell-numeric" data-col="0">` に span が存在しない。このまま意図的に「空値行には逆参照ヒント表示なし」としているなら問題なし。ただし FK ヒントは空値行にも候補プルダウン用のヒントを表示するケースがあるため設計の一貫性を確認推奨。
+- 改善推奨(🟡): fill-handle が `display:block` で残存（left:207px, top:38px）（全サイクル継続課題）。
+- 参考: bug-report #94（逆参照ヒントで querySelectorの対象漏れ）のパターン確認 → 今回の prepend 変更により DOM 順序は FK ヒントと統一されたが、querySelector で `.cell-reference-hint, .cell-reverse-reference-hint` の両方をセットで記述しているかを確認すること（特に列幅自動フィット時の文字幅計算で逆参照ヒントの span を考慮しているか）。
+
+### 過去のレビュー結果（2026-03-28 ISSUE_0129 既存テーブルの定義編集）
 
 #### ISSUE_0129 既存テーブルの定義編集 評価: B
 - 変更内容: エクスプローラー右クリックメニューに「テーブル定義を編集」を追加。既存スキーマをテーブル定義エディタに読み込み。列追加・削除・列名変更・型変更・並び替えを保存するとCSV/スキーマに反映。
@@ -250,3 +261,5 @@
 - エクスプローラー右クリックに「テーブルを削除」がなく、テーブル削除の手段がUIに存在しない（ISSUE_0129で新規発見）
 - column-name-input が HTML attribute value ではなく JS property として設定されており、DOMダンプ上は空フィールドに見える（ISSUE_0129で発見）
 - 型変更（string→int等）の破壊的変更に対する確認ダイアログがない（ISSUE_0129で新規発見）
+- cell-reverse-reference-hint span に aria-hidden="true" がなく、スクリーンリーダーがヒントとPK値を連続テキストとして読み上げる（ISSUE_0136で新規発見、cell-reference-hintと同一パターン）
+- バッファ行への逆参照ヒント表示ポリシーが FK ヒントと統一されているか確認が必要（ISSUE_0136で新規発見）
