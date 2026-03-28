@@ -43,6 +43,12 @@ export class ExplorerFile {
         }
 
         div.addEventListener('click', this.onClick.bind(this));
+        // 右クリックでコンテキストメニューを表示する（「テーブル定義を編集」等）
+        div.addEventListener('contextmenu', (e: MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.tab.showExplorerContextMenu(this.name, e.clientX, e.clientY);
+        });
 
         this.element = div;
     }

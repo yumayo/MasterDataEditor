@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import type { Page, Locator } from '@playwright/test';
 import { readMockFileAsync } from './fixtures/mock-api';
+import { expectCsvAsync } from './fixtures/test-utils';
 
 /**
  * テーブル定義エディタの e2e テスト
@@ -395,5 +396,193 @@ test.describe('テーブル定義エディタ - 列ドラッグ並び替え', ()
 
         // 列順が元に戻ること: id, name, damage
         await expectColumnOrderAsync(page, ['id', 'name', 'damage']);
+    });
+});
+
+// ============================================================
+// 既存テーブルの定義編集テスト（ISSUE_0129）
+// ============================================================
+
+/**
+ * エクスプローラーのテーブル項目を右クリックし、
+ * コンテキストメニューから「テーブル定義を編集」を選択するヘルパー
+ */
+async function openEditDefinitionAsync(page: Page, tableName: string): Promise<void> {
+    const explorer = page.locator('#explorer');
+    const fileItem = explorer.locator('.explorer-file', { hasText: tableName });
+    await fileItem.click({ button: 'right' });
+    const menu = page.locator('.context-menu.visible');
+    await menu.locator('.context-menu-item', { hasText: 'テーブル定義を編集' }).click();
+}
+
+test.describe('既存テーブルの定義編集', () => {
+
+    test('エクスプローラーの右クリックメニューに「テーブル定義を編集」が表示される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        // エクスプローラーのファイルが表示されるのを待つ
+        const explorer = page.locator('#explorer');
+        const fileItem = explorer.locator('.explorer-file', { hasText: 'test' });
+        await expect(fileItem).toBeVisible();
+
+        // 右クリックしてコンテキストメニューを開く
+        await fileItem.click({ button: 'right' });
+
+        // コンテキストメニューに「テーブル定義を編集」が存在すること
+        const menu = page.locator('.context-menu.visible');
+        const editDefItem = menu.locator('.context-menu-item', { hasText: 'テーブル定義を編集' });
+        await expect(editDefItem).toBeVisible();
+    });
+
+    test('既存テーブルのスキーマが定義エディタに読み込まれる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'test' })).toBeVisible();
+
+        // 右クリック→「テーブル定義を編集」をクリック
+        await openEditDefinitionAsync(page, 'test');
+
+        // テーブル定義エディタが表示される
+        const editor = getEditor(page);
+        await expect(editor).toBeVisible();
+
+        // テーブル名入力欄に既存テーブル名が表示されること
+        await expect(getNameInput(page)).toHaveValue('test');
+
+        // 列定義行が3行（id, name, value）存在すること
+        const columnRows = page.locator('.table-definition-column-row');
+        await expect(columnRows).toHaveCount(3);
+
+        // 1列目: id, int, PK=checked
+        const row0 = columnRows.nth(0);
+        await expect(row0.locator('.column-name-input')).toHaveValue('id');
+        await expect(row0.locator('.column-type-select')).toHaveValue('int');
+        await expect(row0.locator('.column-pk-checkbox')).toBeChecked();
+
+        // 2列目: name, string, PK=unchecked
+        const row1 = columnRows.nth(1);
+        await expect(row1.locator('.column-name-input')).toHaveValue('name');
+        await expect(row1.locator('.column-type-select')).toHaveValue('string');
+        await expect(row1.locator('.column-pk-checkbox')).not.toBeChecked();
+
+        // 3列目: value, int, PK=unchecked
+        const row2 = columnRows.nth(2);
+        await expect(row2.locator('.column-name-input')).toHaveValue('value');
+        await expect(row2.locator('.column-type-select')).toHaveValue('int');
+        await expect(row2.locator('.column-pk-checkbox')).not.toBeChecked();
+    });
+
+    test('列を追加して保存するとCSVに空セルが追加される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'test' })).toBeVisible();
+
+        // 既存テーブルを定義エディタで開く
+        await openEditDefinitionAsync(page, 'test');
+        await expect(getEditor(page)).toBeVisible();
+
+        // 新しい列（new_col, string）を追加する
+        await getAddColumnButton(page).click();
+        const newRow = page.locator('.table-definition-column-row').nth(3);
+        await newRow.locator('.column-name-input').fill('new_col');
+        await newRow.locator('.column-type-select').selectOption('string');
+
+        // 保存する
+        await getSaveButton(page).click();
+
+        // 定義エディタが閉じられるのを待つ（保存完了のシグナル）
+        await expect(getEditor(page)).toHaveCount(0);
+
+        // CSVの全行に新列の空セルが追加されていること
+        await expectCsvAsync(page, 'data/test.csv', `
+            id, name,   value, new_col
+            1,  item_a, 100,
+            2,  item_b, 200,
+            3,  item_c, 300,
+        `);
+
+        // スキーマにも新列が追加されていること
+        const schemaJson = await readMockFileAsync(page, 'schema/test.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'name', type: 'string' },
+            { key: 2, name: 'value', type: 'int' },
+            { key: 3, name: 'new_col', type: 'string' },
+        ]);
+    });
+
+    test('列を削除して保存するとCSVから該当列が除去される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'test' })).toBeVisible();
+
+        // 既存テーブルを定義エディタで開く
+        await openEditDefinitionAsync(page, 'test');
+        await expect(getEditor(page)).toBeVisible();
+
+        // value列（3列目）を削除する
+        const columnRows = page.locator('.table-definition-column-row');
+        await columnRows.nth(2).locator('.column-delete-button').click();
+        await expect(columnRows).toHaveCount(2);
+
+        // 保存する
+        await getSaveButton(page).click();
+
+        // 定義エディタが閉じられるのを待つ
+        await expect(getEditor(page)).toHaveCount(0);
+
+        // CSVから value 列が除去されていること
+        await expectCsvAsync(page, 'data/test.csv', `
+            id, name
+            1,  item_a
+            2,  item_b
+            3,  item_c
+        `);
+
+        // スキーマからも value 列が除去されていること
+        const schemaJson = await readMockFileAsync(page, 'schema/test.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'name', type: 'string' },
+        ]);
+    });
+
+    test('列名を変更して保存するとCSVヘッダーが更新される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'test' })).toBeVisible();
+
+        // 既存テーブルを定義エディタで開く
+        await openEditDefinitionAsync(page, 'test');
+        await expect(getEditor(page)).toBeVisible();
+
+        // name列（2列目）の列名を「label」に変更する
+        const columnRows = page.locator('.table-definition-column-row');
+        const nameInput = columnRows.nth(1).locator('.column-name-input');
+        await nameInput.fill('label');
+
+        // 保存する
+        await getSaveButton(page).click();
+
+        // 定義エディタが閉じられるのを待つ
+        await expect(getEditor(page)).toHaveCount(0);
+
+        // CSVヘッダーの name 列が label に変更されていること（データ行は維持）
+        await expectCsvAsync(page, 'data/test.csv', `
+            id, label,  value
+            1,  item_a, 100
+            2,  item_b, 200
+            3,  item_c, 300
+        `);
+
+        // スキーマの列名も変更されていること
+        const schemaJson = await readMockFileAsync(page, 'schema/test.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'label', type: 'string' },
+            { key: 2, name: 'value', type: 'int' },
+        ]);
     });
 });

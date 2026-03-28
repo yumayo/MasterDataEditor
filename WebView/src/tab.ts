@@ -29,6 +29,7 @@ import {NotificationToast} from "./notification";
 import type {EditorAPI} from "./editor-api-types";
 import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
+import type {EditTarget} from "./table-definition-editor";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -155,6 +156,13 @@ export class Tab {
     private tableDefinitionEditor: TableDefinitionEditor | false;
 
     /**
+     * 次回 activateTableDefinitionTab 呼び出し時に使用する編集対象情報。
+     * openEditTableDefinitionTabAsync で設定し、activateTableDefinitionTab で消費される。
+     * 新規作成モードの場合は false。
+     */
+    private pendingEditTarget: EditTarget | false;
+
+    /**
      * 現在表示中のフォームパネル（PKセル右クリック→「フォームビューを表示」で生成）
      * 表示中でない場合は false
      */
@@ -214,6 +222,7 @@ export class Tab {
         this.erDiagramTab = false;
         this.tableDefinitionWrapperElement = false;
         this.tableDefinitionEditor = false;
+        this.pendingEditTarget = false;
         this.currentFormPanel = false;
         this.validationPanel = false;
         this.editorApi = false;
@@ -971,7 +980,26 @@ export class Tab {
 
         this.activeTabName = TABLE_DEFINITION_TAB_NAME;
 
-        // 初回のみ TableDefinitionEditor とラッパーを生成する
+        // 既存テーブル編集時はタブボタンの表示テキストをテーブル名に更新する（新規作成時は「新しいテーブル」のまま）
+        if (this.pendingEditTarget !== false) {
+            const tabButton = this.tabButtons.find(x => x.name === TABLE_DEFINITION_TAB_NAME);
+            if (tabButton) {
+                const nameSpan = tabButton.element.querySelector('.tab-button-name');
+                if (nameSpan) nameSpan.textContent = this.pendingEditTarget.tableName + ' - 定義編集';
+            }
+        }
+
+        // 編集モードで開き直す場合（pendingEditTarget が設定されている場合）、既存のエディタを破棄して再生成する
+        if (this.pendingEditTarget !== false && this.tableDefinitionWrapperElement !== false) {
+            if (this.tableDefinitionEditor !== false) {
+                this.tableDefinitionEditor.destroy();
+            }
+            this.tableDefinitionWrapperElement.remove();
+            this.tableDefinitionWrapperElement = false;
+            this.tableDefinitionEditor = false;
+        }
+
+        // 初回または編集モードでの再生成: TableDefinitionEditor とラッパーを生成する
         if (this.tableDefinitionWrapperElement === false) {
             const wrapper = document.createElement('div');
             wrapper.classList.add('tab-wrapper', 'table-definition-tab-wrapper');
@@ -986,7 +1014,10 @@ export class Tab {
                 if (existingNames.indexOf(name) === -1) existingNames.push(name);
             });
 
-            this.tableDefinitionEditor = new TableDefinitionEditor(this, existingNames);
+            // pendingEditTarget を消費してエディタを生成する（新規の場合は false のまま）
+            const editTarget = this.pendingEditTarget;
+            this.pendingEditTarget = false;
+            this.tableDefinitionEditor = new TableDefinitionEditor(this, existingNames, editTarget);
             this.tableDefinitionEditor.appendTo(wrapper);
         }
 
@@ -1013,6 +1044,78 @@ export class Tab {
 
         // 新テーブルを通常タブで開く
         const tabButton = this.append(tableName, description);
+        tabButton.click();
+    }
+
+    /**
+     * テーブル定義タブを閉じ、既存テーブルを通常タブで再オープンする。
+     * TableDefinitionEditor の編集モード保存後に呼ばれる。
+     * closeTableDefinitionAndOpenTable との違い: エクスプローラーへの追加を行わない（既存テーブルのため）。
+     * また、既にタブが開かれている場合はストアとDOMを再読み込みして最新状態を反映する。
+     */
+    closeTableDefinitionAndReopenTable(tableName: string, description: string | null): void {
+        // テーブル定義タブを閉じる
+        this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
+
+        // 既にテーブルタブが開かれている場合: ストアのキャッシュとDOMを無効化して再読み込みする
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            // タブを閉じて再オープンすることで最新のスキーマ・CSVを読み込む
+            this.performCloseTab(tableName);
+        }
+
+        // テーブルを通常タブで開く（既にエクスプローラーに存在するため appendFile は呼ばない）
+        const tabButton = this.append(tableName, description);
+        tabButton.click();
+    }
+
+    /**
+     * エクスプローラーファイルの右クリックメニューを表示する。
+     * ExplorerFile の contextmenu イベントハンドラから呼ばれる。
+     */
+    showExplorerContextMenu(tableName: string, x: number, y: number): void {
+        this.contextMenu.show(x, y, [
+            {
+                label: 'テーブル定義を編集',
+                action: () => {
+                    this.openEditTableDefinitionTabAsync(tableName)
+                        .catch(e => { console.error('テーブル定義編集タブオープンエラー', e); });
+                },
+            },
+        ]);
+    }
+
+    /**
+     * 既存テーブルのスキーマを読み込み、テーブル定義編集タブを開く。
+     * showExplorerContextMenu から呼ばれる。
+     */
+    private async openEditTableDefinitionTabAsync(tableName: string): Promise<void> {
+        // スキーマJSONを読み込んでパースする
+        const schemaJson = await readFileAsync('schema/' + tableName + '.json');
+        const schema = JSON.parse(schemaJson) as {
+            header: Array<{ key: number; name: string; type: string }>;
+            primary_key: string | string[];
+            description?: string;
+        };
+
+        // primary_key は文字列または文字列配列のどちらでもよい
+        const primaryKeys: ReadonlyArray<string> = Array.isArray(schema.primary_key)
+            ? schema.primary_key
+            : [schema.primary_key];
+
+        // 列情報を EditTargetColumn に変換する
+        const columns = schema.header.map(col => ({ name: col.name, type: col.type }));
+
+        // EditTarget を構築して pendingEditTarget にセットする
+        this.pendingEditTarget = {
+            tableName,
+            description: 'description' in schema ? schema.description as string : '',
+            columns,
+            primaryKeys,
+        };
+
+        // テーブル定義タブを開く（activateTableDefinitionTab 内で pendingEditTarget が消費される）
+        const tabButton = this.append(TABLE_DEFINITION_TAB_NAME, null);
         tabButton.click();
     }
 

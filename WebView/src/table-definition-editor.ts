@@ -3,14 +3,16 @@
  *
  * 責務:
  * - 新規テーブルのスキーマ定義UIを提供する（テーブル名、列名、型、PK指定）
+ * - 既存テーブルのスキーマ定義を読み込み、列の追加・削除・リネーム・並び替えを行う
  * - バリデーション（テーブル名の重複・不正文字、列名重複、PK未設定）
  * - 保存時にスキーマJSON + CSVヘッダーを生成してファイルシステムに書き込む
+ * - 編集モード時は既存CSVの列構造を同期する（列追加→空セル、列削除→列除去、列リネーム→ヘッダー更新）
  * - 列定義行のドラッグ並び替え（Undo対応）
  *
  * Tab から呼ばれて専用タブとしてエディター領域にマウントされる。
  * 設定タブ（SettingsPanel）・ER図タブ（ErDiagramTab）と同じパターン。
  */
-import {writeFileAsync} from "./api";
+import {readFileAsync, writeFileAsync} from "./api";
 import type {Tab} from "./tab";
 
 /** テーブル名の有効文字パターン: 英数字とアンダースコアのみ */
@@ -32,6 +34,27 @@ interface ColumnMoveEntry {
 }
 
 /**
+ * 既存テーブル編集時に渡す対象情報。
+ * スキーマJSONから抽出した列定義とテーブルメタデータを保持する。
+ */
+export interface EditTarget {
+    /** 編集対象のテーブル名 */
+    readonly tableName: string;
+    /** スキーマの説明文（なければ空文字） */
+    readonly description: string;
+    /** 既存の列定義（元の列名リスト。保存時のCSV差分検出に使用） */
+    readonly columns: ReadonlyArray<EditTargetColumn>;
+    /** 主キー列名の配列 */
+    readonly primaryKeys: ReadonlyArray<string>;
+}
+
+/** EditTarget の列情報 */
+export interface EditTargetColumn {
+    readonly name: string;
+    readonly type: string;
+}
+
+/**
  * テーブル定義エディタ
  */
 export class TableDefinitionEditor {
@@ -48,6 +71,11 @@ export class TableDefinitionEditor {
     private readonly indicator: HTMLElement;
     /** 列ドラッグの Undo スタック */
     private readonly undoStack: Array<ColumnMoveEntry>;
+    /**
+     * 編集モード時の元テーブル情報（false = 新規作成モード）
+     * 保存時のCSV列同期とバリデーション（自テーブル名の重複除外）に使用する
+     */
+    private readonly editTarget: EditTarget | false;
     /** ドラッグ候補（mousedown後、閾値到達前の状態） */
     private isDragPending: boolean;
     /** ドラッグ中かどうか（閾値到達後） */
@@ -63,9 +91,10 @@ export class TableDefinitionEditor {
     /** ドラッグ中に updateIndicatorPosition で計算された挿入先インデックス（mouseup 時に参照する） */
     private currentInsertIndex: number;
 
-    constructor(tab: Tab, existingTableNames: ReadonlyArray<string>) {
+    constructor(tab: Tab, existingTableNames: ReadonlyArray<string>, editTarget: EditTarget | false) {
         this.tab = tab;
         this.existingTableNames = existingTableNames;
+        this.editTarget = editTarget;
         this.undoStack = [];
         this.isDragPending = false;
         this.isDragging = false;
@@ -161,8 +190,27 @@ export class TableDefinitionEditor {
         this.columnsContainer.classList.add('table-definition-column-rows');
         columnsSection.appendChild(this.columnsContainer);
 
-        // 初期列を1行追加する
-        this.addColumnRow();
+        // 編集モード: 既存列定義を反映する / 新規モード: 空の列を1行追加する
+        if (editTarget !== false) {
+            this.nameInput.value = editTarget.tableName;
+            this.descInput.value = editTarget.description;
+            for (let i = 0; i < editTarget.columns.length; i++) {
+                const col = editTarget.columns[i];
+                const row = this.addColumnRow();
+                (row.querySelector('.column-name-input') as HTMLInputElement).value = col.name;
+                (row.querySelector('.column-type-select') as HTMLSelectElement).value = col.type;
+                // PKチェックボックス: 主キー配列に含まれていればチェックする
+                if (editTarget.primaryKeys.indexOf(col.name) !== -1) {
+                    (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked = true;
+                }
+                // 元の列名をdata属性に保持する（保存時のCSV列マッピングに使用）
+                // リネームされた場合、inputのvalueは新しい名前だがこの属性は元の名前を保持するため
+                // 元CSVの対応列を正しく特定できる
+                row.dataset['originalColumnName'] = col.name;
+            }
+        } else {
+            this.addColumnRow();
+        }
 
         // 列追加ボタン
         const addColumnButton = document.createElement('button');
@@ -213,9 +261,10 @@ export class TableDefinitionEditor {
     }
 
     /**
-     * 列行を1行追加する
+     * 列行を1行追加し、追加した行要素を返す。
+     * ボタンクリック時と、編集モードの初期化で複数回呼ばれる。
      */
-    private addColumnRow(): void {
+    private addColumnRow(): HTMLElement {
         const row = document.createElement('div');
         row.classList.add('table-definition-column-row');
 
@@ -262,6 +311,7 @@ export class TableDefinitionEditor {
         row.appendChild(deleteButton);
 
         this.columnsContainer.appendChild(row);
+        return row;
     }
 
     /**
@@ -410,7 +460,9 @@ export class TableDefinitionEditor {
         }
 
         // テーブル名: 既存テーブルとの重複チェック
-        if (this.existingTableNames.indexOf(tableName) !== -1) {
+        // 編集モードでは自テーブル名は重複対象から除外する（名前を変えなければ重複ではない）
+        const isOwnName = this.editTarget !== false && tableName === this.editTarget.tableName;
+        if (!isOwnName && this.existingTableNames.indexOf(tableName) !== -1) {
             this.nameError.textContent = '同名のテーブルが既に存在します';
             return false;
         }
@@ -462,8 +514,8 @@ export class TableDefinitionEditor {
     }
 
     /**
-     * スキーマJSON + CSVヘッダーを生成してファイルに保存し、
-     * テーブル定義タブを閉じて新テーブルをエクスプローラーに追加して通常タブで開く
+     * スキーマJSON + CSVを保存する。
+     * 新規モードではCSVヘッダーのみ生成、編集モードでは既存CSVの列構造を同期する。
      */
     private async saveAsync(): Promise<void> {
         if (!this.validate()) return;
@@ -476,19 +528,17 @@ export class TableDefinitionEditor {
         const headerArray: Array<{ key: number; name: string; type: string }> = [];
         const primaryKeys: string[] = [];
         const columnNames: string[] = [];
-
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
             const colType = (row.querySelector('.column-type-select') as HTMLSelectElement).value;
             const isPk = (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked;
-
             headerArray.push({ key: i, name: colName, type: colType });
             columnNames.push(colName);
             if (isPk) primaryKeys.push(colName);
         }
 
-        // スキーマJSON生成
+        // スキーマJSONオブジェクトを組み立てる
         const schema: Record<string, unknown> = {
             header: headerArray,
             primary_key: primaryKeys,
@@ -497,11 +547,95 @@ export class TableDefinitionEditor {
             schema['description'] = description;
         }
 
-        // ファイル書き込み
-        await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
-        await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
+        if (this.editTarget !== false) {
+            // 編集モード: 既存CSVの列構造を同期して保存する
+            await this.saveEditModeAsync(this.editTarget, tableName, schema, columnNames);
+        } else {
+            // 新規モード: スキーマJSON + 空CSVヘッダーを保存する
+            await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
+            await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
+            this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
+        }
+    }
 
-        // テーブル定義タブを閉じ、新テーブルをエクスプローラーに追加して通常タブで開く
-        this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
+    /**
+     * 編集モードの保存処理。
+     * 既存CSVを読み込み、元スキーマとの列差分に基づいてCSV列構造を同期する。
+     *
+     * 列マッピングの戦略:
+     * - 各列行DOMの data-original-column-name 属性で元CSVの列名を特定する
+     * - この属性が存在する列 → 既存列（リネームされていてもデータをコピー）
+     * - この属性が存在しない列 → 新規追加列（空セル）
+     * - 元にあって現在のDOMにない列 → 削除列（CSVから除去）
+     *
+     * これにより列の追加・削除・リネーム・並び替えを一括で処理できる。
+     *
+     * @param editTarget 編集対象のテーブル情報（saveAsync の if 分岐で editTarget !== false が確定済み）
+     */
+    private async saveEditModeAsync(
+        editTarget: EditTarget,
+        tableName: string,
+        schema: Record<string, unknown>,
+        newColumnNames: string[]
+    ): Promise<void> {
+        const originalTableName = editTarget.tableName;
+        const originalColumns = editTarget.columns;
+
+        // 既存CSVを読み込む
+        const csvContent = await readFileAsync('data/' + originalTableName + '.csv');
+        // CRLF/LF 両方に対応する（プロジェクトの改行コードはCRLFだが、モックテスト等ではLFの場合もある）
+        const csvLines = csvContent.split(/\r?\n/).filter(line => line.trim() !== '');
+
+        // 元の列名リスト（元スキーマから取得。CSVヘッダー行のインデックスと対応する）
+        const originalColumnNames = originalColumns.map(c => c.name);
+
+        // DOM列行から元の列名マッピングを構築する
+        // columnMappings[i] = 新しいi番目の列に対応する元CSVの列インデックス（-1 = 新規列）
+        const columnRows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
+        const columnMappings: number[] = [];
+        for (let i = 0; i < columnRows.length; i++) {
+            const row = columnRows[i] as HTMLElement;
+            if ('originalColumnName' in row.dataset) {
+                // 既存列: data-original-column-name 属性から元のCSV列名を取得する
+                const originalName = row.dataset['originalColumnName'] as string;
+                const originalIndex = originalColumnNames.indexOf(originalName);
+                columnMappings.push(originalIndex);
+            } else {
+                // 新規追加列: 元CSVに対応列なし
+                columnMappings.push(-1);
+            }
+        }
+
+        // 新しい列順に基づいてCSVを再構築する
+        const newCsvLines: string[] = [];
+
+        // ヘッダー行: 新しい列名リスト
+        newCsvLines.push(newColumnNames.join(','));
+
+        // データ行: 元のCSVデータを新しい列順で再構築する
+        for (let lineIndex = 1; lineIndex < csvLines.length; lineIndex++) {
+            const cells = csvLines[lineIndex].split(',');
+            const newCells: string[] = [];
+            for (let colIndex = 0; colIndex < columnMappings.length; colIndex++) {
+                const originalIndex = columnMappings[colIndex];
+                if (originalIndex !== -1 && originalIndex < cells.length) {
+                    // 既存列（リネーム含む）: 元のデータをコピー
+                    newCells.push(cells[originalIndex]);
+                } else {
+                    // 新規列: 空セル
+                    newCells.push('');
+                }
+            }
+            newCsvLines.push(newCells.join(','));
+        }
+
+        // スキーマとCSVを保存する
+        await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
+        await writeFileAsync('data/' + tableName + '.csv', newCsvLines.join('\n'));
+
+        // テーブル定義タブを閉じてテーブルを再オープンする
+        // description が空文字の場合は null として渡す（新規作成の saveAsync と同じ規約）
+        const description = this.descInput.value.trim();
+        this.tab.closeTableDefinitionAndReopenTable(tableName, description !== '' ? description : null);
     }
 }
