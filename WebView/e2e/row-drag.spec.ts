@@ -219,6 +219,19 @@ test.describe('行ドラッグ移動', () => {
         ]);
     });
 
+    test('行移動後に移動先の行が選択状態になる', async ({ page, mockFileSystem }) => {
+        const table = await openTableAsync(page);
+
+        // 3行目（index=2）を選択してから先頭（index=0）にドラッグ移動する
+        await selectRowAsync(table, 2);
+        await dragRowAsync(table, 2, 0);
+
+        // 移動後: 3, 1, 2 → 移動先は先頭（index=0）なので先頭行ヘッダーが選択状態になる
+        expect(await isRowSelectedAsync(table, 0)).toBe(true);
+        // 移動元の位置（元の3行目、現在はindex=2）は選択されていない
+        expect(await isRowSelectedAsync(table, 2)).toBe(false);
+    });
+
     test('Undo後にRedoで行移動を再実行できる', async ({ page, mockFileSystem }) => {
         const table = await openTableAsync(page);
 

@@ -169,6 +169,8 @@ export class RowDragController {
                     const copyRange = this.selection.getCopyRange();
                     const anchor = this.selection.getAnchor();
                     this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
+                    // 移動後は移動先の行を選択状態にする（to は fromを抜いた後の0始まりインデックス）
+                    this.selection.selectRow(to + 1);
                 }
             } else if (this.isPending) {
                 // moveモード + 5px未満: クリック操作として扱い、その行のみを選択する

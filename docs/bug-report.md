@@ -2855,3 +2855,18 @@ DOM構築後の視覚属性復元処理の呼び出しパス漏れ（initialize�
 - `runValidation()` と `restoreBookmarkMarks()` のような「DOM構築後に必ず呼ぶ処理」を同じ箇所にまとめて記述し、呼び出し漏れを構造的に防ぐ。
 
 ---
+
+## 198. 397b35e — 行ドラッグ移動後に移動先の行を選択状態にする
+
+### 不具合原因名
+Command実行後の選択状態更新の欠落
+
+### なぜそうなったのか
+`row-drag-controller.ts` の `handleMouseUp()` で、`MoveRowCommand` を `history.executeCommand()` で実行した後に `selection.selectRow()` を呼ぶ処理が欠落していた。`executeCommand()` はCommandを実行してHistoryに積むだけで、SelectionはUndo/Redo時のように自動更新されない。Undo/Redo時は `editor-table-handler.ts` が `selection.setRange()` + `selection.move()` を明示的に呼ぶ形で対応しているが、初回実行後に同等の処理を行う仕組みがなかった。この設計上の空隙に気づかなかった。
+
+### どうしたら今後は再発しないか
+- Commandを実行する呼び出し元は、実行後に必要なすべてのUI状態更新を自分で行う責務を持つ。executeCommand()はCommand実行とHistory記録のみであり、Selectionの更新は呼び出し元が担う。
+- 行移動のように「操作対象が物理的に移動する操作」では、Command実行後に「移動後の位置を選択する」のが自然な挙動であることを意識する。
+
+---
+
