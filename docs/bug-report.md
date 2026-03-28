@@ -2746,3 +2746,16 @@ CSSセレクタインジェクション
 - **`querySelector`にユーザー入力値を直接結合しない。** `querySelectorAll`で候補を取得し`getAttribute`で比較する方式を標準パターンとする。コードレビュー時に`querySelector`内の文字列結合を自動検出するチェックを導入する。
 
 ---
+
+## 190. [78e49e8] — Ctrl+行ヘッダークリック後のドラッグで選択範囲が拡張されない問題の修正
+
+### 不具合原因名
+selectingRow/selectingColumnフラグの設定漏れ
+
+### なぜそうなったのか
+`selection.ts`の`addRow()`と`addColumn()`が`selectingRow`/`selectingColumn`フラグを`true`に設定していなかった。`selectRow()`と`selectColumn()`では正しく設定されていたが、Ctrl+クリックで呼ばれる`addRow()`/`addColumn()`パスでは設定が漏れていた。このため`updateRow()`/`updateColumn()`内の`if (!this.selectingRow) return`ガードでドラッグ操作がサイレントに無視されていた。
+
+### どうしたら今後は再発しないか
+- **行/列選択を開始する全メソッド（selectRow, addRow, extendToRow等）で、対応するフラグ（selectingRow/selectingColumn）の設定を統一する。** 新たに選択開始メソッドを追加する際は、フラグ設定のチェックリストを必ず確認する。
+
+---

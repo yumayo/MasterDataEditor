@@ -196,10 +196,11 @@
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
 }
 
-/* 選択された行ヘッダーのスタイル */
+/* 選択された行ヘッダーのスタイル（ドラッグ移動可能を示す grab カーソル付き） */
 .editor-table-row-header.selected {
     background-color: var(--background-color);
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
+    cursor: grab;
 }
 
 /* 非アクティブテーブルのヘッダー選択色（灰色系）: editor-table--inactive クラスが付与された場合 */

@@ -3,13 +3,22 @@ import {Selection} from "./selection";
 import {History} from "./history";
 import {MoveRowCommand} from "./command";
 
+/** 行ヘッダードラッグの操作モード */
+type RowDragMode = 'move' | 'select';
+
 /**
- * 行ドラッグ移動コントローラー
+ * 行ドラッグコントローラー
  *
  * 責務:
- * - 行ヘッダーの mousedown から5px以上のドラッグを検出する
- * - ドラッグ中はインジケーター（水平線）で挿入先を表示する
- * - mouseup で MoveRowCommand を実行して行を移動する
+ * - 選択済み行ヘッダーのドラッグ → 行移動（5px閾値、インジケーター表示）
+ * - 未選択行ヘッダーのドラッグ → 複数行選択（通過した行を選択範囲に追加）
+ * - 選択済み行ヘッダーのクリック（5px未満でmouseup）→ その行のみ選択
+ *
+ * mousedown 時に対象行が選択済みか（.selected クラス）を確認してモードを決定する。
+ * このハンドラは createRowHeaderClickHandler より先に登録されるため、
+ * selectRow() で .selected が付与される前の状態を正確に判定できる。
+ * moveモードでは stopImmediatePropagation で後続の selectRow を抑制し、
+ * 複数行選択を維持したままドラッグ移動を可能にする。
  *
  * インジケーターは position:fixed で body に追加する。
  * これにより wrapperElement の position:relative やスクロールコンテナの座標系に依存しない。
@@ -26,7 +35,7 @@ export class RowDragController {
     private readonly history: History;
     /** ドラッグ開始の閾値（px） */
     private static readonly DRAG_THRESHOLD = 5;
-    /** ドラッグ中かどうか */
+    /** ドラッグ中かどうか（moveモードでのみ使用） */
     private isDragging: boolean;
     /** mousedown 時点のY座標（閾値判定用） */
     private startY: number;
@@ -42,6 +51,10 @@ export class RowDragController {
     private readonly onMouseMove: (e: MouseEvent) => void;
     /** document.mouseup ハンドラ */
     private readonly onMouseUp: () => void;
+    /** mousedown時に決定される操作モード（選択済み行ならmove、未選択行ならselect） */
+    private mode: RowDragMode;
+    /** selectモードで選択ドラッグを開始済みかどうか */
+    private isSelectionDragging: boolean;
 
     constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
@@ -52,6 +65,8 @@ export class RowDragController {
         this.startY = 0;
         this.fromDomDataRowIndex = 0;
         this.currentInsertIndex = 0;
+        this.mode = 'move';
+        this.isSelectionDragging = false;
         // インジケーター要素を生成（position:fixed で body に追加し、非表示で待機）
         this.indicator = document.createElement('div');
         this.indicator.classList.add('row-drag-indicator');
@@ -72,58 +87,123 @@ export class RowDragController {
 
     /**
      * 行ヘッダーの mousedown から呼ばれる。
-     * ドラッグ候補状態にして、document レベルの mousemove/mouseup を登録する。
+     * 対象行が選択済みかを判定し、moveモードまたはselectモードでドラッグを開始する。
+     *
+     * - 選択済み行 → moveモード: stopImmediatePropagation で後続の selectRow を抑制する。
+     *   mouseup時に5px未満ならクリックとして扱い selectRow を呼ぶ。
+     * - 未選択行 → selectモード: 後続の createRowHeaderClickHandler が selectRow を呼ぶ。
+     *   ドラッグで通過した行を選択範囲に追加する。
      */
-    onRowHeaderMouseDown(domDataRowIndex: number, startY: number): void {
+    onRowHeaderMouseDown(domDataRowIndex: number, startY: number, rowHeaderElement: HTMLElement, event: MouseEvent): void {
+        const isSelected = rowHeaderElement.classList.contains('selected');
+        this.mode = isSelected ? 'move' : 'select';
         this.fromDomDataRowIndex = domDataRowIndex;
         this.startY = startY;
         this.isPending = true;
         this.isDragging = false;
+        this.isSelectionDragging = false;
+        if (this.mode === 'move') {
+            // moveモード: 後続の createRowHeaderClickHandler（selectRow）を抑制する。
+            // mousedown時点では複数行選択を維持し、mouseup時にクリック判定する。
+            // submitAndHide はセル編集の確定のため呼ぶ
+            this.table.getHandler().submitAndHide();
+            event.stopImmediatePropagation();
+        }
         document.addEventListener('mousemove', this.onMouseMove);
         document.addEventListener('mouseup', this.onMouseUp);
     }
 
     /**
      * document.mousemove ハンドラ。
-     * 閾値を超えたらドラッグ開始し、インジケーターを表示・更新する。
+     * moveモード: 閾値を超えたらドラッグ開始し、インジケーターを表示・更新する。
+     * selectモード: 閾値を超えたら行選択ドラッグを開始し、通過する行を選択範囲に追加する。
      */
     private handleMouseMove(clientY: number): void {
         if (this.isPending) {
             // 閾値判定
             if (Math.abs(clientY - this.startY) < RowDragController.DRAG_THRESHOLD) return;
-            // ドラッグ開始
             this.isPending = false;
-            this.isDragging = true;
-            this.indicator.style.display = '';
-            document.body.style.cursor = 'grabbing';
+            if (this.mode === 'move') {
+                // moveモード: ドラッグ開始
+                this.isDragging = true;
+                this.indicator.style.display = '';
+                document.body.style.cursor = 'grabbing';
+            } else {
+                // selectモード: 選択ドラッグ開始（selectRowはmousedownのclickHandlerで既に呼ばれている）
+                this.isSelectionDragging = true;
+            }
         }
-        if (!this.isDragging) return;
-        // マウス位置から挿入先インデックスを計算してインジケーターを配置する
-        this.updateIndicatorPosition(clientY);
+        if (this.mode === 'move') {
+            if (!this.isDragging) return;
+            // マウス位置から挿入先インデックスを計算してインジケーターを配置する
+            this.updateIndicatorPosition(clientY);
+        } else {
+            if (!this.isSelectionDragging) return;
+            // マウス位置から行インデックスを算出して選択範囲を拡張する
+            // updateRow は Selection の行番号体系（1始まり）を使うため +1 する
+            const rowIndex = this.getRowIndexFromClientY(clientY);
+            this.selection.updateRow(rowIndex + 1);
+        }
     }
 
     /**
      * document.mouseup ハンドラ。
-     * ドラッグ中であれば MoveRowCommand を実行して行を移動する。
+     * moveモード + ドラッグ中: MoveRowCommand を実行して行を移動する。
+     * moveモード + ドラッグ未開始（5px未満クリック）: selectRow でその行のみ選択する。
+     * selectモード: 選択を確定する（行移動は実行しない）。
      */
     private handleMouseUp(): void {
         document.removeEventListener('mousemove', this.onMouseMove);
         document.removeEventListener('mouseup', this.onMouseUp);
         document.body.style.cursor = '';
         this.indicator.style.display = 'none';
-        if (this.isDragging) {
-            this.isDragging = false;
-            const from = this.fromDomDataRowIndex;
-            const to = this.currentInsertIndex;
-            // from と to が等しい場合は移動なし（同じ位置への移動）
-            if (from !== to) {
-                const command = new MoveRowCommand(this.table, from, to);
-                const copyRange = this.selection.getCopyRange();
-                const anchor = this.selection.getAnchor();
-                this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
+        if (this.mode === 'move') {
+            if (this.isDragging) {
+                // moveモード: ドラッグ完了 → 行移動を実行する
+                this.isDragging = false;
+                const from = this.fromDomDataRowIndex;
+                const to = this.currentInsertIndex;
+                // from と to が等しい場合は移動なし（同じ位置への移動）
+                if (from !== to) {
+                    const command = new MoveRowCommand(this.table, from, to);
+                    const copyRange = this.selection.getCopyRange();
+                    const anchor = this.selection.getAnchor();
+                    this.history.executeCommand(command, {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column}, copyRange);
+                }
+            } else if (this.isPending) {
+                // moveモード + 5px未満: クリック操作として扱い、その行のみを選択する
+                // （mousedown時に stopImmediatePropagation で selectRow を抑制していたため、ここで呼ぶ）
+                // domDataRowIndex は0始まり、Selection の行番号は1始まり
+                this.selection.selectRow(this.fromDomDataRowIndex + 1);
+                this.selection.end();
             }
+        } else {
+            // selectモード: 選択ドラッグを終了する（Selection.end() で selecting フラグを落とす）
+            this.selection.end();
+            this.isSelectionDragging = false;
         }
         this.isPending = false;
+    }
+
+    /**
+     * マウスY座標からDOMデータ行インデックス（0始まり）を算出する。
+     * テーブル範囲外の場合は最も近い端の行を返す。
+     * storeRowCount === 0 の場合は行ヘッダーが存在しないためドラッグ自体が発生し得ない。
+     */
+    private getRowIndexFromClientY(clientY: number): number {
+        const tableElement = this.table.getTableElement();
+        const storeRowCount = this.table.getStoreRowIndices().length;
+        if (storeRowCount === 0) throw new Error('行が存在しないテーブルではドラッグ操作は発生し得ない');
+        // 各行の矩形を走査して、マウス位置を含む行を特定する
+        for (let i = 0; i < storeRowCount; i++) {
+            const rowElement = tableElement.children[i + 1] as HTMLElement;
+            const rect = rowElement.getBoundingClientRect();
+            if (clientY >= rect.top && clientY < rect.bottom) return i;
+        }
+        // テーブル範囲外の場合: 上側なら先頭行、下側なら末尾行
+        const firstRow = tableElement.children[1] as HTMLElement;
+        if (clientY < firstRow.getBoundingClientRect().top) return 0;
+        return storeRowCount - 1;
     }
 
     /**

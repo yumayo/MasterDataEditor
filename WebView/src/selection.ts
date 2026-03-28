@@ -250,6 +250,7 @@ export class Selection {
 
     /**
      * 現在の選択範囲に列を追加する（Ctrl+列ヘッダークリック時）
+     * selectingColumn を true にすることで、後続のドラッグ（updateColumn）で選択範囲を拡張できるようにする。
      */
     addColumn(column: number): void {
         const rowCount = this.editorTable.getRowCount();
@@ -262,11 +263,14 @@ export class Selection {
         // 行は全行を選択
         this.range = { startRow: 1, startColumn: newStartColumn, endRow: rowCount - 1, endColumn: newEndColumn };
         this.selecting = true;
+        this.selectingColumn = true;
+        this.selectingRow = false;
         this.updateRenderer();
     }
 
     /**
      * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
+     * selectingRow を true にすることで、後続のドラッグ（updateRow）で選択範囲を拡張できるようにする。
      */
     addRow(row: number): void {
         if (row < 1) return;
@@ -281,6 +285,8 @@ export class Selection {
         // 列は全列を選択
         this.range = { startRow: newStartRow, startColumn: 1, endRow: newEndRow, endColumn: columnCount - 1 };
         this.selecting = true;
+        this.selectingColumn = false;
+        this.selectingRow = true;
         this.updateRenderer();
     }
 
