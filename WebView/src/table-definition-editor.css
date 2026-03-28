@@ -28,10 +28,9 @@
     margin-top: 8px;
 }
 
-/* テキスト入力共通 */
-.table-definition-name-input,
-.table-definition-desc-input {
-    padding: 6px 8px;
+/* テキスト入力共通クラス（テーブル定義エディタ内の全入力フィールドで使用） */
+.table-definition-text-input {
+    padding: 4px 8px;
     font-size: 13px;
     color: var(--font-color);
     background-color: var(--background-color);
@@ -41,10 +40,15 @@
     box-sizing: border-box;
 }
 
-.table-definition-name-input:focus,
-.table-definition-desc-input:focus {
+.table-definition-text-input:focus {
     outline: none;
-    border-color: var(--selected-color);
+    border-color: var(--selection-color);
+}
+
+/* テーブル名・説明入力（共通クラスに加えてpadding上書き） */
+.table-definition-name-input,
+.table-definition-desc-input {
+    padding: 6px 8px;
 }
 
 /* バリデーションエラー */
@@ -60,10 +64,10 @@
     margin-bottom: 24px;
 }
 
-/* 列ヘッダー（ドラッグハンドル分の24px列を先頭に追加） */
+/* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
 .table-definition-column-header {
     display: grid;
-    grid-template-columns: 24px 1fr 120px 40px 40px;
+    grid-template-columns: 24px 1fr 120px 40px 120px 60px 32px 40px;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
@@ -74,10 +78,10 @@
     margin-bottom: 4px;
 }
 
-/* 列行（ドラッグハンドル分の24px列を先頭に追加） */
+/* 列行（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
 .table-definition-column-row {
     display: grid;
-    grid-template-columns: 24px 1fr 120px 40px 40px;
+    grid-template-columns: 24px 1fr 120px 40px 120px 60px 32px 40px;
     gap: 8px;
     padding: 4px 0;
     align-items: center;
@@ -115,37 +119,11 @@
     z-index: 1000;
 }
 
-/* 列名入力 */
-.column-name-input {
-    padding: 4px 8px;
-    font-size: 13px;
-    color: var(--font-color);
-    background-color: var(--background-color);
-    border: 1px solid rgba(128, 128, 128, 0.4);
-    border-radius: 3px;
-    width: 100%;
-    box-sizing: border-box;
-}
+/* 列名入力（共通クラスで全プロパティを提供、追加差分なし） */
 
-.column-name-input:focus {
-    outline: none;
-    border-color: var(--selected-color);
-}
-
-/* 型選択 */
+/* 型選択（共通クラスに追加してcursorのみ差分） */
 .column-type-select {
-    padding: 4px 8px;
-    font-size: 13px;
-    color: var(--font-color);
-    background-color: var(--background-color);
-    border: 1px solid rgba(128, 128, 128, 0.4);
-    border-radius: 3px;
     cursor: pointer;
-}
-
-.column-type-select:focus {
-    outline: none;
-    border-color: var(--selected-color);
 }
 
 /* PKチェックボックス */
@@ -189,7 +167,7 @@
 }
 
 .table-definition-add-column-button:hover {
-    border-color: var(--selected-color);
+    border-color: var(--selection-color);
     background-color: rgba(128, 128, 128, 0.05);
 }
 
@@ -236,4 +214,90 @@
 
 .explorer-add-table-button:hover {
     opacity: 1;
+}
+
+/* コメント入力・幅入力（共通クラスで全プロパティを提供、追加差分なし） */
+
+/* 詳細トグルボタン */
+.column-detail-toggle {
+    padding: 2px 4px;
+    font-size: 12px;
+    color: var(--font-color);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+    justify-self: center;
+}
+
+.column-detail-toggle:hover {
+    opacity: 1;
+    border-color: rgba(128, 128, 128, 0.4);
+}
+
+/* 詳細展開パネル（列行のgrid全幅にスパン） */
+.column-detail-panel {
+    grid-column: 1 / -1;
+    padding: 8px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-color: rgba(128, 128, 128, 0.05);
+    border-radius: 3px;
+    margin: 4px 0;
+}
+
+/* 参照タイプラジオグループ */
+.column-ref-type-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+/* 単純参照入力・デフォルト値入力（共通クラスで全プロパティを提供、追加差分なし） */
+
+/* 動的参照フィールド群 */
+.column-ref-dynamic-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* renderAsHtml チェック */
+.column-render-html-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+/* 詳細オプショントグル */
+.table-definition-advanced-toggle {
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--font-color);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    opacity: 0.7;
+}
+
+.table-definition-advanced-toggle:hover {
+    opacity: 1;
+}
+
+/* 詳細セクション */
+.table-definition-advanced-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 0;
+}
+
+/* reverseReferencePriority入力（共通クラスに追加してpaddingのみ差分） */
+.table-definition-reverse-ref-priority-input {
+    padding: 6px 8px;
 }

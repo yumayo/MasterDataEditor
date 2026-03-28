@@ -2798,3 +2798,17 @@ FK参照ヒント（`.cell-reference-hint`）は `cell.prepend` + `float: left` 
 参照系ヒント（`.cell-reference-hint` と `.cell-reverse-reference-hint`）にレイアウト変更を加える際は、もう一方にも同等の変更が必要かチェックリストで確認する。特にCSSプロパティのコピー時は、コピー元の全プロパティを一つずつ検証し、追加先に必要なものが漏れていないか確認する。
 
 ---
+
+## 194. dbdd476 — テーブル定義エディタで全スキーマプロパティを設定可能にする
+
+### 不具合原因名
+対称操作の片方の欠落（reverseReferencePriority の書き込みのみ実装、読み込みを忘れた）
+
+### なぜそうなったのか
+テーブル定義エディタに reverseReferencePriority の保存処理（applyReverseRefPriorityToSchema）を実装したが、既存テーブル編集モードで元スキーマの reverseReferencePriority をUI入力欄に反映する処理を実装し忘れた。EditTarget インターフェースにフィールドが存在せず、tab.ts のスキーマ読み取り箇所でも値を抽出していなかった。結果として、reverseReferencePriority が設定されたテーブルを定義エディタで開いて保存すると、値が黙って消失するデータ破壊バグとなっていた。コードレビュー（fix-scope-auditor, code-reviewer, adversarial-code-reviewer の3名が指摘）で発見し、フィードバックループで修正した。
+
+### どうしたら今後は再発しないか
+- プロパティの「書き込み」を実装したら、必ず「読み込み」側も同時に実装する。保存→再編集→再保存のラウンドトリップテストを必ず書く。
+- 新しいスキーマプロパティをUIに追加する際は、EditTarget の型定義 → tab.ts のスキーマ読み取り → コンストラクタの初期値反映 → 保存処理の書き出し、という4段階を対称的にチェックリスト化する。
+
+---

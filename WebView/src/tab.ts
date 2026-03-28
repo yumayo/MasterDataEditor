@@ -1124,12 +1124,19 @@ export class Tab {
             originalSchema: col,
         }));
 
+        // スキーマルートから reverseReferencePriority を読み取る（存在しなければ null）
+        const schemaObj = schema as Record<string, unknown>;
+        const rrpValue = typeof schemaObj['reverseReferencePriority'] === 'number'
+            ? schemaObj['reverseReferencePriority'] as number
+            : null;
+
         // EditTarget を構築して pendingEditTarget にセットする
         this.pendingEditTarget = {
             tableName,
             description: 'description' in schema ? schema.description as string : '',
             columns,
             primaryKeys,
+            reverseReferencePriority: rrpValue,
         };
 
         // テーブル定義タブを開く（activateTableDefinitionTab 内で pendingEditTarget が消費される）

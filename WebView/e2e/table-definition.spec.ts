@@ -1,6 +1,6 @@
-import { test, expect } from './fixtures/test';
+import { test, expect, test as base } from './fixtures/test';
 import type { Page, Locator } from '@playwright/test';
-import { readMockFileAsync } from './fixtures/mock-api';
+import { readMockFileAsync, installMockApiAsync, createDefaultFileSystem } from './fixtures/mock-api';
 import { expectCsvAsync } from './fixtures/test-utils';
 
 /**
@@ -584,5 +584,373 @@ test.describe('既存テーブルの定義編集', () => {
             { key: 1, name: 'label', type: 'string' },
             { key: 2, name: 'value', type: 'int' },
         ]);
+    });
+});
+
+// ============================================================
+// テーブル定義エディタ — 全スキーマプロパティ設定テスト
+// ============================================================
+
+/**
+ * comment/width/reference/default/renderAsHtml/reverseReferencePriority を持つ
+ * スキーマをモックファイルシステムに登録するためのカスタムフィクスチャ。
+ * 既存テーブル編集テスト（テスト6, 7）で使用する。
+ */
+const RICH_SCHEMA = JSON.stringify({
+    header: [
+        { key: 0, name: "id", type: "int", comment: "識別子", width: 80 },
+        { key: 1, name: "enemy_id", type: "int", comment: "敵ID", width: 120, reference: "enemy.id" },
+        { key: 2, name: "label", type: "string", comment: "表示名", width: 200 },
+    ],
+    primary_key: ["id"],
+    reverseReferencePriority: 3,
+});
+
+const RICH_CSV = [
+    "id,enemy_id,label",
+    "1,10,スライム",
+    "2,20,ドラゴン",
+].join("\n");
+
+interface RichSchemaFixtures {
+    richSchemaPage: void;
+}
+
+const richSchemaTest = base.extend<RichSchemaFixtures>({
+    richSchemaPage: async ({ page }, use) => {
+        const fs = createDefaultFileSystem();
+        fs["schema/drop_item.json"] = RICH_SCHEMA;
+        fs["data/drop_item.csv"] = RICH_CSV;
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await use();
+    },
+});
+
+test.describe('テーブル定義エディタ - 全スキーマプロパティ', () => {
+
+    test('新規作成モードでcomment・widthを設定して保存できる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // テーブル名を入力
+        await getNameInput(page).fill('monster');
+
+        // 1列目: id (int, PK, comment: "ID", width: 100)
+        const row0 = page.locator('.table-definition-column-row').nth(0);
+        await row0.locator('.column-name-input').fill('id');
+        await row0.locator('.column-type-select').selectOption('int');
+        await row0.locator('.column-pk-checkbox').check();
+        await row0.locator('.column-comment-input').fill('ID');
+        await row0.locator('.column-width-input').fill('100');
+
+        // 2列目: name (string, comment: "名前", width: 200)
+        await getAddColumnButton(page).click();
+        const row1 = page.locator('.table-definition-column-row').nth(1);
+        await row1.locator('.column-name-input').fill('name');
+        await row1.locator('.column-type-select').selectOption('string');
+        await row1.locator('.column-comment-input').fill('名前');
+        await row1.locator('.column-width-input').fill('200');
+
+        // 保存
+        await getSaveButton(page).click();
+
+        // 定義エディタタブが閉じられるのを待つ
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONを検証: comment と width が含まれていること
+        const schemaJson = await readMockFileAsync(page, 'schema/monster.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int', comment: 'ID', width: 100 },
+            { key: 1, name: 'name', type: 'string', comment: '名前', width: 200 },
+        ]);
+        expect(schema.primary_key).toEqual(['id']);
+    });
+
+    test('新規作成モードでreferenceを設定して保存できる（単純参照）', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // テーブル名を入力
+        await getNameInput(page).fill('monster_skill');
+
+        // 1列目: id (int, PK)
+        const row0 = page.locator('.table-definition-column-row').nth(0);
+        await row0.locator('.column-name-input').fill('id');
+        await row0.locator('.column-type-select').selectOption('int');
+        await row0.locator('.column-pk-checkbox').check();
+
+        // 2列目: monster_id (int, reference: "monster.id")
+        await getAddColumnButton(page).click();
+        const row1 = page.locator('.table-definition-column-row').nth(1);
+        await row1.locator('.column-name-input').fill('monster_id');
+        await row1.locator('.column-type-select').selectOption('int');
+        // 展開パネルを開く
+        await row1.locator('.column-detail-toggle').click();
+        const panel1 = row1.locator('.column-detail-panel');
+        await expect(panel1).toBeVisible();
+        // 単純参照ラジオを選択
+        await panel1.locator('.column-ref-type-simple').check();
+        // 参照式を入力
+        await panel1.locator('.column-ref-simple-input').fill('monster.id');
+
+        // 保存
+        await getSaveButton(page).click();
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONを検証: reference が含まれていること
+        const schemaJson = await readMockFileAsync(page, 'schema/monster_skill.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'monster_id', type: 'int', reference: 'monster.id' },
+        ]);
+    });
+
+    test('新規作成モードでreferenceを設定して保存できる（動的参照）', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // テーブル名を入力
+        await getNameInput(page).fill('dynamic_ref_test');
+
+        // 1列目: id (int, PK)
+        const row0 = page.locator('.table-definition-column-row').nth(0);
+        await row0.locator('.column-name-input').fill('id');
+        await row0.locator('.column-type-select').selectOption('int');
+        await row0.locator('.column-pk-checkbox').check();
+
+        // 2列目: table_id (int, reference: "table.id" — 単純参照)
+        await getAddColumnButton(page).click();
+        const row1 = page.locator('.table-definition-column-row').nth(1);
+        await row1.locator('.column-name-input').fill('table_id');
+        await row1.locator('.column-type-select').selectOption('int');
+        await row1.locator('.column-detail-toggle').click();
+        const panel1 = row1.locator('.column-detail-panel');
+        await expect(panel1).toBeVisible();
+        await panel1.locator('.column-ref-type-simple').check();
+        await panel1.locator('.column-ref-simple-input').fill('table.id');
+
+        // 3列目: record_id (int, 動的参照)
+        await getAddColumnButton(page).click();
+        const row2 = page.locator('.table-definition-column-row').nth(2);
+        await row2.locator('.column-name-input').fill('record_id');
+        await row2.locator('.column-type-select').selectOption('int');
+        await row2.locator('.column-detail-toggle').click();
+        const panel2 = row2.locator('.column-detail-panel');
+        await expect(panel2).toBeVisible();
+        // 動的参照ラジオを選択
+        await panel2.locator('.column-ref-type-dynamic').check();
+        // 動的参照の各フィールドを入力
+        await panel2.locator('.column-ref-dynamic-source-table').fill('table');
+        await panel2.locator('.column-ref-dynamic-source-match-column').fill('id');
+        await panel2.locator('.column-ref-dynamic-source-match-value').fill('table_id');
+        await panel2.locator('.column-ref-dynamic-dest-table').fill('master');
+        await panel2.locator('.column-ref-dynamic-dest-column').fill('id');
+
+        // 保存
+        await getSaveButton(page).click();
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONを検証: 動的参照オブジェクトが含まれていること
+        const schemaJson = await readMockFileAsync(page, 'schema/dynamic_ref_test.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header[0]).toEqual({ key: 0, name: 'id', type: 'int' });
+        expect(schema.header[1]).toEqual({ key: 1, name: 'table_id', type: 'int', reference: 'table.id' });
+        expect(schema.header[2]).toEqual({
+            key: 2, name: 'record_id', type: 'int',
+            reference: {
+                sourceTable: 'table',
+                sourceMatchColumn: 'id',
+                sourceMatchValue: 'table_id',
+                destTable: 'master',
+                destColumn: 'id',
+            },
+        });
+    });
+
+    test('新規作成モードでdefault・renderAsHtmlを設定して保存できる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // テーブル名を入力
+        await getNameInput(page).fill('with_options');
+
+        // 1列目: id (int, PK)
+        const row0 = page.locator('.table-definition-column-row').nth(0);
+        await row0.locator('.column-name-input').fill('id');
+        await row0.locator('.column-type-select').selectOption('int');
+        await row0.locator('.column-pk-checkbox').check();
+
+        // 2列目: desc (string, default: "未設定", renderAsHtml: true)
+        await getAddColumnButton(page).click();
+        const row1 = page.locator('.table-definition-column-row').nth(1);
+        await row1.locator('.column-name-input').fill('desc');
+        await row1.locator('.column-type-select').selectOption('string');
+        // 展開パネルを開いて default と renderAsHtml を設定
+        await row1.locator('.column-detail-toggle').click();
+        const panel1 = row1.locator('.column-detail-panel');
+        await expect(panel1).toBeVisible();
+        await panel1.locator('.column-default-input').fill('未設定');
+        await panel1.locator('.column-render-html-checkbox').check();
+
+        // 保存
+        await getSaveButton(page).click();
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONを検証: default と renderAsHtml が含まれていること
+        const schemaJson = await readMockFileAsync(page, 'schema/with_options.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+            { key: 1, name: 'desc', type: 'string', default: '未設定', renderAsHtml: true },
+        ]);
+    });
+
+    test('新規作成モードでreverseReferencePriorityを設定して保存できる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        // テーブル名を入力
+        await getNameInput(page).fill('priority_test');
+
+        // 詳細オプションを展開してreverseReferencePriorityを設定
+        await page.locator('.table-definition-advanced-toggle').click();
+        const advancedSection = page.locator('.table-definition-advanced-section');
+        await expect(advancedSection).toBeVisible();
+        await advancedSection.locator('.table-definition-reverse-ref-priority-input').fill('2');
+
+        // 1列目: id (int, PK)
+        const row0 = page.locator('.table-definition-column-row').nth(0);
+        await row0.locator('.column-name-input').fill('id');
+        await row0.locator('.column-type-select').selectOption('int');
+        await row0.locator('.column-pk-checkbox').check();
+
+        // 保存
+        await getSaveButton(page).click();
+        const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
+        await expect(defTabButton).toHaveCount(0);
+
+        // スキーマJSONを検証: reverseReferencePriority が含まれていること
+        const schemaJson = await readMockFileAsync(page, 'schema/priority_test.json');
+        const schema = JSON.parse(schemaJson);
+        expect(schema.reverseReferencePriority).toBe(2);
+        expect(schema.header).toEqual([
+            { key: 0, name: 'id', type: 'int' },
+        ]);
+        expect(schema.primary_key).toEqual(['id']);
+    });
+});
+
+/**
+ * 既存テーブル編集テスト — comment/width/reference が読み込まれることを検証する。
+ * カスタムフィクスチャで comment/width/reference を持つスキーマを事前登録する。
+ */
+richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロパティ（既存テーブル編集）', () => {
+
+    richSchemaTest('既存テーブル編集でcomment・width・reference・reverseReferencePriorityが読み込まれる', async ({ page, richSchemaPage }) => {
+        void richSchemaPage;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'drop_item' })).toBeVisible();
+
+        // 右クリック→「テーブル定義を編集」をクリック
+        await openEditDefinitionAsync(page, 'drop_item');
+        const editor = getEditor(page);
+        await expect(editor).toBeVisible();
+
+        // テーブル名入力欄に既存テーブル名が表示されること
+        await expect(getNameInput(page)).toHaveValue('drop_item');
+
+        // reverseReferencePriority が読み込まれ、詳細セクションが展開されていること
+        const advancedSection = page.locator('.table-definition-advanced-section');
+        await expect(advancedSection).toBeVisible();
+        await expect(advancedSection.locator('.table-definition-reverse-ref-priority-input')).toHaveValue('3');
+
+        // 列定義行が3行存在すること
+        const columnRows = page.locator('.table-definition-column-row');
+        await expect(columnRows).toHaveCount(3);
+
+        // 1列目: id, int, PK=checked, comment="識別子", width=80
+        const row0 = columnRows.nth(0);
+        await expect(row0.locator('.column-name-input')).toHaveValue('id');
+        await expect(row0.locator('.column-type-select')).toHaveValue('int');
+        await expect(row0.locator('.column-pk-checkbox')).toBeChecked();
+        await expect(row0.locator('.column-comment-input')).toHaveValue('識別子');
+        await expect(row0.locator('.column-width-input')).toHaveValue('80');
+
+        // 2列目: enemy_id, int, comment="敵ID", width=120, reference="enemy.id"
+        const row1 = columnRows.nth(1);
+        await expect(row1.locator('.column-name-input')).toHaveValue('enemy_id');
+        await expect(row1.locator('.column-type-select')).toHaveValue('int');
+        await expect(row1.locator('.column-comment-input')).toHaveValue('敵ID');
+        await expect(row1.locator('.column-width-input')).toHaveValue('120');
+        // 展開パネルを開いてreference値を確認
+        await row1.locator('.column-detail-toggle').click();
+        const panel1 = row1.locator('.column-detail-panel');
+        await expect(panel1).toBeVisible();
+        await expect(panel1.locator('.column-ref-type-simple')).toBeChecked();
+        await expect(panel1.locator('.column-ref-simple-input')).toHaveValue('enemy.id');
+
+        // 3列目: label, string, comment="表示名", width=200, 参照なし
+        const row2 = columnRows.nth(2);
+        await expect(row2.locator('.column-name-input')).toHaveValue('label');
+        await expect(row2.locator('.column-type-select')).toHaveValue('string');
+        await expect(row2.locator('.column-comment-input')).toHaveValue('表示名');
+        await expect(row2.locator('.column-width-input')).toHaveValue('200');
+        await row2.locator('.column-detail-toggle').click();
+        const panel2 = row2.locator('.column-detail-panel');
+        await expect(panel2).toBeVisible();
+        await expect(panel2.locator('.column-ref-type-none')).toBeChecked();
+    });
+
+    richSchemaTest('既存テーブル編集でcomment・widthを変更して保存できる（reverseReferencePriorityも維持される）', async ({ page, richSchemaPage }) => {
+        void richSchemaPage;
+        const explorer = page.locator('#explorer');
+        await expect(explorer.locator('.explorer-file', { hasText: 'drop_item' })).toBeVisible();
+
+        // 右クリック→「テーブル定義を編集」をクリック
+        await openEditDefinitionAsync(page, 'drop_item');
+        await expect(getEditor(page)).toBeVisible();
+
+        // 1列目のcommentを変更: "識別子" → "主キー"
+        const columnRows = page.locator('.table-definition-column-row');
+        const row0 = columnRows.nth(0);
+        await row0.locator('.column-comment-input').fill('主キー');
+        // 1列目のwidthを変更: 80 → 150
+        await row0.locator('.column-width-input').fill('150');
+
+        // 3列目のcommentを変更: "表示名" → "ラベル"
+        const row2 = columnRows.nth(2);
+        await row2.locator('.column-comment-input').fill('ラベル');
+
+        // 保存
+        await getSaveButton(page).click();
+        await expect(getEditor(page)).toHaveCount(0);
+
+        // スキーマJSONを検証: comment と width の変更が反映されていること
+        const schemaJson = await readMockFileAsync(page, 'schema/drop_item.json');
+        const schema = JSON.parse(schemaJson);
+        // 1列目: comment="主キー", width=150
+        expect(schema.header[0].comment).toBe('主キー');
+        expect(schema.header[0].width).toBe(150);
+        // 2列目: comment は変更なし "敵ID", reference は維持 "enemy.id"
+        expect(schema.header[1].comment).toBe('敵ID');
+        expect(schema.header[1].width).toBe(120);
+        expect(schema.header[1].reference).toBe('enemy.id');
+        // 3列目: comment="ラベル", width は変更なし 200
+        expect(schema.header[2].comment).toBe('ラベル');
+        expect(schema.header[2].width).toBe(200);
+        // reverseReferencePriority がスキーマルートに維持されていること
+        expect(schema.reverseReferencePriority).toBe(3);
     });
 });
