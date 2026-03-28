@@ -12,6 +12,8 @@
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table + storeRowIndices
 - `/WebView/src/tab.ts` - Tab management, EditorTable factory, pane stack, special tabs (settings/diff/ER diagram)
+- `/WebView/src/bookmark-panel.ts` - Bookmark panel (cell-level bookmarks, persistence to bookmarks.json)
+- `/WebView/src/command-palette.ts` - Command palette (table fuzzy search, query式, @bookmark prefix)
 - `/WebView/src/er-diagram-tab.ts` - ER diagram SVG tab (schema→node/edge→SVG)
 - `/WebView/src/er-diagram-layout.ts` - Grid layout for ER diagram nodes
 - `/WebView/src/in-memory-table-store.ts` - Central data store + refCount + Dirty management
@@ -29,15 +31,18 @@
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
 - **register/unregister 非対称**: **3回再発**
-- **CSS hardcoded colors**: 18+ 回再発 (+er-diagram-tab.css 全色ハードコード)
+- **CSS hardcoded colors**: 19+ 回再発 (+bookmark-panel #FF8C00)
 - **フォールバック禁止 (??)**: 17+ 回再発
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
-- **fire-and-forget Promise without .catch()**: 複数箇所
+- **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
-- **public API漏出→呼び出しパターン拡散**: applyTypedCellStyle が public で createCell/setCellValue の2箇所から個別呼出 (applyTextOrHtml+applyTypedCellStyleペア)
+- **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undoで消失
+- **public API漏出→呼び出しパターン拡散**: applyTypedCellStyle が public で createCell/setCellValue の2箇所から個別呼出, **sidebar が readonly(public)に格上げ**
+- **CSSセレクタインジェクション(新パターン)**: querySelector に data属性値を直接結合→特殊文字でクエリ破壊
+- **PK値変更によるブックマーク永続データ不整合(新パターン)**: PK編集後にbookmarks.json/DOM属性が陳腐化
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
 - **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
@@ -107,8 +112,19 @@
 - 数値入力フィルタ: keydown で isAllowedNumericKey。ただしIME composing中はスキップ
 - applyTypedCellStyle: public で createCell + setCellValue の2経路から呼出（パターン拡散リスク）
 
+## Bookmark Feature Patterns (2026-03-28)
+- bookmark-panel.ts: DOMがSSOT、data-*属性でエントリ情報保持、永続化はbookmarks.json
+- CSSセレクタインジェクション: querySelector に data属性値を直接結合（致命的）
+- data-bookmarked属性: createCell/reloadCellsFromStore/ソート/行操作で復元なし（致命的）
+- PK値変更: bookmarks.json/DOM data-pk-valueが陳腐化（致命的）
+- sidebar: private→readonly(public)に変更、EditorTableHandler経由のチェーンコール発生
+- PK列右クリック: 追加=1列、削除=全列の非対称性
+- renderQueryResultsAsync: fire-and-forget呼出し（.catch無し）
+- コンテキストメニュー: PK列/非PK列で追加メニューコード完全コピペ
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ISSUE_0125 セルブックマーク: 致命的3件、重要6件、軽微3件 (CSSセレクタインジェクション, DOM属性復元漏れ, PK値不整合, sidebar公開, 型安全性, 入力検証, コピペ)
 - (2026-03-28) Typed Input Control: 致命的2件、重要5件、軽微3件 (bool文字入力漏れ, float精度破壊, Undo未記録, publicメソッド漏出)
 - (2026-03-28) Search Replace: 致命的2件、重要5件、軽微3件 (wholeWord無視, 複数テーブルUndo破壊, 列ソート非対応)
 - (2026-03-28) ER Diagram Tab: 致命的2件、重要5件、軽微3件 (document listener leak, 生焼け, leaveSettingsMode欠落, parseSchemaクラッシュ)

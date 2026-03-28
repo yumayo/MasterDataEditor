@@ -15,6 +15,20 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
+### 最新レビュー結果（2026-03-28 ISSUE_0125 セルブックマーク機能改修）
+
+#### ISSUE_0125 セルブックマーク機能（v2） 評価: A-
+- 変更内容: 前回指摘(2026-03-28旧版)の改修。bookmark-entry に role/tabindex 追加、bookmark-entry-delete に aria-label 追加、bookmark-group に role="group"、bookmark-group-header に role="heading" aria-level="3" 追加、エントリ表示形式を「pk | 列名: 表示名 (pk)」形式に改善、0件時の空メッセージ対応、@bookmark コマンドパレット対応、Ctrl+D トグル、セルレベルブックマーク（data-bookmarked属性）追加。
+- 前回からの修正確認: bookmark-entry に role="button" tabindex="0" が付与済み。bookmark-entry-delete に aria-label="item/name: Sword のブックマークを削除"が付与済み。bookmark-group-header に role="heading" aria-level="3" が付与済み。bookmark-group に role="group" が付与済み。0件空メッセージが「該当する項目がありません」で表示（@bookmark 0件テストで確認）。エントリ表示「1 name: Sword (1)」と bookmark-entry-column で区切り文字が入った。
+- 良い点: bookmark-group に role="group" + bookmark-group-header に role="heading" aria-level="3" という ARIA 複合ウィジェット構造が正しく設計されている。bookmark-entry に role="button" + tabindex="0" でキーボードナビゲーション可能。bookmark-entry-delete に aria-label="item/name: Sword のブックマークを削除" でエントリのコンテキストを含む説明が付与されており前回の最大問題が解消。data-bookmarked="" 属性がセル DOM に正確に付与されており SSOT が正しい。コマンドパレット @bookmark 候補が「item | name: Sword (1)」形式で人間可読性が高い（スクリーンショット確認）。0件時の「該当する項目がありません」メッセージが正常表示（前回の🟡が解消）。bookmark-entry-column span（「name: 」）が PK と表示名の視覚的セパレーターとして機能し「1 name: Sword (1)」という読みやすい構造になった（前回「1Sword×」連続表示の解消）。アプリ再起動後も bookmark-panel-content に正確にエントリが復元されている（JSON永続化確認）。
+- 修正必須(🔴): ブックマーク済みセルのオレンジ三角マーク（::after疑似要素）がスクリーンショットで確認できない。DOMダンプ上では data-bookmarked="" 属性が付与されているが、スクリーンショット「Ctrl+Dでブックマーク追加するとdata-bookmarked属性が付与される」でセルの右上に三角マークが表示されていない（セル右端に小さな青い四角形のようなものが見えるが、これは fill-handle である可能性が高い）。CSS で [data-bookmarked]::after { content: ""; border-right: 6px solid orange; ... } を実装している場合、DOMダンプには疑似要素が出力されないため確認不能だが、スクリーンショットでオレンジ三角が視覚的に確認できない。機能の視覚的フィードバックとして最も重要な部分が見えていないとプランナーが「ブックマーク済みかどうか」を判別できない。
+- 修正必須(🔴): bookmark-entry-pk-suffix「 (1)」の表示が冗長。エントリの表示が「1 name: Sword (1)」となり、先頭に「1」、末尾に「(1)」と同じPK値が2回表示されている。プランナーが「どちらが正しい情報か」と混乱する。末尾の `bookmark-entry-pk-suffix` を削除するか、先頭の `bookmark-entry-pk` を削除して「name: Sword (1)」のみにすべき。
+- 修正必須(🔴): `bookmark-panel-content` が空のとき（ブックマーク0件でBOOKMARKSパネルを開いた直接表示）の空状態メッセージがない。「@bookmark 0件」テストでは @bookmark コマンドパレット経由の「該当する項目がありません」が表示されているが、BOOKMARKSパネル自体のコンテンツエリアが空のときに何も表示されないとプランナーが「ツールが壊れているのか、まだ追加していないのか」を判別できない（「ブックマークはありません。Ctrl+D または右クリックで追加できます」等のガイダンステキストが必要）。なお DOMダンプを見ると `bookmark-panel-content` は空 div ではなく bookmark-group が追加済みの状態でダンプされているため、0件時の表示は別途確認が必要。
+- 修正必須(🔴): activity-bar-item の bookmarks SVG に aria-hidden="true" がない（全サイクル継続課題）。スクリーンリーダーがSVGパスを無意味に読み上げる。
+- 改善推奨(🟡): `bookmark-group-header` に折りたたみ機能がない（前回からの継続課題）。テーブルが増えるとスクロールが必要になる。
+- 改善推奨(🟡): ブックマークジャンプ後に対象セルへのフォーカスが視覚的に分かるか不明（前回継続課題）。スクリーンショット「エントリクリックで該当テーブルの該当セルにジャンプする」でname列が選択されているように見えるが、「今ジャンプした」という一時的なハイライト演出がない。
+- 参考: fill-handle が display:block で残存（left:207px, top:38px）（全サイクル継続課題）。
+
 ### 最新レビュー結果（2026-03-28 データ型別入力コントロール）
 
 #### データ型別入力コントロール 評価: B+
@@ -146,10 +160,10 @@
 - プラグインエラーのvalidation-panel-itemにrole="button"が付いているが、クリックしても何も起きない（2026-03-25新規発見）
 - notification-bell / notification-history がエラー通知フローにまだ残存（2026-03-28 第2ラウンドでも未修正）
 - 「トーストエリアがステータスバーの上方に表示される」テストが旧仕様を検証しており、テスト自体の削除または期待値修正が必要（2026-03-28 第2ラウンド発見）
-- bookmark-entry に role="button"/tabindex がない（2026-03-28 ブックマーク機能で新規発見）
-- bookmark-entry-delete の <button> に aria-label がない（2026-03-28 ブックマーク機能で新規発見）
-- bookmark-group-header に role/aria-label がない（validation-panel-group-header と同パターン）
-- bookmark-entry-pk / bookmark-entry-display 間のビジュアルセパレーターなし（「1Sword」と連続表示）
+- bookmark-entry-pk-suffix「(1)」がPK値と重複表示で冗長（ISSUE_0125で新規発見）
+- ブックマーク済みセルのオレンジ三角マーク（::after）がスクリーンショット上で確認不能（ISSUE_0125で発見）
+- bookmark-panel-content 0件時の空状態メッセージがBOOKMARKSパネル直接表示時にない（ISSUE_0125で確認要）
+- ※ 旧版で指摘した bookmark-entry role/tabindex, aria-label, bookmark-group-header role, セパレーター欠如 は全て修正済み（ISSUE_0125で解消確認）
 - er-node (<g>要素) に role="button"/tabindex がない（2026-03-28 ER図機能で新規発見）
 - er-diagram-svg に role="img"/aria-label がない（2026-03-28 ER図機能で新規発見）
 - er-legend の fill/stroke がCSSカスタムプロパティを使わずハードコード（テーマ切替時に破綻するリスク）
