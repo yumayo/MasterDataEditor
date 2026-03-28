@@ -93,3 +93,6 @@
 - `WebView/src/tab.ts` — コミット比較用DiffTabの生成・管理
 - `WebView/index.html` — ダイアログCSSのリンク追加
 - `WebView/e2e/version-compare.spec.ts` — **新規** Playwrightテスト
+
+## 補足
+バックエンドの実装は確認できないと思いますが、モック等を使用して確認をお願いします。
