@@ -38,7 +38,7 @@
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
 - **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失
 - **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
@@ -136,7 +136,7 @@
 - **操作パスの網羅漏れ(moveRow)**: insertRow系では7-8種の後処理、moveRowでは4種のみ（bug-report.md #7の再発）
 - **新規操作パス追加時の後処理チェックリスト**: evictOwnReferenceDataCache, refreshFilterDisplayIfActive, restoreBookmarkMarks, ensureTrailingBufferRow が漏れやすい
 
-## Table Definition Editor Patterns (2026-03-28)
+## Table Definition Editor Patterns (2026-03-28, updated ISSUE_0129)
 - **destroy()未実装**: indicator要素がdocument.bodyに永続残留、ErDiagramTabにはdestroy()があるのに未踏襲
 - **Redo未実装**: undoStackのみ、redoStack/Ctrl+Yなし。docコメント「Undo/Redo対応」が虚偽
 - **列削除後のUndoスタック陳腐化**: row.remove()がundoStackを無視→境界外アクセス
@@ -144,9 +144,15 @@
 - **dragSourceRowダミー要素**: nullの代わりにdocument.createElement('div')で生焼け回避
 - **updateIndicatorPosition/calculateInsertIndex**: insertIndex計算ロジック完全コピペ
 - tab.ts: 特殊タブ分岐が5種(通常/設定/差分/ER/定義)に増殖
+- **ISSUE_0129 CSVパーサ不一致(致命的)**: saveEditModeAsync内で split(',') を使用→csv.ts RFC4180準拠パーサと不一致→カンマ含むデータ破壊
+- **ISSUE_0129 テーブルリネーム時ゴーストファイル(致命的)**: 旧schema/csv未削除、エクスプローラー未更新、nameInput readOnly未設定
+- **ISSUE_0129 スキーマフィールド消失(致命的)**: references/default等の既存フィールドが保存時に丸ごと消える
+- **ISSUE_0129 pendingEditTarget生焼け**: メンバ変数を一時的な引数受け渡し場所として使用するアンチパターン
+- **ISSUE_0129 バリデーション/キャッシュ未更新**: closeTableDefinitionAndReopenTable後にvalidationPanel/referenceDataCache無効化なし
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ISSUE_0129 既存テーブル定義編集: 致命的3件、重要5件、軽微4件 (CSVパーサ不一致データ破壊, リネーム時ゴーストファイル, スキーマフィールド消失, pendingEditTarget生焼け, CRLF, バリデーション/キャッシュ未更新)
 - (2026-03-28) ISSUE_0128 列ドラッグ並び替え: 致命的3件、重要5件、軽微4件 (indicatorリーク, Redo未実装, 列削除後Undo破壊, ドラッグキャンセル未対応, lastIndicatorClientY初期値)
 - (2026-03-28) ISSUE_0127 FK列int値右揃え・ヒント左配置: 致命的2件、重要4件、軽微3件 (constant.ts列幅計算破壊, float:leftレイアウト脆弱性, CSSコメント不整合, applyTypedCellStyleパス漏れ, appendReferenceHint命名)
 - (2026-03-28) ISSUE_0126 行ドラッグ移動: 致命的3件、重要6件、軽微3件 (ソート中データ破壊, ミニテーブルガード欠落, moveRow後処理不足, destroyリスナー漏れ)
