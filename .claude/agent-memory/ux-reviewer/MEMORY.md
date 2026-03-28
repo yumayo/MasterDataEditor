@@ -15,7 +15,27 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-29 テーブル定義エディタ全プロパティUI対応）
+### 最新レビュー結果（2026-03-29 ISSUE_0120 タイムラインパネル・blameビュー）
+
+#### ISSUE_0120 変更履歴・監査ログ機能 評価: C+
+- 変更内容: アクティビティバーに history アイコン（時計SVG）追加。サイドバーに timeline-panel（TIMELINE）。行ヘッダー右クリックメニューに「変更履歴を表示/非表示」切り替え。blame-info div を editor-table-row-header 直下に追加しテキスト「著者名 日付」を表示。
+- 良い点: アクティビティバーへの統合が他パネルと一貫している。`activity-bar-item-active` の切替が正確（historyクリックでactiveクラスがfilesからhistoryに移動）。`timeline-panel` が `sidebar-panel-active` クラスを得てEXPLORERと排他的に切り替わる。`timeline-entry` × 3件（add/update/initial）のメッセージ・著者・日付の3要素が正確に表示。コンテキストメニューの「変更履歴を表示」→「変更履歴を非表示」のトグルが正確に動作（DOMダンプで各状態を確認）。blame 表示後に再度同じメニューで非表示にする対称設計が機能している。バッファ行（editor-table-empty-row, data-row-index="3"）にも blame-info が付与されており全行統一的に処理している。
+- 修正必須(🔴): `blame-info` が `editor-table-row-header`（height:20px固定）の中に子要素として追加されているため、行ヘッダーの高さが変わらず blame テキストがはみ出すかレイアウト破壊が起きる。DOMダンプ確認: `<div class="editor-table-cell editor-table-row-header selected" data-row-index="1" style="height: 20px; min-height: 20px; max-height: 20px; line-height: 20px; ...">2<div class="row-resize-handle"></div><div class="blame-info">Alice 2026-03-01</div></div>` で height が 20px 固定のまま。スクリーンショットでは行ヘッダーが2行表示（「2 / Alic...」）になっているが、行高さが固定のためデータセルとヘッダーの高さが一致しない。これは行ヘッダーの行高さをblame表示時に動的に拡張するか、blame-info を行ヘッダーの外に配置する設計変更が必要。
+- 修正必須(🔴): `blame-info` に `aria-label` も `role` もない。スクリーンリーダーは「Alice 2026-03-01」というテキストを読み上げるが、「これが何の情報（git blame）か」が不明。`aria-label="最終変更: Alice 2026-03-01"` 相当またはセルに `title` 属性での補完が必要。
+- 修正必須(🔴): `blame-info` のテキストフォーマットが「Alice 2026-03-01」というスペース区切りの連結文字列で、著者名と日付の構造的な区別がDOM上にない。著者名が「Bob Smith」のような複数単語の場合に著者名と日付の境界が不明確になる。`<span class="blame-author">Alice</span><span class="blame-date">2026-03-01</span>` のように構造化し、CSSで視覚的にも区別すべき。
+- 修正必須(🔴): `timeline-entry` の各要素（`timeline-entry-message` / `timeline-entry-author` / `timeline-entry-date`）に role・aria-label がない。スクリーンリーダーは「add item_c Charlie 2026-03-20」と連続したテキストとして読み上げ、コミットメッセージ・著者・日付の区別が伝わらない。`role="listitem"` + `timeline-entries` に `role="list"` + 各 `timeline-entry` に `aria-label="add item_c（Charlie、2026-03-20）"` 相当が必要。
+- 修正必須(🔴): `timeline-panel` の `sidebar-panel-header` に「TIMELINE」という英語ラベルのみで日本語テキストがない。他のパネル（EXPLORER/BOOKMARKS/SOURCE CONTROL）と異なり日本語対応されていない（他は英語のまま統一されているなら問題なし）。ただし「TIMELINE」はプランナーに馴染みのない用語であり、「変更履歴」のような日本語化が望ましい。
+- 修正必須(🔴): バッファ行（data-row-index="3"、`editor-table-empty-row`）に `blame-info>Charlie 2026-03-20</blame-info>` が付与されている。バッファ行はまだ保存されていないデータのない行であり、git blame の対象外のはずだが blame 情報が表示されている。プランナーが「4行目を最後に変更したのはCharlieか」と誤解する。バッファ行への blame 情報表示は意味的に不正確であり、表示を抑制すべき。
+- 修正必須(🔴): コンテキストメニューに「変更履歴を表示」が追加されているが、これが blame ビューを指していることと、サイドバーの TIMELINE パネルとの関係性が UI 上に説明がない。プランナーが「変更履歴を表示＝全体の履歴なのか、この行の履歴なのか」を判断できない。メニューテキストを「この行の変更履歴を表示（blame）」のように明確にするか、blame 表示後にサイドバーの TIMELINE パネルを自動的に開いてコンテキストを示すとよい。
+- 修正必須(🔴): activity-bar の history アイコン SVG に `aria-hidden="true"` がない（全サイクル継続課題）。
+- 改善推奨(🟡): `timeline-entry` がクリックできる（コミット詳細を表示する等）かどうかが DOMダンプからは判断できない。`timeline-entry-message` に hover スタイルや `cursor: pointer` があれば操作可能に見えるが、テストが「クリックで何かが起きること」を検証していない。クリックアクションが未実装なら `cursor: default` にしてクリックできないように見せるべき。将来的にはコミット詳細（変更されたセルのハイライト）へのジャンプが欲しい。
+- 改善推奨(🟡): TIMELINE パネルの `timeline-entries` が空の場合（git log がない、または初回コミット前）のエンプティステートメッセージがない。`bookmark-panel-content` と同様に「変更履歴がありません」等のガイダンスが必要。
+- 改善推奨(🟡): `blame-info` の著者名が長い場合（例: 「Hiroshi Tanaka」）に 20px ヘッダーからはみ出る問題がある。スクリーンショットでは「Alic...」「Bob...」「Cha...」と末尾が省略されているが、これは CSS の `overflow: hidden` または `text-overflow: ellipsis` による自動省略と推測される（DOMダンプのインラインスタイルに overflow 制御がない）。フル著者名を tooltip で確認できる `title` 属性が必要。
+- 改善推奨(🟡): 行高さ固定（20px）の状態で blame 情報を表示すると、行番号「2」と著者「Alic...」が縦に並んで表示されている（スクリーンショット確認）が、データセル（item_b / 200）との高さが不一致になっている可能性がある。行ヘッダーとデータセルの高さ同期が blame 表示・非表示の切替時に正しく機能しているかのテストが必要。
+- 改善推奨(🟡): fill-handle が `display:block` で残存（left:515px, top:59px）（全サイクル継続課題）。
+- 参考: bug-report #3（対称操作の片方のみ実装）パターン → 「変更履歴を表示」→「変更履歴を非表示」のトグルは正確に機能している。ただし show/hide の対称性（bug-report #77, #84）に関して、blame-info の DOM への追加・削除が show/hide 両方のパスで正確にクリーンアップされているかを確認すること（タブ切替、テーブル切替、行の挿入・削除時に blame-info が残留しないか）。
+
+### 以前のレビュー結果（2026-03-29 テーブル定義エディタ全プロパティUI対応）
 
 #### テーブル定義エディタ全プロパティUI対応 評価: B+
 - 変更内容: comment/width常時表示、詳細パネルアコーディオン（column-detail-toggle/column-detail-panel）、参照タイプラジオ3択（none/simple/dynamic）、default/renderAsHtml/reverseReferencePriority 入力フィールド追加。
@@ -284,3 +304,10 @@
 - column-ref-dynamic-fields の5プレースホルダーが英語技術用語のまま（2026-03-29 全プロパティUI対応で新規発見）
 - column-render-html-wrapper の label/checkbox が id/for 未関連付け（2026-03-29 全プロパティUI対応で新規発見）
 - renderAsHtml / reverseReferencePriority ラベルが英語camelCaseのまま（2026-03-29 全プロパティUI対応で新規発見）
+- blame-info が editor-table-row-header（height:20px固定）の子要素に追加されており行高さが不一致（ISSUE_0120で新規発見）
+- blame-info の著者名と日付が構造化されておらず、複数単語の著者名で境界が不明確（ISSUE_0120で新規発見）
+- timeline-entry の message/author/date に role/aria-label がなくスクリーンリーダーが連続テキストとして読む（ISSUE_0120で新規発見）
+- バッファ行（editor-table-empty-row）に blame-info が付与されており意味的に不正確（ISSUE_0120で新規発見）
+- TIMELINE パネルに空状態メッセージがない（ISSUE_0120で新規発見）
+- blame-info に aria-label / role がなく「何の情報か」がスクリーンリーダーに伝わらない（ISSUE_0120で新規発見）
+- 行ヘッダーとデータセルの高さ同期が blame 表示切替時に正しく機能しているかのテストが存在しない（ISSUE_0120で新規発見）
