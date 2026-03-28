@@ -54,7 +54,7 @@ export class EditorTable {
     private readonly referenceDataCache: ReferenceDataCache;
     /** テーブルデータの中央ストア（セル編集の同期用） */
     private readonly store: InMemoryTableStore;
-    /** 参照箇所を表示するサイドバー */
+    /** 参照箇所を表示するサイドバー（コンテキストメニュー・ブックマーク操作で使用） */
     private readonly sidebar: Sidebar;
 
     /** 参照ヒント管理モジュール */
@@ -574,7 +574,7 @@ export class EditorTable {
             if (allEntries.length > 0) {
                 menuItems.push({
                     label: '参照箇所を表示',
-                    action: () => { table.sidebar.showReferences(pkValue, allEntries); },
+                    action: () => { table.showReferences(pkValue, allEntries); },
                 });
             }
             if (canShowFormView) {
@@ -585,28 +585,39 @@ export class EditorTable {
                     action: () => { tabRef.showFormPanel(table.tableName, pkValue); },
                 });
             }
-            // ブックマーク追加/解除メニュー
+            // セルレベルのブックマーク追加/解除メニュー（修正10: PK列/非PK列のコードを共通化）
             if (canShowBookmark) {
-                if (table.sidebar.hasBookmark(table.tableName, pkValue)) {
-                    menuItems.push({
-                        label: 'ブックマークを解除',
-                        action: () => { table.sidebar.removeBookmark(table.tableName, pkValue); },
-                    });
-                } else {
-                    // 表示テキスト: PK列以外の最初の列の値を使う
-                    let displayText = '';
-                    const pkColumns = table.tableData.primaryKeyColumns;
-                    const colCount = table.getColumnCount();
-                    for (let c = 0; c < colCount; c++) {
-                        const headerName = table.getColumnHeaderValue(c);
-                        if (pkColumns.includes(headerName)) continue;
-                        displayText = table.getCellValueAt(position.row, c + 1);
-                        break;
+                const clickedCol = table.tableData.header[columnIndex];
+                const clickedColumnName = clickedCol ? clickedCol.name : '';
+                if (clickedColumnName !== '') {
+                    // PK列は行レベル判定、非PK列はセルレベル判定
+                    const isBookmarked = isPkColumn
+                        ? table.hasBookmarkForRow(table.tableName, pkValue)
+                        : table.hasBookmark(table.tableName, pkValue, clickedColumnName);
+                    if (isBookmarked) {
+                        menuItems.push({
+                            label: 'ブックマークを解除',
+                            action: () => {
+                                if (isPkColumn) {
+                                    // 行内の全ブックマークを削除し、該当行全セルの視覚マークも除去する
+                                    table.removeBookmarksForRow(table.tableName, pkValue);
+                                    table.removeBookmarkMarksForRow(position.row);
+                                } else {
+                                    table.removeBookmark(table.tableName, pkValue, clickedColumnName);
+                                    cell.removeAttribute('data-bookmarked');
+                                }
+                            },
+                        });
+                    } else {
+                        const cellValue = table.getCellValueAt(position.row, columnIndex + 1);
+                        menuItems.push({
+                            label: 'ブックマークに追加',
+                            action: () => {
+                                table.addBookmark(table.tableName, pkValue, clickedColumnName, cellValue);
+                                cell.setAttribute('data-bookmarked', '');
+                            },
+                        });
                     }
-                    menuItems.push({
-                        label: 'ブックマークに追加',
-                        action: () => { table.sidebar.addBookmark(table.tableName, pkValue, displayText); },
-                    });
                 }
             }
             table.contextMenu.show(e.clientX, e.clientY, menuItems);
@@ -1471,6 +1482,8 @@ export class EditorTable {
         // タブ切替時にフィルター状態が前回タブのままだと整合性が崩れるためリセットする。
         // ソートリセットと対称に、フィルター状態も UI と実態を一致させる。
         this.clearFilterState();
+        // セル再作成パス（ソート・行操作等）で消失した data-bookmarked 属性を復元する
+        this.restoreBookmarkMarks();
     }
 
     // =========================================================================
@@ -1936,6 +1949,93 @@ export class EditorTable {
         const pkValue = this.getRowPkValue(row);
         if (pkValue === '') return;
         this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
+    }
+
+    // =========================================================================
+    // ブックマーク操作ファサード（デメテルの法則: sidebar を直接公開せずファサードで中継する）
+    // =========================================================================
+
+    /**
+     * セルレベルでブックマークが存在するか確認する
+     */
+    hasBookmark(tableName: string, pkValue: string, columnName: string): boolean {
+        return this.sidebar.hasBookmark(tableName, pkValue, columnName);
+    }
+
+    /**
+     * 行レベルでブックマークが1件以上存在するか確認する（PK列右クリック用）
+     */
+    hasBookmarkForRow(tableName: string, pkValue: string): boolean {
+        return this.sidebar.hasBookmarkForRow(tableName, pkValue);
+    }
+
+    /**
+     * セルレベルでブックマークを追加する
+     */
+    addBookmark(tableName: string, pkValue: string, columnName: string, label: string): void {
+        this.sidebar.addBookmark(tableName, pkValue, columnName, label);
+    }
+
+    /**
+     * セルレベルでブックマークを削除する
+     */
+    removeBookmark(tableName: string, pkValue: string, columnName: string): void {
+        this.sidebar.removeBookmark(tableName, pkValue, columnName);
+    }
+
+    /**
+     * 行レベルで全ブックマークを削除する（PK列右クリック「ブックマークを解除」用）
+     */
+    removeBookmarksForRow(tableName: string, pkValue: string): void {
+        this.sidebar.removeBookmarksForRow(tableName, pkValue);
+    }
+
+    /**
+     * REFERENCESパネルに逆参照エントリを表示する（コンテキストメニュー「参照箇所を表示」用）
+     */
+    showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
+        this.sidebar.showReferences(pkValue, entries);
+    }
+
+    /**
+     * 指定行の全データセルから data-bookmarked 属性を除去する
+     * PK列右クリックの「ブックマークを解除」（行レベル一括削除）で使用する
+     */
+    private removeBookmarkMarksForRow(row: number): void {
+        const rowElement = this.element.children[row] as HTMLElement;
+        // 修正6: 設計上 row は有効なDOM行インデックスであるべき
+        if (!rowElement) throw new Error(`[EditorTable.removeBookmarkMarksForRow] rowElement が null: row=${row}`);
+        const cells = rowElement.querySelectorAll<HTMLElement>('.editor-table-cell[data-bookmarked]');
+        for (let i = 0; i < cells.length; i++) {
+            cells[i].removeAttribute('data-bookmarked');
+        }
+    }
+
+    /**
+     * ストアの行データからブックマーク済みセルを検出し data-bookmarked 属性を復元する。
+     * reloadCellsFromStore() 末尾から呼ばれ、セル再作成後にブックマーク視覚マークを回復する。
+     */
+    private restoreBookmarkMarks(): void {
+        // ミニテーブルや差分タブではブックマーク不要
+        if (this.isMiniTable) return;
+        if (this.tab === false) return;
+        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
+            ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
+            : -1;
+        if (pkColIndex === -1) return;
+        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+            const domRow = domDataRow + 1;
+            const pkValue = this.getCellValueAt(domRow, pkColIndex + 1);
+            if (pkValue === '') continue;
+            for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
+                const columnName = this.tableData.header[domCol].name;
+                if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
+                    this.getCell(domRow, domCol + 1).setAttribute('data-bookmarked', '');
+                } else {
+                    this.getCell(domRow, domCol + 1).removeAttribute('data-bookmarked');
+                }
+            }
+        }
     }
 
     // =========================================================================

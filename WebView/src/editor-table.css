@@ -305,6 +305,21 @@
 .editor-table-cell-focused {
 }
 
+/* ブックマーク済みセルの視覚マーク: 右上にオレンジ色の三角形を表示する */
+.editor-table-cell[data-bookmarked] {
+    position: relative;
+}
+.editor-table-cell[data-bookmarked]::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    border-style: solid;
+    border-width: 0 8px 8px 0;
+    border-color: transparent #FF8C00 transparent transparent;
+    pointer-events: none;
+}
+
 /* ソートインジケーター: リサイズハンドルの左に配置、右寄せ。
    arrowPair（矢印縦積み）と prioritySpan（優先度番号）を横並びで配置する。 */
 .sort-indicator {

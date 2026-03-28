@@ -1,6 +1,6 @@
 import {test, expect} from './fixtures/test';
 import {Page, Locator} from '@playwright/test';
-import {installMockApiAsync, MockFileSystem} from './fixtures/mock-api';
+import {installMockApiAsync, MockFileSystem, readMockFileAsync} from './fixtures/mock-api';
 import {getDataCell} from './fixtures/test-utils';
 
 /**
@@ -45,8 +45,9 @@ function createBookmarkTestFileSystem(): MockFileSystem {
  * テーブルを開いてエディターテーブルが表示されるまで待機する
  */
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
+    // .explorer-file-name に限定する（ブックマークパネルの .bookmark-group-header との重複を避ける）
     const explorer = page.locator('#explorer');
-    await explorer.getByText(tableName, { exact: true }).click();
+    await explorer.locator('.explorer-file-name', {hasText: tableName}).click();
     const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
     await expect(table).toBeVisible();
     return table;
@@ -87,6 +88,45 @@ async function rightClickCellAsync(page: Page, table: Locator, rowIndex: number,
 async function clickContextMenuItemAsync(page: Page, label: string): Promise<void> {
     const menu = page.locator('.context-menu.visible');
     await menu.locator('.context-menu-item', {hasText: label}).click();
+}
+
+/**
+ * 指定セルをクリックしてフォーカスを合わせる
+ */
+async function selectCellAsync(page: Page, table: Locator, rowIndex: number, colIndex: number): Promise<void> {
+    const cell = getDataCell(table, rowIndex, colIndex);
+    await cell.click();
+}
+
+/**
+ * persistAsync() はfire-and-forgetで呼ばれるため、テスト側で書き込み完了を待つ必要がある。
+ * __mockFs の bookmarks.json を監視して期待件数になるまでポーリングする。
+ */
+async function waitForBookmarkCountAsync(page: Page, expectedCount: number): Promise<void> {
+    await page.waitForFunction(
+        (count: number) => {
+            const raw = (window as unknown as { __mockFs: { [key: string]: string } }).__mockFs['data/bookmarks.json'];
+            if (raw === undefined) return count === 0;
+            try {
+                const arr = JSON.parse(raw) as unknown[];
+                return arr.length === count;
+            } catch {
+                return false;
+            }
+        },
+        expectedCount,
+        {timeout: 5000}
+    );
+}
+
+/**
+ * 永続化テスト用のファイルシステムを生成する
+ * bookmarks.json を含む初期状態を作る
+ */
+function createBookmarkTestFileSystemWithPersistence(bookmarks: object[]): MockFileSystem {
+    const base = createBookmarkTestFileSystem();
+    base["data/bookmarks.json"] = JSON.stringify(bookmarks);
+    return base;
 }
 
 test.describe('ブックマーク機能', () => {
@@ -148,9 +188,8 @@ test.describe('ブックマーク機能', () => {
         // エントリが1件表示されること
         const entries = getBookmarkEntries(page);
         await expect(entries).toHaveCount(1);
-        // エントリにPK値 "1" が表示されること
-        const pkElement = entries.first().locator('.bookmark-entry-pk');
-        await expect(pkElement).toHaveText('1');
+        // エントリに PK値 "1" が data-pk-value 属性として保持されていること
+        await expect(entries.first()).toHaveAttribute('data-pk-value', '1');
         // エントリに表示列の値 "Sword" が表示されること（name列の値）
         const displayValue = entries.first().locator('.bookmark-entry-display');
         await expect(displayValue).toHaveText('Sword');
@@ -270,5 +309,344 @@ test.describe('ブックマーク機能', () => {
         // 残りのグループは item であること
         const remainingHeader = groups.first().locator('.bookmark-group-header');
         await expect(remainingHeader).toHaveText('item');
+    });
+});
+
+// =========================================================================
+// セルレベルブックマーク
+// =========================================================================
+test.describe('セルレベルブックマーク', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('同じ行の異なる列を個別にブックマークできる', async ({page}) => {
+        // item テーブルを開く
+        const table = await openTableAsync(page, 'item');
+        // 1行目の name 列（colIndex=1）をブックマーク追加
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // 同じ1行目の value 列（colIndex=2）をブックマーク追加
+        await rightClickCellAsync(page, table, 0, 2);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // ブックマークパネルを開いてエントリが2件表示されること（同一行でも列が違えば別エントリ）
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(2);
+    });
+
+    test('エントリの表示形式が「列名: ラベル（主キー値）」である', async ({page}) => {
+        // item テーブルを開いて1行目の name 列（値: Sword, PK: 1）をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // ブックマークパネルを開く
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(1);
+        // エントリのテキストに「name: Sword (1)」が含まれること
+        await expect(entries.first()).toHaveText(/name:\s*Sword\s*\(1\)/);
+    });
+
+    test('ブックマーク済みセルの右クリックで解除メニューが表示され、別列は追加メニューが表示される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をブックマーク
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // 同じセル（name列）を右クリック → 解除メニューが表示される
+        await rightClickCellAsync(page, table, 0, 1);
+        const menu1 = page.locator('.context-menu.visible');
+        await expect(menu1.locator('.context-menu-item', {hasText: 'ブックマークを解除'})).toBeVisible();
+        // メニューを閉じる
+        await page.keyboard.press('Escape');
+        // 同じ行の value 列（colIndex=2）を右クリック → 追加メニューが表示される（列が異なるため未ブックマーク）
+        await rightClickCellAsync(page, table, 0, 2);
+        const menu2 = page.locator('.context-menu.visible');
+        await expect(menu2.locator('.context-menu-item', {hasText: 'ブックマークに追加'})).toBeVisible();
+    });
+
+    test('エントリクリックで該当テーブルの該当セルにジャンプする', async ({page}) => {
+        // item テーブルを開いて2行目（id=2）の value 列（colIndex=2, 値=200）をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 1, 2);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // enemy テーブルを開いてアクティブタブを切り替える
+        await openTableAsync(page, 'enemy');
+        // ブックマークパネルを開いてエントリをクリック
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await entries.first().click();
+        // item テーブルがアクティブになること
+        const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
+        await expect(itemTable).toBeVisible();
+        // セレクションが value 列（colIndex=2）の2行目（rowIndex=1）に当たっていること
+        // セレクション要素の位置で検証する（data-row, data-col 属性またはtransform位置）
+        const selection = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .selection');
+        await expect(selection).toBeVisible();
+    });
+});
+
+// =========================================================================
+// 永続化（bookmarks.json）
+// =========================================================================
+test.describe('ブックマーク永続化', () => {
+    test('ブックマーク追加後にbookmarks.jsonが保存される', async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        // item テーブルを開いて1行目の name 列をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // persistAsync() の完了を待つ
+        await waitForBookmarkCountAsync(page, 1);
+        // data/bookmarks.json がモックファイルシステムに書き込まれていること
+        const json = await readMockFileAsync(page, 'data/bookmarks.json');
+        const bookmarks = JSON.parse(json) as object[];
+        expect(bookmarks).toHaveLength(1);
+        // 保存形式の検証: tableName, rowKey, columnName, label, createdAt が含まれること
+        const entry = bookmarks[0] as Record<string, unknown>;
+        expect(entry).toHaveProperty('tableName', 'item');
+        expect(entry).toHaveProperty('rowKey', '1');
+        expect(entry).toHaveProperty('columnName', 'name');
+        expect(entry).toHaveProperty('label', 'Sword');
+        expect(entry).toHaveProperty('createdAt');
+    });
+
+    test('複数ブックマーク追加でbookmarks.jsonに全エントリが保存される', async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        // item テーブルの1行目 name 列をブックマーク
+        const itemTable = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, itemTable, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // item テーブルの2行目 value 列をブックマーク
+        await rightClickCellAsync(page, itemTable, 1, 2);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // persistAsync() はfire-and-forgetのため書き込み完了を待つ
+        await waitForBookmarkCountAsync(page, 2);
+        // bookmarks.json に2件保存されていること
+        const json = await readMockFileAsync(page, 'data/bookmarks.json');
+        const bookmarks = JSON.parse(json) as object[];
+        expect(bookmarks).toHaveLength(2);
+    });
+
+    test('アプリ起動時にbookmarks.jsonが存在すれば読み込みパネルに復元される', async ({page}) => {
+        // bookmarks.json に1件のブックマークを事前設定した状態で起動する
+        const savedBookmarks = [{
+            tableName: 'item',
+            rowKey: '2',
+            columnName: 'name',
+            label: 'Shield',
+            createdAt: '2026-01-01T00:00:00.000Z',
+        }];
+        const fs = createBookmarkTestFileSystemWithPersistence(savedBookmarks);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        // ブックマークパネルを開いてエントリが1件復元されていること
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(1);
+        // 復元されたエントリの内容が正しいこと
+        await expect(entries.first()).toHaveText(/name:\s*Shield\s*\(2\)/);
+    });
+
+    test('ブックマーク削除後にbookmarks.jsonから該当エントリが除去される', async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        // item テーブルを開いて1行目と2行目をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        await rightClickCellAsync(page, table, 1, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // persistAsync() はfire-and-forgetのため書き込み完了を待つ
+        await waitForBookmarkCountAsync(page, 2);
+        // 2件保存されていることを確認
+        const json1 = await readMockFileAsync(page, 'data/bookmarks.json');
+        expect(JSON.parse(json1)).toHaveLength(2);
+        // ブックマークパネルを開いて最初のエントリを x ボタンで削除
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await entries.first().hover();
+        await entries.first().locator('.bookmark-entry-delete').click();
+        // persistAsync() はfire-and-forgetのため書き込み完了を待つ
+        await waitForBookmarkCountAsync(page, 1);
+        // bookmarks.json が1件に減っていること
+        const json2 = await readMockFileAsync(page, 'data/bookmarks.json');
+        const remaining = JSON.parse(json2) as object[];
+        expect(remaining).toHaveLength(1);
+    });
+});
+
+// =========================================================================
+// 視覚マーク（data-bookmarked属性）
+// =========================================================================
+test.describe('ブックマーク視覚マーク', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('ブックマーク済みセルにdata-bookmarked属性が付与される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // 該当セルに data-bookmarked 属性が付与されていること
+        const cell = getDataCell(table, 0, 1);
+        await expect(cell).toHaveAttribute('data-bookmarked', '');
+    });
+
+    test('ブックマーク削除後にdata-bookmarked属性が除去される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // data-bookmarked が付いていることを確認
+        const cell = getDataCell(table, 0, 1);
+        await expect(cell).toHaveAttribute('data-bookmarked', '');
+        // 同じセルを右クリックして解除
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークを解除');
+        // data-bookmarked 属性が除去されていること
+        await expect(cell).not.toHaveAttribute('data-bookmarked');
+    });
+
+    test('タブ切替後もブックマーク済みセルのマークが維持される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をブックマーク追加
+        const itemTable = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, itemTable, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // enemy テーブルに切り替える
+        await openTableAsync(page, 'enemy');
+        // item テーブルに戻る
+        const returnedTable = await openTableAsync(page, 'item');
+        // data-bookmarked 属性が維持されていること
+        const cell = getDataCell(returnedTable, 0, 1);
+        await expect(cell).toHaveAttribute('data-bookmarked', '');
+    });
+});
+
+// =========================================================================
+// Ctrl+D ショートカット
+// =========================================================================
+test.describe('Ctrl+D ブックマークショートカット', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('セル選択状態でCtrl+Dを押すとブックマークが追加される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をクリックして選択
+        const table = await openTableAsync(page, 'item');
+        await selectCellAsync(page, table, 0, 1);
+        // Ctrl+D を押す
+        await page.keyboard.press('Control+d');
+        // ブックマークパネルを開いてエントリが1件追加されていること
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(1);
+    });
+
+    test('ブックマーク済みセル選択状態でCtrl+Dを押すとブックマークが解除される（トグル動作）', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をクリックして選択
+        const table = await openTableAsync(page, 'item');
+        await selectCellAsync(page, table, 0, 1);
+        // Ctrl+D で追加
+        await page.keyboard.press('Control+d');
+        // ブックマークパネルでエントリ1件を確認
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(1);
+        // アクティビティバーの files アイコンをクリックしてサイドバーを戻す（ブックマークパネルを閉じる）
+        await page.locator('.activity-bar-item[data-panel="files"]').click();
+        // 同じセルを再度クリックして Ctrl+D で解除
+        await selectCellAsync(page, table, 0, 1);
+        await page.keyboard.press('Control+d');
+        // ブックマークパネルを開いてエントリが0件であること
+        await openBookmarkPanelAsync(page);
+        await expect(entries).toHaveCount(0);
+    });
+
+    test('Ctrl+Dでブックマーク追加するとdata-bookmarked属性が付与される', async ({page}) => {
+        // item テーブルを開いて1行目の name 列をクリックして選択
+        const table = await openTableAsync(page, 'item');
+        await selectCellAsync(page, table, 0, 1);
+        // Ctrl+D を押す
+        await page.keyboard.press('Control+d');
+        // 該当セルに data-bookmarked 属性が付与されていること
+        const cell = getDataCell(table, 0, 1);
+        await expect(cell).toHaveAttribute('data-bookmarked', '');
+    });
+});
+
+// =========================================================================
+// コマンドパレット @bookmark プレフィクス
+// =========================================================================
+test.describe('コマンドパレット @bookmark プレフィクス', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('@bookmarkと入力するとブックマーク一覧が表示される', async ({page}) => {
+        // item テーブルを開いて2件ブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        await rightClickCellAsync(page, table, 1, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // Ctrl+P でコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+        const paletteInput = page.locator('.command-palette-input');
+        await expect(paletteInput).toBeVisible();
+        // @bookmark と入力する
+        await paletteInput.fill('@bookmark');
+        // 候補リストにブックマーク一覧が表示されること（2件）
+        const items = page.locator('.command-palette-item');
+        await expect(items).toHaveCount(2);
+    });
+
+    test('@bookmark候補をクリックすると該当セルにジャンプする', async ({page}) => {
+        // item テーブルを開いて2行目の name 列（id=2, Shield）をブックマーク追加
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 1, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        // enemy テーブルを開いてアクティブタブを切り替える
+        await openTableAsync(page, 'enemy');
+        // Ctrl+P でコマンドパレットを開き @bookmark と入力
+        await page.keyboard.press('Control+p');
+        const paletteInput = page.locator('.command-palette-input');
+        await paletteInput.fill('@bookmark');
+        // 候補リストの最初のアイテムをクリック
+        const items = page.locator('.command-palette-item');
+        await expect(items).toHaveCount(1);
+        await items.first().click();
+        // item テーブルがアクティブになりセレクションが表示されること
+        const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
+        await expect(itemTable).toBeVisible();
+        const selection = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .selection');
+        await expect(selection).toBeVisible();
+    });
+
+    test('ブックマークが0件のとき@bookmarkで空メッセージが表示される', async ({page}) => {
+        // ブックマークを追加せずにコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+        const paletteInput = page.locator('.command-palette-input');
+        await paletteInput.fill('@bookmark');
+        // 候補リストが空であること（空メッセージまたは候補0件）
+        const items = page.locator('.command-palette-item');
+        await expect(items).toHaveCount(0);
+        // 「該当する項目がありません」等の空メッセージが表示されること
+        const emptyMessage = page.locator('.command-palette-empty');
+        await expect(emptyMessage).toBeVisible();
     });
 });

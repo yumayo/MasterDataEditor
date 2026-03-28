@@ -21,6 +21,7 @@ import {BottomPanel} from "./bottom-panel";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
+import type {BookmarkEntry} from "./bookmark-panel";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -187,6 +188,16 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 
         // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
+    }
+
+    // 起動時に bookmarks.json からブックマークを復元する
+    // ファイルが存在しない場合はスキップする（空のブックマークリストで開始）
+    try {
+        const bookmarksJson = await readFileAsync('data/bookmarks.json');
+        const bookmarkEntries = JSON.parse(bookmarksJson) as BookmarkEntry[];
+        sidebar.restoreBookmarks(bookmarkEntries);
+    } catch {
+        // ファイルが存在しない場合は無視する
     }
 
     // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。

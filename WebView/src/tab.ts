@@ -14,6 +14,7 @@ import {DropdownQuickView} from "./dropdown-quick-view";
 import {FillController} from "./fill-controller";
 import {EditorTableHandler} from "./editor-table-handler";
 import {Sidebar} from "./sidebar";
+import type {BookmarkEntry} from "./bookmark-panel";
 import {TabDragDrop} from "./tab-drag-drop";
 import {TabReference} from "./tab-reference";
 import {InMemoryTableStore} from "./in-memory-table-store";
@@ -392,6 +393,50 @@ export class Tab {
                 state.editorTableHandler.activate();
                 return;
             }
+        }
+    }
+
+    /**
+     * テーブルの列名からCSV列インデックス（0始まり）を解決する
+     * EditorTableが開かれていればそのヘッダーから、未開であればストアのヘッダーから解決する
+     * 見つからない場合は -1 を返す
+     */
+    resolveColumnIndex(tableName: string, columnName: string): number {
+        // 開かれているEditorTableからヘッダーを取得する
+        const editorTable = this.openEditorTables.get(tableName);
+        if (editorTable) {
+            const colCount = editorTable.getColumnCount();
+            for (let i = 0; i < colCount; i++) {
+                if (editorTable.getColumnHeaderValue(i) === columnName) return i;
+            }
+            return -1;
+        }
+        // ストアからヘッダーを取得する
+        const header = this.store.getHeader(tableName);
+        if (header !== false) {
+            return header.indexOf(columnName);
+        }
+        return -1;
+    }
+
+    /**
+     * ブックマーク一覧を取得する（コマンドパレット用）
+     */
+    getBookmarks(): BookmarkEntry[] {
+        return this.sidebar.getBookmarks();
+    }
+
+    /**
+     * ブックマーク先のテーブル・セルにジャンプする（BookmarkPanel / CommandPalette 共通ロジック）
+     * columnName からテーブルヘッダーの列インデックスを解決して navigateToTableCell に渡す。
+     * 列が見つからない場合は行単位でジャンプする（スキーマ変更でカラムが消えた場合のフォールバック）。
+     */
+    navigateToBookmark(tableName: string, rowKey: string, columnName: string): void {
+        const columnIndex = this.resolveColumnIndex(tableName, columnName);
+        if (columnIndex !== -1) {
+            this.navigateToTableCell(tableName, rowKey, columnIndex);
+        } else {
+            this.navigateToTableRow(tableName, rowKey);
         }
     }
 

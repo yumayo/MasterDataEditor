@@ -25,8 +25,19 @@ interface QueryResultItem {
     matchValue: string;
 }
 
-/** 候補リストの各要素はテーブル名候補またはクエリ式結果のいずれか */
-type PaletteItem = TableItem | QueryResultItem;
+/**
+ * ブックマーク候補アイテム（@bookmark プレフィクスで検索した結果）
+ */
+interface BookmarkItem {
+    kind: 'bookmark';
+    tableName: string;
+    rowKey: string;
+    columnName: string;
+    label: string;
+}
+
+/** 候補リストの各要素はテーブル名候補、クエリ式結果、またはブックマーク候補のいずれか */
+type PaletteItem = TableItem | QueryResultItem | BookmarkItem;
 
 /** クエリ式の最大候補表示件数 */
 const QUERY_RESULT_MAX = 20;
@@ -158,9 +169,12 @@ export class CommandPalette {
             // テーブル名モード: タブを開く
             const tabButton = this.tab.append(item.tabName, null);
             tabButton.click();
-        } else {
+        } else if (item.kind === 'query') {
             // クエリ式モード: 該当セルにジャンプする
             this.tab.navigateToTableCell(item.tableName, item.pkValue, item.columnIndex);
+        } else {
+            // ブックマークモード: Tab の共通ジャンプメソッドに委譲する
+            this.tab.navigateToBookmark(item.tableName, item.rowKey, item.columnName);
         }
         this.hide();
     }
@@ -171,6 +185,12 @@ export class CommandPalette {
      * それ以外はテーブル名のファジー検索を行う
      */
     private renderList(filterText: string): void {
+        // @bookmark プレフィクス: ブックマーク一覧を表示する
+        if (filterText.startsWith('@bookmark')) {
+            const query = filterText.slice('@bookmark'.length).trim();
+            this.renderBookmarkList(query);
+            return;
+        }
         // クエリ式の判定: テーブル名.列名=値 のパターン
         const queryMatch = filterText.match(/^(\w+)\.(\w+)\s*=\s*(.+)$/);
         if (queryMatch) {
@@ -245,6 +265,54 @@ export class CommandPalette {
                 itemElement.appendChild(descElement);
             }
 
+            this.listElement.appendChild(itemElement);
+        }
+    }
+
+    /**
+     * ブックマーク一覧を候補リストに描画する
+     * Tab 経由で BookmarkPanel からブックマーク一覧を取得し、query で絞り込む
+     */
+    private renderBookmarkList(query: string): void {
+        this.listElement.innerHTML = '';
+        this.selectedIndex = 0;
+        const bookmarks = this.tab.getBookmarks();
+        // query が空でなければテーブル名・列名・ラベルのいずれかに部分一致する候補に絞り込む
+        const lowerQuery = query.toLowerCase();
+        const filtered: BookmarkItem[] = [];
+        for (const bm of bookmarks) {
+            if (query === '' || bm.tableName.toLowerCase().includes(lowerQuery) || bm.columnName.toLowerCase().includes(lowerQuery) || bm.label.toLowerCase().includes(lowerQuery)) {
+                filtered.push({ kind: 'bookmark', tableName: bm.tableName, rowKey: bm.rowKey, columnName: bm.columnName, label: bm.label });
+            }
+        }
+        this.filteredItems = filtered;
+        if (filtered.length === 0) {
+            const emptyElement = document.createElement('div');
+            emptyElement.classList.add('command-palette-empty');
+            emptyElement.textContent = '該当する項目がありません';
+            this.listElement.appendChild(emptyElement);
+            return;
+        }
+        for (let i = 0; i < filtered.length; ++i) {
+            const item = filtered[i];
+            const itemElement = document.createElement('div');
+            itemElement.classList.add('command-palette-item');
+            if (i === 0) itemElement.classList.add('selected');
+            // テーブル名
+            const nameElement = document.createElement('span');
+            nameElement.classList.add('command-palette-item-name');
+            nameElement.textContent = item.tableName;
+            itemElement.appendChild(nameElement);
+            // 列名: ラベル (PK値) を右端に表示する
+            const descElement = document.createElement('span');
+            descElement.classList.add('command-palette-item-description');
+            descElement.textContent = item.columnName + ': ' + item.label + ' (' + item.rowKey + ')';
+            itemElement.appendChild(descElement);
+            const clickIndex = i;
+            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
+                e.preventDefault();
+                this.confirmSelection(clickIndex);
+            });
             this.listElement.appendChild(itemElement);
         }
     }

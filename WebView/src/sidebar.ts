@@ -3,7 +3,7 @@ import {Tab} from "./tab";
 import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "./references-panel";
 import {SearchPanel} from "./search-panel";
-import {BookmarkPanel} from "./bookmark-panel";
+import {BookmarkPanel, BookmarkEntry} from "./bookmark-panel";
 import {SourceControlPanel} from "./source-control-panel";
 import {ReverseReferenceEntry} from "./reverse-reference-resolver";
 import {EditorTable} from "./editor-table";
@@ -200,24 +200,54 @@ export class Sidebar {
     // =========================================================================
 
     /**
-     * ブックマークを追加する
+     * セルレベルでブックマークを追加する
      */
-    addBookmark(tableName: string, pkValue: string, displayText: string): void {
-        this.bookmarkPanel.addBookmark(tableName, pkValue, displayText);
+    addBookmark(tableName: string, pkValue: string, columnName: string, label: string): void {
+        this.bookmarkPanel.addBookmark(tableName, pkValue, columnName, label);
     }
 
     /**
-     * ブックマークを削除する
+     * セルレベルでブックマークを削除する
      */
-    removeBookmark(tableName: string, pkValue: string): void {
-        this.bookmarkPanel.removeBookmark(tableName, pkValue);
+    removeBookmark(tableName: string, pkValue: string, columnName: string): void {
+        this.bookmarkPanel.removeBookmark(tableName, pkValue, columnName);
     }
 
     /**
-     * 指定テーブル名+PK値のブックマークが存在するか確認する
+     * 指定テーブル名+PK値+列名のブックマークが存在するか確認する
      */
-    hasBookmark(tableName: string, pkValue: string): boolean {
-        return this.bookmarkPanel.hasBookmark(tableName, pkValue);
+    hasBookmark(tableName: string, pkValue: string, columnName: string): boolean {
+        return this.bookmarkPanel.hasBookmark(tableName, pkValue, columnName);
+    }
+
+    /**
+     * 指定テーブル名+PK値で（列名問わず）ブックマークが1件以上存在するか確認する
+     * PK列の右クリック時に使用する
+     */
+    hasBookmarkForRow(tableName: string, pkValue: string): boolean {
+        return this.bookmarkPanel.hasBookmarkForRow(tableName, pkValue);
+    }
+
+    /**
+     * 指定テーブル名+PK値の全ブックマークを削除する（行レベル一括削除）
+     * PK列右クリックの「ブックマークを解除」で使用する
+     */
+    removeBookmarksForRow(tableName: string, pkValue: string): void {
+        this.bookmarkPanel.removeBookmarksForRow(tableName, pkValue);
+    }
+
+    /**
+     * ブックマーク一覧を取得する（コマンドパレット用）
+     */
+    getBookmarks(): BookmarkEntry[] {
+        return this.bookmarkPanel.serializeBookmarks();
+    }
+
+    /**
+     * ブックマークを復元する（起動時読み込み用）
+     */
+    restoreBookmarks(entries: BookmarkEntry[]): void {
+        this.bookmarkPanel.restoreBookmarks(entries);
     }
 
     private switchPanel(item: ActivityBarItem): void {

@@ -568,6 +568,13 @@ export class EditorTableHandler {
             return;
         }
 
+        // Ctrl+D: ブックマーク追加/解除トグル
+        if (keyboardEvent.ctrlKey && keyboardEvent.key === 'd') {
+            keyboardEvent.preventDefault();
+            this.toggleBookmark();
+            return;
+        }
+
         // Ctrl+C: コピー
         if (keyboardEvent.ctrlKey && keyboardEvent.key === 'c') {
             keyboardEvent.preventDefault();
@@ -1357,5 +1364,37 @@ export class EditorTableHandler {
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue, newValue }];
         this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
+    }
+
+    /**
+     * フォーカスセルのブックマークをトグルする（Ctrl+Dから呼ばれる）
+     * 通常テーブル（タブあり）でのみ動作する
+     */
+    private toggleBookmark(): void {
+        // ミニテーブルや差分タブでは動作しない（正当なガード）
+        if (this.table.tab === false) return;
+        const focus = this.selection.getFocus();
+        const pkValue = this.table.getRowPkValue(focus.row);
+        // 修正6: PK値が空の場合はバッファ空行等で設計上ありえない操作 → throw
+        if (pkValue === '') throw new Error('[EditorTableHandler.toggleBookmark] pkValue が空文字列: row=' + focus.row);
+        // フォーカスセルの列名を取得する（column=0は行ヘッダーなのでデータ列は1始まり）
+        const dataColIndex = focus.column - 1;
+        // 修正6: データ列範囲外は設計上ありえない → throw
+        if (dataColIndex < 0) throw new Error('[EditorTableHandler.toggleBookmark] dataColIndex < 0: column=' + focus.column);
+        if (!this.tableData) throw new Error('[EditorTableHandler.toggleBookmark] tableData が未設定');
+        if (dataColIndex >= this.tableData.header.length) throw new Error('[EditorTableHandler.toggleBookmark] dataColIndex が範囲外: ' + dataColIndex);
+        const columnName = this.tableData.header[dataColIndex].name;
+        const tableName = this.table.tableName;
+        // 修正9: EditorTable のファサードメソッド経由でブックマーク操作する
+        if (this.table.hasBookmark(tableName, pkValue, columnName)) {
+            this.table.removeBookmark(tableName, pkValue, columnName);
+            // 修正7: unmarkCellBookmarked をインライン展開
+            this.table.getCell(focus.row, focus.column).removeAttribute('data-bookmarked');
+        } else {
+            const cellValue = this.table.getCellValueAt(focus.row, focus.column);
+            this.table.addBookmark(tableName, pkValue, columnName, cellValue);
+            // 修正7: markCellBookmarked をインライン展開
+            this.table.getCell(focus.row, focus.column).setAttribute('data-bookmarked', '');
+        }
     }
 }

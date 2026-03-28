@@ -32,14 +32,6 @@
 .bookmark-entry:hover { background-color: rgba(0, 0, 0, 0.1); }
 [data-theme="dark"] .bookmark-entry:hover { background-color: rgba(255, 255, 255, 0.05); }
 
-/* PK値（等幅フォント、薄い色で表示） */
-.bookmark-entry-pk {
-    font-family: monospace;
-    font-size: 0.85em;
-    color: #888;
-    flex-shrink: 0;
-}
-
 /* 表示テキスト（名前など） */
 .bookmark-entry-display {
     flex: 1;
