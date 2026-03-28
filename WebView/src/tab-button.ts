@@ -136,6 +136,11 @@ export class TabButton {
         this.element.classList.add('tab-button-active');
     }
 
+    /** アクティブ化されたタブボタンが可視領域外にある場合、スムーズスクロールで表示する */
+    scrollIntoViewIfNeeded(): void {
+        this.element.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    }
+
     disable() {
         this.element.classList.remove('tab-button-active');
     }
