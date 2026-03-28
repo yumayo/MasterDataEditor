@@ -30,8 +30,8 @@
 
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **9回再発** (+PluginValidation runAndUpdate .then())
-- **register/unregister 非対称**: **4回再発** (+RowDragController.destroy()でdocumentリスナー未解除)
-- **CSS hardcoded colors**: 19+ 回再発 (+bookmark-panel #FF8C00, --text-muted-color未定義)
+- **register/unregister 非対称**: **5回再発** (+TableDefinitionEditor destroy()未実装、indicator永続残留)
+- **CSS hardcoded colors**: 21+ 回再発 (+table-definition-editor #f44336, #ffffff)
 - **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊
 - **フォールバック禁止 (??)**: 17+ 回再発
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
@@ -136,8 +136,18 @@
 - **操作パスの網羅漏れ(moveRow)**: insertRow系では7-8種の後処理、moveRowでは4種のみ（bug-report.md #7の再発）
 - **新規操作パス追加時の後処理チェックリスト**: evictOwnReferenceDataCache, refreshFilterDisplayIfActive, restoreBookmarkMarks, ensureTrailingBufferRow が漏れやすい
 
+## Table Definition Editor Patterns (2026-03-28)
+- **destroy()未実装**: indicator要素がdocument.bodyに永続残留、ErDiagramTabにはdestroy()があるのに未踏襲
+- **Redo未実装**: undoStackのみ、redoStack/Ctrl+Yなし。docコメント「Undo/Redo対応」が虚偽
+- **列削除後のUndoスタック陳腐化**: row.remove()がundoStackを無視→境界外アクセス
+- **lastIndicatorClientY初期値0**: ドラッグ閾値超え直後のmouseupでinsertIndex=0に飛ぶ
+- **dragSourceRowダミー要素**: nullの代わりにdocument.createElement('div')で生焼け回避
+- **updateIndicatorPosition/calculateInsertIndex**: insertIndex計算ロジック完全コピペ
+- tab.ts: 特殊タブ分岐が5種(通常/設定/差分/ER/定義)に増殖
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-03-28) ISSUE_0128 列ドラッグ並び替え: 致命的3件、重要5件、軽微4件 (indicatorリーク, Redo未実装, 列削除後Undo破壊, ドラッグキャンセル未対応, lastIndicatorClientY初期値)
 - (2026-03-28) ISSUE_0127 FK列int値右揃え・ヒント左配置: 致命的2件、重要4件、軽微3件 (constant.ts列幅計算破壊, float:leftレイアウト脆弱性, CSSコメント不整合, applyTypedCellStyleパス漏れ, appendReferenceHint命名)
 - (2026-03-28) ISSUE_0126 行ドラッグ移動: 致命的3件、重要6件、軽微3件 (ソート中データ破壊, ミニテーブルガード欠落, moveRow後処理不足, destroyリスナー漏れ)
 - (2026-03-28) ISSUE_0125 セルブックマーク: 致命的3件、重要6件、軽微3件 (CSSセレクタインジェクション, DOM属性復元漏れ, PK値不整合, sidebar公開, 型安全性, 入力検証, コピペ)

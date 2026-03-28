@@ -15,7 +15,24 @@
 - `show/hide` や `activate/deactivate` の対称性チェックが繰り返し指摘されている（bug-report #3, #32, #77, #84）
 - ミニテーブルの設計原則: ストアの全行を保持し、表示のみFKフィルタリング（storeRowIndicesのサブセット管理はしない）
 
-### 最新レビュー結果（2026-03-28 ISSUE_0127 FK列int値右揃え・ヒント句左配置）
+### 最新レビュー結果（2026-03-28 ISSUE_0128 テーブル定義エディタ列ドラッグ並び替え）
+
+#### ISSUE_0128 テーブル定義エディタ列ドラッグ並び替え 評価: B+
+- 変更内容: テーブル定義タブに列順ドラッグ並び替え機能追加。`column-drag-handle`（⠿グリフ）が各列行に表示。`column-drag-indicator`（BODY直下）がドラッグ中の挿入位置を示す。Undo/Redo対応。バリデーション（テーブル名空/不正文字/重複・PK未設定）も整備済み。
+- 良い点: `column-drag-handle` に `title="ドラッグで並び替え"` tooltip があり、初見プランナーでも操作可能性を発見できる。`column-drag-indicator` が BODY直下（`style="left: 324px; width: 700px; top: 319px; display: none;"`）に配置されており、テーブル定義エディタの `overflow:hidden` の影響を受けない正しい設計。バリデーションエラーメッセージが入力欄直下に赤テキスト（`table-definition-name-error`）で表示される即時フィードバックが適切。保存後にエクスプローラーに追加され、直ちにエディタグリッドタブが開く一気通貫の UX が良好。Undo後に元の列順（id/damage/name→id/name/damage→Undo→id/damage/name）が正確に復元されている。テーブル名・説明のプレースホルダー（「例: weapon」「例: 武器マスター」）がプランナーに入力形式を示している。
+- 修正必須(🔴): `column-drag-handle` の `div` 要素に `role="button"` / `tabindex="0"` / `aria-label` がなく、キーボード操作でドラッグハンドルに到達できない。DOM: `<div class="column-drag-handle" title="ドラッグで並び替え">⠿</div>` で role 属性が一切ない。スクリーンリーダーはこの div をインタラクティブ要素として認識しない。`role="button"` + `tabindex="0"` + `aria-label="列を並び替え"` の付与が最低限必要。
+- 修正必須(🔴): `column-drag-indicator` がドラッグ中のスクリーンショットで確認できない（テスト終了時点で `display: none`）。ISSUE_0126 の `row-drag-indicator` と同じ問題。「ドラッグで列の並び順を変更できる」テストのスクリーンショットはドラッグ完了後の結果（id/name/damageの順）を撮影しており、ドラッグ中のインジケーター表示（水平または垂直の挿入位置ガイド）が視覚的に機能しているか確認不能。Playwright の mousemove 中の瞬間を撮影するテストが追加されると信頼性が増す（推測）。
+- 修正必須(🔴): `column-pk-checkbox` が `<input type="checkbox">` のネイティブチェックボックスだが、`aria-label` がない。スクリーンリーダーは「チェックボックス」とは読み上げるが「何のチェックボックスか」が不明。`aria-label="id列をPKに設定"` のように行コンテキストを含む aria-label が各チェックボックスに必要。
+- 修正必須(🔴): `column-delete-button` の `<button>` テキストが `×` のみで `aria-label` がない（`bookmark-entry-delete` と同じパターン）。スクリーンリーダーが「×」と読み上げるだけで「どの列を削除するボタンか」が不明。`aria-label="id列を削除"` が必要。スクリーンショット「列を削除できる」で×ボタンが赤背景にハイライトされている（ホバー状態）のは視覚的に良好だが、ARIA対応が欠如。
+- 修正必須(🔴): `tab-button-dirty`（未保存インジケーター●）が「ドラッグで列の並び順を変更できる」「Ctrl+Zで並び替えをUndoできる」の各スクリーンショットで確認できない。DOMダンプを見ると `<div class="tab-button-dirty"></div>` が存在するが、内部テキスト（●）がない。テーブル定義タブで列を並び替えた後に未保存状態のフィードバックがなく、プランナーが「保存したのか否か」を判別できない。テーブルデータタブでは `tab-button-dirty` が機能するため、テーブル定義タブでも未保存状態を dirty マークで示すべき。
+- 修正必須(🔴): activity-bar SVG に `aria-hidden="true"` がない（全サイクル継続課題）。
+- 改善推奨(🟡): `table-definition-column-header` のグリッドヘッダーが `<span></span><span>列名</span><span>型</span><span>PK</span><span></span>` という匿名 span で構成されており、role="columnheader" がない。テーブル定義エディタはグリッドUIに近い性質を持つため、`role="grid"` + `role="columnheader"` でセマンティクスを補完するか、`<table>` 要素で実装し直すことを推奨。
+- 改善推奨(🟡): `column-type-select` の `<select>` に `aria-label` がない。スクリーンリーダーは「コンボボックス」とは読み上げるが「何の型選択か」が不明。`aria-label="id列の型"` が必要。
+- 改善推奨(🟡): ドラッグハンドル（⠿）の視覚的なコントラストが低い可能性がある。スクリーンショットでは `⠿` が薄いグレー色で表示されており、暗い背景色（`#2d2d2d`相当）に対して十分なコントラスト比があるか確認が必要（推測）。ハンドルにカーソルオン時に `cursor: grab` が適用されているかもスクリーンショットでは確認不能。
+- 改善推奨(🟡): 列が1行しかない状態でドラッグ並び替えを試みた場合（並び替え対象がない状態）の操作フィードバックがない。スクリーンショット「PK未設定のときバリデーションエラーが表示される」では列が1行で、ドラッグハンドルが表示されているが、この状態でドラッグしても何も起きない（または1行先頭に戻るだけ）ため、ハンドルが `pointer-events: none` になるかグレーアウトされると誤操作を防げる。
+- 参考: `column-drag-indicator` が BODY直下かつ `display: none` で待機する設計は ISSUE_0126 の `row-drag-indicator` と同一パターン。行インジケーターが水平線だったのに対し、列インジケーターが垂直線であるべきだが、DOMダンプでは `display: none` のため形状確認不能。
+
+### 過去のレビュー結果（2026-03-28 ISSUE_0127 FK列int値右揃え・ヒント句左配置）
 
 #### ISSUE_0127 FK列int値右揃え・ヒント句左配置 評価: B+
 - 変更内容: FK参照列（int型）にも `cell-numeric` クラスを付与して右寄せ適用。`cell-reference-hint` を FK 値テキストの左側に配置。長いヒント句は ellipsis で省略しFK値表示領域を保護。FK参照列（string型）には `cell-numeric` を付与しない選択的適用。
@@ -208,3 +225,9 @@
 - cell-reference-hint span に aria-hidden="true" がなく、スクリーンリーダーがヒントと FK 値を連続テキストとして読み上げる（ISSUE_0127で新規発見）
 - FK 値テキストに専用 span ラッパーがなく、ヒントと実データの DOM 上の区別が不明確（ISSUE_0127で新規発見）
 - Before テスト（FK列に cell-numeric がない旧仕様検証）が After テストと並存しており、どちらかが失敗している可能性がある（ISSUE_0127で新規発見）
+- column-drag-handle に role/tabindex/aria-label がなくキーボード操作不可（ISSUE_0128で新規発見）
+- column-delete-button の aria-label がなくスクリーンリーダーが列コンテキストを認識できない（ISSUE_0128で新規発見）
+- column-pk-checkbox の aria-label がなく「何のPKチェックか」が不明（ISSUE_0128で新規発見）
+- テーブル定義タブで列並び替え後に tab-button-dirty が活性化されない（ISSUE_0128で新規発見）
+- table-definition-column-header の span 群に role="columnheader" がなくセマンティクス不足（ISSUE_0128で新規発見）
+- column-drag-indicator が display:none でドラッグ中の挿入位置確認が静止画テストでは不能（ISSUE_0128で新規発見、ISSUE_0126の row-drag-indicator と同一パターン）
