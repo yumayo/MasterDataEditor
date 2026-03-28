@@ -314,8 +314,8 @@ export function applyFillSeries(
 }
 
 /**
- * スキーマJSONに列幅を保存する
- * 既存JSONを読み込んでwidthフィールドだけ更新することで、
+ * スキーマJSONにテーブルの表示設定を保存する
+ * 既存JSONを読み込んで列幅・renderAsHtml・フリーズペイン状態を更新することで、
  * serialize()では保持できないフィールド（unique_key, index等）を破壊しない
  */
 export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
@@ -338,6 +338,20 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
         } else {
             delete header[i].renderAsHtml;
         }
+    }
+
+    // フリーズペイン状態の永続化: 値が0の場合はフィールド自体を省略して既存スキーマとの互換性を保つ
+    const frozenColumnCount = table.getFrozenColumnCount();
+    const frozenRowCount = table.getFrozenRowCount();
+    if (frozenColumnCount > 0) {
+        existingSchema.frozenColumnCount = frozenColumnCount;
+    } else {
+        delete existingSchema.frozenColumnCount;
+    }
+    if (frozenRowCount > 0) {
+        existingSchema.frozenRowCount = frozenRowCount;
+    } else {
+        delete existingSchema.frozenRowCount;
     }
 
     await writeFileAsync(schemaPath, JSON.stringify(existingSchema, null, 4));

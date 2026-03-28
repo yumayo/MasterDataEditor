@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
-import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { installMockApiAsync, readMockFileAsync, MockFileSystem } from './fixtures/mock-api';
 import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
@@ -497,6 +497,182 @@ test.describe('フリーズペイン', () => {
                 const nonFrozenCell = firstDataRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
                 const nonFrozenBg = await getCellBackgroundColorAsync(nonFrozenCell);
                 expect(nonFrozenBg).toBe('rgba(0, 0, 0, 0)');
+            },
+        );
+    });
+
+    test.describe('固定状態の永続化', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createFreezeTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test(
+            '列を固定するとスキーマに frozenColumnCount が保存される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // "name"列（インデックス1）を右クリックして固定（id, name の2列固定）
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // saveFreezeStateAsync は fire-and-forget のため非同期書き込み完了を poll で待機する
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenColumnCount;
+                }).toBe(2);
+            },
+        );
+
+        test(
+            '列の固定を解除するとスキーマから frozenColumnCount が消える',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // まず列を固定する
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // 固定が保存されていることを確認（saveFreezeStateAsync は fire-and-forget のため poll で待機）
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenColumnCount;
+                }).toBe(2);
+
+                // 列の固定を解除する
+                await rightClickColumnHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, '列の固定を解除');
+
+                // frozenColumnCount フィールドが除去されていることを確認（saveFreezeStateAsync は非同期のため poll で待機）
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenColumnCount;
+                }).toBeUndefined();
+            },
+        );
+
+        test(
+            '行を固定するとスキーマに frozenRowCount が保存される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // 1行目（rowIndex=0、Slimeの行）を右クリックして固定
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // saveFreezeStateAsync は fire-and-forget のため非同期書き込み完了を poll で待機する
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenRowCount;
+                }).toBe(1);
+            },
+        );
+
+        test(
+            '行の固定を解除するとスキーマから frozenRowCount が消える',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // まず行を固定する
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 固定が保存されていることを確認（saveFreezeStateAsync は fire-and-forget のため poll で待機）
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenRowCount;
+                }).toBe(1);
+
+                // 行の固定を解除する
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, '行の固定を解除');
+
+                // frozenRowCount フィールドが除去されていることを確認（saveFreezeStateAsync は非同期のため poll で待機）
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenRowCount;
+                }).toBeUndefined();
+            },
+        );
+
+        test(
+            'frozenColumnCount がスキーマにあるテーブルを開くと列固定が復元される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // 列を固定してスキーマに保存
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // saveFreezeStateAsync の非同期書き込み完了を待機してからタブを閉じる
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenColumnCount;
+                }).toBe(2);
+
+                // タブを閉じる（タブの×ボタン）
+                const tabButton = page.locator('.tab-button', { hasText: 'freeze_test' });
+                const closeButton = tabButton.locator('.tab-button-close');
+                await closeButton.click();
+
+                // テーブルを再度開く
+                const reopenedTable = await openTableAsync(page, 'freeze_test');
+
+                // 固定列（id: colIndex=0）のデータセルが sticky になっている
+                const idStyles = await getColumnCellStylesAsync(reopenedTable, 0);
+                for (const style of idStyles) {
+                    expect(style.position).toBe('sticky');
+                }
+
+                // 固定列（name: colIndex=1）のデータセルも sticky になっている
+                const nameStyles = await getColumnCellStylesAsync(reopenedTable, 1);
+                for (const style of nameStyles) {
+                    expect(style.position).toBe('sticky');
+                }
+
+                // 非固定列（hp: colIndex=2）は sticky でないこと
+                const hpStyles = await getColumnCellStylesAsync(reopenedTable, 2);
+                for (const style of hpStyles) {
+                    expect(style.position).not.toBe('sticky');
+                }
+            },
+        );
+
+        test(
+            'frozenRowCount がスキーマにあるテーブルを開くと行固定が復元される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // 行を固定してスキーマに保存
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // saveFreezeStateAsync の非同期書き込み完了を待機してからタブを閉じる
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
+                    return JSON.parse(text).frozenRowCount;
+                }).toBe(1);
+
+                // タブを閉じる
+                const tabButton = page.locator('.tab-button', { hasText: 'freeze_test' });
+                const closeButton = tabButton.locator('.tab-button-close');
+                await closeButton.click();
+
+                // テーブルを再度開く
+                const reopenedTable = await openTableAsync(page, 'freeze_test');
+
+                // 固定行（rowIndex=0）のデータセルが sticky になっている
+                const rowStyles = await getRowCellStylesAsync(reopenedTable, 0);
+                for (const style of rowStyles) {
+                    expect(style.position).toBe('sticky');
+                }
+
+                // 非固定行（rowIndex=1）は sticky でないこと
+                const nonFrozenStyles = await getRowCellStylesAsync(reopenedTable, 1);
+                for (const style of nonFrozenStyles) {
+                    expect(style.position).not.toBe('sticky');
+                }
             },
         );
     });

@@ -1761,6 +1761,15 @@ export class Tab {
             const areaResizer = editorTableFactoryResult.areaResizer;
             const fillController = editorTableFactoryResult.fillController;
 
+            // フリーズペイン状態の復元: スキーマJSONに保存された固定列数・固定行数を適用する
+            // createEditorTable() 内で initialize() が完了しているためDOM構築済み
+            if ('frozenColumnCount' in json && (json.frozenColumnCount as number) > 0) {
+                editorTable.freezeColumns(json.frozenColumnCount as number);
+            }
+            if ('frozenRowCount' in json && (json.frozenRowCount as number) > 0) {
+                editorTable.freezeRows(json.frozenRowCount as number);
+            }
+
             // 開いているテーブルのマップに登録
             this.openEditorTables.set(name, editorTable);
 

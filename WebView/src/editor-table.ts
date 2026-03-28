@@ -29,6 +29,7 @@ import {Utility} from "./utility";
 import {Tab} from "./tab";
 import {NotificationToast} from "./notification";
 import {ErrorTooltip} from "./error-tooltip";
+import {saveSchemaDataAsync} from "./editor-actions";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -836,6 +837,7 @@ export class EditorTable {
      * 先頭からcount列を固定する。
      * 各データ行・ヘッダー行の該当セルに position:sticky + left を設定し、
      * 最後の固定列に freeze-column-border クラスを付与する。
+     * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
      */
     freezeColumns(count: number): void {
         if (count === 0) { this.unfreezeColumns(); return; }
@@ -856,6 +858,7 @@ export class EditorTable {
      * 先頭からcount行を固定する。
      * 該当行の全セルに position:sticky + top を設定し、
      * 最後の固定行の行ヘッダーに freeze-row-border クラスを付与する。
+     * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
      */
     freezeRows(count: number): void {
         if (count === 0) { this.unfreezeRows(); return; }
@@ -870,6 +873,16 @@ export class EditorTable {
     unfreezeRows(): void {
         this.clearFreezeRowStyles();
         this.frozenRowCount = 0;
+    }
+
+    /**
+     * フリーズペイン状態をスキーマJSONに永続化する。
+     * コンテキストメニューからのfreeze/unfreeze操作後に呼び出す。
+     * テーブルオープン時の復元ではsaveSchemaDataAsyncを呼ばないよう、
+     * freeze/unfreezeメソッド自体からは分離している。
+     */
+    saveFreezeStateAsync(): void {
+        saveSchemaDataAsync(this);
     }
 
     /**

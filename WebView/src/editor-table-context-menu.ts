@@ -98,8 +98,8 @@ export class EditorTableContextMenu {
                 ...(this.table.isMiniTableInstance() ? [] : [
                     {separator: true} as ContextMenuEntry,
                     ...(this.table.getFrozenColumnCount() > 0
-                        ? [{label: '列の固定を解除', action: () => { this.table.unfreezeColumns(); }}]
-                        : [{label: `先頭からこの列まで固定 (${contextMenuColumnIndex + 1}列)`, action: () => { this.table.freezeColumns(contextMenuColumnIndex + 1); }}]),
+                        ? [{label: '列の固定を解除', action: () => { this.table.unfreezeColumns(); this.table.saveFreezeStateAsync(); }}]
+                        : [{label: `先頭からこの列まで固定 (${contextMenuColumnIndex + 1}列)`, action: () => { this.table.freezeColumns(contextMenuColumnIndex + 1); this.table.saveFreezeStateAsync(); }}]),
                 ]),
             ];
             this.contextMenu.show(e.clientX, e.clientY, menuItems);
@@ -178,8 +178,8 @@ export class EditorTableContextMenu {
                 ...(this.table.isMiniTableInstance() ? [] : [
                     {separator: true} as ContextMenuEntry,
                     ...(this.table.getFrozenRowCount() > 0
-                        ? [{label: '行の固定を解除', action: () => { this.table.unfreezeRows(); }}]
-                        : [{label: 'この行まで固定', action: () => { this.table.freezeRows(dataRowIndex + 1); }}]),
+                        ? [{label: '行の固定を解除', action: () => { this.table.unfreezeRows(); this.table.saveFreezeStateAsync(); }}]
+                        : [{label: 'この行まで固定', action: () => { this.table.freezeRows(dataRowIndex + 1); this.table.saveFreezeStateAsync(); }}]),
                 ]),
             ]);
         };
