@@ -531,6 +531,28 @@ test.describe('ブックマーク視覚マーク', () => {
         const cell = getDataCell(returnedTable, 0, 1);
         await expect(cell).toHaveAttribute('data-bookmarked', '');
     });
+
+    test('テーブル初回表示時にbookmarks.jsonのブックマークマークが描画されている', async ({page}) => {
+        // bookmarks.json に2件のセルブックマークを事前設定した状態で起動する
+        const savedBookmarks = [
+            {tableName: 'item', rowKey: '1', columnName: 'name', label: 'Sword', createdAt: '2026-01-01T00:00:00.000Z'},
+            {tableName: 'item', rowKey: '2', columnName: 'value', label: '200', createdAt: '2026-01-01T00:00:00.000Z'},
+        ];
+        const fs = createBookmarkTestFileSystemWithPersistence(savedBookmarks);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        // item テーブルを初回オープンする
+        const table = await openTableAsync(page, 'item');
+        // 1行目(rowIndex=0) name列(colIndex=1) に data-bookmarked 属性が付与されていること
+        const cell1 = getDataCell(table, 0, 1);
+        await expect(cell1).toHaveAttribute('data-bookmarked', '');
+        // 2行目(rowIndex=1) value列(colIndex=2) に data-bookmarked 属性が付与されていること
+        const cell2 = getDataCell(table, 1, 2);
+        await expect(cell2).toHaveAttribute('data-bookmarked', '');
+        // ブックマークされていないセルには data-bookmarked 属性がないこと
+        const cell3 = getDataCell(table, 0, 0);
+        await expect(cell3).not.toHaveAttribute('data-bookmarked');
+    });
 });
 
 // =========================================================================

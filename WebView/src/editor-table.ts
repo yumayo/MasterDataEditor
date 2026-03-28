@@ -387,6 +387,8 @@ export class EditorTable {
         });
         // 初期表示時にバリデーションを実行してセルにエラークラスを付与する
         this.runValidation();
+        // 初期表示時にブックマーク済みセルの視覚マークを復元する
+        this.restoreBookmarkMarks();
     }
 
     /**
