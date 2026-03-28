@@ -1770,6 +1770,18 @@ export class Tab {
                 editorTable.freezeRows(json.frozenRowCount as number);
             }
 
+            // ソート状態の復元: スキーマJSONに保存されたソートキーを適用する
+            // ソート復元はDOM行の再配置を行うためフリーズ復元後に実施する
+            if ('sortKeys' in json && Array.isArray(json.sortKeys) && (json.sortKeys as unknown[]).length > 0) {
+                editorTable.restoreSortState(json.sortKeys as { columnName: string; direction: 'asc' | 'desc' }[]);
+            }
+
+            // フィルター状態の復元: スキーマJSONに保存されたフィルターを適用する
+            // ソート復元後に実施することで、ソート順を維持したままフィルターが適用される
+            if ('filters' in json && typeof json.filters === 'object' && json.filters !== null && Object.keys(json.filters as object).length > 0) {
+                editorTable.restoreFilterState(json.filters as { [columnName: string]: string[] });
+            }
+
             // 開いているテーブルのマップに登録
             this.openEditorTables.set(name, editorTable);
 

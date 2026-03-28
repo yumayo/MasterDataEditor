@@ -2,6 +2,7 @@ import {ColumnFilter} from "./column-filter";
 import {EditorTable} from "./editor-table";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 import {fuzzyMatch, appendHighlightedSegments} from "./fuzzy-search";
+import {saveSchemaDataAsync} from "./editor-actions";
 
 /**
  * フィルタードロップダウン UI コンポーネント
@@ -316,6 +317,8 @@ export class FilterDropdown {
         this.columnFilter.applyFilter(storeColumnIndex, selectedValues);
         this.hide();
         this.table.applyFilterDisplay();
+        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this.table);
     }
 
     /**
@@ -327,6 +330,8 @@ export class FilterDropdown {
         this.hide();
         this.columnFilter.clearFilter(storeColumnIndex);
         this.table.applyFilterDisplay();
+        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this.table);
     }
 
     /**

@@ -15,6 +15,14 @@ export interface SortKey {
 }
 
 /**
+ * スキーマJSON永続化用のソートキー表現（列名ベース）
+ */
+export interface SerializedSortKey {
+    columnName: string;
+    direction: SortDirection;
+}
+
+/**
  * 列ソート管理クラス
  *
  * 責務:
@@ -153,6 +161,50 @@ export class ColumnSorter {
     clearAllSorts(): void {
         this.sortKeys = [];
         this.originalIndices = [];
+    }
+
+    /**
+     * 現在のソート状態をスキーマJSON永続化用にシリアライズする。
+     * DOM列インデックスを列名に変換する（EditorTableData.header 経由）。
+     * ソートキーがない場合は空配列を返す。
+     */
+    serializeSortKeys(): SerializedSortKey[] {
+        const header = this.table.getTableData().header;
+        const result: SerializedSortKey[] = [];
+        for (const key of this.sortKeys) {
+            if (key.columnIndex >= 0 && key.columnIndex < header.length) {
+                result.push({ columnName: header[key.columnIndex].name, direction: key.direction });
+            }
+        }
+        return result;
+    }
+
+    /**
+     * スキーマJSONから読み込んだソートキーを復元する。
+     * 列名をDOM列インデックスに逆引きし、存在しない列名は無視する。
+     * 現在の storeRowIndices（currentIndices）を元にソート済みインデックスを計算して返す。
+     * 復元するソートキーがない場合は currentIndices をそのまま返す。
+     */
+    restoreSortKeys(serialized: SerializedSortKey[], currentIndices: number[]): number[] {
+        const header = this.table.getTableData().header;
+        // 列名 → DOM列インデックスのマップを構築
+        const nameToIndex = new Map<string, number>();
+        for (let i = 0; i < header.length; i++) {
+            nameToIndex.set(header[i].name, i);
+        }
+        // 有効なソートキーのみ復元する（存在しない列名は無視）
+        const restoredKeys: SortKey[] = [];
+        for (const s of serialized) {
+            const colIdx = nameToIndex.get(s.columnName);
+            if (colIdx !== null && colIdx !== undefined) {
+                restoredKeys.push({ columnIndex: colIdx, direction: s.direction });
+            }
+        }
+        if (restoredKeys.length === 0) return currentIndices;
+        // ソート状態を設定して計算する
+        this.originalIndices = [...currentIndices];
+        this.sortKeys = restoredKeys;
+        return this.computeSortedIndices();
     }
 
     /**

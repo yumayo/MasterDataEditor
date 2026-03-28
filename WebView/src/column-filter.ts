@@ -1,4 +1,11 @@
 /**
+ * スキーマJSON永続化用のフィルター表現（列名ベース）
+ */
+export interface SerializedFilters {
+    [columnName: string]: string[];
+}
+
+/**
  * 列フィルター管理クラス
  *
  * 責務:
@@ -123,5 +130,43 @@ export class ColumnFilter {
     getSelectedValues(storeColumnIndex: number): Set<string> | null {
         if (!this.filterMap.has(storeColumnIndex)) return null;
         return this.filterMap.get(storeColumnIndex) as Set<string>;
+    }
+
+    /**
+     * 現在のフィルター状態をスキーマJSON永続化用にシリアライズする。
+     * ストア列インデックスを列名に変換するため、CSVヘッダー（storeColumnNames）を受け取る。
+     * フィルターがない場合は空オブジェクトを返す。
+     *
+     * @param storeColumnNames ストア（CSV）の列名配列（storeColumnNames[storeColIndex] = 列名）
+     */
+    serializeFilters(storeColumnNames: readonly string[]): SerializedFilters {
+        const result: SerializedFilters = {};
+        this.filterMap.forEach((selectedValues, storeColumnIndex) => {
+            if (storeColumnIndex < storeColumnNames.length) {
+                result[storeColumnNames[storeColumnIndex]] = Array.from(selectedValues);
+            }
+        });
+        return result;
+    }
+
+    /**
+     * スキーマJSONから読み込んだフィルター状態を復元する。
+     * 列名をストア列インデックスに逆引きし、存在しない列名は無視する。
+     *
+     * @param serialized スキーマJSONから読み込んだフィルターオブジェクト
+     * @param storeColumnNames ストア（CSV）の列名配列（storeColumnNames[storeColIndex] = 列名）
+     */
+    restoreFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {
+        // 列名 → ストア列インデックスのマップを構築
+        const nameToStoreIndex = new Map<string, number>();
+        for (let i = 0; i < storeColumnNames.length; i++) {
+            nameToStoreIndex.set(storeColumnNames[i], i);
+        }
+        for (const columnName of Object.keys(serialized)) {
+            const storeColIdx = nameToStoreIndex.get(columnName);
+            if (storeColIdx !== null && storeColIdx !== undefined) {
+                this.filterMap.set(storeColIdx, new Set(serialized[columnName]));
+            }
+        }
     }
 }

@@ -354,6 +354,22 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
         delete existingSchema.frozenRowCount;
     }
 
+    // ソートキーの永続化: 空配列の場合はフィールド自体を省略してスキーマを汚染しない
+    const sortKeys = table.serializeSortKeys();
+    if (sortKeys.length > 0) {
+        existingSchema.sortKeys = sortKeys;
+    } else {
+        delete existingSchema.sortKeys;
+    }
+
+    // フィルター状態の永続化: 空オブジェクトの場合はフィールド自体を省略してスキーマを汚染しない
+    const filters = table.serializeFilters();
+    if (Object.keys(filters).length > 0) {
+        existingSchema.filters = filters;
+    } else {
+        delete existingSchema.filters;
+    }
+
     await writeFileAsync(schemaPath, JSON.stringify(existingSchema, null, 4));
 }
 

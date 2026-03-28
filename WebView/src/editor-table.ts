@@ -22,8 +22,8 @@ import {ValidationError} from "./validation-engine";
 import {DiffTab} from "./diff-tab";
 import {GitDiffTracker} from "./git-diff-tracker";
 import {gitStatusAsync, gitShowAsync, gitShowFreshAsync, GitStatusResult} from "./api";
-import {ColumnSorter} from "./column-sorter";
-import {ColumnFilter} from "./column-filter";
+import {ColumnSorter, SerializedSortKey} from "./column-sorter";
+import {ColumnFilter, SerializedFilters} from "./column-filter";
 import {FilterDropdown} from "./filter-dropdown";
 import {Utility} from "./utility";
 import {Tab} from "./tab";
@@ -246,6 +246,19 @@ export class EditorTable {
 
     /** 内部モジュール用: 自テーブルの参照データキャッシュを無効化する（行追加・削除後に呼ぶ） */
     evictOwnReferenceDataCache(): void { this.referenceDataCache.evictEntry(this.tableName); }
+
+    /** 現在のソート状態をスキーマJSON永続化用にシリアライズする */
+    serializeSortKeys(): SerializedSortKey[] { return this.columnSorter.serializeSortKeys(); }
+
+    /**
+     * 現在のフィルター状態をスキーマJSON永続化用にシリアライズする。
+     * ストアのCSVヘッダーから列名を取得してストア列インデックスを列名に変換する。
+     */
+    serializeFilters(): SerializedFilters {
+        const storeColumnNames = this.store.getHeader(this.tableName);
+        if (storeColumnNames === false) return {};
+        return this.columnFilter.serializeFilters(storeColumnNames);
+    }
 
     /**
      * 指定データ列のスキーマ型名を返す。
@@ -1823,6 +1836,47 @@ export class EditorTable {
     }
 
     /**
+     * スキーマJSONから読み込んだソートキーを復元する。
+     * tab.ts の createTabState() からテーブルオープン時に呼ばれる。
+     * saveSchemaDataAsync は呼ばない（復元時の保存は不要）。
+     */
+    restoreSortState(serializedSortKeys: SerializedSortKey[]): void {
+        const newIndices = this.columnSorter.restoreSortKeys(serializedSortKeys, this.storeRowIndices);
+        if (newIndices === this.storeRowIndices) return; // 復元するソートキーがなかった
+        this.storeRowIndices = newIndices;
+        // applySortForColumn と同じDOM再配置ロジック
+        const storeIndexToRowElement = new Map<number, HTMLElement>();
+        const totalRows = this.element.children.length;
+        for (let domIdx = 1; domIdx < totalRows; domIdx++) {
+            const row = this.element.children[domIdx] as HTMLElement;
+            if (row.classList.contains('editor-table-empty-row')) continue;
+            if (!row.hasAttribute('data-store-index')) continue;
+            storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
+        }
+        const firstEmptyRow = this.element.querySelector('.editor-table-empty-row');
+        for (const storeIdx of newIndices) {
+            const row = storeIndexToRowElement.get(storeIdx);
+            if (!row) continue;
+            if (firstEmptyRow) { this.element.insertBefore(row, firstEmptyRow); } else { this.element.appendChild(row); }
+        }
+        this.structure.renumberRowsFrom(1);
+        this.selection.updateRendererAfterResize();
+        this.updateAllSortIndicators();
+    }
+
+    /**
+     * スキーマJSONから読み込んだフィルター状態を復元する。
+     * tab.ts の createTabState() からテーブルオープン時に呼ばれる。
+     * saveSchemaDataAsync は呼ばない（復元時の保存は不要）。
+     */
+    restoreFilterState(serializedFilters: SerializedFilters): void {
+        const storeColumnNames = this.store.getHeader(this.tableName);
+        if (storeColumnNames === false) return;
+        this.columnFilter.restoreFilters(serializedFilters, storeColumnNames);
+        if (this.columnFilter.hasActiveFilter()) this.applyFilterDisplay();
+    }
+
+    /**
      * 指定列のソートをトグルし、DOMの行順を更新する。
      * ソートはView変換のみ（ストア順序は変えない）。Undo/Redo対象外。
      * ミニテーブルでは呼ばれない（ソートインジケーターが存在しないため）。
@@ -1868,6 +1922,9 @@ export class EditorTable {
 
         // ソート後もフィルター状態を維持する（フィルター適用中の場合は表示/非表示を再計算する）
         this.refreshFilterDisplayIfActive();
+
+        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this);
     }
 
     /**
