@@ -20,6 +20,7 @@ import {DebugConsole} from "./debug-console";
 import {BottomPanel} from "./bottom-panel";
 import {EditorApiImpl} from "./editor-api";
 import {EditorApiBridge} from "./editor-api-bridge";
+import {ErrorTooltip} from "./error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 import type {BookmarkEntry} from "./bookmark-panel";
 
@@ -98,6 +99,9 @@ import type {BookmarkEntry} from "./bookmark-panel";
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
 
     tab.connectValidationPanel(validationPanel);
+    // エラーツールチップを生成して Tab に接続する（全 EditorTable で共有するシングルトン）
+    const errorTooltip = new ErrorTooltip(validationPanel);
+    tab.connectErrorTooltip(errorTooltip);
     // ボトムパネル（PROBLEMS / DEBUG CONSOLE）を editor 下段に配置する
     editor.appendBottomPanel(bottomPanel);
     // ステータスバーは画面幅いっぱいに表示するため body 直下に配置する

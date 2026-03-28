@@ -28,6 +28,7 @@ import {FilterDropdown} from "./filter-dropdown";
 import {Utility} from "./utility";
 import {Tab} from "./tab";
 import {NotificationToast} from "./notification";
+import {ErrorTooltip} from "./error-tooltip";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -766,6 +767,59 @@ export class EditorTable {
      */
     connectValidationPanel(panel: ValidationPanel): void {
         this.validationPanel = panel;
+    }
+
+    /**
+     * ErrorTooltip を接続する（Tab.createEditorTable 内から呼ばれる）。
+     * 接続後、テーブル要素に mouseover/mouseout のイベントデリゲーションを登録する。
+     *
+     * イベントデリゲーション方式: セルごとにリスナーを貼るのではなくテーブル要素で一括捕捉する。
+     * セルは動的に追加・削除されるため、デリゲーション方式が適切。
+     */
+    connectErrorTooltip(tooltip: ErrorTooltip): void {
+        this.element.addEventListener('mouseover', (e) => {
+            const target = e.target as HTMLElement;
+            // セル要素またはその子要素（参照ヒント span 等）からセル要素を探す
+            const cell = target.classList.contains('editor-table-cell') ? target : target.closest('.editor-table-cell') as HTMLElement | null;
+            if (!cell) return;
+            if (!cell.classList.contains('cell-error')) return;
+            // DOM座標からストア座標に変換する
+            const position = this.getCellPositionFromElement(cell);
+            if (!position) return;
+            // DOM行 position.row はヘッダー行を含む（0=ヘッダー）。データ行は1始まり。
+            const domDataRowIndex = position.row - 1;
+            if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
+            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            // DOM列 position.column は行ヘッダーを含む（0=行ヘッダー）。データ列は1始まり。
+            const domDataColIndex = position.column - 1;
+            const storeColIndex = this.getStoreColumnIndex(domDataColIndex);
+            if (storeColIndex === -1) return;
+            tooltip.showAfterDelay(cell, this.tableName, storeRowIndex, storeColIndex);
+        });
+
+        this.element.addEventListener('mouseout', (e) => {
+            const target = e.target as HTMLElement;
+            const cell = target.classList.contains('editor-table-cell') ? target : target.closest('.editor-table-cell') as HTMLElement | null;
+            if (!cell) return;
+            // relatedTarget（移動先要素）が同一セル内の子要素であればツールチップを消さない
+            const related = e.relatedTarget as HTMLElement | null;
+            if (related && cell.contains(related)) return;
+            tooltip.hide();
+        });
+
+        // セルクリック時にツールチップを非表示にする（編集モードに入るため邪魔になる）
+        this.element.addEventListener('mousedown', () => {
+            tooltip.hide();
+        });
+
+        // スクロール時にツールチップを非表示にする（位置がずれるため）
+        // EditorTable の親（スクロールコンテナ）にリスナーを追加する
+        const scrollParent = this.element.parentElement;
+        if (scrollParent) {
+            scrollParent.addEventListener('scroll', () => {
+                tooltip.hide();
+            });
+        }
     }
 
     // =========================================================================

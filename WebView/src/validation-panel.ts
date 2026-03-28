@@ -108,6 +108,15 @@ export class ValidationPanel {
     }
 
     /**
+     * 指定テーブル・行・列に対応するエラーリストを返す。
+     * エラーツールチップがセル位置からエラーメッセージを照合するために使う。
+     * 同一セルに複数エラー（PK重複 + 型不一致など）がある場合は全件返す。
+     */
+    getErrorsForCell(tableName: string, rowIndex: number, columnIndex: number): ValidationError[] {
+        return this.currentErrors.filter(e => e.tableName === tableName && e.rowIndex === rowIndex && e.columnIndex === columnIndex);
+    }
+
+    /**
      * バリデーションを実行してパネル・ステータスバー・各EditorTableのエラークラスを更新する。
      * applyCellChanges / replayCellChanges 完了後に呼ばれる。
      *

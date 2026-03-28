@@ -26,6 +26,7 @@ import {DiffTab} from "./diff-tab";
 import {FormPanel} from "./form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "./notification";
+import {ErrorTooltip} from "./error-tooltip";
 import type {EditorAPI} from "./editor-api-types";
 import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
@@ -190,6 +191,9 @@ export class Tab {
     /** エラー通知トースト（各子コンポーネントに伝播させる） */
     private readonly notification: NotificationToast;
 
+    /** エラーツールチップ（connectErrorTooltipで設定される。未設定はfalse） */
+    private errorTooltip: ErrorTooltip | false;
+
     /** EditorAPI（connectEditorApi で後から接続する。未接続時は false） */
     private editorApi: EditorAPI | false;
 
@@ -225,6 +229,7 @@ export class Tab {
         this.pendingEditTarget = false;
         this.currentFormPanel = false;
         this.validationPanel = false;
+        this.errorTooltip = false;
         this.editorApi = false;
         this.pendingTableOpens = new Map();
 
@@ -272,6 +277,14 @@ export class Tab {
      */
     connectValidationPanel(panel: ValidationPanel): void {
         this.validationPanel = panel;
+    }
+
+    /**
+     * エラーツールチップを接続する（main.ts で呼ぶ）。
+     * 接続後は createEditorTable / createMiniEditorTable で ErrorTooltip 接続が行われる。
+     */
+    connectErrorTooltip(tooltip: ErrorTooltip): void {
+        this.errorTooltip = tooltip;
     }
 
     /**
@@ -1929,6 +1942,10 @@ export class Tab {
             );
             editorTable.connectValidationPanel(this.validationPanel);
         }
+        // エラーツールチップの接続
+        if (this.errorTooltip !== false) {
+            editorTable.connectErrorTooltip(this.errorTooltip);
+        }
 
         return {editorTable, selection, editorTableHandler, history, areaResizer, fillController};
     }
@@ -2060,6 +2077,10 @@ export class Tab {
                 tableData.header.map(col => ({ name: col.name, type: col.type, reference: col.reference, defaultValue: col.defaultValue }))
             );
             editorTable.connectValidationPanel(this.validationPanel);
+        }
+        // エラーツールチップの接続
+        if (this.errorTooltip !== false) {
+            editorTable.connectErrorTooltip(this.errorTooltip);
         }
 
         // git差分ハイライト（refreshGitDiffAsync）は呼び出し元が適切なタイミングで呼ぶ。

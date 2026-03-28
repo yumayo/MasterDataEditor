@@ -1,0 +1,32 @@
+/* ==========================================================================
+   エラーツールチップ
+   エラーセル（.cell-error）にマウスホバー 500ms で表示される。
+   position:fixed で body 直下に配置し、エディターテーブルの StackingContext に影響されない。
+   ========================================================================== */
+
+.error-tooltip {
+    position: fixed;
+    background-color: #fef0f0;
+    border: 1px solid #f56c6c;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 400px;
+    z-index: var(--z-index-error-tooltip);
+    color: #c0392b;
+    white-space: pre-line;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: none;
+}
+
+.error-tooltip.visible {
+    display: block;
+}
+
+/* ダークテーマ */
+[data-theme="dark"] .error-tooltip {
+    background-color: #3a1d1d;
+    border-color: #e74c3c;
+    color: #f8d7da;
+}

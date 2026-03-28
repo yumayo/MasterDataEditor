@@ -31,6 +31,7 @@
     /* ─── 最前面 UI ─── */
     --z-index-filter-dropdown-container: 1000;
     --z-index-dropdown-quick-view: 1000;
+    --z-index-error-tooltip: 1200;
     --z-index-notification: 1500;
     --z-index-close-confirm-overlay: 2000;
     --z-index-command-palette-overlay: 2100;
