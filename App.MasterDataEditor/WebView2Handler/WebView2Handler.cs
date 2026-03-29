@@ -299,6 +299,33 @@ public class WebView2Handler : IDisposable
 							SendMessageToWebView(WebView2HandlerGitDiscardRequest.Invoke(root, requestId));
 							break;
 
+						case "git_blame_request":
+						{
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerGitBlameRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
+							break;
+						}
+
+						case "git_log_request":
+						{
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerGitLogRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
+							break;
+						}
+
+						case "git_show_at_commit_request":
+						{
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerGitShowAtCommitRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
+							break;
+						}
+
 						case "editor_api_response":
 							HandleEditorApiResponse(root);
 							break;
