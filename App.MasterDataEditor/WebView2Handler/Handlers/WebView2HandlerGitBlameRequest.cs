@@ -70,11 +70,17 @@ namespace App.MasterDataEditor
 			var entries = new List<object>();
 			var lines = output.Split('\n');
 
+			// git blame --porcelain では同じコミットハッシュの2回目以降の出現で
+			// author/author-time/summary 等のヘッダー行が省略される。
+			// コミット情報をハッシュ単位でキャッシュし、省略時はキャッシュから復元する。
+			var commitCache = new Dictionary<string, (string author, string date, string message)>();
+
 			string currentHash = "";
 			string currentAuthor = "";
 			string currentDate = "";
 			string currentMessage = "";
 			int currentLineNumber = 0;
+			bool isFirstOccurrence = false;
 
 			for (int i = 0; i < lines.Length; i++)
 			{
@@ -85,16 +91,26 @@ namespace App.MasterDataEditor
 				if (line.Length >= 40 && !line.StartsWith('\t') && IsHexString(line, 40))
 				{
 					currentHash = line.Substring(0, 40);
-					// finalLine は2番目の数値（スペース区切り）
 					var parts = line.Split(' ');
 					if (parts.Length >= 3 && int.TryParse(parts[2], out var finalLine))
 					{
 						currentLineNumber = finalLine;
 					}
-					// 新しいブロック開始時にリセット
-					currentAuthor = "";
-					currentDate = "";
-					currentMessage = "";
+					// キャッシュ済みのコミットならキャッシュから復元する
+					if (commitCache.TryGetValue(currentHash, out var cached))
+					{
+						currentAuthor = cached.author;
+						currentDate = cached.date;
+						currentMessage = cached.message;
+						isFirstOccurrence = false;
+					}
+					else
+					{
+						currentAuthor = "";
+						currentDate = "";
+						currentMessage = "";
+						isFirstOccurrence = true;
+					}
 				}
 				else if (line.StartsWith("author "))
 				{
@@ -115,7 +131,12 @@ namespace App.MasterDataEditor
 				}
 				else if (line.StartsWith('\t'))
 				{
-					// タブで始まる行 = ソースコード行 → 1エントリ確定
+					// 初出コミットのヘッダー情報が揃ったのでキャッシュに登録する
+					if (isFirstOccurrence)
+					{
+						commitCache[currentHash] = (currentAuthor, currentDate, currentMessage);
+						isFirstOccurrence = false;
+					}
 					entries.Add(new
 					{
 						lineNumber = currentLineNumber,

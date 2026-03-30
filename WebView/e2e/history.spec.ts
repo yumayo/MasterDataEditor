@@ -41,9 +41,10 @@ interface LogEntry {
  */
 const BLAME_DATA: Record<string, BlameEntry[]> = {
     "data/test.csv": [
-        { lineNumber: 1, author: "Alice", date: "2026-03-01", commitHash: "aaa1111", commitMessage: "initial commit" },
-        { lineNumber: 2, author: "Bob", date: "2026-03-15", commitHash: "bbb2222", commitMessage: "update item_b" },
-        { lineNumber: 3, author: "Charlie", date: "2026-03-20", commitHash: "ccc3333", commitMessage: "add item_c" },
+        // lineNumber はCSVファイルの1始まり行番号（行1=ヘッダー、行2〜=データ行）
+        { lineNumber: 2, author: "Alice", date: "2026-03-01", commitHash: "aaa1111", commitMessage: "initial commit" },
+        { lineNumber: 3, author: "Bob", date: "2026-03-15", commitHash: "bbb2222", commitMessage: "update item_b" },
+        { lineNumber: 4, author: "Charlie", date: "2026-03-20", commitHash: "ccc3333", commitMessage: "add item_c" },
     ],
 };
 
@@ -188,11 +189,11 @@ test.describe('blameビュー', () => {
     // テスト4: コンテキストメニューから「変更履歴を表示」でblame情報がトグル表示される
     // -------------------------------------------------------------------------
     test(
-        '行ヘッダー右クリックで「変更履歴を表示」が存在し、クリックすると .blame-info が表示されること',
+        '行ヘッダー右クリックで「変更履歴を表示」が存在し、クリックすると .blame-cell が表示されること',
         async ({ page, historyTest: _historyTest }) => {
             const table = page.locator('.editor-table');
 
-            // データ行の行ヘッダー（行インデックス1: 最初のデータ行）を右クリックする
+            // データ行の行ヘッダー（nth(1): 2番目のデータ行）を右クリックする
             await rightClickRowHeaderAsync(table, 1);
 
             // コンテキストメニューに「変更履歴を表示」が存在することを確認する
@@ -204,14 +205,14 @@ test.describe('blameビュー', () => {
             // 「変更履歴を表示」をクリックする
             await blameMenuItem.click();
 
-            // 行ヘッダーに .blame-info サブ要素が表示されることを確認する
+            // 行ヘッダーに .blame-cell サブ要素が表示されることを確認する
             const rowHeader = table.locator('.editor-table-row-header').nth(1);
-            const blameInfo = rowHeader.locator('.blame-info');
-            await expect(blameInfo).toBeVisible();
+            const blameCell = rowHeader.locator('.blame-cell');
+            await expect(blameCell).toBeVisible();
 
-            // .blame-info 内の構造化された author/date 要素を検証する
-            await expect(blameInfo.locator('.blame-author')).toHaveText('Alice');
-            await expect(blameInfo.locator('.blame-date')).toHaveText('2026-03-01');
+            // .blame-cell 内の構造化された author/date 要素を検証する（nth(1)=データ行2→lineNumber=3→Bob）
+            await expect(blameCell.locator('.blame-author')).toHaveText('Bob');
+            await expect(blameCell.locator('.blame-date')).toHaveText('2026-03-15');
         },
     );
 
@@ -219,7 +220,7 @@ test.describe('blameビュー', () => {
     // テスト5: blameトグルを再度クリックするとblame情報が非表示になる
     // -------------------------------------------------------------------------
     test(
-        '「変更履歴を非表示」クリックで .blame-info が非表示になること',
+        '「変更履歴を非表示」クリックで .blame-cell が非表示になること',
         async ({ page, historyTest: _historyTest }) => {
             const table = page.locator('.editor-table');
 
@@ -227,9 +228,9 @@ test.describe('blameビュー', () => {
             await rightClickRowHeaderAsync(table, 1);
             await clickContextMenuItemAsync(page, '変更履歴を表示');
 
-            // blame-info が表示されていることを確認する
+            // blame-cell が表示されていることを確認する
             const rowHeader = table.locator('.editor-table-row-header').nth(1);
-            await expect(rowHeader.locator('.blame-info')).toBeVisible();
+            await expect(rowHeader.locator('.blame-cell')).toBeVisible();
 
             // 再度行ヘッダーを右クリックしてコンテキストメニューを開く
             await rightClickRowHeaderAsync(table, 1);
@@ -237,8 +238,8 @@ test.describe('blameビュー', () => {
             // 「変更履歴を非表示」をクリックする
             await clickContextMenuItemAsync(page, '変更履歴を非表示');
 
-            // .blame-info が非表示になることを確認する
-            await expect(rowHeader.locator('.blame-info')).not.toBeVisible();
+            // .blame-cell が非表示になることを確認する
+            await expect(rowHeader.locator('.blame-cell')).toHaveCount(0);
         },
     );
 });

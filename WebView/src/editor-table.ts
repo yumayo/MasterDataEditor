@@ -466,42 +466,53 @@ export class EditorTable {
         const filename = 'data/' + this.tableName + '.csv';
         const entries = await gitBlameAsync(filename);
         this.isBlameVisible = true;
+        // blame表示中クラスを付与して行ヘッダー幅をCSSで拡張する
+        this.element.classList.add('editor-table--blame-visible');
+        // 列ヘッダー行のcorner-cellにもblameヘッダーラベルを追加する
+        const cornerCell = this.element.querySelector('.editor-table-corner-cell') as HTMLElement;
+        if (cornerCell) {
+            const blameHeader = document.createElement('div');
+            blameHeader.classList.add('blame-column-header');
+            blameHeader.textContent = 'BLAME';
+            cornerCell.prepend(blameHeader);
+        }
         // 行番号→BlameEntryの高速ルックアップマップを構築する
         const blameMap = new Map<number, BlameEntry>();
         for (let i = 0; i < entries.length; i++) {
             blameMap.set(entries[i].lineNumber, entries[i]);
         }
-        // 各行ヘッダーに blame-info 要素を追加する
+        // 各行ヘッダーの先頭に blame-cell 要素を挿入する
+        // 行ヘッダーは children[0] のため、DOM上は行ヘッダー内部に配置して
+        // children インデックスに影響を与えない設計とする
         const rowHeaders = this.element.querySelectorAll('.editor-table-row-header') as NodeListOf<HTMLElement>;
         for (const rowHeader of Array.from(rowHeaders)) {
-            // バッファ空行（editor-table-empty-row）の行ヘッダーにはblame情報を付与しない
             const parentRow = rowHeader.parentElement;
-            if (parentRow && parentRow.classList.contains('editor-table-empty-row')) continue;
+            const isEmptyRow = parentRow !== null && parentRow.classList.contains('editor-table-empty-row');
             const rowIndexStr = rowHeader.dataset.rowIndex;
-            if (!rowIndexStr) continue;
-            // data-rowIndex はCSVヘッダー行を除いたデータ行の0始まりインデックス。
-            // git blame の lineNumber は1始まりだが、CSVヘッダー行(lineNumber=0相当)を除外して
-            // データ行のインデックスとして直接マッピングする。
-            const lineNumber = parseInt(rowIndexStr);
-            const entry = blameMap.get(lineNumber);
-            if (!entry) continue;
-            // 既存の blame-info があれば除去してから追加する
-            const existing = rowHeader.querySelector('.blame-info');
-            if (existing) existing.remove();
-            const blameInfo = document.createElement('div');
-            blameInfo.classList.add('blame-info');
-            blameInfo.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
-            blameInfo.setAttribute('role', 'note');
-            blameInfo.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
-            const authorSpan = document.createElement('span');
-            authorSpan.classList.add('blame-author');
-            authorSpan.textContent = entry.author;
-            blameInfo.appendChild(authorSpan);
-            const dateSpan = document.createElement('span');
-            dateSpan.classList.add('blame-date');
-            dateSpan.textContent = entry.date;
-            blameInfo.appendChild(dateSpan);
-            rowHeader.appendChild(blameInfo);
+            // blame-cell は全行（バッファ空行含む）に追加してレイアウトを統一する
+            const blameCell = document.createElement('div');
+            blameCell.classList.add('blame-cell');
+            if (!isEmptyRow && rowIndexStr) {
+                // data-rowIndex はCSVヘッダー行を除いたデータ行の0始まりインデックス。
+                // git blame の lineNumber はCSVファイルの1始まり行番号で、行1がCSVヘッダー。
+                // データ行0 → CSVファイル行2（ヘッダー行1行 + 0始まり→1始まり）
+                const lineNumber = parseInt(rowIndexStr) + 2;
+                const entry = blameMap.get(lineNumber);
+                if (entry) {
+                    blameCell.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
+                    blameCell.setAttribute('role', 'note');
+                    blameCell.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
+                    const authorSpan = document.createElement('span');
+                    authorSpan.classList.add('blame-author');
+                    authorSpan.textContent = entry.author;
+                    blameCell.appendChild(authorSpan);
+                    const dateSpan = document.createElement('span');
+                    dateSpan.classList.add('blame-date');
+                    dateSpan.textContent = entry.date;
+                    blameCell.appendChild(dateSpan);
+                }
+            }
+            rowHeader.prepend(blameCell);
         }
     }
 
@@ -510,9 +521,15 @@ export class EditorTable {
      */
     hideBlame(): void {
         this.isBlameVisible = false;
-        const blameInfos = this.element.querySelectorAll('.blame-info');
-        for (const info of Array.from(blameInfos)) {
-            info.remove();
+        this.element.classList.remove('editor-table--blame-visible');
+        // blame-cell と blame-column-header を全て除去する
+        const blameCells = this.element.querySelectorAll('.blame-cell');
+        for (const cell of Array.from(blameCells)) {
+            cell.remove();
+        }
+        const blameHeaders = this.element.querySelectorAll('.blame-column-header');
+        for (const header of Array.from(blameHeaders)) {
+            header.remove();
         }
     }
 
@@ -988,8 +1005,10 @@ export class EditorTable {
         if (this.frozenColumnCount === 0) return;
         const rowCount = this.element.children.length;
         // 各固定列の left 値を事前に計算する（行ヘッダー幅 + 前の固定列幅の合計）
+        // blame表示時は行ヘッダー幅が240pxに拡張されるため、実際の幅を取得する
         const leftValues: number[] = [];
-        let cumulativeLeft = 40; // 行ヘッダー幅
+        const rowHeaderWidth = this.isBlameVisible ? 240 : 40;
+        let cumulativeLeft = rowHeaderWidth;
         for (let col = 0; col < this.frozenColumnCount; col++) {
             leftValues.push(cumulativeLeft);
             // 列幅は列ヘッダーセルから取得する（px文字列をパース）

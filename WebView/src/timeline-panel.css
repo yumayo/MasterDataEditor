@@ -45,14 +45,73 @@
     margin-top: 1px;
 }
 
-/* blame情報: 行ヘッダー内に表示される author + date */
-.blame-info {
+/* =========================================================================
+   blame列: 行番号の左に独立した列として表示する
+   行ヘッダー（children[0]）の内部に blame-cell を prepend することで
+   テーブルの children インデックスに影響を与えない設計。
+   行ヘッダーを display:flex にして [blame-cell | 行番号テキスト] の2分割とし、
+   blame-cell の右ボーダーで視覚的に独立した列に見せる。
+   row-resize-handle は position:absolute なので flex レイアウトに影響しない。
+   ========================================================================= */
+
+/* blame表示時の行ヘッダー: 幅を拡張し flex で blame-cell と行番号を横並びにする */
+.editor-table--blame-visible .editor-table-row-header {
+    min-width: 240px;
+    max-width: 240px;
+    width: 240px;
+    display: flex;
+    align-items: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* blame表示時のcorner-cell: 行ヘッダーと同幅にして列位置を揃える */
+.editor-table--blame-visible .editor-table-corner-cell {
+    min-width: 240px;
+    max-width: 240px;
+    width: 240px;
+    display: flex;
+    align-items: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* blame列ヘッダー（corner-cell内）: 左半分にラベルを表示 */
+.blame-column-header {
+    width: 200px;
+    min-width: 200px;
+    text-align: center;
     font-size: 10px;
+    font-weight: normal;
+    opacity: 0.6;
+    border-right: 1px solid var(--border-color);
+}
+
+/* blame-cell: 行ヘッダー内の左側200pxを占有し、右ボーダーで行番号と分離する */
+.blame-cell {
+    width: 200px;
+    min-width: 200px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: normal;
     color: var(--font-color);
     opacity: 0.6;
     white-space: nowrap;
     overflow: hidden;
+    padding: 0 6px;
+    border-right: 1px solid var(--border-color);
+    box-sizing: border-box;
+}
+
+.blame-author {
+    max-width: 90px;
+    overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 4px;
-    line-height: 1.2;
+}
+
+.blame-date {
+    opacity: 0.8;
+    font-size: 10px;
 }
