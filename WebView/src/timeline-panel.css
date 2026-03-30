@@ -76,7 +76,7 @@
     position: sticky;
     left: 0;
     z-index: var(--z-index-blame-cell);
-    background: var(--editor-table-column-header-bg, var(--bg-color));
+    background-color: var(--background-color);
     box-sizing: border-box;
 }
 
@@ -99,7 +99,7 @@
     position: sticky;
     left: 0;
     z-index: var(--z-index-blame-cell);
-    background: var(--bg-color);
+    background-color: var(--background-color);
 }
 
 /* blame-cell 内の著者・日付を横並びにする */
