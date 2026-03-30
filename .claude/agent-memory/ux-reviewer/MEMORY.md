@@ -21,9 +21,12 @@
 ### 以前のレビュー結果（2026-03-29 ISSUE_0123 任意コミット間バージョン比較）
 - ファイル: project_issue0123_version_compare.md — 評価B+。コミット選択ダイアログARIA欠如・選択状態表示なし・fill-handle残存が主要課題。
 
+### 最新レビュー結果（2026-03-30 ISSUE_0120 blameビュー行ヘッダー改修後）
+- ファイル: project_issue0120_blame_view_v2.md — 評価B+。前回C+から改善。行1のblame欠落・activity-bar SVGのaria-hidden欠如が残存。flex横並びレイアウト・ARIA・構造化・バッファ行誤表示はすべて解消。
+
 ### 以前のレビュー結果（2026-03-29 ISSUE_0120 タイムラインパネル・blameビュー）
 
-#### ISSUE_0120 変更履歴・監査ログ機能 評価: C+
+#### ISSUE_0120 変更履歴・監査ログ機能 評価: C+（初回レビュー、改修前）
 - 変更内容: アクティビティバーに history アイコン（時計SVG）追加。サイドバーに timeline-panel（TIMELINE）。行ヘッダー右クリックメニューに「変更履歴を表示/非表示」切り替え。blame-info div を editor-table-row-header 直下に追加しテキスト「著者名 日付」を表示。
 - 良い点: アクティビティバーへの統合が他パネルと一貫している。`activity-bar-item-active` の切替が正確（historyクリックでactiveクラスがfilesからhistoryに移動）。`timeline-panel` が `sidebar-panel-active` クラスを得てEXPLORERと排他的に切り替わる。`timeline-entry` × 3件（add/update/initial）のメッセージ・著者・日付の3要素が正確に表示。コンテキストメニューの「変更履歴を表示」→「変更履歴を非表示」のトグルが正確に動作（DOMダンプで各状態を確認）。blame 表示後に再度同じメニューで非表示にする対称設計が機能している。バッファ行（editor-table-empty-row, data-row-index="3"）にも blame-info が付与されており全行統一的に処理している。
 - 修正必須(🔴): `blame-info` が `editor-table-row-header`（height:20px固定）の中に子要素として追加されているため、行ヘッダーの高さが変わらず blame テキストがはみ出すかレイアウト破壊が起きる。DOMダンプ確認: `<div class="editor-table-cell editor-table-row-header selected" data-row-index="1" style="height: 20px; min-height: 20px; max-height: 20px; line-height: 20px; ...">2<div class="row-resize-handle"></div><div class="blame-info">Alice 2026-03-01</div></div>` で height が 20px 固定のまま。スクリーンショットでは行ヘッダーが2行表示（「2 / Alic...」）になっているが、行高さが固定のためデータセルとヘッダーの高さが一致しない。これは行ヘッダーの行高さをblame表示時に動的に拡張するか、blame-info を行ヘッダーの外に配置する設計変更が必要。
