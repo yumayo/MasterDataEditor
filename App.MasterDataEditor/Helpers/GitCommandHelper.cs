@@ -49,6 +49,21 @@ namespace App.MasterDataEditor
 		}
 
 		/// <summary>
+		/// フロントエンドから受け取った "data/xxx.csv" 形式のパスを
+		/// gitルート相対の "{dataPrefix}xxx.csv" 形式に変換する。
+		/// フロントエンドはgitリポジトリ構造を知らないため、
+		/// テーブル名ベースでパスを構築する呼び出し元（git_log, git_blame）で使用する。
+		/// </summary>
+		public static string ToGitRootRelativePath(string frontendPath, string dataPrefix)
+		{
+			if (frontendPath.StartsWith("data/"))
+			{
+				return dataPrefix + frontendPath.Substring("data/".Length);
+			}
+			return frontendPath;
+		}
+
+		/// <summary>
 		/// 指定した作業ディレクトリでgitコマンドを実行し、標準出力を返す
 		/// ProcessStartInfo.ArgumentListを使用し、各引数を個別に渡すことで引数インジェクションを防止する
 		/// コマンドが失敗した場合（終了コードが0以外）は InvalidOperationException をスローする

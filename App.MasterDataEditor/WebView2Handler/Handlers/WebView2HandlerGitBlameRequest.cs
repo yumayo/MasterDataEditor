@@ -19,10 +19,10 @@ namespace App.MasterDataEditor
 					return new { type = "git_blame_response", requestId, success = false, error = "filename is required" };
 				}
 
-				var filename = filenameElement.GetString();
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
+				var filename = GitCommandHelper.ToGitRootRelativePath(filenameElement.GetString(), dataPrefix);
 				var validationError = GitCommandHelper.ValidateDataPath(filename, dataPrefix);
 				if (validationError != null)
 				{

@@ -35,11 +35,11 @@ namespace App.MasterDataEditor
 					return new { type = "git_log_response", requestId, success = false, error = "limit is required" };
 				}
 
-				var filename = filenameElement.GetString();
 				var limit = limitElement.GetInt32();
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
+				var filename = GitCommandHelper.ToGitRootRelativePath(filenameElement.GetString(), dataPrefix);
 				var validationError = GitCommandHelper.ValidateDataPath(filename, dataPrefix);
 				if (validationError != null)
 				{
