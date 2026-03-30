@@ -524,6 +524,8 @@ export class EditorTable {
         // blame列挿入でDOMインデックスが1つずれるため、フォーカス位置とSelection範囲を補正する
         if (this.lastFocusedCol >= 0) this.lastFocusedCol += 1;
         this.selection.shiftColumnsBy(1);
+        // blame列挿入でデータセルの絶対座標がずれるため、選択範囲の描画を再計算する
+        this.selection.updateRendererAfterResize();
         // 固定列がある場合、blame列分のインデックスずれを反映する
         if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
     }
@@ -546,6 +548,8 @@ export class EditorTable {
         // blame列除去でDOMインデックスが1つ戻るため、フォーカス位置とSelection範囲を補正する
         if (this.lastFocusedCol >= 0) this.lastFocusedCol -= 1;
         this.selection.shiftColumnsBy(-1);
+        // blame列除去でデータセルの絶対座標が戻るため、選択範囲の描画を再計算する
+        this.selection.updateRendererAfterResize();
         // 固定列がある場合、インデックスが元に戻ったので再適用する
         if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
     }
