@@ -41,7 +41,7 @@ export class EditorTableReference {
      */
     setCellValueAt(row: number, column: number, value: string): void {
         const cell = this.table.getCell(row, column);
-        const dataColumnIndex = column - 1;
+        const dataColumnIndex = column - this.table.dataColumnOffset();
         this.setCellValue(cell, value, dataColumnIndex, row);
         // 変更された列に依存する動的参照列のヒントを再評価する（二段リスト対応）
         this.updateDependentColumnsInRow(row, dataColumnIndex);
@@ -80,7 +80,7 @@ export class EditorTableReference {
                 for (const colName of this.getAllParentColumnNames()) {
                     const colDataIndex = this.tableData.header.findIndex(h => h.name === colName);
                     if (colDataIndex === -1) continue;
-                    const colValue = this.table.getCellValueAt(rowIndex, colDataIndex + 1);
+                    const colValue = this.table.getCellValueAt(rowIndex, colDataIndex + this.table.dataColumnOffset());
                     if (colValue === '') continue;
                     if (!this.reverseReferenceMap) continue;
                     const entries = this.reverseReferenceMap.get(colValue);
@@ -132,9 +132,9 @@ export class EditorTableReference {
         for (let rowIndex = startDomRow; rowIndex < endDomRow; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
             if (!row) throw new Error(`DOM行が見つかりません: rowIndex=${rowIndex}`);
-            for (let colIndex = 1; colIndex < row.children.length; colIndex++) {
+            for (let colIndex = this.table.dataColumnOffset(); colIndex < row.children.length; colIndex++) {
                 const cell = row.children[colIndex] as HTMLElement;
-                const dataColumnIndex = colIndex - 1;
+                const dataColumnIndex = colIndex - this.table.dataColumnOffset();
                 const value = EditorTable.getCellValue(cell);
                 this.setCellValue(cell, value, dataColumnIndex, rowIndex);
             }
@@ -148,7 +148,7 @@ export class EditorTableReference {
         const tableElement = this.table.getTableElement();
         for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
-            const cell = row.children[columnIndex + 1] as HTMLElement;
+            const cell = row.children[columnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 const value = EditorTable.getCellValue(cell);
                 this.setCellValue(cell, value, columnIndex, rowIndex);
@@ -177,12 +177,12 @@ export class EditorTableReference {
         // 全データ行のPK列セルに逆参照ヒントを適用する
         for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
-            const pkCell = row.children[pkColumnIndex + 1] as HTMLElement;
+            const pkCell = row.children[pkColumnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (!pkCell) continue;
             // 全 parentColumnName の列値でエントリを収集する
             const allEntries: ReverseReferenceEntry[] = [];
             for (const [colName, colIdx] of parentColumnIndices) {
-                const colCell = row.children[colIdx + 1] as HTMLElement;
+                const colCell = row.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
                 if (!colCell) continue;
                 const colValue = EditorTable.getCellValue(colCell);
                 if (colValue === '') continue;
@@ -240,7 +240,7 @@ export class EditorTableReference {
     getCellValueByColumnName(rowIndex: number, columnName: string): string {
         const dataColumnIndex = this.tableData.header.findIndex(col => col.name === columnName);
         if (dataColumnIndex === -1) return '';
-        return this.table.getCellValueAt(rowIndex, dataColumnIndex + 1);
+        return this.table.getCellValueAt(rowIndex, dataColumnIndex + this.table.dataColumnOffset());
     }
 
     /**
@@ -252,7 +252,7 @@ export class EditorTableReference {
             col => col.name === this.tableData.primaryKeyColumns[0]
         );
         if (pkColumnIndex === -1) return '';
-        return this.table.getCellValueAt(rowIndex, pkColumnIndex + 1);
+        return this.table.getCellValueAt(rowIndex, pkColumnIndex + this.table.dataColumnOffset());
     }
 
     /**
@@ -270,7 +270,7 @@ export class EditorTableReference {
             return;
         }
         // column=0は行ヘッダーなので、データ列インデックスに+1する
-        const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
+        const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + this.table.dataColumnOffset());
         if (filterValue === '') return;
         // フィルタテーブルの全データを同期的に取得
         const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
@@ -482,7 +482,7 @@ export class EditorTableReference {
             // この動的参照が変更された列を参照元としているか確認
             if (this.resolveValueColumnIndex(expr.filter.valueColumn, colIdx) !== changedDataColumnIndex) continue;
             // 依存しているセルのヒントを再評価する
-            const cell = rowElement.children[colIdx + 1] as HTMLElement;
+            const cell = rowElement.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 const cellValue = EditorTable.getCellValue(cell);
                 this.setCellValue(cell, cellValue, colIdx, rowIndex);
@@ -510,7 +510,7 @@ export class EditorTableReference {
             // 参照先テーブルが自身の表示列を持つ場合は逆参照チェーン不使用なのでスキップ
             const refData = this.referenceDataCache.getSync(expr.tableName);
             if (!refData || refData.displayColumnName !== '') continue;
-            const cell = rowElement.children[colIdx + 1] as HTMLElement;
+            const cell = rowElement.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
             if (!cell) continue;
             const fkValue = EditorTable.getCellValue(cell);
             if (fkValue === '') continue;

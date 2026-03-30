@@ -179,7 +179,7 @@ export class AreaResizer {
         for (let col = startCol; col <= endCol; col++) {
             // 列インデックスへの変換: selectionのcolumnはDOMのcolumn（行ヘッダーを含むため1始まり）
             // EditorTableのcolumnIndexは0始まり（行ヘッダーを除く）
-            const colIndex = col - 1;
+            const colIndex = col - this.editorTable.dataColumnOffset();
             const oldWidth = this.editorTable.getColumnWidth(colIndex);
             const newWidth = widthFactory(colIndex);
             if (oldWidth === newWidth) continue;

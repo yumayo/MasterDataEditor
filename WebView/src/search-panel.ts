@@ -472,8 +472,8 @@ export class SearchPanel {
         if (pkColIndex === -1) return '';
         // ID値に一致する行を探す
         for (let r = 1; r < rowCount; r++) {
-            if (editorTable.getCellValueAt(r, pkColIndex + 1) === idValue) {
-                return editorTable.getCellValueAt(r, displayColIndex + 1);
+            if (editorTable.getCellValueAt(r, pkColIndex + editorTable.dataColumnOffset()) === idValue) {
+                return editorTable.getCellValueAt(r, displayColIndex + editorTable.dataColumnOffset());
             }
         }
         return '';
@@ -497,7 +497,7 @@ export class SearchPanel {
         const domRow = editorTable.findDomRowByPkValue(result.pkValue);
         if (domRow === -1) return;
         // DOM列インデックス（1始まり、行ヘッダー含む）
-        const domColumn = result.columnIndex + 1;
+        const domColumn = result.columnIndex + editorTable.dataColumnOffset();
         const oldValue = editorTable.getCellValueAt(domRow, domColumn);
         const searchText = this.inputElement.value.trim();
         const replaceText = this.replaceInputElement.value;
@@ -545,7 +545,7 @@ export class SearchPanel {
             if (!editorTable) continue;
             const domRow = editorTable.findDomRowByPkValue(result.pkValue);
             if (domRow === -1) continue;
-            const domColumn = result.columnIndex + 1;
+            const domColumn = result.columnIndex + editorTable.dataColumnOffset();
             const oldValue = editorTable.getCellValueAt(domRow, domColumn);
             const newValue = replaceWithQuery(oldValue, searchText, replaceText, options);
             if (oldValue === newValue) continue;

@@ -556,7 +556,7 @@ export class DeleteColumnCommand implements Command {
         // 各行から削除する列のセル値を保存（列ヘッダー行を除く）
         const rowCount = this.editorTable.getRowCount();
         for (let rowIdx = 1; rowIdx < rowCount; ++rowIdx) {
-            const value = this.editorTable.getCellValueAt(rowIdx, this.columnIndex + 1);
+            const value = this.editorTable.getCellValueAt(rowIdx, this.columnIndex + this.editorTable.dataColumnOffset());
             this.deletedCellValues.push(value);
         }
 
@@ -577,7 +577,7 @@ export class DeleteColumnCommand implements Command {
         // セル値を復元
         const rowCount = this.editorTable.getRowCount();
         for (let rowIdx = 1; rowIdx < rowCount; ++rowIdx) {
-            this.editorTable.updateCellValueAt(rowIdx, this.columnIndex + 1, this.deletedCellValues[rowIdx - 1]);
+            this.editorTable.updateCellValueAt(rowIdx, this.columnIndex + this.editorTable.dataColumnOffset(), this.deletedCellValues[rowIdx - 1]);
         }
 
         // 列幅を復元（全セルに適用）
@@ -678,7 +678,7 @@ export class DeleteRowCommand implements Command {
         // 削除する行のセル値を保存（行ヘッダーセルを除く）
         const columnCount = this.editorTable.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
-            const value = this.editorTable.getCellValueAt(this.rowIndex, colIdx + 1);
+            const value = this.editorTable.getCellValueAt(this.rowIndex, colIdx + this.editorTable.dataColumnOffset());
             this.deletedCellValues.push(value);
         }
 
@@ -696,7 +696,7 @@ export class DeleteRowCommand implements Command {
         // セル値を復元
         const columnCount = this.editorTable.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
-            this.editorTable.updateCellValueAt(this.rowIndex, colIdx + 1, this.deletedCellValues[colIdx]);
+            this.editorTable.updateCellValueAt(this.rowIndex, colIdx + this.editorTable.dataColumnOffset(), this.deletedCellValues[colIdx]);
         }
 
         // 行高を復元（全セルに適用）

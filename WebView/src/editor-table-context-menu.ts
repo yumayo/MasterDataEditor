@@ -31,7 +31,7 @@ export class EditorTableContextMenu {
             // 左クリック以外は無視
             if (e.button !== 0) return;
             this.table.getHandler().submitAndHide();
-            const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + 1;
+            const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + this.table.dataColumnOffset();
             if (e.shiftKey) {
                 this.selection.extendToColumn(clickedColumnIndex);
             } else if (e.ctrlKey || e.metaKey) {
@@ -53,7 +53,7 @@ export class EditorTableContextMenu {
             // 読み取り専用の場合はコンテキストメニューを表示しない
             if (this.readOnly) return;
             const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
-            const contextMenuSelectionColumnIndex = contextMenuColumnIndex + 1;
+            const contextMenuSelectionColumnIndex = contextMenuColumnIndex + this.table.dataColumnOffset();
             // 選択範囲を取得
             const selRange = this.selection.getSelectionRange();
             // 列全体が選択されているか判定（行範囲がテーブル全高さか確認）
@@ -66,8 +66,8 @@ export class EditorTableContextMenu {
             const useSelectedColumns = isColumnSelection && isInSelection;
             // 複数列選択時の列情報を計算
             const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
-            const startColumnIndex = useSelectedColumns ? selRange.startColumn - 1 : contextMenuColumnIndex;
-            const endColumnIndex = useSelectedColumns ? selRange.endColumn - 1 : contextMenuColumnIndex;
+            const startColumnIndex = useSelectedColumns ? selRange.startColumn - this.table.dataColumnOffset() : contextMenuColumnIndex;
+            const endColumnIndex = useSelectedColumns ? selRange.endColumn - this.table.dataColumnOffset() : contextMenuColumnIndex;
             // 選択範囲外の右クリック時は対象列を選択する
             if (!useSelectedColumns) {
                 this.selection.selectColumn(contextMenuSelectionColumnIndex);

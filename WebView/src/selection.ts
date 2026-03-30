@@ -127,7 +127,7 @@ export class Selection {
      */
     move(row: number, column: number): void {
         row = Math.max(1, row);
-        column = Math.max(1, column);
+        column = Math.max(this.editorTable.dataColumnOffset(), column);
 
         this.focus = { row, column }; // move フォーカスを移動します。範囲選択の変更なし
         this.scrollFocusIntoView();
@@ -143,9 +143,9 @@ export class Selection {
      */
     setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
         startRow = Math.max(1, startRow);
-        startColumn = Math.max(1, startColumn);
+        startColumn = Math.max(this.editorTable.dataColumnOffset(), startColumn);
         endRow = Math.max(1, endRow);
-        endColumn = Math.max(1, endColumn);
+        endColumn = Math.max(this.editorTable.dataColumnOffset(), endColumn);
 
         this.range = { startRow, startColumn, endRow, endColumn };
         this.updateRenderer();
@@ -153,7 +153,7 @@ export class Selection {
 
     start(row: number, column: number): void {
         row = Math.max(1, row);
-        column = Math.max(1, column);
+        column = Math.max(this.editorTable.dataColumnOffset(), column);
 
         this.selecting = true;
         this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
@@ -297,7 +297,7 @@ export class Selection {
      */
     extendSelection(row: number, column: number): void {
         const endRow = Math.max(1, row);
-        const endColumn = Math.max(1, column);
+        const endColumn = Math.max(this.editorTable.dataColumnOffset(), column);
         this.range = {
             ...this.range,
             endRow: endRow,
@@ -380,6 +380,17 @@ export class Selection {
 
         this.range = { ...this.range, endRow: row };
         this.updateRenderer();
+    }
+
+    /**
+     * blame列の挿入/除去でDOMインデックスがずれた際に、
+     * Selection の range と focus の列インデックスを一括補正する。
+     * updateRenderer() は呼ばない（DOM構造変更の途中で呼ぶと不整合を起こすため）。
+     */
+    shiftColumnsBy(delta: number): void {
+        this.range.startColumn += delta;
+        this.range.endColumn += delta;
+        this.focus = { row: this.focus.row, column: this.focus.column + delta };
     }
 
     isSingleCell(): boolean {

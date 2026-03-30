@@ -411,7 +411,7 @@ export class Tab {
         const editorTable = state.editorTable;
         const rowCount = editorTable.getRowCount();
         // columnIndex はCSVの0始まり列 → DOM上は column + 1
-        const col = columnIndex + 1;
+        const col = columnIndex + editorTable.dataColumnOffset();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, col, r, col);

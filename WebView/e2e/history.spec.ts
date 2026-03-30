@@ -205,12 +205,12 @@ test.describe('blameビュー', () => {
             // 「変更履歴を表示」をクリックする
             await blameMenuItem.click();
 
-            // 行ヘッダーに .blame-cell サブ要素が表示されることを確認する
-            const rowHeader = table.locator('.editor-table-row-header').nth(1);
-            const blameCell = rowHeader.locator('.blame-cell');
+            // 行の children[0] に .blame-cell が表示されることを確認する（行ヘッダーの兄弟要素）
+            const dataRow = table.locator('.editor-table-row').nth(2); // nth(0)=ヘッダー行、nth(1)=データ行1、nth(2)=データ行2
+            const blameCell = dataRow.locator('.blame-cell');
             await expect(blameCell).toBeVisible();
 
-            // .blame-cell 内の構造化された author/date 要素を検証する（nth(1)=データ行2→lineNumber=3→Bob）
+            // .blame-cell 内の構造化された author/date 要素を検証する（データ行2→lineNumber=3→Bob）
             await expect(blameCell.locator('.blame-author')).toHaveText('Bob');
             await expect(blameCell.locator('.blame-date')).toHaveText('2026-03-15');
         },
@@ -229,8 +229,8 @@ test.describe('blameビュー', () => {
             await clickContextMenuItemAsync(page, '変更履歴を表示');
 
             // blame-cell が表示されていることを確認する
-            const rowHeader = table.locator('.editor-table-row-header').nth(1);
-            await expect(rowHeader.locator('.blame-cell')).toBeVisible();
+            const dataRow = table.locator('.editor-table-row').nth(2);
+            await expect(dataRow.locator('.blame-cell')).toBeVisible();
 
             // 再度行ヘッダーを右クリックしてコンテキストメニューを開く
             await rightClickRowHeaderAsync(table, 1);
@@ -239,7 +239,67 @@ test.describe('blameビュー', () => {
             await clickContextMenuItemAsync(page, '変更履歴を非表示');
 
             // .blame-cell が非表示になることを確認する
-            await expect(rowHeader.locator('.blame-cell')).toHaveCount(0);
+            await expect(dataRow.locator('.blame-cell')).toHaveCount(0);
+        },
+    );
+});
+
+test.describe('blame表示時の列選択', () => {
+
+    // -------------------------------------------------------------------------
+    // テスト6: blame表示時に列ヘッダーをクリックすると正しい1列のみ選択される
+    // blame列（children[0]）がDOMインデックスをずらすため、列ヘッダークリックで
+    // 隣の列が選択されたり2列選択されたりするバグのリグレッションテスト
+    // -------------------------------------------------------------------------
+    test(
+        'blame表示時に列ヘッダー「name」をクリックすると、name列の1列のみに selected クラスが付与されること',
+        async ({ page, historyTest: _historyTest }) => {
+            const table = page.locator('.editor-table');
+
+            // blameを表示する
+            await rightClickRowHeaderAsync(table, 0);
+            await clickContextMenuItemAsync(page, '変更履歴を表示');
+            await expect(table.locator('.blame-cell').first()).toBeVisible();
+
+            // name列ヘッダーをクリックする
+            const nameHeader = table.locator('.editor-table-column-header', { hasText: 'name' });
+            await nameHeader.click();
+
+            // name列ヘッダーにのみ selected クラスが付与されていること
+            await expect(nameHeader).toHaveClass(/selected/);
+
+            // 他の列ヘッダー（id, value）には selected クラスが付与されていないこと
+            const idHeader = table.locator('.editor-table-column-header', { hasText: 'id' });
+            const valueHeader = table.locator('.editor-table-column-header', { hasText: 'value' });
+            await expect(idHeader).not.toHaveClass(/selected/);
+            await expect(valueHeader).not.toHaveClass(/selected/);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト7: blame表示時にセルをクリックすると正しいセルにフォーカスが当たる
+    // -------------------------------------------------------------------------
+    test(
+        'blame表示時にデータセルをクリックすると、クリックしたセルにフォーカスクラスが付与されること',
+        async ({ page, historyTest: _historyTest }) => {
+            const table = page.locator('.editor-table');
+
+            // blameを表示する
+            await rightClickRowHeaderAsync(table, 0);
+            await clickContextMenuItemAsync(page, '変更履歴を表示');
+            await expect(table.locator('.blame-cell').first()).toBeVisible();
+
+            // 1行目のname列セル（2列目のデータセル）をクリックする
+            const firstDataRow = table.locator('.editor-table-row').nth(1);
+            const nameCell = firstDataRow.locator('.editor-table-cell[data-col="1"]');
+            await nameCell.click();
+
+            // クリックしたセルに editor-table-cell-focused クラスが付与されていること
+            await expect(nameCell).toHaveClass(/editor-table-cell-focused/);
+
+            // 隣のセル（id列）にはフォーカスクラスが付与されていないこと
+            const idCell = firstDataRow.locator('.editor-table-cell[data-col="0"]');
+            await expect(idCell).not.toHaveClass(/editor-table-cell-focused/);
         },
     );
 });

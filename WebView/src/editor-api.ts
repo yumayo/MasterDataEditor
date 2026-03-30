@@ -266,7 +266,7 @@ export class EditorApiImpl implements EditorAPI {
                 const oldValue = rows[row][column];
                 // DOM インデックスに変換する
                 const domRow = row + 1;
-                const domColumn = column + 1;
+                const domColumn = column + tabState.editorTable.dataColumnOffset();
                 const changes: CellChange[] = [{ row: domRow, column: domColumn, oldValue, newValue: value }];
                 const range = { startRow: domRow, startColumn: domColumn, endRow: domRow, endColumn: domColumn };
                 const command = new CellChangeCommand(tabState.editorTable, changes, range, range);
@@ -295,7 +295,7 @@ export class EditorApiImpl implements EditorAPI {
                     const c = changes[i];
                     if (c.row < 0 || c.row >= rows.length) return false;
                     if (c.column < 0 || c.column >= rows[c.row].length) return false;
-                    cellChanges.push({ row: c.row + 1, column: c.column + 1, oldValue: rows[c.row][c.column], newValue: c.value });
+                    cellChanges.push({ row: c.row + 1, column: c.column + tabState.editorTable.dataColumnOffset(), oldValue: rows[c.row][c.column], newValue: c.value });
                 }
                 // 空配列の場合は何もせず成功を返す
                 if (cellChanges.length === 0) return true;

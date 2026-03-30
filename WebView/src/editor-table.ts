@@ -225,6 +225,14 @@ export class EditorTable {
     getTableData(): EditorTableData { return this.tableData; }
 
     /**
+     * データ列のDOMインデックスオフセットを返す。
+     * 通常時: 1（children[0]=行ヘッダー、children[1]=データ列0）
+     * blame表示時: 2（children[0]=blame列、children[1]=行ヘッダー、children[2]=データ列0）
+     * children[dataColumnIndex + dataColumnOffset] でデータセルにアクセスする。
+     */
+    dataColumnOffset(): number { return this.isBlameVisible ? 2 : 1; }
+
+    /**
      * DOM列インデックス（0始まり）をストア（CSV）列インデックスに変換して返す。
      * 対応するCSV列が存在しない場合、または範囲外の場合は -1 を返す。
      * ColumnSorter・ColumnFilter・FilterDropdown などが columnMapping に直接触れないようにするファサード。
@@ -460,38 +468,37 @@ export class EditorTable {
     }
 
     /**
-     * git blame を実行して各行ヘッダーに著者・日付情報を表示する
+     * git blame を実行して各行の先頭（children[0]）に独立した blame-cell を挿入する
      */
     async showBlameAsync(): Promise<void> {
         const filename = 'data/' + this.tableName + '.csv';
         const entries = await gitBlameAsync(filename);
         this.isBlameVisible = true;
-        // blame表示中クラスを付与して行ヘッダー幅をCSSで拡張する
+        // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
         this.element.classList.add('editor-table--blame-visible');
-        // 列ヘッダー行のcorner-cellにもblameヘッダーラベルを追加する
-        const cornerCell = this.element.querySelector('.editor-table-corner-cell') as HTMLElement;
-        if (cornerCell) {
-            const blameHeader = document.createElement('div');
-            blameHeader.classList.add('blame-column-header');
-            blameHeader.textContent = 'BLAME';
-            cornerCell.prepend(blameHeader);
-        }
+        // 列ヘッダー行（element.children[0]）の先頭に blame-column-header を prepend する
+        const headerRow = this.element.children[0] as HTMLElement;
+        const blameHeaderCell = document.createElement('div');
+        blameHeaderCell.classList.add('blame-column-header', 'editor-table-cell');
+        blameHeaderCell.textContent = 'BLAME';
+        EditorTable.applyCellHeight(blameHeaderCell, DEFAULT_ROW_HEIGHT);
+        headerRow.prepend(blameHeaderCell);
         // 行番号→BlameEntryの高速ルックアップマップを構築する
         const blameMap = new Map<number, BlameEntry>();
         for (let i = 0; i < entries.length; i++) {
             blameMap.set(entries[i].lineNumber, entries[i]);
         }
-        // 各行ヘッダーの先頭に blame-cell 要素を挿入する
-        // 行ヘッダーは children[0] のため、DOM上は行ヘッダー内部に配置して
-        // children インデックスに影響を与えない設計とする
-        const rowHeaders = this.element.querySelectorAll('.editor-table-row-header') as NodeListOf<HTMLElement>;
-        for (const rowHeader of Array.from(rowHeaders)) {
-            const parentRow = rowHeader.parentElement;
-            const isEmptyRow = parentRow !== null && parentRow.classList.contains('editor-table-empty-row');
-            const rowIndexStr = rowHeader.dataset.rowIndex;
+        // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
+        const rowCount = this.element.children.length;
+        for (let row = 1; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
+            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+            const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : null;
             // blame-cell は全行（バッファ空行含む）に追加してレイアウトを統一する
             const blameCell = document.createElement('div');
-            blameCell.classList.add('blame-cell');
+            blameCell.classList.add('blame-cell', 'editor-table-cell');
+            EditorTable.applyCellHeight(blameCell, DEFAULT_ROW_HEIGHT);
             if (!isEmptyRow && rowIndexStr) {
                 // data-rowIndex はCSVヘッダー行を除いたデータ行の0始まりインデックス。
                 // git blame の lineNumber はCSVファイルの1始まり行番号で、行1がCSVヘッダー。
@@ -512,25 +519,35 @@ export class EditorTable {
                     blameCell.appendChild(dateSpan);
                 }
             }
-            rowHeader.prepend(blameCell);
+            rowElement.prepend(blameCell);
         }
+        // blame列挿入でDOMインデックスが1つずれるため、フォーカス位置とSelection範囲を補正する
+        if (this.lastFocusedCol >= 0) this.lastFocusedCol += 1;
+        this.selection.shiftColumnsBy(1);
+        // 固定列がある場合、blame列分のインデックスずれを反映する
+        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
     }
 
     /**
-     * 全行ヘッダーから blame-info 要素を除去して非表示にする
+     * 各行の children[0] に挿入された blame-cell / blame-column-header を除去して非表示にする
      */
     hideBlame(): void {
         this.isBlameVisible = false;
         this.element.classList.remove('editor-table--blame-visible');
-        // blame-cell と blame-column-header を全て除去する
-        const blameCells = this.element.querySelectorAll('.blame-cell');
-        for (const cell of Array.from(blameCells)) {
-            cell.remove();
+        // 各行の children[0]（blame-cell または blame-column-header）を除去する
+        const rowCount = this.element.children.length;
+        for (let row = 0; row < rowCount; row++) {
+            const rowElement = this.element.children[row] as HTMLElement;
+            const firstChild = rowElement.children[0] as HTMLElement;
+            if (firstChild && (firstChild.classList.contains('blame-cell') || firstChild.classList.contains('blame-column-header'))) {
+                firstChild.remove();
+            }
         }
-        const blameHeaders = this.element.querySelectorAll('.blame-column-header');
-        for (const header of Array.from(blameHeaders)) {
-            header.remove();
-        }
+        // blame列除去でDOMインデックスが1つ戻るため、フォーカス位置とSelection範囲を補正する
+        if (this.lastFocusedCol >= 0) this.lastFocusedCol -= 1;
+        this.selection.shiftColumnsBy(-1);
+        // 固定列がある場合、インデックスが元に戻ったので再適用する
+        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
     }
 
     /**
@@ -723,7 +740,7 @@ export class EditorTable {
                             },
                         });
                     } else {
-                        const cellValue = table.getCellValueAt(position.row, columnIndex + 1);
+                        const cellValue = table.getCellValueAt(position.row, columnIndex + table.dataColumnOffset());
                         menuItems.push({
                             label: 'ブックマークに追加',
                             action: () => {
@@ -904,7 +921,7 @@ export class EditorTable {
             if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
             const storeRowIndex = this.storeRowIndices[domDataRowIndex];
             // DOM列 position.column は行ヘッダーを含む（0=行ヘッダー）。データ列は1始まり。
-            const domDataColIndex = position.column - 1;
+            const domDataColIndex = position.column - this.dataColumnOffset();
             const storeColIndex = this.getStoreColumnIndex(domDataColIndex);
             if (storeColIndex === -1) return;
             tooltip.showAfterDelay(cell, this.tableName, storeRowIndex, storeColIndex);
@@ -1004,11 +1021,15 @@ export class EditorTable {
     applyFreezeColumnStyles(): void {
         if (this.frozenColumnCount === 0) return;
         const rowCount = this.element.children.length;
-        // 各固定列の left 値を事前に計算する（行ヘッダー幅 + 前の固定列幅の合計）
-        // blame表示時は行ヘッダー幅が240pxに拡張されるため、実際の幅を取得する
+        // blame表示時は children[0] が blame-cell なので、データ列のオフセットが1つ増える
+        // 通常: children[0]=行ヘッダー, children[1]=データ列0, ...
+        // blame: children[0]=blame-cell, children[1]=行ヘッダー, children[2]=データ列0, ...
+        const blameColumnWidth = 200;
+        const rowHeaderWidth = 40;
+        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
+        // 各固定列の left 値を事前に計算する（blame列幅 + 行ヘッダー幅 + 前の固定列幅の合計）
         const leftValues: number[] = [];
-        const rowHeaderWidth = this.isBlameVisible ? 240 : 40;
-        let cumulativeLeft = rowHeaderWidth;
+        let cumulativeLeft = (this.isBlameVisible ? blameColumnWidth + rowHeaderWidth : rowHeaderWidth);
         for (let col = 0; col < this.frozenColumnCount; col++) {
             leftValues.push(cumulativeLeft);
             // 列幅は列ヘッダーセルから取得する（px文字列をパース）
@@ -1019,8 +1040,8 @@ export class EditorTable {
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
             for (let col = 0; col < this.frozenColumnCount; col++) {
-                // col+1: 行ヘッダー（children[0]）を除くデータ列
-                const cell = rowElement.children[col + 1] as HTMLElement;
+                // dataColumnOffset: 行ヘッダー（+ blame-cell）を除くデータ列
+                const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
                 if (!cell) continue;
                 cell.style.position = 'sticky';
                 cell.style.left = leftValues[col] + 'px';
@@ -1043,10 +1064,12 @@ export class EditorTable {
      */
     private clearFreezeColumnStyles(): void {
         const rowCount = this.element.children.length;
+        // blame表示時はデータ列のオフセットが1つ増える
+        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
             for (let col = 0; col < this.frozenColumnCount; col++) {
-                const cell = rowElement.children[col + 1] as HTMLElement;
+                const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
                 if (!cell) continue;
                 cell.style.position = '';
                 cell.style.left = '';
@@ -1197,7 +1220,7 @@ export class EditorTable {
      */
     getColumnHeaderValue(columnIndex: number): string {
         const headerRow = this.element.children[0] as HTMLElement;
-        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         // comment付き2行構造の場合は .column-header-name span を優先する
         const nameSpan = headerCell.querySelector('.column-header-name');
         if (nameSpan !== null) return nameSpan.textContent as string;
@@ -1213,7 +1236,7 @@ export class EditorTable {
      */
     setColumnHeaderValue(columnIndex: number, value: string): void {
         const headerRow = this.element.children[0] as HTMLElement;
-        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         // comment付き2行構造の場合は .column-header-name span を優先する
         const nameSpan = headerCell.querySelector('.column-header-name');
         if (nameSpan !== null) {
@@ -1234,7 +1257,7 @@ export class EditorTable {
      */
     addColumnHeaderClass(columnIndex: number, className: string): void {
         const headerRow = this.element.children[0];
-        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         if (headerCell) {
             headerCell.classList.add(className);
         }
@@ -1245,7 +1268,7 @@ export class EditorTable {
      */
     getColumnWidth(columnIndex: number): string {
         const columnHeaderRow = this.element.children[0];
-        const headerCell = columnHeaderRow.children[columnIndex + 1] as HTMLElement;
+        const headerCell = columnHeaderRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         if (headerCell.style.width === '') {
             throw new Error(`列ヘッダーセル(columnIndex=${columnIndex})にwidthが設定されていません`);
         }
@@ -1322,8 +1345,8 @@ export class EditorTable {
             // バッファ空行はスキップ
             if (rowElement.classList.contains('editor-table-empty-row')) continue;
 
-            // 列ヘッダーセルを除いた列インデックス（columnIndex+1 が DOM上の位置）
-            const cell = rowElement.children[columnIndex + 1] as HTMLElement | undefined;
+            // 列ヘッダーセルを除いた列インデックス（columnIndex + dataColumnOffset() が DOM上の位置）
+            const cell = rowElement.children[columnIndex + this.dataColumnOffset()] as HTMLElement | undefined;
             if (!cell) continue;
 
             // セルテキスト値の幅を計測
@@ -1383,7 +1406,7 @@ export class EditorTable {
     setColumnWidth(columnIndex: number, width: string): void {
         for (let i = 0; i < this.element.children.length; ++i) {
             const row = this.element.children[i] as HTMLElement;
-            const cell = row.children[columnIndex + 1] as HTMLElement;
+            const cell = row.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 EditorTable.applyCellWidth(cell, width);
             }
@@ -1459,7 +1482,9 @@ export class EditorTable {
     }
 
     /**
-     * セル要素から位置を取得する
+     * セル要素から位置を取得する。
+     * 返される column は生のDOMインデックス（blame表示時はblame列=0を含む）。
+     * データ列インデックスへの変換は column - dataColumnOffset() で行うこと。
      */
     getCellPositionFromElement(cell: HTMLElement): CellPosition | null {
         return EditorTable.getCellPosition(cell, this.element);
@@ -1532,12 +1557,11 @@ export class EditorTable {
             headerCell.classList.remove('selected');
         }
         // すべての行ヘッダーから選択状態を解除
+        // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
         for (let i = 1; i < this.element.children.length; i++) {
             const row = this.element.children[i] as HTMLElement;
-            const rowHeader = row.children[0] as HTMLElement;
-            if (rowHeader.classList.contains('editor-table-row-header')) {
-                rowHeader.classList.remove('selected');
-            }
+            const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
+            if (rowHeader) rowHeader.classList.remove('selected');
         }
         // 選択範囲に含まれる列ヘッダーに選択状態を追加
         for (let col = startColumn; col <= endColumn; col++) {
@@ -1550,10 +1574,8 @@ export class EditorTable {
         for (let row = startRow; row <= endRow; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
             if (rowElement) {
-                const rowHeader = rowElement.children[0] as HTMLElement;
-                if (rowHeader.classList.contains('editor-table-row-header')) {
-                    rowHeader.classList.add('selected');
-                }
+                const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+                if (rowHeader) rowHeader.classList.add('selected');
             }
         }
     }
@@ -1654,9 +1676,9 @@ export class EditorTable {
                 const storeColIdx = storeColumnIndices[domCol];
                 if (storeColIdx === -1) continue;
                 const storeValue = storeColIdx < storeRowData.length ? storeRowData[storeColIdx] : '';
-                const domValue = this.getCellValueAt(domRow, domCol + 1);
+                const domValue = this.getCellValueAt(domRow, domCol + this.dataColumnOffset());
                 if (domValue !== storeValue) {
-                    const cell = this.getCell(domRow, domCol + 1);
+                    const cell = this.getCell(domRow, domCol + this.dataColumnOffset());
                     this.reference.setCellValue(cell, storeValue, domCol, domRow);
                 }
             }
@@ -2090,7 +2112,7 @@ export class EditorTable {
         const headerRow = this.element.children[0];
         const columnCount = this.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; colIdx++) {
-            const headerCell = headerRow.children[colIdx + 1] as HTMLElement;
+            const headerCell = headerRow.children[colIdx + this.dataColumnOffset()] as HTMLElement;
             const storeColIdx = this.getStoreColumnIndex(colIdx);
             if (storeColIdx !== -1 && this.columnFilter.isColumnFiltered(storeColIdx)) {
                 headerCell.classList.add('filter-active');
@@ -2121,7 +2143,7 @@ export class EditorTable {
         const columnCount = this.getColumnCount();
         const totalSortKeyCount = this.columnSorter.getSortKeyCount();
         for (let colIdx = 0; colIdx < columnCount; colIdx++) {
-            const headerCell = headerRow.children[colIdx + 1] as HTMLElement;
+            const headerCell = headerRow.children[colIdx + this.dataColumnOffset()] as HTMLElement;
             const indicator = headerCell.querySelector('.sort-indicator');
             if (!indicator) continue;
             const sortKey = this.columnSorter.getSortKeyForColumn(colIdx);
@@ -2169,7 +2191,7 @@ export class EditorTable {
             for (let c = 0; c < colCount; c++) {
                 if (this.getColumnHeaderValue(c) !== entry.columnName) continue;
                 // DOMセルを更新（参照ヒント適用のためreference.setCellValueAt()を使用）
-                this.reference.setCellValueAt(rowIndex, c + 1, entry.value);
+                this.reference.setCellValueAt(rowIndex, c + this.dataColumnOffset(), entry.value);
                 // ストアをインデックスベースで更新（PK未入力でも動作する）
                 if (canUpdateStore && storeHeader !== false) {
                     const storeColIndex = storeHeader.indexOf(entry.columnName);
@@ -2273,14 +2295,14 @@ export class EditorTable {
         if (pkColIndex === -1) return;
         for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
             const domRow = domDataRow + 1;
-            const pkValue = this.getCellValueAt(domRow, pkColIndex + 1);
+            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
             if (pkValue === '') continue;
             for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
                 const columnName = this.tableData.header[domCol].name;
                 if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
-                    this.getCell(domRow, domCol + 1).setAttribute('data-bookmarked', '');
+                    this.getCell(domRow, domCol + this.dataColumnOffset()).setAttribute('data-bookmarked', '');
                 } else {
-                    this.getCell(domRow, domCol + 1).removeAttribute('data-bookmarked');
+                    this.getCell(domRow, domCol + this.dataColumnOffset()).removeAttribute('data-bookmarked');
                 }
             }
         }
@@ -2362,10 +2384,11 @@ export class EditorTable {
         if (this.gitDiffTracker === false) {
             // git差分トラッカーが未接続 or 差分なし → 全セルからハイライトを除去する
             // （保存後にgit statusから差分が消えたケースに対応）
+            const offset = this.dataColumnOffset();
             for (let row = 1; row < rowCount; row++) {
                 const rowElement = this.element.children[row] as HTMLElement;
                 if (rowElement.classList.contains('editor-table-empty-row')) continue;
-                for (let col = 1; col < totalColCount; col++) {
+                for (let col = offset; col < totalColCount; col++) {
                     this.getCell(row, col).classList.remove('cell-git-changed');
                 }
             }
@@ -2376,6 +2399,7 @@ export class EditorTable {
         // DOM列インデックス（0始まり）→ ストア（CSV）列インデックスのマッピングを取得する。
         // 非連番keyスキーマではDOMインデックスとCSVインデックスが一致しないため変換が必須。
         const columnMapping = this.tableData.columnMapping;
+        const offset2 = this.dataColumnOffset();
         // row=1 から開始（row=0 は列ヘッダー行のため除外）
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
@@ -2386,9 +2410,9 @@ export class EditorTable {
             const domDataRowIndex = row - 1;
             if (domDataRowIndex >= this.storeRowIndices.length) continue;
             const storeRowIndex = this.storeRowIndices[domDataRowIndex];
-            // col=1 から開始（col=0 は行ヘッダーセルのため除外）
-            for (let col = 1; col < totalColCount; col++) {
-                const domColIndex = col - 1; // DOM列インデックス（0始まり）
+            // col=offset から開始（col=0〜offset-1 はblame列・行ヘッダーのため除外）
+            for (let col = offset2; col < totalColCount; col++) {
+                const domColIndex = col - offset2; // DOM列インデックス（0始まり）
                 const storeColIndex = columnMapping[domColIndex]; // CSV列インデックスに変換
                 if (storeColIndex === -1) continue; // 対応するCSV列がない場合はスキップ
                 const cell = this.getCell(row, col);
@@ -2564,8 +2588,8 @@ export class EditorTable {
         if (storeRowIndex < 0) return;
         const storeHeader = this.store.getHeader(this.tableName);
         if (storeHeader === false) return;
-        // DOMの列インデックス（1始まり、行ヘッダー含む）→ ストアの列インデックス（0始まり）
-        const columnName = this.getColumnHeaderValue(column - 1);
+        // DOMの列インデックス → データ列インデックス（0始まり）→ ストアの列インデックス
+        const columnName = this.getColumnHeaderValue(column - this.dataColumnOffset());
         const storeColIndex = storeHeader.indexOf(columnName);
         if (storeColIndex === -1) return;
         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
@@ -2724,7 +2748,7 @@ export class EditorTable {
      */
     public getColumnHeaderComment(columnIndex: number): string | null {
         const headerRow = this.element.children[0] as HTMLElement;
-        const headerCell = headerRow.children[columnIndex + 1] as HTMLElement;
+        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         // data-full-comment があれば完全なcomment（\n含む）を返す
         // \n を含まないcommentも createColumnHeaderCell で必ず dataset.fullComment に保存されるため、
         // commentがある場合は常にここから読み取る。commentなし（TextNodeのみ）の場合は属性が存在しない。
@@ -2921,20 +2945,21 @@ export class EditorTable {
         const storeHeader = this.store.getHeader(this.tableName);
         if (storeHeader === false) return;
         const colCount = this.getColumnCount();
+        const offset = this.dataColumnOffset();
         // DOM列名→ストア列インデックスのマッピングを事前構築する（内ループでのindexOf呼び出しを排除）
         const domColToStoreCol: number[] = [];
-        for (let domColIdx = 1; domColIdx <= colCount; domColIdx++) {
-            domColToStoreCol.push(storeHeader.indexOf(this.getColumnHeaderValue(domColIdx - 1)));
+        for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+            domColToStoreCol.push(storeHeader.indexOf(this.getColumnHeaderValue(dataColIdx)));
         }
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
             const row = this.element.children[rowIdx] as HTMLElement | null;
             if (!row) continue;
             const storeRowIdx = this.storeRowIndices[rowIdx - 1];
-            for (let domColIdx = 1; domColIdx <= colCount; domColIdx++) {
-                const cell = row.children[domColIdx] as HTMLElement | null;
+            for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+                const cell = row.children[dataColIdx + offset] as HTMLElement | null;
                 if (!cell) continue;
-                const storeColIdx = domColToStoreCol[domColIdx - 1];
+                const storeColIdx = domColToStoreCol[dataColIdx];
                 if (storeColIdx === -1) continue;
                 const key = `${storeRowIdx},${storeColIdx}`;
                 const isPkError = pkErrorCells.has(key);

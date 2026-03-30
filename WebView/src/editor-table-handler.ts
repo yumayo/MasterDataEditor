@@ -453,7 +453,7 @@ export class EditorTableHandler {
         // 数値型の編集モードフィルタ（IME変換中はスキップ）
         if (!keyboardEvent.isComposing) {
             const focus = this.selection.getFocus();
-            const dataColIndex = focus.column - 1;
+            const dataColIndex = focus.column - this.table.dataColumnOffset();
             if (dataColIndex >= 0 && !this.table.hasColumnReference(dataColIndex)) {
                 const colType = this.table.getColumnType(dataColIndex);
                 // int型の上下矢印インクリメント/デクリメント
@@ -708,7 +708,7 @@ export class EditorTableHandler {
         // Spaceキー: bool型セルの場合はトグル操作（テキスト編集モードには入らない）
         if (keyboardEvent.key === ' ') {
             const focus = this.selection.getFocus();
-            const dataColIndex = focus.column - 1;
+            const dataColIndex = focus.column - this.table.dataColumnOffset();
             if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
                 keyboardEvent.preventDefault();
                 this.toggleBoolCell();
@@ -723,7 +723,7 @@ export class EditorTableHandler {
         // （Space/Delete/Backspaceのみ操作可能）
         {
             const focus = this.selection.getFocus();
-            const dataColIndex = focus.column - 1;
+            const dataColIndex = focus.column - this.table.dataColumnOffset();
             if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
                 return;
             }
@@ -1158,7 +1158,7 @@ export class EditorTableHandler {
 
         const focus = this.selection.getFocus();
         // column=0は行ヘッダーなので、データ列は1から始まる
-        const columnIndex = focus.column - 1;
+        const columnIndex = focus.column - this.table.dataColumnOffset();
 
         if (columnIndex < 0 || columnIndex >= this.tableData.header.length) {
             return null;
@@ -1199,8 +1199,8 @@ export class EditorTableHandler {
             return null;
         }
 
-        // column=0は行ヘッダーなので、データ列インデックスに+1する
-        const cellValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + 1);
+        // column=0は行ヘッダー（blame列が有効な場合はcolumn=1がblame列）なので、データ列オフセットを加算する
+        const cellValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + this.table.dataColumnOffset());
         if (cellValue === '') {
             // 値が空の場合は参照を解決できない（データ欠損であり、スキーマ設定ミスではない）
             return null;
@@ -1270,7 +1270,7 @@ export class EditorTableHandler {
         // 明示的な参照がない場合、逆参照されているPK列かチェック
         if (!resolvedReference && this.tableData) {
             const focus = this.selection.getFocus();
-            const columnIndex = focus.column - 1;
+            const columnIndex = focus.column - this.table.dataColumnOffset();
             if (columnIndex >= 0
                 && columnIndex < this.tableData.header.length
                 && this.tableData.primaryKeyColumns.includes(this.tableData.header[columnIndex].name)
@@ -1378,7 +1378,7 @@ export class EditorTableHandler {
         // 修正6: PK値が空の場合はバッファ空行等で設計上ありえない操作 → throw
         if (pkValue === '') throw new Error('[EditorTableHandler.toggleBookmark] pkValue が空文字列: row=' + focus.row);
         // フォーカスセルの列名を取得する（column=0は行ヘッダーなのでデータ列は1始まり）
-        const dataColIndex = focus.column - 1;
+        const dataColIndex = focus.column - this.table.dataColumnOffset();
         // 修正6: データ列範囲外は設計上ありえない → throw
         if (dataColIndex < 0) throw new Error('[EditorTableHandler.toggleBookmark] dataColIndex < 0: column=' + focus.column);
         if (!this.tableData) throw new Error('[EditorTableHandler.toggleBookmark] tableData が未設定');

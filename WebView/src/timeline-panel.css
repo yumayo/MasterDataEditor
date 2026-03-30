@@ -46,54 +46,47 @@
 }
 
 /* =========================================================================
-   blame列: 行番号の左に独立した列として表示する
-   行ヘッダー（children[0]）の内部に blame-cell を prepend することで
-   テーブルの children インデックスに影響を与えない設計。
-   行ヘッダーを display:flex にして [blame-cell | 行番号テキスト] の2分割とし、
-   blame-cell の右ボーダーで視覚的に独立した列に見せる。
-   row-resize-handle は position:absolute なので flex レイアウトに影響しない。
+   blame列: 各行の children[0] に独立した table-cell として挿入する。
+   行ヘッダーやcorner-cellの内部ではなく、行の直接の子要素として配置し、
+   position:sticky で左端に固定する。
+   blame表示時は行ヘッダー・corner-cell の left を blame列幅(200px)分ずらす。
    ========================================================================= */
 
-/* blame表示時の行ヘッダー: 幅を拡張し flex で blame-cell と行番号を横並びにする */
+/* blame表示時の行ヘッダー: 通常幅(40px)のまま、left を blame列幅分ずらす */
 .editor-table--blame-visible .editor-table-row-header {
-    min-width: 240px;
-    max-width: 240px;
-    width: 240px;
-    display: flex;
-    align-items: center;
-    padding-left: 0;
-    padding-right: 0;
+    left: 200px;
 }
 
-/* blame表示時のcorner-cell: 行ヘッダーと同幅にして列位置を揃える */
+/* blame表示時のcorner-cell: 通常幅(40px)のまま、left を blame列幅分ずらす */
 .editor-table--blame-visible .editor-table-corner-cell {
-    min-width: 240px;
-    max-width: 240px;
-    width: 240px;
-    display: flex;
-    align-items: center;
-    padding-left: 0;
-    padding-right: 0;
+    left: 200px;
 }
 
-/* blame列ヘッダー（corner-cell内）: 左半分にラベルを表示 */
+/* blame列ヘッダー: 行の children[0] に独立した table-cell として配置 */
 .blame-column-header {
+    display: table-cell;
     width: 200px;
     min-width: 200px;
+    max-width: 200px;
     text-align: center;
     font-size: 10px;
     font-weight: normal;
     opacity: 0.6;
     border-right: 1px solid var(--border-color);
+    position: sticky;
+    left: 0;
+    z-index: var(--z-index-blame-cell);
+    background: var(--editor-table-column-header-bg, var(--bg-color));
+    box-sizing: border-box;
 }
 
-/* blame-cell: 行ヘッダー内の左側200pxを占有し、右ボーダーで行番号と分離する */
+/* blame-cell: 各行の children[0] に独立した table-cell として配置 */
 .blame-cell {
+    display: table-cell;
     width: 200px;
     min-width: 200px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    max-width: 200px;
+    vertical-align: middle;
     font-size: 11px;
     font-weight: normal;
     color: var(--font-color);
@@ -103,6 +96,17 @@
     padding: 0 6px;
     border-right: 1px solid var(--border-color);
     box-sizing: border-box;
+    position: sticky;
+    left: 0;
+    z-index: var(--z-index-blame-cell);
+    background: var(--bg-color);
+}
+
+/* blame-cell 内の著者・日付を横並びにする */
+.blame-cell .blame-author,
+.blame-cell .blame-date {
+    display: inline;
+    margin-right: 8px;
 }
 
 .blame-author {

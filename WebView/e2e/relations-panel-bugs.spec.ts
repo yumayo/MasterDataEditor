@@ -738,11 +738,8 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             await expect(miniTable).toBeVisible();
 
             // quest テーブルのヘッダー列から "enemy_id" の列インデックスを取得する。
-            // 変更後は hiddenColumns が空なので quest のフルスキーマ（id, name, enemy_id）が表示される。
+            // hiddenColumns が空なので quest のフルスキーマ（id, name, enemy_id）が表示される。
             // DOM上: 行ヘッダー(col=0), id(col=1), name(col=2), enemy_id(col=3)
-            //
-            // 変更前は物理除去によりヘッダーが存在しないため以降のセル検証も FAIL する（RED）。
-            // 変更後は enemy_id 列のデータセルに "1" が入っていることを確認できる（GREEN）。
             const allHeaders = miniTable.locator('.editor-table-column-header');
             await expect(allHeaders.first()).toBeVisible();
             // PK/FKバッジ実装によりallTextContents()は "enemy_idFK" のようにバッジテキストを含む。
@@ -759,9 +756,9 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             // "enemy_id" がヘッダーに含まれることを検証する（物理除去されていないことの確認）
             expect(headerTexts).toContain('enemy_id');
 
-            // enemy_id 列のデータセルが "1スライム" であることを確認する。
-            // EditorTableはFK列にリバースリファレンスヒント（参照先の表示名）を連結して表示するため、
-            // 物理値 "1"（enemy.id=1）に参照先 enemy.ja="スライム" が連結されて "1スライム" と表示される。
+            // enemy_id 列のデータセルが "スライム1" であることを確認する。
+            // EditorTableはFK列の参照ヒント（参照先の表示名）をprependで値の前に配置するため、
+            // 参照先 enemy.ja="スライム" が先、物理値 "1"（enemy.id=1）が後で "スライム1" と表示される。
             // データ行 nth(1)（ヘッダー行を除いた最初のデータ行）の enemy_id 列インデックスでセルを取得する
             const enemyIdColIndex = headerTexts.indexOf('enemy_id');
             const firstDataRow = miniTable.locator('.editor-table-row').nth(1);
@@ -771,7 +768,7 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             // そのため DOM インデックスは enemyIdColIndex + 1（行ヘッダー分オフセット）
             const enemyIdCell = firstDataRow.locator('.editor-table-cell').nth(enemyIdColIndex + 1);
             await expect(enemyIdCell).toBeVisible();
-            await expect(enemyIdCell).toHaveText('1スライム');
+            await expect(enemyIdCell).toHaveText('スライム1');
         },
     );
 });

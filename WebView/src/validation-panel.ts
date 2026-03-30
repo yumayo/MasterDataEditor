@@ -298,7 +298,7 @@ export class ValidationPanel {
             this.tab.switchToExistingTab(tableName);
             const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
             if (domRow === null) return;
-            const domCol = error.columnIndex + 1;
+            const domCol = error.columnIndex + state.editorTable.dataColumnOffset();
             state.selection.setRange(domRow, domCol, domRow, domCol);
             state.selection.move(domRow, domCol);
             state.editorTableHandler.activate();

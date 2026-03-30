@@ -501,7 +501,7 @@ export class RelationsPanel {
         // EditorTable の DOM 上の最新値（ストアより新しい可能性がある）を列名配列と対応付けて保持する。
         // DOMの列は1始まり（行ヘッダーが0列目）なのでcolIdx+1でアクセスする。
         const rowHeader = tableData.header.map(col => col.name);
-        const targetRow = tableData.header.map((_, colIdx) => editorTable.getCellValueAt(rowIndex, colIdx + 1));
+        const targetRow = tableData.header.map((_, colIdx) => editorTable.getCellValueAt(rowIndex, colIdx + editorTable.dataColumnOffset()));
 
         // N:1（FK参照先）の解決
         for (let colIdx = 0; colIdx < tableData.header.length; colIdx++) {
@@ -510,8 +510,8 @@ export class RelationsPanel {
             const expr = parseReferenceExpression(col.reference);
 
             if (isSimpleReference(expr)) {
-                // DOMの列は1始まり（行ヘッダーが0列目）なのでcolIdx+1
-                const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + 1);
+                // DOMの列は行ヘッダー（+blame列）分のオフセットを加算する
+                const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + editorTable.dataColumnOffset());
                 if (fkValue === '') continue;
 
                 // ストア優先・CSV直読みでテーブルデータを取得する
