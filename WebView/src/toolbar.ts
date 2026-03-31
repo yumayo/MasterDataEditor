@@ -16,6 +16,11 @@ export class Toolbar {
         this.tab = tab;
         this.editor = editor;
 
+        // ER図ボタン（アクティブなテーブルをER図上で表示する）
+        const erDiagramButton = this.createButton('ER図で表示', createErDiagramIcon());
+        erDiagramButton.addEventListener('click', () => this.openErDiagramForActiveTable());
+        containerElement.appendChild(erDiagramButton);
+
         // CSV エクスポートボタン
         const csvExportButton = this.createButton('CSVをクリップボードにコピー', createCopyIcon());
         csvExportButton.addEventListener('click', () => this.exportCsvToClipboard(csvExportButton));
@@ -45,6 +50,12 @@ export class Toolbar {
         button.title = title;
         button.appendChild(icon);
         return button;
+    }
+
+    private openErDiagramForActiveTable(): void {
+        const tableName = this.tab.getActiveTabName();
+        if (tableName === false) return;
+        this.tab.openErDiagramAndFocusTable(tableName);
     }
 
     private exportCsvToClipboard(button: HTMLButtonElement): void {
@@ -109,6 +120,17 @@ function escapeCsvField(value: string): string {
         return '"' + value.replace(/"/g, '""') + '"';
     }
     return value;
+}
+
+/** ER図アイコン（アクティビティバーと同じデザイン: 2つの矩形ノード＋接続線） */
+function createErDiagramIcon(): SVGSVGElement {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" class="toolbar-icon">
+  <rect x="2" y="3" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+  <rect x="14" y="15" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M6 9V12H18V15" stroke="currentColor" stroke-width="1.5"/>
+</svg>`;
+    return wrapper.firstElementChild as SVGSVGElement;
 }
 
 /** コピーアイコン（2つの重なったドキュメント）をSVGで作成する */

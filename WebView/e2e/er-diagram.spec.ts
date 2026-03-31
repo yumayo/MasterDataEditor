@@ -186,12 +186,7 @@ test.describe('ER図機能', () => {
     test('単純参照が実線エッジで表示される', async ({page}) => {
         await openErDiagramAsync(page);
         const svg = getErDiagramSvg(page);
-        // item.weapon_id → weapon.id の単純参照エッジが存在すること
-        const simpleEdges = svg.locator('.er-edge-simple');
-        // 少なくとも1本の単純参照エッジがあること
-        const simpleEdgeCount = await simpleEdges.count();
-        expect(simpleEdgeCount).toBeGreaterThanOrEqual(1);
-        // item → weapon のエッジがあることを data 属性で検証する
+        // item → weapon のエッジが存在すること（buildAsync 完了を auto-retry で待機する）
         const itemWeaponEdge = svg.locator('.er-edge-simple[data-from="item"][data-to="weapon"]');
         await expect(itemWeaponEdge).toHaveCount(1);
     });
@@ -199,14 +194,13 @@ test.describe('ER図機能', () => {
     test('動的参照が破線エッジで表示される', async ({page}) => {
         await openErDiagramAsync(page);
         const svg = getErDiagramSvg(page);
-        // quest.reward_type の動的参照エッジが存在すること
-        const dynamicEdges = svg.locator('.er-edge-dynamic');
-        // 少なくとも1本の動的参照エッジがあること
-        const dynamicEdgeCount = await dynamicEdges.count();
-        expect(dynamicEdgeCount).toBeGreaterThanOrEqual(1);
-        // quest → reward_config のエッジがあることを data 属性で検証する
-        const questRewardEdge = svg.locator('.er-edge-dynamic[data-from="quest"][data-to="reward_config"]');
-        await expect(questRewardEdge).toHaveCount(1);
+        // 動的参照はCSVデータから実テーブルに解決される
+        // quest.reward_type → weapon.id（reward_config の target_table=weapon 行から解決）
+        const questWeaponEdge = svg.locator('.er-edge-dynamic[data-from="quest"][data-to="weapon"]');
+        await expect(questWeaponEdge).toHaveCount(1);
+        // quest.reward_type → item.id（reward_config の target_table=item 行から解決）
+        const questItemEdge = svg.locator('.er-edge-dynamic[data-from="quest"][data-to="item"]');
+        await expect(questItemEdge).toHaveCount(1);
     });
 
     test('ノードクリックで該当テーブルがタブで開く', async ({page}) => {
@@ -225,9 +219,8 @@ test.describe('ER図機能', () => {
 
     test('凡例が表示される', async ({page}) => {
         await openErDiagramAsync(page);
-        const svg = getErDiagramSvg(page);
-        // 凡例要素が存在すること
-        const legend = svg.locator('.er-legend');
+        // 凡例はHTML要素としてコンテナ左上に固定配置される（SVG内ではない）
+        const legend = page.locator('.er-diagram-container .er-legend');
         await expect(legend).toBeVisible();
         // 「単純参照」の説明が表示されること
         await expect(legend).toContainText('単純参照');

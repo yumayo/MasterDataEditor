@@ -11,7 +11,7 @@
  * Tab から呼ばれて専用タブとしてエディター領域にマウントされる。
  * 設定タブ（openSettingsTab）と同じパターン。
  */
-import {findFilesAsync, readFileAsync} from "./api";
+import {findFilesAsync, readFileAsync, writeFileAsync} from "./api";
 import {isDynamicReferenceSchema} from "./reference-expression";
 import {calculateGridLayout, ER_NODE_WIDTH} from "./er-diagram-layout";
 import type {Tab} from "./tab";
@@ -37,7 +37,29 @@ interface TableInfo {
 interface EdgeInfo {
     from: string;
     to: string;
+    fromColumn: string;
+    toColumn: string;
     type: 'simple' | 'dynamic';
+}
+
+/** 動的参照の未解決情報（CSVを読み込んで実テーブルに展開するための中間データ） */
+interface UnresolvedDynamicRef {
+    from: string;
+    fromColumn: string;
+    configTable: string;
+    destTableColumn: string;
+    destColumn: string;
+}
+
+// =========================================================================
+// 永続化ファイルパス
+// =========================================================================
+const LAYOUT_FILE = 'data/er-diagram-layout.json';
+
+/** 永続化する配置データの型 */
+interface SavedLayout {
+    nodes: Record<string, { x: number; y: number }>;
+    viewBox: { x: number; y: number; w: number; h: number };
 }
 
 // =========================================================================
@@ -80,6 +102,8 @@ export class ErDiagramTab {
     private tables: TableInfo[];
     /** エッジ情報（buildAsync で構築される） */
     private edges: EdgeInfo[];
+    /** buildAsync 完了後にフォーカスすべきテーブル名（未完了時の保留リクエスト） */
+    private pendingFocusTable: string | false;
 
     /** ノード位置（ドラッグで更新される） */
     private nodePositions: Map<string, { x: number; y: number }>;
@@ -87,7 +111,10 @@ export class ErDiagramTab {
     /** ノードの SVG グループ要素マップ */
     private nodeElements: Map<string, SVGGElement>;
 
-    /** ドラッグ状態追跡 */
+    /** テーブル名.カラム名 → ノード内のカラム中心Y座標（ノードローカル座標） */
+    private columnCenterYMap: Map<string, number>;
+
+    /** ノードドラッグ状態追跡 */
     private dragState: {
         active: boolean;
         startX: number;
@@ -98,14 +125,27 @@ export class ErDiagramTab {
         moved: boolean;
     };
 
+    /** viewBox 状態（パン・ズームで動的に更新する） */
+    private viewBox: { x: number; y: number; w: number; h: number };
+
+    /** キャンバスパン状態（中ボタンドラッグ） */
+    private panState: { active: boolean; startX: number; startY: number; originX: number; originY: number };
+
+    /** wheel イベントリスナー（destroy 時に解除する） */
+    private readonly onWheelBound: (e: WheelEvent) => void;
+
     constructor(tab: Tab) {
         this.tab = tab;
         this.selectedTable = '';
         this.tables = [];
         this.edges = [];
+        this.pendingFocusTable = false;
         this.nodePositions = new Map();
         this.nodeElements = new Map();
+        this.columnCenterYMap = new Map();
         this.dragState = { active: false, startX: 0, startY: 0, currentTable: '', offsetX: 0, offsetY: 0, moved: false };
+        this.viewBox = { x: 0, y: 0, w: 800, h: 600 };
+        this.panState = { active: false, startX: 0, startY: 0, originX: 0, originY: 0 };
 
         // コンテナ
         this.container = document.createElement('div');
@@ -131,12 +171,27 @@ export class ErDiagramTab {
 
         this.container.appendChild(this.svg);
 
-        // 背景クリックで選択解除
+        // 背景クリックで選択解除（左ボタンのみ）
         this.svg.addEventListener('mousedown', (e: MouseEvent) => {
-            if (e.target === this.svg) {
+            if (e.button === 0 && e.target === this.svg) {
                 this.clearSelection();
             }
         });
+
+        // 中ボタンドラッグでキャンバスパン
+        this.svg.addEventListener('mousedown', (e: MouseEvent) => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            this.panState = { active: true, startX: e.clientX, startY: e.clientY, originX: this.viewBox.x, originY: this.viewBox.y };
+            this.svg.classList.add('panning');
+        });
+
+        // コンテキストメニュー抑制（中ボタン）
+        this.svg.addEventListener('contextmenu', (e: Event) => { e.preventDefault(); });
+
+        // ホイールズーム
+        this.onWheelBound = (e: WheelEvent) => { this.handleWheel(e); };
+        this.svg.addEventListener('wheel', this.onWheelBound, { passive: false });
 
         // ドラッグ: mousemove / mouseup はドキュメントレベルで監視する
         // destroy() で解除するためバインド済み関数をフィールドに保持する
@@ -154,12 +209,42 @@ export class ErDiagramTab {
     }
 
     /**
+     * 指定テーブルのノードを画面中央にフォーカスし、選択状態にする
+     * ツールバーのER図ボタンから Tab.openErDiagramAndFocusTable() 経由で呼ばれる
+     */
+    focusTable(tableName: string): void {
+        const pos = this.nodePositions.get(tableName);
+        if (!pos) {
+            // buildAsync がまだ完了していない場合は保留する
+            this.pendingFocusTable = tableName;
+            return;
+        }
+        // ノードの中心座標を計算する
+        const colY = this.columnCenterYMap.get(tableName + '.' + this.tables.find(t => t.name === tableName)?.columns[0]?.name);
+        const nodeHeight = colY !== undefined ? colY * 2 : 80;
+        const centerX = pos.x + ER_NODE_WIDTH / 2;
+        const centerY = pos.y + nodeHeight / 2;
+        // viewBox の中心を該当ノードに合わせる（現在のズームレベルは維持する）
+        this.viewBox.x = centerX - this.viewBox.w / 2;
+        this.viewBox.y = centerY - this.viewBox.h / 2;
+        this.applyViewBox();
+        this.saveLayoutAsync();
+        // ノードを選択状態にしてエッジをハイライトする
+        this.clearSelection();
+        this.selectedTable = tableName;
+        const nodeEl = this.nodeElements.get(tableName);
+        if (nodeEl) nodeEl.classList.add('er-node-selected');
+        this.highlightEdgesFor(tableName);
+    }
+
+    /**
      * タブクローズ時にドキュメントレベルのイベントリスナーを解除する
      * Tab.performCloseTab から呼ばれる
      */
     destroy(): void {
         document.removeEventListener('mousemove', this.onMouseMoveBound);
         document.removeEventListener('mouseup', this.onMouseUpBound);
+        this.svg.removeEventListener('wheel', this.onWheelBound);
     }
 
     /**
@@ -178,11 +263,37 @@ export class ErDiagramTab {
         });
         const results = await Promise.all(readPromises);
         // header が不正なスキーマ（parseSchema が null を返したもの）を除外する
-        const validResults = results.filter((r): r is { table: TableInfo; edges: EdgeInfo[] } => r !== null);
+        const validResults = results.filter((r): r is { table: TableInfo; edges: EdgeInfo[]; unresolvedDynamic: UnresolvedDynamicRef[] } => r !== null);
         this.tables = validResults.map(r => r.table);
         this.edges = validResults.flatMap(r => r.edges);
 
-        this.render();
+        // 動的参照をCSVデータから解決して実テーブルへのエッジに展開する
+        const unresolvedAll = validResults.flatMap(r => r.unresolvedDynamic);
+        const tableNameSet = new Set(this.tables.map(t => t.name));
+        for (let i = 0; i < unresolvedAll.length; i++) {
+            const dyn = unresolvedAll[i];
+            const resolved = await this.resolveDynamicEdgesAsync(dyn, tableNameSet);
+            for (let j = 0; j < resolved.length; j++) {
+                this.edges.push(resolved[j]);
+            }
+        }
+
+        // 保存済みレイアウトがあれば読み込む
+        let savedLayout: SavedLayout | null = null;
+        try {
+            const json = await readFileAsync(LAYOUT_FILE);
+            savedLayout = JSON.parse(json) as SavedLayout;
+        } catch (_) {
+            // ファイルが存在しない場合は初回配置
+        }
+
+        this.render(savedLayout);
+
+        // buildAsync 完了前に focusTable が呼ばれていた場合、ここで実行する
+        if (this.pendingFocusTable !== false) {
+            this.focusTable(this.pendingFocusTable);
+            this.pendingFocusTable = false;
+        }
     }
 
     // =========================================================================
@@ -192,7 +303,7 @@ export class ErDiagramTab {
     /**
      * スキーマ JSON をパースしてテーブル情報とエッジ情報を抽出する
      */
-    private parseSchema(tableName: string, schemaJson: string): { table: TableInfo; edges: EdgeInfo[] } | null {
+    private parseSchema(tableName: string, schemaJson: string): { table: TableInfo; edges: EdgeInfo[]; unresolvedDynamic: UnresolvedDynamicRef[] } | null {
         const schema = JSON.parse(schemaJson) as Record<string, unknown>;
         const pkArray = Array.isArray(schema['primary_key']) ? schema['primary_key'] as string[] : [];
         const pkSet = new Set<string>(pkArray);
@@ -202,6 +313,7 @@ export class ErDiagramTab {
         const headerArray = headerRaw as Array<Record<string, unknown>>;
         const columns: ColumnInfo[] = [];
         const edges: EdgeInfo[] = [];
+        const unresolvedDynamic: UnresolvedDynamicRef[] = [];
 
         for (let i = 0; i < headerArray.length; i++) {
             const col = headerArray[i];
@@ -213,20 +325,59 @@ export class ErDiagramTab {
             const ref: unknown = 'reference' in col ? col['reference'] : null;
             if (isDynamicReferenceSchema(ref)) {
                 isFk = true;
-                // 動的参照: sourceTable が参照先テーブル
-                edges.push({ from: tableName, to: ref.sourceTable, type: 'dynamic' });
+                // 動的参照: CSVデータから実テーブルを解決するため未解決リストに入れる
+                unresolvedDynamic.push({
+                    from: tableName,
+                    fromColumn: colName,
+                    configTable: ref.sourceTable,
+                    destTableColumn: ref.destTable,
+                    destColumn: ref.destColumn,
+                });
             } else if (typeof ref === 'string') {
                 isFk = true;
                 // 単純参照: "テーブル名.列名" 形式
                 const dotIndex = ref.indexOf('.');
                 if (dotIndex !== -1) {
                     const targetTable = ref.substring(0, dotIndex);
-                    edges.push({ from: tableName, to: targetTable, type: 'simple' });
+                    const targetColumn = ref.substring(dotIndex + 1);
+                    edges.push({ from: tableName, to: targetTable, fromColumn: colName, toColumn: targetColumn, type: 'simple' });
                 }
             }
             columns.push({ name: colName, isPrimaryKey: isPk, isForeignKey: isFk });
         }
-        return { table: { name: tableName, columns }, edges };
+        return { table: { name: tableName, columns }, edges, unresolvedDynamic };
+    }
+
+    /**
+     * 動的参照をCSVデータから解決し、実テーブルへのエッジ群を返す
+     * configTable のCSVを読み込み、destTableColumn の値（実テーブル名）と destColumn の値（実カラム名）を取得する
+     */
+    private async resolveDynamicEdgesAsync(dyn: UnresolvedDynamicRef, tableNameSet: Set<string>): Promise<EdgeInfo[]> {
+        const edges: EdgeInfo[] = [];
+        try {
+            const csv = await readFileAsync('data/' + dyn.configTable + '.csv');
+            const lines = csv.split('\n').map(l => l.replace(/\r$/, ''));
+            if (lines.length < 2) return edges;
+            const header = lines[0].split(',');
+            const destTableIdx = header.indexOf(dyn.destTableColumn);
+            const destColIdx = header.indexOf(dyn.destColumn);
+            if (destTableIdx === -1) return edges;
+            // 各行から実テーブル名・カラム名を取得して重複を排除する
+            const seen = new Set<string>();
+            for (let row = 1; row < lines.length; row++) {
+                if (lines[row].trim() === '') continue;
+                const fields = lines[row].split(',');
+                const targetTable = fields[destTableIdx]?.trim();
+                if (!targetTable || !tableNameSet.has(targetTable) || seen.has(targetTable)) continue;
+                seen.add(targetTable);
+                // 実テーブルのPK列名を解決する（destColumn指定がある場合はその値、なければ"id"）
+                const targetColumn = destColIdx !== -1 ? (fields[destColIdx]?.trim() || 'id') : 'id';
+                edges.push({ from: dyn.from, to: targetTable, fromColumn: dyn.fromColumn, toColumn: targetColumn, type: 'dynamic' });
+            }
+        } catch (_) {
+            // CSVが読めない場合は解決不能
+        }
+        return edges;
     }
 
     // =========================================================================
@@ -236,7 +387,7 @@ export class ErDiagramTab {
     /**
      * テーブル・エッジ情報を元に SVG を描画する
      */
-    private render(): void {
+    private render(savedLayout: SavedLayout | null): void {
         // ノード高さを事前計算する（レイアウトに必要）
         const nodeHeights = new Map<string, number>();
         for (let i = 0; i < this.tables.length; i++) {
@@ -244,9 +395,34 @@ export class ErDiagramTab {
             nodeHeights.set(t.name, NODE_TITLE_HEIGHT + NODE_PADDING_TOP + t.columns.length * NODE_COLUMN_HEIGHT + NODE_PADDING_TOP);
         }
 
-        // グリッドレイアウトで初期座標を計算する
-        const tableNames = this.tables.map(t => t.name);
-        this.nodePositions = calculateGridLayout(tableNames, nodeHeights);
+        // 保存済みレイアウトがあればノード座標を復元する。なければグリッドレイアウトで初期配置する。
+        if (savedLayout !== null) {
+            this.nodePositions = new Map();
+            for (let i = 0; i < this.tables.length; i++) {
+                const name = this.tables[i].name;
+                const saved = savedLayout.nodes[name];
+                if (saved) {
+                    this.nodePositions.set(name, { x: saved.x, y: saved.y });
+                } else {
+                    // 新しいテーブルが追加された場合はグリッドレイアウトのフォールバック位置を使う
+                    const fallback = calculateGridLayout(this.tables.map(t => t.name), nodeHeights);
+                    this.nodePositions.set(name, fallback.get(name)!);
+                }
+            }
+        } else {
+            const tableNames = this.tables.map(t => t.name);
+            this.nodePositions = calculateGridLayout(tableNames, nodeHeights);
+        }
+
+        // カラム中心Y座標マップを構築する（エッジ描画で使用する）
+        this.columnCenterYMap.clear();
+        for (let i = 0; i < this.tables.length; i++) {
+            const table = this.tables[i];
+            for (let j = 0; j < table.columns.length; j++) {
+                const key = table.name + '.' + table.columns[j].name;
+                this.columnCenterYMap.set(key, NODE_TITLE_HEIGHT + NODE_PADDING_TOP + (j + 0.5) * NODE_COLUMN_HEIGHT);
+            }
+        }
 
         // ノードを描画する
         this.nodeElements.clear();
@@ -264,7 +440,32 @@ export class ErDiagramTab {
             this.renderEdge(this.edges[i]);
         }
 
-        // 凡例を描画する
+        // viewBox を設定する（保存済みがあれば復元、なければバウンディングボックスから計算）
+        if (savedLayout !== null) {
+            this.viewBox = { ...savedLayout.viewBox };
+        } else {
+            const padding = 40;
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            for (const [name, pos] of this.nodePositions) {
+                const h = nodeHeights.get(name)!;
+                if (pos.x < minX) minX = pos.x;
+                if (pos.y < minY) minY = pos.y;
+                if (pos.x + ER_NODE_WIDTH > maxX) maxX = pos.x + ER_NODE_WIDTH;
+                if (pos.y + h > maxY) maxY = pos.y + h;
+            }
+            this.viewBox = {
+                x: minX - padding,
+                y: minY - padding,
+                w: maxX - minX + padding * 2,
+                h: maxY - minY + padding * 2,
+            };
+        }
+        this.applyViewBox();
+
+        // 凡例をHTML要素として左上に固定配置する
         this.renderLegend();
     }
 
@@ -338,13 +539,7 @@ export class ErDiagramTab {
                 this.clearSelection();
                 this.selectedTable = table.name;
                 group.classList.add('er-node-selected');
-                const edgeElements = this.edgesLayer.querySelectorAll('line');
-                for (let i = 0; i < edgeElements.length; i++) {
-                    const line = edgeElements[i];
-                    if (line.getAttribute('data-from') === table.name || line.getAttribute('data-to') === table.name) {
-                        line.classList.add('er-edge-highlighted');
-                    }
-                }
+                this.highlightEdgesFor(table.name);
                 this.tab.openTableByErDiagram(table.name);
             }
         });
@@ -354,87 +549,158 @@ export class ErDiagramTab {
 
     /**
      * エッジ（参照線）を描画する
-     * ノード中心同士を結ぶ直線
+     * FKカラムの端 → PKカラムの端を、2回折れ曲がる経路で接続し、端点に●を描画する
      */
     private renderEdge(edge: EdgeInfo): void {
+        const group = document.createElementNS(SVG_NS, 'g');
+        group.setAttribute('data-from', edge.from);
+        group.setAttribute('data-to', edge.to);
+        group.setAttribute('data-from-column', edge.fromColumn);
+        group.setAttribute('data-to-column', edge.toColumn);
+        if (edge.type === 'simple') {
+            group.classList.add('er-edge-simple');
+        } else {
+            group.classList.add('er-edge-dynamic');
+        }
+
+        // ベジェ曲線の本体パス
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.classList.add('er-edge-path');
+        group.appendChild(path);
+
+        // FK側のカーディナリティ記号（クロウズフット: 多側）
+        const crowsFoot = document.createElementNS(SVG_NS, 'path');
+        crowsFoot.classList.add('er-edge-crows-foot');
+        group.appendChild(crowsFoot);
+
+        // PK側のカーディナリティ記号（バー: 一側）
+        const oneBar = document.createElementNS(SVG_NS, 'line');
+        oneBar.classList.add('er-edge-one-bar');
+        group.appendChild(oneBar);
+
+        this.edgesLayer.appendChild(group);
+        this.updateEdgePosition(group, edge);
+    }
+
+    /**
+     * エッジグループのベジェ曲線パスとカーディナリティ記号の座標を再計算する
+     */
+    private updateEdgePosition(group: SVGGElement, edge: EdgeInfo): void {
         const fromPos = this.nodePositions.get(edge.from);
         const toPos = this.nodePositions.get(edge.to);
         if (!fromPos || !toPos) return;
 
+        const fromColY = this.columnCenterYMap.get(edge.from + '.' + edge.fromColumn);
+        const toColY = this.columnCenterYMap.get(edge.to + '.' + edge.toColumn);
+        if (fromColY === undefined || toColY === undefined) return;
+
+        // ノードの左右どちらから出入りするかを決定する
         const fromCenterX = fromPos.x + ER_NODE_WIDTH / 2;
-        const fromCenterY = fromPos.y + 40;
         const toCenterX = toPos.x + ER_NODE_WIDTH / 2;
-        const toCenterY = toPos.y + 40;
+        const exitRight = fromCenterX <= toCenterX;
+        // カーディナリティ記号の幅分だけ内側にオフセットする
+        const markerGap = 10;
+        const startX = exitRight ? fromPos.x + ER_NODE_WIDTH : fromPos.x;
+        const endX = exitRight ? toPos.x : toPos.x + ER_NODE_WIDTH;
+        const dir = exitRight ? 1 : -1;
+        const curveStartX = startX + markerGap * dir;
+        const curveEndX = endX - markerGap * dir;
+        const startY = fromPos.y + fromColY;
+        const endY = toPos.y + toColY;
 
-        const line = document.createElementNS(SVG_NS, 'line');
-        line.setAttribute('x1', String(fromCenterX));
-        line.setAttribute('y1', String(fromCenterY));
-        line.setAttribute('x2', String(toCenterX));
-        line.setAttribute('y2', String(toCenterY));
-        line.setAttribute('data-from', edge.from);
-        line.setAttribute('data-to', edge.to);
+        // ベジェ曲線のS字カーブ: 制御点を水平方向に張り出してスムーズに接続する
+        const tension = Math.min(Math.abs(curveEndX - curveStartX) * 0.5, 120);
+        const cp1x = curveStartX + tension * dir;
+        const cp2x = curveEndX - tension * dir;
+        const path = group.querySelector('.er-edge-path') as SVGPathElement;
+        path.setAttribute('d', `M ${curveStartX} ${startY} C ${cp1x} ${startY} ${cp2x} ${endY} ${curveEndX} ${endY}`);
 
-        if (edge.type === 'simple') {
-            line.classList.add('er-edge-simple');
-        } else {
-            line.classList.add('er-edge-dynamic');
-        }
+        // FK側: クロウズフット（三又の足）
+        const footLen = 8;
+        const footSpread = 7;
+        const crowsFoot = group.querySelector('.er-edge-crows-foot') as SVGPathElement;
+        crowsFoot.setAttribute('d', [
+            `M ${startX + footLen * dir} ${startY - footSpread} L ${startX} ${startY} L ${startX + footLen * dir} ${startY + footSpread}`,
+            `M ${startX} ${startY} L ${startX + markerGap * dir} ${startY}`,
+        ].join(' '));
 
-        this.edgesLayer.appendChild(line);
+        // PK側: バー（一本線） — ノード縁から少し離して視認性を確保する
+        const barOffset = 4;
+        const barLen = 9;
+        const barX = endX - barOffset * dir;
+        const oneBar = group.querySelector('.er-edge-one-bar') as SVGLineElement;
+        oneBar.setAttribute('x1', String(barX));
+        oneBar.setAttribute('y1', String(endY - barLen));
+        oneBar.setAttribute('x2', String(barX));
+        oneBar.setAttribute('y2', String(endY + barLen));
     }
 
     /**
-     * 凡例を描画する（SVG内に固定配置）
+     * 全エッジの座標を現在のノード位置に合わせて再計算する
+     */
+    private updateAllEdgePositions(): void {
+        const edgeGroups = this.edgesLayer.querySelectorAll('g[data-from]');
+        for (let i = 0; i < edgeGroups.length; i++) {
+            const g = edgeGroups[i] as SVGGElement;
+            const fromTable = g.getAttribute('data-from')!;
+            const toTable = g.getAttribute('data-to')!;
+            const fromCol = g.getAttribute('data-from-column')!;
+            const toCol = g.getAttribute('data-to-column')!;
+            const edge = this.edges.find(e => e.from === fromTable && e.to === toTable && e.fromColumn === fromCol && e.toColumn === toCol);
+            if (edge) this.updateEdgePosition(g, edge);
+        }
+    }
+
+    /**
+     * 指定テーブルに関連するエッジに highlighted クラスを付与する
+     */
+    private highlightEdgesFor(tableName: string): void {
+        const edgeGroups = this.edgesLayer.querySelectorAll('g[data-from], g[data-to]');
+        for (let i = 0; i < edgeGroups.length; i++) {
+            const g = edgeGroups[i];
+            if (g.getAttribute('data-from') === tableName || g.getAttribute('data-to') === tableName) {
+                g.classList.add('er-edge-highlighted');
+            }
+        }
+    }
+
+    /**
+     * 凡例をHTML要素としてコンテナ左上に固定配置する
+     * パン・ズームの影響を受けない
      */
     private renderLegend(): void {
-        const legend = document.createElementNS(SVG_NS, 'g');
+        const legend = document.createElement('div');
         legend.classList.add('er-legend');
-        legend.setAttribute('transform', 'translate(20, 20)');
+        // 単純参照トグル
+        const simpleRow = this.createLegendToggle('er-legend-line-simple', '単純参照', 'er-edge-simple');
+        legend.appendChild(simpleRow);
+        // 動的参照トグル
+        const dynamicRow = this.createLegendToggle('er-legend-line-dynamic', '動的参照', 'er-edge-dynamic');
+        legend.appendChild(dynamicRow);
+        this.container.appendChild(legend);
+    }
 
-        // 凡例背景（テーマ対応のためCSSクラスでスタイルを指定する）
-        const bg = document.createElementNS(SVG_NS, 'rect');
-        bg.classList.add('er-legend-bg');
-        bg.setAttribute('width', '140');
-        bg.setAttribute('height', '60');
-        bg.setAttribute('rx', '4');
-        bg.setAttribute('ry', '4');
-        legend.appendChild(bg);
-
-        // 単純参照の凡例線
-        const simpleLine = document.createElementNS(SVG_NS, 'line');
-        simpleLine.setAttribute('x1', '10');
-        simpleLine.setAttribute('y1', '22');
-        simpleLine.setAttribute('x2', '40');
-        simpleLine.setAttribute('y2', '22');
-        simpleLine.classList.add('er-edge-simple');
-        legend.appendChild(simpleLine);
-
-        // 単純参照の凡例テキスト（テーマ対応のためCSSクラスでスタイルを指定する）
-        const simpleText = document.createElementNS(SVG_NS, 'text');
-        simpleText.classList.add('er-legend-text');
-        simpleText.setAttribute('x', '48');
-        simpleText.setAttribute('y', '26');
-        simpleText.textContent = '単純参照';
-        legend.appendChild(simpleText);
-
-        // 動的参照の凡例線
-        const dynamicLine = document.createElementNS(SVG_NS, 'line');
-        dynamicLine.setAttribute('x1', '10');
-        dynamicLine.setAttribute('y1', '44');
-        dynamicLine.setAttribute('x2', '40');
-        dynamicLine.setAttribute('y2', '44');
-        dynamicLine.classList.add('er-edge-dynamic');
-        legend.appendChild(dynamicLine);
-
-        // 動的参照の凡例テキスト（テーマ対応のためCSSクラスでスタイルを指定する）
-        const dynamicText = document.createElementNS(SVG_NS, 'text');
-        dynamicText.classList.add('er-legend-text');
-        dynamicText.setAttribute('x', '48');
-        dynamicText.setAttribute('y', '48');
-        dynamicText.textContent = '動的参照';
-        legend.appendChild(dynamicText);
-
-        this.svg.appendChild(legend);
+    /**
+     * 凡例のトグル行を生成する
+     * クリックで対応するエッジタイプの表示/非表示を切り替える
+     */
+    private createLegendToggle(lineClass: string, label: string, edgeClass: string): HTMLElement {
+        const row = document.createElement('div');
+        row.classList.add('er-legend-row', 'er-legend-row-toggle');
+        const line = document.createElement('span');
+        line.classList.add('er-legend-line', lineClass);
+        const text = document.createElement('span');
+        text.textContent = label;
+        row.appendChild(line);
+        row.appendChild(text);
+        row.addEventListener('click', () => {
+            const hidden = row.classList.toggle('er-legend-row-off');
+            const edges = this.edgesLayer.querySelectorAll('.' + edgeClass);
+            for (let i = 0; i < edges.length; i++) {
+                (edges[i] as SVGElement).style.display = hidden ? 'none' : '';
+            }
+        });
+        return row;
     }
 
     /**
@@ -459,10 +725,60 @@ export class ErDiagramTab {
     // ドラッグ / クリック
     // =========================================================================
 
+    /** スクリーン1ピクセルあたりのSVG座標単位を返す（preserveAspectRatio meet の均一スケール） */
+    private screenToSvgScale(): number {
+        const rect = this.svg.getBoundingClientRect();
+        return Math.max(this.viewBox.w / rect.width, this.viewBox.h / rect.height);
+    }
+
+    /** viewBox をSVG属性に反映する */
+    private applyViewBox(): void {
+        this.svg.setAttribute('viewBox', `${this.viewBox.x} ${this.viewBox.y} ${this.viewBox.w} ${this.viewBox.h}`);
+    }
+
+    /** ノード座標と viewBox を永続化する */
+    private saveLayoutAsync(): void {
+        const nodes: Record<string, { x: number; y: number }> = {};
+        for (const [name, pos] of this.nodePositions) {
+            nodes[name] = { x: pos.x, y: pos.y };
+        }
+        const data: SavedLayout = { nodes, viewBox: { ...this.viewBox } };
+        writeFileAsync(LAYOUT_FILE, JSON.stringify(data)).catch(e => { console.error('ER図レイアウト保存エラー', e); });
+    }
+
+    /** ホイールズーム: カーソル位置を中心にズームイン・アウトする */
+    private handleWheel(e: WheelEvent): void {
+        e.preventDefault();
+        const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+        // カーソル位置をSVG座標に変換する
+        const rect = this.svg.getBoundingClientRect();
+        const ratioX = (e.clientX - rect.left) / rect.width;
+        const ratioY = (e.clientY - rect.top) / rect.height;
+        const cursorSvgX = this.viewBox.x + this.viewBox.w * ratioX;
+        const cursorSvgY = this.viewBox.y + this.viewBox.h * ratioY;
+        // viewBox サイズを拡縮し、カーソル位置が同じSVG座標を指すようにオフセットを補正する
+        const newW = this.viewBox.w * zoomFactor;
+        const newH = this.viewBox.h * zoomFactor;
+        this.viewBox.x = cursorSvgX - newW * ratioX;
+        this.viewBox.y = cursorSvgY - newH * ratioY;
+        this.viewBox.w = newW;
+        this.viewBox.h = newH;
+        this.applyViewBox();
+        this.saveLayoutAsync();
+    }
+
     /**
-     * mousemove ハンドラ: ドラッグ中にノードとエッジの位置を更新する
+     * mousemove ハンドラ: ノードドラッグまたはキャンバスパンを処理する
      */
     private handleMouseMove(e: MouseEvent): void {
+        // キャンバスパン（中ボタンドラッグ）
+        if (this.panState.active) {
+            const svgScale = this.screenToSvgScale();
+            this.viewBox.x = this.panState.originX - (e.clientX - this.panState.startX) * svgScale;
+            this.viewBox.y = this.panState.originY - (e.clientY - this.panState.startY) * svgScale;
+            this.applyViewBox();
+            return;
+        }
         if (!this.dragState.active) return;
         const dx = e.clientX - this.dragState.startX;
         const dy = e.clientY - this.dragState.startY;
@@ -471,38 +787,38 @@ export class ErDiagramTab {
         }
         if (!this.dragState.moved) return;
 
-        // ノード位置を更新する
-        const newX = this.dragState.offsetX + dx;
-        const newY = this.dragState.offsetY + dy;
+        // スクリーンピクセルをSVG座標系に変換してノード位置を更新する
+        // SVG の preserveAspectRatio(meet) は均一スケーリングのため、軸ごとではなく単一のスケールを使う
+        const svgScale = this.screenToSvgScale();
+        const newX = this.dragState.offsetX + dx * svgScale;
+        const newY = this.dragState.offsetY + dy * svgScale;
         const nodeEl = this.nodeElements.get(this.dragState.currentTable);
         if (nodeEl) {
             nodeEl.setAttribute('transform', `translate(${newX},${newY})`);
         }
         this.nodePositions.set(this.dragState.currentTable, { x: newX, y: newY });
-        // 全エッジの座標をノードの現在位置に合わせて更新する
-        const allLines = this.edgesLayer.querySelectorAll('line');
-        for (let j = 0; j < allLines.length; j++) {
-            const edgeLine = allLines[j];
-            const edgeFrom = edgeLine.getAttribute('data-from')!;
-            const edgeTo = edgeLine.getAttribute('data-to')!;
-            const fp = this.nodePositions.get(edgeFrom);
-            const tp = this.nodePositions.get(edgeTo);
-            if (!fp || !tp) continue;
-            edgeLine.setAttribute('x1', String(fp.x + ER_NODE_WIDTH / 2));
-            edgeLine.setAttribute('y1', String(fp.y + 40));
-            edgeLine.setAttribute('x2', String(tp.x + ER_NODE_WIDTH / 2));
-            edgeLine.setAttribute('y2', String(tp.y + 40));
-        }
+        this.updateAllEdgePositions();
     }
 
     /**
      * mouseup ハンドラ: ドラッグ完了またはクリック判定
      */
     private handleMouseUp(_e: MouseEvent): void {
+        // キャンバスパン終了
+        if (this.panState.active) {
+            this.panState.active = false;
+            this.svg.classList.remove('panning');
+            this.saveLayoutAsync();
+            return;
+        }
         if (!this.dragState.active) return;
         const tableName = this.dragState.currentTable;
         const wasDrag = this.dragState.moved;
         this.dragState.active = false;
+
+        if (wasDrag) {
+            this.saveLayoutAsync();
+        }
 
         if (!wasDrag) {
             // ドラッグしていない場合はクリック: ノード選択 + テーブルタブを開く
@@ -511,14 +827,7 @@ export class ErDiagramTab {
             // ノードに selected クラスを付与する
             const nodeEl = this.nodeElements.get(tableName);
             if (nodeEl) nodeEl.classList.add('er-node-selected');
-            // 関連エッジ（from または to が一致）に highlighted クラスを付与する
-            const edgeElements = this.edgesLayer.querySelectorAll('line');
-            for (let i = 0; i < edgeElements.length; i++) {
-                const line = edgeElements[i];
-                if (line.getAttribute('data-from') === tableName || line.getAttribute('data-to') === tableName) {
-                    line.classList.add('er-edge-highlighted');
-                }
-            }
+            this.highlightEdgesFor(tableName);
             this.tab.openTableByErDiagram(tableName);
         }
     }

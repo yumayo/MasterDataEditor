@@ -261,7 +261,9 @@ export class Tab {
      * 新規タブ作成は行わない。タブが存在しない場合は閉じられたタブの履歴エントリをスキップする。
      */
     switchToExistingTab(name: string): void {
-        if (!this.tabStates.has(name)) {
+        // 特殊タブ（ER図等）は tabStates に登録されないため、tabButtons で存在を確認する
+        const exists = this.tabStates.has(name) || this.tabButtons.some(b => b.name === name);
+        if (!exists) {
             // 閉じられたタブの履歴エントリをスキップして次のエントリに進む
             history.back();
             return;
@@ -1309,6 +1311,9 @@ export class Tab {
 
         // ER図パネルを表示する
         this.erDiagramWrapperElement.style.display = '';
+
+        // ER図タブへの遷移をナビゲーション履歴に記録する（マウス戻る/進むで復元可能にする）
+        this.navigationHistory.pushTabSwitch(ER_DIAGRAM_TAB_NAME);
     }
 
     /**
@@ -1318,6 +1323,17 @@ export class Tab {
     openTableByErDiagram(tableName: string): void {
         this.append(tableName, null);
         this.enableTabButton(tableName);
+    }
+
+    /**
+     * ER図タブを開き、指定テーブルのノードを画面中央にフォーカスする
+     * ツールバーのER図ボタンから呼ばれる
+     */
+    openErDiagramAndFocusTable(tableName: string): void {
+        this.openErDiagramTab();
+        if (this.erDiagramTab !== false) {
+            this.erDiagramTab.focusTable(tableName);
+        }
     }
 
     /**
