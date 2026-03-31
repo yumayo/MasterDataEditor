@@ -1207,7 +1207,7 @@ export class EditorTable {
      */
     getColumnCount(): number {
         const headerRow = this.element.children[0];
-        return headerRow.children.length - 1;
+        return headerRow.children.length - this.dataColumnOffset();
     }
 
     /**
@@ -2829,8 +2829,7 @@ export class EditorTable {
      */
     public moveRow(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
         if (fromDomDataRowIndex === toDomDataRowIndex) return;
-        // blameはgit committed dataのため、行移動でDOM行構造が変化すると陳腐化する
-        this.hideBlameIfVisible();
+        // blame-cell は各行要素の children[0] に配置されており、行要素ごとDOM移動するため陳腐化しない
         // ストアの行を移動する
         const fromStoreIndex = this.storeRowIndices[fromDomDataRowIndex];
         // 移動先のストアインデックスを計算する:

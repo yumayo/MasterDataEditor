@@ -2870,3 +2870,18 @@ Command実行後の選択状態更新の欠落
 
 ---
 
+## 36. blame表示中に行ドラッグで行を入れ替えるとblameが解除され、選択も移動先に追従しない
+
+### 不具合原因名
+getColumnCount()がblame列を含めてカウントしていた
+
+### なぜそうなったのか
+`moveRow()` の冒頭で `hideBlameIfVisible()` を呼んでblameを強制解除していた。blame-cellは各行要素のchildren[0]に配置されており、行要素ごとDOM移動するため実際には陳腐化しない。`hideBlameIfVisible()` を除去してblameを維持するようにしたところ、今度は行移動後に選択が移動先に追従しなくなった。原因は `getColumnCount()` が `headerRow.children.length - 1` で計算しており、blame表示中はblame-column-headerが追加されるためデータ列数より1多い値を返していたこと。これにより `updateAllSortIndicators()` が存在しないchildren[N+1]にアクセスしてTypeErrorが発生し、`moveRow()` が途中で例外終了。呼び出し元の `handleMouseUp()` で `executeCommand()` の後に続く `selectRow(to + 1)` が実行されず、選択が更新されなかった。
+
+### どうしたら今後は再発しないか
+- `getColumnCount()` のように「行ヘッダー等の非データ列を除外する」関数は、固定値 `-1` ではなく `dataColumnOffset()` を使って動的に除外数を算出する。blame列のような動的に追加される列がある場合、ハードコードされたオフセットは陳腐化する。
+- DOM構造を変更する機能（blame列の追加/除去）を実装した際は、DOM列数に依存する全関数（`getColumnCount`, `getTotalColumnCount`, `updateAllSortIndicators` 等）が正しく動作するかを検証する。
+
+---
+
+
