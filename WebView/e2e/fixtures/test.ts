@@ -36,6 +36,13 @@ export const test = base.extend<MockFixtures>({
 
     // 全テストで自動実行されるDOMダンプフィクスチャ
     autoDump: [async ({ page }, use, testInfo) => {
+        // ブラウザ側の未キャッチ例外とエラーログを収集する
+        const pageErrors: string[] = [];
+        page.on('pageerror', err => pageErrors.push(`[EXCEPTION] ${err.message}\n${err.stack}`));
+        page.on('console', msg => {
+            if (msg.type() === 'error') pageErrors.push(`[console.error] ${msg.text()}`);
+        });
+
         await use();
 
         // テスト完了後にDOMをダンプする
@@ -44,6 +51,11 @@ export const test = base.extend<MockFixtures>({
         const testTitle = testInfo.title.replace(/[<>:"/\\|?*]/g, '_');
         const outputDir = resolve(dumpRootDir, specName);
         mkdirSync(outputDir, { recursive: true });
+
+        // テスト失敗時にブラウザ側エラーをファイルに出力する（原因特定を迅速にするため）
+        if (testInfo.status !== testInfo.expectedStatus && pageErrors.length > 0) {
+            writeFileSync(resolve(outputDir, testTitle + '.errors.log'), pageErrors.join('\n'), 'utf-8');
+        }
 
         const html = await page.evaluate(() => {
             // head内のstyleとscriptを除去して軽量化する
