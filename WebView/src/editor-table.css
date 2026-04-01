@@ -13,6 +13,8 @@
 
 .editor-table-cell {
     display: table-cell;
+    /* 擬似要素（::before / ::after）の包含ブロックにするために必要 */
+    position: relative;
 
     padding-left: 6px;
     padding-right: 6px;

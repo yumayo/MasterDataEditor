@@ -2071,8 +2071,6 @@ export class Tab {
 
         // DOM要素を追加
         editorTable.appendTo(wrapperElement);
-        wrapperElement.appendChild(selection.element);
-        wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
         wrapperElement.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(wrapperElement);
@@ -2180,8 +2178,6 @@ export class Tab {
 
         // 左ペインと同じ: 全要素を wrapperElement に配置する
         editorTable.appendTo(wrapperElement);
-        wrapperElement.appendChild(selection.element);
-        wrapperElement.appendChild(selection.copyBorderElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
         wrapperElement.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(wrapperElement);

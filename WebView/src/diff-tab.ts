@@ -687,8 +687,6 @@ export class DiffTab {
         editorTable.initializeModules(notification);
 
         editorTable.appendTo(innerWrapper);
-        innerWrapper.appendChild(selection.element);
-        innerWrapper.appendChild(selection.copyBorderElement);
         innerWrapper.appendChild(selection.fillPreviewElement);
         innerWrapper.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(innerWrapper);

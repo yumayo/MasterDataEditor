@@ -17,22 +17,6 @@ export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 export class Selection {
 
-    element: HTMLElement;
-
-    /** フォーカスセルの上の領域（選択範囲の全幅） */
-    private topBackground: HTMLElement;
-
-    /** フォーカスセルの下の領域（選択範囲の全幅） */
-    private bottomBackground: HTMLElement;
-
-    /** フォーカスセルの左の領域（フォーカス行のみ） */
-    private leftBackground: HTMLElement;
-
-    /** フォーカスセルの右の領域（フォーカス行のみ） */
-    private rightBackground: HTMLElement;
-
-    copyBorderElement: HTMLElement;
-
     fillPreviewElement: HTMLElement;
 
     private range: CellRange;
@@ -79,38 +63,7 @@ export class Selection {
         this.fillStartMousePosition = { x: 0, y: 0 };
         this.fillCurrentMousePosition = { x: 0, y: 0 };
 
-        // 選択範囲表示用の要素を作成
-        const element = document.createElement('div');
-        element.classList.add('selection');
-        this.element = element;
-
-        // 4つの背景要素を作成（フォーカスセルを囲む上・下・左・右の領域）
-        const topBackground = document.createElement('div');
-        topBackground.classList.add('selection-background');
-        this.topBackground = topBackground;
-        this.element.appendChild(topBackground);
-
-        const bottomBackground = document.createElement('div');
-        bottomBackground.classList.add('selection-background');
-        this.bottomBackground = bottomBackground;
-        this.element.appendChild(bottomBackground);
-
-        const leftBackground = document.createElement('div');
-        leftBackground.classList.add('selection-background');
-        this.leftBackground = leftBackground;
-        this.element.appendChild(leftBackground);
-
-        const rightBackground = document.createElement('div');
-        rightBackground.classList.add('selection-background');
-        this.rightBackground = rightBackground;
-        this.element.appendChild(rightBackground);
-
-        // コピー範囲表示用の要素を作成
-        const copyBorderElement = document.createElement('div');
-        copyBorderElement.classList.add('copy-border');
-        this.copyBorderElement = copyBorderElement;
-
-        // フィルプレビュー範囲表示用の要素を作成
+        // フィルプレビュー範囲表示用の要素を作成（オーバーレイのまま維持）
         const fillPreviewElement = document.createElement('div');
         fillPreviewElement.classList.add('fill-preview');
         this.fillPreviewElement = fillPreviewElement;
@@ -508,61 +461,18 @@ export class Selection {
 
     private updateCopyRenderer(): void {
         if (!this.hasCopyRange()) {
-            this.hideCopyBorder();
+            this.editorTable.clearCopyClasses();
             return;
         }
-
-        const { startRow, startColumn, endRow, endColumn } = this.copyRange;
-
-        const tableRect = this.editorTable.getTableBoundingClientRect();
-
-        const startRect = this.editorTable.getCellRectOrNull(startRow, startColumn);
-        const endRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
-
-        if (!startRect || !endRect) {
-            this.hideCopyBorder();
-            return;
-        }
-
-        const left = Math.round(startRect.left - tableRect.left - 1);
-        const top = Math.round(startRect.top - tableRect.top - 1);
-        const width = Math.round(endRect.right - startRect.left - 1);
-        const height = Math.round(endRect.bottom - startRect.top - 1);
-
-        this.copyBorderElement.style.left = left + 'px';
-        this.copyBorderElement.style.top = top + 'px';
-        this.copyBorderElement.style.width = width + 'px';
-        this.copyBorderElement.style.height = height + 'px';
-        this.copyBorderElement.style.display = 'block';
+        this.editorTable.applyCopyClasses(this.copyRange);
     }
 
     private updateRenderer(): void {
         const selectionRange = this.getSelectionRange();
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
-        const tableRect = this.editorTable.getTableBoundingClientRect();
-
-        const startRect = this.editorTable.getCellRectOrNull(startRow, startColumn);
-        const endRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
-        const focusRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
-
-        if (!startRect || !endRect || !focusRect) {
-            this.hideRenderer();
-            return;
-        }
-
-        const left = Math.round(startRect.left - tableRect.left - 1);
-        const top = Math.round(startRect.top - tableRect.top - 1);
-        const width = Math.round(endRect.right - startRect.left - 1);
-        const height = Math.round(endRect.bottom - startRect.top - 1);
-
-        this.element.style.left = left + 'px';
-        this.element.style.top = top + 'px';
-        this.element.style.width = width + 'px';
-        this.element.style.height = height + 'px';
-
-        // 背景要素の位置を設定（フォーカスセルを除く）
-        this.updateBackgroundElements(startRect, endRect, focusRect);
+        // EditorTable にセル単位でクラスを付与させる（座標計算不要）
+        this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
 
         // フィルハンドルの位置を更新
         this.updateFillHandlePosition();
@@ -687,63 +597,12 @@ export class Selection {
         this.fillHandle.style.display = 'block';
     }
 
-    private updateBackgroundElements(startRect: DOMRect, endRect: DOMRect, focusRect: DOMRect): void {
-        // 座標計算は最後にまとめて整数化する
-        const focusLeftPx = Math.floor(focusRect.left - startRect.left);
-        const focusTopPx = Math.floor(focusRect.top - startRect.top);
-        const focusWidth = Math.ceil(focusRect.width);
-        const focusHeight = Math.ceil(focusRect.height);
-        const totalWidth = Math.ceil(endRect.right - startRect.left);
-        const totalHeight = Math.ceil(endRect.bottom - startRect.top);
-
-        // 単一セルの場合は背景を非表示
-        if (this.isSingleCell()) {
-            this.hideBackgroundElements();
-            return;
-        }
-
-        const topHeight = focusTopPx;
-        const bottomTop = focusTopPx + focusHeight;
-        const bottomHeight = totalHeight - bottomTop;
-        const leftWidth = focusLeftPx;
-        const rightLeft = focusLeftPx + focusWidth;
-        const rightWidth = totalWidth - rightLeft;
-
-        this.updateBackgroundElement(this.topBackground, 0, 0, totalWidth, topHeight);
-        this.updateBackgroundElement(this.bottomBackground, 0, bottomTop, totalWidth, bottomHeight);
-        this.updateBackgroundElement(this.leftBackground, 0, focusTopPx, leftWidth, focusHeight);
-        this.updateBackgroundElement(this.rightBackground, rightLeft, focusTopPx, rightWidth, focusHeight);
-    }
-
-    private updateBackgroundElement(element: HTMLElement, left: number, top: number, width: number, height: number): void {
-        if (width <= 0 || height <= 0) {
-            element.style.display = 'none';
-            return;
-        }
-
-        element.style.display = 'block';
-        element.style.left = left + 'px';
-        element.style.top = top + 'px';
-        element.style.width = width + 'px';
-        element.style.height = height + 'px';
-    }
-
-    private hideBackgroundElements(): void {
-        this.topBackground.style.display = 'none';
-        this.bottomBackground.style.display = 'none';
-        this.leftBackground.style.display = 'none';
-        this.rightBackground.style.display = 'none';
-    }
-
     private hideRenderer(): void {
-        this.element.style.left = '-99999px';
-        this.element.style.top = '-99999px';
-        this.element.style.width = '0px';
-        this.element.style.height = '0px';
+        this.editorTable.clearSelectionClasses();
     }
 
     private hideCopyBorder(): void {
-        this.copyBorderElement.style.display = 'none';
+        this.editorTable.clearCopyClasses();
     }
 
     startFill(row: number, column: number, mouseX: number, mouseY: number): void {

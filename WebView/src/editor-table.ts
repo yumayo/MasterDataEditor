@@ -117,6 +117,16 @@ export class EditorTable {
     private lastFocusedRow: number;
     private lastFocusedCol: number;
     /**
+     * 前回 applySelectionClasses() でクラスを付与したセルの記録。
+     * clearSelectionClasses() でクラスを除去するために使用する。
+     */
+    private lastSelectionCells: { row: number; col: number; classes: string[] }[];
+    /**
+     * 前回 applyCopyClasses() でクラスを付与したセルの記録。
+     * clearCopyClasses() でクラスを除去するために使用する。
+     */
+    private lastCopyCells: { row: number; col: number; classes: string[] }[];
+    /**
      * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
      * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
      * forceRefreshRelationsPanel() は refreshCurrentRow() を直接呼ぶためこの値を変更しない。
@@ -174,6 +184,8 @@ export class EditorTable {
         this.lastNotifiedRow = -1;
         this.lastFocusedRow = -1;
         this.lastFocusedCol = -1;
+        this.lastSelectionCells = [];
+        this.lastCopyCells = [];
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.columnSorter = new ColumnSorter(this, store);
@@ -906,6 +918,119 @@ export class EditorTable {
         }
         this.lastFocusedRow = -1;
         this.lastFocusedCol = -1;
+    }
+
+    /**
+     * 選択範囲のセルにクラスを付与する（Selection から呼ばれる）。
+     * 前回付与したクラスを除去してから新しいクラスを付与する。
+     * フォーカスセルには sel-bg を付与しない（Excel同様に白背景で表示）。
+     *
+     * @param range 正規化済みの選択範囲（startRow <= endRow, startColumn <= endColumn）
+     * @param focusRow フォーカスセルのDOM行インデックス
+     * @param focusCol フォーカスセルのDOM列インデックス
+     */
+    applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void {
+        // 前回のクラスを除去する
+        for (const entry of this.lastSelectionCells) {
+            const cell = this.getCellOrNull(entry.row, entry.col);
+            if (cell !== null) cell.classList.remove(...entry.classes);
+        }
+        this.lastSelectionCells = [];
+
+        const { startRow, startColumn, endRow, endColumn } = range;
+
+        // 選択範囲内のセルにクラスを付与する
+        for (let row = startRow; row <= endRow; row++) {
+            for (let col = startColumn; col <= endColumn; col++) {
+                const cell = this.getCellOrNull(row, col);
+                if (cell === null) continue;
+                const classes: string[] = [];
+                // フォーカスセル以外に背景色を付与
+                if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
+                if (row === startRow) classes.push('sel-top');
+                if (row === endRow) classes.push('sel-bottom');
+                if (col === startColumn) classes.push('sel-left');
+                if (col === endColumn) classes.push('sel-right');
+                if (classes.length > 0) {
+                    cell.classList.add(...classes);
+                    this.lastSelectionCells.push({ row, col, classes });
+                }
+            }
+        }
+
+        // 隣接セルのボーダーを透明にする（灰色セルボーダーが青枠を隠す問題を解消）
+        // 上辺: 1つ上の行のセルの border-bottom を透明にする
+        if (startRow > 0) {
+            for (let col = startColumn; col <= endColumn; col++) {
+                const cell = this.getCellOrNull(startRow - 1, col);
+                if (cell === null) continue;
+                cell.classList.add('sel-adj-bottom');
+                this.lastSelectionCells.push({ row: startRow - 1, col, classes: ['sel-adj-bottom'] });
+            }
+        }
+        // 左辺: 1つ左の列のセルの border-right を透明にする
+        if (startColumn > 0) {
+            for (let row = startRow; row <= endRow; row++) {
+                const cell = this.getCellOrNull(row, startColumn - 1);
+                if (cell === null) continue;
+                cell.classList.add('sel-adj-right');
+                this.lastSelectionCells.push({ row, col: startColumn - 1, classes: ['sel-adj-right'] });
+            }
+        }
+    }
+
+    /**
+     * コピー範囲のセルにクラスを付与する（Selection から呼ばれる）。
+     * 前回付与したクラスを除去してから新しいクラスを付与する。
+     *
+     * @param range 正規化済みのコピー範囲
+     */
+    applyCopyClasses(range: CellRange): void {
+        // 前回のクラスを除去する
+        for (const entry of this.lastCopyCells) {
+            const cell = this.getCellOrNull(entry.row, entry.col);
+            if (cell !== null) cell.classList.remove(...entry.classes);
+        }
+        this.lastCopyCells = [];
+
+        const { startRow, startColumn, endRow, endColumn } = range;
+        for (let row = startRow; row <= endRow; row++) {
+            for (let col = startColumn; col <= endColumn; col++) {
+                const cell = this.getCellOrNull(row, col);
+                if (cell === null) continue;
+                const classes: string[] = [];
+                if (row === startRow) classes.push('copy-top');
+                if (row === endRow) classes.push('copy-bottom');
+                if (col === startColumn) classes.push('copy-left');
+                if (col === endColumn) classes.push('copy-right');
+                if (classes.length > 0) {
+                    cell.classList.add(...classes);
+                    this.lastCopyCells.push({ row, col, classes });
+                }
+            }
+        }
+    }
+
+    /**
+     * 選択クラスを全セルから除去する（Selection.hideRenderer() から呼ばれる）。
+     */
+    clearSelectionClasses(): void {
+        for (const entry of this.lastSelectionCells) {
+            const cell = this.getCellOrNull(entry.row, entry.col);
+            if (cell !== null) cell.classList.remove(...entry.classes);
+        }
+        this.lastSelectionCells = [];
+    }
+
+    /**
+     * コピークラスを全セルから除去する（Selection.hideCopyBorder() から呼ばれる）。
+     */
+    clearCopyClasses(): void {
+        for (const entry of this.lastCopyCells) {
+            const cell = this.getCellOrNull(entry.row, entry.col);
+            if (cell !== null) cell.classList.remove(...entry.classes);
+        }
+        this.lastCopyCells = [];
     }
 
     /**

@@ -5,6 +5,9 @@
 
 :root {
     /* ─── EditorTable 内部の重なり順 ─── */
+    /* セルのstacking context内で使用するため小さい値で十分 */
+    --z-index-selection-border: 1;
+    --z-index-copy-border: 2;
     --z-index-selection-range-bg: 10;
     --z-index-freeze-column: 15;
     --z-index-blame-cell: 20;

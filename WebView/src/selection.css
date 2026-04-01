@@ -1,29 +1,70 @@
-/* 選択範囲表示用の独立した要素 */
-.selection {
-    position: absolute;
-    border: 2px solid rgba(0, 120, 215, 0.5);
-    pointer-events: none;
-}
+/* ===== 選択範囲（実線）— ::before で描画 ===== */
+/* 辺セルのみ overflow: visible にし clip-path: inset(0) で border-box クリップに切り替える。
+   これにより ::before を border 領域まで拡張でき、セル間の1px隙間を埋められる。
+   隣接セルの灰色ボーダーは sel-adj-* クラスで透明にして青枠を最前面にする。 */
 
-.selection-background {
-    position: absolute;
+/* 選択範囲の背景色（フォーカスセルには付与しない） */
+.sel-bg {
     background-color: rgba(0, 120, 215, 0.2);
 }
 
-/* コピー範囲の点線枠表示用の独立した要素 */
-.copy-border {
-    position: absolute;
-    border: 1px dashed rgba(0, 120, 215, 0.9);
-    pointer-events: none;
-    display: none;
+/* 辺セルは overflow を border-box クリップに切り替える
+   （padding-box クリップの overflow: hidden だと ::before の拡張分が切られる） */
+.sel-top, .sel-bottom, .sel-left, .sel-right {
+    overflow: visible;
+    clip-path: inset(0);
 }
 
-/* フィルハンドル（選択範囲右下の小さな四角） */
+/* 擬似要素の共通設定（選択ボーダーのあるセルのみ生成）
+   右と下は -1px で border-right / border-bottom 領域まで拡張し隣セルと隙間なく接続する。
+   左と上はセルに border-left / border-top がないため 0 のままで外縁に到達する。 */
+.sel-top::before, .sel-bottom::before, .sel-left::before, .sel-right::before {
+    content: '';
+    position: absolute;
+    inset: 0 -1px -1px 0;
+    pointer-events: none;
+    z-index: var(--z-index-selection-border);
+}
+
+.sel-top::before { border-top: 2px solid #0078d7; }
+.sel-bottom::before { border-bottom: 2px solid #0078d7; }
+.sel-left::before { border-left: 2px solid #0078d7; }
+.sel-right::before { border-right: 2px solid #0078d7; }
+
+/* 選択辺の灰色セルボーダーを透明にする（青枠を最前面にする）。
+   .editor-table-row .editor-table-cell の詳細度 0,2,0 に勝つため .editor-table-row を付ける。 */
+.editor-table-row .sel-bottom,
+.editor-table-row .sel-adj-bottom { border-bottom-color: transparent; }
+.sel-right,
+.sel-adj-right { border-right-color: transparent; }
+
+/* ===== コピー範囲（点線）— ::after で描画 ===== */
+
+/* コピー辺セルも同様に border-box クリップに切り替える */
+.copy-top, .copy-bottom, .copy-left, .copy-right {
+    overflow: visible;
+    clip-path: inset(0);
+}
+
+.copy-top::after, .copy-bottom::after, .copy-left::after, .copy-right::after {
+    content: '';
+    position: absolute;
+    inset: 0 -1px -1px 0;
+    pointer-events: none;
+    z-index: var(--z-index-copy-border);
+}
+
+.copy-top::after { border-top: 2px dashed #0078d7; }
+.copy-bottom::after { border-bottom: 2px dashed #0078d7; }
+.copy-left::after { border-left: 2px dashed #0078d7; }
+.copy-right::after { border-right: 2px dashed #0078d7; }
+
+/* ===== フィルハンドル（選択範囲右下の小さな四角） ===== */
 .fill-handle {
     position: absolute;
     width: 8px;
     height: 8px;
-    background-color: rgba(0, 120, 215, 0.9);
+    background-color: #0078d7;
     border: 1px solid white;
     cursor: crosshair;
     z-index: var(--z-index-selection-range-bg);
@@ -31,56 +72,44 @@
 }
 
 .fill-handle:hover {
-    background-color: rgba(0, 120, 215, 1);
+    background-color: #005a9e;
 }
 
-/* フィルプレビュー範囲表示用の独立した要素 */
+/* ===== フィルプレビュー範囲表示用の独立した要素 ===== */
 .fill-preview {
     position: absolute;
-    border: 1px dashed rgba(0, 120, 215, 0.8);
+    border: 1px dashed #0078d7;
     background-color: rgba(0, 120, 215, 0.1);
     pointer-events: none;
     display: none;
 }
 
-/* 非アクティブテーブルの選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
-/* .selection / .copy-border / .fill-preview / .fill-handle はすべて .editor-table の兄弟要素なので ~ セレクタを使う */
-.editor-table--inactive ~ .selection {
-    border-color: rgba(128, 128, 128, 0.5);
-}
-
-.editor-table--inactive ~ .selection .selection-background {
+/* ===== 非アクティブテーブル ===== */
+.editor-table--inactive .sel-bg {
     background-color: rgba(128, 128, 128, 0.2);
 }
 
-.editor-table--inactive ~ .copy-border {
-    border-color: rgba(128, 128, 128, 0.9);
+.editor-table--inactive .sel-top::before { border-top-color: #808080; }
+.editor-table--inactive .sel-bottom::before { border-bottom-color: #808080; }
+.editor-table--inactive .sel-left::before { border-left-color: #808080; }
+.editor-table--inactive .sel-right::before { border-right-color: #808080; }
+
+.editor-table--inactive .copy-top::after,
+.editor-table--inactive .copy-bottom::after,
+.editor-table--inactive .copy-left::after,
+.editor-table--inactive .copy-right::after {
+    border-color: #808080;
 }
 
 .editor-table--inactive ~ .fill-handle {
-    background-color: rgba(128, 128, 128, 0.5);
+    background-color: #808080;
 }
 
 .editor-table--inactive ~ .fill-handle:hover {
-    background-color: rgba(128, 128, 128, 0.7);
+    background-color: #666666;
 }
 
 .editor-table--inactive ~ .fill-preview {
-    border-color: rgba(128, 128, 128, 0.8);
+    border-color: #808080;
     background-color: rgba(128, 128, 128, 0.1);
-}
-
-/* 操作拒否時の震え＋赤フィードバック */
-@keyframes reject-shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-3px); }
-    40% { transform: translateX(3px); }
-    60% { transform: translateX(-2px); }
-    80% { transform: translateX(2px); }
-}
-
-.selection-rejected {
-    animation: reject-shake 0.3s ease-in-out;
-    border-color: rgba(220, 38, 38, 0.8) !important;
-    background-color: rgba(220, 38, 38, 0.15) !important;
 }
