@@ -27,6 +27,27 @@
     border-bottom: 1px solid var(--border-color);
     font-weight: bold;
     user-select: none;
+    cursor: pointer;
+}
+
+.validation-panel-group-header:hover {
+    background-color: var(--hover-color);
+}
+
+/* 折り畳みシェブロン（SVGは右向き「>」、展開時に90deg回転で下向き「v」にする） */
+.validation-panel-group-chevron {
+    display: inline-flex;
+    align-items: center;
+    transform: rotate(90deg);
+}
+
+.validation-panel-group-header[aria-expanded="false"] .validation-panel-group-chevron {
+    transform: rotate(0deg);
+}
+
+/* 折り畳まれたグループの項目コンテナ */
+.validation-panel-group-items[aria-hidden="true"] {
+    display: none;
 }
 
 .validation-panel-group-name {
@@ -34,7 +55,7 @@
 }
 
 .validation-panel-group-count {
-    color: var(--error-color);
+    color: var(--font-color);
     font-size: 11px;
 }
 

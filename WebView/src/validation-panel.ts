@@ -32,6 +32,8 @@ export class ValidationPanel {
     private readonly pluginRunner: PluginValidationRunner;
     /** プラグイン非同期リクエストの陳腐化防止用カウンタ */
     private pluginRequestId = 0;
+    /** グループ折り畳み状態（テーブル名 → 折り畳まれているか） */
+    private readonly collapsedGroups = new Set<string>();
 
     constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, store: InMemoryTableStore, debugConsole: DebugConsole, pluginRunner: PluginValidationRunner) {
         this.engine = engine;
@@ -198,15 +200,40 @@ export class ValidationPanel {
             // グループヘッダー
             const groupHeader = document.createElement('div');
             groupHeader.classList.add('validation-panel-group-header');
+            const collapsed = this.collapsedGroups.has(tableName);
+            groupHeader.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+
+            const chevron = document.createElement('span');
+            chevron.classList.add('validation-panel-group-chevron');
+            chevron.innerHTML = `<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5.3 5.4z"/></svg>`;
+
             const nameSpan = document.createElement('span');
             nameSpan.classList.add('validation-panel-group-name');
             nameSpan.textContent = tableName;
             const countSpan = document.createElement('span');
             countSpan.classList.add('validation-panel-group-count');
             countSpan.textContent = `(${tableErrors.length} 件)`;
+            groupHeader.appendChild(chevron);
             groupHeader.appendChild(nameSpan);
             groupHeader.appendChild(countSpan);
             this.element.appendChild(groupHeader);
+
+            // エラー項目コンテナ（折り畳み対象）
+            const itemsContainer = document.createElement('div');
+            itemsContainer.classList.add('validation-panel-group-items');
+            itemsContainer.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+
+            // ヘッダークリックで折り畳みを切り替える
+            groupHeader.addEventListener('click', () => {
+                const expanded = groupHeader.getAttribute('aria-expanded') === 'true';
+                groupHeader.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                itemsContainer.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+                if (expanded) {
+                    this.collapsedGroups.add(tableName);
+                } else {
+                    this.collapsedGroups.delete(tableName);
+                }
+            });
 
             // エラー項目
             for (const error of tableErrors) {
@@ -259,8 +286,10 @@ export class ValidationPanel {
                     item.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.jumpToError(error); });
                 }
 
-                this.element.appendChild(item);
+                itemsContainer.appendChild(item);
             }
+
+            this.element.appendChild(itemsContainer);
         }
     }
 
