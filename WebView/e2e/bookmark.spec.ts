@@ -256,9 +256,9 @@ test.describe('ブックマーク機能', () => {
         // item テーブルが再度アクティブになること
         const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
         await expect(itemTable).toBeVisible();
-        // PK列（id列 = colIndex 0）にセレクションが当たっていること
-        const selection = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .selection');
-        await expect(selection).toBeVisible();
+        // PK列（id列 = colIndex 0）にセレクションが当たっていること（sel-top クラスを持つセルが存在する）
+        const selectionCell = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .sel-top');
+        await expect(selectionCell.first()).toBeVisible();
     });
 
     test('テーブル名でグルーピング表示される', async ({page}) => {
@@ -382,9 +382,9 @@ test.describe('セルレベルブックマーク', () => {
         const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
         await expect(itemTable).toBeVisible();
         // セレクションが value 列（colIndex=2）の2行目（rowIndex=1）に当たっていること
-        // セレクション要素の位置で検証する（data-row, data-col 属性またはtransform位置）
-        const selection = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .selection');
-        await expect(selection).toBeVisible();
+        // sel-top クラスを持つセルが存在することで選択状態を検証する
+        const selectionCell = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .sel-top');
+        await expect(selectionCell.first()).toBeVisible();
     });
 });
 
@@ -655,8 +655,8 @@ test.describe('コマンドパレット @bookmark プレフィクス', () => {
         // item テーブルがアクティブになりセレクションが表示されること
         const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
         await expect(itemTable).toBeVisible();
-        const selection = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .selection');
-        await expect(selection).toBeVisible();
+        const selectionCell = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .sel-top');
+        await expect(selectionCell.first()).toBeVisible();
     });
 
     test('ブックマークが0件のとき@bookmarkで空メッセージが表示される', async ({page}) => {

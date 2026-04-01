@@ -93,30 +93,32 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * 指定した要素の computed border-top-color に colorFragment が含まれるかどうかを返す。
- * computed style は "rgba(R, G, B, A)" 形式で返るため、スペースありなしの両方を許容する。
- * colorFragment 例: '0, 120, 215'（青）、'128, 128, 128'（灰）
+ * 選択セル（sel-top クラス付き）の ::before 疑似要素の border-top-color を取得し、
+ * colorFragment が含まれるかどうかを返す。
+ * セルベース選択方式では ::before 疑似要素にボーダーが描画されるため、
+ * window.getComputedStyle(el, '::before') で取得する。
  */
-async function hasBorderColorAsync(el: Locator, colorFragment: string): Promise<boolean> {
-    const color = await el.evaluate((e: Element) => window.getComputedStyle(e).borderTopColor);
-    // "R, G, B" と "R,G,B" どちらの形式でも一致させるためスペース除去版も確認する
+async function hasSelectionBorderColorAsync(el: Locator, colorFragment: string): Promise<boolean> {
+    const color = await el.evaluate((e: Element) => window.getComputedStyle(e, '::before').borderTopColor);
     return color.includes(colorFragment) || color.includes(colorFragment.replace(/, /g, ','));
 }
 
 /**
- * 指定した要素の computed border-color が「青色系」かどうかを返す
- * .selection 要素のアクティブ時の border-color は rgba(0, 120, 215, 0.5)
+ * 選択セルの ::before ボーダーが「青色系」かどうかを返す
+ * アクティブ時: sel-top::before { border-top: 2px solid #0078d7; }
+ * #0078d7 = rgb(0, 120, 215)
  */
 async function isBlueBorderAsync(el: Locator): Promise<boolean> {
-    return hasBorderColorAsync(el, '0, 120, 215');
+    return hasSelectionBorderColorAsync(el, '0, 120, 215');
 }
 
 /**
- * 指定した要素の computed border-color が「灰色系」かどうかを返す
- * .selection 要素の非アクティブ時の border-color は rgba(128, 128, 128, 0.5)
+ * 選択セルの ::before ボーダーが「灰色系」かどうかを返す
+ * 非アクティブ時: .editor-table--inactive .sel-top::before { border-top-color: #808080; }
+ * #808080 = rgb(128, 128, 128)
  */
 async function isGrayBorderAsync(el: Locator): Promise<boolean> {
-    return hasBorderColorAsync(el, '128, 128, 128');
+    return hasSelectionBorderColorAsync(el, '128, 128, 128');
 }
 
 // データセルを絞り込むセレクタ（行ヘッダー・列ヘッダー・コーナーセルを除外）
@@ -150,16 +152,15 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             const miniDataCell = miniTable.locator(DATA_CELL_SELECTOR).first();
             await expect(miniDataCell).toBeVisible();
 
-            // 左ペインのセルをクリックして選択状態を作る（.selection 枠線を生成させる）
+            // 左ペインのセルをクリックして選択状態を作る（sel-top クラスが付与される）
             const mainDataCell = mainTable.locator(DATA_CELL_SELECTOR).first();
             await expect(mainDataCell).toBeVisible();
             await mainDataCell.click();
 
-            // 左ペインの .selection 要素が存在し、border-color が青色であることを確認する（前提確認）
-            // .selection は単一セル選択時でも常に表示される（.selection-background と異なり非表示にならない）
-            const mainSelection = page.locator('.editor-left-pane .selection').first();
-            await expect(mainSelection).toBeVisible();
-            expect(await isBlueBorderAsync(mainSelection)).toBe(true);
+            // 左ペインに sel-top クラスを持つセルが存在し、::before の border-color が青色であることを確認する（前提確認）
+            const mainSelectionCell = page.locator('.editor-left-pane .sel-top').first();
+            await expect(mainSelectionCell).toBeVisible();
+            expect(await isBlueBorderAsync(mainSelectionCell)).toBe(true);
 
             // 右ペインのミニテーブルのセルをクリックして、右ペインをアクティブにする
             await miniDataCell.click();
@@ -167,8 +168,8 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             // 左ペインの EditorTable に editor-table--inactive クラスが付与されることを確認する
             await expect(mainTable).toHaveClass(/editor-table--inactive/);
 
-            // 左ペインの .selection の border-color が灰色系（非アクティブ色）になることを確認する
-            await expect.poll(() => isGrayBorderAsync(mainSelection)).toBe(true);
+            // 左ペインの選択セルの ::before border-color が灰色系（非アクティブ色）になることを確認する
+            await expect.poll(() => isGrayBorderAsync(mainSelectionCell)).toBe(true);
         },
     );
 
@@ -191,7 +192,7 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             const miniDataCell = miniTable.locator(DATA_CELL_SELECTOR).first();
             await expect(miniDataCell).toBeVisible();
 
-            // 左ペインのセルをクリックして選択状態を作る（.selection 枠線を生成させる）
+            // 左ペインのセルをクリックして選択状態を作る（sel-top クラスが付与される）
             const mainDataCell = mainTable.locator(DATA_CELL_SELECTOR).first();
             await expect(mainDataCell).toBeVisible();
             await mainDataCell.click();
@@ -208,11 +209,10 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             // editor-table--inactive クラスが除去されることを確認する
             await expect(mainTable).not.toHaveClass(/editor-table--inactive/);
 
-            // 左ペインの .selection の border-color が青色（アクティブ色）に戻ることを確認する
-            // .selection は単一セル選択時でも常に表示される
-            const mainSelection = page.locator('.editor-left-pane .selection').first();
-            await expect(mainSelection).toBeVisible();
-            await expect.poll(() => isBlueBorderAsync(mainSelection)).toBe(true);
+            // 左ペインの選択セルの ::before border-color が青色（アクティブ色）に戻ることを確認する
+            const mainSelectionCell = page.locator('.editor-left-pane .sel-top').first();
+            await expect(mainSelectionCell).toBeVisible();
+            await expect.poll(() => isBlueBorderAsync(mainSelectionCell)).toBe(true);
         },
     );
 });

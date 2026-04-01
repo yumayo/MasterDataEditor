@@ -91,7 +91,7 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		// フィルハンドルにホバーする
 		await fillHandle.hover();
 
-		// ホバー時も青色系（0, 120, 215）であることを検証する
-		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(true);
+		// ホバー時は青色系の濃いめ（#005a9e = rgb(0, 90, 158)）であることを検証する
+		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 90, 158')).toBe(true);
 	});
 });

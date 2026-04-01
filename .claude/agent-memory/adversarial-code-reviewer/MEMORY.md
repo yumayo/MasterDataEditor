@@ -31,14 +31,14 @@
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **10回再発** (+showBlameAsync requestIdガードなし)
 - **register/unregister 非対称**: **5回再発** (+TableDefinitionEditor destroy()未実装、indicator永続残留)
-- **CSS hardcoded colors**: 21+ 回再発 (+table-definition-editor #f44336, #ffffff)
+- **CSS hardcoded colors**: 25+ 回再発 (+table-definition-editor #f44336, #ffffff, +selection.css #0078d7/#808080/#005a9e/#666666)
 - **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**, **--list-hover-bg未定義(timeline-panel.css)**, **--z-dialog未定義(commit-selector-dialog.css)**, **未定義CSS変数12箇所+フォールバック値乱用(commit-selector-dialog.css)**
 - **フォールバック禁止 (?? / ||)**: 22+ 回再発 (+applyOriginalSchemaToRow dynRef 5箇所)
 - **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette, +showBlameAsync in context-menu)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**, **applySelectionClasses/applyCopyClasses/clearXxx 4メソッドが同一構造のコピペ**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
 - **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失, **blame-info要素が同じ全操作で消失**
 - **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
@@ -164,8 +164,20 @@
 - dataset.commit as string 型アサーション(undefined無視)
 - DiffTab コンストラクタ18引数(leftLabel/rightLabel追加で膨張)
 
+## Selection Pseudo-element Refactoring Patterns (2026-04-02)
+- 選択範囲: ::before で描画、コピー範囲: ::after で描画
+- **::after 衝突(致命的)**: cell-error::after(赤波線)、data-bookmarked::after(オレンジ三角)との3者競合
+- **selection-rejected 消失(致命的)**: 操作拒否時の震え+赤フィードバックアニメーションが削除され未再実装
+- **lastSelectionCells/lastCopyCells 陳腐化**: 行挿入/削除後にDOMインデックスがズレてクラス残留
+- **overflow:visible テキスト省略破壊**: sel-top等がoverflow:hiddenをvisibleに上書き→ellipsis無効化
+- **clip-path: inset(0) + sticky 競合**: フリーズペインのstickyセルとstacking context相互作用
+- applySelectionClasses/applyCopyClasses/clearXxx が完全コピペ
+- fillPreviewElement/fillHandle が依然 public HTMLElement
+- hideRenderer() がデッドコード（呼び出し箇所なし）
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-04-02) Selection擬似要素リファクタ: 致命的3件、重要5件、軽微4件 (::after衝突, ::beforeスロット枯渇, selection-rejected消失, lastSelectionCells陳腐化, clip-path/sticky, overflow:visible, コピペ, デッドコード)
 - (2026-03-29) ISSUE_0123 バージョン比較: 致命的3件、重要5件、軽微4件 (z-index未定義ダイアログ隠れ, 同一コミット比較無検証, fetchCsvエラー握りつぶし, コールバック疎結合, CSSフォールバック12箇所, ダイアログ多重オープン, 型アサーション, スキーマ不整合)
 - (2026-03-29) ISSUE_0120 タイムライン・blame: 致命的3件、重要5件、軽微4件 (blame操作パス網羅漏れ, fire-and-forget showBlameAsync, requestIdガードなし, --list-hover-bg未定義, タブ切替時ログ未更新, lineNumberマッピングoff-by-one疑い)
 - (2026-03-29) 全スキーマプロパティUI: 致命的3件、重要5件、軽微4件 (rrp読込欠落, default型不一致, 動的参照バリデーション無し, フォールバック||5箇所, width/rrp数値検証無し, 参照形式検証無し, CSSコピペ6箇所, --selected-color未定義)

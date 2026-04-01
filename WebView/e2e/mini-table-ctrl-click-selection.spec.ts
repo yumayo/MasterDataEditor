@@ -105,27 +105,30 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * 指定した要素の computed border-color が「青色系」かどうかを返す。
- * .selection 要素のアクティブ時の border-color は rgba(0, 120, 215, 0.5)。
- * computed style は "rgba(R, G, B, A)" 形式で返るため、スペースありなしの両方を許容する。
+ * 選択セル（sel-top クラス付き）の ::before 疑似要素の border-top-color を取得し、
+ * 青色系かどうかを返す。
+ * #0078d7 = rgb(0, 120, 215)
  */
 async function isBlueBorderAsync(el: Locator): Promise<boolean> {
-	const color = await el.evaluate((e: Element) => window.getComputedStyle(e).borderTopColor);
+	const color = await el.evaluate((e: Element) => window.getComputedStyle(e, '::before').borderTopColor);
 	const fragment = '0, 120, 215';
 	return color.includes(fragment) || color.includes(fragment.replace(/, /g, ','));
 }
 
 /**
- * .selection 要素の top スタイルを数値で返す。
- *
- * selection.ts の実装:
- *   - selection.start() が呼ばれた場合: top は対象セルの位置（ヘッダー行分 > 0px）
- *   - selection.start() が呼ばれていない場合（バグ時）: top は '-99999px'（画面外）
- *
- * 選択が有効になっているかどうかの判定に使用する。
+ * sel-top クラスを持つセルの top 位置を返す。
+ * セルベース選択方式では .selection div が廃止されたため、
+ * sel-top クラスのセルの getBoundingClientRect().top を返す。
+ * セルが存在しない場合は -99999 を返す（旧方式で .selection が画面外にあるケースに相当）。
  */
-async function getSelectionTopAsync(el: Locator): Promise<number> {
-	return el.evaluate((e: Element) => parseFloat(window.getComputedStyle(e).top));
+async function getSelectionTopAsync(container: Locator): Promise<number> {
+	return container.evaluate((c: Element) => {
+		const cell = c.querySelector('.sel-top');
+		if (!cell) return -99999;
+		const containerRect = c.closest('.relations-panel')?.getBoundingClientRect();
+		if (!containerRect) return -99999;
+		return cell.getBoundingClientRect().top - containerRect.top;
+	});
 }
 
 /**
@@ -198,12 +201,12 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 			const leftSlotRelationsPanel = page.locator('.editor-left-slot .relations-panel');
 			await expect(leftSlotRelationsPanel).toBeVisible();
 
-			// 左スロットの RelationsPanel 内の .selection 要素の top が 0 より大きいこと。
-			// selection.start() が呼ばれた場合: top はヘッダー行の高さ以上（> 0）
-			// selection.start() が呼ばれていない場合（バグ時）: top は -99999px（画面外） → テスト失敗（RED）
-			// 修正後: selection.start() が呼ばれて top > 0 になる → テスト成功（GREEN）
-			const leftSlotSelection = page.locator('.editor-left-slot .relations-panel .selection').first();
-			await expect.poll(() => getSelectionTopAsync(leftSlotSelection)).toBeGreaterThan(0);
+			// 左スロットの RelationsPanel 内に sel-top クラスを持つセルが存在し、位置が正の値であること。
+			// selection.start() が呼ばれた場合: sel-top セルはヘッダー行の下（位置 > 0）
+			// selection.start() が呼ばれていない場合（バグ時）: sel-top セルが存在しない → -99999 → テスト失敗（RED）
+			// 修正後: selection.start() が呼ばれて sel-top セルが存在する → テスト成功（GREEN）
+			const leftSlotRelPanel = page.locator('.editor-left-slot .relations-panel .editor-table').first();
+			await expect.poll(() => getSelectionTopAsync(leftSlotRelPanel)).toBeGreaterThan(0);
 		},
 	);
 
@@ -241,15 +244,16 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 			// ペインスタックが追加されてナビゲーションバーが表示されること（前提確認）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
-			// 左スロットの RelationsPanel 内の .selection 要素の top が 0 より大きいこと（選択が有効なこと）
-			const leftSlotSelection = page.locator('.editor-left-slot .relations-panel .selection').first();
-			await expect.poll(() => getSelectionTopAsync(leftSlotSelection)).toBeGreaterThan(0);
+			// 左スロットの RelationsPanel 内に sel-top クラスを持つセルが存在すること（選択が有効なこと）
+			const leftSlotMiniTable = page.locator('.editor-left-slot .relations-panel .editor-table').first();
+			await expect.poll(() => getSelectionTopAsync(leftSlotMiniTable)).toBeGreaterThan(0);
 
 			// 選択ボーダーが青色（アクティブ色）であること
-			// .selection の border-color がアクティブ色 rgba(0, 120, 215, 0.5) であることを確認する
-			// 修正前: selection.start() が呼ばれないため border-color がアクティブ色にならない → テスト失敗（RED）
-			// 修正後: selection.start() が呼ばれ blue border が設定される → テスト成功（GREEN）
-			await expect.poll(() => isBlueBorderAsync(leftSlotSelection)).toBe(true);
+			// sel-top セルの ::before border-color がアクティブ色 #0078d7 = rgb(0, 120, 215) であることを確認する
+			// 修正前: selection.start() が呼ばれないため sel-top セルが存在しない → テスト失敗（RED）
+			// 修正後: selection.start() が呼ばれ sel-top セルが存在し青色ボーダー → テスト成功（GREEN）
+			const leftSlotSelCell = page.locator('.editor-left-slot .relations-panel .sel-top').first();
+			await expect.poll(() => isBlueBorderAsync(leftSlotSelCell)).toBe(true);
 		},
 	);
 

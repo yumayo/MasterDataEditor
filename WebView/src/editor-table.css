@@ -307,53 +307,43 @@
     background-color: rgba(81, 184, 81, 0.2);
 }
 
-/* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示）
-   cell-error と併用される場合は ::after 側の波線に統一するため text-decoration を消す */
+/* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示） */
 .cell-pk-duplicate {
     text-decoration: underline wavy red;
     text-underline-offset: 2px;
 }
-.cell-pk-duplicate.cell-error {
-    text-decoration: none;
-}
 
 /* エラーセル: 赤波線（下線）
-   ::after 疑似要素でセルの上に波線を重ねる。
-   背景画像方式だと子要素（参照ヒント span）にも伝播して二重に見えるため、
-   独立したレイヤーとして重ねることで1本だけ描画する。 */
+   background-image でセル幅全体に波線を描画する。::after 擬似要素はコピー範囲ボーダーが使用するため空けておく。
+   background-position: bottom で下端に配置し、background-size で波線の高さを制御する。 */
 .cell-error {
-    position: relative;
-}
-.cell-error::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0px;
-    height: 3px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
     background-repeat: repeat-x;
+    background-position: bottom left;
     background-size: 6px 3px;
-    pointer-events: none;
 }
 
 /* フォーカスセル: バリデーションパネルからジャンプした後のセル特定用（テストセレクタとして使用） */
 .editor-table-cell-focused {
 }
 
-/* ブックマーク済みセルの視覚マーク: 右上にオレンジ色の三角形を表示する */
+/* ブックマーク済みセルの視覚マーク: 右上にオレンジ色の三角形を background-image で表示する。
+   ::after 擬似要素はコピー範囲ボーダーが使用するため空けておく。 */
 .editor-table-cell[data-bookmarked] {
-    position: relative;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: top right;
+    background-size: 8px 8px;
 }
-.editor-table-cell[data-bookmarked]::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    border-style: solid;
-    border-width: 0 8px 8px 0;
-    border-color: transparent #FF8C00 transparent transparent;
-    pointer-events: none;
+
+/* エラー + ブックマーク併用: background-image はカンマ区切りで複数指定し両方描画する */
+.cell-error.editor-table-cell[data-bookmarked] {
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, repeat-x;
+    background-position: top right, bottom left;
+    background-size: 8px 8px, 6px 3px;
 }
 
 /* ソートインジケーター: リサイズハンドルの左に配置、右寄せ。

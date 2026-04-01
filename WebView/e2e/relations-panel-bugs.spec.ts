@@ -255,10 +255,6 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            // ミニEditorTableの選択枠（.selection）を確認する
-            const selectionEl = page.locator('.relations-panel .selection').first();
-            await expect(selectionEl).toBeVisible();
-
             // 最初のデータセルが DOM に出現するまで待機してからクリックする。
             // buildMiniTableAsync は非同期（readFileAsync を含む）のため、
             // .relations-panel-content の visible 後もセルがまだ構築中の可能性がある。
@@ -268,19 +264,19 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             await expect(firstDataCell).toBeVisible();
             await firstDataCell.click();
 
-            // クリック直後の選択枠のleft値を記録する
-            const initialLeft = await selectionEl.evaluate((el: Element) => {
-                return (el as HTMLElement).style.left;
-            });
+            // クリック直後に sel-top クラスが付与されたセルの left 位置を記録する
+            const initialSelCell = miniTable.locator('.sel-top').first();
+            await expect(initialSelCell).toBeVisible();
+            const initialLeft = await initialSelCell.evaluate((el: Element) => el.getBoundingClientRect().left);
 
             // ArrowRight を押して右の列に移動させる
             await page.keyboard.press('ArrowRight');
 
-            // 選択枠の left 値が変化していることを確認（列移動した証拠）
-            // バグ修正前は active=false のため onKeydown() が即 return し、left は変化しなかった
-            const afterLeft = await selectionEl.evaluate((el: Element) => {
-                return (el as HTMLElement).style.left;
-            });
+            // sel-top クラスが付与されたセルの left 位置が変化していることを確認（列移動した証拠）
+            // バグ修正前は active=false のため onKeydown() が即 return し、列は変化しなかった
+            const afterSelCell = miniTable.locator('.sel-top').first();
+            await expect(afterSelCell).toBeVisible();
+            const afterLeft = await afterSelCell.evaluate((el: Element) => el.getBoundingClientRect().left);
 
             expect(afterLeft).not.toBe(initialLeft);
         },
@@ -310,20 +306,19 @@ test.describe('バグ2: ミニEditorTableでの矢印キー操作が無視され
             ).first();
             await mainCell.click();
 
-            // メインテーブルの選択枠の初期位置を記録する
-            const mainSelectionEl = page.locator('.editor-left-pane .selection').first();
-            const beforeTop = await mainSelectionEl.evaluate((el: Element) => {
-                return (el as HTMLElement).style.top;
-            });
+            // メインテーブルの選択セルの初期位置（top）を記録する
+            const mainSelCell = page.locator('.editor-left-pane .sel-top').first();
+            await expect(mainSelCell).toBeVisible();
+            const beforeTop = await mainSelCell.evaluate((el: Element) => el.getBoundingClientRect().top);
 
             // メインテーブルで矢印キーを押す
             await page.keyboard.press('ArrowDown');
 
-            // メインテーブルの選択枠が移動したことを確認
+            // メインテーブルの選択セルの top が変化したことを確認
             // ミニEditorTableがフォーカスを奪い続けている場合はメインのselectionが動かない
-            const afterTop = await mainSelectionEl.evaluate((el: Element) => {
-                return (el as HTMLElement).style.top;
-            });
+            const afterSelCell = page.locator('.editor-left-pane .sel-top').first();
+            await expect(afterSelCell).toBeVisible();
+            const afterTop = await afterSelCell.evaluate((el: Element) => el.getBoundingClientRect().top);
 
             expect(afterTop).not.toBe(beforeTop);
         },
@@ -968,7 +963,7 @@ test.describe('バグ7: N:1ミニテーブルにバッファ行（editor-table-e
 //   -1px にはならないこと。
 // =============================================================================
 
-test.describe('ミニテーブルの .selection 要素の left/top が -1px にならないこと', () => {
+test.describe('ミニテーブルの選択セルの位置が正しいこと', () => {
     test.beforeEach(async ({ page }) => {
         // バグ2テストと同じファイルシステム構成を使う（quest → enemy のN:1参照）
         const fs = createMiniTableKeyboardFileSystem();
@@ -978,7 +973,7 @@ test.describe('ミニテーブルの .selection 要素の left/top が -1px に�
     });
 
     test(
-        'ミニテーブル表示後に .selection の left が -1px ではないこと',
+        'ミニテーブル表示後に sel-top クラスのセルが存在し位置が正しいこと',
         async ({ page }) => {
             // quest テーブルを開いて1行目を選択 → RelationsPanel に enemy のミニテーブルが表示される
             const mainTable = await openTableAsync(page, 'quest');
@@ -989,23 +984,26 @@ test.describe('ミニテーブルの .selection 要素の left/top が -1px に�
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            // ミニテーブル内の .selection 要素を取得する
-            const selectionEl = page.locator('.relations-panel .selection').first();
-            await expect(selectionEl).toBeVisible();
+            // ミニテーブル内に sel-top クラスを持つセルが存在することを確認する
+            // セルベース選択方式では、選択セルに sel-top/sel-bottom/sel-left/sel-right クラスが付与される
+            const selCell = miniTable.locator('.sel-top').first();
+            await expect(selCell).toBeVisible();
 
-            // .selection の left スタイルが -1px ではないことを検証する
-            // バグ時: DOM マウント前に updateRenderer() が呼ばれるため left = -1px になる
-            // 修正後: DOM マウント後に updateRenderer() が呼ばれるか、またはマウント前の
-            //   呼び出しを抑制するため、left は正のセル位置になるはず
-            const left = await selectionEl.evaluate(
-                (el: Element) => (el as HTMLElement).style.left
-            );
-            expect(left, 'ミニテーブルの .selection の left が -1px になっている').not.toBe('-1px');
+            // 選択セルの位置がミニテーブル内で正の値であることを検証する
+            // バグ時: DOM マウント前に updateRenderer() が呼ばれ、セル位置が不正になる
+            // 修正後: DOM マウント後に正しいセルに sel-top が付与される
+            const rect = await selCell.evaluate((el: Element) => {
+                const tableRect = el.closest('.editor-table')!.getBoundingClientRect();
+                const cellRect = el.getBoundingClientRect();
+                return { left: cellRect.left - tableRect.left, top: cellRect.top - tableRect.top };
+            });
+            expect(rect.left, 'ミニテーブルの選択セルの left が 0 以下になっている').toBeGreaterThan(0);
+            expect(rect.top, 'ミニテーブルの選択セルの top が 0 以下になっている').toBeGreaterThan(0);
         },
     );
 
     test(
-        'ミニテーブル表示後に .selection の top が -1px ではないこと',
+        'ミニテーブル表示後に選択セルの top がヘッダー行の高さ以上であること',
         async ({ page }) => {
             const mainTable = await openTableAsync(page, 'quest');
             await selectRowAsync(mainTable, 0);
@@ -1014,21 +1012,22 @@ test.describe('ミニテーブルの .selection 要素の left/top が -1px に�
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            const selectionEl = page.locator('.relations-panel .selection').first();
-            await expect(selectionEl).toBeVisible();
+            const selCell = miniTable.locator('.sel-top').first();
+            await expect(selCell).toBeVisible();
 
-            // .selection の top スタイルが -1px ではないことを検証する
-            // バグ時: Math.round(0 - 0 - 1) = -1 で top = -1px になる
+            // 選択セルの top がヘッダー行分のオフセットを含む正の値であることを検証する
+            // バグ時: Math.round(0 - 0 - 1) = -1 で top = -1px になっていた
             // 修正後: top は正のセル位置（ヘッダー行分のオフセットを含む）になるはず
-            const top = await selectionEl.evaluate(
-                (el: Element) => (el as HTMLElement).style.top
-            );
-            expect(top, 'ミニテーブルの .selection の top が -1px になっている').not.toBe('-1px');
+            const top = await selCell.evaluate((el: Element) => {
+                const tableRect = el.closest('.editor-table')!.getBoundingClientRect();
+                return el.getBoundingClientRect().top - tableRect.top;
+            });
+            expect(top, 'ミニテーブルの選択セルの top が 0 以下になっている').toBeGreaterThan(0);
         },
     );
 
     test(
-        'ミニテーブル表示後に .selection の left と top が両方とも正の値であること',
+        'ミニテーブル表示後に選択セルの left と top が両方とも正の値であること',
         async ({ page }) => {
             const mainTable = await openTableAsync(page, 'quest');
             await selectRowAsync(mainTable, 0);
@@ -1037,20 +1036,19 @@ test.describe('ミニテーブルの .selection 要素の left/top が -1px に�
             const miniTable = page.locator('.relations-panel .editor-table').first();
             await expect(miniTable).toBeVisible();
 
-            const selectionEl = page.locator('.relations-panel .selection').first();
-            await expect(selectionEl).toBeVisible();
+            const selCell = miniTable.locator('.sel-top').first();
+            await expect(selCell).toBeVisible();
 
             // left と top を数値として取得し、0 より大きいことを検証する
             // A1セル（row=1, column=1）はヘッダー行・ヘッダー列の右下にあるため、
             // left > 0 かつ top > 0 であるべき
-            const left = await selectionEl.evaluate(
-                (el: Element) => parseFloat((el as HTMLElement).style.left)
-            );
-            const top = await selectionEl.evaluate(
-                (el: Element) => parseFloat((el as HTMLElement).style.top)
-            );
-            expect(left, 'ミニテーブルの .selection の left が 0 以下になっている').toBeGreaterThan(0);
-            expect(top, 'ミニテーブルの .selection の top が 0 以下になっている').toBeGreaterThan(0);
+            const rect = await selCell.evaluate((el: Element) => {
+                const tableRect = el.closest('.editor-table')!.getBoundingClientRect();
+                const cellRect = el.getBoundingClientRect();
+                return { left: cellRect.left - tableRect.left, top: cellRect.top - tableRect.top };
+            });
+            expect(rect.left, 'ミニテーブルの選択セルの left が 0 以下になっている').toBeGreaterThan(0);
+            expect(rect.top, 'ミニテーブルの選択セルの top が 0 以下になっている').toBeGreaterThan(0);
         },
     );
 });

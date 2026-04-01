@@ -145,7 +145,7 @@ async function performDragOnMiniTableAsync(page: Page): Promise<DragResult> {
     await page.mouse.move(endBox.x + endBox.width / 2, endBox.y + endBox.height / 2);
     await page.mouse.up();
 
-    return { startBox, selectionEl: page.locator('.relations-panel .selection').first() };
+    return { startBox, selectionEl: miniTable };
 }
 
 // データセルを絞り込むセレクタ（行ヘッダー・列ヘッダー・コーナーセルを除外）
@@ -166,9 +166,9 @@ test.describe('ミニEditorTableのマウスドラッグ範囲選択', () => {
             const { startBox, selectionEl } = await performDragOnMiniTableAsync(page);
 
             // ドラッグ後の選択範囲を確認する。
-            // .selection 要素の width を確認することで複数セル選択されたか判定する。
-            // 1セルのみ選択: selection.width ≈ startCell.width
-            // 複数セル選択: selection.width > startCell.width（2列分の幅になる）
+            // sel-bg クラスを持つセルの数で複数セル選択されたか判定する。
+            // 1セルのみ選択: sel-bg セルは 0 個（フォーカスセルには sel-bg が付かない）
+            // 複数セル選択: sel-bg セルが 1 個以上（フォーカスセル以外に選択セルがある）
             //
             // バグ修正前: activate() が呼ばれないため mousemove がウィンドウに届かず、
             //   ドラッグしても選択範囲が startCell のまま → このアサーションが失敗
@@ -176,14 +176,14 @@ test.describe('ミニEditorTableのマウスドラッグ範囲選択', () => {
             //   endCell まで選択範囲が拡張される → このアサーションが成功
             await expect(selectionEl).toBeVisible();
 
-            const selectionWidth = await selectionEl.evaluate((el: Element) => {
-                return el.getBoundingClientRect().width;
-            });
+            // sel-top クラスを持つセルが存在すること（選択ボーダーが描画されていること）
+            const selTopCells = selectionEl.locator('.sel-top');
+            await expect(selTopCells.first()).toBeVisible();
 
-            // 選択範囲が1セルより広い（2列分）ことを確認する
-            // 1列のみ選択されている場合は startCell.width と同程度になるはずなので、
-            // startCell.width より明確に広くなっていることで複数セル選択を判定する
-            expect(selectionWidth).toBeGreaterThan(startBox.width * 1.5);
+            // 複数セル選択されたことを sel-top セルの数で確認する
+            // 2列ドラッグ = sel-top セルが2つ以上存在するはず
+            const selTopCount = await selTopCells.count();
+            expect(selTopCount).toBeGreaterThanOrEqual(2);
         },
     );
 
@@ -194,34 +194,31 @@ test.describe('ミニEditorTableのマウスドラッグ範囲選択', () => {
 
             // mouseup 後に Selection.end() が呼ばれ、isSelecting() が false になることで
             // ドラッグ選択が「確定」した状態になる。
-            // 確定後も選択範囲は保持されるため、.selection 要素が visible であり続けることを確認する。
+            // 確定後も選択範囲は保持されるため、sel-top クラスを持つセルが存在し続けることを確認する。
             //
             // バグ修正前: mouseup が window に届かないため end() が呼ばれず、
             //   isSelecting() が true のまま残る（実際は mousemove 自体も届かないのでドラッグ選択不成立）
             // バグ修正後: mouseup が window に届いて end() が呼ばれ、
             //   isSelecting() が false になって選択範囲が確定する
-            await expect(selectionEl).toBeVisible();
+            await expect(selectionEl.locator('.sel-top').first()).toBeVisible();
 
             // mouseup の後にマウスを遠くに移動しても選択範囲が変化しないことを確認する
             // （isSelecting() = false になったため、mousemove を受けても範囲が変わらない）
-            const selectionWidthBeforeMove = await selectionEl.evaluate((el: Element) => {
-                return el.getBoundingClientRect().width;
-            });
+            const selTopCells = selectionEl.locator('.sel-top');
+            const selTopCountBeforeMove = await selTopCells.count();
 
             // 別の場所にマウスを移動する（ドラッグ確定後は selection が動かないはず）
             await page.mouse.move(0, 0);
 
-            const selectionWidthAfterMove = await selectionEl.evaluate((el: Element) => {
-                return el.getBoundingClientRect().width;
-            });
+            const selTopCountAfterMove = await selTopCells.count();
 
-            // 選択範囲が確定していれば mouseup 後のマウス移動で幅は変化しない
+            // 選択範囲が確定していれば mouseup 後のマウス移動で sel-top セルの数は変化しない
             // バグ修正前: そもそもドラッグ選択が1セルのまま → ここでの比較は意味を成さない
             // バグ修正後: 複数セル選択が確定し、その後のマウス移動で変化しない
-            expect(selectionWidthAfterMove).toBe(selectionWidthBeforeMove);
+            expect(selTopCountAfterMove).toBe(selTopCountBeforeMove);
 
             // さらに、確定した選択範囲が複数セルであることも確認する
-            expect(selectionWidthAfterMove).toBeGreaterThan(startBox.width * 1.5);
+            expect(selTopCountAfterMove).toBeGreaterThanOrEqual(2);
         },
     );
 });

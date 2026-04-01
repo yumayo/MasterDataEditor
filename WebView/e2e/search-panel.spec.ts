@@ -185,9 +185,9 @@ test.describe('検索パネル', () => {
         // テーブルが開かれてエディターテーブルが表示される（左ペイン限定で探す）
         const table = page.locator('.editor-left-pane .editor-table');
         await expect(table).toBeVisible();
-        // セレクション範囲が表示されていること（左ペイン限定で探す）
-        const selection = page.locator('.editor-left-pane .selection');
-        await expect(selection).toBeVisible();
+        // セレクション範囲が表示されていること（左ペイン限定で sel-top クラスを持つセルを探す）
+        const selectionCell = page.locator('.editor-left-pane .sel-top');
+        await expect(selectionCell.first()).toBeVisible();
     });
 
     test('ローマ字入力で全文検索がヒットすること', async ({page}) => {

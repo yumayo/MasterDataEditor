@@ -84,9 +84,9 @@ test.describe('コマンドパレット クエリ式セルジャンプ', () => {
         await expect(page.locator('.editor-table')).toBeVisible();
         await expect(page.locator('.tab-button').first()).toContainText('item');
 
-        // 該当テーブルのセルにジャンプしていること（選択オーバーレイが表示される）
-        const selection = page.locator('.selection');
-        await expect(selection).toBeVisible();
+        // 該当テーブルのセルにジャンプしていること（選択クラスを持つセルが表示される）
+        const selectionCell = page.locator('.sel-top');
+        await expect(selectionCell.first()).toBeVisible();
     });
 
     test('通常のテーブル名入力は従来通り動作する', async ({page}) => {
