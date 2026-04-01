@@ -399,6 +399,7 @@ export class Tab {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, 1, r, 1);
                 state.selection.move(r, 1);
+                state.selection.scrollFocusToCenterVertically();
                 // サイドバー等からのジャンプでフォーカスが移動した場合でも確実にフォーカスを戻す
                 state.editorTableHandler.activate();
                 return;
@@ -418,6 +419,7 @@ export class Tab {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, col, r, col);
                 state.selection.move(r, col);
+                state.selection.scrollFocusToCenterVertically();
                 // サイドバー等からのジャンプでフォーカスが移動した場合でも確実にフォーカスを戻す
                 state.editorTableHandler.activate();
                 return;
@@ -1667,6 +1669,9 @@ export class Tab {
         }
         // DOM（左右スロット）にペインスタックの状態を反映する
         this.updateVisiblePanes();
+        // wrapperが display:none → 表示に復帰した後、selectionオーバーレイの位置を再計算する。
+        // 非表示中は getCellRectOrNull が null を返すため、hideRenderer() で消えたままになる。
+        state.selection.updateRendererAfterResize();
     }
 
     /**

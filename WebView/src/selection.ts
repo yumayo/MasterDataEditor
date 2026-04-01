@@ -578,6 +578,36 @@ export class Selection {
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
     }
 
+    /**
+     * フォーカスセルをビューポートの縦中央にスクロールする。
+     * ナビゲーション（定義ジャンプ、検索結果ジャンプ等）で呼び出され、
+     * ジャンプ先の行が画面中央に来るようにする。
+     */
+    scrollFocusToCenterVertically(): void {
+        const targetRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
+        if (!targetRect) return;
+        const containerRect = this.scrollBinding.getBoundingClientRect();
+        const headerHeight = this.editorTable.getFirstRowHeight();
+        const { scrollbarHeight } = this.scrollBinding.getScrollbarSize();
+        const visibleTop = containerRect.top + headerHeight;
+        const visibleBottom = containerRect.bottom - scrollbarHeight;
+        const visibleHeight = visibleBottom - visibleTop;
+        // セルの中心をビューポートの縦中央に配置する
+        const cellCenterY = (targetRect.top + targetRect.bottom) / 2;
+        const viewportCenterY = visibleTop + visibleHeight / 2;
+        const scrollDelta = cellCenterY - viewportCenterY;
+        const nextScrollTop = Math.max(0, this.scrollBinding.getScrollTop() + scrollDelta);
+        if (nextScrollTop !== this.scrollBinding.getScrollTop()) {
+            const scrollBinding = this.scrollBinding;
+            scrollBinding.setScrollPosition(nextScrollTop, scrollBinding.getScrollLeft());
+            window.requestAnimationFrame(() => {
+                if (scrollBinding.getScrollTop() !== nextScrollTop) {
+                    scrollBinding.setScrollPosition(nextScrollTop, scrollBinding.getScrollLeft());
+                }
+            });
+        }
+    }
+
     private scrollFocusIntoView(): void {
         this.scrollCellIntoView(this.focus.row, this.focus.column);
     }

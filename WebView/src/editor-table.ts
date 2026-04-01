@@ -30,6 +30,7 @@ import {Tab} from "./tab";
 import {NotificationToast} from "./notification";
 import {ErrorTooltip} from "./error-tooltip";
 import {saveSchemaDataAsync} from "./editor-actions";
+import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -668,6 +669,15 @@ export class EditorTable {
             if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
                 table.navigateToDefinition(position.row);
                 table.selection.start(position.row, position.column);
+                e.preventDefault();
+                return;
+            }
+            // メインテーブルのCtrl+クリックでFK列の参照先テーブルを開く（RelationsPanel非表示時のみ）
+            // start()でセルを選択した後、end()でドラッグ状態を即解除する。
+            // end()を呼ばないとmouseupが発火しないままselecting=trueが残り、戻ったときに範囲選択になる。
+            if ((e.ctrlKey || e.metaKey) && !table.isMiniTable && table.navigateToReferenceTable(position.row, position.column)) {
+                table.selection.start(position.row, position.column);
+                table.selection.end();
                 e.preventDefault();
                 return;
             }
@@ -2223,6 +2233,28 @@ export class EditorTable {
         const pkValue = this.getRowPkValue(row);
         if (pkValue === '') return;
         this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
+    }
+
+    /**
+     * メインテーブル専用: Ctrl+クリックまたはF12でFK列の参照先テーブルをタブで開く。
+     * RelationsPanelが非表示の場合のみ動作する（表示中はRelationsPanelで参照できるため不要）。
+     * 動的参照は非同期解決が必要なためスキップし、単純参照（"table.column"形式）のみ対応する。
+     * @returns ナビゲーションが実行された場合 true
+     */
+    navigateToReferenceTable(row: number, column: number): boolean {
+        if (this.tab === false) return false;
+        // RelationsPanelが表示中なら何もしない
+        if (this.tab.editor.isRelationsPanelVisible()) return false;
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.header.length) return false;
+        const reference = this.tableData.header[dataColumnIndex].reference;
+        if (reference === null) return false;
+        const expr = parseReferenceExpression(reference);
+        if (!isSimpleReference(expr)) return false;
+        const cellValue = this.getCellValueAt(row, column);
+        if (cellValue === '') return false;
+        this.tab.navigateToTableRow(expr.tableName, cellValue);
+        return true;
     }
 
     // =========================================================================

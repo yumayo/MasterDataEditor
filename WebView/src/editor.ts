@@ -295,6 +295,8 @@ export class Editor {
      * RelationsPanel の表示/非表示をトグルする。
      * ツールバーのトグルボタンやリサイズハンドルのダブルクリックから呼ばれる。
      */
+    isRelationsPanelVisible(): boolean { return this.relationsPanelVisible; }
+
     toggleRelationsPanel(): void {
         if (this.relationsPanelVisible) {
             this.hideRelationsPanel();
