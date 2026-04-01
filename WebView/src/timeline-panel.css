@@ -16,7 +16,11 @@
 .timeline-entry {
     padding: 6px 4px;
     border-bottom: 1px solid var(--border-color);
-    cursor: default;
+    cursor: pointer;
+}
+
+.timeline-entry-selected {
+    background: var(--list-active-bg);
 }
 
 .timeline-entry:hover {

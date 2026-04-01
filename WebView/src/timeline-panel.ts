@@ -4,15 +4,22 @@ import {gitLogAsync, LogEntry} from "./api";
  * タイムラインパネル
  * サイドバーに配置し、アクティブテーブルの git log ベースのコミット履歴を表示する。
  * 各コミットエントリはメッセージ・著者・日付の3要素で構成される。
+ * エントリクリック時にコールバックを発火し、差分タブの表示を起動する。
  */
 export class TimelinePanel {
     private readonly element: HTMLElement;
     private readonly entriesContainer: HTMLElement;
+    /** エントリクリック時のコールバック（テーブル名・コミットハッシュ・メッセージ・日付を渡す） */
+    private readonly onEntryClick: (tableName: string, commitHash: string, commitMessage: string, commitDate: string) => void;
     /** loadLogAsync の競合状態を防ぐリクエストID */
     private currentRequestId: number;
+    /** 現在表示中のテーブル名（loadLogAsync で設定される） */
+    private currentTableName: string;
 
-    constructor() {
+    constructor(onEntryClick: (tableName: string, commitHash: string, commitMessage: string, commitDate: string) => void) {
+        this.onEntryClick = onEntryClick;
         this.currentRequestId = 0;
+        this.currentTableName = '';
 
         this.element = document.createElement('div');
         this.element.classList.add('timeline-panel');
@@ -56,6 +63,7 @@ export class TimelinePanel {
      * タブ切り替え時やパネル表示時にアクティブテーブル名で呼ばれる
      */
     async loadLogAsync(tableName: string): Promise<void> {
+        this.currentTableName = tableName;
         const requestId = ++this.currentRequestId;
         const entries = await gitLogAsync('data/' + tableName + '.csv', 20);
         // 非同期中に別のリクエストが発行された場合は描画をスキップする
@@ -97,6 +105,17 @@ export class TimelinePanel {
             dateElement.classList.add('timeline-entry-date');
             dateElement.textContent = entry.date;
             entryElement.appendChild(dateElement);
+
+            // エントリクリックで差分タブを開く（選択状態の切り替えも行う）
+            entryElement.addEventListener('click', () => {
+                // 既存の選択状態を全て解除してからクリックされたエントリを選択する
+                const previousSelected = this.entriesContainer.querySelectorAll('.timeline-entry-selected');
+                for (let j = 0; j < previousSelected.length; j++) {
+                    previousSelected[j].classList.remove('timeline-entry-selected');
+                }
+                entryElement.classList.add('timeline-entry-selected');
+                this.onEntryClick(this.currentTableName, entry.commitHash, entry.message, entry.date);
+            });
 
             this.entriesContainer.appendChild(entryElement);
         }

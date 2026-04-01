@@ -1462,7 +1462,7 @@ export class Tab {
      * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
      *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
      */
-    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string): void {
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null): void {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
 
         // 既存の差分タブが開いている場合は破棄して再作成する（最新データで差分表示するため）
@@ -1494,7 +1494,7 @@ export class Tab {
             tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference, this.openEditorTables, this.notification, this.validationPanel,
-            null, null
+            leftLabel, rightLabel
         );
         this.diffTabs.set(diffTabName, diffTab);
 

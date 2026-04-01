@@ -42,6 +42,8 @@ namespace App.MasterDataEditor
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
+				// フロントエンドから受け取った "data/xxx.csv" をgitルート相対パスに変換する
+				path = GitCommandHelper.ToGitRootRelativePath(path, dataPrefix);
 				var validationError = GitCommandHelper.ValidateDataPath(path, dataPrefix);
 				if (validationError != null)
 				{

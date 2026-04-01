@@ -11,7 +11,7 @@ import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
 import {ResizeHandle} from "./resize-handle";
-import {invalidateGitStatusCache, invalidateGitShowCache} from "./api";
+import {invalidateGitStatusCache, invalidateGitShowCache, readFileAsync, gitShowAtCommitAsync} from "./api";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -87,7 +87,13 @@ export class Sidebar {
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // タイムラインパネル（git logベースのコミット履歴を表示する）
-        this.timelinePanel = new TimelinePanel();
+        // エントリクリック時にコミット時点のCSVと現在CSVの差分をDiffTabで表示する
+        this.timelinePanel = new TimelinePanel(
+            (tableName, commitHash, commitMessage, commitDate) => {
+                this.openTimelineDiffAsync(tableName, commitHash, commitMessage, commitDate)
+                    .catch(e => { console.error('タイムライン差分表示失敗', e); });
+            }
+        );
         this.timelinePanel.appendTo(sidebarContent);
 
         // ExplorerDirectory をファイルパネル内に構築
@@ -254,6 +260,23 @@ export class Sidebar {
      */
     restoreBookmarks(entries: BookmarkEntry[]): void {
         this.bookmarkPanel.restoreBookmarks(entries);
+    }
+
+    /**
+     * タイムラインエントリクリック時にコミット時点のCSVと現在CSVの差分をDiffTabで表示する
+     * スキーマ・現在CSV・コミット時点CSVを並列取得し、Tab.openDiffTab で差分タブを開く
+     */
+    private async openTimelineDiffAsync(tableName: string, commitHash: string, commitMessage: string, _commitDate: string): Promise<void> {
+        const path = 'data/' + tableName + '.csv';
+        const [schemaJson, currentCsv, commitCsv] = await Promise.all([
+            readFileAsync('schema/' + tableName + '.json'),
+            readFileAsync(path),
+            gitShowAtCommitAsync(commitHash, path),
+        ]);
+        // isStaged=true で両ペイン読み取り専用にする（過去コミットとの比較は編集不要）
+        const leftLabel = tableName + ' (' + commitHash.substring(0, 7) + ' ' + commitMessage + ')';
+        const rightLabel = tableName + ' (現在)';
+        this.tab.openDiffTab(tableName, true, schemaJson, commitCsv, currentCsv, path, leftLabel, rightLabel);
     }
 
     private switchPanel(item: ActivityBarItem): void {
