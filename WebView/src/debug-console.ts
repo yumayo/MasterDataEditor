@@ -7,7 +7,7 @@
  *
  * バックグラウンドタスクの発行履歴（ラベル・経過時間・成否）を最大1000件表示する。
  * 1000件超過時は先頭エントリ（最古のもの）を削除して上限を維持する。
- * 新規エントリ追加時はリスト末尾へ自動スクロールする。
+ * スクロール位置が最下部にある場合のみ新規エントリ追加時にリスト末尾へ自動追従する（tailモード）。
  *
  * カラムヘッダーの右端ハンドルをドラッグすることで各列の幅を変更できる。
  * ドラッグ中はリスト全体のセルを即時更新する（Undo不要のデバッグ機能のためシンプル実装）。
@@ -65,11 +65,13 @@ export class DebugConsole {
      * ログエントリを1件追加する。経過時間はマイクロ秒単位で受け取り、自動フォーマットする。
      * 1000件を超えた場合は先頭エントリ（最古のもの）を削除する。
      * パネルが非表示でもエントリは蓄積される。
-     * 追加後はリスト末尾へ自動スクロールする。
+     * スクロールが最下部にある場合のみ末尾へ自動追従する（tailモード）。
      * @param durationUs 経過時間（マイクロ秒）
      * @param caller 呼び出し元情報（"filename.ts:行番号" 形式）
      */
     appendEntry(label: string, durationUs: number, status: 'success' | 'error', caller: string): void {
+        // 追加前にスクロール位置が最下部付近かどうかを判定（tail動作の判定）
+        const isAtBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 8;
         if (this.entryCount >= DebugConsole.MAX_ENTRIES) {
             if (this.list.firstChild) {
                 this.list.removeChild(this.list.firstChild);
@@ -78,7 +80,10 @@ export class DebugConsole {
         }
         this.list.appendChild(this.createRow(label, this.formatDuration(durationUs), status, caller));
         this.entryCount++;
-        this.list.scrollTop = this.list.scrollHeight;
+        // スクロールが最下部にある場合のみ自動追従する（tailモード）
+        if (isAtBottom) {
+            this.list.scrollTop = this.list.scrollHeight;
+        }
     }
 
     /**
