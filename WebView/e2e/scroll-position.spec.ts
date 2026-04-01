@@ -409,3 +409,70 @@ test(
         ).toBeLessThanOrEqual(containerRectFinal.bottom);
     },
 );
+
+// =============================================================================
+// リグレッションテスト: Deleteキー押下後にスクロール位置が(0,0)にリセットされるバグ
+//
+// 根本原因:
+//   ナビゲーションモードでDeleteキーを押すと applyCellChanges() でDOMが変更される。
+//   その際、top:-99999px に位置する grid-textfield（contenteditable）にフォーカスがあるため、
+//   ブラウザがフォーカス要素に向かって自動スクロールし scrollTop が 0 にリセットされる。
+//   hide() では事前にスクロール位置を保存して保護しているが、Deleteキーのパスでは
+//   hide() を経由しないため保護が効いていなかった。
+//
+// 期待動作:
+//   Deleteキー押下後もスクロール位置が維持されること。
+// =============================================================================
+
+test(
+    'Deleteキー押下後にスクロール位置がリセットされないこと',
+    async ({ page }) => {
+        await page.setViewportSize({ width: 1024, height: 768 });
+
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara');
+
+        // ヘッダー行(1) + データ行(100) = 101
+        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+        await expect(dataRows).toHaveCount(101);
+
+        // 95行目付近までスクロールする
+        const scrollTop = await page.evaluate(() => {
+            const container = document.querySelector('.editor-left-pane');
+            if (!container) return 0;
+            container.scrollTop = 94 * 28;
+            return container.scrollTop;
+        });
+        expect(scrollTop).toBeGreaterThan(0);
+
+        // スクロール後の位置を記録する
+        const scrollBefore = await getScrollPositionAsync(page);
+        expect(scrollBefore.scrollTop).toBeGreaterThan(0);
+
+        // 95行目のattack列をシングルクリックして選択する（ナビゲーションモードのまま）
+        const targetCell = getDataCell(table, 94, 2);
+        await targetCell.click();
+
+        // クリック後もスクロール位置が維持されていることを確認する
+        const scrollAfterClick = await getScrollPositionAsync(page);
+        expect(scrollAfterClick.scrollTop).toBeGreaterThan(100);
+
+        // Deleteキーを押してセル値をクリアする
+        await page.keyboard.press('Delete');
+
+        // スクロール副作用が収まるまで待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
+        // Delete後のスクロール位置を取得する
+        const scrollAfterDelete = await getScrollPositionAsync(page);
+
+        // スクロール位置が(0,0)にリセットされていないことを検証する
+        expect(
+            scrollAfterDelete.scrollTop,
+            `Deleteキー押下後にスクロール位置がリセットされた。押下前: scrollTop=${scrollAfterClick.scrollTop}, 押下後: scrollTop=${scrollAfterDelete.scrollTop}`,
+        ).toBeGreaterThan(100);
+    },
+);

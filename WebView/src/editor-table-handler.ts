@@ -700,6 +700,10 @@ export class EditorTableHandler {
         // DeleteキーまたはBackspaceキー（読み取り専用ミニEditorTableでは禁止）
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             if (this.readOnly) return;
+            // DOM変更前にスクロール位置を保存する（applyCellChanges によるDOM書き換えで
+            // ブラウザが top:-99999px のフォーカス要素に自動スクロールし、位置がリセットされる場合がある）
+            const scrollTop = this.scrollController.getScrollTop();
+            const scrollLeft = this.scrollController.getScrollLeft();
             const deleteRange = this.selection.getSelectionRange();
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
@@ -710,6 +714,8 @@ export class EditorTableHandler {
             }
             if (changes.length > 0) {
                 this.applyCellChangesWithHistory(changes, deleteRange, this.selection.getCopyRange());
+                // 事前保存したスクロール位置で保護する（hide() と同じパターン）
+                this.focusWithoutScrolling(scrollTop, scrollLeft);
             }
             return;
         }
