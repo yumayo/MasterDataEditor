@@ -27,8 +27,43 @@
 
 ### 重要な設計ルール
 - `move()` だけが `scrollFocusIntoView()` を呼ぶ（start/setRange/extendSelection は呼ばない）
-- `updateRenderer()` はスクロールに触れない（CSSポジション更新のみ）
+- `updateRenderer()` はスクロールに触れない（CSSクラス付与のみ）
 - `notifyRowSelectionChanged` は `updateRenderer()` の末尾で呼ばれる（EditorTable 経由で RelationsPanel へ）
+
+## 選択範囲レンダリングの実装方式（擬似要素ベース）
+
+### 2026-04-02 に オーバーレイdiv → CSS擬似要素 に移行
+
+**変更の動機:** float座標計算による誤差の排除
+
+**廃止した要素:**
+- `selection.element`（`.selection` div）— selection.ts から削除
+- `selection.copyBorderElement`（`.copy-border` div）— selection.ts から削除
+- `topBackground`, `bottomBackground`, `leftBackground`, `rightBackground` — 削除
+- `updateBackgroundElements`, `updateBackgroundElement`, `hideBackgroundElements` — 削除
+
+**維持した要素:**
+- `selection.fillPreviewElement`（`.fill-preview` div）— オーバーレイのまま維持
+- `selection.fillHandle`（`.fill-handle` div）— オーバーレイのまま維持
+
+**新しい仕組み:**
+- EditorTable に `applySelectionClasses(range, focusRow, focusCol)` / `clearSelectionClasses()` を追加
+- EditorTable に `applyCopyClasses(range)` / `clearCopyClasses()` を追加
+- `lastSelectionCells: { row, col, classes }[]` フィールドで前回付与したクラスを追跡
+- `lastCopyCells: { row, col, classes }[]` フィールドで前回付与したクラスを追跡
+- セルに `position: relative` を付与（editor-table.css）して擬似要素のアンカーにする
+
+**CSS クラスの意味:**
+- `sel-bg` — 選択範囲の背景色（フォーカスセルは除外）
+- `sel-top`, `sel-bottom`, `sel-left`, `sel-right` — 選択範囲の各辺のボーダー（::before で描画）
+- `copy-top`, `copy-bottom`, `copy-left`, `copy-right` — コピー範囲の各辺のボーダー（::after で描画）
+
+**非アクティブテーブル:** `editor-table--inactive` クラスが EditorTable 要素に付与されるため、
+`editor-table--inactive .sel-bg` のように **子孫セレクタ**で灰色に変更できる（オーバーレイ方式の `~` 兄弟セレクタは不要）。
+fill-handle / fill-preview はオーバーレイのままなので `~` セレクタを維持している。
+
+**tab.ts/diff-tab.ts の変更:** `wrapperElement.appendChild(selection.element)` と
+`wrapperElement.appendChild(selection.copyBorderElement)` の2行を削除。
 
 ## 修正済みパターン
 
@@ -41,7 +76,6 @@
 ## 既知のバグ（未修正）
 
 ### BUG: `scrollCellIntoView` の `requestAnimationFrame` 競合
-**ファイル:** `selection.ts` 614-628行目
 **症状:** 複数の `scrollCellIntoView` が連続して呼ばれると、古い rAF コールバックが新しいスクロール位置を上書きする。
 **修正方針:** `private scrollRafId: number = 0` フィールドを追加し、新しい呼び出し時に `cancelAnimationFrame(this.scrollRafId)` してから再登録する。
 
@@ -50,11 +84,6 @@
 ### 症状
 1024x768 画面で95行目（右端列）を編集・確定するとスクロール位置が (0,0) にリセットされる。
 
-### Selection 担当範囲の調査結果
-- `scrollCellIntoView` の計算ロジック（593-603行目）は正常
-- `requestAnimationFrame` 競合バグあり（614-628行目）← 修正必要
-- `move()` 後のスクロール計算に負値クランプが欠如（高スクロール位置で誤動作する可能性）
-
 ### 真の原因（Selection管轄外）
 `editor-table-handler.ts:267` の `this.element.focus({ preventScroll: true })` が、
 `hide()` 後（`top: -99999px`）の `contenteditable` 要素に対して呼ばれると、
@@ -62,20 +91,3 @@ WebView2 の特定ビルドでスクロールコンテナの `scrollTop/scrollLe
 
 **協調が必要:** `editor-table-integrator` エージェントに `editor-table-handler.ts` の
 `onFocusout` → `focus()` パスを調査依頼すること。
-
-### フロー図（Enter確定時）
-```
-keydown(Enter)
-  → submitText()         // セル値確定
-  → hide()               // grid-textfield を top:-99999px へ（フォーカスは失われない）
-  → moveCellDownWithinSelection()  // 例: row=96 へ
-     → selection.move(96, col)
-        → scrollFocusIntoView()
-        → scrollCellIntoView(96, col)
-           [ここで rAF 競合バグが影響する可能性]
---- keydown 完了 ---
-[非同期] blur/focusout 発火（別操作によりフォーカスが移った場合）
-  → onFocusout(editor-table-handler.ts:224)
-     → this.element.focus({ preventScroll: true })
-        [WebView2 バグ: scrollTop/scrollLeft が 0 にリセットされる]
-```
