@@ -31,6 +31,7 @@
 
     /* ─── ダイアログ ─── */
     --z-index-commit-selector-dialog: 1800;
+    --z-index-reverse-reference-jump-dialog: 1800;
 
     /* ─── 最前面 UI ─── */
     --z-index-filter-dropdown-container: 1000;

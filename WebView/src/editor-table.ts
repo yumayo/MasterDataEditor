@@ -31,6 +31,7 @@ import {NotificationToast} from "./notification";
 import {ErrorTooltip} from "./error-tooltip";
 import {saveSchemaDataAsync} from "./editor-actions";
 import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -672,10 +673,12 @@ export class EditorTable {
                 e.preventDefault();
                 return;
             }
-            // メインテーブルのCtrl+クリックでFK列の参照先テーブルを開く（RelationsPanel非表示時のみ）
+            // メインテーブルのCtrl+クリックでFK列の参照先 / PK列の逆参照先テーブルを開く（RelationsPanel非表示時のみ）
             // start()でセルを選択した後、end()でドラッグ状態を即解除する。
             // end()を呼ばないとmouseupが発火しないままselecting=trueが残り、戻ったときに範囲選択になる。
-            if ((e.ctrlKey || e.metaKey) && !table.isMiniTable && table.navigateToReferenceTable(position.row, position.column)) {
+            if ((e.ctrlKey || e.metaKey) && !table.isMiniTable
+                && (table.navigateToReferenceTable(position.row, position.column)
+                    || table.navigateToReverseReferenceTable(position.row, position.column))) {
                 table.selection.start(position.row, position.column);
                 table.selection.end();
                 e.preventDefault();
@@ -2254,6 +2257,45 @@ export class EditorTable {
         const cellValue = this.getCellValueAt(row, column);
         if (cellValue === '') return false;
         this.tab.navigateToTableRow(expr.tableName, cellValue);
+        return true;
+    }
+
+    /**
+     * メインテーブル専用: Ctrl+クリックまたはF12でPK列の逆参照先テーブルをタブで開く。
+     * RelationsPanelが非表示の場合のみ動作する（表示中はRelationsPanelで参照できるため不要）。
+     * 逆参照が1つなら直接ジャンプ、複数ならモーダルで選択させる。
+     * @returns ナビゲーションが実行された（またはモーダル表示された）場合 true
+     */
+    navigateToReverseReferenceTable(row: number, column: number): boolean {
+        if (this.tab === false) return false;
+        if (this.tab.editor.isRelationsPanelVisible()) return false;
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.header.length) return false;
+        const colName = this.tableData.header[dataColumnIndex].name;
+        if (!this.tableData.primaryKeyColumns.includes(colName)) return false;
+        if (!this.hasReverseReferences()) return false;
+        const pkValue = this.getRowPkValue(row);
+        if (pkValue === '') return false;
+        // PK値に対する逆参照エントリを収集する（parentColumnName でフィルタリング）
+        const allEntries: ReverseReferenceEntry[] = [];
+        for (const parentColName of this.getAllParentColumnNames()) {
+            const colValue = this.getCellValueByColumnName(row, parentColName);
+            if (colValue === '') continue;
+            const entries = this.getReverseReferenceEntries(colValue);
+            for (const entry of entries) {
+                if (entry.parentColumnName === parentColName) allEntries.push(entry);
+            }
+        }
+        if (allEntries.length === 0) return false;
+        if (allEntries.length === 1) {
+            this.tab.navigateToTableRow(allEntries[0].childTableName, pkValue);
+            return true;
+        }
+        // 複数の逆参照: モーダルで選択させる
+        const tab = this.tab;
+        ReverseReferenceJumpDialog.open(allEntries, (selected) => {
+            tab.navigateToTableRow(selected.childTableName, pkValue);
+        });
         return true;
     }
 

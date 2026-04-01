@@ -560,10 +560,11 @@ export class EditorTableHandler {
             this.table.navigateToDefinition(focus.row);
             return;
         }
-        // F12: メインテーブルでFK列の参照先テーブルを開く（RelationsPanel非表示時のみ）
+        // F12: メインテーブルでFK列の参照先 / PK列の逆参照先テーブルを開く（RelationsPanel非表示時のみ）
         if (keyboardEvent.key === 'F12' && !this.table.isMiniTableInstance()) {
             const focus = this.selection.getFocus();
-            if (this.table.navigateToReferenceTable(focus.row, focus.column)) {
+            if (this.table.navigateToReferenceTable(focus.row, focus.column)
+                || this.table.navigateToReverseReferenceTable(focus.row, focus.column)) {
                 keyboardEvent.preventDefault();
                 return;
             }
