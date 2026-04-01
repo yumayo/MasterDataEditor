@@ -26,6 +26,14 @@ public partial class App : Application
 	[STAThread]
 	public static void Main(string[] args)
 	{
+		// --validate 引数: ヘッドレスバリデーションモード（GUIなし）
+		// WinExe なので AttachConsole で親コンソールにアタッチして出力する
+		if (Array.Exists(args, arg => arg == "--validate"))
+		{
+			Headless.HeadlessValidator.Run();
+			return;
+		}
+
 		// --mcp 引数: stdioプロキシモードとして起動（GUIなし）
 		// Claude Desktopが本プロセスを子プロセスとして起動し、
 		// stdin/stdoutをメインアプリのHTTP MCPサーバーに中継する
