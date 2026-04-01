@@ -62,17 +62,11 @@
 
 .validation-panel-item-kind-pk,
 .validation-panel-item-kind-fk,
-.validation-panel-item-kind-type {
+.validation-panel-item-kind-type,
+.validation-panel-item-kind-plugin {
     background-color: var(--error-bg);
     color: var(--error-color);
     border: 1px solid var(--error-border);
-}
-
-/* プラグインバリデーションエラー: 警告色で差別化する */
-.validation-panel-item-kind-plugin {
-    background-color: rgba(205, 155, 50, 0.15);
-    color: #cda632;
-    border: 1px solid rgba(205, 155, 50, 0.3);
 }
 
 .validation-panel-item-location {
