@@ -53,8 +53,6 @@ export class EditorTable {
     private readonly selectionDragController: SelectionDragController;
     /** 行ドラッグ移動コントローラー（initializeModulesで再作成されるためreadonlyではない） */
     private rowDragController: RowDragController;
-    private readonly scrollBinding: ScrollViewportController;
-    private lastScrollLeft = -1;
     private readonly referenceDataCache: ReferenceDataCache;
     /** テーブルデータの中央ストア（セル編集の同期用） */
     private readonly store: InMemoryTableStore;
@@ -165,7 +163,6 @@ export class EditorTable {
         this.contextMenu = contextMenu;
         this.history = history;
         this.areaResizer = areaResizer;
-        this.scrollBinding = scrollBinding;
         this.sidebar = sidebar;
         this.emptyRowCount = emptyRowCount;
         this.rootCssClass = rootCssClass;
@@ -421,7 +418,6 @@ export class EditorTable {
      */
     activate(): void {
         this.selectionDragController.activate();
-        this.scrollBinding.activate();
     }
 
     /**
@@ -432,13 +428,12 @@ export class EditorTable {
     deactivate(): void {
         this.handler.deactivate();
         this.selectionDragController.deactivate();
-        this.scrollBinding.deactivate();
     }
 
     /**
      * アクティブ/非アクティブの視覚状態のみを切り替える
      * activateHandler() から複数の EditorTable に対して呼ばれる。
-     * selectionDragController・scrollBinding は操作しない（handler の排他制御とは独立）。
+     * selectionDragController は操作しない（handler の排他制御とは独立）。
      */
     setInactiveAppearance(inactive: boolean): void {
         if (inactive) {
@@ -580,35 +575,6 @@ export class EditorTable {
     // =========================================================================
     // スクロール
     // =========================================================================
-
-    onScroll(): void {
-        this.updateRowHeaderSticky();
-    }
-
-    /**
-     * 行ヘッダーの位置を現在のscrollLeftに強制同期する。
-     * display:none → display:'' でスクロール位置がリセットされた際に
-     * scrollイベントが発火しないため、外部から明示的に呼び出す。
-     */
-    forceRowHeaderScrollSync(): void {
-        this.lastScrollLeft = -1;
-        this.updateRowHeaderSticky();
-    }
-
-    private updateRowHeaderSticky(): void {
-        const offset = this.scrollBinding.getScrollLeft();
-        if (offset === this.lastScrollLeft) return;
-        this.lastScrollLeft = offset;
-        const rowHeaders = this.element.querySelectorAll('.editor-table-row-header, .editor-table-corner-cell') as NodeListOf<HTMLElement>;
-        if (rowHeaders.length === 0) return;
-        for (const header of Array.from(rowHeaders)) {
-            header.style.position = 'relative';
-            header.style.left = `${offset}px`;
-            header.style.transform = '';
-            header.style.zIndex = '20';
-            header.style.overflow = 'visible';
-        }
-    }
 
     stopAutoScrollForInput(): void {
         this.selectionDragController.stopAutoScrollForInput();
@@ -1166,17 +1132,26 @@ export class EditorTable {
         // blame表示時は children[0] が blame-cell なので、データ列のオフセットが1つ増える
         // 通常: children[0]=行ヘッダー, children[1]=データ列0, ...
         // blame: children[0]=blame-cell, children[1]=行ヘッダー, children[2]=データ列0, ...
-        const blameColumnWidth = 200;
-        const rowHeaderWidth = 40;
         const dataColumnOffset = this.isBlameVisible ? 2 : 1;
+        const columnHeaderRow = this.element.children[0];
+        // 行ヘッダーの実占有幅を getBoundingClientRect() で取得する
+        // （padding + border を含む。固定値 40px だと padding/border 分ずれる）
+        const rowHeaderCell = columnHeaderRow.children[this.isBlameVisible ? 1 : 0] as HTMLElement;
+        const rowHeaderWidth = rowHeaderCell.getBoundingClientRect().width;
+        // blame列も同様に実占有幅を取得する
+        let cumulativeLeft = rowHeaderWidth;
+        if (this.isBlameVisible) {
+            const blameCell = columnHeaderRow.children[0] as HTMLElement;
+            cumulativeLeft += blameCell.getBoundingClientRect().width;
+        }
         // 各固定列の left 値を事前に計算する（blame列幅 + 行ヘッダー幅 + 前の固定列幅の合計）
         const leftValues: number[] = [];
-        let cumulativeLeft = (this.isBlameVisible ? blameColumnWidth + rowHeaderWidth : rowHeaderWidth);
         for (let col = 0; col < this.frozenColumnCount; col++) {
             leftValues.push(cumulativeLeft);
-            // 列幅は列ヘッダーセルから取得する（px文字列をパース）
-            const width = parseInt(this.getColumnWidth(col));
-            cumulativeLeft += width;
+            // getBoundingClientRect().width で padding + border を含む実占有幅を取得する
+            // （style.width は content 幅のみのため、累積計算で列が重なるバグの原因になる）
+            const headerCell = columnHeaderRow.children[col + dataColumnOffset] as HTMLElement;
+            cumulativeLeft += headerCell.getBoundingClientRect().width;
         }
         // 全行（ヘッダー行 + データ行 + バッファ空行）に対して固定列セルにstickyを適用
         for (let row = 0; row < rowCount; row++) {
@@ -1236,27 +1211,24 @@ export class EditorTable {
             // DOM行インデックス: データ行0 → element.children[1]
             const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
             if (!rowElement) continue;
-            const cellCount = rowElement.children.length;
             const rowHeight = rowElement.getBoundingClientRect().height;
-            for (let col = 0; col < cellCount; col++) {
+            // 個々のセルではなく table-row に sticky を適用する。
+            // セル単位で sticky にすると Chromium の table-cell 描画順で固定列の上に
+            // 固定行セルが描画されてしまう。行単位なら行 vs セルの z-index 比較になり正しく動作する。
+            rowElement.style.position = 'sticky';
+            rowElement.style.top = cumulativeTop + 'px';
+            rowElement.style.zIndex = `var(--z-index-freeze-row)`;
+            // 行ヘッダーは縦横両方向で固定されるため z-index をコーナーレベルに上げる
+            const rowHeader = rowElement.children[0] as HTMLElement;
+            rowHeader.style.zIndex = `var(--z-index-freeze-corner)`;
+            if (dataRowIdx === this.frozenRowCount - 1) {
+                rowHeader.classList.add('freeze-row-border');
+            }
+            // データセルに不透明な背景色を付与（透過防止）
+            const cellCount = rowElement.children.length;
+            for (let col = 1; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
-                if (col === 0) {
-                    // 行ヘッダー: 縦スクロールでも固定されるよう position:sticky + top を設定。
-                    // 横スクロール固定（left:0）はCSSで既に設定済みだが、フリーズ行の行ヘッダーは
-                    // 縦横両方向で固定される必要があるため z-index をコーナーレベルに上げる。
-                    cell.style.position = 'sticky';
-                    cell.style.top = cumulativeTop + 'px';
-                    cell.style.zIndex = `var(--z-index-freeze-corner)`;
-                    if (dataRowIdx === this.frozenRowCount - 1) {
-                        cell.classList.add('freeze-row-border');
-                    }
-                } else {
-                    cell.style.position = 'sticky';
-                    cell.style.top = cumulativeTop + 'px';
-                    cell.style.zIndex = `var(--z-index-freeze-row)`;
-                    // 透過防止: 固定セルに不透明な背景色を付与
-                    cell.classList.add('freeze-cell');
-                }
+                cell.classList.add('freeze-cell');
             }
             cumulativeTop += rowHeight;
         }
@@ -1269,23 +1241,18 @@ export class EditorTable {
         for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
             const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
             if (!rowElement) continue;
+            // 行レベルの sticky をクリア
+            rowElement.style.position = '';
+            rowElement.style.top = '';
+            rowElement.style.zIndex = '';
+            // 行ヘッダーの z-index とボーダークラスをクリア
+            const rowHeader = rowElement.children[0] as HTMLElement;
+            rowHeader.style.zIndex = '';
+            rowHeader.classList.remove('freeze-row-border');
+            // データセルの freeze-cell クラスをクリア
             const cellCount = rowElement.children.length;
-            for (let col = 0; col < cellCount; col++) {
-                const cell = rowElement.children[col] as HTMLElement;
-                if (col === 0) {
-                    // 行ヘッダー: フリーズで設定した top/zIndex をクリア。
-                    // position:sticky と left:0 は CSS の .editor-table-row-header で
-                    // 定義済みなのでインラインスタイルをクリアすればCSSに戻る。
-                    cell.style.position = '';
-                    cell.style.top = '';
-                    cell.style.zIndex = '';
-                    cell.classList.remove('freeze-row-border');
-                } else {
-                    cell.style.position = '';
-                    cell.style.top = '';
-                    cell.style.zIndex = '';
-                    cell.classList.remove('freeze-cell');
-                }
+            for (let col = 1; col < cellCount; col++) {
+                rowElement.children[col].classList.remove('freeze-cell');
             }
         }
     }
@@ -1311,6 +1278,10 @@ export class EditorTable {
         const rowCount = this.element.children.length;
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
+            // 行レベルの sticky をクリア（フリーズ行で設定される）
+            rowElement.style.position = '';
+            rowElement.style.top = '';
+            rowElement.style.zIndex = '';
             const cellCount = rowElement.children.length;
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
@@ -1318,14 +1289,11 @@ export class EditorTable {
                     // 行ヘッダー: フリーズで設定したインラインスタイルをすべてクリア。
                     // CSS の .editor-table-row-header が position:sticky; left:0 を持つので
                     // インラインを空にすればCSSの値に戻る。
-                    cell.style.position = '';
-                    cell.style.top = '';
                     cell.style.zIndex = '';
                     cell.classList.remove('freeze-row-border');
                 } else {
                     cell.style.position = '';
                     cell.style.left = '';
-                    cell.style.top = '';
                     cell.style.zIndex = '';
                     cell.classList.remove('freeze-column-border', 'freeze-row-border', 'freeze-cell');
                 }

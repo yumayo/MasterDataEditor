@@ -188,25 +188,18 @@ async function getColumnCellStylesAsync(
 }
 
 /**
- * 指定行の全データセルの computed style を取得する
+ * 指定行の table-row の computed style を取得する（行固定は行単位で sticky を適用する）
  * rowIndex: 0始まり（ヘッダー行を除くデータ行）
- * 戻り値: 各セルの { position, top } オブジェクト配列
+ * 戻り値: { position, top } オブジェクト
  */
-async function getRowCellStylesAsync(
+async function getRowStyleAsync(
     table: Locator, rowIndex: number,
-): Promise<Array<{ position: string; top: string }>> {
+): Promise<{ position: string; top: string }> {
     const row = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(rowIndex + 1);
-    const cells = row.locator('.editor-table-cell:not(.editor-table-row-header)');
-    const count = await cells.count();
-    const styles: Array<{ position: string; top: string }> = [];
-    for (let i = 0; i < count; i++) {
-        const style = await cells.nth(i).evaluate((el) => {
-            const cs = window.getComputedStyle(el);
-            return { position: cs.position, top: cs.top };
-        });
-        styles.push(style);
-    }
-    return styles;
+    return row.evaluate((el) => {
+        const cs = window.getComputedStyle(el);
+        return { position: cs.position, top: cs.top };
+    });
 }
 
 /**
@@ -287,15 +280,17 @@ test.describe('フリーズペイン', () => {
                     expect(style.position).toBe('sticky');
                 }
 
-                // id列の left 値は行ヘッダー幅（40px）であること
+                // id列の left 値は行ヘッダーの実占有幅（padding+border含む）であること
+                // getBoundingClientRect で取得するため 40px より大きい
                 for (const style of idStyles) {
-                    expect(style.left).toBe('40px');
-                }
-
-                // name列の left 値は行ヘッダー幅(40px) + id列の幅 であること（40pxより大きい）
-                for (const style of nameStyles) {
                     const leftPx = parseInt(style.left);
                     expect(leftPx).toBeGreaterThan(40);
+                }
+
+                // name列の left 値は行ヘッダー幅 + id列の幅 であること（id列より大きい）
+                for (const style of nameStyles) {
+                    const leftPx = parseInt(style.left);
+                    expect(leftPx).toBeGreaterThan(parseInt(idStyles[0].left));
                 }
 
                 // 非固定列（hp: colIndex=2）は sticky でないこと
@@ -397,23 +392,17 @@ test.describe('フリーズペイン', () => {
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
-                // 固定行（rowIndex=0）のデータセルが sticky になっている
-                const rowStyles = await getRowCellStylesAsync(table, 0);
-                for (const style of rowStyles) {
-                    expect(style.position).toBe('sticky');
-                }
+                // 固定行（rowIndex=0）の table-row が sticky になっている
+                const rowStyle = await getRowStyleAsync(table, 0);
+                expect(rowStyle.position).toBe('sticky');
 
                 // top 値はヘッダー行の高さ分のオフセットがある（0pxより大きい）
-                for (const style of rowStyles) {
-                    const topPx = parseInt(style.top);
-                    expect(topPx).toBeGreaterThan(0);
-                }
+                const topPx = parseInt(rowStyle.top);
+                expect(topPx).toBeGreaterThan(0);
 
-                // 非固定行（rowIndex=1）は sticky でないこと
-                const nonFrozenStyles = await getRowCellStylesAsync(table, 1);
-                for (const style of nonFrozenStyles) {
-                    expect(style.position).not.toBe('sticky');
-                }
+                // 非固定行（rowIndex=1）の table-row は sticky でないこと
+                const nonFrozenStyle = await getRowStyleAsync(table, 1);
+                expect(nonFrozenStyle.position).not.toBe('sticky');
 
                 // 最後の固定行に freeze-row-border クラスが付与される
                 const frozenRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
@@ -423,7 +412,7 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
-            '固定行の行ヘッダーにposition:stickyが適用される',
+            '固定行の行ヘッダーにfreeze-row-borderとz-indexが適用される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
@@ -431,13 +420,16 @@ test.describe('フリーズペイン', () => {
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
-                // 固定行の行ヘッダーが sticky であること（縦スクロール固定のため）
-                const headerStyle = await getRowHeaderStyleAsync(table, 0);
-                expect(headerStyle.position).toBe('sticky');
-
-                // top 値がヘッダー行の高さ分のオフセットを持つ（0pxより大きい）
-                const topPx = parseInt(headerStyle.top);
+                // 固定行の table-row が sticky であること
+                const rowStyle = await getRowStyleAsync(table, 0);
+                expect(rowStyle.position).toBe('sticky');
+                const topPx = parseInt(rowStyle.top);
                 expect(topPx).toBeGreaterThan(0);
+
+                // 固定行の行ヘッダーに freeze-corner レベルの z-index が設定されていること
+                const headerStyle = await getRowHeaderStyleAsync(table, 0);
+                const zIndex = parseInt(headerStyle.zIndex);
+                expect(zIndex).toBeGreaterThan(0);
             },
         );
     });
@@ -662,17 +654,13 @@ test.describe('フリーズペイン', () => {
                 // テーブルを再度開く
                 const reopenedTable = await openTableAsync(page, 'freeze_test');
 
-                // 固定行（rowIndex=0）のデータセルが sticky になっている
-                const rowStyles = await getRowCellStylesAsync(reopenedTable, 0);
-                for (const style of rowStyles) {
-                    expect(style.position).toBe('sticky');
-                }
+                // 固定行（rowIndex=0）の table-row が sticky になっている
+                const rowStyle = await getRowStyleAsync(reopenedTable, 0);
+                expect(rowStyle.position).toBe('sticky');
 
-                // 非固定行（rowIndex=1）は sticky でないこと
-                const nonFrozenStyles = await getRowCellStylesAsync(reopenedTable, 1);
-                for (const style of nonFrozenStyles) {
-                    expect(style.position).not.toBe('sticky');
-                }
+                // 非固定行（rowIndex=1）の table-row は sticky でないこと
+                const nonFrozenStyle = await getRowStyleAsync(reopenedTable, 1);
+                expect(nonFrozenStyle.position).not.toBe('sticky');
             },
         );
     });

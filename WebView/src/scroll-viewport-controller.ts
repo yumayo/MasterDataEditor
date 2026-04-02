@@ -1,19 +1,8 @@
 export class ScrollViewportController {
     private container: HTMLElement;
-    private handler: () => void;
 
-    constructor(container: HTMLElement, handler: () => void) {
+    constructor(container: HTMLElement) {
         this.container = container;
-        this.handler = handler;
-    }
-
-    activate(): void {
-        this.container.addEventListener('scroll', this.handler);
-        this.handler();
-    }
-
-    deactivate(): void {
-        this.container.removeEventListener('scroll', this.handler);
     }
 
     getScrollLeft(): number {

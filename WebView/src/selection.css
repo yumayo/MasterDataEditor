@@ -3,9 +3,13 @@
    これにより ::before を border 領域まで拡張でき、セル間の1px隙間を埋められる。
    隣接セルの灰色ボーダーは sel-adj-* クラスで透明にして青枠を最前面にする。 */
 
-/* 選択範囲の背景色（フォーカスセルには付与しない） */
+/* 選択範囲の背景色（フォーカスセルには付与しない）
+   データセルは通常 transparent なので、半透明の background-color だけだと
+   position:sticky の行ヘッダーや固定列の上に描画されたとき背面が透けてしまう。
+   不透明な background-color を下地に敷き、選択色は background-image で重ねる。 */
 .sel-bg {
-    background-color: rgba(0, 120, 215, 0.2);
+    background-color: var(--background-sub-color);
+    background-image: linear-gradient(rgba(0, 120, 215, 0.2), rgba(0, 120, 215, 0.2));
 }
 
 /* 辺セルは overflow を border-box クリップに切り替える
@@ -86,7 +90,8 @@
 
 /* ===== 非アクティブテーブル ===== */
 .editor-table--inactive .sel-bg {
-    background-color: rgba(128, 128, 128, 0.2);
+    background-color: var(--background-sub-color);
+    background-image: linear-gradient(rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.2));
 }
 
 .editor-table--inactive .sel-top::before { border-top-color: #808080; }

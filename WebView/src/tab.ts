@@ -2023,11 +2023,8 @@ export class Tab {
         // 相互参照を解決するため、一時的な空オブジェクトを作成
         const editorTable = {} as EditorTable;
 
-        // ScrollViewportController を作成（editorTable.onScroll を参照）
-        // スクロール対象は左ペイン（editor.getLeftPaneForScroll()）に変更
-        const scrollController = new ScrollViewportController(this.editor.getLeftPaneForScroll(), () => {
-            editorTable.onScroll();
-        });
+        // スクロール対象は左ペイン（editor.getLeftPaneForScroll()）
+        const scrollController = new ScrollViewportController(this.editor.getLeftPaneForScroll());
 
         // Selection を作成（editorTable への参照をコンストラクタで渡す）
         const selection = new Selection(editorTable, wrapperElement, scrollController);
@@ -2145,9 +2142,7 @@ export class Tab {
         // wrapperElement（通常フロー子要素）にEditorTable・Selection・テキストフィールド・ドロップダウンを全配置する。
         // wrapperElement.getBoundingClientRect() がスクロール量を含むため座標計算が正しくなり、
         // テキストフィールドはスクロールに追従しつつクリッピングされない。
-        const scrollController = new ScrollViewportController(scrollContainer, () => {
-            editorTable.onScroll();
-        });
+        const scrollController = new ScrollViewportController(scrollContainer);
 
         const selection = new Selection(editorTable, wrapperElement, scrollController);
 

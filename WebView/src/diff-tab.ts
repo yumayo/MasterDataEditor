@@ -553,9 +553,6 @@ export class DiffTab {
         this.leftPaneElement.scrollTop = this.savedScrollTop;
         this.rightPaneElement.scrollLeft = this.savedScrollLeft;
         this.rightPaneElement.scrollTop = this.savedScrollTop;
-        // 行ヘッダーの style.left を復元後の scrollLeft に同期する
-        this.leftEditorTable.forceRowHeaderScrollSync();
-        this.rightEditorTable.forceRowHeaderScrollSync();
         // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
         this.leftEditorTable.refreshSelectionDisplay();
         this.rightEditorTable.refreshSelectionDisplay();
@@ -663,9 +660,7 @@ export class DiffTab {
         paneElement.appendChild(innerWrapper);
 
         // scrollControllerの対象はペイン要素（overflow:auto）
-        const scrollController = new ScrollViewportController(paneElement, () => {
-            editorTable.onScroll();
-        });
+        const scrollController = new ScrollViewportController(paneElement);
 
         const selection = new Selection(editorTable, innerWrapper, scrollController);
         const history = new History(editorTable, tabButton, store, tableKey, 100);

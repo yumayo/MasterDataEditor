@@ -3,22 +3,12 @@ import { MockFileSystem, installMockApiAsync } from './fixtures/mock-api';
 import { Page } from '@playwright/test';
 
 // =============================================================================
-// ISSUE_0092: 差分タブのスクロール位置復元時に行ヘッダーだけが取り残される
+// ISSUE_0092: 差分タブのスクロール位置復元時に行ヘッダーがずれる
 //
-// 不具合の再現:
-//   1. 差分タブを開いて右スクロール
-//      → leftPaneElement.scrollLeft = N、行ヘッダー style.left = Npx
-//   2. タブバーから通常タブに切り替え → diffTab.hide() で display: none
-//      → ブラウザが scrollLeft を 0 にリセットするが scroll イベントは発火しない
-//      → lastScrollLeft = N のまま、行ヘッダーも left: Npx のまま残る
-//   3. タブバーから差分タブに戻る → diffTab.show() で display: ''
-//      → scrollLeft=0 だが行ヘッダーは left: Npx → ずれ発生
-//
-// テストシナリオ:
-//   横スクロールが発生するよう列数の多いテーブルを用意し、
-//   通常テーブルを先に開く → 差分タブを開いて右スクロール
-//   → タブバーから通常タブに切り替え → タブバーから差分タブに戻る
-//   → 行ヘッダーの style.left が scrollLeft と一致することを検証する
+// 行ヘッダーは CSS position:sticky; left:0 で固定されるため、
+// display:none → display:'' の切り替えでもブラウザが自動で位置を管理する。
+// このテストは差分タブの表示切替後も行ヘッダーがスクロールコンテナの
+// 左端に視覚的に固定されていることを getBoundingClientRect() で検証する。
 //
 // 注意:
 //   エクスプローラーパネルに切り替えると closeAllDiffTabs() が呼ばれて
@@ -132,15 +122,13 @@ test.describe('ISSUE_0092: 差分タブのスクロール位置復元時に行�
 
     // -------------------------------------------------------------------------
     // 差分タブを右スクロール → タブバーで通常タブに切り替え → タブバーで差分タブに戻る
-    // → 行ヘッダーの style.left が scrollLeft と一致すること
+    // → 行ヘッダーがスクロールコンテナの左端に視覚的に固定されていること
     //
-    // 不具合状態（RED）:
-    //   hide() で display:none → ブラウザが scrollLeft を 0 にリセット
-    //   しかし scroll イベントは発火しないため行ヘッダーの left は古い値のまま
-    //   show() で差分タブに戻ると scrollLeft=0 なのに行ヘッダーだけ left:Npx でずれる
+    // CSS position:sticky; left:0 により、display:none → display:'' の切り替え後も
+    // ブラウザが自動で行ヘッダーの位置を管理する。
     // -------------------------------------------------------------------------
     test(
-        '差分タブ再表示時に行ヘッダーのleftがscrollLeftと一致すること',
+        '差分タブ再表示時に行ヘッダーがスクロールコンテナの左端に固定されていること',
         async ({ page, diffSetup: _diffSetup }) => {
             // ソースコントロールパネルから差分タブを開く
             await page.locator('[data-panel="sourceControl"]').click();
@@ -157,22 +145,18 @@ test.describe('ISSUE_0092: 差分タブのスクロール位置復元時に行�
             await leftPane.evaluate((el) => {
                 el.scrollLeft = 200;
             });
-
-            // スクロールイベントが処理されるまで待つ
-            // （行ヘッダーの style.left が更新されることを確認）
             await page.waitForTimeout(200);
 
-            // スクロール後、行ヘッダーの style.left が 200px になっていることを確認する（事前条件）
-            const leftBeforeSwitch = await leftPane.evaluate((el) => {
+            // スクロール後、行ヘッダーがコンテナの左端に固定されていることを確認する（事前条件）
+            const offsetBeforeSwitch = await leftPane.evaluate((el) => {
                 const header = el.querySelector('.editor-table-row-header') as HTMLElement | null;
                 if (!header) throw new Error('行ヘッダーが見つかりません');
-                return header.style.left;
+                return Math.abs(header.getBoundingClientRect().left - el.getBoundingClientRect().left);
             });
-            expect(leftBeforeSwitch).toBe('200px');
+            // 行ヘッダーはスクロールコンテナの左端に固定されるべき（1px以内の誤差を許容）
+            expect(offsetBeforeSwitch).toBeLessThanOrEqual(1);
 
             // タブバーから通常テーブルのタブに切り替える
-            // （エクスプローラーパネルに切り替えると closeAllDiffTabs() が呼ばれて差分タブが
-            //   destroy されてしまうため、タブバーから切り替えて hide のみ発生させる）
             await page.locator('.tab-button', { hasText: 'normal' }).click();
 
             // 差分タブのラッパーが非表示になっていることを確認する
@@ -183,32 +167,22 @@ test.describe('ISSUE_0092: 差分タブのスクロール位置復元時に行�
             await page.locator('.tab-button', { hasText: '差分: wide_table' }).click();
             await expect(page.locator('.diff-tab')).toBeVisible();
 
-            // 左ペイン: 行ヘッダーの style.left が scrollLeft と一致することを検証する
-            // 不具合状態では scrollLeft=0 なのに行ヘッダーの left が 200px のままでずれる
-            const leftResult = await leftPane.evaluate((el) => {
+            // 左ペイン: 行ヘッダーがスクロールコンテナの左端に固定されていることを検証する
+            const leftOffset = await leftPane.evaluate((el) => {
                 const header = el.querySelector('.editor-table-row-header') as HTMLElement | null;
                 if (!header) throw new Error('左ペインの行ヘッダーが見つかりません');
-                return {
-                    scrollLeft: el.scrollLeft,
-                    headerLeft: header.style.left,
-                };
+                return Math.abs(header.getBoundingClientRect().left - el.getBoundingClientRect().left);
             });
-            // scrollLeft が 0 なら行ヘッダーの left も 0px であるべき
-            // scrollLeft が 200 なら行ヘッダーの left も 200px であるべき
-            // いずれにせよ両者が一致していることが正しい動作
-            expect(leftResult.headerLeft).toBe(`${leftResult.scrollLeft}px`);
+            expect(leftOffset).toBeLessThanOrEqual(1);
 
-            // 右ペイン: 行ヘッダーの style.left が scrollLeft と一致することを検証する
+            // 右ペイン: 行ヘッダーがスクロールコンテナの左端に固定されていることを検証する
             const rightPane = page.locator('.diff-pane-right');
-            const rightResult = await rightPane.evaluate((el) => {
+            const rightOffset = await rightPane.evaluate((el) => {
                 const header = el.querySelector('.editor-table-row-header') as HTMLElement | null;
                 if (!header) throw new Error('右ペインの行ヘッダーが見つかりません');
-                return {
-                    scrollLeft: el.scrollLeft,
-                    headerLeft: header.style.left,
-                };
+                return Math.abs(header.getBoundingClientRect().left - el.getBoundingClientRect().left);
             });
-            expect(rightResult.headerLeft).toBe(`${rightResult.scrollLeft}px`);
+            expect(rightOffset).toBeLessThanOrEqual(1);
         },
     );
 });
