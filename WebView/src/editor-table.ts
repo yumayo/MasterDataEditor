@@ -30,7 +30,7 @@ import {Tab} from "./tab";
 import {NotificationToast} from "./notification";
 import {ErrorTooltip} from "./error-tooltip";
 import {saveSchemaDataAsync} from "./editor-actions";
-import {parseReferenceExpression, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
 
 /**
@@ -2335,7 +2335,7 @@ export class EditorTable {
     /**
      * メインテーブル専用: Ctrl+クリックまたはF12でFK列の参照先テーブルをタブで開く。
      * RelationsPanelが非表示の場合のみ動作する（表示中はRelationsPanelで参照できるため不要）。
-     * 動的参照は非同期解決が必要なためスキップし、単純参照（"table.column"形式）のみ対応する。
+     * 単純参照（"table.column"形式）と動的参照（二段リスト）の両方に対応する。
      * @returns ナビゲーションが実行された場合 true
      */
     navigateToReferenceTable(row: number, column: number): boolean {
@@ -2347,13 +2347,50 @@ export class EditorTable {
         const reference = this.tableData.header[dataColumnIndex].reference;
         if (reference === null) return false;
         const expr = parseReferenceExpression(reference);
-        if (!isSimpleReference(expr)) return false;
         const cellValue = this.getCellValueAt(row, column);
         if (cellValue === '') return false;
-        // 参照先テーブルの参照列の値で行を検索し、その列にフォーカスする
-        // 例: shop.shop_product_group_id(=1) → shop_productテーブルで group_id=1 の行を開き group_id 列を選択
-        this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue);
-        return true;
+        if (isSimpleReference(expr)) {
+            // 単純参照: 参照先テーブルの参照列の値で行を検索し、その列にフォーカスする
+            // 例: shop.shop_product_group_id(=1) → shop_productテーブルで group_id=1 の行を開き group_id 列を選択
+            this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue);
+            return true;
+        }
+        if (isDynamicReference(expr)) {
+            // 動的参照（二段リスト）: 中間テーブルからジャンプ先テーブル名と列名を解決する
+            const resolved = this.resolveDynamicReferenceTarget(row, expr);
+            if (resolved === null) return false;
+            this.tab.navigateToTableColumnValue(resolved.tableName, resolved.columnName, cellValue);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 動的参照の中間テーブルを検索し、ジャンプ先のテーブル名と列名を解決する。
+     * 同一行の sourceMatchValue 列の値で中間テーブルを検索し、
+     * destTable 列からテーブル名、destColumn 列から列名を取得する。
+     */
+    private resolveDynamicReferenceTarget(row: number, expr: DynamicReference): { tableName: string; columnName: string } | null {
+        // 同一行の sourceMatchValue 列の値を取得する
+        const valueColumnIndex = this.reference.resolveValueColumnIndex(expr.filter.valueColumn, 0);
+        if (valueColumnIndex === -1) return null;
+        const filterValue = this.getCellValueAt(row, valueColumnIndex + this.dataColumnOffset());
+        if (filterValue === '') return null;
+        // 中間テーブルの全データをキャッシュから同期取得する
+        const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
+        if (fullData === false) return null;
+        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
+        if (lookupColumnIndex === -1) return null;
+        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
+        if (targetColumnIndex === -1) return null;
+        // filterColumn の値で中間テーブルの行を検索する
+        const matchedRow = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
+        if (!matchedRow) return null;
+        const tableName = matchedRow[lookupColumnIndex];
+        if (tableName === '') return null;
+        const columnName = matchedRow[targetColumnIndex];
+        if (columnName === '') return null;
+        return { tableName, columnName };
     }
 
     /**
