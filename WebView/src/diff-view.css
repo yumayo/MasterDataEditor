@@ -159,7 +159,11 @@
     flex-direction: column;
 }
 
-/* ペインラベル（差分タブ内のコミット情報表示） */
+/* ペインラベル（差分タブ内のコミット情報表示）
+   スクロールしても常に上端に固定表示する。
+   z-index は列ヘッダー行より上に設定し、スクロール時に列ヘッダーに隠れないようにする。
+   高さ = padding 4px*2 + font-size 12px * line-height 1.2 + border-bottom 1px ≒ 24px
+   列ヘッダー行の top はこの高さ分ずらす必要がある（:has() セレクタで制御）。 */
 .diff-pane-label-left,
 .diff-pane-label-right {
     padding: 4px 12px;
@@ -168,4 +172,16 @@
     color: var(--font-color);
     background: var(--background-sub-color);
     border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: var(--z-index-editor-table-corner);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* テーブルが横に広い場合、ラベルの幅をスクロールコンテナの表示幅に制限する。
+       max-width: 100% は sticky 要素では包含ブロック（スクロールコンテナ）の幅を参照する。 */
+    max-width: 100%;
+    box-sizing: border-box;
 }
+

@@ -553,9 +553,26 @@ export class DiffTab {
         this.leftPaneElement.scrollTop = this.savedScrollTop;
         this.rightPaneElement.scrollLeft = this.savedScrollLeft;
         this.rightPaneElement.scrollTop = this.savedScrollTop;
+        // ラベルがある場合、列ヘッダー行の top をラベルの実高さ分ずらす。
+        // display:'' 直後なので getBoundingClientRect() で正確な高さを取得できる。
+        this.applyLabelOffsetToColumnHeaders();
         // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
         this.leftEditorTable.refreshSelectionDisplay();
         this.rightEditorTable.refreshSelectionDisplay();
+    }
+
+    /** ラベルの高さを列ヘッダー行の top に反映する */
+    private applyLabelOffsetToColumnHeaders(): void {
+        const leftLabel = this.leftPaneElement.querySelector('.diff-pane-label-left') as HTMLElement | null;
+        if (leftLabel !== null) {
+            const headerRow = this.leftPaneElement.querySelector('.editor-table-column-header-row') as HTMLElement;
+            headerRow.style.top = leftLabel.getBoundingClientRect().height + 'px';
+        }
+        const rightLabel = this.rightPaneElement.querySelector('.diff-pane-label-right') as HTMLElement | null;
+        if (rightLabel !== null) {
+            const headerRow = this.rightPaneElement.querySelector('.editor-table-column-header-row') as HTMLElement;
+            headerRow.style.top = rightLabel.getBoundingClientRect().height + 'px';
+        }
     }
 
     /**
