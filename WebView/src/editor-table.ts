@@ -2350,7 +2350,9 @@ export class EditorTable {
         if (!isSimpleReference(expr)) return false;
         const cellValue = this.getCellValueAt(row, column);
         if (cellValue === '') return false;
-        this.tab.navigateToTableRow(expr.tableName, cellValue);
+        // 参照先テーブルの参照列の値で行を検索し、その列にフォーカスする
+        // 例: shop.shop_product_group_id(=1) → shop_productテーブルで group_id=1 の行を開き group_id 列を選択
+        this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue);
         return true;
     }
 

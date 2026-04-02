@@ -123,6 +123,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
     private pendingNavigationColumnIndex: number;
 
+    /** タブ読み込み完了後にナビゲーションする列名（空文字列は無効、navigateToTableColumnValueで使用） */
+    private pendingNavigationColumnName: string;
+
     /** グローバルなリレーションパネル（全タブで共有、editor.elementの右ペインに配置） */
     private readonly relationsPanel: RelationsPanel;
 
@@ -219,6 +222,7 @@ export class Tab {
         this.notification = notification;
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
+        this.pendingNavigationColumnName = '';
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.store, this.referenceDataCache, this.notification);
         this.paneStack = [];
@@ -390,6 +394,25 @@ export class Tab {
     }
 
     /**
+     * FK参照ジャンプ用: 参照先テーブルの特定列の値が一致する行を開き、その列にフォーカスする。
+     * PK値ではなく参照先列の値（例: group_id=1）で行を検索する。
+     */
+    navigateToTableColumnValue(tableName: string, columnName: string, value: string): void {
+        this.navigationHistory.pushNavigateCell(tableName);
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            this.enableTabButton(tableName);
+            this.navigateToCellByColumnValue(existingState, columnName, value);
+            return;
+        }
+        // タブが未作成の場合: pendingNavigation を設定して新規タブを開く
+        this.pendingNavigationPkValue = value;
+        this.pendingNavigationColumnName = columnName;
+        const tabButton = this.append(tableName, null);
+        tabButton.click();
+    }
+
+    /**
      * EditorTableの全行を走査し、PK値が一致する行を選択状態にする
      */
     private navigateToRow(state: TabState, pkValue: string): void {
@@ -421,6 +444,26 @@ export class Tab {
                 state.selection.move(r, col);
                 state.selection.scrollFocusToCenterVertically();
                 // サイドバー等からのジャンプでフォーカスが移動した場合でも確実にフォーカスを戻す
+                state.editorTableHandler.activate();
+                return;
+            }
+        }
+    }
+
+    /**
+     * EditorTableの全行を走査し、指定列名の値が一致する最初の行を見つけてその列にフォーカスする。
+     * FK参照ジャンプ用（参照先列がPKでない場合にPK検索では見つからないため列値で検索する）。
+     */
+    private navigateToCellByColumnValue(state: TabState, columnName: string, value: string): void {
+        const editorTable = state.editorTable;
+        const rowCount = editorTable.getRowCount();
+        for (let r = 1; r < rowCount; r++) {
+            if (editorTable.getCellValueByColumnName(r, columnName) === value) {
+                const columnIndex = this.resolveColumnIndex(state.editorTable.tableName, columnName);
+                const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
+                state.selection.setRange(r, col, r, col);
+                state.selection.move(r, col);
+                state.selection.scrollFocusToCenterVertically();
                 state.editorTableHandler.activate();
                 return;
             }
@@ -473,12 +516,15 @@ export class Tab {
 
     /**
      * タブ読み込み完了後のpendingNavigationを消費する
-     * navigateToTableRow / navigateToTableCell で設定された
+     * navigateToTableRow / navigateToTableCell / navigateToTableColumnValue で設定された
      * 保留ナビゲーションを実行し、フィールドをリセットする
      */
     consumePendingNavigation(state: TabState): void {
         if (this.pendingNavigationPkValue === '') return;
-        if (this.pendingNavigationColumnIndex !== -1) {
+        if (this.pendingNavigationColumnName !== '') {
+            this.navigateToCellByColumnValue(state, this.pendingNavigationColumnName, this.pendingNavigationPkValue);
+            this.pendingNavigationColumnName = '';
+        } else if (this.pendingNavigationColumnIndex !== -1) {
             this.navigateToCell(state, this.pendingNavigationPkValue, this.pendingNavigationColumnIndex);
             this.pendingNavigationColumnIndex = -1;
         } else {
