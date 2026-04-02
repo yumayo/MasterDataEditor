@@ -404,10 +404,9 @@ test.describe('フリーズペイン', () => {
                 const nonFrozenStyle = await getRowStyleAsync(table, 1);
                 expect(nonFrozenStyle.position).not.toBe('sticky');
 
-                // 最後の固定行に freeze-row-border クラスが付与される
+                // 最後の固定行の table-row に freeze-row-border クラスが付与される
                 const frozenRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
-                const frozenRowHeader = frozenRow.locator('.editor-table-row-header');
-                await expect(frozenRowHeader).toHaveClass(/freeze-row-border/);
+                await expect(frozenRow).toHaveClass(/freeze-row-border/);
             },
         );
 

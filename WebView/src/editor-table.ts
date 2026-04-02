@@ -1221,8 +1221,9 @@ export class EditorTable {
             // 行ヘッダーは縦横両方向で固定されるため z-index をコーナーレベルに上げる
             const rowHeader = rowElement.children[0] as HTMLElement;
             rowHeader.style.zIndex = `var(--z-index-freeze-corner)`;
+            // 最後の固定行に影クラスを付与（行全体に影を表示するため table-row に付ける）
             if (dataRowIdx === this.frozenRowCount - 1) {
-                rowHeader.classList.add('freeze-row-border');
+                rowElement.classList.add('freeze-row-border');
             }
             // データセルに不透明な背景色を付与（透過防止）
             const cellCount = rowElement.children.length;
@@ -1241,14 +1242,14 @@ export class EditorTable {
         for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
             const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
             if (!rowElement) continue;
-            // 行レベルの sticky をクリア
+            // 行レベルの sticky と影クラスをクリア
             rowElement.style.position = '';
             rowElement.style.top = '';
             rowElement.style.zIndex = '';
-            // 行ヘッダーの z-index とボーダークラスをクリア
+            rowElement.classList.remove('freeze-row-border');
+            // 行ヘッダーの z-index をクリア
             const rowHeader = rowElement.children[0] as HTMLElement;
             rowHeader.style.zIndex = '';
-            rowHeader.classList.remove('freeze-row-border');
             // データセルの freeze-cell クラスをクリア
             const cellCount = rowElement.children.length;
             for (let col = 1; col < cellCount; col++) {
@@ -1278,10 +1279,11 @@ export class EditorTable {
         const rowCount = this.element.children.length;
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
-            // 行レベルの sticky をクリア（フリーズ行で設定される）
+            // 行レベルの sticky と影クラスをクリア（フリーズ行で設定される）
             rowElement.style.position = '';
             rowElement.style.top = '';
             rowElement.style.zIndex = '';
+            rowElement.classList.remove('freeze-row-border');
             const cellCount = rowElement.children.length;
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
@@ -1290,7 +1292,6 @@ export class EditorTable {
                     // CSS の .editor-table-row-header が position:sticky; left:0 を持つので
                     // インラインを空にすればCSSの値に戻る。
                     cell.style.zIndex = '';
-                    cell.classList.remove('freeze-row-border');
                 } else {
                     cell.style.position = '';
                     cell.style.left = '';

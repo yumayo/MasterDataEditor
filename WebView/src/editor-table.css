@@ -431,14 +431,19 @@
     background-color: var(--background-sub-color);
 }
 
-/* 固定列の最後のセル（ヘッダー含む）に右影を表示 */
+/* 固定列の最後のセル（ヘッダー含む）に右影を表示。
+   box-shadow の blur は上下にも広がるため、clip-path で右側のみに制限する。
+   inset(0 -8px 0 0) で右方向に8px（shadow幅2px + blur4px + 余裕2px）だけ描画領域を拡張する。 */
 .freeze-column-border {
     box-shadow: 2px 0 4px rgba(0,0,0,0.15);
+    clip-path: inset(0 -8px 0 0);
 }
 
-/* 固定行の最後の行ヘッダーに下影を表示 */
+/* 固定行の最後の行ヘッダーに下影を表示。
+   clip-path で下方向のみに制限する。 */
 .freeze-row-border {
     box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    clip-path: inset(0 0 -8px 0);
 }
 
 /* ==========================================================================
