@@ -391,7 +391,7 @@ export class EditorTableReference {
         // FK参照が設定されている列: boolコントロールは不適用だが、数値型の右揃えは適用する
         if (column.reference !== null) {
             this.removeBoolDisplay(cell);
-            if (column.type === 'int' || column.type === 'float' || column.type === 'double') {
+            if (column.type === 'int' || column.type === 'long' || column.type === 'float' || column.type === 'double') {
                 cell.classList.add('cell-numeric');
             } else {
                 cell.classList.remove('cell-numeric');
@@ -432,7 +432,7 @@ export class EditorTableReference {
                 svg.classList.add('cell-bool-uncheck');
                 cell.appendChild(svg);
             }
-        } else if (column.type === 'int' || column.type === 'float' || column.type === 'double') {
+        } else if (column.type === 'int' || column.type === 'long' || column.type === 'float' || column.type === 'double') {
             // 数値型: 右寄せクラスを付与する
             cell.classList.add('cell-numeric');
             this.removeBoolDisplay(cell);

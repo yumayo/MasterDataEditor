@@ -54,7 +54,7 @@ export class EditorTableDataColumn {
         // defaultValue が null の場合はキー自体を出力しない（元スキーマに存在しないキーを汚染しない）
         // 型に基づいて元のスキーマ型（number/boolean/string）に復元して出力する
         if (this.defaultValue !== null) {
-            if (this.type === 'int' || this.type === 'float' || this.type === 'double') {
+            if (this.type === 'int' || this.type === 'long' || this.type === 'float' || this.type === 'double') {
                 result['default'] = Number(this.defaultValue);
             } else if (this.type === 'bool') {
                 result['default'] = this.defaultValue === '1' ? 1 : 0;

@@ -457,7 +457,7 @@ export class EditorTableHandler {
             if (dataColIndex >= 0 && !this.table.hasColumnReference(dataColIndex)) {
                 const colType = this.table.getColumnType(dataColIndex);
                 // int型の上下矢印インクリメント/デクリメント
-                if (colType === 'int' && (keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowDown')) {
+                if ((colType === 'int' || colType === 'long') && (keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowDown')) {
                     keyboardEvent.preventDefault();
                     const currentText = this.element.textContent ?? '';
                     const currentValue = parseInt(currentText, 10);
@@ -482,7 +482,7 @@ export class EditorTableHandler {
                     return;
                 }
                 // int型の入力フィルタ: 数字・+・-・制御キー以外をブロック
-                if (colType === 'int') {
+                if (colType === 'int' || colType === 'long') {
                     if (!this.isAllowedNumericKey(keyboardEvent)) {
                         keyboardEvent.preventDefault();
                         return;
