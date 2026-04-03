@@ -127,6 +127,7 @@
     border: 1px dashed #0078d7;
     background-color: rgba(0, 120, 215, 0.1);
     pointer-events: none;
+    z-index: var(--z-index-fill-handle);
     display: none;
 }
 
