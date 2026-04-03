@@ -460,12 +460,24 @@ export class EditorTableHandler {
                 if ((colType === 'int' || colType === 'long') && (keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowDown')) {
                     keyboardEvent.preventDefault();
                     const currentText = this.element.textContent ?? '';
-                    const currentValue = parseInt(currentText, 10);
-                    const base = isNaN(currentValue) ? 0 : currentValue;
-                    const newValue = keyboardEvent.key === 'ArrowUp' ? base + 1 : base - 1;
-                    this.element.textContent = String(newValue);
+                    // long型はBigIntで計算し、53bit超の整数でも精度を保つ
+                    let newValueStr: string;
+                    if (colType === 'long') {
+                        try {
+                            const base = currentText === '' ? 0n : BigInt(currentText);
+                            const newValue = keyboardEvent.key === 'ArrowUp' ? base + 1n : base - 1n;
+                            newValueStr = newValue.toString();
+                        } catch {
+                            newValueStr = currentText;
+                        }
+                    } else {
+                        const currentValue = parseInt(currentText, 10);
+                        const base = isNaN(currentValue) ? 0 : currentValue;
+                        newValueStr = String(keyboardEvent.key === 'ArrowUp' ? base + 1 : base - 1);
+                    }
+                    this.element.textContent = newValueStr;
                     // テキストフィールドをリサイズする
-                    if (this.textField) this.textField.resizeTextField(String(newValue));
+                    if (this.textField) this.textField.resizeTextField(newValueStr);
                     return;
                 }
                 // float/double型の上下矢印インクリメント/デクリメント（整数部を増減）
