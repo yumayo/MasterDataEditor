@@ -59,10 +59,15 @@
 
 /* 項目の名前表示（セルの参照ヒントと同じスタイル） */
 .grid-dropdown-item-name {
-    color: var(--text-muted-color, #888);
+    color: var(--reference-hint-color);
     margin-left: 4px;
     font-size: 0.9em;
-    opacity: 0.7;
+}
+
+/* 背景が青いとき（ホバー中 or ホバーなしでselected）の項目名は白系で表示 */
+.grid-dropdown-item:hover .grid-dropdown-item-name,
+.grid-dropdown-list:not(:has(.grid-dropdown-item:hover)) .grid-dropdown-item.selected .grid-dropdown-item-name {
+    color: rgba(255, 255, 255, 0.8);
 }
 
 /* 項目が見つからない場合のメッセージ */

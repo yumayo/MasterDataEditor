@@ -246,9 +246,8 @@
    string型FK列: 通常フローでヒント→FK値の順に左揃え表示
    数値型FK列: float:left + text-align:right により ヒント左・FK値右 のレイアウトを実現 */
 .cell-reference-hint {
-    color: var(--text-muted-color, #888);
+    color: var(--reference-hint-color);
     font-size: 0.9em;
-    opacity: 0.7;
     margin-left: 0;
     margin-right: 4px;
 }
@@ -267,10 +266,9 @@
 
 /* 逆参照列のヒント表示 */
 .cell-reverse-reference-hint {
-    color: var(--text-muted-color, #888);
+    color: var(--reference-hint-color);
     margin-right: 4px;
     font-size: 0.9em;
-    opacity: 0.7;
 }
 
 /* 数値型PK列の逆参照ヒント: float:left で左配置し、ellipsis で省略対応する。
