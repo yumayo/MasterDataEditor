@@ -45,8 +45,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
  *   typed_test: id(int), name(string), active(bool), count(int), rate(float), score(double)
  *
  * 初期データ:
- *   1, TestA, true,  10, 1.5, 99.9
- *   2, TestB, false, 20, 2.5, 88.8
+ *   1, TestA, 1,  10, 1.5, 99.9
+ *   2, TestB, 0, 20, 2.5, 88.8
  */
 function createTypedInputFileSystem(): MockFileSystem {
 	return {
@@ -64,8 +64,8 @@ function createTypedInputFileSystem(): MockFileSystem {
 		}),
 		"data/typed_test.csv": [
 			"id,name,active,count,rate,score",
-			"1,TestA,true,10,1.5,99.9",
-			"2,TestB,false,20,2.5,88.8",
+			"1,TestA,1,10,1.5,99.9",
+			"2,TestB,0,20,2.5,88.8",
 		].join("\n"),
 	};
 }
@@ -104,8 +104,8 @@ function createFkPriorityFileSystem(): MockFileSystem {
 		}),
 		"data/fk_test.csv": [
 			"id,category_id,flag",
-			"1,1,true",
-			"2,2,false",
+			"1,1,1",
+			"2,2,0",
 		].join("\n"),
 	};
 }

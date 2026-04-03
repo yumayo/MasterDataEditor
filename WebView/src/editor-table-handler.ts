@@ -1368,14 +1368,14 @@ export class EditorTableHandler {
 
     /**
      * bool型セルのトグル操作を行う。
-     * 現在のフォーカスセルの値を "true"↔"false" に切り替え、CellChangeCommand で履歴に記録する。
+     * 現在のフォーカスセルの値を "1"↔"0" に切り替え、CellChangeCommand で履歴に記録する。
      * ダブルクリックおよびSpaceキーから呼び出される。
      */
     toggleBoolCell(): void {
         if (this.readOnly) return;
         const target = getTarget(this.table, this.selection);
         const oldValue = target.cellValue;
-        const newValue = oldValue === 'true' ? 'false' : 'true';
+        const newValue = oldValue !== '0' ? '0' : '1';
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue, newValue }];
         this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());

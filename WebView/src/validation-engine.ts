@@ -596,7 +596,7 @@ const TYPE_DEFAULT_VALUES: Readonly<Record<string, string>> = {
     'int': '0',
     'float': '0',
     'double': '0',
-    'bool': 'false',
+    'bool': '0',
 };
 
 /**

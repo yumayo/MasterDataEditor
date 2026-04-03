@@ -400,14 +400,14 @@ export class EditorTableReference {
         }
         if (column.type === 'bool') {
             // bool型: テキストをSVGアイコンに置き換える
-            // true → チェックマーク ✓、false → バツ印 ×、空値 → 表示なし（バッファ空行対応）
+            // 0以外 → チェックマーク ✓、0 → バツ印 ×、空値 → 表示なし（バッファ空行対応）
             this.removeBoolDisplay(cell);
             cell.dataset.rawValue = value;
             cell.textContent = '';
             if (value === '') {
                 // 空値（バッファ空行等）: SVGを表示せず aria-checked も設定しない
                 cell.removeAttribute('aria-checked');
-            } else if (value === 'true') {
+            } else if (value !== '0') {
                 cell.setAttribute('aria-checked', 'true');
                 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                 svg.setAttribute('width', '16');

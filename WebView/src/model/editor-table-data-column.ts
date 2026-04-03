@@ -57,7 +57,7 @@ export class EditorTableDataColumn {
             if (this.type === 'int' || this.type === 'float' || this.type === 'double') {
                 result['default'] = Number(this.defaultValue);
             } else if (this.type === 'bool') {
-                result['default'] = this.defaultValue === 'true';
+                result['default'] = this.defaultValue === '1' ? 1 : 0;
             } else {
                 result['default'] = this.defaultValue;
             }
