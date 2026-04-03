@@ -20,33 +20,36 @@
     overflow-y: auto;
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     z-index: var(--z-index-grid-dropdown-list);
 }
 
 /* ドロップダウン項目 */
 .grid-dropdown-item {
-    padding: 2px 8px;
+    padding: var(--dropdown-item-padding);
     cursor: pointer;
     white-space: nowrap;
     font-size: 13px;
     font-family: sans-serif;
 }
 
-/* ホバー: ライトテーマで見える水色ベース */
-.grid-dropdown-item:hover {
-    background-color: rgba(0, 120, 215, 0.1);
-}
-
-/* 選択中: 薄い水色（白背景にアクセント色20%を合成した不透明色）、フォント色はテーマ変数を使用 */
+/* 選択中: 青色ハイライト */
 .grid-dropdown-item.selected {
-    background-color: #cce4f7;
-    color: var(--font-color);
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
 }
 
-/* 選択中ホバー: 選択中より少し濃い水色 */
-.grid-dropdown-item.selected:hover {
-    background-color: #bfddf4;
+/* ホバー: 青色ハイライト */
+.grid-dropdown-item:hover {
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
+/* リスト内でホバーがあるとき、ホバー対象でない選択項目の青色を消す */
+.grid-dropdown-list:has(.grid-dropdown-item:hover) .grid-dropdown-item.selected:not(:hover) {
+    background-color: transparent;
+    color: var(--font-color);
 }
 
 /* 項目のID表示 */
@@ -70,13 +73,3 @@
     font-size: 13px;
 }
 
-/* ダークテーマ用オーバーライド */
-[data-theme="dark"] .grid-dropdown-item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-}
-[data-theme="dark"] .grid-dropdown-item.selected {
-    background-color: #264f78;
-}
-[data-theme="dark"] .grid-dropdown-item.selected:hover {
-    background-color: #2d5a87;
-}

@@ -115,8 +115,10 @@ export class GridDropdownInput {
         // フィルタを適用（初期表示時は選択を維持）
         this.filterItems('', true);
 
-        // 表示
+        // 表示してから選択項目を中央にスクロールする
+        // display:none の状態では scrollIntoView が効かないため、visible 付与後に実行する
         this.element.classList.add('visible');
+        this.scrollToSelected();
     }
 
     /**
@@ -302,10 +304,14 @@ export class GridDropdownInput {
     /**
      * 選択項目をスクロールして表示
      */
+    /** 選択項目をドロップダウンリストの中央にスクロールする（親要素のスクロールには影響しない） */
     private scrollToSelected(): void {
-        const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
+        const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected') as HTMLElement | null;
         if (selectedElement) {
-            selectedElement.scrollIntoView({block: 'nearest'});
+            const listHeight = this.dropdownElement.clientHeight;
+            const itemTop = selectedElement.offsetTop;
+            const itemHeight = selectedElement.offsetHeight;
+            this.dropdownElement.scrollTop = itemTop - (listHeight - itemHeight) / 2;
         }
     }
 }

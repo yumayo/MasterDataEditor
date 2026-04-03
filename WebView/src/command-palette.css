@@ -22,7 +22,7 @@
     margin-top: 15vh;
     height: fit-content;
     background: var(--background-color);
-    border-radius: 0;
+    border-radius: var(--border-radius);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
@@ -34,7 +34,7 @@
     background: var(--background-color);
     color: var(--font-color);
     border: none;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    border-bottom: var(--input-border);
     font-size: 14px;
     outline: none;
 }
@@ -50,19 +50,26 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 14px;
+    padding: var(--dropdown-item-padding);
     cursor: pointer;
     color: var(--font-color);
 }
 
-/* ホバー: ライトテーマで見える水色ベース */
-.command-palette-item:hover {
-    background: rgba(0, 120, 215, 0.1);
+/* 選択中: 青色ハイライト */
+.command-palette-item.selected {
+    background: var(--selection-color);
+    color: var(--selection-font-color);
 }
 
-/* 選択中: ライトテーマ向けの薄い水色、フォント色はテーマ変数を使用 */
-.command-palette-item.selected {
-    background: #cce4f7;
+/* ホバー: 青色ハイライト */
+.command-palette-item:hover {
+    background: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
+/* リスト内でホバーがあるとき、ホバー対象でない選択項目の青色を消す */
+.command-palette-list:has(.command-palette-item:hover) .command-palette-item.selected:not(:hover) {
+    background: transparent;
     color: var(--font-color);
 }
 
@@ -86,14 +93,3 @@
     text-align: center;
 }
 
-/* ダークテーマ用オーバーライド */
-[data-theme="dark"] .command-palette-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-}
-[data-theme="dark"] .command-palette-item.selected {
-    background: #264f78;
-    color: #ffffff;
-}
-[data-theme="dark"] .command-palette-item.selected:hover {
-    background: #2d5a87;
-}

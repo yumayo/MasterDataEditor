@@ -42,6 +42,56 @@
     background-color: rgba(255, 255, 255, 0.1);
 }
 
+/* フィルター入力欄: ファイルリスト上部のファジー検索用テキストフィールド */
+.explorer-filter-container {
+    position: relative;
+    margin: 4px 12px;
+}
+
+.explorer-filter-input {
+    width: 100%;
+    padding: var(--input-padding);
+    padding-right: 26px;
+    font-size: var(--input-font-size);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    background-color: var(--background-color);
+    color: var(--font-color);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.explorer-filter-input:focus {
+    border-color: var(--focus-border);
+}
+
+.explorer-filter-input::placeholder {
+    color: var(--font-color);
+    opacity: 0.4;
+}
+
+.explorer-filter-clear {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--font-color);
+    opacity: 0.5;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+}
+
+.explorer-filter-clear:hover {
+    opacity: 1;
+    background-color: var(--icon-button-hover-bg);
+}
+
 /* テーブル名: 主情報として通常フォントサイズで太字 */
 .explorer-file-name {
     font-size: 12px;

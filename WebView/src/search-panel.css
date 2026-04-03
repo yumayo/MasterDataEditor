@@ -1,21 +1,20 @@
 /* 検索パネルコントロール */
 .search-panel-controls {
-    padding: 4px 12px 8px;
+    padding: 8px 8px 8px 2px;
     min-width: 0;
 }
 
 /* 入力行（chevronトグル + 入力欄の横並び） */
 .search-panel-input-row {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 2px;
 }
 
-/* 置換モード折りたたみトグル（chevronアイコン） */
+/* 置換モード折りたたみトグル（chevronアイコン、縦長） */
 .search-replace-toggle {
     flex-shrink: 0;
-    width: 20px;
-    height: 20px;
+    width: 14px;
     padding: 0;
     border: none;
     background: transparent;
@@ -30,57 +29,76 @@
 
 .search-replace-toggle:hover {
     opacity: 1;
-    background-color: rgba(128, 128, 128, 0.2);
+    background-color: var(--icon-button-hover-bg);
 }
 
 .search-replace-toggle-expanded {
     opacity: 0.8;
 }
 
+/* 検索入力欄コンテナ（入力欄 + オプションボタンを内包する） */
+.search-panel-input-wrapper {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    background-color: var(--background-color);
+    overflow: hidden;
+}
+
+.search-panel-input-wrapper:focus-within {
+    border-color: var(--focus-border);
+}
+
 .search-panel-input {
     flex: 1;
     min-width: 0;
     box-sizing: border-box;
-    padding: 4px 8px;
-    font-size: 13px;
-    border: 1px solid rgba(128, 128, 128, 0.4);
-    border-radius: 2px;
-    background-color: var(--background-color);
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    border: none;
+    background: transparent;
     color: var(--font-color);
     outline: none;
 }
 
-.search-panel-input:focus {
-    border-color: #528bff;
-}
-
-/* オプションボタン行 */
+/* オプションボタン（検索入力欄の右端に配置） */
 .search-panel-options {
     display: flex;
-    gap: 4px;
-    margin-top: 4px;
+    gap: 2px;
+    flex-shrink: 0;
+    padding-right: 4px;
 }
 
 .search-option-button {
-    padding: 2px 6px;
-    font-size: 11px;
-    font-family: monospace;
-    border: 1px solid rgba(128, 128, 128, 0.3);
-    border-radius: 2px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
     background: transparent;
     color: var(--font-color);
-    opacity: 0.6;
+    opacity: 0.4;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-family: monospace;
+    line-height: 1;
 }
 
 .search-option-button:hover {
-    opacity: 0.9;
+    opacity: 0.8;
+    background-color: var(--icon-button-hover-bg);
 }
 
 .search-option-active {
     opacity: 1;
-    background-color: rgba(82, 139, 255, 0.3);
-    border-color: #528bff;
+    background-color: rgba(0, 122, 204, 0.25);
+    border-color: var(--focus-border);
 }
 
 /* 検索結果 */
@@ -131,7 +149,7 @@
 
 .search-result-reference-hint {
     font-size: 11px;
-    color: #528bff;
+    color: var(--focus-border);
     opacity: 0.8;
 }
 
@@ -140,62 +158,54 @@
     display: flex;
     gap: 4px;
     margin-top: 4px;
+    margin-left: 16px;
     align-items: center;
-}
-
-/* 置換入力行の左端余白（chevronトグルと検索入力欄のインデントを揃える） */
-.search-panel-replace-indent {
-    flex-shrink: 0;
-    width: 20px;
 }
 
 .search-panel-replace-input {
     flex: 1;
     min-width: 0;
     box-sizing: border-box;
-    padding: 4px 8px;
-    font-size: 13px;
-    border: 1px solid rgba(128, 128, 128, 0.4);
-    border-radius: 2px;
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
     background-color: var(--background-color);
     color: var(--font-color);
     outline: none;
 }
 
 .search-panel-replace-input:focus {
-    border-color: #528bff;
+    border-color: var(--focus-border);
 }
 
-/* 置換ボタン・すべて置換ボタン（SVGアイコン） */
+/* 置換ボタン・すべて置換ボタン（テキストラベル） */
 .search-replace-button,
 .search-replace-all-button {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    padding: 2px;
-    border: 1px solid rgba(128, 128, 128, 0.3);
-    border-radius: 2px;
+    padding: var(--dropdown-item-padding);
+    font-size: 11px;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
     background: transparent;
     color: var(--font-color);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    white-space: nowrap;
 }
 
 .search-replace-button:hover,
 .search-replace-all-button:hover {
-    background-color: rgba(82, 139, 255, 0.2);
+    background-color: rgba(0, 122, 204, 0.2);
 }
 
 /* カレントマッチのフォーカス表示 */
 .search-result-item-focused {
-    background-color: rgba(82, 139, 255, 0.15);
-    outline: 1px solid rgba(82, 139, 255, 0.4);
+    background-color: rgba(0, 122, 204, 0.15);
+    outline: 1px solid rgba(0, 122, 204, 0.4);
 }
 
 [data-theme="dark"] .search-result-item-focused {
-    background-color: rgba(82, 139, 255, 0.2);
+    background-color: rgba(0, 122, 204, 0.2);
 }
 
 /* 置換プレビュー */

@@ -1,5 +1,6 @@
 import {Tab} from "./tab";
 import {extractFirstLineFromDescription} from "./description-utils";
+import {fuzzyMatch, appendHighlightedSegments} from "./fuzzy-search";
 
 export class ExplorerFile {
 
@@ -9,6 +10,7 @@ export class ExplorerFile {
     private readonly name: string;
     private readonly depth: number;
     private readonly element: HTMLElement;
+    private readonly nameSpan: HTMLElement;
 
     constructor(
         tab: Tab,
@@ -26,10 +28,10 @@ export class ExplorerFile {
         div.style.paddingLeft = (this.depth * 16) + 'px';
 
         // name を1行目（主情報）、description を2行目（補助情報）として表示する
-        const nameSpan = document.createElement('span');
-        nameSpan.classList.add('explorer-file-name');
-        nameSpan.textContent = name;
-        div.appendChild(nameSpan);
+        this.nameSpan = document.createElement('span');
+        this.nameSpan.classList.add('explorer-file-name');
+        this.nameSpan.textContent = name;
+        div.appendChild(this.nameSpan);
 
         // description が存在する場合は1行目のみ使用。表示する行がない場合は生成しない
         if (description !== null) {
@@ -72,6 +74,30 @@ export class ExplorerFile {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+    }
+
+    /**
+     * ファジー検索でnameがqueryにマッチするか判定する。
+     * マッチした場合はハイライト付きで表示し、マッチしない場合は非表示にする。
+     * @returns マッチした場合 true
+     */
+    matchFilter(query: string): boolean {
+        const matched = fuzzyMatch(this.name, query);
+        this.element.style.display = matched ? '' : 'none';
+        if (matched) {
+            // nameSpan の中身をクリアしてハイライト付きで再構築する
+            this.nameSpan.textContent = '';
+            appendHighlightedSegments(this.nameSpan, this.name, query);
+        }
+        return matched;
+    }
+
+    /**
+     * フィルタをクリアして通常表示に戻す（display復帰 + ハイライト除去）
+     */
+    clearFilter(): void {
+        this.element.style.display = '';
+        this.nameSpan.textContent = this.name;
     }
 
     private onClick(): void {

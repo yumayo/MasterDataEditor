@@ -144,7 +144,8 @@
 
 /* 検索ハイライト（コマンドパレット・フィルタードロップダウン・検索パネルで共通使用） */
 .search-highlight {
-    background-color: #fde68a;
+    background-color: #f59e0b;
+    color: #000000;
     border-radius: 3px;
     padding: 0 2px;
 }

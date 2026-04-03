@@ -24,6 +24,14 @@ body {
     --error-color: rgb(255, 120, 120);
     --error-bg: rgba(255, 80, 80, 0.25);
     --error-border: rgba(255, 80, 80, 0.5);
+
+    /* UI共通トークン */
+    --border-radius: 4px;
+    --dropdown-item-padding: 2px 8px;
+    --input-border: 1px solid rgba(128, 128, 128, 0.3);
+    --input-padding: 4px 8px;
+    --input-font-size: 12px;
+    --icon-button-hover-bg: rgba(128, 128, 128, 0.2);
 }
 
 [data-theme="dark"] {

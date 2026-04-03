@@ -20,6 +20,43 @@ export class ExplorerDirectory {
         this.element = element;
         this.depth = depth;
         this.files = new Map();
+
+        // フィルター入力欄をファイルリストの先頭に配置する
+        const filterContainer = document.createElement('div');
+        filterContainer.classList.add('explorer-filter-container');
+        const filterInput = document.createElement('input');
+        filterInput.type = 'text';
+        filterInput.classList.add('explorer-filter-input');
+        filterInput.placeholder = 'テーブルを検索...';
+        // クリアボタン（✕）
+        const clearButton = document.createElement('button');
+        clearButton.classList.add('explorer-filter-clear');
+        clearButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M9.35 3.35L6.71 6l2.64 2.65-.71.7L6 6.71 3.35 9.35l-.7-.7L5.29 6 2.65 3.35l.7-.7L6 5.29l2.65-2.64.7.7z" fill="currentColor"/></svg>';
+        clearButton.style.display = 'none';
+        clearButton.addEventListener('click', () => {
+            filterInput.value = '';
+            clearButton.style.display = 'none';
+            for (const file of this.files.values()) {
+                file.clearFilter();
+            }
+            filterInput.focus();
+        });
+        filterInput.addEventListener('input', () => {
+            const query = filterInput.value;
+            clearButton.style.display = query === '' ? 'none' : '';
+            if (query === '') {
+                for (const file of this.files.values()) {
+                    file.clearFilter();
+                }
+            } else {
+                for (const file of this.files.values()) {
+                    file.matchFilter(query);
+                }
+            }
+        });
+        filterContainer.appendChild(filterInput);
+        filterContainer.appendChild(clearButton);
+        this.element.appendChild(filterContainer);
     }
 
     appendFile(name: string, description: string | null): void {

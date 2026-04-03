@@ -18,6 +18,7 @@
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border-radius: var(--border-radius);
     min-width: 160px;
     padding: 4px 0;
     z-index: var(--z-index-context-menu);
@@ -29,14 +30,15 @@
 }
 
 .context-menu-item {
-    padding: 6px 12px;
+    padding: var(--dropdown-item-padding);
+    font-size: 13px;
     cursor: pointer;
     white-space: nowrap;
 }
 
 .context-menu-item:hover {
-    color: var(--selection-font-color);
     background-color: var(--selection-color);
+    color: var(--selection-font-color);
 }
 
 .context-menu-separator {

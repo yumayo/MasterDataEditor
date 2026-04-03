@@ -64,10 +64,6 @@ export class SearchPanel {
     private static readonly CHEVRON_RIGHT_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.7 13.7L5 13l5-5-5-5 .7-.7L11.4 8l-5.7 5.7z"/></svg>';
     /** chevron-down: 展開状態（置換表示） */
     private static readonly CHEVRON_DOWN_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.3 5.7L3 5l5 5 5-5 .7.7L8 11.4 2.3 5.7z"/></svg>';
-    /** replace: 1件置換アイコン */
-    private static readonly REPLACE_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.9 3H2v2h1V4h6v1l2-1.5L9 2v1H3.9zM14 11V9h-1v1H7V9L5 10.5 7 12v-1h6.1z"/></svg>';
-    /** replace-all: すべて置換アイコン */
-    private static readonly REPLACE_ALL_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.9 1H2v2h1V2h6v1l2-1.5L9 0v1H3.9zM3.9 5H2v2h1V6h6v1l2-1.5L9 4v1H3.9zM14 13v-2h-1v1H7v-1l-2 1.5L7 14v-1h6.1z"/></svg>';
 
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
@@ -103,7 +99,7 @@ export class SearchPanel {
         inputRow.classList.add('search-panel-input-row');
         controlsElement.appendChild(inputRow);
 
-        // 置換モード折りたたみトグル（chevronアイコン）
+        // 置換モード折りたたみトグル（chevronアイコン、縦長）
         this.chevronToggle = document.createElement('button');
         this.chevronToggle.classList.add('search-replace-toggle');
         this.chevronToggle.setAttribute('aria-label', '置換モードを切り替え');
@@ -119,6 +115,10 @@ export class SearchPanel {
         });
         inputRow.appendChild(this.chevronToggle);
 
+        // 検索入力欄コンテナ（入力欄 + オプションボタンを内包する）
+        const inputWrapper = document.createElement('div');
+        inputWrapper.classList.add('search-panel-input-wrapper');
+
         this.inputElement = document.createElement('input');
         this.inputElement.classList.add('search-panel-input');
         this.inputElement.type = 'text';
@@ -126,18 +126,24 @@ export class SearchPanel {
         this.inputElement.addEventListener('input', () => {
             this.handleInputChange();
         });
-        inputRow.appendChild(this.inputElement);
+        inputWrapper.appendChild(this.inputElement);
+
+        // オプションボタン（検索入力欄の中に配置）
+        const optionsRow = document.createElement('div');
+        optionsRow.classList.add('search-panel-options');
+        optionsRow.appendChild(this.createOptionButton('caseSensitive', 'Aa', '大文字小文字を区別'));
+        this.wholeWordButton = this.createOptionButton('wholeWord', '|ab|', '単語単位で検索');
+        optionsRow.appendChild(this.wholeWordButton);
+        optionsRow.appendChild(this.createOptionButton('regex', '.*', '正規表現'));
+        inputWrapper.appendChild(optionsRow);
+
+        inputRow.appendChild(inputWrapper);
 
         // 置換入力行（初期状態では非表示）
         this.replaceRowElement = document.createElement('div');
         this.replaceRowElement.classList.add('search-panel-replace-row');
         this.replaceRowElement.style.display = 'none';
         controlsElement.appendChild(this.replaceRowElement);
-
-        // 置換入力行の左端にchevronと同じ幅の余白を確保してインデントを揃える
-        const replaceIndent = document.createElement('div');
-        replaceIndent.classList.add('search-panel-replace-indent');
-        this.replaceRowElement.appendChild(replaceIndent);
 
         this.replaceInputElement = document.createElement('input');
         this.replaceInputElement.classList.add('search-panel-replace-input');
@@ -150,39 +156,27 @@ export class SearchPanel {
         });
         this.replaceRowElement.appendChild(this.replaceInputElement);
 
-        // 1件置換ボタン（SVGアイコン）
+        // 1件置換ボタン（テキストラベル）
         this.replaceButton = document.createElement('button');
         this.replaceButton.classList.add('search-replace-button');
         this.replaceButton.setAttribute('aria-label', '現在のマッチを1件置換');
         this.replaceButton.title = '置換';
-        this.replaceButton.innerHTML = SearchPanel.REPLACE_SVG;
+        this.replaceButton.textContent = '置換';
         this.replaceButton.addEventListener('click', () => {
             this.replaceCurrentMatch();
         });
         this.replaceRowElement.appendChild(this.replaceButton);
 
-        // すべて置換ボタン（SVGアイコン）
+        // すべて置換ボタン（テキストラベル）
         this.replaceAllButton = document.createElement('button');
         this.replaceAllButton.classList.add('search-replace-all-button');
         this.replaceAllButton.setAttribute('aria-label', 'すべてのマッチを一括置換');
         this.replaceAllButton.title = 'すべて置換';
-        this.replaceAllButton.innerHTML = SearchPanel.REPLACE_ALL_SVG;
+        this.replaceAllButton.textContent = '全置換';
         this.replaceAllButton.addEventListener('click', () => {
             this.replaceAllMatches();
         });
         this.replaceRowElement.appendChild(this.replaceAllButton);
-
-        // オプションボタン
-        const optionsRow = document.createElement('div');
-        optionsRow.classList.add('search-panel-options');
-        controlsElement.appendChild(optionsRow);
-
-        optionsRow.appendChild(this.createOptionButton('caseSensitive', 'Aa'));
-        this.wholeWordButton = this.createOptionButton('wholeWord', '|ab|');
-        // 初期状態（OFF）のtitleを設定する
-        this.wholeWordButton.title = '単語単位で検索';
-        optionsRow.appendChild(this.wholeWordButton);
-        optionsRow.appendChild(this.createOptionButton('regex', '.*'));
 
         // 検索結果
         this.resultsElement = document.createElement('div');
@@ -243,11 +237,12 @@ export class SearchPanel {
     /**
      * オプションボタンを生成する
      */
-    private createOptionButton(option: 'caseSensitive' | 'wholeWord' | 'regex', label: string): HTMLElement {
+    private createOptionButton(option: 'caseSensitive' | 'wholeWord' | 'regex', svgHtml: string, title: string): HTMLElement {
         const button = document.createElement('button');
         button.classList.add('search-option-button');
         button.dataset.option = option;
-        button.textContent = label;
+        button.textContent = svgHtml;
+        button.title = title;
         button.addEventListener('click', () => {
             if (option === 'caseSensitive') {
                 this.caseSensitive = !this.caseSensitive;

@@ -26,23 +26,72 @@
     color: var(--font-color);
 }
 
-/* テーマ選択プルダウン */
-.settings-theme-select {
-    padding: 4px 8px;
-    font-size: 13px;
-    color: var(--font-color);
-    background-color: var(--background-color);
-    border: 1px solid rgba(128, 128, 128, 0.4);
-    border-radius: 3px;
-    cursor: pointer;
+/* テーマ選択カスタムドロップダウン */
+.settings-dropdown {
+    position: relative;
     min-width: 120px;
 }
 
-.settings-theme-select:hover {
+.settings-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    color: var(--font-color);
+    background-color: var(--background-color);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+}
+
+.settings-dropdown-trigger:hover {
     border-color: rgba(128, 128, 128, 0.7);
 }
 
-.settings-theme-select:focus {
-    outline: none;
-    border-color: var(--selected-color);
+.settings-dropdown-chevron {
+    font-size: 9px;
+    margin-left: 8px;
+    opacity: 0.6;
+}
+
+.settings-dropdown-list {
+    display: none;
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    width: 100%;
+    background-color: var(--background-color);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+    overflow: hidden;
+}
+
+.settings-dropdown-list.visible {
+    display: block;
+}
+
+.settings-dropdown-item {
+    padding: var(--dropdown-item-padding);
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--font-color);
+}
+
+.settings-dropdown-item-active {
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
+.settings-dropdown-item:hover {
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
+.settings-dropdown-list:has(.settings-dropdown-item:hover) .settings-dropdown-item-active:not(:hover) {
+    background-color: transparent;
+    color: var(--font-color);
 }
