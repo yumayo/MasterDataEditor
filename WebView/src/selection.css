@@ -19,6 +19,28 @@
     clip-path: inset(0);
 }
 
+/* 固定列/固定行の最終セルが選択辺を持つ場合、clip-path: inset(0) が
+   freeze-column-border / freeze-row-border の影用 clip-path を上書きして
+   box-shadow が消えてしまう。複合セレクタで影の描画領域を維持する。 */
+.freeze-column-border.sel-top,
+.freeze-column-border.sel-bottom,
+.freeze-column-border.sel-left,
+.freeze-column-border.sel-right {
+    clip-path: inset(0 -8px 0 0);
+}
+.freeze-row-border.sel-top,
+.freeze-row-border.sel-bottom,
+.freeze-row-border.sel-left,
+.freeze-row-border.sel-right {
+    clip-path: inset(0 0 -8px 0);
+}
+.freeze-column-border.freeze-row-border.sel-top,
+.freeze-column-border.freeze-row-border.sel-bottom,
+.freeze-column-border.freeze-row-border.sel-left,
+.freeze-column-border.freeze-row-border.sel-right {
+    clip-path: inset(0 -8px -8px 0);
+}
+
 /* 擬似要素の共通設定（選択ボーダーのあるセルのみ生成）
    右と下は -1px で border-right / border-bottom 領域まで拡張し隣セルと隙間なく接続する。
    左と上はセルに border-left / border-top がないため 0 のままで外縁に到達する。 */
@@ -48,6 +70,26 @@
 .copy-top, .copy-bottom, .copy-left, .copy-right {
     overflow: visible;
     clip-path: inset(0);
+}
+
+/* コピー辺でも同様に freeze-*-border の shadow 用 clip-path を維持する */
+.freeze-column-border.copy-top,
+.freeze-column-border.copy-bottom,
+.freeze-column-border.copy-left,
+.freeze-column-border.copy-right {
+    clip-path: inset(0 -8px 0 0);
+}
+.freeze-row-border.copy-top,
+.freeze-row-border.copy-bottom,
+.freeze-row-border.copy-left,
+.freeze-row-border.copy-right {
+    clip-path: inset(0 0 -8px 0);
+}
+.freeze-column-border.freeze-row-border.copy-top,
+.freeze-column-border.freeze-row-border.copy-bottom,
+.freeze-column-border.freeze-row-border.copy-left,
+.freeze-column-border.freeze-row-border.copy-right {
+    clip-path: inset(0 -8px -8px 0);
 }
 
 .copy-top::after, .copy-bottom::after, .copy-left::after, .copy-right::after {
