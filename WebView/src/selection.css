@@ -71,7 +71,7 @@
     background-color: #0078d7;
     border: 1px solid white;
     cursor: crosshair;
-    z-index: var(--z-index-selection-range-bg);
+    z-index: var(--z-index-fill-handle);
     display: none;
 }
 

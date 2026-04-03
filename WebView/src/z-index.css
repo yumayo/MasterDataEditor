@@ -17,6 +17,7 @@
     --z-index-freeze-corner: 35;
     --z-index-editor-table-corner: 40;
     --z-index-resize-handle: 45;
+    --z-index-fill-handle: 46;
     --z-index-grid-textfield-active: 50;
     --z-index-column-header-badge-area: 1;
     --z-index-resize-guideline: 100;
