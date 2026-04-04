@@ -9,14 +9,14 @@ import {gitLogAsync, LogEntry} from "./api";
 export class TimelinePanel {
     private readonly element: HTMLElement;
     private readonly entriesContainer: HTMLElement;
-    /** エントリクリック時のコールバック（テーブル名・コミットハッシュ・メッセージ・日付を渡す） */
-    private readonly onEntryClick: (tableName: string, commitHash: string, commitMessage: string, commitDate: string) => void;
+    /** エントリクリック時のコールバック（テーブル名・選択コミット・1つ前のコミット（なければnull）を渡す） */
+    private readonly onEntryClick: (tableName: string, entry: LogEntry, prevEntry: LogEntry | null) => void;
     /** loadLogAsync の競合状態を防ぐリクエストID */
     private currentRequestId: number;
     /** 現在表示中のテーブル名（loadLogAsync で設定される） */
     private currentTableName: string;
 
-    constructor(onEntryClick: (tableName: string, commitHash: string, commitMessage: string, commitDate: string) => void) {
+    constructor(onEntryClick: (tableName: string, entry: LogEntry, prevEntry: LogEntry | null) => void) {
         this.onEntryClick = onEntryClick;
         this.currentRequestId = 0;
         this.currentTableName = '';
@@ -107,6 +107,8 @@ export class TimelinePanel {
             entryElement.appendChild(dateElement);
 
             // エントリクリックで差分タブを開く（選択状態の切り替えも行う）
+            // git log は新しい順なので、entries[i+1] がこのファイルの1つ前のコミット
+            const prevEntry = i + 1 < entries.length ? entries[i + 1] : null;
             entryElement.addEventListener('click', () => {
                 // 既存の選択状態を全て解除してからクリックされたエントリを選択する
                 const previousSelected = this.entriesContainer.querySelectorAll('.timeline-entry-selected');
@@ -114,7 +116,7 @@ export class TimelinePanel {
                     previousSelected[j].classList.remove('timeline-entry-selected');
                 }
                 entryElement.classList.add('timeline-entry-selected');
-                this.onEntryClick(this.currentTableName, entry.commitHash, entry.message, entry.date);
+                this.onEntryClick(this.currentTableName, entry, prevEntry);
             });
 
             this.entriesContainer.appendChild(entryElement);

@@ -11,7 +11,7 @@ import {EditorTable} from "./editor-table";
 import {Editor} from "./editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "./constant";
 import {ResizeHandle} from "./resize-handle";
-import {invalidateGitStatusCache, invalidateGitShowCache, readFileAsync, gitShowAtCommitAsync} from "./api";
+import {invalidateGitStatusCache, invalidateGitShowCache, readFileAsync, gitShowAtCommitAsync, LogEntry} from "./api";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -87,10 +87,10 @@ export class Sidebar {
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // タイムラインパネル（git logベースのコミット履歴を表示する）
-        // エントリクリック時にコミット時点のCSVと現在CSVの差分をDiffTabで表示する
+        // エントリクリック時にそのコミット1つ分の差分をDiffTabで表示する
         this.timelinePanel = new TimelinePanel(
-            (tableName, commitHash, commitMessage, commitDate) => {
-                this.openTimelineDiffAsync(tableName, commitHash, commitMessage, commitDate)
+            (tableName, entry, prevEntry) => {
+                this.openTimelineDiffAsync(tableName, entry, prevEntry)
                     .catch(e => { console.error('タイムライン差分表示失敗', e); });
             }
         );
@@ -263,20 +263,24 @@ export class Sidebar {
     }
 
     /**
-     * タイムラインエントリクリック時にコミット時点のCSVと現在CSVの差分をDiffTabで表示する
-     * スキーマ・現在CSV・コミット時点CSVを並列取得し、Tab.openDiffTab で差分タブを開く
+     * タイムラインエントリクリック時に、そのコミット1つ分の差分をDiffTabで表示する。
+     * 左ペイン: そのファイルの1つ前のコミット時点のCSV、右ペイン: 選択コミット時点のCSV
+     * prevEntry はファイル履歴上の1つ前のコミット（初回コミットの場合はnull）
      */
-    private async openTimelineDiffAsync(tableName: string, commitHash: string, commitMessage: string, _commitDate: string): Promise<void> {
+    private async openTimelineDiffAsync(tableName: string, entry: LogEntry, prevEntry: LogEntry | null): Promise<void> {
         const path = 'data/' + tableName + '.csv';
-        const [schemaJson, currentCsv, commitCsv] = await Promise.all([
-            readFileAsync('schema/' + tableName + '.json'),
-            readFileAsync(path),
-            gitShowAtCommitAsync(commitHash, path),
-        ]);
+        const shortHash = entry.commitHash.substring(0, 7);
+        // 前のコミットが存在する場合はそのCSVも取得、なければ空文字（ファイル新規追加）
+        const fetches: [Promise<string>, Promise<string>, Promise<string>] = prevEntry !== null
+            ? [readFileAsync('schema/' + tableName + '.json'), gitShowAtCommitAsync(prevEntry.commitHash, path), gitShowAtCommitAsync(entry.commitHash, path)]
+            : [readFileAsync('schema/' + tableName + '.json'), Promise.resolve(''), gitShowAtCommitAsync(entry.commitHash, path)];
+        const [schemaJson, prevCsv, commitCsv] = await Promise.all(fetches);
         // isStaged=true で両ペイン読み取り専用にする（過去コミットとの比較は編集不要）
-        const leftLabel = tableName + ' (' + commitHash.substring(0, 7) + ' ' + commitMessage + ')';
-        const rightLabel = tableName + ' (現在)';
-        this.tab.openDiffTab(tableName, true, schemaJson, commitCsv, currentCsv, path, leftLabel, rightLabel);
+        const leftLabel = prevEntry !== null
+            ? tableName + ' (' + prevEntry.commitHash.substring(0, 7) + ' ' + prevEntry.message + ')'
+            : tableName + ' (初回コミット)';
+        const rightLabel = tableName + ' (' + shortHash + ' ' + entry.message + ')';
+        this.tab.openDiffTab(tableName, true, schemaJson, prevCsv, commitCsv, path, leftLabel, rightLabel);
     }
 
     private switchPanel(item: ActivityBarItem): void {
