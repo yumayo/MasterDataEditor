@@ -1,0 +1,9 @@
+/* スクロールバー上にエラー・git変更マーカーを表示するcanvasトラック */
+.scrollbar-marker-track {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    pointer-events: none;
+    z-index: 5;
+}

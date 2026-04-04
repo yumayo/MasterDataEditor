@@ -175,8 +175,17 @@
 - fillPreviewElement/fillHandle が依然 public HTMLElement
 - hideRenderer() がデッドコード（呼び出し箇所なし）
 
+## ScrollbarMarkerTrack Patterns (2026-04-04)
+-> See `scrollbar_marker_track_review.md`, `common_bug_patterns.md`
+- Editor owns single ScrollbarMarkerTrack, all tabs share it via connectScrollbarMarkerTrack
+- 二重redraw: setErrorRows/setGitChangedRows を個別呼出→update()一括メソッドに統合して解決済み
+- ResizeObserver.observe() target not updated in reattach() (currently safe because leftSlot is stable)
+- refreshGitDiffAsync exception catch path + applyGitDiffHighlight storeRows===false path: マーカークリア追加で解決済み
+- destroy() method exists but is never called (dead code)
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-04-04) ScrollbarMarkerTrack: 致命的1件(例外パスマーカー残存→修正済み)、重要2件(二重redraw→修正済み, ResizeObserver対象不変)、軽微2件(destroy未使用, ストア二重走査)
 - (2026-04-02) Selection擬似要素リファクタ: 致命的3件、重要5件、軽微4件 (::after衝突, ::beforeスロット枯渇, selection-rejected消失, lastSelectionCells陳腐化, clip-path/sticky, overflow:visible, コピペ, デッドコード)
 - (2026-03-29) ISSUE_0123 バージョン比較: 致命的3件、重要5件、軽微4件 (z-index未定義ダイアログ隠れ, 同一コミット比較無検証, fetchCsvエラー握りつぶし, コールバック疎結合, CSSフォールバック12箇所, ダイアログ多重オープン, 型アサーション, スキーマ不整合)
 - (2026-03-29) ISSUE_0120 タイムライン・blame: 致命的3件、重要5件、軽微4件 (blame操作パス網羅漏れ, fire-and-forget showBlameAsync, requestIdガードなし, --list-hover-bg未定義, タブ切替時ログ未更新, lineNumberマッピングoff-by-one疑い)

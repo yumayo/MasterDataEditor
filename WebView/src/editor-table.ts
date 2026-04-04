@@ -32,6 +32,7 @@ import {ErrorTooltip} from "./error-tooltip";
 import {saveSchemaDataAsync} from "./editor-actions";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
+import {ScrollbarMarkerTrack, MarkerEntry} from "./scrollbar-marker-track";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -137,6 +138,12 @@ export class EditorTable {
      * 行挿入・削除時に同期される。
      */
     private storeRowIndices: number[];
+    /** スクロールバーマーカートラック（connectScrollbarMarkerTrackで設定される。未設定はfalse） */
+    private scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
+    /** 直近のバリデーションで検出されたエラーがあるDOM行インデックス（0始まり）の集合 */
+    private currentErrorDomRows: Set<number>;
+    /** 直近のgit差分で検出された変更があるDOM行インデックス（0始まり）の集合 */
+    private currentGitChangedDomRows: Set<number>;
 
     constructor(
         tableName: string,
@@ -185,6 +192,9 @@ export class EditorTable {
         this.lastCopyCells = [];
         // initialize() で初期化される
         this.storeRowIndices = [];
+        this.scrollbarMarkerTrack = false;
+        this.currentErrorDomRows = new Set();
+        this.currentGitChangedDomRows = new Set();
         this.columnSorter = new ColumnSorter(this, store);
         this.columnFilter = new ColumnFilter();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
@@ -418,6 +428,8 @@ export class EditorTable {
      */
     activate(): void {
         this.selectionDragController.activate();
+        // タブ切り替え時に保持済みのマーカーデータを再描画する
+        this.refreshScrollbarMarkers();
     }
 
     /**
@@ -428,6 +440,8 @@ export class EditorTable {
     deactivate(): void {
         this.handler.deactivate();
         this.selectionDragController.deactivate();
+        // スクロールバーマーカーをクリアする（非アクティブタブのマーカーが残存するのを防止）
+        if (this.scrollbarMarkerTrack !== false) this.scrollbarMarkerTrack.clear();
     }
 
     /**
@@ -1005,6 +1019,14 @@ export class EditorTable {
      */
     connectValidationPanel(panel: ValidationPanel): void {
         this.validationPanel = panel;
+    }
+
+    /**
+     * ScrollbarMarkerTrack を接続する（Tab.createEditorTable 内から呼ばれる）。
+     * ミニテーブルでは呼ばない（マーカートラックは左ペインの通常テーブル専用）。
+     */
+    connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void {
+        this.scrollbarMarkerTrack = track;
     }
 
     /**
@@ -2603,15 +2625,25 @@ export class EditorTable {
                     this.getCell(row, col).classList.remove('cell-git-changed');
                 }
             }
+            // git変更なし → スクロールバーマーカーもクリアする
+            this.currentGitChangedDomRows = new Set();
+            this.refreshScrollbarMarkers();
             return;
         }
         const storeRows = this.store.getRows(this.tableName);
-        if (storeRows === false) return;
+        if (storeRows === false) {
+            // ストアデータが存在しない場合はgit変更マーカーをクリアする
+            this.currentGitChangedDomRows = new Set();
+            this.refreshScrollbarMarkers();
+            return;
+        }
         // DOM列インデックス（0始まり）→ ストア（CSV）列インデックスのマッピングを取得する。
         // 非連番keyスキーマではDOMインデックスとCSVインデックスが一致しないため変換が必須。
         const columnMapping = this.tableData.columnMapping;
         const offset2 = this.dataColumnOffset();
         // row=1 から開始（row=0 は列ヘッダー行のため除外）
+        // DOM走査と同時にgit変更行のDOM行インデックスを収集する（二重走査を避ける）
+        const changedDomRows = new Set<number>();
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.element.children[row] as HTMLElement;
             // バッファ空行（editor-table-empty-row クラスあり）はハイライト対象外
@@ -2621,6 +2653,7 @@ export class EditorTable {
             const domDataRowIndex = row - 1;
             if (domDataRowIndex >= this.storeRowIndices.length) continue;
             const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            let hasChanged = false;
             // col=offset から開始（col=0〜offset-1 はblame列・行ヘッダーのため除外）
             for (let col = offset2; col < totalColCount; col++) {
                 const domColIndex = col - offset2; // DOM列インデックス（0始まり）
@@ -2628,8 +2661,13 @@ export class EditorTable {
                 if (storeColIndex === -1) continue; // 対応するCSV列がない場合はスキップ
                 const cell = this.getCell(row, col);
                 this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, storeColIndex);
+                if (!hasChanged && this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) hasChanged = true;
             }
+            if (hasChanged) changedDomRows.add(domDataRowIndex);
         }
+        // git変更行をスクロールバーマーカーに反映する
+        this.currentGitChangedDomRows = changedDomRows;
+        this.refreshScrollbarMarkers();
     }
 
     /**
@@ -2645,6 +2683,9 @@ export class EditorTable {
         } catch (e) {
             // gitリポジトリでない環境や通信エラーでは差分ハイライト更新をスキップする
             console.warn('[EditorTable] refreshGitDiffAsync: git status の取得に失敗しました:', e);
+            // git変更マーカーをクリアする（古いマーカーが残存するのを防止）
+            this.currentGitChangedDomRows = new Set();
+            this.refreshScrollbarMarkers();
             return;
         }
         // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
@@ -3180,6 +3221,69 @@ export class EditorTable {
                 if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
             }
         }
+        // エラー行をスクロールバーマーカーに反映する（ストア行→DOM行に変換）
+        const errorDomRows = new Set<number>();
+        for (const error of errors) {
+            const domDataRow = this.storeRowIndices.indexOf(error.rowIndex);
+            if (domDataRow !== -1) errorDomRows.add(domDataRow);
+        }
+        this.currentErrorDomRows = errorDomRows;
+        this.refreshScrollbarMarkers();
+    }
+
+    // =========================================================================
+    // スクロールバーマーカー
+    // =========================================================================
+
+    /**
+     * スクロールバーマーカートラックにエラー行・git変更行を反映する。
+     * ミニテーブルではマーカー不要のため何もしない。
+     */
+    private refreshScrollbarMarkers(): void {
+        if (this.scrollbarMarkerTrack === false) return;
+        if (this.isMiniTable) return;
+        // スクロールバー位置と正確に一致させるため、行のピクセル座標で計算する。
+        // 行の offsetTop は offsetParent（.editor-left-pane, position: relative）からの相対位置で、
+        // scrollHeight も同じ .editor-left-pane 基準なので、比率 offsetTop / scrollHeight が
+        // スクロールバートラック上の位置と正確に一致する。
+        const scrollContainer = this.element.parentElement;
+        if (scrollContainer === null) return;
+        const scrollHeight = scrollContainer.scrollHeight;
+        if (scrollHeight <= 0) return;
+        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, scrollHeight);
+        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, scrollHeight);
+        this.scrollbarMarkerTrack.update(errorMarkers, gitMarkers);
+    }
+
+    /**
+     * DOM行インデックスの集合からマーカー描画エントリを構築する。
+     * 各行の offsetTop / scrollHeight でスクロールバー上の比率位置を計算する。
+     * offsetTop は offsetParent（.editor-left-pane）からの相対位置なのでtableOffsetの加算は不要。
+     * 連続する行はまとめて1つのエントリにマージする。
+     */
+    private buildMarkerEntries(domRows: Set<number>, scrollHeight: number): MarkerEntry[] {
+        if (domRows.size === 0) return [];
+        const markers: MarkerEntry[] = [];
+        const sorted = Array.from(domRows).sort((a, b) => a - b);
+        let rangeStartRow = this.element.children[sorted[0] + 1] as HTMLElement;
+        let rangeEndRow = rangeStartRow;
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i] === sorted[i - 1] + 1) {
+                rangeEndRow = this.element.children[sorted[i] + 1] as HTMLElement;
+            } else {
+                markers.push({
+                    top: rangeStartRow.offsetTop / scrollHeight,
+                    height: (rangeEndRow.offsetTop + rangeEndRow.offsetHeight - rangeStartRow.offsetTop) / scrollHeight,
+                });
+                rangeStartRow = this.element.children[sorted[i] + 1] as HTMLElement;
+                rangeEndRow = rangeStartRow;
+            }
+        }
+        markers.push({
+            top: rangeStartRow.offsetTop / scrollHeight,
+            height: (rangeEndRow.offsetTop + rangeEndRow.offsetHeight - rangeStartRow.offsetTop) / scrollHeight,
+        });
+        return markers;
     }
 
 }
