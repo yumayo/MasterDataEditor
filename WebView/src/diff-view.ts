@@ -44,6 +44,23 @@ function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
 }
 
 /**
+ * 行の値をソースヘッダー順から表示ヘッダー順に並べ替える。
+ * ソースヘッダーに存在しない表示列は空文字列になる。
+ */
+function remapRow(row: string[], sourceHeaderMap: Map<string, number>, displayHeader: string[]): string[] {
+    const result: string[] = [];
+    for (const name of displayHeader) {
+        if (sourceHeaderMap.has(name)) {
+            const idx = sourceHeaderMap.get(name)!;
+            result.push(idx < row.length ? row[idx] : '');
+        } else {
+            result.push('');
+        }
+    }
+    return result;
+}
+
+/**
  * 差分ビュー
  * DiffView はコンストラクタ完了時に差分計算とDOMが確定する（生焼けオブジェクト不可）
  */
@@ -60,6 +77,12 @@ export class DiffView {
 
         // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
         const displayColumns = current.header.length > 0 ? current.header : head.header;
+
+        // 列名→元ヘッダー上のインデックスのマップを構築する（remapRow で使用）
+        const headHeaderMap = new Map<string, number>();
+        for (let i = 0; i < head.header.length; i++) headHeaderMap.set(head.header[i], i);
+        const currentHeaderMap = new Map<string, number>();
+        for (let i = 0; i < current.header.length; i++) currentHeaderMap.set(current.header[i], i);
 
         // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
         const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
@@ -119,27 +142,25 @@ export class DiffView {
             const currentRow = hasCurrent ? currentMap.get(pk)! : null;
 
             if (headRow !== null && currentRow !== null) {
-                // 両方に存在 → セル単位で比較する
+                // 両方に存在 → 表示ヘッダー順に並べ替えてからセル単位で比較する
+                const remappedHead = remapRow(headRow, headHeaderMap, displayColumns);
+                const remappedCurrent = remapRow(currentRow, currentHeaderMap, displayColumns);
                 const changedIndices = new Set<number>();
-                const maxLen = Math.max(displayColumns.length, headRow.length, currentRow.length);
-                for (let i = 0; i < maxLen; i++) {
-                    // 配列長チェックで範囲外アクセスを回避する（undefined を使わない）
-                    const hVal = i < headRow.length ? headRow[i] : '';
-                    const cVal = i < currentRow.length ? currentRow[i] : '';
-                    if (hVal !== cVal) changedIndices.add(i);
+                for (let i = 0; i < displayColumns.length; i++) {
+                    if (remappedHead[i] !== remappedCurrent[i]) changedIndices.add(i);
                 }
                 const kind = changedIndices.size > 0 ? 'modified' as const : 'unchanged' as const;
                 if (kind === 'modified') {
-                    diffRows.push({ kind, headValues: headRow, currentValues: currentRow, changedColumnIndices: changedIndices });
+                    diffRows.push({ kind, headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices });
                 } else {
-                    diffRows.push({ kind, headValues: headRow, currentValues: currentRow });
+                    diffRows.push({ kind, headValues: remappedHead, currentValues: remappedCurrent });
                 }
             } else if (headRow !== null) {
-                // HEAD版にのみ存在 → 削除行
-                diffRows.push({ kind: 'deleted', headValues: headRow });
+                // HEAD版にのみ存在 → 削除行（表示ヘッダー順に並べ替える）
+                diffRows.push({ kind: 'deleted', headValues: remapRow(headRow, headHeaderMap, displayColumns) });
             } else if (currentRow !== null) {
-                // 現在版にのみ存在 → 追加行
-                diffRows.push({ kind: 'added', currentValues: currentRow });
+                // 現在版にのみ存在 → 追加行（表示ヘッダー順に並べ替える）
+                diffRows.push({ kind: 'added', currentValues: remapRow(currentRow, currentHeaderMap, displayColumns) });
             }
         }
 

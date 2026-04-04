@@ -75,6 +75,23 @@ function buildUniqueKeyMap(rows: string[][], pkIndices: number[]): { map: Map<st
 }
 
 /**
+ * 行の値をソースヘッダー順から表示ヘッダー順に並べ替える。
+ * ソースヘッダーに存在しない表示列は空文字列になる。
+ */
+function remapRow(row: string[], sourceHeaderMap: Map<string, number>, displayHeader: string[]): string[] {
+    const result: string[] = [];
+    for (const name of displayHeader) {
+        if (sourceHeaderMap.has(name)) {
+            const idx = sourceHeaderMap.get(name)!;
+            result.push(idx < row.length ? row[idx] : '');
+        } else {
+            result.push('');
+        }
+    }
+    return result;
+}
+
+/**
  * HEAD版とCurrent版のCSVを行順でマージして差分行リストを構築する
  * ファイル行順を維持するため PKソートは行わない。
  *
@@ -91,6 +108,12 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
 
     // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
     const displayHeader = current.header.length > 0 ? current.header : head.header;
+
+    // 列名→元ヘッダー上のインデックスのマップを構築する（remapRow で使用）
+    const headHeaderMap = new Map<string, number>();
+    for (let i = 0; i < head.header.length; i++) headHeaderMap.set(head.header[i], i);
+    const currentHeaderMap = new Map<string, number>();
+    for (let i = 0; i < current.header.length; i++) currentHeaderMap.set(current.header[i], i);
 
     // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
     const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
@@ -117,22 +140,21 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
 
         if (currentEntry !== null) {
             processedCurrentKeys.add(currentEntry.key);
-            // 両方に存在 → セル単位で比較する
+            // 両方に存在 → 表示ヘッダー順に並べ替えてからセル単位で比較する
+            const remappedHead = remapRow(headRow, headHeaderMap, displayHeader);
+            const remappedCurrent = remapRow(currentEntry.row, currentHeaderMap, displayHeader);
             const changedIndices = new Set<number>();
-            const maxLen = Math.max(displayHeader.length, headRow.length, currentEntry.row.length);
-            for (let i = 0; i < maxLen; i++) {
-                const hVal = i < headRow.length ? headRow[i] : '';
-                const cVal = i < currentEntry.row.length ? currentEntry.row[i] : '';
-                if (hVal !== cVal) changedIndices.add(i);
+            for (let i = 0; i < displayHeader.length; i++) {
+                if (remappedHead[i] !== remappedCurrent[i]) changedIndices.add(i);
             }
             if (changedIndices.size > 0) {
-                diffRows.push({ kind: 'modified', headValues: headRow, currentValues: currentEntry.row, changedColumnIndices: changedIndices });
+                diffRows.push({ kind: 'modified', headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices });
             } else {
-                diffRows.push({ kind: 'unchanged', headValues: headRow, currentValues: currentEntry.row });
+                diffRows.push({ kind: 'unchanged', headValues: remappedHead, currentValues: remappedCurrent });
             }
         } else {
-            // Current版に存在しない → HEAD版の元の位置に削除行を配置する
-            diffRows.push({ kind: 'deleted', headValues: headRow });
+            // Current版に存在しない → HEAD版の元の位置に削除行を配置する（表示ヘッダー順に並べ替える）
+            diffRows.push({ kind: 'deleted', headValues: remapRow(headRow, headHeaderMap, displayHeader) });
         }
     }
 
@@ -143,7 +165,7 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
         const addedRawPk = currentKey.includes('_row') ? currentKey.substring(0, currentKey.lastIndexOf('_row')) : currentKey;
         const existsInHead = headMap.has(currentKey) || headMap.has(addedRawPk);
         if (!existsInHead) {
-            diffRows.push({ kind: 'added', currentValues: currentMap.get(currentKey)! });
+            diffRows.push({ kind: 'added', currentValues: remapRow(currentMap.get(currentKey)!, currentHeaderMap, displayHeader) });
         }
     }
 

@@ -38,7 +38,7 @@
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette, +showBlameAsync in context-menu)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**, **applySelectionClasses/applyCopyClasses/clearXxx 4メソッドが同一構造のコピペ**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**, **applySelectionClasses/applyCopyClasses/clearXxx 4メソッドが同一構造のコピペ**, **remapRow/parseCsv/SchemaJson/DiffRow型がdiff-rows.tsとdiff-view.tsに完全重複**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
 - **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失, **blame-info要素が同じ全操作で消失**
 - **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
@@ -183,8 +183,17 @@
 - refreshGitDiffAsync exception catch path + applyGitDiffHighlight storeRows===false path: マーカークリア追加で解決済み
 - destroy() method exists but is never called (dead code)
 
+## Diff Column-Name Matching Patterns (2026-04-04)
+- remapRow関数がdiff-rows.tsとdiff-view.tsに完全コピペ（+parseCsv, SchemaJson, DiffRow型も重複）
+- diff-view.ts parseCsvがsplit(',')のままRFC4180非準拠 — diff-rows.tsはCsvクラス使用
+- displayHeader = current.header → HEAD側の列削除が差分に一切表示されない（致命的設計欠陥）
+- 重複列名でheaderMapが後勝ち → 先頭同名列データ消失
+- remapRow内のフォールバック(idx < row.length ? ... : '')が異常をマスク
+- headRowValuesPerDomRow がremapRow済みdisplayHeader順であることが型・コメントで表現されていない
+
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-04-04) Diff列名ベースマッチング: 致命的3件(重複列名データ消失, 列削除不可視, フォールバック異常マスク)、重要5件(remapRowコピペ, parseCsv非対称, 空CSV境界値, 恒等変換冗長, headValues暗黙契約)、軽微4件(型定義コピペ, 非null断言, テストコメント, PK列不在)
 - (2026-04-04) ScrollbarMarkerTrack: 致命的1件(例外パスマーカー残存→修正済み)、重要2件(二重redraw→修正済み, ResizeObserver対象不変)、軽微2件(destroy未使用, ストア二重走査)
 - (2026-04-02) Selection擬似要素リファクタ: 致命的3件、重要5件、軽微4件 (::after衝突, ::beforeスロット枯渇, selection-rejected消失, lastSelectionCells陳腐化, clip-path/sticky, overflow:visible, コピペ, デッドコード)
 - (2026-03-29) ISSUE_0123 バージョン比較: 致命的3件、重要5件、軽微4件 (z-index未定義ダイアログ隠れ, 同一コミット比較無検証, fetchCsvエラー握りつぶし, コールバック疎結合, CSSフォールバック12箇所, ダイアログ多重オープン, 型アサーション, スキーマ不整合)
