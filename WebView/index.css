@@ -26,6 +26,12 @@ body {
     --error-border: rgba(255, 80, 80, 0.5);
     --reference-hint-color: #999999;
 
+    /* PK/FKバッジ — 不透明色（行選択色と混ざらないようにする） */
+    --pk-badge-bg: #fdecd0;
+    --pk-badge-border: #fbd89e;
+    --fk-badge-bg: #ede8ff;
+    --fk-badge-border: #dcd1fc;
+
     /* UI共通トークン */
     --border-radius: 4px;
     --dropdown-item-padding: 2px 8px;
@@ -46,6 +52,12 @@ body {
     --hover-color-strong: rgba(255, 255, 255, 0.15);
     --scroll-bar-background-color: rgba(255, 255, 255, 0.2);
     --reference-hint-color: #777777;
+
+    /* PK/FKバッジ — ダークテーマ用不透明色 */
+    --pk-badge-bg: #4b3d25;
+    --pk-badge-border: #76551e;
+    --fk-badge-bg: #3c3954;
+    --fk-badge-border: #574e7e;
 }
 
 *::-webkit-scrollbar {

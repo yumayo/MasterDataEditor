@@ -597,10 +597,6 @@ export class Selection {
         this.fillHandle.style.display = 'block';
     }
 
-    private hideRenderer(): void {
-        this.editorTable.clearSelectionClasses();
-    }
-
     private hideCopyBorder(): void {
         this.editorTable.clearCopyClasses();
     }
