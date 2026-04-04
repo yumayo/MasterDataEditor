@@ -66,7 +66,7 @@ export class CommandPalette {
         this.tab = tab;
         this.dataProvider = new SearchDataProvider(openEditorTables);
         this.tableItems = [];
-        this.selectedIndex = 0;
+        this.selectedIndex = -1;
         this.filteredItems = [];
         this.queryRequestId = 0;
 
@@ -118,8 +118,13 @@ export class CommandPalette {
                 e.preventDefault();
                 const visibleItems = this.listElement.querySelectorAll('.command-palette-item');
                 if (visibleItems.length === 0) return;
-                const delta = e.key === 'ArrowDown' ? 1 : -1;
-                this.selectedIndex = (this.selectedIndex + delta + visibleItems.length) % visibleItems.length;
+                if (this.selectedIndex === -1) {
+                    // 未選択状態からの初回移動: Downなら先頭、Upなら末尾を選択する
+                    this.selectedIndex = e.key === 'ArrowDown' ? 0 : visibleItems.length - 1;
+                } else {
+                    const delta = e.key === 'ArrowDown' ? 1 : -1;
+                    this.selectedIndex = (this.selectedIndex + delta + visibleItems.length) % visibleItems.length;
+                }
                 this.updateSelection(visibleItems);
                 return;
             }
@@ -209,7 +214,7 @@ export class CommandPalette {
      */
     private renderTableList(filterText: string): void {
         this.listElement.innerHTML = '';
-        this.selectedIndex = 0;
+        this.selectedIndex = -1;
 
         // テーブル名またはdescriptionのfuzzyMatchでフィルタリング
         const filtered: TableItem[] = filterText === ''
@@ -233,9 +238,6 @@ export class CommandPalette {
             const item = filtered[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
-            if (i === 0) {
-                itemElement.classList.add('selected');
-            }
 
             const nameElement = document.createElement('span');
             nameElement.classList.add('command-palette-item-name');
@@ -275,7 +277,7 @@ export class CommandPalette {
      */
     private renderBookmarkList(query: string): void {
         this.listElement.innerHTML = '';
-        this.selectedIndex = 0;
+        this.selectedIndex = -1;
         const bookmarks = this.tab.getBookmarks();
         // query が空でなければテーブル名・列名・ラベルのいずれかに部分一致する候補に絞り込む
         const lowerQuery = query.toLowerCase();
@@ -297,7 +299,6 @@ export class CommandPalette {
             const item = filtered[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
-            if (i === 0) itemElement.classList.add('selected');
             // テーブル名
             const nameElement = document.createElement('span');
             nameElement.classList.add('command-palette-item-name');
@@ -330,7 +331,7 @@ export class CommandPalette {
         const tableExists = this.tableItems.some(item => item.tabName === tableName);
         if (!tableExists) {
             this.listElement.innerHTML = '';
-            this.selectedIndex = 0;
+            this.selectedIndex = -1;
             this.filteredItems = [];
             const emptyElement = document.createElement('div');
             emptyElement.classList.add('command-palette-empty');
@@ -349,7 +350,7 @@ export class CommandPalette {
         const columnIndex = tableData.csvHeader.indexOf(columnName);
         if (columnIndex === -1) {
             this.listElement.innerHTML = '';
-            this.selectedIndex = 0;
+            this.selectedIndex = -1;
             this.filteredItems = [];
             const emptyElement = document.createElement('div');
             emptyElement.classList.add('command-palette-empty');
@@ -381,7 +382,7 @@ export class CommandPalette {
 
         // リスト描画
         this.listElement.innerHTML = '';
-        this.selectedIndex = 0;
+        this.selectedIndex = -1;
         this.filteredItems = results;
 
         if (results.length === 0) {
@@ -396,9 +397,6 @@ export class CommandPalette {
             const result = results[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
-            if (i === 0) {
-                itemElement.classList.add('selected');
-            }
 
             // テーブル名を表示する
             const nameElement = document.createElement('span');

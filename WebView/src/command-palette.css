@@ -24,19 +24,21 @@
     background: var(--background-color);
     border-radius: var(--border-radius);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
 }
 
 /* 検索入力欄 */
 .command-palette-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 10px 14px;
+    padding: var(--dropdown-item-padding);
     background: var(--background-color);
     color: var(--font-color);
     border: none;
     border-bottom: var(--input-border);
-    font-size: 14px;
     outline: none;
+    font-size: 12px;
+    height: 30px;
 }
 
 /* 候補リスト */
@@ -81,7 +83,6 @@
 /* テーブル説明（descriptionラベル） */
 .command-palette-item-description {
     font-size: 12px;
-    opacity: 0.6;
     margin-left: 8px;
 }
 
