@@ -2743,7 +2743,7 @@ export class EditorTable {
             }
             // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
             if (requestId !== this.refreshGitDiffRequestId) return;
-            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices);
+            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices, storeHeader);
             const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
             this.connectGitDiffTracker(tracker);
         }
@@ -2811,7 +2811,7 @@ export class EditorTable {
         }
         // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
         if (requestId !== this.refreshGitDiffRequestId) return;
-        const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices);
+        const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices, storeHeader);
         const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
         this.connectGitDiffTracker(tracker);
         this.applyGitDiffHighlight();

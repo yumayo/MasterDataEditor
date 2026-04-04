@@ -30,15 +30,47 @@ export class GitDiffTracker {
      * HEAD版CSVテキストをパースして 複合PKキー → 行データ Map を構築する
      * Csv クラスを使用することでストア側の load() と同じパース挙動を保証し、
      * 空白トリムの不整合による誤差分検出を防止する
+     *
+     * currentHeader を渡すと、HEAD版の行データを currentHeader の列順に並べ替えて格納する。
+     * これにより isCellChanged() で currentRow[columnIndex] と headRow[columnIndex] が
+     * 同じ列名の値を指すことが保証される（列追加・列順序変更に対応）。
      */
-    static buildHeadRowMap(headCsvText: string, pkColumnIndices: readonly number[]): Map<string, string[]> {
+    static buildHeadRowMap(headCsvText: string, pkColumnIndices: readonly number[], currentHeader: readonly string[]): Map<string, string[]> {
         const csv = new Csv();
         csv.load(headCsvText);
+        // HEAD版ヘッダーの列名→インデックスマップを構築する（リマップ用）
+        const headHeaderMap = new Map<string, number>();
+        for (let i = 0; i < csv.header.length; i++) headHeaderMap.set(csv.header[i], i);
+        // HEAD版のPK列インデックスをHEAD版ヘッダーから解決する（pkColumnIndicesはcurrentHeader基準のため直接使えない）
+        const headPkIndices: number[] = [];
+        for (const currentIdx of pkColumnIndices) {
+            if (currentIdx >= 0 && currentIdx < currentHeader.length) {
+                const colName = currentHeader[currentIdx];
+                if (headHeaderMap.has(colName)) {
+                    headPkIndices.push(headHeaderMap.get(colName)!);
+                } else {
+                    headPkIndices.push(-1);
+                }
+            } else {
+                headPkIndices.push(-1);
+            }
+        }
         const map = new Map<string, string[]>();
         for (const row of csv.body) {
-            const pk = GitDiffTracker.buildCompositeKey(row, pkColumnIndices);
+            // PK値はHEAD版のインデックスで取得する
+            const pk = GitDiffTracker.buildCompositeKey(row, headPkIndices);
+            // HEAD行をcurrentHeader順に並べ替えて格納する
+            const remapped: string[] = [];
+            for (const colName of currentHeader) {
+                if (headHeaderMap.has(colName)) {
+                    const idx = headHeaderMap.get(colName)!;
+                    remapped.push(idx < row.length ? row[idx] : '');
+                } else {
+                    remapped.push('');
+                }
+            }
             // PK重複は後勝ち（HEADデータの整合性はgitが保証する前提）
-            map.set(pk, row);
+            map.set(pk, remapped);
         }
         return map;
     }
