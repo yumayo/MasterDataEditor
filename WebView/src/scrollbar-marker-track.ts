@@ -35,6 +35,10 @@ export class ScrollbarMarkerTrack {
             const dpr = window.devicePixelRatio;
             this.canvas.width = Math.round(14 * dpr);
             this.canvas.height = Math.round(Math.max(0, trackHeight) * dpr);
+            // CSS height を明示的に設定する。canvas.height は物理ピクセル（trackHeight × dpr）だが、
+            // CSS height を指定しないとブラウザは属性値をそのまま CSS ピクセルとして扱うため、
+            // dpr > 1 の環境で canvas が dpr 倍の高さで表示されマーカー位置がずれる。
+            this.canvas.style.height = `${Math.max(0, trackHeight)}px`;
             this.redraw();
         });
         this.resizeObserver.observe(scrollContainer);
