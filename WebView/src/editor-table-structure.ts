@@ -115,6 +115,8 @@ export class EditorTableStructure {
         this.table.clearSortState();
         // 列挿入によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
         this.table.clearFilterState();
+        // 列挿入後にgit差分ハイライトを全セル再評価する（列インデックスが変化するため、水平マーカーも再構築される）
+        this.table.applyGitDiffHighlight();
     }
 
     /**
@@ -332,6 +334,8 @@ export class EditorTableStructure {
         this.table.clearSortState();
         // 列削除によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
         this.table.clearFilterState();
+        // 列削除後にgit差分ハイライトを全セル再評価する（列インデックスが変化するため、水平マーカーも再構築される）
+        this.table.applyGitDiffHighlight();
     }
 
     /**

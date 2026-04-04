@@ -51,8 +51,10 @@ export class Editor {
     /** RelationsPanelへの参照。appendRelationsPanel() で設定される */
     private relationsPanel: RelationsPanel | false;
 
-    /** スクロールバーマーカートラック（エラー・git変更位置の可視化） */
+    /** 垂直スクロールバーマーカートラック（エラー・git変更行の可視化） */
     private readonly scrollbarMarkerTrack: ScrollbarMarkerTrack;
+    /** 水平スクロールバーマーカートラック（エラー・git変更列の可視化） */
+    private readonly horizontalScrollbarMarkerTrack: ScrollbarMarkerTrack;
 
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
@@ -116,8 +118,8 @@ export class Editor {
         this.rightSlot = rightSlot;
 
         // スクロールバーマーカートラックを左スロットに配置する
-        // leftPane（スクロールコンテナ）の clientHeight で垂直スクロールバートラック高さを取得する
-        this.scrollbarMarkerTrack = new ScrollbarMarkerTrack(leftSlot, leftPane);
+        this.scrollbarMarkerTrack = new ScrollbarMarkerTrack(leftSlot, leftPane, 'vertical', 'scrollbar-marker-track');
+        this.horizontalScrollbarMarkerTrack = new ScrollbarMarkerTrack(leftSlot, leftPane, 'horizontal', 'horizontal-scrollbar-marker-track');
     }
 
     /** Tab を接続する（ナビゲーションボタンのクリックハンドラ用） */
@@ -157,6 +159,7 @@ export class Editor {
         this.leftSlot.appendChild(leftElement);
         // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
         this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.horizontalScrollbarMarkerTrack.reattach(this.leftSlot);
 
         // 右スロットの全子要素を取り除いてから新しい右ペインを追加する
         while (this.rightSlot.firstChild) {
@@ -210,9 +213,14 @@ export class Editor {
         return this.leftPane;
     }
 
-    /** スクロールバーマーカートラックを返す（EditorTable への接続用） */
+    /** 垂直スクロールバーマーカートラックを返す（EditorTable への接続用） */
     getScrollbarMarkerTrack(): ScrollbarMarkerTrack {
         return this.scrollbarMarkerTrack;
+    }
+
+    /** 水平スクロールバーマーカートラックを返す（EditorTable への接続用） */
+    getHorizontalScrollbarMarkerTrack(): ScrollbarMarkerTrack {
+        return this.horizontalScrollbarMarkerTrack;
     }
 
     /**
@@ -240,6 +248,7 @@ export class Editor {
         this.leftSlot.appendChild(wrapper);
         // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
         this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.horizontalScrollbarMarkerTrack.reattach(this.leftSlot);
 
         // 右スロットを非表示にして差分ビューを全幅で表示する
         this.rightSlot.style.display = 'none';
@@ -258,6 +267,7 @@ export class Editor {
         this.leftSlot.appendChild(this.leftPane);
         // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
         this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.horizontalScrollbarMarkerTrack.reattach(this.leftSlot);
         // RelationsPanel のトグル状態を尊重して右スロットの表示を復元する
         this.applyRelationsPanelVisibility();
     }

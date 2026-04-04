@@ -336,8 +336,8 @@ export class DiffTab {
         );
 
         // 差分マーカートラックを各ペインスロットに配置する（.editor-left-slot と同パターン）
-        this.leftTrack = new ScrollbarMarkerTrack(leftPaneSlot, leftPaneElement);
-        this.rightTrack = new ScrollbarMarkerTrack(rightPaneSlot, rightPaneElement);
+        this.leftTrack = new ScrollbarMarkerTrack(leftPaneSlot, leftPaneElement, 'vertical', 'scrollbar-marker-track');
+        this.rightTrack = new ScrollbarMarkerTrack(rightPaneSlot, rightPaneElement, 'vertical', 'scrollbar-marker-track');
 
         // 左ペイン（HEAD版）は常に読み取り専用にする
         // makeReadOnly() により Ctrl+S も禁止される（不正パスへの書き込み防止）
@@ -903,12 +903,12 @@ export class DiffTab {
             if (domRows[i] === domRows[i - 1] + 1) {
                 rangeEnd = tableElement.children[domRows[i]] as HTMLElement;
             } else {
-                markers.push({ top: rangeStart.offsetTop / scrollHeight, height: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
+                markers.push({ start: rangeStart.offsetTop / scrollHeight, size: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
                 rangeStart = tableElement.children[domRows[i]] as HTMLElement;
                 rangeEnd = rangeStart;
             }
         }
-        markers.push({ top: rangeStart.offsetTop / scrollHeight, height: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
+        markers.push({ start: rangeStart.offsetTop / scrollHeight, size: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
         return markers;
     }
 }

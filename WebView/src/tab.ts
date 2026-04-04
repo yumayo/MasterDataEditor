@@ -2145,6 +2145,8 @@ export class Tab {
         }
         // スクロールバーマーカートラックの接続（通常テーブル専用。ミニテーブルでは呼ばない）
         editorTable.connectScrollbarMarkerTrack(this.editor.getScrollbarMarkerTrack());
+        // 水平スクロールバーマーカートラックの接続（通常テーブル専用。ミニテーブルでは呼ばない）
+        editorTable.connectHorizontalScrollbarMarkerTrack(this.editor.getHorizontalScrollbarMarkerTrack());
 
         return {editorTable, selection, editorTableHandler, history, areaResizer, fillController};
     }

@@ -167,6 +167,7 @@ export class AreaResizer {
             this.editorTable.setColumnWidth(targetColumnIndex, newWidth);
             this.history.pushCommand(command, historyRange, copyRange);
             this.selection.updateRendererAfterResize();
+            this.editorTable.notifyColumnWidthChanged();
             return;
         }
 
@@ -193,6 +194,7 @@ export class AreaResizer {
         const command = commands.length === 1 ? commands[0] : new CompositeCommand(commands);
         this.history.pushCommand(command, historyRange, copyRange);
         this.selection.updateRendererAfterResize();
+        this.editorTable.notifyColumnWidthChanged();
     }
 
     /**

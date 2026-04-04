@@ -27,6 +27,7 @@
 - `/WebView/src/reference-expression.ts` - DynamicReferenceSchema + parseReferenceExpression
 - `/WebView/src/model/editor-table-data-column.ts` - Column model with reference: string | DynamicReferenceSchema | null
 - `/WebView/src/editor-table-handler.ts` - Keyboard/mouse handler, markSavedAndUpdatePanel
+- `/WebView/src/horizontal-scrollbar-marker-track.ts` - 水平スクロールバーマーカー（垂直版のコピー）
 
 ## Recurring Review Patterns (Top Priority)
 - **awaitポイント後のrequestIdチェック**: **10回再発** (+showBlameAsync requestIdガードなし)
@@ -34,11 +35,11 @@
 - **CSS hardcoded colors**: 25+ 回再発 (+table-definition-editor #f44336, #ffffff, +selection.css #0078d7/#808080/#005a9e/#666666)
 - **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**, **--list-hover-bg未定義(timeline-panel.css)**, **--z-dialog未定義(commit-selector-dialog.css)**, **未定義CSS変数12箇所+フォールバック値乱用(commit-selector-dialog.css)**
 - **フォールバック禁止 (?? / ||)**: 22+ 回再発 (+applyOriginalSchemaToRow dynRef 5箇所)
-- **生焼けオブジェクト | false + connect パターン**: 8回再発 (+ErDiagramTab tables/edges empty arrays)
+- **生焼けオブジェクト | false + connect パターン**: 9回再発 (+HorizontalScrollbarMarkerTrack接続)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
 - **fire-and-forget Promise without .catch()**: 複数箇所 (+renderQueryResultsAsync in command-palette, +showBlameAsync in context-menu)
 - **document listener leak (anonymous arrow)**: removeEventListener不可 (+ErDiagramTab mousemove/mouseup)
-- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**, **applySelectionClasses/applyCopyClasses/clearXxx 4メソッドが同一構造のコピペ**, **remapRow/parseCsv/SchemaJson/DiffRow型がdiff-rows.tsとdiff-view.tsに完全重複**
+- **コピペコード**: SchemaEntry→TableSchema変換, parseCsv, PK解決, **PluginError変換**, **refreshGitDiffAsync .catch(4箇所)**, int/floatインクリメント処理, **ブックマーク追加メニュー(PK列/非PK列の同一コード)**, **table-definition-editor.ts saveEditModeAsync内のCSV split(',')がcsv.tsのRFC4180パーサと重複かつ機能不足**, **ハッシュ7桁切り詰めロジック(tab.ts formatCommitDisplay + commit-selector-dialog.ts buildCommitList)**, **applySelectionClasses/applyCopyClasses/clearXxx 4メソッドが同一構造のコピペ**, **remapRow/parseCsv/SchemaJson/DiffRow型がdiff-rows.tsとdiff-view.tsに完全重複**, **HorizontalScrollbarMarkerTrack redraw/drawMarkersが垂直版と構造コピペ+色定数4箇所重複**
 - **操作パスの網羅漏れ(型別入力)**: bool型セルでSpace/dblclickはガードされるが文字入力(^\w$)経路がブロックされていない
 - **操作パスの網羅漏れ(DOM属性復元)**: data-bookmarked属性がソート/行操作/reloadCellsFromStore/Undo/moveRowで消失, **blame-info要素が同じ全操作で消失**
 - **操作パスの網羅漏れ(moveRow後処理)**: moveRowにevictOwnReferenceDataCache/refreshFilterDisplayIfActive/restoreBookmarkMarks欠落
@@ -183,6 +184,15 @@
 - refreshGitDiffAsync exception catch path + applyGitDiffHighlight storeRows===false path: マーカークリア追加で解決済み
 - destroy() method exists but is never called (dead code)
 
+## HorizontalScrollbarMarkerTrack Patterns (2026-04-04)
+- 垂直版ScrollbarMarkerTrackの水平コピー。Editor生成、全タブ共有、connectで接続
+- **列リサイズ後マーカー陳腐化(致命的)**: area-resizerの列リサイズ完了時にrefreshHorizontalScrollbarMarkers未呼出
+- **buildColumnMarkerEntries境界外アクセス(致命的)**: headerRow.children[idx]のnullチェック欠如→列数変化時TypeError
+- **生焼けオブジェクト(9回目)**: horizontalScrollbarMarkerTrack: false + connectパターン
+- updateDiff()未実装: 差分ビューで水平マーカーが使えない（垂直版との非対称）
+- MarkerEntry型のセマンティクス不一致: top→left, height→width として流用
+- 色・z-index ハードコード: 垂直版からの4箇所コピペ
+
 ## Diff Column-Name Matching Patterns (2026-04-04)
 - remapRow関数がdiff-rows.tsとdiff-view.tsに完全コピペ（+parseCsv, SchemaJson, DiffRow型も重複）
 - diff-view.ts parseCsvがsplit(',')のままRFC4180非準拠 — diff-rows.tsはCsvクラス使用
@@ -193,6 +203,7 @@
 
 ## Review History
 -> See `known-issues-archive.md` for details
+- (2026-04-04) HorizontalScrollbarMarkerTrack: 致命的3件(列リサイズ後陳腐化, 境界外アクセス, 生焼けオブジェクト)、重要5件(offsetLeft基準不一致, z-indexハードコード, 色ハードコード, MarkerEntry命名, updateDiff欠落)、軽微4件(ミュータブル状態, getContext毎回, destroy未使用, コピペコード)
 - (2026-04-04) Diff列名ベースマッチング: 致命的3件(重複列名データ消失, 列削除不可視, フォールバック異常マスク)、重要5件(remapRowコピペ, parseCsv非対称, 空CSV境界値, 恒等変換冗長, headValues暗黙契約)、軽微4件(型定義コピペ, 非null断言, テストコメント, PK列不在)
 - (2026-04-04) ScrollbarMarkerTrack: 致命的1件(例外パスマーカー残存→修正済み)、重要2件(二重redraw→修正済み, ResizeObserver対象不変)、軽微2件(destroy未使用, ストア二重走査)
 - (2026-04-02) Selection擬似要素リファクタ: 致命的3件、重要5件、軽微4件 (::after衝突, ::beforeスロット枯渇, selection-rejected消失, lastSelectionCells陳腐化, clip-path/sticky, overflow:visible, コピペ, デッドコード)
