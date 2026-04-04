@@ -8,7 +8,7 @@ import {extractFirstPrimaryKeyColumn} from "./schema-utils";
  */
 export interface TableSearchData {
     tableName: string;
-    header: Array<{name: string; type: string; reference: string}>;
+    header: Array<{name: string; type: string; reference: string; comment: string}>;
     csvHeader: string[];
     csvBody: string[][];
     primaryKeyColumnName: string;
@@ -99,13 +99,14 @@ export class SearchDataProvider {
                 break;
             }
         }
-        const header: Array<{name: string; type: string; reference: string}> = [];
+        const header: Array<{name: string; type: string; reference: string; comment: string}> = [];
         for (const col of tableData.header) {
             header.push({
                 name: col.name,
                 type: col.type,
                 // 動的参照（オブジェクト）は検索パネルでは使わないため空文字列にする
                 reference: typeof col.reference === 'string' ? col.reference : '',
+                comment: col.comment !== null ? col.comment : '',
             });
         }
         return {
@@ -129,13 +130,14 @@ export class SearchDataProvider {
         const schema = JSON.parse(schemaText);
         const csv = new Csv();
         csv.load(csvText);
-        const header: Array<{name: string; type: string; reference: string}> = [];
+        const header: Array<{name: string; type: string; reference: string; comment: string}> = [];
         for (const col of schema.header) {
             header.push({
                 name: col.name,
                 type: col.type,
                 // 動的参照（オブジェクト）は検索パネルでは使わないため空文字列にする
                 reference: typeof col.reference === 'string' ? col.reference : '',
+                comment: typeof col.comment === 'string' ? col.comment : '',
             });
         }
         // スキーマの primary_key から最初のPK列名を取得する

@@ -19,6 +19,7 @@ interface TableItem {
 interface QueryResultItem {
     kind: 'query';
     tableName: string;
+    pkColumnName: string;
     pkValue: string;
     columnName: string;
     columnIndex: number;
@@ -36,8 +37,18 @@ interface BookmarkItem {
     label: string;
 }
 
-/** 候補リストの各要素はテーブル名候補、クエリ式結果、またはブックマーク候補のいずれか */
-type PaletteItem = TableItem | QueryResultItem | BookmarkItem;
+/**
+ * 列名補完アイテム（テーブル名. で列名候補を表示する）
+ */
+interface ColumnItem {
+    kind: 'column';
+    tableName: string;
+    columnName: string;
+    comment: string;
+}
+
+/** 候補リストの各要素はテーブル名候補、クエリ式結果、ブックマーク候補、または列名補完のいずれか */
+type PaletteItem = TableItem | QueryResultItem | BookmarkItem | ColumnItem;
 
 /** クエリ式の最大候補表示件数 */
 const QUERY_RESULT_MAX = 20;
@@ -105,6 +116,12 @@ export class CommandPalette {
         this.inputElement.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 this.hide();
+                return;
+            }
+            // Tabキー：選択中の候補で補完する（テーブル名→「テーブル名.」、列名→「テーブル名.列名=」）
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                this.completeTab(this.selectedIndex);
                 return;
             }
             // Enterキー：選択中の項目で確定する
@@ -196,13 +213,21 @@ export class CommandPalette {
             this.renderBookmarkList(query);
             return;
         }
-        // クエリ式の判定: テーブル名.列名=値 のパターン
-        const queryMatch = filterText.match(/^(\w+)\.(\w+)\s*=\s*(.+)$/);
+        // クエリ式の判定: テーブル名.列名= または テーブル名.列名=値 のパターン
+        const queryMatch = filterText.match(/^(\w+)\.(\w+)\s*=\s*(.*)$/);
         if (queryMatch) {
             const tableName = queryMatch[1];
             const columnName = queryMatch[2];
             const searchValue = queryMatch[3].trim();
             this.renderQueryResultsAsync(tableName, columnName, searchValue);
+            return;
+        }
+        // 列名補完の判定: テーブル名. または テーブル名.列名部分（=がない）
+        const columnMatch = filterText.match(/^(\w+)\.(\w*)$/);
+        if (columnMatch) {
+            const tableName = columnMatch[1];
+            const columnPrefix = columnMatch[2];
+            this.renderColumnListAsync(tableName, columnPrefix);
             return;
         }
         // テーブル名ファジー検索モード
@@ -233,11 +258,19 @@ export class CommandPalette {
             return;
         }
 
+        // 絞り込みテキストがある場合は先頭を自動選択する
+        if (filterText !== '') {
+            this.selectedIndex = 0;
+        }
+
         // フィルタ結果をリストに描画
         for (let i = 0; i < filtered.length; ++i) {
             const item = filtered[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
+            if (i === this.selectedIndex) {
+                itemElement.classList.add('selected');
+            }
 
             const nameElement = document.createElement('span');
             nameElement.classList.add('command-palette-item-name');
@@ -295,10 +328,15 @@ export class CommandPalette {
             this.listElement.appendChild(emptyElement);
             return;
         }
+        // ブックマーク検索では常に先頭を自動選択する
+        this.selectedIndex = 0;
         for (let i = 0; i < filtered.length; ++i) {
             const item = filtered[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
+            if (i === this.selectedIndex) {
+                itemElement.classList.add('selected');
+            }
             // テーブル名
             const nameElement = document.createElement('span');
             nameElement.classList.add('command-palette-item-name');
@@ -372,6 +410,7 @@ export class CommandPalette {
                 results.push({
                     kind: 'query',
                     tableName: tableName,
+                    pkColumnName: tableData.primaryKeyColumnName,
                     pkValue: pkColumnIndex !== -1 ? row[pkColumnIndex] : '',
                     columnName: columnName,
                     columnIndex: columnIndex,
@@ -393,10 +432,16 @@ export class CommandPalette {
             return;
         }
 
+        // クエリ式検索では常に先頭を自動選択する
+        this.selectedIndex = 0;
+
         for (let i = 0; i < results.length; ++i) {
             const result = results[i];
             const itemElement = document.createElement('div');
             itemElement.classList.add('command-palette-item');
+            if (i === this.selectedIndex) {
+                itemElement.classList.add('selected');
+            }
 
             // テーブル名を表示する
             const nameElement = document.createElement('span');
@@ -404,16 +449,16 @@ export class CommandPalette {
             nameElement.textContent = result.tableName;
             itemElement.appendChild(nameElement);
 
-            // PK値を表示する
+            // PK列名=値を表示する
             const pkElement = document.createElement('span');
             pkElement.classList.add('command-palette-item-pk');
-            pkElement.textContent = result.pkValue;
+            pkElement.textContent = result.pkColumnName + '=' + result.pkValue;
             itemElement.appendChild(pkElement);
 
-            // マッチした列の値を右端に表示する
+            // マッチした列名=値を右端に表示する
             const valueElement = document.createElement('span');
             valueElement.classList.add('command-palette-item-description');
-            valueElement.textContent = result.matchValue;
+            valueElement.textContent = result.columnName + '=' + result.matchValue;
             itemElement.appendChild(valueElement);
 
             const clickIndex = i;
@@ -423,6 +468,105 @@ export class CommandPalette {
             });
 
             this.listElement.appendChild(itemElement);
+        }
+    }
+
+    /**
+     * 列名補完候補を非同期で取得してリストに描画する
+     * テーブル名の後にドットを打った時点で、そのテーブルの全列名を候補表示する
+     * 列名の部分入力がある場合はファジー検索で絞り込む
+     */
+    private async renderColumnListAsync(tableName: string, columnPrefix: string): Promise<void> {
+        ++this.queryRequestId;
+        const requestId = this.queryRequestId;
+
+        const tableExists = this.tableItems.some(item => item.tabName === tableName);
+        if (!tableExists) {
+            this.listElement.innerHTML = '';
+            this.selectedIndex = -1;
+            this.filteredItems = [];
+            const emptyElement = document.createElement('div');
+            emptyElement.classList.add('command-palette-empty');
+            emptyElement.textContent = "テーブル '" + tableName + "' が見つかりません";
+            this.listElement.appendChild(emptyElement);
+            return;
+        }
+
+        const tableData = await this.dataProvider.getTableDataAsync(tableName);
+        if (requestId !== this.queryRequestId) return;
+
+        // スキーマのheaderから列名とコメントを取得してフィルタリングする
+        const columns: ColumnItem[] = [];
+        for (const col of tableData.header) {
+            if (columnPrefix === '' || fuzzyMatch(col.name, columnPrefix)) {
+                columns.push({kind: 'column', tableName: tableName, columnName: col.name, comment: col.comment});
+            }
+        }
+
+        this.listElement.innerHTML = '';
+        this.selectedIndex = -1;
+        this.filteredItems = columns;
+
+        if (columns.length === 0) {
+            const emptyElement = document.createElement('div');
+            emptyElement.classList.add('command-palette-empty');
+            emptyElement.textContent = '該当する列がありません';
+            this.listElement.appendChild(emptyElement);
+            return;
+        }
+
+        // 先頭を自動選択する
+        this.selectedIndex = 0;
+
+        for (let i = 0; i < columns.length; ++i) {
+            const item = columns[i];
+            const itemElement = document.createElement('div');
+            itemElement.classList.add('command-palette-item');
+            if (i === this.selectedIndex) {
+                itemElement.classList.add('selected');
+            }
+
+            const nameElement = document.createElement('span');
+            nameElement.classList.add('command-palette-item-name');
+            if (columnPrefix !== '') {
+                appendHighlightedSegments(nameElement, item.columnName, columnPrefix);
+            } else {
+                nameElement.textContent = item.columnName;
+            }
+            itemElement.appendChild(nameElement);
+
+            // コメントがある場合は右端に表示する
+            if (item.comment !== '') {
+                const commentElement = document.createElement('span');
+                commentElement.classList.add('command-palette-item-description');
+                commentElement.textContent = item.comment;
+                itemElement.appendChild(commentElement);
+            }
+
+            const clickIndex = i;
+            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
+                e.preventDefault();
+                this.completeTab(clickIndex);
+            });
+
+            this.listElement.appendChild(itemElement);
+        }
+    }
+
+    /**
+     * Tab補完を確定する
+     * table種別: 入力欄に「テーブル名.」を設定して列名補完モードに遷移する
+     * column種別: 入力欄に「テーブル名.列名=」を設定してクエリ式モードに遷移する
+     */
+    private completeTab(index: number): void {
+        if (index < 0 || index >= this.filteredItems.length) return;
+        const item = this.filteredItems[index];
+        if (item.kind === 'table') {
+            this.inputElement.value = item.tabName + '.';
+            this.renderList(this.inputElement.value);
+        } else if (item.kind === 'column') {
+            this.inputElement.value = item.tableName + '.' + item.columnName + '=';
+            this.renderList(this.inputElement.value);
         }
     }
 
