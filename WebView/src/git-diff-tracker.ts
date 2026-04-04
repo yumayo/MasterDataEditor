@@ -39,8 +39,7 @@ export class GitDiffTracker {
         const csv = new Csv();
         csv.load(headCsvText);
         // HEAD版ヘッダーの列名→インデックスマップを構築する（リマップ用）
-        const headHeaderMap = new Map<string, number>();
-        for (let i = 0; i < csv.header.length; i++) headHeaderMap.set(csv.header[i], i);
+        const headHeaderMap = GitDiffTracker.buildHeaderIndexMap(csv.header);
         // HEAD版のPK列インデックスをHEAD版ヘッダーから解決する（pkColumnIndicesはcurrentHeader基準のため直接使えない）
         const headPkIndices: number[] = [];
         for (const currentIdx of pkColumnIndices) {
@@ -60,15 +59,7 @@ export class GitDiffTracker {
             // PK値はHEAD版のインデックスで取得する
             const pk = GitDiffTracker.buildCompositeKey(row, headPkIndices);
             // HEAD行をcurrentHeader順に並べ替えて格納する
-            const remapped: string[] = [];
-            for (const colName of currentHeader) {
-                if (headHeaderMap.has(colName)) {
-                    const idx = headHeaderMap.get(colName)!;
-                    remapped.push(idx < row.length ? row[idx] : '');
-                } else {
-                    remapped.push('');
-                }
-            }
+            const remapped = GitDiffTracker.remapRow(row, headHeaderMap, currentHeader);
             // PK重複は後勝ち（HEADデータの整合性はgitが保証する前提）
             map.set(pk, remapped);
         }
@@ -82,6 +73,32 @@ export class GitDiffTracker {
      */
     public static buildCompositeKey(row: string[], pkColumnIndices: readonly number[]): string {
         return pkColumnIndices.map(idx => idx >= 0 && idx < row.length ? row[idx] : '').join('\t');
+    }
+
+    /**
+     * ヘッダー配列から列名→インデックスのマップを構築する
+     */
+    static buildHeaderIndexMap(header: readonly string[]): Map<string, number> {
+        const map = new Map<string, number>();
+        for (let i = 0; i < header.length; i++) map.set(header[i], i);
+        return map;
+    }
+
+    /**
+     * 行の値をソースヘッダー順から表示ヘッダー順に並べ替える。
+     * ソースヘッダーに存在しない表示列は空文字列になる。
+     */
+    static remapRow(row: string[], sourceHeaderMap: Map<string, number>, displayHeader: readonly string[]): string[] {
+        const result: string[] = [];
+        for (const name of displayHeader) {
+            if (sourceHeaderMap.has(name)) {
+                const idx = sourceHeaderMap.get(name)!;
+                result.push(idx < row.length ? row[idx] : '');
+            } else {
+                result.push('');
+            }
+        }
+        return result;
     }
 
     /**
