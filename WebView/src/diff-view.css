@@ -45,15 +45,15 @@
 }
 
 .diff-cell-deleted {
-    background-color: rgba(240, 50, 50, 0.2);
+    background-color: var(--diff-deleted-bg);
 }
 
 .diff-cell-added {
-    background-color: rgba(81, 184, 81, 0.2);
+    background-color: var(--diff-added-bg);
 }
 
 .diff-row-deleted .diff-cell {
-    background-color: rgba(240, 50, 50, 0.2);
+    background-color: var(--diff-deleted-bg);
 }
 
 .diff-row-empty {
@@ -133,36 +133,42 @@
    背面のセルが透けてしまう。不透明な下地 + background-image で差分色を重ねる。
    データセルは通常 transparent なので半透明のままでよい。 */
 .diff-pane-left .editor-table-row.diff-row-deleted .editor-table-cell {
-    background-color: rgba(240, 50, 50, 0.2);
+    background-color: var(--diff-deleted-bg);
 }
 .diff-pane-left .editor-table-row.diff-row-deleted .editor-table-row-header {
     background-color: var(--background-color);
-    background-image: linear-gradient(rgba(240, 50, 50, 0.2), rgba(240, 50, 50, 0.2));
+    background-image: linear-gradient(var(--diff-deleted-bg), var(--diff-deleted-bg));
 }
 
 .diff-pane-left .editor-table-row.diff-row-empty .editor-table-cell,
 .diff-pane-right .editor-table-row.diff-row-empty .editor-table-cell {
-    background-color: var(--cell-background-color, rgba(128, 128, 128, 0.1));
-    opacity: 0.4;
+    background-color: var(--diff-empty-bg);
+    opacity: var(--diff-empty-opacity);
 }
 .diff-pane-left .editor-table-row.diff-row-empty .editor-table-row-header,
 .diff-pane-right .editor-table-row.diff-row-empty .editor-table-row-header {
     background-color: var(--background-color);
-    background-image: linear-gradient(rgba(128, 128, 128, 0.1), rgba(128, 128, 128, 0.1));
-    opacity: 0.4;
+    background-image: linear-gradient(var(--diff-empty-bg), var(--diff-empty-bg));
+    opacity: var(--diff-empty-opacity);
 }
 
 /* EditorTable 内の差分セルクラス */
 .diff-pane-left .editor-table-cell.diff-cell-deleted {
-    background-color: rgba(240, 50, 50, 0.2);
+    background-color: var(--diff-deleted-bg);
 }
 
 .diff-pane-right .editor-table-cell.diff-cell-added {
-    background-color: rgba(81, 184, 81, 0.2);
+    background-color: var(--diff-added-bg);
 }
 .diff-pane-right .editor-table-row-header.diff-cell-added {
     background-color: var(--background-color);
-    background-image: linear-gradient(rgba(81, 184, 81, 0.2), rgba(81, 184, 81, 0.2));
+    background-image: linear-gradient(var(--diff-added-bg), var(--diff-added-bg));
+}
+
+/* 新規列の左ペイン（HEAD版に列が存在しなかった）は空白行と同じ灰色 */
+.diff-pane-left .editor-table-cell.diff-cell-new-column {
+    background-color: var(--diff-empty-bg);
+    opacity: var(--diff-empty-opacity);
 }
 
 /* innerWrapper — position:absolute 要素の含有ブロック */

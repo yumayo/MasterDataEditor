@@ -102,7 +102,7 @@ function remapRow(row: string[], sourceHeaderMap: Map<string, number>, displayHe
  * 2. Current版の order 順にループし、HEAD版に存在しない行を added として末尾に追加する
  * これにより、削除行が HEAD版の元の位置に配置され、added行は末尾にまとめて配置される。
  */
-export function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[] } {
+export function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[]; newColumnIndices: ReadonlySet<number> } {
     const head = parseCsv(headCsvText);
     const current = parseCsv(currentCsvText);
 
@@ -114,6 +114,12 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
     for (let i = 0; i < head.header.length; i++) headHeaderMap.set(head.header[i], i);
     const currentHeaderMap = new Map<string, number>();
     for (let i = 0; i < current.header.length; i++) currentHeaderMap.set(current.header[i], i);
+
+    // HEAD版に存在しない列のインデックス集合（新規列の識別に使用）
+    const newColumnIndices = new Set<number>();
+    for (let i = 0; i < displayHeader.length; i++) {
+        if (!headHeaderMap.has(displayHeader[i])) newColumnIndices.add(i);
+    }
 
     // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
     const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
@@ -169,7 +175,7 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
         }
     }
 
-    return { diffRows, displayHeader };
+    return { diffRows, displayHeader, newColumnIndices };
 }
 
 /**

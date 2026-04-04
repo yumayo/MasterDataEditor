@@ -90,6 +90,9 @@ export class DiffTab {
     /** DOM列インデックス → CSV列インデックスの順引きマップ（動的更新で使用） */
     private readonly domIndexToCsvIndex: ReadonlyMap<number, number>;
 
+    /** HEAD版に存在しない列のDOM列インデックス集合（新規列を灰色表示するため） */
+    private readonly newColumnDomIndices: ReadonlySet<number>;
+
     constructor(
         tableName: string,
         schemaJson: string,
@@ -121,7 +124,7 @@ export class DiffTab {
         const primaryKeyNames: readonly string[] = schema.primary_key;
 
         // 差分計算（ファイル行順）
-        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
+        const { diffRows, displayHeader, newColumnIndices } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
         // columnCount はスキーマ列数ではなくCSV全列数（displayHeader.length）を使う。
         // スキーマが非連番keyの場合、changedColumnIndices はCSV列インデックス（0〜N-1）を持つため、
         // CSV全列数で切り詰めないと applyDiffClasses でインデックス範囲外になる。
@@ -313,13 +316,23 @@ export class DiffTab {
         }
         this.domIndexToCsvIndex = domIndexToCsvIndex;
 
+        // newColumnIndices（displayHeader/CSVインデックス）をDOM列インデックスに変換する
+        const newColumnDomIndices = new Set<number>();
+        for (const csvIdx of newColumnIndices) {
+            if (csvIndexToDomIndex.has(csvIdx)) {
+                newColumnDomIndices.add(csvIndexToDomIndex.get(csvIdx)!);
+            }
+        }
+        this.newColumnDomIndices = newColumnDomIndices;
+
         // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
         this.applyDiffClasses(
             this.leftEditorTable, this.rightEditorTable,
             leftEmptyRowIndices, rightEmptyRowIndices,
             leftDeletedRowIndices, rightAddedRowIndices,
             leftModifiedCells, rightModifiedCells,
-            csvIndexToDomIndex
+            csvIndexToDomIndex,
+            newColumnIndices
         );
 
         // 差分マーカートラックを各ペインスロットに配置する（.editor-left-slot と同パターン）
@@ -521,12 +534,18 @@ export class DiffTab {
         const rightCell = this.rightEditorTable.getCell(domRow, domColumn);
         // 左ペインの対応セルにdiff-cell-deletedを付与/除去する
         const leftCell = this.leftEditorTable.getCell(domRow, domColumn);
+        // 新規列（HEAD版に存在しない列）は diff-cell-new-column を使い、通常の変更列は diff-cell-added/deleted を使う
+        const isNewColumn = this.newColumnDomIndices.has(domColIndex);
         if (newValue === headValue) {
-            // HEAD版と同じ値 → 差分なし。diff-cell-added / diff-cell-deleted を除去する
-            rightCell.classList.remove('diff-cell-added');
-            leftCell.classList.remove('diff-cell-deleted');
+            // HEAD版と同じ値 → 差分なし。すべての差分クラスを除去する
+            rightCell.classList.remove('diff-cell-added', 'diff-cell-new-column');
+            leftCell.classList.remove('diff-cell-deleted', 'diff-cell-new-column');
+        } else if (isNewColumn) {
+            // 新規列の差分 → 左ペインは灰色（HEAD版に列が存在しない）、右ペインは緑（新データ追加）
+            leftCell.classList.add('diff-cell-new-column');
+            rightCell.classList.add('diff-cell-added');
         } else {
-            // HEAD版と異なる値 → 差分あり。diff-cell-added / diff-cell-deleted を付与する
+            // 既存列の差分 → 赤/緑表示（diff-cell-deleted / diff-cell-added）
             rightCell.classList.add('diff-cell-added');
             leftCell.classList.add('diff-cell-deleted');
         }
@@ -770,7 +789,8 @@ export class DiffTab {
         rightAddedRowIndices: number[],
         leftModifiedCells: Array<{ row: number; col: number }>,
         rightModifiedCells: Array<{ row: number; col: number }>,
-        csvIndexToDomIndex: Map<number, number>
+        csvIndexToDomIndex: Map<number, number>,
+        newColumnIndices: ReadonlySet<number>
     ): void {
         const leftElement = leftTable.getTableElement();
         const rightElement = rightTable.getTableElement();
@@ -806,16 +826,17 @@ export class DiffTab {
             }
         }
 
-        // 左ペインの変更セル（.diff-cell-deleted）
+        // 左ペインの変更セル（新規列は灰色、それ以外は赤色）
         // colIdx はCSV列インデックスなので、DOM列インデックスへ変換する。
         // スキーマに定義されていないCSV列（csvIndexToDomIndex に存在しない）はスキップする。
         for (const { row: rowIdx, col: csvColIdx } of leftModifiedCells) {
             const domColIdx = csvIndexToDomIndex.get(csvColIdx);
             if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
-            leftTable.getCell(rowIdx + 1, domColIdx + 1).classList.add('diff-cell-deleted');
+            const className = newColumnIndices.has(csvColIdx) ? 'diff-cell-new-column' : 'diff-cell-deleted';
+            leftTable.getCell(rowIdx + 1, domColIdx + 1).classList.add(className);
         }
 
-        // 右ペインの変更セル（.diff-cell-added）
+        // 右ペインの変更セル（新規列も含め緑色で統一。新規列=新しいデータが追加された意味）
         for (const { row: rowIdx, col: csvColIdx } of rightModifiedCells) {
             const domColIdx = csvIndexToDomIndex.get(csvColIdx);
             if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ

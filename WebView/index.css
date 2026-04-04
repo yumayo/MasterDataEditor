@@ -32,6 +32,12 @@ body {
     --fk-badge-bg: #ede8ff;
     --fk-badge-border: #dcd1fc;
 
+    /* 差分ビュー */
+    --diff-deleted-bg: rgba(240, 50, 50, 0.2);
+    --diff-added-bg: rgba(81, 184, 81, 0.2);
+    --diff-empty-bg: rgba(128, 128, 128, 0.1);
+    --diff-empty-opacity: 0.4;
+
     /* UI共通トークン */
     --border-radius: 4px;
     --dropdown-item-padding: 2px 8px;
@@ -58,6 +64,12 @@ body {
     --pk-badge-border: #76551e;
     --fk-badge-bg: #3c3954;
     --fk-badge-border: #574e7e;
+
+    /* 差分ビュー */
+    --diff-deleted-bg: rgba(240, 50, 50, 0.2);
+    --diff-added-bg: rgba(81, 184, 81, 0.2);
+    --diff-empty-bg: rgba(128, 128, 128, 0.1);
+    --diff-empty-opacity: 0.4;
 }
 
 *::-webkit-scrollbar {

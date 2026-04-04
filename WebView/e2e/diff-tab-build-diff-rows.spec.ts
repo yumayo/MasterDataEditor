@@ -134,7 +134,7 @@ test.describe('buildDiffRows — 列追加・削除時の列名マッチング',
             ['2', 'b', '2026-02-01', 'desc2'],
         ]);
 
-        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, ['id']);
+        const { diffRows, displayHeader, newColumnIndices } = buildDiffRows(headCsv, currentCsv, ['id']);
 
         // displayHeader は current.header を採用する
         expect(displayHeader).toEqual(['id', 'name', 'end_at', 'description']);
@@ -160,6 +160,10 @@ test.describe('buildDiffRows — 列追加・削除時の列名マッチング',
         const row1 = diffRows[1] as Extract<DiffRow, { kind: 'modified' }>;
         expect(row1.changedColumnIndices.has(endAtIndex)).toBe(true);
         expect(row1.changedColumnIndices.size).toBe(1);
+
+        // newColumnIndices: end_at（displayHeader上のindex 2）は新規列
+        expect(newColumnIndices.has(2)).toBe(true);
+        expect(newColumnIndices.size).toBe(1);
     });
 
     // -------------------------------------------------------------------------
@@ -210,7 +214,7 @@ test.describe('buildDiffRows — 列追加・削除時の列名マッチング',
             ['1', 'desc1', 'a'],
         ]);
 
-        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, ['id']);
+        const { diffRows, displayHeader, newColumnIndices } = buildDiffRows(headCsv, currentCsv, ['id']);
 
         // displayHeader は current.header を採用する
         expect(displayHeader).toEqual(['id', 'description', 'name']);
@@ -218,6 +222,9 @@ test.describe('buildDiffRows — 列追加・削除時の列名マッチング',
         // 列名ベースで比較すると全値が一致するので unchanged
         expect(diffRows).toHaveLength(1);
         expect(diffRows[0].kind).toBe('unchanged');
+
+        // 列順序変更のみなので新規列はない
+        expect(newColumnIndices.size).toBe(0);
     });
 
 });
