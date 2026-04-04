@@ -42,8 +42,9 @@
 }
 
 /* 擬似要素の共通設定（選択ボーダーのあるセルのみ生成）
-   右と下は -1px で border-right / border-bottom 領域まで拡張し隣セルと隙間なく接続する。
-   左と上はセルに border-left / border-top がないため 0 のままで外縁に到達する。 */
+   右と下は -1px で border-right / border-bottom 領域まで拡張し、
+   選択辺が行・列境界のグリッド線で途切れないようにする。
+   sel-bottom / sel-right セルだけ拡張を止め、選択枠をセル内に留める。 */
 .sel-top::before, .sel-bottom::before, .sel-left::before, .sel-right::before {
     content: '';
     position: absolute;
@@ -51,18 +52,15 @@
     pointer-events: none;
     z-index: var(--z-index-selection-border);
 }
+/* 選択範囲の下辺セル: ::before を border-bottom 領域まで伸ばさない */
+.sel-bottom::before { bottom: 0; }
+/* 選択範囲の右辺セル: ::before を border-right 領域まで伸ばさない */
+.sel-right::before { right: 0; }
 
 .sel-top::before { border-top: 2px solid #0078d7; }
 .sel-bottom::before { border-bottom: 2px solid #0078d7; }
 .sel-left::before { border-left: 2px solid #0078d7; }
 .sel-right::before { border-right: 2px solid #0078d7; }
-
-/* 選択辺の灰色セルボーダーを透明にする（青枠を最前面にする）。
-   .editor-table-row .editor-table-cell の詳細度 0,2,0 に勝つため .editor-table-row を付ける。 */
-.editor-table-row .sel-bottom,
-.editor-table-row .sel-adj-bottom { border-bottom-color: transparent; }
-.sel-right,
-.sel-adj-right { border-right-color: transparent; }
 
 /* ===== コピー範囲（点線）— ::after で描画 ===== */
 
@@ -99,6 +97,8 @@
     pointer-events: none;
     z-index: var(--z-index-copy-border);
 }
+.copy-bottom::after { bottom: 0; }
+.copy-right::after { right: 0; }
 
 .copy-top::after { border-top: 2px dashed #0078d7; }
 .copy-bottom::after { border-bottom: 2px dashed #0078d7; }
