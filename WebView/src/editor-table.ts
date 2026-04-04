@@ -3252,7 +3252,7 @@ export class EditorTable {
         if (scrollHeight <= 0) return;
         const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, scrollHeight);
         const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, scrollHeight);
-        this.scrollbarMarkerTrack.update(errorMarkers, gitMarkers);
+        this.scrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
     }
 
     /**

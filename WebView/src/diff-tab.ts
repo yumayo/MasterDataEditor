@@ -18,6 +18,7 @@ import {TabReference} from "./tab-reference";
 import {GridDropdownInput} from "./grid-dropdown-input";
 import {NotificationToast} from "./notification";
 import {ValidationPanel} from "./validation-panel";
+import {ScrollbarMarkerTrack, MarkerEntry} from "./scrollbar-marker-track";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -71,6 +72,10 @@ export class DiffTab {
     /** スクロール同期の対象となるペイン要素（removeEventListener に必要） */
     private readonly leftPaneElement: HTMLElement;
     private readonly rightPaneElement: HTMLElement;
+
+    /** 差分マーカートラック（左=削除行の赤マーカー、右=追加行の緑マーカー） */
+    private readonly leftTrack: ScrollbarMarkerTrack;
+    private readonly rightTrack: ScrollbarMarkerTrack;
 
     /**
      * DOM行インデックス（0始まり） → HEAD版のCSV値配列。
@@ -154,10 +159,15 @@ export class DiffTab {
         diffTabContent.classList.add('diff-tab');
         wrapperElement.appendChild(diffTabContent);
 
-        // 左ペイン（HEAD版 = 変更前）— 初期50%はCSSの flex: 0 0 50% で設定済み
+        // 左ペインスロット（ScrollbarMarkerTrack 配置用ラッパー、.editor-left-slot と同パターン）
+        const leftPaneSlot = document.createElement('div');
+        leftPaneSlot.classList.add('diff-pane-left-slot');
+        diffTabContent.appendChild(leftPaneSlot);
+
+        // 左ペイン（HEAD版 = 変更前）
         const leftPaneElement = document.createElement('div');
         leftPaneElement.classList.add('diff-pane-left');
-        diffTabContent.appendChild(leftPaneElement);
+        leftPaneSlot.appendChild(leftPaneElement);
         this.leftPaneElement = leftPaneElement;
 
         // 左ペインラベル（バージョン比較時のコミット情報表示。nullの場合は非表示）
@@ -189,7 +199,7 @@ export class DiffTab {
                 const newWidth = moveEvent.clientX - rect.left;
                 // 20%〜80%にクランプし、小数点1桁に丸める
                 const percentage = Math.round(Math.max(20, Math.min(80, (newWidth / rect.width) * 100)) * 10) / 10;
-                leftPaneElement.style.flexBasis = `${percentage}%`;
+                leftPaneSlot.style.flexBasis = `${percentage}%`;
             };
 
             const onMouseUp = () => {
@@ -211,10 +221,15 @@ export class DiffTab {
         };
         resizeHandle.addEventListener('mousedown', this.boundResizeMouseDown);
 
-        // 右ペイン（現在版 = 変更後）— flex: 1 のまま（残りスペースを埋める）
+        // 右ペインスロット（ScrollbarMarkerTrack 配置用ラッパー）
+        const rightPaneSlot = document.createElement('div');
+        rightPaneSlot.classList.add('diff-pane-right-slot');
+        diffTabContent.appendChild(rightPaneSlot);
+
+        // 右ペイン（現在版 = 変更後）
         const rightPaneElement = document.createElement('div');
         rightPaneElement.classList.add('diff-pane-right');
-        diffTabContent.appendChild(rightPaneElement);
+        rightPaneSlot.appendChild(rightPaneElement);
         this.rightPaneElement = rightPaneElement;
 
         // 右ペインラベル（バージョン比較時のコミット情報表示。nullの場合は非表示）
@@ -307,6 +322,10 @@ export class DiffTab {
             csvIndexToDomIndex
         );
 
+        // 差分マーカートラックを各ペインスロットに配置する（.editor-left-slot と同パターン）
+        this.leftTrack = new ScrollbarMarkerTrack(leftPaneSlot, leftPaneElement);
+        this.rightTrack = new ScrollbarMarkerTrack(rightPaneSlot, rightPaneElement);
+
         // 左ペイン（HEAD版）は常に読み取り専用にする
         // makeReadOnly() により Ctrl+S も禁止される（不正パスへの書き込み防止）
         this.leftEditorTable.makeReadOnly();
@@ -379,6 +398,7 @@ export class DiffTab {
         leftElement.insertBefore(paddingRow, insertBefore);
         // 挿入したパディング行自身も含めて rowIndex 以降を再ナンバリングする
         this.renumberLeftRows(rowIndex);
+        this.refreshDiffMarkers();
     }
 
     /**
@@ -412,6 +432,7 @@ export class DiffTab {
             rightRow.replaceWith(newPaddingRow);
             if (leftRow !== null) leftRow.classList.add('diff-row-deleted');
         }
+        this.refreshDiffMarkers();
     }
 
     /**
@@ -509,6 +530,8 @@ export class DiffTab {
             rightCell.classList.add('diff-cell-added');
             leftCell.classList.add('diff-cell-deleted');
         }
+        // セル編集で差分クラスが変わるためマーカーを再計算する
+        this.refreshDiffMarkers();
     }
 
     /**
@@ -559,6 +582,8 @@ export class DiffTab {
         // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
         this.leftEditorTable.refreshSelectionDisplay();
         this.rightEditorTable.refreshSelectionDisplay();
+        // display:none 解除後にDOMレイアウトが確定するため、差分マーカーを計算・描画する
+        this.refreshDiffMarkers();
     }
 
     /** ラベルの高さを列ヘッダー行の top に反映する */
@@ -611,6 +636,9 @@ export class DiffTab {
         // ドラッグ操作中に destroy() が呼ばれた場合のカーソル・ユーザー選択スタイルをリセットする
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+        // 差分マーカートラックの ResizeObserver を解放する
+        this.leftTrack.destroy();
+        this.rightTrack.destroy();
         // EditorTableのdiffTab参照をリセットする（RelationsPanel.disconnectEditorTable() と対称）
         this.leftEditorTable.diffTab = false;
         this.rightEditorTable.diffTab = false;
@@ -793,5 +821,73 @@ export class DiffTab {
             if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
             rightTable.getCell(rowIdx + 1, domColIdx + 1).classList.add('diff-cell-added');
         }
+    }
+
+    /**
+     * 差分マーカーを再計算してトラックに反映する。
+     * DOM行のCSSクラスを走査して変更行を検出し、offsetTop / scrollHeight でマーカー位置を算出する。
+     * 左ペイン: 削除行は赤、変更行は緑。右ペイン: 追加・変更行は緑。
+     * すべて左1/3に描画し、エラーマーカー（右1/3）と位置で区別する。
+     */
+    private refreshDiffMarkers(): void {
+        // 左ペイン: 削除行（diff-row-deleted）と変更行（diff-cell-deleted）を分離する
+        const leftResult = this.collectLeftPaneMarkers();
+        this.leftTrack.updateDiff(leftResult.deletedMarkers, leftResult.modifiedMarkers);
+        // 右ペイン: 追加・変更行（diff-cell-added）はすべて緑
+        const rightAdded = this.collectDiffRowMarkers(this.rightEditorTable, this.rightPaneElement, null, 'diff-cell-added');
+        this.rightTrack.updateDiff([], rightAdded);
+    }
+
+    /**
+     * 左ペインのDOM行を走査して差分マーカーを収集する。
+     * 左ペインは「変更前」を表示するため、削除行（diff-row-deleted）も
+     * 変更セルを含む行（diff-cell-deleted）もすべて赤マーカーとして扱う。
+     */
+    private collectLeftPaneMarkers(): { deletedMarkers: MarkerEntry[]; modifiedMarkers: MarkerEntry[] } {
+        const leftMarkers = this.collectDiffRowMarkers(this.leftEditorTable, this.leftPaneElement, 'diff-row-deleted', 'diff-cell-deleted');
+        return { deletedMarkers: leftMarkers, modifiedMarkers: [] };
+    }
+
+    /**
+     * 指定ペインのDOM行を走査して差分マーカーを収集する。
+     * @param rowClass 行全体の差分クラス（null の場合はセルクラスのみで判定）
+     * @param cellClass セル単位の差分クラス
+     */
+    private collectDiffRowMarkers(editorTable: EditorTable, paneElement: HTMLElement, rowClass: string | null, cellClass: string): MarkerEntry[] {
+        const scrollHeight = paneElement.scrollHeight;
+        if (scrollHeight <= 0) return [];
+        const tableElement = editorTable.getTableElement();
+        const changedDomRows: number[] = [];
+        for (let i = 1; i < tableElement.children.length; i++) {
+            const row = tableElement.children[i] as HTMLElement;
+            if (row.classList.contains('diff-row-empty')) continue;
+            if (rowClass !== null && row.classList.contains(rowClass)) { changedDomRows.push(i); continue; }
+            for (let j = 0; j < row.children.length; j++) {
+                if ((row.children[j] as HTMLElement).classList.contains(cellClass)) { changedDomRows.push(i); break; }
+            }
+        }
+        return this.buildMarkerEntries(tableElement, changedDomRows, scrollHeight);
+    }
+
+    /**
+     * DOM行インデックス配列からマーカーエントリを構築する。
+     * 連続する行はマージして1つのエントリにする（EditorTable.buildMarkerEntries と同パターン）。
+     */
+    private buildMarkerEntries(tableElement: HTMLElement, domRows: number[], scrollHeight: number): MarkerEntry[] {
+        if (domRows.length === 0) return [];
+        const markers: MarkerEntry[] = [];
+        let rangeStart = tableElement.children[domRows[0]] as HTMLElement;
+        let rangeEnd = rangeStart;
+        for (let i = 1; i < domRows.length; i++) {
+            if (domRows[i] === domRows[i - 1] + 1) {
+                rangeEnd = tableElement.children[domRows[i]] as HTMLElement;
+            } else {
+                markers.push({ top: rangeStart.offsetTop / scrollHeight, height: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
+                rangeStart = tableElement.children[domRows[i]] as HTMLElement;
+                rangeEnd = rangeStart;
+            }
+        }
+        markers.push({ top: rangeStart.offsetTop / scrollHeight, height: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
+        return markers;
     }
 }

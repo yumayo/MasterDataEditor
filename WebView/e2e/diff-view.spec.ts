@@ -169,7 +169,7 @@ test.describe('diff-tab リサイズハンドル', () => {
     // プロダクションコードに flex-basis のパーセンテージ設定処理がないため RED になる
     // -------------------------------------------------------------------------
     test(
-        'リサイズハンドルをドラッグした後、左ペイン（.diff-pane-left）のflex-basisがパーセンテージで設定されること',
+        'リサイズハンドルをドラッグした後、左ペインスロット（.diff-pane-left-slot）のflex-basisがパーセンテージで設定されること',
         async ({ page, diffViewPage: _diffViewPage }) => {
             await openDiffTabAsync(page);
 
@@ -178,8 +178,8 @@ test.describe('diff-tab リサイズハンドル', () => {
 
             // ドラッグ後の .diff-pane-left の style.flexBasis を確認する
             const flexBasis = await page.evaluate(() => {
-                const el = document.querySelector('.diff-pane-left') as HTMLElement | null;
-                if (!el) throw new Error('.diff-pane-left が見つかりません');
+                const el = document.querySelector('.diff-pane-left-slot') as HTMLElement | null;
+                if (!el) throw new Error('.diff-pane-left-slot が見つかりません');
                 return el.style.flexBasis;
             });
 
@@ -205,8 +205,8 @@ test.describe('diff-tab リサイズハンドル', () => {
             await dragDiffResizeHandleAsync(page, -2000);
 
             const flexBasis = await page.evaluate(() => {
-                const el = document.querySelector('.diff-pane-left') as HTMLElement | null;
-                if (!el) throw new Error('.diff-pane-left が見つかりません');
+                const el = document.querySelector('.diff-pane-left-slot') as HTMLElement | null;
+                if (!el) throw new Error('.diff-pane-left-slot が見つかりません');
                 return el.style.flexBasis;
             });
 
@@ -234,8 +234,8 @@ test.describe('diff-tab リサイズハンドル', () => {
             await dragDiffResizeHandleAsync(page, 2000);
 
             const flexBasis = await page.evaluate(() => {
-                const el = document.querySelector('.diff-pane-left') as HTMLElement | null;
-                if (!el) throw new Error('.diff-pane-left が見つかりません');
+                const el = document.querySelector('.diff-pane-left-slot') as HTMLElement | null;
+                if (!el) throw new Error('.diff-pane-left-slot が見つかりません');
                 return el.style.flexBasis;
             });
 

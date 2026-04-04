@@ -78,18 +78,37 @@
     height: 100%;
 }
 
-/* 左ペインの初期幅は50%。リサイズ後はJSが flexBasis のみ上書きする */
-.diff-pane-left {
+/* スロットラッパー: ScrollbarMarkerTrack の配置コンテナ（.editor-left-slot と同パターン） */
+.diff-pane-left-slot {
     flex: 0 0 50%;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.diff-pane-right-slot {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 左ペインはスロット内を埋める */
+.diff-pane-left {
+    flex: 1 1 auto;
     overflow: auto;
     border-right: 1px solid var(--border-color);
     position: relative;
     min-width: 0;
 }
 
-/* 右ペインは残りスペースを埋める（flex: 1） */
+/* 右ペインはスロット内を埋める */
 .diff-pane-right {
-    flex: 1;
+    flex: 1 1 auto;
     overflow: auto;
     position: relative;
     min-width: 0;
