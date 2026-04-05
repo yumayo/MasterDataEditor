@@ -125,7 +125,7 @@ export class Selection {
      * 列全体を選択する（列ヘッダークリック時）
      */
     selectColumn(column: number): void {
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
         this.range = { startRow: 1, startColumn: column, endRow: rowCount - 1, endColumn: column };
@@ -159,7 +159,7 @@ export class Selection {
      * 現在のアンカーから指定した列まで選択を拡張する（Shift+列ヘッダークリック時）
      */
     extendToColumn(column: number): void {
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
         // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
@@ -187,7 +187,7 @@ export class Selection {
      * 全セルを選択する（左上コーナークリック時）
      */
     selectAll(): void {
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();
@@ -206,7 +206,7 @@ export class Selection {
      * selectingColumn を true にすることで、後続のドラッグ（updateColumn）で選択範囲を拡張できるようにする。
      */
     addColumn(column: number): void {
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
         // 新しい選択範囲を計算（列を含めるように拡張）
@@ -593,8 +593,11 @@ export class Selection {
      */
     reapplySelectionClassesOnly(): void {
         const selectionRange = this.getSelectionRange();
+        const { startRow, startColumn, endRow, endColumn } = selectionRange;
         this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
+        // 行・列ヘッダーの選択ハイライトも再適用する（バーチャルスクロールで行が入れ替わった後に必要）
+        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }

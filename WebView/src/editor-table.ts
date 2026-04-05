@@ -143,9 +143,9 @@ export class EditorTable {
     private scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
     /** 水平スクロールバーマーカートラック（connectHorizontalScrollbarMarkerTrackで設定される。未設定はfalse） */
     private horizontalScrollbarMarkerTrack: ScrollbarMarkerTrack | false;
-    /** 直近のバリデーションで検出されたエラーがあるDOM行インデックス（0始まり）の集合 */
+    /** 直近のバリデーションで検出されたエラーがあるデータ行インデックス（0始まり）の集合 */
     private currentErrorDomRows: Set<number>;
-    /** 直近のgit差分で検出された変更があるDOM行インデックス（0始まり）の集合 */
+    /** 直近のgit差分で検出された変更があるデータ行インデックス（0始まり）の集合 */
     private currentGitChangedDomRows: Set<number>;
     /** 直近のバリデーションで検出されたエラーがあるDOM列インデックス（0始まり、dataColumnOffset後）の集合 */
     private currentErrorDomCols: Set<number>;
@@ -593,6 +593,7 @@ export class EditorTable {
     /**
      * バーチャルスクロールで行の入れ替えが完了した後に、表示中の行に装飾を再適用する。
      * 選択クラス、コピー範囲クラス、フォーカスセル、フリーズペインスタイルを再適用する。
+     * 参照ヒント（FK参照先の表示名）を新しく生成された行に適用する。
      * バリデーションエラーとgit差分は renderRowForVirtualScroll 内の applyRowDecorations で適用済み。
      */
     private reapplyRowDecorations(): void {
@@ -602,6 +603,8 @@ export class EditorTable {
         // ドラッグ終了後の mouseup → selection.end() → updateRenderer() で正しく再適用される。
         if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) return;
         this.selection.reapplySelectionClassesOnly();
+        // 参照ヒントを再適用する（仮想スクロールで新しく生成された行にFK参照ヒントが必要）
+        this.reference.updateReferenceHints();
     }
 
     /**
@@ -1595,6 +1598,17 @@ export class EditorTable {
     }
 
     /**
+     * 論理的な全行数を返す（列ヘッダー行を含む）。
+     * 仮想スクロール時もDOMに存在しない行を含めた全データ行+バッファ行の数を返す。
+     * Selection の列全選択・行全選択など、全行を対象とする操作で使用する。
+     */
+    getLogicalRowCount(): number {
+        // storeRowIndices.length = データ行数, +1 = バッファ行, +1 = 列ヘッダー行
+        // ミニテーブル（仮想スクロール無効）では getRowCount() と同じ値になる
+        return this.storeRowIndices.length + 1 + 1;
+    }
+
+    /**
      * 列数を取得する（行ヘッダーセルを除く）
      */
     getColumnCount(): number {
@@ -1603,11 +1617,28 @@ export class EditorTable {
     }
 
     /**
-     * 座標でセルの値を取得する（参照ヒントを除外）
+     * 座標でセルの値を取得する（参照ヒントを除外）。
+     * 仮想スクロールで行がDOMに存在しない場合はストアから直接取得する。
      */
     getCellValueAt(row: number, column: number): string {
-        const cell = this.getCell(row, column);
-        return EditorTable.getCellValue(cell);
+        const rowElement = this.getRowElement(row);
+        if (rowElement !== null) {
+            const cell = rowElement.children[column] as HTMLElement;
+            return EditorTable.getCellValue(cell);
+        }
+        // DOM外の行: ストアから直接取得する
+        const dataRowIndex = row - 1;
+        if (dataRowIndex < 0 || dataRowIndex >= this.storeRowIndices.length) return '';
+        const storeRowIndex = this.storeRowIndices[dataRowIndex];
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false || storeRowIndex >= storeRows.length) return '';
+        const storeHeader = this.store.getHeader(this.tableName);
+        if (storeHeader === false) return '';
+        const dataColIndex = column - this.dataColumnOffset();
+        if (dataColIndex < 0 || dataColIndex >= this.tableData.columnMapping.length) return '';
+        const storeColIndex = this.tableData.columnMapping[dataColIndex];
+        if (storeColIndex === -1 || storeColIndex >= storeRows[storeRowIndex].length) return '';
+        return storeRows[storeRowIndex][storeColIndex];
     }
 
     /**
@@ -1943,11 +1974,10 @@ export class EditorTable {
             const headerCell = columnHeaderRow.children[i] as HTMLElement;
             headerCell.classList.remove('selected');
         }
-        // すべての行ヘッダーから選択状態を解除
-        // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
-        for (let i = 1; i < this.getRowCount(); i++) {
-            const row = this.getRowElement(i);
-            if (!row) continue;
+        // すべての行ヘッダーから選択状態を解除する。
+        // DOM子要素を直接走査する（仮想スクロール時は論理インデックスとDOMインデックスが一致しないため）。
+        for (let i = 1; i < this.element.children.length; i++) {
+            const row = this.element.children[i] as HTMLElement;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (rowHeader) rowHeader.classList.remove('selected');
         }
@@ -2981,7 +3011,7 @@ export class EditorTable {
         const rowCount = this.getRowCount();
         const totalColCount = this.getTotalColumnCount();
         if (this.gitDiffTracker === false) {
-            // git差分トラッカーが未接続 or 差分なし → 全セルからハイライトを除去する
+            // git差分トラッカーが未接続 or 差分なし → DOMに存在する全セルからハイライトを除去する
             // （保存後にgit statusから差分が消えたケースに対応）
             const offset = this.dataColumnOffset();
             for (let row = 1; row < rowCount; row++) {
@@ -3012,37 +3042,44 @@ export class EditorTable {
         // 非連番keyスキーマではDOMインデックスとCSVインデックスが一致しないため変換が必須。
         const columnMapping = this.tableData.columnMapping;
         const offset2 = this.dataColumnOffset();
-        // row=1 から開始（row=0 は列ヘッダー行のため除外）
-        // DOM走査と同時にgit変更行・列のDOM行/列インデックスを収集する（二重走査を避ける）
-        const changedDomRows = new Set<number>();
+        // ストアベースで全データ行を走査し、git変更行・列のデータ行インデックスを収集する。
+        // 仮想スクロール時はDOMに表示範囲の行しか存在しないため、DOM走査では全行を検出できない。
+        // マーカー描画にはDOMに存在しない行のインデックスも必要なのでストア全行を走査する。
+        const changedDataRows = new Set<number>();
         const changedDomCols = new Set<number>();
-        for (let row = 1; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
-            // バッファ空行（editor-table-empty-row クラスあり）はハイライト対象外
-            if (rowElement.classList.contains('editor-table-empty-row')) continue;
-            // 差分タブのパディング行（diff-row-empty クラスあり）もハイライト対象外
-            if (rowElement.classList.contains('diff-row-empty')) continue;
-            const domDataRowIndex = row - 1;
-            if (domDataRowIndex >= this.storeRowIndices.length) continue;
-            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+        const dataRowCount = this.storeRowIndices.length;
+        for (let dataRowIndex = 0; dataRowIndex < dataRowCount; dataRowIndex++) {
+            const storeRowIndex = this.storeRowIndices[dataRowIndex];
             let hasChanged = false;
-            // col=offset から開始（col=0〜offset-1 はblame列・行ヘッダーのため除外）
-            for (let col = offset2; col < totalColCount; col++) {
-                const domColIndex = col - offset2; // DOM列インデックス（0始まり）
-                const storeColIndex = columnMapping[domColIndex]; // CSV列インデックスに変換
-                if (storeColIndex === -1) continue; // 対応するCSV列がない場合はスキップ
-                const cell = this.getCell(row, col);
-                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, storeColIndex);
+            for (let domColIndex = 0; domColIndex < columnMapping.length; domColIndex++) {
+                const storeColIndex = columnMapping[domColIndex];
+                if (storeColIndex === -1) continue;
                 if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) {
                     if (!hasChanged) hasChanged = true;
                     changedDomCols.add(domColIndex);
                 }
             }
-            if (hasChanged) changedDomRows.add(domDataRowIndex);
+            if (hasChanged) changedDataRows.add(dataRowIndex);
+        }
+        // DOMに存在する行にのみ cell-git-changed クラスを適用/除去する
+        for (let row = 1; row < rowCount; row++) {
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
+            if (rowElement.classList.contains('editor-table-empty-row')) continue;
+            if (rowElement.classList.contains('diff-row-empty')) continue;
+            const domDataRowIndex = row - 1;
+            if (domDataRowIndex >= dataRowCount) continue;
+            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            for (let col = offset2; col < totalColCount; col++) {
+                const domColIndex = col - offset2;
+                const storeColIndex = columnMapping[domColIndex];
+                if (storeColIndex === -1) continue;
+                const cell = this.getCell(row, col);
+                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, storeColIndex);
+            }
         }
         // git変更行・列をスクロールバーマーカーに反映する
-        this.currentGitChangedDomRows = changedDomRows;
+        this.currentGitChangedDomRows = changedDataRows;
         this.currentGitChangedDomCols = changedDomCols;
         this.refreshScrollbarMarkers();
         this.refreshHorizontalScrollbarMarkers();
@@ -3211,8 +3248,7 @@ export class EditorTable {
      * インデックスベースで更新する。PK重複があっても正しい行を更新できる。
      */
     updateCellValueAt(row: number, column: number, value: string): void {
-        this.reference.setCellValueAt(row, column, value);
-        // DOMデータ行インデックス（0始まり）= DOM行インデックス - 1（列ヘッダー行分）
+        // DOMデータ行インデックス（0始まり）= 論理行インデックス - 1（列ヘッダー行分）
         const domDataRowIndex = row - 1;
         if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
         const storeRowIndex = this.storeRowIndices[domDataRowIndex];
@@ -3224,13 +3260,17 @@ export class EditorTable {
         const columnName = this.getColumnHeaderValue(column - this.dataColumnOffset());
         const storeColIndex = storeHeader.indexOf(columnName);
         if (storeColIndex === -1) return;
+        // ストア更新はDOM有無に関わらず常に実行する
         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
+        // DOM上に行が存在する場合のみDOM操作（参照ヒント・git差分ハイライト等）を行う。
+        // 仮想スクロールでDOM外の行はスクロールで表示される際に renderRowForVirtualScroll で再生成される。
+        const rowElement = this.getRowElement(row);
+        if (rowElement === null) return;
+        this.reference.setCellValueAt(row, column, value);
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
-        // storeColIndex はすでにCSV列インデックスに変換済みのためそのまま渡す（column-1はDOM列インデックスなので誤り）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
         // git差分ハイライトをこのセル1つ分だけ再評価する
-        // storeColIndex はすでにストア（CSV）列インデックスに変換済みなのでそのまま使う
         if (this.gitDiffTracker !== false) {
             const latestRows = this.store.getRows(this.tableName);
             if (latestRows !== false) {
@@ -3632,59 +3672,53 @@ export class EditorTable {
     /**
      * スクロールバーマーカートラックにエラー行・git変更行を反映する。
      * ミニテーブルではマーカー不要のため何もしない。
+     * データ行インデックスと総データ行数の比率でマーカー位置を算出する。
+     * DOMの表示範囲に依存しないため、仮想スクロール時もすべてのマーカーを描画できる。
      */
     private refreshScrollbarMarkers(): void {
         if (this.scrollbarMarkerTrack === false) return;
         if (this.isMiniTable) return;
-        // テーブル高さを100%としたマーカー比率を計算する。
-        // Canvas は editor-left-pane の全高に引き伸ばされるため、
-        // テーブルの行位置がペイン全高にマッピングされる。
-        const tableRect = this.element.getBoundingClientRect();
-        const tableHeight = tableRect.height;
-        if (tableHeight <= 0) return;
-        const tableTop = tableRect.top;
-        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, tableHeight, tableTop);
-        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, tableHeight, tableTop);
+        // 総データ行数（バッファ行を含む）をマーカー位置の分母にする。
+        // storeRowIndices.length はデータ行数、+1 でバッファ行1行を考慮する。
+        // ミニテーブルでは呼ばれない（上のガードで早期リターン済み）。
+        const totalDataRowCount = this.storeRowIndices.length + 1;
+        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, totalDataRowCount);
+        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, totalDataRowCount);
         this.scrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
     }
 
     /**
-     * DOM行インデックスの集合からマーカー描画エントリを構築する。
-     * getBoundingClientRect() で行のビューポート座標を取得し、テーブル上端からの相対位置で
-     * テーブル高さに対する比率を算出する。テーブル基準の座標を使うことで、テーブルが画面高さに
-     * 満たない場合でもマーカーがテーブルの行位置と正確に一致する。
+     * データ行インデックスの集合からマーカー描画エントリを構築する。
+     * 各行のマーカー位置を dataRowIndex / totalDataRowCount で比率算出する。
+     * DOM要素の座標に依存しないため、仮想スクロールで表示範囲外の行もマーカーを生成できる。
      * 連続する行はまとめて1つのエントリにマージする。
      */
-    private buildMarkerEntries(domRows: Set<number>, tableHeight: number, tableTop: number): MarkerEntry[] {
-        if (domRows.size === 0) return [];
+    private buildMarkerEntries(dataRows: Set<number>, totalDataRowCount: number): MarkerEntry[] {
+        if (dataRows.size === 0) return [];
         const markers: MarkerEntry[] = [];
-        const sorted = Array.from(domRows).sort((a, b) => a - b);
-        let rangeStartRow = this.getRowElement(sorted[0] + 1);
-        let rangeEndRow = rangeStartRow;
+        const sorted = Array.from(dataRows).sort((a, b) => a - b);
+        const rowSize = 1 / totalDataRowCount;
+        let rangeStartIdx = sorted[0];
+        let rangeEndIdx = sorted[0];
         for (let i = 1; i < sorted.length; i++) {
             if (sorted[i] === sorted[i - 1] + 1) {
-                rangeEndRow = this.getRowElement(sorted[i] + 1);
+                // 連続する行はマージする
+                rangeEndIdx = sorted[i];
             } else {
-                if (rangeStartRow && rangeEndRow) {
-                    const startRect = rangeStartRow.getBoundingClientRect();
-                    const endRect = rangeEndRow.getBoundingClientRect();
-                    markers.push({
-                        start: (startRect.top - tableTop) / tableHeight,
-                        size: (endRect.bottom - startRect.top) / tableHeight,
-                    });
-                }
-                rangeStartRow = this.getRowElement(sorted[i] + 1);
-                rangeEndRow = rangeStartRow;
+                // 非連続 → 前のレンジを確定して新しいレンジを開始する
+                markers.push({
+                    start: rangeStartIdx / totalDataRowCount,
+                    size: (rangeEndIdx - rangeStartIdx + 1) * rowSize,
+                });
+                rangeStartIdx = sorted[i];
+                rangeEndIdx = sorted[i];
             }
         }
-        if (rangeStartRow && rangeEndRow) {
-            const startRect = rangeStartRow.getBoundingClientRect();
-            const endRect = rangeEndRow.getBoundingClientRect();
-            markers.push({
-                start: (startRect.top - tableTop) / tableHeight,
-                size: (endRect.bottom - startRect.top) / tableHeight,
-            });
-        }
+        // 最後のレンジを確定する
+        markers.push({
+            start: rangeStartIdx / totalDataRowCount,
+            size: (rangeEndIdx - rangeStartIdx + 1) * rowSize,
+        });
         return markers;
     }
 

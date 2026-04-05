@@ -724,8 +724,6 @@ export class EditorTableHandler {
             const deleteRange = this.selection.getSelectionRange();
             const changes: CellChange[] = [];
             for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
-                // バーチャルスクロールにより行がDOMに存在しない場合があるため、値取得前にDOMに確保する
-                this.table.ensureRowVisible(r);
                 for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
                     const oldValue = this.table.getCellValueAt(r, c);
                     if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });

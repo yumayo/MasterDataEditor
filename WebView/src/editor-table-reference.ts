@@ -129,14 +129,19 @@ export class EditorTableReference {
      */
     updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
         const tableElement = this.table.getTableElement();
-        for (let rowIndex = startDomRow; rowIndex < endDomRow; rowIndex++) {
-            const row = tableElement.children[rowIndex] as HTMLElement;
-            if (!row) throw new Error(`DOM行が見つかりません: rowIndex=${rowIndex}`);
+        // 仮想スクロール時、DOM子インデックスと論理行インデックスがずれるためオフセットを加算する。
+        // setCellValue 内の getCellValueAt は論理インデックスで行を検索するため、
+        // DOMインデックスのまま渡すと動的参照・逆参照ヒントの行解決に失敗する。
+        const vsOffset = this.table.getVirtualScrollRenderedStart();
+        for (let domIndex = startDomRow; domIndex < endDomRow; domIndex++) {
+            const row = tableElement.children[domIndex] as HTMLElement;
+            if (!row) throw new Error(`DOM行が見つかりません: domIndex=${domIndex}`);
+            const logicalRowIndex = vsOffset + domIndex;
             for (let colIndex = this.table.dataColumnOffset(); colIndex < row.children.length; colIndex++) {
                 const cell = row.children[colIndex] as HTMLElement;
                 const dataColumnIndex = colIndex - this.table.dataColumnOffset();
                 const value = EditorTable.getCellValue(cell);
-                this.setCellValue(cell, value, dataColumnIndex, rowIndex);
+                this.setCellValue(cell, value, dataColumnIndex, logicalRowIndex);
             }
         }
     }
