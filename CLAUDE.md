@@ -112,3 +112,6 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 - 共通処理が書ける場合は、共通処理でまとめること。決して、コピペを多用しないこと。
 - Playwrightテスト（e2e/*.spec.ts）では `@playwright/test` から直接インポートせず、必ず `./fixtures/test` からインポートすること（`autoDump` フィクスチャによるDOM自動ダンプを有効にするため）。型（`Page`, `Locator` 等）のみ `@playwright/test` から直接インポートしてよい。
 - テスト失敗時、`.CONTEXT/dump/{spec名}/{テストタイトル}.errors.log` にブラウザ側の未キャッチ例外と `console.error` が出力される。テストが RED のとき、アサーションエラーだけでなくこのファイルも確認すること。ブラウザ側 TypeError 等がテスト失敗の根本原因であることが多い。
+- テスト実行後、`.CONTEXT/dump/{spec名}/{テストタイトル}.console.log` にブラウザ側の全コンソール出力（log/warn/error/debug）が記録される。テスト成功・失敗問わず常に出力される。デバッグ時に `console.log` で仕込んだログはこのファイルで確認すること。
+- テスト実行後、`.CONTEXT/dump/{spec名}/{テストタイトル}.html` にDOMダンプ、`.png` にスクリーンショットが保存される。UIの状態確認に使用すること。
+- ソースコードに `console.log` でデバッグログを残してよい。プロダクションビルドでは `esbuild.pure` により `console.log` / `console.debug` が自動除去される（`console.warn` / `console.error` は残る）。テストビルド時（`PLAYWRIGHT=1`）は除去されないためダンプに記録される。
