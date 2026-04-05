@@ -10,7 +10,7 @@
 - Build: Vite (`WebView/` directory)
 
 ## Virtual Scroll
-- [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — Phase 1骨格: スペーサー行方式、getRowElement変換、appendDataRow
+- [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — 方式B（テーブル外スペーサー）: DOM構造不変、connectRenderRow、Object.Assign注意点
 
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table facade

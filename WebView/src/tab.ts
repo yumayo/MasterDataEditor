@@ -2156,6 +2156,8 @@ export class Tab {
 
         // DOM要素を追加
         editorTable.appendTo(wrapperElement);
+        // バーチャルスクロールのスペーサーを配置（appendTo 完了後にテーブル前後に挿入する）
+        editorTable.attachSpacers();
         wrapperElement.appendChild(selection.fillPreviewElement);
         wrapperElement.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(wrapperElement);

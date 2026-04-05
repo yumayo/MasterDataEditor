@@ -5,6 +5,13 @@
     user-select: none;
 }
 
+/* バーチャルスクロール用スペーサー（テーブル外配置） */
+.virtual-scroll-top-spacer,
+.virtual-scroll-bottom-spacer {
+    width: 100%;
+    flex-shrink: 0;
+}
+
 .editor-table-row {
     display: table-row;
 }

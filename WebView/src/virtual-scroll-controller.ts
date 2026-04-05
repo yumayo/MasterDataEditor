@@ -1,13 +1,18 @@
+import {ROW_TOTAL_HEIGHT_PX} from "./constant";
+
 /**
  * バーチャルスクロールの制御を担うコントローラー。
  *
- * Phase 1: スペーサー行なし、全行DOM存在。クラスとAPIの骨格のみ。
- *          enabled=true でも DOM 構造は従来と同一（スペーサー行を追加しない）。
- *          Phase 2 でスペーサー行追加・行の動的追加/削除を実装する。
+ * 方式B（テーブル外スペーサー）を採用する。
+ * スペーサー要素は .tab-wrapper の子として .editor-table の前後に配置する。
+ * テーブル内 DOM 構造は従来と同一のため getRowCount(), getCellPosition(), nth-child セレクタに影響しない。
  *
- * enabled=false（ミニテーブル）の場合は将来的にもスペーサー行を追加しない。
+ * enabled=false（ミニテーブル）の場合は全メソッドがパススルー動作する。
  */
 export class VirtualScrollController {
+    /** 表示範囲外に余分にレンダリングするオーバースキャン行数 */
+    private static readonly OVERSCAN = 10;
+
     private readonly tableElement: HTMLElement;
     private readonly scrollContainer: HTMLElement;
     private readonly enabled: boolean;
@@ -15,8 +20,25 @@ export class VirtualScrollController {
     /** 総データ行数（バッファ行含む） */
     private totalRowCount: number;
 
+    /** 現在DOMに存在するデータ行の開始インデックス（0始まり） */
+    private renderedStart: number;
+    /** 現在DOMに存在するデータ行の終了インデックス（排他） */
+    private renderedEnd: number;
+
+    /** 上部スペーサー要素。enabled=true のみ使用。enabled=false なら false */
+    private topSpacer: HTMLElement | false;
+    /** 下部スペーサー要素。enabled=true のみ使用。enabled=false なら false */
+    private bottomSpacer: HTMLElement | false;
+
     /** スクロールイベントリスナー（destroy時の解除用に保持） */
     private readonly scrollListener: (() => void) | false;
+
+    /**
+     * 行生成コールバック。データ行インデックスを受け取り、DOM行要素を返す。
+     * enabled=true の場合のみ使用。enabled=false なら false。
+     * Object.Assign パターンで EditorTable のプロキシが確定した後に connectRenderRow() で設定する。
+     */
+    private renderRow: ((dataRowIndex: number) => HTMLElement) | false;
 
     constructor(
         tableElement: HTMLElement,
@@ -28,6 +50,14 @@ export class VirtualScrollController {
         this.scrollContainer = scrollContainer;
         this.enabled = enabled;
         this.totalRowCount = totalRowCount;
+        this.renderRow = false;
+
+        // enabled=false（ミニテーブル）では全行がDOMに存在する
+        this.renderedStart = 0;
+        this.renderedEnd = totalRowCount;
+
+        this.topSpacer = false;
+        this.bottomSpacer = false;
 
         if (enabled) {
             this.scrollListener = () => this.onScroll();
@@ -37,70 +67,266 @@ export class VirtualScrollController {
         }
     }
 
-    /** スクロールイベントハンドラ（Phase 2 で実装） */
+    /**
+     * 行生成コールバックを設定する。
+     * Object.Assign パターンで EditorTable のプロキシが確定し���後、
+     * initializeModules() 内で正しい this を持つコールバックを渡すこと。
+     * enabled=false の場合は呼ばなくてよい（renderRow は使用されない）。
+     */
+    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement): void {
+        this.renderRow = renderRow;
+    }
+
+    /**
+     * スペーサー要素を生成し、テーブル要素の前後に配置する。
+     * tableElement が親要素に追加された後（appendTo 完了後）に呼ぶこと。
+     * enabled=false の場合は何もしない。
+     */
+    attachSpacers(): void {
+        if (!this.enabled) return;
+        const parent = this.tableElement.parentElement;
+        if (parent === null) return;
+
+        // 上部スペーサー: テーブル要素の直前に挿入
+        const top = document.createElement('div');
+        top.classList.add('virtual-scroll-top-spacer');
+        top.style.height = '0px';
+        parent.insertBefore(top, this.tableElement);
+        this.topSpacer = top;
+
+        // 下部スペーサー: テーブル要素の直後に挿入（filterRowCountElement の前）
+        const bottom = document.createElement('div');
+        bottom.classList.add('virtual-scroll-bottom-spacer');
+        bottom.style.height = '0px';
+        // tableElement の直後に挿入する（nextSibling が存在すればその前に、なければ末尾に追加）
+        const nextSibling = this.tableElement.nextElementSibling;
+        if (nextSibling !== null) {
+            parent.insertBefore(bottom, nextSibling);
+        } else {
+            parent.appendChild(bottom);
+        }
+        this.bottomSpacer = bottom;
+    }
+
+    /** スクロールイベントハンドラ。表示範囲を再計算して行を動的に生成/破棄する */
     onScroll(): void {
-        // Phase 1: 何もしない
+        if (!this.enabled) return;
+        this.recalculate();
     }
 
     /** 総行数が変化した際に呼ぶ */
     updateTotalRowCount(count: number): void {
         this.totalRowCount = count;
+        if (!this.enabled) {
+            // ミニテーブルでは renderedEnd も同期する
+            this.renderedEnd = count;
+        }
     }
 
-    /** 表示範囲を強制再計算する（Phase 2 で実装） */
+    /** 表示範囲を強制再計算する（行挿入/削除/ソート/フィルター後） */
     forceRecalculate(): void {
-        // Phase 1: 何もしない
+        if (!this.enabled) return;
+        this.recalculate();
     }
 
     /**
      * 現在の表示範囲 [start, end) を返す。
-     * Phase 1 では常に [0, totalRowCount) を返す（全行表示中）。
+     * enabled=false では常に [0, totalRowCount) を返す（全行表示中）。
      */
     getRenderedRange(): { start: number; end: number } {
-        return { start: 0, end: this.totalRowCount };
+        return { start: this.renderedStart, end: this.renderedEnd };
     }
 
     /**
      * 論理データ行インデックス（0始まり）をDOMの子要素インデックスに変換する。
-     * Phase 1: スペーサー行がないため、常に dataRowIndex + 1 を返す。
-     * Phase 2: 表示範囲外ならnullを返す。
+     * enabled=false: 常に dataRowIndex + 1 を返す（従来通り）。
+     * enabled=true: 表示範囲内なら dataRowIndex - renderedStart + 1、範囲外なら null。
+     * +1 はヘッダー行分のオフセット。
      */
     dataRowToDomIndex(dataRowIndex: number): number | null {
-        // Phase 1: スペーサー行なし。DOM構造は [ヘッダー(0), dataRow0(1), dataRow1(2), ...]
-        return dataRowIndex + 1;
+        if (!this.enabled) return dataRowIndex + 1;
+        if (dataRowIndex < this.renderedStart || dataRowIndex >= this.renderedEnd) return null;
+        return dataRowIndex - this.renderedStart + 1;
     }
 
     /**
      * DOMの子要素インデックスがスペーサー行かどうかを判定する。
-     * Phase 1: スペーサー行がないため常にfalse。
+     * 方式Bではスペーサーがテーブル外にあるため常にfalse。
      */
     isSpacerIndex(_domChildIndex: number): boolean {
-        // Phase 1: スペーサー行なし
         return false;
     }
 
     /**
      * スペーサー行の数を返す。
-     * Phase 1: スペーサー行なしのため0。
+     * 方式Bではスペーサーがテーブル外にあるため常に0。
      */
     spacerCount(): number {
-        // Phase 1: スペーサー行なし
         return 0;
     }
 
     /**
      * データ行をテーブル末尾に追加する。
-     * Phase 1: 単純な appendChild。
-     * Phase 2: bottomSpacerの手前に挿入する。
+     * 方式Bではスペーサーがテーブル外にあるため単純な appendChild。
      */
     appendDataRow(row: HTMLElement): void {
         this.tableElement.appendChild(row);
+    }
+
+    /**
+     * 指定データ行インデックスがビューポートに含まれるようスクロールする。
+     * enabled=false の場合は何もしない（従来のスクロール処理に委譲）。
+     */
+    ensureRowVisible(dataRowIndex: number): void {
+        if (!this.enabled) return;
+        // ヘッダー行の高さを考慮したスクロール位置を計算
+        const headerHeight = this.getHeaderHeight();
+        const rowTop = dataRowIndex * ROW_TOTAL_HEIGHT_PX;
+        const rowBottom = rowTop + ROW_TOTAL_HEIGHT_PX;
+        const viewTop = this.scrollContainer.scrollTop - this.getTopSpacerParentOffset();
+        const viewBottom = viewTop + this.scrollContainer.clientHeight;
+        if (rowTop + headerHeight < viewTop) {
+            // 上方向にスクロール
+            this.scrollContainer.scrollTop = rowTop + this.getTopSpacerParentOffset();
+        } else if (rowBottom + headerHeight > viewBottom) {
+            // 下方向にスクロール
+            this.scrollContainer.scrollTop = rowBottom + headerHeight - this.scrollContainer.clientHeight + this.getTopSpacerParentOffset();
+        }
+        // スクロール後に再計算
+        this.recalculate();
     }
 
     /** DOM破棄 */
     destroy(): void {
         if (this.scrollListener !== false) {
             this.scrollContainer.removeEventListener('scroll', this.scrollListener);
+        }
+        if (this.topSpacer !== false) {
+            this.topSpacer.remove();
+        }
+        if (this.bottomSpacer !== false) {
+            this.bottomSpacer.remove();
+        }
+    }
+
+    // =========================================================================
+    // 内部メソッド
+    // =========================================================================
+
+    /**
+     * ヘッダー行の実際の高さを取得する。
+     * ヘッダー行は sticky なので、スクロール位置計算時にオフセットとして使用する。
+     */
+    private getHeaderHeight(): number {
+        const headerRow = this.tableElement.children[0] as HTMLElement;
+        if (!headerRow) return ROW_TOTAL_HEIGHT_PX;
+        return headerRow.offsetHeight;
+    }
+
+    /**
+     * topSpacer の親要素内でのオフセット（topSpacer 自身の高さ）を取得する。
+     * scrollTop にはスペーサーの高さが含まれるため、データ行の位置計算に必要。
+     */
+    private getTopSpacerParentOffset(): number {
+        if (this.topSpacer === false) return 0;
+        return this.topSpacer.offsetHeight;
+    }
+
+    /**
+     * 表示範囲を再計算し、DOMの行を更新する。
+     * scrollContainer の scrollTop を基に、ビューポートに収まるデータ行の範囲を決定する。
+     */
+    private recalculate(): void {
+        if (this.renderRow === false) return;
+        const scrollTop = this.scrollContainer.scrollTop;
+        const viewportHeight = this.scrollContainer.clientHeight;
+        const headerHeight = this.getHeaderHeight();
+
+        // topSpacer の高さはスクロール位置に含まれるため差し引く
+        const topSpacerHeight = this.topSpacer !== false ? this.topSpacer.offsetHeight : 0;
+
+        // ヘッダー行（sticky）の下端から見えるデータ行の範囲を計算する
+        // scrollTop が topSpacer の分も含むため、まず topSpacer を差し引いてデータ領域の先頭からの位置を得る
+        const dataAreaScrollTop = Math.max(0, scrollTop - topSpacerHeight);
+        // sticky ヘッダーがデータ領域の先頭にかぶさるため、ヘッダー高さ分を追加で差し引く
+        const effectiveTop = Math.max(0, dataAreaScrollTop - headerHeight);
+        const firstVisibleRow = Math.floor(effectiveTop / ROW_TOTAL_HEIGHT_PX);
+        const visibleRowCount = Math.ceil((viewportHeight - headerHeight) / ROW_TOTAL_HEIGHT_PX) + 1;
+        const lastVisibleRow = firstVisibleRow + visibleRowCount;
+
+        const newStart = Math.max(0, firstVisibleRow - VirtualScrollController.OVERSCAN);
+        const newEnd = Math.min(this.totalRowCount, lastVisibleRow + VirtualScrollController.OVERSCAN);
+
+        if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
+
+        this.updateRenderedRows(newStart, newEnd);
+
+        // スペーサーの高さを更新する
+        if (this.topSpacer !== false) {
+            this.topSpacer.style.height = `${newStart * ROW_TOTAL_HEIGHT_PX}px`;
+        }
+        if (this.bottomSpacer !== false) {
+            this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * ROW_TOTAL_HEIGHT_PX)}px`;
+        }
+
+        this.renderedStart = newStart;
+        this.renderedEnd = newEnd;
+    }
+
+    /**
+     * DOMのデータ行を新しい表示範囲に更新する。
+     * 既存の行との差分を効率的に計算し、不要な行を削除、新しい行を生成する。
+     */
+    private updateRenderedRows(newStart: number, newEnd: number): void {
+        if (this.renderRow === false) return;
+
+        // 現在の範囲と新しい範囲の重複部分を計算する
+        const overlapStart = Math.max(this.renderedStart, newStart);
+        const overlapEnd = Math.min(this.renderedEnd, newEnd);
+
+        if (overlapStart >= overlapEnd) {
+            // 重複なし: 全行を入れ替える
+            // 既存のデータ行をすべて削除する（ヘッダー行は残す）
+            while (this.tableElement.children.length > 1) {
+                this.tableElement.removeChild(this.tableElement.lastChild as Node);
+            }
+            // 新しい範囲の行をすべて生成する
+            for (let i = newStart; i < newEnd; i++) {
+                const row = this.renderRow(i);
+                this.tableElement.appendChild(row);
+            }
+        } else {
+            // 重複あり: 差分のみ更新する
+
+            // 上端の不要な行を削除する（renderedStart ～ overlapStart の行）
+            const removeTopCount = overlapStart - this.renderedStart;
+            for (let i = 0; i < removeTopCount; i++) {
+                // children[1] がデータ行の先頭（children[0] はヘッダー行）
+                const row = this.tableElement.children[1];
+                if (row) this.tableElement.removeChild(row);
+            }
+
+            // 下端の不要な行を削除する（overlapEnd ～ renderedEnd の行）
+            const removeBottomCount = this.renderedEnd - overlapEnd;
+            for (let i = 0; i < removeBottomCount; i++) {
+                const row = this.tableElement.lastChild;
+                if (row) this.tableElement.removeChild(row);
+            }
+
+            // 上端に新しい行を挿入する（newStart ～ overlapStart の行）
+            // ヘッダー行の次（children[1]）に順番に挿入する
+            const headerRow = this.tableElement.children[0];
+            const insertRef = headerRow.nextSibling;
+            for (let i = newStart; i < overlapStart; i++) {
+                const row = this.renderRow(i);
+                this.tableElement.insertBefore(row, insertRef);
+            }
+
+            // 下端に新しい行を追加する（overlapEnd ～ newEnd の行）
+            for (let i = overlapEnd; i < newEnd; i++) {
+                const row = this.renderRow(i);
+                this.tableElement.appendChild(row);
+            }
         }
     }
 }

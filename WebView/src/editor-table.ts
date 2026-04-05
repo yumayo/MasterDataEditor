@@ -221,6 +221,8 @@ export class EditorTable {
         );
         this.rowDragController = new RowDragController(this, selection, history);
         // バーチャルスクロール: 通常テーブルで有効化、ミニテーブルでは無���化
+        // バーチャルスクロール: 通常テーブルで有効化、ミニテーブルでは無効化
+        // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
         this.virtualScroll = new VirtualScrollController(
             this.element, scrollContainer, emptyRowCount, !isMiniTable
         );
@@ -250,6 +252,10 @@ export class EditorTable {
         // 旧インスタンスのインジケーター要素を document.body から除去してからの再作成。
         this.rowDragController.destroy();
         this.rowDragController = new RowDragController(this, this.selection, this.history);
+        // バーチャルスクロールの行生成コールバックを正しい this（プロキシオブジェクト）で設定する。
+        // コンストラクタ時点の this は realEditorTable を指すためクロージャが旧オブジェクトを捕捉してしまう。
+        // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
+        this.virtualScroll.connectRenderRow((dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex));
     }
 
     // =========================================================================
@@ -493,6 +499,26 @@ export class EditorTable {
         // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
         row.classList.add('editor-table-empty-row');
         return row;
+    }
+
+    /**
+     * バーチャルスクロールの行動的生成コールバック。
+     * データ行かバッファ行かを判定し、適切なメソッドに委譲する。
+     * storeRowIndices の長さ（=データ行数）を境界としてバッファ行を判定する。
+     */
+    private renderRowForVirtualScroll(dataRowIndex: number): HTMLElement {
+        if (dataRowIndex < this.storeRowIndices.length) {
+            return this.renderDataRow(dataRowIndex);
+        }
+        return this.renderBufferRow(dataRowIndex);
+    }
+
+    /**
+     * バーチャルスクロールのスペーサー要素をDOM上に配置する。
+     * appendTo() 完了後（テーブル要素が親要素に追加された後）に呼ぶこと。
+     */
+    attachSpacers(): void {
+        this.virtualScroll.attachSpacers();
     }
 
     /**
@@ -931,13 +957,22 @@ export class EditorTable {
     /**
      * DOM行インデックスから行要素を取得する。
      * 0 = 列ヘッダー行、1以降 = データ行。
-     * バーチャルスクロール有効時はスペーサー行分のオフセットを考慮する。
-     * 表示範囲外の行やスペーサー行インデックスではnullを返す。
+     *
+     * domRowIndex は従来のインデックス体系（0=ヘッダー、1=データ行0、...）で呼ばれる。
+     * 方式B（テーブル外スペーサー）のため、テーブル内 children のインデックスは従来と変わらない。
+     * ただし仮想化有効時は表示範囲のデータ行のみがDOMに存在するため、
+     * dataRowToDomIndex で実際の children インデックスに変換する。
      */
     private getRowElement(domRowIndex: number): HTMLElement | null {
-        // Phase 1: スペーサー行なし。dataRowToDomIndex は常に dataRowIndex + 1 を返す。
-        // domRowIndex は従来のインデックス体系（0=ヘッダー、1=データ行0、...）
-        const row = this.element.children[domRowIndex];
+        if (domRowIndex === 0) {
+            // ヘッダー行は常に children[0]
+            return this.element.children[0] as HTMLElement;
+        }
+        // domRowIndex は1始まりのデータ行インデックス。0始まりに変換する。
+        const dataRowIndex = domRowIndex - 1;
+        const actualDomIndex = this.virtualScroll.dataRowToDomIndex(dataRowIndex);
+        if (actualDomIndex === null) return null;
+        const row = this.element.children[actualDomIndex];
         if (!row) return null;
         return row as HTMLElement;
     }
