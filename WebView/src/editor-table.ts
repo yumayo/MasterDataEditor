@@ -2466,13 +2466,14 @@ export class EditorTable {
         }
         if (allEntries.length === 0) return false;
         if (allEntries.length === 1) {
-            this.tab.navigateToTableRow(allEntries[0].childTableName, pkValue);
+            const entry = allEntries[0];
+            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, pkValue);
             return true;
         }
         // 複数の逆参照: モーダルで選択させる
         const tab = this.tab;
         ReverseReferenceJumpDialog.open(allEntries, (selected) => {
-            tab.navigateToTableRow(selected.childTableName, pkValue);
+            tab.navigateToTableColumnValue(selected.childTableName, selected.childColumnName, pkValue);
         });
         return true;
     }
