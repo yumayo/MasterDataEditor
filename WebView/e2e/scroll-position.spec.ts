@@ -281,7 +281,8 @@ test(
             const rowTop = rowIdx * rowHeight;
             const targetScrollTop = rowTop - container.clientHeight + 5;
             container.scrollTop = targetScrollTop;
-            // バーチャルスクロールのrecalculateを同期的に発火させるためscrollイベントをディスパッチする
+            // scrollTop設定だけではscrollイベントが非同期のため、rAFスロットルを挟んでrecalculateが遅延する。
+            // 確実にDOMを更新するために同期的にscrollイベントをディスパッチしてrecalculateを強制発火させる。
             container.dispatchEvent(new Event('scroll'));
             return {
                 scrollTop: container.scrollTop,
@@ -294,8 +295,10 @@ test(
         // スクロール設定が正しく反映されたことを確認する
         expect(scrollSetup.scrollTop, `スクロール設定が反映されていない: clientHeight=${scrollSetup.clientHeight}, scrollHeight=${scrollSetup.scrollHeight}, targetScrollTop=${scrollSetup.targetScrollTop}`).toBeGreaterThan(0);
 
-        // recalculate後のDOMレイアウトが確定するのを待つ
-        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+        // scrollTop設定後のscrollイベント発火→rAFスロットル→recalculate→DOM更新を待つ。
+        // page.evaluate内でscrollTopを設定してもブラウザのscrollイベントは非同期発火するため、
+        // rAFだけでは不十分。短いタイムアウトでイベントループの完了を保証する。
+        await page.waitForTimeout(100);
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);
@@ -373,12 +376,15 @@ test(
             // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
             const rowTop = rowIdx * rowHeight;
             container.scrollTop = rowTop - container.clientHeight + 5;
-            // バーチャルスクロールのrecalculateを同期的に発火させるためscrollイベントをディスパッチする
+            // scrollTop設定だけではscrollイベントが非同期のため、rAFスロットルを挟んでrecalculateが遅延する。
+            // 確実にDOMを更新するために同期的にscrollイベントをディスパッチしてrecalculateを強制発火させる。
             container.dispatchEvent(new Event('scroll'));
         }, [targetRowIndex, ROW_HEIGHT] as [number, number]);
 
-        // recalculate後のDOMレイアウトが確定するのを待つ
-        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+        // scrollTop設定後のscrollイベント発火→rAFスロットル→recalculate→DOM更新を待つ。
+        // page.evaluate内でscrollTopを設定してもブラウザのscrollイベントは非同期発火するため、
+        // rAFだけでは不十分。短いタイムアウトでイベントループの完了を保証する。
+        await page.waitForTimeout(100);
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);

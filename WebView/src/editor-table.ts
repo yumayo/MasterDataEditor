@@ -151,6 +151,11 @@ export class EditorTable {
     private currentErrorDomCols: Set<number>;
     /** 直近のgit差分で検出された変更があるDOM列インデックス（0始まり、dataColumnOffset後）の集合 */
     private currentGitChangedDomCols: Set<number>;
+    /** バリデーションエラーのストア座標キャッシュ（renderRowForVirtualScroll でクラス適用に使用） */
+    private cachedPkErrorCells: Set<string>;
+    private cachedOtherErrorCells: Set<string>;
+    /** DOM列→ストア列のマッピングキャッシュ（バリデーションエラークラス適用用） */
+    private cachedDomColToStoreCol: number[];
     /** バーチャルスクロールコントローラー */
     private readonly virtualScroll: VirtualScrollController;
 
@@ -208,6 +213,9 @@ export class EditorTable {
         this.currentGitChangedDomRows = new Set();
         this.currentErrorDomCols = new Set();
         this.currentGitChangedDomCols = new Set();
+        this.cachedPkErrorCells = new Set();
+        this.cachedOtherErrorCells = new Set();
+        this.cachedDomColToStoreCol = [];
         this.columnSorter = new ColumnSorter(this, store);
         this.columnFilter = new ColumnFilter();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
@@ -461,6 +469,9 @@ export class EditorTable {
         this.runValidation();
         // 初期表示時にブックマーク済みセルの視覚マークを復元する
         this.restoreBookmarkMarks();
+        // 全行生成後にバーチャルスクロールの初期表示範囲を確立する。
+        // ビューポートに収まる行のみ残し、残りは削除してスペーサーで高さを補完する。
+        this.virtualScroll.forceRecalculate();
     }
 
     /**
@@ -520,12 +531,55 @@ export class EditorTable {
      * バーチャルスクロールの行動的生成コールバック。
      * データ行かバッファ行かを判定し、適切なメソッドに委譲する。
      * storeRowIndices の長さ（=データ行数）を境界としてバッファ行を判定する。
+     * 生成後にバリデーションエラークラスとgit変更クラスを適用する。
      */
     private renderRowForVirtualScroll(dataRowIndex: number): HTMLElement {
         if (dataRowIndex < this.storeRowIndices.length) {
-            return this.renderDataRow(dataRowIndex);
+            const row = this.renderDataRow(dataRowIndex);
+            this.applyRowDecorations(row, dataRowIndex);
+            return row;
         }
         return this.renderBufferRow(dataRowIndex);
+    }
+
+    /**
+     * バーチャルスクロールで動的生成されたデータ行に、バリデーションエラーとgit変更のクラスを適用する。
+     * applyValidationErrors / applyGitDiffHighlight でキャッシュされた情報を使用する。
+     */
+    private applyRowDecorations(rowElement: HTMLElement, dataRowIndex: number): void {
+        const storeRowIndex = this.storeRowIndices[dataRowIndex];
+        const offset = this.dataColumnOffset();
+        const colCount = this.getColumnCount();
+        // バリデーションエラークラスの適用
+        if (this.cachedPkErrorCells.size > 0 || this.cachedOtherErrorCells.size > 0) {
+            for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+                const cell = rowElement.children[dataColIdx + offset] as HTMLElement | null;
+                if (!cell) continue;
+                const storeColIdx = dataColIdx < this.cachedDomColToStoreCol.length ? this.cachedDomColToStoreCol[dataColIdx] : -1;
+                if (storeColIdx === -1) continue;
+                const key = `${storeRowIndex},${storeColIdx}`;
+                const isPkError = this.cachedPkErrorCells.has(key);
+                const isOtherError = this.cachedOtherErrorCells.has(key);
+                if (isPkError) { cell.classList.add('cell-pk-duplicate'); }
+                if (isPkError || isOtherError) { cell.classList.add('cell-error'); }
+            }
+        }
+        // git変更クラスの適用
+        if (this.gitDiffTracker !== false) {
+            const storeRows = this.store.getRows(this.tableName);
+            if (storeRows !== false) {
+                const columnMapping = this.tableData.columnMapping;
+                for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+                    const cell = rowElement.children[dataColIdx + offset] as HTMLElement | null;
+                    if (!cell) continue;
+                    const storeColIdx = dataColIdx < columnMapping.length ? columnMapping[dataColIdx] : -1;
+                    if (storeColIdx === -1) continue;
+                    if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIdx)) {
+                        cell.classList.add('cell-git-changed');
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -3491,6 +3545,10 @@ export class EditorTable {
         for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
             domColToStoreCol.push(storeHeader.indexOf(this.getColumnHeaderValue(dataColIdx)));
         }
+        // バーチャルスクロールで新規生成される行にもエラークラスを適用できるようキャッシュに保存する
+        this.cachedPkErrorCells = pkErrorCells;
+        this.cachedOtherErrorCells = otherErrorCells;
+        this.cachedDomColToStoreCol = domColToStoreCol;
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
             const row = this.getRowElement(rowIdx);

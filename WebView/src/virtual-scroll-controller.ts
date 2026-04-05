@@ -119,15 +119,10 @@ export class VirtualScrollController {
         this.bottomSpacer = bottom;
     }
 
-    /** スクロールイベントハンドラ。requestAnimationFrame でスロットルして再計算する */
+    /** スクロールイベントハンドラ。同期的に再計算を実行する */
     onScroll(): void {
         if (!this.enabled) return;
-        if (this.scrollPending) return;
-        this.scrollPending = true;
-        requestAnimationFrame(() => {
-            this.scrollPending = false;
-            this.recalculate();
-        });
+        this.recalculate();
     }
 
     /** 総行数が変化した際に呼ぶ */
