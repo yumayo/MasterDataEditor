@@ -25,6 +25,9 @@ export class VirtualScrollController {
     /** 現在DOMに存在するデータ行の終了インデックス（排他） */
     private renderedEnd: number;
 
+    /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
+    private actualRowHeight: number;
+
     /** 上部スペーサー要素。enabled=true のみ使用。enabled=false なら false */
     private topSpacer: HTMLElement | false;
     /** 下部スペーサー要素。enabled=true のみ使用。enabled=false なら false */
@@ -50,6 +53,7 @@ export class VirtualScrollController {
         this.scrollContainer = scrollContainer;
         this.enabled = enabled;
         this.totalRowCount = totalRowCount;
+        this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
         this.renderRow = false;
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
@@ -198,9 +202,11 @@ export class VirtualScrollController {
     ensureRowVisible(dataRowIndex: number): void {
         if (!this.enabled) return;
         // ヘッダー行の高さを考慮したスクロール位置を計算
+        this.measureActualRowHeight();
+        const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        const rowTop = dataRowIndex * ROW_TOTAL_HEIGHT_PX;
-        const rowBottom = rowTop + ROW_TOTAL_HEIGHT_PX;
+        const rowTop = dataRowIndex * rowHeight;
+        const rowBottom = rowTop + rowHeight;
         const viewTop = this.scrollContainer.scrollTop - this.getTopSpacerParentOffset();
         const viewBottom = viewTop + this.scrollContainer.clientHeight;
         if (rowTop + headerHeight < viewTop) {
@@ -242,6 +248,20 @@ export class VirtualScrollController {
     }
 
     /**
+     * DOMに存在するデータ行の実際の高さを測定して actualRowHeight を更新する。
+     * DPIスケーリングや将来的なCSS変更にも対応するため、定数ではなく実測値を使う。
+     * データ行がDOMに存在しない場合は前回の値（初期値はROW_TOTAL_HEIGHT_PX）を維持する。
+     */
+    private measureActualRowHeight(): void {
+        // children[0] はヘッダー行、children[1] が最初のデータ行
+        if (this.tableElement.children.length < 2) return;
+        const firstDataRow = this.tableElement.children[1] as HTMLElement;
+        if (!firstDataRow) return;
+        const measured = firstDataRow.offsetHeight;
+        if (measured > 0) this.actualRowHeight = measured;
+    }
+
+    /**
      * topSpacer の親要素内でのオフセット（topSpacer 自身の高さ）を取得する。
      * scrollTop にはスペーサーの高さが含まれるため、データ行の位置計算に必要。
      */
@@ -256,6 +276,11 @@ export class VirtualScrollController {
      */
     private recalculate(): void {
         if (this.renderRow === false) return;
+        // 実行時の行高さを測定する（DPIスケーリング対応）。
+        // DOMにデータ行が存在する場合のみ測定し、存在しない場合は前回の値を維持する。
+        this.measureActualRowHeight();
+        const rowHeight = this.actualRowHeight;
+
         const scrollTop = this.scrollContainer.scrollTop;
         const viewportHeight = this.scrollContainer.clientHeight;
         const headerHeight = this.getHeaderHeight();
@@ -268,8 +293,8 @@ export class VirtualScrollController {
         const dataAreaScrollTop = Math.max(0, scrollTop - topSpacerHeight);
         // sticky ヘッダーがデータ領域の先頭にかぶさるため、ヘッダー高さ分を追加で差し引く
         const effectiveTop = Math.max(0, dataAreaScrollTop - headerHeight);
-        const firstVisibleRow = Math.floor(effectiveTop / ROW_TOTAL_HEIGHT_PX);
-        const visibleRowCount = Math.ceil((viewportHeight - headerHeight) / ROW_TOTAL_HEIGHT_PX) + 1;
+        const firstVisibleRow = Math.floor(effectiveTop / rowHeight);
+        const visibleRowCount = Math.ceil((viewportHeight - headerHeight) / rowHeight) + 1;
         const lastVisibleRow = firstVisibleRow + visibleRowCount;
 
         const newStart = Math.max(0, firstVisibleRow - VirtualScrollController.OVERSCAN);
@@ -277,22 +302,21 @@ export class VirtualScrollController {
 
         if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
 
-        // DOM行の入れ替え前にスクロール位置を保存する。
-        // updateRenderedRows() でDOM行が削除・挿入されると、ブラウザが
-        // grid-textfield（top:-99999px の contenteditable）に向かって自動スクロールし
-        // scrollTop が 0 にリセットされる場合がある。
+        // スペーサー高さを行の入れ替え「前」に設定する。
+        // 行を削除してからスペーサーを設定すると、一時的にコンテンツ高さが激減し
+        // ブラウザがscrollTopをクランプしてスクロール位置が0にリセットされる。
+        // スペーサーを先に膨らませることで、行削除中もコンテンツ高さを安定させる。
         const savedScrollTop = scrollTop;
         const savedScrollLeft = this.scrollContainer.scrollLeft;
 
-        this.updateRenderedRows(newStart, newEnd);
-
-        // スペーサーの高さを更新する
         if (this.topSpacer !== false) {
-            this.topSpacer.style.height = `${newStart * ROW_TOTAL_HEIGHT_PX}px`;
+            this.topSpacer.style.height = `${newStart * rowHeight}px`;
         }
         if (this.bottomSpacer !== false) {
-            this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * ROW_TOTAL_HEIGHT_PX)}px`;
+            this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * rowHeight)}px`;
         }
+
+        this.updateRenderedRows(newStart, newEnd);
 
         this.renderedStart = newStart;
         this.renderedEnd = newEnd;
