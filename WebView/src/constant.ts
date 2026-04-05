@@ -5,8 +5,14 @@
 /** デフォルトの列幅 */
 export const DEFAULT_COLUMN_WIDTH = '100px';
 
-/** デフォルトの行高さ */
-export const DEFAULT_ROW_HEIGHT = '20px';
+/** 行のCSSheightプロパティ値(px) */
+export const ROW_HEIGHT_PX = 20;
+
+/** border-bottom: 1px を含む行の実描画高さ(px)。バーチャルスクロールの位置計算に使用する */
+export const ROW_TOTAL_HEIGHT_PX = 21;
+
+/** 行のCSSheightプロパティ値（文字列） */
+export const DEFAULT_ROW_HEIGHT = `${ROW_HEIGHT_PX}px`;
 
 /** 列ヘッダーのフォント指定（CSSの body { font-size: 13px; font-family: sans-serif; } と .editor-table-column-header { font-weight: bold; } に対応） */
 export const COLUMN_HEADER_FONT = 'bold 13px sans-serif';
