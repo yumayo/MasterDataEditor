@@ -64,6 +64,10 @@ export class SearchPanel {
     private static readonly CHEVRON_RIGHT_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.7 13.7L5 13l5-5-5-5 .7-.7L11.4 8l-5.7 5.7z"/></svg>';
     /** chevron-down: 展開状態（置換表示） */
     private static readonly CHEVRON_DOWN_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.3 5.7L3 5l5 5 5-5 .7.7L8 11.4 2.3 5.7z"/></svg>';
+    /** replace: 1件置換アイコン（VSCode Codicons準拠） */
+    private static readonly REPLACE_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.6 2.7c.3-.3.3-.8 0-1.1-.3-.3-.8-.3-1.1 0L7.4 4.7l1.1 1.1 3.1-3.1zM3 7h5.2l1.8-1.8L9.7 4.9 8.4 6.2H3c-.6 0-1 .4-1 1v2c0 .6.4 1 1 1h3v2l3-2.5L6 7.2V8H3V7zm10 2c0-.6-.4-1-1-1h-1v1h1v2H8.6l-1.3 1H12c.6 0 1-.4 1-1V9z"/></svg>';
+    /** replace-all: 全置換アイコン（VSCode Codicons準拠） */
+    private static readonly REPLACE_ALL_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.6 2.7c.3-.3.3-.8 0-1.1-.3-.3-.8-.3-1.1 0L7.4 4.7l1.1 1.1 3.1-3.1zM3 7h5.2l1.8-1.8-.3-.3-1.3 1.3H3c-.6 0-1 .4-1 1v2c0 .6.4 1 1 1h3v2l3-2.5L6 7.2V8H3V7zm10 2c0-.6-.4-1-1-1h-1v1h1v2H8.6l-1.3 1H12c.6 0 1-.4 1-1V9z"/><path d="M14.6 4.7c.3-.3.3-.8 0-1.1-.3-.3-.8-.3-1.1 0l-1.1 1.1 1.1 1.1 1.1-1.1z" opacity="0.6"/></svg>';
 
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
@@ -156,23 +160,23 @@ export class SearchPanel {
         });
         this.replaceRowElement.appendChild(this.replaceInputElement);
 
-        // 1件置換ボタン（テキストラベル）
+        // 1件置換ボタン（SVGアイコン）
         this.replaceButton = document.createElement('button');
         this.replaceButton.classList.add('search-replace-button');
         this.replaceButton.setAttribute('aria-label', '現在のマッチを1件置換');
         this.replaceButton.title = '置換';
-        this.replaceButton.textContent = '置換';
+        this.replaceButton.innerHTML = SearchPanel.REPLACE_SVG;
         this.replaceButton.addEventListener('click', () => {
             this.replaceCurrentMatch();
         });
         this.replaceRowElement.appendChild(this.replaceButton);
 
-        // すべて置換ボタン（テキストラベル）
+        // すべて置換ボタン（SVGアイコン）
         this.replaceAllButton = document.createElement('button');
         this.replaceAllButton.classList.add('search-replace-all-button');
         this.replaceAllButton.setAttribute('aria-label', 'すべてのマッチを一括置換');
         this.replaceAllButton.title = 'すべて置換';
-        this.replaceAllButton.textContent = '全置換';
+        this.replaceAllButton.innerHTML = SearchPanel.REPLACE_ALL_SVG;
         this.replaceAllButton.addEventListener('click', () => {
             this.replaceAllMatches();
         });

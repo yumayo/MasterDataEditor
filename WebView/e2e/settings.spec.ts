@@ -6,13 +6,13 @@ import { test, expect } from './fixtures/test';
 // 検証する機能:
 //   1. アクティビティバー下部に歯車アイコン（.activity-bar-settings）を配置する
 //   2. 歯車クリックで「設定」タブをタブバーに開く
-//   3. 設定画面にライト/ダークの2択プルダウン（select.settings-theme-select）を表示する
-//   4. プルダウン変更時に body[data-theme] が即時更新される
+//   3. 設定画面にライト/ダークの2択カスタムドロップダウンを表示する
+//   4. ドロップダウン変更時に body[data-theme] が即時更新される
 //   5. テーマ変更時に自動保存されるため dirty マークが表示されない
 //   6. Ctrl+S は冪等に動作する（自動保存済みでもエラーにならない）
 //   7. Ctrl+S 経由での保存後リロードでテーマが維持される
 //   8. テーマ変更のみ（Ctrl+S なし）でリロード後もテーマが維持される（自動保存）
-//   9. 設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作する
+//   9. 設定タブを閉じて再度開いた場合にテーマドロップダウンが正しく動作する
 // =============================================================================
 
 // =============================================================================
@@ -55,20 +55,19 @@ test.describe('設定画面', () => {
     // テスト3: 設定画面にテーマプルダウンが表示されること
     // ---------------------------------------------------------------------------
     test(
-        '設定タブ内にテーマ選択のプルダウン（select.settings-theme-select）が表示されること',
+        '設定タブ内にテーマ選択のカスタムドロップダウンが表示されること',
         async ({ page, mockFileSystem }) => {
             // 歯車ボタンをクリックして設定タブを開く
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // 設定パネル内のテーマ選択プルダウンが表示されることを確認する
-            // プロダクションコードに .settings-panel と select.settings-theme-select が存在しないため失敗（RED）
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await expect(themeSelect).toBeVisible();
+            // 設定パネル内のカスタムドロップダウントリガーが表示されることを確認する
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await expect(trigger).toBeVisible();
 
             // 「light」「dark」の2つの選択肢が存在することを確認する
-            await expect(themeSelect.locator('option[value="light"]')).toHaveCount(1);
-            await expect(themeSelect.locator('option[value="dark"]')).toHaveCount(1);
+            await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="light"]')).toHaveCount(1);
+            await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="dark"]')).toHaveCount(1);
         },
     );
 
@@ -76,7 +75,7 @@ test.describe('設定画面', () => {
     // テスト4: プルダウンでライト選択時にテーマが即時反映されること
     // ---------------------------------------------------------------------------
     test(
-        'プルダウンで「light」を選択すると body の data-theme 属性が即時 light になること',
+        'ドロップダウンで「light」を選択すると body の data-theme 属性が即時 light になること',
         async ({ page, mockFileSystem }) => {
             // 初期状態が dark テーマであることを確認する
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
@@ -85,10 +84,10 @@ test.describe('設定画面', () => {
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // テーマプルダウンで「light」を選択する
-            // プロダクションコードに即時プレビューのロジックが存在しないため失敗（RED）
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンで「ライト」を選択する
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // body の data-theme 属性が「light」になることを確認する
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
@@ -111,9 +110,10 @@ test.describe('設定画面', () => {
             const dirtyIndicator = settingsTabButton.locator('.tab-button-dirty');
             await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
 
-            // テーマプルダウンで「light」を選択してテーマを変更する
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンで「ライト」を選択してテーマを変更する
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // 自動保存により dirty マークが表示されないことを確認する
             await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
@@ -130,9 +130,10 @@ test.describe('設定画面', () => {
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // テーマを変更する（自動保存される）
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンでテーマを変更する（自動保存される）
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // 自動保存により dirty マークが表示されていないことを確認する
             const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
@@ -140,8 +141,6 @@ test.describe('設定画面', () => {
             await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
 
             // Ctrl+S を押しても問題なく動作することを確認する（冪等性）
-            // ネイティブ <select> にフォーカスがあると Chromium が keydown イベントを生成しないため、
-            // 設定タブボタンをクリックしてフォーカスを <select> から外す
             await settingsTabButton.click();
             await page.keyboard.press('Control+s');
 
@@ -160,13 +159,12 @@ test.describe('設定画面', () => {
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // テーマを「light」に変更する
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンでテーマを「ライト」に変更する
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // Ctrl+S で保存する（localStorage への永続化）
-            // ネイティブ <select> にフォーカスがあると Chromium が keydown イベントを生成しないため、
-            // 設定タブボタンをクリックしてフォーカスを <select> から外す
             const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
             await settingsTabButton.click();
             await page.keyboard.press('Control+s');
@@ -179,7 +177,6 @@ test.describe('設定画面', () => {
             await page.reload();
 
             // リロード後もライトテーマが維持されることを確認する
-            // プロダクションコードにリロード時の localStorage 読み込みロジックが存在しないため失敗（RED）
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
         },
     );
@@ -194,9 +191,10 @@ test.describe('設定画面', () => {
             const settingsButton = page.locator('.activity-bar-settings');
             await settingsButton.click();
 
-            // テーマを「light」に変更する（Ctrl+S は押さない）
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンでテーマを「ライト」に変更する（Ctrl+S は押さない）
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // dirty マークが表示されないことを確認する（自動保存済み）
             const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
@@ -215,7 +213,7 @@ test.describe('設定画面', () => {
     // テスト9: 設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作すること
     // ---------------------------------------------------------------------------
     test(
-        '設定タブを閉じて再度開いた場合にテーマプルダウンが正しく動作すること',
+        '設定タブを閉じて再度開いた場合にテーマドロップダウンが正しく動作すること',
         async ({ page, mockFileSystem }) => {
             const settingsButton = page.locator('.activity-bar-settings');
             const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
@@ -223,13 +221,12 @@ test.describe('設定画面', () => {
             // 歯車ボタンをクリックして設定タブを開く
             await settingsButton.click();
 
-            // テーマを「light」に変更する
-            const themeSelect = page.locator('.settings-panel select.settings-theme-select');
-            await themeSelect.selectOption('light');
+            // カスタムドロップダウンでテーマを「ライト」に変更する
+            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await trigger.click();
+            await page.locator('.settings-dropdown-item[data-value="light"]').click();
 
             // Ctrl+S で保存する
-            // ネイティブ <select> にフォーカスがあると Chromium が keydown イベントを生成しないため、
-            // 設定タブボタンをクリックしてフォーカスを <select> から外す
             await settingsTabButton.click();
             await page.keyboard.press('Control+s');
 
@@ -247,11 +244,13 @@ test.describe('設定画面', () => {
             // 歯車ボタンを再度クリックして設定タブを開く
             await settingsButton.click();
 
-            // 再オープン後のタブのプルダウンが「light」であることを確認する（localStorage から正しく初期化される）
-            await expect(page.locator('.settings-panel select.settings-theme-select')).toHaveValue('light');
+            // 再オープン後のドロップダウントリガーが「ライト」表示であることを確認する（localStorage から正しく初期化される）
+            const reopenedTrigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            await expect(reopenedTrigger).toHaveText(/ライト/);
 
-            // テーマを「dark」に変更する（自動保存される）
-            await page.locator('.settings-panel select.settings-theme-select').selectOption('dark');
+            // カスタムドロップダウンでテーマを「ダーク」に変更する（自動保存される）
+            await reopenedTrigger.click();
+            await page.locator('.settings-dropdown-item[data-value="dark"]').click();
 
             // 自動保存により dirty マークが表示されないことを確認する
             const newDirtyIndicator = page.locator('.tab-button').filter({ hasText: '設定' }).locator('.tab-button-dirty');

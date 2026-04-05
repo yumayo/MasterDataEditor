@@ -170,11 +170,11 @@ test(
 
         // Ctrl+S で保存する
         await page.keyboard.press('Control+s');
+        // 保存処理は fire-and-forget の非同期処理のため、完了を待機する
+        await page.waitForTimeout(500);
 
         // 保存されたCSVを取得して検証する
         // RFC4180 準拠なら "value,with,comma" とクォートされるはず
-        // 現行実装（単純 join(',')）では value,with,comma がクォートなしで出力され
-        //   CSV が壊れる（3列データとして読まれる）ため、このテストは RED になる
         const savedCsv = await readMockFileAsync(page, 'data/item.csv');
         const lines = savedCsv.split('\n').filter(l => l.trim() !== '');
 
@@ -209,10 +209,11 @@ test(
 
         // Ctrl+S で保存する
         await page.keyboard.press('Control+s');
+        // 保存処理は fire-and-forget の非同期処理のため、完了を待機する
+        await page.waitForTimeout(500);
 
         // 保存されたCSVを取得して検証する
         // RFC4180 準拠なら "say ""hello""" とエスケープされるはず
-        // 現行実装（単純 join(',')）では say "hello" がエスケープなしで出力されるため、このテストは RED になる
         const savedCsv = await readMockFileAsync(page, 'data/item.csv');
         const lines = savedCsv.split('\n').filter(l => l.trim() !== '');
 

@@ -22,7 +22,7 @@
     margin-top: 15vh;
     height: fit-content;
     background: var(--background-color);
-    border-radius: var(--border-radius);
+    border-radius: 0;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
     overflow: hidden;
 }

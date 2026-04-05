@@ -194,9 +194,14 @@ export class CommandPalette {
         } else if (item.kind === 'query') {
             // クエリ式モード: 該当セルにジャンプする
             this.tab.navigateToTableCell(item.tableName, item.pkValue, item.columnIndex);
-        } else {
+        } else if (item.kind === 'bookmark') {
             // ブックマークモード: Tab の共通ジャンプメソッドに委譲する
             this.tab.navigateToBookmark(item.tableName, item.rowKey, item.columnName);
+        } else if (item.kind === 'column') {
+            // 列名補完モード: 入力欄に「テーブル名.列名=」をセットして検索続行
+            this.inputElement.value = item.tableName + '.' + item.columnName + '=';
+            this.renderList(this.inputElement.value);
+            return; // hide() しない
         }
         this.hide();
     }
@@ -258,10 +263,8 @@ export class CommandPalette {
             return;
         }
 
-        // 絞り込みテキストがある場合は先頭を自動選択する
-        if (filterText !== '') {
-            this.selectedIndex = 0;
-        }
+        // リスト項目が存在する場合は常に先頭を自動選択する
+        this.selectedIndex = 0;
 
         // フィルタ結果をリストに描画
         for (let i = 0; i < filtered.length; ++i) {

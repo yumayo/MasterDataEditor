@@ -489,8 +489,8 @@ test.describe('テストケース10: PK重複セルの背景が赤く、枠も�
             await expect(firstPkCell).toHaveClass(/cell-error/);
             await expect(secondPkCell).toHaveClass(/cell-error/);
 
-            // ::after 疑似要素で赤波線が描画されていることを確認する
-            const bgImage = await firstPkCell.evaluate(el => getComputedStyle(el, '::after').backgroundImage);
+            // セル自体に赤波線（background-image）が描画されていることを確認する
+            const bgImage = await firstPkCell.evaluate(el => getComputedStyle(el).backgroundImage);
             expect(bgImage).not.toBe('none');
         },
     );
@@ -518,8 +518,8 @@ test.describe('テストケース11: FK参照切れセルに赤波線が表示�
             const fkCell = getDataCell(table, 0, 1);
             await expect(fkCell).toHaveClass(/cell-error/);
 
-            // ::after 疑似要素で赤波線が描画されていることを確認する
-            const bgImage = await fkCell.evaluate(el => getComputedStyle(el, '::after').backgroundImage);
+            // セル自体に赤波線（background-image）が描画されていることを確認する
+            const bgImage = await fkCell.evaluate(el => getComputedStyle(el).backgroundImage);
             expect(bgImage).not.toBe('none');
         },
     );

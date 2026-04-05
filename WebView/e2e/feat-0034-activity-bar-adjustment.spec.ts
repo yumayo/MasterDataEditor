@@ -84,9 +84,8 @@ test(
 // =============================================================================
 // テスト2: アクティブなアクティビティバーアイテムのborder-leftは青色（selection-color）である
 //
-// 要件: border-left-color を var(--selection-color) = #007fd4 = rgb(0, 127, 212) にする。
+// 要件: border-left-color を var(--selection-color) = #2196f3 = rgb(33, 150, 243) にする。
 //       幅は 2px。
-// 現状: border-left-color が var(--font-color)（デフォルトテーマ: rgb(33, 37, 43)）のためREDになる。
 // =============================================================================
 test(
     'アクティブなアクティビティバーアイテムのborder-leftは青色（selection-color）である',
@@ -95,15 +94,15 @@ test(
         const activeItem = page.locator('.activity-bar-item.activity-bar-item-active').first();
         await expect(activeItem).toBeVisible();
 
-        // border-left-color が rgb(0, 127, 212) = #007fd4 = var(--selection-color) であることを検証する
+        // border-left-color が rgb(33, 150, 243) = #2196f3 = var(--selection-color) であることを検証する
         const borderLeftColor = await activeItem.evaluate(
             (el: Element) => window.getComputedStyle(el).borderLeftColor,
         );
         expect(
             borderLeftColor,
             `アクティブな .activity-bar-item の border-left-color が selection-color ではありません（実際: '${borderLeftColor}'）` +
-            ` — 'border-left-color: var(--selection-color)' (#007fd4 = rgb(0, 127, 212)) に変更してください`,
-        ).toBe('rgb(0, 127, 212)');
+            ` — 'border-left-color: var(--selection-color)' (#2196f3 = rgb(33, 150, 243)) に変更してください`,
+        ).toBe('rgb(33, 150, 243)');
 
         // border-left-width: 2px であることを検証する
         const borderLeftWidth = await activeItem.evaluate(

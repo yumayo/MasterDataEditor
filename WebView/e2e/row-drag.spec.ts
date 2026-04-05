@@ -204,7 +204,16 @@ test.describe('行ドラッグ移動', () => {
 
         // セルをクリックしてフォーカスを確保してから保存
         await clickFirstCellAsync(table);
+
+        // Dirtyマークが付いていることを確認（行移動コマンドの実行確認）
+        const tabButton = page.locator('.tab-button', { hasText: 'test' });
+        const dirtyIndicator = tabButton.locator('.tab-button-dirty');
+        await expect(dirtyIndicator).toHaveClass(/tab-button-dirty-visible/);
+
         await page.keyboard.press('Control+s');
+
+        // 保存は fire-and-forget の非同期処理のため、Dirtyマーク消去を保存完了のシグナルとして待機する
+        await expect(dirtyIndicator).not.toHaveClass(/tab-button-dirty-visible/);
 
         // CSVの内容を検証
         const csv = await page.evaluate(() => {
