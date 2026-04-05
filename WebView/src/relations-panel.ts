@@ -568,7 +568,7 @@ export class RelationsPanel {
                 // 1:Nのフィルタリングは共通メソッドに委譲する
                 // 子テーブルのPK列名は ReverseReferenceEntry.childPkColumnName から取得（スキーマ再読み込み不要）
                 const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
-                    allRows, header, reverseEntry.childColumnName, columnValue, reverseEntry.rows, reverseEntry.childPkColumnName,
+                    allRows, header, reverseEntry.isDynamic, reverseEntry.childColumnName, columnValue, reverseEntry.rows, reverseEntry.childPkColumnName,
                 );
 
                 const fkColName = reverseEntry.childColumnName;
@@ -615,20 +615,23 @@ export class RelationsPanel {
 
     /**
      * 1:N逆参照のフィルタリング共通処理。
-     * - childColumnName が空でない場合: FK列値が filterValue と一致する行を収集する（単純参照）。
-     * - childColumnName が空の場合: pkRows のPKセットで allRows を検索する（動的参照）。
+     * - isDynamic === false（単純参照）: FK列値が filterValue と一致する行を収集する。
+     * - isDynamic === true（動的参照）: pkRows のPKセットで allRows を検索する。
+     *   動的参照ではFK列値が同じでも中間テーブル経由で異なる親テーブルを参照する可能性があるため、
+     *   逆参照マップ構築時に特定済みのPKセットでフィルタリングする。
      * - 対象列が見つからない場合は空配列を返す。
      * childPkColumnName: 子テーブルのPK列名（動的参照でのフィルタリングに使用）
      */
     private filterRowsByReverseEntry(
         allRows: string[][],
         header: string[],
+        isDynamic: boolean,
         childColumnName: string,
         filterValue: string,
         pkRows: ReverseReferenceRow[],
         childPkColumnName: string,
     ): { filteredRows: string[][]; filteredStoreRowIndices: number[] } {
-        if (childColumnName !== '') {
+        if (!isDynamic) {
             // 単純参照: FK列値で直接フィルタ（常に最新のストアデータを反映する）
             const fkColIdx = header.indexOf(childColumnName);
             if (fkColIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
@@ -640,7 +643,7 @@ export class RelationsPanel {
                 filteredStoreRowIndices: filteredWithIndices.map(({ storeIndex }) => storeIndex),
             };
         }
-        // 動的参照: FK列名が特定できないため reverseEntry.rows のPKセットでフィルタする
+        // 動的参照: FK列値だけでは参照先テーブルを一意に特定できないため reverseEntry.rows のPKセットでフィルタする
         // 子テーブルのPK列名はスキーマから取得した childPkColumnName を使用する
         const pkColIdx = header.indexOf(childPkColumnName);
         if (pkColIdx === -1) return { filteredRows: [], filteredStoreRowIndices: [] };
@@ -1108,7 +1111,7 @@ export class RelationsPanel {
                 // 1:Nのフィルタリングは共通メソッドに委譲する
                 // 子テーブルのPK列名は ReverseReferenceEntry.childPkColumnName から取得（スキーマ再読み込み不要）
                 const { filteredRows, filteredStoreRowIndices } = this.filterRowsByReverseEntry(
-                    allRows, childHeader, reverseEntry.childColumnName, pkValue, reverseEntry.rows, reverseEntry.childPkColumnName,
+                    allRows, childHeader, reverseEntry.isDynamic, reverseEntry.childColumnName, pkValue, reverseEntry.rows, reverseEntry.childPkColumnName,
                 );
 
                 entries.push({

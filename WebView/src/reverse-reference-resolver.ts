@@ -33,8 +33,14 @@ export interface ReverseReferenceEntry {
     rows: ReverseReferenceRow[];
     /** 逆参照の表示優先度（小さいほど高優先、未設定は Number.MAX_SAFE_INTEGER） */
     priority: number;
-    /** 子テーブルのFK列名（単純参照の場合のみ設定される。動的参照の場合は空文字列） */
+    /** 子テーブルのFK列名（単純参照・動的参照ともに設定される） */
     childColumnName: string;
+    /**
+     * 動的参照かどうか。
+     * true の場合、FK列値だけでは参照先テーブルを一意に特定できないため、
+     * filterRowsByReverseEntry では rows の PKセットでフィルタリングする。
+     */
+    isDynamic: boolean;
     /**
      * 参照先の親テーブル列名（逆参照マップのキーに使われた列）
      * 例: shop.shop_product_group_id が shop_product.group_id を参照する場合は "group_id"
@@ -45,7 +51,7 @@ export interface ReverseReferenceEntry {
     parentColumnName: string;
     /**
      * 子テーブルのPK列名（スキーマの primary_key から取得）
-     * filterRowsByReverseEntry の動的参照パス（childColumnName === ''）で使用する
+     * filterRowsByReverseEntry の動的参照パス（isDynamic === true）で使用する
      */
     childPkColumnName: string;
 }
@@ -140,7 +146,8 @@ export class ReverseReferenceResolver {
 
     /**
      * グループ化された逆参照情報をマップにマージする
-     * childColumnName: 単純参照のFK列名。動的参照の場合は空文字列を渡す
+     * childColumnName: 子テーブルのFK列名（単純参照・動的参照ともに設定）
+     * isDynamic: 動的参照かどうか
      * parentColumnName: 逆参照マップのキーに使った親テーブルの列名
      *   単純参照では expr.columnName（例: "group_id"）
      *   動的参照では中間テーブルの targetColumn 列の値から動的解決した列名
@@ -151,6 +158,7 @@ export class ReverseReferenceResolver {
         childTableName: string,
         priority: number,
         childColumnName: string,
+        isDynamic: boolean,
         parentColumnName: string,
         childPkColumnName: string,
         map: ReverseReferenceMap
@@ -170,6 +178,7 @@ export class ReverseReferenceResolver {
                     rows,
                     priority,
                     childColumnName,
+                    isDynamic,
                     parentColumnName,
                     childPkColumnName,
                 });
@@ -403,7 +412,7 @@ export class ReverseReferenceResolver {
 
             // 単純参照の parentColumnName は expr.columnName（参照先の親テーブル列名）
             this.mergeGroups(
-                groups, childTableName, priority, fk.columnName, fk.parentColumnName, childPkColumnName, map
+                groups, childTableName, priority, fk.columnName, false, fk.parentColumnName, childPkColumnName, map
             );
         }
 
@@ -448,11 +457,11 @@ export class ReverseReferenceResolver {
                 list.push({ pkValue, displayText });
             }
 
-            // 動的参照: FK列名は特定できないため空文字列。
+            // 動的参照: FK列名は dynFk.columnName（動的参照式が定義されている子テーブルの列）。
             // parentColumnName は中間テーブルの targetColumn 列の値から動的解決した値を使う
             groupsByParentColumn.forEach((groups, resolvedParentColumnName) => {
                 this.mergeGroups(
-                    groups, childTableName, priority, '', resolvedParentColumnName, childPkColumnName, map
+                    groups, childTableName, priority, dynFk.columnName, true, resolvedParentColumnName, childPkColumnName, map
                 );
             });
         }
