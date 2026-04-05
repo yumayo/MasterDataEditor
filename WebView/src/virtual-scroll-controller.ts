@@ -25,6 +25,11 @@ export class VirtualScrollController {
     /** 現在DOMに存在するデータ行の終了インデックス（排他） */
     private renderedEnd: number;
 
+    /** recalculate の再帰呼び出しを防止するフラグ */
+    private isRecalculating: boolean;
+    /** requestAnimationFrame によるスクロールスロットル用フラグ */
+    private scrollPending: boolean;
+
     /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
     private actualRowHeight: number;
 
@@ -54,6 +59,8 @@ export class VirtualScrollController {
         this.enabled = enabled;
         this.totalRowCount = totalRowCount;
         this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
+        this.isRecalculating = false;
+        this.scrollPending = false;
         this.renderRow = false;
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
@@ -112,10 +119,15 @@ export class VirtualScrollController {
         this.bottomSpacer = bottom;
     }
 
-    /** スクロールイベントハンドラ。表示範囲を再計算して行を動的に生成/破棄する */
+    /** スクロールイベントハンドラ。requestAnimationFrame でスロットルして再計算する */
     onScroll(): void {
         if (!this.enabled) return;
-        this.recalculate();
+        if (this.scrollPending) return;
+        this.scrollPending = true;
+        requestAnimationFrame(() => {
+            this.scrollPending = false;
+            this.recalculate();
+        });
     }
 
     /** 総行数が変化した際に呼ぶ */
@@ -276,8 +288,18 @@ export class VirtualScrollController {
      */
     private recalculate(): void {
         if (this.renderRow === false) return;
-        // 実行時の行高さを測定する（DPIスケーリング対応）。
-        // DOMにデータ行が存在する場合のみ測定し、存在しない場合は前回の値を維持する。
+        if (this.isRecalculating) return;
+        this.isRecalculating = true;
+
+        try {
+            this.recalculateCore();
+        } finally {
+            this.isRecalculating = false;
+        }
+    }
+
+    private recalculateCore(): void {
+        // 実行時の行高さを測定する（DPIスケーリング対応）
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
 
@@ -285,16 +307,13 @@ export class VirtualScrollController {
         const viewportHeight = this.scrollContainer.clientHeight;
         const headerHeight = this.getHeaderHeight();
 
-        // topSpacer の高さはスクロール位置に含まれるため差し引く
-        const topSpacerHeight = this.topSpacer !== false ? this.topSpacer.offsetHeight : 0;
-
-        // ヘッダー行（sticky）の下端から見えるデータ行の範囲を計算する
-        // scrollTop が topSpacer の分も含むため、まず topSpacer を差し引いてデータ領域の先頭からの位置を得る
-        const dataAreaScrollTop = Math.max(0, scrollTop - topSpacerHeight);
-        // sticky ヘッダーがデータ領域の先頭にかぶさるため、ヘッダー高さ分を追加で差し引く
-        const effectiveTop = Math.max(0, dataAreaScrollTop - headerHeight);
-        const firstVisibleRow = Math.floor(effectiveTop / rowHeight);
-        const visibleRowCount = Math.ceil((viewportHeight - headerHeight) / rowHeight) + 1;
+        // 方式B（テーブル外スペーサー）では、scrollTop は topSpacer + テーブル + bottomSpacer
+        // 全体の中での位置を示す。topSpacer の高さ = renderedStart * rowHeight なので、
+        // scrollTop からデータ行の先頭位置を直接算出できる。
+        // ヘッダー行は sticky で常にビューポート上端に固定されるため、
+        // データ行の可視領域はビューポートからヘッダー高さを引いた部分。
+        const firstVisibleRow = Math.max(0, Math.floor(scrollTop / rowHeight));
+        const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + 1;
         const lastVisibleRow = firstVisibleRow + visibleRowCount;
 
         const newStart = Math.max(0, firstVisibleRow - VirtualScrollController.OVERSCAN);
