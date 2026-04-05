@@ -11,6 +11,7 @@
 
 ## Virtual Scroll
 - [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — 方式B（テーブル外スペーサー）: DOM構造不変、connectRenderRow、Object.Assign注意点
+- [バーチャルスクロール統合問題](virtual-scroll-integration-issues.md) — getCellPosition修正、renderedEnd同期、スクロール位置復元
 
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table facade

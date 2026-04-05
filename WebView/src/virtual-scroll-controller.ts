@@ -168,9 +168,27 @@ export class VirtualScrollController {
     /**
      * データ行をテーブル末尾に追加する。
      * 方式Bではスペーサーがテーブル外にあるため単純な appendChild。
+     * 行追加による renderedEnd の更新は notifyRowAppended() で行うこと。
      */
     appendDataRow(row: HTMLElement): void {
         this.tableElement.appendChild(row);
+    }
+
+    /**
+     * DOMに新しい行が追加されたことを通知する。
+     * renderedEnd をインクリメントして dataRowToDomIndex のインデックス変換を正しく保つ。
+     * 既存行の再配置（ソート・ドラッグ移動等）では呼ばないこと。
+     */
+    notifyRowAppended(): void {
+        this.renderedEnd++;
+    }
+
+    /**
+     * DOMから行が削除されたことを通知する。
+     * renderedEnd をデクリメントして dataRowToDomIndex のインデックス変換を正しく保つ。
+     */
+    notifyRowRemoved(): void {
+        if (this.renderedEnd > this.renderedStart) this.renderedEnd--;
     }
 
     /**
@@ -259,6 +277,13 @@ export class VirtualScrollController {
 
         if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
 
+        // DOM行の入れ替え前にスクロール位置を保存する。
+        // updateRenderedRows() でDOM行が削除・挿入されると、ブラウザが
+        // grid-textfield（top:-99999px の contenteditable）に向かって自動スクロールし
+        // scrollTop が 0 にリセットされる場合がある。
+        const savedScrollTop = scrollTop;
+        const savedScrollLeft = this.scrollContainer.scrollLeft;
+
         this.updateRenderedRows(newStart, newEnd);
 
         // スペーサーの高さを更新する
@@ -271,6 +296,14 @@ export class VirtualScrollController {
 
         this.renderedStart = newStart;
         this.renderedEnd = newEnd;
+
+        // DOM操作でブラウザがスクロール位置をリセットした場合に復元する
+        if (this.scrollContainer.scrollTop !== savedScrollTop) {
+            this.scrollContainer.scrollTop = savedScrollTop;
+        }
+        if (this.scrollContainer.scrollLeft !== savedScrollLeft) {
+            this.scrollContainer.scrollLeft = savedScrollLeft;
+        }
     }
 
     /**

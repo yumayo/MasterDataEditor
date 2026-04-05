@@ -71,12 +71,13 @@ async function getScrollPositionAsync(page: Page): Promise<{ scrollTop: number; 
 }
 
 /**
- * テーブルの指定行・列のデータセルを返す
- * rowIndex: 0始まり（ヘッダー行を除く）
+ * テーブルの指定行・列のデータセルを返す（バーチャルスクロール対応）
+ * data-store-index 属性で行を特定するため、DOM内の位置に依存しない。
+ * rowIndex: 0始まり（ストアインデックス = ヘッダー行を除く）
  * colIndex: 0始まり（行ヘッダーを除く）
  */
 function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator(`.editor-table-row[data-store-index="${rowIndex}"]`);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 
@@ -94,10 +95,8 @@ test(
         const table = await openTableAsync(page, 'chara');
 
         // テーブルが100行分のデータを読み込んでいることを確認する
-        // （バッファ空行 editor-table-empty-row を除外してデータ行のみカウント）
-        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-        // ヘッダー行(1) + データ行(100) = 101
-        await expect(dataRows).toHaveCount(101);
+        // バーチャルスクロールによりDOMには全行は存在しない。先頭データ行の存在で確認する。
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
 
         // left-pane をスクロールして95行目付近を表示する
         // 1行あたりの高さを考慮してスクロール量を計算する
@@ -158,9 +157,9 @@ test(
 
         const table = await openTableAsync(page, 'chara');
 
-        // データ行100行が表示されるまで待機する
-        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-        await expect(dataRows).toHaveCount(101);
+        // テーブルが正しくロードされたことを確認する
+        // バーチャルスクロールによりDOMには全行は存在しない。先頭データ行の存在で確認する。
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
 
         // スクロールして90行目付近を表示する
         const scrollTop = await page.evaluate(() => {
@@ -215,10 +214,11 @@ test(
 // =============================================================================
 
 /**
- * セルの DOMRect を JS 評価で取得する
+ * セルの DOMRect を JS 評価で取得する（バーチャルスクロール対応）
+ * data-store-index 属性で行を特定するため、DOM内の位置に依存しない。
  * Playwright の getBoundingClientRect は scrollIntoViewIfNeeded を内部で呼ぶ可能性があるため
  * evaluate 経由で直接取得する
- * rowIndex: 0始まり（ヘッダー行を除く）、colIndex: 0始まり（行ヘッダーを除く）
+ * rowIndex: 0始まり（ストアインデックス）、colIndex: 0始まり（行ヘッダーを除く）
  */
 async function getCellBoundingRectAsync(
     page: Page,
@@ -227,9 +227,8 @@ async function getCellBoundingRectAsync(
 ): Promise<{ top: number; bottom: number; left: number; right: number }> {
     return page.evaluate(
         ([rowIdx, colIdx]) => {
-            // editor-table-row を rowIdx+1 番目（ヘッダー行をスキップ）から取得する
-            const rows = document.querySelectorAll('.editor-left-pane .editor-table .editor-table-row');
-            const row = rows[rowIdx + 1] as HTMLElement | undefined;
+            // data-store-index 属性で行を特定する（バーチャルスクロールによりDOMの位置は不定）
+            const row = document.querySelector(`.editor-left-pane .editor-table .editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
             if (!row) return { top: 0, bottom: 0, left: 0, right: 0 };
             const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
             const cell = cells[colIdx] as HTMLElement | undefined;
@@ -265,27 +264,38 @@ test(
 
         const table = await openTableAsync(page, 'chara');
 
-        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-        await expect(dataRows).toHaveCount(101);
+        // テーブルが正しくロードされたことを確認する
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
 
         // まず最初の行を選択してフォーカスをテーブルに当てる（{ force: true } のためフォーカスが必要）
         const firstCell = getDataCell(table, 0, 0);
         await firstCell.click();
 
         // ターゲット行（rowIndex=30）の下端が画面下端からはみ出るようスクロールする
-        // offsetTop を使って、行の上端がコンテナ表示領域の下端から5pxだけ内側に来るようにする
-        // これにより行の大部分は画面外にはみ出す
+        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
         const targetRowIndex = 30;
-        await page.evaluate(([rowIdx]) => {
+        const ROW_HEIGHT = 21;
+        const scrollSetup = await page.evaluate(([rowIdx, rowHeight]) => {
             const container = document.querySelector('.editor-left-pane');
-            if (!container) return;
-            const rows = container.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
-            const targetRow = rows[rowIdx + 1] as HTMLElement | undefined; // +1 でヘッダー行をスキップ
-            if (!targetRow) return;
-            // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
-            // これにより行の大部分（下端）は画面外にはみ出す
-            container.scrollTop = targetRow.offsetTop - container.clientHeight + 5;
-        }, [targetRowIndex] as [number]);
+            if (!container) return { scrollTop: -1, clientHeight: 0, scrollHeight: 0, targetScrollTop: 0 };
+            const rowTop = rowIdx * rowHeight;
+            const targetScrollTop = rowTop - container.clientHeight + 5;
+            container.scrollTop = targetScrollTop;
+            // バーチャルスクロールのrecalculateを同期的に発火させるためscrollイベントをディスパッチする
+            container.dispatchEvent(new Event('scroll'));
+            return {
+                scrollTop: container.scrollTop,
+                clientHeight: container.clientHeight,
+                scrollHeight: container.scrollHeight,
+                targetScrollTop,
+            };
+        }, [targetRowIndex, ROW_HEIGHT] as [number, number]);
+
+        // スクロール設定が正しく反映されたことを確認する
+        expect(scrollSetup.scrollTop, `スクロール設定が反映されていない: clientHeight=${scrollSetup.clientHeight}, scrollHeight=${scrollSetup.scrollHeight}, targetScrollTop=${scrollSetup.targetScrollTop}`).toBeGreaterThan(0);
+
+        // recalculate後のDOMレイアウトが確定するのを待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);
@@ -295,22 +305,22 @@ test(
             `ターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
         ).toBeGreaterThan(containerRectAfterScroll.bottom);
 
-        // スクロール前のスクロール量を記録する
-        const scrollBefore = await getScrollPositionAsync(page);
-
-        // ターゲットセルに対して mousedown イベントを直接ディスパッチする
-        // page.mouse.click() や Locator.click() はブラウザの scrollIntoView が介入するため、
-        // evaluate 経由でイベントを直接発火し、アプリケーション側の自動スクロールのみを検証する
-        await page.evaluate(([rowIdx, colIdx]) => {
-            const rows = document.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
-            const row = rows[rowIdx + 1] as HTMLElement | undefined;
-            if (!row) return;
+        // ターゲットセルに対して mousedown イベントを直接ディスパッチし、
+        // ディスパッチ前のスクロール位置を同一 evaluate 内で記録する
+        const scrollBeforeClick = await page.evaluate(([rowIdx, colIdx]) => {
+            const container = document.querySelector('.editor-left-pane');
+            const scrollBefore = container ? container.scrollTop : 0;
+            const row = document.querySelector(`.editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
+            if (!row) return { scrollBefore, dispatched: false };
             const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
             const cell = cells[colIdx] as HTMLElement | undefined;
-            if (!cell) return;
+            if (!cell) return { scrollBefore, dispatched: false };
             cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
             cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
+            return { scrollBefore, dispatched: true };
         }, [targetRowIndex, 2] as [number, number]);
+
+        expect(scrollBeforeClick.dispatched, 'mousedownイベントのディスパッチに失敗した').toBe(true);
 
         // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
@@ -321,8 +331,8 @@ test(
         // クリック後にセルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
         expect(
             scrollAfter.scrollTop,
-            `クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBefore.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
-        ).toBeGreaterThan(scrollBefore.scrollTop);
+            `クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollBefore}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBeforeClick.scrollBefore);
 
         // さらにクリック後にターゲットセルが完全に画面内に収まっていることを確認する
         const containerRectFinal = await getContainerRectAsync(page);
@@ -346,24 +356,29 @@ test(
 
         const table = await openTableAsync(page, 'chara');
 
-        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-        await expect(dataRows).toHaveCount(101);
+        // テーブルが正しくロードされたことを確認する
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
 
         // 1行目のセルを通常クリックして選択開始位置（アンカー）を確立する
         const anchorCell = getDataCell(table, 0, 0);
         await anchorCell.click();
 
         // Shift+クリックのターゲット行（rowIndex=30）の下端が画面外にはみ出るようスクロールする
+        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
         const targetRowIndex = 30;
-        await page.evaluate(([rowIdx]) => {
+        const ROW_HEIGHT = 21;
+        await page.evaluate(([rowIdx, rowHeight]) => {
             const container = document.querySelector('.editor-left-pane');
             if (!container) return;
-            const rows = container.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
-            const targetRow = rows[rowIdx + 1] as HTMLElement | undefined;
-            if (!targetRow) return;
             // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
-            container.scrollTop = targetRow.offsetTop - container.clientHeight + 5;
-        }, [targetRowIndex] as [number]);
+            const rowTop = rowIdx * rowHeight;
+            container.scrollTop = rowTop - container.clientHeight + 5;
+            // バーチャルスクロールのrecalculateを同期的に発火させるためscrollイベントをディスパッチする
+            container.dispatchEvent(new Event('scroll'));
+        }, [targetRowIndex, ROW_HEIGHT] as [number, number]);
+
+        // recalculate後のDOMレイアウトが確定するのを待つ
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);
@@ -373,20 +388,22 @@ test(
             `Shift+クリックのターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
         ).toBeGreaterThan(containerRectAfterScroll.bottom);
 
-        // スクロール前のスクロール量を記録する
-        const scrollBefore = await getScrollPositionAsync(page);
-
-        // ターゲットセルに対して Shift+mousedown を直接ディスパッチする
-        await page.evaluate(([rowIdx, colIdx]) => {
-            const rows = document.querySelectorAll('.editor-table-row:not(.editor-table-empty-row)');
-            const row = rows[rowIdx + 1] as HTMLElement | undefined;
-            if (!row) return;
+        // ターゲットセルに対して Shift+mousedown を直接ディスパッチし、
+        // ディスパッチ前のスクロール位置を同一 evaluate 内で記録する
+        const scrollBeforeClick = await page.evaluate(([rowIdx, colIdx]) => {
+            const container = document.querySelector('.editor-left-pane');
+            const scrollBefore = container ? container.scrollTop : 0;
+            const row = document.querySelector(`.editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
+            if (!row) return { scrollBefore, dispatched: false };
             const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
             const cell = cells[colIdx] as HTMLElement | undefined;
-            if (!cell) return;
+            if (!cell) return { scrollBefore, dispatched: false };
             cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
             cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
+            return { scrollBefore, dispatched: true };
         }, [targetRowIndex, 0] as [number, number]);
+
+        expect(scrollBeforeClick.dispatched, 'Shift+mousedownイベントのディスパッチに失敗した').toBe(true);
 
         // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
@@ -397,8 +414,8 @@ test(
         // Shift+クリック後に拡張先セルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
         expect(
             scrollAfter.scrollTop,
-            `Shift+クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBefore.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
-        ).toBeGreaterThan(scrollBefore.scrollTop);
+            `Shift+クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollBefore}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBeforeClick.scrollBefore);
 
         // さらにShift+クリック後にターゲットセルが完全に画面内に収まっていることを確認する
         const containerRectFinal = await getContainerRectAsync(page);
@@ -435,9 +452,8 @@ test(
 
         const table = await openTableAsync(page, 'chara');
 
-        // ヘッダー行(1) + データ行(100) = 101
-        const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-        await expect(dataRows).toHaveCount(101);
+        // テーブルが正しくロードされたことを確認する
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
 
         // 95行目付近までスクロールする
         const scrollTop = await page.evaluate(() => {

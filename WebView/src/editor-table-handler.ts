@@ -301,6 +301,11 @@ export class EditorTableHandler {
         // キーボードイベントが機能するように active = true にする
         this.active = true;
 
+        // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、
+        // セル矩形を取得する前に行をDOMに確保する
+        const focus = this.selection.getFocus();
+        this.table.ensureRowVisible(focus.row);
+
         const target = getTarget(this.table, this.selection);
         const cellRect = target.cellRect;
         // セルのビューポート絶対座標をそのまま渡す。
@@ -1321,6 +1326,11 @@ export class EditorTableHandler {
             if (refData.items.length === 0) {
                 return false;
             }
+
+            // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、
+            // セル矩形を取得する前に行をDOMに確保する
+            const focus = this.selection.getFocus();
+            this.table.ensureRowVisible(focus.row);
 
             // セルの位置を取得
             // ビューポート絶対座標をそのまま渡す（GridTextField.show() 内で補正する）

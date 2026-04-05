@@ -175,6 +175,8 @@ export class EditorTableStructure {
             // rowIndex がDOMの末尾を超えた場合はbottomSpacerの手前に追加する
             this.table.appendDataRowToTable(newRow);
         }
+        // 新しい行がDOMに追加されたため renderedEnd を同期する（バーチャルスクロールのインデックス変換に必要）
+        this.table.notifyVirtualScrollRowAppended();
         // ソート時のstoreRowIndex逆引きのためのインデックスは後で設定する（storeRowIndex確定後）
         // ストアにも空行を挿入する。
         // rowIndex はヘッダー行を含む DOM インデックスのため、データ行インデックスは rowIndex - 1。
@@ -234,6 +236,8 @@ export class EditorTableStructure {
         if (this.table.diffTab !== false) {
             this.table.diffTab.notifyRightPaneRowInserted(rowIndex);
         }
+        // 行追加後にバーチャルスクロールの総行数を同期する
+        this.table.syncVirtualScrollTotalRowCount();
     }
 
     /**
@@ -383,7 +387,11 @@ export class EditorTableStructure {
         } else {
             // 通常テーブルの場合は DOM 行をそのまま削除する
             const rowToDelete = this.table.getRowElementForInsert(rowIndex);
-            if (rowToDelete) rowToDelete.remove();
+            if (rowToDelete) {
+                rowToDelete.remove();
+                // DOM行が削除されたため renderedEnd を同期する
+                this.table.notifyVirtualScrollRowRemoved();
+            }
         }
         // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);
@@ -407,6 +415,8 @@ export class EditorTableStructure {
         // バッファ行の自動補充は不要。deleteRow の呼び出し元（DeleteRowCommand.execute/undo）は
         // この区別を知らないため、ここで一元的に判定する。
         if (this.table.diffTab === false) this.table.ensureTrailingBufferRow();
+        // 行削除後にバーチャルスクロールの総行数を同期する
+        this.table.syncVirtualScrollTotalRowCount();
     }
 
     /**

@@ -494,6 +494,8 @@ export class Selection {
      * ジャンプ先の行が画面中央に来るようにする。
      */
     scrollFocusToCenterVertically(): void {
+        // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
+        this.editorTable.ensureRowVisible(this.focus.row);
         const targetRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
         if (!targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
@@ -523,6 +525,8 @@ export class Selection {
     }
 
     private scrollCellIntoView(row: number, column: number): void {
+        // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
+        this.editorTable.ensureRowVisible(row);
         const targetRect = this.editorTable.getCellRectOrNull(row, column);
         if (!targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();

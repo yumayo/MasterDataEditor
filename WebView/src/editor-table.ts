@@ -303,6 +303,21 @@ export class EditorTable {
         this.virtualScroll.appendDataRow(row);
     }
 
+    /** 内部モジュール用: DOMに新しい行が追加されたことをバーチャルスクロールに通知する */
+    notifyVirtualScrollRowAppended(): void {
+        this.virtualScroll.notifyRowAppended();
+    }
+
+    /** 内部モジュール用: DOMから行が削除されたことをバーチャルスクロールに通知する */
+    notifyVirtualScrollRowRemoved(): void {
+        this.virtualScroll.notifyRowRemoved();
+    }
+
+    /** 内部モジュール用: バーチャルスクロールの総行数を現在のDOM行数で同期する */
+    syncVirtualScrollTotalRowCount(): void {
+        this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
+    }
+
     /** 内部モジュール用: 中央ストアを取得する */
     getStore(): InMemoryTableStore { return this.store; }
 
@@ -888,17 +903,30 @@ export class EditorTable {
     }
 
     public static getCellPosition(cell: HTMLElement, tableElement: HTMLElement): CellPosition | null {
+        const rowElement = cell.parentElement;
+        if (!rowElement) return null;
+        // 行インデックスの取得: ヘッダー行は常に children[0]。
+        // データ行はバーチャルスクロールにより children のインデックスが論理インデックスとずれるため、
+        // 行ヘッダーの data-row-index 属性（renumberRowsFrom で設定される 0始まりのデータ行インデックス）
+        // から算出する。ヘッダー行は行ヘッダーを持たないため children インデックスを使う。
         let row: number = -1;
-        for (let i = 0; i < tableElement.children.length; ++i) {
-            if (tableElement.children[i] === cell.parentElement) {
-                row = i;
-                break;
+        const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+        if (rowHeader && rowHeader.dataset.rowIndex !== undefined) {
+            // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
+            row = Number(rowHeader.dataset.rowIndex) + 1;
+        } else {
+            // ヘッダー行またはデータ行ヘッダーがない場合: children のインデックスで探索する
+            for (let i = 0; i < tableElement.children.length; ++i) {
+                if (tableElement.children[i] === rowElement) {
+                    row = i;
+                    break;
+                }
             }
         }
         if (row === -1) return null;
         let column: number = -1;
-        for (let i = 0; i < tableElement.children[row].children.length; ++i) {
-            if (tableElement.children[row].children[i] === cell) {
+        for (let i = 0; i < rowElement.children.length; ++i) {
+            if (rowElement.children[i] === cell) {
                 column = i;
                 break;
             }
@@ -1705,6 +1733,16 @@ export class EditorTable {
     /**
      * 指定座標のセルのBoundingClientRectを取得する
      */
+    /**
+     * 指定行がDOMに存在するよう保証する（バーチャルスクロール対応）。
+     * row は DOM行インデックス（0始まり、列ヘッダー行=0、データ行1行目=1）。
+     * セルの矩形取得やセル編集開始の前に呼んで、対象行をDOMに確保する。
+     */
+    ensureRowVisible(row: number): void {
+        if (row < 1) return;
+        this.virtualScroll.ensureRowVisible(row - 1);
+    }
+
     getCellRectAt(row: number, column: number): DOMRect {
         const cell = this.getCell(row, column);
         return cell.getBoundingClientRect();
@@ -1898,9 +1936,13 @@ export class EditorTable {
                         const insertTarget = this.getRowElement(domRowIndex);
                         if (insertTarget) {
                             this.element.insertBefore(newRow, insertTarget);
+                            // DOM行が挿入されたため renderedEnd を同期する
+                            this.virtualScroll.notifyRowAppended();
                         } else {
                             // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
                             this.virtualScroll.appendDataRow(newRow);
+                            // 新しい行がDOMに追加されたため renderedEnd を同期する
+                            this.virtualScroll.notifyRowAppended();
                         }
                     }
                     this.storeRowIndices.push(i);
@@ -1916,6 +1958,8 @@ export class EditorTable {
                         throw new Error('[EditorTable.reloadCellsFromStore] DOM行とストアの不整合: 削除対象行が存在しないか空行です。 domRowIndex=' + domRowIndex);
                     }
                     rowToRemove.remove();
+                    // DOM行が削除されたため renderedEnd を同期する
+                    this.virtualScroll.notifyRowRemoved();
                     this.storeRowIndices.splice(i, 1);
                 }
                 domRowCountChanged = true;
@@ -1930,6 +1974,8 @@ export class EditorTable {
         // ミニテーブルは都度再構築（destroyMiniEditorTables/buildMiniEditorTableAsync）のため到達しないが、
         // promoteBufferRowToStore/demoteStoreRowToBuffer/deleteRow と条件を統一する。
         if (this.diffTab === false) this.ensureTrailingBufferRow();
+        // DOM行数が変化した場合にバーチャルスクロールの総行数を同期する
+        if (domRowCountChanged) this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
 
         // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
         // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
@@ -2118,6 +2164,10 @@ export class EditorTable {
         row.classList.add('editor-table-empty-row');
         // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
         this.virtualScroll.appendDataRow(row);
+        // 新しい行がDOMに追加されたため renderedEnd を同期する（dataRowToDomIndex のインデックス変換に必要）
+        this.virtualScroll.notifyRowAppended();
+        // バッファ行追加によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する
+        this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
         // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
@@ -2146,7 +2196,13 @@ export class EditorTable {
             // 2行目以降の余分なバッファ行を削除対象に追加する（末尾の1行は残す）
             if (bufferRowCount > 1) toRemove.push(row);
         }
-        for (const row of toRemove) this.element.removeChild(row);
+        for (const row of toRemove) {
+            this.element.removeChild(row);
+            // DOM行が削除されたため renderedEnd を同期する
+            this.virtualScroll.notifyRowRemoved();
+        }
+        // バッファ行削除によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する
+        if (toRemove.length > 0) this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
         // 行削除後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // 行数変化後に選択オーバーレイの描画位置を再計算する
