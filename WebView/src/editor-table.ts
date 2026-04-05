@@ -407,34 +407,23 @@ export class EditorTable {
             columnHeaderRow.classList.add('editor-table-column-header-row');
             this.element.appendChild(columnHeaderRow);
         }
+        // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
+        this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
+        // 初期レンダリングでは tableData.body から直接セル値を取得する。
+        // renderDataRow() は storeRowIndices 経由でストアから値を取得するが、
+        // ミニテーブルでは initialize() 後に setStoreRowIndices() で上書きされるため使えない。
         for (let i = 0; i < this.tableData.body.length; ++i) {
-            const cells = [];
-            const rowIndex = i;
-            const rowHeaderCell = this.structure.createRowHeaderCell(String(i + 1), i);
-            cells.push(rowHeaderCell);
+            const cells: HTMLElement[] = [];
+            cells.push(this.structure.createRowHeaderCell(String(i + 1), i));
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, this.tableData.body[i].values[j], j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT);
-                cells.push(cell);
+                cells.push(EditorTable.createCell(this, this.tableData.body[i].values[j], j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
             }
-            const row = EditorTable.createRow(cells, rowIndex);
-            // ソート時にstoreRowIndexからDOM行要素を逆引きするためのインデックスを付与する
+            const row = EditorTable.createRow(cells, i);
             row.dataset.storeIndex = String(i);
             this.element.appendChild(row);
         }
-        // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
-        this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
         for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
-            const cells = [];
-            const rowIndex = this.tableData.body.length + i;
-            const rowHeaderCell = this.structure.createRowHeaderCell(String(this.tableData.body.length + i + 1), this.tableData.body.length + i);
-            cells.push(rowHeaderCell);
-            for (let j = 0; j < this.tableData.header.length; ++j) {
-                const cell = EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT);
-                cells.push(cell);
-            }
-            const row = EditorTable.createRow(cells, rowIndex);
-            // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
-            row.classList.add('editor-table-empty-row');
+            const row = this.renderBufferRow(this.tableData.body.length + i);
             this.element.appendChild(row);
         }
         // フィル中のマウス移動イベント
@@ -451,6 +440,59 @@ export class EditorTable {
         this.runValidation();
         // 初期表示時にブックマーク済みセルの視覚マークを復元する
         this.restoreBookmarkMarks();
+    }
+
+    /**
+     * 指定データ行インデックスのDOM行要素を生成して返す。
+     * storeRowIndices 経由でストアからセル値を取得してセルを生成する。
+     * バーチャルスクロールの行動的生成で再利用する。
+     * テーブルへの追加（appendChild）は呼び出し側の責務。
+     *
+     * @param dataRowIndex storeRowIndices上のインデックス（0始まり）
+     * @returns 生成された行要素（data-store-index 設定済み）
+     */
+    renderDataRow(dataRowIndex: number): HTMLElement {
+        const storeRowIndex = this.storeRowIndices[dataRowIndex];
+        const storeRows = this.store.getRows(this.tableName);
+        const columnMapping = this.tableData.columnMapping;
+        const cells: HTMLElement[] = [];
+        // 行ヘッダー（表示上は1始まり）
+        cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
+        for (let j = 0; j < this.tableData.header.length; ++j) {
+            // columnMapping でDOM列→ストア（CSV）列に変換してセル値を取得する
+            const csvColIndex = columnMapping[j];
+            let value: string = '';
+            if (storeRows !== false && csvColIndex !== -1) {
+                const storeRow = storeRows[storeRowIndex];
+                if (csvColIndex < storeRow.length) {
+                    value = storeRow[csvColIndex];
+                }
+            }
+            cells.push(EditorTable.createCell(this, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
+        }
+        const row = EditorTable.createRow(cells, dataRowIndex);
+        // ソート時にstoreRowIndexからDOM行要素を逆引きするためのインデックスを付与する
+        row.dataset.storeIndex = String(storeRowIndex);
+        return row;
+    }
+
+    /**
+     * バッファ行（空行）のDOM要素を生成して返す。
+     * バッファ行はユーザーが入力を開始するまで空のまま保持される待機行。
+     *
+     * @param dataRowIndex DOM上のデータ行インデックス（0始まり、ヘッダー行を除く）
+     * @returns 生成された行要素（editor-table-empty-row クラス付き）
+     */
+    renderBufferRow(dataRowIndex: number): HTMLElement {
+        const cells: HTMLElement[] = [];
+        cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
+        for (let j = 0; j < this.tableData.header.length; ++j) {
+            cells.push(EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
+        }
+        const row = EditorTable.createRow(cells, dataRowIndex);
+        // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
+        row.classList.add('editor-table-empty-row');
+        return row;
     }
 
     /**

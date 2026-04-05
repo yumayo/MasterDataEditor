@@ -10,6 +10,7 @@
 export class VirtualScrollController {
     private readonly tableElement: HTMLElement;
     private readonly scrollContainer: HTMLElement;
+    private readonly enabled: boolean;
 
     /** 総データ行数（バッファ行含む） */
     private totalRowCount: number;
