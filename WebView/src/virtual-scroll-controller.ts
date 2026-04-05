@@ -146,6 +146,27 @@ export class VirtualScrollController {
     }
 
     /**
+     * 表示中の全データ行を破棄して再レンダリングする。
+     * storeRowIndices が変更された後（ソート・フィルター等）に呼ぶ。
+     * renderedStart/renderedEnd を無効化して recalculate を再実行することで
+     * 全行が renderRow コールバック経由で新しい storeRowIndices に基づいて再生成される。
+     * enabled=false（ミニテーブル）の場合は何もしない。
+     */
+    forceFullRerender(): void {
+        if (!this.enabled) return;
+        if (this.renderRow === false) return;
+        // 既存のデータ行をすべて削除する（ヘッダー行は残す）
+        while (this.tableElement.children.length > 1) {
+            this.tableElement.removeChild(this.tableElement.lastChild as Node);
+        }
+        // renderedStart/renderedEnd を「何も描画されていない」状態にリセットする
+        this.renderedStart = 0;
+        this.renderedEnd = 0;
+        // recalculate がビューポートに基づいて正しい範囲を描画する
+        this.recalculate();
+    }
+
+    /**
      * 現在の表示範囲 [start, end) を返す。
      * enabled=false では常に [0, totalRowCount) を返す（全行表示中）。
      */

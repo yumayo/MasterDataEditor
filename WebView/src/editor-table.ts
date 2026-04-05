@@ -329,6 +329,11 @@ export class EditorTable {
         this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
     }
 
+    /** 内部モジュール用: バーチャルスクロールで現在DOMに存在するデータ行の開始インデックス（0始まり）を返す */
+    getVirtualScrollRenderedStart(): number {
+        return this.virtualScroll.getRenderedRange().start;
+    }
+
     /** 内部モジュール用: 中央ストアを取得する */
     getStore(): InMemoryTableStore { return this.store; }
 
@@ -2508,6 +2513,16 @@ export class EditorTable {
      * applySortForColumn / applySortState から共通で使われる。
      */
     private rearrangeDomRowsByStoreIndices(indices: number[]): void {
+        // バーチャルスクロール有効時: DOM上にはビューポート分の行しか存在しないため
+        // DOM要素の物理的な並び替えは不可能。storeRowIndices は呼び出し元で更新済みなので、
+        // 全行を破棄して renderRowForVirtualScroll 経由で再レンダリングする。
+        const range = this.virtualScroll.getRenderedRange();
+        if (range.end - range.start < indices.length) {
+            console.log(`[VirtualScroll] rearrangeDomRows: 仮想スクロール有効のため全行再レンダリング (DOM=${range.end - range.start}行, 全体=${indices.length}行)`);
+            this.virtualScroll.forceFullRerender();
+            return;
+        }
+        // ミニテーブル・非仮想スクロール時: 全行がDOMに存在するため従来の並び替え
         // data-store-index 属性を使ってストアインデックス → DOM行要素のマップを構築する
         const storeIndexToRowElement = new Map<number, HTMLElement>();
         const totalRows = this.getRowCount();

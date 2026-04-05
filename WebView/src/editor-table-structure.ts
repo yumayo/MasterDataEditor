@@ -547,10 +547,15 @@ export class EditorTableStructure {
      */
     renumberRowsFrom(startDomIndex: number): void {
         const rowCount = this.table.getRowCount();
+        // バーチャルスクロール時はDOMインデックスと論理行インデックスがずれるためオフセットを加算する。
+        // DOM子要素[1]がデータ行renderedStartに対応するため、
+        // DOM子要素[i]の論理行番号は renderedStart + i（1始まり表示）となる。
+        const vsOffset = this.table.getVirtualScrollRenderedStart();
         for (let i = startDomIndex; i < rowCount; ++i) {
             const row = this.table.getRowElementForInsert(i);
             if (!row) continue;
-            row.dataset.row = String(i);
+            const logicalRowNumber = vsOffset + i;
+            row.dataset.row = String(logicalRowNumber);
             // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
             const header = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (!header) continue;
@@ -560,11 +565,11 @@ export class EditorTableStructure {
                 if (node.nodeType === Node.TEXT_NODE) { textNode = node as Text; break; }
             }
             if (textNode) {
-                textNode.textContent = String(i);
+                textNode.textContent = String(logicalRowNumber);
             } else {
-                header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+                header.insertBefore(document.createTextNode(String(logicalRowNumber)), header.firstChild);
             }
-            header.dataset.rowIndex = String(i - 1);
+            header.dataset.rowIndex = String(logicalRowNumber - 1);
         }
     }
 
