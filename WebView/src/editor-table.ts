@@ -534,7 +534,8 @@ export class EditorTable {
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
         const rowCount = this.element.children.length;
         for (let row = 1; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
             const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
             const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : null;
@@ -582,7 +583,8 @@ export class EditorTable {
         // 各行の children[0]（blame-cell または blame-column-header）を除去する
         const rowCount = this.element.children.length;
         for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             const firstChild = rowElement.children[0] as HTMLElement;
             if (firstChild && (firstChild.classList.contains('blame-cell') || firstChild.classList.contains('blame-column-header'))) {
                 firstChild.remove();
@@ -861,12 +863,24 @@ export class EditorTable {
     // =========================================================================
 
     /**
+     * DOM行インデックスから行要素を取得する。
+     * 0 = 列ヘッダー行、1以降 = データ行。
+     * バーチャルスクロール導入後はDOMに存在しない行でnullを返すようになる。
+     * 現時点では全行がDOMに存在するため、範囲外でなければ必ず要素を返す。
+     */
+    private getRowElement(domRowIndex: number): HTMLElement | null {
+        const row = this.element.children[domRowIndex];
+        if (!row) return null;
+        return row as HTMLElement;
+    }
+
+    /**
      * 座標からセル要素を取得する
      * @param row 行インデックス（0始まり、列ヘッダー行を含む）
      * @param column 列インデックス（0始まり、行ヘッダーセルを含む）
      */
     getCell(row: number, column: number): HTMLElement {
-        const rowElement = this.element.children[row] as HTMLElement;
+        const rowElement = this.getRowElement(row);
         if (!rowElement) {
             throw new Error(`行が見つかりません: row=${row}`);
         }
@@ -882,7 +896,7 @@ export class EditorTable {
      * 内部のクラス操作で使用する。DOM要素を外部に流出させないこと。
      */
     private getCellOrNull(row: number, column: number): HTMLElement | null {
-        const rowElement = this.element.children[row] as HTMLElement | null;
+        const rowElement = this.getRowElement(row);
         if (!rowElement) return null;
         return rowElement.children[column] as HTMLElement | null;
     }
@@ -1209,7 +1223,8 @@ export class EditorTable {
         }
         // 全行（ヘッダー行 + データ行 + バッファ空行）に対して固定列セルにstickyを適用
         for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             for (let col = 0; col < this.frozenColumnCount; col++) {
                 // dataColumnOffset: 行ヘッダー（+ blame-cell）を除くデータ列
                 const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
@@ -1238,7 +1253,8 @@ export class EditorTable {
         // blame表示時はデータ列のオフセットが1つ増える
         const dataColumnOffset = this.isBlameVisible ? 2 : 1;
         for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             for (let col = 0; col < this.frozenColumnCount; col++) {
                 const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
                 if (!cell) continue;
@@ -1263,7 +1279,7 @@ export class EditorTable {
         let cumulativeTop = headerRowHeight;
         for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
             // DOM行インデックス: データ行0 → element.children[1]
-            const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
+            const rowElement = this.getRowElement(dataRowIdx + 1);
             if (!rowElement) continue;
             const rowHeight = rowElement.getBoundingClientRect().height;
             // 個々のセルではなく table-row に sticky を適用する。
@@ -1294,7 +1310,7 @@ export class EditorTable {
      */
     private clearFreezeRowStyles(): void {
         for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
-            const rowElement = this.element.children[dataRowIdx + 1] as HTMLElement;
+            const rowElement = this.getRowElement(dataRowIdx + 1);
             if (!rowElement) continue;
             // 行レベルの sticky と影クラスをクリア
             rowElement.style.position = '';
@@ -1332,7 +1348,8 @@ export class EditorTable {
     private clearAllFreezeStyles(): void {
         const rowCount = this.element.children.length;
         for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             // 行レベルの sticky と影クラスをクリア（フリーズ行で設定される）
             rowElement.style.position = '';
             rowElement.style.top = '';
@@ -1506,7 +1523,8 @@ export class EditorTable {
         // 全データ行（バッファ空行を除く）のセル幅を計測
         const rowCount = this.element.children.length;
         for (let rowIdx = 1; rowIdx < rowCount; rowIdx++) {
-            const rowElement = this.element.children[rowIdx] as HTMLElement;
+            const rowElement = this.getRowElement(rowIdx);
+            if (!rowElement) continue;
             // バッファ空行はスキップ
             if (rowElement.classList.contains('editor-table-empty-row')) continue;
 
@@ -1570,8 +1588,9 @@ export class EditorTable {
      */
     setColumnWidth(columnIndex: number, width: string): void {
         for (let i = 0; i < this.element.children.length; ++i) {
-            const row = this.element.children[i] as HTMLElement;
-            const cell = row.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
+            const rowElement = this.getRowElement(i);
+            if (!rowElement) continue;
+            const cell = rowElement.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 EditorTable.applyCellWidth(cell, width);
             }
@@ -1592,9 +1611,9 @@ export class EditorTable {
      * 座標でセルのBoundingClientRectを取得する（存在しない場合はnull）
      */
     getCellRectOrNull(row: number, column: number): DOMRect | null {
-        const rowElement = this.element.children[row] as HTMLElement | undefined;
+        const rowElement = this.getRowElement(row);
         if (!rowElement) return null;
-        const cell = rowElement.children[column] as HTMLElement | undefined;
+        const cell = rowElement.children[column] as HTMLElement | null;
         if (!cell) return null;
         return cell.getBoundingClientRect();
     }
@@ -1603,7 +1622,8 @@ export class EditorTable {
      * テキストフィールドの幅を計算する
      */
     calculateTextFieldWidth(row: number, column: number, textWidth: number): { width: number; cellHeight: number } {
-        const rowElement = this.element.children[row] as HTMLElement;
+        const rowElement = this.getRowElement(row);
+        if (!rowElement) return { width: 0, cellHeight: 0 };
         const startCell = rowElement.children[column] as HTMLElement;
         const cellHeight = startCell.getBoundingClientRect().height;
         let width = 0;
@@ -1667,7 +1687,7 @@ export class EditorTable {
         const dataStartRow = 1;
         let maxRow = 0;
         for (let r = this.element.children.length - 1; r >= dataStartRow; r--) {
-            const rowElement = this.element.children[r] as HTMLElement;
+            const rowElement = this.getRowElement(r);
             if (!rowElement) continue;
             let hasData = false;
             for (let c = 1; c < rowElement.children.length; c++) {
@@ -1702,7 +1722,8 @@ export class EditorTable {
         // すべての行ヘッダーから選択状態を解除
         // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
         for (let i = 1; i < this.element.children.length; i++) {
-            const row = this.element.children[i] as HTMLElement;
+            const row = this.getRowElement(i);
+            if (!row) continue;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (rowHeader) rowHeader.classList.remove('selected');
         }
@@ -1715,7 +1736,7 @@ export class EditorTable {
         }
         // 選択範囲に含まれる行ヘッダーに選択状態を追加
         for (let row = startRow; row <= endRow; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
             if (rowElement) {
                 const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
                 if (rowHeader) rowHeader.classList.add('selected');
@@ -1755,7 +1776,7 @@ export class EditorTable {
                 // ストアの方が多い: バッファ空行を昇格してデータ行に変換し、足りなければ新規行を挿入する
                 for (let i = currentDataRowCount; i < storeRows.length; i++) {
                     const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
-                    const existingRow = this.element.children[domRowIndex] as HTMLElement | null;
+                    const existingRow = this.getRowElement(domRowIndex);
                     if (existingRow && existingRow.classList.contains('editor-table-empty-row')) {
                         // バッファ空行をデータ行に昇格する（editor-table-empty-row クラスを除去）
                         existingRow.classList.remove('editor-table-empty-row');
@@ -1771,7 +1792,7 @@ export class EditorTable {
                         const newRow = EditorTable.createRow(cells, domRowIndex);
                         // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
                         newRow.dataset.storeIndex = String(i);
-                        const insertTarget = this.element.children[domRowIndex];
+                        const insertTarget = this.getRowElement(domRowIndex);
                         if (insertTarget) {
                             this.element.insertBefore(newRow, insertTarget);
                         } else {
@@ -1785,7 +1806,7 @@ export class EditorTable {
                 // ストアの方が少ない: 末尾のデータ行をDOMから除去する（バッファ空行は維持する）
                 for (let i = currentDataRowCount - 1; i >= storeRows.length; i--) {
                     const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
-                    const rowToRemove = this.element.children[domRowIndex] as HTMLElement | null;
+                    const rowToRemove = this.getRowElement(domRowIndex);
                     // 通常テーブルで削除対象がnullまたはバッファ空行である場合は設計上の不整合
                     if (!rowToRemove || rowToRemove.classList.contains('editor-table-empty-row')) {
                         throw new Error('[EditorTable.reloadCellsFromStore] DOM行とストアの不整合: 削除対象行が存在しないか空行です。 domRowIndex=' + domRowIndex);
@@ -1885,7 +1906,7 @@ export class EditorTable {
             // ソート中の場合、originalIndices も同期する（バッファ行昇格でストア行数が増えるため）
             this.columnSorter.notifyRowInserted(storeRowIndex);
             // DOMの該当行から editor-table-empty-row クラスを除去する（data行として昇格）
-            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            const domRow = this.getRowElement(i + 1);
             if (domRow) {
                 domRow.classList.remove('editor-table-empty-row');
                 // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
@@ -1924,7 +1945,7 @@ export class EditorTable {
             // ソート中の場合、originalIndices も同期する（ストア行降格でストア行数が減るため）
             this.columnSorter.notifyRowDeleted(storeRowIndex);
             // DOMの該当行に editor-table-empty-row クラスを復元し、storeIndex 属性を削除する（promoteBufferRowToStore との対称性）
-            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            const domRow = this.getRowElement(i + 1);
             if (domRow) {
                 domRow.classList.add('editor-table-empty-row');
                 delete domRow.dataset.storeIndex;
@@ -1979,8 +2000,8 @@ export class EditorTable {
         const totalDataRows = this.element.children.length - 1;
         // 末尾のDOM行がバッファ行かどうかを確認する（children[0]は列ヘッダーなので+1オフセット）
         if (totalDataRows > 0) {
-            const lastRow = this.element.children[totalDataRows] as HTMLElement;
-            if (lastRow.classList.contains('editor-table-empty-row')) return;
+            const lastRow = this.getRowElement(totalDataRows);
+            if (lastRow && lastRow.classList.contains('editor-table-empty-row')) return;
         }
         // 新しいバッファ行の行インデックス（0始まり）
         const newRowIndex = totalDataRows;
@@ -2013,8 +2034,8 @@ export class EditorTable {
         const toRemove: HTMLElement[] = [];
         let bufferRowCount = 0;
         for (let i = this.element.children.length - 1; i >= 1; i--) {
-            const row = this.element.children[i] as HTMLElement;
-            if (!row.classList.contains('editor-table-empty-row')) break;
+            const row = this.getRowElement(i);
+            if (!row || !row.classList.contains('editor-table-empty-row')) break;
             bufferRowCount++;
             // 2行目以降の余分なバッファ行を削除対象に追加する（末尾の1行は残す）
             if (bufferRowCount > 1) toRemove.push(row);
@@ -2251,7 +2272,8 @@ export class EditorTable {
         const storeIndexToRowElement = new Map<number, HTMLElement>();
         const totalRows = this.element.children.length;
         for (let domIdx = 1; domIdx < totalRows; domIdx++) {
-            const row = this.element.children[domIdx] as HTMLElement;
+            const row = this.getRowElement(domIdx);
+            if (!row) continue;
             if (row.classList.contains('editor-table-empty-row')) continue;
             if (!row.hasAttribute('data-store-index')) continue;
             storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
@@ -2282,7 +2304,8 @@ export class EditorTable {
         // フィルター未適用時は全行表示にして行数カウンターを非表示にし早期 return する
         if (!this.columnFilter.hasActiveFilter()) {
             for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
-                (this.element.children[domDataRow + 1] as HTMLElement).style.display = '';
+                const rowEl = this.getRowElement(domDataRow + 1);
+                if (rowEl) rowEl.style.display = '';
             }
             this.updateFilterActiveClasses();
             this.filterRowCountElement.style.display = 'none';
@@ -2297,10 +2320,10 @@ export class EditorTable {
         const totalCount = this.storeRowIndices.length;
 
         // 各データ行の display を更新する（バッファ空行は対象外）
-        // DOM行は initialize() と reloadCellsFromStore() でストア行と必ず対応するため null チェック不要
         for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
             const storeRowIndex = this.storeRowIndices[domDataRow];
-            const domRow = this.element.children[domDataRow + 1] as HTMLElement;
+            const domRow = this.getRowElement(domDataRow + 1);
+            if (!domRow) continue;
             if (filteredSet.has(storeRowIndex)) {
                 domRow.style.display = '';
                 visibleCount++;
@@ -2592,8 +2615,8 @@ export class EditorTable {
      * PK列右クリックの「ブックマークを解除」（行レベル一括削除）で使用する
      */
     private removeBookmarkMarksForRow(row: number): void {
-        const rowElement = this.element.children[row] as HTMLElement;
-        // 修正6: 設計上 row は有効なDOM行インデックスであるべき
+        const rowElement = this.getRowElement(row);
+        // 設計上 row は有効なDOM行インデックスであるべき
         if (!rowElement) throw new Error(`[EditorTable.removeBookmarkMarksForRow] rowElement が null: row=${row}`);
         const cells = rowElement.querySelectorAll<HTMLElement>('.editor-table-cell[data-bookmarked]');
         for (let i = 0; i < cells.length; i++) {
@@ -2706,7 +2729,8 @@ export class EditorTable {
             // （保存後にgit statusから差分が消えたケースに対応）
             const offset = this.dataColumnOffset();
             for (let row = 1; row < rowCount; row++) {
-                const rowElement = this.element.children[row] as HTMLElement;
+                const rowElement = this.getRowElement(row);
+                if (!rowElement) continue;
                 if (rowElement.classList.contains('editor-table-empty-row')) continue;
                 for (let col = offset; col < totalColCount; col++) {
                     this.getCell(row, col).classList.remove('cell-git-changed');
@@ -2737,7 +2761,8 @@ export class EditorTable {
         const changedDomRows = new Set<number>();
         const changedDomCols = new Set<number>();
         for (let row = 1; row < rowCount; row++) {
-            const rowElement = this.element.children[row] as HTMLElement;
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
             // バッファ空行（editor-table-empty-row クラスあり）はハイライト対象外
             if (rowElement.classList.contains('editor-table-empty-row')) continue;
             // 差分タブのパディング行（diff-row-empty クラスあり）もハイライト対象外
@@ -3210,10 +3235,11 @@ export class EditorTable {
         // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
         const fromDomIndex = fromDomDataRowIndex + 1;
         const toDomIndex = toDomDataRowIndex + 1;
-        const rowElement = this.element.children[fromDomIndex] as HTMLElement;
+        const rowElement = this.getRowElement(fromDomIndex);
+        if (!rowElement) throw new Error(`[EditorTable.moveRowInternal] 移動元のDOM行が存在しません: fromDomIndex=${fromDomIndex}`);
         rowElement.remove();
         // 挿入位置のDOM要素（fromを抜いた後のインデックス）
-        const insertBefore = this.element.children[toDomIndex] as HTMLElement | null;
+        const insertBefore = this.getRowElement(toDomIndex);
         if (insertBefore) {
             this.element.insertBefore(rowElement, insertBefore);
         } else {
@@ -3227,7 +3253,7 @@ export class EditorTable {
         }
         // data-store-index DOM属性も更新する
         for (let i = 0; i < this.storeRowIndices.length; i++) {
-            const domRow = this.element.children[i + 1] as HTMLElement | null;
+            const domRow = this.getRowElement(i + 1);
             if (domRow) domRow.dataset.storeIndex = String(i);
         }
         // 行番号を再ナンバリングする
@@ -3303,7 +3329,7 @@ export class EditorTable {
         }
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
-            const row = this.element.children[rowIdx] as HTMLElement | null;
+            const row = this.getRowElement(rowIdx);
             if (!row) continue;
             const storeRowIdx = this.storeRowIndices[rowIdx - 1];
             for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
@@ -3372,28 +3398,32 @@ export class EditorTable {
         if (domRows.size === 0) return [];
         const markers: MarkerEntry[] = [];
         const sorted = Array.from(domRows).sort((a, b) => a - b);
-        let rangeStartRow = this.element.children[sorted[0] + 1] as HTMLElement;
+        let rangeStartRow = this.getRowElement(sorted[0] + 1);
         let rangeEndRow = rangeStartRow;
         for (let i = 1; i < sorted.length; i++) {
             if (sorted[i] === sorted[i - 1] + 1) {
-                rangeEndRow = this.element.children[sorted[i] + 1] as HTMLElement;
+                rangeEndRow = this.getRowElement(sorted[i] + 1);
             } else {
-                const startRect = rangeStartRow.getBoundingClientRect();
-                const endRect = rangeEndRow.getBoundingClientRect();
-                markers.push({
-                    start: (startRect.top - tableTop) / tableHeight,
-                    size: (endRect.bottom - startRect.top) / tableHeight,
-                });
-                rangeStartRow = this.element.children[sorted[i] + 1] as HTMLElement;
+                if (rangeStartRow && rangeEndRow) {
+                    const startRect = rangeStartRow.getBoundingClientRect();
+                    const endRect = rangeEndRow.getBoundingClientRect();
+                    markers.push({
+                        start: (startRect.top - tableTop) / tableHeight,
+                        size: (endRect.bottom - startRect.top) / tableHeight,
+                    });
+                }
+                rangeStartRow = this.getRowElement(sorted[i] + 1);
                 rangeEndRow = rangeStartRow;
             }
         }
-        const startRect = rangeStartRow.getBoundingClientRect();
-        const endRect = rangeEndRow.getBoundingClientRect();
-        markers.push({
-            start: (startRect.top - tableTop) / tableHeight,
-            size: (endRect.bottom - startRect.top) / tableHeight,
-        });
+        if (rangeStartRow && rangeEndRow) {
+            const startRect = rangeStartRow.getBoundingClientRect();
+            const endRect = rangeEndRow.getBoundingClientRect();
+            markers.push({
+                start: (startRect.top - tableTop) / tableHeight,
+                size: (endRect.bottom - startRect.top) / tableHeight,
+            });
+        }
         return markers;
     }
 
