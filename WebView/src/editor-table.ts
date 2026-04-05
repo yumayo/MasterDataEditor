@@ -3285,23 +3285,26 @@ export class EditorTable {
     private refreshScrollbarMarkers(): void {
         if (this.scrollbarMarkerTrack === false) return;
         if (this.isMiniTable) return;
-        // .editor-left-pane（実際のスクロールコンテナ）の scrollHeight を使う。
-        // this.element.parentElement（.tab-wrapper）ではなく、ScrollbarMarkerTrack が
-        // 保持する scrollContainer 経由で取得することで、マーカー位置が正確になる。
-        const scrollHeight = this.scrollbarMarkerTrack.getScrollLength();
-        if (scrollHeight <= 0) return;
-        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, scrollHeight);
-        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, scrollHeight);
+        // テーブル高さを100%としたマーカー比率を計算する。
+        // Canvas は editor-left-pane の全高に引き伸ばされるため、
+        // テーブルの行位置がペイン全高にマッピングされる。
+        const tableRect = this.element.getBoundingClientRect();
+        const tableHeight = tableRect.height;
+        if (tableHeight <= 0) return;
+        const tableTop = tableRect.top;
+        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, tableHeight, tableTop);
+        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, tableHeight, tableTop);
         this.scrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
     }
 
     /**
      * DOM行インデックスの集合からマーカー描画エントリを構築する。
-     * 各行の offsetTop / scrollHeight でスクロールバー上の比率位置を計算する。
-     * offsetTop は offsetParent（.editor-left-pane）からの相対位置なのでtableOffsetの加算は不要。
+     * getBoundingClientRect() で行のビューポート座標を取得し、テーブル上端からの相対位置で
+     * テーブル高さに対する比率を算出する。テーブル基準の座標を使うことで、テーブルが画面高さに
+     * 満たない場合でもマーカーがテーブルの行位置と正確に一致する。
      * 連続する行はまとめて1つのエントリにマージする。
      */
-    private buildMarkerEntries(domRows: Set<number>, scrollHeight: number): MarkerEntry[] {
+    private buildMarkerEntries(domRows: Set<number>, tableHeight: number, tableTop: number): MarkerEntry[] {
         if (domRows.size === 0) return [];
         const markers: MarkerEntry[] = [];
         const sorted = Array.from(domRows).sort((a, b) => a - b);
@@ -3311,17 +3314,21 @@ export class EditorTable {
             if (sorted[i] === sorted[i - 1] + 1) {
                 rangeEndRow = this.element.children[sorted[i] + 1] as HTMLElement;
             } else {
+                const startRect = rangeStartRow.getBoundingClientRect();
+                const endRect = rangeEndRow.getBoundingClientRect();
                 markers.push({
-                    start: rangeStartRow.offsetTop / scrollHeight,
-                    size: (rangeEndRow.offsetTop + rangeEndRow.offsetHeight - rangeStartRow.offsetTop) / scrollHeight,
+                    start: (startRect.top - tableTop) / tableHeight,
+                    size: (endRect.bottom - startRect.top) / tableHeight,
                 });
                 rangeStartRow = this.element.children[sorted[i] + 1] as HTMLElement;
                 rangeEndRow = rangeStartRow;
             }
         }
+        const startRect = rangeStartRow.getBoundingClientRect();
+        const endRect = rangeEndRow.getBoundingClientRect();
         markers.push({
-            start: rangeStartRow.offsetTop / scrollHeight,
-            size: (rangeEndRow.offsetTop + rangeEndRow.offsetHeight - rangeStartRow.offsetTop) / scrollHeight,
+            start: (startRect.top - tableTop) / tableHeight,
+            size: (endRect.bottom - startRect.top) / tableHeight,
         });
         return markers;
     }

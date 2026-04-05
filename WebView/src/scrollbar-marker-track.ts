@@ -121,16 +121,6 @@ export class ScrollbarMarkerTrack {
         parentElement.appendChild(this.canvas);
     }
 
-    /**
-     * スクロールコンテナの主軸方向のスクロール可能サイズを返す。
-     * 垂直トラックでは scrollHeight、水平トラックでは scrollWidth。
-     * EditorTable がマーカー位置の比率計算に使用する。
-     */
-    getScrollLength(): number {
-        if (this.axis === 'vertical') return this.scrollContainer.scrollHeight;
-        return this.scrollContainer.scrollWidth;
-    }
-
     /** ResizeObserver を解放する */
     destroy(): void {
         this.resizeObserver.disconnect();
