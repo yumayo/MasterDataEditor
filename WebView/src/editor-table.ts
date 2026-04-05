@@ -33,6 +33,7 @@ import {saveSchemaDataAsync} from "./editor-actions";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
 import {ScrollbarMarkerTrack, MarkerEntry} from "./scrollbar-marker-track";
+import {VirtualScrollController} from "./virtual-scroll-controller";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -150,6 +151,8 @@ export class EditorTable {
     private currentErrorDomCols: Set<number>;
     /** 直近のgit差分で検出された変更があるDOM列インデックス（0始まり、dataColumnOffset後）の集合 */
     private currentGitChangedDomCols: Set<number>;
+    /** バーチャルスクロールコントローラー */
+    private readonly virtualScroll: VirtualScrollController;
 
     constructor(
         tableName: string,
@@ -163,6 +166,7 @@ export class EditorTable {
         areaResizer: AreaResizer,
         scrollBinding: ScrollViewportController,
         sidebar: Sidebar,
+        scrollContainer: HTMLElement,
         emptyRowCount: number,
         rootCssClass: string,
         isMiniTable: boolean
@@ -216,6 +220,10 @@ export class EditorTable {
             scrollBinding
         );
         this.rowDragController = new RowDragController(this, selection, history);
+        // バーチャルスクロール: 通常テーブルで有効化、ミニテーブルでは無���化
+        this.virtualScroll = new VirtualScrollController(
+            this.element, scrollContainer, emptyRowCount, !isMiniTable
+        );
     }
 
     /**
@@ -271,6 +279,22 @@ export class EditorTable {
         const mapping = this.tableData.columnMapping;
         if (domColumnIndex < 0 || domColumnIndex >= mapping.length) return -1;
         return mapping[domColumnIndex];
+    }
+
+    /**
+     * 内部モジュール用: 指定DOMインデックスの行要素を取得する（行挿入の insertBefore 用）。
+     * getRowElement のパブリック版。スペーサーオフセットを考慮した正しい子要素を返す。
+     */
+    getRowElementForInsert(domRowIndex: number): HTMLElement | null {
+        return this.getRowElement(domRowIndex);
+    }
+
+    /**
+     * 内部モジュール用: データ行をテーブル末尾（bottomSpacerの手前）に追加する。
+     * バーチャルスクロール有効時はbottomSpacerの手前に挿入し、無効時は通常のappendChildを使う。
+     */
+    appendDataRowToTable(row: HTMLElement): void {
+        this.virtualScroll.appendDataRow(row);
     }
 
     /** 内部モジュール用: 中央ストアを取得する */
@@ -532,7 +556,7 @@ export class EditorTable {
             blameMap.set(entries[i].lineNumber, entries[i]);
         }
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.getRowElement(row);
             if (!rowElement) continue;
@@ -581,7 +605,7 @@ export class EditorTable {
         this.isBlameVisible = false;
         this.element.classList.remove('editor-table--blame-visible');
         // 各行の children[0]（blame-cell または blame-column-header）を除去する
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.getRowElement(row);
             if (!rowElement) continue;
@@ -865,10 +889,12 @@ export class EditorTable {
     /**
      * DOM行インデックスから行要素を取得する。
      * 0 = 列ヘッダー行、1以降 = データ行。
-     * バーチャルスクロール導入後はDOMに存在しない行でnullを返すようになる。
-     * 現時点では全行がDOMに存在するため、範囲外でなければ必ず要素を返す。
+     * バーチャルスクロール有効時はスペーサー行分のオフセットを考慮する。
+     * 表示範囲外の行やスペーサー行インデックスではnullを返す。
      */
     private getRowElement(domRowIndex: number): HTMLElement | null {
+        // Phase 1: スペーサー行なし。dataRowToDomIndex は常に dataRowIndex + 1 を返す。
+        // domRowIndex は従来のインデックス体系（0=ヘッダー、1=データ行0、...）
         const row = this.element.children[domRowIndex];
         if (!row) return null;
         return row as HTMLElement;
@@ -1196,7 +1222,7 @@ export class EditorTable {
      */
     applyFreezeColumnStyles(): void {
         if (this.frozenColumnCount === 0) return;
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         // blame表示時は children[0] が blame-cell なので、データ列のオフセットが1つ増える
         // 通常: children[0]=行ヘッダー, children[1]=データ列0, ...
         // blame: children[0]=blame-cell, children[1]=行ヘッダー, children[2]=データ列0, ...
@@ -1249,7 +1275,7 @@ export class EditorTable {
      * 固定列のCSS stickyスタイルをクリアする。
      */
     private clearFreezeColumnStyles(): void {
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         // blame表示時はデータ列のオフセットが1つ増える
         const dataColumnOffset = this.isBlameVisible ? 2 : 1;
         for (let row = 0; row < rowCount; row++) {
@@ -1346,7 +1372,7 @@ export class EditorTable {
      * 構造変更後に位置がずれたセルの古いスタイル残留を防ぐため、全セルを走査する。
      */
     private clearAllFreezeStyles(): void {
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.getRowElement(row);
             if (!rowElement) continue;
@@ -1374,10 +1400,10 @@ export class EditorTable {
     }
 
     /**
-     * 行数を取得する（列ヘッダー行を含む）
+     * 行数を取得する（列ヘッダー行を含む、スペーサー行は除外）
      */
     getRowCount(): number {
-        return this.element.children.length;
+        return this.element.children.length - this.virtualScroll.spacerCount();
     }
 
     /**
@@ -1521,7 +1547,7 @@ export class EditorTable {
         let maxWidth = parseFloat(headerWidthStr);
 
         // 全データ行（バッファ空行を除く）のセル幅を計測
-        const rowCount = this.element.children.length;
+        const rowCount = this.getRowCount();
         for (let rowIdx = 1; rowIdx < rowCount; rowIdx++) {
             const rowElement = this.getRowElement(rowIdx);
             if (!rowElement) continue;
@@ -1587,7 +1613,7 @@ export class EditorTable {
      * 指定列の幅を設定し、その列の全セルのスタイルを更新
      */
     setColumnWidth(columnIndex: number, width: string): void {
-        for (let i = 0; i < this.element.children.length; ++i) {
+        for (let i = 0; i < this.getRowCount(); ++i) {
             const rowElement = this.getRowElement(i);
             if (!rowElement) continue;
             const cell = rowElement.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
@@ -1686,7 +1712,7 @@ export class EditorTable {
     getMaxDataRow(): number {
         const dataStartRow = 1;
         let maxRow = 0;
-        for (let r = this.element.children.length - 1; r >= dataStartRow; r--) {
+        for (let r = this.getRowCount() - 1; r >= dataStartRow; r--) {
             const rowElement = this.getRowElement(r);
             if (!rowElement) continue;
             let hasData = false;
@@ -1721,7 +1747,7 @@ export class EditorTable {
         }
         // すべての行ヘッダーから選択状態を解除
         // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
-        for (let i = 1; i < this.element.children.length; i++) {
+        for (let i = 1; i < this.getRowCount(); i++) {
             const row = this.getRowElement(i);
             if (!row) continue;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
@@ -1796,7 +1822,8 @@ export class EditorTable {
                         if (insertTarget) {
                             this.element.insertBefore(newRow, insertTarget);
                         } else {
-                            this.element.appendChild(newRow);
+                            // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
+                            this.virtualScroll.appendDataRow(newRow);
                         }
                     }
                     this.storeRowIndices.push(i);
@@ -1996,8 +2023,8 @@ export class EditorTable {
      * @internal EditorTableStructure.deleteRow() からも呼ばれる。外部からは呼ばないこと。
      */
     ensureTrailingBufferRow(): void {
-        // 列ヘッダー行(children[0])を除いたデータ行の総数（ストア行 + 既存バッファ行）
-        const totalDataRows = this.element.children.length - 1;
+        // 列ヘッダー行を除いたデータ行の総数（ストア行 + 既存バッファ行。スペーサー行は除外済み）
+        const totalDataRows = this.getRowCount() - 1;
         // 末尾のDOM行がバッファ行かどうかを確認する（children[0]は列ヘッダーなので+1オフセット）
         if (totalDataRows > 0) {
             const lastRow = this.getRowElement(totalDataRows);
@@ -2012,7 +2039,8 @@ export class EditorTable {
         }
         const row = EditorTable.createRow(cells, newRowIndex);
         row.classList.add('editor-table-empty-row');
-        this.element.appendChild(row);
+        // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
+        this.virtualScroll.appendDataRow(row);
         // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
@@ -2030,10 +2058,11 @@ export class EditorTable {
      */
     private normalizeTrailingBufferRows(): void {
         // DOM上のバッファ行（editor-table-empty-row）を末尾から数えて2行目以降を削除する
-        // children[0]は列ヘッダーなのでデータ行は children[1] 以降
+        // getRowCount() はスペーサー行を除外した値を返すため安全にループできる
         const toRemove: HTMLElement[] = [];
         let bufferRowCount = 0;
-        for (let i = this.element.children.length - 1; i >= 1; i--) {
+        const rowCount = this.getRowCount();
+        for (let i = rowCount - 1; i >= 1; i--) {
             const row = this.getRowElement(i);
             if (!row || !row.classList.contains('editor-table-empty-row')) break;
             bufferRowCount++;
@@ -2270,7 +2299,7 @@ export class EditorTable {
     private rearrangeDomRowsByStoreIndices(indices: number[]): void {
         // data-store-index 属性を使ってストアインデックス → DOM行要素のマップを構築する
         const storeIndexToRowElement = new Map<number, HTMLElement>();
-        const totalRows = this.element.children.length;
+        const totalRows = this.getRowCount();
         for (let domIdx = 1; domIdx < totalRows; domIdx++) {
             const row = this.getRowElement(domIdx);
             if (!row) continue;
@@ -2287,7 +2316,8 @@ export class EditorTable {
             if (firstEmptyRow) {
                 this.element.insertBefore(row, firstEmptyRow);
             } else {
-                this.element.appendChild(row);
+                // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
+                this.virtualScroll.appendDataRow(row);
             }
         }
     }
@@ -3243,7 +3273,8 @@ export class EditorTable {
         if (insertBefore) {
             this.element.insertBefore(rowElement, insertBefore);
         } else {
-            this.element.appendChild(rowElement);
+            // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
+            this.virtualScroll.appendDataRow(rowElement);
         }
         // storeRowIndices を再構築する
         // 通常テーブル: 移動後は storeRowIndices[i] = i となる

@@ -53,10 +53,11 @@ export class EditorTableStructure {
      * comment: Undo時にcommentを復元するために使用する。新規挿入時は null を渡す。
      */
     insertColumnInternal(columnIndex: number, comment: string | null): void {
-        const tableElement = this.table.getTableElement();
-        // 各行に新しいセルを挿入
-        for (let currentRowIndex = 0; currentRowIndex < tableElement.children.length; ++currentRowIndex) {
-            const row = tableElement.children[currentRowIndex] as HTMLElement;
+        // 各行に新しいセルを挿入（getRowCount でスペーサー行を除外した行数でループ）
+        const rowCount = this.table.getRowCount();
+        for (let currentRowIndex = 0; currentRowIndex < rowCount; ++currentRowIndex) {
+            const row = this.table.getRowElementForInsert(currentRowIndex);
+            if (!row) continue;
             if (currentRowIndex === 0) {
                 // 列ヘッダー行
                 // 挿入前に既存のラベルをDOMから取得
@@ -166,8 +167,14 @@ export class EditorTableStructure {
             cells.push(cell);
         }
         const newRow = EditorTable.createRow(cells, rowIndex);
-        const insertBefore = tableElement.children[rowIndex];
-        tableElement.insertBefore(newRow, insertBefore);
+        // getRowElement を使ってスペーサー行のオフセットを考慮した位置に挿入する
+        const insertBeforeRow = this.table.getRowElementForInsert(rowIndex);
+        if (insertBeforeRow) {
+            tableElement.insertBefore(newRow, insertBeforeRow);
+        } else {
+            // rowIndex がDOMの末尾を超えた場合はbottomSpacerの手前に追加する
+            this.table.appendDataRowToTable(newRow);
+        }
         // ソート時のstoreRowIndex逆引きのためのインデックスは後で設定する（storeRowIndex確定後）
         // ストアにも空行を挿入する。
         // rowIndex はヘッダー行を含む DOM インデックスのため、データ行インデックスは rowIndex - 1。
@@ -199,7 +206,7 @@ export class EditorTableStructure {
             if (indices[i] >= storeRowIndex) {
                 indices[i] += 1;
                 // data-store-index DOM属性もストアインデックスに合わせて更新する
-                const domRow = tableElement.children[i + 1] as HTMLElement | null;
+                const domRow = this.table.getRowElementForInsert(i + 1);
                 if (domRow) domRow.dataset.storeIndex = String(indices[i]);
             }
         }
@@ -286,9 +293,11 @@ export class EditorTableStructure {
         for (let i = offset; i < columnHeaderRow.children.length; ++i) {
             existingLabels.push(getColumnHeaderLabel(columnHeaderRow.children[i] as HTMLElement));
         }
-        // 各行から指定位置のセルを削除
-        for (let rowIdx = 0; rowIdx < tableElement.children.length; ++rowIdx) {
-            const row = tableElement.children[rowIdx] as HTMLElement;
+        // 各行から指定位置のセルを削除（getRowCount でスペーサー行を除外した行数でループ）
+        const rowCount = this.table.getRowCount();
+        for (let rowIdx = 0; rowIdx < rowCount; ++rowIdx) {
+            const row = this.table.getRowElementForInsert(rowIdx);
+            if (!row) continue;
             // columnIndex + offset はblame列・行ヘッダーを除いた位置
             const cellToRemove = row.children[columnIndex + offset];
             if (cellToRemove) {
@@ -342,7 +351,6 @@ export class EditorTableStructure {
      * 行を削除する（Undo用）
      */
     deleteRow(rowIndex: number): void {
-        const tableElement = this.table.getTableElement();
         // storeRowIndices から対応エントリを削除し、ストアからも行を削除する。
         // insertRowInternal と対称な処理: 挿入時に storeRowIndices と store を両方更新したように、
         // 削除時も storeRowIndices と store を両方更新してデータ整合性を保つ。
@@ -357,7 +365,7 @@ export class EditorTableStructure {
                 if (indices[i] > removedStoreIndex) {
                     indices[i] -= 1;
                     // data-store-index DOM属性もストアインデックスに合わせて更新する
-                    const domRow = tableElement.children[i + 1] as HTMLElement | null;
+                    const domRow = this.table.getRowElementForInsert(i + 1);
                     if (domRow) domRow.dataset.storeIndex = String(indices[i]);
                 }
             }
@@ -369,11 +377,13 @@ export class EditorTableStructure {
         //   - 左ペインの対応行が diff-row-padding-inserted → 行挿入のUndo → 左右のDOM行を削除
         //   - そうでない → 通常のデータ行削除 → 右ペインをパディング行変換 + 左ペインに削除マーク
         if (this.table.diffTab !== false) {
-            const rowElement = tableElement.children[rowIndex] as HTMLElement;
+            const rowElement = this.table.getRowElementForInsert(rowIndex);
+            if (!rowElement) throw new Error(`[EditorTableStructure.deleteRow] 削除対象のDOM行が存在しません: rowIndex=${rowIndex}`);
             this.table.diffTab.notifyRightPaneRowDeleted(rowIndex, rowElement);
         } else {
             // 通常テーブルの場合は DOM 行をそのまま削除する
-            tableElement.children[rowIndex].remove();
+            const rowToDelete = this.table.getRowElementForInsert(rowIndex);
+            if (rowToDelete) rowToDelete.remove();
         }
         // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);
@@ -526,9 +536,10 @@ export class EditorTableStructure {
      * @param startDomIndex 更新を開始する DOM インデックス（列ヘッダー行 = 0 を含む、データ行は 1 以上）
      */
     renumberRowsFrom(startDomIndex: number): void {
-        const tableElement = this.table.getTableElement();
-        for (let i = startDomIndex; i < tableElement.children.length; ++i) {
-            const row = tableElement.children[i] as HTMLElement;
+        const rowCount = this.table.getRowCount();
+        for (let i = startDomIndex; i < rowCount; ++i) {
+            const row = this.table.getRowElementForInsert(i);
+            if (!row) continue;
             row.dataset.row = String(i);
             // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
             const header = row.querySelector('.editor-table-row-header') as HTMLElement | null;

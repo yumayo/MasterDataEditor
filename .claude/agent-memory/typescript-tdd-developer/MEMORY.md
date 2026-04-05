@@ -9,6 +9,9 @@
 - Design: Intentionally tightly coupled, Command pattern for Undo/Redo
 - Build: Vite (`WebView/` directory)
 
+## Virtual Scroll
+- [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — Phase 1骨格: スペーサー行方式、getRowElement変換、appendDataRow
+
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table facade
 - `/WebView/src/editor-table-handler.ts` - High-level edit handler

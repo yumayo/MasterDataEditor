@@ -2134,10 +2134,12 @@ export class Tab {
 
         // 本物の EditorTable インスタンスを作成（データ行+バッファ1行で通常の編集テーブルを生成）
         const emptyRowCount = tableData.body.length + 1;
+        // scrollContainer: 左ペインがスクロールコンテナ（バーチャルスクロールのイベント登録先）
+        const scrollContainerElement = this.editor.getLeftPaneForScroll();
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, emptyRowCount, 'editor-table', false
+            scrollController, this.sidebar, scrollContainerElement, emptyRowCount, 'editor-table', false
         );
 
         // editorTable に本物のインスタンスの内容をコピー
@@ -2253,7 +2255,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, emptyRowCount, 'editor-table', true
+            scrollController, this.sidebar, scrollContainer, emptyRowCount, 'editor-table', true
         );
 
         Object.assign(editorTable, realEditorTable);

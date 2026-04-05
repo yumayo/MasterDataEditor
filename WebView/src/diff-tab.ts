@@ -738,7 +738,7 @@ export class DiffTab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, referenceDataCache, store, editorTableHandler,
             selection, contextMenu, history, areaResizer,
-            scrollController, sidebar, 0, 'editor-table', true
+            scrollController, sidebar, paneElement, 0, 'editor-table', true
         );
 
         Object.assign(editorTable, realEditorTable);
