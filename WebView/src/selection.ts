@@ -585,6 +585,21 @@ export class Selection {
         }
     }
 
+    /**
+     * 選択範囲のCSSクラスのみを再適用する（スクロール位置やフィルハンドルは変更しない）。
+     * バーチャルスクロールでDOM行が入れ替わった際に、新しい行に選択背景色を適用するために使う。
+     * updateRendererAfterResize() と異なり、スクロール移動やRelationsPanel通知を行わないため
+     * ドラッグ選択中に呼んでもドラッグを妨害しない。
+     */
+    reapplySelectionClassesOnly(): void {
+        const selectionRange = this.getSelectionRange();
+        this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
+        this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
+        if (this.hasCopyRange()) {
+            this.updateCopyRenderer();
+        }
+    }
+
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
         const endRow = selectionRange.endRow;

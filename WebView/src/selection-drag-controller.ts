@@ -9,6 +9,7 @@ export class SelectionDragController {
     private scrollBinding: ScrollViewportController;
     private mousemoveHandler: (e: MouseEvent) => void;
     private mouseupHandler: () => void;
+    private activated = false;
     private autoScrollActive = false;
     private autoScrollFrameId = 0;
     private lastMouseX = 0;
@@ -26,7 +27,9 @@ export class SelectionDragController {
         this.mousemoveHandler = (e: MouseEvent) => {
             this.lastMouseX = e.clientX;
             this.lastMouseY = e.clientY;
-            if (selection.isSelectingColumn() || selection.isSelectingRow() || selection.isSelecting()) {
+            const isActive = selection.isSelectingColumn() || selection.isSelectingRow() || selection.isSelecting();
+            if (isActive) {
+                console.log('[SelectionDrag] mousemove selecting x=' + e.clientX + ' y=' + e.clientY);
                 this.updateSelectionFromPoint(e.clientX, e.clientY);
                 this.updateAutoScrollState(e.clientX, e.clientY);
             } else {
@@ -41,11 +44,15 @@ export class SelectionDragController {
     }
 
     activate(): void {
+        if (this.activated) return;
+        this.activated = true;
         window.addEventListener('mousemove', this.mousemoveHandler);
         window.addEventListener('mouseup', this.mouseupHandler);
     }
 
     deactivate(): void {
+        if (!this.activated) return;
+        this.activated = false;
         window.removeEventListener('mousemove', this.mousemoveHandler);
         window.removeEventListener('mouseup', this.mouseupHandler);
         this.stopAutoScroll();

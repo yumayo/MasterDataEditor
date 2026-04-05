@@ -38,8 +38,11 @@ export const test = base.extend<MockFixtures>({
     autoDump: [async ({ page }, use, testInfo) => {
         // ブラウザ側の未キャッチ例外とエラーログを収集する
         const pageErrors: string[] = [];
+        // ブラウザ側の全コンソール出力を収集する（console.log含む）
+        const consoleLogs: string[] = [];
         page.on('pageerror', err => pageErrors.push(`[EXCEPTION] ${err.message}\n${err.stack}`));
         page.on('console', msg => {
+            consoleLogs.push(`[${msg.type()}] ${msg.text()}`);
             if (msg.type() === 'error') pageErrors.push(`[console.error] ${msg.text()}`);
         });
 
@@ -55,6 +58,10 @@ export const test = base.extend<MockFixtures>({
         // テスト失敗時にブラウザ側エラーをファイルに出力する（原因特定を迅速にするため）
         if (testInfo.status !== testInfo.expectedStatus && pageErrors.length > 0) {
             writeFileSync(resolve(outputDir, testTitle + '.errors.log'), pageErrors.join('\n'), 'utf-8');
+        }
+        // ブラウザ側のコンソール出力を常にファイルに出力する（テスト成功/失敗問わず）
+        if (consoleLogs.length > 0) {
+            writeFileSync(resolve(outputDir, testTitle + '.console.log'), consoleLogs.join('\n'), 'utf-8');
         }
 
         const html = await page.evaluate(() => {

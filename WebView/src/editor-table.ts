@@ -263,7 +263,10 @@ export class EditorTable {
         // バーチャルスクロールの行生成コールバックを正しい this（プロキシオブジェクト）で設定する。
         // コンストラクタ時点の this は realEditorTable を指すためクロージャが旧オブジェクトを捕捉してしまう。
         // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
-        this.virtualScroll.connectRenderRow((dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex));
+        this.virtualScroll.connectRenderRow(
+            (dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex),
+            () => this.reapplyRowDecorations()
+        );
     }
 
     // =========================================================================
@@ -583,6 +586,20 @@ export class EditorTable {
     }
 
     /**
+     * バーチャルスクロールで行の入れ替えが完了した後に、表示中の行に装飾を再適用する。
+     * 選択クラス、コピー範囲クラス、フォーカスセル、フリーズペインスタイルを再適用する。
+     * バリデーションエラーとgit差分は renderRowForVirtualScroll 内の applyRowDecorations で適用済み。
+     */
+    private reapplyRowDecorations(): void {
+        // ドラッグ選択中（mousedown→mousemove中）は選択クラス再適用をスキップする。
+        // ドラッグ中に applySelectionClasses を呼ぶと lastSelectionCells のリセットで
+        // 中間状態が壊れ、ドラッグ操作が途中で止まる。
+        // ドラッグ終了後の mouseup → selection.end() → updateRenderer() で正しく再適用される。
+        if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) return;
+        this.selection.reapplySelectionClassesOnly();
+    }
+
+    /**
      * バーチャルスクロールのスペーサー要素をDOM上に配置する。
      * appendTo() 完了後（テーブル要素が親要素に追加された後）に呼ぶこと。
      */
@@ -822,6 +839,7 @@ export class EditorTable {
             });
         });
         cell.addEventListener('mousedown', (e) => {
+            console.log('[SelectionDrag] cell mousedown button=' + e.button);
             // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
             if (e.button !== 0) return;
             const position = EditorTable.getCellPosition(cell, table.element);
@@ -862,6 +880,12 @@ export class EditorTable {
             if (e.shiftKey) {
                 table.selection.extendSelection(position.row, position.column);
             } else {
+                // SelectionDragController を有効化する（window mousemove/mouseup によるドラッグ選択に必要）。
+                // activateTabState 経由で activate が呼ばれるべきだが、HMRリロード後など
+                // タイミングによっては呼ばれないケースがあるため、mousedown 時にも確実に有効化する。
+                // addEventListener の重複登録は SelectionDragController 側でガードする。
+                table.selectionDragController.activate();
+                console.log('[SelectionDrag] selection.start row=' + position.row + ' col=' + position.column);
                 table.selection.start(position.row, position.column);
             }
         });

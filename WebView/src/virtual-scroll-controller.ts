@@ -27,8 +27,6 @@ export class VirtualScrollController {
 
     /** recalculate の再帰呼び出しを防止するフラグ */
     private isRecalculating: boolean;
-    /** requestAnimationFrame によるスクロールスロットル用フラグ */
-    private scrollPending: boolean;
 
     /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
     private actualRowHeight: number;
@@ -48,6 +46,12 @@ export class VirtualScrollController {
      */
     private renderRow: ((dataRowIndex: number) => HTMLElement) | false;
 
+    /**
+     * 行装飾再適用コールバック。updateRenderedRows 完了後に呼ばれる。
+     * 選択クラス、バリデーションエラー、git差分ハイライト等を表示範囲のDOMに再適用する。
+     */
+    private afterRowsUpdated: (() => void) | false;
+
     constructor(
         tableElement: HTMLElement,
         scrollContainer: HTMLElement,
@@ -60,8 +64,8 @@ export class VirtualScrollController {
         this.totalRowCount = totalRowCount;
         this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
         this.isRecalculating = false;
-        this.scrollPending = false;
         this.renderRow = false;
+        this.afterRowsUpdated = false;
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
         this.renderedStart = 0;
@@ -84,8 +88,9 @@ export class VirtualScrollController {
      * initializeModules() 内で正しい this を持つコールバックを渡すこと。
      * enabled=false の場合は呼ばなくてよい（renderRow は使用されない）。
      */
-    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement): void {
+    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement, afterRowsUpdated: () => void): void {
         this.renderRow = renderRow;
+        this.afterRowsUpdated = afterRowsUpdated;
     }
 
     /**
@@ -300,13 +305,9 @@ export class VirtualScrollController {
 
         const scrollTop = this.scrollContainer.scrollTop;
         const viewportHeight = this.scrollContainer.clientHeight;
-        const headerHeight = this.getHeaderHeight();
 
         // 方式B（テーブル外スペーサー）では、scrollTop は topSpacer + テーブル + bottomSpacer
-        // 全体の中での位置を示す。topSpacer の高さ = renderedStart * rowHeight なので、
-        // scrollTop からデータ行の先頭位置を直接算出できる。
-        // ヘッダー行は sticky で常にビューポート上端に固定されるため、
-        // データ行の可視領域はビューポートからヘッダー高さを引いた部分。
+        // 全体の中での位置を示す。scrollTop / rowHeight で先頭行を直接算出できる。
         const firstVisibleRow = Math.max(0, Math.floor(scrollTop / rowHeight));
         const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + 1;
         const lastVisibleRow = firstVisibleRow + visibleRowCount;
@@ -334,6 +335,11 @@ export class VirtualScrollController {
 
         this.renderedStart = newStart;
         this.renderedEnd = newEnd;
+
+        // 行の入れ替え後に装飾（選択クラス、バリデーション、git差分等）を再適用する
+        if (this.afterRowsUpdated !== false) {
+            this.afterRowsUpdated();
+        }
 
         // DOM操作でブラウザがスクロール位置をリセットした場合に復元する
         if (this.scrollContainer.scrollTop !== savedScrollTop) {
