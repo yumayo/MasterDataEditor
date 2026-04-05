@@ -35,7 +35,7 @@ if (process.env.NODE_ENV === 'production') {
             // リリースビルドでは console.log / console.debug を除去する。
             // console.warn / console.error は残す（運用時のエラー検知に必要）。
             // テスト時（PLAYWRIGHT=1）はAI開発のデバッグログを残すため除去しない。
-            ...(env.PLAYWRIGHT !== '1' ? { drop: ['console'] } : {}),
+            ...(env.PLAYWRIGHT !== '1' ? { pure: ['console.log', 'console.debug'] } : {}),
         },
         build: {
             outDir: 'dist',
