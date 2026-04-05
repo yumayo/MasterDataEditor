@@ -17,7 +17,6 @@
     color: var(--border-color);
     user-select: none;
     border-radius: 2px;
-    transition: color 0.15s;
     z-index: var(--z-index-filter-dropdown-overlay);
 }
 
@@ -25,9 +24,9 @@
     color: var(--font-color);
 }
 
-/* フィルター適用中のヘッダーセル */
+/* フィルター適用中: ソートと同じく親要素の色を継承して強調 */
 .editor-table-column-header.filter-active .filter-icon {
-    color: var(--selection-color);
+    color: inherit;
 }
 
 /* フィルタードロップダウンコンテナ */
@@ -79,8 +78,7 @@
     flex: 1;
 }
 
-.filter-buttons button,
-.filter-apply {
+.filter-buttons button {
     padding: 3px 8px;
     font-size: 11px;
     background-color: var(--background-sub-color);
@@ -88,11 +86,9 @@
     border-radius: var(--border-radius);
     color: var(--font-color);
     cursor: pointer;
-    transition: background-color 0.15s;
 }
 
-.filter-buttons button:hover,
-.filter-apply:hover {
+.filter-buttons button:hover {
     background-color: var(--background-color);
 }
 
@@ -155,9 +151,13 @@
 /* 適用ボタン: 操作を確定するプライマリアクションのため選択色（アクセントカラー）を使用 */
 .filter-apply {
     align-self: flex-end;
+    padding: 3px 8px;
+    font-size: 11px;
+    border: 1px solid var(--selection-color);
+    border-radius: var(--border-radius);
     background-color: var(--selection-color);
-    border-color: var(--selection-color);
-    color: #ffffff;
+    color: var(--selection-font-color);
+    cursor: pointer;
 }
 
 .filter-apply:hover {

@@ -9,7 +9,10 @@ import {
     InsertColumnCommand,
     InsertColumnsCommand,
     InsertRowCommand,
-    InsertRowsCommand
+    InsertRowsCommand,
+    SortCommand,
+    FilterCommand,
+    ColumnWidthCommand,
 } from "./command";
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
@@ -350,10 +353,27 @@ export class History implements IHistory {
 
     /**
      * 未保存の変更があるかどうか
+     *
+     * savedIndex と currentIndex の間にデータ変更コマンドが1つでもあれば dirty。
+     * ソート・フィルタ・列幅変更はView変換（即時保存済み）のため dirty 判定から除外する。
+     *
      * @returns true: 保存時点から変更がある（dirty）, false: 保存時点と同じ（clean）
      */
     isDirty(): boolean {
-        return this.currentIndex !== this.savedIndex;
+        if (this.savedIndex === SAVED_INDEX_LOST) return true;
+        if (this.currentIndex === this.savedIndex) return false;
+        // savedIndex と currentIndex の間のコマンドをすべて検査し、
+        // データ変更コマンドが1つでもあれば dirty と判定する
+        const start = Math.min(this.savedIndex, this.currentIndex) + 1;
+        const end = Math.max(this.savedIndex, this.currentIndex);
+        for (let i = start; i <= end; i++) {
+            const cmd = this.history[i].command;
+            if (cmd instanceof SortCommand) continue;
+            if (cmd instanceof FilterCommand) continue;
+            if (cmd instanceof ColumnWidthCommand) continue;
+            return true;
+        }
+        return false;
     }
 
     /**

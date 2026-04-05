@@ -162,11 +162,13 @@ export class FilterDropdown {
     }
 
     /**
-     * ドロップダウンを非表示にする。
+     * ドロップダウンを非表示にし、テーブルにキーボードフォーカスを戻す。
+     * フォーカスを戻すことで、閉じた直後の Ctrl+Z が EditorTableHandler に到達する。
      */
     hide(): void {
         this.element.classList.remove('visible');
         this.currentColumnIndex = -1;
+        this.table.focusTable();
     }
 
     /**
@@ -310,28 +312,42 @@ export class FilterDropdown {
     /**
      * 適用ボタンのハンドラ: チェックされた値でフィルターを適用してドロップダウンを閉じる。
      * currentColumnIndex は DOM列インデックスのため、ストア列インデックスに変換してから ColumnFilter に渡す。
+     * フィルター変更前後の状態を記録して FilterCommand を履歴に積む（Undo/Redo対応）。
      */
     private applyAndClose(): void {
+        // フィルター変更前の状態を記録する（Undo時に復元するため）
+        const oldFilters = this.table.serializeFilters();
         const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         const selectedValues = this.collectCheckedValues();
         this.columnFilter.applyFilter(storeColumnIndex, selectedValues);
         this.hide();
         this.table.applyFilterDisplay();
+        // フィルター変更後の状態を記録する
+        const newFilters = this.table.serializeFilters();
         // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
         saveSchemaDataAsync(this.table);
+        // FilterCommand を履歴に積む（既に実行済みのため pushCommand を使う）
+        this.table.pushFilterCommand(oldFilters, newFilters);
     }
 
     /**
      * クリアボタンのハンドラ: 当該列のフィルターを解除してドロップダウンを閉じる。
      * currentColumnIndex は DOM列インデックスのため、ストア列インデックスに変換してから ColumnFilter に渡す。
+     * フィルター変更前後の状態を記録して FilterCommand を履歴に積む（Undo/Redo対応）。
      */
     private clearAndClose(): void {
+        // フィルター変更前の状態を記録する（Undo時に復元するため）
+        const oldFilters = this.table.serializeFilters();
         const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         this.hide();
         this.columnFilter.clearFilter(storeColumnIndex);
         this.table.applyFilterDisplay();
+        // フィルター変更後の状態を記録する
+        const newFilters = this.table.serializeFilters();
         // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
         saveSchemaDataAsync(this.table);
+        // FilterCommand を履歴に積む（既に実行済みのため pushCommand を使う）
+        this.table.pushFilterCommand(oldFilters, newFilters);
     }
 
     /**

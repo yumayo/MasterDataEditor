@@ -1,6 +1,8 @@
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
 import { EditorTableDataColumn } from "./model/editor-table-data-column";
+import { SerializedSortKey } from "./column-sorter";
+import { SerializedFilters } from "./column-filter";
 
 /**
  * Undo/Redo可能なコマンドのインターフェース
@@ -794,5 +796,78 @@ export class RenderAsHtmlToggleCommand implements Command {
 
     getDescription(): string {
         return `RenderAsHtmlToggle at column=${this.columnIndex}`;
+    }
+}
+
+/**
+ * ソート状態を変更するコマンド（Undo/Redo対応）
+ *
+ * ソート操作は applySortForColumn() で既に実行済みのため、pushCommand で履歴に積む。
+ * execute/redo では新しいソート状態を適用し、undo では元のソート状態に戻す。
+ * ソート状態はシリアライズ済みのソートキー配列で保持する（列名ベースのため列追加削除に影響されない）。
+ */
+export class SortCommand implements Command {
+    private readonly editorTable: EditorTable;
+    private readonly oldSortKeys: SerializedSortKey[];
+    private readonly newSortKeys: SerializedSortKey[];
+
+    constructor(editorTable: EditorTable, oldSortKeys: SerializedSortKey[], newSortKeys: SerializedSortKey[]) {
+        this.editorTable = editorTable;
+        this.oldSortKeys = oldSortKeys;
+        this.newSortKeys = newSortKeys;
+    }
+
+    execute(): void {
+        this.editorTable.applySortState(this.newSortKeys);
+    }
+
+    undo(): void {
+        this.editorTable.applySortState(this.oldSortKeys);
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        return `Sort: ${this.oldSortKeys.length} keys -> ${this.newSortKeys.length} keys`;
+    }
+}
+
+/**
+ * フィルター状態を変更するコマンド（Undo/Redo対応）
+ *
+ * フィルター操作は FilterDropdown の applyAndClose/clearAndClose で既に実行済みのため、
+ * pushCommand で履歴に積む。
+ * execute/redo では新しいフィルター状態を適用し、undo では元のフィルター状態に戻す。
+ * フィルター状態はシリアライズ済みのフィルターオブジェクトで保持する（列名ベース）。
+ */
+export class FilterCommand implements Command {
+    private readonly editorTable: EditorTable;
+    private readonly oldFilters: SerializedFilters;
+    private readonly newFilters: SerializedFilters;
+
+    constructor(editorTable: EditorTable, oldFilters: SerializedFilters, newFilters: SerializedFilters) {
+        this.editorTable = editorTable;
+        this.oldFilters = oldFilters;
+        this.newFilters = newFilters;
+    }
+
+    execute(): void {
+        this.editorTable.applyFilterState(this.newFilters);
+    }
+
+    undo(): void {
+        this.editorTable.applyFilterState(this.oldFilters);
+    }
+
+    redo(): void {
+        this.execute();
+    }
+
+    getDescription(): string {
+        const oldCount = Object.keys(this.oldFilters).length;
+        const newCount = Object.keys(this.newFilters).length;
+        return `Filter: ${oldCount} columns -> ${newCount} columns`;
     }
 }

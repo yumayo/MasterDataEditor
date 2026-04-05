@@ -3,7 +3,7 @@ import {Selection, CellPosition, CellRange} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
-import {Command, CellChange, RenderAsHtmlToggleCommand} from "./command";
+import {Command, CellChange, RenderAsHtmlToggleCommand, SortCommand, FilterCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -453,6 +453,15 @@ export class EditorTable {
         // スクロールバーマーカーをクリアする（非アクティブタブのマーカーが残存するのを防止）
         if (this.scrollbarMarkerTrack !== false) this.scrollbarMarkerTrack.clear();
         if (this.horizontalScrollbarMarkerTrack !== false) this.horizontalScrollbarMarkerTrack.clear();
+    }
+
+    /**
+     * テーブルにキーボードフォーカスを戻す。
+     * FilterDropdown など外部UIを閉じた後に呼ぶことで、
+     * Ctrl+Z/Ctrl+S などのキーボードショートカットが EditorTableHandler に到達するようにする。
+     */
+    focusTable(): void {
+        this.handler.activate();
     }
 
     /**
@@ -2125,21 +2134,7 @@ export class EditorTable {
         const newIndices = this.columnSorter.restoreSortKeys(serializedSortKeys, this.storeRowIndices);
         if (newIndices === this.storeRowIndices) return; // 復元するソートキーがなかった
         this.storeRowIndices = newIndices;
-        // applySortForColumn と同じDOM再配置ロジック
-        const storeIndexToRowElement = new Map<number, HTMLElement>();
-        const totalRows = this.element.children.length;
-        for (let domIdx = 1; domIdx < totalRows; domIdx++) {
-            const row = this.element.children[domIdx] as HTMLElement;
-            if (row.classList.contains('editor-table-empty-row')) continue;
-            if (!row.hasAttribute('data-store-index')) continue;
-            storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
-        }
-        const firstEmptyRow = this.element.querySelector('.editor-table-empty-row');
-        for (const storeIdx of newIndices) {
-            const row = storeIndexToRowElement.get(storeIdx);
-            if (!row) continue;
-            if (firstEmptyRow) { this.element.insertBefore(row, firstEmptyRow); } else { this.element.appendChild(row); }
-        }
+        this.rearrangeDomRowsByStoreIndices(newIndices);
         this.structure.renumberRowsFrom(1);
         this.selection.updateRendererAfterResize();
         this.updateAllSortIndicators();
@@ -2159,20 +2154,122 @@ export class EditorTable {
 
     /**
      * 指定列のソートをトグルし、DOMの行順を更新する。
-     * ソートはView変換のみ（ストア順序は変えない）。Undo/Redo対象外。
+     * ソートはView変換のみ（ストア順序は変えない）。
      * ミニテーブルでは呼ばれない（ソートインジケーターが存在しないため）。
+     *
+     * ソート前後のシリアライズ済みソートキーを SortCommand に記録し、
+     * History に pushCommand で履歴に積む（Undo/Redo対応）。
      *
      * @param columnIndex DOMの列インデックス（0始まり、行ヘッダーなし）
      */
     applySortForColumn(columnIndex: number): void {
         // blameはgit committed dataのため、ソートによるDOM行並び替えで陳腐化する
         this.hideBlameIfVisible();
+        // ソート前の状態を記録する（Undo時に復元するため）
+        const oldSortKeys = this.columnSorter.serializeSortKeys();
         // ColumnSorterにソートを委譲して新しいstoreRowIndicesを取得する
         const newIndices = this.columnSorter.toggleSort(columnIndex, this.storeRowIndices);
         this.storeRowIndices = newIndices;
+        // ソート後の状態を記録する
+        const newSortKeys = this.columnSorter.serializeSortKeys();
 
-        // data-store-index 属性を使ってストアインデックス → DOM行要素のマップを構築する。
-        // initialize() や insertRowInternal, promoteBufferRowToStore で付与済み。
+        // DOM行の並び替え
+        this.rearrangeDomRowsByStoreIndices(newIndices);
+
+        // 並び替え後に全データ行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再設定する
+        this.structure.renumberRowsFrom(1);
+        // DOM行順序が変わったため選択オーバーレイの描画位置を再計算する
+        this.selection.updateRendererAfterResize();
+        // 全列ヘッダーのソートインジケーターを更新する
+        this.updateAllSortIndicators();
+        // ソート後もフィルター状態を維持する（フィルター適用中の場合は表示/非表示を再計算する）
+        this.refreshFilterDisplayIfActive();
+
+        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this);
+
+        // SortCommand を履歴に積む（既に実行済みのため pushCommand を使う）
+        const command = new SortCommand(this, oldSortKeys, newSortKeys);
+        const anchor = this.selection.getAnchor();
+        const copyRange = this.selection.getCopyRange();
+        const range = {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column};
+        this.history.pushCommand(command, range, copyRange);
+    }
+
+    /**
+     * シリアライズ済みソートキーからソート状態を適用する（SortCommand の execute/undo 用）。
+     *
+     * restoreSortState() はタブ復元専用（saveSchemaDataAsync を呼ばない）であるのに対し、
+     * このメソッドはコマンドの undo/redo から呼ばれ、saveSchemaDataAsync も呼ぶ。
+     */
+    applySortState(sortKeys: SerializedSortKey[]): void {
+        // blameはgit committed dataのため、ソート変更でDOM行並び替えが発生し陳腐化する
+        this.hideBlameIfVisible();
+        // 既存のソート状態をリセットしてから復元する
+        this.columnSorter.clearAllSorts();
+        if (sortKeys.length > 0) {
+            // ソートキーを復元して新しい storeRowIndices を取得する
+            const newIndices = this.columnSorter.restoreSortKeys(sortKeys, this.storeRowIndices);
+            this.storeRowIndices = newIndices;
+            this.rearrangeDomRowsByStoreIndices(newIndices);
+        } else {
+            // ソート解除: storeRowIndices を元の順序（0, 1, 2, ...）に戻す
+            const naturalOrder: number[] = [];
+            for (let i = 0; i < this.storeRowIndices.length; i++) naturalOrder.push(i);
+            this.storeRowIndices = naturalOrder;
+            this.rearrangeDomRowsByStoreIndices(naturalOrder);
+        }
+        this.structure.renumberRowsFrom(1);
+        this.selection.updateRendererAfterResize();
+        this.updateAllSortIndicators();
+        this.refreshFilterDisplayIfActive();
+        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this);
+    }
+
+    /**
+     * シリアライズ済みフィルターからフィルター状態を適用する（FilterCommand の execute/undo 用）。
+     *
+     * restoreFilterState() はタブ復元専用（saveSchemaDataAsync を呼ばない）であるのに対し、
+     * このメソッドはコマンドの undo/redo から呼ばれ、saveSchemaDataAsync も呼ぶ。
+     */
+    applyFilterState(filters: SerializedFilters): void {
+        const storeColumnNames = this.store.getHeader(this.tableName);
+        if (storeColumnNames === false) return;
+        // 既存のフィルター状態をリセットしてから復元する
+        this.columnFilter.clearAllFilters();
+        const hasFilters = Object.keys(filters).length > 0;
+        if (hasFilters) {
+            this.columnFilter.restoreFilters(filters, storeColumnNames);
+        }
+        // フィルター有無に関わらず applyFilterDisplay() を呼ぶ
+        // （フィルター解除時に全行を再表示し、行数カウンターを非表示にするため）
+        this.applyFilterDisplay();
+        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
+        saveSchemaDataAsync(this);
+    }
+
+    /**
+     * FilterDropdown からフィルター変更をコマンドとして履歴に積む。
+     * FilterDropdown は History を直接参照しないため、このメソッドを経由する（デメテルの法則）。
+     *
+     * @param oldFilters フィルター変更前のシリアライズ済みフィルター
+     * @param newFilters フィルター変更後のシリアライズ済みフィルター
+     */
+    pushFilterCommand(oldFilters: SerializedFilters, newFilters: SerializedFilters): void {
+        const command = new FilterCommand(this, oldFilters, newFilters);
+        const anchor = this.selection.getAnchor();
+        const copyRange = this.selection.getCopyRange();
+        const range = {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column};
+        this.history.pushCommand(command, range, copyRange);
+    }
+
+    /**
+     * storeRowIndices の順序に従って DOM のデータ行を並び替える。
+     * applySortForColumn / applySortState から共通で使われる。
+     */
+    private rearrangeDomRowsByStoreIndices(indices: number[]): void {
+        // data-store-index 属性を使ってストアインデックス → DOM行要素のマップを構築する
         const storeIndexToRowElement = new Map<number, HTMLElement>();
         const totalRows = this.element.children.length;
         for (let domIdx = 1; domIdx < totalRows; domIdx++) {
@@ -2181,33 +2278,18 @@ export class EditorTable {
             if (!row.hasAttribute('data-store-index')) continue;
             storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
         }
-
         // バッファ行の先頭要素を取得しておく（insertBefore の基準点として使用）
         const firstEmptyRow = this.element.querySelector('.editor-table-empty-row');
-        // newIndices の順序でデータ行を親に再挿入する（insertBefore でバッファ行の前に配置）
-        for (const storeIdx of newIndices) {
+        // indices の順序でデータ行を親に再挿入する（insertBefore でバッファ行の前に配置）
+        for (const storeIdx of indices) {
             const row = storeIndexToRowElement.get(storeIdx);
-            if (!row) throw new Error('[EditorTable.applySortForColumn] storeIdx に対応するDOM行が存在しません: ' + storeIdx);
+            if (!row) throw new Error('[EditorTable.rearrangeDomRowsByStoreIndices] storeIdx に対応するDOM行が存在しません: ' + storeIdx);
             if (firstEmptyRow) {
                 this.element.insertBefore(row, firstEmptyRow);
             } else {
                 this.element.appendChild(row);
             }
         }
-
-        // 並び替え後に全データ行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再設定する
-        this.structure.renumberRowsFrom(1);
-        // DOM行順序が変わったため選択オーバーレイの描画位置を再計算する
-        this.selection.updateRendererAfterResize();
-
-        // 全列ヘッダーのソートインジケーターを更新する
-        this.updateAllSortIndicators();
-
-        // ソート後もフィルター状態を維持する（フィルター適用中の場合は表示/非表示を再計算する）
-        this.refreshFilterDisplayIfActive();
-
-        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this);
     }
 
     /**
