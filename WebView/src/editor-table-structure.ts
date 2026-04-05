@@ -544,13 +544,6 @@ export class EditorTableStructure {
                 header.insertBefore(document.createTextNode(String(i)), header.firstChild);
             }
             header.dataset.rowIndex = String(i - 1);
-            // リサイズハンドルのイベントハンドラを再設定
-            const resizeHandle = header.querySelector('.row-resize-handle');
-            if (resizeHandle) resizeHandle.remove();
-            const newResizeHandle = document.createElement('div');
-            newResizeHandle.classList.add('row-resize-handle');
-            this.areaResizer.setupRowResizeHandle(newResizeHandle, header, i);
-            header.appendChild(newResizeHandle);
         }
     }
 
@@ -599,10 +592,6 @@ export class EditorTableStructure {
         rowHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createRowHeaderClickHandler(rowHeaderCell));
         // 行ヘッダー右クリックでコンテキストメニュー
         rowHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createRowHeaderContextMenuHandler(rowHeaderCell));
-        const resizeHandle = document.createElement('div');
-        resizeHandle.classList.add('row-resize-handle');
-        this.areaResizer.setupRowResizeHandle(resizeHandle, rowHeaderCell, rowIndex + 1);
-        rowHeaderCell.appendChild(resizeHandle);
         return rowHeaderCell;
     }
 }

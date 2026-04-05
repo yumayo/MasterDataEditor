@@ -163,25 +163,6 @@
     background-color: rgba(128, 128, 128, 0.3);
 }
 
-/* 行リサイズハンドル（行境界の中央にまたがる: 内側4px + 外側4px）
-   --z-index-resize-handle は --z-index-editor-table-row-header より高く設定し、
-   bottom: -4px ではみ出た部分が下の行ヘッダーセルに隠れないようにする。
-   --z-index-grid-textfield-active より低くし、セル編集中にリサイズハンドルが重ならないようにする。 */
-.row-resize-handle {
-    position: absolute;
-    bottom: -4px;
-    left: 0;
-    width: 100%;
-    height: 8px;
-    cursor: row-resize;
-    user-select: none;
-    z-index: var(--z-index-resize-handle);
-}
-
-.row-resize-handle:hover {
-    background-color: rgba(128, 128, 128, 0.3);
-}
-
 /* 列ヘッダーセルをrelativeにしてリサイズハンドルを配置できるようにする。
    overflow: visible はハンドルが right: -4px で隣セルの領域にはみ出す際に必須。
    table-cell はデフォルト visible だが Chrome では隣セルが上に被さるケースがあるため明示する。 */
@@ -190,13 +171,6 @@
     overflow: visible;
 }
 
-/* 行ヘッダーは position:sticky（左固定）を維持するため position:relative にしない。
-   sticky は absolute 子要素（リサイズハンドル）の包含ブロックとしても機能するので
-   position:relative と同等にハンドル配置が正しく動作する。
-   overflow: visible はハンドルが bottom: -4px で隣セルの領域にはみ出す際に必須。 */
-.editor-table-row-header {
-    overflow: visible;
-}
 
 /* 選択された列ヘッダーのスタイル */
 .editor-table-column-header.selected {
@@ -232,14 +206,6 @@
     top: 0;
     bottom: 0;
     height: 100%;
-}
-
-/* 行リサイズ時のガイドライン（横線） */
-.resize-guideline-row {
-    height: 2px;
-    left: 0;
-    right: 0;
-    width: 100%;
 }
 
 /* 参照列のヒント表示（FK値の左側に配置される）

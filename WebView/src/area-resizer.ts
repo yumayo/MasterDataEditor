@@ -1,8 +1,8 @@
 import type { History } from "./history";
 import type { Selection } from "./selection";
 import type { EditorTable } from "./editor-table";
-import { ColumnWidthCommand, RowHeightCommand, CompositeCommand } from "./command";
-import { DEFAULT_ROW_HEIGHT, MIN_COLUMN_WIDTH_PX } from "./constant";
+import { ColumnWidthCommand, CompositeCommand } from "./command";
+import { MIN_COLUMN_WIDTH_PX } from "./constant";
 
 /** D&D開始と判定する最小移動距離(px) */
 const DRAG_MIN_DISTANCE_PX = 3;
@@ -21,13 +21,6 @@ export class AreaResizer {
     private resizeColumnStartLeft: number = 0;
     /** mousedownからの移動距離がDRAG_MIN_DISTANCE_PX以上になったらD&D確定 */
     private columnDragConfirmed: boolean = false;
-
-    private isResizingRow: boolean = false;
-    private resizingRowIndex: number = -1;
-    private resizeStartY: number = 0;
-    private resizeStartHeight: number = 0;
-    private resizeRowStartTop: number = 0;
-    private resizeRowOldHeight: string = DEFAULT_ROW_HEIGHT;
 
     private mousemoveHandler!: (e: MouseEvent) => void;
     private mouseupHandler!: (e: MouseEvent) => void;
@@ -68,13 +61,6 @@ export class AreaResizer {
                 // ガイドラインの位置を更新（実際のセルは変更しない）
                 this.resizeGuideline.style.left = newLeft + 'px';
             }
-
-            if (this.isResizingRow) {
-                const deltaY = e.clientY - this.resizeStartY;
-                const newTop = this.resizeRowStartTop + deltaY;
-                // ガイドラインの位置を更新（実際のセルは変更しない）
-                this.resizeGuideline.style.top = newTop + 'px';
-            }
         };
 
         this.mouseupHandler = (e: MouseEvent) => {
@@ -89,46 +75,10 @@ export class AreaResizer {
 
                 // ガイドラインを非表示
                 this.resizeGuideline.style.display = 'none';
-                this.resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
-            }
-
-            if (this.isResizingRow) {
-                const deltaY = e.clientY - this.resizeStartY;
-                const newHeight = Math.max(20, this.resizeStartHeight + deltaY);
-                const newHeightStr = newHeight + 'px';
-
-                // 高さが変わった場合のみ履歴に追加
-                if (this.resizeRowOldHeight !== newHeightStr) {
-                    const command = new RowHeightCommand(
-                        this.editorTable,
-                        this.resizingRowIndex,
-                        this.resizeRowOldHeight,
-                        newHeightStr
-                    );
-                    // マウスアップ時にセルのスタイルを更新
-                    this.editorTable.setRowHeight(this.resizingRowIndex, newHeightStr);
-
-                    // 履歴に追加（既に実行済み）
-                    const copyRange = this.selection.getCopyRange();
-                    const anchor = this.selection.getAnchor();
-                    this.history.pushCommand(command, {
-                        startRow: anchor.row,
-                        startColumn: anchor.column,
-                        endRow: anchor.row,
-                        endColumn: anchor.column
-                    }, copyRange);
-
-                    // selection の描画領域を更新
-                    this.selection.updateRendererAfterResize();
-                }
-
-                // ガイドラインを非表示
-                this.resizeGuideline.style.display = 'none';
-                this.resizeGuideline.classList.remove('resize-guideline-column', 'resize-guideline-row');
+                this.resizeGuideline.classList.remove('resize-guideline-column');
             }
 
             this.isResizingColumn = false;
-            this.isResizingRow = false;
             this.columnDragConfirmed = false;
         };
     }
@@ -235,7 +185,6 @@ export class AreaResizer {
             this.resizeGuideline.style.left = this.resizeColumnStartLeft + 'px';
             this.resizeGuideline.style.top = '0';
             this.resizeGuideline.classList.add('resize-guideline-column');
-            this.resizeGuideline.classList.remove('resize-guideline-row');
         });
 
         // ダブルクリックで自動幅調整（D&Dとは排他、mouseupで既にリセット済み）
@@ -246,31 +195,4 @@ export class AreaResizer {
         });
     }
 
-    /**
-     * 行リサイズハンドルをセットアップ
-     */
-    public setupRowResizeHandle(resizeHandle: HTMLElement, rowHeaderCell: HTMLElement, rowIndex: number): void {
-        resizeHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.isResizingRow = true;
-            this.resizingRowIndex = rowIndex;
-            this.resizeStartY = e.clientY;
-            const height = Number.parseFloat(rowHeaderCell.style.height);
-            this.resizeStartHeight = height;
-            // 元の高さを保存（Undo用）- セルのスタイルから取得
-            this.resizeRowOldHeight = rowHeaderCell.style.height;
-
-            // ガイドラインを表示（横線）: 行下端（境界）を基準にすることでマウス位置によらず正確な境界線を示す
-            // getBoundingClientRect() は浮動小数点を返すため Math.round() でサブピクセル蓄積を防ぐ
-            const headerRect = rowHeaderCell.getBoundingClientRect();
-            const editorRect = this.editorElement.getBoundingClientRect();
-            this.resizeRowStartTop = Math.round(headerRect.bottom - editorRect.top + this.editorElement.scrollTop);
-            this.resizeGuideline.style.display = 'block';
-            this.resizeGuideline.style.top = this.resizeRowStartTop + 'px';
-            this.resizeGuideline.style.left = '0';
-            this.resizeGuideline.classList.add('resize-guideline-row');
-            this.resizeGuideline.classList.remove('resize-guideline-column');
-        });
-    }
 }

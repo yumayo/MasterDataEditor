@@ -1538,7 +1538,7 @@ export class EditorTable {
     /**
      * 差分ビュー用パディング行を生成して返す。
      * 左ペインの行数を右ペインに合わせるために挿入する「穴埋め専用の空行」として使用する。
-     * イベントリスナー（dblclick・mousedown・contextmenu・row-resize-handle）は不要かつ有害なため、
+     * イベントリスナー（dblclick・mousedown・contextmenu）は不要かつ有害なため、
      * createCell / createRowHeaderCell を使わず軽量な空div を直接生成する。
      * DiffTab固有のクラス（diff-row-empty・diff-row-padding-inserted）の付与は呼び出し側の責務であり、
      * ここでは付与しない（SRP遵守）。
@@ -1578,28 +1578,6 @@ export class EditorTable {
         }
         // 固定列の left 値は列幅に依存するため、列幅変更後に再計算する
         if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
-    }
-
-    /**
-     * 指定行の高さを取得（その行の最初のセルから取得）
-     */
-    getRowHeight(rowIndex: number): string {
-        const row = this.element.children[rowIndex] as HTMLElement;
-        const cell = row.children[0] as HTMLElement;
-        return cell.style.height || DEFAULT_ROW_HEIGHT;
-    }
-
-    /**
-     * 指定行の高さを設定し、その行の全セルのスタイルを更新
-     */
-    setRowHeight(rowIndex: number, height: string): void {
-        const row = this.element.children[rowIndex] as HTMLElement;
-        if (row) {
-            for (let i = 0; i < row.children.length; ++i) {
-                const cell = row.children[i] as HTMLElement;
-                EditorTable.applyCellHeight(cell, height);
-            }
-        }
     }
 
     /**

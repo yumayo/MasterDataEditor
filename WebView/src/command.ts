@@ -493,44 +493,6 @@ export class ColumnWidthCommand implements Command {
 }
 
 /**
- * 行高を変更するコマンド
- */
-export class RowHeightCommand implements Command {
-    private editorTable: EditorTable;
-    private rowIndex: number;
-    private oldHeight: string;
-    private newHeight: string;
-
-    constructor(
-        editorTable: EditorTable,
-        rowIndex: number,
-        oldHeight: string,
-        newHeight: string
-    ) {
-        this.editorTable = editorTable;
-        this.rowIndex = rowIndex;
-        this.oldHeight = oldHeight;
-        this.newHeight = newHeight;
-    }
-
-    execute(): void {
-        this.editorTable.setRowHeight(this.rowIndex, this.newHeight);
-    }
-
-    undo(): void {
-        this.editorTable.setRowHeight(this.rowIndex, this.oldHeight);
-    }
-
-    redo(): void {
-        this.execute();
-    }
-
-    getDescription(): string {
-        return `RowHeight[${this.rowIndex}]: ${this.oldHeight} -> ${this.newHeight}`;
-    }
-}
-
-/**
  * 列を削除するコマンド
  * deleteColumn/insertColumnInternalメソッドを呼び出す形で実装
  */
@@ -669,13 +631,11 @@ export class DeleteRowCommand implements Command {
     private editorTable: EditorTable;
     private rowIndex: number;
     private deletedCellValues: string[];
-    private deletedHeight: string;
 
     constructor(editorTable: EditorTable, rowIndex: number) {
         this.editorTable = editorTable;
         this.rowIndex = rowIndex;
         this.deletedCellValues = [];
-        this.deletedHeight = '';
     }
 
     execute(): void {
@@ -687,9 +647,6 @@ export class DeleteRowCommand implements Command {
             const value = this.editorTable.getCellValueAt(this.rowIndex, colIdx + this.editorTable.dataColumnOffset());
             this.deletedCellValues.push(value);
         }
-
-        // 行高を保存（セルのスタイルから取得）
-        this.deletedHeight = this.editorTable.getRowHeight(this.rowIndex);
 
         // 行を削除
         this.editorTable.deleteRow(this.rowIndex);
@@ -704,9 +661,6 @@ export class DeleteRowCommand implements Command {
         for (let colIdx = 0; colIdx < columnCount; ++colIdx) {
             this.editorTable.updateCellValueAt(this.rowIndex, colIdx + this.editorTable.dataColumnOffset(), this.deletedCellValues[colIdx]);
         }
-
-        // 行高を復元（全セルに適用）
-        this.editorTable.setRowHeight(this.rowIndex, this.deletedHeight);
     }
 
     redo(): void {

@@ -3,19 +3,17 @@ import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
 // =============================================================================
-// FEAT_0015: 列/行リサイズハンドルの当たり判定改善
+// FEAT_0015: 列リサイズハンドルの当たり判定改善
 //
 // 改善内容:
 //   列リサイズハンドル: right: 0; width: 5px
 //                   → right: -4px; width: 8px（列境界の中央に配置）
-//   行リサイズハンドル: bottom: 0; height: 5px
-//                   → bottom: -4px; height: 8px（行境界の中央に配置）
 //   ガイドライン初期位置: e.clientX 基準
 //                   → headerCell.getBoundingClientRect().right 基準
 //
 // 期待効果:
-//   ハンドルが列境界/行境界の中央にまたがって配置されることで、
-//   境界線の左側（または上側）からでもドラッグ開始できる。
+//   ハンドルが列境界の中央にまたがって配置されることで、
+//   境界線の左側からでもドラッグ開始できる。
 // =============================================================================
 
 /**
@@ -86,27 +84,6 @@ test.describe('FEAT_0015: リサイズハンドルの当たり判定改善', () 
 
 			// width が 8px であること（現状: 5px → 改善後: 8px）
 			await expect(resizeHandle).toHaveCSS('width', '8px');
-		},
-	);
-
-	// ---------------------------------------------------------------------------
-	// テスト2: 行リサイズハンドルのCSSが行境界の中央に配置されていること
-	// ---------------------------------------------------------------------------
-	test(
-		'行リサイズハンドルの bottom が -4px、height が 8px であること',
-		async ({ page }) => {
-			const table = await openTableAsync(page, 'item');
-			// 0行目の行ヘッダーにあるリサイズハンドルを取得
-			const rowHeader = table.locator('.editor-table-row-header').first();
-			const resizeHandle = rowHeader.locator('.row-resize-handle').first();
-			await expect(resizeHandle).toBeAttached();
-
-			// bottom が -4px であること（行境界を中央にまたいで配置）
-			// 現状: bottom: 0（行内部に閉じている）→ 改善後: bottom: -4px（境界にまたがる）
-			await expect(resizeHandle).toHaveCSS('bottom', '-4px');
-
-			// height が 8px であること（現状: 5px → 改善後: 8px）
-			await expect(resizeHandle).toHaveCSS('height', '8px');
 		},
 	);
 
