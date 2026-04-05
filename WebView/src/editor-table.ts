@@ -3342,11 +3342,12 @@ export class EditorTable {
     // =========================================================================
 
     /**
-     * 列幅が変更されたことを通知する（AreaResizer から呼ばれる）。
-     * 水平スクロールバーマーカーの位置を再計算する。
+     * 列幅が変更されたことを通知する（AreaResizer / ColumnWidthCommand から呼ばれる）。
+     * 水平スクロールバーマーカーの位置を再計算し、スキーマJSONへ即時保存する。
      */
     notifyColumnWidthChanged(): void {
         this.refreshHorizontalScrollbarMarkers();
+        if (!this.isMiniTable) saveSchemaDataAsync(this);
     }
 
     /**
