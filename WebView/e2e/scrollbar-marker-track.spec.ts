@@ -256,11 +256,16 @@ base.describe('ScrollbarMarkerTrack', () => {
             await installMockApiAsync(page, createDuplicatePkFileSystem());
             await page.goto('/');
             await openTableAsync(page, 'item');
-            // バリデーション実行完了を待つ
-            const table = page.locator('.editor-left-slot .editor-table:visible').first();
-            await expect(
-                table.locator('.cell-error').first(),
-            ).toBeAttached({ timeout: 5000 });
+            // バリデーション実行完了を待つ。
+            // バーチャルスクロールにより98-99行目はDOMに存在しないため .cell-error は使えない。
+            // スクロールバーマーカー（ストアベースで描画される）が出現するまでポーリングする。
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.lower.hasRed;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
             // マーカーが下半分にのみ存在することを検証する
             const positions = await detectMarkerPositionsAsync(page);
             expect(positions.upper.hasRed).toBe(false);
@@ -296,10 +301,14 @@ base.describe('ScrollbarMarkerTrack', () => {
             await page.goto('/');
             // item テーブル（PK重複あり）を開く
             await openTableAsync(page, 'item');
-            const table = page.locator('.editor-left-slot .editor-table:visible').first();
-            await expect(
-                table.locator('.cell-error').first(),
-            ).toBeAttached({ timeout: 5000 });
+            // バリデーション完了を待つ（スクロールバーマーカーが描画されるまでポーリング）
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.lower.hasRed;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
             const positionsWithError = await detectMarkerPositionsAsync(page);
             expect(positionsWithError.lower.hasRed).toBe(true);
             // enemy テーブル（エラーなし）に切り替える
@@ -325,11 +334,16 @@ gitTest.describe('ScrollbarMarkerTrack git変更', () => {
         'git変更マーカーがスクロールバー下部に描画される',
         async ({ page, gitMarkerPage: _gitMarkerPage }) => {
             await openTableAsync(page, 'item');
-            // git差分ハイライトの適用を待つ
-            const table = page.locator('.editor-left-slot .editor-table:visible').first();
-            await expect(
-                table.locator('.cell-git-changed').first(),
-            ).toBeAttached({ timeout: 5000 });
+            // git差分ハイライトの適用を待つ。
+            // バーチャルスクロールにより最終行はDOMに存在しないため .cell-git-changed は使えない。
+            // スクロールバーマーカー（ストアベースで描画される）が出現するまでポーリングする。
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.lower.hasGreen;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
             // マーカーが下半分にのみ存在することを検証する
             const positions = await detectMarkerPositionsAsync(page);
             expect(positions.upper.hasGreen).toBe(false);

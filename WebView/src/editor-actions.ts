@@ -7,10 +7,13 @@ import {readFileAsync, writeFileAsync} from "./api";
 import {InMemoryTableStore} from "./in-memory-table-store";
 
 /**
- * フォーカスセルの情報を取得する
+ * フォーカスセルの情報を取得する。
+ * バーチャルスクロールによりフォーカス行がDOMに存在しない場合があるため、
+ * セル矩形・値の取得前に ensureRowVisible で行をDOMに確保する。
  */
 export function getTarget(table: EditorTable, selection: Selection) {
     const focus = selection.getFocus();
+    table.ensureRowVisible(focus.row);
     return {
         row: focus.row,
         column: focus.column,
