@@ -65,15 +65,14 @@ master-dataスキルを必ず読んでください。
 
 | ファイル | 出力条件 | 用途 |
 |---------|---------|------|
-| `.errors.log` | テスト失敗時のみ | ブラウザ側の未キャッチ例外と `console.error`。TypeError 等がテスト失敗の根本原因であることが多い |
-| `.console.log` | 常に出力 | ブラウザ側の全コンソール出力。`console.log` で仕込んだデバッグログの確認に使う |
+| `.console.log` | 常に出力 | ブラウザ側の全コンソール出力と未キャッチ例外。各行に `[log]`, `[error]`, `[EXCEPTION]` 等のレベルが付与される |
 | `.html` | 常に出力 | テスト完了時点のDOMダンプ。UIの状態確認に使う |
 | `.png` | 常に出力 | テスト完了時点のスクリーンショット |
 
 ```sh
-# 失敗テストのエラーログ確認
-cat ".CONTEXT/dump/{specファイル名}/{テストタイトル}.errors.log"
-# 失敗テストのコンソールログ確認
+# 失敗テストのコンソールログ確認（EXCEPTION/errorでフィルタ）
+cat ".CONTEXT/dump/{specファイル名}/{テストタイトル}.console.log" | grep -E "\[EXCEPTION\]|\[error\]"
+# 全ログ確認（デバッグログ含む）
 cat ".CONTEXT/dump/{specファイル名}/{テストタイトル}.console.log"
 ```
 

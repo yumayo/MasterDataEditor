@@ -95,26 +95,24 @@ autoDump フィクスチャが各テスト完了後に `.CONTEXT/dump/{specフ�
 
 | ファイル | 出力条件 | 内容 |
 |---------|---------|------|
-| `.errors.log` | テスト失敗時のみ | ブラウザ側の未キャッチ例外と `console.error` |
-| `.console.log` | 常に出力 | ブラウザ側の全コンソール出力（log/warn/error/debug） |
+| `.console.log` | 常に出力 | ブラウザ側の全コンソール出力と未キャッチ例外。各行に `[log]`, `[error]`, `[warning]`, `[debug]`, `[EXCEPTION]` のレベルが付与される |
 | `.html` | 常に出力 | テスト完了時点のDOMダンプ（style/script除去済み） |
 | `.png` | 常に出力 | テスト完了時点のスクリーンショット |
 
 ### テスト失敗時の確認手順
 
-1. まず `.errors.log` を確認する。ブラウザ側 TypeError 等がテスト失敗の根本原因であることが多い。
-2. `.console.log` を確認する。デバッグ用の `console.log` 出力が記録されており、処理フローの追跡に有用。
-3. 必要に応じて `.html`（DOM構造）や `.png`（スクリーンショット）で UI の状態を確認する。
+1. `.console.log` を確認する。`[EXCEPTION]` や `[error]` がテスト失敗の根本原因（未キャッチ TypeError 等）であることが多い。デバッグ用の `[log]` 出力も処理フローの追跡に有用。
+2. 必要に応じて `.html`（DOM構造）や `.png`（スクリーンショット）で UI の状態を確認する。
 
 ```sh
-# エラーログの確認
-find .CONTEXT/dump -name "*.errors.log" -exec echo "=== {} ===" \; -exec cat {} \;
-
 # 特定テストのコンソールログ確認
 cat ".CONTEXT/dump/{specファイル名}/{テストタイトル}.console.log"
+
+# 全テストのEXCEPTIONとerrorを一括確認
+grep -r "\[EXCEPTION\]\|\[error\]" .CONTEXT/dump/ --include="*.console.log"
 ```
 
-ブラウザ側エラーはテスト失敗の根本原因（未キャッチ TypeError 等）を示すことが多いため、アサーションエラーだけでなくこの情報も必ず報告する。
+ブラウザ側エラーはテスト失敗の根本原因を示すことが多いため、アサーションエラーだけでなくこの情報も必ず報告する。
 
 ## 重要な注意事項
 

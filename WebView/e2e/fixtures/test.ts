@@ -36,15 +36,11 @@ export const test = base.extend<MockFixtures>({
 
     // 全テストで自動実行されるDOMダンプフィクスチャ
     autoDump: [async ({ page }, use, testInfo) => {
-        // ブラウザ側の未キャッチ例外とエラーログを収集する
-        const pageErrors: string[] = [];
-        // ブラウザ側の全コンソール出力を収集する（console.log含む）
+        // ブラウザ側の全コンソール出力と未キャッチ例外を統合して収集する。
+        // 各エントリにはレベル（[log], [error], [warning], [debug], [EXCEPTION]）が付与される。
         const consoleLogs: string[] = [];
-        page.on('pageerror', err => pageErrors.push(`[EXCEPTION] ${err.message}\n${err.stack}`));
-        page.on('console', msg => {
-            consoleLogs.push(`[${msg.type()}] ${msg.text()}`);
-            if (msg.type() === 'error') pageErrors.push(`[console.error] ${msg.text()}`);
-        });
+        page.on('pageerror', err => consoleLogs.push(`[EXCEPTION] ${err.message}\n${err.stack}`));
+        page.on('console', msg => consoleLogs.push(`[${msg.type()}] ${msg.text()}`));
 
         await use();
 
@@ -55,10 +51,6 @@ export const test = base.extend<MockFixtures>({
         const outputDir = resolve(dumpRootDir, specName);
         mkdirSync(outputDir, { recursive: true });
 
-        // テスト失敗時にブラウザ側エラーをファイルに出力する（原因特定を迅速にするため）
-        if (testInfo.status !== testInfo.expectedStatus && pageErrors.length > 0) {
-            writeFileSync(resolve(outputDir, testTitle + '.errors.log'), pageErrors.join('\n'), 'utf-8');
-        }
         // ブラウザ側のコンソール出力を常にファイルに出力する（テスト成功/失敗問わず）
         if (consoleLogs.length > 0) {
             writeFileSync(resolve(outputDir, testTitle + '.console.log'), consoleLogs.join('\n'), 'utf-8');
