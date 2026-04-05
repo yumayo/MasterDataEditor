@@ -107,6 +107,17 @@ export class ValidationEngine {
      * プラグインバリデーションエラーのジャンプ先PK値を解決するために使用する。
      * スキーマ未登録・PK列なし・PK値空文字の場合は null を返す。
      */
+    /**
+     * 指定テーブルの先頭PK列名を返す。
+     * スキーマ未登録またはPK列が定義されていない場合は null を返す。
+     */
+    resolvePkColumnName(tableName: string): string | null {
+        const schema = this.schemas.get(tableName);
+        if (schema === undefined) return null;
+        if (schema.primaryKeyColumns.length === 0) return null;
+        return schema.primaryKeyColumns[0];
+    }
+
     resolvePkValue(tableName: string, rowIndex: number): string | null {
         const resolved = this.resolveSchemaAndData(tableName);
         if (resolved === null) return null;

@@ -261,12 +261,15 @@ export class ValidationPanel {
                 // プラグインエラーでジャンプ先がある場合はテーブル名・行番号を表示する
                 // ジャンプ先がない場合はファイル名のみ表示する
                 // 通常エラーはテーブル名・行番号・列名を表示する
+                // 主キーが解決できている場合は「テーブル名.PK列名=PK値」形式で表示する
+                const pkColName = this.engine.resolvePkColumnName(error.tableName);
+                const pkPrefix = (error.pkValue !== null && pkColName !== null) ? `${tableName}.${pkColName}=${error.pkValue}` : tableName;
                 if (error.kind === 'plugin' && error.rowIndex === -1) {
                     locationSpan.textContent = `${error.columnName}:`;
                 } else if (error.kind === 'plugin') {
-                    locationSpan.textContent = `${error.tableName} 行${error.rowIndex + 1}:`;
+                    locationSpan.textContent = `${pkPrefix} 行${error.rowIndex + 1}:`;
                 } else {
-                    locationSpan.textContent = `${tableName} 行${error.rowIndex + 1} ${error.columnName}:`;
+                    locationSpan.textContent = `${pkPrefix} 行${error.rowIndex + 1} ${error.columnName}:`;
                 }
 
                 const messageSpan = document.createElement('span');

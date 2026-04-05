@@ -375,7 +375,7 @@ test.describe('プラグインバリデーション: assertのコンテキスト
 
             // エラーの location にテーブル名と行番号が表示されていること
             const locationText = pluginItem.first().locator('.validation-panel-item-location');
-            await expect(locationText).toHaveText('chara 行2:');
+            await expect(locationText).toHaveText('chara.id=2 行2:');
 
             // エラーをクリックしてジャンプする
             await pluginItem.first().click();
