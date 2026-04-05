@@ -54,6 +54,17 @@ export interface ReverseReferenceEntry {
      * filterRowsByReverseEntry の動的参照パス（isDynamic === true）で使用する
      */
     childPkColumnName: string;
+    /**
+     * 動的参照の1段目フィルタ列名（例: "table_id"）。
+     * 逆参照ジャンプ時にFK値だけでなくこの列の値も一致する行に絞り込むために使う。
+     * 単純参照では空文字列。
+     */
+    filterColumnName: string;
+    /**
+     * 動的参照の1段目フィルタ値の集合（例: {"6"} = table_id=6 がこの参照先に対応する）。
+     * filterColumnName が空文字列でない場合のみ有効。単純参照では空集合。
+     */
+    filterValues: ReadonlySet<string>;
 }
 
 /**
@@ -161,6 +172,8 @@ export class ReverseReferenceResolver {
         isDynamic: boolean,
         parentColumnName: string,
         childPkColumnName: string,
+        filterColumnName: string,
+        filterValues: ReadonlySet<string>,
         map: ReverseReferenceMap
     ): void {
         groups.forEach(
@@ -181,6 +194,8 @@ export class ReverseReferenceResolver {
                     isDynamic,
                     parentColumnName,
                     childPkColumnName,
+                    filterColumnName,
+                    filterValues,
                 });
             }
         );
@@ -411,8 +426,9 @@ export class ReverseReferenceResolver {
             }
 
             // 単純参照の parentColumnName は expr.columnName（参照先の親テーブル列名）
+            // 単純参照ではフィルタ不要のため空文字列・空集合を渡す
             this.mergeGroups(
-                groups, childTableName, priority, fk.columnName, false, fk.parentColumnName, childPkColumnName, map
+                groups, childTableName, priority, fk.columnName, false, fk.parentColumnName, childPkColumnName, '', new Set(), map
             );
         }
 
@@ -458,10 +474,21 @@ export class ReverseReferenceResolver {
             }
 
             // 動的参照: FK列名は dynFk.columnName（動的参照式が定義されている子テーブルの列）。
-            // parentColumnName は中間テーブルの targetColumn 列の値から動的解決した値を使う
+            // parentColumnName は中間テーブルの targetColumn 列の値から動的解決した値を使う。
+            // フィルタ列名は dynFk.valueColumnName（例: "table_id"）で、
+            // 各 resolvedParentColumnName に対応するフィルタ値を逆引きして渡す
+            // （逆参照ジャンプ時に1段目の列値で行を絞り込むために使用する）
+            const parentColumnToFilterValues = new Map<string, Set<string>>();
+            dynFk.filterValueToParentColumnName.forEach((parentCol, filterVal) => {
+                let vals = parentColumnToFilterValues.get(parentCol);
+                if (!vals) { vals = new Set(); parentColumnToFilterValues.set(parentCol, vals); }
+                vals.add(filterVal);
+            });
             groupsByParentColumn.forEach((groups, resolvedParentColumnName) => {
+                const filterVals = parentColumnToFilterValues.get(resolvedParentColumnName);
                 this.mergeGroups(
-                    groups, childTableName, priority, dynFk.columnName, true, resolvedParentColumnName, childPkColumnName, map
+                    groups, childTableName, priority, dynFk.columnName, true, resolvedParentColumnName, childPkColumnName,
+                    dynFk.valueColumnName, filterVals ? filterVals : new Set(), map
                 );
             });
         }

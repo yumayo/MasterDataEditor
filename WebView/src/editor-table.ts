@@ -2397,14 +2397,16 @@ export class EditorTable {
         if (isSimpleReference(expr)) {
             // 単純参照: 参照先テーブルの参照列の値で行を検索し、その列にフォーカスする
             // 例: shop.shop_product_group_id(=1) → shop_productテーブルで group_id=1 の行を開き group_id 列を選択
-            this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue);
+            // 順方向ジャンプではフィルタ不要のため空文字列・空Setを渡す
+            this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue, '', new Set());
             return true;
         }
         if (isDynamicReference(expr)) {
             // 動的参照（二段リスト）: 中間テーブルからジャンプ先テーブル名と列名を解決する
+            // 順方向ジャンプではジャンプ先が一意に解決されるためフィルタ不要
             const resolved = this.resolveDynamicReferenceTarget(row, expr);
             if (resolved === null) return false;
-            this.tab.navigateToTableColumnValue(resolved.tableName, resolved.columnName, cellValue);
+            this.tab.navigateToTableColumnValue(resolved.tableName, resolved.columnName, cellValue, '', new Set());
             return true;
         }
         return false;
@@ -2467,13 +2469,14 @@ export class EditorTable {
         if (allEntries.length === 0) return false;
         if (allEntries.length === 1) {
             const entry = allEntries[0];
-            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, pkValue);
+            // 逆参照ジャンプ: 動的参照の場合は1段目フィルタ情報を渡して正しい行に着地させる
+            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, pkValue, entry.filterColumnName, entry.filterValues);
             return true;
         }
         // 複数の逆参照: モーダルで選択させる
         const tab = this.tab;
         ReverseReferenceJumpDialog.open(allEntries, (selected) => {
-            tab.navigateToTableColumnValue(selected.childTableName, selected.childColumnName, pkValue);
+            tab.navigateToTableColumnValue(selected.childTableName, selected.childColumnName, pkValue, selected.filterColumnName, selected.filterValues);
         });
         return true;
     }

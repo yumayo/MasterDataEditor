@@ -132,6 +132,11 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションする列名（空文字列は無効、navigateToTableColumnValueで使用） */
     private pendingNavigationColumnName: string;
 
+    /** 動的参照の逆参照ジャンプ用: 1段目フィルタ列名（空文字列は無効） */
+    private pendingNavigationFilterColumnName: string;
+    /** 動的参照の逆参照ジャンプ用: 1段目フィルタ値の集合 */
+    private pendingNavigationFilterValues: ReadonlySet<string>;
+
     /** グローバルなリレーションパネル（全タブで共有、editor.elementの右ペインに配置） */
     private readonly relationsPanel: RelationsPanel;
 
@@ -229,6 +234,8 @@ export class Tab {
         this.pendingNavigationPkValue = '';
         this.pendingNavigationColumnIndex = -1;
         this.pendingNavigationColumnName = '';
+        this.pendingNavigationFilterColumnName = '';
+        this.pendingNavigationFilterValues = new Set();
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.store, this.referenceDataCache, this.notification);
         this.paneStack = [];
@@ -402,18 +409,22 @@ export class Tab {
     /**
      * FK参照ジャンプ用: 参照先テーブルの特定列の値が一致する行を開き、その列にフォーカスする。
      * PK値ではなく参照先列の値（例: group_id=1）で行を検索する。
+     * 動的参照の逆参照ジャンプでは filterColumnName / filterValues で1段目の列値も一致する行に絞り込む。
+     * 単純参照・順方向ジャンプでは空文字列・空Setを渡すこと。
      */
-    navigateToTableColumnValue(tableName: string, columnName: string, value: string): void {
+    navigateToTableColumnValue(tableName: string, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             this.enableTabButton(tableName);
-            this.navigateToCellByColumnValue(existingState, columnName, value);
+            this.navigateToCellByColumnValue(existingState, columnName, value, filterColumnName, filterValues);
             return;
         }
         // タブが未作成の場合: pendingNavigation を設定して新規タブを開く
         this.pendingNavigationPkValue = value;
         this.pendingNavigationColumnName = columnName;
+        this.pendingNavigationFilterColumnName = filterColumnName;
+        this.pendingNavigationFilterValues = filterValues;
         const tabButton = this.append(tableName, null);
         tabButton.click();
     }
@@ -459,20 +470,26 @@ export class Tab {
     /**
      * EditorTableの全行を走査し、指定列名の値が一致する最初の行を見つけてその列にフォーカスする。
      * FK参照ジャンプ用（参照先列がPKでない場合にPK検索では見つからないため列値で検索する）。
+     * 動的参照の逆参照ジャンプでは filterColumnName / filterValues で1段目の列値も一致する行に絞り込む。
      */
-    private navigateToCellByColumnValue(state: TabState, columnName: string, value: string): void {
+    private navigateToCellByColumnValue(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         const editorTable = state.editorTable;
         const rowCount = editorTable.getRowCount();
         for (let r = 1; r < rowCount; r++) {
-            if (editorTable.getCellValueByColumnName(r, columnName) === value) {
-                const columnIndex = this.resolveColumnIndex(state.editorTable.tableName, columnName);
-                const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
-                state.selection.setRange(r, col, r, col);
-                state.selection.move(r, col);
-                state.selection.scrollFocusToCenterVertically();
-                state.editorTableHandler.activate();
-                return;
+            if (editorTable.getCellValueByColumnName(r, columnName) !== value) continue;
+            // 動的参照の逆参照ジャンプ: 1段目の列値（例: table_id）もチェックして
+            // 同じFK値を持つ別テーブル参照行を除外する
+            if (filterColumnName !== '' && filterValues.size > 0) {
+                const filterValue = editorTable.getCellValueByColumnName(r, filterColumnName);
+                if (!filterValues.has(filterValue)) continue;
             }
+            const columnIndex = this.resolveColumnIndex(state.editorTable.tableName, columnName);
+            const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
+            state.selection.setRange(r, col, r, col);
+            state.selection.move(r, col);
+            state.selection.scrollFocusToCenterVertically();
+            state.editorTableHandler.activate();
+            return;
         }
     }
 
@@ -528,8 +545,13 @@ export class Tab {
     consumePendingNavigation(state: TabState): void {
         if (this.pendingNavigationPkValue === '') return;
         if (this.pendingNavigationColumnName !== '') {
-            this.navigateToCellByColumnValue(state, this.pendingNavigationColumnName, this.pendingNavigationPkValue);
+            this.navigateToCellByColumnValue(
+                state, this.pendingNavigationColumnName, this.pendingNavigationPkValue,
+                this.pendingNavigationFilterColumnName, this.pendingNavigationFilterValues
+            );
             this.pendingNavigationColumnName = '';
+            this.pendingNavigationFilterColumnName = '';
+            this.pendingNavigationFilterValues = new Set();
         } else if (this.pendingNavigationColumnIndex !== -1) {
             this.navigateToCell(state, this.pendingNavigationPkValue, this.pendingNavigationColumnIndex);
             this.pendingNavigationColumnIndex = -1;
