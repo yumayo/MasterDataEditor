@@ -28,6 +28,8 @@ import {FormPanel} from "./form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "./notification";
 import {ErrorTooltip} from "./error-tooltip";
+import type {SerializedSortKey} from "./column-sorter";
+import type {SerializedFilters} from "./column-filter";
 import type {EditorAPI} from "./editor-api-types";
 import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
@@ -65,6 +67,10 @@ export interface TabState {
     paneStack: Array<{ element: HTMLElement; panel: RelationsPanel | false }>;
     /** タブ非アクティブ時に保存されたビューインデックス */
     viewIndex: number;
+    /** タブ非アクティブ時に保存されたソートキー（reloadCellsFromStore後に復元するため） */
+    savedSortKeys: SerializedSortKey[];
+    /** タブ非アクティブ時に保存されたフィルター状態（reloadCellsFromStore後に復元するため） */
+    savedFilters: SerializedFilters;
 }
 
 export interface EditorTableFactoryResult {
@@ -967,7 +973,14 @@ export class Tab {
             this.activateTabState(existingState);
             this.activeTabName = name;
             // 他タブでストアが変更されたセルのDOMを同期する
+            // reloadCellsFromStore はソート/フィルター状態をクリアするため、退避した状態を復元する
             existingState.editorTable.reloadCellsFromStore();
+            if (existingState.savedSortKeys.length > 0) {
+                existingState.editorTable.restoreSortState(existingState.savedSortKeys);
+            }
+            if (Object.keys(existingState.savedFilters).length > 0) {
+                existingState.editorTable.restoreFilterState(existingState.savedFilters);
+            }
             // 他タブでインメモリデータが編集された可能性があるため、参照ヒントを再更新する
             this.reference.refreshReferenceHints(name, existingState);
             // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
@@ -1672,6 +1685,9 @@ export class Tab {
         // 現在のペインスタックと viewIndex を state に保存する（タブ復帰時に復元するため）
         state.paneStack = this.paneStack.slice();
         state.viewIndex = this.viewIndex;
+        // ソート/フィルター状態を保存する（reloadCellsFromStore がクリアするため、復元用に退避する）
+        state.savedSortKeys = state.editorTable.serializeSortKeys();
+        state.savedFilters = state.editorTable.serializeFilters();
         // フォーカスクラスを除去して次タブ切り替え時に前タブのハイライトが残留しないようにする
         state.editorTable.clearFocusedCell();
         state.editorTable.deactivate();
@@ -2014,6 +2030,8 @@ export class Tab {
                 savedScrollTop: 0,
                 paneStack: this.paneStack.slice(),
                 viewIndex: this.viewIndex,
+                savedSortKeys: [],
+                savedFilters: {},
             };
             this.tabStates.set(name, state);
 
