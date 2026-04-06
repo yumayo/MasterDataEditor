@@ -290,7 +290,11 @@ export class VirtualScrollController {
         if (this.tableElement.children.length < 2) return;
         const firstDataRow = this.tableElement.children[1] as HTMLElement;
         if (!firstDataRow) return;
-        const measured = firstDataRow.offsetHeight;
+        // offsetHeight は整数に丸められるため、DPIスケーリング時に実際のレンダリング高さと乖離する。
+        // 例: 125%スケーリングでは border 1px が 0.8px にレンダリングされ、行高さが 20.8px になるが
+        // offsetHeight は 21 を返す。スペーサー高さ計算にこの誤差が蓄積すると scrollHeight が変動し
+        // スクロールバーのつまみ位置がずれる。getBoundingClientRect().height は小数精度を持つ。
+        const measured = firstDataRow.getBoundingClientRect().height;
         if (measured > 0) this.actualRowHeight = measured;
     }
 
