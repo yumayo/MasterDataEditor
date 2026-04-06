@@ -234,22 +234,22 @@ export class VirtualScrollController {
      */
     ensureRowVisible(dataRowIndex: number): void {
         if (!this.enabled) return;
-        // ヘッダー行の高さを考慮したスクロール位置を計算
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        const rowTop = dataRowIndex * rowHeight;
-        const rowBottom = rowTop + rowHeight;
-        const viewTop = this.scrollContainer.scrollTop - this.getTopSpacerParentOffset();
+        // rowTop/rowBottom はスクロールコンテンツ内の絶対座標。
+        // 方式B（テーブル外スペーサー）では topSpacer.height = renderedStart * rowHeight なので、
+        // 行 i の絶対位置は i * rowHeight + headerHeight になる（スペーサー分が自動的に加算される）。
+        // viewTop/viewBottom も scrollTop（絶対座標）で比較する。
+        const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
+        const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
+        const viewTop = this.scrollContainer.scrollTop;
         const viewBottom = viewTop + this.scrollContainer.clientHeight;
-        if (rowTop + headerHeight < viewTop) {
-            // 上方向にスクロール
-            this.scrollContainer.scrollTop = rowTop + this.getTopSpacerParentOffset();
-        } else if (rowBottom + headerHeight > viewBottom) {
-            // 下方向にスクロール
-            this.scrollContainer.scrollTop = rowBottom + headerHeight - this.scrollContainer.clientHeight + this.getTopSpacerParentOffset();
+        if (rowAbsoluteTop < viewTop) {
+            this.scrollContainer.scrollTop = rowAbsoluteTop - headerHeight;
+        } else if (rowAbsoluteBottom > viewBottom) {
+            this.scrollContainer.scrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
         }
-        // スクロール後に再計算
         this.recalculate();
     }
 
