@@ -487,6 +487,11 @@ export class EditorTable {
         this.virtualScroll.forceRecalculate();
     }
 
+    /** バーチャルスクロールのスペーサーとDOM行を強制再計算する（タブ復帰時に使用） */
+    forceVirtualScrollRecalculate(): void {
+        this.virtualScroll.forceRecalculate();
+    }
+
     /**
      * 指定データ行インデックスのDOM行要素を生成して返す。
      * storeRowIndices 経由でストアからセル値を取得してセルを生成する。

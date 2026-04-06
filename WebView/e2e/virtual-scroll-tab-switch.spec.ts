@@ -190,4 +190,61 @@ test.describe('バーチャルスクロール タブ切替', () => {
         // ブラウザ側で未キャッチ例外が発生していないこと
         expect(pageErrors, '未キャッチ例外が発生していないこと').toHaveLength(0);
     });
+
+    test('テーブルAをスクロール後に既存のテーブルBタブに切替えると先頭行から表示される', async ({ page }) => {
+        const pageErrors: Error[] = [];
+        page.on('pageerror', (error) => pageErrors.push(error));
+
+        const fs = createLargeFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        // テーブルA（weapon 1000行）を開く
+        await page.locator('#explorer .explorer-file').getByText('weapon', { exact: true }).click();
+        const weaponTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="weapon"] .editor-table');
+        await expect(weaponTable).toBeVisible();
+
+        // テーブルB（enemy 1000行）を開く（この時点でBはスクロール位置0で表示）
+        await page.locator('#explorer .explorer-file').getByText('enemy', { exact: true }).click();
+        const enemyTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table');
+        await expect(enemyTable).toBeVisible();
+
+        // テーブルAのタブに戻す
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponTable).toBeVisible();
+
+        // テーブルAを500行目付近までスクロールする
+        const scrollContainer = page.locator('.editor-left-pane');
+        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 21; });
+        await page.waitForTimeout(300);
+
+        const scrollTopA = await scrollContainer.evaluate((el) => el.scrollTop);
+        console.log(`テーブルAスクロール後: scrollTop=${scrollTopA}`);
+        expect(scrollTopA, 'テーブルAで500行目付近にスクロールされていること').toBeGreaterThan(5000);
+
+        // テーブルBのタブに切替える（既存タブ）
+        await page.locator('.tab-button').getByText('enemy', { exact: true }).click();
+        await expect(enemyTable).toBeVisible();
+        await page.waitForTimeout(300);
+
+        // テーブルBは先頭行（id=1）から表示されるべき（Aのスクロール位置に影響されない）
+        const firstVisibleId = await enemyTable.evaluate((table) => {
+            const rows = table.querySelectorAll('.editor-table-row:not(.editor-table-column-header-row)');
+            if (rows.length === 0) return null;
+            const firstRow = rows[0];
+            const cells = firstRow.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
+            if (cells.length === 0) return null;
+            return cells[0].textContent;
+        });
+        console.log(`テーブルB先頭行のid: ${firstVisibleId}`);
+        expect(firstVisibleId, 'テーブルBは先頭行（id=1）から表示されるべき').toBe('1');
+
+        // スクロール位置が先頭付近であること（テーブルBのsavedScrollTopは0のはず）
+        const scrollTopB = await scrollContainer.evaluate((el) => el.scrollTop);
+        console.log(`テーブルB表示後: scrollTop=${scrollTopB}`);
+        expect(scrollTopB, 'テーブルBのスクロール位置は先頭付近であること').toBeLessThan(100);
+
+        // ブラウザ側で未キャッチ例外が発生していないこと
+        expect(pageErrors, '未キャッチ例外が発生していないこと').toHaveLength(0);
+    });
 });

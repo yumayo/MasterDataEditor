@@ -997,6 +997,10 @@ export class Tab {
             // 他タブでストアが変更されたセルのDOMを同期する
             // reloadCellsFromStore はソート/フィルター状態をクリアするため、退避した状態を復元する
             existingState.editorTable.reloadCellsFromStore();
+            // タブ復帰後にバーチャルスクロールのスペーサーとDOM行を再計算する。
+            // activateTabState で復元された scrollTop に基づき、正しい範囲の行を表示する。
+            // これがないと、前タブのスクロール位置でDOM行が構築されたままになる。
+            existingState.editorTable.forceVirtualScrollRecalculate();
             if (existingState.savedSortKeys.length > 0) {
                 existingState.editorTable.restoreSortState(existingState.savedSortKeys);
             }
