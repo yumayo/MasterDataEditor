@@ -334,6 +334,11 @@ export class EditorTable {
         return this.virtualScroll.getRenderedRange().start;
     }
 
+    /** 内部モジュール用: バーチャルスクロールで現在DOMに存在するデータ行の終了インデックス（排他、0始まり）を返す */
+    getVirtualScrollRenderedEnd(): number {
+        return this.virtualScroll.getRenderedRange().end;
+    }
+
     /** 内部モジュール用: 中央ストアを取得する */
     getStore(): InMemoryTableStore { return this.store; }
 
@@ -605,6 +610,8 @@ export class EditorTable {
         this.selection.reapplySelectionClassesOnly();
         // 参照ヒントを再適用する（仮想スクロールで新しく生成された行にFK参照ヒントが必要）
         this.reference.updateReferenceHints();
+        // ブックマーク属性を再適用する（仮想スクロールで新しく生成された行にブックマークマークが必要）
+        this.restoreBookmarkMarks();
     }
 
     /**
@@ -2922,7 +2929,10 @@ export class EditorTable {
             ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
             : -1;
         if (pkColIndex === -1) return;
-        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+        // バーチャルスクロールではDOMに存在する行のみ処理する
+        const rendered = this.virtualScroll.getRenderedRange();
+        const loopEnd = Math.min(this.storeRowIndices.length, rendered.end);
+        for (let domDataRow = rendered.start; domDataRow < loopEnd; domDataRow++) {
             const domRow = domDataRow + 1;
             const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
             if (pkValue === '') continue;

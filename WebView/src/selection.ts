@@ -598,6 +598,8 @@ export class Selection {
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
         // 行・列ヘッダーの選択ハイライトも再適用する（バーチャルスクロールで行が入れ替わった後に必要）
         this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+        // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
+        this.updateFillHandlePosition();
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }
@@ -605,8 +607,15 @@ export class Selection {
 
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
-        const endRow = selectionRange.endRow;
+        let endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;
+
+        // バーチャルスクロールでendRowがDOM外の場合、表示範囲の最後の行にクランプする
+        // renderedEnd は排他なので -1 し、ヘッダー行分の +1 でDOM行インデックスに変換する
+        const renderedEnd = this.editorTable.getVirtualScrollRenderedEnd();
+        if (endRow > renderedEnd) {
+            endRow = renderedEnd;
+        }
 
         const cellRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
         if (!cellRect) return;
