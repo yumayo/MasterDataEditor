@@ -299,15 +299,6 @@ export class VirtualScrollController {
     }
 
     /**
-     * topSpacer の親要素内でのオフセット（topSpacer 自身の高さ）を取得する。
-     * scrollTop にはスペーサーの高さが含まれるため、データ行の位置計算に必要。
-     */
-    private getTopSpacerParentOffset(): number {
-        if (this.topSpacer === false) return 0;
-        return this.topSpacer.offsetHeight;
-    }
-
-    /**
      * 表示範囲を再計算し、DOMの行を更新する。
      * scrollContainer の scrollTop を基に、ビューポートに収まるデータ行の範囲を決定する。
      */

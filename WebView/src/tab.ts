@@ -434,7 +434,7 @@ export class Tab {
      */
     private navigateToRow(state: TabState, pkValue: string): void {
         const editorTable = state.editorTable;
-        const rowCount = editorTable.getRowCount();
+        const rowCount = editorTable.getLogicalRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getRowPkValue(r) === pkValue) {
                 state.selection.setRange(r, 1, r, 1);
@@ -452,7 +452,7 @@ export class Tab {
      */
     private navigateToCell(state: TabState, pkValue: string, columnIndex: number): void {
         const editorTable = state.editorTable;
-        const rowCount = editorTable.getRowCount();
+        const rowCount = editorTable.getLogicalRowCount();
         // columnIndex はCSVの0始まり列 → DOM上は column + 1
         const col = columnIndex + editorTable.dataColumnOffset();
         for (let r = 1; r < rowCount; r++) {
@@ -474,7 +474,7 @@ export class Tab {
      */
     private navigateToCellByColumnValue(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         const editorTable = state.editorTable;
-        const rowCount = editorTable.getRowCount();
+        const rowCount = editorTable.getLogicalRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getCellValueByColumnName(r, columnName) !== value) continue;
             // 動的参照の逆参照ジャンプ: 1段目の列値（例: table_id）もチェックして
