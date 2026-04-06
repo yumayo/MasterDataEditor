@@ -2094,8 +2094,10 @@ export class EditorTable {
         // ミニテーブルは都度再構築（destroyMiniEditorTables/buildMiniEditorTableAsync）のため到達しないが、
         // promoteBufferRowToStore/demoteStoreRowToBuffer/deleteRow と条件を統一する。
         if (this.diffTab === false) this.ensureTrailingBufferRow();
-        // DOM行数が変化した場合にバーチャルスクロールの総行数を同期する
-        if (domRowCountChanged) this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
+        // DOM行数が変化した場合にバーチャルスクロールの総行数を同期する。
+        // getRowCount() は仮想スクロール時にDOM行数しか返さないため、
+        // 論理的な総行数（storeRowIndices + バッファ1行）を使う。
+        if (domRowCountChanged) this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
 
         // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
         // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
@@ -2266,6 +2268,15 @@ export class EditorTable {
      * @internal EditorTableStructure.deleteRow() からも呼ばれる。外部からは呼ばないこと。
      */
     ensureTrailingBufferRow(): void {
+        // バーチャルスクロールでバッファ行がDOM外（表示範囲外）に存在する場合はスキップする。
+        // バッファ行はストア行の直後（storeRowIndices.length）に位置する。
+        // 表示範囲終端がバッファ行位置より手前にある場合、バッファ行はDOM外に存在するが
+        // 論理的には存在し続けるため、重複追加してはならない。
+        // 非仮想スクロール時は renderedEnd が全行をカバーするためこの条件は成立しない。
+        const bufferDataRowIndex = this.storeRowIndices.length;
+        const rendered = this.virtualScroll.getRenderedRange();
+        if (rendered.end < bufferDataRowIndex) return;
+
         // 列ヘッダー行を除いたデータ行の総数（ストア行 + 既存バッファ行。スペーサー行は除外済み）
         const totalDataRows = this.getRowCount() - 1;
         // 末尾のDOM行がバッファ行かどうかを確認する（children[0]は列ヘッダーなので+1オフセット）
@@ -2286,8 +2297,10 @@ export class EditorTable {
         this.virtualScroll.appendDataRow(row);
         // 新しい行がDOMに追加されたため renderedEnd を同期する（dataRowToDomIndex のインデックス変換に必要）
         this.virtualScroll.notifyRowAppended();
-        // バッファ行追加によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する
-        this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
+        // バッファ行追加によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する。
+        // 論理的な総行数（storeRowIndices + バッファ1行）を使う。getRowCount() は
+        // 仮想スクロール時にDOMの行数しか返さないため使えない。
+        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
         // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
