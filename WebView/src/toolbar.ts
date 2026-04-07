@@ -79,7 +79,8 @@ export class Toolbar {
  */
 function buildCsvWithHints(editorTable: EditorTable): string {
     const columnCount = editorTable.getColumnCount();
-    const rowCount = editorTable.getRowCount();
+    const rowCount = editorTable.getLogicalRowCount();
+    const dataColOffset = editorTable.dataColumnOffset();
     const lines: string[] = [];
     // ヘッダー行: 行番号列は空、以降はカラム名
     const headerCells: string[] = [''];
@@ -88,24 +89,21 @@ function buildCsvWithHints(editorTable: EditorTable): string {
     }
     lines.push(headerCells.join(','));
     // データ行: 全セルが空の行に達したら終了（パディング行を除外）
+    // 仮想スクロールでDOM外の行もストアから値を取得するため getCellValueAt を使う
     for (let row = 1; row < rowCount; row++) {
         let hasValue = false;
         const cellTexts: string[] = [];
-        for (let col = 1; col <= columnCount; col++) {
-            const cell = editorTable.getCell(row, col);
-            const value = EditorTable.getCellValue(cell);
-            const hintElement = cell.querySelector('.cell-reference-hint');
-            let output = value;
-            if (hintElement && hintElement.textContent) {
-                output = value + ' ' + hintElement.textContent;
-            }
+        for (let col = 0; col < columnCount; col++) {
+            const value = editorTable.getCellValueAt(row, col + dataColOffset);
+            // 参照ヒントはDOM外の行では取得できないため値のみ出力する
+            const hint = editorTable.getReferenceHintText(row, col);
+            const output = hint !== null ? value + ' ' + hint : value;
             cellTexts.push(output);
             if (value !== '') hasValue = true;
         }
         if (!hasValue) break;
-        // 行番号はDOMの行ヘッダーセルから取得
-        const rowHeaderCell = editorTable.getCell(row, 0);
-        const rowCells = [rowHeaderCell.textContent ?? ''];
+        // 行番号は1始まりのデータ行インデックス
+        const rowCells = [String(row)];
         for (const text of cellTexts) {
             rowCells.push(escapeCsvField(text));
         }

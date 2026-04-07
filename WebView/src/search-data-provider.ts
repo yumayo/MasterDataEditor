@@ -81,7 +81,7 @@ export class SearchDataProvider {
     private buildFromEditorTable(tableName: string, editorTable: EditorTable): TableSearchData {
         const tableData = editorTable.getTableData();
         const columnCount = editorTable.getColumnCount();
-        const rowCount = editorTable.getRowCount();
+        const rowCount = editorTable.getLogicalRowCount();
         const csvHeader: string[] = [];
         for (let c = 0; c < columnCount; c++) {
             csvHeader.push(editorTable.getColumnHeaderValue(c));

@@ -306,7 +306,7 @@ export class Selection {
         if (!this.selectingColumn) return;
         if (column < 1) return;
 
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();
@@ -324,7 +324,7 @@ export class Selection {
         if (!this.selectingRow) return;
         if (row < 1) return;
 
-        const rowCount = this.editorTable.getRowCount();
+        const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
         if (row >= rowCount) return;
 

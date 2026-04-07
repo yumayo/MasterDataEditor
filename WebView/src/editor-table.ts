@@ -1654,6 +1654,20 @@ export class EditorTable {
     }
 
     /**
+     * 座標で参照ヒントのテキストを取得する。DOM外の行では null を返す。
+     * CSV出力（buildCsvWithHints）で使用する。
+     */
+    getReferenceHintText(row: number, column: number): string | null {
+        const rowElement = this.getRowElement(row);
+        if (rowElement === null) return null;
+        const cell = rowElement.children[column + this.dataColumnOffset()] as HTMLElement | null;
+        if (cell === null) return null;
+        const hint = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint') as HTMLElement | null;
+        if (hint === null || hint.textContent === null) return null;
+        return hint.textContent;
+    }
+
+    /**
      * 列ヘッダーの値を取得する。
      * comment付き2行構造では .column-header-name span から、それ以外は TextNode から取得する。
      */

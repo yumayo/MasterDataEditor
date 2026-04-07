@@ -32,7 +32,7 @@ export function getTarget(table: EditorTable, selection: Selection) {
 export function moveCell(table: EditorTable, selection: Selection, x: number, y: number) {
     console.trace(`${x}, ${y}`);
 
-    const rowLength = table.getRowCount();
+    const rowLength = table.getLogicalRowCount();
     if (rowLength === 0) return;
 
     const columnLength = table.getTotalColumnCount();
@@ -49,7 +49,7 @@ export function moveCell(table: EditorTable, selection: Selection, x: number, y:
 }
 
 export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {
-    const rowLength = table.getRowCount();
+    const rowLength = table.getLogicalRowCount();
     if (rowLength === 0) return;
 
     const columnLength = table.getTotalColumnCount();

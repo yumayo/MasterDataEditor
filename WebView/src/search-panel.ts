@@ -450,7 +450,7 @@ export class SearchPanel {
      */
     private findDisplayTextFromEditorTable(editorTable: EditorTable, idValue: string): string {
         const columnCount = editorTable.getColumnCount();
-        const rowCount = editorTable.getRowCount();
+        const rowCount = editorTable.getLogicalRowCount();
         // 表示列を特定（EditorTableのヘッダーから列名配列を構築して共通関数で決定）
         const headerNames: string[] = [];
         for (let c = 0; c < columnCount; c++) {
