@@ -78,11 +78,12 @@ export class DiffTab {
     private readonly rightTrack: ScrollbarMarkerTrack;
 
     /**
-     * DOM行インデックス（0始まり） → HEAD版のCSV値配列。
+     * データ行インデックス（0始まり） → HEAD版のCSV値配列。
      * 空行（パディング行）や追加行（HEAD版に存在しない行）は null。
      * セル編集後のdiff-cell-added/diff-cell-deleted動的更新に使用する。
+     * 行挿入・削除時にインデックスを同期するため readonly ではない。
      */
-    private readonly headRowValuesPerDomRow: ReadonlyArray<string[] | null>;
+    private readonly headRowValuesPerDomRow: Array<string[] | null>;
 
     /** destroy() 時のスキーマ登録解除に必要なバリデーションパネル参照（staged時は false） */
     private readonly validationPanel: ValidationPanel | false;
@@ -92,6 +93,19 @@ export class DiffTab {
 
     /** HEAD版に存在しない列のDOM列インデックス集合（新規列を灰色表示するため） */
     private readonly newColumnDomIndices: ReadonlySet<number>;
+
+    /** 左ペインの各データ行に付与すべきdiffクラス集合（データ行インデックス 0始まり → クラス名配列） */
+    private readonly leftRowClasses: Map<number, string[]>;
+    /** 右ペインの各データ行に付与すべきdiffクラス集合 */
+    private readonly rightRowClasses: Map<number, string[]>;
+    /** 左ペインのセルdiffクラス（"dataRow,domCol" → クラス名） */
+    private readonly leftCellClasses: Map<string, string>;
+    /** 右ペインのセルdiffクラス（"dataRow,domCol" → クラス名） */
+    private readonly rightCellClasses: Map<string, string>;
+    /** 右ペインの追加行（行内全セルに diff-cell-added を付与すべき行）のデータ行インデックス集合 */
+    private readonly rightAddedRows: Set<number>;
+    /** 右ペインの初期パディング行のデータ行インデックス → ストア行インデックス */
+    private readonly rightPaddingStoreIndices: Map<number, number>;
 
     constructor(
         tableName: string,
@@ -118,6 +132,13 @@ export class DiffTab {
         this.dragMouseUp = null;
         this.savedScrollLeft = 0;
         this.savedScrollTop = 0;
+        // diffクラスデータモデルを初期化する（applyDiffClassesで構築される）
+        this.leftRowClasses = new Map();
+        this.rightRowClasses = new Map();
+        this.leftCellClasses = new Map();
+        this.rightCellClasses = new Map();
+        this.rightAddedRows = new Set();
+        this.rightPaddingStoreIndices = new Map();
 
         // スキーマをパースしてPK列名（配列）を取得する
         const schema = JSON.parse(schemaJson) as SchemaJson;
@@ -325,15 +346,21 @@ export class DiffTab {
         }
         this.newColumnDomIndices = newColumnDomIndices;
 
-        // 差分クラスをDOM行・セルに付与する（EditorTable生成後）
-        this.applyDiffClasses(
-            this.leftEditorTable, this.rightEditorTable,
+        // 差分クラスのデータモデルを構築する（仮想スクロールの renderRow フックで適用される）
+        this.buildDiffClassData(
             leftEmptyRowIndices, rightEmptyRowIndices,
             leftDeletedRowIndices, rightAddedRowIndices,
             leftModifiedCells, rightModifiedCells,
             csvIndexToDomIndex,
             newColumnIndices
         );
+
+        // diffTab 接続と diffClassData 構築が完了した後、仮想スクロールの全行を再生成する。
+        // initialize() 時点では diffTab 未接続のため diffフックが通らず、
+        // diffクラスが適用されていない行がDOMに存在する。全行を破棄して renderRowForVirtualScroll 経由で
+        // 再生成することで、buildDiffClassData で構築したデータに基づくdiffクラスが正しく適用される。
+        this.leftEditorTable.forceVirtualScrollFullRerender();
+        this.rightEditorTable.forceVirtualScrollFullRerender();
 
         // 差分マーカートラックを各ペインスロットに配置する（.editor-left-slot と同パターン）
         this.leftTrack = new ScrollbarMarkerTrack(leftPaneSlot, leftPaneElement, 'vertical', 'scrollbar-marker-track');
@@ -388,29 +415,59 @@ export class DiffTab {
      * @param rowIndex DOM行インデックス（1始まり、0がヘッダー行）
      */
     notifyRightPaneRowInserted(rowIndex: number): void {
-        const leftElement = this.leftEditorTable.getTableElement();
-        const rightElement = this.rightEditorTable.getTableElement();
-        const leftRow = leftElement.children.item(rowIndex) as HTMLElement | null;
-        // 左ペインの対応行が diff-row-deleted を持つ場合は「削除のUndo」として処理する。
-        // insertRowInternal は rowIndex 位置に新行を挿入済みのため、旧パディング化行は rowIndex+1 に存在する。
-        if (leftRow !== null && leftRow.classList.contains('diff-row-deleted')) {
-            // 削除のUndo: diff-row-deleted を除去して行を「元の状態」に戻す
-            leftRow.classList.remove('diff-row-deleted');
+        // dataRowIndex（0始まり）に変換
+        const dataRowIndex = rowIndex - 1;
+        // 左ペインの対応行が diff-row-deleted を持つ場合は「削除のUndo」として処理する
+        const leftRowClasses = this.leftRowClasses.get(dataRowIndex);
+        if (leftRowClasses !== undefined && leftRowClasses.includes('diff-row-deleted')) {
+            // 削除のUndo: データモデルから diff-row-deleted を除去
+            const idx = leftRowClasses.indexOf('diff-row-deleted');
+            leftRowClasses.splice(idx, 1);
+            if (leftRowClasses.length === 0) this.leftRowClasses.delete(dataRowIndex);
+            // 右ペインのデータモデルからパディング行マークを除去する
+            const rightClasses = this.rightRowClasses.get(dataRowIndex);
+            if (rightClasses !== undefined) {
+                const emptyIdx = rightClasses.indexOf('diff-row-empty');
+                if (emptyIdx !== -1) rightClasses.splice(emptyIdx, 1);
+                if (rightClasses.length === 0) this.rightRowClasses.delete(dataRowIndex);
+            }
+            // DOM更新（行がDOM上に存在する場合のみ）
+            const leftRow = this.leftEditorTable.getRowElementForInsert(dataRowIndex + 1);
+            if (leftRow !== null) leftRow.classList.remove('diff-row-deleted');
             // 右ペインの旧パディング化行（insertRowInternal が押し出した位置 = rowIndex+1）を削除する
-            const oldPaddingRow = rightElement.children.item(rowIndex + 1) as HTMLElement | null;
-            if (oldPaddingRow !== null) oldPaddingRow.remove();
+            const oldPaddingRow = this.rightEditorTable.getRowElementForInsert(rowIndex + 1);
+            if (oldPaddingRow !== null) {
+                oldPaddingRow.remove();
+                // insertRowInternal で notifyVirtualScrollRowAppended 済みだが、
+                // パディング行を remove したため renderedEnd を1つ戻す
+                this.rightEditorTable.notifyVirtualScrollRowRemoved();
+            }
+            // notifyRightPaneRowDeleted の「通常データ行削除」パスでストアにパディング空行を再挿入しているため、
+            // insertRowInternal がストアに行挿入した分が余剰になる。パディング空行を除去してストアを元に戻す。
+            // insertRowInternal はデータ行を dataRowIndex に挿入し、パディング空行は dataRowIndex+1 に押し出されている。
+            this.rightEditorTable.getStore().removeRow(this.rightTableKey, dataRowIndex + 1);
+            this.rightEditorTable.rebuildStoreRowIndicesForDiff();
+            this.rightEditorTable.syncVirtualScrollTotalRowCount();
+            // 仮想スクロールの再計算（DOM要素が変わったため）
+            this.leftEditorTable.forceVirtualScrollRecalculate();
+            this.rightEditorTable.forceVirtualScrollRecalculate();
+            this.refreshDiffMarkers();
             return;
         }
-        // 通常の行挿入: 左ペインの rowIndex 位置にパディング行を挿入して行数を同期する。
-        // createPaddingRow() はイベントリスナーなしの軽量な空行を返すため、
-        // DiffTab 固有のクラスはここで付与する（SRP: EditorTable は diff の知識を持たない）。
-        const paddingRow = this.leftEditorTable.createPaddingRow(rowIndex);
-        paddingRow.classList.add('diff-row-empty', 'diff-row-padding-inserted');
-        // 左ペインの rowIndex 位置に挿入する（insertBefore で rowIndex の前に配置）
-        const insertBefore = leftElement.children.item(rowIndex) as HTMLElement | null;
-        leftElement.insertBefore(paddingRow, insertBefore);
-        // 挿入したパディング行自身も含めて rowIndex 以降を再ナンバリングする
-        this.renumberLeftRows(rowIndex);
+        // 通常の行挿入: データモデルのインデックスを dataRowIndex 以降で +1 シフトする
+        this.shiftDiffDataIndices(dataRowIndex, 1);
+        // 挿入位置にパディング行のデータを設定する
+        this.leftRowClasses.set(dataRowIndex, ['diff-row-empty', 'diff-row-padding-inserted']);
+        // headRowValuesPerDomRow に null を挿入して行インデックスを同期する
+        this.headRowValuesPerDomRow.splice(dataRowIndex, 0, null);
+        // 左ペインのストアにも空行を挿入して仮想スクロールの行数を同期する
+        this.leftEditorTable.getStore().insertRowAt(this.leftTableKey, dataRowIndex, Array(this.leftEditorTable.getColumnCount()).fill(''));
+        // 左ペインの storeRowIndices を再構築する
+        this.leftEditorTable.rebuildStoreRowIndicesForDiff();
+        // 左ペインの仮想スクロールの総行数を更新し、全行を再生成する。
+        // storeRowIndicesが変わったため既存DOM行は無効。forceFullRerenderで再生成する。
+        this.leftEditorTable.syncVirtualScrollTotalRowCount();
+        this.leftEditorTable.forceVirtualScrollFullRerender();
         this.refreshDiffMarkers();
     }
 
@@ -426,54 +483,107 @@ export class DiffTab {
      * @param rightRow 右ペインの削除対象DOM行要素
      */
     notifyRightPaneRowDeleted(rowIndex: number, rightRow: HTMLElement): void {
-        const leftElement = this.leftEditorTable.getTableElement();
-        const leftRow = leftElement.children.item(rowIndex) as HTMLElement | null;
-        // 左ペインの対応行が行挿入で追加したパディング行かどうかを確認する
-        if (leftRow !== null && leftRow.classList.contains('diff-row-padding-inserted')) {
-            // 行挿入のUndo: 左ペインのパディング行と右ペインのDOM行を削除する
-            leftRow.remove();
+        const dataRowIndex = rowIndex - 1;
+        // 左ペインの対応行が行挿入で追加したパディング行かどうかを確認する（データモデルで判定）
+        const leftClasses = this.leftRowClasses.get(dataRowIndex);
+        if (leftClasses !== undefined && leftClasses.includes('diff-row-padding-inserted')) {
+            // 行挿入のUndo: 左ペインのパディング行データを削除し、右ペインのDOM行も削除する
+            this.leftRowClasses.delete(dataRowIndex);
             rightRow.remove();
-            // 削除後のdata-row属性を再ナンバリングする
-            this.renumberLeftRows(rowIndex);
+            // headRowValuesPerDomRow から挿入行を削除して行インデックスを同期する
+            this.headRowValuesPerDomRow.splice(dataRowIndex, 1);
+            // 左ペインのストアから行を削除する
+            this.leftEditorTable.getStore().removeRow(this.leftTableKey, dataRowIndex);
+            // データモデルのインデックスを dataRowIndex 以降で -1 シフトする
+            this.shiftDiffDataIndices(dataRowIndex, -1);
+            // 左ペインの storeRowIndices を再構築する
+            this.leftEditorTable.rebuildStoreRowIndicesForDiff();
+            this.leftEditorTable.syncVirtualScrollTotalRowCount();
+            this.leftEditorTable.forceVirtualScrollFullRerender();
         } else {
             // 通常のデータ行削除: 右ペインをパディング行に置き換え、左ペインに削除マークを付与する。
-            // インプレース変換では元のイベントリスナー（dblclick, mousedown, contextmenu等）が残存するため、
             // createPaddingRow() でイベントリスナーなしの軽量な空行を生成して replaceWith() で差し替える。
-            // diff-row-padding-inserted は「行挿入で生成されたパディング行」のマーカーなので付与しない（diff-row-empty のみ）。
             const newPaddingRow = this.rightEditorTable.createPaddingRow(rowIndex);
             newPaddingRow.classList.add('diff-row-empty');
             rightRow.replaceWith(newPaddingRow);
+            // deleteRow がストアから行を削除し storeRowIndices を縮小済みだが、
+            // DOM上はパディング行として残る。仮想スクロールの totalRowCount と storeRowIndices.length の
+            // 不整合を解消するため、ストアにパディング行（空行）を再挿入し storeRowIndices を再構築する。
+            this.rightEditorTable.getStore().insertRowAt(this.rightTableKey, dataRowIndex, Array(this.rightEditorTable.getColumnCount()).fill(''));
+            this.rightEditorTable.rebuildStoreRowIndicesForDiff();
+            // データモデル: 左ペインの行に diff-row-deleted を追加
+            if (leftClasses !== undefined) {
+                leftClasses.push('diff-row-deleted');
+            } else {
+                this.leftRowClasses.set(dataRowIndex, ['diff-row-deleted']);
+            }
+            // 右ペインのデータモデル: この行を空行として記録
+            const rightClasses = this.rightRowClasses.get(dataRowIndex);
+            if (rightClasses !== undefined) {
+                if (!rightClasses.includes('diff-row-empty')) rightClasses.push('diff-row-empty');
+            } else {
+                this.rightRowClasses.set(dataRowIndex, ['diff-row-empty']);
+            }
+            // DOM更新（左ペインの行がDOM上に存在する場合のみ）
+            const leftRow = this.leftEditorTable.getRowElementForInsert(dataRowIndex + 1);
             if (leftRow !== null) leftRow.classList.add('diff-row-deleted');
         }
         this.refreshDiffMarkers();
     }
 
     /**
-     * 左ペインの startDomIndex 以降の data-row 属性・行ヘッダーテキスト・data-rowIndex を再ナンバリングする。
-     * notifyRightPaneRowInserted / notifyRightPaneRowDeleted の後に呼ぶ。
-     * 差分ビュー左ペインはリサイズハンドルを持たないため、テキストノードの更新のみ行う。
-     * ※ EditorTableStructure.renumberRowsFrom() への委譲は不可。
-     *   あちらはリサイズハンドルを毎回 appendChild するため、差分ビューのパディング行に
-     *   不要なハンドル要素が挿入される副作用がある。独自実装を維持する。
+     * diffデータモデルのインデックスをシフトする。
+     * 行挿入（direction=1）時は fromDataRowIndex 以降のインデックスを +1、
+     * 行削除（direction=-1）時は fromDataRowIndex+1 以降のインデックスを -1 する。
      */
-    private renumberLeftRows(startDomIndex: number): void {
-        const leftElement = this.leftEditorTable.getTableElement();
-        for (let i = startDomIndex; i < leftElement.children.length; i++) {
-            const row = leftElement.children[i] as HTMLElement;
-            row.dataset.row = String(i);
-            const header = row.children[0] as HTMLElement;
-            if (!header.classList.contains('editor-table-row-header')) continue;
-            // テキストノードを更新する（editor-table-structure.ts の renumberRowsFrom と同パターン）
-            let textNode: Text | null = null;
-            for (const node of Array.from(header.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) { textNode = node as Text; break; }
+    private shiftDiffDataIndices(fromDataRowIndex: number, direction: 1 | -1): void {
+        // direction=1: fromDataRowIndex 以降を +1（挿入位置を空けるため）
+        // direction=-1: fromDataRowIndex+1（=削除された行の次）以降を -1
+        const shiftFrom = direction === 1 ? fromDataRowIndex : fromDataRowIndex + 1;
+        this.shiftMapKeys(this.leftRowClasses, shiftFrom, direction);
+        this.shiftMapKeys(this.rightRowClasses, shiftFrom, direction);
+        this.shiftCellClassKeys(this.leftCellClasses, shiftFrom, direction);
+        this.shiftCellClassKeys(this.rightCellClasses, shiftFrom, direction);
+        // rightAddedRows のインデックスシフト（インライン展開: 1箇所のみ使用）
+        const toShift: number[] = [];
+        for (const value of this.rightAddedRows) {
+            if (value >= shiftFrom) toShift.push(value);
+        }
+        for (const value of toShift) this.rightAddedRows.delete(value);
+        for (const value of toShift) this.rightAddedRows.add(value + direction);
+        this.shiftMapKeys(this.rightPaddingStoreIndices, shiftFrom, direction);
+    }
+
+    /** Map<number, V> のキーをシフトする */
+    private shiftMapKeys<V>(map: Map<number, V>, fromIndex: number, direction: 1 | -1): void {
+        const entries: Array<[number, V]> = [];
+        for (const [key, value] of map) {
+            if (key >= fromIndex) {
+                entries.push([key, value]);
+                map.delete(key);
             }
-            if (textNode !== null) {
-                textNode.textContent = String(i);
-            } else {
-                header.insertBefore(document.createTextNode(String(i)), header.firstChild);
+        }
+        for (const [key, value] of entries) {
+            map.set(key + direction, value);
+        }
+    }
+
+    /** セルクラスMap（"row,col" キー）の行インデックスをシフトする */
+    private shiftCellClassKeys(map: Map<string, string>, fromIndex: number, direction: 1 | -1): void {
+        const entries: Array<[string, string]> = [];
+        for (const [key, value] of map) {
+            const commaIdx = key.indexOf(',');
+            const rowIdx = parseInt(key.substring(0, commaIdx));
+            if (rowIdx >= fromIndex) {
+                entries.push([key, value]);
+                map.delete(key);
             }
-            header.dataset.rowIndex = String(i - 1);
+        }
+        for (const [key, value] of entries) {
+            const commaIdx = key.indexOf(',');
+            const rowIdx = parseInt(key.substring(0, commaIdx));
+            const col = key.substring(commaIdx);
+            map.set(`${rowIdx + direction}${col}`, value);
         }
     }
 
@@ -495,17 +605,8 @@ export class DiffTab {
      * 行挿入・削除・Undo/Redoが発生しても属性値は変わらないため安全。
      */
     computeCurrentRightPaddingStoreRowIndices(): readonly number[] {
-        const rightElement = this.rightEditorTable.getTableElement();
-        const result: number[] = [];
-        // diff-row-initial-padding クラスを持つ行のみを対象にする。
-        // ユーザー削除後のパディング行はこのクラスを持たないため自動的に除外される。
-        const paddingRows = rightElement.querySelectorAll('.diff-row-initial-padding');
-        for (const row of paddingRows) {
-            const attr = (row as HTMLElement).getAttribute('data-padding-store-index');
-            if (attr === null) throw new Error('[DiffTab] 初期パディング行に data-padding-store-index 属性がありません');
-            result.push(Number(attr));
-        }
-        return result;
+        // データモデルから直接取得する（DOM走査不要）
+        return Array.from(this.rightPaddingStoreIndices.values());
     }
 
     /**
@@ -530,24 +631,39 @@ export class DiffTab {
         const csvColIndex = this.domIndexToCsvIndex.get(domColIndex) as number;
         // HEAD版の該当セル値を取得する
         const headValue = csvColIndex < headValues.length ? headValues[csvColIndex] : '';
-        // 右ペインのセルにdiff-cell-addedを付与/除去する
-        const rightCell = this.rightEditorTable.getCell(domRow, domColumn);
-        // 左ペインの対応セルにdiff-cell-deletedを付与/除去する
-        const leftCell = this.leftEditorTable.getCell(domRow, domColumn);
-        // 新規列（HEAD版に存在しない列）は diff-cell-new-column を使い、通常の変更列は diff-cell-added/deleted を使う
         const isNewColumn = this.newColumnDomIndices.has(domColIndex);
+        const leftCellKey = `${dataRowIndex},${domColIndex}`;
+        const rightCellKey = `${dataRowIndex},${domColIndex}`;
+        // データモデルを更新する（常に実行。仮想スクロールでDOM外の行でもデータは最新に保つ）
         if (newValue === headValue) {
-            // HEAD版と同じ値 → 差分なし。すべての差分クラスを除去する
-            rightCell.classList.remove('diff-cell-added', 'diff-cell-new-column');
-            leftCell.classList.remove('diff-cell-deleted', 'diff-cell-new-column');
+            this.leftCellClasses.delete(leftCellKey);
+            this.rightCellClasses.delete(rightCellKey);
         } else if (isNewColumn) {
-            // 新規列の差分 → 左ペインは灰色（HEAD版に列が存在しない）、右ペインは緑（新データ追加）
-            leftCell.classList.add('diff-cell-new-column');
-            rightCell.classList.add('diff-cell-added');
+            this.leftCellClasses.set(leftCellKey, 'diff-cell-new-column');
+            this.rightCellClasses.set(rightCellKey, 'diff-cell-added');
         } else {
-            // 既存列の差分 → 赤/緑表示（diff-cell-deleted / diff-cell-added）
-            rightCell.classList.add('diff-cell-added');
-            leftCell.classList.add('diff-cell-deleted');
+            this.leftCellClasses.set(leftCellKey, 'diff-cell-deleted');
+            this.rightCellClasses.set(rightCellKey, 'diff-cell-added');
+        }
+        // DOM更新: 右ペインの行は updateCellValueAt で getRowElement チェック済みのためDOMに存在する。
+        // 左ペインは別の VirtualScrollController なので DOM 上に行が存在しない場合がある。
+        const rightCell = this.rightEditorTable.getCellOrNull(domRow, domColumn);
+        const leftCell = this.leftEditorTable.getCellOrNull(domRow, domColumn);
+        if (rightCell !== null) {
+            if (newValue === headValue) {
+                rightCell.classList.remove('diff-cell-added', 'diff-cell-new-column');
+            } else {
+                rightCell.classList.add('diff-cell-added');
+            }
+        }
+        if (leftCell !== null) {
+            if (newValue === headValue) {
+                leftCell.classList.remove('diff-cell-deleted', 'diff-cell-new-column');
+            } else if (isNewColumn) {
+                leftCell.classList.add('diff-cell-new-column');
+            } else {
+                leftCell.classList.add('diff-cell-deleted');
+            }
         }
         // セル編集で差分クラスが変わるためマーカーを再計算する
         this.refreshDiffMarkers();
@@ -598,6 +714,9 @@ export class DiffTab {
         // ラベルがある場合、列ヘッダー行の top をラベルの実高さ分ずらす。
         // display:'' 直後なので getBoundingClientRect() で正確な高さを取得できる。
         this.applyLabelOffsetToColumnHeaders();
+        // 仮想スクロールの再計算（display:none → display:'' でビューポートサイズが変わるため）
+        this.leftEditorTable.forceVirtualScrollRecalculate();
+        this.rightEditorTable.forceVirtualScrollRecalculate();
         // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
         this.leftEditorTable.refreshSelectionDisplay();
         this.rightEditorTable.refreshSelectionDisplay();
@@ -734,11 +853,12 @@ export class DiffTab {
 
         const areaResizer = new AreaResizer(innerWrapper, history, selection);
 
-        // emptyRowCount=0、isMiniTable=true で生成する（空行なし、ミニテーブル相当）
+        // isMiniTable=true（RelationsPanel連携なし）、enableVirtualScroll=true（大量行に対応）
+        // emptyRowCount=0: 差分テーブルはバッファ行を持たない
         const realEditorTable = new EditorTable(
             tableKey, tableData, referenceDataCache, store, editorTableHandler,
             selection, contextMenu, history, areaResizer,
-            scrollController, sidebar, paneElement, 0, 'editor-table', true
+            scrollController, sidebar, paneElement, 0, 'editor-table', true, true
         );
 
         Object.assign(editorTable, realEditorTable);
@@ -746,6 +866,8 @@ export class DiffTab {
         editorTable.initializeModules(notification);
 
         editorTable.appendTo(innerWrapper);
+        // 仮想スクロールのスペーサーを配置する（appendTo完了後にDOMに追加されている必要がある）
+        editorTable.attachSpacers();
         innerWrapper.appendChild(selection.fillPreviewElement);
         innerWrapper.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(innerWrapper);
@@ -772,17 +894,14 @@ export class DiffTab {
     }
 
     /**
-     * 差分クラスをEditorTableのDOMに付与する
-     * EditorTable.getCell(row, col) でセル要素を取得し、直接CSSクラスを追加する
-     * row は1始まり（0がヘッダー行）、col は1始まり（0が行ヘッダー）
+     * 差分クラスのデータモデルを構築する。
+     * DOM操作は行わず、データモデル（leftRowClasses, rightRowClasses 等）にデータを蓄積する。
+     * 仮想スクロールの renderRow フック（applyDiffDecorationsToRow）経由でDOMに適用される。
      *
      * @param csvIndexToDomIndex CSV列インデックス → DOM列インデックスの逆引きマップ。
      *   スキーマに定義されていないCSV列はマップに含まれないためスキップされる。
-     *   非連番keyスキーマではCSV列インデックス（0〜全列-1）とDOM列インデックスが一致しないため必須。
      */
-    private applyDiffClasses(
-        leftTable: EditorTable,
-        rightTable: EditorTable,
+    private buildDiffClassData(
         leftEmptyRowIndices: number[],
         rightEmptyRowIndices: number[],
         leftDeletedRowIndices: number[],
@@ -792,123 +911,152 @@ export class DiffTab {
         csvIndexToDomIndex: Map<number, number>,
         newColumnIndices: ReadonlySet<number>
     ): void {
-        const leftElement = leftTable.getTableElement();
-        const rightElement = rightTable.getTableElement();
-
         // 左ペインの空白行（追加行に対応する空白）
-        // buildMergedData が生成するインデックスとDOM構造は同期的に構築されるため、
-        // インデックスの存在チェックは不要（防御的ガードを除去）
         for (const rowIdx of leftEmptyRowIndices) {
-            const row = leftElement.children[rowIdx + 1] as HTMLElement; // +1 でヘッダー行スキップ
-            row.classList.add('diff-row-empty');
+            this.leftRowClasses.set(rowIdx, ['diff-row-empty']);
         }
-
-        // 右ペインの空白行（削除行に対応する空白）: 初期パディング行であることを明示する。
-        // diff-row-initial-padding クラスと data-padding-store-index 属性を付与することで、
-        // ユーザー削除後のパディング行（diff-row-empty だが初期パディングではない行）と区別できる。
-        // rowIdx は rightRows 配列のインデックスであり、store.registerTable に渡したボディの行インデックスと一致する。
+        // 右ペインの空白行（削除行に対応する空白）: 初期パディング行
         for (const rowIdx of rightEmptyRowIndices) {
-            const rightRow = rightElement.children[rowIdx + 1] as HTMLElement;
-            rightRow.classList.add('diff-row-empty', 'diff-row-initial-padding');
-            rightRow.setAttribute('data-padding-store-index', String(rowIdx));
+            this.rightRowClasses.set(rowIdx, ['diff-row-empty', 'diff-row-initial-padding']);
+            this.rightPaddingStoreIndices.set(rowIdx, rowIdx);
         }
-
         // 左ペインの削除行
         for (const rowIdx of leftDeletedRowIndices) {
-            (leftElement.children[rowIdx + 1] as HTMLElement).classList.add('diff-row-deleted');
+            const existing = this.leftRowClasses.get(rowIdx);
+            if (existing !== undefined) {
+                existing.push('diff-row-deleted');
+            } else {
+                this.leftRowClasses.set(rowIdx, ['diff-row-deleted']);
+            }
         }
-
-        // 右ペインの追加行: 行内の全セル（行ヘッダー含む）に diff-cell-added を付与する
+        // 右ペインの追加行
         for (const rowIdx of rightAddedRowIndices) {
-            const rowElement = rightElement.children[rowIdx + 1] as HTMLElement;
+            this.rightAddedRows.add(rowIdx);
+        }
+        // 左ペインの変更セル（新規列は灰色、それ以外は赤色）
+        for (const { row: rowIdx, col: csvColIdx } of leftModifiedCells) {
+            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
+            if (domColIdx === undefined) continue;
+            const className = newColumnIndices.has(csvColIdx) ? 'diff-cell-new-column' : 'diff-cell-deleted';
+            this.leftCellClasses.set(`${rowIdx},${domColIdx}`, className);
+        }
+        // 右ペインの変更セル（新規列も含め緑色で統一）
+        for (const { row: rowIdx, col: csvColIdx } of rightModifiedCells) {
+            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
+            if (domColIdx === undefined) continue;
+            this.rightCellClasses.set(`${rowIdx},${domColIdx}`, 'diff-cell-added');
+        }
+    }
+
+    /**
+     * 仮想スクロールで行が生成されたときにdiffクラスを適用する。
+     * EditorTable.renderRowForVirtualScroll() から呼ばれる。
+     *
+     * @param rowElement 生成された行DOM要素
+     * @param dataRowIndex データ行インデックス（0始まり）
+     * @param editorTable 呼び出し元のEditorTable（左右どちらかの判定に使用）
+     */
+    applyDiffDecorationsToRow(rowElement: HTMLElement, dataRowIndex: number, editorTable: EditorTable): void {
+        const isLeft = editorTable === this.leftEditorTable;
+        const rowClasses = isLeft ? this.leftRowClasses : this.rightRowClasses;
+        const cellClasses = isLeft ? this.leftCellClasses : this.rightCellClasses;
+
+        // 行レベルのクラスを適用
+        const classes = rowClasses.get(dataRowIndex);
+        if (classes !== undefined) {
+            rowElement.classList.add(...classes);
+        }
+        // 右ペインの初期パディング行に data-padding-store-index 属性を設定
+        if (!isLeft) {
+            const paddingStoreIndex = this.rightPaddingStoreIndices.get(dataRowIndex);
+            if (paddingStoreIndex !== undefined) {
+                rowElement.setAttribute('data-padding-store-index', String(paddingStoreIndex));
+            }
+        }
+        // 右ペインの追加行: 全セル（行ヘッダー含む）に diff-cell-added を付与
+        if (!isLeft && this.rightAddedRows.has(dataRowIndex)) {
             for (let i = 0; i < rowElement.children.length; i++) {
                 (rowElement.children[i] as HTMLElement).classList.add('diff-cell-added');
             }
+            return;
         }
-
-        // 左ペインの変更セル（新規列は灰色、それ以外は赤色）
-        // colIdx はCSV列インデックスなので、DOM列インデックスへ変換する。
-        // スキーマに定義されていないCSV列（csvIndexToDomIndex に存在しない）はスキップする。
-        for (const { row: rowIdx, col: csvColIdx } of leftModifiedCells) {
-            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
-            if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
-            const className = newColumnIndices.has(csvColIdx) ? 'diff-cell-new-column' : 'diff-cell-deleted';
-            leftTable.getCell(rowIdx + 1, domColIdx + 1).classList.add(className);
-        }
-
-        // 右ペインの変更セル（新規列も含め緑色で統一。新規列=新しいデータが追加された意味）
-        for (const { row: rowIdx, col: csvColIdx } of rightModifiedCells) {
-            const domColIdx = csvIndexToDomIndex.get(csvColIdx);
-            if (domColIdx === undefined) continue; // スキーマにないCSV列はスキップ
-            rightTable.getCell(rowIdx + 1, domColIdx + 1).classList.add('diff-cell-added');
+        // セルレベルのクラスを適用
+        // rowElement.children[0] = 行ヘッダー、children[1〜] = データセル
+        // cellClasses のキーは "dataRowIndex,domColIdx" で domColIdx は行ヘッダーを除外した0始まり
+        for (let domCol = 1; domCol < rowElement.children.length; domCol++) {
+            const key = `${dataRowIndex},${domCol - 1}`;
+            const className = cellClasses.get(key);
+            if (className !== undefined) {
+                (rowElement.children[domCol] as HTMLElement).classList.add(className);
+            }
         }
     }
 
     /**
      * 差分マーカーを再計算してトラックに反映する。
-     * DOM行のCSSクラスを走査して変更行を検出し、offsetTop / scrollHeight でマーカー位置を算出する。
-     * 左ペイン: 削除行は赤、変更行は緑。右ペイン: 追加・変更行は緑。
-     * すべて左1/3に描画し、エラーマーカー（右1/3）と位置で区別する。
+     * データモデルから算術的にマーカー位置を計算する（DOM走査不要）。
+     * 左ペイン: 削除行と変更セルを持つ行はすべて赤マーカー。
+     * 右ペイン: 追加行と変更セルを持つ行はすべて緑マーカー。
      */
     private refreshDiffMarkers(): void {
-        // 左ペイン: 削除行（diff-row-deleted）と変更行（diff-cell-deleted）を分離する
-        const leftResult = this.collectLeftPaneMarkers();
-        this.leftTrack.updateDiff(leftResult.deletedMarkers, leftResult.modifiedMarkers);
-        // 右ペイン: 追加・変更行（diff-cell-added）はすべて緑
-        const rightAdded = this.collectDiffRowMarkers(this.rightEditorTable, this.rightPaneElement, null, 'diff-cell-added');
-        this.rightTrack.updateDiff([], rightAdded);
+        // 左ペイン: 削除行（diff-row-deleted含む行）と変更セルを持つ行を収集
+        const leftChangedRows = this.collectChangedDataRows(this.leftRowClasses, this.leftCellClasses, 'diff-row-deleted');
+        const leftTotalRows = this.leftEditorTable.getLogicalRowCount() - 1; // ヘッダー行を除くデータ行数
+        const leftMarkers = this.buildArithmeticMarkerEntries(leftChangedRows, leftTotalRows);
+        this.leftTrack.updateDiff(leftMarkers, []);
+        // 右ペイン: 追加行と変更セルを持つ行を収集
+        const rightChangedRows = this.collectChangedDataRows(this.rightRowClasses, this.rightCellClasses, null);
+        for (const row of this.rightAddedRows) rightChangedRows.add(row);
+        const rightTotalRows = this.rightEditorTable.getLogicalRowCount() - 1;
+        const rightMarkers = this.buildArithmeticMarkerEntries(rightChangedRows, rightTotalRows);
+        this.rightTrack.updateDiff([], rightMarkers);
     }
 
     /**
-     * 左ペインのDOM行を走査して差分マーカーを収集する。
-     * 左ペインは「変更前」を表示するため、削除行（diff-row-deleted）も
-     * 変更セルを含む行（diff-cell-deleted）もすべて赤マーカーとして扱う。
+     * データモデルから変更のあるデータ行インデックスを収集する。
+     * @param rowClasses 行レベルのクラスマップ
+     * @param cellClasses セルレベルのクラスマップ
+     * @param rowClassName 対象とする行クラス名（null の場合は行クラスを無視）
      */
-    private collectLeftPaneMarkers(): { deletedMarkers: MarkerEntry[]; modifiedMarkers: MarkerEntry[] } {
-        const leftMarkers = this.collectDiffRowMarkers(this.leftEditorTable, this.leftPaneElement, 'diff-row-deleted', 'diff-cell-deleted');
-        return { deletedMarkers: leftMarkers, modifiedMarkers: [] };
-    }
-
-    /**
-     * 指定ペインのDOM行を走査して差分マーカーを収集する。
-     * @param rowClass 行全体の差分クラス（null の場合はセルクラスのみで判定）
-     * @param cellClass セル単位の差分クラス
-     */
-    private collectDiffRowMarkers(editorTable: EditorTable, paneElement: HTMLElement, rowClass: string | null, cellClass: string): MarkerEntry[] {
-        const scrollHeight = paneElement.scrollHeight;
-        if (scrollHeight <= 0) return [];
-        const tableElement = editorTable.getTableElement();
-        const changedDomRows: number[] = [];
-        for (let i = 1; i < tableElement.children.length; i++) {
-            const row = tableElement.children[i] as HTMLElement;
-            if (row.classList.contains('diff-row-empty')) continue;
-            if (rowClass !== null && row.classList.contains(rowClass)) { changedDomRows.push(i); continue; }
-            for (let j = 0; j < row.children.length; j++) {
-                if ((row.children[j] as HTMLElement).classList.contains(cellClass)) { changedDomRows.push(i); break; }
-            }
+    private collectChangedDataRows(rowClasses: Map<number, string[]>, cellClasses: Map<string, string>, rowClassName: string | null): Set<number> {
+        const result = new Set<number>();
+        // 行レベルのクラスから変更行を収集
+        for (const [rowIdx, classes] of rowClasses) {
+            // diff-row-empty 行はスキップ（パディング行はマーカー対象外）
+            if (classes.includes('diff-row-empty')) continue;
+            if (rowClassName !== null && classes.includes(rowClassName)) { result.add(rowIdx); continue; }
+            // rowClassName=null の場合は行クラスからは収集しない（セルクラスのみ）
         }
-        return this.buildMarkerEntries(tableElement, changedDomRows, scrollHeight);
+        // セルレベルのクラスから変更行を収集（キーは "rowIdx,domColIdx"）
+        for (const key of cellClasses.keys()) {
+            const commaIdx = key.indexOf(',');
+            result.add(parseInt(key.substring(0, commaIdx)));
+        }
+        return result;
     }
 
     /**
-     * DOM行インデックス配列からマーカーエントリを構築する。
-     * 連続する行はマージして1つのエントリにする（EditorTable.buildMarkerEntries と同パターン）。
+     * データ行インデックスの集合から算術的にマーカーエントリを構築する。
+     * 行の位置は dataRowIndex / totalRows の比率で計算する（DOM要素のoffsetTopは使わない）。
+     * 連続する行はマージして1つのエントリにする。
      */
-    private buildMarkerEntries(tableElement: HTMLElement, domRows: number[], scrollHeight: number): MarkerEntry[] {
-        if (domRows.length === 0) return [];
+    private buildArithmeticMarkerEntries(changedRows: Set<number>, totalRows: number): MarkerEntry[] {
+        if (changedRows.size === 0 || totalRows <= 0) return [];
+        const sorted = Array.from(changedRows).sort((a, b) => a - b);
+        const rowSize = 1 / totalRows;
         const markers: MarkerEntry[] = [];
-        let rangeStart = tableElement.children[domRows[0]] as HTMLElement;
-        let rangeEnd = rangeStart;
-        for (let i = 1; i < domRows.length; i++) {
-            if (domRows[i] === domRows[i - 1] + 1) {
-                rangeEnd = tableElement.children[domRows[i]] as HTMLElement;
+        let rangeStart = sorted[0];
+        let rangeEnd = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i] === rangeEnd + 1) {
+                rangeEnd = sorted[i];
             } else {
-                markers.push({ start: rangeStart.offsetTop / scrollHeight, size: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
-                rangeStart = tableElement.children[domRows[i]] as HTMLElement;
-                rangeEnd = rangeStart;
+                markers.push({ start: rangeStart / totalRows, size: (rangeEnd - rangeStart + 1) * rowSize });
+                rangeStart = sorted[i];
+                rangeEnd = sorted[i];
             }
         }
-        markers.push({ start: rangeStart.offsetTop / scrollHeight, size: (rangeEnd.offsetTop + rangeEnd.offsetHeight - rangeStart.offsetTop) / scrollHeight });
+        markers.push({ start: rangeStart / totalRows, size: (rangeEnd - rangeStart + 1) * rowSize });
         return markers;
     }
 }

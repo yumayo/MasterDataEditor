@@ -2143,7 +2143,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, scrollContainerElement, emptyRowCount, 'editor-table', false
+            scrollController, this.sidebar, scrollContainerElement, emptyRowCount, 'editor-table', false, true
         );
 
         // editorTable に本物のインスタンスの内容をコピー
@@ -2261,7 +2261,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, scrollContainer, emptyRowCount, 'editor-table', true
+            scrollController, this.sidebar, scrollContainer, emptyRowCount, 'editor-table', true, false
         );
 
         Object.assign(editorTable, realEditorTable);

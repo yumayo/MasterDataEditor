@@ -174,7 +174,8 @@ export class EditorTable {
         scrollContainer: HTMLElement,
         emptyRowCount: number,
         rootCssClass: string,
-        isMiniTable: boolean
+        isMiniTable: boolean,
+        enableVirtualScroll: boolean
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -228,11 +229,11 @@ export class EditorTable {
             scrollBinding
         );
         this.rowDragController = new RowDragController(this, selection, history);
-        // バーチャルスクロール: 通常テーブルで有効化、ミニテーブルでは無���化
-        // バーチャルスクロール: 通常テーブルで有効化、ミニテーブルでは無効化
+        // バーチャルスクロール: enableVirtualScroll=true で有効化
+        // 通常テーブル: true、ミニテーブル: false、差分テーブル: true（isMiniTable=true だが仮想スクロール有効）
         // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
         this.virtualScroll = new VirtualScrollController(
-            this.element, scrollContainer, emptyRowCount, !isMiniTable
+            this.element, scrollContainer, emptyRowCount, enableVirtualScroll
         );
     }
 
@@ -307,6 +308,17 @@ export class EditorTable {
     }
 
     /**
+     * 差分テーブル用: storeRowIndices を行数ベースで再構築する。
+     * 差分テーブルの左ペインで行挿入・削除後にストア行数と同期するために使用する。
+     * 通常テーブルは storeRowIndices[i] = i のため、この処理で正しく初期化される。
+     */
+    rebuildStoreRowIndicesForDiff(): void {
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return;
+        this.storeRowIndices = Array.from({ length: storeRows.length }, (_, i) => i);
+    }
+
+    /**
      * 内部モジュール用: データ行をテーブル末尾（bottomSpacerの手前）に追加する。
      * バーチャルスクロール有効時はbottomSpacerの手前に挿入し、無効時は通常のappendChildを使う。
      */
@@ -324,9 +336,9 @@ export class EditorTable {
         this.virtualScroll.notifyRowRemoved();
     }
 
-    /** 内部モジュール用: バーチャルスクロールの総行数を現在のDOM行数で同期する */
+    /** 内部モジュール用: バーチャルスクロールの総行数を storeRowIndices の行数で同期する */
     syncVirtualScrollTotalRowCount(): void {
-        this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
+        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length);
     }
 
     /** 内部モジュール用: バーチャルスクロールで現在DOMに存在するデータ行の開始インデックス（0始まり）を返す */
@@ -451,6 +463,9 @@ export class EditorTable {
         }
         // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
         this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
+        // 差分テーブル（emptyRowCount=0, enableVirtualScroll=true）では VirtualScrollController の
+        // totalRowCount がコンストラクタ時点で0のまま。storeRowIndices 確定後に実データ行数で更新する。
+        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length);
         // 初期レンダリングでは tableData.body から直接セル値を取得する。
         // renderDataRow() は storeRowIndices 経由でストアから値を取得するが、
         // ミニテーブルでは initialize() 後に setStoreRowIndices() で上書きされるため使えない。
@@ -490,6 +505,11 @@ export class EditorTable {
     /** バーチャルスクロールのスペーサーとDOM行を強制再計算する（タブ復帰時に使用） */
     forceVirtualScrollRecalculate(): void {
         this.virtualScroll.forceRecalculate();
+    }
+
+    /** バーチャルスクロールの全行を破棄して再レンダリングする（diffTab接続後の初期装飾適用に使用） */
+    forceVirtualScrollFullRerender(): void {
+        this.virtualScroll.forceFullRerender();
     }
 
     /**
@@ -555,6 +575,10 @@ export class EditorTable {
         if (dataRowIndex < this.storeRowIndices.length) {
             const row = this.renderDataRow(dataRowIndex);
             this.applyRowDecorations(row, dataRowIndex);
+            // 差分タブ接続時: diffクラスを適用する
+            if (this.diffTab !== false) {
+                this.diffTab.applyDiffDecorationsToRow(row, dataRowIndex, this);
+            }
             return row;
         }
         return this.renderBufferRow(dataRowIndex);
@@ -1122,9 +1146,10 @@ export class EditorTable {
 
     /**
      * セル要素を取得する（存在しない場合は null を返す）。
-     * 内部のクラス操作で使用する。DOM要素を外部に流出させないこと。
+     * 仮想スクロールでDOM外の行は null を返す。
+     * DiffTab のセルクラス操作など、DOM上に行が存在しない場合を許容する呼び出しで使用する。
      */
-    private getCellOrNull(row: number, column: number): HTMLElement | null {
+    getCellOrNull(row: number, column: number): HTMLElement | null {
         const rowElement = this.getRowElement(row);
         if (!rowElement) return null;
         return rowElement.children[column] as HTMLElement | null;
