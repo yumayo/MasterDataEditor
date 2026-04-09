@@ -2982,3 +2982,21 @@ display:none ベースのフィルタリングが仮想スクロールの動的D
 - display:none による見た目の制御は仮想スクロールと根本的に非互換であり、データ層（インデックス配列）での制御に統一すべき
 
 ---
+
+## 206. 大量行テーブルの最下部セル選択後にフィルターをかけると画面が空白になる
+
+### 不具合原因名
+フィルター適用後の scrollTop・selection クランプ漏れと data-row-index の不整合
+
+### なぜそうなったのか
+フィルター適用時に3つの状態が未更新のまま残っていた:
+
+1. **scrollTop がクランプされない**: 1000行テーブルの最下部（scrollTop≒21000px）でフィルターをかけて50行に絞ると、コンテンツ高さは≒1050pxに縮小するが scrollTop は21000pxのまま。recalculateCore() で firstVisibleRow=1000 > totalRowCount=50 となり何も描画されない
+2. **selection.focus/range がクランプされない**: focus.row=999 がフィルター後の行数を大幅に超過。ensureRowVisible(999) が異常な位置にスクロールし、クリック後の scrollFocusIntoView() も破綻する
+3. **data-row-index がフィルター前のストアインデックスのまま**: renderDataRow(mappedDataRowIndex) が物理インデックス（例:250）を data-row-index に設定するため、getCellPosition() がクリック時に不正な行番号を返す
+
+### どうしたら今後は再発しないか
+- フィルターやソートなど行数・行順序が変化する操作の後は「scrollTop」「selection.focus/range」「data-row-index」の3つが新しい状態と整合しているか必ず検証する
+- 仮想スクロールの recalculate は scrollTop が有効範囲内にあることを前提としているため、totalRowCount を縮小する操作では必ず scrollTop を先にリセットする
+
+---

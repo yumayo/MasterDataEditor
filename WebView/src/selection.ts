@@ -346,6 +346,31 @@ export class Selection {
         this.focus = { row: this.focus.row, column: this.focus.column + delta };
     }
 
+    /**
+     * フィルター適用/解除後に focus と range を指定した最大行数内にクランプする。
+     * maxDataRow はフィルター後のデータ行数（DOM行インデックスでは maxDataRow がデータ行最終行）。
+     * focus.row または range のいずれかが maxDataRow を超えている場合にクランプする。
+     * Shift+クリックによる複数行選択で range.endRow > maxDataRow かつ focus.row <= maxDataRow
+     * のケースにも対応する。
+     * scrollFocusIntoView は呼ばない（フィルター適用直後は scrollTop が別途リセット済みのため）。
+     * updateRenderer も呼ばない（呼び出し側で updateRendererAfterResize を呼ぶこと）。
+     */
+    clampToFilteredRowCount(maxDataRow: number): void {
+        const needsClamp = this.focus.row > maxDataRow
+            || this.range.startRow > maxDataRow
+            || this.range.endRow > maxDataRow;
+        if (!needsClamp) return;
+        const clampedFocusRow = Math.min(this.focus.row, maxDataRow);
+        // maxDataRow=0（全行フィルターアウト）の場合は row=1（バッファ行）にフォールバック
+        const safeRow = clampedFocusRow < 1 ? 1 : clampedFocusRow;
+        const col = this.focus.column;
+        this.focus = { row: safeRow, column: col };
+        this.range = {
+            startRow: safeRow, startColumn: col,
+            endRow: safeRow, endColumn: col,
+        };
+    }
+
     isSingleCell(): boolean {
         return this.range.startRow === this.range.endRow && this.range.startColumn === this.range.endColumn;
     }

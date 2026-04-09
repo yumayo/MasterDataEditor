@@ -594,6 +594,22 @@ export class EditorTable {
                 ? this.filteredRowIndices[dataRowIndex]
                 : dataRowIndex;
             const row = this.renderDataRow(mappedDataRowIndex);
+            // フィルター適用時、renderDataRow は mappedDataRowIndex（storeRowIndices上のインデックス）で
+            // data-row-index を設定するが、仮想スクロールの論理行インデックスは dataRowIndex であるべき。
+            // getCellPosition() が data-row-index を読んで行番号を返すため、フィルター後の連続した
+            // 論理行番号（0,1,2,...）に修正しないと、クリック時に不正な行番号でスクロールが飛ぶ。
+            if (this.columnFilter.hasActiveFilter()) {
+                const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
+                if (rowHeader) {
+                    rowHeader.dataset.rowIndex = String(dataRowIndex);
+                    // 行ヘッダーのテキストノードも仮想スクロールの論理行番号に更新する
+                    for (const node of Array.from(rowHeader.childNodes)) {
+                        if (node.nodeType === Node.TEXT_NODE) { node.textContent = String(dataRowIndex + 1); break; }
+                    }
+                }
+                // 行の data-row 属性も論理行インデックスに更新する
+                row.dataset.row = String(dataRowIndex + 1);
+            }
             this.applyRowDecorations(row, mappedDataRowIndex);
             // 差分タブ接続時: diffクラスを適用する
             if (this.diffTab !== false) {
@@ -2726,6 +2742,10 @@ export class EditorTable {
         if (isVirtualScrollActive) {
             // 仮想スクロール: totalRowCount をフィルター後の行数+バッファ1行に更新して全行再描画
             this.virtualScroll.updateTotalRowCount(visibleCount + 1);
+            // フィルター前の scrollTop がフィルター後のコンテンツ高さを超えている場合、
+            // recalculateCore() で firstVisibleRow > totalRowCount となり何も描画されなくなる。
+            // forceFullRerender() の前に scrollTop を先頭にリセットする。
+            this.virtualScroll.resetScrollTop();
             this.virtualScroll.forceFullRerender();
         } else {
             // ミニテーブル: 従来通り display で行を制御する（全行がDOMに存在するため）
@@ -2748,8 +2768,27 @@ export class EditorTable {
         this.filterRowCountElement.textContent = `${visibleCount} / ${totalCount} 行`;
         this.filterRowCountElement.style.display = 'block';
 
+        // フィルター適用後の行数内に selection をクランプする
+        // focus.row がフィルター後の行数を超えている場合、scrollFocusIntoView() が
+        // 無効な行位置でスクロール計算を行い画面が異常な位置に飛ぶ
+        this.clampSelectionToFilteredRange();
+
         // 行の display 変更後に選択オーバーレイの描画位置を再計算する（非表示行にまたがる選択を解消）
         this.selection.updateRendererAfterResize();
+    }
+
+    /**
+     * フィルター適用/解除後に selection の focus/range がフィルター後の行数内に収まるようクランプする。
+     * focus.row がフィルター後のデータ行数を超えている場合、先頭データ行（row=1）にリセットする。
+     * selection.start() は scrollFocusIntoView() を呼ぶため使わない。
+     * scrollFocusIntoView() が forceFullRerender() 直後のレイアウト確定前に呼ばれると
+     * getBoundingClientRect() が不正な値を返し、スクロールが異常な位置に飛ぶ。
+     */
+    private clampSelectionToFilteredRange(): void {
+        const maxRow = this.getFilteredDataRowCount();
+        // focus/range を直接クランプする。scrollFocusIntoView は呼ばない。
+        // 後続の updateRendererAfterResize() で選択オーバーレイの描画位置が再計算される。
+        this.selection.clampToFilteredRowCount(maxRow);
     }
 
     /**

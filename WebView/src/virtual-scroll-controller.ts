@@ -139,6 +139,18 @@ export class VirtualScrollController {
         }
     }
 
+    /**
+     * scrollContainer の scrollTop を 0 にリセットする。
+     * フィルター適用後にコンテンツ高さが大幅に縮小した場合、
+     * scrollTop がコンテンツ高さを超えた位置に留まると recalculateCore() で
+     * firstVisibleRow > totalRowCount となり何も描画されなくなる。
+     * enabled=false（ミニテーブル）の場合は何もしない。
+     */
+    resetScrollTop(): void {
+        if (!this.enabled) return;
+        this.scrollContainer.scrollTop = 0;
+    }
+
     /** 表示範囲を強制再計算する（行挿入/削除/ソート/フィルター後） */
     forceRecalculate(): void {
         if (!this.enabled) return;

@@ -1458,6 +1458,37 @@ test.describe('BUG: 仮想スクロール有効テーブルでのフィルター
     );
 
     test(
+        'フィルター適用後にスクロール位置が先頭にリセットされテーブルが表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'monster');
+
+            // 最下部までスクロールして最後のセルをクリックして選択する
+            const scrollContainer = page.locator('.editor-left-pane');
+            await scrollContainer.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            await page.waitForTimeout(200);
+            // 最後のデータ行のセルをクリック
+            const lastRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').last();
+            await lastRow.locator('.editor-table-cell:not(.editor-table-row-header)').first().click();
+            await page.waitForTimeout(100);
+
+            // category=boss のみにフィルター（100行 → 5行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'normal', false);
+            await applyFilterAsync(page);
+
+            // フィルター適用後、テーブルのデータ行が表示されていること（空白画面にならない）
+            const visibleRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+            // ヘッダー行 + boss 5行 = 少なくとも2行以上が visible であること
+            const visibleCount = await visibleRows.count();
+            expect(visibleCount).toBeGreaterThanOrEqual(2);
+
+            // 表示されている行の category がすべて boss であること
+            const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+            expect(categoryValues).toEqual(['boss', 'boss', 'boss', 'boss', 'boss']);
+        },
+    );
+
+    test(
         'フィルター解除後に全100行が表示され仮想スクロールが正常に動作する',
         async ({ page }) => {
             const table = await openTableAsync(page, 'monster');
@@ -1481,6 +1512,188 @@ test.describe('BUG: 仮想スクロール有効テーブルでのフィルター
             const scrollContainer = page.locator('.editor-left-pane');
             const scrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
             expect(scrollHeight).toBeGreaterThan(2000);
+        },
+    );
+});
+
+// =============================================================================
+// BUG: 大量行テーブルの最下部セル選択後にフィルターをかけると画面が空白になる不具合
+//
+// 再現手順:
+//   1. 1000行テーブルを開き、最下部(行999)のセルを選択する
+//   2. フィルターをかけて100行程度に絞り込む
+//   3. 何も表示されない状態になる（フィルハンドルだけ見える）
+//   4. 上にスクロールするとテーブルが表示されるが、クリックでセルを選択できない
+//   5. スクロールすると変な場所に飛ぶ
+//
+// 根本原因:
+//   1. フィルター適用後に selection.focus/range がクランプされない（行999を指したまま）
+//   2. scrollTop がフィルター後のコンテンツ高さを超えた位置に留まる
+//   3. ensureRowVisible() がフィルター後の行数を超えた行にスクロールしようとする
+//   4. クリック時の getCellPosition → start() 後に scrollFocusIntoView() が
+//      無効な focus 行位置でスクロール計算を行い、異常な位置に飛ぶ
+// =============================================================================
+
+/**
+ * 1000行テーブル用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   enemy: id（int）, type（string）, power（int）
+ *
+ * 1000行: type は "rare"(50行: id=1,21,41,...,981), "common"(950行: それ以外)
+ * フィルター後に50行になる。1000行 → 50行の大幅な行数変化で問題を再現する。
+ */
+function createLargeTableFilterTestFileSystem(): MockFileSystem {
+    const rows = ['id,type,power'];
+    for (let i = 1; i <= 1000; i++) {
+        const type = (i % 20 === 1) ? 'rare' : 'common';
+        rows.push(`${i},${type},${i}`);
+    }
+    return {
+        "schema/enemy.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "type", type: "string" },
+                { key: 2, name: "power", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/enemy.csv": rows.join("\n"),
+    };
+}
+
+test.describe('BUG: 最下部セル選択後のフィルターで画面が空白になる', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createLargeTableFilterTestFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '最下部セル選択後にフィルターをかけてもテーブルが表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'enemy');
+            const scrollContainer = page.locator('.editor-left-pane');
+
+            // 最下部までスクロールして最後のデータ行のセルをクリック
+            await scrollContainer.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            await page.waitForTimeout(200);
+            const lastRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').last();
+            await lastRow.locator('.editor-table-cell:not(.editor-table-row-header)').first().click();
+            await page.waitForTimeout(100);
+
+            // type=rare のみにフィルター（1000行 → 50行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'common', false);
+            await applyFilterAsync(page);
+
+            // フィルター適用後、テーブルのデータ行が表示されていること（空白画面にならない）
+            // 仮想スクロール有効のため全50行がDOMに存在するとは限らない。
+            // ビューポート + OVERSCAN 分のデータ行が表示されていれば正常。
+            const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+            expect(categoryValues.length).toBeGreaterThan(0);
+            expect(categoryValues.every(v => v === 'rare')).toBe(true);
+        },
+    );
+
+    test(
+        'フィルター適用後にセルをクリックして選択できる',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'enemy');
+            const scrollContainer = page.locator('.editor-left-pane');
+
+            // 最下部までスクロールして最後のデータ行のセルをクリック
+            await scrollContainer.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            await page.waitForTimeout(200);
+            const lastRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').last();
+            await lastRow.locator('.editor-table-cell:not(.editor-table-row-header)').first().click();
+            await page.waitForTimeout(100);
+
+            // type=rare のみにフィルター（1000行 → 50行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'common', false);
+            await applyFilterAsync(page);
+            await page.waitForTimeout(200);
+
+            // フィルター後の先頭データ行のセルをクリック
+            const firstDataCell = table.locator(
+                '.editor-table-row:not(.editor-table-empty-row):not(.editor-table-column-header-row) .editor-table-cell:not(.editor-table-row-header)'
+            ).first();
+            await firstDataCell.click();
+            await page.waitForTimeout(100);
+
+            // クリック後にいずれかのデータセルに selected クラスが付与されること
+            // 仮想スクロール環境ではロケータ解決時と実際のクリック到達先が異なる場合があるため
+            // 特定のセルではなく「selected セルが存在すること」を検証する
+            const selectedCells = table.locator('.editor-table-cell.selected');
+            await expect(selectedCells.first()).toBeVisible();
+        },
+    );
+
+    test(
+        'フィルター適用後にスクロールしても表示が崩れない',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'enemy');
+            const scrollContainer = page.locator('.editor-left-pane');
+
+            // 最下部までスクロールして最後のデータ行のセルをクリック
+            await scrollContainer.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            await page.waitForTimeout(200);
+            const lastRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').last();
+            await lastRow.locator('.editor-table-cell:not(.editor-table-row-header)').first().click();
+            await page.waitForTimeout(100);
+
+            // type=rare のみにフィルター（1000行 → 50行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'common', false);
+            await applyFilterAsync(page);
+            await page.waitForTimeout(200);
+
+            // 少しスクロールする（変な場所に飛ばないこと）
+            await scrollContainer.evaluate((el) => { el.scrollTop += 100; });
+            await page.waitForTimeout(200);
+
+            // スクロール後もデータ行が表示されていること
+            const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+            expect(categoryValues.length).toBeGreaterThan(0);
+            expect(categoryValues.every(v => v === 'rare')).toBe(true);
+
+            // scrollTop がコンテンツの高さ内に収まっていること
+            const scrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
+            const scrollTop = await scrollContainer.evaluate((el) => el.scrollTop);
+            expect(scrollTop).toBeLessThan(scrollHeight);
+        },
+    );
+
+    test(
+        'フィルター適用後に矢印キーでセルを移動できる',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'enemy');
+            const scrollContainer = page.locator('.editor-left-pane');
+
+            // 最下部までスクロールして最後のデータ行のセルをクリック
+            await scrollContainer.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+            await page.waitForTimeout(200);
+            const lastRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').last();
+            await lastRow.locator('.editor-table-cell:not(.editor-table-row-header)').first().click();
+            await page.waitForTimeout(100);
+
+            // type=rare のみにフィルター（1000行 → 50行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'common', false);
+            await applyFilterAsync(page);
+            await page.waitForTimeout(200);
+
+            // 矢印キー↓で移動
+            await page.keyboard.press('ArrowDown');
+            await page.waitForTimeout(100);
+
+            // 選択セルが存在し selected クラスが付与されていること
+            const selectedCells = table.locator('.editor-table-cell.selected');
+            const count = await selectedCells.count();
+            expect(count).toBeGreaterThan(0);
+
+            // 選択セルが表示領域内にあること（DOMに存在し visible であること）
+            await expect(selectedCells.first()).toBeVisible();
         },
     );
 });
