@@ -584,6 +584,10 @@ export class EditorTable {
      * フィルター適用時: dataRowIndex を filteredRowIndices 経由で storeRowIndices 上のインデックスに変換する。
      * フィルター未適用時: hasActiveFilter()=false により dataRowIndex をそのまま使用する。
      * 生成後にバリデーションエラークラスとgit変更クラスを適用する。
+     *
+     * フィルター適用時: data-row-index をフィルター後の論理インデックス（0,1,2,...）に上書きする。
+     * getCellPosition() は data-row-index を読んで行番号を返し、Selection はこの論理行番号で動作する。
+     * ストアアクセス時は resolveStoreRowIndex() で論理インデックスを storeRowIndices 上のインデックスに変換する。
      */
     private renderRowForVirtualScroll(dataRowIndex: number): HTMLElement {
         const filteredCount = this.getFilteredDataRowCount();
@@ -597,7 +601,7 @@ export class EditorTable {
             // フィルター適用時、renderDataRow は mappedDataRowIndex（storeRowIndices上のインデックス）で
             // data-row-index を設定するが、仮想スクロールの論理行インデックスは dataRowIndex であるべき。
             // getCellPosition() が data-row-index を読んで行番号を返すため、フィルター後の連続した
-            // 論理行番号（0,1,2,...）に修正しないと、クリック時に不正な行番号でスクロールが飛ぶ。
+            // 論理行番号（0,1,2,...）に修正する。ストアアクセスは resolveStoreRowIndex() で変換する。
             if (this.columnFilter.hasActiveFilter()) {
                 const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
                 if (rowHeader) {
@@ -1383,9 +1387,10 @@ export class EditorTable {
             const position = this.getCellPositionFromElement(cell);
             if (!position) return;
             // DOM行 position.row はヘッダー行を含む（0=ヘッダー）。データ行は1始まり。
+            // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
             const domDataRowIndex = position.row - 1;
-            if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
-            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
+            if (storeRowIndex < 0) return;
             // DOM列 position.column は行ヘッダーを含む（0=行ヘッダー）。データ列は1始まり。
             const domDataColIndex = position.column - this.dataColumnOffset();
             const storeColIndex = this.getStoreColumnIndex(domDataColIndex);
@@ -1680,6 +1685,28 @@ export class EditorTable {
     }
 
     /**
+     * フィルター後の論理データ行インデックス（0始まり）からストア行インデックスを解決する。
+     *
+     * フィルター未適用時: storeRowIndices[dataRowIndex] をそのまま返す。
+     * フィルター適用時: filteredRowIndices[dataRowIndex] で storeRowIndices 上のインデックスを取得し、
+     *   storeRowIndices[mappedIndex] でストア行インデックスを返す。
+     *
+     * getCellPosition() が返す row（= data-row-index + 1）はフィルター適用時に論理行番号（0,1,2,...）に
+     * 上書きされるため、セル編集等でストアにアクセスする際はこのメソッドで正しいストア行を解決すること。
+     * -1 を返す場合はストアアクセス不可（範囲外）。
+     */
+    resolveStoreRowIndex(dataRowIndex: number): number {
+        if (!this.columnFilter.hasActiveFilter()) {
+            if (dataRowIndex < 0 || dataRowIndex >= this.storeRowIndices.length) return -1;
+            return this.storeRowIndices[dataRowIndex];
+        }
+        if (dataRowIndex < 0 || dataRowIndex >= this.filteredRowIndices.length) return -1;
+        const mappedIndex = this.filteredRowIndices[dataRowIndex];
+        if (mappedIndex < 0 || mappedIndex >= this.storeRowIndices.length) return -1;
+        return this.storeRowIndices[mappedIndex];
+    }
+
+    /**
      * 論理的な全行数を返す（列ヘッダー行を含む）。
      * 仮想スクロール時もDOMに存在しない行を含めた全データ行+バッファ行の数を返す。
      * フィルター適用時はフィルター後の行数に基づく（非表示行は論理行数に含めない）。
@@ -1709,9 +1736,10 @@ export class EditorTable {
             return EditorTable.getCellValue(cell);
         }
         // DOM外の行: ストアから直接取得する
+        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
         const dataRowIndex = row - 1;
-        if (dataRowIndex < 0 || dataRowIndex >= this.storeRowIndices.length) return '';
-        const storeRowIndex = this.storeRowIndices[dataRowIndex];
+        const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
+        if (storeRowIndex < 0) return '';
         const storeRows = this.store.getRows(this.tableName);
         if (storeRows === false || storeRowIndex >= storeRows.length) return '';
         const storeHeader = this.store.getHeader(this.tableName);
@@ -2866,10 +2894,9 @@ export class EditorTable {
      * @param rowIndex DOMの行インデックス（列ヘッダー行を含む。データ行は1始まり）
      */
     applyAutoFillToRow(rowIndex: number): void {
-        // storeRowIndicesを使ってストア行インデックスを取得する（PK重複時でも正しい行を更新できる）
+        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
         const domDataRowIndex = rowIndex - 1;
-        if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
-        const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+        const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
         // 照合失敗（-1）の場合はストア更新不可。DOM更新は継続する。
         const canUpdateStore = storeRowIndex >= 0;
         const storeHeader = canUpdateStore ? this.store.getHeader(this.tableName) : false;
@@ -3121,10 +3148,12 @@ export class EditorTable {
         if (rowIndex === this.lastNotifiedRow) return;
         this.lastNotifiedRow = rowIndex;
         // 重複チェック通過後に EditorAPI へ行選択イベントを発火する（ストアインデックス0始まりで通知）
+        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
         if (this.tab !== false) {
-            const domDataRow = rowIndex - 1; // DOM行インデックス（1始まり）→ データ行インデックス（0始まり）
-            if (domDataRow >= 0 && domDataRow < this.storeRowIndices.length) {
-                this.tab.emitRowSelected(this.tableName, this.storeRowIndices[domDataRow]);
+            const domDataRow = rowIndex - 1;
+            const storeRowIndex = this.resolveStoreRowIndex(domDataRow);
+            if (storeRowIndex >= 0) {
+                this.tab.emitRowSelected(this.tableName, storeRowIndex);
             }
         }
         this.relationsPanel.updateForRow(rowIndex);
@@ -3232,9 +3261,11 @@ export class EditorTable {
             if (!rowElement) continue;
             if (rowElement.classList.contains('editor-table-empty-row')) continue;
             if (rowElement.classList.contains('diff-row-empty')) continue;
+            // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
             const domDataRowIndex = row - 1;
             if (domDataRowIndex >= dataRowCount) continue;
-            const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+            const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
+            if (storeRowIndex < 0) continue;
             for (let col = offset2; col < totalColCount; col++) {
                 const domColIndex = col - offset2;
                 const storeColIndex = columnMapping[domColIndex];
@@ -3414,9 +3445,9 @@ export class EditorTable {
      */
     updateCellValueAt(row: number, column: number, value: string): void {
         // DOMデータ行インデックス（0始まり）= 論理行インデックス - 1（列ヘッダー行分）
+        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
         const domDataRowIndex = row - 1;
-        if (domDataRowIndex < 0 || domDataRowIndex >= this.storeRowIndices.length) return;
-        const storeRowIndex = this.storeRowIndices[domDataRowIndex];
+        const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
         // データ行外（空行等）・照合失敗（-1）の場合はストア更新をスキップ
         if (storeRowIndex < 0) return;
         const storeHeader = this.store.getHeader(this.tableName);
@@ -3794,10 +3825,14 @@ export class EditorTable {
         this.cachedOtherErrorCells = otherErrorCells;
         this.cachedDomColToStoreCol = domColToStoreCol;
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
-        for (let rowIdx = 1; rowIdx <= this.storeRowIndices.length; rowIdx++) {
+        // フィルター適用時は getFilteredDataRowCount() でフィルター後の行数を使う
+        const validationRowCount = this.getFilteredDataRowCount();
+        for (let rowIdx = 1; rowIdx <= validationRowCount; rowIdx++) {
             const row = this.getRowElement(rowIdx);
             if (!row) continue;
-            const storeRowIdx = this.storeRowIndices[rowIdx - 1];
+            // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
+            const storeRowIdx = this.resolveStoreRowIndex(rowIdx - 1);
+            if (storeRowIdx < 0) continue;
             for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
                 const cell = row.children[dataColIdx + offset] as HTMLElement | null;
                 if (!cell) continue;
