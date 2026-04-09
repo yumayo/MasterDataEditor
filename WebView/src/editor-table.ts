@@ -139,6 +139,14 @@ export class EditorTable {
      * 行挿入・削除時に同期される。
      */
     private storeRowIndices: number[];
+    /**
+     * フィルター適用時のデータ行インデックス配列。
+     * filteredRowIndices[i] は storeRowIndices 上のインデックスを指す。
+     * フィルター適用時のみ有効な値を持ち、仮想スクロールのレンダリングで使用する。
+     * フィルター未適用時は空配列 []（使用しない — storeRowIndices を直接参照する）。
+     * applyFilterDisplay() でフィルター適用・解除時に更新される。
+     */
+    private filteredRowIndices: number[];
     /** スクロールバーマーカートラック（connectScrollbarMarkerTrackで設定される。未設定はfalse） */
     private scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
     /** 水平スクロールバーマーカートラック（connectHorizontalScrollbarMarkerTrackで設定される。未設定はfalse） */
@@ -208,6 +216,7 @@ export class EditorTable {
         this.lastCopyCells = [];
         // initialize() で初期化される
         this.storeRowIndices = [];
+        this.filteredRowIndices = [];
         this.scrollbarMarkerTrack = false;
         this.horizontalScrollbarMarkerTrack = false;
         this.currentErrorDomRows = new Set();
@@ -336,9 +345,11 @@ export class EditorTable {
         this.virtualScroll.notifyRowRemoved();
     }
 
-    /** 内部モジュール用: バーチャルスクロールの総行数を storeRowIndices の行数で同期する */
+    /** 内部モジュール用: バーチャルスクロールの総行数をデータ行数で同期する。
+     * フィルター適用時はフィルター後の行数を使用する。
+     * バッファ行は含まない。ensureTrailingBufferRow() がバッファ行追加後に別途+1を加算する。 */
     syncVirtualScrollTotalRowCount(): void {
-        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length);
+        this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount());
     }
 
     /** 内部モジュール用: バーチャルスクロールで現在DOMに存在するデータ行の開始インデックス（0始まり）を返す */
@@ -463,6 +474,7 @@ export class EditorTable {
         }
         // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
         this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
+        // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
         // 差分テーブル（emptyRowCount=0, enableVirtualScroll=true）では VirtualScrollController の
         // totalRowCount がコンストラクタ時点で0のまま。storeRowIndices 確定後に実データ行数で更新する。
         this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length);
@@ -568,16 +580,24 @@ export class EditorTable {
     /**
      * バーチャルスクロールの行動的生成コールバック。
      * データ行かバッファ行かを判定し、適切なメソッドに委譲する。
-     * storeRowIndices の長さ（=データ行数）を境界としてバッファ行を判定する。
+     * filteredRowIndices の長さ（=フィルター後のデータ行数）を境界としてバッファ行を判定する。
+     * フィルター適用時: dataRowIndex を filteredRowIndices 経由で storeRowIndices 上のインデックスに変換する。
+     * フィルター未適用時: hasActiveFilter()=false により dataRowIndex をそのまま使用する。
      * 生成後にバリデーションエラークラスとgit変更クラスを適用する。
      */
     private renderRowForVirtualScroll(dataRowIndex: number): HTMLElement {
-        if (dataRowIndex < this.storeRowIndices.length) {
-            const row = this.renderDataRow(dataRowIndex);
-            this.applyRowDecorations(row, dataRowIndex);
+        const filteredCount = this.getFilteredDataRowCount();
+        if (dataRowIndex < filteredCount) {
+            // フィルター適用時: filteredRowIndices で storeRowIndices 上のインデックスに変換
+            // フィルター未適用時: dataRowIndex をそのまま使用（storeRowIndices[dataRowIndex]）
+            const mappedDataRowIndex = this.columnFilter.hasActiveFilter()
+                ? this.filteredRowIndices[dataRowIndex]
+                : dataRowIndex;
+            const row = this.renderDataRow(mappedDataRowIndex);
+            this.applyRowDecorations(row, mappedDataRowIndex);
             // 差分タブ接続時: diffクラスを適用する
             if (this.diffTab !== false) {
-                this.diffTab.applyDiffDecorationsToRow(row, dataRowIndex, this);
+                this.diffTab.applyDiffDecorationsToRow(row, mappedDataRowIndex, this);
             }
             return row;
         }
@@ -1635,14 +1655,23 @@ export class EditorTable {
     }
 
     /**
+     * フィルター適用後のデータ行数を返す。
+     * フィルター適用時: filteredRowIndices.length（フィルター条件を満たす行のみ）
+     * フィルター未適用時: storeRowIndices.length（全データ行）
+     */
+    private getFilteredDataRowCount(): number {
+        return this.columnFilter.hasActiveFilter() ? this.filteredRowIndices.length : this.storeRowIndices.length;
+    }
+
+    /**
      * 論理的な全行数を返す（列ヘッダー行を含む）。
      * 仮想スクロール時もDOMに存在しない行を含めた全データ行+バッファ行の数を返す。
+     * フィルター適用時はフィルター後の行数に基づく（非表示行は論理行数に含めない）。
      * Selection の列全選択・行全選択など、全行を対象とする操作で使用する。
      */
     getLogicalRowCount(): number {
-        // storeRowIndices.length = データ行数, +1 = バッファ行, +1 = 列ヘッダー行
-        // ミニテーブル（仮想スクロール無効）では getRowCount() と同じ値になる
-        return this.storeRowIndices.length + 1 + 1;
+        // getFilteredDataRowCount() = フィルター後のデータ行数, +1 = バッファ行, +1 = 列ヘッダー行
+        return this.getFilteredDataRowCount() + 1 + 1;
     }
 
     /**
@@ -2139,9 +2168,11 @@ export class EditorTable {
         // promoteBufferRowToStore/demoteStoreRowToBuffer/deleteRow と条件を統一する。
         if (this.diffTab === false) this.ensureTrailingBufferRow();
         // DOM行数が変化した場合にバーチャルスクロールの総行数を同期する。
-        // getRowCount() は仮想スクロール時にDOM行数しか返さないため、
-        // 論理的な総行数（storeRowIndices + バッファ1行）を使う。
-        if (domRowCountChanged) this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
+        if (domRowCountChanged) {
+            // getRowCount() は仮想スクロール時にDOM行数しか返さないため、
+            // 論理的な総行数（storeRowIndices + バッファ1行）を使う。
+            this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
+        }
 
         // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
         // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
@@ -2284,7 +2315,7 @@ export class EditorTable {
      * 指定の domDataRowIndex がバッファ空行（ストア未登録）かどうかを判定する
      */
     isBufferRow(domDataRowIndex: number): boolean {
-        return domDataRowIndex >= this.storeRowIndices.length;
+        return domDataRowIndex >= this.getFilteredDataRowCount();
     }
 
     /**
@@ -2313,11 +2344,11 @@ export class EditorTable {
      */
     ensureTrailingBufferRow(): void {
         // バーチャルスクロールでバッファ行がDOM外（表示範囲外）に存在する場合はスキップする。
-        // バッファ行はストア行の直後（storeRowIndices.length）に位置する。
+        // バッファ行はフィルター後のデータ行の直後に位置する。
         // 表示範囲終端がバッファ行位置より手前にある場合、バッファ行はDOM外に存在するが
         // 論理的には存在し続けるため、重複追加してはならない。
         // 非仮想スクロール時は renderedEnd が全行をカバーするためこの条件は成立しない。
-        const bufferDataRowIndex = this.storeRowIndices.length;
+        const bufferDataRowIndex = this.getFilteredDataRowCount();
         const rendered = this.virtualScroll.getRenderedRange();
         if (rendered.end < bufferDataRowIndex) return;
 
@@ -2342,9 +2373,7 @@ export class EditorTable {
         // 新しい行がDOMに追加されたため renderedEnd を同期する（dataRowToDomIndex のインデックス変換に必要）
         this.virtualScroll.notifyRowAppended();
         // バッファ行追加によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する。
-        // 論理的な総行数（storeRowIndices + バッファ1行）を使う。getRowCount() は
-        // 仮想スクロール時にDOMの行数しか返さないため使えない。
-        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
+        this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount() + 1);
         // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
@@ -2643,19 +2672,36 @@ export class EditorTable {
     }
 
     /**
-     * 現在の ColumnFilter 状態に基づいてデータ行の display を切り替え、
-     * フィルタークラスと行数カウンターを更新する。
+     * 現在の ColumnFilter 状態に基づいてデータ行の表示を制御する。
+     *
+     * 仮想スクロール有効時: filteredRowIndices を更新して forceFullRerender() で再描画する。
+     *   DOM に存在しない行に display=none を適用できないため、filteredRowIndices で
+     *   レンダリング対象を制限し、totalRowCount をフィルター後の行数に更新する。
+     *
+     * 仮想スクロール無効時（ミニテーブル）: 従来通り display=none で行を制御する。
+     *
      * FilterDropdown の適用・クリア時と、ソート変更時・行挿入削除時に呼ばれる。
      */
     applyFilterDisplay(): void {
         const storeRows = this.store.getRows(this.tableName);
         if (storeRows === false) return;
 
-        // フィルター未適用時は全行表示にして行数カウンターを非表示にし早期 return する
+        const isVirtualScrollActive = !this.isMiniTable;
+
+        // フィルター未適用時
         if (!this.columnFilter.hasActiveFilter()) {
-            for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
-                const rowEl = this.getRowElement(domDataRow + 1);
-                if (rowEl) rowEl.style.display = '';
+            // filteredRowIndices を空配列にリセットする（フィルター未適用状態）
+            this.filteredRowIndices = [];
+            if (isVirtualScrollActive) {
+                // 仮想スクロール: totalRowCount を全行数+バッファ行に戻して再描画
+                this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
+                this.virtualScroll.forceFullRerender();
+            } else {
+                // ミニテーブル: 従来通り display を復元
+                for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+                    const rowEl = this.getRowElement(domDataRow + 1);
+                    if (rowEl) rowEl.style.display = '';
+                }
             }
             this.updateFilterActiveClasses();
             this.filterRowCountElement.style.display = 'none';
@@ -2664,21 +2710,34 @@ export class EditorTable {
         }
 
         // フィルター条件に一致するストアインデックスのセットを構築する
-        const filteredSet = new Set(this.columnFilter.computeFilteredIndices(this.storeRowIndices, storeRows));
-
-        let visibleCount = 0;
+        const filteredStoreIndices = this.columnFilter.computeFilteredIndices(this.storeRowIndices, storeRows);
+        const filteredSet = new Set(filteredStoreIndices);
         const totalCount = this.storeRowIndices.length;
 
-        // 各データ行の display を更新する（バッファ空行は対象外）
-        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
-            const storeRowIndex = this.storeRowIndices[domDataRow];
-            const domRow = this.getRowElement(domDataRow + 1);
-            if (!domRow) continue;
-            if (filteredSet.has(storeRowIndex)) {
-                domRow.style.display = '';
-                visibleCount++;
-            } else {
-                domRow.style.display = 'none';
+        // filteredRowIndices を構築: storeRowIndices 上のインデックスのうちフィルタ条件を満たすもの
+        this.filteredRowIndices = [];
+        for (let i = 0; i < this.storeRowIndices.length; i++) {
+            if (filteredSet.has(this.storeRowIndices[i])) {
+                this.filteredRowIndices.push(i);
+            }
+        }
+        const visibleCount = this.filteredRowIndices.length;
+
+        if (isVirtualScrollActive) {
+            // 仮想スクロール: totalRowCount をフィルター後の行数+バッファ1行に更新して全行再描画
+            this.virtualScroll.updateTotalRowCount(visibleCount + 1);
+            this.virtualScroll.forceFullRerender();
+        } else {
+            // ミニテーブル: 従来通り display で行を制御する（全行がDOMに存在するため）
+            for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
+                const storeRowIndex = this.storeRowIndices[domDataRow];
+                const domRow = this.getRowElement(domDataRow + 1);
+                if (!domRow) continue;
+                if (filteredSet.has(storeRowIndex)) {
+                    domRow.style.display = '';
+                } else {
+                    domRow.style.display = 'none';
+                }
             }
         }
 

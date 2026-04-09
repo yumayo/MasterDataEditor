@@ -1342,3 +1342,145 @@ test.describe('BUG: 検索絞り込み後の適用で非表示項目がチェッ
         },
     );
 });
+
+// =============================================================================
+// BUG: 仮想スクロールが有効な大量行テーブルでフィルターが機能しない不具合
+//
+// 根本原因:
+//   applyFilterDisplay() は DOM の display=none でフィルタリングを実現しているが、
+//   仮想スクロール有効時はビューポート+OVERSCAN 分の行しか DOM に存在しない。
+//   そのため:
+//   1. totalRowCount がフィルター後の行数を反映しない → スペーサー高さが全行分のまま
+//   2. renderRowForVirtualScroll() がフィルター対象外の行も生成する
+//   3. スクロール時に新規生成された行に display=none が適用されない
+// =============================================================================
+
+/**
+ * 仮想スクロールが発動する大量行テーブル用のファイルシステムを生成する。
+ *
+ * テーブル構成:
+ *   monster: id（int）, category（string）, level（int）
+ *
+ * 100行: category は "boss"(5行), "normal"(95行) の2種。
+ * boss は id=1,21,41,61,81 に分散配置（スクロール範囲全体に散らばる）。
+ * ビューポート高さ600px / 行高21px ≒ 28行表示 + OVERSCAN=10 = 約48行がDOMに存在。
+ * → 100行中 52行はDOM外であり、display=none ベースのフィルターが効かない。
+ */
+function createVirtualScrollFilterTestFileSystem(): MockFileSystem {
+    const rows = ['id,category,level'];
+    for (let i = 1; i <= 100; i++) {
+        // id が 1,21,41,61,81 の行は boss、それ以外は normal
+        const category = (i % 20 === 1) ? 'boss' : 'normal';
+        rows.push(`${i},${category},${i * 10}`);
+    }
+    return {
+        "schema/monster.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "category", type: "string" },
+                { key: 2, name: "level", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/monster.csv": rows.join("\n"),
+    };
+}
+
+test.describe('BUG: 仮想スクロール有効テーブルでのフィルター', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createVirtualScrollFilterTestFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '100行テーブルで category=boss のみにフィルターすると5行だけ表示される',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'monster');
+
+            // category 列（colIndex=1）でフィルター: "normal" を除外して "boss" のみ残す
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'normal', false);
+            await applyFilterAsync(page);
+
+            // 行数カウンターが「5 / 100 行」を表示すること
+            const rowCount = page.locator('.filter-row-count');
+            await expect(rowCount).toBeVisible();
+            await expect(rowCount).toContainText('5');
+            await expect(rowCount).toContainText('100');
+
+            // 表示されている行の category がすべて boss であること
+            const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+            expect(categoryValues).toEqual(['boss', 'boss', 'boss', 'boss', 'boss']);
+        },
+    );
+
+    test(
+        'フィルター適用後にスクロールしても非表示行が現れない',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'monster');
+
+            // category=boss のみにフィルター
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'normal', false);
+            await applyFilterAsync(page);
+
+            // スクロールコンテナを最下部までスクロールする
+            const scrollContainer = page.locator('.editor-left-pane');
+            await scrollContainer.evaluate((el) => {
+                el.scrollTop = el.scrollHeight;
+            });
+            // スクロール後の再描画を待つ
+            await page.waitForTimeout(200);
+
+            // スクロール後も表示されている行の category はすべて boss であること
+            const categoryValues = await getVisibleColumnValuesAsync(table, 1);
+            expect(categoryValues).toEqual(['boss', 'boss', 'boss', 'boss', 'boss']);
+        },
+    );
+
+    test(
+        'フィルター適用後のスペーサー高さがフィルター後の行数に基づいている',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'monster');
+
+            // category=boss のみにフィルター（5行）
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'normal', false);
+            await applyFilterAsync(page);
+
+            // スクロールコンテナの scrollHeight がフィルター前（100行分）より大幅に小さいこと
+            // overflow:auto コンテナでは scrollHeight >= clientHeight（~650px）が下限となるため、
+            // 100行分の scrollHeight（~2100px）の半分以下であることを検証する
+            const scrollContainer = page.locator('.editor-left-pane');
+            const scrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
+            expect(scrollHeight).toBeLessThan(1000);
+        },
+    );
+
+    test(
+        'フィルター解除後に全100行が表示され仮想スクロールが正常に動作する',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'monster');
+
+            // category=boss のみにフィルター
+            await clickFilterIconAsync(table, 1);
+            await setFilterItemCheckedAsync(page, 'normal', false);
+            await applyFilterAsync(page);
+
+            // フィルター解除
+            await clickFilterIconAsync(table, 1);
+            const dropdown = page.locator('.filter-dropdown.visible');
+            await dropdown.locator('.filter-clear').click();
+
+            // 行数カウンターが非表示になること
+            const rowCount = page.locator('.filter-row-count');
+            await expect(rowCount).not.toBeVisible();
+
+            // スクロールコンテナの scrollHeight が100行分に復帰すること
+            // 100行 × 21px = 2100px + ヘッダー + バッファ行
+            const scrollContainer = page.locator('.editor-left-pane');
+            const scrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
+            expect(scrollHeight).toBeGreaterThan(2000);
+        },
+    );
+});
