@@ -95,8 +95,9 @@ async function clickContextMenuItemAsync(
 async function clickFirstCellAsync(
     table: Locator,
 ): Promise<void> {
+    // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
     const selector =
-        '.editor-table-row:nth-child(2)'
+        '.editor-table-row:nth-child(3)'
         + ' .editor-table-cell:nth-child(2)';
     await table.locator(selector).click();
 }

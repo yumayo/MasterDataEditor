@@ -57,7 +57,8 @@ export class EditorTableContextMenu {
             // 選択範囲を取得
             const selRange = this.selection.getSelectionRange();
             // 列全体が選択されているか判定（行範囲がテーブル全高さか確認）
-            const lastRow = this.table.getRowCount() - 1;
+            // getLogicalRowCount() は仮想スクロールのDOM行数に依存しない論理行数を返す
+            const lastRow = this.table.getLogicalRowCount() - 1;
             const isColumnSelection = selRange.startRow === 1 && selRange.endRow === lastRow;
             // 右クリックした列が選択範囲内か判定
             const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn

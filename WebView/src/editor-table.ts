@@ -472,6 +472,8 @@ export class EditorTable {
             columnHeaderRow.classList.add('editor-table-column-header-row');
             this.element.appendChild(columnHeaderRow);
         }
+        // ヘッダー行追加直後に topSpacer をテーブル内に配置する（データ行追加前に必要）
+        this.virtualScroll.attachSpacers();
         // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
         this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
         // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
@@ -1676,6 +1678,16 @@ export class EditorTable {
     }
 
     /**
+     * テーブル内のデータ行が始まる children オフセットを返す。
+     * 仮想スクロール有効: 1（ヘッダー行）+ 1（topSpacer）= 2
+     * 仮想スクロール無効（ミニテーブル）: 1（ヘッダー行のみ）
+     * RowDragController が children[i + offset] でデータ行にアクセスするために使用する。
+     */
+    getDataRowChildOffset(): number {
+        return 1 + this.virtualScroll.spacerCount();
+    }
+
+    /**
      * フィルター適用後のデータ行数を返す。
      * フィルター適用時: filteredRowIndices.length（フィルター条件を満たす行のみ）
      * フィルター未適用時: storeRowIndices.length（全データ行）
@@ -2421,7 +2433,8 @@ export class EditorTable {
         // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
-        const newDomRow = newRowIndex + 1; // DOMインデックス（列ヘッダー行を+1でオフセット）
+        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）を考慮する
+        const newDomRow = newRowIndex + this.getDataRowChildOffset();
         this.updateReferenceHintsForRows(newDomRow, newDomRow);
         // 行数変化後に選択オーバーレイの描画位置を再計算する
         this.selection.updateRendererAfterResize();

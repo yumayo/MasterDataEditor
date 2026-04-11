@@ -866,8 +866,6 @@ export class DiffTab {
         editorTable.initializeModules(notification);
 
         editorTable.appendTo(innerWrapper);
-        // 仮想スクロールのスペーサーを配置する（appendTo完了後にDOMに追加されている必要がある）
-        editorTable.attachSpacers();
         innerWrapper.appendChild(selection.fillPreviewElement);
         innerWrapper.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(innerWrapper);

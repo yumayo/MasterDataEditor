@@ -17,7 +17,8 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
 
 /** テーブルの最初のデータセルをクリックしてフォーカスを確保する */
 async function clickFirstCellAsync(table: Locator): Promise<void> {
-    await table.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)').click();
+    // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
+    await table.locator('.editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)').click();
 }
 
 // =============================================================================
@@ -560,8 +561,9 @@ test.describe('Phase 3: イベントAPI', () => {
             });
         });
 
-        // 2行目のセルをクリックして行選択を変更する（DOMの3行目 = ヘッダー + データ行1 + データ行2）
-        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)');
+        // 2行目のセルをクリックして行選択を変更する
+        // 仮想スクロール有効テーブル: [0]=header, [1]=topSpacer, [2]=データ行1, [3]=データ行2
+        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(4) .editor-table-cell:nth-child(2)');
         await secondRowCell.click();
 
         const event = await eventPromise;
@@ -588,7 +590,8 @@ test.describe('Phase 3: イベントAPI', () => {
         });
 
         // 行クリックして行選択を変更する
-        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)');
+        // 仮想スクロール有効テーブル: [0]=header, [1]=topSpacer, [2]=データ行1, [3]=データ行2
+        const secondRowCell = page.locator('.editor-left-pane .editor-table .editor-table-row:nth-child(4) .editor-table-cell:nth-child(2)');
         await secondRowCell.click();
 
         // 行選択イベント処理の完了を待ってからフラグを確認する

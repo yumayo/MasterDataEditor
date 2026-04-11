@@ -118,7 +118,9 @@ export class EditorTableReference {
      * 参照データのpreload完了後にセルの参照ヒントを更新する
      */
     updateReferenceHints(): void {
-        this.updateReferenceHintsForRows(1, this.table.getTableElement().children.length);
+        // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        const startIndex = this.table.getDataRowChildOffset();
+        this.updateReferenceHintsForRows(startIndex, this.table.getTableElement().children.length);
     }
 
     /**
@@ -133,10 +135,15 @@ export class EditorTableReference {
         // setCellValue 内の getCellValueAt は論理インデックスで行を検索するため、
         // DOMインデックスのまま渡すと動的参照・逆参照ヒントの行解決に失敗する。
         const vsOffset = this.table.getVirtualScrollRenderedStart();
+        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
+        const dataRowChildOffset = this.table.getDataRowChildOffset();
         for (let domIndex = startDomRow; domIndex < endDomRow; domIndex++) {
             const row = tableElement.children[domIndex] as HTMLElement;
             if (!row) throw new Error(`DOM行が見つかりません: domIndex=${domIndex}`);
-            const logicalRowIndex = vsOffset + domIndex;
+            // logicalRowIndex: getCellValueAt() が受け取るDOM行インデックス（1始まり、ヘッダー含む）
+            // domIndex から dataRowChildOffset を引いてデータ行ローカルインデックス（0始まり）を算出し、
+            // +1 して getCellValueAt の行番号体系（1始まり）に変換する
+            const logicalRowIndex = vsOffset + (domIndex - dataRowChildOffset) + 1;
             for (let colIndex = this.table.dataColumnOffset(); colIndex < row.children.length; colIndex++) {
                 const cell = row.children[colIndex] as HTMLElement;
                 const dataColumnIndex = colIndex - this.table.dataColumnOffset();
@@ -151,12 +158,17 @@ export class EditorTableReference {
      */
     updateColumnReferenceHints(columnIndex: number): void {
         const tableElement = this.table.getTableElement();
-        for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
-            const row = tableElement.children[rowIndex] as HTMLElement;
+        // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        const dataRowChildOffset = this.table.getDataRowChildOffset();
+        const vsOffset = this.table.getVirtualScrollRenderedStart();
+        for (let domIndex = dataRowChildOffset; domIndex < tableElement.children.length; domIndex++) {
+            const row = tableElement.children[domIndex] as HTMLElement;
             const cell = row.children[columnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 const value = EditorTable.getCellValue(cell);
-                this.setCellValue(cell, value, columnIndex, rowIndex);
+                // logicalRowIndex: getCellValueAt() が受け取るDOM行インデックス（1始まり、ヘッダー含む）
+                const logicalRowIndex = vsOffset + (domIndex - dataRowChildOffset) + 1;
+                this.setCellValue(cell, value, columnIndex, logicalRowIndex);
             }
         }
     }
@@ -180,7 +192,9 @@ export class EditorTableReference {
             if (idx !== -1) parentColumnIndices.set(colName, idx);
         }
         // 全データ行のPK列セルに逆参照ヒントを適用する
-        for (let rowIndex = 1; rowIndex < tableElement.children.length; rowIndex++) {
+        // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        const startIndex = this.table.getDataRowChildOffset();
+        for (let rowIndex = startIndex; rowIndex < tableElement.children.length; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
             const pkCell = row.children[pkColumnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (!pkCell) continue;
@@ -476,8 +490,9 @@ export class EditorTableReference {
      * Excelの二段リストと同様に、親列の変更で子列の参照先を切り替える
      */
     private updateDependentColumnsInRow(rowIndex: number, changedDataColumnIndex: number): void {
-        const tableElement = this.table.getTableElement();
-        const rowElement = tableElement.children[rowIndex] as HTMLElement;
+        // rowIndex は1始まりのDOM行インデックス。getRowElementForInsert で topSpacer を考慮した正しい行要素を取得する
+        const rowElement = this.table.getRowElementForInsert(rowIndex);
+        if (!rowElement) return;
         for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
             if (colIdx === changedDataColumnIndex) continue;
             const column = this.tableData.header[colIdx];
@@ -504,8 +519,9 @@ export class EditorTableReference {
         if (!changedColumn) return;
         // 表示列でなければ更新不要
         if (!isDisplayColumn(changedColumn.name)) return;
-        const tableElement = this.table.getTableElement();
-        const rowElement = tableElement.children[rowIndex] as HTMLElement;
+        // rowIndex は1始まりのDOM行インデックス。getRowElementForInsert で topSpacer を考慮した正しい行要素を取得する
+        const rowElement = this.table.getRowElementForInsert(rowIndex);
+        if (!rowElement) return;
         for (let colIdx = 0; colIdx < this.tableData.header.length; colIdx++) {
             if (colIdx === changedDataColumnIndex) continue;
             const column = this.tableData.header[colIdx];

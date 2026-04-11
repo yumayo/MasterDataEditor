@@ -101,8 +101,9 @@ export class AreaResizer {
         };
 
         // 選択範囲が列全体選択を表しているか判定（context-menu.ts と同じ判定方式）
+        // getLogicalRowCount() は仮想スクロールのDOM行数に依存しない論理行数を返す
         const selectionRange = this.selection.getSelectionRange();
-        const lastRow = this.editorTable.getRowCount() - 1;
+        const lastRow = this.editorTable.getLogicalRowCount() - 1;
         const isColumnSelection = selectionRange.startRow === 1 && selectionRange.endRow === lastRow;
         // targetColumnIndex は0始まり、selectionRange の column は1始まり（行ヘッダー含む）
         const targetSelectionColumn = targetColumnIndex + 1;

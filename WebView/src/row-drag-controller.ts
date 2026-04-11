@@ -196,14 +196,16 @@ export class RowDragController {
         const tableElement = this.table.getTableElement();
         const storeRowCount = this.table.getStoreRowIndices().length;
         if (storeRowCount === 0) throw new Error('行が存在しないテーブルではドラッグ操作は発生し得ない');
+        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
+        const offset = this.table.getDataRowChildOffset();
         // 各行の矩形を走査して、マウス位置を含む行を特定する
         for (let i = 0; i < storeRowCount; i++) {
-            const rowElement = tableElement.children[i + 1] as HTMLElement;
+            const rowElement = tableElement.children[i + offset] as HTMLElement;
             const rect = rowElement.getBoundingClientRect();
             if (clientY >= rect.top && clientY < rect.bottom) return i;
         }
         // テーブル範囲外の場合: 上側なら先頭行、下側なら末尾行
-        const firstRow = tableElement.children[1] as HTMLElement;
+        const firstRow = tableElement.children[offset] as HTMLElement;
         if (clientY < firstRow.getBoundingClientRect().top) return 0;
         return storeRowCount - 1;
     }
@@ -217,15 +219,16 @@ export class RowDragController {
     private updateIndicatorPosition(clientY: number): void {
         const tableElement = this.table.getTableElement();
         const storeRowCount = this.table.getStoreRowIndices().length;
+        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
+        const offset = this.table.getDataRowChildOffset();
         // テーブル要素の水平範囲をインジケーターに適用する
         const tableRect = tableElement.getBoundingClientRect();
         this.indicator.style.left = tableRect.left + 'px';
         this.indicator.style.width = tableRect.width + 'px';
         // 各行の矩形を走査して、マウス位置に最も近い行間を特定する
-        // 行のDOM要素は children[1] 〜 children[storeRowCount]（列ヘッダーが [0]）
         let insertIndex = 0;
         for (let i = 0; i < storeRowCount; i++) {
-            const rowElement = tableElement.children[i + 1] as HTMLElement;
+            const rowElement = tableElement.children[i + offset] as HTMLElement;
             const rect = rowElement.getBoundingClientRect();
             const rowMidY = rect.top + rect.height / 2;
             if (clientY > rowMidY) {
@@ -241,12 +244,12 @@ export class RowDragController {
         // インジケーターの top 位置をビューポート座標で設定する
         let indicatorTop: number;
         if (insertIndex < storeRowCount) {
-            const targetRow = tableElement.children[insertIndex + 1] as HTMLElement;
+            const targetRow = tableElement.children[insertIndex + offset] as HTMLElement;
             const targetRect = targetRow.getBoundingClientRect();
             indicatorTop = targetRect.top;
         } else {
             // 最終行の下端
-            const lastRow = tableElement.children[storeRowCount] as HTMLElement;
+            const lastRow = tableElement.children[storeRowCount + offset - 1] as HTMLElement;
             const lastRect = lastRow.getBoundingClientRect();
             indicatorTop = lastRect.bottom;
         }

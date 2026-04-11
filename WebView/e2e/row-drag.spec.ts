@@ -75,7 +75,8 @@ async function dragRowAsync(table: Locator, fromRowIndex: number, toRowIndex: nu
  * テーブルの最初のデータセルをクリックしてキーボードフォーカスを確保する
  */
 async function clickFirstCellAsync(table: Locator): Promise<void> {
-    await table.locator('.editor-table-row:nth-child(2) .editor-table-cell:nth-child(2)').click();
+    // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
+    await table.locator('.editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)').click();
 }
 
 /**

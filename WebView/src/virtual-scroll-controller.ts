@@ -3,15 +3,20 @@ import {ROW_TOTAL_HEIGHT_PX} from "./constant";
 /**
  * バーチャルスクロールの制御を担うコントローラー。
  *
- * 方式B（テーブル外スペーサー）を採用する。
- * スペーサー要素は .tab-wrapper の子として .editor-table の前後に配置する。
- * テーブル内 DOM 構造は従来と同一のため getRowCount(), getCellPosition(), nth-child セレクタに影響しない。
+ * 方式B（テーブル内 topSpacer）を採用する。
+ * topSpacer はテーブル内のヘッダー行直後（children[1]）に display:table-row として配置する。
+ * これによりヘッダー行（position:sticky; top:0）の自然位置が常に0になり、
+ * コンポジタースレッドの非同期スクロール中でもヘッダーが画面下に落ちることがない。
+ * テーブル内 DOM 構造: [0]=header, [1]=topSpacer, [2..]=data rows
+ * bottomSpacer はテーブル外のまま。
  *
  * enabled=false（ミニテーブル）の場合は全メソッドがパススルー動作する。
  */
 export class VirtualScrollController {
     /** 表示範囲外に余分にレンダリングするオーバースキャン行数 */
     private static readonly OVERSCAN = 10;
+    /** テーブル内データ行の開始インデックス。[0]=header, [1]=topSpacer, [2..]=data rows */
+    private static readonly DATA_ROW_START_INDEX = 2;
 
     private readonly tableElement: HTMLElement;
     private readonly scrollContainer: HTMLElement;
@@ -94,27 +99,39 @@ export class VirtualScrollController {
     }
 
     /**
-     * スペーサー要素を生成し、テーブル要素の前後に配置する。
-     * tableElement が親要素に追加された後（appendTo 完了後）に呼ぶこと。
+     * スペーサー要素を生成し配置する。
+     * topSpacer: テーブル内のヘッダー行直後（children[1]）に display:table-row + table-cell として挿入する。
+     * bottomSpacer: テーブル外（親要素内のテーブル直後）に配置する。
+     * ヘッダー行が既に存在する状態（initialize() のヘッダー追加直後）で呼ぶこと。
      * enabled=false の場合は何もしない。
      */
     attachSpacers(): void {
         if (!this.enabled) return;
+
+        // 上部スペーサー: テーブル内にヘッダー行直後に挿入する（display:table-row）
+        // table-row の高さを制御するため、内部に table-cell を配置する
+        const topRow = document.createElement('div');
+        topRow.classList.add('virtual-scroll-top-spacer');
+        const topCell = document.createElement('div');
+        topCell.classList.add('virtual-scroll-top-spacer-cell');
+        topCell.style.height = '0px';
+        topRow.appendChild(topCell);
+        // ヘッダー行（children[0]）の直後に挿入する
+        const headerRow = this.tableElement.children[0];
+        if (headerRow.nextSibling !== null) {
+            this.tableElement.insertBefore(topRow, headerRow.nextSibling);
+        } else {
+            this.tableElement.appendChild(topRow);
+        }
+        // topSpacer はセル要素を参照する（高さ制御のため）
+        this.topSpacer = topCell;
+
+        // 下部スペーサー: テーブル外（親要素内のテーブル直後）に配置する
         const parent = this.tableElement.parentElement;
         if (parent === null) return;
-
-        // 上部スペーサー: テーブル要素の直前に挿入
-        const top = document.createElement('div');
-        top.classList.add('virtual-scroll-top-spacer');
-        top.style.height = '0px';
-        parent.insertBefore(top, this.tableElement);
-        this.topSpacer = top;
-
-        // 下部スペーサー: テーブル要素の直後に挿入（filterRowCountElement の前）
         const bottom = document.createElement('div');
         bottom.classList.add('virtual-scroll-bottom-spacer');
         bottom.style.height = '0px';
-        // tableElement の直後に挿入する（nextSibling が存在すればその前に、なければ末尾に追加）
         const nextSibling = this.tableElement.nextElementSibling;
         if (nextSibling !== null) {
             parent.insertBefore(bottom, nextSibling);
@@ -167,8 +184,8 @@ export class VirtualScrollController {
     forceFullRerender(): void {
         if (!this.enabled) return;
         if (this.renderRow === false) return;
-        // 既存のデータ行をすべて削除する（ヘッダー行は残す）
-        while (this.tableElement.children.length > 1) {
+        // 既存のデータ行をすべて削除する（ヘッダー行 + topSpacer は残す）
+        while (this.tableElement.children.length > VirtualScrollController.DATA_ROW_START_INDEX) {
             this.tableElement.removeChild(this.tableElement.lastChild as Node);
         }
         // renderedStart/renderedEnd を「何も描画されていない」状態にリセットする
@@ -188,30 +205,33 @@ export class VirtualScrollController {
 
     /**
      * 論理データ行インデックス（0始まり）をDOMの子要素インデックスに変換する。
-     * enabled=false: 常に dataRowIndex + 1 を返す（従来通り）。
-     * enabled=true: 表示範囲内なら dataRowIndex - renderedStart + 1、範囲外なら null。
-     * +1 はヘッダー行分のオフセット。
+     * enabled=false: 常に dataRowIndex + 1 を返す（ヘッダー行分のオフセット）。
+     * enabled=true: 表示範囲内なら dataRowIndex - renderedStart + DATA_ROW_START_INDEX、範囲外なら null。
+     * DATA_ROW_START_INDEX はヘッダー行 + topSpacer 分のオフセット。
      */
     dataRowToDomIndex(dataRowIndex: number): number | null {
         if (!this.enabled) return dataRowIndex + 1;
         if (dataRowIndex < this.renderedStart || dataRowIndex >= this.renderedEnd) return null;
-        return dataRowIndex - this.renderedStart + 1;
+        return dataRowIndex - this.renderedStart + VirtualScrollController.DATA_ROW_START_INDEX;
     }
 
     /**
      * DOMの子要素インデックスがスペーサー行かどうかを判定する。
-     * 方式Bではスペーサーがテーブル外にあるため常にfalse。
+     * enabled=true: children[1] が topSpacer なので true を返す。
+     * enabled=false: topSpacer は挿入されないため常に false。
      */
-    isSpacerIndex(_domChildIndex: number): boolean {
-        return false;
+    isSpacerIndex(domChildIndex: number): boolean {
+        if (!this.enabled) return false;
+        return domChildIndex === 1;
     }
 
     /**
-     * スペーサー行の数を返す。
-     * 方式Bではスペーサーがテーブル外にあるため常に0。
+     * テーブル内に配置されたスペーサー行の数を返す。
+     * enabled=true: topSpacer が children[1] にあるため 1。
+     * enabled=false: スペーサーなしのため 0。
      */
     spacerCount(): number {
-        return 0;
+        return this.enabled ? 1 : 0;
     }
 
     /**
@@ -249,10 +269,10 @@ export class VirtualScrollController {
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        // rowTop/rowBottom はスクロールコンテンツ内の絶対座標。
-        // 方式B（テーブル外スペーサー）では topSpacer.height = renderedStart * rowHeight なので、
-        // 行 i の絶対位置は i * rowHeight + headerHeight になる（スペーサー分が自動的に加算される）。
-        // viewTop/viewBottom も scrollTop（絶対座標）で比較する。
+        // topSpacer がテーブル内にあるため、行 i の絶対位置は
+        // headerHeight + i * rowHeight（ヘッダー高さ + データ行のオフセット）になる。
+        // topSpacer の高さは renderedStart * rowHeight だが、
+        // 全行の仮想的な位置は topSpacer に依存せず i * rowHeight で一定。
         const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
         const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
         const viewTop = this.scrollContainer.scrollTop;
@@ -271,7 +291,10 @@ export class VirtualScrollController {
             this.scrollContainer.removeEventListener('scroll', this.scrollListener);
         }
         if (this.topSpacer !== false) {
-            this.topSpacer.remove();
+            // topSpacer はセル要素（.virtual-scroll-top-spacer-cell）を指すため、
+            // 親の行要素（.virtual-scroll-top-spacer）ごと削除する
+            const topRow = this.topSpacer.parentElement;
+            if (topRow !== null) topRow.remove();
         }
         if (this.bottomSpacer !== false) {
             this.bottomSpacer.remove();
@@ -298,9 +321,11 @@ export class VirtualScrollController {
      * データ行がDOMに存在しない場合は前回の値（初期値はROW_TOTAL_HEIGHT_PX）を維持する。
      */
     private measureActualRowHeight(): void {
-        // children[0] はヘッダー行、children[1] が最初のデータ行
-        if (this.tableElement.children.length < 2) return;
-        const firstDataRow = this.tableElement.children[1] as HTMLElement;
+        // enabled=true: children[0]=header, [1]=topSpacer, [2]=最初のデータ行
+        // enabled=false: children[0]=header, [1]=最初のデータ行
+        const dataStart = this.enabled ? VirtualScrollController.DATA_ROW_START_INDEX : 1;
+        if (this.tableElement.children.length <= dataStart) return;
+        const firstDataRow = this.tableElement.children[dataStart] as HTMLElement;
         if (!firstDataRow) return;
         // offsetHeight は整数に丸められるため、DPIスケーリング時に実際のレンダリング高さと乖離する。
         // 例: 125%スケーリングでは border 1px が 0.8px にレンダリングされ、行高さが 20.8px になるが
@@ -333,10 +358,12 @@ export class VirtualScrollController {
 
         const scrollTop = this.scrollContainer.scrollTop;
         const viewportHeight = this.scrollContainer.clientHeight;
+        const headerHeight = this.getHeaderHeight();
 
-        // 方式B（テーブル外スペーサー）では、scrollTop は topSpacer + テーブル + bottomSpacer
-        // 全体の中での位置を示す。scrollTop / rowHeight で先頭行を直接算出できる。
-        const firstVisibleRow = Math.max(0, Math.floor(scrollTop / rowHeight));
+        // topSpacer がテーブル内にあるため、scrollTop にはヘッダー高さが含まれる。
+        // データ行領域の scrollTop = scrollTop - headerHeight で先頭行を算出する。
+        const dataAreaScrollTop = Math.max(0, scrollTop - headerHeight);
+        const firstVisibleRow = Math.max(0, Math.floor(dataAreaScrollTop / rowHeight));
         const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + 1;
         const lastVisibleRow = firstVisibleRow + visibleRowCount;
 
@@ -349,7 +376,6 @@ export class VirtualScrollController {
         // 行を削除してからスペーサーを設定すると、一時的にコンテンツ高さが激減し
         // ブラウザがscrollTopをクランプしてスクロール位置が0にリセットされる。
         // スペーサーを先に膨らませることで、行削除中もコンテンツ高さを安定させる。
-        const savedScrollTop = scrollTop;
         const savedScrollLeft = this.scrollContainer.scrollLeft;
 
         if (this.topSpacer !== false) {
@@ -369,10 +395,9 @@ export class VirtualScrollController {
             this.afterRowsUpdated();
         }
 
-        // DOM操作でブラウザがスクロール位置をリセットした場合に復元する
-        if (this.scrollContainer.scrollTop !== savedScrollTop) {
-            this.scrollContainer.scrollTop = savedScrollTop;
-        }
+        // scrollTop 復元: GETによる強制レイアウトを回避するため無条件SETにする。
+        // topSpacer がテーブル内にあるため DOM 操作後のスクロール位置ずれを防止する。
+        this.scrollContainer.scrollTop = scrollTop;
         if (this.scrollContainer.scrollLeft !== savedScrollLeft) {
             this.scrollContainer.scrollLeft = savedScrollLeft;
         }
@@ -389,10 +414,11 @@ export class VirtualScrollController {
         const overlapStart = Math.max(this.renderedStart, newStart);
         const overlapEnd = Math.min(this.renderedEnd, newEnd);
 
+        const dataStart = VirtualScrollController.DATA_ROW_START_INDEX;
         if (overlapStart >= overlapEnd) {
             // 重複なし: 全行を入れ替える
-            // 既存のデータ行をすべて削除する（ヘッダー行は残す）
-            while (this.tableElement.children.length > 1) {
+            // 既存のデータ行をすべて削除する（ヘッダー行 + topSpacer は残す）
+            while (this.tableElement.children.length > dataStart) {
                 this.tableElement.removeChild(this.tableElement.lastChild as Node);
             }
             // 新しい範囲の行をすべて生成する
@@ -406,8 +432,8 @@ export class VirtualScrollController {
             // 上端の不要な行を削除する（renderedStart ～ overlapStart の行）
             const removeTopCount = overlapStart - this.renderedStart;
             for (let i = 0; i < removeTopCount; i++) {
-                // children[1] がデータ行の先頭（children[0] はヘッダー行）
-                const row = this.tableElement.children[1];
+                // children[dataStart] がデータ行の先頭（[0]=header, [1]=topSpacer）
+                const row = this.tableElement.children[dataStart];
                 if (row) this.tableElement.removeChild(row);
             }
 
@@ -419,9 +445,8 @@ export class VirtualScrollController {
             }
 
             // 上端に新しい行を挿入する（newStart ～ overlapStart の行）
-            // ヘッダー行の次（children[1]）に順番に挿入する
-            const headerRow = this.tableElement.children[0];
-            const insertRef = headerRow.nextSibling;
+            // topSpacer の次（children[dataStart]）に順番に挿入する
+            const insertRef = this.tableElement.children[dataStart];
             for (let i = newStart; i < overlapStart; i++) {
                 const row = this.renderRow(i);
                 this.tableElement.insertBefore(row, insertRef);

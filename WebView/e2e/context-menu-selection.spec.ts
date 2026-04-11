@@ -55,8 +55,9 @@ test(
 
         // "value"列（インデックス2）のデータセルへ
         // マウスを移動する
+        // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
         const valueCell = table
-            .locator('.editor-table-row:nth-child(2)')
+            .locator('.editor-table-row:nth-child(3)')
             .locator(
                 '.editor-table-cell'
                 + ':not(.editor-table-row-header)'
