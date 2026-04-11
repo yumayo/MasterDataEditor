@@ -121,4 +121,51 @@ test.describe('仮想スクロール × 固定行', () => {
         // 固定行2行 + ビューポート内の通常行（少なくとも数行はある）
         expect(visibleCount).toBeGreaterThan(5);
     });
+
+    test('固定行を選択してスクロールしてもフィルハンドルが固定行セルの右下に正しく位置する', async ({ page }) => {
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'big_table');
+
+        // 固定行のセル（データ行0, value列）をクリックして選択する
+        const dataRows = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)');
+        const frozenRow = dataRows.nth(0);
+        // value列（3番目のデータセル = children[2] ※行ヘッダー除く）をクリック
+        const targetCell = frozenRow.locator('.editor-table-cell').nth(2);
+        await targetCell.click();
+
+        // まずスクロールを一度行って、仮想スクロールの表示範囲を安定させる。
+        // 初回描画では renderedEnd が大きく、スクロール時に行入れ替えが発生して
+        // afterRowsUpdated → updateFillHandlePosition が呼ばれてしまう。
+        // 安定後の微小スクロールでは行入れ替えが発生しないため、
+        // 修正前は updateFillHandlePosition が呼ばれず fillHandle の位置がずれる。
+        const scrollContainer = page.locator('.editor-left-pane');
+        await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
+        await page.waitForTimeout(50);
+
+        // 安定後のfillHandle の style.top を記録する
+        const initialTop = await page.evaluate(() => {
+            const handle = document.querySelector('.fill-handle') as HTMLElement;
+            return parseFloat(handle.style.top);
+        });
+
+        // 2回目の微小スクロール: 行入れ替えが発生しない量（1px追加）
+        const scrollAmount = 5;
+        await scrollContainer.evaluate((el, amount) => { el.scrollTop += amount; }, scrollAmount);
+        await page.waitForTimeout(50);
+
+        // スクロール後のfillHandle の style.top を取得する
+        const afterScrollTop = await page.evaluate(() => {
+            const handle = document.querySelector('.fill-handle') as HTMLElement;
+            return parseFloat(handle.style.top);
+        });
+
+        // stickyセルのビューポート位置は不変なので、fillHandle の style.top は
+        // スクロール量分だけ増加する必要がある。
+        // 修正前: style.top が更新されないため差分0 → 失敗
+        // 修正後: スクロールイベントで updateFillHandlePosition が呼ばれ、差分 ≈ scrollAmount
+        expect(Math.abs((afterScrollTop - initialTop) - scrollAmount)).toBeLessThanOrEqual(2);
+    });
 });

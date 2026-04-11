@@ -630,6 +630,17 @@ export class Selection {
         }
     }
 
+    /**
+     * フィルハンドルの位置を再計算する。
+     * スクロール時に固定行（frozenRow）のフィルハンドル位置を更新するために
+     * EditorTable から呼ばれる。通常は private な updateRenderer() 経由で呼ばれるが、
+     * 仮想スクロールの行入れ替えが発生しない微小スクロールでは updateRenderer() が
+     * 呼ばれないため、EditorTable のスクロールコールバックから直接呼ぶ必要がある。
+     */
+    refreshFillHandlePosition(): void {
+        this.updateFillHandlePosition();
+    }
+
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
         let endRow = selectionRange.endRow;

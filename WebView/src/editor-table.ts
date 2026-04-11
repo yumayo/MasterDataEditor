@@ -275,7 +275,8 @@ export class EditorTable {
         // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
         this.virtualScroll.connectRenderRow(
             (dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex),
-            () => this.reapplyRowDecorations()
+            () => this.reapplyRowDecorations(),
+            () => this.onScrollForFrozenFillHandle()
         );
     }
 
@@ -667,6 +668,28 @@ export class EditorTable {
                 }
             }
         }
+    }
+
+    /**
+     * スクロールイベント時に行入れ替えの有無にかかわらず呼ばれる。
+     * 固定行・固定列のセルが選択されている場合、fillHandle の位置を更新する。
+     * 固定行/列は position:sticky でビューポートに固定されるが、fillHandle は position:absolute で
+     * wrapperElement 内に配置されているため、スクロール時に位置のずれ（プルプル）が発生する。
+     * 行入れ替え発生時は reapplyRowDecorations → updateFillHandlePosition が呼ばれるので
+     * 重複更新になるが、軽量な処理のためパフォーマンス影響は無視できる。
+     */
+    private onScrollForFrozenFillHandle(): void {
+        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
+        const range = this.selection.getSelectionRange();
+        // endRow が固定行内、または endColumn が固定列内にある場合のみ更新する。
+        // endRow はデータ行インデックス（1始まり、ヘッダー行は0）なので frozenRowCount と比較。
+        // endColumn は DOM列インデックス（dataColumnOffset() 含む）なので
+        // データ列インデックスに変換して frozenColumnCount と比較する。
+        const isFrozenRow = this.frozenRowCount > 0 && range.endRow <= this.frozenRowCount;
+        const endDataColumn = range.endColumn - this.dataColumnOffset();
+        const isFrozenColumn = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
+        if (!isFrozenRow && !isFrozenColumn) return;
+        this.selection.refreshFillHandlePosition();
     }
 
     /**

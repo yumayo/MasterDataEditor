@@ -64,6 +64,12 @@ export class VirtualScrollController {
      */
     private afterRowsUpdated: (() => void) | false;
 
+    /**
+     * スクロールイベント時に常に呼ばれるコールバック。行入れ替え有無にかかわらず実行される。
+     * 固定行のフィルハンドル位置更新など、スクロール位置に依存する軽量な処理を登録する。
+     */
+    private afterScroll: (() => void) | false;
+
     constructor(
         tableElement: HTMLElement,
         scrollContainer: HTMLElement,
@@ -79,6 +85,7 @@ export class VirtualScrollController {
         this.isRecalculating = false;
         this.renderRow = false;
         this.afterRowsUpdated = false;
+        this.afterScroll = false;
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
         this.renderedStart = 0;
@@ -101,9 +108,10 @@ export class VirtualScrollController {
      * initializeModules() 内で正しい this を持つコールバックを渡すこと。
      * enabled=false の場合は呼ばなくてよい（renderRow は使用されない）。
      */
-    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement, afterRowsUpdated: () => void): void {
+    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement, afterRowsUpdated: () => void, afterScroll: () => void): void {
         this.renderRow = renderRow;
         this.afterRowsUpdated = afterRowsUpdated;
+        this.afterScroll = afterScroll;
     }
 
     /**
@@ -153,6 +161,11 @@ export class VirtualScrollController {
     onScroll(): void {
         if (!this.enabled) return;
         this.recalculate();
+        // 行入れ替え有無にかかわらず、スクロール時に常にコールバックを呼ぶ。
+        // 固定行のフィルハンドル位置更新に必要。
+        if (this.afterScroll !== false) {
+            this.afterScroll();
+        }
     }
 
     /** 総行数が変化した際に呼ぶ */
