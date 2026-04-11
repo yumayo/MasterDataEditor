@@ -686,6 +686,8 @@ export class EditorTable {
         this.reference.updateReferenceHints();
         // ブックマーク属性を再適用する（仮想スクロールで新しく生成された行にブックマークマークが必要）
         this.restoreBookmarkMarks();
+        // 固定行のstickyスタイルを再適用する（仮想スクロールの行入れ替えでDOMが再生成された場合に必要）
+        if (this.frozenRowCount > 0) { this.applyFreezeRowStyles(); }
     }
 
     /**
@@ -1468,6 +1470,8 @@ export class EditorTable {
     freezeRows(count: number): void {
         if (count === 0) { this.unfreezeRows(); return; }
         this.frozenRowCount = count;
+        // 仮想スクロールに固定行数を通知し、固定行がDOMから削除されないようにする
+        this.virtualScroll.setFrozenRowCount(count);
         this.applyFreezeRowStyles();
     }
 
@@ -1478,6 +1482,8 @@ export class EditorTable {
     unfreezeRows(): void {
         this.clearFreezeRowStyles();
         this.frozenRowCount = 0;
+        // 仮想スクロールの固定行数をリセットする
+        this.virtualScroll.setFrozenRowCount(0);
     }
 
     /**
@@ -3127,19 +3133,25 @@ export class EditorTable {
             ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
             : -1;
         if (pkColIndex === -1) return;
-        // バーチャルスクロールではDOMに存在する行のみ処理する
+        // DOMに存在する行のみ処理する。
+        // 固定行（0〜frozenRowCount-1）は常にDOMに存在し、ビューポート行（rendered.start〜rendered.end）も
+        // DOMに存在する。その間の行（frozenRowCount〜rendered.start）はDOMに存在しないためスキップする。
         const rendered = this.virtualScroll.getRenderedRange();
         const loopEnd = Math.min(this.storeRowIndices.length, rendered.end);
-        for (let domDataRow = rendered.start; domDataRow < loopEnd; domDataRow++) {
+        for (let domDataRow = 0; domDataRow < loopEnd; domDataRow++) {
+            // 固定行とビューポート行の間のギャップはDOMに存在しないためスキップする
+            if (domDataRow >= this.frozenRowCount && domDataRow < rendered.start) continue;
             const domRow = domDataRow + 1;
             const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
             if (pkValue === '') continue;
             for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
                 const columnName = this.tableData.header[domCol].name;
+                const cell = this.getCellOrNull(domRow, domCol + this.dataColumnOffset());
+                if (cell === null) continue;
                 if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
-                    this.getCell(domRow, domCol + this.dataColumnOffset()).setAttribute('data-bookmarked', '');
+                    cell.setAttribute('data-bookmarked', '');
                 } else {
-                    this.getCell(domRow, domCol + this.dataColumnOffset()).removeAttribute('data-bookmarked');
+                    cell.removeAttribute('data-bookmarked');
                 }
             }
         }

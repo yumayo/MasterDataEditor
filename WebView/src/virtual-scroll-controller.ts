@@ -7,7 +7,7 @@ import {ROW_TOTAL_HEIGHT_PX} from "./constant";
  * topSpacer はテーブル内のヘッダー行直後（children[1]）に display:table-row として配置する。
  * これによりヘッダー行（position:sticky; top:0）の自然位置が常に0になり、
  * コンポジタースレッドの非同期スクロール中でもヘッダーが画面下に落ちることがない。
- * テーブル内 DOM 構造: [0]=header, [1]=topSpacer, [2..]=data rows
+ * テーブル内 DOM 構造: [0]=header, [1]=topSpacer, [2..2+frozen)=固定行, [2+frozen..)=ビューポート行
  * bottomSpacer はテーブル外のまま。
  *
  * enabled=false（ミニテーブル）の場合は全メソッドがパススルー動作する。
@@ -25,7 +25,14 @@ export class VirtualScrollController {
     /** 総データ行数（バッファ行含む） */
     private totalRowCount: number;
 
-    /** 現在DOMに存在するデータ行の開始インデックス（0始まり） */
+    /**
+     * 固定行数（0=未固定）。
+     * 固定行はスクロール位置に関わらず常にDOMに存在し、topSpacer直後に配置される。
+     * updateRenderedRows() の削除対象から除外される。
+     */
+    private frozenRowCount: number;
+
+    /** 現在DOMに存在するデータ行の開始インデックス（0始まり、固定行を含む） */
     private renderedStart: number;
     /** 現在DOMに存在するデータ行の終了インデックス（排他） */
     private renderedEnd: number;
@@ -67,6 +74,7 @@ export class VirtualScrollController {
         this.scrollContainer = scrollContainer;
         this.enabled = enabled;
         this.totalRowCount = totalRowCount;
+        this.frozenRowCount = 0;
         this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
         this.isRecalculating = false;
         this.renderRow = false;
@@ -157,6 +165,23 @@ export class VirtualScrollController {
     }
 
     /**
+     * 固定行数を設定する。
+     * 固定行はスクロール位置に関わらず常にDOMに存在し、updateRenderedRows() で削除されない。
+     * EditorTable.freezeRows() / unfreezeRows() から呼ばれる。
+     * enabled=false（ミニテーブル）の場合は設定のみ保持する（全行がDOMに存在するため動作に影響なし）。
+     *
+     * renderedStart が frozenRowCount 未満の場合は引き上げる。
+     * 固定行はビューポート行とは別にDOMに常駐するため、ビューポート行の管理範囲から除外する。
+     * これにより updateRenderedRows() が固定行を誤って削除することを防ぐ。
+     */
+    setFrozenRowCount(count: number): void {
+        this.frozenRowCount = count;
+        if (this.renderedStart < count) {
+            this.renderedStart = count;
+        }
+    }
+
+    /**
      * scrollContainer の scrollTop を 0 にリセットする。
      * フィルター適用後にコンテンツ高さが大幅に縮小した場合、
      * scrollTop がコンテンツ高さを超えた位置に留まると recalculateCore() で
@@ -188,15 +213,22 @@ export class VirtualScrollController {
         while (this.tableElement.children.length > VirtualScrollController.DATA_ROW_START_INDEX) {
             this.tableElement.removeChild(this.tableElement.lastChild as Node);
         }
-        // renderedStart/renderedEnd を「何も描画されていない」状態にリセットする
-        this.renderedStart = 0;
-        this.renderedEnd = 0;
+        // 固定行を再生成してDOMに配置する（常にtopSpacer直後に存在する必要がある）
+        for (let i = 0; i < this.frozenRowCount; i++) {
+            const row = this.renderRow(i);
+            this.tableElement.appendChild(row);
+        }
+        // renderedStart/renderedEnd を固定行の直後にリセットする
+        // （固定行は既にDOMに存在するが renderedStart/renderedEnd の管理対象は非固定行のみ）
+        this.renderedStart = this.frozenRowCount;
+        this.renderedEnd = this.frozenRowCount;
         // recalculate がビューポートに基づいて正しい範囲を描画する
         this.recalculate();
     }
 
     /**
-     * 現在の表示範囲 [start, end) を返す。
+     * 現在のビューポート行の表示範囲 [start, end) を返す。
+     * 固定行（0〜frozenRowCount-1）はこの範囲に含まれないが、常にDOMに存在する。
      * enabled=false では常に [0, totalRowCount) を返す（全行表示中）。
      */
     getRenderedRange(): { start: number; end: number } {
@@ -206,13 +238,21 @@ export class VirtualScrollController {
     /**
      * 論理データ行インデックス（0始まり）をDOMの子要素インデックスに変換する。
      * enabled=false: 常に dataRowIndex + 1 を返す（ヘッダー行分のオフセット）。
-     * enabled=true: 表示範囲内なら dataRowIndex - renderedStart + DATA_ROW_START_INDEX、範囲外なら null。
-     * DATA_ROW_START_INDEX はヘッダー行 + topSpacer 分のオフセット。
+     * enabled=true:
+     *   固定行（0 <= dataRowIndex < frozenRowCount）: DATA_ROW_START_INDEX + dataRowIndex（常にDOM上に存在）
+     *   非固定行（renderedStart <= dataRowIndex < renderedEnd）:
+     *     dataRowIndex - renderedStart + DATA_ROW_START_INDEX + frozenRowCount
+     *   上記以外（表示範囲外）: null
      */
     dataRowToDomIndex(dataRowIndex: number): number | null {
         if (!this.enabled) return dataRowIndex + 1;
+        // 固定行は常にDOMに存在する（topSpacer直後に配置）
+        if (dataRowIndex < this.frozenRowCount) {
+            return dataRowIndex + VirtualScrollController.DATA_ROW_START_INDEX;
+        }
+        // 非固定行: ビューポート範囲内のみDOMに存在
         if (dataRowIndex < this.renderedStart || dataRowIndex >= this.renderedEnd) return null;
-        return dataRowIndex - this.renderedStart + VirtualScrollController.DATA_ROW_START_INDEX;
+        return dataRowIndex - this.renderedStart + VirtualScrollController.DATA_ROW_START_INDEX + this.frozenRowCount;
     }
 
     /**
@@ -266,13 +306,15 @@ export class VirtualScrollController {
      */
     ensureRowVisible(dataRowIndex: number): void {
         if (!this.enabled) return;
+        // 固定行は常に表示されているためスクロール不要
+        if (dataRowIndex < this.frozenRowCount) return;
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        // topSpacer がテーブル内にあるため、行 i の絶対位置は
-        // headerHeight + i * rowHeight（ヘッダー高さ + データ行のオフセット）になる。
-        // topSpacer の高さは renderedStart * rowHeight だが、
-        // 全行の仮想的な位置は topSpacer に依存せず i * rowHeight で一定。
+        // 行の絶対位置を計算する。固定行は position:sticky でヘッダー直下に表示されるため、
+        // 非固定行の表示領域はヘッダー + 固定行の高さ分だけ下にオフセットされる。
+        // しかし仮想コンテンツ全体の高さは全行数 * rowHeight で計算するため、
+        // 非固定行の絶対位置は headerHeight + dataRowIndex * rowHeight のまま。
         const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
         const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
         const viewTop = this.scrollContainer.scrollTop;
@@ -377,14 +419,19 @@ export class VirtualScrollController {
         const headerHeight = this.getHeaderHeight();
 
         // topSpacer がテーブル内にあるため、scrollTop にはヘッダー高さが含まれる。
-        // データ行領域の scrollTop = scrollTop - headerHeight で先頭行を算出する。
-        const dataAreaScrollTop = Math.max(0, scrollTop - headerHeight);
+        // 固定行は position:sticky でヘッダー直下に固定表示されるため、
+        // データ行領域のスクロールオフセットからは固定行の高さも除外する。
+        const frozenHeight = this.frozenRowCount * rowHeight;
+        const dataAreaScrollTop = Math.max(0, scrollTop - headerHeight - frozenHeight);
         const firstVisibleRow = Math.max(0, Math.floor(dataAreaScrollTop / rowHeight));
         const visibleRowCount = Math.ceil(viewportHeight / rowHeight) + 1;
         const lastVisibleRow = firstVisibleRow + visibleRowCount;
 
-        const newStart = Math.max(0, firstVisibleRow - VirtualScrollController.OVERSCAN);
-        const newEnd = Math.min(this.totalRowCount, lastVisibleRow + VirtualScrollController.OVERSCAN);
+        // 非固定行の表示範囲を計算する。固定行はDOMに常駐するため表示範囲に含めない。
+        // firstVisibleRow は固定行を除いた相対インデックスなので、frozenRowCount を加算して
+        // 全体のデータ行インデックスに変換する。
+        const newStart = Math.max(this.frozenRowCount, firstVisibleRow + this.frozenRowCount - VirtualScrollController.OVERSCAN);
+        const newEnd = Math.min(this.totalRowCount, lastVisibleRow + this.frozenRowCount + VirtualScrollController.OVERSCAN);
 
         if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
 
@@ -392,10 +439,11 @@ export class VirtualScrollController {
         // 行を削除してからスペーサーを設定すると、一時的にコンテンツ高さが激減し
         // ブラウザがscrollTopをクランプしてスクロール位置が0にリセットされる。
         // スペーサーを先に膨らませることで、行削除中もコンテンツ高さを安定させる。
+        // topSpacer は固定行の後のギャップを埋めるため、固定行の高さ分を差し引く。
         const savedScrollLeft = this.scrollContainer.scrollLeft;
 
         if (this.topSpacer !== false) {
-            this.topSpacer.style.height = `${newStart * rowHeight}px`;
+            this.topSpacer.style.height = `${Math.max(0, (newStart - this.frozenRowCount) * rowHeight)}px`;
         }
         if (this.bottomSpacer !== false) {
             this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * rowHeight)}px`;
@@ -422,19 +470,26 @@ export class VirtualScrollController {
     /**
      * DOMのデータ行を新しい表示範囲に更新する。
      * 既存の行との差分を効率的に計算し、不要な行を削除、新しい行を生成する。
+     *
+     * 固定行（frozenRowCount > 0）がある場合:
+     *   DOM構造: [0]=header, [1]=topSpacer, [2..2+frozen)=固定行, [2+frozen..)=ビューポート行
+     *   固定行は常にDOMに存在し、この関数では操作しない。
+     *   renderedStart/renderedEnd は frozenRowCount 以上の値で呼ばれる。
+     *   ビューポート行の操作は viewportStart (= dataStart + frozenRowCount) から行う。
      */
     private updateRenderedRows(newStart: number, newEnd: number): void {
         if (this.renderRow === false) return;
+
+        // ビューポート行のDOM開始位置（固定行の直後）
+        const viewportDomStart = VirtualScrollController.DATA_ROW_START_INDEX + this.frozenRowCount;
 
         // 現在の範囲と新しい範囲の重複部分を計算する
         const overlapStart = Math.max(this.renderedStart, newStart);
         const overlapEnd = Math.min(this.renderedEnd, newEnd);
 
-        const dataStart = VirtualScrollController.DATA_ROW_START_INDEX;
         if (overlapStart >= overlapEnd) {
-            // 重複なし: 全行を入れ替える
-            // 既存のデータ行をすべて削除する（ヘッダー行 + topSpacer は残す）
-            while (this.tableElement.children.length > dataStart) {
+            // 重複なし: ビューポート行を全入れ替え（固定行は残す）
+            while (this.tableElement.children.length > viewportDomStart) {
                 this.tableElement.removeChild(this.tableElement.lastChild as Node);
             }
             // 新しい範囲の行をすべて生成する
@@ -448,8 +503,8 @@ export class VirtualScrollController {
             // 上端の不要な行を削除する（renderedStart ～ overlapStart の行）
             const removeTopCount = overlapStart - this.renderedStart;
             for (let i = 0; i < removeTopCount; i++) {
-                // children[dataStart] がデータ行の先頭（[0]=header, [1]=topSpacer）
-                const row = this.tableElement.children[dataStart];
+                // viewportDomStart がビューポート行の先頭（固定行の直後）
+                const row = this.tableElement.children[viewportDomStart];
                 if (row) this.tableElement.removeChild(row);
             }
 
@@ -461,8 +516,8 @@ export class VirtualScrollController {
             }
 
             // 上端に新しい行を挿入する（newStart ～ overlapStart の行）
-            // topSpacer の次（children[dataStart]）に順番に挿入する
-            const insertRef = this.tableElement.children[dataStart];
+            // ビューポート行の先頭に挿入する
+            const insertRef = this.tableElement.children[viewportDomStart];
             for (let i = newStart; i < overlapStart; i++) {
                 const row = this.renderRow(i);
                 this.tableElement.insertBefore(row, insertRef);

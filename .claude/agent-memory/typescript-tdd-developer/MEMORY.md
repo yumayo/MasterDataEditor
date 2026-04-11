@@ -12,6 +12,7 @@
 ## Virtual Scroll
 - [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — 方式B（テーブル内topSpacer）: scrollTopリセット問題、totalRowCountにバッファ行含む、rAF復元
 - [バーチャルスクロール統合問題](virtual-scroll-integration-issues.md) — getCellPosition修正、renderedEnd同期、スクロール位置復元
+- [仮想スクロール×固定行の統合](virtual-scroll-frozen-rows.md) — 固定行DOM常駐、renderedStart引き上げ、viewportDomStartオフセット
 
 ## Key Files
 - `/WebView/src/editor-table.ts` - Core table facade
