@@ -277,12 +277,28 @@ export class VirtualScrollController {
         const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
         const viewTop = this.scrollContainer.scrollTop;
         const viewBottom = viewTop + this.scrollContainer.clientHeight;
+        let targetScrollTop = this.scrollContainer.scrollTop;
         if (rowAbsoluteTop < viewTop) {
-            this.scrollContainer.scrollTop = rowAbsoluteTop - headerHeight;
+            targetScrollTop = rowAbsoluteTop - headerHeight;
         } else if (rowAbsoluteBottom > viewBottom) {
-            this.scrollContainer.scrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
+            targetScrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
         }
-        this.recalculate();
+        if (targetScrollTop !== this.scrollContainer.scrollTop) {
+            this.scrollContainer.scrollTop = targetScrollTop;
+            this.recalculate();
+            // topSpacer がテーブル内（display:table-row）にあるため、recalculate のDOM操作後に
+            // ブラウザの非同期レイアウト再計算で scrollTop がリセットされることがある。
+            // rAF 後に scrollTop を再設定して非同期リセットに対応する。
+            const container = this.scrollContainer;
+            requestAnimationFrame(() => {
+                if (container.scrollTop !== targetScrollTop) {
+                    container.scrollTop = targetScrollTop;
+                    container.dispatchEvent(new Event('scroll'));
+                }
+            });
+        } else {
+            this.recalculate();
+        }
     }
 
     /** DOM破棄 */

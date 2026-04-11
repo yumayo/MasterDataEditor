@@ -477,9 +477,12 @@ export class EditorTable {
         // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
         this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
         // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
-        // 差分テーブル（emptyRowCount=0, enableVirtualScroll=true）では VirtualScrollController の
-        // totalRowCount がコンストラクタ時点で0のまま。storeRowIndices 確定後に実データ行数で更新する。
-        this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length);
+        // totalRowCount はバッファ行を含むDOM上の総データ行数。
+        // 通常テーブル: emptyRowCount = body.length + 1（データ行 + バッファ行1行）
+        // 差分テーブル: emptyRowCount = 0 だが実データ行が存在するため storeRowIndices.length を使う。
+        // forceRecalculate() が totalRowCount に基づいてDOM行を管理するため、
+        // バッファ行を含めないと forceRecalculate 時にバッファ行がDOMから削除される。
+        this.virtualScroll.updateTotalRowCount(Math.max(this.emptyRowCount, this.storeRowIndices.length));
         // 初期レンダリングでは tableData.body から直接セル値を取得する。
         // renderDataRow() は storeRowIndices 経由でストアから値を取得するが、
         // ミニテーブルでは initialize() 後に setStoreRowIndices() で上書きされるため使えない。

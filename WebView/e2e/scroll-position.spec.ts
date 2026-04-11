@@ -275,30 +275,25 @@ test(
         // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
         const targetRowIndex = 30;
         const ROW_HEIGHT = 21;
-        const scrollSetup = await page.evaluate(([rowIdx, rowHeight]) => {
+
+        // スクロール位置を設定し、バーチャルスクロールの recalculate でDOM行を更新する。
+        // topSpacer がテーブル内（display:table-row）にあるため、scrollTop の JS 設定後に
+        // ブラウザの非同期レイアウト再計算で scrollTop がリセットされることがある。
+        // scrollTop を設定→安定するまでポーリング→ターゲット行のDOMが存在するまで待機する。
+        await page.waitForFunction(([rowIdx, rowHeight]) => {
             const container = document.querySelector('.editor-left-pane');
-            if (!container) return { scrollTop: -1, clientHeight: 0, scrollHeight: 0, targetScrollTop: 0 };
+            if (!container) return false;
             const rowTop = rowIdx * rowHeight;
             const targetScrollTop = rowTop - container.clientHeight + 5;
-            container.scrollTop = targetScrollTop;
-            // scrollTop設定だけではscrollイベントが非同期のため、rAFスロットルを挟んでrecalculateが遅延する。
-            // 確実にDOMを更新するために同期的にscrollイベントをディスパッチしてrecalculateを強制発火させる。
-            container.dispatchEvent(new Event('scroll'));
-            return {
-                scrollTop: container.scrollTop,
-                clientHeight: container.clientHeight,
-                scrollHeight: container.scrollHeight,
-                targetScrollTop,
-            };
-        }, [targetRowIndex, ROW_HEIGHT] as [number, number]);
-
-        // スクロール設定が正しく反映されたことを確認する
-        expect(scrollSetup.scrollTop, `スクロール設定が反映されていない: clientHeight=${scrollSetup.clientHeight}, scrollHeight=${scrollSetup.scrollHeight}, targetScrollTop=${scrollSetup.targetScrollTop}`).toBeGreaterThan(0);
-
-        // scrollTop設定後のscrollイベント発火→rAFスロットル→recalculate→DOM更新を待つ。
-        // page.evaluate内でscrollTopを設定してもブラウザのscrollイベントは非同期発火するため、
-        // rAFだけでは不十分。短いタイムアウトでイベントループの完了を保証する。
-        await page.waitForTimeout(100);
+            // scrollTop がターゲット位置から大きくずれている場合は再設定する
+            if (Math.abs(container.scrollTop - targetScrollTop) > 1) {
+                container.scrollTop = targetScrollTop;
+                container.dispatchEvent(new Event('scroll'));
+                return false;
+            }
+            // ターゲット行がDOMに存在することを確認する
+            return document.querySelector(`.editor-left-pane .editor-table .editor-table-row[data-store-index="${rowIdx}"]`) !== null;
+        }, [targetRowIndex, ROW_HEIGHT] as [number, number], { timeout: 3000 });
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);
@@ -370,21 +365,22 @@ test(
         // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
         const targetRowIndex = 30;
         const ROW_HEIGHT = 21;
-        await page.evaluate(([rowIdx, rowHeight]) => {
-            const container = document.querySelector('.editor-left-pane');
-            if (!container) return;
-            // 行の上端がコンテナ下端から5pxだけ見える位置にスクロール
-            const rowTop = rowIdx * rowHeight;
-            container.scrollTop = rowTop - container.clientHeight + 5;
-            // scrollTop設定だけではscrollイベントが非同期のため、rAFスロットルを挟んでrecalculateが遅延する。
-            // 確実にDOMを更新するために同期的にscrollイベントをディスパッチしてrecalculateを強制発火させる。
-            container.dispatchEvent(new Event('scroll'));
-        }, [targetRowIndex, ROW_HEIGHT] as [number, number]);
 
-        // scrollTop設定後のscrollイベント発火→rAFスロットル→recalculate→DOM更新を待つ。
-        // page.evaluate内でscrollTopを設定してもブラウザのscrollイベントは非同期発火するため、
-        // rAFだけでは不十分。短いタイムアウトでイベントループの完了を保証する。
-        await page.waitForTimeout(100);
+        // スクロール位置を設定し、バーチャルスクロールの recalculate でDOM行を更新する。
+        // topSpacer がテーブル内にあるため、scrollTop の JS 設定後にブラウザの非同期レイアウトで
+        // scrollTop がリセットされることがある。安定するまでポーリングする。
+        await page.waitForFunction(([rowIdx, rowHeight]) => {
+            const container = document.querySelector('.editor-left-pane');
+            if (!container) return false;
+            const rowTop = rowIdx * rowHeight;
+            const targetScrollTop = rowTop - container.clientHeight + 5;
+            if (Math.abs(container.scrollTop - targetScrollTop) > 1) {
+                container.scrollTop = targetScrollTop;
+                container.dispatchEvent(new Event('scroll'));
+                return false;
+            }
+            return document.querySelector(`.editor-left-pane .editor-table .editor-table-row[data-store-index="${rowIdx}"]`) !== null;
+        }, [targetRowIndex, ROW_HEIGHT] as [number, number], { timeout: 3000 });
 
         // スクロール後にターゲットセルの下端が画面外にはみ出していることを確認する
         const containerRectAfterScroll = await getContainerRectAsync(page);
