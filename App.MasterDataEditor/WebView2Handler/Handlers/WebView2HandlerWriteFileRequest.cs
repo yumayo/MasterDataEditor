@@ -67,6 +67,7 @@ namespace App.MasterDataEditor
 
 				var data = dataElement.GetString();
 				File.WriteAllText(filePath, data);
+				AfterSaveHookRunner.StartIfExists(workDir, filename);
 
 				return new
 				{
