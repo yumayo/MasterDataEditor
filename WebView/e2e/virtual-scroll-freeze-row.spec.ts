@@ -50,6 +50,19 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     return table;
 }
 
+async function rightClickRowHeaderAsync(table: Locator, dataRowIndex: number): Promise<void> {
+    const header = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)')
+        .nth(dataRowIndex)
+        .locator('.editor-table-row-header');
+    await header.click({ button: 'right' });
+}
+
+async function clickContextMenuItemAsync(page: Page, label: string): Promise<void> {
+    const menu = page.locator('.context-menu.visible');
+    await expect(menu).toBeVisible();
+    await menu.locator('.context-menu-item', { hasText: label }).click();
+}
+
 test.describe('仮想スクロール × 固定行', () => {
     test('固定行を設定後、下にスクロールしても固定行がDOMに存在しstickyが維持される', async ({ page }) => {
         const fs = createFileSystem();
@@ -167,5 +180,49 @@ test.describe('仮想スクロール × 固定行', () => {
         // 修正前: style.top が更新されないため差分0 → 失敗
         // 修正後: スクロールイベントで updateFillHandlePosition が呼ばれ、差分 ≈ scrollAmount
         expect(Math.abs((afterScrollTop - initialTop) - scrollAmount)).toBeLessThanOrEqual(2);
+    });
+
+    test('1行目の固定を解除した後に1行目1列目をクリックしても先頭行が重複しない', async ({ page }) => {
+        const fs = createFileSystem();
+        delete fs['schema/big_table.json'];
+        fs['schema/big_table.json'] = JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'name', type: 'string' },
+                { key: 2, name: 'value', type: 'int' },
+            ],
+            primary_key: ['id'],
+        });
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'big_table');
+
+        await rightClickRowHeaderAsync(table, 0);
+        await clickContextMenuItemAsync(page, 'この行まで固定');
+        await rightClickRowHeaderAsync(table, 0);
+        await clickContextMenuItemAsync(page, '行の固定を解除');
+
+        const firstDataCell = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)').nth(0)
+            .locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
+        await firstDataCell.click();
+
+        await expect.poll(async () => {
+            return table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)')
+                .evaluateAll((rowElements) => {
+                    return rowElements.slice(0, 3).map((rowElement) => {
+                        const cells = Array.from(rowElement.children) as HTMLElement[];
+                        return {
+                            rowHeader: (cells[0]?.textContent ?? '').trim(),
+                            id: (cells[1]?.textContent ?? '').trim(),
+                            name: (cells[2]?.textContent ?? '').trim(),
+                        };
+                    });
+                });
+        }).toEqual([
+            { rowHeader: '1', id: '1', name: 'name_1' },
+            { rowHeader: '2', id: '2', name: 'name_2' },
+            { rowHeader: '3', id: '3', name: 'name_3' },
+        ]);
     });
 });

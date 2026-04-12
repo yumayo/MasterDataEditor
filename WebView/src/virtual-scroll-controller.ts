@@ -204,7 +204,16 @@ export class VirtualScrollController {
      * これにより updateRenderedRows() が固定行を誤って削除することを防ぐ。
      */
     setFrozenRowCount(count: number): void {
+        const previousFrozenRowCount = this.frozenRowCount;
         this.frozenRowCount = count;
+        if (!this.enabled) return;
+        if (this.renderRow === false) return;
+        if (previousFrozenRowCount !== count) {
+            // 固定行とビューポート行の境界が変わると、旧固定行DOMを残したままの差分更新では
+            // 同じ論理行が通常行として再挿入され、解除後に二重表示が起こる。
+            this.forceFullRerender();
+            return;
+        }
         if (this.renderedStart < count) {
             this.renderedStart = count;
         }
