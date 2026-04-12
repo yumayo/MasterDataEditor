@@ -119,8 +119,9 @@ export class EditorTableReference {
      */
     updateReferenceHints(): void {
         // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        // bottomSpacer はデータ行ではないため getDataRowEndChildIndex() で除外する
         const startIndex = this.table.getDataRowChildOffset();
-        this.updateReferenceHintsForRows(startIndex, this.table.getTableElement().children.length);
+        this.updateReferenceHintsForRows(startIndex, this.table.getDataRowEndChildIndex());
     }
 
     /**
@@ -159,9 +160,11 @@ export class EditorTableReference {
     updateColumnReferenceHints(columnIndex: number): void {
         const tableElement = this.table.getTableElement();
         // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        // bottomSpacer はデータ行ではないため getDataRowEndChildIndex() で除外する
         const dataRowChildOffset = this.table.getDataRowChildOffset();
+        const dataRowEndIndex = this.table.getDataRowEndChildIndex();
         const vsOffset = this.table.getVirtualScrollRenderedStart();
-        for (let domIndex = dataRowChildOffset; domIndex < tableElement.children.length; domIndex++) {
+        for (let domIndex = dataRowChildOffset; domIndex < dataRowEndIndex; domIndex++) {
             const row = tableElement.children[domIndex] as HTMLElement;
             const cell = row.children[columnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
@@ -192,9 +195,10 @@ export class EditorTableReference {
             if (idx !== -1) parentColumnIndices.set(colName, idx);
         }
         // 全データ行のPK列セルに逆参照ヒントを適用する
-        // データ行の開始 children オフセットから走査する（topSpacer を飛ばす）
+        // データ行の開始 children オフセットから走査する（topSpacer/bottomSpacer を除外する）
         const startIndex = this.table.getDataRowChildOffset();
-        for (let rowIndex = startIndex; rowIndex < tableElement.children.length; rowIndex++) {
+        const endIndex = this.table.getDataRowEndChildIndex();
+        for (let rowIndex = startIndex; rowIndex < endIndex; rowIndex++) {
             const row = tableElement.children[rowIndex] as HTMLElement;
             const pkCell = row.children[pkColumnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (!pkCell) continue;

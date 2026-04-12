@@ -495,11 +495,13 @@ export class EditorTable {
             }
             const row = EditorTable.createRow(cells, i);
             row.dataset.storeIndex = String(i);
-            this.element.appendChild(row);
+            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
+            this.virtualScroll.appendDataRow(row);
         }
         for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
             const row = this.renderBufferRow(this.tableData.body.length + i);
-            this.element.appendChild(row);
+            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
+            this.virtualScroll.appendDataRow(row);
         }
         // フィル中のマウス移動イベント
         this.element.addEventListener('mousemove', (e) => {
@@ -1192,6 +1194,8 @@ export class EditorTable {
         const dataRowIndex = domRowIndex - 1;
         const actualDomIndex = this.virtualScroll.dataRowToDomIndex(dataRowIndex);
         if (actualDomIndex === null) return null;
+        // bottomSpacer がテーブル末尾に存在するため、スペーサー行をデータ行として返さない
+        if (this.virtualScroll.isSpacerIndex(actualDomIndex)) return null;
         const row = this.element.children[actualDomIndex];
         if (!row) return null;
         return row as HTMLElement;
@@ -1222,7 +1226,10 @@ export class EditorTable {
     getCellOrNull(row: number, column: number): HTMLElement | null {
         const rowElement = this.getRowElement(row);
         if (!rowElement) return null;
-        return rowElement.children[column] as HTMLElement | null;
+        const cell = rowElement.children[column];
+        // children[column] が範囲外の場合 undefined が返るため、null に正規化する
+        if (!cell) return null;
+        return cell as HTMLElement;
     }
 
     /**
@@ -1706,7 +1713,7 @@ export class EditorTable {
      * 行数を取得する（列ヘッダー行を含む、スペーサー行は除外）
      */
     getRowCount(): number {
-        return this.element.children.length - this.virtualScroll.spacerCount();
+        return this.element.children.length - this.virtualScroll.totalSpacerCount();
     }
 
     /**
@@ -1717,6 +1724,14 @@ export class EditorTable {
      */
     getDataRowChildOffset(): number {
         return 1 + this.virtualScroll.spacerCount();
+    }
+
+    /**
+     * テーブル内のデータ行が終わる children インデックス（排他）を返す。
+     * bottomSpacer を除外した終了インデックスを返すため、children 走査のループ終了条件に使う。
+     */
+    getDataRowEndChildIndex(): number {
+        return this.virtualScroll.getDataRowEndChildIndex();
     }
 
     /**
@@ -1776,8 +1791,10 @@ export class EditorTable {
     getCellValueAt(row: number, column: number): string {
         const rowElement = this.getRowElement(row);
         if (rowElement !== null) {
-            const cell = rowElement.children[column] as HTMLElement;
-            return EditorTable.getCellValue(cell);
+            const cell = rowElement.children[column];
+            // children[column] が範囲外（undefined）の場合はストアにフォールバックする
+            if (!cell) return '';
+            return EditorTable.getCellValue(cell as HTMLElement);
         }
         // DOM外の行: ストアから直接取得する
         // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
@@ -2144,7 +2161,10 @@ export class EditorTable {
         }
         // すべての行ヘッダーから選択状態を解除する。
         // DOM子要素を直接走査する（仮想スクロール時は論理インデックスとDOMインデックスが一致しないため）。
-        for (let i = 1; i < this.element.children.length; i++) {
+        // bottomSpacer は行ヘッダーを持たないためデータ行終了位置まで走査する。
+        const dataRowEnd = this.getDataRowEndChildIndex();
+        for (let i = 1; i < dataRowEnd; i++) {
+            if (this.virtualScroll.isSpacerIndex(i)) continue;
             const row = this.element.children[i] as HTMLElement;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (rowHeader) rowHeader.classList.remove('selected');

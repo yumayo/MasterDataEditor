@@ -21,11 +21,20 @@
     font-size: 0;
 }
 
-/* bottomSpacer: テーブル外のまま */
+/* bottomSpacer: テーブル内に配置される display:table-row（topSpacerと同構造） */
 .virtual-scroll-bottom-spacer {
-    width: 100%;
-    flex-shrink: 0;
+    display: table-row;
     overflow-anchor: none;
+}
+
+/* bottomSpacer内のセル。table-rowの高さを制御するため必要 */
+.virtual-scroll-bottom-spacer-cell {
+    display: table-cell;
+    width: 0;
+    padding: 0;
+    border: none;
+    line-height: 0;
+    font-size: 0;
 }
 
 .editor-table-row {
