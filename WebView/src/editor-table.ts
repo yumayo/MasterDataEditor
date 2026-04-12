@@ -711,7 +711,10 @@ export class EditorTable {
         this.reference.updateReferenceHints();
         // ブックマーク属性を再適用する（仮想スクロールで新しく生成された行にブックマークマークが必要）
         this.restoreBookmarkMarks();
-        // 固定行のstickyスタイルを再適用する（仮想スクロールの行入れ替えでDOMが再生成された場合に必要）
+        // 固定列・固定行のstickyスタイルを再適用する。
+        // 行固定の再構成でDOMが再生成されると、既存の固定列セルの left / sticky も失われるため、
+        // 両軸を同じ再描画経路で復元する。
+        if (this.frozenColumnCount > 0) { this.applyFreezeColumnStyles(); }
         if (this.frozenRowCount > 0) { this.applyFreezeRowStyles(); }
     }
 
@@ -1527,17 +1530,34 @@ export class EditorTable {
     }
 
     /**
+     * 現在DOMに存在する行要素を順番に返す。
+     * 仮想スクロール有効時はスペーサー行を除外し、ヘッダー行・固定行・表示中の通常行のみを対象にする。
+     */
+    private getRenderedRowElements(): HTMLElement[] {
+        const rows: HTMLElement[] = [];
+        for (let childIndex = 0; childIndex < this.element.children.length; childIndex++) {
+            if (this.virtualScroll.isSpacerIndex(childIndex)) continue;
+            const rowElement = this.element.children[childIndex];
+            if (rowElement) {
+                rows.push(rowElement as HTMLElement);
+            }
+        }
+        return rows;
+    }
+
+    /**
      * 固定列のCSS stickyスタイルを全行に適用する。
      * 行ヘッダー幅(40px)を基準に、各固定列の left を累積計算する。
      */
     applyFreezeColumnStyles(): void {
         if (this.frozenColumnCount === 0) return;
-        const rowCount = this.getRowCount();
+        const renderedRows = this.getRenderedRowElements();
+        if (renderedRows.length === 0) return;
         // blame表示時は children[0] が blame-cell なので、データ列のオフセットが1つ増える
         // 通常: children[0]=行ヘッダー, children[1]=データ列0, ...
         // blame: children[0]=blame-cell, children[1]=行ヘッダー, children[2]=データ列0, ...
         const dataColumnOffset = this.isBlameVisible ? 2 : 1;
-        const columnHeaderRow = this.element.children[0];
+        const columnHeaderRow = renderedRows[0];
         // 行ヘッダーの実占有幅を getBoundingClientRect() で取得する
         // （padding + border を含む。固定値 40px だと padding/border 分ずれる）
         const rowHeaderCell = columnHeaderRow.children[this.isBlameVisible ? 1 : 0] as HTMLElement;
@@ -1557,10 +1577,9 @@ export class EditorTable {
             const headerCell = columnHeaderRow.children[col + dataColumnOffset] as HTMLElement;
             cumulativeLeft += headerCell.getBoundingClientRect().width;
         }
-        // 全行（ヘッダー行 + データ行 + バッファ空行）に対して固定列セルにstickyを適用
-        for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
+        // 現在DOMに存在する全行（ヘッダー行 + 固定行 + 表示中のデータ行）に対して固定列を適用する
+        for (let row = 0; row < renderedRows.length; row++) {
+            const rowElement = renderedRows[row];
             for (let col = 0; col < this.frozenColumnCount; col++) {
                 // dataColumnOffset: 行ヘッダー（+ blame-cell）を除くデータ列
                 const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
@@ -1585,12 +1604,11 @@ export class EditorTable {
      * 固定列のCSS stickyスタイルをクリアする。
      */
     private clearFreezeColumnStyles(): void {
-        const rowCount = this.getRowCount();
+        const renderedRows = this.getRenderedRowElements();
         // blame表示時はデータ列のオフセットが1つ増える
         const dataColumnOffset = this.isBlameVisible ? 2 : 1;
-        for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
+        for (let row = 0; row < renderedRows.length; row++) {
+            const rowElement = renderedRows[row];
             for (let col = 0; col < this.frozenColumnCount; col++) {
                 const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
                 if (!cell) continue;

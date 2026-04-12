@@ -102,6 +102,45 @@ function createMiniTableFreezeTestFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 行固定と列固定の同時利用を検証する大規模テーブル用のファイルシステムを生成する。
+ *
+ * 1000行かつ横スクロールが必要な列数を持つため、仮想スクロールによる再描画後も
+ * 固定列が維持されるかを確認できる。
+ */
+function createCombinedFreezeTestFileSystem(): MockFileSystem {
+    const rows: string[] = ['id,name,value_1,value_2,value_3,value_4,value_5,value_6'];
+    for (let i = 1; i <= 1000; i++) {
+        rows.push([
+            `${i}`,
+            `name_${i}`,
+            `v1_${i}`,
+            `v2_${i}`,
+            `v3_${i}`,
+            `v4_${i}`,
+            `v5_${i}`,
+            `v6_${i}`,
+        ].join(','));
+    }
+
+    return {
+        "schema/freeze_combo.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "value_1", type: "string" },
+                { key: 3, name: "value_2", type: "string" },
+                { key: 4, name: "value_3", type: "string" },
+                { key: 5, name: "value_4", type: "string" },
+                { key: 6, name: "value_5", type: "string" },
+                { key: 7, name: "value_6", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/freeze_combo.csv": rows.join("\n"),
+    };
+}
+
 // =============================================================================
 // テストユーティリティ
 // =============================================================================
@@ -224,6 +263,16 @@ async function getRowHeaderStyleAsync(
  */
 async function getCellBackgroundColorAsync(cell: Locator): Promise<string> {
     return cell.evaluate((el) => window.getComputedStyle(el).backgroundColor);
+}
+
+/**
+ * 指定セルの sticky 関連スタイルを取得する
+ */
+async function getCellStickyStyleAsync(cell: Locator): Promise<{ position: string; left: string; top: string }> {
+    return cell.evaluate((el) => {
+        const cs = window.getComputedStyle(el);
+        return { position: cs.position, left: cs.left, top: cs.top };
+    });
 }
 
 // =============================================================================
@@ -411,6 +460,45 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
+            '列固定のあとに行固定しても固定列のstickyスタイルが維持される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_test');
+
+                // まず "name" 列まで固定して id / name の2列を固定する
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // 行固定前は固定列セルが sticky であることを前提確認する
+                const idStylesBeforeFreezeRow = await getColumnCellStylesAsync(table, 0);
+                for (const style of idStylesBeforeFreezeRow) {
+                    expect(style.position).toBe('sticky');
+                }
+                const nameStylesBeforeFreezeRow = await getColumnCellStylesAsync(table, 1);
+                for (const style of nameStylesBeforeFreezeRow) {
+                    expect(style.position).toBe('sticky');
+                }
+
+                // 続けて 1 行目を固定する
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 行固定自体は適用されていることを先に確認する
+                const frozenRowStyle = await getRowStyleAsync(table, 0);
+                expect(frozenRowStyle.position).toBe('sticky');
+
+                // 行固定後も id / name 列のデータセルは sticky のまま維持されるべき
+                const idStylesAfterFreezeRow = await getColumnCellStylesAsync(table, 0);
+                for (const style of idStylesAfterFreezeRow) {
+                    expect(style.position).toBe('sticky');
+                }
+                const nameStylesAfterFreezeRow = await getColumnCellStylesAsync(table, 1);
+                for (const style of nameStylesAfterFreezeRow) {
+                    expect(style.position).toBe('sticky');
+                }
+            },
+        );
+
+        test(
             '固定行の行ヘッダーにfreeze-row-borderとz-indexが適用される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
@@ -488,6 +576,64 @@ test.describe('フリーズペイン', () => {
                 const nonFrozenCell = firstDataRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
                 const nonFrozenBg = await getCellBackgroundColorAsync(nonFrozenCell);
                 expect(nonFrozenBg).toBe('rgba(0, 0, 0, 0)');
+            },
+        );
+    });
+
+    test.describe('行と列の同時固定', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createCombinedFreezeTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test(
+            '列固定後に行固定して大きくスクロールしても固定列が維持される',
+            async ({ page }) => {
+                const table = await openTableAsync(page, 'freeze_combo');
+
+                // id, name の2列を固定する
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+
+                // 1行目を固定する
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 固定行はDOMに残り続けること
+                const frozenRow = table.locator('.editor-table-row:not(.editor-table-empty-row)')
+                    .filter({ has: page.locator('.editor-table-row-header[data-row-index="0"]') });
+                await expect(frozenRow).toHaveCount(1);
+                const frozenRowStyle = await frozenRow.first().evaluate((el) => {
+                    const cs = window.getComputedStyle(el);
+                    return { position: cs.position, top: cs.top };
+                });
+                expect(frozenRowStyle.position).toBe('sticky');
+                expect(parseInt(frozenRowStyle.top)).toBeGreaterThan(0);
+
+                // 仮想スクロールで通常行が再描画される位置までスクロールする
+                const scrollContainer = page.locator('.editor-left-pane');
+                await scrollContainer.evaluate((el) => {
+                    el.scrollTop = 500 * 21;
+                    el.scrollLeft = 600;
+                });
+
+                // スクロール後に表示された通常行でも固定列が sticky のまま維持されること
+                const scrolledRow = table.locator('.editor-table-row:not(.editor-table-empty-row)')
+                    .filter({ has: page.locator('.editor-table-row-header[data-row-index="500"]') });
+                await expect(scrolledRow).toHaveCount(1);
+
+                const idCellStyle = await getCellStickyStyleAsync(
+                    scrolledRow.first().locator('.editor-table-cell:not(.editor-table-row-header)').nth(0),
+                );
+                expect(idCellStyle.position).toBe('sticky');
+                expect(parseInt(idCellStyle.left)).toBeGreaterThan(40);
+
+                const nameCellStyle = await getCellStickyStyleAsync(
+                    scrolledRow.first().locator('.editor-table-cell:not(.editor-table-row-header)').nth(1),
+                );
+                expect(nameCellStyle.position).toBe('sticky');
+                expect(parseInt(nameCellStyle.left)).toBeGreaterThan(parseInt(idCellStyle.left));
             },
         );
     });
@@ -660,6 +806,64 @@ test.describe('フリーズペイン', () => {
                 // 非固定行（rowIndex=1）の table-row は sticky でないこと
                 const nonFrozenStyle = await getRowStyleAsync(reopenedTable, 1);
                 expect(nonFrozenStyle.position).not.toBe('sticky');
+            },
+        );
+
+        test(
+            '行固定と列固定を保存したテーブルを開き直してスクロールしても固定列が維持される',
+            async ({ page }) => {
+                const fs = createCombinedFreezeTestFileSystem();
+                await installMockApiAsync(page, fs);
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'freeze_combo');
+
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                await expect.poll(async () => {
+                    const text = await readMockFileAsync(page, 'schema/freeze_combo.json');
+                    const json = JSON.parse(text);
+                    return { frozenColumnCount: json.frozenColumnCount, frozenRowCount: json.frozenRowCount };
+                }).toEqual({ frozenColumnCount: 2, frozenRowCount: 1 });
+
+                const tabButton = page.locator('.tab-button', { hasText: 'freeze_combo' });
+                await tabButton.locator('.tab-button-close').click();
+
+                const reopenedTable = await openTableAsync(page, 'freeze_combo');
+                const scrollContainer = page.locator('.editor-left-pane');
+                await scrollContainer.evaluate((el) => {
+                    el.scrollTop = 500 * 21;
+                    el.scrollLeft = 600;
+                });
+
+                const frozenRow = reopenedTable.locator('.editor-table-row:not(.editor-table-empty-row)')
+                    .filter({ has: page.locator('.editor-table-row-header[data-row-index="0"]') });
+                await expect(frozenRow).toHaveCount(1);
+                const frozenRowStyle = await frozenRow.first().evaluate((el) => {
+                    const cs = window.getComputedStyle(el);
+                    return { position: cs.position, top: cs.top };
+                });
+                expect(frozenRowStyle.position).toBe('sticky');
+                expect(parseInt(frozenRowStyle.top)).toBeGreaterThan(0);
+
+                const scrolledRow = reopenedTable.locator('.editor-table-row:not(.editor-table-empty-row)')
+                    .filter({ has: page.locator('.editor-table-row-header[data-row-index="500"]') });
+                await expect(scrolledRow).toHaveCount(1);
+
+                const idCellStyle = await getCellStickyStyleAsync(
+                    scrolledRow.first().locator('.editor-table-cell:not(.editor-table-row-header)').nth(0),
+                );
+                expect(idCellStyle.position).toBe('sticky');
+                expect(parseInt(idCellStyle.left)).toBeGreaterThan(40);
+
+                const nameCellStyle = await getCellStickyStyleAsync(
+                    scrolledRow.first().locator('.editor-table-cell:not(.editor-table-row-header)').nth(1),
+                );
+                expect(nameCellStyle.position).toBe('sticky');
+                expect(parseInt(nameCellStyle.left)).toBeGreaterThan(parseInt(idCellStyle.left));
             },
         );
     });
