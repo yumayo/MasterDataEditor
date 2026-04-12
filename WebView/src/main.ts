@@ -23,6 +23,8 @@ import {EditorApiBridge} from "./editor-api-bridge";
 import {ErrorTooltip} from "./error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 import type {BookmarkEntry} from "./bookmark-panel";
+import {TitleBar} from "./title-bar";
+import {WindowEdgeResizer} from "./window-edge-resizer";
 
 (async () => {
     // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
@@ -51,9 +53,17 @@ import type {BookmarkEntry} from "./bookmark-panel";
 
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
+    const titleBarDragRegionElement = document.getElementById('title-bar-drag-region')!;
+    const titleBarTitleElement = document.getElementById('title-bar-title')!;
+    const titleBarMinimizeButton = document.getElementById('title-bar-minimize')! as HTMLButtonElement;
+    const titleBarMaximizeButton = document.getElementById('title-bar-maximize')! as HTMLButtonElement;
+    const titleBarCloseButton = document.getElementById('title-bar-close')! as HTMLButtonElement;
     const tabElement = document.getElementById('tab')!;
     const tabContentElement = document.getElementById('tab-content')!;
     const editorElement = document.getElementById('editor')!;
+
+    new TitleBar(titleBarDragRegionElement, titleBarTitleElement, titleBarMinimizeButton, titleBarMaximizeButton, titleBarCloseButton);
+    new WindowEdgeResizer(document.body);
 
     const editor = new Editor(editorElement);
 

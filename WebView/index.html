@@ -43,8 +43,20 @@
     <link rel="stylesheet" href="src/timeline-panel.css">
     <link rel="stylesheet" href="src/scrollbar-marker-track.css">
     <link rel="stylesheet" href="src/horizontal-scrollbar-marker-track.css">
+    <link rel="stylesheet" href="src/title-bar.css">
 </head>
 <body data-theme="dark">
+<div id="title-bar" class="title-bar">
+    <div id="title-bar-drag-region" class="title-bar-drag-region">
+        <div class="title-bar-app-badge">MD</div>
+        <div id="title-bar-title" class="title-bar-title">マスターデータ入力支援ツール</div>
+    </div>
+    <div class="title-bar-window-controls">
+        <button id="title-bar-minimize" class="title-bar-button title-bar-button-minimize" type="button" aria-label="最小化" title="最小化"></button>
+        <button id="title-bar-maximize" class="title-bar-button title-bar-button-maximize" type="button" aria-label="最大化" title="最大化"></button>
+        <button id="title-bar-close" class="title-bar-button title-bar-button-close" type="button" aria-label="閉じる" title="閉じる"></button>
+    </div>
+</div>
 <div id="explorer" class="explorer">
 </div>
 <div id="tab" class="tab">

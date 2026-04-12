@@ -86,7 +86,7 @@ internal static class HeadlessValidator
         {
             // 既存の WebView2Handler を使ってファイルI/Oハンドラ等を有効化する
             var consoleLogPath = AppEnvironment.GetConsoleLogPath();
-            var handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2Control, consoleLogPath);
+            var handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2Control, consoleLogPath, NullWebViewWindowController.Instance);
 
             // EditorApiBridge を接続して TypeScript API を呼び出し可能にする
             var bridge = new EditorApiBridge();

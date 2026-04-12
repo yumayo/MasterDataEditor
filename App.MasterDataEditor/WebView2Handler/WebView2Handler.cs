@@ -10,11 +10,12 @@ using Microsoft.Web.WebView2.Wpf;
 
 namespace App.MasterDataEditor;
 
-public class WebView2Handler : IDisposable
+internal sealed class WebView2Handler : IDisposable
 {
 	private readonly Dispatcher _dispatcher;
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
+	private readonly IWebViewWindowController _windowController;
 	private readonly IDisposable _fileWatcherHandle;
 	private readonly IDisposable _gitWatcherHandle;
 	/// <summary>
@@ -25,11 +26,12 @@ public class WebView2Handler : IDisposable
 	/// </summary>
 	private EditorApiBridge _editorApiBridge = new();
 
-	public WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
+	private WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath, IWebViewWindowController windowController)
 	{
 		_dispatcher = dispatcher;
 		_webView2 = webView2;
 		_consoleLogPath = consoleLogPath;
+		_windowController = windowController;
 		_webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
 		// DevToolsProtocolを使ってconsole.logをキャプチャ
@@ -106,7 +108,7 @@ public class WebView2Handler : IDisposable
 		File.AppendAllText(_consoleLogPath, logLine + Environment.NewLine);
 	}
 
-	public static async Task<WebView2Handler> CreateAsync(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
+	internal static async Task<WebView2Handler> CreateAsync(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath, IWebViewWindowController windowController)
 	{
 		try
 		{
@@ -169,7 +171,7 @@ public class WebView2Handler : IDisposable
 			Logger.Error(ex, "WebView2初期化時にエラーが発生しました。");
 		}
 
-		return new WebView2Handler(dispatcher, webView2, consoleLogPath);
+		return new WebView2Handler(dispatcher, webView2, consoleLogPath, windowController);
 	}
 
 	/// <summary>
@@ -209,6 +211,11 @@ public class WebView2Handler : IDisposable
 				Logger.Error(e, "WebView2へのメッセージの送信に失敗しました。");
 			}
 		});
+	}
+
+	public void SendWindowStateChanged()
+	{
+		SendMessageToWebView(_windowController.CreateWindowStateChangedMessage());
 	}
 
 	private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -330,6 +337,14 @@ public class WebView2Handler : IDisposable
 							HandleEditorApiResponse(root);
 							break;
 
+						case "window_command":
+							HandleWindowCommand(root);
+							break;
+
+						case "window_state_request":
+							SendWindowStateChanged();
+							break;
+
 						default:
 							Logger.Info($"未知のメッセージタイプ: {messageType}");
 							break;
@@ -362,6 +377,40 @@ public class WebView2Handler : IDisposable
 			// TypeScript側のEditorApiBridgeはsuccess:false時に必ずerrorプロパティを含む
 			var error = root.GetProperty("error").GetString()!;
 			_editorApiBridge.HandleResponse(requestId, false, default, error);
+		}
+	}
+
+	private void HandleWindowCommand(JsonElement root)
+	{
+		var command = root.GetProperty("command").GetString() ?? "";
+		switch (command)
+		{
+			case "drag":
+				_windowController.BeginWindowDrag(root.GetProperty("screenX").GetDouble(), root.GetProperty("screenY").GetDouble());
+				break;
+
+			case "resize":
+				_windowController.BeginWindowResize(root.GetProperty("direction").GetString() ?? "");
+				break;
+
+			case "show_system_menu":
+				_windowController.ShowSystemMenu(root.GetProperty("screenX").GetDouble(), root.GetProperty("screenY").GetDouble());
+				break;
+
+			case "minimize":
+				_windowController.MinimizeWindow();
+				break;
+
+			case "toggle_maximize":
+				_windowController.ToggleMaximizeWindow();
+				break;
+
+			case "close":
+				_windowController.CloseWindow();
+				break;
+
+			default:
+				throw new InvalidOperationException($"未知のウィンドウコマンド: {command}");
 		}
 	}
 }
