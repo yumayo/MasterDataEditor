@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Playwrightテスト実行ラッパー
+# 使い方: playwright [playwright testに渡す引数...]
+
+docker compose exec playwright npx tsc --noEmit
+docker compose exec playwright npm run stop-preview
+docker compose exec playwright npx playwright test $*
