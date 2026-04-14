@@ -103,11 +103,11 @@
 }
 
 .title-bar-button-restore::before {
-    transform: translate(-2px, -1px);
+    transform: translate(calc(-50% + 2px), calc(-50% - 2px));
 }
 
 .title-bar-button-restore::after {
-    transform: translate(-6px, 3px);
+    transform: translate(calc(-50% - 2px), calc(-50% + 2px));
 }
 
 .title-bar-button-close::before,
