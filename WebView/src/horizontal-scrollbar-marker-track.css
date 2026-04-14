@@ -1,9 +1,0 @@
-/* 水平スクロールバー上にエラー列・git変更列のマーカーを表示するcanvasトラック */
-.horizontal-scrollbar-marker-track {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    height: 14px;
-    pointer-events: none;
-    z-index: 5;
-}

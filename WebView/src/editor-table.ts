@@ -149,16 +149,12 @@ export class EditorTable {
     private filteredRowIndices: number[];
     /** スクロールバーマーカートラック（connectScrollbarMarkerTrackで設定される。未設定はfalse） */
     private scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
-    /** 水平スクロールバーマーカートラック（connectHorizontalScrollbarMarkerTrackで設定される。未設定はfalse） */
-    private horizontalScrollbarMarkerTrack: ScrollbarMarkerTrack | false;
+    /** 通常テーブルの共有右側マーカーを更新できるアクティブ状態 */
+    private isActive: boolean;
     /** 直近のバリデーションで検出されたエラーがあるデータ行インデックス（0始まり）の集合 */
     private currentErrorDomRows: Set<number>;
     /** 直近のgit差分で検出された変更があるデータ行インデックス（0始まり）の集合 */
     private currentGitChangedDomRows: Set<number>;
-    /** 直近のバリデーションで検出されたエラーがあるDOM列インデックス（0始まり、dataColumnOffset後）の集合 */
-    private currentErrorDomCols: Set<number>;
-    /** 直近のgit差分で検出された変更があるDOM列インデックス（0始まり、dataColumnOffset後）の集合 */
-    private currentGitChangedDomCols: Set<number>;
     /** バリデーションエラーのストア座標キャッシュ（renderRowForVirtualScroll でクラス適用に使用） */
     private cachedPkErrorCells: Set<string>;
     private cachedOtherErrorCells: Set<string>;
@@ -218,11 +214,9 @@ export class EditorTable {
         this.storeRowIndices = [];
         this.filteredRowIndices = [];
         this.scrollbarMarkerTrack = false;
-        this.horizontalScrollbarMarkerTrack = false;
+        this.isActive = false;
         this.currentErrorDomRows = new Set();
         this.currentGitChangedDomRows = new Set();
-        this.currentErrorDomCols = new Set();
-        this.currentGitChangedDomCols = new Set();
         this.cachedPkErrorCells = new Set();
         this.cachedOtherErrorCells = new Set();
         this.cachedDomColToStoreCol = [];
@@ -734,9 +728,9 @@ export class EditorTable {
      */
     activate(): void {
         this.selectionDragController.activate();
+        this.isActive = true;
         // タブ切り替え時に保持済みのマーカーデータを再描画する
         this.refreshScrollbarMarkers();
-        this.refreshHorizontalScrollbarMarkers();
     }
 
     /**
@@ -747,9 +741,10 @@ export class EditorTable {
     deactivate(): void {
         this.handler.deactivate();
         this.selectionDragController.deactivate();
-        // スクロールバーマーカーをクリアする（非アクティブタブのマーカーが残存するのを防止）
-        if (this.scrollbarMarkerTrack !== false) this.scrollbarMarkerTrack.clear();
-        if (this.horizontalScrollbarMarkerTrack !== false) this.horizontalScrollbarMarkerTrack.clear();
+        const wasActive = this.isActive;
+        this.isActive = false;
+        // 共有右側マーカーは、このテーブルが表示中だった場合だけクリアする。
+        if (wasActive && this.scrollbarMarkerTrack !== false) this.scrollbarMarkerTrack.clear();
     }
 
     /**
@@ -1395,18 +1390,8 @@ export class EditorTable {
      */
     connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void {
         this.scrollbarMarkerTrack = track;
-        // 接続前にデータが蓄積されている場合に��座にマーカーを描画す��
-        this.refreshScrollbarMarkers();
-    }
-
-    /**
-     * 水平 ScrollbarMarkerTrack を接続する（Tab.createEditorTable 内から呼ばれる）。
-     * ミニテーブルでは呼ばない（マーカートラックは左ペインの通常テーブル専用）。
-     */
-    connectHorizontalScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void {
-        this.horizontalScrollbarMarkerTrack = track;
         // 接続前にデータが蓄積されている場合に即座にマーカーを描画する
-        this.refreshHorizontalScrollbarMarkers();
+        this.refreshScrollbarMarkers();
     }
 
     /**
@@ -3307,18 +3292,14 @@ export class EditorTable {
             }
             // git変更なし → スクロールバーマーカーもクリアする
             this.currentGitChangedDomRows = new Set();
-            this.currentGitChangedDomCols = new Set();
             this.refreshScrollbarMarkers();
-            this.refreshHorizontalScrollbarMarkers();
             return;
         }
         const storeRows = this.store.getRows(this.tableName);
         if (storeRows === false) {
             // ストアデータが存在しない場合はgit変更マーカーをクリアする
             this.currentGitChangedDomRows = new Set();
-            this.currentGitChangedDomCols = new Set();
             this.refreshScrollbarMarkers();
-            this.refreshHorizontalScrollbarMarkers();
             return;
         }
         // DOM列インデックス（0始まり）→ ストア（CSV）列インデックスのマッピングを取得する。
@@ -3329,7 +3310,6 @@ export class EditorTable {
         // 仮想スクロール時はDOMに表示範囲の行しか存在しないため、DOM走査では全行を検出できない。
         // マーカー描画にはDOMに存在しない行のインデックスも必要なのでストア全行を走査する。
         const changedDataRows = new Set<number>();
-        const changedDomCols = new Set<number>();
         const dataRowCount = this.storeRowIndices.length;
         for (let dataRowIndex = 0; dataRowIndex < dataRowCount; dataRowIndex++) {
             const storeRowIndex = this.storeRowIndices[dataRowIndex];
@@ -3339,7 +3319,6 @@ export class EditorTable {
                 if (storeColIndex === -1) continue;
                 if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) {
                     if (!hasChanged) hasChanged = true;
-                    changedDomCols.add(domColIndex);
                 }
             }
             if (hasChanged) changedDataRows.add(dataRowIndex);
@@ -3365,9 +3344,7 @@ export class EditorTable {
         }
         // git変更行・列をスクロールバーマーカーに反映する
         this.currentGitChangedDomRows = changedDataRows;
-        this.currentGitChangedDomCols = changedDomCols;
         this.refreshScrollbarMarkers();
-        this.refreshHorizontalScrollbarMarkers();
     }
 
     /**
@@ -3385,9 +3362,7 @@ export class EditorTable {
             console.warn('[EditorTable] refreshGitDiffAsync: git status の取得に失敗しました:', e);
             // git変更マーカーをクリアする（古いマーカーが残存するのを防止）
             this.currentGitChangedDomRows = new Set();
-            this.currentGitChangedDomCols = new Set();
             this.refreshScrollbarMarkers();
-            this.refreshHorizontalScrollbarMarkers();
             return;
         }
         // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
@@ -3944,14 +3919,6 @@ export class EditorTable {
         }
         this.currentErrorDomRows = errorDomRows;
         this.refreshScrollbarMarkers();
-        // エラー列を水平スクロールバーマーカーに反映する（ストア列→DOM列に変換）
-        const errorDomCols = new Set<number>();
-        for (const error of errors) {
-            const domColIdx = this.tableData.columnMapping.indexOf(error.columnIndex);
-            if (domColIdx !== -1) errorDomCols.add(domColIdx);
-        }
-        this.currentErrorDomCols = errorDomCols;
-        this.refreshHorizontalScrollbarMarkers();
     }
 
     // =========================================================================
@@ -3967,6 +3934,7 @@ export class EditorTable {
     private refreshScrollbarMarkers(): void {
         if (this.scrollbarMarkerTrack === false) return;
         if (this.isMiniTable) return;
+        if (!this.isActive) return;
         // 総データ行数（バッファ行を含む）をマーカー位置の分母にする。
         // storeRowIndices.length はデータ行数、+1 でバッファ行1行を考慮する。
         // ミニテーブルでは呼ばれない（上のガードで早期リターン済み）。
@@ -4011,79 +3979,12 @@ export class EditorTable {
         return markers;
     }
 
-    // =========================================================================
-    // 水平スクロールバーマーカー
-    // =========================================================================
-
     /**
      * 列幅が変更されたことを通知する（AreaResizer / ColumnWidthCommand から呼ばれる）。
-     * 水平スクロールバーマーカーの位置を再計算し、スキーマJSONへ即時保存する。
+     * 通常テーブルではスキーマJSONへ即時保存する。
      */
     notifyColumnWidthChanged(): void {
-        this.refreshHorizontalScrollbarMarkers();
         if (!this.isMiniTable) saveSchemaDataAsync(this);
-    }
-
-    /**
-     * 水平スクロールバーマーカートラックにエラー列・git変更列を反映する。
-     * ミニテーブルではマーカー不要のため何もしない。
-     */
-    private refreshHorizontalScrollbarMarkers(): void {
-        if (this.horizontalScrollbarMarkerTrack === false) return;
-        if (this.isMiniTable) return;
-        // テーブル幅を100%としたマーカー比率を計算する。
-        // Canvas は editor-left-pane の全幅に引き伸ばされるため、
-        // テーブルの列位置がペイン全幅にマッピングされる。
-        const tableRect = this.element.getBoundingClientRect();
-        const tableWidth = tableRect.width;
-        if (tableWidth <= 0) return;
-        const tableLeft = tableRect.left;
-        const errorMarkers = this.buildColumnMarkerEntries(this.currentErrorDomCols, tableWidth, tableLeft);
-        const gitMarkers = this.buildColumnMarkerEntries(this.currentGitChangedDomCols, tableWidth, tableLeft);
-        this.horizontalScrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
-    }
-
-    /**
-     * DOM列インデックスの集合からマーカー描画エントリを構築する。
-     * getBoundingClientRect() でセルのビューポート座標を取得し、テーブル左端からの相対位置で
-     * テーブル幅に対する比率を算出する。テーブル基準の座標を使うことで、テーブルが画面幅に
-     * 満たない場合でもマーカーがテーブルの列位置と正確に一致する。
-     * 連続する列はまとめて1つのエントリにマージする。
-     */
-    private buildColumnMarkerEntries(
-        domCols: Set<number>, tableWidth: number, tableLeft: number
-    ): MarkerEntry[] {
-        if (domCols.size === 0) return [];
-        const markers: MarkerEntry[] = [];
-        const offset = this.dataColumnOffset();
-        const headerRow = this.element.children[0];
-        const maxChildIndex = headerRow.children.length;
-        // 列削除後に古いインデックスが残っている場合を除外する（境界外アクセス防止）
-        const valid = Array.from(domCols).filter(col => col + offset < maxChildIndex).sort((a, b) => a - b);
-        if (valid.length === 0) return [];
-        let rangeStartCell = headerRow.children[valid[0] + offset] as HTMLElement;
-        let rangeEndCell = rangeStartCell;
-        for (let i = 1; i < valid.length; i++) {
-            if (valid[i] === valid[i - 1] + 1) {
-                rangeEndCell = headerRow.children[valid[i] + offset] as HTMLElement;
-            } else {
-                const startRect = rangeStartCell.getBoundingClientRect();
-                const endRect = rangeEndCell.getBoundingClientRect();
-                markers.push({
-                    start: (startRect.left - tableLeft) / tableWidth,
-                    size: (endRect.right - startRect.left) / tableWidth,
-                });
-                rangeStartCell = headerRow.children[valid[i] + offset] as HTMLElement;
-                rangeEndCell = rangeStartCell;
-            }
-        }
-        const startRect = rangeStartCell.getBoundingClientRect();
-        const endRect = rangeEndCell.getBoundingClientRect();
-        markers.push({
-            start: (startRect.left - tableLeft) / tableWidth,
-            size: (endRect.right - startRect.left) / tableWidth,
-        });
-        return markers;
     }
 
 }

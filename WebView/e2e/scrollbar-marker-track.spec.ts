@@ -10,10 +10,13 @@ import { MockFileSystem, installMockApiAsync } from './fixtures/mock-api';
 //
 // テストケース:
 //   1. canvas要素の存在: テーブルを開いたとき .scrollbar-marker-track が存在する
-//   2. エラーマーカー位置: 100行テーブルの末尾にPK重複エラーを置き、マーカーが下部に描画される
-//   3. git変更マーカー位置: 100行テーブルの末尾に変更行を置き、マーカーが下部に描画される
-//   4. マーカーなし: エラーもgit変更もない場合は透明
-//   5. タブ切り替え: 別テーブルに切り替えるとマーカーが変わる
+//   2. 水平トラック廃止: 通常テーブルを開いても .horizontal-scrollbar-marker-track は存在しない
+//   3. エラーマーカー位置: 100行テーブルの末尾にPK重複エラーを置き、マーカーが下部に描画される
+//   4. git変更マーカー位置: 100行テーブルの末尾に変更行を置き、マーカーが下部に描画される
+//   5. マーカーなし: エラーもgit変更もない場合は透明
+//   6. タブ切り替え: 別テーブルに切り替えるとマーカーが変わる
+//   7. ValidationPanel競合: enemy を先に開き、item でPK重複を作って即戻っても赤マーカーは再出現しない
+//   8. 非アクティブタブclose競合: enemy を閉じても、アクティブ item の赤マーカーは消えない
 // =============================================================================
 
 // テストデータ -------------------------------------------------------------------
@@ -84,6 +87,32 @@ function createTwoTableFileSystem(): MockFileSystem {
             primary_key: ['id'],
         }),
         'data/item.csv': itemRows.join('\n'),
+        'schema/enemy.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'ja', type: 'string' },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/enemy.csv': [
+            'id,ja',
+            '1,slime',
+            '2,dragon',
+        ].join('\n'),
+    };
+}
+
+/** ValidationPanel競合テスト用: item / enemy ともに初期状態はクリーン */
+function createTwoCleanTableFileSystem(): MockFileSystem {
+    return {
+        'schema/item.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'name', type: 'string' },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/item.csv': generateCsvRows(100).join('\n'),
         'schema/enemy.json': JSON.stringify({
             header: [
                 { key: 0, name: 'id', type: 'int' },
@@ -247,7 +276,21 @@ base.describe('ScrollbarMarkerTrack', () => {
     );
 
     // -------------------------------------------------------------------------
-    // テスト2: エラーマーカーが正しい位置に描画される
+    // テスト2: 水平スクロールマーカーは廃止されている
+    // -------------------------------------------------------------------------
+    base(
+        '通常テーブルを開いたとき .horizontal-scrollbar-marker-track は存在しない',
+        async ({ page }) => {
+            await installMockApiAsync(page, createCleanFileSystem());
+            await page.goto('/');
+            await openTableAsync(page, 'item');
+            const horizontalCanvas = page.locator('.editor-left-slot .horizontal-scrollbar-marker-track');
+            await expect(horizontalCanvas).toHaveCount(0);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト3: エラーマーカーが正しい位置に描画される
     // 100行テーブルの行98,99にPK重複 → マーカーは下半分に描画、上半分には描画されない
     // -------------------------------------------------------------------------
     base(
@@ -274,7 +317,7 @@ base.describe('ScrollbarMarkerTrack', () => {
     );
 
     // -------------------------------------------------------------------------
-    // テスト4: マーカーなし（エラーもgit変更もないクリーンな状態）
+    // テスト5: マーカーなし（エラーもgit変更もないクリーンな状態）
     // -------------------------------------------------------------------------
     base(
         'エラーもgit変更もない場合は canvas が透明である',
@@ -292,7 +335,7 @@ base.describe('ScrollbarMarkerTrack', () => {
     );
 
     // -------------------------------------------------------------------------
-    // テスト5: タブ切り替えでマーカーが更新される
+    // テスト6: タブ切り替えでマーカーが更新される
     // -------------------------------------------------------------------------
     base(
         'タブ切り替えでマーカーが変わる（エラーありテーブル→クリーンテーブル）',
@@ -322,12 +365,88 @@ base.describe('ScrollbarMarkerTrack', () => {
             ).toBe(false);
         },
     );
+
+    // -------------------------------------------------------------------------
+    // テスト7: enemy を先に開いた順序でも、非アクティブ item から赤マーカーを再描画しない
+    // -------------------------------------------------------------------------
+    base(
+        'enemy を先に開き、item でPK重複を作って即戻っても、待機後に enemy 側の右側マーカーへ赤が出ない',
+        async ({ page }) => {
+            await installMockApiAsync(page, createTwoCleanTableFileSystem());
+            await page.goto('/');
+            // openEditorTables の反復順を enemy -> item に固定する。
+            await openTableAsync(page, 'enemy');
+            const itemTable = await openTableAsync(page, 'item');
+            // item の2行目idを1に変更してPK重複を作る。Enterではなく enemy クリックで確定し、
+            // setTimeout(0) の遅延バリデーションが enemy 復帰後に流れる順序を踏む。
+            const secondItemPkCell = itemTable.locator('.editor-table-row').nth(2)
+                .locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
+            await expect(secondItemPkCell).toBeVisible();
+            await secondItemPkCell.dblclick();
+            const editField = page.locator('.grid-textfield-active');
+            await expect(editField).toBeVisible();
+            await page.keyboard.press('Control+a');
+            await page.keyboard.insertText('1');
+            await page.locator('#explorer .explorer-file').getByText('enemy', { exact: true }).click();
+            const enemyTable = page.locator('.editor-left-slot .tab-wrapper[data-tab-name="enemy"] .editor-table');
+            await expect(enemyTable).toBeVisible();
+            // item の遅延バリデーション完了後でも、敵側の共有右側マーカーに赤が出ないことを期待する。
+            await expect(page.locator('.status-bar-badge-count')).toHaveText('2', { timeout: 5000 });
+            const positions = await detectMarkerPositionsAsync(page);
+            expect(positions.upper.hasRed).toBe(false);
+            expect(positions.lower.hasRed).toBe(false);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // テスト8: 非アクティブな enemy タブを閉じても、アクティブ item の赤マーカーは消えない
+    // -------------------------------------------------------------------------
+    base(
+        'item に赤マーカーが出ている状態で非アクティブな enemy タブを閉じても、item 側の右側マーカーが残る',
+        async ({ page }) => {
+            await installMockApiAsync(page, createTwoCleanTableFileSystem());
+            await page.goto('/');
+            await openTableAsync(page, 'enemy');
+            const itemTable = await openTableAsync(page, 'item');
+
+            // item の2行目idを1に変更して、item をアクティブのままPK重複を発生させる。
+            const secondItemPkCell = itemTable.locator('.editor-table-row').nth(2)
+                .locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
+            await expect(secondItemPkCell).toBeVisible();
+            await secondItemPkCell.dblclick();
+            const editField = page.locator('.grid-textfield-active');
+            await expect(editField).toBeVisible();
+            await page.keyboard.press('Control+a');
+            await page.keyboard.insertText('1');
+            await page.keyboard.press('Enter');
+
+            // 先に item 側の赤マーカーが出ていることを固定する。
+            await expect.poll(
+                async () => {
+                    const positions = await detectMarkerPositionsAsync(page);
+                    return positions.upper.hasRed;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
+
+            const enemyTabButton = page.locator('.tab-button').filter({
+                has: page.locator('.tab-button-name', { hasText: 'enemy' }),
+            }).first();
+            await enemyTabButton.locator('.tab-button-close').click();
+            await expect(enemyTabButton).toHaveCount(0);
+            await expect(page.locator('.tab-button-active')).toContainText('item');
+
+            // 期待動作: 非アクティブ tab の close では共有右側マーカーは消えない。
+            const positionsAfterClose = await detectMarkerPositionsAsync(page);
+            expect(positionsAfterClose.upper.hasRed).toBe(true);
+        },
+    );
 });
 
 // git変更マーカーのテスト
 gitTest.describe('ScrollbarMarkerTrack git変更', () => {
     // -------------------------------------------------------------------------
-    // テスト3: git変更マーカーが正しい位置に描画される
+    // テスト4: git変更マーカーが正しい位置に描画される
     // 100行テーブルの最終行のみ変更 → マーカーは下半分に描画、上半分には描画されない
     // -------------------------------------------------------------------------
     gitTest(
