@@ -5,6 +5,7 @@
         <TargetFramework>net10.0-windows</TargetFramework>
         <Nullable>enable</Nullable>
         <UseWPF>true</UseWPF>
+        <ApplicationIcon>Assets\master-data-editor-icon.ico</ApplicationIcon>
         <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
         <!-- Linux コンテナからの Windows 向けクロスビルドを有効化 -->
         <EnableWindowsTargeting>true</EnableWindowsTargeting>

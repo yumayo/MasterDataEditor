@@ -18,19 +18,14 @@
     padding: 0 14px;
 }
 
-.title-bar-app-badge {
+.title-bar-app-icon {
     width: 18px;
     height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--border-color);
-    background-color: var(--background-color);
-    color: var(--font-color);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    display: block;
     flex-shrink: 0;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .title-bar-title {
