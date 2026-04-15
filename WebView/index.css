@@ -1,21 +1,14 @@
 body {
     /* 画面いっぱいにしたいので */
     margin: 0;
-    height: 100vh;
-    overflow: hidden;
 
     font-family: sans-serif;
 
     /* エディターなので小さめのフォントにします。 */
     font-size: 13px;
-    background-color: var(--background-sub-color);
-    color: var(--font-color);
 }
 
 :root {
-    --title-bar-height: 36px;
-    --tab-height: 48px;
-    --status-bar-height: 22px;
     --font-color: #21252b;
     --secondary-font-color: rgba(0, 0, 0, 0.45);
     --background-color: #ffffff;

@@ -8,9 +8,9 @@
      */
     position: fixed;
     left: 300px;
-    top: var(--title-bar-height);
+    top: 0;
     box-sizing: border-box;
-    height: var(--tab-height);
+    height: 48px;
     width: calc(100vw - 300px);
     margin: 0;
     border-bottom: 1px solid rgba(128, 128, 128, 0.3);

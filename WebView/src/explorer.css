@@ -3,7 +3,7 @@
     background-color: var(--background-color);
     color: var(--font-color);
     width: 300px;
-    height: calc(100vh - var(--title-bar-height) - var(--status-bar-height));
+    height: calc(100vh - 22px);
     display: flex;
     position: relative;
 
