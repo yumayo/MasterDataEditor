@@ -81,6 +81,37 @@ function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locato
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 
+interface ActiveEditorTableForTest {
+    selection: {
+        start(row: number, column: number): void;
+        extendSelection(row: number, column: number): void;
+        end(): void;
+    };
+    dataColumnOffset(): number;
+}
+
+async function invokeSelectionAsync(
+    page: Page,
+    mode: 'start' | 'extend',
+    rowIndex: number,
+    colIndex: number,
+): Promise<boolean> {
+    return page.evaluate(([action, dataRowIndex, dataColIndex]) => {
+        const editor = (window as unknown as { editor?: { activeEditorTable: ActiveEditorTableForTest | false } }).editor;
+        if (!editor || editor.activeEditorTable === false) return false;
+        const activeEditorTable = editor.activeEditorTable;
+        const domRowIndex = dataRowIndex + 1;
+        const domColumnIndex = dataColIndex + activeEditorTable.dataColumnOffset();
+        if (action === 'start') {
+            activeEditorTable.selection.start(domRowIndex, domColumnIndex);
+        } else {
+            activeEditorTable.selection.extendSelection(domRowIndex, domColumnIndex);
+        }
+        activeEditorTable.selection.end();
+        return true;
+    }, [mode, rowIndex, colIndex] as ['start' | 'extend', number, number]);
+}
+
 test(
     'セル編集確定後にスクロール位置がリセットされないこと',
     async ({ page }) => {
@@ -303,22 +334,11 @@ test(
             `ターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
         ).toBeGreaterThan(containerRectAfterScroll.bottom);
 
-        // ターゲットセルに対して mousedown イベントを直接ディスパッチし、
-        // ディスパッチ前のスクロール位置を同一 evaluate 内で記録する
-        const scrollBeforeClick = await page.evaluate(([rowIdx, colIdx]) => {
-            const container = document.querySelector('.editor-left-pane');
-            const scrollBefore = container ? container.scrollTop : 0;
-            const row = document.querySelector(`.editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
-            if (!row) return { scrollBefore, dispatched: false };
-            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
-            const cell = cells[colIdx] as HTMLElement | undefined;
-            if (!cell) return { scrollBefore, dispatched: false };
-            cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
-            cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
-            return { scrollBefore, dispatched: true };
-        }, [targetRowIndex, 2] as [number, number]);
-
-        expect(scrollBeforeClick.dispatched, 'mousedownイベントのディスパッチに失敗した').toBe(true);
+        // オフスクリーン行は実クリックできないため、テスト用に公開された activeEditorTable から
+        // mousedown 相当の selection.start() を直接呼び出してスクロール補正を検証する。
+        const scrollBeforeClick = await getScrollPositionAsync(page);
+        const selectionInvoked = await invokeSelectionAsync(page, 'start', targetRowIndex, 2);
+        expect(selectionInvoked, 'activeEditorTable 経由の selection.start 呼び出しに失敗した').toBe(true);
 
         // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
@@ -329,8 +349,8 @@ test(
         // クリック後にセルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
         expect(
             scrollAfter.scrollTop,
-            `クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollBefore}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
-        ).toBeGreaterThan(scrollBeforeClick.scrollBefore);
+            `クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBeforeClick.scrollTop);
 
         // さらにクリック後にターゲットセルが完全に画面内に収まっていることを確認する
         const containerRectFinal = await getContainerRectAsync(page);
@@ -390,22 +410,11 @@ test(
             `Shift+クリックのターゲットセルが画面外にない（bottom=${cellRectBefore.bottom}, containerBottom=${containerRectAfterScroll.bottom}）`,
         ).toBeGreaterThan(containerRectAfterScroll.bottom);
 
-        // ターゲットセルに対して Shift+mousedown を直接ディスパッチし、
-        // ディスパッチ前のスクロール位置を同一 evaluate 内で記録する
-        const scrollBeforeClick = await page.evaluate(([rowIdx, colIdx]) => {
-            const container = document.querySelector('.editor-left-pane');
-            const scrollBefore = container ? container.scrollTop : 0;
-            const row = document.querySelector(`.editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
-            if (!row) return { scrollBefore, dispatched: false };
-            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
-            const cell = cells[colIdx] as HTMLElement | undefined;
-            if (!cell) return { scrollBefore, dispatched: false };
-            cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
-            cell.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0, shiftKey: true }));
-            return { scrollBefore, dispatched: true };
-        }, [targetRowIndex, 0] as [number, number]);
-
-        expect(scrollBeforeClick.dispatched, 'Shift+mousedownイベントのディスパッチに失敗した').toBe(true);
+        // オフスクリーン行は実クリックできないため、テスト用に公開された activeEditorTable から
+        // Shift+mousedown 相当の selection.extendSelection() を直接呼び出して検証する。
+        const scrollBeforeClick = await getScrollPositionAsync(page);
+        const selectionInvoked = await invokeSelectionAsync(page, 'extend', targetRowIndex, 0);
+        expect(selectionInvoked, 'activeEditorTable 経由の selection.extendSelection 呼び出しに失敗した').toBe(true);
 
         // requestAnimationFrame でスクロール位置が再適用されるため、1フレーム待つ
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
@@ -416,8 +425,8 @@ test(
         // Shift+クリック後に拡張先セルが画面内に収まるようスクロールされているはず（scrollTop が増加する）
         expect(
             scrollAfter.scrollTop,
-            `Shift+クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollBefore}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
-        ).toBeGreaterThan(scrollBeforeClick.scrollBefore);
+            `Shift+クリック後に自動スクロールが行われなかった。クリック前: scrollTop=${scrollBeforeClick.scrollTop}, クリック後: scrollTop=${scrollAfter.scrollTop}`,
+        ).toBeGreaterThan(scrollBeforeClick.scrollTop);
 
         // さらにShift+クリック後にターゲットセルが完全に画面内に収まっていることを確認する
         const containerRectFinal = await getContainerRectAsync(page);

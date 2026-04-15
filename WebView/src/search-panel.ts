@@ -1,23 +1,11 @@
 import {Tab} from "./tab";
-import {SearchDataProvider, TableSearchData} from "./search-data-provider";
-import {parseSearchQuery, matchesQuery, replaceWithQuery, SearchOptions, SearchQuery} from "./search-query";
+import type {SearchResultInfo} from "./editor-api-types";
 import {EditorTable} from "./editor-table";
-import {determineDisplayColumnName} from "./config";
 import {appendHighlightedSegments} from "./fuzzy-search";
 import {CellChange, CellChangeCommand, CompositeCommand} from "./command";
 import {CellRange} from "./selection";
-
-/**
- * 検索結果1件分の情報
- */
-interface SearchResult {
-    tableName: string;
-    columnName: string;
-    columnIndex: number;
-    pkValue: string;
-    value: string;
-    referenceDisplayText: string;
-}
+import {replaceWithQuery, shouldAutoEnableWholeWord, type SearchOptions} from "./search-query";
+import {SearchEngine} from "./search-engine";
 
 /**
  * SEARCHパネル
@@ -29,7 +17,7 @@ export class SearchPanel {
     private readonly inputElement: HTMLInputElement;
     private readonly resultsElement: HTMLElement;
     private readonly tab: Tab;
-    private readonly dataProvider: SearchDataProvider;
+    private readonly searchEngine: SearchEngine;
     private readonly openEditorTables: Map<string, EditorTable>;
     private caseSensitive: boolean;
     /** ユーザーが手動でONにしたかどうか */
@@ -57,7 +45,7 @@ export class SearchPanel {
     /** カレントマッチのインデックス（-1で未選択） */
     private focusedResultIndex: number;
     /** 最新の検索結果（置換実行時に参照する） */
-    private currentResults: SearchResult[];
+    private currentResults: SearchResultInfo[];
 
     // SVGアイコン定数（16x16 viewBox、VSCode Codicons準拠のパスデータ）
     /** chevron-right: 折りたたみ状態（置換非表示） */
@@ -72,7 +60,7 @@ export class SearchPanel {
     constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
         this.tab = tab;
         this.openEditorTables = openEditorTables;
-        this.dataProvider = new SearchDataProvider(openEditorTables);
+        this.searchEngine = new SearchEngine(openEditorTables);
         this.caseSensitive = false;
         this.wholeWordManual = false;
         this.wholeWordAuto = false;
@@ -269,12 +257,7 @@ export class SearchPanel {
      */
     private handleInputChange(): void {
         const value = this.inputElement.value;
-        const isNumericOnly = /^\d+$/.test(value);
-        if (isNumericOnly) {
-            this.wholeWordAuto = true;
-        } else {
-            this.wholeWordAuto = false;
-        }
+        this.wholeWordAuto = shouldAutoEnableWholeWord(value);
         this.updateWholeWordButtonState();
         this.scheduleSearch();
     }
@@ -335,9 +318,11 @@ export class SearchPanel {
         // 空文字でないことが確定してからローディング表示を開始する
         this.resultsElement.classList.add('searching');
         try {
-            const options = this.getCurrentSearchOptions();
-            const query = parseSearchQuery(inputText, options);
-            const results = await this.searchAsync(query, requestId);
+            const results = await this.searchEngine.searchAsync(
+                inputText,
+                this.getCurrentSearchOptions(),
+                () => requestId !== this.searchRequestId,
+            );
             // await の間に新しい検索が始まっていた場合は結果を破棄する
             if (requestId !== this.searchRequestId) return;
             this.currentResults = results;
@@ -350,132 +335,6 @@ export class SearchPanel {
                 this.resultsElement.classList.remove('searching');
             }
         }
-    }
-
-    /**
-     * 全テーブルを横断して検索する。
-     * テーブルデータ取得は Promise.all で並列化し、検索処理はテーブルごとに
-     * setTimeout(0) でメインスレッドに制御を返してキー入力のカクつきを防ぐ。
-     * requestId が変化した時点で中断して空配列を返す。
-     */
-    private async searchAsync(query: SearchQuery, requestId: number): Promise<SearchResult[]> {
-        const tableNames = await this.dataProvider.loadAllTableNamesAsync();
-        // テーブル名取得後に新しいリクエストが来ていれば中断する
-        if (requestId !== this.searchRequestId) return [];
-        // フィルタクエリの場合は対象テーブルのみ検索
-        const targetTables = query.kind === 'filter'
-            ? tableNames.filter(name => name === query.tableName)
-            : tableNames;
-        // テーブルデータをすべて並列取得する
-        const tableDataResults = await Promise.all(
-            targetTables.map(tableName => this.dataProvider.getTableDataAsync(tableName))
-        );
-        // 並列取得完了後に新しいリクエストが来ていれば中断する
-        if (requestId !== this.searchRequestId) return [];
-        const results: SearchResult[] = [];
-        for (let i = 0; i < tableDataResults.length; i++) {
-            if (requestId !== this.searchRequestId) return [];
-            // 2テーブル目以降の前にメインスレッドに制御を返してキー入力のカクつきを防ぐ
-            if (i > 0) await new Promise(resolve => setTimeout(resolve, 0));
-            if (requestId !== this.searchRequestId) return [];
-            this.searchInTable(query, tableDataResults[i], results);
-        }
-        return results;
-    }
-
-    /**
-     * テーブル内でクエリに一致するセルを検索する
-     */
-    private searchInTable(query: SearchQuery, tableData: TableSearchData, results: SearchResult[]): void {
-        const pkColumnIndex = tableData.csvHeader.indexOf(tableData.primaryKeyColumnName);
-        const options: SearchOptions = {
-            caseSensitive: query.caseSensitive,
-            wholeWord: query.wholeWord,
-            useRegex: query.useRegex,
-        };
-        for (let rowIndex = 0; rowIndex < tableData.csvBody.length; rowIndex++) {
-            const row = tableData.csvBody[rowIndex];
-            const pkValue = pkColumnIndex !== -1 ? row[pkColumnIndex] : String(rowIndex);
-            for (let colIndex = 0; colIndex < row.length; colIndex++) {
-                // フィルタクエリの場合は対象列のみ
-                if (query.kind === 'filter') {
-                    const colName = tableData.csvHeader[colIndex];
-                    if (colName !== query.columnName) continue;
-                    if (!matchesQuery(row[colIndex], query.value, options)) continue;
-                } else {
-                    if (!matchesQuery(row[colIndex], query.text, options)) continue;
-                }
-                const columnName = colIndex < tableData.csvHeader.length
-                    ? tableData.csvHeader[colIndex]
-                    : '';
-                // 参照列の表示テキストを解決
-                const referenceDisplayText = this.resolveReferenceDisplay(tableData, colIndex, row[colIndex]);
-                results.push({
-                    tableName: tableData.tableName,
-                    columnName,
-                    columnIndex: colIndex,
-                    pkValue,
-                    value: row[colIndex],
-                    referenceDisplayText,
-                });
-            }
-        }
-    }
-
-    /**
-     * 参照列の表示テキストを同期的に解決する
-     * ReferenceDataCacheにキャッシュがあれば利用する
-     */
-    private resolveReferenceDisplay(tableData: TableSearchData, colIndex: number, cellValue: string): string {
-        if (colIndex >= tableData.header.length) return '';
-        const columnDef = tableData.header[colIndex];
-        if (columnDef.reference === '') return '';
-        // 参照式からテーブル名を抽出（単純参照: テーブル名.列名）
-        const dotIndex = columnDef.reference.indexOf('.');
-        if (dotIndex === -1) return '';
-        const refTableName = columnDef.reference.substring(0, dotIndex);
-        // $で始まる場合は動的参照なのでスキップ
-        if (refTableName.startsWith('$')) return '';
-        // openEditorTablesからReferenceDataCacheを利用する代わりに、
-        // 直接参照先テーブルのインメモリデータから表示テキストを検索
-        const refEditorTable = this.openEditorTables.get(refTableName);
-        if (refEditorTable) {
-            return this.findDisplayTextFromEditorTable(refEditorTable, cellValue);
-        }
-        return '';
-    }
-
-    /**
-     * EditorTableから指定ID値の表示テキストを検索する
-     */
-    private findDisplayTextFromEditorTable(editorTable: EditorTable, idValue: string): string {
-        const columnCount = editorTable.getColumnCount();
-        const rowCount = editorTable.getLogicalRowCount();
-        // 表示列を特定（EditorTableのヘッダーから列名配列を構築して共通関数で決定）
-        const headerNames: string[] = [];
-        for (let c = 0; c < columnCount; c++) {
-            headerNames.push(editorTable.getColumnHeaderValue(c));
-        }
-        const displayColName = determineDisplayColumnName(headerNames);
-        if (displayColName === '') return '';
-        const displayColIndex = headerNames.indexOf(displayColName);
-        // PKColumnを特定（テーブルスキーマのprimaryKeyColumnsから最初のPK列名を使用）
-        const pkColumnName = editorTable.getTableData().primaryKeyColumns[0];
-        let pkColIndex = -1;
-        for (let c = 0; c < columnCount; c++) {
-            if (editorTable.getColumnHeaderValue(c) === pkColumnName) {
-                pkColIndex = c;
-                break;
-            }
-        }
-        if (pkColIndex === -1) return '';
-        // ID値に一致する行を探す
-        for (let r = 1; r < rowCount; r++) {
-            if (editorTable.getCellValueAt(r, pkColIndex + editorTable.dataColumnOffset()) === idValue) {
-                return editorTable.getCellValueAt(r, displayColIndex + editorTable.dataColumnOffset());
-            }
-        }
-        return '';
     }
 
     // =========================================================================
@@ -640,7 +499,7 @@ export class SearchPanel {
      * @param results 検索結果
      * @param searchText ハイライト用の検索テキスト
      */
-    private renderResults(results: SearchResult[], searchText: string): void {
+    private renderResults(results: SearchResultInfo[], searchText: string): void {
         this.resultsElement.replaceChildren();
         for (let i = 0; i < results.length; i++) {
             const result = results[i];

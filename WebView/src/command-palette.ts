@@ -106,11 +106,18 @@ export class CommandPalette {
         parentElement.appendChild(this.overlayElement);
 
         // イベントハンドラを登録
-        this.overlayElement.addEventListener('mousedown', (e: MouseEvent) => {
+        const hideOnOverlayBackground = (eventTarget: EventTarget | null) => {
+            if (!(eventTarget instanceof Node)) return;
             // オーバーレイ背景部分のクリックでのみ閉じる（パレット本体のクリックは無視）
-            if (e.target === this.overlayElement) {
+            if (!paletteElement.contains(eventTarget)) {
                 this.hide();
             }
+        };
+        this.overlayElement.addEventListener('mousedown', (e: MouseEvent) => {
+            hideOnOverlayBackground(e.target);
+        });
+        this.overlayElement.addEventListener('click', (e: MouseEvent) => {
+            hideOnOverlayBackground(e.target);
         });
 
         this.inputElement.addEventListener('keydown', (e: KeyboardEvent) => {

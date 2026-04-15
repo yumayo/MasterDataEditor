@@ -8,7 +8,8 @@ import {determineDisplayColumnName} from "./config";
 import {ValidationEngine} from "./validation-engine";
 import type {PluginValidationRunner} from "./plugin-validation-runner";
 import {resolvePluginErrors} from "./plugin-validation-runner";
-import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, ValidationErrorInfo} from "./editor-api-types";
+import {SearchEngine} from "./search-engine";
+import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, SearchResultInfo, ValidationErrorInfo} from "./editor-api-types";
 
 /**
  * EditorAPI の実装
@@ -52,6 +53,7 @@ export class EditorApiImpl implements EditorAPI {
             csv.load(content);
             return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
         }
+        const searchEngine = new SearchEngine(tab.getOpenEditorTables());
 
         // data 名前空間: ストアからの読み取り（ディープコピーを返して内部データを保護する）
         this.data = {
@@ -220,6 +222,9 @@ export class EditorApiImpl implements EditorAPI {
                     out.push({ tableName: 'プラグイン', rowIndex: -1, columnName: '(system)', value: '', kind: 'plugin', message: '[system] プラグインバリデーション実行失敗: ' + String(e) });
                 }
                 return out;
+            },
+            async searchCellsAsync(queryText: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean): Promise<SearchResultInfo[]> {
+                return searchEngine.searchAsync(queryText, { caseSensitive, wholeWord, useRegex }, () => false);
             },
         };
 

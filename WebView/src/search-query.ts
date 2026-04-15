@@ -39,6 +39,14 @@ export interface SearchOptions {
 }
 
 /**
+ * 数値のみの入力では部分一致より完全一致のほうが期待に近いため、
+ * SEARCHパネルとMCP検索の両方で暗黙的に wholeWord を有効化する。
+ */
+export function shouldAutoEnableWholeWord(input: string): boolean {
+    return /^\d+$/.test(input.trim());
+}
+
+/**
  * 検索ボックスの入力文字列を解析して SearchQuery を返す
  *
  * 解析ルール:

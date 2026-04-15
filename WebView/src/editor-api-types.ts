@@ -29,6 +29,8 @@ export interface EditorDataAPI {
     getRelatedTablesAsync(tableName: string): Promise<RelatedTableInfo[] | null>;
     /** 全テーブルのバリデーションエラー一覧を取得する（プラグインエラーを含む） */
     getValidationErrorsAsync(): Promise<ValidationErrorInfo[]>;
+    /** SEARCHパネルと同じ検索エンジンでテーブル横断検索を行う */
+    searchCellsAsync(queryText: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean): Promise<SearchResultInfo[]>;
 }
 
 /** バリデーションエラー情報（外部API用、内部フィールドを除外した公開型） */
@@ -39,6 +41,17 @@ export interface ValidationErrorInfo {
     value: string;
     kind: 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
     message: string;
+}
+
+/** 全文検索結果（MCP API用） */
+export interface SearchResultInfo {
+    tableName: string;
+    rowIndex: number;
+    columnName: string;
+    columnIndex: number;
+    pkValue: string;
+    value: string;
+    referenceDisplayText: string;
 }
 
 /** 関連テーブル情報（MCP API用） */

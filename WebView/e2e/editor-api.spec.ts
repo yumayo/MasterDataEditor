@@ -665,6 +665,46 @@ test.describe('Phase 4: C# ↔ WebView ブリッジ', () => {
         });
     });
 
+    test('ブリッジ: data.searchCellsAsync を呼び出せる', async ({ page }) => {
+        await setupSearchApiTestAsync(page);
+
+        const result = await page.evaluate(() => {
+            return new Promise<unknown>((resolve) => {
+                window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'editor_api_response') resolve(data);
+                });
+                window.chrome.webview.postMessage(JSON.stringify({
+                    type: 'editor_api_request',
+                    requestId: 'test-bridge-search',
+                    method: 'data.searchCellsAsync',
+                    params: {
+                        queryText: 'quest.name = quest_a',
+                        caseSensitive: false,
+                        wholeWord: false,
+                        useRegex: false,
+                    },
+                }));
+            });
+        });
+        expect(result).toEqual({
+            type: 'editor_api_response',
+            requestId: 'test-bridge-search',
+            success: true,
+            data: [
+                {
+                    tableName: 'quest',
+                    rowIndex: 0,
+                    columnName: 'name',
+                    columnIndex: 1,
+                    pkValue: '1',
+                    value: 'quest_a',
+                    referenceDisplayText: '',
+                },
+            ],
+        });
+    });
+
     test('ブリッジ: 存在しないメソッドの呼び出しでエラーレスポンスを返す', async ({ mockFileSystem, page }) => {
         await openTableAsync(page, 'test');
 
@@ -889,5 +929,121 @@ test.describe('Phase 5: getRelatedTablesAsync', () => {
             return (window as unknown as { editorApi: { data: { getRelatedTablesAsync(name: string): Promise<Array<unknown> | null> } } }).editorApi.data.getRelatedTablesAsync('nonexistent');
         });
         expect(related).toBeNull();
+    });
+});
+
+/**
+ * 全文検索APIテスト用のファイルシステム
+ */
+function createSearchApiFileSystem(): MockFileSystem {
+    return {
+        "schema/enemy.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/enemy.csv": "id,ja\n1,スライム\n2,ドラゴン",
+        "schema/quest.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/quest.csv": "id,name,enemy_id\n1,quest_a,1\n2,quest_b,2",
+    };
+}
+
+/** 全文検索APIテスト用ページセットアップ */
+async function setupSearchApiTestAsync(page: Page): Promise<void> {
+    await installMockApiAsync(page, createSearchApiFileSystem());
+    await page.goto('/');
+    await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+}
+
+// =============================================================================
+// Phase 6: 全文検索API (editorApi.data.searchCellsAsync)
+// =============================================================================
+
+test.describe('Phase 6: 全文検索API', () => {
+    test('未オープンのテーブルも全文検索できる', async ({ page }) => {
+        await setupSearchApiTestAsync(page);
+
+        const results = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: {
+                searchCellsAsync(
+                    queryText: string,
+                    caseSensitive: boolean,
+                    wholeWord: boolean,
+                    useRegex: boolean,
+                ): Promise<Array<{
+                    tableName: string;
+                    rowIndex: number;
+                    columnName: string;
+                    columnIndex: number;
+                    pkValue: string;
+                    value: string;
+                    referenceDisplayText: string;
+                }>>;
+            } } }).editorApi.data.searchCellsAsync('quest_a', false, false, false);
+        });
+
+        expect(results).toEqual([
+            {
+                tableName: 'quest',
+                rowIndex: 0,
+                columnName: 'name',
+                columnIndex: 1,
+                pkValue: '1',
+                value: 'quest_a',
+                referenceDisplayText: '',
+            },
+        ]);
+    });
+
+    test('開いているテーブルの未保存編集を検索結果に反映する', async ({ page }) => {
+        await setupSearchApiTestAsync(page);
+        await openTableAsync(page, 'quest');
+
+        const edited = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { edit: {
+                setCellValue(name: string, row: number, column: number, value: string): boolean;
+            } } }).editorApi.edit.setCellValue('quest', 0, 1, 'quest_edited');
+        });
+        expect(edited).toBe(true);
+
+        const results = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: {
+                searchCellsAsync(
+                    queryText: string,
+                    caseSensitive: boolean,
+                    wholeWord: boolean,
+                    useRegex: boolean,
+                ): Promise<Array<{
+                    tableName: string;
+                    rowIndex: number;
+                    columnName: string;
+                    columnIndex: number;
+                    pkValue: string;
+                    value: string;
+                    referenceDisplayText: string;
+                }>>;
+            } } }).editorApi.data.searchCellsAsync('quest_edited', false, false, false);
+        });
+
+        expect(results).toEqual([
+            {
+                tableName: 'quest',
+                rowIndex: 0,
+                columnName: 'name',
+                columnIndex: 1,
+                pkValue: '1',
+                value: 'quest_edited',
+                referenceDisplayText: '',
+            },
+        ]);
     });
 });

@@ -97,6 +97,7 @@ export class EditorApiBridge {
             case 'getReferenceHintsAsync': return this.api.data.getReferenceHintsAsync(this.requireString(params, 'tableName'));
             case 'getRelatedTablesAsync': return this.api.data.getRelatedTablesAsync(this.requireString(params, 'tableName'));
             case 'getValidationErrorsAsync': return this.api.data.getValidationErrorsAsync();
+            case 'searchCellsAsync': return this.api.data.searchCellsAsync(this.requireString(params, 'queryText'), this.requireBoolean(params, 'caseSensitive'), this.requireBoolean(params, 'wholeWord'), this.requireBoolean(params, 'useRegex'));
             default: throw new Error('Unknown data method: ' + methodName);
         }
     }
@@ -136,6 +137,13 @@ export class EditorApiBridge {
     private requireNumber(params: Record<string, unknown>, key: string): number {
         const value = params[key];
         if (typeof value !== 'number') throw new Error('Parameter "' + key + '" must be a number, got ' + typeof value);
+        return value;
+    }
+
+    /** params から boolean 型のパラメータを取り出す。型が異なる場合は Error をスローする */
+    private requireBoolean(params: Record<string, unknown>, key: string): boolean {
+        const value = params[key];
+        if (typeof value !== 'boolean') throw new Error('Parameter "' + key + '" must be a boolean, got ' + typeof value);
         return value;
     }
 
