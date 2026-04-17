@@ -57,6 +57,10 @@ const LOG_DATA: Record<string, LogEntry[]> = {
         { commitHash: "bbb2222", author: "Bob", date: "2026-03-15", message: "update item_b" },
         { commitHash: "aaa1111", author: "Alice", date: "2026-03-01", message: "initial commit" },
     ],
+    "data/other.csv": [
+        { commitHash: "fff6666", author: "Frank", date: "2026-04-02", message: "rebalance other table" },
+        { commitHash: "eee5555", author: "Eve", date: "2026-03-28", message: "add other row" },
+    ],
 };
 
 // カスタムフィクスチャ -----------------------------------------------------------
@@ -75,6 +79,19 @@ interface HistoryFixtures {
 const test = base.extend<HistoryFixtures>({
     historyTest: async ({ page }, use) => {
         const fs = createDefaultFileSystem();
+        fs["schema/other.json"] = JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "value", type: "int" },
+            ],
+            primary_key: ["id"],
+        });
+        fs["data/other.csv"] = [
+            "id,name,value",
+            "10,other_a,500",
+            "20,other_b,800",
+        ].join("\n");
 
         // git blame/log モックデータをブラウザコンテキストに注入する
         await page.addInitScript((args: {
@@ -179,6 +196,31 @@ test.describe('タイムラインパネル', () => {
             await expect(firstEntry.locator('.timeline-entry-message')).toHaveText('add item_c');
             await expect(firstEntry.locator('.timeline-entry-author')).toHaveText('Charlie');
             await expect(firstEntry.locator('.timeline-entry-date')).toHaveText('2026-03-20');
+        },
+    );
+
+    test(
+        'history パネル表示中に通常テーブルタブを切り替えると、そのタブのコミット履歴に更新されること',
+        async ({ page, historyTest: _historyTest }) => {
+            const explorer = page.locator('#explorer');
+            await explorer.getByText('other', { exact: true }).click();
+            await expect(page.locator('.tab-button-active')).toContainText('other');
+
+            const historyButton = page.locator('.activity-bar-item[data-panel="history"]');
+            await historyButton.click();
+
+            const timelinePanel = page.locator('.timeline-panel');
+            await expect(timelinePanel).toBeVisible();
+            const entries = timelinePanel.locator('.timeline-entry');
+            await expect(entries).toHaveCount(2);
+            await expect(entries.nth(0).locator('.timeline-entry-message')).toHaveText('rebalance other table');
+            await expect(entries.nth(0).locator('.timeline-entry-author')).toHaveText('Frank');
+
+            await page.locator('.tab-button').getByText('test', { exact: true }).click();
+            await expect(page.locator('.tab-button-active')).toContainText('test');
+            await expect(entries).toHaveCount(3);
+            await expect(entries.nth(0).locator('.timeline-entry-message')).toHaveText('add item_c');
+            await expect(entries.nth(0).locator('.timeline-entry-author')).toHaveText('Charlie');
         },
     );
 });

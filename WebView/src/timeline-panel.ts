@@ -59,6 +59,13 @@ export class TimelinePanel {
     }
 
     /**
+     * パネルが表示中かを返す
+     */
+    isVisible(): boolean {
+        return this.element.classList.contains('sidebar-panel-active');
+    }
+
+    /**
      * 指定テーブルの git log を取得してエントリ一覧を描画する
      * タブ切り替え時やパネル表示時にアクティブテーブル名で呼ばれる
      */

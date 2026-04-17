@@ -994,6 +994,7 @@ export class Tab {
         if (existingState) {
             this.activateTabState(existingState);
             this.activeTabName = name;
+            this.sidebar.notifyActiveTableChanged(name);
             // 他タブでストアが変更されたセルのDOMを同期する
             // reloadCellsFromStore はソート/フィルター状態をクリアするため、退避した状態を復元する
             existingState.editorTable.reloadCellsFromStore();
@@ -2077,6 +2078,7 @@ export class Tab {
             // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
             this.activateTabState(state);
             this.activeTabName = name;
+            this.sidebar.notifyActiveTableChanged(name);
 
             if (isDirtyOnCreate) {
                 tabButton.setDirty(true);

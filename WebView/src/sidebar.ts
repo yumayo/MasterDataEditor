@@ -263,6 +263,14 @@ export class Sidebar {
     }
 
     /**
+     * 通常テーブルタブの切り替え時に、表示中サイドバーパネルを同期する
+     */
+    notifyActiveTableChanged(tableName: string): void {
+        if (!this.timelinePanel.isVisible()) return;
+        this.timelinePanel.loadLogAsync(tableName).catch(e => { console.error('タイムラインログ取得失敗', e); });
+    }
+
+    /**
      * タイムラインエントリクリック時に、そのコミット1つ分の差分をDiffTabで表示する。
      * 左ペイン: そのファイルの1つ前のコミット時点のCSV、右ペイン: 選択コミット時点のCSV
      * prevEntry はファイル履歴上の1つ前のコミット（初回コミットの場合はnull）
@@ -309,7 +317,7 @@ export class Sidebar {
             // アクティブテーブルの git log を読み込む
             const activeTabName = this.tab.getActiveTabName();
             if (activeTabName !== false) {
-                this.timelinePanel.loadLogAsync(activeTabName).catch(e => { console.error('タイムラインログ取得失敗', e); });
+                this.notifyActiveTableChanged(activeTabName);
             }
             return;
         }
