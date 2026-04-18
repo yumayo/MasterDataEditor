@@ -61,5 +61,7 @@
     ],
     "primary_key": [
         "id"
-    ]
+    ],
+    "frozenColumnCount": 2,
+    "frozenRowCount": 5
 }
