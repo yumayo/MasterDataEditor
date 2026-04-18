@@ -17,7 +17,10 @@
     --z-index-freeze-corner: 35;
     --z-index-editor-table-corner: 40;
     --z-index-resize-handle: 45;
-    --z-index-fill-handle: 46;
+    /* fill-handle / fill-preview は通常セル上の操作補助UI。
+       行ヘッダー・列ヘッダー・固定行・固定列より前に出さず、
+       通常セルの選択装飾より前で止める。 */
+    --z-index-fill-handle: 14;
     --z-index-grid-textfield-active: 50;
     --z-index-column-header-badge-area: 1;
     --z-index-resize-guideline: 100;
