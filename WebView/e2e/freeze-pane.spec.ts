@@ -716,6 +716,63 @@ test.describe('フリーズペイン', () => {
                 expect(parseInt(nameCellStyle.left)).toBeGreaterThan(parseInt(idCellStyle.left));
             },
         );
+
+        test(
+            '矢印キーで最初のスクロール対象セルへ移動しても選択セルが固定領域に隠れない',
+            async ({ page }) => {
+                await page.setViewportSize({ width: 640, height: 480 });
+                const table = await openTableAsync(page, 'freeze_combo');
+                await rightClickColumnHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+                await rightClickRowHeaderAsync(table, 0);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                const scrollContainer = page.locator('.editor-left-pane');
+                await scrollContainer.evaluate((element) => {
+                    element.scrollTop = 10;
+                    element.scrollLeft = 60;
+                });
+                await page.waitForTimeout(100);
+
+                const scrollPosition = await scrollContainer.evaluate((element) => {
+                    return { top: element.scrollTop, left: element.scrollLeft };
+                });
+                expect(scrollPosition.top).toBeGreaterThan(0);
+                expect(scrollPosition.left).toBeGreaterThan(0);
+
+                await clickDataCellAsync(table, 3, 3);
+                await page.keyboard.press('ArrowUp');
+                await page.keyboard.press('ArrowUp');
+                await page.keyboard.press('ArrowLeft');
+                await page.keyboard.press('ArrowLeft');
+
+                await expect.poll(async () => {
+                    return await page.evaluate(() => {
+                        const focusedCell = document.querySelector('.editor-left-pane .editor-table-cell-focused');
+                        const frozenRow = document.querySelector('.editor-left-pane .editor-table-row.freeze-row-border');
+                        const frozenColumn = document.querySelector('.editor-left-pane .editor-table-column-header.freeze-column-border');
+                        if (!(focusedCell instanceof HTMLElement)) {
+                            throw new Error('focusedCell が見つかりません');
+                        }
+                        if (!(frozenRow instanceof HTMLElement)) {
+                            throw new Error('frozenRow が見つかりません');
+                        }
+                        if (!(frozenColumn instanceof HTMLElement)) {
+                            throw new Error('frozenColumn が見つかりません');
+                        }
+
+                        const focusedRect = focusedCell.getBoundingClientRect();
+                        const frozenRowRect = frozenRow.getBoundingClientRect();
+                        const frozenColumnRect = frozenColumn.getBoundingClientRect();
+                        return {
+                            value: focusedCell.textContent?.trim() ?? '',
+                            topVisible: focusedRect.top >= frozenRowRect.bottom,
+                            leftVisible: focusedRect.left >= frozenColumnRect.right,
+                        };
+                    });
+                }).toEqual({ value: 'name_2', topVisible: true, leftVisible: true });
+            },
+        );
     });
 
     test.describe('固定状態の永続化', () => {

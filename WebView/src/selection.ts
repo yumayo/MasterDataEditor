@@ -555,13 +555,12 @@ export class Selection {
         const targetRect = this.editorTable.getCellRectOrNull(row, column);
         if (!targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
-        const headerHeight = this.editorTable.getFirstRowHeight();
-        const rowHeaderWidth = this.editorTable.getRowHeaderWidth();
+        const viewportInsets = this.editorTable.getSelectionViewportInsets();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
 
-        const visibleTop = containerRect.top + headerHeight;
+        const visibleTop = containerRect.top + viewportInsets.top;
         const visibleBottom = containerRect.bottom - scrollbarHeight;
-        const visibleLeft = containerRect.left + rowHeaderWidth;
+        const visibleLeft = containerRect.left + viewportInsets.left;
         const visibleRight = containerRect.right - scrollbarWidth;
 
         let nextScrollTop = this.scrollBinding.getScrollTop();

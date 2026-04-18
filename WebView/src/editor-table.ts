@@ -2114,6 +2114,53 @@ export class EditorTable {
     }
 
     /**
+     * 選択セルの可視判定で避けるべき固定領域のインセットを返す。
+     * 上端は列ヘッダー + 固定行、左端は blame列 + 行ヘッダー + 固定列の累積サイズとなる。
+     */
+    getSelectionViewportInsets(): { top: number; left: number } {
+        const headerRow = this.element.children[0] as HTMLElement | undefined;
+        if (!headerRow) {
+            throw new Error('列ヘッダー行が存在しません');
+        }
+
+        let top = headerRow.getBoundingClientRect().height;
+        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
+            const rowElement = this.getRowElement(dataRowIdx + 1);
+            if (!rowElement) {
+                throw new Error(`固定行が存在しません: dataRowIdx=${dataRowIdx}`);
+            }
+            top += rowElement.getBoundingClientRect().height;
+        }
+
+        let left = 0;
+        if (this.isBlameVisible) {
+            const blameCell = headerRow.children[0] as HTMLElement | undefined;
+            if (!blameCell) {
+                throw new Error('blame列ヘッダーが存在しません');
+            }
+            left += blameCell.getBoundingClientRect().width;
+        }
+
+        const rowHeaderIndex = this.isBlameVisible ? 1 : 0;
+        const rowHeaderCell = headerRow.children[rowHeaderIndex] as HTMLElement | undefined;
+        if (!rowHeaderCell) {
+            throw new Error('行ヘッダーセルが存在しません');
+        }
+        left += rowHeaderCell.getBoundingClientRect().width;
+
+        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
+        for (let dataColumnIdx = 0; dataColumnIdx < this.frozenColumnCount; dataColumnIdx++) {
+            const columnHeaderCell = headerRow.children[dataColumnIdx + dataColumnOffset] as HTMLElement | undefined;
+            if (!columnHeaderCell) {
+                throw new Error(`固定列ヘッダーが存在しません: dataColumnIdx=${dataColumnIdx}`);
+            }
+            left += columnHeaderCell.getBoundingClientRect().width;
+        }
+
+        return { top, left };
+    }
+
+    /**
      * 行ヘッダー（コーナーセル）の幅を取得する
      */
     getRowHeaderWidth(): number {
