@@ -66,6 +66,7 @@ namespace App.MasterDataEditor
 				}
 
 				var data = dataElement.GetString();
+				Directory.CreateDirectory(AppEnvironment.GetDirectoryName(filePath));
 				File.WriteAllText(filePath, data);
 				AfterSaveHookRunner.StartIfExists(workDir, filename);
 

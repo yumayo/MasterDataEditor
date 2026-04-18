@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 /**
  * インメモリファイルシステム
@@ -39,7 +39,7 @@ export function createDefaultFileSystem(): MockFileSystem {
     return {
         "schema/test.json": schema,
         "data/test.csv": csv,
-        "data/bookmarks.json": "[]",
+        "userdata/bookmarks.json": "[]",
         "plugins/.gitkeep": "",
     };
 }
@@ -54,9 +54,27 @@ export async function installMockApiAsync(
     page: Page,
     fileSystem: MockFileSystem,
 ): Promise<void> {
+    const mockFsInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await page.addInitScript(
-        (fs: MockFileSystem) => {
+        ({ fs, instanceId }: { fs: MockFileSystem; instanceId: string }) => {
             type Handler = (event: MessageEvent) => void;
+            type AfterWriteHook = (filename: string, data: string) => void;
+            type MockApiWindow = {
+                __mockFs: MockFileSystem;
+                __onAfterWriteFile?: AfterWriteHook;
+            };
+            const MOCK_FS_STORAGE_KEY = '__mockFs';
+            const MOCK_FS_INSTANCE_KEY = '__mockFsInstanceId';
+            const storedFs = sessionStorage.getItem(MOCK_FS_STORAGE_KEY);
+            const storedInstanceId = sessionStorage.getItem(MOCK_FS_INSTANCE_KEY);
+            const runtimeFs = storedFs !== null && storedInstanceId === instanceId
+                ? JSON.parse(storedFs) as MockFileSystem
+                : fs;
+
+            function persistMockFs(): void {
+                sessionStorage.setItem(MOCK_FS_STORAGE_KEY, JSON.stringify(runtimeFs));
+                sessionStorage.setItem(MOCK_FS_INSTANCE_KEY, instanceId);
+            }
 
             const listeners: Handler[] = [];
 
@@ -68,7 +86,7 @@ export async function installMockApiAsync(
                 const seen = new Set<string>();
                 const results: MockFile[] = [];
 
-                for (const key of Object.keys(fs)) {
+                for (const key of Object.keys(runtimeFs)) {
                     if (!key.startsWith(prefix)) {
                         continue;
                     }
@@ -94,7 +112,7 @@ export async function installMockApiAsync(
                 }
 
                 const hasPrefix =
-                    Object.keys(fs).some(k => k.startsWith(prefix));
+                    Object.keys(runtimeFs).some(k => k.startsWith(prefix));
                 if (results.length === 0 && !hasPrefix) {
                     throw new Error(
                         `Directory not found: ` + directory,
@@ -120,7 +138,8 @@ export async function installMockApiAsync(
              * リクエストを処理してレスポンスを返す
              */
             // テストからMockFileSystemを参照可能にする（readMockFileAsync経由でアクセス）
-            (window as unknown as { __mockFs: MockFileSystem }).__mockFs = fs;
+            (window as unknown as MockApiWindow).__mockFs = runtimeFs;
+            persistMockFs();
 
             function handleRequest(message: string): void {
                 const request = JSON.parse(message);
@@ -173,12 +192,12 @@ export async function installMockApiAsync(
 
                 if (type === "read_file_request") {
                     const filename = request.filename as string;
-                    if (filename in fs) {
+                    if (filename in runtimeFs) {
                         dispatch({
                             type: "read_file_response",
                             requestId,
                             success: true,
-                            data: fs[filename],
+                            data: runtimeFs[filename],
                         });
                     } else {
                         dispatch({
@@ -194,24 +213,25 @@ export async function installMockApiAsync(
                 if (type === "write_file_request") {
                     const filename = request.filename as string;
                     const data = request.data as string;
-                    fs[filename] = data;
+                    const mockWindow = window as unknown as MockApiWindow;
+                    runtimeFs[filename] = data;
+                    persistMockFs();
                     dispatch({
                         type: "write_file_response",
                         requestId,
                         success: true,
                     });
                     // ファイル書き込み後フック: テストから登録することで保存後の状態を動的に変更できる
-                    type AfterWriteHook = (filename: string, data: string) => void;
-                    type HookWindow = { __onAfterWriteFile?: AfterWriteHook };
-                    const hook = (window as unknown as HookWindow).__onAfterWriteFile;
+                    const hook = mockWindow.__onAfterWriteFile;
                     if (hook) { hook(filename, data); }
                     return;
                 }
 
                 if (type === "delete_file_request") {
                     const filename = request.filename as string;
-                    if (filename in fs) {
-                        delete fs[filename];
+                    if (filename in runtimeFs) {
+                        delete runtimeFs[filename];
+                        persistMockFs();
                         dispatch({ type: "delete_file_response", requestId, success: true });
                     } else {
                         dispatch({ type: "delete_file_response", requestId, success: false, error: "File not found" });
@@ -405,7 +425,7 @@ export async function installMockApiAsync(
                 },
             };
         },
-        fileSystem,
+        { fs: fileSystem, instanceId: mockFsInstanceId },
     );
 }
 

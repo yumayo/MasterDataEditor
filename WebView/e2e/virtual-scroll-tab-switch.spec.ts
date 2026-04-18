@@ -43,7 +43,7 @@ function createFileSystem(): MockFileSystem {
 /** ブックマーク付きファイルシステム（weapon 80行目にブックマーク設定済み） */
 function createFileSystemWithBookmark(): MockFileSystem {
     const fs = createFileSystem();
-    fs['data/bookmarks.json'] = JSON.stringify([
+    fs['userdata/bookmarks.json'] = JSON.stringify([
         { tableName: 'weapon', rowKey: '80', columnName: 'name', label: 'weapon_80', createdAt: '2026-01-01T00:00:00.000Z' },
     ]);
     return fs;

@@ -9,7 +9,7 @@ import {CommandPalette} from "./command-palette";
 import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
-import {applyStoredTheme} from "./settings-panel";
+import {applyStoredThemeAsync} from "./settings-panel";
 import {NotificationToast} from "./notification";
 import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
@@ -23,10 +23,11 @@ import {EditorApiBridge} from "./editor-api-bridge";
 import {ErrorTooltip} from "./error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "./editor-api-types";
 import type {BookmarkEntry} from "./bookmark-panel";
+import {BOOKMARKS_FILE} from "./userdata-path";
 
 (async () => {
-    // localStorage に保存されたテーマを即時適用する（body[data-theme] の初期値を上書きする）
-    applyStoredTheme();
+    // 保存済みテーマを起動直後に適用する（body[data-theme] の初期値を上書きする）
+    await applyStoredThemeAsync();
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
     // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を
@@ -80,6 +81,16 @@ import type {BookmarkEntry} from "./bookmark-panel";
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
+
+    // 起動直後に bookmarks.json からブックマークを復元する。
+    // schema 読み込み完了を待つ必要はなく、先に復元しておくことで初回テーブル表示時の視覚マーク適用を安定させる。
+    try {
+        const bookmarksJson = await readFileAsync(BOOKMARKS_FILE);
+        const bookmarkEntries = JSON.parse(bookmarksJson) as BookmarkEntry[];
+        sidebar.restoreBookmarks(bookmarkEntries);
+    } catch {
+        // ファイルが存在しない場合は無視する
+    }
 
     // ツールバーを初期化（タブ・エディタへの密結合。コンストラクタ内でDOMイベントをバインドするため変数保持不要）
     new Toolbar(document.getElementById('toolbar')!, tab, editor);
@@ -192,16 +203,6 @@ import type {BookmarkEntry} from "./bookmark-panel";
 
         // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
-    }
-
-    // 起動時に bookmarks.json からブックマークを復元する
-    // ファイルが存在しない場合はスキップする（空のブックマークリストで開始）
-    try {
-        const bookmarksJson = await readFileAsync('data/bookmarks.json');
-        const bookmarkEntries = JSON.parse(bookmarksJson) as BookmarkEntry[];
-        sidebar.restoreBookmarks(bookmarkEntries);
-    } catch {
-        // ファイルが存在しない場合は無視する
     }
 
     // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。

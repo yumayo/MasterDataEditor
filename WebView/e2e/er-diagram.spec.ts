@@ -1,6 +1,8 @@
 import {test, expect} from './fixtures/test';
 import {Page, Locator} from '@playwright/test';
-import {installMockApiAsync, MockFileSystem} from './fixtures/mock-api';
+import {installMockApiAsync, MockFileSystem, readMockFileAsync} from './fixtures/mock-api';
+
+const ER_DIAGRAM_LAYOUT_FILE = 'userdata/er-diagram-layout.json';
 
 // =============================================================================
 // ER図機能テスト
@@ -91,6 +93,12 @@ function createErDiagramTestFileSystem(): MockFileSystem {
     };
 }
 
+function createErDiagramTestFileSystemWithSavedLayout(savedLayout: object): MockFileSystem {
+    const fs = createErDiagramTestFileSystem();
+    fs[ER_DIAGRAM_LAYOUT_FILE] = JSON.stringify(savedLayout);
+    return fs;
+}
+
 /**
  * アクティビティバーのER図アイコンをクリックしてER図タブを開く
  */
@@ -114,6 +122,14 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
     await expect(table).toBeVisible();
     return table;
+}
+
+async function waitForErDiagramLayoutWriteAsync(page: Page): Promise<void> {
+    await page.waitForFunction(
+        (path: string) => typeof (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path] === 'string',
+        ER_DIAGRAM_LAYOUT_FILE,
+        {timeout: 5000}
+    );
 }
 
 test.describe('ER図機能', () => {
@@ -244,4 +260,36 @@ test.describe('ER図機能', () => {
         const itemWeaponEdge = svg.locator('.er-edge-simple[data-from="item"][data-to="weapon"]');
         await expect(itemWeaponEdge).toHaveClass(/er-edge-highlighted/);
     });
+});
+
+test.describe('ER図レイアウト永続化', () => {
+    test('ズーム操作後にuserdata/er-diagram-layout.jsonへ保存される', async ({page}) => {
+        const fs = createErDiagramTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await openErDiagramAsync(page);
+
+        const svg = getErDiagramSvg(page);
+        await svg.hover();
+        await page.mouse.wheel(0, 240);
+        await waitForErDiagramLayoutWriteAsync(page);
+
+        const layoutJson = await readMockFileAsync(page, ER_DIAGRAM_LAYOUT_FILE);
+        const layout = JSON.parse(layoutJson) as {viewBox: {x: number; y: number; w: number; h: number}};
+        expect(layout.viewBox.w).toBeGreaterThan(0);
+        expect(layout.viewBox.h).toBeGreaterThan(0);
+    });
+
+    test('userdata/er-diagram-layout.jsonが存在すれば起動時にviewBoxを復元する', async ({page}) => {
+        const fs = createErDiagramTestFileSystemWithSavedLayout({
+            nodes: {},
+            viewBox: {x: 10, y: 20, w: 333, h: 444},
+        });
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await openErDiagramAsync(page);
+
+        await expect(getErDiagramSvg(page)).toHaveAttribute('viewBox', '10 20 333 444');
+    });
+
 });

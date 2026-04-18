@@ -1,5 +1,6 @@
 import {Tab} from "./tab";
 import {writeFileAsync} from "./api";
+import {BOOKMARKS_FILE} from "./userdata-path";
 
 /**
  * ブックマークエントリの永続化データ型
@@ -209,11 +210,11 @@ export class BookmarkPanel {
     }
 
     /**
-     * ブックマークを data/bookmarks.json に永続化する
+     * ブックマークを userdata/bookmarks.json に永続化する
      */
     private async persistAsync(): Promise<void> {
         const entries = this.serializeBookmarks();
-        await writeFileAsync('data/bookmarks.json', JSON.stringify(entries));
+        await writeFileAsync(BOOKMARKS_FILE, JSON.stringify(entries));
     }
 
     /**

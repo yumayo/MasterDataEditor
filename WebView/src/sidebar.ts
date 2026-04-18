@@ -260,6 +260,9 @@ export class Sidebar {
      */
     restoreBookmarks(entries: BookmarkEntry[]): void {
         this.bookmarkPanel.restoreBookmarks(entries);
+        this.tab.getOpenEditorTables().forEach((editorTable) => {
+            editorTable.reapplyBookmarkMarks();
+        });
     }
 
     /**

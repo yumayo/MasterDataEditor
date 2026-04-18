@@ -509,11 +509,11 @@ export class EditorTable {
         });
         // 初期表示時にバリデーションを実行してセルにエラークラスを付与する
         this.runValidation();
-        // 初期表示時にブックマーク済みセルの視覚マークを復元する
-        this.restoreBookmarkMarks();
         // 全行生成後にバーチャルスクロールの初期表示範囲を確立する。
         // ビューポートに収まる行のみ残し、残りは削除してスペーサーで高さを補完する。
         this.virtualScroll.forceRecalculate();
+        // forceRecalculate() が初期DOMを作り直すため、その後でブックマーク視覚マークを復元する
+        this.restoreBookmarkMarks();
     }
 
     /** バーチャルスクロールのスペーサーとDOM行を強制再計算する（タブ復帰時に使用） */
@@ -3184,6 +3184,14 @@ export class EditorTable {
      */
     removeBookmark(tableName: string, pkValue: string, columnName: string): void {
         this.sidebar.removeBookmark(tableName, pkValue, columnName);
+    }
+
+    /**
+     * 既に開いているテーブルに対してブックマーク視覚マークを再適用する
+     * 起動後に bookmarks.json を復元したタイミングなど、BookmarkPanel の内容が後から揃う経路で使用する
+     */
+    reapplyBookmarkMarks(): void {
+        this.restoreBookmarkMarks();
     }
 
     /**

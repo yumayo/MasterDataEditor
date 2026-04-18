@@ -15,6 +15,7 @@ import {findFilesAsync, readFileAsync, writeFileAsync} from "./api";
 import {isDynamicReferenceSchema} from "./reference-expression";
 import {calculateGridLayout, ER_NODE_WIDTH} from "./er-diagram-layout";
 import type {Tab} from "./tab";
+import {ER_DIAGRAM_LAYOUT_FILE} from "./userdata-path";
 
 // =========================================================================
 // 内部データ型
@@ -54,8 +55,6 @@ interface UnresolvedDynamicRef {
 // =========================================================================
 // 永続化ファイルパス
 // =========================================================================
-const LAYOUT_FILE = 'data/er-diagram-layout.json';
-
 /** 永続化する配置データの型 */
 interface SavedLayout {
     nodes: Record<string, { x: number; y: number }>;
@@ -281,7 +280,7 @@ export class ErDiagramTab {
         // 保存済みレイアウトがあれば読み込む
         let savedLayout: SavedLayout | null = null;
         try {
-            const json = await readFileAsync(LAYOUT_FILE);
+            const json = await readFileAsync(ER_DIAGRAM_LAYOUT_FILE);
             savedLayout = JSON.parse(json) as SavedLayout;
         } catch (_) {
             // ファイルが存在しない場合は初回配置
@@ -743,7 +742,7 @@ export class ErDiagramTab {
             nodes[name] = { x: pos.x, y: pos.y };
         }
         const data: SavedLayout = { nodes, viewBox: { ...this.viewBox } };
-        writeFileAsync(LAYOUT_FILE, JSON.stringify(data)).catch(e => { console.error('ER図レイアウト保存エラー', e); });
+        writeFileAsync(ER_DIAGRAM_LAYOUT_FILE, JSON.stringify(data)).catch(e => { console.error('ER図レイアウト保存エラー', e); });
     }
 
     /** ホイールズーム: カーソル位置を中心にズームイン・アウトする */

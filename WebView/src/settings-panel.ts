@@ -1,18 +1,37 @@
+import {readFileAsync, writeFileAsync} from "./api";
 import {TabButton} from "./tab-button";
+import {THEME_SETTINGS_FILE} from "./userdata-path";
 
 /**
  * 設定画面パネル
  * テーマ選択プルダウンを提供する。
- * - change イベントで body[data-theme] を即時更新し、自動的に localStorage へ保存する
+ * - change イベントで body[data-theme] を即時更新し、自動的に userdata/theme.json へ保存する
  * - Ctrl+S による手動保存も引き続き動作する（冪等）
  */
 
-/** localStorage に保存するテーマ設定のキー */
-const THEME_STORAGE_KEY = 'master-data-editor-theme';
+type ThemeValue = 'dark' | 'light';
+
+interface ThemeSettingsFile {
+    theme: ThemeValue;
+}
+
+function isThemeValue(value: unknown): value is ThemeValue {
+    return value === 'dark' || value === 'light';
+}
+
+async function readStoredThemeAsync(): Promise<ThemeValue | null> {
+    try {
+        const json = await readFileAsync(THEME_SETTINGS_FILE);
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        return isThemeValue(parsed['theme']) ? parsed['theme'] : null;
+    } catch {
+        return null;
+    }
+}
 
 export class SettingsPanel {
     private readonly element: HTMLElement;
-    private selectedTheme: string;
+    private selectedTheme: ThemeValue;
     private readonly selectedLabel: HTMLElement;
     private readonly dropdownList: HTMLElement;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
@@ -51,7 +70,7 @@ export class SettingsPanel {
         this.dropdownList = document.createElement('div');
         this.dropdownList.classList.add('settings-dropdown-list');
 
-        const options: Array<{ value: string; text: string }> = [
+        const options: Array<{ value: ThemeValue; text: string }> = [
             { value: 'dark', text: 'ダーク' },
             { value: 'light', text: 'ライト' },
         ];
@@ -80,7 +99,7 @@ export class SettingsPanel {
         dropdown.appendChild(this.dropdownList);
 
         // 現在の body[data-theme] を初期値として反映する
-        // index.html の <body data-theme="dark"> で初期値が設定され、applyStoredTheme() が
+        // index.html の <body data-theme="dark"> で初期値が設定され、applyStoredThemeAsync() が
         // main.ts で SettingsPanel 生成前に必ず呼ばれるため、getAttribute は常に非 null を返す
         const currentTheme = document.body.getAttribute('data-theme')!;
         const currentOption = options.find(o => o.value === currentTheme)!;
@@ -93,7 +112,7 @@ export class SettingsPanel {
         this.element.appendChild(section);
     }
 
-    private selectTheme(value: string, text: string): void {
+    private selectTheme(value: ThemeValue, text: string): void {
         this.selectedTheme = value;
         this.selectedLabel.textContent = text;
         document.body.dataset.theme = value;
@@ -128,21 +147,26 @@ export class SettingsPanel {
     }
 
     /**
-     * 現在の設定を localStorage に保存し、dirty 状態を解除する
+     * 現在の設定を userdata/theme.json に保存し、dirty 状態を解除する
      * change イベント（自動保存）および Ctrl+S（手動保存）の両方から呼ばれる
      */
     save(): void {
-        localStorage.setItem(THEME_STORAGE_KEY, this.selectedTheme);
-        this.tabButton.setDirty(false);
+        const data: ThemeSettingsFile = {theme: this.selectedTheme};
+        writeFileAsync(THEME_SETTINGS_FILE, JSON.stringify(data))
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error('[SettingsPanel] save failed:', String(error));
+                this.tabButton.setDirty(true);
+            });
     }
 }
 
 /**
- * アプリケーション起動時に localStorage から保存済みテーマを読み込んで適用する
+ * アプリケーション起動時に userdata/theme.json から保存済みテーマを読み込んで適用する
  * main.ts の初期化処理で呼ぶ
  */
-export function applyStoredTheme(): void {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+export async function applyStoredThemeAsync(): Promise<void> {
+    const stored = await readStoredThemeAsync();
     if (stored !== null) {
         document.body.dataset.theme = stored;
     }

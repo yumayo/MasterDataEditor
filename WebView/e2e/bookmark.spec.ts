@@ -3,6 +3,8 @@ import {Page, Locator} from '@playwright/test';
 import {installMockApiAsync, MockFileSystem, readMockFileAsync} from './fixtures/mock-api';
 import {getDataCell} from './fixtures/test-utils';
 
+const BOOKMARKS_FILE = 'userdata/bookmarks.json';
+
 /**
  * ブックマークテスト用のファイルシステムを生成する
  *
@@ -104,8 +106,8 @@ async function selectCellAsync(page: Page, table: Locator, rowIndex: number, col
  */
 async function waitForBookmarkCountAsync(page: Page, expectedCount: number): Promise<void> {
     await page.waitForFunction(
-        (count: number) => {
-            const raw = (window as unknown as { __mockFs: { [key: string]: string } }).__mockFs['data/bookmarks.json'];
+        ({count, path}: {count: number; path: string}) => {
+            const raw = (window as unknown as { __mockFs: { [key: string]: string } }).__mockFs[path];
             if (raw === undefined) return count === 0;
             try {
                 const arr = JSON.parse(raw) as unknown[];
@@ -114,7 +116,7 @@ async function waitForBookmarkCountAsync(page: Page, expectedCount: number): Pro
                 return false;
             }
         },
-        expectedCount,
+        {count: expectedCount, path: BOOKMARKS_FILE},
         {timeout: 5000}
     );
 }
@@ -125,7 +127,7 @@ async function waitForBookmarkCountAsync(page: Page, expectedCount: number): Pro
  */
 function createBookmarkTestFileSystemWithPersistence(bookmarks: object[]): MockFileSystem {
     const base = createBookmarkTestFileSystem();
-    base["data/bookmarks.json"] = JSON.stringify(bookmarks);
+    base[BOOKMARKS_FILE] = JSON.stringify(bookmarks);
     return base;
 }
 
@@ -402,8 +404,8 @@ test.describe('ブックマーク永続化', () => {
         await clickContextMenuItemAsync(page, 'ブックマークに追加');
         // persistAsync() の完了を待つ
         await waitForBookmarkCountAsync(page, 1);
-        // data/bookmarks.json がモックファイルシステムに書き込まれていること
-        const json = await readMockFileAsync(page, 'data/bookmarks.json');
+        // userdata/bookmarks.json がモックファイルシステムに書き込まれていること
+        const json = await readMockFileAsync(page, BOOKMARKS_FILE);
         const bookmarks = JSON.parse(json) as object[];
         expect(bookmarks).toHaveLength(1);
         // 保存形式の検証: tableName, rowKey, columnName, label, createdAt が含まれること
@@ -429,7 +431,7 @@ test.describe('ブックマーク永続化', () => {
         // persistAsync() はfire-and-forgetのため書き込み完了を待つ
         await waitForBookmarkCountAsync(page, 2);
         // bookmarks.json に2件保存されていること
-        const json = await readMockFileAsync(page, 'data/bookmarks.json');
+        const json = await readMockFileAsync(page, BOOKMARKS_FILE);
         const bookmarks = JSON.parse(json) as object[];
         expect(bookmarks).toHaveLength(2);
     });
@@ -467,7 +469,7 @@ test.describe('ブックマーク永続化', () => {
         // persistAsync() はfire-and-forgetのため書き込み完了を待つ
         await waitForBookmarkCountAsync(page, 2);
         // 2件保存されていることを確認
-        const json1 = await readMockFileAsync(page, 'data/bookmarks.json');
+        const json1 = await readMockFileAsync(page, BOOKMARKS_FILE);
         expect(JSON.parse(json1)).toHaveLength(2);
         // ブックマークパネルを開いて最初のエントリを x ボタンで削除
         await openBookmarkPanelAsync(page);
@@ -477,7 +479,7 @@ test.describe('ブックマーク永続化', () => {
         // persistAsync() はfire-and-forgetのため書き込み完了を待つ
         await waitForBookmarkCountAsync(page, 1);
         // bookmarks.json が1件に減っていること
-        const json2 = await readMockFileAsync(page, 'data/bookmarks.json');
+        const json2 = await readMockFileAsync(page, BOOKMARKS_FILE);
         const remaining = JSON.parse(json2) as object[];
         expect(remaining).toHaveLength(1);
     });
