@@ -132,19 +132,10 @@ export class EditorTableReference {
      */
     updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
         const tableElement = this.table.getTableElement();
-        // 仮想スクロール時、DOM子インデックスと論理行インデックスがずれるためオフセットを加算する。
-        // setCellValue 内の getCellValueAt は論理インデックスで行を検索するため、
-        // DOMインデックスのまま渡すと動的参照・逆参照ヒントの行解決に失敗する。
-        const vsOffset = this.table.getVirtualScrollRenderedStart();
-        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
-        const dataRowChildOffset = this.table.getDataRowChildOffset();
         for (let domIndex = startDomRow; domIndex < endDomRow; domIndex++) {
             const row = tableElement.children[domIndex] as HTMLElement;
             if (!row) throw new Error(`DOM行が見つかりません: domIndex=${domIndex}`);
-            // logicalRowIndex: getCellValueAt() が受け取るDOM行インデックス（1始まり、ヘッダー含む）
-            // domIndex から dataRowChildOffset を引いてデータ行ローカルインデックス（0始まり）を算出し、
-            // +1 して getCellValueAt の行番号体系（1始まり）に変換する
-            const logicalRowIndex = vsOffset + (domIndex - dataRowChildOffset) + 1;
+            const logicalRowIndex = this.getLogicalRowIndexFromDomRow(row);
             for (let colIndex = this.table.dataColumnOffset(); colIndex < row.children.length; colIndex++) {
                 const cell = row.children[colIndex] as HTMLElement;
                 const dataColumnIndex = colIndex - this.table.dataColumnOffset();
@@ -163,14 +154,12 @@ export class EditorTableReference {
         // bottomSpacer はデータ行ではないため getDataRowEndChildIndex() で除外する
         const dataRowChildOffset = this.table.getDataRowChildOffset();
         const dataRowEndIndex = this.table.getDataRowEndChildIndex();
-        const vsOffset = this.table.getVirtualScrollRenderedStart();
         for (let domIndex = dataRowChildOffset; domIndex < dataRowEndIndex; domIndex++) {
             const row = tableElement.children[domIndex] as HTMLElement;
             const cell = row.children[columnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
                 const value = EditorTable.getCellValue(cell);
-                // logicalRowIndex: getCellValueAt() が受け取るDOM行インデックス（1始まり、ヘッダー含む）
-                const logicalRowIndex = vsOffset + (domIndex - dataRowChildOffset) + 1;
+                const logicalRowIndex = this.getLogicalRowIndexFromDomRow(row);
                 this.setCellValue(cell, value, columnIndex, logicalRowIndex);
             }
         }
@@ -337,6 +326,21 @@ export class EditorTableReference {
         // 表示テキストがFK値と同じ場合はヒントが冗長なので表示しない
         if (displayText === '' || displayText === value) return;
         this.appendReferenceHint(cell, displayText);
+    }
+
+    /**
+     * DOM行要素から論理行インデックスを復元する。
+     * 仮想スクロールや固定行が有効でも、行ヘッダーの data-row-index は常に
+     * 現在そのDOM行が表している論理データ行を指すため、renderedStart からの逆算より信頼できる。
+     */
+    private getLogicalRowIndexFromDomRow(row: HTMLElement): number {
+        const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
+        if (rowHeader === null) throw new Error('行ヘッダーが見つかりません');
+        const rowIndexText = rowHeader.getAttribute('data-row-index');
+        if (rowIndexText === null) throw new Error('行ヘッダーに data-row-index がありません');
+        const dataRowIndex = Number(rowIndexText);
+        if (Number.isNaN(dataRowIndex)) throw new Error(`不正な data-row-index です: ${rowIndexText}`);
+        return dataRowIndex + 1;
     }
 
     /**

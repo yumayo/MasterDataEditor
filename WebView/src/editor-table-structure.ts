@@ -543,18 +543,27 @@ export class EditorTableStructure {
     /**
      * startDomIndex 以降の全行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再設定する。
      * 行挿入・削除・DOM行数変化後に必ず呼ぶこと。
-     * @param startDomIndex 更新を開始する DOM インデックス（列ヘッダー行 = 0 を含む、データ行は 1 以上）
+     * @param startRowNumber 更新を開始する論理行番号（列ヘッダー行 = 0、データ行は 1 以上）
      */
-    renumberRowsFrom(startDomIndex: number): void {
-        const rowCount = this.table.getRowCount();
-        // バーチャルスクロール時はDOMインデックスと論理行インデックスがずれるためオフセットを加算する。
-        // DOM子要素[1]がデータ行renderedStartに対応するため、
-        // DOM子要素[i]の論理行番号は renderedStart + i（1始まり表示）となる。
+    renumberRowsFrom(startRowNumber: number): void {
         const vsOffset = this.table.getVirtualScrollRenderedStart();
-        for (let i = startDomIndex; i < rowCount; ++i) {
-            const row = this.table.getRowElementForInsert(i);
+        const vsEnd = this.table.getVirtualScrollRenderedEnd();
+        const frozenRowCount = this.table.getFrozenRowCount();
+        const visibleLogicalRowNumbers = [0];
+        for (let logicalRowNumber = 1; logicalRowNumber <= frozenRowCount; logicalRowNumber++) {
+            visibleLogicalRowNumbers.push(logicalRowNumber);
+        }
+        for (let logicalRowNumber = vsOffset + 1; logicalRowNumber <= vsEnd; logicalRowNumber++) {
+            visibleLogicalRowNumbers.push(logicalRowNumber);
+        }
+        for (const logicalRowNumber of visibleLogicalRowNumbers) {
+            if (logicalRowNumber < startRowNumber) continue;
+            const row = this.table.getRowElementForInsert(logicalRowNumber);
             if (!row) continue;
-            const logicalRowNumber = vsOffset + i;
+            if (logicalRowNumber === 0) {
+                row.dataset.row = '0';
+                continue;
+            }
             row.dataset.row = String(logicalRowNumber);
             // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
             const header = row.querySelector('.editor-table-row-header') as HTMLElement | null;
