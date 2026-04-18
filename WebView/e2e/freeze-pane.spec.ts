@@ -141,6 +141,33 @@ function createCombinedFreezeTestFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * fill-handle の重なり順検証用ファイルシステム。
+ * 先頭1行・先頭1列を固定した状態で開き、選択セルに応じて
+ * fill-handle の z-index が動的に切り替わることを検証する。
+ */
+function createFillHandleZIndexTestFileSystem(): MockFileSystem {
+    return {
+        "schema/fill_handle_z_index_test.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "hp", type: "int" },
+                { key: 3, name: "atk", type: "int" },
+            ],
+            primary_key: ["id"],
+            frozenRowCount: 1,
+            frozenColumnCount: 1,
+        }),
+        "data/fill_handle_z_index_test.csv": [
+            "id,name,hp,atk",
+            "1,Slime,100,10",
+            "2,Dragon,9999,500",
+            "3,Goblin,200,30",
+        ].join("\n"),
+    };
+}
+
 // =============================================================================
 // テストユーティリティ
 // =============================================================================
@@ -182,6 +209,29 @@ async function clickContextMenuItemAsync(page: Page, label: string): Promise<voi
     const menu = page.locator('.context-menu.visible');
     await expect(menu).toBeVisible();
     await menu.locator('.context-menu-item', { hasText: label }).click();
+}
+
+async function clickDataCellAsync(table: Locator, rowIndex: number, columnIndex: number): Promise<void> {
+    const row = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)').nth(rowIndex);
+    const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(columnIndex);
+    await cell.click();
+}
+
+async function getComputedZIndexAsync(page: Page, selector: string): Promise<number> {
+    return await page.evaluate((targetSelector) => {
+        const element = document.querySelector(targetSelector);
+        if (!(element instanceof HTMLElement)) {
+            throw new Error(`要素が見つかりません: ${targetSelector}`);
+        }
+        return parseInt(window.getComputedStyle(element).zIndex, 10);
+    }, selector);
+}
+
+async function getRootCssZIndexVarAsync(page: Page, cssVariableName: string): Promise<number> {
+    return await page.evaluate((targetVariableName) => {
+        const value = window.getComputedStyle(document.documentElement).getPropertyValue(targetVariableName).trim();
+        return parseInt(value, 10);
+    }, cssVariableName);
 }
 
 /**
@@ -405,6 +455,36 @@ test.describe('フリーズペイン', () => {
                 await expect(nameHeader).not.toHaveClass(/freeze-column-border/);
             },
         );
+    });
+
+    test.describe('fill-handle の重なり順', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createFillHandleZIndexTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test('選択セルの固定状態に応じて fill-handle の z-index が切り替わる', async ({ page }) => {
+            const table = await openTableAsync(page, 'fill_handle_z_index_test');
+            const freezeColumnZIndex = await getRootCssZIndexVarAsync(page, '--z-index-freeze-column');
+            const freezeRowZIndex = await getRootCssZIndexVarAsync(page, '--z-index-freeze-row');
+
+            // 通常セル選択時は固定行・固定列より下に留まり、背後に隠れる必要がある。
+            await clickDataCellAsync(table, 1, 1);
+            const normalCellHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
+            expect(normalCellHandleZIndex).toBeLessThan(freezeColumnZIndex);
+            expect(normalCellHandleZIndex).toBeLessThan(freezeRowZIndex);
+
+            // 固定列セル選択時は固定列セルの 1 つ上に出す。
+            await clickDataCellAsync(table, 1, 0);
+            const frozenColumnHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
+            expect(frozenColumnHandleZIndex).toBe(freezeColumnZIndex + 1);
+
+            // 固定行セル選択時は固定行セルの 1 つ上に出す。
+            await clickDataCellAsync(table, 0, 1);
+            const frozenRowHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
+            expect(frozenRowHandleZIndex).toBe(freezeRowZIndex + 1);
+        });
     });
 
     test.describe('行の固定', () => {

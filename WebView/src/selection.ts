@@ -653,14 +653,36 @@ export class Selection {
             endRow = renderedEnd;
         }
 
-        const cellRect = this.editorTable.getCellRectOrNull(endRow, endColumn);
-        if (!cellRect) return;
+        const cell = this.editorTable.getCellOrNull(endRow, endColumn);
+        if (!cell) return;
+        const cellRect = cell.getBoundingClientRect();
 
         // セルの右下にフィルハンドルを配置
         const editorRect = this.editorElement.getBoundingClientRect();
+        const baseZIndexText = window.getComputedStyle(document.documentElement).getPropertyValue('--z-index-fill-handle').trim();
+        const baseZIndex = parseInt(baseZIndexText, 10);
+        if (Number.isNaN(baseZIndex)) {
+            throw new Error(`CSS変数 --z-index-fill-handle の値が不正です: ${baseZIndexText}`);
+        }
+        let effectiveCellZIndex = 0;
+        let currentElement: HTMLElement | null = cell;
+        while (currentElement && currentElement !== this.editorElement) {
+            const currentZIndexText = window.getComputedStyle(currentElement).zIndex;
+            if (currentZIndexText !== 'auto') {
+                const currentZIndex = parseInt(currentZIndexText, 10);
+                if (Number.isNaN(currentZIndex)) {
+                    throw new Error(`fill-handle の z-index 計算に失敗しました: ${currentZIndexText}`);
+                }
+                effectiveCellZIndex = Math.max(effectiveCellZIndex, currentZIndex);
+            }
+            currentElement = currentElement.parentElement;
+        }
+        const fillOverlayZIndex = Math.max(baseZIndex, effectiveCellZIndex + 1);
 
         this.fillHandle.style.left = (cellRect.right - editorRect.left + this.editorElement.scrollLeft - 4) + 'px';
         this.fillHandle.style.top = (cellRect.bottom - editorRect.top + this.editorElement.scrollTop - 4) + 'px';
+        this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
+        this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
         this.fillHandle.style.display = 'block';
     }
 
