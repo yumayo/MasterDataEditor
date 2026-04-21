@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {EditorTableData} from "./model/editor-table-data";
 import {ReferenceDataCache} from "./reference-data-cache";
-import {parseReferenceExpression, isDynamicReference, isSimpleReference} from "./reference-expression";
+import {parseReferenceExpression, isDynamicReference, isSimpleReference, DynamicReferenceSchema} from "./reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "./reverse-reference-resolver";
 import {isDisplayColumn} from "./config";
 import {sanitizeHtml} from "./html-sanitizer";
@@ -24,6 +24,8 @@ export class EditorTableReference {
     private readonly notification: NotificationToast;
     /** 逆参照マップ（参照先列の値→逆参照エントリ配列） */
     private reverseReferenceMap: ReverseReferenceMap | false;
+    /** 逆参照マップ内で使用される親列名一覧（collectReverseReferenceEntries の再構築を避ける） */
+    private reverseReferenceParentColumnNames: string[];
 
     constructor(table: EditorTable, tableData: EditorTableData, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
         this.table = table;
@@ -31,6 +33,7 @@ export class EditorTableReference {
         this.referenceDataCache = referenceDataCache;
         this.notification = notification;
         this.reverseReferenceMap = false;
+        this.reverseReferenceParentColumnNames = [];
     }
 
     /**
@@ -74,23 +77,8 @@ export class EditorTableReference {
             this.applyTextOrHtml(cell, value, column ? column.renderAsHtml : false);
             // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
             this.applyTypedCellStyle(cell, value, dataColumnIndex);
-            // PK列の場合は逆参照ヒントを再適用（全parentColumnNameの列値でエントリを収集）
-            if (column && this.tableData.primaryKeyColumns.includes(column.name)) {
-                const allEntries: ReverseReferenceEntry[] = [];
-                for (const colName of this.getAllParentColumnNames()) {
-                    const colDataIndex = this.tableData.header.findIndex(h => h.name === colName);
-                    if (colDataIndex === -1) continue;
-                    const colValue = this.table.getCellValueAt(rowIndex, colDataIndex + this.table.dataColumnOffset());
-                    if (colValue === '') continue;
-                    if (!this.reverseReferenceMap) continue;
-                    const entries = this.reverseReferenceMap.get(colValue);
-                    if (!entries) continue;
-                    for (const entry of entries) {
-                        if (entry.parentColumnName === colName) allEntries.push(entry);
-                    }
-                }
-                this.applyReverseReferenceHintFromEntries(cell, allEntries);
-            }
+            // PK列の場合は逆参照ヒントを再適用する
+            if (column && this.tableData.primaryKeyColumns.includes(column.name)) this.applyReverseReferenceHintFromEntries(cell, this.collectReverseReferenceEntries(rowIndex));
             return;
         }
         // 値を設定（参照列でも renderAsHtml を考慮）
@@ -102,16 +90,8 @@ export class EditorTableReference {
             this.updateDynamicReferenceHint(cell, value, expr, rowIndex, dataColumnIndex);
             return;
         }
-        // 単純参照の場合: 同期的に参照ヒントを取得
-        const displayText = this.referenceDataCache.getDisplayTextById(expr.tableName, value);
-        // 参照ヒントを追加（表示テキストがある場合のみ）
-        // prepend でFK値テキストの前（左側）にヒントを配置する
-        if (displayText) {
-            const hintSpan = document.createElement('span');
-            hintSpan.classList.add('cell-reference-hint');
-            hintSpan.textContent = displayText;
-            cell.prepend(hintSpan);
-        }
+        const displayText = this.resolveReferenceHintText(value, column.reference, rowIndex, dataColumnIndex, true);
+        if (displayText !== null) this.appendReferenceHint(cell, displayText);
     }
 
     /**
@@ -131,18 +111,32 @@ export class EditorTableReference {
      * @param endDomRow DOM行の終了インデックス（含まない）
      */
     updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
+        const decorationTargetColumnIndexes = this.getDecorationTargetColumnIndexes();
+        if (decorationTargetColumnIndexes.length === 0) return;
         const tableElement = this.table.getTableElement();
         for (let domIndex = startDomRow; domIndex < endDomRow; domIndex++) {
             const row = tableElement.children[domIndex] as HTMLElement;
             if (!row) throw new Error(`DOM行が見つかりません: domIndex=${domIndex}`);
             const logicalRowIndex = this.getLogicalRowIndexFromDomRow(row);
-            for (let colIndex = this.table.dataColumnOffset(); colIndex < row.children.length; colIndex++) {
-                const cell = row.children[colIndex] as HTMLElement;
-                const dataColumnIndex = colIndex - this.table.dataColumnOffset();
-                const value = EditorTable.getCellValue(cell);
+            for (const dataColumnIndex of decorationTargetColumnIndexes) {
+                const colIndex = dataColumnIndex + this.table.dataColumnOffset();
+                const cell = row.children[colIndex];
+                if (!(cell instanceof HTMLElement)) continue;
+                const value = this.table.getCellValueAt(logicalRowIndex, colIndex);
                 this.setCellValue(cell, value, dataColumnIndex, logicalRowIndex);
             }
         }
+    }
+
+    private getDecorationTargetColumnIndexes(): number[] {
+        const decorationTargetColumnIndexes: number[] = [];
+        for (let columnIndex = 0; columnIndex < this.tableData.header.length; columnIndex++) {
+            const column = this.tableData.header[columnIndex];
+            if (column.reference !== null || this.tableData.primaryKeyColumns.includes(column.name)) {
+                decorationTargetColumnIndexes.push(columnIndex);
+            }
+        }
+        return decorationTargetColumnIndexes;
     }
 
     /**
@@ -158,8 +152,8 @@ export class EditorTableReference {
             const row = tableElement.children[domIndex] as HTMLElement;
             const cell = row.children[columnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
-                const value = EditorTable.getCellValue(cell);
                 const logicalRowIndex = this.getLogicalRowIndexFromDomRow(row);
+                const value = this.table.getCellValueAt(logicalRowIndex, columnIndex + this.table.dataColumnOffset());
                 this.setCellValue(cell, value, columnIndex, logicalRowIndex);
             }
         }
@@ -173,16 +167,18 @@ export class EditorTableReference {
      */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reverseReferenceMap = map;
+        this.reverseReferenceParentColumnNames = [];
+        map.forEach(entries => {
+            for (const entry of entries) {
+                if (!this.reverseReferenceParentColumnNames.includes(entry.parentColumnName)) {
+                    this.reverseReferenceParentColumnNames.push(entry.parentColumnName);
+                }
+            }
+        });
         const tableElement = this.table.getTableElement();
         // PK列のインデックスを取得（ヒントの表示先は最初のPK列）
         const pkColumnIndex = this.tableData.header.findIndex(col => col.name === this.tableData.primaryKeyColumns[0]);
         if (pkColumnIndex === -1) return;
-        // 逆参照マップで使われている全 parentColumnName とそのデータ列インデックスを事前計算する
-        const parentColumnIndices = new Map<string, number>();
-        for (const colName of this.getAllParentColumnNames()) {
-            const idx = this.tableData.header.findIndex(col => col.name === colName);
-            if (idx !== -1) parentColumnIndices.set(colName, idx);
-        }
         // 全データ行のPK列セルに逆参照ヒントを適用する
         // データ行の開始 children オフセットから走査する（topSpacer/bottomSpacer を除外する）
         const startIndex = this.table.getDataRowChildOffset();
@@ -191,21 +187,8 @@ export class EditorTableReference {
             const row = tableElement.children[rowIndex] as HTMLElement;
             const pkCell = row.children[pkColumnIndex + this.table.dataColumnOffset()] as HTMLElement;
             if (!pkCell) continue;
-            // 全 parentColumnName の列値でエントリを収集する
-            const allEntries: ReverseReferenceEntry[] = [];
-            for (const [colName, colIdx] of parentColumnIndices) {
-                const colCell = row.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
-                if (!colCell) continue;
-                const colValue = EditorTable.getCellValue(colCell);
-                if (colValue === '') continue;
-                const entries = this.reverseReferenceMap.get(colValue);
-                if (!entries) continue;
-                for (const entry of entries) {
-                    if (entry.parentColumnName === colName) allEntries.push(entry);
-                }
-            }
-            // 収集した全エントリでヒントを表示する
-            this.applyReverseReferenceHintFromEntries(pkCell, allEntries);
+            const logicalRowIndex = this.getLogicalRowIndexFromDomRow(row);
+            this.applyReverseReferenceHintFromEntries(pkCell, this.collectReverseReferenceEntries(logicalRowIndex));
         }
     }
 
@@ -233,14 +216,7 @@ export class EditorTableReference {
      * relations-panel.ts の1:N解決で「どの列値でルックアップするか」を決定するために使用する
      */
     getAllParentColumnNames(): Set<string> {
-        const result = new Set<string>();
-        if (!this.reverseReferenceMap) return result;
-        this.reverseReferenceMap.forEach(entries => {
-            for (const entry of entries) {
-                result.add(entry.parentColumnName);
-            }
-        });
-        return result;
+        return new Set(this.reverseReferenceParentColumnNames);
     }
 
     /**
@@ -268,64 +244,30 @@ export class EditorTableReference {
     }
 
     /**
+     * 指定セルの参照ヒント文字列を状態から解決して返す。
+     * DOM未描画行でも取得できるため、CSV出力や自動列幅計算で使用する。
+     */
+    getHintText(rowIndex: number, dataColumnIndex: number): string | null {
+        if (rowIndex <= 0) return null;
+        const column = this.tableData.header[dataColumnIndex];
+        if (!column) return null;
+        const value = this.table.getCellValueAt(rowIndex, dataColumnIndex + this.table.dataColumnOffset());
+        if (column.reference !== null) return this.resolveReferenceHintText(value, column.reference, rowIndex, dataColumnIndex, false);
+        if (!this.tableData.primaryKeyColumns.includes(column.name)) return null;
+        const entries = this.collectReverseReferenceEntries(rowIndex);
+        const hintText = formatReverseReferenceHint(entries);
+        return hintText === '' ? null : hintText;
+    }
+
+    /**
      * 動的参照の参照ヒントを同期的に更新する
      * preloadReferenceTables() 完了後はキャッシュ済みのため同期アクセスで十分
      * キャッシュ未ヒット時はヒントを表示しない（プリロード完了後に updateReferenceHints() で再適用される）
      */
     private updateDynamicReferenceHint(cell: HTMLElement, value: string, expr: ReturnType<typeof parseReferenceExpression>, rowIndex: number, dataColumnIndex: number): void {
         if (!isDynamicReference(expr)) return;
-        // 同一行の指定カラムの値を取得
-        const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
-        if (valueColumnIndex === -1) {
-            console.warn(`動的参照ヒント: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
-            this.notification.show(`動的参照: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
-            return;
-        }
-        // column=0は行ヘッダーなので、データ列インデックスに+1する
-        const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + this.table.dataColumnOffset());
-        if (filterValue === '') return;
-        // フィルタテーブルの全データを同期的に取得
-        const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
-        if (fullData === false) return;
-        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
-        if (lookupColumnIndex === -1) {
-            console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
-            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
-            return;
-        }
-        // targetColumn（destColumn）の列インデックスを解決する
-        // 中間テーブルのこの列の値が、参照先テーブルの実際の列名になる
-        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
-        if (targetColumnIndex === -1) {
-            console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
-            this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
-            return;
-        }
-        // filterColumn で行を検索（主キー以外のカラムにも対応）
-        const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
-        if (!row) return;
-        const targetTableName = row[lookupColumnIndex];
-        if (targetTableName === '') return;
-        // targetColumn 列の値を動的取得する（= 参照先テーブルの実際の列名）
-        const resolvedTargetColumn = row[targetColumnIndex];
-        if (resolvedTargetColumn === '') return;
-        // 参照先テーブルのFullDataを取得して、動的解決済み列名でルックアップする
-        const targetFullData = this.referenceDataCache.getFullDataSync(targetTableName);
-        if (targetFullData === false) return;
-        // resolvedTargetColumn がPK列と一致する場合は既存のdisplayTextルックアップを使用
-        if (resolvedTargetColumn === targetFullData.primaryKeyColumnName) {
-            const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
-            if (!displayText) return;
-            this.appendReferenceHint(cell, displayText);
-            return;
-        }
-        // PK列以外の列で参照する場合: findRowByColumn で該当行を探し、表示列の値を返す
-        const matchedRow = this.referenceDataCache.findRowByColumn(targetFullData, resolvedTargetColumn, value);
-        if (!matchedRow || targetFullData.displayColumnIndex === -1) return;
-        const displayText = matchedRow[targetFullData.displayColumnIndex];
-        // 表示テキストがFK値と同じ場合はヒントが冗長なので表示しない
-        if (displayText === '' || displayText === value) return;
-        this.appendReferenceHint(cell, displayText);
+        const displayText = this.tryResolveDynamicReferenceHintText(value, expr, rowIndex, dataColumnIndex, true);
+        if (displayText !== null) this.appendReferenceHint(cell, displayText);
     }
 
     /**
@@ -334,13 +276,91 @@ export class EditorTableReference {
      * 現在そのDOM行が表している論理データ行を指すため、renderedStart からの逆算より信頼できる。
      */
     private getLogicalRowIndexFromDomRow(row: HTMLElement): number {
-        const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
-        if (rowHeader === null) throw new Error('行ヘッダーが見つかりません');
-        const rowIndexText = rowHeader.getAttribute('data-row-index');
-        if (rowIndexText === null) throw new Error('行ヘッダーに data-row-index がありません');
+        const rowIndexText = row.dataset.rowIndex;
+        if (rowIndexText === undefined) throw new Error('行要素に data-row-index がありません');
         const dataRowIndex = Number(rowIndexText);
         if (Number.isNaN(dataRowIndex)) throw new Error(`不正な data-row-index です: ${rowIndexText}`);
         return dataRowIndex + 1;
+    }
+
+    private collectReverseReferenceEntries(rowIndex: number): ReverseReferenceEntry[] {
+        const allEntries: ReverseReferenceEntry[] = [];
+        if (!this.reverseReferenceMap) return allEntries;
+        for (const colName of this.reverseReferenceParentColumnNames) {
+            const colDataIndex = this.tableData.header.findIndex(header => header.name === colName);
+            if (colDataIndex === -1) continue;
+            const colValue = this.table.getCellValueAt(rowIndex, colDataIndex + this.table.dataColumnOffset());
+            if (colValue === '') continue;
+            const entries = this.reverseReferenceMap.get(colValue);
+            if (!entries) continue;
+            for (const entry of entries) {
+                if (entry.parentColumnName === colName) allEntries.push(entry);
+            }
+        }
+        return allEntries;
+    }
+
+    private resolveReferenceHintText(value: string, reference: string | DynamicReferenceSchema, rowIndex: number, dataColumnIndex: number, notifyOnSchemaError: boolean): string | null {
+        if (value === '') return null;
+        const expr = parseReferenceExpression(reference);
+        if (isDynamicReference(expr)) return this.tryResolveDynamicReferenceHintText(value, expr, rowIndex, dataColumnIndex, notifyOnSchemaError);
+        const displayText = this.referenceDataCache.getDisplayTextById(expr.tableName, value);
+        return displayText;
+    }
+
+    private tryResolveDynamicReferenceHintText(
+        value: string,
+        expr: ReturnType<typeof parseReferenceExpression>,
+        rowIndex: number,
+        dataColumnIndex: number,
+        notifyOnSchemaError: boolean
+    ): string | null {
+        if (!isDynamicReference(expr)) return null;
+        const valueColumnIndex = this.resolveValueColumnIndex(expr.filter.valueColumn, dataColumnIndex);
+        if (valueColumnIndex === -1) {
+            if (notifyOnSchemaError) {
+                console.warn(`動的参照ヒント: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
+                this.notification.show(`動的参照: テーブル '${this.table.tableName}' に列 '${expr.filter.valueColumn}' が見つかりません`);
+            }
+            return null;
+        }
+        const filterValue = this.table.getCellValueAt(rowIndex, valueColumnIndex + this.table.dataColumnOffset());
+        if (filterValue === '') return null;
+        const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
+        if (fullData === false) return null;
+        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
+        if (lookupColumnIndex === -1) {
+            if (notifyOnSchemaError) {
+                console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+                this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.lookupColumn}' が見つかりません`);
+            }
+            return null;
+        }
+        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
+        if (targetColumnIndex === -1) {
+            if (notifyOnSchemaError) {
+                console.warn(`動的参照ヒント: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+                this.notification.show(`動的参照: テーブル '${expr.filter.tableName}' に列 '${expr.targetColumn}' が見つかりません`);
+            }
+            return null;
+        }
+        const row = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
+        if (!row) return null;
+        const targetTableName = row[lookupColumnIndex];
+        if (targetTableName === '') return null;
+        const resolvedTargetColumn = row[targetColumnIndex];
+        if (resolvedTargetColumn === '') return null;
+        const targetFullData = this.referenceDataCache.getFullDataSync(targetTableName);
+        if (targetFullData === false) return null;
+        if (resolvedTargetColumn === targetFullData.primaryKeyColumnName) {
+            const displayText = this.referenceDataCache.getDisplayTextById(targetTableName, value);
+            return displayText;
+        }
+        const matchedRow = this.referenceDataCache.findRowByColumn(targetFullData, resolvedTargetColumn, value);
+        if (!matchedRow || targetFullData.displayColumnIndex === -1) return null;
+        const displayText = matchedRow[targetFullData.displayColumnIndex];
+        if (displayText === '' || displayText === value) return null;
+        return displayText;
     }
 
     /**
@@ -512,7 +532,7 @@ export class EditorTableReference {
             // 依存しているセルのヒントを再評価する
             const cell = rowElement.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
             if (cell) {
-                const cellValue = EditorTable.getCellValue(cell);
+                const cellValue = this.table.getCellValueAt(rowIndex, colIdx + this.table.dataColumnOffset());
                 this.setCellValue(cell, cellValue, colIdx, rowIndex);
             }
         }
@@ -541,7 +561,7 @@ export class EditorTableReference {
             if (!refData || refData.displayColumnName !== '') continue;
             const cell = rowElement.children[colIdx + this.table.dataColumnOffset()] as HTMLElement;
             if (!cell) continue;
-            const fkValue = EditorTable.getCellValue(cell);
+            const fkValue = this.table.getCellValueAt(rowIndex, colIdx + this.table.dataColumnOffset());
             if (fkValue === '') continue;
             // キャッシュを更新し、ヒントを再描画
             this.referenceDataCache.updateDisplayText(expr.tableName, fkValue, newValue);

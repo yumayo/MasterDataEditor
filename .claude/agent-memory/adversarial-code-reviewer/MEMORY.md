@@ -34,6 +34,8 @@
 - **register/unregister 非対称**: **5回再発** (+TableDefinitionEditor destroy()未実装、indicator永続残留)
 - **CSS hardcoded colors**: 25+ 回再発 (+table-definition-editor #f44336, #ffffff, +selection.css #0078d7/#808080/#005a9e/#666666)
 - **CSS/JS定数の二重管理→乖離**: constant.ts REFERENCE_HINT_MARGIN_PX vs CSS margin-right変更で列幅計算破壊, **--selected-color未定義(22箇所)**, **--list-hover-bg未定義(timeline-panel.css)**, **--z-dialog未定義(commit-selector-dialog.css)**, **未定義CSS変数12箇所+フォールバック値乱用(commit-selector-dialog.css)**
+- **仮想スクロール×4分割レイアウトの行高源泉分裂**: VirtualScrollController は actualRowHeight/getBoundingClientRect を使うのに editor-table.ts の quadrant 座標計算が ROW_TOTAL_HEIGHT_PX に戻りやすい。高DPI/コメント付きヘッダー/固定行列で detached row top・pane height が累積ズレする
+- **4分割レイアウトの source grid / detached pane 同期漏れ**: `getTableElement()` を grid 側に寄せた後、参照ヒント・ブックマーク・選択クラスなどの非スクロール更新は `refreshDetachedHeaderLayout` か `refreshQuadrantViewportRowHeaders + syncQuadrantStaticCellStates` を通さないと固定行/固定列の見た目が stale になる
 - **フォールバック禁止 (?? / ||)**: 22+ 回再発 (+applyOriginalSchemaToRow dynRef 5箇所)
 - **生焼けオブジェクト | false + connect パターン**: 9回再発 (+HorizontalScrollbarMarkerTrack接続)
 - **undefined比較 (Map.get)**: api.ts gitShowCache.get() !== undefined
@@ -48,6 +50,7 @@
 - **PK値変更によるブックマーク永続データ不整合(新パターン)**: PK編集後にbookmarks.json/DOM属性が陳腐化
 - **try/catch なし async**: searching/loading状態が永続固着するパターン
 - **同期メソッド内の.then()非同期化**: runAndUpdate()内で.then()使用+requestIDガードなし
+- **scroll起点フラグのfinally欠落**: onScroll系で isHandlingScrollEvent/requestId類を true にしたら try/finally で必ず戻す。例外1回で以後の再計算が誤分類される
 - **型定義の変更波及漏れ**: reference型変更時にrelations-panel, search-data-provider等の型アサーションが未更新
 - **C# MCP出力のエッジケース未対応**: rowIndex=-1時のフォーマット崩壊 (ValidationTool.cs)
 - **MCP保存パスの後処理不足**: markSavedAndUpdatePanel相当の処理がMCPパスに未実装 (2026-03-26)
@@ -70,6 +73,7 @@
 - **EditorAPI**: getReferences/getRelatedTablesAsync が動的参照列を完全に無視（SchemaEntry.references由来のため）
 - **serialize() roundtrip**: reference: null がJSONに出力され元スキーマを汚染
 - reference-data-cache.ts: Record<string, unknown>→as DynamicReferenceSchemaキャスト (型安全性不足)
+- editor-table-reference.ts: decorationTargetColumnIndexes のような列インデックスキャッシュは insert/deleteColumn 後に即陳腐化する。bug-report #6/#87/#91 系の「構造変化に追随しないキャッシュ」パターン
 - search-data-provider.ts: 動的参照→空文字列変換が2箇所でコピペ
 
 ## Plugin Validation Known Patterns (2026-03-25)

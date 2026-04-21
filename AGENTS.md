@@ -73,6 +73,8 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 
 コードレビューは、**fix-scope-auditor** エージェント、**adversarial-code-reviewer** エージェント、**code-reviewer** エージェント、**ux-reviewer** エージェントに並列で任せること。
 
+描画・レイアウト・重なり順・透過・固定領域・スクロール追従の不具合は、E2Eアサーションだけで完結させず、**ux-reviewer** にスクリーンショットとDOMダンプを渡して見た目のレビューを必ず行うこと。こうした不具合はテストを書きづらいため、Playwrightの `autoDump` で出力された `.png` / `.html` を根拠に視覚レビューまで完了条件に含めること。
+
 コミットは、**commit** スキルを使用すること。
 
 ## AI あなたを矯正するうえでの重要なアドバイス
@@ -117,4 +119,5 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 - Playwrightテスト（e2e/*.spec.ts）では `@playwright/test` から直接インポートせず、必ず `./fixtures/test` からインポートすること（`autoDump` フィクスチャによるDOM自動ダンプを有効にするため）。型（`Page`, `Locator` 等）のみ `@playwright/test` から直接インポートしてよい。
 - テスト実行後、`.CONTEXT/dump/{spec名}/{テストタイトル}.console.log` にブラウザ側の全コンソール出力と未キャッチ例外が記録される。各エントリにはレベル（`[log]`, `[error]`, `[warning]`, `[debug]`, `[EXCEPTION]`）が付与される。テスト成功・失敗問わず常に出力される。テストが RED のとき、アサーションエラーだけでなくこのファイルの `[EXCEPTION]` や `[error]` を確認すること。ブラウザ側 TypeError 等がテスト失敗の根本原因であることが多い。
 - テスト実行後、`.CONTEXT/dump/{spec名}/{テストタイトル}.html` にDOMダンプ、`.png` にスクリーンショットが保存される。UIの状態確認に使用すること。
+- 描画系の変更では、テストがGREENでも `.CONTEXT/dump/{spec名}/{テストタイトル}.png` と `.html` を `ux-reviewer` に渡して見た目レビューを行うこと。とくに透過、重なり順、固定行/固定列、スクロール追従、境界線の破綻は、アサーションよりスクリーンショットの方が検出しやすい。
 - ソースコードに `console.log` でデバッグログを残してよい。プロダクションビルドでは `esbuild.pure` により `console.log` / `console.debug` が自動除去される（`console.warn` / `console.error` は残る）。テストビルド時（`PLAYWRIGHT=1`）は除去されないためダンプに記録される。

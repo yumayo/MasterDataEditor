@@ -1696,8 +1696,8 @@ export class Tab {
     private deactivateTabState(state: TabState): void {
         // フォームパネルが表示中であれば閉じる（タブ切り替え時に残留しないようにする）
         this.closeFormPanel();
-        // スクロール位置をwrapperが表示されている間に保存する（左ペインのスクロール）
-        this.editor.saveScrollPosition(state);
+        state.savedScrollLeft = state.editorTable.getScrollLeft();
+        state.savedScrollTop = state.editorTable.getScrollTop();
         state.wrapperElement.style.display = 'none';
         // グローバルリレーションパネルのEditorTable接続を完全解除する（relationsPanel内でフィールドもリセットされる）
         this.relationsPanel.disconnectEditorTable();
@@ -1733,8 +1733,7 @@ export class Tab {
         // グローバルリレーションパネルにアクティブなEditorTableを接続する
         // connectEditorTable内でEditorTable.relationsPanel フィールドも設定される（相互参照）
         this.relationsPanel.connectEditorTable(state.editorTable);
-        // スクロール位置をイベントリスナー登録前に復元する（左ペインのスクロール）
-        this.editor.restoreScrollPosition(state);
+        state.editorTable.restoreScrollPosition(state.savedScrollTop, state.savedScrollLeft);
         state.editorTable.activate();
         state.areaResizer.activate();
         state.fillController.activate();
@@ -1972,6 +1971,8 @@ export class Tab {
             const wrapperElement = document.createElement('div');
             wrapperElement.classList.add('tab-wrapper');
             wrapperElement.dataset.tabName = name;
+            wrapperElement.style.height = '100%';
+            wrapperElement.style.position = 'relative';
             this.editor.appendChild(wrapperElement);
 
             // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
@@ -2115,8 +2116,9 @@ export class Tab {
         // 相互参照を解決するため、一時的な空オブジェクトを作成
         const editorTable = {} as EditorTable;
 
-        // スクロール対象は左ペイン（editor.getLeftPaneForScroll()）
-        const scrollController = new ScrollViewportController(this.editor.getLeftPaneForScroll());
+        const mainViewportElement = document.createElement('div');
+        mainViewportElement.classList.add('editor-table-main-viewport');
+        const scrollController = new ScrollViewportController(mainViewportElement);
 
         // Selection を作成（editorTable への参照をコンストラクタで渡す）
         const selection = new Selection(editorTable, wrapperElement, scrollController);
@@ -2140,12 +2142,10 @@ export class Tab {
 
         // 本物の EditorTable インスタンスを作成（データ行+バッファ1行で通常の編集テーブルを生成）
         const emptyRowCount = tableData.body.length + 1;
-        // scrollContainer: 左ペインがスクロールコンテナ（バーチャルスクロールのイベント登録先）
-        const scrollContainerElement = this.editor.getLeftPaneForScroll();
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, scrollContainerElement, emptyRowCount, 'editor-table', false, true
+            scrollController, this.sidebar, mainViewportElement, emptyRowCount, 'editor-table', false, true, true
         );
 
         // editorTable に本物のインスタンスの内容をコピー
@@ -2259,7 +2259,7 @@ export class Tab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,
-            scrollController, this.sidebar, scrollContainer, emptyRowCount, 'editor-table', true, false
+            scrollController, this.sidebar, scrollContainer, emptyRowCount, 'editor-table', true, false, false
         );
 
         Object.assign(editorTable, realEditorTable);

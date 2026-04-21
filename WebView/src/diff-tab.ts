@@ -727,15 +727,9 @@ export class DiffTab {
     /** ラベルの高さを列ヘッダー行の top に反映する */
     private applyLabelOffsetToColumnHeaders(): void {
         const leftLabel = this.leftPaneElement.querySelector('.diff-pane-label-left') as HTMLElement | null;
-        if (leftLabel !== null) {
-            const headerRow = this.leftPaneElement.querySelector('.editor-table-column-header-row') as HTMLElement;
-            headerRow.style.top = leftLabel.getBoundingClientRect().height + 'px';
-        }
+        this.leftEditorTable.setDetachedHeaderTopOffset(leftLabel !== null ? leftLabel.getBoundingClientRect().height : 0);
         const rightLabel = this.rightPaneElement.querySelector('.diff-pane-label-right') as HTMLElement | null;
-        if (rightLabel !== null) {
-            const headerRow = this.rightPaneElement.querySelector('.editor-table-column-header-row') as HTMLElement;
-            headerRow.style.top = rightLabel.getBoundingClientRect().height + 'px';
-        }
+        this.rightEditorTable.setDetachedHeaderTopOffset(rightLabel !== null ? rightLabel.getBoundingClientRect().height : 0);
     }
 
     /**
@@ -858,7 +852,7 @@ export class DiffTab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, referenceDataCache, store, editorTableHandler,
             selection, contextMenu, history, areaResizer,
-            scrollController, sidebar, paneElement, 0, 'editor-table', true, true
+            scrollController, sidebar, paneElement, 0, 'editor-table', true, true, false
         );
 
         Object.assign(editorTable, realEditorTable);

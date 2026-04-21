@@ -5,7 +5,7 @@
 
 /* 選択範囲の背景色（フォーカスセルには付与しない）
    データセルは通常 transparent なので、半透明の background-color だけだと
-   position:sticky の行ヘッダーや固定列の上に描画されたとき背面が透けてしまう。
+   分離した固定行ヘッダーや固定列の上に描画されたとき背面が透けてしまう。
    不透明な background-color を下地に敷き、選択色は background-image で重ねる。 */
 .sel-bg {
     background-color: var(--background-sub-color);

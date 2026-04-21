@@ -1,5 +1,18 @@
 import {ROW_TOTAL_HEIGHT_PX} from "./constant";
 
+export interface RenderedDataRowRange {
+    start: number;
+    end: number;
+}
+
+export interface RenderedRowsUpdate {
+    refreshAllRows: boolean;
+    insertedRanges: RenderedDataRowRange[];
+    triggeredByScroll: boolean;
+    scrollTop: number;
+    scrollLeft: number;
+}
+
 /**
  * バーチャルスクロールの制御を担うコントローラー。
  *
@@ -8,7 +21,7 @@ import {ROW_TOTAL_HEIGHT_PX} from "./constant";
  * テーブル高さ = header + topSpacer + frozenRows + viewportRows + bottomSpacer
  *             = header + totalRowCount * rowHeight（常に一定）
  * これによりテーブルが常に全スクロール範囲をカバーし、
- * ヘッダー行（position:sticky; top:0）がどのスクロール位置でも維持される。
+ * ヘッダー行は detached layer 側で常時表示される。
  * コンポジタースレッドの非同期スクロール中でも、ビューポートがテーブル外に出ることがなく、
  * ヘッダーや行が消える問題が発生しない。
  *
@@ -53,6 +66,10 @@ export class VirtualScrollController {
 
     /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
     private actualRowHeight: number;
+    /** 実行時に測定したヘッダー行の実際の高さ(px)。コメント付き2行ヘッダーを含む */
+    private actualHeaderHeight: number;
+    /** 右下本文ビューの scrollTop を旧来の全体スクロール座標へ読み替える補正値 */
+    private scrollTopCompensationPx: number;
 
     /** 上部スペーサー要素（セル要素を参照）。enabled=true のみ使用。enabled=false なら false */
     private topSpacer: HTMLElement | false;
@@ -75,13 +92,21 @@ export class VirtualScrollController {
      * 行装飾再適用コールバック。updateRenderedRows 完了後に呼ばれる。
      * 選択クラス、バリデーションエラー、git差分ハイライト等を表示範囲のDOMに再適用する。
      */
-    private afterRowsUpdated: (() => void) | false;
+    private afterRowsUpdated: ((update: RenderedRowsUpdate) => void) | false;
 
     /**
      * スクロールイベント時に常に呼ばれるコールバック。行入れ替え有無にかかわらず実行される。
      * 固定行のフィルハンドル位置更新など、スクロール位置に依存する軽量な処理を登録する。
      */
-    private afterScroll: (() => void) | false;
+    private afterScroll: ((scrollTop: number, scrollLeft: number) => void) | false;
+    /** 初回 recalculate では既存DOMの装飾を差分計算できないため full refresh を強制する */
+    private hasCompletedInitialRowsUpdate: boolean;
+    /** 現在の recalculate が scroll イベント起点かどうか */
+    private isHandlingScrollEvent: boolean;
+    /** 現在処理中の scroll event で先に取得した scrollTop */
+    private currentScrollTop: number;
+    /** 現在処理中の scroll event で先に取得した scrollLeft */
+    private currentScrollLeft: number;
 
     constructor(
         tableElement: HTMLElement,
@@ -95,10 +120,16 @@ export class VirtualScrollController {
         this.totalRowCount = totalRowCount;
         this.frozenRowCount = 0;
         this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
+        this.actualHeaderHeight = ROW_TOTAL_HEIGHT_PX;
+        this.scrollTopCompensationPx = 0;
         this.isRecalculating = false;
         this.renderRow = false;
         this.afterRowsUpdated = false;
         this.afterScroll = false;
+        this.hasCompletedInitialRowsUpdate = false;
+        this.isHandlingScrollEvent = false;
+        this.currentScrollTop = 0;
+        this.currentScrollLeft = 0;
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
         this.renderedStart = 0;
@@ -122,7 +153,11 @@ export class VirtualScrollController {
      * initializeModules() 内で正しい this を持つコールバックを渡すこと。
      * enabled=false の場合は呼ばなくてよい（renderRow は使用されない）。
      */
-    connectRenderRow(renderRow: (dataRowIndex: number) => HTMLElement, afterRowsUpdated: () => void, afterScroll: () => void): void {
+    connectRenderRow(
+        renderRow: (dataRowIndex: number) => HTMLElement,
+        afterRowsUpdated: (update: RenderedRowsUpdate) => void,
+        afterScroll: (scrollTop: number, scrollLeft: number) => void
+    ): void {
         this.renderRow = renderRow;
         this.afterRowsUpdated = afterRowsUpdated;
         this.afterScroll = afterScroll;
@@ -160,7 +195,7 @@ export class VirtualScrollController {
         // topSpacer と同じ構造でテーブル内に配置することで、テーブル高さが常に
         // header + topSpacer + frozenRows + viewportRows + bottomSpacer = 全コンテンツ高さ となり、
         // どのスクロール位置でもビューポートがテーブル内に収まる。
-        // これによりstickyヘッダーが高速スクロール時にも消えなくなる。
+        // これにより分離ヘッダーとデータ領域のスクロール整合が高速スクロール時にも崩れにくくなる。
         const bottomRow = document.createElement('div');
         bottomRow.classList.add('virtual-scroll-bottom-spacer');
         const bottomCell = document.createElement('div');
@@ -176,12 +211,23 @@ export class VirtualScrollController {
     /** スクロールイベントハンドラ。同期的に再計算を実行する */
     onScroll(): void {
         if (!this.enabled) return;
-        this.recalculate();
+        this.currentScrollTop = this.scrollContainer.scrollTop;
+        this.currentScrollLeft = this.scrollContainer.scrollLeft;
+        this.isHandlingScrollEvent = true;
+        try {
+            this.recalculate();
+        } finally {
+            this.isHandlingScrollEvent = false;
+        }
         // 行入れ替え有無にかかわらず、スクロール時に常にコールバックを呼ぶ。
         // 固定行のフィルハンドル位置更新に必要。
         if (this.afterScroll !== false) {
-            this.afterScroll();
+            this.afterScroll(this.currentScrollTop, this.currentScrollLeft);
         }
+    }
+
+    handlesScrollEvents(): boolean {
+        return this.enabled;
     }
 
     /** 総行数が変化した際に呼ぶ */
@@ -229,6 +275,10 @@ export class VirtualScrollController {
     resetScrollTop(): void {
         if (!this.enabled) return;
         this.scrollContainer.scrollTop = 0;
+    }
+
+    setScrollTopCompensationPx(value: number): void {
+        this.scrollTopCompensationPx = value;
     }
 
     /** 表示範囲を強制再計算する（行挿入/削除/ソート/フィルター後） */
@@ -335,6 +385,19 @@ export class VirtualScrollController {
         return this.enabled ? 2 : 0;
     }
 
+    refreshMeasuredGeometry(): void {
+        this.measureHeaderHeight();
+        this.measureActualRowHeight();
+    }
+
+    getActualRowHeightPx(): number {
+        return this.actualRowHeight;
+    }
+
+    getActualHeaderHeightPx(): number {
+        return this.actualHeaderHeight;
+    }
+
     /**
      * テーブル内のデータ行が終わる children インデックス（排他）を返す。
      * bottomSpacer がテーブル末尾にある場合、その直前のインデックスまでをデータ行範囲とする。
@@ -390,30 +453,31 @@ export class VirtualScrollController {
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        // 行の絶対位置を計算する。固定行は position:sticky でヘッダー直下に表示されるため、
+        // 行の絶対位置を計算する。固定行は detached/transform によりヘッダー直下へ固定表示されるため、
         // 非固定行の表示領域はヘッダー + 固定行の高さ分だけ下にオフセットされる。
         // しかし仮想コンテンツ全体の高さは全行数 * rowHeight で計算するため、
         // 非固定行の絶対位置は headerHeight + dataRowIndex * rowHeight のまま。
         const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
         const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
-        const viewTop = this.scrollContainer.scrollTop;
+        const viewTop = this.scrollContainer.scrollTop + this.scrollTopCompensationPx;
         const viewBottom = viewTop + this.scrollContainer.clientHeight;
-        let targetScrollTop = this.scrollContainer.scrollTop;
+        let targetScrollTop = this.scrollContainer.scrollTop + this.scrollTopCompensationPx;
         if (rowAbsoluteTop < viewTop) {
             targetScrollTop = rowAbsoluteTop - headerHeight;
         } else if (rowAbsoluteBottom > viewBottom) {
             targetScrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
         }
-        if (targetScrollTop !== this.scrollContainer.scrollTop) {
-            this.scrollContainer.scrollTop = targetScrollTop;
+        const rawTargetScrollTop = Math.max(0, targetScrollTop - this.scrollTopCompensationPx);
+        if (rawTargetScrollTop !== this.scrollContainer.scrollTop) {
+            this.scrollContainer.scrollTop = rawTargetScrollTop;
             this.recalculate();
             // スペーサーがテーブル内（display:table-row）にあるため、recalculate のDOM操作後に
             // ブラウザの非同期レイアウト再計算で scrollTop がリセットされることがある。
             // rAF 後に scrollTop を再設定して非同期リセットに対応する。
             const container = this.scrollContainer;
             requestAnimationFrame(() => {
-                if (container.scrollTop !== targetScrollTop) {
-                    container.scrollTop = targetScrollTop;
+                if (container.scrollTop !== rawTargetScrollTop) {
+                    container.scrollTop = rawTargetScrollTop;
                     container.dispatchEvent(new Event('scroll'));
                 }
             });
@@ -444,12 +508,18 @@ export class VirtualScrollController {
 
     /**
      * ヘッダー行の実際の高さを取得する。
-     * ヘッダー行は sticky なので、スクロール位置計算時にオフセットとして使用する。
+     * ヘッダー行は detached layer と同じ高さを持つため、スクロール位置計算時のオフセットに使用する。
      */
     private getHeaderHeight(): number {
-        const headerRow = this.tableElement.children[0] as HTMLElement;
-        if (!headerRow) return ROW_TOTAL_HEIGHT_PX;
-        return headerRow.offsetHeight;
+        this.measureHeaderHeight();
+        return this.actualHeaderHeight;
+    }
+
+    private measureHeaderHeight(): void {
+        const headerRow = this.tableElement.children[0] as HTMLElement | null;
+        if (headerRow === null) return;
+        const measured = headerRow.getBoundingClientRect().height;
+        if (measured > 0) this.actualHeaderHeight = measured;
     }
 
     /**
@@ -494,13 +564,16 @@ export class VirtualScrollController {
         // 実行時の行高さを測定する（DPIスケーリング対応）
         this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
+        const previousRenderedStart = this.renderedStart;
+        const previousRenderedEnd = this.renderedEnd;
 
-        const scrollTop = this.scrollContainer.scrollTop;
+        const scrollTopWithoutCompensation = this.isHandlingScrollEvent ? this.currentScrollTop : this.scrollContainer.scrollTop;
+        const scrollTop = scrollTopWithoutCompensation + this.scrollTopCompensationPx;
         const viewportHeight = this.scrollContainer.clientHeight;
         const headerHeight = this.getHeaderHeight();
 
         // topSpacer がテーブル内にあるため、scrollTop にはヘッダー高さが含まれる。
-        // 固定行は position:sticky でヘッダー直下に固定表示されるため、
+        // 固定行は transform でヘッダー直下に固定表示されるため、
         // データ行領域のスクロールオフセットからは固定行の高さも除外する。
         const frozenHeight = this.frozenRowCount * rowHeight;
         const dataAreaScrollTop = Math.max(0, scrollTop - headerHeight - frozenHeight);
@@ -523,7 +596,7 @@ export class VirtualScrollController {
         // ブラウザがscrollTopをクランプしてスクロール位置が0にリセットされる。
         // スペーサーを先に膨らませることで、行削除中もコンテンツ高さを安定させる。
         // topSpacer は固定行の後のギャップを埋めるため、固定行の高さ分を差し引く。
-        const savedScrollLeft = this.scrollContainer.scrollLeft;
+        const savedScrollLeft = this.isHandlingScrollEvent ? this.currentScrollLeft : this.scrollContainer.scrollLeft;
 
         if (this.topSpacer !== false) {
             this.topSpacer.style.height = `${Math.max(0, (newStart - this.frozenRowCount) * rowHeight)}px`;
@@ -539,7 +612,10 @@ export class VirtualScrollController {
 
         // 行の入れ替え後に装飾（選択クラス、バリデーション、git差分等）を再適用する
         if (this.afterRowsUpdated !== false) {
-            this.afterRowsUpdated();
+            this.afterRowsUpdated(
+                this.createRenderedRowsUpdate(previousRenderedStart, previousRenderedEnd, newStart, newEnd, scrollTopWithoutCompensation, savedScrollLeft)
+            );
+            this.hasCompletedInitialRowsUpdate = true;
         }
 
         // scrollTop は復元しない。
@@ -549,6 +625,46 @@ export class VirtualScrollController {
         if (this.scrollContainer.scrollLeft !== savedScrollLeft) {
             this.scrollContainer.scrollLeft = savedScrollLeft;
         }
+    }
+
+    private createRenderedRowsUpdate(
+        previousStart: number,
+        previousEnd: number,
+        newStart: number,
+        newEnd: number,
+        scrollTop: number,
+        scrollLeft: number
+    ): RenderedRowsUpdate {
+        if (!this.hasCompletedInitialRowsUpdate) {
+            return {
+                refreshAllRows: true,
+                insertedRanges: [{ start: newStart, end: newEnd }],
+                triggeredByScroll: this.isHandlingScrollEvent,
+                scrollTop,
+                scrollLeft,
+            };
+        }
+        const overlapStart = Math.max(previousStart, newStart);
+        const overlapEnd = Math.min(previousEnd, newEnd);
+        if (overlapStart >= overlapEnd) {
+            return {
+                refreshAllRows: true,
+                insertedRanges: [{ start: newStart, end: newEnd }],
+                triggeredByScroll: this.isHandlingScrollEvent,
+                scrollTop,
+                scrollLeft,
+            };
+        }
+        const insertedRanges: RenderedDataRowRange[] = [];
+        if (newStart < overlapStart) insertedRanges.push({ start: newStart, end: overlapStart });
+        if (overlapEnd < newEnd) insertedRanges.push({ start: overlapEnd, end: newEnd });
+        return {
+            refreshAllRows: false,
+            insertedRanges,
+            triggeredByScroll: this.isHandlingScrollEvent,
+            scrollTop,
+            scrollLeft,
+        };
     }
 
     /**

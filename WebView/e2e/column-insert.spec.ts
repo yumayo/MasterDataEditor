@@ -112,6 +112,77 @@ async function clickFirstCellAsync(
     await table.locator(selector).click();
 }
 
+/**
+ * 列ヘッダーの表示テキストをDOM上だけ改竄する
+ */
+async function tamperColumnHeaderTextAsync(
+    table: Locator,
+    columnIndex: number,
+    text: string,
+): Promise<void> {
+    await table
+        .locator('.editor-table-column-header')
+        .nth(columnIndex)
+        .evaluate(
+            (
+                el: HTMLElement,
+                nextText: string,
+            ) => {
+                const nameSpan =
+                    el.querySelector(
+                        '.column-header-name',
+                    );
+                if (nameSpan) {
+                    nameSpan.textContent = nextText;
+                    return;
+                }
+                for (const node of
+                    Array.from(el.childNodes)
+                ) {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        node.textContent = nextText;
+                        return;
+                    }
+                }
+                el.insertBefore(
+                    document.createTextNode(nextText),
+                    el.firstChild,
+                );
+            },
+            text,
+        );
+}
+
+/**
+ * セルの表示テキストをDOM上だけ改竄する
+ */
+async function tamperCellTextAsync(
+    table: Locator,
+    rowIndex: number,
+    columnIndex: number,
+    text: string,
+): Promise<void> {
+    const row = table
+        .locator('.editor-table-row')
+        .nth(rowIndex + 1);
+    await row
+        .locator(
+            '.editor-table-cell'
+            + ':not(.editor-table-row-header)',
+        )
+        .nth(columnIndex)
+        .evaluate(
+            (
+                el: HTMLElement,
+                nextText: string,
+            ) => {
+                el.textContent = nextText;
+                el.dataset.rawValue = nextText;
+            },
+            text,
+        );
+}
+
 test(
     '列ヘッダーを右クリックして左に列を挿入できること',
     async ({ page, mockFileSystem }) => {
@@ -289,6 +360,59 @@ test(
             await getColumnHeaderTextsAsync(table);
         expect(after2).toEqual(
             ['id', '', 'name', 'value', '']
+        );
+    },
+);
+
+test(
+    'DOM表示が改竄されていても列削除のUndoは内部SSOTから正しく復元すること',
+    async ({ page, mockFileSystem }) => {
+        const table = await openTableAsync(page);
+
+        await tamperColumnHeaderTextAsync(
+            table,
+            1,
+            'bogus',
+        );
+        await tamperCellTextAsync(
+            table,
+            0,
+            1,
+            'tampered',
+        );
+
+        const tamperedHeaders =
+            await getColumnHeaderTextsAsync(table);
+        expect(tamperedHeaders).toEqual(
+            ['id', 'bogus', 'value']
+        );
+        const tamperedRow =
+            await getRowCellTextsAsync(table, 0);
+        expect(tamperedRow.slice(0, 3)).toEqual(
+            ['1', 'tampered', '100']
+        );
+
+        await rightClickColumnHeaderAsync(table, 1);
+        await clickContextMenuItemAsync(page, '列を削除');
+
+        const afterDelete =
+            await getColumnHeaderTextsAsync(table);
+        expect(afterDelete).toEqual(
+            ['id', 'value']
+        );
+
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+z');
+
+        const afterUndoHeaders =
+            await getColumnHeaderTextsAsync(table);
+        expect(afterUndoHeaders).toEqual(
+            ['id', 'name', 'value']
+        );
+        const afterUndoRow =
+            await getRowCellTextsAsync(table, 0);
+        expect(afterUndoRow.slice(0, 3)).toEqual(
+            ['1', 'item_a', '100']
         );
     },
 );

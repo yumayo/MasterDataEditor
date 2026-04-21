@@ -1,8 +1,120 @@
 .editor-table {
-    display: table;
+    display: block;
     position: relative;
+    width: max-content;
 
     user-select: none;
+}
+
+.editor-table--quadrant-layout {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.editor-table-pane {
+    position: absolute;
+    overflow: hidden;
+}
+
+.editor-table-pane-content,
+.editor-table-main-content {
+    position: relative;
+}
+
+.editor-table-top-viewport,
+.editor-table-left-viewport,
+.editor-table-main-viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.editor-table-top-viewport {
+    overflow-x: hidden;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.editor-table-left-viewport {
+    overflow-x: hidden;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.editor-table-top-viewport::-webkit-scrollbar,
+.editor-table-left-viewport::-webkit-scrollbar {
+    display: none;
+}
+
+.editor-table-main-viewport {
+    overflow: auto;
+}
+
+.editor-table-grid {
+    display: table;
+    position: relative;
+    width: max-content;
+}
+
+.editor-table-detached-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+}
+
+.editor-table-detached-column-header-layer {
+    z-index: var(--z-index-editor-table-column-header-row);
+}
+
+.editor-table-detached-row-header-layer {
+    z-index: var(--z-index-editor-table-row-header);
+}
+
+.editor-table--quadrant-layout .editor-table-detached-row-header-layer {
+    z-index: var(--z-index-freeze-column);
+}
+
+.editor-table-detached-frozen-row-background-layer {
+    z-index: 24;
+}
+
+.editor-table-detached-frozen-row-layer {
+    z-index: var(--z-index-freeze-row);
+}
+
+.editor-table-detached-frozen-corner-layer {
+    z-index: var(--z-index-freeze-corner);
+}
+
+.editor-table-detached-corner-layer {
+    z-index: var(--z-index-editor-table-corner);
+}
+
+.editor-table-detached-row {
+    display: flex;
+    position: absolute;
+    left: 0;
+}
+
+.editor-table-detached-layer .editor-table-cell {
+    pointer-events: auto;
+}
+
+.editor-table-detached-frozen-row-layer .editor-table-cell {
+    pointer-events: none;
+}
+
+.editor-table--quadrant-layout .editor-table-detached-frozen-row-layer .editor-table-cell {
+    pointer-events: auto;
+}
+
+.editor-table-detached-frozen-row-background {
+    position: absolute;
+    left: 0;
+    height: 21px;
+    background-color: var(--background-sub-color);
 }
 
 /* topSpacer: テーブル内に配置される display:table-row */
@@ -69,9 +181,6 @@
 /* 列ヘッダー行のスタイル */
 .editor-table-column-header-row {
     background-color: var(--background-color);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-index-editor-table-column-header-row);
 }
 
 /* 列ヘッダーセルのスタイル */
@@ -160,9 +269,6 @@
     min-width: 40px;
     max-width: 40px;
     width: 40px;
-    position: sticky;
-    left: 0;
-    z-index: var(--z-index-editor-table-row-header);
 }
 
 /* 左上隅のセルのスタイル */
@@ -171,9 +277,6 @@
     min-width: 40px;
     max-width: 40px;
     width: 40px;
-    position: sticky;
-    left: 0;
-    z-index: var(--z-index-editor-table-corner);
 }
 
 /* 列リサイズハンドル（列境界の中央にまたがる: 内側4px + 外側4px）
@@ -421,8 +524,16 @@
    フリーズペイン（行/列の固定）
    ========================================================================== */
 
-/* 固定セルの背景色: sticky で浮いたセルの下にスクロール内容が透けないよう不透明背景を設定する。
+/* 固定セルの背景色: transform で前面に持ち上がるセルの下にスクロール内容が透けないよう不透明背景を設定する。
    データセルは通常 transparent なので、テーブル下地色（--background-sub-color）を背景に敷く。 */
+.freeze-row {
+    background-color: var(--background-sub-color);
+}
+
+.freeze-row .editor-table-cell:not(.editor-table-row-header) {
+    background-color: var(--background-sub-color);
+}
+
 .freeze-cell {
     background-color: var(--background-sub-color);
 }

@@ -6,6 +6,7 @@ import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT} from "./constant";
 import {Utility} from "./utility";
 import {DynamicReferenceSchema} from "./reference-expression";
+import {EditorTableDataColumn} from "./model/editor-table-data-column";
 
 /**
  * テーブル構造操作モジュール
@@ -53,39 +54,38 @@ export class EditorTableStructure {
      * comment: Undo時にcommentを復元するために使用する。新規挿入時は null を渡す。
      */
     insertColumnInternal(columnIndex: number, comment: string | null): void {
+        const tableData = this.table.getTableData();
+        const nextKey = tableData.header.reduce((maxKey, column) => Math.max(maxKey, column.key), -1) + 1;
+        const newWidth = Utility.calculateColumnWidth('', !this.table.isMiniTableInstance());
+        tableData.header.splice(columnIndex, 0, new EditorTableDataColumn(nextKey, '', 'string', comment, null, null, newWidth, false));
+        const columnMapping = tableData.columnMapping as number[];
+        columnMapping.splice(columnIndex, 0, columnIndex);
+        for (let i = columnIndex + 1; i < columnMapping.length; i++) {
+            if (columnMapping[i] !== -1) columnMapping[i] += 1;
+        }
+        for (const row of tableData.body) {
+            row.values.splice(columnIndex, 0, '');
+        }
+        this.table.getStore().insertColumnAt(this.table.tableName, columnIndex, '', () => '');
         // 各行に新しいセルを挿入（getRowCount でスペーサー行を除外した行数でループ）
         const rowCount = this.table.getRowCount();
         for (let currentRowIndex = 0; currentRowIndex < rowCount; ++currentRowIndex) {
             const row = this.table.getRowElementForInsert(currentRowIndex);
             if (!row) continue;
             if (currentRowIndex === 0) {
-                // 列ヘッダー行
-                // 挿入前に既存のラベルをDOMから取得
-                const existingLabels: string[] = [];
                 const offset = this.table.dataColumnOffset();
-                for (let i = offset; i < row.children.length; ++i) {
-                    existingLabels.push(getColumnHeaderLabel(row.children[i] as HTMLElement));
-                }
                 // 列挿入で追加する新規列は PK でも FK でもないため false/null を渡す
                 // ミニテーブルはアイコンなしのため hasIcons: false、通常テーブルは hasIcons: true
-                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, Utility.calculateColumnWidth('', !this.table.isMiniTableInstance()), false, null);
+                const newHeaderCell = this.createColumnHeaderCell('', comment, columnIndex, newWidth, false, null);
                 // 挿入位置（行ヘッダーの後、columnIndex番目）
                 const insertBefore = row.children[columnIndex + offset];
                 row.insertBefore(newHeaderCell, insertBefore);
-                // 全列ヘッダーのラベルを更新（DOMから取得した既存ラベルを使用）
-                const newColumnCount = existingLabels.length + 1;
+                const newColumnCount = this.table.getColumnCount();
                 for (let i = 0; i < newColumnCount; ++i) {
                     const headerCell = row.children[i + offset] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    let label = '';
-                    if (i < columnIndex) {
-                        label = existingLabels[i] || '';
-                    } else if (i > columnIndex) {
-                        label = existingLabels[i - 1] || '';
-                    }
-                    // comment あり（.column-header-name span）かcommentなし（TextNode）かに応じてラベルを更新
-                    setColumnHeaderLabel(headerCell, label);
+                    setColumnHeaderLabel(headerCell, this.table.getColumnHeaderValue(i));
                     // リサイズハンドルのイベントハンドラを再設定
                     const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
                     if (existingResizeHandle) {
@@ -98,7 +98,7 @@ export class EditorTableStructure {
                 }
             } else {
                 // 通常の行: 行の高さは既存のセルから取得。列幅はヘッダーと同じ計算で揃える
-                const newCell = EditorTable.createCell(this.table, '', columnIndex, Utility.calculateColumnWidth('', !this.table.isMiniTableInstance()), DEFAULT_ROW_HEIGHT);
+                const newCell = EditorTable.createCell(this.table, '', columnIndex, newWidth, DEFAULT_ROW_HEIGHT);
                 const insertBefore = row.children[columnIndex + this.table.dataColumnOffset()];
                 row.insertBefore(newCell, insertBefore);
                 // 後続のセルのdata-colを更新
@@ -154,8 +154,7 @@ export class EditorTableStructure {
         const storeColumnCount = storeHeader.length;
         // DOM上の列数（行ヘッダーを除く）。DOM列数はスキーマの header 配列から決定され、ストア列数はCSVヘッダーから決定される。
         // ミニテーブルではFK列を除いた表示列のみDOMに存在するため、DOM列数とストア列数は一致しない場合がある。
-        const columnHeaderRow = tableElement.children[0];
-        const domColumnCount = columnHeaderRow.children.length - this.table.dataColumnOffset();
+        const domColumnCount = this.table.getColumnCount();
         // 新しい行を作成
         const cells: HTMLElement[] = [];
         // 行ヘッダーを作成
@@ -288,15 +287,22 @@ export class EditorTableStructure {
      * 列を削除する（Undo用）
      */
     deleteColumn(columnIndex: number): void {
-        const tableElement = this.table.getTableElement();
-        const columnHeaderRow = tableElement.children[0];
-        const offset = this.table.dataColumnOffset();
-        const totalColumns = columnHeaderRow.children.length - offset;
-        // 削除前に既存のラベルをDOMから取得
-        const existingLabels: string[] = [];
-        for (let i = offset; i < columnHeaderRow.children.length; ++i) {
-            existingLabels.push(getColumnHeaderLabel(columnHeaderRow.children[i] as HTMLElement));
+        const tableData = this.table.getTableData();
+        const columnMapping = tableData.columnMapping as number[];
+        const removedStoreColumnIndex = columnIndex < columnMapping.length ? columnMapping[columnIndex] : -1;
+        tableData.header.splice(columnIndex, 1);
+        columnMapping.splice(columnIndex, 1);
+        if (removedStoreColumnIndex !== -1) {
+            for (let i = 0; i < columnMapping.length; i++) {
+                if (columnMapping[i] > removedStoreColumnIndex) columnMapping[i] -= 1;
+            }
+            this.table.getStore().removeColumnAt(this.table.tableName, removedStoreColumnIndex);
         }
+        for (const row of tableData.body) {
+            row.values.splice(columnIndex, 1);
+        }
+        const offset = this.table.dataColumnOffset();
+        const totalColumns = this.table.getColumnCount();
         // 各行から指定位置のセルを削除（getRowCount でスペーサー行を除外した行数でループ）
         const rowCount = this.table.getRowCount();
         for (let rowIdx = 0; rowIdx < rowCount; ++rowIdx) {
@@ -309,18 +315,11 @@ export class EditorTableStructure {
             }
             // 列ヘッダー行の場合、ラベルを更新
             if (rowIdx === 0) {
-                for (let i = 0; i < totalColumns - 1; ++i) {
+                for (let i = 0; i < totalColumns; ++i) {
                     const headerCell = row.children[i + offset] as HTMLElement;
                     headerCell.dataset.columnIndex = String(i);
                     headerCell.dataset.col = String(i);
-                    let label = '';
-                    if (i < columnIndex) {
-                        label = existingLabels[i] || '';
-                    } else {
-                        label = existingLabels[i + 1] || '';
-                    }
-                    // comment あり（.column-header-name span）かcommentなし（TextNode）かに応じてラベルを更新
-                    setColumnHeaderLabel(headerCell, label);
+                    setColumnHeaderLabel(headerCell, this.table.getColumnHeaderValue(i));
                     // リサイズハンドルのイベントハンドラを再設定
                     const existingResizeHandle = headerCell.querySelector('.column-resize-handle');
                     if (existingResizeHandle) {
@@ -565,6 +564,7 @@ export class EditorTableStructure {
                 continue;
             }
             row.dataset.row = String(logicalRowNumber);
+            row.dataset.rowIndex = String(logicalRowNumber - 1);
             // blame表示時は children[0] がblame列なので querySelector で行ヘッダーを取得する
             const header = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (!header) continue;
@@ -580,6 +580,7 @@ export class EditorTableStructure {
             }
             header.dataset.rowIndex = String(logicalRowNumber - 1);
         }
+        this.table.refreshDetachedHeaderLayout();
     }
 
     /**
@@ -667,24 +668,6 @@ function appendBadgeIfNeeded(columnHeaderCell: HTMLElement, isPrimaryKey: boolea
     columnHeaderCell.insertBefore(badgeArea, columnHeaderCell.firstChild);
     // バッジに関するすべての処理（コンテナ生成・バッジ生成・クラス付与）をここに集約する
     columnHeaderCell.classList.add('has-badge');
-}
-
-/**
- * 列ヘッダーセルからラベル文字列を取得する。
- * comment あり（.column-header-name span）の場合はそのテキストを返し、
- * comment なし（TextNode）の場合は TextNode のテキストを返す。
- */
-function getColumnHeaderLabel(headerCell: HTMLElement): string {
-    const nameSpan = headerCell.querySelector<HTMLElement>('.column-header-name');
-    if (nameSpan !== null) {
-        return nameSpan.textContent || '';
-    }
-    for (const node of Array.from(headerCell.childNodes)) {
-        if (node.nodeType === Node.TEXT_NODE) {
-            return node.textContent || '';
-        }
-    }
-    return '';
 }
 
 /**

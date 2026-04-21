@@ -90,5 +90,10 @@
     flex: 1 1 auto;
     overflow: auto;
     position: relative;
+    scrollbar-width: none;
+}
+
+.editor-left-pane::-webkit-scrollbar {
+    display: none;
 }
 

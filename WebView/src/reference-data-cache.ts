@@ -21,6 +21,7 @@ export interface ReferenceTableData {
     tableName: string;
     items: ReferenceItem[];
     displayColumnName: string;  // 表示に使用している列名
+    displayTextById: Map<string, string>;
 }
 
 /**
@@ -141,7 +142,8 @@ export class ReferenceDataCache {
             return {
                 tableName,
                 items: [],
-                displayColumnName: ''
+                displayColumnName: '',
+                displayTextById: new Map<string, string>()
             };
         }
 
@@ -153,7 +155,8 @@ export class ReferenceDataCache {
             return {
                 tableName,
                 items: [],
-                displayColumnName: ''
+                displayColumnName: '',
+                displayTextById: new Map<string, string>()
             };
         }
 
@@ -163,7 +166,8 @@ export class ReferenceDataCache {
             return {
                 tableName,
                 items: [],
-                displayColumnName: ''
+                displayColumnName: '',
+                displayTextById: new Map<string, string>()
             };
         }
 
@@ -180,7 +184,8 @@ export class ReferenceDataCache {
                 return {
                     tableName,
                     items: [],
-                    displayColumnName: ''
+                    displayColumnName: '',
+                    displayTextById: new Map<string, string>()
                 };
             }
 
@@ -200,7 +205,8 @@ export class ReferenceDataCache {
             return {
                 tableName,
                 items: [],
-                displayColumnName: ''
+                displayColumnName: '',
+                displayTextById: new Map<string, string>()
             };
         }
 
@@ -260,10 +266,17 @@ export class ReferenceDataCache {
             );
         }
 
+        const displayTextById = new Map<string, string>();
+        for (const item of items) {
+            if (!displayTextById.has(item.id)) {
+                displayTextById.set(item.id, item.displayText);
+            }
+        }
         return {
             tableName,
             items,
-            displayColumnName
+            displayColumnName,
+            displayTextById
         };
     }
 
@@ -409,6 +422,7 @@ export class ReferenceDataCache {
         const item = data.items.find(item => item.id === id);
         if (!item) return;
         item.displayText = newDisplayText;
+        data.displayTextById.set(id, newDisplayText);
     }
 
     /** セル編集時にfullDataCacheとcache両方のキャッシュを即時更新する */
@@ -434,6 +448,7 @@ export class ReferenceDataCache {
         const item = data.items.find(item => item.id === id);
         if (!item) return;
         item.displayText = value;
+        data.displayTextById.set(id, value);
     }
 
     /**
@@ -442,17 +457,16 @@ export class ReferenceDataCache {
      * @param id 検索するID
      * @returns 表示テキスト（見つからない場合は undefined）
      */
-    getDisplayTextById(tableName: string, id: string): string | undefined {
+    getDisplayTextById(tableName: string, id: string): string | null {
         const data = this.cache.get(tableName);
-        if (!data) return undefined;
-
-        const item = data.items.find(item => item.id === id);
-        if (!item) return undefined;
+        if (!data) return null;
+        const displayText = data.displayTextById.get(id);
+        if (displayText === undefined) return null;
 
         // displayText と id が同じ場合はヒントを表示しない
-        if (item.displayText === item.id) return undefined;
+        if (displayText === id) return null;
 
-        return item.displayText;
+        return displayText;
     }
 
     /**

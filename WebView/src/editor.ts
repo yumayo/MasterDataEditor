@@ -106,6 +106,7 @@ export class Editor {
         // leftPane を leftSlot の中に入れる（後方互換性: .editor-left-pane は .editor-left-slot の子として存在し続ける）
         const leftPane = document.createElement('div');
         leftPane.classList.add('editor-left-pane');
+        leftPane.addEventListener('wheel', (event) => { this.redirectOuterWheelToMainViewport(event); }, { passive: false });
         leftSlot.appendChild(leftPane);
         this.leftPane = leftPane;
 
@@ -207,6 +208,36 @@ export class Editor {
      */
     getLeftPaneForScroll(): HTMLElement {
         return this.leftPane;
+    }
+
+    private redirectOuterWheelToMainViewport(event: WheelEvent): void {
+        if (event.ctrlKey) return;
+        if (!(event.target instanceof Element)) return;
+        if (this.tab === false) return;
+        const activeState = this.tab.getActiveTabState();
+        if (activeState === false) return;
+        if (!activeState.editorTable.usesInternalScrollLayout()) return;
+        if (!activeState.wrapperElement.contains(event.target)) return;
+        const mainViewport = activeState.wrapperElement.querySelector('.editor-table-main-viewport');
+        if (!(mainViewport instanceof HTMLElement)) return;
+        if (mainViewport.contains(event.target)) return;
+
+        let deltaX = event.deltaX;
+        let deltaY = event.deltaY;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            deltaX *= 16;
+            deltaY *= 16;
+        } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+            deltaX *= this.leftPane.clientWidth;
+            deltaY *= this.leftPane.clientHeight;
+        }
+        if (event.shiftKey && deltaX === 0 && deltaY !== 0) {
+            deltaX = deltaY;
+            deltaY = 0;
+        }
+
+        event.preventDefault();
+        activeState.editorTable.scrollByInput(deltaY, deltaX);
     }
 
     /** 垂直スクロールバーマーカートラックを返す（EditorTable への接続用） */

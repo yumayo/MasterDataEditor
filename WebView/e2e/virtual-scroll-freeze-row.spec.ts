@@ -6,14 +6,14 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 // 仮想スクロール × 固定行（freeze row）の統合テスト
 //
 // 仮想スクロール有効テーブルで固定行を設定した場合、スクロールしても
-// 固定行がDOMに残り position:sticky が維持されることを検証する。
+// 固定行がDOMに残り、transform で固定位置が維持されることを検証する。
 //
 // 問題:
 //   現在の updateRenderedRows() は固定行を特別扱いしない。
-//   OVERSCAN範囲外になると固定行もDOMから削除され、stickyが無効になる。
+//   OVERSCAN範囲外になると固定行もDOMから削除され、位置固定が無効になる。
 //
 // テストケース:
-//   1. 固定行を設定後、下にスクロールしても固定行がDOMに存在しstickyが維持される
+//   1. 固定行を設定後、下にスクロールしても固定行がDOMに存在し位置固定が維持される
 // =============================================================================
 
 /** 1000行のCSVデータを生成する */
@@ -41,6 +41,22 @@ function createFileSystem(): MockFileSystem {
     };
 }
 
+function createCommentedFrozenPaneFileSystem(): MockFileSystem {
+    return {
+        'schema/big_table.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int', comment: '識別子' },
+                { key: 1, name: 'name', type: 'string', comment: '表示名' },
+                { key: 2, name: 'value', type: 'int', comment: '内部値' },
+            ],
+            primary_key: ['id'],
+            frozenRowCount: 2,
+            frozenColumnCount: 1,
+        }),
+        'data/big_table.csv': generateCsv(1000),
+    };
+}
+
 /** テーブルを開いてLocatorを返す */
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const explorer = page.locator('#explorer');
@@ -50,10 +66,44 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     return table;
 }
 
+async function getTableScrollContainerAsync(page: Page): Promise<Locator> {
+    const mainViewport = page.locator('.editor-left-pane .editor-table-main-viewport');
+    if (await mainViewport.count() !== 1) throw new Error('main viewport が見つかりません');
+    return mainViewport;
+}
+
+async function getFrozenRowViewportTopAsync(table: Locator, rowIndex: number): Promise<number> {
+    return table.evaluate((tableElement, targetRowIndex) => {
+        const detachedRow = tableElement.querySelector<HTMLElement>(`.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="${targetRowIndex}"]`);
+        if (detachedRow instanceof HTMLElement) {
+            const cell = detachedRow.querySelector<HTMLElement>('.editor-table-cell');
+            if (!(cell instanceof HTMLElement)) throw new Error('固定行の分離セルが見つかりません');
+            return cell.getBoundingClientRect().top;
+        }
+        const sourceRow = tableElement.querySelectorAll<HTMLElement>('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)')[targetRowIndex];
+        if (!(sourceRow instanceof HTMLElement)) throw new Error(`固定行が見つかりません: rowIndex=${targetRowIndex}`);
+        const cell = sourceRow.querySelector<HTMLElement>('.editor-table-cell:not(.editor-table-row-header)');
+        if (!(cell instanceof HTMLElement)) throw new Error('固定行の本文セルが見つかりません');
+        return cell.getBoundingClientRect().top;
+    }, rowIndex);
+}
+
+async function clickVisibleDataCellAsync(table: Locator, rowIndex: number, columnIndex: number): Promise<void> {
+    const detachedCell = table.locator([
+        `.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="${rowIndex}"] .editor-table-cell[data-col="${columnIndex}"]`,
+        `.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="${rowIndex}"] .editor-table-cell[data-col="${columnIndex}"]`,
+        `.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="${rowIndex}"] .editor-table-cell[data-col="${columnIndex}"]`,
+    ].join(',')).first();
+    if (await detachedCell.count() > 0) {
+        await detachedCell.click();
+        return;
+    }
+    const row = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)').nth(rowIndex);
+    await row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(columnIndex).click();
+}
+
 async function rightClickRowHeaderAsync(table: Locator, dataRowIndex: number): Promise<void> {
-    const header = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)')
-        .nth(dataRowIndex)
-        .locator('.editor-table-row-header');
+    const header = table.locator('.editor-table-detached-row-header-layer .editor-table-row-header').nth(dataRowIndex);
     await header.click({ button: 'right' });
 }
 
@@ -63,39 +113,143 @@ async function clickContextMenuItemAsync(page: Page, label: string): Promise<voi
     await menu.locator('.context-menu-item', { hasText: label }).click();
 }
 
+async function installFrozenCellRectCounterAsync(page: Page, dataRowIndex: number, columnIndex: number): Promise<void> {
+    await page.evaluate(({ targetRowIndex, targetColumnIndex }) => {
+        const trackerWindow = window as unknown as Record<string, unknown> & {
+            __trackedFrozenCellRectCount: number | null;
+            __trackedFrozenCellRectOriginal: typeof HTMLElement.prototype.getBoundingClientRect | null;
+        };
+        if (!('__trackedFrozenCellRectCount' in trackerWindow)) trackerWindow.__trackedFrozenCellRectCount = null;
+        if (!('__trackedFrozenCellRectOriginal' in trackerWindow)) trackerWindow.__trackedFrozenCellRectOriginal = null;
+        const selector = `.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="${targetRowIndex}"] .editor-table-cell[data-col="${targetColumnIndex}"]`;
+        if (!(document.querySelector(selector) instanceof HTMLElement)) {
+            throw new Error(`計測対象の固定セルが見つかりません: selector=${selector}`);
+        }
+        trackerWindow.__trackedFrozenCellRectCount = 0;
+        trackerWindow.__trackedFrozenCellRectOriginal = HTMLElement.prototype.getBoundingClientRect;
+        HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
+            if (this.matches(selector)) {
+                if (trackerWindow.__trackedFrozenCellRectCount === null) throw new Error('固定セル計測カウンタが初期化されていません');
+                trackerWindow.__trackedFrozenCellRectCount += 1;
+            }
+            const original = trackerWindow.__trackedFrozenCellRectOriginal;
+            if (original === null) throw new Error('元の getBoundingClientRect が見つかりません');
+            return original.call(this);
+        };
+    }, { targetRowIndex: dataRowIndex, targetColumnIndex: columnIndex });
+}
+
+async function getFrozenCellRectCountAsync(page: Page): Promise<number> {
+    return page.evaluate(() => {
+        const trackerWindow = window as unknown as Record<string, unknown> & { __trackedFrozenCellRectCount: number | null };
+        if (!('__trackedFrozenCellRectCount' in trackerWindow)) throw new Error('固定セル計測カウンタが初期化されていません');
+        if (trackerWindow.__trackedFrozenCellRectCount === null) throw new Error('固定セル計測カウンタが初期化されていません');
+        return trackerWindow.__trackedFrozenCellRectCount;
+    });
+}
+
+async function installMainGridRowOffsetTopCounterAsync(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        const trackerWindow = window as unknown as Record<string, unknown> & {
+            __mainGridRowOffsetTopCount: number | null;
+            __mainGridRowOffsetTopDescriptor: PropertyDescriptor | null;
+            __mainGridRowOffsetTopPrototype: object | null;
+        };
+        if (!('__mainGridRowOffsetTopCount' in trackerWindow)) trackerWindow.__mainGridRowOffsetTopCount = null;
+        if (!('__mainGridRowOffsetTopDescriptor' in trackerWindow)) trackerWindow.__mainGridRowOffsetTopDescriptor = null;
+        if (!('__mainGridRowOffsetTopPrototype' in trackerWindow)) trackerWindow.__mainGridRowOffsetTopPrototype = null;
+        let currentPrototype: object | null = document.body;
+        let descriptor: PropertyDescriptor | null = null;
+        while (currentPrototype !== null) {
+            descriptor = Object.getOwnPropertyDescriptor(currentPrototype, 'offsetTop') ?? null;
+            if (descriptor !== null) break;
+            currentPrototype = Object.getPrototypeOf(currentPrototype);
+        }
+        if (currentPrototype === null || descriptor === null || typeof descriptor.get !== 'function') {
+            throw new Error('offsetTop の元ディスクリプタが見つかりません');
+        }
+        trackerWindow.__mainGridRowOffsetTopCount = 0;
+        trackerWindow.__mainGridRowOffsetTopPrototype = currentPrototype;
+        trackerWindow.__mainGridRowOffsetTopDescriptor = descriptor;
+        Object.defineProperty(currentPrototype, 'offsetTop', {
+            configurable: true,
+            get: function(this: HTMLElement): number {
+                if (this.classList.contains('editor-table-row')
+                    && !this.classList.contains('editor-table-column-header-row')
+                    && !this.classList.contains('editor-table-detached-row')
+                    && this.closest('.editor-table-grid') !== null) {
+                    if (trackerWindow.__mainGridRowOffsetTopCount === null) throw new Error('offsetTop 計測カウンタが初期化されていません');
+                    trackerWindow.__mainGridRowOffsetTopCount += 1;
+                }
+                const originalDescriptor = trackerWindow.__mainGridRowOffsetTopDescriptor;
+                if (originalDescriptor === null || typeof originalDescriptor.get !== 'function') {
+                    throw new Error('offsetTop の元 getter が失われました');
+                }
+                return originalDescriptor.get.call(this) as number;
+            },
+        });
+    });
+}
+
+async function getMainGridRowOffsetTopCountAsync(page: Page): Promise<number> {
+    return page.evaluate(() => {
+        const trackerWindow = window as unknown as Record<string, unknown> & { __mainGridRowOffsetTopCount: number | null };
+        if (!('__mainGridRowOffsetTopCount' in trackerWindow)) throw new Error('offsetTop 計測カウンタが初期化されていません');
+        if (trackerWindow.__mainGridRowOffsetTopCount === null) throw new Error('offsetTop 計測カウンタが初期化されていません');
+        return trackerWindow.__mainGridRowOffsetTopCount;
+    });
+}
+
+async function applyCustomDataRowHeightAsync(page: Page, heightPx: string): Promise<void> {
+    await page.addStyleTag({
+        content: `
+            .editor-table-row:not(.editor-table-column-header-row) .editor-table-cell {
+                height: ${heightPx} !important;
+                min-height: ${heightPx} !important;
+                line-height: ${heightPx} !important;
+            }
+        `,
+    });
+}
+
+async function getFirstVisibleQuadrantRowHeaderTopDeltaAsync(table: Locator): Promise<number> {
+    return table.evaluate((tableElement) => {
+        const detachedRow = tableElement.querySelector<HTMLElement>('.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index]');
+        if (!(detachedRow instanceof HTMLElement)) throw new Error('分離行ヘッダー行が見つかりません');
+        const rowIndexText = detachedRow.dataset.rowIndex;
+        if (rowIndexText === undefined) throw new Error('分離行ヘッダーに rowIndex がありません');
+        const sourceRow = tableElement.querySelector<HTMLElement>(`.editor-table-grid .editor-table-row[data-row-index="${rowIndexText}"]`);
+        if (!(sourceRow instanceof HTMLElement)) throw new Error(`元行が見つかりません: rowIndex=${rowIndexText}`);
+        const detachedHeader = detachedRow.querySelector<HTMLElement>('.editor-table-row-header');
+        const sourceHeader = sourceRow.querySelector<HTMLElement>('.editor-table-row-header');
+        if (!(detachedHeader instanceof HTMLElement) || !(sourceHeader instanceof HTMLElement)) {
+            throw new Error(`比較対象の行ヘッダーが見つかりません: rowIndex=${rowIndexText}`);
+        }
+        return Math.abs(detachedHeader.getBoundingClientRect().top - sourceHeader.getBoundingClientRect().top);
+    });
+}
+
 test.describe('仮想スクロール × 固定行', () => {
-    test('固定行を設定後、下にスクロールしても固定行がDOMに存在しstickyが維持される', async ({ page }) => {
+    test('固定行を設定後、下にスクロールしても固定行がDOMに存在し位置固定が維持される', async ({ page }) => {
         const fs = createFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
 
         const table = await openTableAsync(page, 'big_table');
 
-        // 初期表示で固定行（データ行0, 1）がDOMに存在し、stickyが適用されていることを確認
+        // 初期表示で固定行（データ行0, 1）がDOMに存在することを確認
         const dataRows = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)');
         const initialRowCount = await dataRows.count();
         expect(initialRowCount).toBeGreaterThanOrEqual(2);
 
-        // 固定行0のスタイルを確認（position:sticky, topが0pxより大きい）
-        const frozenRow0 = dataRows.nth(0);
-        const frozenRow0Style = await frozenRow0.evaluate((el) => {
-            const cs = window.getComputedStyle(el);
-            return { position: cs.position, top: cs.top };
-        });
-        expect(frozenRow0Style.position).toBe('sticky');
-        expect(parseInt(frozenRow0Style.top)).toBeGreaterThan(0);
+        // 固定行0/1の初期位置を記録する
+        const frozenRow0Top = await getFrozenRowViewportTopAsync(table, 0);
 
-        // 固定行1のスタイルも確認
-        const frozenRow1 = dataRows.nth(1);
-        const frozenRow1Style = await frozenRow1.evaluate((el) => {
-            const cs = window.getComputedStyle(el);
-            return { position: cs.position, top: cs.top };
-        });
-        expect(frozenRow1Style.position).toBe('sticky');
-        expect(parseInt(frozenRow1Style.top)).toBeGreaterThan(parseInt(frozenRow0Style.top));
+        const frozenRow1Top = await getFrozenRowViewportTopAsync(table, 1);
+        expect(frozenRow1Top).toBeGreaterThan(frozenRow0Top);
 
         // 500行目付近までスクロールする（OVERSCAN=10 をはるかに超える位置）
-        const scrollContainer = page.locator('.editor-left-pane');
+        const scrollContainer = await getTableScrollContainerAsync(page);
         await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 21; });
         await page.waitForTimeout(300);
 
@@ -109,23 +263,12 @@ test.describe('仮想スクロール × 固定行', () => {
             .filter({ has: page.locator('.editor-table-row-header[data-row-index="1"]') });
         await expect(row1IdCell).toHaveCount(1);
 
-        // 固定行0が依然としてstickyであること
-        const frozenRow0AfterScroll = row0IdCell.first();
-        const afterScrollStyle0 = await frozenRow0AfterScroll.evaluate((el) => {
-            const cs = window.getComputedStyle(el);
-            return { position: cs.position, top: cs.top };
-        });
-        expect(afterScrollStyle0.position).toBe('sticky');
-        expect(parseInt(afterScrollStyle0.top)).toBeGreaterThan(0);
+        // 固定行0/1のビューポート位置が維持されること
+        const afterScrollTop0 = await getFrozenRowViewportTopAsync(table, 0);
+        expect(Math.abs(afterScrollTop0 - frozenRow0Top)).toBeLessThanOrEqual(2);
 
-        // 固定行1が依然としてstickyであること
-        const frozenRow1AfterScroll = row1IdCell.first();
-        const afterScrollStyle1 = await frozenRow1AfterScroll.evaluate((el) => {
-            const cs = window.getComputedStyle(el);
-            return { position: cs.position, top: cs.top };
-        });
-        expect(afterScrollStyle1.position).toBe('sticky');
-        expect(parseInt(afterScrollStyle1.top)).toBeGreaterThan(parseInt(afterScrollStyle0.top));
+        const afterScrollTop1 = await getFrozenRowViewportTopAsync(table, 1);
+        expect(Math.abs(afterScrollTop1 - frozenRow1Top)).toBeLessThanOrEqual(2);
 
         // さらに: ビューポート内にスクロール位置に対応したデータ行も表示されていること
         // （固定行だけでなく、500行目付近の行も表示されている）
@@ -144,17 +287,14 @@ test.describe('仮想スクロール × 固定行', () => {
 
         // 固定行のセル（データ行0, value列）をクリックして選択する
         const dataRows = table.locator('.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)');
-        const frozenRow = dataRows.nth(0);
-        // value列（3番目のデータセル = children[2] ※行ヘッダー除く）をクリック
-        const targetCell = frozenRow.locator('.editor-table-cell').nth(2);
-        await targetCell.click();
+        await clickVisibleDataCellAsync(table, 0, 2);
 
         // まずスクロールを一度行って、仮想スクロールの表示範囲を安定させる。
         // 初回描画では renderedEnd が大きく、スクロール時に行入れ替えが発生して
         // afterRowsUpdated → updateFillHandlePosition が呼ばれてしまう。
         // 安定後の微小スクロールでは行入れ替えが発生しないため、
         // 修正前は updateFillHandlePosition が呼ばれず fillHandle の位置がずれる。
-        const scrollContainer = page.locator('.editor-left-pane');
+        const scrollContainer = await getTableScrollContainerAsync(page);
         await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
         await page.waitForTimeout(50);
 
@@ -175,11 +315,74 @@ test.describe('仮想スクロール × 固定行', () => {
             return parseFloat(handle.style.top);
         });
 
-        // stickyセルのビューポート位置は不変なので、fillHandle の style.top は
-        // スクロール量分だけ増加する必要がある。
-        // 修正前: style.top が更新されないため差分0 → 失敗
-        // 修正後: スクロールイベントで updateFillHandlePosition が呼ばれ、差分 ≈ scrollAmount
-        expect(Math.abs((afterScrollTop - initialTop) - scrollAmount)).toBeLessThanOrEqual(2);
+        // 4領域構成では fixed row の可視セルも wrapper 基準の絶対位置が不変なので、
+        // fillHandle の style.top もスクロールで変化しないことが正しい。
+        expect(Math.abs(afterScrollTop - initialTop)).toBeLessThanOrEqual(2);
+    });
+
+    test('固定行選択で表示レンジ更新を伴うスクロールでも fillHandle のセル計測は1回で済む', async ({ page }) => {
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'big_table');
+        await clickVisibleDataCellAsync(table, 0, 2);
+
+        const scrollContainer = await getTableScrollContainerAsync(page);
+        await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
+        await page.waitForTimeout(50);
+
+        await installFrozenCellRectCounterAsync(page, 0, 2);
+
+        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
+        await page.waitForTimeout(100);
+
+        await expect.poll(async () => getFrozenCellRectCountAsync(page)).toBe(1);
+    });
+
+    test('表示レンジ更新を伴うスクロールでも main grid 行の offsetTop を読み直さない', async ({ page }) => {
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTableAsync(page, 'big_table');
+        const scrollContainer = await getTableScrollContainerAsync(page);
+
+        await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
+        await page.waitForTimeout(50);
+
+        await installMainGridRowOffsetTopCounterAsync(page);
+
+        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
+        await page.waitForTimeout(100);
+
+        await expect.poll(async () => getMainGridRowOffsetTopCountAsync(page)).toBe(0);
+    });
+
+    test('コメント付きヘッダーと固定列を併用して行高が変わっても quadrant 行ヘッダーが本文と揃う', async ({ page }) => {
+        const fs = createCommentedFrozenPaneFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        await applyCustomDataRowHeightAsync(page, '25.5px');
+
+        const table = await openTableAsync(page, 'big_table');
+        const scrollContainer = await getTableScrollContainerAsync(page);
+
+        await scrollContainer.evaluate((el) => { el.scrollTop = 2600; });
+        await page.waitForTimeout(100);
+
+        await expect.poll(async () => getFirstVisibleQuadrantRowHeaderTopDeltaAsync(table)).toBeLessThanOrEqual(2);
+    });
+
+    test('quadrant レイアウトでもセル選択時に分離行ヘッダーの selected 状態が同期される', async ({ page }) => {
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'big_table');
+        await clickVisibleDataCellAsync(table, 5, 1);
+
+        await expect(table.locator('.editor-table-detached-row-header-layer .editor-table-row-header[data-row-index="5"]')).toHaveClass(/selected/);
     });
 
     test('1行目の固定を解除した後に1行目1列目をクリックしても先頭行が重複しない', async ({ page }) => {

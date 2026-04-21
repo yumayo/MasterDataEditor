@@ -5,6 +5,12 @@
 /** デフォルトの列幅 */
 export const DEFAULT_COLUMN_WIDTH = '100px';
 
+/** 行ヘッダー列の幅(px) */
+export const ROW_HEADER_WIDTH_PX = 40;
+
+/** blame列の幅(px) */
+export const BLAME_COLUMN_WIDTH_PX = 200;
+
 /** 行のCSSheightプロパティ値(px) */
 export const ROW_HEIGHT_PX = 20;
 

@@ -6,6 +6,8 @@
 - ファイル: project_review_archive_mar2026.md
 - 2026-03-15〜23 全レビューの要約と横断的継続課題リストを収録
 - ISSUE_0112まで含む最新版
+- ファイル: project_fixed_rows_rendering_overlay.md
+- 固定行で内容欠落・背景透け・境界崩れが同時発生した場合は、固定オーバーレイ層の重大破綻として扱う
 
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）

@@ -6,7 +6,7 @@
             "name": "id",
             "type": "int",
             "comment": "ID",
-            "width": 199
+            "width": 173
         },
         {
             "key": 1,
@@ -62,6 +62,6 @@
     "primary_key": [
         "id"
     ],
-    "frozenColumnCount": 2,
-    "frozenRowCount": 5
+    "frozenRowCount": 12,
+    "frozenColumnCount": 2
 }

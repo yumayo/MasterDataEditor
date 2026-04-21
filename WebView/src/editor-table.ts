@@ -5,7 +5,7 @@ import {ContextMenu, ContextMenuEntry} from "./context-menu";
 import {History} from "./history";
 import {Command, CellChange, RenderAsHtmlToggleCommand, SortCommand, FilterCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX} from "./constant";
+import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX, ROW_TOTAL_HEIGHT_PX, ROW_HEADER_WIDTH_PX, BLAME_COLUMN_WIDTH_PX} from "./constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {RowDragController} from "./row-drag-controller";
@@ -33,7 +33,7 @@ import {saveSchemaDataAsync} from "./editor-actions";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "./reference-expression";
 import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
 import {ScrollbarMarkerTrack, MarkerEntry} from "./scrollbar-marker-track";
-import {VirtualScrollController} from "./virtual-scroll-controller";
+import {VirtualScrollController, RenderedRowsUpdate} from "./virtual-scroll-controller";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -47,6 +47,7 @@ export class EditorTable {
     readonly tableName: string;
     private readonly tableData: EditorTableData;
     private readonly element: HTMLElement;
+    private readonly gridElement: HTMLElement;
     private readonly selection: Selection;
     private readonly areaResizer: AreaResizer;
     private readonly handler: EditorTableHandler;
@@ -60,6 +61,25 @@ export class EditorTable {
     private readonly store: InMemoryTableStore;
     /** 参照箇所を表示するサイドバー（コンテキストメニュー・ブックマーク操作で使用） */
     private readonly sidebar: Sidebar;
+    private readonly scrollContainer: HTMLElement;
+    private readonly usesInternalMainViewport: boolean;
+    private readonly topLeftPane: HTMLElement;
+    private readonly topRightPane: HTMLElement;
+    private readonly bottomLeftPane: HTMLElement;
+    private readonly bottomRightPane: HTMLElement;
+    private readonly topRightViewport: HTMLElement;
+    private readonly leftBottomViewport: HTMLElement;
+    private readonly topLeftContent: HTMLElement;
+    private readonly topRightContent: HTMLElement;
+    private readonly leftBottomContent: HTMLElement;
+    private readonly mainContent: HTMLElement;
+    private readonly detachedColumnHeaderLayer: HTMLElement;
+    private readonly detachedRowHeaderLayer: HTMLElement;
+    private readonly detachedFrozenRowBackgroundLayer: HTMLElement;
+    private readonly detachedCornerLayer: HTMLElement;
+    private readonly detachedFrozenRowDataLayer: HTMLElement;
+    private readonly detachedFrozenCornerDataLayer: HTMLElement;
+    private detachedHeaderTopOffset: number;
 
     /** 参照ヒント管理モジュール */
     reference!: EditorTableReference;
@@ -162,6 +182,8 @@ export class EditorTable {
     private cachedDomColToStoreCol: number[];
     /** バーチャルスクロールコントローラー */
     private readonly virtualScroll: VirtualScrollController;
+    /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
+    private skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
     constructor(
         tableName: string,
@@ -179,7 +201,8 @@ export class EditorTable {
         emptyRowCount: number,
         rootCssClass: string,
         isMiniTable: boolean,
-        enableVirtualScroll: boolean
+        enableVirtualScroll: boolean,
+        internalScrollLayout: boolean
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -191,10 +214,75 @@ export class EditorTable {
         this.history = history;
         this.areaResizer = areaResizer;
         this.sidebar = sidebar;
+        this.scrollContainer = scrollContainer;
+        this.usesInternalMainViewport = internalScrollLayout;
         this.emptyRowCount = emptyRowCount;
         this.rootCssClass = rootCssClass;
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
+        this.topLeftPane = document.createElement('div');
+        this.topLeftPane.classList.add('editor-table-pane', 'editor-table-pane-top-left');
+        this.topRightPane = document.createElement('div');
+        this.topRightPane.classList.add('editor-table-pane', 'editor-table-pane-top-right');
+        this.bottomLeftPane = document.createElement('div');
+        this.bottomLeftPane.classList.add('editor-table-pane', 'editor-table-pane-bottom-left');
+        this.bottomRightPane = document.createElement('div');
+        this.bottomRightPane.classList.add('editor-table-pane', 'editor-table-pane-bottom-right');
+        this.topRightViewport = document.createElement('div');
+        this.topRightViewport.classList.add('editor-table-top-viewport');
+        this.leftBottomViewport = document.createElement('div');
+        this.leftBottomViewport.classList.add('editor-table-left-viewport');
+        this.topLeftContent = document.createElement('div');
+        this.topLeftContent.classList.add('editor-table-pane-content', 'editor-table-top-left-content');
+        this.topRightContent = document.createElement('div');
+        this.topRightContent.classList.add('editor-table-pane-content', 'editor-table-top-right-content');
+        this.leftBottomContent = document.createElement('div');
+        this.leftBottomContent.classList.add('editor-table-pane-content', 'editor-table-left-bottom-content');
+        this.mainContent = document.createElement('div');
+        this.mainContent.classList.add('editor-table-main-content');
+        this.detachedColumnHeaderLayer = document.createElement('div');
+        this.detachedColumnHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-column-header-layer');
+        this.detachedRowHeaderLayer = document.createElement('div');
+        this.detachedRowHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-row-header-layer');
+        this.detachedFrozenRowBackgroundLayer = document.createElement('div');
+        this.detachedFrozenRowBackgroundLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-row-background-layer');
+        this.detachedCornerLayer = document.createElement('div');
+        this.detachedCornerLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-corner-layer');
+        this.gridElement = document.createElement('div');
+        this.gridElement.classList.add('editor-table-grid');
+        this.detachedFrozenRowDataLayer = document.createElement('div');
+        this.detachedFrozenRowDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-row-layer');
+        this.detachedFrozenCornerDataLayer = document.createElement('div');
+        this.detachedFrozenCornerDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-corner-layer');
+        if (this.usesInternalMainViewport) {
+            this.topLeftPane.appendChild(this.topLeftContent);
+            this.topLeftContent.appendChild(this.detachedCornerLayer);
+            this.topLeftContent.appendChild(this.detachedFrozenCornerDataLayer);
+            this.topRightPane.appendChild(this.topRightViewport);
+            this.topRightViewport.appendChild(this.topRightContent);
+            this.topRightContent.appendChild(this.detachedColumnHeaderLayer);
+            this.topRightContent.appendChild(this.detachedFrozenRowBackgroundLayer);
+            this.topRightContent.appendChild(this.detachedFrozenRowDataLayer);
+            this.bottomLeftPane.appendChild(this.leftBottomViewport);
+            this.leftBottomViewport.appendChild(this.leftBottomContent);
+            this.leftBottomContent.appendChild(this.detachedRowHeaderLayer);
+            this.bottomRightPane.appendChild(this.scrollContainer);
+            this.scrollContainer.classList.add('editor-table-main-viewport');
+            this.scrollContainer.appendChild(this.mainContent);
+            this.mainContent.appendChild(this.gridElement);
+            this.element.appendChild(this.topLeftPane);
+            this.element.appendChild(this.topRightPane);
+            this.element.appendChild(this.bottomLeftPane);
+            this.element.appendChild(this.bottomRightPane);
+        } else {
+            this.element.appendChild(this.detachedColumnHeaderLayer);
+            this.element.appendChild(this.detachedRowHeaderLayer);
+            this.element.appendChild(this.detachedFrozenRowBackgroundLayer);
+            this.element.appendChild(this.detachedCornerLayer);
+            this.element.appendChild(this.gridElement);
+            this.element.appendChild(this.detachedFrozenRowDataLayer);
+        }
+        this.detachedHeaderTopOffset = 0;
         this.relationsPanel = false;
         this.validationPanel = false;
         this.diffTab = false;
@@ -220,6 +308,7 @@ export class EditorTable {
         this.cachedPkErrorCells = new Set();
         this.cachedOtherErrorCells = new Set();
         this.cachedDomColToStoreCol = [];
+        this.skipFrozenFillHandleRefreshOnNextScrollSync = false;
         this.columnSorter = new ColumnSorter(this, store);
         this.columnFilter = new ColumnFilter();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
@@ -236,7 +325,7 @@ export class EditorTable {
         // 通常テーブル: true、ミニテーブル: false、差分テーブル: true（isMiniTable=true だが仮想スクロール有効）
         // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
         this.virtualScroll = new VirtualScrollController(
-            this.element, scrollContainer, emptyRowCount, enableVirtualScroll
+            this.gridElement, scrollContainer, emptyRowCount, enableVirtualScroll
         );
     }
 
@@ -269,9 +358,12 @@ export class EditorTable {
         // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
         this.virtualScroll.connectRenderRow(
             (dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex),
-            () => this.reapplyRowDecorations(),
-            () => this.onScrollForFrozenFillHandle()
+            (update: RenderedRowsUpdate) => this.reapplyRowDecorations(update),
+            (scrollTop: number, scrollLeft: number) => this.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft)
         );
+        if (!this.virtualScroll.handlesScrollEvents()) {
+            this.scrollContainer.addEventListener('scroll', () => { this.syncScrollBoundVisuals(); });
+        }
     }
 
     // =========================================================================
@@ -279,7 +371,7 @@ export class EditorTable {
     // =========================================================================
 
     /** 内部モジュール用: テーブルDOM要素を取得する */
-    getTableElement(): HTMLElement { return this.element; }
+    getTableElement(): HTMLElement { return this.gridElement; }
 
     /** 内部モジュール用: テーブルデータを取得する */
     getTableData(): EditorTableData { return this.tableData; }
@@ -291,6 +383,967 @@ export class EditorTable {
      * children[dataColumnIndex + dataColumnOffset] でデータセルにアクセスする。
      */
     dataColumnOffset(): number { return this.isBlameVisible ? 2 : 1; }
+
+    private getHeaderRowHeightPx(): number {
+        return this.virtualScroll.getActualHeaderHeightPx();
+    }
+
+    private getDataRowHeightPx(): number {
+        return this.virtualScroll.getActualRowHeightPx();
+    }
+
+    private getColumnLayoutWidthPx(columnIndex: number): number {
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        return parseFloat(column.width);
+    }
+
+    /**
+     * 列ヘッダーの実レイアウトから、データ列先頭を基準にした境界位置を返す。
+     * コメント付きヘッダーでは padding / badge / icon により schema.width より実幅が広がるため、
+     * 4領域分割の境界は render 後の offset 位置をSSOTにする。
+     */
+    private getRenderedDataBoundaryOffsetPx(dataColumnExclusiveEnd: number): number {
+        if (dataColumnExclusiveEnd <= 0) return 0;
+        const headerRow = this.getRowElement(0);
+        if (headerRow !== null) {
+            const firstDataCell = headerRow.children[this.dataColumnOffset()];
+            if (firstDataCell instanceof HTMLElement) {
+                if (dataColumnExclusiveEnd < this.getColumnCount()) {
+                    const boundaryCell = headerRow.children[this.dataColumnOffset() + dataColumnExclusiveEnd];
+                    if (boundaryCell instanceof HTMLElement) {
+                        const renderedWidth = boundaryCell.offsetLeft - firstDataCell.offsetLeft;
+                        if (renderedWidth > 0) return renderedWidth;
+                    }
+                } else {
+                    const lastDataCell = headerRow.children[headerRow.children.length - 1];
+                    if (lastDataCell instanceof HTMLElement) {
+                        const renderedWidth = (lastDataCell.offsetLeft + lastDataCell.offsetWidth) - firstDataCell.offsetLeft;
+                        if (renderedWidth > 0) return renderedWidth;
+                    }
+                }
+            }
+        }
+        let width = 0;
+        for (let dataColumnIndex = 0; dataColumnIndex < Math.min(dataColumnExclusiveEnd, this.getColumnCount()); dataColumnIndex++) {
+            width += this.getColumnLayoutWidthPx(dataColumnIndex);
+        }
+        return width;
+    }
+
+    private getDetachedPrefixWidthPx(): number {
+        const headerRow = this.getRowElement(0);
+        if (!headerRow) {
+            return ROW_HEADER_WIDTH_PX + (this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0);
+        }
+        const firstDataCell = headerRow.children[this.dataColumnOffset()] as HTMLElement | null;
+        if (!firstDataCell) {
+            return ROW_HEADER_WIDTH_PX + (this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0);
+        }
+        return firstDataCell.offsetLeft;
+    }
+
+    private getDataAreaWidthPx(): number {
+        return this.getRenderedDataBoundaryOffsetPx(this.getColumnCount());
+    }
+
+    private getFrozenColumnAreaWidthPx(): number {
+        return this.getRenderedDataBoundaryOffsetPx(this.frozenColumnCount);
+    }
+
+    private getFixedLeftWidthPx(): number {
+        return this.getDetachedPrefixWidthPx() + this.getFrozenColumnAreaWidthPx();
+    }
+
+    private getFixedTopHeightPx(): number {
+        return this.getHeaderRowHeightPx() + (this.frozenRowCount * this.getDataRowHeightPx());
+    }
+
+    private getLogicalRowIndexFromElement(rowElement: HTMLElement): number | null {
+        if (rowElement.classList.contains('editor-table-column-header-row')) return 0;
+        const rowIndexText = rowElement.dataset.rowIndex;
+        if (rowIndexText === undefined) return null;
+        return Number(rowIndexText) + 1;
+    }
+
+    private forwardClonedCellPointerInteractions(cloneCell: HTMLElement, sourceCell: HTMLElement): void {
+        const relayEvent = (event: MouseEvent, type: 'mousedown' | 'dblclick' | 'contextmenu') => {
+            const forwarded = new MouseEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                button: event.button,
+                buttons: event.buttons,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey,
+            });
+            sourceCell.dispatchEvent(forwarded);
+            event.preventDefault();
+            event.stopPropagation();
+        };
+        cloneCell.addEventListener('mousedown', (event) => relayEvent(event, 'mousedown'));
+        cloneCell.addEventListener('dblclick', (event) => relayEvent(event, 'dblclick'));
+        cloneCell.addEventListener('contextmenu', (event) => relayEvent(event, 'contextmenu'));
+    }
+
+    private cloneDetachedCell(sourceCell: HTMLElement): HTMLElement {
+        const cloneCell = sourceCell.cloneNode(true) as HTMLElement;
+        cloneCell.style.visibility = '';
+        cloneCell.style.flex = '0 0 auto';
+        {
+            // detached layer は flex レイアウトなので、table レイアウトで確定した実幅をそのまま引き継ぐ。
+            const computedStyle = window.getComputedStyle(sourceCell);
+            const renderedWidth = sourceCell.getBoundingClientRect().width;
+            const width = computedStyle.boxSizing === 'border-box'
+                ? renderedWidth
+                : renderedWidth
+                    - parseFloat(computedStyle.paddingLeft)
+                    - parseFloat(computedStyle.paddingRight)
+                    - parseFloat(computedStyle.borderLeftWidth)
+                    - parseFloat(computedStyle.borderRightWidth);
+            if (width > 0) {
+                cloneCell.style.width = `${width}px`;
+                cloneCell.style.minWidth = `${width}px`;
+                cloneCell.style.maxWidth = `${width}px`;
+            }
+        }
+        if (cloneCell.classList.contains('editor-table-column-header')) {
+            cloneCell.addEventListener('mousedown', this.contextMenuHandler.createColumnHeaderClickHandler(cloneCell));
+            cloneCell.addEventListener('contextmenu', this.contextMenuHandler.createColumnHeaderContextMenuHandler(cloneCell));
+            const resizeHandle = cloneCell.querySelector('.column-resize-handle') as HTMLElement | null;
+            if (resizeHandle !== null) {
+                const columnIndexText = cloneCell.dataset.columnIndex;
+                if (columnIndexText === undefined) throw new Error('分離列ヘッダーに columnIndex がありません');
+                this.areaResizer.setupColumnResizeHandle(resizeHandle, cloneCell, Number(columnIndexText));
+            }
+            const filterIcon = cloneCell.querySelector('.filter-icon') as HTMLElement | null;
+            if (filterIcon !== null) {
+                filterIcon.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                filterIcon.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const headerCell = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+                    const colIdx = Number(headerCell.dataset.columnIndex);
+                    this.openFilterDropdown(colIdx, e.currentTarget as HTMLElement);
+                });
+            }
+        }
+        if (cloneCell.classList.contains('editor-table-row-header')) {
+            cloneCell.addEventListener('mousedown', (e: MouseEvent) => {
+                if (e.button !== 0) return;
+                const rowIndexText = cloneCell.dataset.rowIndex;
+                if (rowIndexText === undefined) throw new Error('分離行ヘッダーに rowIndex がありません');
+                this.getRowDragController().onRowHeaderMouseDown(Number(rowIndexText), e.clientY, cloneCell, e);
+            });
+            cloneCell.addEventListener('mousedown', this.contextMenuHandler.createRowHeaderClickHandler(cloneCell));
+            cloneCell.addEventListener('contextmenu', this.contextMenuHandler.createRowHeaderContextMenuHandler(cloneCell));
+        }
+        if (cloneCell.classList.contains('editor-table-corner-cell')) {
+            cloneCell.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                this.handler.submitAndHide();
+                this.selection.selectAll();
+            });
+        }
+        if (!cloneCell.classList.contains('editor-table-column-header')
+            && !cloneCell.classList.contains('editor-table-row-header')
+            && !cloneCell.classList.contains('editor-table-corner-cell')) {
+            this.forwardClonedCellPointerInteractions(cloneCell, sourceCell);
+        }
+        return cloneCell;
+    }
+
+    private syncDetachedCellVisualState(sourceCell: HTMLElement, detachedCell: HTMLElement): void {
+        if (detachedCell.innerHTML !== sourceCell.innerHTML) {
+            const replacement = this.cloneDetachedCell(sourceCell);
+            detachedCell.replaceWith(replacement);
+            detachedCell = replacement;
+        }
+        detachedCell.className = sourceCell.className;
+        if (sourceCell.hasAttribute('data-bookmarked')) {
+            detachedCell.setAttribute('data-bookmarked', '');
+        } else {
+            detachedCell.removeAttribute('data-bookmarked');
+        }
+    }
+
+    private syncDetachedRowVisualState(sourceRow: HTMLElement, detachedRow: HTMLElement): void {
+        detachedRow.classList.toggle('freeze-row', sourceRow.classList.contains('freeze-row'));
+        detachedRow.classList.toggle('freeze-row-border', sourceRow.classList.contains('freeze-row-border'));
+    }
+
+    private refreshDetachedHeaderLayers(): void {
+        this.virtualScroll.refreshMeasuredGeometry();
+        if (this.usesInternalMainViewport) {
+            this.refreshQuadrantPaneLayers();
+            return;
+        }
+        const renderedRows = this.getRenderedRowElements();
+        for (const renderedRow of renderedRows) {
+            const cellCount = renderedRow.children.length;
+            if (renderedRow.classList.contains('editor-table-column-header-row')) {
+                for (let col = 0; col < cellCount; col++) {
+                    (renderedRow.children[col] as HTMLElement).style.visibility = '';
+                }
+                continue;
+            }
+            for (let col = 0; col < Math.min(this.dataColumnOffset(), cellCount); col++) {
+                (renderedRow.children[col] as HTMLElement).style.visibility = '';
+            }
+        }
+        this.detachedColumnHeaderLayer.replaceChildren();
+        this.detachedRowHeaderLayer.replaceChildren();
+        this.detachedFrozenRowBackgroundLayer.replaceChildren();
+        this.detachedCornerLayer.replaceChildren();
+        this.detachedFrozenRowDataLayer.replaceChildren();
+
+        const headerRow = this.getRowElement(0);
+        if (headerRow === null) return;
+        const prefixWidth = this.getDetachedPrefixWidthPx();
+        const dataAreaWidth = this.getDataAreaWidthPx();
+        const headerHeight = this.getHeaderRowHeightPx();
+        const rowHeight = this.getDataRowHeightPx();
+        this.detachedColumnHeaderLayer.style.top = `${this.detachedHeaderTopOffset}px`;
+        this.detachedFrozenRowBackgroundLayer.style.top = `${this.detachedHeaderTopOffset}px`;
+        this.detachedCornerLayer.style.top = `${this.detachedHeaderTopOffset}px`;
+        this.detachedColumnHeaderLayer.style.left = `${prefixWidth}px`;
+        this.detachedFrozenRowBackgroundLayer.style.left = `${prefixWidth}px`;
+        this.detachedFrozenRowDataLayer.style.left = `${prefixWidth}px`;
+        this.detachedFrozenRowBackgroundLayer.style.width = `${dataAreaWidth}px`;
+        this.detachedFrozenRowDataLayer.style.width = `${dataAreaWidth}px`;
+        this.detachedRowHeaderLayer.style.width = `${prefixWidth}px`;
+        this.detachedCornerLayer.style.width = `${prefixWidth}px`;
+        this.detachedColumnHeaderLayer.style.height = `${headerHeight}px`;
+        this.detachedFrozenRowBackgroundLayer.style.height = `${this.frozenRowCount * rowHeight}px`;
+        this.detachedFrozenRowDataLayer.style.top = `${this.detachedHeaderTopOffset}px`;
+        this.detachedFrozenRowDataLayer.style.height = `${this.frozenRowCount * rowHeight}px`;
+        this.detachedCornerLayer.style.height = `${headerHeight}px`;
+
+        for (let i = 0; i < headerRow.children.length; i++) {
+            (headerRow.children[i] as HTMLElement).style.visibility = 'hidden';
+        }
+
+        const detachedCornerRow = document.createElement('div');
+        detachedCornerRow.classList.add('editor-table-detached-row');
+        detachedCornerRow.style.top = '0px';
+        for (let col = 0; col < this.dataColumnOffset(); col++) {
+            const sourceCell = headerRow.children[col] as HTMLElement | null;
+            if (sourceCell === null) continue;
+            detachedCornerRow.appendChild(this.cloneDetachedCell(sourceCell));
+        }
+        this.detachedCornerLayer.appendChild(detachedCornerRow);
+
+        const detachedHeaderRow = document.createElement('div');
+        detachedHeaderRow.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
+        detachedHeaderRow.style.top = '0px';
+        for (let col = this.dataColumnOffset(); col < headerRow.children.length; col++) {
+            const sourceCell = headerRow.children[col] as HTMLElement | null;
+            if (sourceCell === null) continue;
+            detachedHeaderRow.appendChild(this.cloneDetachedCell(sourceCell));
+        }
+        this.detachedColumnHeaderLayer.appendChild(detachedHeaderRow);
+
+        const dataRowEnd = this.getDataRowEndChildIndex();
+        for (let childIndex = this.getDataRowChildOffset(); childIndex < dataRowEnd; childIndex++) {
+            if (this.virtualScroll.isSpacerIndex(childIndex)) continue;
+            const rowElement = this.gridElement.children[childIndex] as HTMLElement | null;
+            if (rowElement === null) continue;
+            const detachedRow = document.createElement('div');
+            detachedRow.classList.add('editor-table-detached-row');
+            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+            if (rowHeader !== null) {
+                const rowIndexText = rowHeader.dataset.rowIndex;
+                if (rowIndexText !== undefined) {
+                    detachedRow.dataset.rowIndex = rowIndexText;
+                    const logicalRowIndex = Number(rowIndexText) + 1;
+                    detachedRow.style.top = logicalRowIndex <= this.frozenRowCount
+                        ? `${headerHeight + ((logicalRowIndex - 1) * rowHeight)}px`
+                        : `${rowElement.offsetTop}px`;
+                    if (logicalRowIndex <= this.frozenRowCount) {
+                        const backgroundPlate = document.createElement('div');
+                        backgroundPlate.classList.add('editor-table-detached-frozen-row-background');
+                        if (logicalRowIndex === this.frozenRowCount) backgroundPlate.classList.add('freeze-row-border');
+                        backgroundPlate.dataset.rowIndex = rowIndexText;
+                        backgroundPlate.style.top = `${headerHeight + ((logicalRowIndex - 1) * rowHeight)}px`;
+                        backgroundPlate.style.width = `${dataAreaWidth}px`;
+                        this.detachedFrozenRowBackgroundLayer.appendChild(backgroundPlate);
+
+                        const detachedDataRow = document.createElement('div');
+                        detachedDataRow.classList.add('editor-table-detached-row', 'freeze-row');
+                        if (logicalRowIndex === this.frozenRowCount) detachedDataRow.classList.add('freeze-row-border');
+                        detachedDataRow.dataset.rowIndex = rowIndexText;
+                        detachedDataRow.style.top = `${headerHeight + ((logicalRowIndex - 1) * rowHeight)}px`;
+                        for (let col = this.dataColumnOffset(); col < rowElement.children.length; col++) {
+                            const sourceCell = rowElement.children[col] as HTMLElement | null;
+                            if (sourceCell === null) continue;
+                            detachedDataRow.appendChild(this.cloneDetachedCell(sourceCell));
+                        }
+                        this.detachedFrozenRowDataLayer.appendChild(detachedDataRow);
+                    }
+                }
+            }
+            if (detachedRow.style.top === '') detachedRow.style.top = `${rowElement.offsetTop}px`;
+            if (rowElement.classList.contains('freeze-row')) detachedRow.classList.add('freeze-row');
+            if (rowElement.classList.contains('freeze-row-border')) detachedRow.classList.add('freeze-row-border');
+            for (let col = 0; col < this.dataColumnOffset(); col++) {
+                const sourceCell = rowElement.children[col] as HTMLElement | null;
+                if (sourceCell === null) continue;
+                sourceCell.style.visibility = 'hidden';
+                const detachedCell = this.cloneDetachedCell(sourceCell);
+                const rowIndexText = detachedRow.dataset.rowIndex;
+                if (rowIndexText !== undefined && (Number(rowIndexText) + 1) <= this.frozenRowCount) {
+                    detachedCell.style.zIndex = 'var(--z-index-freeze-corner)';
+                }
+                detachedRow.appendChild(detachedCell);
+            }
+            this.detachedRowHeaderLayer.appendChild(detachedRow);
+        }
+        this.syncDetachedHeaderScrollOffset();
+    }
+
+    private refreshQuadrantPaneLayers(): void {
+        this.virtualScroll.refreshMeasuredGeometry();
+        this.detachedColumnHeaderLayer.replaceChildren();
+        this.detachedRowHeaderLayer.replaceChildren();
+        this.detachedFrozenRowBackgroundLayer.replaceChildren();
+        this.detachedCornerLayer.replaceChildren();
+        this.detachedFrozenRowDataLayer.replaceChildren();
+        this.detachedFrozenCornerDataLayer.replaceChildren();
+
+        const headerRow = this.getRowElement(0);
+        if (headerRow === null) return;
+        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        const actualFixedLeftWidth = this.getFixedLeftWidthPx();
+        const availableWidth = this.element.clientWidth > 0 ? this.element.clientWidth : actualFixedLeftWidth;
+        const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - 1));
+        const fixedTopHeight = this.getFixedTopHeightPx();
+        const rowHeight = this.getDataRowHeightPx();
+        this.virtualScroll.setScrollTopCompensationPx(fixedTopHeight);
+        const frozenColumnWidth = this.getFrozenColumnAreaWidthPx();
+        const dataAreaWidth = this.getDataAreaWidthPx();
+        const mainContentWidth = Math.max(0, dataAreaWidth - frozenColumnWidth);
+        const mainContentHeight = Math.max(0, (this.getLogicalRowCount() - 1 - this.frozenRowCount) * rowHeight);
+        const paneTop = this.detachedHeaderTopOffset;
+
+        this.topLeftPane.style.top = `${paneTop}px`;
+        this.topLeftPane.style.left = '0px';
+        this.topLeftPane.style.width = `${visibleFixedLeftWidth}px`;
+        this.topLeftPane.style.height = `${fixedTopHeight}px`;
+        this.topRightPane.style.top = `${paneTop}px`;
+        this.topRightPane.style.left = `${visibleFixedLeftWidth}px`;
+        this.topRightPane.style.height = `${fixedTopHeight}px`;
+        this.bottomLeftPane.style.top = `${paneTop + fixedTopHeight}px`;
+        this.bottomLeftPane.style.left = '0px';
+        this.bottomLeftPane.style.width = `${visibleFixedLeftWidth}px`;
+        this.bottomRightPane.style.top = `${paneTop + fixedTopHeight}px`;
+        this.bottomRightPane.style.left = `${visibleFixedLeftWidth}px`;
+        this.bottomRightPane.style.right = '0px';
+        this.bottomRightPane.style.bottom = '0px';
+        this.topLeftContent.style.width = `${actualFixedLeftWidth}px`;
+        this.topLeftContent.style.height = `${fixedTopHeight}px`;
+        this.topRightContent.style.width = `${mainContentWidth}px`;
+        this.topRightContent.style.height = `${fixedTopHeight}px`;
+        this.leftBottomContent.style.width = `${actualFixedLeftWidth}px`;
+        this.leftBottomContent.style.height = `${mainContentHeight}px`;
+        this.mainContent.style.width = `${mainContentWidth}px`;
+        this.mainContent.style.height = `${mainContentHeight}px`;
+        this.gridElement.style.position = 'absolute';
+        this.gridElement.style.left = `${-actualFixedLeftWidth}px`;
+        this.gridElement.style.top = `${-fixedTopHeight}px`;
+
+        // 右下だけが実スクロール担当なので、そこで消費されるガター幅・高さを
+        // 右上ヘッダー領域と左下行ヘッダー領域にも反映して見た目の列幅・行高を揃える。
+        const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth);
+        const mainViewportScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
+        this.topRightPane.style.right = `${mainViewportScrollbarWidth}px`;
+        this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
+
+        const detachedCornerRow = document.createElement('div');
+        detachedCornerRow.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
+        detachedCornerRow.style.top = '0px';
+        for (let col = 0; col < Math.min(fixedLeftColumnCount, headerRow.children.length); col++) {
+            const sourceCell = headerRow.children[col] as HTMLElement | null;
+            if (sourceCell === null) continue;
+            detachedCornerRow.appendChild(this.cloneDetachedCell(sourceCell));
+        }
+        this.detachedCornerLayer.appendChild(detachedCornerRow);
+
+        const detachedHeaderRow = document.createElement('div');
+        detachedHeaderRow.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
+        detachedHeaderRow.style.top = '0px';
+        for (let col = fixedLeftColumnCount; col < headerRow.children.length; col++) {
+            const sourceCell = headerRow.children[col] as HTMLElement | null;
+            if (sourceCell === null) continue;
+            detachedHeaderRow.appendChild(this.cloneDetachedCell(sourceCell));
+        }
+        this.detachedColumnHeaderLayer.appendChild(detachedHeaderRow);
+
+        const renderedRows = this.getRenderedRowElements();
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex === 0) continue;
+            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+            if (rowHeader === null) continue;
+            const rowIndexText = rowHeader.dataset.rowIndex;
+            if (rowIndexText === undefined) continue;
+            const rowTop = this.getQuadrantViewportRowTopPx(logicalRowIndex);
+
+            if (logicalRowIndex <= this.frozenRowCount) {
+                const backgroundPlate = document.createElement('div');
+                backgroundPlate.classList.add('editor-table-detached-frozen-row-background');
+                if (logicalRowIndex === this.frozenRowCount) backgroundPlate.classList.add('freeze-row-border');
+                backgroundPlate.dataset.rowIndex = rowIndexText;
+                backgroundPlate.style.top = `${rowTop}px`;
+                backgroundPlate.style.width = `${mainContentWidth}px`;
+                this.detachedFrozenRowBackgroundLayer.appendChild(backgroundPlate);
+
+                const frozenCornerRow = document.createElement('div');
+                frozenCornerRow.classList.add('editor-table-detached-row', 'freeze-row');
+                if (logicalRowIndex === this.frozenRowCount) frozenCornerRow.classList.add('freeze-row-border');
+                frozenCornerRow.dataset.rowIndex = rowIndexText;
+                frozenCornerRow.style.top = `${rowTop}px`;
+                for (let col = 0; col < Math.min(fixedLeftColumnCount, rowElement.children.length); col++) {
+                    const sourceCell = rowElement.children[col] as HTMLElement | null;
+                    if (sourceCell === null) continue;
+                    frozenCornerRow.appendChild(this.cloneDetachedCell(sourceCell));
+                }
+                this.detachedFrozenCornerDataLayer.appendChild(frozenCornerRow);
+
+                const frozenDataRow = document.createElement('div');
+                frozenDataRow.classList.add('editor-table-detached-row', 'freeze-row');
+                if (logicalRowIndex === this.frozenRowCount) frozenDataRow.classList.add('freeze-row-border');
+                frozenDataRow.dataset.rowIndex = rowIndexText;
+                frozenDataRow.style.top = `${rowTop}px`;
+                for (let col = fixedLeftColumnCount; col < rowElement.children.length; col++) {
+                    const sourceCell = rowElement.children[col] as HTMLElement | null;
+                    if (sourceCell === null) continue;
+                    frozenDataRow.appendChild(this.cloneDetachedCell(sourceCell));
+                }
+                this.detachedFrozenRowDataLayer.appendChild(frozenDataRow);
+                continue;
+            }
+        }
+        this.refreshQuadrantViewportRowHeaders(null);
+    }
+
+    private refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void {
+        if (!this.usesInternalMainViewport) return;
+        const scrollTop = update !== null ? update.scrollTop : this.scrollContainer.scrollTop;
+        const scrollLeft = update !== null ? update.scrollLeft : this.scrollContainer.scrollLeft;
+        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        const rebuildAll = (): void => {
+            const renderedRows = this.getRenderedRowElements();
+            const fragment = document.createDocumentFragment();
+            for (const rowElement of renderedRows) {
+                const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+                if (rowHeader === null) continue;
+                const rowIndexText = rowHeader.dataset.rowIndex;
+                if (rowIndexText === undefined) continue;
+                const logicalRowIndex = Number(rowIndexText) + 1;
+                if (logicalRowIndex <= this.frozenRowCount) continue;
+                const detachedLeftRow = document.createElement('div');
+                detachedLeftRow.classList.add('editor-table-detached-row');
+                detachedLeftRow.dataset.rowIndex = rowIndexText;
+                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
+                for (let col = 0; col < Math.min(fixedLeftColumnCount, rowElement.children.length); col++) {
+                    const sourceCell = rowElement.children[col] as HTMLElement | null;
+                    if (sourceCell === null) continue;
+                    detachedLeftRow.appendChild(this.cloneDetachedCell(sourceCell));
+                }
+                fragment.appendChild(detachedLeftRow);
+            }
+            this.detachedRowHeaderLayer.replaceChildren(fragment);
+            this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
+        };
+        if (update === null || update.refreshAllRows || this.detachedRowHeaderLayer.childElementCount === 0) {
+            rebuildAll();
+            return;
+        }
+        const renderedRows = this.getRenderedRowElements();
+        let firstNonFrozenSourceRow: HTMLElement | null = null;
+        let lastNonFrozenSourceRow: HTMLElement | null = null;
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex <= this.frozenRowCount) continue;
+            if (firstNonFrozenSourceRow === null) firstNonFrozenSourceRow = rowElement;
+            lastNonFrozenSourceRow = rowElement;
+        }
+        if (firstNonFrozenSourceRow === null || lastNonFrozenSourceRow === null) {
+            rebuildAll();
+            return;
+        }
+        const firstSourceRowHeader = firstNonFrozenSourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+        const lastSourceRowHeader = lastNonFrozenSourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+        if (firstSourceRowHeader === null || lastSourceRowHeader === null) {
+            rebuildAll();
+            return;
+        }
+        const firstCurrentRowIndexText = firstSourceRowHeader.dataset.rowIndex;
+        const lastCurrentRowIndexText = lastSourceRowHeader.dataset.rowIndex;
+        if (firstCurrentRowIndexText === undefined || lastCurrentRowIndexText === undefined) {
+            rebuildAll();
+            return;
+        }
+        const firstCurrentRowIndex = Number(firstCurrentRowIndexText);
+        const lastCurrentRowIndex = Number(lastCurrentRowIndexText);
+        while (this.detachedRowHeaderLayer.firstElementChild instanceof HTMLElement) {
+            const firstDetachedRow = this.detachedRowHeaderLayer.firstElementChild;
+            const rowIndexText = firstDetachedRow.dataset.rowIndex;
+            if (rowIndexText !== undefined && Number(rowIndexText) >= firstCurrentRowIndex) break;
+            this.detachedRowHeaderLayer.removeChild(firstDetachedRow);
+        }
+        while (this.detachedRowHeaderLayer.lastElementChild instanceof HTMLElement) {
+            const lastDetachedRow = this.detachedRowHeaderLayer.lastElementChild;
+            const rowIndexText = lastDetachedRow.dataset.rowIndex;
+            if (rowIndexText !== undefined && Number(rowIndexText) <= lastCurrentRowIndex) break;
+            this.detachedRowHeaderLayer.removeChild(lastDetachedRow);
+        }
+        for (const insertedRange of update.insertedRanges) {
+            if (insertedRange.start >= insertedRange.end) continue;
+            const fragment = document.createDocumentFragment();
+            for (let dataRowIndex = insertedRange.start; dataRowIndex < insertedRange.end; dataRowIndex++) {
+                const logicalRowIndex = dataRowIndex + 1;
+                if (logicalRowIndex <= this.frozenRowCount) continue;
+                const sourceRow = this.getRowElement(logicalRowIndex);
+                if (sourceRow === null) continue;
+                const rowHeader = sourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+                if (rowHeader === null) continue;
+                const rowIndexText = rowHeader.dataset.rowIndex;
+                if (rowIndexText === undefined) continue;
+                const detachedLeftRow = document.createElement('div');
+                detachedLeftRow.classList.add('editor-table-detached-row');
+                detachedLeftRow.dataset.rowIndex = rowIndexText;
+                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
+                for (let col = 0; col < Math.min(fixedLeftColumnCount, sourceRow.children.length); col++) {
+                    const sourceCell = sourceRow.children[col] as HTMLElement | null;
+                    if (sourceCell === null) continue;
+                    detachedLeftRow.appendChild(this.cloneDetachedCell(sourceCell));
+                }
+                fragment.appendChild(detachedLeftRow);
+            }
+            if (insertedRange.start <= firstCurrentRowIndex) {
+                this.detachedRowHeaderLayer.insertBefore(fragment, this.detachedRowHeaderLayer.firstChild);
+                continue;
+            }
+            this.detachedRowHeaderLayer.appendChild(fragment);
+        }
+        this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
+    }
+
+    /** legacy detached-layer 用: row header clone の top 座標を旧 full rebuild と同じ規則で返す */
+    private getDetachedViewportRowTopPx(sourceRow: HTMLElement, logicalRowIndex: number): string {
+        if (logicalRowIndex <= this.frozenRowCount) {
+            return `${this.getHeaderRowHeightPx() + ((logicalRowIndex - 1) * this.getDataRowHeightPx())}px`;
+        }
+        return `${sourceRow.offsetTop}px`;
+    }
+
+    /** legacy detached-layer 用: 行ヘッダー clone を1行分生成する */
+    private createDetachedViewportRowClone(sourceRow: HTMLElement): HTMLElement | null {
+        const rowHeader = sourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+        if (rowHeader === null) return null;
+        const rowIndexText = rowHeader.dataset.rowIndex;
+        if (rowIndexText === undefined) return null;
+        const logicalRowIndex = Number(rowIndexText) + 1;
+        const detachedRow = document.createElement('div');
+        detachedRow.classList.add('editor-table-detached-row');
+        detachedRow.dataset.rowIndex = rowIndexText;
+        detachedRow.style.top = this.getDetachedViewportRowTopPx(sourceRow, logicalRowIndex);
+        this.syncDetachedRowVisualState(sourceRow, detachedRow);
+        const prefixColumnCount = Math.min(this.dataColumnOffset(), sourceRow.children.length);
+        for (let col = 0; col < prefixColumnCount; col++) {
+            const sourceCell = sourceRow.children[col] as HTMLElement | null;
+            if (sourceCell === null) continue;
+            detachedRow.appendChild(this.cloneDetachedCell(sourceCell));
+        }
+        return detachedRow;
+    }
+
+    /** legacy detached-layer 用: 表示中の row header clone の見た目だけを同期する */
+    private syncDetachedViewportRowHeaderStates(): void {
+        if (this.usesInternalMainViewport) return;
+        const prefixColumnCount = this.dataColumnOffset();
+        const detachedViewportRows = this.detachedRowHeaderLayer.children;
+        for (let rowIndex = 0; rowIndex < detachedViewportRows.length; rowIndex++) {
+            const detachedRow = detachedViewportRows[rowIndex] as HTMLElement;
+            const rowIndexText = detachedRow.dataset.rowIndex;
+            if (rowIndexText === undefined) continue;
+            const sourceRow = this.getRowElement(Number(rowIndexText) + 1);
+            if (sourceRow === null) continue;
+            detachedRow.style.top = this.getDetachedViewportRowTopPx(sourceRow, Number(rowIndexText) + 1);
+            this.syncDetachedRowVisualState(sourceRow, detachedRow);
+            const syncCount = Math.min(prefixColumnCount, sourceRow.children.length, detachedRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(sourceRow.children[col] as HTMLElement, detachedRow.children[col] as HTMLElement);
+            }
+        }
+    }
+
+    /** legacy detached-layer 用: 静的レイヤーを壊さず、表示中 row header のみ差分更新する */
+    private refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void {
+        if (this.usesInternalMainViewport) return;
+        const scrollTop = update !== null ? update.scrollTop : this.scrollContainer.scrollTop;
+        const scrollLeft = update !== null ? update.scrollLeft : this.scrollContainer.scrollLeft;
+        const rebuildAll = (): void => {
+            const renderedRows = this.getRenderedRowElements();
+            const fragment = document.createDocumentFragment();
+            for (const rowElement of renderedRows) {
+                const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+                if (logicalRowIndex === null || logicalRowIndex === 0) continue;
+                const detachedRow = this.createDetachedViewportRowClone(rowElement);
+                if (detachedRow !== null) fragment.appendChild(detachedRow);
+            }
+            this.detachedRowHeaderLayer.replaceChildren(fragment);
+            this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
+        };
+        if (update === null || update.refreshAllRows || this.detachedRowHeaderLayer.childElementCount === 0) {
+            rebuildAll();
+            return;
+        }
+        const renderedRows = this.getRenderedRowElements();
+        let firstSourceRow: HTMLElement | null = null;
+        let lastSourceRow: HTMLElement | null = null;
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex <= this.frozenRowCount) continue;
+            if (firstSourceRow === null) firstSourceRow = rowElement;
+            lastSourceRow = rowElement;
+        }
+        if (firstSourceRow === null || lastSourceRow === null) {
+            rebuildAll();
+            return;
+        }
+        const firstSourceRowHeader = firstSourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+        const lastSourceRowHeader = lastSourceRow.querySelector('.editor-table-row-header') as HTMLElement | null;
+        if (firstSourceRowHeader === null || lastSourceRowHeader === null) {
+            rebuildAll();
+            return;
+        }
+        const firstCurrentRowIndexText = firstSourceRowHeader.dataset.rowIndex;
+        const lastCurrentRowIndexText = lastSourceRowHeader.dataset.rowIndex;
+        if (firstCurrentRowIndexText === undefined || lastCurrentRowIndexText === undefined) {
+            rebuildAll();
+            return;
+        }
+        const firstCurrentRowIndex = Number(firstCurrentRowIndexText);
+        const lastCurrentRowIndex = Number(lastCurrentRowIndexText);
+        while (this.detachedRowHeaderLayer.firstElementChild instanceof HTMLElement) {
+            const firstDetachedRow = this.detachedRowHeaderLayer.firstElementChild;
+            const rowIndexText = firstDetachedRow.dataset.rowIndex;
+            if (rowIndexText !== undefined && (Number(rowIndexText) < this.frozenRowCount || Number(rowIndexText) >= firstCurrentRowIndex)) break;
+            this.detachedRowHeaderLayer.removeChild(firstDetachedRow);
+        }
+        while (this.detachedRowHeaderLayer.lastElementChild instanceof HTMLElement) {
+            const lastDetachedRow = this.detachedRowHeaderLayer.lastElementChild;
+            const rowIndexText = lastDetachedRow.dataset.rowIndex;
+            if (rowIndexText !== undefined && Number(rowIndexText) <= lastCurrentRowIndex) break;
+            this.detachedRowHeaderLayer.removeChild(lastDetachedRow);
+        }
+        for (const insertedRange of update.insertedRanges) {
+            if (insertedRange.start >= insertedRange.end) continue;
+            const fragment = document.createDocumentFragment();
+            for (let dataRowIndex = insertedRange.start; dataRowIndex < insertedRange.end; dataRowIndex++) {
+                const sourceRow = this.getRowElement(dataRowIndex + 1);
+                if (sourceRow === null) continue;
+                const detachedRow = this.createDetachedViewportRowClone(sourceRow);
+                if (detachedRow !== null) fragment.appendChild(detachedRow);
+            }
+            if (insertedRange.start <= firstCurrentRowIndex) {
+                let firstViewportDetachedRow: Element | null = null;
+                for (let childIndex = 0; childIndex < this.detachedRowHeaderLayer.children.length; childIndex++) {
+                    const child = this.detachedRowHeaderLayer.children[childIndex] as HTMLElement;
+                    const rowIndexText = child.dataset.rowIndex;
+                    if (rowIndexText === undefined) continue;
+                    if (Number(rowIndexText) < this.frozenRowCount) continue;
+                    firstViewportDetachedRow = child;
+                    break;
+                }
+                if (firstViewportDetachedRow === null) {
+                    this.detachedRowHeaderLayer.appendChild(fragment);
+                } else {
+                    this.detachedRowHeaderLayer.insertBefore(fragment, firstViewportDetachedRow);
+                }
+                continue;
+            }
+            this.detachedRowHeaderLayer.appendChild(fragment);
+        }
+        this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
+    }
+
+    /** legacy detached-layer 用: static clone の選択状態だけを同期する */
+    private syncDetachedLegacyStaticCellStates(): void {
+        if (this.usesInternalMainViewport) return;
+        const headerRow = this.getRowElement(0);
+        if (headerRow === null) return;
+        const prefixColumnCount = this.dataColumnOffset();
+        const detachedCornerRow = this.detachedCornerLayer.firstElementChild as HTMLElement | null;
+        if (detachedCornerRow !== null) {
+            const syncCount = Math.min(prefixColumnCount, headerRow.children.length, detachedCornerRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(headerRow.children[col] as HTMLElement, detachedCornerRow.children[col] as HTMLElement);
+            }
+        }
+        const detachedHeaderRow = this.detachedColumnHeaderLayer.firstElementChild as HTMLElement | null;
+        if (detachedHeaderRow !== null) {
+            const availableColumnCount = Math.min(headerRow.children.length - prefixColumnCount, detachedHeaderRow.children.length);
+            for (let col = 0; col < availableColumnCount; col++) {
+                this.syncDetachedCellVisualState(
+                    headerRow.children[prefixColumnCount + col] as HTMLElement,
+                    detachedHeaderRow.children[col] as HTMLElement
+                );
+            }
+        }
+        for (let logicalRowIndex = 1; logicalRowIndex <= this.frozenRowCount; logicalRowIndex++) {
+            const sourceRow = this.getRowElement(logicalRowIndex);
+            if (sourceRow === null) continue;
+            const dataRowIndex = logicalRowIndex - 1;
+            const detachedFrozenDataRow =
+                this.detachedFrozenRowDataLayer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+            if (detachedFrozenDataRow === null) continue;
+            this.syncDetachedRowVisualState(sourceRow, detachedFrozenDataRow);
+            const syncCount = Math.min(sourceRow.children.length - prefixColumnCount, detachedFrozenDataRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(
+                    sourceRow.children[prefixColumnCount + col] as HTMLElement,
+                    detachedFrozenDataRow.children[col] as HTMLElement
+                );
+            }
+        }
+    }
+
+    private syncQuadrantStaticCellStates(): void {
+        if (!this.usesInternalMainViewport) return;
+        const headerRow = this.getRowElement(0);
+        if (headerRow === null) return;
+        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        const detachedCornerRow = this.detachedCornerLayer.firstElementChild as HTMLElement | null;
+        if (detachedCornerRow !== null) {
+            const syncCount = Math.min(fixedLeftColumnCount, headerRow.children.length, detachedCornerRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(headerRow.children[col] as HTMLElement, detachedCornerRow.children[col] as HTMLElement);
+            }
+        }
+        const detachedHeaderRow = this.detachedColumnHeaderLayer.firstElementChild as HTMLElement | null;
+        if (detachedHeaderRow !== null) {
+            const availableColumnCount = Math.min(headerRow.children.length - fixedLeftColumnCount, detachedHeaderRow.children.length);
+            for (let col = 0; col < availableColumnCount; col++) {
+                this.syncDetachedCellVisualState(
+                    headerRow.children[fixedLeftColumnCount + col] as HTMLElement,
+                    detachedHeaderRow.children[col] as HTMLElement
+                );
+            }
+        }
+        const detachedViewportRows = this.detachedRowHeaderLayer.children;
+        for (let rowIndex = 0; rowIndex < detachedViewportRows.length; rowIndex++) {
+            const detachedRow = detachedViewportRows[rowIndex] as HTMLElement;
+            const rowIndexText = detachedRow.dataset.rowIndex;
+            if (rowIndexText === undefined) continue;
+            const sourceRow = this.getRowElement(Number(rowIndexText) + 1);
+            if (sourceRow === null) continue;
+            this.syncDetachedRowVisualState(sourceRow, detachedRow);
+            const syncCount = Math.min(fixedLeftColumnCount, sourceRow.children.length, detachedRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(sourceRow.children[col] as HTMLElement, detachedRow.children[col] as HTMLElement);
+            }
+        }
+        for (let logicalRowIndex = 1; logicalRowIndex <= this.frozenRowCount; logicalRowIndex++) {
+            const sourceRow = this.getRowElement(logicalRowIndex);
+            if (sourceRow === null) continue;
+            const dataRowIndex = logicalRowIndex - 1;
+            const detachedFrozenCornerRow =
+                this.detachedFrozenCornerDataLayer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+            if (detachedFrozenCornerRow !== null) {
+                this.syncDetachedRowVisualState(sourceRow, detachedFrozenCornerRow);
+                const syncCount = Math.min(fixedLeftColumnCount, sourceRow.children.length, detachedFrozenCornerRow.children.length);
+                for (let col = 0; col < syncCount; col++) {
+                    this.syncDetachedCellVisualState(sourceRow.children[col] as HTMLElement, detachedFrozenCornerRow.children[col] as HTMLElement);
+                }
+            }
+            const detachedFrozenDataRow =
+                this.detachedFrozenRowDataLayer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+            if (detachedFrozenDataRow !== null) {
+                this.syncDetachedRowVisualState(sourceRow, detachedFrozenDataRow);
+                const syncCount = Math.min(sourceRow.children.length - fixedLeftColumnCount, detachedFrozenDataRow.children.length);
+                for (let col = 0; col < syncCount; col++) {
+                    this.syncDetachedCellVisualState(
+                        sourceRow.children[fixedLeftColumnCount + col] as HTMLElement,
+                        detachedFrozenDataRow.children[col] as HTMLElement
+                    );
+                }
+            }
+        }
+    }
+
+    private syncDetachedHeaderScrollOffset(): void {
+        this.syncDetachedHeaderScrollOffsetWithPositions(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
+    }
+
+    private setInlineTransformIfChanged(element: HTMLElement, transform: string): void {
+        if (element.style.transform === transform) return;
+        element.style.transform = transform;
+    }
+
+    private setInlineZIndexIfChanged(element: HTMLElement, zIndex: string): void {
+        if (element.style.zIndex === zIndex) return;
+        element.style.zIndex = zIndex;
+    }
+
+    private syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void {
+        if (this.usesInternalMainViewport) {
+            this.topRightViewport.scrollLeft = scrollLeft;
+            this.leftBottomViewport.scrollTop = scrollTop;
+            return;
+        }
+        this.virtualScroll.setScrollTopCompensationPx(0);
+        this.setInlineTransformIfChanged(this.detachedColumnHeaderLayer, `translateY(${scrollTop}px)`);
+        this.setInlineTransformIfChanged(this.detachedRowHeaderLayer, `translateX(${scrollLeft}px)`);
+        this.setInlineTransformIfChanged(this.detachedFrozenRowBackgroundLayer, `translateY(${scrollTop}px)`);
+        this.setInlineTransformIfChanged(this.detachedCornerLayer, `translate(${scrollLeft}px, ${scrollTop}px)`);
+        this.setInlineTransformIfChanged(this.detachedFrozenRowDataLayer, `translateY(${scrollTop}px)`);
+        const detachedHeaderRow = this.detachedColumnHeaderLayer.firstElementChild as HTMLElement | null;
+        if (detachedHeaderRow !== null && this.frozenColumnCount > 0) {
+            const frozenColumnTransform = `translateX(${scrollLeft}px)`;
+            const syncCount = Math.min(this.frozenColumnCount, detachedHeaderRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                const headerCell = detachedHeaderRow.children[col] as HTMLElement;
+                this.setInlineTransformIfChanged(headerCell, frozenColumnTransform);
+            }
+        }
+        if (this.frozenColumnCount > 0) {
+            const detachedFrozenDataRows = this.detachedFrozenRowDataLayer.children;
+            const frozenColumnTransform = `translateX(${scrollLeft}px)`;
+            for (let rowIndex = 0; rowIndex < detachedFrozenDataRows.length; rowIndex++) {
+                const detachedDataRow = detachedFrozenDataRows[rowIndex] as HTMLElement;
+                const syncCount = Math.min(this.frozenColumnCount, detachedDataRow.children.length);
+                for (let col = 0; col < syncCount; col++) {
+                    const cell = detachedDataRow.children[col] as HTMLElement;
+                    this.setInlineTransformIfChanged(cell, frozenColumnTransform);
+                }
+            }
+        }
+        if (this.frozenRowCount > 0) {
+            const detachedRows = this.detachedRowHeaderLayer.children;
+            const frozenRowTransform = `translateY(${scrollTop}px)`;
+            for (let i = 0; i < detachedRows.length; i++) {
+                const detachedRow = detachedRows[i] as HTMLElement;
+                const rowIndexText = detachedRow.dataset.rowIndex;
+                if (rowIndexText === undefined) continue;
+                const logicalRowIndex = Number(rowIndexText) + 1;
+                if (logicalRowIndex > this.frozenRowCount) continue;
+                this.setInlineTransformIfChanged(detachedRow, frozenRowTransform);
+            }
+        }
+    }
+
+    private syncScrollBoundVisuals(): void {
+        this.syncScrollBoundVisualsWithPositions(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
+    }
+
+    private syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
+        this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
+        this.syncFreezeTransforms(scrollTop, scrollLeft);
+        this.onScrollForFrozenFillHandle();
+    }
+
+    refreshDetachedHeaderLayout(): void {
+        this.refreshDetachedHeaderLayers();
+        this.syncScrollBoundVisuals();
+    }
+
+    syncDetachedVisualState(): void {
+        if (this.usesInternalMainViewport) {
+            this.syncQuadrantStaticCellStates();
+            return;
+        }
+        this.syncDetachedLegacyStaticCellStates();
+        this.syncDetachedViewportRowHeaderStates();
+        this.syncScrollBoundVisuals();
+    }
+
+    setDetachedHeaderTopOffset(offsetPx: number): void {
+        this.detachedHeaderTopOffset = offsetPx;
+        this.refreshDetachedHeaderLayout();
+    }
+
+    private refreshFreezeVisualState(): void {
+        // 固定数変更や構造変更では、既存DOMに残った古い固定クラスを一度すべて落とす。
+        this.clearAllFreezeStyles();
+        this.applyFreezeVisualStateToRenderedRows();
+        this.refreshDetachedHeaderLayout();
+    }
+
+    private getQuadrantViewportRowTopPx(logicalRowIndex: number): number {
+        const rowHeight = this.getDataRowHeightPx();
+        if (logicalRowIndex <= this.frozenRowCount) {
+            return this.getHeaderRowHeightPx() + ((logicalRowIndex - 1) * rowHeight);
+        }
+        return (logicalRowIndex - 1 - this.frozenRowCount) * rowHeight;
+    }
+
+    private applyFreezeVisualStateToRenderedRows(): void {
+        // 仮想スクロール時は差し替えられた行だけが新規DOMになるため、ここでは add-only で十分。
+        // 全掃除を入れると可視行・可視セルすべてに class remove が走り、スクロールコストが跳ね上がる。
+        const renderedRows = this.getRenderedRowElements();
+        const dataColumnOffset = this.dataColumnOffset();
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            const isHeaderRow = logicalRowIndex === 0;
+            const isFrozenRow = logicalRowIndex !== null && logicalRowIndex > 0 && logicalRowIndex <= this.frozenRowCount;
+            if (isFrozenRow) {
+                rowElement.classList.add('freeze-row');
+                if (logicalRowIndex === this.frozenRowCount) rowElement.classList.add('freeze-row-border');
+                const cellCount = rowElement.children.length;
+                for (let col = dataColumnOffset; col < cellCount; col++) {
+                    rowElement.children[col].classList.add('freeze-cell');
+                }
+            }
+            if (this.frozenColumnCount === 0) continue;
+            for (let dataColIndex = 0; dataColIndex < this.frozenColumnCount; dataColIndex++) {
+                const cell = rowElement.children[dataColIndex + dataColumnOffset] as HTMLElement | null;
+                if (cell === null) continue;
+                if (dataColIndex === this.frozenColumnCount - 1) cell.classList.add('freeze-column-border');
+                if (!isHeaderRow) cell.classList.add('freeze-cell');
+            }
+        }
+    }
+
+    private syncFreezeTransforms(scrollTop: number, scrollLeft: number): void {
+        if (this.usesInternalMainViewport) return;
+        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
+        const renderedRows = this.getRenderedRowElements();
+        const dataColumnOffset = this.dataColumnOffset();
+        const rowHeight = this.getDataRowHeightPx();
+        const frozenColumnTransform = `translate(${scrollLeft}px, 0px)`;
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            const isFrozenRow = logicalRowIndex !== null && logicalRowIndex > 0 && logicalRowIndex <= this.frozenRowCount;
+            const frozenRowTranslateY = isFrozenRow
+                ? scrollTop + this.getHeaderRowHeightPx() + ((logicalRowIndex - 1) * rowHeight) - rowElement.offsetTop
+                : 0;
+            const cellCount = rowElement.children.length;
+            if (isFrozenRow) {
+                const frozenRowOnlyTransform = `translate(0px, ${frozenRowTranslateY}px)`;
+                const frozenCornerTransform = `translate(${scrollLeft}px, ${frozenRowTranslateY}px)`;
+                for (let col = 0; col < cellCount; col++) {
+                    const cell = rowElement.children[col] as HTMLElement;
+                    const dataColIndex = col - dataColumnOffset;
+                    const isFrozenColumn = dataColIndex >= 0 && dataColIndex < this.frozenColumnCount;
+                    this.setInlineTransformIfChanged(cell, isFrozenColumn ? frozenCornerTransform : frozenRowOnlyTransform);
+                    this.setInlineZIndexIfChanged(cell, isFrozenColumn ? 'var(--z-index-freeze-corner)' : 'var(--z-index-freeze-row)');
+                }
+                continue;
+            }
+            if (this.frozenColumnCount === 0) continue;
+            const frozenColumnEnd = Math.min(cellCount, dataColumnOffset + this.frozenColumnCount);
+            for (let col = dataColumnOffset; col < frozenColumnEnd; col++) {
+                const cell = rowElement.children[col] as HTMLElement;
+                this.setInlineTransformIfChanged(cell, frozenColumnTransform);
+                this.setInlineZIndexIfChanged(cell, 'var(--z-index-freeze-column)');
+            }
+        }
+    }
 
     /**
      * DOM列インデックス（0始まり）をストア（CSV）列インデックスに変換して返す。
@@ -433,6 +1486,7 @@ export class EditorTable {
      */
     initialize(): void {
         this.element.classList.add(this.rootCssClass);
+        if (this.usesInternalMainViewport) this.element.classList.add('editor-table--quadrant-layout');
         {
             const cells = [];
             // 左上隅の空セル
@@ -465,12 +1519,15 @@ export class EditorTable {
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
             columnHeaderRow.classList.add('editor-table-column-header-row');
-            this.element.appendChild(columnHeaderRow);
+            this.gridElement.appendChild(columnHeaderRow);
         }
         // ヘッダー行追加直後に topSpacer をテーブル内に配置する（データ行追加前に必要）
         this.virtualScroll.attachSpacers();
-        // 全テーブルで storeRowIndices を初期化する（ミニテーブルはN:1・1:Nいずれも setStoreRowIndices() で上書き）
-        this.storeRowIndices = Array.from({ length: this.tableData.body.length }, (_, i) => i);
+        // 通常テーブルはストア、ミニテーブルは呼び出し元から渡された部分行データを初期描画のソースにする。
+        // ミニテーブルは initialize() 後に setStoreRowIndices() で実ストア行へ差し替えられる。
+        const initialStoreRows = this.isMiniTable ? false : this.store.getRows(this.tableName);
+        const initialDataRowCount = initialStoreRows === false ? this.tableData.body.length : initialStoreRows.length;
+        this.storeRowIndices = Array.from({ length: initialDataRowCount }, (_, i) => i);
         // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
         // totalRowCount はバッファ行を含むDOM上の総データ行数。
         // 通常テーブル: emptyRowCount = body.length + 1（データ行 + バッファ行1行）
@@ -478,22 +1535,28 @@ export class EditorTable {
         // forceRecalculate() が totalRowCount に基づいてDOM行を管理するため、
         // バッファ行を含めないと forceRecalculate 時にバッファ行がDOMから削除される。
         this.virtualScroll.updateTotalRowCount(Math.max(this.emptyRowCount, this.storeRowIndices.length));
-        // 初期レンダリングでは tableData.body から直接セル値を取得する。
-        // renderDataRow() は storeRowIndices 経由でストアから値を取得するが、
-        // ミニテーブルでは initialize() 後に setStoreRowIndices() で上書きされるため使えない。
-        for (let i = 0; i < this.tableData.body.length; ++i) {
+        for (let i = 0; i < initialDataRowCount; ++i) {
             const cells: HTMLElement[] = [];
             cells.push(this.structure.createRowHeaderCell(String(i + 1), i));
             for (let j = 0; j < this.tableData.header.length; ++j) {
-                cells.push(EditorTable.createCell(this, this.tableData.body[i].values[j], j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
+                let value = '';
+                if (initialStoreRows !== false) {
+                    const storeRow = initialStoreRows[i];
+                    const storeColumnIndex = this.tableData.columnMapping[j];
+                    value = storeColumnIndex === -1 || storeColumnIndex >= storeRow.length ? '' : storeRow[storeColumnIndex];
+                } else {
+                    value = this.tableData.body[i].values[j];
+                }
+                cells.push(EditorTable.createCell(this, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
             }
             const row = EditorTable.createRow(cells, i);
+            row.dataset.rowIndex = String(i);
             row.dataset.storeIndex = String(i);
             // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
             this.virtualScroll.appendDataRow(row);
         }
-        for (let i = 0; i < this.emptyRowCount - this.tableData.body.length; ++i) {
-            const row = this.renderBufferRow(this.tableData.body.length + i);
+        for (let i = 0; i < this.emptyRowCount - initialDataRowCount; ++i) {
+            const row = this.renderBufferRow(initialDataRowCount + i);
             // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
             this.virtualScroll.appendDataRow(row);
         }
@@ -514,16 +1577,19 @@ export class EditorTable {
         this.virtualScroll.forceRecalculate();
         // forceRecalculate() が初期DOMを作り直すため、その後でブックマーク視覚マークを復元する
         this.restoreBookmarkMarks();
+        this.refreshFreezeVisualState();
     }
 
     /** バーチャルスクロールのスペーサーとDOM行を強制再計算する（タブ復帰時に使用） */
     forceVirtualScrollRecalculate(): void {
         this.virtualScroll.forceRecalculate();
+        this.refreshDetachedHeaderLayout();
     }
 
     /** バーチャルスクロールの全行を破棄して再レンダリングする（diffTab接続後の初期装飾適用に使用） */
     forceVirtualScrollFullRerender(): void {
         this.virtualScroll.forceFullRerender();
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
@@ -555,6 +1621,7 @@ export class EditorTable {
             cells.push(EditorTable.createCell(this, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
         }
         const row = EditorTable.createRow(cells, dataRowIndex);
+        row.dataset.rowIndex = String(dataRowIndex);
         // ソート時にstoreRowIndexからDOM行要素を逆引きするためのインデックスを付与する
         row.dataset.storeIndex = String(storeRowIndex);
         return row;
@@ -574,6 +1641,7 @@ export class EditorTable {
             cells.push(EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
         }
         const row = EditorTable.createRow(cells, dataRowIndex);
+        row.dataset.rowIndex = String(dataRowIndex);
         // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
         row.classList.add('editor-table-empty-row');
         return row;
@@ -613,6 +1681,7 @@ export class EditorTable {
                         if (node.nodeType === Node.TEXT_NODE) { node.textContent = String(dataRowIndex + 1); break; }
                     }
                 }
+                row.dataset.rowIndex = String(dataRowIndex);
                 // 行の data-row 属性も論理行インデックスに更新する
                 row.dataset.row = String(dataRowIndex + 1);
             }
@@ -669,12 +1738,16 @@ export class EditorTable {
     /**
      * スクロールイベント時に行入れ替えの有無にかかわらず呼ばれる。
      * 固定行・固定列のセルが選択されている場合、fillHandle の位置を更新する。
-     * 固定行/列は position:sticky でビューポートに固定されるが、fillHandle は position:absolute で
+     * 固定行/列は transform でスクロール分を打ち消してビューポートに固定されるが、fillHandle は position:absolute で
      * wrapperElement 内に配置されているため、スクロール時に位置のずれ（プルプル）が発生する。
      * 行入れ替え発生時は reapplyRowDecorations → updateFillHandlePosition が呼ばれるので
      * 重複更新になるが、軽量な処理のためパフォーマンス影響は無視できる。
      */
     private onScrollForFrozenFillHandle(): void {
+        if (this.skipFrozenFillHandleRefreshOnNextScrollSync) {
+            this.skipFrozenFillHandleRefreshOnNextScrollSync = false;
+            return;
+        }
         if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
         const range = this.selection.getSelectionRange();
         // endRow が固定行内、または endColumn が固定列内にある場合のみ更新する。
@@ -694,22 +1767,59 @@ export class EditorTable {
      * 参照ヒント（FK参照先の表示名）を新しく生成された行に適用する。
      * バリデーションエラーとgit差分は renderRowForVirtualScroll 内の applyRowDecorations で適用済み。
      */
-    private reapplyRowDecorations(): void {
+    private reapplyRowDecorations(update: RenderedRowsUpdate): void {
         // ドラッグ選択中（mousedown→mousemove中）は選択クラス再適用をスキップする。
         // ドラッグ中に applySelectionClasses を呼ぶと lastSelectionCells のリセットで
         // 中間状態が壊れ、ドラッグ操作が途中で止まる。
         // ドラッグ終了後の mouseup → selection.end() → updateRenderer() で正しく再適用される。
-        if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) return;
-        this.selection.reapplySelectionClassesOnly();
-        // 参照ヒントを再適用する（仮想スクロールで新しく生成された行にFK参照ヒントが必要）
-        this.reference.updateReferenceHints();
-        // ブックマーク属性を再適用する（仮想スクロールで新しく生成された行にブックマークマークが必要）
-        this.restoreBookmarkMarks();
-        // 固定列・固定行のstickyスタイルを再適用する。
-        // 行固定の再構成でDOMが再生成されると、既存の固定列セルの left / sticky も失われるため、
-        // 両軸を同じ再描画経路で復元する。
-        if (this.frozenColumnCount > 0) { this.applyFreezeColumnStyles(); }
-        if (this.frozenRowCount > 0) { this.applyFreezeRowStyles(); }
+        if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) {
+            this.applyFreezeVisualStateToRenderedRows();
+            if (this.usesInternalMainViewport) {
+                this.refreshQuadrantViewportRowHeaders(update);
+                if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();
+                return;
+            }
+            if (update.triggeredByScroll) {
+                this.refreshDetachedViewportRowHeaders(update);
+                return;
+            }
+            this.refreshDetachedHeaderLayout();
+            return;
+        }
+        this.applyFreezeVisualStateToRenderedRows();
+        this.selection.reapplySelectionClassesOnly(update.triggeredByScroll);
+        const selectionRange = this.selection.getSelectionRange();
+        const isFrozenRowSelection = this.frozenRowCount > 0 && selectionRange.endRow <= this.frozenRowCount;
+        const endDataColumn = selectionRange.endColumn - this.dataColumnOffset();
+        const isFrozenColumnSelection = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
+        this.skipFrozenFillHandleRefreshOnNextScrollSync = update.triggeredByScroll && (isFrozenRowSelection || isFrozenColumnSelection);
+        this.reapplyReferenceAndBookmarkDecorations(update);
+        if (this.usesInternalMainViewport) {
+            this.refreshQuadrantViewportRowHeaders(update);
+            if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();
+            return;
+        }
+        if (update.triggeredByScroll) {
+            this.refreshDetachedViewportRowHeaders(update);
+            return;
+        }
+        this.refreshDetachedHeaderLayout();
+    }
+
+    private reapplyReferenceAndBookmarkDecorations(update: RenderedRowsUpdate): void {
+        if (update.refreshAllRows) {
+            this.reference.updateReferenceHints();
+            this.restoreBookmarkMarks();
+            return;
+        }
+        for (const insertedRange of update.insertedRanges) {
+            if (insertedRange.start >= insertedRange.end) continue;
+            const startDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.start);
+            const endDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.end - 1);
+            if (startDomRow === null || endDomRow === null) continue;
+            this.reference.updateReferenceHintsForRows(startDomRow, endDomRow + 1);
+            this.restoreBookmarkMarksForDataRowRange(insertedRange.start, insertedRange.end);
+        }
     }
 
     /**
@@ -812,7 +1922,7 @@ export class EditorTable {
         // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
         this.element.classList.add('editor-table--blame-visible');
         // 列ヘッダー行（element.children[0]）の先頭に blame-column-header を prepend する
-        const headerRow = this.element.children[0] as HTMLElement;
+        const headerRow = this.gridElement.children[0] as HTMLElement;
         const blameHeaderCell = document.createElement('div');
         blameHeaderCell.classList.add('blame-column-header', 'editor-table-cell');
         blameHeaderCell.textContent = 'BLAME';
@@ -862,8 +1972,7 @@ export class EditorTable {
         this.selection.shiftColumnsBy(1);
         // blame列挿入でデータセルの絶対座標がずれるため、選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
-        // 固定列がある場合、blame列分のインデックスずれを反映する
-        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
+        this.refreshFreezeVisualState();
     }
 
     /**
@@ -887,8 +1996,7 @@ export class EditorTable {
         this.selection.shiftColumnsBy(-1);
         // blame列除去でデータセルの絶対座標が戻るため、選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
-        // 固定列がある場合、インデックスが元に戻ったので再適用する
-        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
+        this.refreshFreezeVisualState();
     }
 
     /**
@@ -917,6 +2025,11 @@ export class EditorTable {
         row.classList.add('editor-table-row');
         if (rowIndex !== undefined) {
             row.dataset.row = String(rowIndex);
+            const firstCell = cells.length > 0 ? cells[0] : null;
+            if (firstCell !== null && firstCell.classList.contains('editor-table-row-header')) {
+                const rowIndexText = firstCell.dataset.rowIndex;
+                if (rowIndexText !== undefined) row.dataset.rowIndex = rowIndexText;
+            }
         }
         for (let i = 0; i < cells.length; ++i) {
             row.appendChild(cells[i]);
@@ -1186,7 +2299,8 @@ export class EditorTable {
     private getRowElement(domRowIndex: number): HTMLElement | null {
         if (domRowIndex === 0) {
             // ヘッダー行は常に children[0]
-            return this.element.children[0] as HTMLElement;
+            const headerRow = this.gridElement.children[0];
+            return headerRow instanceof HTMLElement ? headerRow : null;
         }
         // domRowIndex は1始まりのデータ行インデックス。0始まりに変換する。
         const dataRowIndex = domRowIndex - 1;
@@ -1194,7 +2308,7 @@ export class EditorTable {
         if (actualDomIndex === null) return null;
         // bottomSpacer がテーブル末尾に存在するため、スペーサー行をデータ行として返さない
         if (this.virtualScroll.isSpacerIndex(actualDomIndex)) return null;
-        const row = this.element.children[actualDomIndex];
+        const row = this.gridElement.children[actualDomIndex];
         if (!row) return null;
         return row as HTMLElement;
     }
@@ -1228,6 +2342,39 @@ export class EditorTable {
         // children[column] が範囲外の場合 undefined が返るため、null に正規化する
         if (!cell) return null;
         return cell as HTMLElement;
+    }
+
+    private getVisibleDetachedCellOrNull(row: number, column: number): HTMLElement | null {
+        if (!this.usesInternalMainViewport) return null;
+        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        if (row === 0) {
+            const headerLayer = column < fixedLeftColumnCount ? this.detachedCornerLayer : this.detachedColumnHeaderLayer;
+            const headerRow = headerLayer.firstElementChild as HTMLElement | null;
+            if (headerRow === null) return null;
+            const childIndex = column < fixedLeftColumnCount ? column : column - fixedLeftColumnCount;
+            const cell = headerRow.children[childIndex];
+            return cell instanceof HTMLElement ? cell : null;
+        }
+        const dataRowIndex = row - 1;
+        if (dataRowIndex < this.frozenRowCount) {
+            const layer = column < fixedLeftColumnCount ? this.detachedFrozenCornerDataLayer : this.detachedFrozenRowDataLayer;
+            const detachedRow = layer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+            if (detachedRow === null) return null;
+            const childIndex = column < fixedLeftColumnCount ? column : column - fixedLeftColumnCount;
+            const cell = detachedRow.children[childIndex];
+            return cell instanceof HTMLElement ? cell : null;
+        }
+        if (column >= fixedLeftColumnCount) return null;
+        const detachedRow = this.detachedRowHeaderLayer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+        if (detachedRow === null) return null;
+        const cell = detachedRow.children[column];
+        return cell instanceof HTMLElement ? cell : null;
+    }
+
+    getVisibleCellOrNull(row: number, column: number): HTMLElement | null {
+        const detachedCell = this.getVisibleDetachedCellOrNull(row, column);
+        if (detachedCell !== null) return detachedCell;
+        return this.getCellOrNull(row, column);
     }
 
     /**
@@ -1394,6 +2541,31 @@ export class EditorTable {
         this.refreshScrollbarMarkers();
     }
 
+    getScrollLeft(): number {
+        return this.scrollContainer.scrollLeft;
+    }
+
+    getScrollTop(): number {
+        return this.scrollContainer.scrollTop;
+    }
+
+    usesInternalScrollLayout(): boolean {
+        return this.usesInternalMainViewport;
+    }
+
+    scrollByInput(deltaTopPx: number, deltaLeftPx: number): void {
+        if (deltaTopPx === 0 && deltaLeftPx === 0) return;
+        this.scrollContainer.scrollTop += deltaTopPx;
+        this.scrollContainer.scrollLeft += deltaLeftPx;
+        this.syncScrollBoundVisuals();
+    }
+
+    restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
+        this.scrollContainer.scrollTop = scrollTop;
+        this.scrollContainer.scrollLeft = scrollLeft;
+        this.syncScrollBoundVisuals();
+    }
+
     /**
      * ErrorTooltip を接続する（Tab.createEditorTable 内から呼ばれる）。
      * 接続後、テーブル要素に mouseover/mouseout のイベントデリゲーションを登録する。
@@ -1460,33 +2632,36 @@ export class EditorTable {
 
     /**
      * 先頭からcount列を固定する。
-     * 各データ行・ヘッダー行の該当セルに position:sticky + left を設定し、
+     * 固定列のセルにはスクロール量を打ち消す transform を適用し、
      * 最後の固定列に freeze-column-border クラスを付与する。
      * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
      */
     freezeColumns(count: number): void {
         if (count === 0) { this.unfreezeColumns(); return; }
+        this.clearFreezeColumnStyles();
         this.frozenColumnCount = count;
         this.applyFreezeColumnStyles();
     }
 
     /**
      * 列固定を解除する。
-     * 固定セルの sticky と left をクリアし、freeze-column-border を除去する。
+     * 固定セルの transform をクリアし、freeze-column-border を除去する。
      */
     unfreezeColumns(): void {
         this.clearFreezeColumnStyles();
         this.frozenColumnCount = 0;
+        this.refreshFreezeVisualState();
     }
 
     /**
      * 先頭からcount行を固定する。
-     * 該当行の全セルに position:sticky + top を設定し、
-     * 最後の固定行の行ヘッダーに freeze-row-border クラスを付与する。
+     * 該当行にはスクロール量を打ち消す transform を適用し、
+     * 最後の固定行に freeze-row-border クラスを付与する。
      * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
      */
     freezeRows(count: number): void {
         if (count === 0) { this.unfreezeRows(); return; }
+        this.clearFreezeRowStyles();
         this.frozenRowCount = count;
         // 仮想スクロールに固定行数を通知し、固定行がDOMから削除されないようにする
         this.virtualScroll.setFrozenRowCount(count);
@@ -1495,13 +2670,14 @@ export class EditorTable {
 
     /**
      * 行固定を解除する。
-     * 固定行のセルの sticky と top をクリアし、freeze-row-border を除去する。
+     * 固定行の transform をクリアし、freeze-row-border を除去する。
      */
     unfreezeRows(): void {
         this.clearFreezeRowStyles();
         this.frozenRowCount = 0;
         // 仮想スクロールの固定行数をリセットする
         this.virtualScroll.setFrozenRowCount(0);
+        this.refreshFreezeVisualState();
     }
 
     /**
@@ -1520,9 +2696,9 @@ export class EditorTable {
      */
     private getRenderedRowElements(): HTMLElement[] {
         const rows: HTMLElement[] = [];
-        for (let childIndex = 0; childIndex < this.element.children.length; childIndex++) {
+        for (let childIndex = 0; childIndex < this.gridElement.children.length; childIndex++) {
             if (this.virtualScroll.isSpacerIndex(childIndex)) continue;
-            const rowElement = this.element.children[childIndex];
+            const rowElement = this.gridElement.children[childIndex];
             if (rowElement) {
                 rows.push(rowElement as HTMLElement);
             }
@@ -1530,138 +2706,44 @@ export class EditorTable {
         return rows;
     }
 
-    /**
-     * 固定列のCSS stickyスタイルを全行に適用する。
-     * 行ヘッダー幅(40px)を基準に、各固定列の left を累積計算する。
-     */
+    /** 固定列の視覚スタイルを再構築する。 */
     applyFreezeColumnStyles(): void {
-        if (this.frozenColumnCount === 0) return;
-        const renderedRows = this.getRenderedRowElements();
-        if (renderedRows.length === 0) return;
-        // blame表示時は children[0] が blame-cell なので、データ列のオフセットが1つ増える
-        // 通常: children[0]=行ヘッダー, children[1]=データ列0, ...
-        // blame: children[0]=blame-cell, children[1]=行ヘッダー, children[2]=データ列0, ...
-        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
-        const columnHeaderRow = renderedRows[0];
-        // 行ヘッダーの実占有幅を getBoundingClientRect() で取得する
-        // （padding + border を含む。固定値 40px だと padding/border 分ずれる）
-        const rowHeaderCell = columnHeaderRow.children[this.isBlameVisible ? 1 : 0] as HTMLElement;
-        const rowHeaderWidth = rowHeaderCell.getBoundingClientRect().width;
-        // blame列も同様に実占有幅を取得する
-        let cumulativeLeft = rowHeaderWidth;
-        if (this.isBlameVisible) {
-            const blameCell = columnHeaderRow.children[0] as HTMLElement;
-            cumulativeLeft += blameCell.getBoundingClientRect().width;
-        }
-        // 各固定列の left 値を事前に計算する（blame列幅 + 行ヘッダー幅 + 前の固定列幅の合計）
-        const leftValues: number[] = [];
-        for (let col = 0; col < this.frozenColumnCount; col++) {
-            leftValues.push(cumulativeLeft);
-            // getBoundingClientRect().width で padding + border を含む実占有幅を取得する
-            // （style.width は content 幅のみのため、累積計算で列が重なるバグの原因になる）
-            const headerCell = columnHeaderRow.children[col + dataColumnOffset] as HTMLElement;
-            cumulativeLeft += headerCell.getBoundingClientRect().width;
-        }
-        // 現在DOMに存在する全行（ヘッダー行 + 固定行 + 表示中のデータ行）に対して固定列を適用する
-        for (let row = 0; row < renderedRows.length; row++) {
-            const rowElement = renderedRows[row];
-            for (let col = 0; col < this.frozenColumnCount; col++) {
-                // dataColumnOffset: 行ヘッダー（+ blame-cell）を除くデータ列
-                const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
-                if (!cell) continue;
-                cell.style.position = 'sticky';
-                cell.style.left = leftValues[col] + 'px';
-                cell.style.zIndex = `var(--z-index-freeze-column)`;
-                // 最後の固定列に影クラスを付与
-                if (col === this.frozenColumnCount - 1) {
-                    cell.classList.add('freeze-column-border');
-                }
-                // 透過防止: データ行のセルに不透明な背景色を付与
-                // ヘッダー行（row===0）は .editor-table-column-header で既に背景色を持つため不要
-                if (row > 0) {
-                    cell.classList.add('freeze-cell');
-                }
-            }
-        }
+        this.refreshFreezeVisualState();
     }
 
-    /**
-     * 固定列のCSS stickyスタイルをクリアする。
-     */
+    /** 固定列の視覚スタイルを全列から除去する。 */
     private clearFreezeColumnStyles(): void {
         const renderedRows = this.getRenderedRowElements();
-        // blame表示時はデータ列のオフセットが1つ増える
-        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
-        for (let row = 0; row < renderedRows.length; row++) {
-            const rowElement = renderedRows[row];
-            for (let col = 0; col < this.frozenColumnCount; col++) {
-                const cell = rowElement.children[col + dataColumnOffset] as HTMLElement;
-                if (!cell) continue;
-                cell.style.position = '';
-                cell.style.left = '';
+        const dataColumnOffset = this.dataColumnOffset();
+        for (const rowElement of renderedRows) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            const isFrozenRow = logicalRowIndex !== null && logicalRowIndex > 0 && logicalRowIndex <= this.frozenRowCount;
+            for (let col = dataColumnOffset; col < rowElement.children.length; col++) {
+                const cell = rowElement.children[col] as HTMLElement;
+                cell.style.transform = '';
                 cell.style.zIndex = '';
                 cell.classList.remove('freeze-column-border');
-                cell.classList.remove('freeze-cell');
+                if (!isFrozenRow) cell.classList.remove('freeze-cell');
             }
         }
     }
 
-    /**
-     * 固定行のCSS stickyスタイルを適用する。
-     * ヘッダー行の高さ(24px)を基準に、各固定行の top を累積計算する。
-     */
+    /** 固定行の視覚スタイルを再構築する。 */
     applyFreezeRowStyles(): void {
-        if (this.frozenRowCount === 0) return;
-        // 列ヘッダー行の高さを取得（スキーマの comment 有無で高さが変わる）
-        const headerRowElement = this.element.children[0] as HTMLElement;
-        const headerRowHeight = headerRowElement.getBoundingClientRect().height;
-        let cumulativeTop = headerRowHeight;
-        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
-            // DOM行インデックス: データ行0 → element.children[1]
-            const rowElement = this.getRowElement(dataRowIdx + 1);
-            if (!rowElement) continue;
-            const rowHeight = rowElement.getBoundingClientRect().height;
-            // 個々のセルではなく table-row に sticky を適用する。
-            // セル単位で sticky にすると Chromium の table-cell 描画順で固定列の上に
-            // 固定行セルが描画されてしまう。行単位なら行 vs セルの z-index 比較になり正しく動作する。
-            rowElement.style.position = 'sticky';
-            rowElement.style.top = cumulativeTop + 'px';
-            rowElement.style.zIndex = `var(--z-index-freeze-row)`;
-            // 行ヘッダーは縦横両方向で固定されるため z-index をコーナーレベルに上げる
-            const rowHeader = rowElement.children[0] as HTMLElement;
-            rowHeader.style.zIndex = `var(--z-index-freeze-corner)`;
-            // 最後の固定行に影クラスを付与（行全体に影を表示するため table-row に付ける）
-            if (dataRowIdx === this.frozenRowCount - 1) {
-                rowElement.classList.add('freeze-row-border');
-            }
-            // データセルに不透明な背景色を付与（透過防止）
-            const cellCount = rowElement.children.length;
-            for (let col = 1; col < cellCount; col++) {
-                const cell = rowElement.children[col] as HTMLElement;
-                cell.classList.add('freeze-cell');
-            }
-            cumulativeTop += rowHeight;
-        }
+        this.refreshFreezeVisualState();
     }
 
-    /**
-     * 固定行のCSS stickyスタイルをクリアする。
-     */
+    /** 固定行の視覚スタイルを全行から除去する。 */
     private clearFreezeRowStyles(): void {
-        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
-            const rowElement = this.getRowElement(dataRowIdx + 1);
-            if (!rowElement) continue;
-            // 行レベルの sticky と影クラスをクリア
-            rowElement.style.position = '';
-            rowElement.style.top = '';
+        const renderedRows = this.getRenderedRowElements();
+        const dataColumnOffset = this.dataColumnOffset();
+        for (const rowElement of renderedRows) {
+            rowElement.style.transform = '';
             rowElement.style.zIndex = '';
+            rowElement.classList.remove('freeze-row');
             rowElement.classList.remove('freeze-row-border');
-            // 行ヘッダーの z-index をクリア
-            const rowHeader = rowElement.children[0] as HTMLElement;
-            rowHeader.style.zIndex = '';
-            // データセルの freeze-cell クラスをクリア
-            const cellCount = rowElement.children.length;
-            for (let col = 1; col < cellCount; col++) {
+            for (let col = dataColumnOffset; col < rowElement.children.length; col++) {
+                if (col < dataColumnOffset + this.frozenColumnCount) continue;
                 rowElement.children[col].classList.remove('freeze-cell');
             }
         }
@@ -1672,16 +2754,11 @@ export class EditorTable {
      * 一度クリアしてから再適用することで、構造変更で残った古いスタイルを確実に除去する。
      */
     private reapplyFreezeStylesAfterStructureChange(): void {
-        // 構造変更でセル位置がずれるため、一度全セルからフリーズスタイルを除去してから再適用する。
-        // removeColumns のクランプで frozenColumnCount が 0 になるケースがあるため、
-        // 早期リターンせず常にクリアを実行する。
-        this.clearAllFreezeStyles();
-        if (this.frozenColumnCount > 0) { this.applyFreezeColumnStyles(); }
-        if (this.frozenRowCount > 0) { this.applyFreezeRowStyles(); }
+        this.refreshFreezeVisualState();
     }
 
     /**
-     * 全セルからフリーズ関連スタイル（sticky, left, top, zIndex, border/cell クラス）を除去する。
+     * 全セルからフリーズ関連スタイル（transform, zIndex, border/cell クラス）を除去する。
      * 構造変更後に位置がずれたセルの古いスタイル残留を防ぐため、全セルを走査する。
      */
     private clearAllFreezeStyles(): void {
@@ -1689,25 +2766,16 @@ export class EditorTable {
         for (let row = 0; row < rowCount; row++) {
             const rowElement = this.getRowElement(row);
             if (!rowElement) continue;
-            // 行レベルの sticky と影クラスをクリア（フリーズ行で設定される）
-            rowElement.style.position = '';
-            rowElement.style.top = '';
+            rowElement.style.transform = '';
             rowElement.style.zIndex = '';
+            rowElement.classList.remove('freeze-row');
             rowElement.classList.remove('freeze-row-border');
             const cellCount = rowElement.children.length;
             for (let col = 0; col < cellCount; col++) {
                 const cell = rowElement.children[col] as HTMLElement;
-                if (col === 0) {
-                    // 行ヘッダー: フリーズで設定したインラインスタイルをすべてクリア。
-                    // CSS の .editor-table-row-header が position:sticky; left:0 を持つので
-                    // インラインを空にすればCSSの値に戻る。
-                    cell.style.zIndex = '';
-                } else {
-                    cell.style.position = '';
-                    cell.style.left = '';
-                    cell.style.zIndex = '';
-                    cell.classList.remove('freeze-column-border', 'freeze-row-border', 'freeze-cell');
-                }
+                cell.style.transform = '';
+                cell.style.zIndex = '';
+                cell.classList.remove('freeze-column-border', 'freeze-row-border', 'freeze-cell');
             }
         }
     }
@@ -1716,7 +2784,7 @@ export class EditorTable {
      * 行数を取得する（列ヘッダー行を含む、スペーサー行は除外）
      */
     getRowCount(): number {
-        return this.element.children.length - this.virtualScroll.totalSpacerCount();
+        return this.gridElement.children.length - this.virtualScroll.totalSpacerCount();
     }
 
     /**
@@ -1783,8 +2851,7 @@ export class EditorTable {
      * 列数を取得する（行ヘッダーセルを除く）
      */
     getColumnCount(): number {
-        const headerRow = this.element.children[0];
-        return headerRow.children.length - this.dataColumnOffset();
+        return this.tableData.header.length;
     }
 
     /**
@@ -1792,22 +2859,23 @@ export class EditorTable {
      * 仮想スクロールで行がDOMに存在しない場合はストアから直接取得する。
      */
     getCellValueAt(row: number, column: number): string {
-        const rowElement = this.getRowElement(row);
-        if (rowElement !== null) {
-            const cell = rowElement.children[column];
-            // children[column] が範囲外（undefined）の場合はストアにフォールバックする
-            if (!cell) return '';
-            return EditorTable.getCellValue(cell as HTMLElement);
+        if (row === 0) {
+            if (column < this.dataColumnOffset()) return '';
+            const headerColumnIndex = column - this.dataColumnOffset();
+            if (headerColumnIndex < 0 || headerColumnIndex >= this.tableData.header.length) return '';
+            return this.tableData.header[headerColumnIndex].name;
         }
-        // DOM外の行: ストアから直接取得する
-        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
+        if (column < this.dataColumnOffset()) {
+            if (!this.isBlameVisible && column === 0) return String(row);
+            if (this.isBlameVisible && column === 1) return String(row);
+            return '';
+        }
         const dataRowIndex = row - 1;
+        if (dataRowIndex < 0 || dataRowIndex >= this.getFilteredDataRowCount()) return '';
         const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
         if (storeRowIndex < 0) return '';
         const storeRows = this.store.getRows(this.tableName);
         if (storeRows === false || storeRowIndex >= storeRows.length) return '';
-        const storeHeader = this.store.getHeader(this.tableName);
-        if (storeHeader === false) return '';
         const dataColIndex = column - this.dataColumnOffset();
         if (dataColIndex < 0 || dataColIndex >= this.tableData.columnMapping.length) return '';
         const storeColIndex = this.tableData.columnMapping[dataColIndex];
@@ -1816,17 +2884,11 @@ export class EditorTable {
     }
 
     /**
-     * 座標で参照ヒントのテキストを取得する。DOM外の行では null を返す。
-     * CSV出力（buildCsvWithHints）で使用する。
+     * 座標で参照ヒントのテキストを取得する。
+     * ストア/参照キャッシュから解決するため、DOM外の行でも取得できる。
      */
     getReferenceHintText(row: number, column: number): string | null {
-        const rowElement = this.getRowElement(row);
-        if (rowElement === null) return null;
-        const cell = rowElement.children[column + this.dataColumnOffset()] as HTMLElement | null;
-        if (cell === null) return null;
-        const hint = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint') as HTMLElement | null;
-        if (hint === null || hint.textContent === null) return null;
-        return hint.textContent;
+        return this.reference.getHintText(row, column);
     }
 
     /**
@@ -1834,15 +2896,9 @@ export class EditorTable {
      * comment付き2行構造では .column-header-name span から、それ以外は TextNode から取得する。
      */
     getColumnHeaderValue(columnIndex: number): string {
-        const headerRow = this.element.children[0] as HTMLElement;
-        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
-        // comment付き2行構造の場合は .column-header-name span を優先する
-        const nameSpan = headerCell.querySelector('.column-header-name');
-        if (nameSpan !== null) return nameSpan.textContent as string;
-        for (const node of Array.from(headerCell.childNodes)) {
-            if (node.nodeType === Node.TEXT_NODE) return node.textContent as string;
-        }
-        return '';
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        return column.name;
     }
 
     /**
@@ -1850,56 +2906,61 @@ export class EditorTable {
      * comment付き2行構造では .column-header-name span を、それ以外は TextNode を更新する。
      */
     setColumnHeaderValue(columnIndex: number, value: string): void {
-        const headerRow = this.element.children[0] as HTMLElement;
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        column.name = value;
+        const storeColumnIndex = this.getStoreColumnIndex(columnIndex);
+        if (storeColumnIndex !== -1) this.store.renameColumn(this.tableName, storeColumnIndex, value);
+        const headerRow = this.gridElement.children[0] as HTMLElement;
         const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         // comment付き2行構造の場合は .column-header-name span を優先する
         const nameSpan = headerCell.querySelector('.column-header-name');
         if (nameSpan !== null) {
             nameSpan.textContent = value;
+            this.refreshDetachedHeaderLayout();
             return;
         }
         for (const node of Array.from(headerCell.childNodes)) {
             if (node.nodeType === Node.TEXT_NODE) {
                 node.textContent = value;
+                this.refreshDetachedHeaderLayout();
                 return;
             }
         }
         headerCell.insertBefore(document.createTextNode(value), headerCell.firstChild);
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
      * 列ヘッダーにCSSクラスを追加する
      */
     addColumnHeaderClass(columnIndex: number, className: string): void {
-        const headerRow = this.element.children[0];
+        const headerRow = this.gridElement.children[0];
         const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
         if (headerCell) {
             headerCell.classList.add(className);
         }
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
      * 指定列の幅を取得（列ヘッダーセルから取得）
      */
     getColumnWidth(columnIndex: number): string {
-        const columnHeaderRow = this.element.children[0];
-        const headerCell = columnHeaderRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
-        if (headerCell.style.width === '') {
-            throw new Error(`列ヘッダーセル(columnIndex=${columnIndex})にwidthが設定されていません`);
-        }
-        return headerCell.style.width;
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        return column.width;
     }
 
     /**
      * 全列の幅を配列で取得する
      */
     getColumnWidths(): string[] {
-        const widths: string[] = [];
-        const columnCount = this.getColumnCount();
-        for (let i = 0; i < columnCount; i++) {
-            widths.push(this.getColumnWidth(i));
-        }
-        return widths;
+        return this.tableData.header.map(column => column.width);
+    }
+
+    getColumnHeaderValues(): string[] {
+        return this.tableData.header.map(column => column.name);
     }
 
     /**
@@ -1954,28 +3015,18 @@ export class EditorTable {
         let maxWidth = parseFloat(headerWidthStr);
 
         // 全データ行（バッファ空行を除く）のセル幅を計測
-        const rowCount = this.getRowCount();
-        for (let rowIdx = 1; rowIdx < rowCount; rowIdx++) {
-            const rowElement = this.getRowElement(rowIdx);
-            if (!rowElement) continue;
-            // バッファ空行はスキップ
-            if (rowElement.classList.contains('editor-table-empty-row')) continue;
-
-            // 列ヘッダーセルを除いた列インデックス（columnIndex + dataColumnOffset() が DOM上の位置）
-            const cell = rowElement.children[columnIndex + this.dataColumnOffset()] as HTMLElement | undefined;
-            if (!cell) continue;
-
-            // セルテキスト値の幅を計測
-            const cellValue = EditorTable.getCellValue(cell);
+        const dataRowCount = this.getFilteredDataRowCount();
+        for (let rowIdx = 1; rowIdx <= dataRowCount; rowIdx++) {
+            const cellValue = this.getCellValueAt(rowIdx, columnIndex + this.dataColumnOffset());
             ctx.font = CELL_FONT;
             const textWidth = ctx.measureText(cellValue).width;
 
             // 参照ヒント幅を計測（通常参照ヒント・逆参照ヒントのどちらも対象）
-            const hintElement = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint') as HTMLElement | null;
+            const hintText = this.getReferenceHintText(rowIdx, columnIndex);
             let hintWidth = 0;
-            if (hintElement !== null) {
+            if (hintText !== null) {
                 ctx.font = REFERENCE_HINT_FONT;
-                hintWidth = ctx.measureText(hintElement.textContent as string).width + REFERENCE_HINT_MARGIN_PX;
+                hintWidth = ctx.measureText(hintText).width + REFERENCE_HINT_MARGIN_PX;
             }
 
             // セル全体の占有幅 = テキスト幅 + ヒント幅 + パディング
@@ -2020,6 +3071,9 @@ export class EditorTable {
      * 指定列の幅を設定し、その列の全セルのスタイルを更新
      */
     setColumnWidth(columnIndex: number, width: string): void {
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        column.width = width;
         for (let i = 0; i < this.getRowCount(); ++i) {
             const rowElement = this.getRowElement(i);
             if (!rowElement) continue;
@@ -2028,8 +3082,7 @@ export class EditorTable {
                 EditorTable.applyCellWidth(cell, width);
             }
         }
-        // 固定列の left 値は列幅に依存するため、列幅変更後に再計算する
-        if (this.frozenColumnCount > 0) this.applyFreezeColumnStyles();
+        this.refreshFreezeVisualState();
     }
 
     /**
@@ -2046,14 +3099,17 @@ export class EditorTable {
     }
 
     getCellRectAt(row: number, column: number): DOMRect {
-        const cell = this.getCell(row, column);
-        return cell.getBoundingClientRect();
+        const rect = this.getCellRectOrNull(row, column);
+        if (rect === null) throw new Error(`セル矩形が見つかりません: row=${row}, column=${column}`);
+        return rect;
     }
 
     /**
      * 座標でセルのBoundingClientRectを取得する（存在しない場合はnull）
      */
     getCellRectOrNull(row: number, column: number): DOMRect | null {
+        const detachedCell = this.getVisibleDetachedCellOrNull(row, column);
+        if (detachedCell !== null) return detachedCell.getBoundingClientRect();
         const rowElement = this.getRowElement(row);
         if (!rowElement) return null;
         const cell = rowElement.children[column] as HTMLElement | null;
@@ -2064,15 +3120,13 @@ export class EditorTable {
     /**
      * テキストフィールドの幅を計算する
      */
-    calculateTextFieldWidth(row: number, column: number, textWidth: number): { width: number; cellHeight: number } {
-        const rowElement = this.getRowElement(row);
-        if (!rowElement) return { width: 0, cellHeight: 0 };
-        const startCell = rowElement.children[column] as HTMLElement;
-        const cellHeight = startCell.getBoundingClientRect().height;
+    calculateTextFieldWidth(_row: number, column: number, textWidth: number): { width: number; cellHeight: number } {
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.getColumnCount()) return { width: 0, cellHeight: 0 };
+        const cellHeight = ROW_TOTAL_HEIGHT_PX;
         let width = 0;
-        for (let i = column; i < rowElement.children.length; i++) {
-            const cell = rowElement.children[i] as HTMLElement;
-            width += cell.getBoundingClientRect().width;
+        for (let i = dataColumnIndex; i < this.getColumnCount(); i++) {
+            width += this.getColumnLayoutWidthPx(i);
             if (textWidth < width - 14) {
                 break;
             }
@@ -2100,17 +3154,14 @@ export class EditorTable {
      * 行ヘッダーを含む全列数を取得する
      */
     getTotalColumnCount(): number {
-        const headerRow = this.element.children[0];
-        return headerRow.children.length;
+        return this.dataColumnOffset() + this.getColumnCount();
     }
 
     /**
      * 列ヘッダー行の高さを取得する
      */
     getFirstRowHeight(): number {
-        const headerRow = this.element.children[0] as HTMLElement | undefined;
-        if (!headerRow) return 0;
-        return headerRow.getBoundingClientRect().height;
+        return this.usesInternalMainViewport ? 0 : this.getHeaderRowHeightPx();
     }
 
     /**
@@ -2118,81 +3169,73 @@ export class EditorTable {
      * 上端は列ヘッダー + 固定行、左端は blame列 + 行ヘッダー + 固定列の累積サイズとなる。
      */
     getSelectionViewportInsets(): { top: number; left: number } {
-        const headerRow = this.element.children[0] as HTMLElement | undefined;
-        if (!headerRow) {
-            throw new Error('列ヘッダー行が存在しません');
+        if (this.usesInternalMainViewport) {
+            return { top: 0, left: 0 };
         }
-
-        let top = headerRow.getBoundingClientRect().height;
-        for (let dataRowIdx = 0; dataRowIdx < this.frozenRowCount; dataRowIdx++) {
-            const rowElement = this.getRowElement(dataRowIdx + 1);
-            if (!rowElement) {
-                throw new Error(`固定行が存在しません: dataRowIdx=${dataRowIdx}`);
-            }
-            top += rowElement.getBoundingClientRect().height;
-        }
-
-        let left = 0;
-        if (this.isBlameVisible) {
-            const blameCell = headerRow.children[0] as HTMLElement | undefined;
-            if (!blameCell) {
-                throw new Error('blame列ヘッダーが存在しません');
-            }
-            left += blameCell.getBoundingClientRect().width;
-        }
-
-        const rowHeaderIndex = this.isBlameVisible ? 1 : 0;
-        const rowHeaderCell = headerRow.children[rowHeaderIndex] as HTMLElement | undefined;
-        if (!rowHeaderCell) {
-            throw new Error('行ヘッダーセルが存在しません');
-        }
-        left += rowHeaderCell.getBoundingClientRect().width;
-
-        const dataColumnOffset = this.isBlameVisible ? 2 : 1;
+        let top = this.detachedHeaderTopOffset + this.getHeaderRowHeightPx() + (this.frozenRowCount * this.getDataRowHeightPx());
+        let left = this.getDetachedPrefixWidthPx();
         for (let dataColumnIdx = 0; dataColumnIdx < this.frozenColumnCount; dataColumnIdx++) {
-            const columnHeaderCell = headerRow.children[dataColumnIdx + dataColumnOffset] as HTMLElement | undefined;
-            if (!columnHeaderCell) {
-                throw new Error(`固定列ヘッダーが存在しません: dataColumnIdx=${dataColumnIdx}`);
-            }
-            left += columnHeaderCell.getBoundingClientRect().width;
+            left += this.getColumnLayoutWidthPx(dataColumnIdx);
         }
-
         return { top, left };
+    }
+
+    /**
+     * 指定DOM列の水平方向レイアウト境界を返す。
+     * detached layer / transform 適用後でも、列幅SSOTからスクロール計算できるようにする。
+     */
+    getCellHorizontalLayoutBounds(column: number): { left: number; right: number } {
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0) {
+            return this.usesInternalMainViewport
+                ? { left: 0, right: this.getFixedLeftWidthPx() }
+                : { left: 0, right: this.getDetachedPrefixWidthPx() };
+        }
+        if (dataColumnIndex >= this.getColumnCount()) {
+            throw new Error(`データ列範囲外です: column=${column}`);
+        }
+        let left = this.usesInternalMainViewport ? 0 : this.getDetachedPrefixWidthPx();
+        const startIndex = this.usesInternalMainViewport ? this.frozenColumnCount : 0;
+        for (let index = startIndex; index < dataColumnIndex; index++) {
+            left += this.getColumnLayoutWidthPx(index);
+        }
+        const width = this.getColumnLayoutWidthPx(dataColumnIndex);
+        return { left, right: left + width };
+    }
+
+    /**
+     * 指定DOM列が固定列かどうかを返す。
+     */
+    isFrozenDomColumn(column: number): boolean {
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0) return true;
+        return dataColumnIndex >= 0 && dataColumnIndex < this.frozenColumnCount;
     }
 
     /**
      * 行ヘッダー（コーナーセル）の幅を取得する
      */
     getRowHeaderWidth(): number {
-        const headerRow = this.element.children[0] as HTMLElement | undefined;
-        const cornerCell = headerRow?.children[0] as HTMLElement | undefined;
-        if (!cornerCell) return 0;
-        return cornerCell.getBoundingClientRect().width;
+        return ROW_HEADER_WIDTH_PX;
     }
 
     /**
      * データ領域の最大行を取得（データが入力されている最後の行）
      */
     getMaxDataRow(): number {
-        const dataStartRow = 1;
-        let maxRow = 0;
-        for (let r = this.getRowCount() - 1; r >= dataStartRow; r--) {
-            const rowElement = this.getRowElement(r);
-            if (!rowElement) continue;
-            let hasData = false;
-            for (let c = 1; c < rowElement.children.length; c++) {
-                const cell = rowElement.children[c] as HTMLElement;
-                if (cell && cell.textContent && cell.textContent.trim() !== '') {
-                    hasData = true;
-                    break;
-                }
-            }
-            if (hasData) {
-                maxRow = r;
-                break;
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return 0;
+        for (let dataRowIndex = this.getFilteredDataRowCount() - 1; dataRowIndex >= 0; dataRowIndex--) {
+            const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
+            if (storeRowIndex < 0 || storeRowIndex >= storeRows.length) continue;
+            const rowValues = storeRows[storeRowIndex];
+            for (let dataColIndex = 0; dataColIndex < this.tableData.columnMapping.length; dataColIndex++) {
+                const storeColIndex = this.tableData.columnMapping[dataColIndex];
+                if (storeColIndex === -1 || storeColIndex >= rowValues.length) continue;
+                if (rowValues[storeColIndex].trim() !== '') return dataRowIndex + 1;
             }
         }
-        return maxRow;
+        return 0;
     }
 
     // =========================================================================
@@ -2203,7 +3246,19 @@ export class EditorTable {
      * ヘッダーの選択状態を更新する
      */
     updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        const columnHeaderRow = this.element.children[0] as HTMLElement;
+        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, true);
+    }
+
+    /**
+     * 仮想スクロールの純スクロール時に、静的 detached layer の全同期を避けつつ
+     * source DOM 側の行・列ヘッダー選択状態だけを更新する。
+     */
+    updateHeaderSelectionForVirtualScroll(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, false);
+    }
+
+    private applyHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number, syncDetachedLayers: boolean): void {
+        const columnHeaderRow = this.gridElement.children[0] as HTMLElement;
         // すべての列ヘッダーから選択状態を解除
         for (let i = 1; i < columnHeaderRow.children.length; i++) {
             const headerCell = columnHeaderRow.children[i] as HTMLElement;
@@ -2215,7 +3270,7 @@ export class EditorTable {
         const dataRowEnd = this.getDataRowEndChildIndex();
         for (let i = 1; i < dataRowEnd; i++) {
             if (this.virtualScroll.isSpacerIndex(i)) continue;
-            const row = this.element.children[i] as HTMLElement;
+            const row = this.gridElement.children[i] as HTMLElement;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (rowHeader) rowHeader.classList.remove('selected');
         }
@@ -2234,6 +3289,13 @@ export class EditorTable {
                 if (rowHeader) rowHeader.classList.add('selected');
             }
         }
+        if (!syncDetachedLayers) return;
+        if (this.usesInternalMainViewport) {
+            this.syncQuadrantStaticCellStates();
+            return;
+        }
+        this.syncDetachedLegacyStaticCellStates();
+        this.syncDetachedViewportRowHeaderStates();
     }
 
     /**
@@ -2247,16 +3309,11 @@ export class EditorTable {
         // blameはgit committed dataのため、ストアからの全面リロードで陳腐化する
         this.hideBlameIfVisible();
         const storeRows = this.store.getRows(this.tableName);
-        const storeHeader = this.store.getHeader(this.tableName);
-        if (storeRows === false || storeHeader === false) return;
+        if (storeRows === false) return;
 
-        // DOMの列ヘッダー名 → ストアの列インデックスのマッピングを構築
+        // DOM列インデックス → ストア列インデックスのマッピングを columnMapping から構築する。
         const domColumnCount = this.getColumnCount();
-        const storeColumnIndices: number[] = [];
-        for (let domCol = 0; domCol < domColumnCount; domCol++) {
-            const headerName = this.getColumnHeaderValue(domCol);
-            storeColumnIndices.push(storeHeader.indexOf(headerName));
-        }
+        const storeColumnIndices = this.tableData.columnMapping.slice(0, domColumnCount);
 
         // 通常テーブルのみ: DOMの行数とストアの行数を同期し、storeRowIndices を [0..storeRows.length-1] に更新する。
         // ミニテーブルはフィルタ済みのサブセットを表示しており、ストア全行との同期は不適切なため除外する。
@@ -2286,7 +3343,7 @@ export class EditorTable {
                         newRow.dataset.storeIndex = String(i);
                         const insertTarget = this.getRowElement(domRowIndex);
                         if (insertTarget) {
-                            this.element.insertBefore(newRow, insertTarget);
+                            this.gridElement.insertBefore(newRow, insertTarget);
                             // DOM行が挿入されたため renderedEnd を同期する
                             this.virtualScroll.notifyRowAppended();
                         } else {
@@ -2339,17 +3396,17 @@ export class EditorTable {
             const domRow = domDataRow + 1; // DOMは1始まり（列ヘッダー行がある）
             const storeRowIndex = this.storeRowIndices[domDataRow];
             if (storeRowIndex < 0 || storeRowIndex >= storeRows.length) continue;
+            const rowElement = this.getRowElement(domRow);
+            if (rowElement === null) continue;
             const storeRowData = storeRows[storeRowIndex];
 
             for (let domCol = 0; domCol < domColumnCount; domCol++) {
                 const storeColIdx = storeColumnIndices[domCol];
                 if (storeColIdx === -1) continue;
                 const storeValue = storeColIdx < storeRowData.length ? storeRowData[storeColIdx] : '';
-                const domValue = this.getCellValueAt(domRow, domCol + this.dataColumnOffset());
-                if (domValue !== storeValue) {
-                    const cell = this.getCell(domRow, domCol + this.dataColumnOffset());
-                    this.reference.setCellValue(cell, storeValue, domCol, domRow);
-                }
+                const cell = rowElement.children[domCol + this.dataColumnOffset()] as HTMLElement | null;
+                if (cell === null) continue;
+                this.reference.setCellValue(cell, storeValue, domCol, domRow);
             }
         }
 
@@ -2377,6 +3434,7 @@ export class EditorTable {
         this.clearFilterState();
         // セル再作成パス（ソート・行操作等）で消失した data-bookmarked 属性を復元する
         this.restoreBookmarkMarks();
+        this.refreshFreezeVisualState();
     }
 
     // =========================================================================
@@ -2562,7 +3620,7 @@ export class EditorTable {
             if (bufferRowCount > 1) toRemove.push(row);
         }
         for (const row of toRemove) {
-            this.element.removeChild(row);
+            this.gridElement.removeChild(row);
             // DOM行が削除されたため renderedEnd を同期する
             this.virtualScroll.notifyRowRemoved();
         }
@@ -2816,13 +3874,13 @@ export class EditorTable {
             storeIndexToRowElement.set(Number(row.dataset.storeIndex), row);
         }
         // バッファ行の先頭要素を取得しておく（insertBefore の基準点として使用）
-        const firstEmptyRow = this.element.querySelector('.editor-table-empty-row');
+        const firstEmptyRow = this.gridElement.querySelector('.editor-table-empty-row');
         // indices の順序でデータ行を親に再挿入する（insertBefore でバッファ行の前に配置）
         for (const storeIdx of indices) {
             const row = storeIndexToRowElement.get(storeIdx);
             if (!row) throw new Error('[EditorTable.rearrangeDomRowsByStoreIndices] storeIdx に対応するDOM行が存在しません: ' + storeIdx);
             if (firstEmptyRow) {
-                this.element.insertBefore(row, firstEmptyRow);
+                this.gridElement.insertBefore(row, firstEmptyRow);
             } else {
                 // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
                 this.virtualScroll.appendDataRow(row);
@@ -2865,6 +3923,7 @@ export class EditorTable {
             this.updateFilterActiveClasses();
             this.filterRowCountElement.style.display = 'none';
             this.selection.updateRendererAfterResize();
+            this.refreshFreezeVisualState();
             return;
         }
 
@@ -2918,6 +3977,7 @@ export class EditorTable {
 
         // 行の display 変更後に選択オーバーレイの描画位置を再計算する（非表示行にまたがる選択を解消）
         this.selection.updateRendererAfterResize();
+        this.refreshFreezeVisualState();
     }
 
     /**
@@ -2939,7 +3999,7 @@ export class EditorTable {
      * ColumnFilter はストア列インデックスで管理しているため、DOM列インデックスを変換してから参照する。
      */
     private updateFilterActiveClasses(): void {
-        const headerRow = this.element.children[0];
+        const headerRow = this.gridElement.children[0];
         const columnCount = this.getColumnCount();
         for (let colIdx = 0; colIdx < columnCount; colIdx++) {
             const headerCell = headerRow.children[colIdx + this.dataColumnOffset()] as HTMLElement;
@@ -2950,6 +4010,7 @@ export class EditorTable {
                 headerCell.classList.remove('filter-active');
             }
         }
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
@@ -2969,7 +4030,7 @@ export class EditorTable {
      * - ソートされた列: sort-asc または sort-desc クラスを付与、優先度番号を表示
      */
     private updateAllSortIndicators(): void {
-        const headerRow = this.element.children[0];
+        const headerRow = this.gridElement.children[0];
         const columnCount = this.getColumnCount();
         const totalSortKeyCount = this.columnSorter.getSortKeyCount();
         for (let colIdx = 0; colIdx < columnCount; colIdx++) {
@@ -2989,6 +4050,7 @@ export class EditorTable {
                 prioritySpan.textContent = (sortKey && totalSortKeyCount > 1) ? String(priority) : '';
             }
         }
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
@@ -3014,7 +4076,6 @@ export class EditorTable {
         const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
         // 照合失敗（-1）の場合はストア更新不可。DOM更新は継続する。
         const canUpdateStore = storeRowIndex >= 0;
-        const storeHeader = canUpdateStore ? this.store.getHeader(this.tableName) : false;
         for (const entry of this.autoFillEntries) {
             const colCount = this.getColumnCount();
             for (let c = 0; c < colCount; c++) {
@@ -3022,11 +4083,9 @@ export class EditorTable {
                 // DOMセルを更新（参照ヒント適用のためreference.setCellValueAt()を使用）
                 this.reference.setCellValueAt(rowIndex, c + this.dataColumnOffset(), entry.value);
                 // ストアをインデックスベースで更新（PK未入力でも動作する）
-                if (canUpdateStore && storeHeader !== false) {
-                    const storeColIndex = storeHeader.indexOf(entry.columnName);
-                    if (storeColIndex !== -1) {
-                        this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, entry.value);
-                    }
+                if (canUpdateStore) {
+                    const storeColIndex = this.getStoreColumnIndex(c);
+                    if (storeColIndex !== -1) this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, entry.value);
                 }
                 break;
             }
@@ -3249,6 +4308,32 @@ export class EditorTable {
                 const columnName = this.tableData.header[domCol].name;
                 const cell = this.getCellOrNull(domRow, domCol + this.dataColumnOffset());
                 if (cell === null) continue;
+                if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
+                    cell.setAttribute('data-bookmarked', '');
+                } else {
+                    cell.removeAttribute('data-bookmarked');
+                }
+            }
+        }
+    }
+
+    private restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number): void {
+        if (this.isMiniTable) return;
+        if (this.tab === false) return;
+        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
+            ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
+            : -1;
+        if (pkColIndex === -1) return;
+        for (let dataRowIndex = startDataRowIndex; dataRowIndex < endDataRowIndex; dataRowIndex++) {
+            const domRow = dataRowIndex + 1;
+            const rowElement = this.getRowElement(domRow);
+            if (rowElement === null) continue;
+            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
+            if (pkValue === '') continue;
+            for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
+                const columnName = this.tableData.header[domCol].name;
+                const cell = rowElement.children[domCol + this.dataColumnOffset()];
+                if (!(cell instanceof HTMLElement)) continue;
                 if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
                     cell.setAttribute('data-bookmarked', '');
                 } else {
@@ -3569,11 +4654,10 @@ export class EditorTable {
         const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
         // データ行外（空行等）・照合失敗（-1）の場合はストア更新をスキップ
         if (storeRowIndex < 0) return;
-        const storeHeader = this.store.getHeader(this.tableName);
-        if (storeHeader === false) return;
         // DOMの列インデックス → データ列インデックス（0始まり）→ ストアの列インデックス
-        const columnName = this.getColumnHeaderValue(column - this.dataColumnOffset());
-        const storeColIndex = storeHeader.indexOf(columnName);
+        const dataColumnIndex = column - this.dataColumnOffset();
+        if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.columnMapping.length) return;
+        const storeColIndex = this.getStoreColumnIndex(dataColumnIndex);
         if (storeColIndex === -1) return;
         // ストア更新はDOM有無に関わらず常に実行する
         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
@@ -3582,6 +4666,8 @@ export class EditorTable {
         const rowElement = this.getRowElement(row);
         if (rowElement === null) return;
         this.reference.setCellValueAt(row, column, value);
+        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        const requiresDetachedCloneSync = row <= this.frozenRowCount || column < fixedLeftColumnCount;
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
@@ -3597,6 +4683,12 @@ export class EditorTable {
         if (this.diffTab !== false) {
             this.diffTab.notifyCellEdited(row, column, value);
         }
+        if (!requiresDetachedCloneSync) return;
+        if (this.usesInternalMainViewport) {
+            this.syncQuadrantStaticCellStates();
+            return;
+        }
+        this.refreshDetachedHeaderLayout();
     }
 
     /**
@@ -3643,16 +4735,19 @@ export class EditorTable {
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
     updateReferenceHints(): void {
         this.reference.updateReferenceHints();
+        this.syncDetachedFrozenClonesAfterVisualContentChange();
     }
 
     /** 指定DOM行範囲のセルの参照ヒントを更新する */
     updateReferenceHintsForRows(startDomRow: number, endDomRow: number): void {
         this.reference.updateReferenceHintsForRows(startDomRow, endDomRow);
+        this.syncDetachedFrozenClonesAfterVisualContentChange();
     }
 
     /** 指定した列のすべてのセルの参照ヒントを更新する */
     updateColumnReferenceHints(columnIndex: number): void {
         this.reference.updateColumnReferenceHints(columnIndex);
+        this.syncDetachedFrozenClonesAfterVisualContentChange();
     }
 
     /**
@@ -3663,9 +4758,19 @@ export class EditorTable {
      */
     updateReverseReferenceHints(map: ReverseReferenceMap): void {
         this.reference.updateReverseReferenceHints(map);
+        this.syncDetachedFrozenClonesAfterVisualContentChange();
         if (!this.isMiniTable) {
             this.forceRefreshRelationsPanel();
         }
+    }
+
+    private syncDetachedFrozenClonesAfterVisualContentChange(): void {
+        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
+        if (this.usesInternalMainViewport) {
+            this.syncQuadrantStaticCellStates();
+            return;
+        }
+        this.refreshDetachedHeaderLayout();
     }
 
     /** 逆参照マップにエントリが存在するか判定する */
@@ -3705,7 +4810,7 @@ export class EditorTable {
      * 参照キャッシュの結果を null に正規化して返す
      */
     getDisplayTextById(tableName: string, id: string): string | null {
-        return this.referenceDataCache.getDisplayTextById(tableName, id) ?? null;
+        return this.referenceDataCache.getDisplayTextById(tableName, id);
     }
 
     // =========================================================================
@@ -3734,13 +4839,9 @@ export class EditorTable {
      * comment なし（TextNode のみ）の場合は null を返す。
      */
     public getColumnHeaderComment(columnIndex: number): string | null {
-        const headerRow = this.element.children[0] as HTMLElement;
-        const headerCell = headerRow.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
-        // data-full-comment があれば完全なcomment（\n含む）を返す
-        // \n を含まないcommentも createColumnHeaderCell で必ず dataset.fullComment に保存されるため、
-        // commentがある場合は常にここから読み取る。commentなし（TextNodeのみ）の場合は属性が存在しない。
-        if ('fullComment' in headerCell.dataset) return headerCell.dataset.fullComment as string;
-        return null;
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        return column.comment;
     }
 
     /** 行挿入（Commandを使用してhistoryに追加） */
@@ -3852,7 +4953,7 @@ export class EditorTable {
         // 挿入位置のDOM要素（fromを抜いた後のインデックス）
         const insertBefore = this.getRowElement(toDomIndex);
         if (insertBefore) {
-            this.element.insertBefore(rowElement, insertBefore);
+            this.gridElement.insertBefore(rowElement, insertBefore);
         } else {
             // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
             this.virtualScroll.appendDataRow(rowElement);
@@ -3929,15 +5030,12 @@ export class EditorTable {
             const key = `${error.rowIndex},${error.columnIndex}`;
             if (error.kind === 'pk-duplicate') { pkErrorCells.add(key); } else { otherErrorCells.add(key); }
         }
-        // ストアヘッダーはループ外で1回だけ取得する
-        const storeHeader = this.store.getHeader(this.tableName);
-        if (storeHeader === false) return;
         const colCount = this.getColumnCount();
         const offset = this.dataColumnOffset();
-        // DOM列名→ストア列インデックスのマッピングを事前構築する（内ループでのindexOf呼び出しを排除）
+        // DOM列→ストア列のマッピングを columnMapping から事前構築する。
         const domColToStoreCol: number[] = [];
         for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
-            domColToStoreCol.push(storeHeader.indexOf(this.getColumnHeaderValue(dataColIdx)));
+            domColToStoreCol.push(this.getStoreColumnIndex(dataColIdx));
         }
         // バーチャルスクロールで新規生成される行にもエラークラスを適用できるようキャッシュに保存する
         this.cachedPkErrorCells = pkErrorCells;
@@ -4043,4 +5141,3 @@ export class EditorTable {
     }
 
 }
-

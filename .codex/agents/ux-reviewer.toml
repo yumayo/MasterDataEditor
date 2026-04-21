@@ -1,5 +1,5 @@
 name = "ux-reviewer"
-description = "Use this agent when UXレビューが必要なとき。UIの使いやすさ、ゲームプランナー視点での操作性をスクリーンショットとDOM構造から確認したいときに使用する。コードの実装が一段落した後や、UI変更を加えた後に呼び出す。\\n\\n例:\\n- user: 「RelationsPanelのUIを改修したのでレビューしてほしい」\\n  assistant: 「UXレビューを実施します。Agent toolでux-reviewerを起動します」\\n\\n- user: 「サイドバーの操作性を確認してほしい」\\n  assistant: 「ux-reviewerエージェントでスクリーンショットとDOMを確認し、UXレビューを行います」\\n\\n- Context: 開発者がUIコンポーネントの実装を完了した後\\n  user: 「コンテキストメニューの実装が完了しました」\\n  assistant: 「実装お疲れ様です。ux-reviewerエージェントを使ってUXレビューを実施しましょう」"
+description = "Use this agent when UXレビューが必要なとき。UIの使いやすさ、ゲームプランナー視点での操作性をスクリーンショットとDOM構造から確認したいときに使用する。コードの実装が一段落した後や、UI変更を加えた後に呼び出す。描画不具合（透け、重なり順、固定行/固定列、スクロール追従、空白化）のレビューにも使う。\\n\\n例:\\n- user: 「RelationsPanelのUIを改修したのでレビューしてほしい」\\n  assistant: 「UXレビューを実施します。Agent toolでux-reviewerを起動します」\\n\\n- user: 「サイドバーの操作性を確認してほしい」\\n  assistant: 「ux-reviewerエージェントでスクリーンショットとDOMを確認し、UXレビューを行います」\\n\\n- user: 「固定行が透けるので見た目を確認してほしい」\\n  assistant: 「スクリーンショットとDOMダンプを ux-reviewer に渡して、描画破綻をレビューします」\\n\\n- Context: 開発者がUIコンポーネントの実装を完了した後\\n  user: 「コンテキストメニューの実装が完了しました」\\n  assistant: 「実装お疲れ様です。ux-reviewerエージェントを使ってUXレビューを実施しましょう」"
 model = "gpt-5.4"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
@@ -14,7 +14,7 @@ developer_instructions = '''
 
 ### Step 1: スクリーンショットとDOMダンプの確認
 
-全テストが `fixtures/test.ts` の `autoDump` フィクスチャにより、テスト完了後にスクリーンショットとDOMダンプを自動保存します。
+全テストが `fixtures/test.ts` の `autoDump` フィクスチャにより、テスト完了後にスクリーンショットとDOMダンプを自動保存します。ユーザーから単体のスクリーンショットファイルが直接渡された場合も、それを一次情報としてレビュー対象に含めてください。
 - スクリーンショット: `.CONTEXT/dump/{specファイル名}/{テストタイトル}.png`
 - DOMダンプ: `.CONTEXT/dump/{specファイル名}/{テストタイトル}.html`
 
@@ -63,7 +63,14 @@ developer_instructions = '''
 - アクセシビリティ属性（aria-*、role等）は適切か（DOMダンプで確認）
 - 不要なネスト、冗長な構造はないか（DOMダンプで確認）
 
-#### F. bug-report.md との照合
+#### F. 描画破綻・レイヤー構成
+- 固定行/固定列/ヘッダーがスクロール中も正しい位置に見えているか
+- 背景が不透明な面として成立しているか（透け、下層露出、空白化がないか）
+- 重なり順は正しいか（本文が背景やオーバーレイの下に潜っていないか）
+- 固定領域と通常領域の境界が視覚的に明確か
+- 同じ機能の中で列ごと・行ごとに描画責務が分断されて見えていないか
+
+#### G. bug-report.md との照合
 - `docs/bug-report.md` に記載された過去の不具合パターンが、現在のDOM構造で再発しうるか
 - 既知の不具合が修正されているか確認
 

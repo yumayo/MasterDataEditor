@@ -197,6 +197,37 @@ export class InMemoryTableStore {
         this.rows.get(tableName)!.push(values);
     }
 
+    /** 指定インデックスに列を挿入する */
+    insertColumnAt(tableName: string, columnIndex: number, columnName: string, valueFactory: () => string): void {
+        if (!this.headers.has(tableName) || !this.rows.has(tableName)) return;
+        const header = this.headers.get(tableName)!;
+        const rows = this.rows.get(tableName)!;
+        header.splice(columnIndex, 0, columnName);
+        for (const row of rows) {
+            row.splice(columnIndex, 0, valueFactory());
+        }
+    }
+
+    /** 指定インデックスの列を削除する */
+    removeColumnAt(tableName: string, columnIndex: number): void {
+        if (!this.headers.has(tableName) || !this.rows.has(tableName)) return;
+        const header = this.headers.get(tableName)!;
+        const rows = this.rows.get(tableName)!;
+        if (columnIndex < 0 || columnIndex >= header.length) return;
+        header.splice(columnIndex, 1);
+        for (const row of rows) {
+            if (columnIndex < row.length) row.splice(columnIndex, 1);
+        }
+    }
+
+    /** 指定インデックスの列名を更新する */
+    renameColumn(tableName: string, columnIndex: number, columnName: string): void {
+        if (!this.headers.has(tableName)) return;
+        const header = this.headers.get(tableName)!;
+        if (columnIndex < 0 || columnIndex >= header.length) return;
+        header[columnIndex] = columnName;
+    }
+
     /** 行削除（テーブル未登録・行インデックス範囲外の場合は何もしない） */
     removeRow(tableName: string, rowIndex: number): void {
         if (!this.rows.has(tableName)) return;

@@ -511,6 +511,7 @@ export class Selection {
         // フォーカスセルに editor-table-cell-focused クラスを付与する（ジャンプ確認用）
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
+        this.editorTable.syncDetachedVisualState();
     }
 
     /**
@@ -519,6 +520,7 @@ export class Selection {
      * ジャンプ先の行が画面中央に来るようにする。
      */
     scrollFocusToCenterVertically(): void {
+        if (this.focus.row <= this.editorTable.getFrozenRowCount()) return;
         // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
         this.editorTable.ensureRowVisible(this.focus.row);
         const targetRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
@@ -556,26 +558,31 @@ export class Selection {
         if (!targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
         const viewportInsets = this.editorTable.getSelectionViewportInsets();
+        const targetHorizontalBounds = this.editorTable.getCellHorizontalLayoutBounds(column);
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
 
         const visibleTop = containerRect.top + viewportInsets.top;
         const visibleBottom = containerRect.bottom - scrollbarHeight;
-        const visibleLeft = containerRect.left + viewportInsets.left;
-        const visibleRight = containerRect.right - scrollbarWidth;
 
         let nextScrollTop = this.scrollBinding.getScrollTop();
         let nextScrollLeft = this.scrollBinding.getScrollLeft();
 
-        if (targetRect.top < visibleTop) {
-            nextScrollTop += targetRect.top - visibleTop;
-        } else if (targetRect.bottom > visibleBottom) {
-            nextScrollTop += targetRect.bottom - visibleBottom;
+        if (row > this.editorTable.getFrozenRowCount()) {
+            if (targetRect.top < visibleTop) {
+                nextScrollTop += targetRect.top - visibleTop;
+            } else if (targetRect.bottom > visibleBottom) {
+                nextScrollTop += targetRect.bottom - visibleBottom;
+            }
         }
 
-        if (targetRect.left < visibleLeft) {
-            nextScrollLeft += targetRect.left - visibleLeft;
-        } else if (targetRect.right > visibleRight) {
-            nextScrollLeft += targetRect.right - visibleRight;
+        if (!this.editorTable.isFrozenDomColumn(column)) {
+            const visibleLeft = this.scrollBinding.getScrollLeft() + viewportInsets.left;
+            const visibleRight = this.scrollBinding.getScrollLeft() + containerRect.width - scrollbarWidth;
+            if (targetHorizontalBounds.left < visibleLeft) {
+                nextScrollLeft += targetHorizontalBounds.left - visibleLeft;
+            } else if (targetHorizontalBounds.right > visibleRight) {
+                nextScrollLeft += targetHorizontalBounds.right - visibleRight;
+            }
         }
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
@@ -615,13 +622,18 @@ export class Selection {
      * updateRendererAfterResize() と異なり、スクロール移動やRelationsPanel通知を行わないため
      * ドラッグ選択中に呼んでもドラッグを妨害しない。
      */
-    reapplySelectionClassesOnly(): void {
+    reapplySelectionClassesOnly(triggeredByScroll: boolean): void {
         const selectionRange = this.getSelectionRange();
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
         this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
-        // 行・列ヘッダーの選択ハイライトも再適用する（バーチャルスクロールで行が入れ替わった後に必要）
-        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+        // 純スクロール時はこの直後に EditorTable.reapplyRowDecorations() 側で
+        // detached row header の差分同期が走るため、ここでは静的 layer の全同期を省く。
+        if (triggeredByScroll) {
+            this.editorTable.updateHeaderSelectionForVirtualScroll(startRow, startColumn, endRow, endColumn);
+        } else {
+            this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+        }
         // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
         this.updateFillHandlePosition();
         if (this.hasCopyRange()) {
@@ -652,7 +664,7 @@ export class Selection {
             endRow = renderedEnd;
         }
 
-        const cell = this.editorTable.getCellOrNull(endRow, endColumn);
+        const cell = this.editorTable.getVisibleCellOrNull(endRow, endColumn);
         if (!cell) return;
         const cellRect = cell.getBoundingClientRect();
 
