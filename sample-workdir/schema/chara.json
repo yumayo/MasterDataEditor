@@ -20,7 +20,7 @@
             "name": "recover_hp",
             "type": "int",
             "comment": "HP回復量",
-            "width": 100
+            "width": 618
         },
         {
             "key": 3,
@@ -62,6 +62,6 @@
     "primary_key": [
         "id"
     ],
-    "frozenRowCount": 12,
+    "frozenRowCount": 10,
     "frozenColumnCount": 2
 }

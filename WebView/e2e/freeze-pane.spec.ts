@@ -23,6 +23,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   7. 固定行の行ヘッダーに固定用レイヤーが適用される
 //   8. 固定行のデータセルに不透明な背景色が設定される
 //   9. 固定列のデータセルに不透明な背景色が設定される
+//   10. 4領域構成で固定行上をドラッグしても選択終端行が下へずれない
 // =============================================================================
 
 // =============================================================================
@@ -532,6 +533,60 @@ async function getVisibleCellRectAsync(
         const rect = sourceCell.getBoundingClientRect();
         return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
     }, { rowIndex, columnIndex });
+}
+
+async function dragSelectionAsync(
+    page: Page, table: Locator, startRowIndex: number, startColumnIndex: number, endRowIndex: number, endColumnIndex: number,
+): Promise<void> {
+    const startRect = await getVisibleCellRectAsync(table, startRowIndex, startColumnIndex);
+    const endRect = await getVisibleCellRectAsync(table, endRowIndex, endColumnIndex);
+
+    await page.mouse.move(
+        startRect.left + startRect.width / 2,
+        startRect.top + startRect.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+        endRect.left + endRect.width / 2,
+        endRect.top + endRect.height / 2,
+        { steps: 8 },
+    );
+    await page.mouse.up();
+}
+
+async function getActiveSelectionRangeAsync(page: Page): Promise<{
+    startRow: number;
+    startColumn: number;
+    endRow: number;
+    endColumn: number;
+} | null> {
+    return await page.evaluate(() => {
+        type CellRangeForTest = {
+            startRow: number;
+            startColumn: number;
+            endRow: number;
+            endColumn: number;
+        };
+        type ActiveEditorTableForTest = {
+            selection: {
+                getSelectionRange(): CellRangeForTest;
+            };
+            dataColumnOffset(): number;
+        };
+
+        const editor = (window as unknown as { editor?: { activeEditorTable: ActiveEditorTableForTest | false } }).editor;
+        if (!editor || editor.activeEditorTable === false) return null;
+
+        const activeEditorTable = editor.activeEditorTable;
+        const range = activeEditorTable.selection.getSelectionRange();
+        const dataColumnOffset = activeEditorTable.dataColumnOffset();
+        return {
+            startRow: range.startRow - 1,
+            startColumn: range.startColumn - dataColumnOffset,
+            endRow: range.endRow - 1,
+            endColumn: range.endColumn - dataColumnOffset,
+        };
+    });
 }
 
 // =============================================================================
@@ -1165,6 +1220,68 @@ test.describe('フリーズペイン', () => {
                 expect(scrolled.rootScrollLeft).toBe(0);
                 expect(Math.abs(scrolled.topLeftTop - initial.topLeftTop)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
+            },
+        );
+
+        test(
+            '10行固定の4領域構成で rowIndex 0 から 3 へドラッグしても最後の選択行は 3 のまま',
+            async ({ page }) => {
+                await page.setViewportSize({ width: 640, height: 480 });
+                const table = await openTableAsync(page, 'freeze_combo');
+
+                // 4領域構成を作るために先頭2列と先頭10行を固定する
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+                await rightClickRowHeaderAsync(table, 9);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                await expect(table.locator('.editor-table-pane-top-left')).toBeVisible();
+                await expect(table.locator('.editor-table-pane-top-right')).toBeVisible();
+                await expect(table.locator('.editor-table-pane-bottom-left')).toBeVisible();
+                await expect(table.locator('.editor-table-pane-bottom-right')).toBeVisible();
+
+                // 固定行レイヤー上の通常データ列をドラッグし、終了行がそのまま選択終端になることを検証する
+                await dragSelectionAsync(page, table, 0, 2, 3, 2);
+
+                const selectionRange = await getActiveSelectionRangeAsync(page);
+                expect(selectionRange).not.toBeNull();
+                if (selectionRange === null) {
+                    throw new Error('選択範囲が取得できません');
+                }
+
+                expect(selectionRange.startRow).toBe(0);
+                expect(
+                    selectionRange.endRow,
+                    '10行固定で rowIndex 0 -> 3 をドラッグしたのに最後の選択行が固定領域ぶん下へずれている'
+                ).toBe(3);
+            },
+        );
+
+        test(
+            '10行固定の4領域構成で固定行から非固定行へドラッグしても最後の選択行が境界でずれない',
+            async ({ page }) => {
+                await page.setViewportSize({ width: 640, height: 480 });
+                const table = await openTableAsync(page, 'freeze_combo');
+
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+                await rightClickRowHeaderAsync(table, 9);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                // 固定領域から非固定領域へ跨いでドラッグしても、境界をまたいだ先の論理行がそのまま選択終端になること
+                await dragSelectionAsync(page, table, 0, 2, 12, 2);
+
+                const selectionRange = await getActiveSelectionRangeAsync(page);
+                expect(selectionRange).not.toBeNull();
+                if (selectionRange === null) {
+                    throw new Error('選択範囲が取得できません');
+                }
+
+                expect(selectionRange.startRow).toBe(0);
+                expect(
+                    selectionRange.endRow,
+                    '10行固定で rowIndex 0 -> 12 をドラッグしたのに固定境界をまたいだ先で選択終端がずれている'
+                ).toBe(12);
             },
         );
 

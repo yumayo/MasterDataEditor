@@ -164,30 +164,22 @@ export class SelectionDragController {
 
     private getSelectionViewportRect(): { top: number; bottom: number; left: number; right: number } {
         const containerRect = this.scrollBinding.getBoundingClientRect();
-        const headerHeight = this.getHeaderHeight();
-        const rowHeaderWidth = this.getRowHeaderWidth();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
+        const columnHeader = this.tableElement.querySelector<HTMLElement>(
+            '.editor-table-pane-top-right .editor-table-column-header, .editor-table-detached-column-header-layer .editor-table-column-header, .editor-table-grid .editor-table-column-header'
+        );
+        const rowHeader = this.tableElement.querySelector<HTMLElement>(
+            '.editor-table-pane-top-left .editor-table-row-header, .editor-table-pane-bottom-left .editor-table-row-header, .editor-table-detached-row-header-layer .editor-table-row-header, .editor-table-grid .editor-table-row-header'
+        );
+        const top = columnHeader !== null ? columnHeader.getBoundingClientRect().bottom : containerRect.top;
+        const left = rowHeader !== null ? rowHeader.getBoundingClientRect().right : containerRect.left;
 
         return {
-            top: containerRect.top + headerHeight,
+            top,
             bottom: containerRect.bottom - scrollbarHeight,
-            left: containerRect.left + rowHeaderWidth,
+            left,
             right: containerRect.right - scrollbarWidth
         };
-    }
-
-    private getHeaderHeight(): number {
-        if (this.tableElement.children.length === 0) return 0;
-        const headerRow = this.tableElement.children[0] as HTMLElement;
-        return headerRow.getBoundingClientRect().height;
-    }
-
-    private getRowHeaderWidth(): number {
-        if (this.tableElement.children.length === 0) return 0;
-        const headerRow = this.tableElement.children[0] as HTMLElement;
-        if (headerRow.children.length === 0) return 0;
-        const cornerCell = headerRow.children[0] as HTMLElement;
-        return cornerCell.getBoundingClientRect().width;
     }
 
 }

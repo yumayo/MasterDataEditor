@@ -2212,23 +2212,39 @@ export class EditorTable {
         if (!rowElement) return null;
         // 行インデックスの取得: ヘッダー行は常に children[0]。
         // データ行はバーチャルスクロールにより children のインデックスが論理インデックスとずれるため、
-        // 行ヘッダーの data-row-index 属性（renumberRowsFrom で設定される 0始まりのデータ行インデックス）
-        // から算出する。ヘッダー行は行ヘッダーを持たないため children インデックスを使う。
+        // 行要素または行ヘッダーの data-row-index 属性（renumberRowsFrom で設定される 0始まりの
+        // データ行インデックス）から算出する。固定行 clone は行要素自身が data-row-index を持つ。
+        // ヘッダー行は data-row-index を持たないため children インデックスを使う。
         let row: number = -1;
-        const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-        if (rowHeader && rowHeader.dataset.rowIndex !== undefined) {
+        if (rowElement.classList.contains('editor-table-column-header-row')) {
+            row = 0;
+        } else if (rowElement.dataset.rowIndex !== undefined) {
             // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
-            row = Number(rowHeader.dataset.rowIndex) + 1;
+            row = Number(rowElement.dataset.rowIndex) + 1;
         } else {
-            // ヘッダー行またはデータ行ヘッダーがない場合: children のインデックスで探索する
-            for (let i = 0; i < tableElement.children.length; ++i) {
-                if (tableElement.children[i] === rowElement) {
-                    row = i;
-                    break;
+            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+            if (rowHeader && rowHeader.dataset.rowIndex !== undefined) {
+                // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
+                row = Number(rowHeader.dataset.rowIndex) + 1;
+            } else {
+                // ヘッダー行または data-row-index がない行: children のインデックスで探索する
+                for (let i = 0; i < tableElement.children.length; ++i) {
+                    if (tableElement.children[i] === rowElement) {
+                        row = i;
+                        break;
+                    }
                 }
             }
         }
         if (row === -1) return null;
+        const dataColText = cell.dataset.col;
+        if (dataColText !== undefined) {
+            const dataColumn = Number(dataColText);
+            if (!Number.isNaN(dataColumn)) {
+                const dataColumnOffset = tableElement.classList.contains('editor-table--blame-visible') ? 2 : 1;
+                return { row, column: dataColumnOffset + dataColumn };
+            }
+        }
         let column: number = -1;
         for (let i = 0; i < rowElement.children.length; ++i) {
             if (rowElement.children[i] === cell) {
