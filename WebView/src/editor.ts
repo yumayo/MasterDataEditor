@@ -209,8 +209,7 @@ export class Editor {
             this.leftSlot.removeChild(this.leftSlot.firstChild);
         }
         this.leftSlot.appendChild(leftElement);
-        // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
-        this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.reattachActiveScrollbarMarkerTrack();
 
         // 右スロットの全子要素を取り除いてから新しい右ペインを追加する
         while (this.rightSlot.firstChild) {
@@ -322,8 +321,7 @@ export class Editor {
         wrapper.classList.add('editor-left-pane', 'diff-view-wrapper');
         diffView.appendTo(wrapper);
         this.leftSlot.appendChild(wrapper);
-        // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
-        this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.reattachActiveScrollbarMarkerTrack();
 
         // 右スロットを非表示にして差分ビューを全幅で表示する
         this.rightSlot.style.display = 'none';
@@ -340,8 +338,7 @@ export class Editor {
             this.leftSlot.removeChild(this.leftSlot.firstChild);
         }
         this.leftSlot.appendChild(this.leftPane);
-        // スクロールバーマーカートラックを再追加する（leftSlot クリアで除去されるため）
-        this.scrollbarMarkerTrack.reattach(this.leftSlot);
+        this.reattachActiveScrollbarMarkerTrack();
         // RelationsPanel のトグル状態を尊重して右スロットの表示を復元する
         this.applyRelationsPanelVisibility();
     }
@@ -461,6 +458,13 @@ export class Editor {
             this.rightSlot.style.flexShrink = '0';
             this.rightSlot.style.flexBasis = '0';
         }
+    }
+
+    private reattachActiveScrollbarMarkerTrack(): void {
+        if (this.tab === false) return;
+        const activeState = this.tab.getActiveTabState();
+        if (activeState === false) return;
+        activeState.editorTable.reattachScrollbarMarkerTrack();
     }
 
     /** リスナーに表示/非表示の変更を通知する */

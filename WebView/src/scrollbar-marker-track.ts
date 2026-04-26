@@ -1,7 +1,7 @@
 /**
  * ScrollbarMarkerTrack — 右側スクロールバー上にエラー・git変更・差分マーカーを描画する
  *
- * Canvas ベースで .editor-left-slot 相当の親要素に配置し、右端スクロールバー上に重ねて表示する。
+ * Canvas ベースでスクロール viewport のオーバーレイ親要素に配置し、右端スクロールバー上に重ねて表示する。
  * 行のピクセル座標からマーカー比率を算出し、縦方向の位置へ反映する。
  *
  * 描画レーン（幅を3分割）:
@@ -29,7 +29,7 @@ export class ScrollbarMarkerTrack {
 
     private readonly canvas: HTMLCanvasElement;
     private readonly resizeObserver: ResizeObserver;
-    private readonly scrollContainer: HTMLElement;
+    private scrollContainer: HTMLElement;
     private errorMarkers: ReadonlyArray<MarkerEntry>;
     private gitChangedMarkers: ReadonlyArray<MarkerEntry>;
     /** 差分ビュー専用: 削除行マーカー（赤、第1レーン） */
@@ -51,16 +51,9 @@ export class ScrollbarMarkerTrack {
 
         // コンテナリサイズ時に canvas サイズを同期して再描画する。
         // clientHeight をトラック長、TRACK_THICKNESS を太さに設定する。
-        this.resizeObserver = new ResizeObserver(() => {
-            const dpr = window.devicePixelRatio;
-            const trackLength = this.scrollContainer.clientHeight;
-            this.canvas.width = Math.round(TRACK_THICKNESS * dpr);
-            this.canvas.height = Math.round(Math.max(0, trackLength) * dpr);
-            // CSS height を明示設定（dpr > 1 でのずれ防止）
-            this.canvas.style.height = `${Math.max(0, trackLength)}px`;
-            this.redraw();
-        });
+        this.resizeObserver = new ResizeObserver(() => { this.resizeCanvas(); });
         this.resizeObserver.observe(scrollContainer);
+        this.resizeCanvas();
     }
 
     /**
@@ -97,16 +90,31 @@ export class ScrollbarMarkerTrack {
     }
 
     /**
-     * canvas を指定した親要素に再追加する。
-     * Editor.setVisiblePanes() 等で leftSlot の子要素が全クリアされた後に呼ばれる。
+     * canvas を指定した親要素に再追加し、監視対象のスクロールコンテナを必要に応じて差し替える。
      */
-    reattach(parentElement: HTMLElement): void {
+    reattach(parentElement: HTMLElement, scrollContainer: HTMLElement): void {
         parentElement.appendChild(this.canvas);
+        if (this.scrollContainer !== scrollContainer) {
+            this.resizeObserver.disconnect();
+            this.scrollContainer = scrollContainer;
+            this.resizeObserver.observe(scrollContainer);
+        }
+        this.resizeCanvas();
     }
 
     /** ResizeObserver を解放する */
     destroy(): void {
         this.resizeObserver.disconnect();
+    }
+
+    private resizeCanvas(): void {
+        const dpr = window.devicePixelRatio;
+        const trackLength = this.scrollContainer.clientHeight;
+        this.canvas.width = Math.round(TRACK_THICKNESS * dpr);
+        this.canvas.height = Math.round(Math.max(0, trackLength) * dpr);
+        // CSS height を明示設定（dpr > 1 でのずれ防止）
+        this.canvas.style.height = `${Math.max(0, trackLength)}px`;
+        this.redraw();
     }
 
     /**

@@ -187,6 +187,7 @@
 - ResizeObserver.observe() target not updated in reattach() (currently safe because leftSlot is stable)
 - refreshGitDiffAsync exception catch path + applyGitDiffHighlight storeRows===false path: マーカークリア追加で解決済み
 - destroy() method exists but is never called (dead code)
+- **display:none 初期化 × 仮想スクロール計測汚染**: wrapper を初回 activate 前に hidden にすると `initialize() -> virtualScroll.forceRecalculate()` が `clientHeight=0` / `headerHeight` 未計測のまま走る。初回表示で 41 行しか描画されない・コメント付き2行ヘッダー補正が外れるため、表示後に `forceVirtualScrollRecalculate()` 相当の再計測が必要
 
 ## HorizontalScrollbarMarkerTrack Patterns (2026-04-04)
 - 垂直版ScrollbarMarkerTrackの水平コピー。Editor生成、全タブ共有、connectで接続

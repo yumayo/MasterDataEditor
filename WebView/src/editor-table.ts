@@ -1871,6 +1871,7 @@ export class EditorTable {
     activate(): void {
         this.selectionDragController.activate();
         this.isActive = true;
+        this.reattachScrollbarMarkerTrack();
         // タブ切り替え時に保持済みのマーカーデータを再描画する
         this.refreshScrollbarMarkers();
     }
@@ -2586,8 +2587,28 @@ export class EditorTable {
      */
     connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void {
         this.scrollbarMarkerTrack = track;
+        if (this.isActive) this.reattachScrollbarMarkerTrack();
         // 接続前にデータが蓄積されている場合に即座にマーカーを描画する
         this.refreshScrollbarMarkers();
+    }
+
+    createScrollbarMarkerTrack(cssClass: string): ScrollbarMarkerTrack {
+        const target = this.resolveScrollbarMarkerTarget();
+        return new ScrollbarMarkerTrack(target.parentElement, target.scrollContainer, cssClass);
+    }
+
+    reattachScrollbarMarkerTrack(): void {
+        if (this.scrollbarMarkerTrack === false) return;
+        if (this.isMiniTable) return;
+        const target = this.resolveScrollbarMarkerTarget();
+        this.scrollbarMarkerTrack.reattach(target.parentElement, target.scrollContainer);
+    }
+
+    private resolveScrollbarMarkerTarget(): { parentElement: HTMLElement; scrollContainer: HTMLElement } {
+        if (this.usesInternalMainViewport) return {parentElement: this.bottomRightPane, scrollContainer: this.scrollContainer};
+        const parentElement = this.scrollContainer.parentElement;
+        if (parentElement === null) throw new Error(`[EditorTable.resolveScrollbarMarkerTarget] scrollContainer の親要素がありません: table=${this.tableName}`);
+        return {parentElement, scrollContainer: this.scrollContainer};
     }
 
     getScrollLeft(): number {

@@ -185,7 +185,7 @@ export class DiffTab {
         diffTabContent.classList.add('diff-tab');
         wrapperElement.appendChild(diffTabContent);
 
-        // 左ペインスロット（ScrollbarMarkerTrack 配置用ラッパー、.editor-left-slot と同パターン）
+        // 左ペインスロット（差分ペインの配置ラッパー）
         const leftPaneSlot = document.createElement('div');
         leftPaneSlot.classList.add('diff-pane-left-slot');
         diffTabContent.appendChild(leftPaneSlot);
@@ -364,9 +364,9 @@ export class DiffTab {
         this.leftEditorTable.forceVirtualScrollFullRerender();
         this.rightEditorTable.forceVirtualScrollFullRerender();
 
-        // 差分マーカートラックを各ペインスロットに配置する（.editor-left-slot と同パターン）
-        this.leftTrack = new ScrollbarMarkerTrack(leftPaneSlot, leftPaneElement, 'scrollbar-marker-track');
-        this.rightTrack = new ScrollbarMarkerTrack(rightPaneSlot, rightPaneElement, 'scrollbar-marker-track');
+        // 差分マーカートラックを各EditorTableの実スクロール領域に配置する。
+        this.leftTrack = this.leftEditorTable.createScrollbarMarkerTrack('scrollbar-marker-track');
+        this.rightTrack = this.rightEditorTable.createScrollbarMarkerTrack('scrollbar-marker-track');
 
         // 左ペイン（HEAD版）は常に読み取り専用にする
         // makeReadOnly() により Ctrl+S も禁止される（不正パスへの書き込み防止）

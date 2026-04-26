@@ -8,6 +8,8 @@
 - ISSUE_0112まで含む最新版
 - ファイル: project_fixed_rows_rendering_overlay.md
 - 固定行で内容欠落・背景透け・境界崩れが同時発生した場合は、固定オーバーレイ層の重大破綻として扱う
+- ファイル: project_shared_scrollbar_marker_ownership.md
+- 共有 `scrollbar-marker-track` の hidden wrapper 退避パターンと、2026-04-27 時点での `.editor-table-pane-bottom-right` 直下への修正確認を記録
 
 ### このプロジェクトの評価軸メモ
 - 核心機能 = 外部キー参照の苦痛解消（定義ジャンプ、RelationsPanel）

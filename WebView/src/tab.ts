@@ -992,8 +992,8 @@ export class Tab {
         // 既存のタブ状態があればそれを表示
         const existingState = this.tabStates.get(name);
         if (existingState) {
-            this.activateTabState(existingState);
             this.activeTabName = name;
+            this.activateTabState(existingState);
             this.sidebar.notifyActiveTableChanged(name);
             // 他タブでストアが変更されたセルのDOMを同期する
             // reloadCellsFromStore はソート/フィルター状態をクリアするため、退避した状態を復元する
@@ -1976,6 +1976,7 @@ export class Tab {
             wrapperElement.style.position = 'sticky';
             wrapperElement.style.top = '0';
             wrapperElement.style.left = '0';
+            wrapperElement.style.display = 'none';
             this.editor.appendChild(wrapperElement);
 
             // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
@@ -2066,13 +2067,6 @@ export class Tab {
             };
             this.tabStates.set(name, state);
 
-            // openTableAsync() で待機中の呼び出し元に完了を通知する
-            const pendingResolve = this.pendingTableOpens.get(name);
-            if (pendingResolve !== null && pendingResolve !== undefined) {
-                this.pendingTableOpens.delete(name);
-                pendingResolve(true);
-            }
-
             // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
             // activateTabState の前にチェックする理由:
             //   activateTabState → RelationsPanel更新 → 旧ミニテーブルのHistory破棄 という流れで
@@ -2080,14 +2074,18 @@ export class Tab {
             const isDirtyOnCreate = this.store.isTableDirty(name);
 
             // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
-            this.activateTabState(state);
             this.activeTabName = name;
+            this.activateTabState(state);
             this.sidebar.notifyActiveTableChanged(name);
+            state.editorTable.forceVirtualScrollRecalculate();
             this.editor.syncActiveTableScrollState();
 
             if (isDirtyOnCreate) {
                 tabButton.setDirty(true);
             }
+
+            // openTableAsync() で待機中の呼び出し元には、タブの正式なアクティブ化が完了してから通知する。
+            this.resolvePendingTableOpen(name, true);
 
             // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
             state.editorTable.forceRefreshRelationsPanel();
@@ -2101,12 +2099,18 @@ export class Tab {
             this.consumePendingNavigation(state);
         }).catch(() => {
             // スキーマ読み込み失敗時にpending解決を通知する
-            const pendingResolve = this.pendingTableOpens.get(name);
-            if (pendingResolve !== null && pendingResolve !== undefined) {
-                this.pendingTableOpens.delete(name);
-                pendingResolve(false);
-            }
+            this.resolvePendingTableOpen(name, false);
         });
+    }
+
+    private resolvePendingTableOpen(name: string, success: boolean): void {
+        for (const [pendingName, pendingResolve] of this.pendingTableOpens) {
+            if (pendingName === name) {
+                this.pendingTableOpens.delete(pendingName);
+                pendingResolve(success);
+                return;
+            }
+        }
     }
 
     /**
