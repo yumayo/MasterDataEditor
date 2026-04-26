@@ -150,7 +150,7 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 			// 期待: ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行（slash と flame が FK=1 に対応する）
 			// リグレッションがある場合: FK値が非連続なため、最初の FK=1 の行 (slash) だけが
 			// 検出されて flame が欠落し、ヘッダー行(1) + データ行(1) + バッファ行(1) = 3行になる
-			await expect(allRows, 'enemy id=1 を選択したとき、FK=1 の行（slash, flame）が2件ミニテーブルに表示されるべき').toHaveCount(4);
+			await expect(allRows, 'enemy id=1 を選択したとき、FK=1 の行（slash, flame）が2件ミニテーブルに表示されるべき').toHaveCount(3);
 		},
 	);
 
@@ -166,7 +166,7 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 			// 2番目のデータ行（id=3, flame）が表示されていることを確認する
 			// DOM構造: 行0=ヘッダー行、行1=1番目データ行(slash)、行2=2番目データ行(flame)
 			// リグレッションがある場合: 行2が存在しない（flame が欠落している）
-			const secondDataRow = miniTable.locator('.editor-table-row').nth(2);
+			const secondDataRow = miniTable.locator('.editor-table-row').nth(1);
 			await expect(secondDataRow, '2番目のデータ行（flame）がミニテーブルに存在するべき').toBeVisible();
 
 			// 2番目のデータ行に "flame" が含まれることを確認する
@@ -191,7 +191,7 @@ test.describe('リグレッション1: ミニテーブルでFK値が非連続で
 
 			// 期待: ヘッダー行(1) + データ行(2) + バッファ行(1) = 4行（thunder と blizzard が FK=2 に対応する）
 			// リグレッションがある場合: blizzard が欠落して3行になる
-			await expect(allRows, 'enemy id=2 を選択したとき、FK=2 の行（thunder, blizzard）が2件ミニテーブルに表示されるべき').toHaveCount(4);
+			await expect(allRows, 'enemy id=2 を選択したとき、FK=2 の行（thunder, blizzard）が2件ミニテーブルに表示されるべき').toHaveCount(3);
 		},
 	);
 
@@ -321,7 +321,7 @@ test.describe('バッファ空行への入力が保存されること', () => {
 
 			// データ行は2行（id=1,id=2）。3行目（rowIndex=3）はバッファ空行。
 			// DOM構造: ヘッダー行(nth(0)) + id=1行(nth(1)) + id=2行(nth(2)) + バッファ行(nth(3))...
-			const bufferRow = itemTable.locator('.editor-table-row').nth(3);
+			const bufferRow = itemTable.locator('.editor-table-row').nth(2);
 			// 最初のデータセル（id列）をダブルクリックして編集する
 			const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 			await expect(idCell).toBeVisible();
@@ -363,7 +363,7 @@ test.describe('バッファ空行への入力が保存されること', () => {
 			const itemTable = await openTableAsync(page, 'item');
 
 			// バッファ空行（3行目）のid列にデータを入力する
-			const bufferRow = itemTable.locator('.editor-table-row').nth(3);
+			const bufferRow = itemTable.locator('.editor-table-row').nth(2);
 			const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 			await idCell.dblclick();
 			const editField = page.locator('.grid-textfield-active').first();
@@ -462,10 +462,10 @@ test.describe('Fill操作でバッファ空行にデータがフィルされた�
 			// item.csv: id=1(sword/100), id=2(shield/200)の2行
 			// DOM構造: row[0]=ヘッダー、row[1]=id=1行、row[2]=id=2行、row[3]=バッファ空行...
 			// id=2行（row[2]）のid列（col=1）をフィルハンドルでrow[3]（バッファ空行）までドラッグする
-			await fillDownWithHandleAsync(page, itemTable, 2, 3, 1);
+			await fillDownWithHandleAsync(page, itemTable, 1, 2, 1);
 
 			// フィル後、バッファ空行に id=2 の値がコピーされていることをDOMで確認する
-			const bufferRow = itemTable.locator('.editor-table-row').nth(3);
+			const bufferRow = itemTable.locator('.editor-table-row').nth(2);
 			const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 			await expect(idCell).toHaveText('2');
 
@@ -493,10 +493,10 @@ test.describe('Fill操作でバッファ空行にデータがフィルされた�
 			const itemTable = await openTableAsync(page, 'item');
 
 			// id=2行のid列をバッファ空行までドラッグフィルする
-			await fillDownWithHandleAsync(page, itemTable, 2, 3, 1);
+			await fillDownWithHandleAsync(page, itemTable, 1, 2, 1);
 
 			// フィル後の値確認
-			const bufferRow = itemTable.locator('.editor-table-row').nth(3);
+			const bufferRow = itemTable.locator('.editor-table-row').nth(2);
 			const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 			await expect(idCell).toHaveText('2');
 
@@ -535,7 +535,7 @@ test.describe('リグレッション2: 通常テーブルの最下行データ�
 
 			// 最終行（rowIndex=2, id=3, potion）のvalue列をダブルクリックして編集する
 			// ヘッダー行(nth(0)) + 1行目(nth(1)) + 2行目(nth(2)) + 3行目(nth(3)) = 4行
-			const lastDataRow = itemTable.locator('.editor-table-row').nth(3);
+			const lastDataRow = itemTable.locator('.editor-table-row').nth(2);
 			const valueCell = lastDataRow.locator(
 				'.editor-table-cell:not(.editor-table-row-header)'
 			).nth(2);
@@ -594,7 +594,7 @@ test.describe('リグレッション2: 通常テーブルの最下行データ�
 			// ヘッダー行(1) + データ行(4) = 5行
 			// バッファ空行（editor-table-empty-row）は除外して実データ行のみカウントする
 			const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-			await expect(allRows).toHaveCount(5);
+			await expect(allRows).toHaveCount(4);
 
 			// Ctrl+S で保存する（行挿入で追加した空行も含めて保存）
 			await itemTable.click();
@@ -647,7 +647,7 @@ test.describe('リグレッション2: 通常テーブルの最下行データ�
 			// ヘッダー行(1) + データ行(4) = 5行
 			// バッファ空行（editor-table-empty-row）は除外して実データ行のみカウントする
 			const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-			await expect(allRows).toHaveCount(5);
+			await expect(allRows).toHaveCount(4);
 
 			// Ctrl+S で保存する
 			await itemTable.click();
@@ -692,7 +692,7 @@ test.describe('リグレッション2: 通常テーブルの最下行データ�
 			// 行が追加されてテーブルに4データ行が表示されることを確認する
 			// バッファ空行（editor-table-empty-row）は除外して実データ行のみカウントする
 			const allRows = itemTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-			await expect(allRows).toHaveCount(5);
+			await expect(allRows).toHaveCount(4);
 
 			// Ctrl+S で保存する
 			await itemTable.click();

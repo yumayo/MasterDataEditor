@@ -150,14 +150,6 @@
     pointer-events: auto;
 }
 
-.editor-table-detached-frozen-row-layer .editor-table-cell {
-    pointer-events: none;
-}
-
-.editor-table--quadrant-layout .editor-table-detached-frozen-row-layer .editor-table-cell {
-    pointer-events: auto;
-}
-
 .editor-table-detached-frozen-row-background {
     position: absolute;
     left: 0;
@@ -197,7 +189,8 @@
     font-size: 0;
 }
 
-.editor-table-row {
+.editor-table-row,
+.editor-table-source-column-header-row {
     display: table-row;
 }
 
@@ -219,6 +212,7 @@
 /* テーブルのセルの上の線の描画。
    固定行/列の分離レイヤーは .editor-table-row ではなく .editor-table-detached-row なので同じ罫線を当てる。 */
 .editor-table-row .editor-table-cell,
+.editor-table-source-column-header-row .editor-table-cell,
 .editor-table-detached-row .editor-table-cell {
     border-bottom: 1px solid var(--background-color);
 }
@@ -229,8 +223,13 @@
 }
 
 /* 列ヘッダー行のスタイル */
-.editor-table-column-header-row {
+.editor-table-column-header-row,
+.editor-table-source-column-header-row {
     background-color: var(--background-color);
+}
+
+.editor-table-detached-row.editor-table-column-header-row {
+    display: table;
 }
 
 /* 列ヘッダーセルのスタイル */

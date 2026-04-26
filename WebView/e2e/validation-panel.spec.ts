@@ -121,7 +121,7 @@ async function editCellAsync(
     newValue: string,
 ): Promise<void> {
     // ヘッダー行（nth(0)）を除いてデータ行を取得する
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await expect(cell).toBeVisible();
     await cell.dblclick();
@@ -138,7 +138,7 @@ async function editCellAsync(
  * rowIndex: 0始まり（ヘッダー行を除く）
  */
 function getPkCell(table: Locator, rowIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 }
 
@@ -147,7 +147,7 @@ function getPkCell(table: Locator, rowIndex: number): Locator {
  * rowIndex: 0始まり、colIndex: 0始まり（行ヘッダーを除く）
  */
 function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 

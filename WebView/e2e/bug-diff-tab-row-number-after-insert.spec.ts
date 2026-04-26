@@ -144,8 +144,8 @@ test.describe('BUG — 差分ビューで右ペインに行挿入後の左ペイ
             await expect(rightTable).toBeVisible();
 
             // 右ペインの初期構成確認:
-            // header(nth=0) + id=1(nth=1) + id=2(nth=2) + id=3(nth=3) + padding(nth=4) = 5行
-            await expect(rightTable.locator('.editor-table-row')).toHaveCount(5);
+            // id=1(nth=0) + id=2(nth=1) + id=3(nth=2) + padding(nth=3) = 4行
+            await expect(rightTable.locator('.editor-table-row')).toHaveCount(4);
 
             // 右ペインの2行目データ行（id=2: .editor-table-row-header の nth=1）を右クリックする
             // nth=0: id=1, nth=1: id=2, nth=2: id=3, nth=3: initial-padding
@@ -159,14 +159,14 @@ test.describe('BUG — 差分ビューで右ペインに行挿入後の左ペイ
             await expect(contextMenu).toBeVisible();
             await contextMenu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
 
-            // 挿入後: 右ペインの行数が1増加すること（6行）
-            // header(0) + id=1(1) + id=2(2) + 新規行(3) + id=3(4) + padding(5) = 6行
-            await expect(rightTable.locator('.editor-table-row')).toHaveCount(6);
+            // 挿入後: 右ペインの行数が1増加すること（5行）
+            // id=1(0) + id=2(1) + 新規行(2) + id=3(3) + padding(4) = 5行
+            await expect(rightTable.locator('.editor-table-row')).toHaveCount(5);
 
             // 挿入後の左ペイン構成:
-            // header(0) + id=1(1) + id=2(2) + 新規パディング行(3) + id=3(4) + id=4 deleted(5) = 6行
-            // 左ペインの行数も6行になっていること（パディング行同期済み）
-            await expect(leftTable.locator('.editor-table-row')).toHaveCount(6);
+            // id=1(0) + id=2(1) + 新規パディング行(2) + id=3(3) + id=4 deleted(4) = 5行
+            // 左ペインの行数も5行になっていること（パディング行同期済み）
+            await expect(leftTable.locator('.editor-table-row')).toHaveCount(5);
 
             // 左ペインの新規パディング行（diff-row-padding-inserted）を取得する
             const newPaddingRow = leftTable.locator('.editor-table-row.diff-row-padding-inserted');
@@ -223,7 +223,7 @@ test.describe('BUG — 差分ビューで右ペインに行挿入後の左ペイ
 
             // 挿入前の左ペインの行番号を確認する（初期状態は正しく 1, 2, 3, 4 の順）
             // データ行の行ヘッダー: nth=0がid=1(「1」), nth=1がid=2(「2」), nth=2がid=3(「3」), nth=3がid=4(「4」)
-            const leftRowHeaders = leftTable.locator('.editor-table-row-header');
+            const leftRowHeaders = leftTable.locator('.editor-table-grid .editor-table-row-header');
             await expect(leftRowHeaders.nth(0)).toHaveText('1');
             await expect(leftRowHeaders.nth(1)).toHaveText('2');
             await expect(leftRowHeaders.nth(2)).toHaveText('3');
@@ -237,11 +237,11 @@ test.describe('BUG — 差分ビューで右ペインに行挿入後の左ペイ
             await expect(contextMenu).toBeVisible();
             await contextMenu.locator('.context-menu-item', { hasText: '上に行を挿入' }).click();
 
-            // 挿入後: 右ペインの行数が1増加すること（6行）
-            await expect(rightTable.locator('.editor-table-row')).toHaveCount(6);
+            // 挿入後: 右ペインの行数が1増加すること（5行）
+            await expect(rightTable.locator('.editor-table-row')).toHaveCount(5);
 
-            // 挿入後: 左ペインの行数も1増加すること（6行）
-            await expect(leftTable.locator('.editor-table-row')).toHaveCount(6);
+            // 挿入後: 左ペインの行数も1増加すること（5行）
+            await expect(leftTable.locator('.editor-table-row')).toHaveCount(5);
 
             // 挿入後の左ペイン行ヘッダー:
             // nth=0: 新規パディング行（DOM=1） → 行番号は "1"
@@ -256,7 +256,7 @@ test.describe('BUG — 差分ビューで右ペインに行挿入後の左ペイ
             // 新規パディング行（nth=0）の行番号が表示されていること
             // 挿入位置（DOM rowIndex=1）に対応する行番号は "1"。
             // createPaddingRow() が textContent を設定しないため空になる → RED
-            const updatedLeftRowHeaders = leftTable.locator('.editor-table-row-header');
+            const updatedLeftRowHeaders = leftTable.locator('.editor-table-grid .editor-table-row-header');
             await expect(updatedLeftRowHeaders.nth(0)).toHaveText('1');
 
             // 既存行の行番号が再ナンバリングされていること

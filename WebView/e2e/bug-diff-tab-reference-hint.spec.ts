@@ -120,7 +120,7 @@ const test = base.extend<DiffTabReferenceHintFixtures>({
  * colIndex: 0始まり（行ヘッダーを除く）
  */
 function getDiffPaneReferenceHint(pane: import('@playwright/test').Locator, rowIndex: number, colIndex: number): import('@playwright/test').Locator {
-    const row = pane.locator('.editor-table .editor-table-row').nth(rowIndex + 1);
+    const row = pane.locator('.editor-table .editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     return cell.locator('.cell-reference-hint');
 }

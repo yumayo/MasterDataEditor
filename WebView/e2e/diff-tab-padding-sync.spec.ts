@@ -135,7 +135,7 @@ test.describe('差分ビューのパディング行同期', () => {
             const leftTable = leftPane.locator('.editor-table');
             const rightTable = rightPane.locator('.editor-table');
 
-            // 初期行数を取得する（列ヘッダー行 + データ行の合計。nth(0) が列ヘッダー行、nth(1) からデータ行）
+            // 初期行数を取得する（.editor-table-row はデータ行のみ）
             const initialLeftRowCount = await leftTable.locator('.editor-table-row').count();
             const initialRightRowCount = await rightTable.locator('.editor-table-row').count();
             expect(initialLeftRowCount).toBe(initialRightRowCount);
@@ -160,9 +160,8 @@ test.describe('差分ビューのパディング行同期', () => {
             const afterLeftRowCount = await leftTable.locator('.editor-table-row').count();
             expect(afterLeftRowCount).toBe(afterRightRowCount);
 
-            // 左ペインの挿入位置（データ1行目 = .editor-table-row の nth(1)）に diff-row-empty クラスが付いていること
-            // nth(0) が列ヘッダー行（editor-table-column-header-row）、nth(1) がデータ1行目
-            const firstLeftDataRow = leftTable.locator('.editor-table-row').nth(1);
+            // 左ペインの挿入位置（データ1行目 = .editor-table-row の nth(0)）に diff-row-empty クラスが付いていること
+            const firstLeftDataRow = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRow).toHaveClass(/diff-row-empty/);
         },
     );
@@ -228,12 +227,12 @@ test.describe('差分ビューのパディング行同期', () => {
 
             // 右ペインの削除された行（1行目データ行）が diff-row-empty クラスを持つこと
             // 現行実装ではDOMが削除されてこの行は存在しなくなるため、失敗してREDになる
-            const firstRightDataRow = rightTable.locator('.editor-table-row').nth(1);
+            const firstRightDataRow = rightTable.locator('.editor-table-row').nth(0);
             await expect(firstRightDataRow).toHaveClass(/diff-row-empty/);
 
             // 左ペインの同一位置（1行目データ行）に diff-row-deleted クラスが付くこと
             // 現行実装では左ペインへの同期処理がないため、このアサーションが失敗してREDになる
-            const firstLeftDataRow = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRow = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRow).toHaveClass(/diff-row-deleted/);
 
             // 左右ペインの行数が一致し続けること
@@ -299,11 +298,11 @@ test.describe('差分ビューのパディング行同期', () => {
             // 現行実装ではこのアサーションが失敗してREDになる
             const afterInsertLeftRowCount = await leftTable.locator('.editor-table-row').count();
             expect(afterInsertLeftRowCount).toBe(initialLeftRowCount + 1);
-            const firstLeftDataRowAfterInsert = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterInsert = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterInsert).toHaveClass(/diff-row-empty/);
 
             // 右ペインのセルをクリックしてフォーカスを確保してからUndoする
-            const firstRightDataCell = rightTable.locator('.editor-table-row').nth(1)
+            const firstRightDataCell = rightTable.locator('.editor-table-row').nth(0)
                 .locator('.editor-table-cell:not(.editor-table-row-header)').first();
             await firstRightDataCell.click();
             await page.keyboard.press('Control+z');
@@ -314,12 +313,12 @@ test.describe('差分ビューのパディング行同期', () => {
             expect(afterUndoLeftRowCount).toBe(initialLeftRowCount);
 
             // Undo後: 挿入位置にパディング行がなくなること（元の行に戻る）
-            const firstLeftDataRowAfterUndo = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterUndo = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterUndo).not.toHaveClass(/diff-row-empty/);
 
             // Redo前に右ペインのセルをクリックしてフォーカスを確保する
             // Undoで挿入行が削除されると、クリック済みのセルがDOMから除去されフォーカスが失われるため
-            const rightCellBeforeRedo = rightTable.locator('.editor-table-row').nth(1)
+            const rightCellBeforeRedo = rightTable.locator('.editor-table-row').nth(0)
                 .locator('.editor-table-cell:not(.editor-table-row-header)').first();
             await rightCellBeforeRedo.click();
 
@@ -329,7 +328,7 @@ test.describe('差分ビューのパディング行同期', () => {
             // Redo後: 左ペインに再びパディング行が挿入されること
             // toHaveCount はPlaywright auto-retrying assertionのため、DOMの更新を待機する
             await expect(leftTable.locator('.editor-table-row')).toHaveCount(initialLeftRowCount + 1);
-            const firstLeftDataRowAfterRedo = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterRedo = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterRedo).toHaveClass(/diff-row-empty/);
         },
     );
@@ -390,11 +389,11 @@ test.describe('差分ビューのパディング行同期', () => {
             expect(afterDeleteRightRowCount).toBe(initialRowCount);
 
             // 削除後: 右ペインの1行目データ行が diff-row-empty になっていること
-            const firstRightDataRowAfterDelete = rightTable.locator('.editor-table-row').nth(1);
+            const firstRightDataRowAfterDelete = rightTable.locator('.editor-table-row').nth(0);
             await expect(firstRightDataRowAfterDelete).toHaveClass(/diff-row-empty/);
 
             // 削除後: 左ペインの1行目データ行に diff-row-deleted が付いていること
-            const firstLeftDataRowAfterDelete = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterDelete = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterDelete).toHaveClass(/diff-row-deleted/);
 
             // 左右ペインの行数が一致していること
@@ -402,7 +401,7 @@ test.describe('差分ビューのパディング行同期', () => {
             expect(afterDeleteLeftRowCount).toBe(afterDeleteRightRowCount);
 
             // 右ペインの2行目データ行をクリックしてフォーカスを確保してからUndoする
-            const secondRightDataCell = rightTable.locator('.editor-table-row').nth(2)
+            const secondRightDataCell = rightTable.locator('.editor-table-row').nth(1)
                 .locator('.editor-table-cell:not(.editor-table-row-header)').first();
             await secondRightDataCell.click();
             await page.keyboard.press('Control+z');
@@ -410,11 +409,11 @@ test.describe('差分ビューのパディング行同期', () => {
             // Undo後: 右ペインの1行目データ行が diff-row-empty でなくなっていること（データが復元）
             // toHaveCount はPlaywright auto-retrying assertionのため、DOMの更新を待機する
             await expect(rightTable.locator('.editor-table-row')).toHaveCount(initialRowCount);
-            const firstRightDataRowAfterUndo = rightTable.locator('.editor-table-row').nth(1);
+            const firstRightDataRowAfterUndo = rightTable.locator('.editor-table-row').nth(0);
             await expect(firstRightDataRowAfterUndo).not.toHaveClass(/diff-row-empty/);
 
             // Undo後: 左ペインの1行目データ行の diff-row-deleted が除去されていること
-            const firstLeftDataRowAfterUndo = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterUndo = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterUndo).not.toHaveClass(/diff-row-deleted/);
 
             // Undo後: 左右ペインの行数が一致していること
@@ -423,16 +422,16 @@ test.describe('差分ビューのパディング行同期', () => {
             expect(afterUndoLeftRowCount).toBe(afterUndoRightRowCount);
 
             // 右ペインのセルをクリックしてフォーカスを確保してからRedoする
-            const rightCellBeforeRedo = rightTable.locator('.editor-table-row').nth(1)
+            const rightCellBeforeRedo = rightTable.locator('.editor-table-row').nth(0)
                 .locator('.editor-table-cell:not(.editor-table-row-header)').first();
             await rightCellBeforeRedo.click();
             await page.keyboard.press('Control+y');
 
             // Redo後: 再び行削除状態になること（右ペインが diff-row-empty、左ペインに diff-row-deleted）
             await expect(rightTable.locator('.editor-table-row')).toHaveCount(initialRowCount);
-            const firstRightDataRowAfterRedo = rightTable.locator('.editor-table-row').nth(1);
+            const firstRightDataRowAfterRedo = rightTable.locator('.editor-table-row').nth(0);
             await expect(firstRightDataRowAfterRedo).toHaveClass(/diff-row-empty/);
-            const firstLeftDataRowAfterRedo = leftTable.locator('.editor-table-row').nth(1);
+            const firstLeftDataRowAfterRedo = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterRedo).toHaveClass(/diff-row-deleted/);
 
             // Redo後: 左右ペインの行数が一致していること

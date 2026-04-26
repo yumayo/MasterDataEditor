@@ -69,7 +69,7 @@ async function editCellAsync(
     colIndex: number,
     newValue: string,
 ): Promise<void> {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await expect(cell).toBeVisible();
     await cell.dblclick();
@@ -85,7 +85,7 @@ async function editCellAsync(
  * rowIndex: 0始まり、colIndex: 0始まり（行ヘッダーを除く）
  */
 function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 

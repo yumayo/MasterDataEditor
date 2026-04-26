@@ -56,7 +56,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
  */
 function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
     // .editor-table-row の nth(0) はヘッダー行なので、nth(rowIndex + 1) がデータ行
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 

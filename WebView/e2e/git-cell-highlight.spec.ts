@@ -308,7 +308,7 @@ test.describe('gitセルハイライト', () => {
 
             // 列ヘッダー行（row=0）のセルには .cell-git-changed が付与されないことを確認する
             // プロダクションコードにヘッダー行除外実装が存在しないため失敗（RED）
-            const headerRow = table.locator('.editor-table-row').first();
+            const headerRow = table.locator('.editor-table-column-header-row').first();
             const headerCells = headerRow.locator('.editor-table-cell');
             const headerCellCount = await headerCells.count();
             for (let i = 0; i < headerCellCount; i++) {

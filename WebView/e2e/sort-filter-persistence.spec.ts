@@ -211,7 +211,7 @@ async function getColumnValuesAsync(table: Locator, colIndex: number): Promise<s
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const row = dataRows.nth(i);
         const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
         values.push(await cell.innerText());
@@ -227,7 +227,7 @@ async function getVisibleColumnValuesAsync(table: Locator, colIndex: number): Pr
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const row = dataRows.nth(i);
         const isVisible = await row.isVisible();
         if (!isVisible) continue;

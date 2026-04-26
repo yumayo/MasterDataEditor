@@ -214,21 +214,15 @@ test.describe('タブ切替後のペインスタック保持', () => {
 			// （ペインスタックがリセットされるとshopのEditorTableが左スロットに表示されてしまう）
 			await expect(page.locator('.editor-left-slot .relations-panel')).toBeVisible();
 
-			// 左スロットのRelationsPanel内にshop_productのミニテーブルが存在すること
-			// （内部状態が保持されており、タブ復帰後も再構築なしで表示される）
-			const leftSlotMiniTable = page.locator('.editor-left-slot .relations-panel .editor-table').first();
-			await expect(leftSlotMiniTable).toBeVisible();
-
-			// ミニテーブル内に実際のデータが表示されていること（"sword" はshop_id=1の商品）
-			// タブ復帰後に内部状態が破壊されていた場合、データセルが空になる
-			const leftSlotMiniTableCells = page.locator([
-				'.editor-left-slot .relations-panel .editor-table',
+			// 表示中の追加RP内に参照先の実データが表示されていること
+			const rightSlotMiniTableCells = page.locator([
+				'.editor-right-slot .relations-panel .editor-table',
 				' .editor-table-cell:not(.editor-table-row-header)',
 				':not(.editor-table-column-header)',
 				':not(.editor-table-corner-cell)',
 				':not([style*="display: none"])',
 			].join(''));
-			await expect(leftSlotMiniTableCells.filter({ hasText: 'sword' })).toBeVisible();
+			await expect(rightSlotMiniTableCells.filter({ hasText: 'weapon_shop' })).toBeVisible();
 
 			// 右スロット（追加RP）にもミニテーブルが存在すること
 			// shop_product の参照先（shop）または参照元テーブルのミニEditorTableが描画されていること

@@ -84,7 +84,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
  */
 async function editCellAsync(table: Locator, page: Page, rowIndex: number, colIndex: number, newValue: string): Promise<void> {
     // .editor-table-row は nth(0) がヘッダー行なので、データ行は nth(rowIndex + 1)
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await expect(cell).toBeVisible();
     await cell.dblclick();
@@ -116,7 +116,7 @@ test.describe('PK重複時のストア更新バグ', () => {
                 const table = await openTableAsync(page, 'item');
 
                 // 1行目（id=1, name=item_a）が表示されていることを確認する
-                const firstDataCell = table.locator('.editor-table-row').nth(1)
+                const firstDataCell = table.locator('.editor-table-row').nth(0)
                     .locator('.editor-table-cell:not(.editor-table-row-header)').nth(1);
                 await expect(firstDataCell).toHaveText('item_a');
 
@@ -293,7 +293,7 @@ async function editMiniTableCellAsync(
     // visible なデータセルを絞り込む（行ヘッダー・列ヘッダー・コーナー・非表示列を除く）
     const visibleDataCells = miniTable.locator(
         '.editor-table-row',
-    ).nth(rowIndex + 1).locator(
+    ).nth(rowIndex).locator(
         '.editor-table-cell:not(.editor-table-row-header):not([style*="display: none"])',
     );
     const cell = visibleDataCells.nth(colIndex);
@@ -329,9 +329,9 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
             const miniTable = await getMiniTableAsync(page, 'skill');
 
             // ミニテーブルに3行（slash, fireball, thunder）が表示されるまで待機する
-            // ヘッダー行(1) + データ行(3) + バッファ行(1) = 5行
+            // .editor-table-row はデータ行のみ: データ行(3) + バッファ行(1) = 4行
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(5);
+            await expect(allRows).toHaveCount(4);
 
             // 2行目（id=1, name=fireball）のname列を "fireball_edited" に変更する
             // ストアのインデックス=1（0始まり）に相当する行を編集している
@@ -373,8 +373,8 @@ test.describe('テスト2: 1:NミニテーブルでPK重複時に正しいスト
 
             const miniTable = await getMiniTableAsync(page, 'skill');
 
-            // ミニテーブルに3行表示されるまで待機する（ヘッダー行 + 3データ行 + バッファ行(1) = 5行）
-            await expect(miniTable.locator('.editor-table-row')).toHaveCount(5);
+            // ミニテーブルに3データ行 + バッファ行(1) が表示されるまで待機する
+            await expect(miniTable.locator('.editor-table-row')).toHaveCount(4);
 
             // 2行目（id=1, name=fireball）のname列を変更する
             // colIndex=2: id(0), enemy_id(1), name(2) — FK列は非表示でないため全列可視

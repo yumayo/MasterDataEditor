@@ -32,7 +32,7 @@ function getReferenceHint(
 ): Locator {
     const row = table
         .locator('.editor-table-row')
-        .nth(rowIndex + 1);
+        .nth(rowIndex);
     const cell = row
         .locator(
             '.editor-table-cell'

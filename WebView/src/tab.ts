@@ -1012,6 +1012,7 @@ export class Tab {
             this.reference.refreshReferenceHints(name, existingState);
             // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
             existingState.editorTable.forceRefreshRelationsPanel();
+            this.editor.syncActiveTableScrollState();
             // 既存タブの再アクティブ化では emitTableOpened を発火しない（Open/Close の対称性を維持するため）
             return;
         }
@@ -1972,7 +1973,9 @@ export class Tab {
             wrapperElement.classList.add('tab-wrapper');
             wrapperElement.dataset.tabName = name;
             wrapperElement.style.height = '100%';
-            wrapperElement.style.position = 'relative';
+            wrapperElement.style.position = 'sticky';
+            wrapperElement.style.top = '0';
+            wrapperElement.style.left = '0';
             this.editor.appendChild(wrapperElement);
 
             // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
@@ -2080,6 +2083,7 @@ export class Tab {
             this.activateTabState(state);
             this.activeTabName = name;
             this.sidebar.notifyActiveTableChanged(name);
+            this.editor.syncActiveTableScrollState();
 
             if (isDirtyOnCreate) {
                 tabButton.setDirty(true);

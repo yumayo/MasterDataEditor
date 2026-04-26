@@ -40,7 +40,7 @@ function getDataCell(
 ): Locator {
     const row = table
         .locator('.editor-table-row')
-        .nth(rowIndex + 1);
+        .nth(rowIndex);
     return row
         .locator(
             '.editor-table-cell'

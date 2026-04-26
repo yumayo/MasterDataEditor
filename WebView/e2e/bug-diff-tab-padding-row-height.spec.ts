@@ -188,7 +188,7 @@ test.describe('差分ビューの右ペインで行挿入したときのパデ�
 
             // 初期行数を確認する
             // HEAD=4行・Current=3行の差分なので、パディング行含めて左右とも4行のデータ行が表示される
-            // .editor-table-row には列ヘッダー行（nth(0)）+ データ行（nth(1)〜）が含まれる
+            // .editor-table-row はデータ行のみを数える
             const initialLeftRowCount = await leftTable.locator('.editor-table-row').count();
             const initialRightRowCount = await rightTable.locator('.editor-table-row').count();
             expect(initialLeftRowCount).toBe(initialRightRowCount);
@@ -201,11 +201,11 @@ test.describe('差分ビューの右ペインで行挿入したときのパデ�
             await dragSelectRowHeadersAsync(page, startRowHeader, endRowHeader);
 
             // 3行が選択されたことを確認する（行ヘッダーに selected クラスが付く）
-            const selectedRowHeaders = rightTable.locator('.editor-table-row-header.selected');
+            const selectedRowHeaders = rightTable.locator('.editor-table-grid .editor-table-row-header.selected');
             await expect(selectedRowHeaders).toHaveCount(3);
 
             // 選択した行ヘッダーを右クリックしてコンテキストメニューを表示する
-            const lastSelectedHeader = rightTable.locator('.editor-table-row-header').nth(3);
+            const lastSelectedHeader = rightTable.locator('.editor-table-detached-row .editor-table-row-header[data-row-index="3"]');
             await lastSelectedHeader.click({ button: 'right' });
 
             // コンテキストメニューが表示されることを確認する
@@ -227,12 +227,11 @@ test.describe('差分ビューの右ペインで行挿入したときのパデ�
             expect(afterLeftRowCount).toBe(afterRightRowCount);
 
             // 左ペインの5行目（挿入されたパディング行）のセルの高さを確認する
-            // DOM構造: nth(0) = 列ヘッダー行, nth(1)〜 = データ行
-            // 初期データは4行なので、挿入されたパディング行は nth(5)〜nth(7) の位置に入る
-            // 「5行目」= データ行の5番目 = DOM行インデックス5（列ヘッダー行 + データ4行の次）
+            // 初期データは4行なので、挿入されたパディング行は nth(4)〜nth(6) の位置に入る
+            // 「5行目」= データ行の5番目 = DOM行インデックス4
             // ※ 右ペインのデータ4行目の「下」に挿入されるため、左ペインのパディング行は
-            //   既存4行の後ろ（DOM行インデックス5〜7）に挿入される
-            const paddingRow = leftTable.locator('.editor-table-row').nth(5);
+            //   既存4行の後ろ（DOM行インデックス4〜6）に挿入される
+            const paddingRow = leftTable.locator('.editor-table-row').nth(4);
             await expect(paddingRow).toBeVisible();
 
             // パディング行が diff-row-empty クラスを持つことを確認する

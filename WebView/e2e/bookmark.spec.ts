@@ -663,6 +663,7 @@ test.describe('コマンドパレット @bookmark プレフィクス', () => {
 
     test('ブックマークが0件のとき@bookmarkで空メッセージが表示される', async ({page}) => {
         // ブックマークを追加せずにコマンドパレットを開く
+        await page.locator('body').click({position: {x: 1, y: 1}});
         await page.keyboard.press('Control+p');
         const paletteInput = page.locator('.command-palette-input');
         await paletteInput.fill('@bookmark');

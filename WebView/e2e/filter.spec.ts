@@ -182,8 +182,7 @@ async function getVisibleColumnValuesAsync(table: Locator, colIndex: number): Pr
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    // nth(0) はヘッダー行（editor-table-column-header-row）なのでスキップ
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const row = dataRows.nth(i);
         // display:none の非表示行はスキップ
         const isVisible = await row.isVisible();

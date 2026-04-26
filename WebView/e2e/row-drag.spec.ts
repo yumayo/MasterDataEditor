@@ -17,7 +17,7 @@ async function openTableAsync(page: Page): Promise<Locator> {
  * rowIndex: 0始まり（ヘッダー行を除く）
  */
 async function getRowCellTextsAsync(table: Locator, rowIndex: number): Promise<string[]> {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cells = row.locator('.editor-table-cell:not(.editor-table-row-header)');
     const count = await cells.count();
     const texts: string[] = [];
@@ -33,7 +33,7 @@ async function getRowCellTextsAsync(table: Locator, rowIndex: number): Promise<s
 async function getRowIdValuesAsync(table: Locator, count: number): Promise<string[]> {
     const values: string[] = [];
     for (let i = 0; i < count; ++i) {
-        const row = table.locator('.editor-table-row').nth(i + 1);
+        const row = table.locator('.editor-table-row').nth(i);
         const firstCell = row.locator('.editor-table-cell:not(.editor-table-row-header)').first();
         values.push(await firstCell.innerText());
     }
@@ -75,8 +75,12 @@ async function dragRowAsync(table: Locator, fromRowIndex: number, toRowIndex: nu
  * テーブルの最初のデータセルをクリックしてキーボードフォーカスを確保する
  */
 async function clickFirstCellAsync(table: Locator): Promise<void> {
-    // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
-    await table.locator('.editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)').click();
+    await table
+        .locator('.editor-table-row')
+        .first()
+        .locator('.editor-table-cell:not(.editor-table-row-header)')
+        .first()
+        .click();
 }
 
 /**

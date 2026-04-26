@@ -128,11 +128,9 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
             const miniEditorTable = shopProductSection.locator('.editor-table');
             await expect(miniEditorTable).toBeVisible();
 
-            // データ行（ヘッダー行 row=0 を除いた .editor-table-row）を数える
-            // .editor-table-row の nth(0) はヘッダー行なので、データ行は nth(1) 以降
             const allRows = miniEditorTable.locator('.editor-table-row');
-            // ヘッダー行(1) + データ行(2) + バッファ空行(1) = 合計4行あることを検証
-            await expect(allRows).toHaveCount(4);
+            // データ行(2) + バッファ空行(1) = 合計3行あることを検証
+            await expect(allRows).toHaveCount(3);
 
             // 行カウント表示も "2 rows" であることを確認
             const rowCountEl = shopProductSection.locator('.relations-table-row-count');
@@ -158,8 +156,8 @@ test.describe('バグ1: N:1リレーションで参照列がPK以外のとき複
 
             // group_id=2 に対応する行は id=3(Potion) の1件
             const allRows = shopProductSection.locator('.editor-table .editor-table-row');
-            // ヘッダー行(1) + データ行(1) + バッファ空行(1) = 合計3行
-            await expect(allRows).toHaveCount(3);
+            // データ行(1) + バッファ空行(1) = 合計2行
+            await expect(allRows).toHaveCount(2);
 
             const rowCountEl = shopProductSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');
@@ -457,10 +455,10 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
             const miniTable = questSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // ヘッダー行(1) + データ行(2) + バッファ行(1) = 合計4行
+            // データ行(2) + バッファ行(1) = 合計3行
             // enemy_id=1 に対応する行は id=1(first_quest) と id=2(second_quest) の2件
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(4);
+            await expect(allRows).toHaveCount(3);
 
             // 行カウント表示も "2 rows" であることを確認する
             const rowCountEl = questSection.locator('.relations-table-row-count');
@@ -483,10 +481,10 @@ test.describe('バグ4: 1:N子テーブルのタブが未開放でも右ペイ�
             const miniTable = questSection.locator('.editor-table');
             await expect(miniTable).toBeVisible();
 
-            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 合計3行
+            // データ行(1) + バッファ行(1) = 合計2行
             // enemy_id=2 に対応する行は id=3(dragon_quest) の1件
             const allRows = miniTable.locator('.editor-table-row');
-            await expect(allRows).toHaveCount(3);
+            await expect(allRows).toHaveCount(2);
 
             const rowCountEl = questSection.locator('.relations-table-row-count');
             await expect(rowCountEl).toHaveText('1 rows');
@@ -605,13 +603,13 @@ test.describe('バグ5: N:1ミニテーブルで参照対象列（PK列）がす
             await expect(miniTable).toBeVisible();
 
             // "id" 列のデータセルが display:none なしで visible であることを確認する。
-            // ヘッダー行（.editor-table-column-header を含む行）を除いたデータ行の id 列セルを取得する。
+            // データ行の id 列セルを取得する。
             // 変更前は hideColumnsByName() で "id" 列セルも display:none になるため FAIL する（RED）。
             // 変更後はすべてのセルが visible になるため GREEN になる。
             //
             // DOM上の列インデックス: 行ヘッダー(col=0), id列(col=1), ja列(col=2)
-            // データ行の "id" 列セルは .editor-table-row の nth(1)（ヘッダー行除く最初の行）の children[1]
-            const dataRow = miniTable.locator('.editor-table-row').nth(1);
+            // データ行の "id" 列セルは .editor-table-row の nth(0) の children[1]
+            const dataRow = miniTable.locator('.editor-table-row').nth(0);
             await expect(dataRow).toBeVisible();
             const idCell = dataRow.locator('.editor-table-cell').nth(1);
             await expect(idCell).toBeVisible();
@@ -754,9 +752,9 @@ test.describe('バグ6: 1:NミニテーブルでFK列が表示されること', 
             // enemy_id 列のデータセルが "スライム1" であることを確認する。
             // EditorTableはFK列の参照ヒント（参照先の表示名）をprependで値の前に配置するため、
             // 参照先 enemy.ja="スライム" が先、物理値 "1"（enemy.id=1）が後で "スライム1" と表示される。
-            // データ行 nth(1)（ヘッダー行を除いた最初のデータ行）の enemy_id 列インデックスでセルを取得する
+            // データ行 nth(0) の enemy_id 列インデックスでセルを取得する
             const enemyIdColIndex = headerTexts.indexOf('enemy_id');
-            const firstDataRow = miniTable.locator('.editor-table-row').nth(1);
+            const firstDataRow = miniTable.locator('.editor-table-row').nth(0);
             await expect(firstDataRow).toBeVisible();
             // DOM列インデックス: 行ヘッダー列(children[0]) + データ列(children[1]以降)
             // headerTexts は列ヘッダーセルのテキスト一覧（行ヘッダーセルは除かれる）
@@ -933,12 +931,12 @@ test.describe('バグ7: N:1ミニテーブルにバッファ行（editor-table-e
             await expect(miniTable).toBeVisible();
 
             // N:1も emptyRowCount = entry.rows.length + 1 でバッファ行が確保されるため、
-            // ヘッダー行(1) + データ行(1) + バッファ行(1) = 3行が表示される。
+            // データ行(1) + バッファ行(1) = 2行が表示される。
             const allRows = miniTable.locator('.editor-table-row');
             await expect(
                 allRows,
-                'N:1 ミニテーブル（table）にはヘッダー(1) + データ(1) + バッファ(1) = 3行が表示されるべき',
-            ).toHaveCount(3);
+                'N:1 ミニテーブル（table）にはデータ(1) + バッファ(1) = 2行が表示されるべき',
+            ).toHaveCount(2);
         },
     );
 });

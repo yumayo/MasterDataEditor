@@ -178,7 +178,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
 
 /** 指定行・列のデータセルをダブルクリックして新しい値を入力しEnterで確定する */
 async function editCellAsync(table: Locator, page: Page, rowIndex: number, colIndex: number, newValue: string): Promise<void> {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await expect(cell).toBeVisible();
     await cell.dblclick();

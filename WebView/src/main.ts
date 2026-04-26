@@ -133,15 +133,16 @@ import {BOOKMARKS_FILE} from "./userdata-path";
 
     // グローバルキーボードショートカットを登録
     document.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        const key = e.key.toLowerCase();
+        if (e.ctrlKey && e.shiftKey && key === 'f') {
             e.preventDefault();
             sidebar.activateSearchPanel();
         }
-        if (e.ctrlKey && !e.shiftKey && e.key === 'h') {
+        if (e.ctrlKey && !e.shiftKey && key === 'h') {
             e.preventDefault();
             sidebar.activateSearchPanelWithReplace();
         }
-        if (e.ctrlKey && !e.shiftKey && e.key === 'p') {
+        if (e.ctrlKey && !e.shiftKey && key === 'p') {
             e.preventDefault();
             commandPalette.show();
         }
@@ -151,7 +152,8 @@ import {BOOKMARKS_FILE} from "./userdata-path";
     // EditorTable 内にフォーカスがある場合は EditorTableHandler のバブリングハンドラに任せ、
     // それ以外（設定タブ、サイドバー、検索パネル等）はここで処理する。
     document.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.ctrlKey && !e.shiftKey && e.key === 's') {
+        const key = e.key.toLowerCase();
+        if (e.ctrlKey && !e.shiftKey && key === 's') {
             const target = e.target as HTMLElement;
             // EditorTable 内にフォーカスがある場合は既存ハンドラに委ねる
             if (target.closest('.editor-table')) return;

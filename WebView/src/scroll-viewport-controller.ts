@@ -16,6 +16,7 @@ export class ScrollViewportController {
     setScrollPosition(scrollTop: number, scrollLeft: number): void {
         this.container.scrollTop = scrollTop;
         this.container.scrollLeft = scrollLeft;
+        this.container.dispatchEvent(new Event('scroll'));
     }
 
     getBoundingClientRect(): DOMRect {

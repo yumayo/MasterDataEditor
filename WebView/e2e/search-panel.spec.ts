@@ -72,6 +72,13 @@ function getOptionButton(page: Page, option: string): Locator {
     return page.locator(`.search-option-button[data-option="${option}"]`);
 }
 
+async function openSearchPanelAsync(page: Page): Promise<void> {
+    await page.locator('.activity-bar-item[data-panel="search"]').click();
+    const searchInput = getSearchInput(page);
+    await expect(searchInput).toBeVisible();
+    await searchInput.focus();
+}
+
 test.describe('検索パネル', () => {
     test.beforeEach(async ({page}) => {
         const fs = createSearchTestFileSystem();
@@ -90,7 +97,7 @@ test.describe('検索パネル', () => {
     });
 
     test('テキスト入力で全文検索結果がリアルタイムに表示されること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // "quest_a"で検索
         await searchInput.fill('quest_a');
@@ -102,7 +109,7 @@ test.describe('検索パネル', () => {
     });
 
     test('テーブル名.列名 = 値 のクエリ式でフィルタリングできること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('quest.name = quest_a');
         const results = getSearchResults(page);
@@ -117,7 +124,7 @@ test.describe('検索パネル', () => {
     test('スペースを含む値をダブルクォーテーションで検索できること', async ({page}) => {
         // このテストではスペースを含むデータを使うために先にテーブルのデータ構造を確認
         // quest_a/quest_bにスペースがないため、部分一致で代替テスト
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // クエリ式で値をダブルクォーテーションで囲む
         await searchInput.fill('quest.name = "quest_a"');
@@ -128,7 +135,7 @@ test.describe('検索パネル', () => {
     });
 
     test('大文字小文字区別トグルが機能すること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // デフォルトは大文字小文字区別なし → "QUEST_A"で検索してもマッチする
         await searchInput.fill('QUEST_A');
@@ -142,7 +149,7 @@ test.describe('検索パネル', () => {
     });
 
     test('単語検索トグルが機能すること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // デフォルトは部分一致 → "quest"で検索するとquest_a,quest_bがマッチ
         await searchInput.fill('quest');
@@ -161,7 +168,7 @@ test.describe('検索パネル', () => {
     });
 
     test('正規表現トグルが機能すること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // 正規表現を有効にする
         const regexButton = getOptionButton(page, 'regex');
@@ -175,7 +182,7 @@ test.describe('検索パネル', () => {
     });
 
     test('検索結果クリックで該当セルにジャンプすること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('quest_b');
         const results = getSearchResults(page);
@@ -193,7 +200,7 @@ test.describe('検索パネル', () => {
     test('ローマ字入力で全文検索がヒットすること', async ({page}) => {
         // enemy テーブルの ja 列: "スライム", "ドラゴン"
         // "suraimu" → "すらいむ" → ひらがな変換後に "スライム"（カタカナ→ひらがな正規化）にマッチ
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('suraimu');
         const results = getSearchResults(page);
@@ -204,7 +211,7 @@ test.describe('検索パネル', () => {
     test('全角半角を無視して検索がヒットすること', async ({page}) => {
         // quest テーブルの name 列: "quest_a", "quest_b"
         // "ＱＵＥＳＴ" (全角大文字) → 正規化後 "quest" → 部分一致でヒット
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('ＱＵＥＳＴ');
         const results = getSearchResults(page);
@@ -216,7 +223,7 @@ test.describe('検索パネル', () => {
 
     test('検索結果にPK値が表示されること', async ({page}) => {
         // quest テーブルを検索: quest_a (id=1) がヒットしたとき、PK値 "1" が表示される
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('quest_a');
         const results = getSearchResults(page);
@@ -228,7 +235,7 @@ test.describe('検索パネル', () => {
     });
 
     test('数値のみ入力時にwholeWordが自動的にONになること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // 数値のみ入力
         await searchInput.fill('1');
@@ -238,7 +245,7 @@ test.describe('検索パネル', () => {
     });
 
     test('数値から数値以外に変更したらwholeWordの自動ONが解除されること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // 数値のみ入力でwholeWord自動ON
         await searchInput.fill('1');
@@ -250,7 +257,7 @@ test.describe('検索パネル', () => {
     });
 
     test('ユーザーが手動でwholeWordをONにした場合は数値解除後も維持されること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         const wholeWordButton = getOptionButton(page, 'wholeWord');
         // 手動でwholeWordをONにする
@@ -266,7 +273,7 @@ test.describe('検索パネル', () => {
 
     test('検索ヒット部分がハイライト表示されること', async ({page}) => {
         // quest テーブルの name 列: "quest_a" を "quest" で検索
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         await searchInput.fill('quest');
         const results = getSearchResults(page);
@@ -282,7 +289,7 @@ test.describe('検索パネル', () => {
         await openTableAsync(page, 'enemy');
         // テーブルの非同期処理が完了するまで待機
         await page.waitForTimeout(1000);
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // 全文検索で"1"を検索 → enemy, quest両方のテーブルから結果が表示される
         await searchInput.fill('quest_a');
@@ -292,7 +299,7 @@ test.describe('検索パネル', () => {
     });
 
     test('検索中にローディングインジケータが表示され、完了後に消えること', async ({page}) => {
-        await page.keyboard.press('Control+Shift+F');
+        await openSearchPanelAsync(page);
         const searchInput = getSearchInput(page);
         // MutationObserver で searching クラスの付与を検知する（検索が高速完了してもキャッチできる）
         await page.evaluate(() => {

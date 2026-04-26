@@ -27,7 +27,7 @@ async function getRowIdValuesAsync(
     for (let i = 0; i < count; ++i) {
         const row = table
             .locator('.editor-table-row')
-            .nth(i + 1);
+            .nth(i);
         const firstCell = row.locator(
             '.editor-table-cell'
             + ':not(.editor-table-row-header)',
@@ -47,7 +47,7 @@ async function getRowCellTextsAsync(
 ): Promise<string[]> {
     const row = table
         .locator('.editor-table-row')
-        .nth(rowIndex + 1);
+        .nth(rowIndex);
     const selector =
         '.editor-table-cell'
         + ':not(.editor-table-row-header)';
@@ -95,11 +95,12 @@ async function clickContextMenuItemAsync(
 async function clickFirstCellAsync(
     table: Locator,
 ): Promise<void> {
-    // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
-    const selector =
-        '.editor-table-row:nth-child(3)'
-        + ' .editor-table-cell:nth-child(2)';
-    await table.locator(selector).click();
+    await table
+        .locator('.editor-table-row')
+        .first()
+        .locator('.editor-table-cell:not(.editor-table-row-header)')
+        .first()
+        .click();
 }
 
 test(

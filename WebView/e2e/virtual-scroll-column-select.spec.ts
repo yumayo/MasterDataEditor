@@ -42,7 +42,7 @@ test.describe('バーチャルスクロール列選択', () => {
         await expect(table).toBeVisible();
 
         // name列のヘッダーをクリックして列選択する
-        const nameHeader = table.locator('.editor-table-column-header-row .editor-table-cell').nth(2); // nth(0)=行ヘッダー, nth(1)=id, nth(2)=name
+        const nameHeader = table.locator('.editor-table-column-header-row .editor-table-column-header').nth(1); // nth(0)=id, nth(1)=name
         await nameHeader.click();
 
         // 選択範囲を取得する（ブラウザ側で selection.getSelectionRange() を呼ぶ）
@@ -118,7 +118,7 @@ test.describe('バーチャルスクロール列選択', () => {
         await expect(table).toBeVisible();
 
         // value列のヘッダーをクリックして列選択
-        const valueHeader = table.locator('.editor-table-column-header-row .editor-table-cell').nth(3); // nth(3)=value
+        const valueHeader = table.locator('.editor-table-column-header-row .editor-table-column-header').nth(2); // nth(2)=value
         await valueHeader.click();
 
         // Deleteキーで列の値を消去

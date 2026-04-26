@@ -53,12 +53,42 @@ async function getTableScrollContainerAsync(page: Page): Promise<Locator> {
     return mainViewport;
 }
 
-async function getVisibleRowHeaderAsync(table: Locator, dataRowIndex: number): Promise<Locator> {
-    const detachedRowHeader = table.locator(`.editor-table-detached-row-header-layer .editor-table-row-header[data-row-index="${dataRowIndex}"]`);
-    if (await detachedRowHeader.count() > 0) {
-        return detachedRowHeader.first();
-    }
-    return table.locator(`.editor-table-row-header[data-row-index="${dataRowIndex}"]`).first();
+async function getVisibleRowHeaderClickTargetAsync(table: Locator): Promise<{ dataRowIndex: number; x: number; y: number; }> {
+    return table.evaluate((tableElement) => {
+        const viewport = tableElement.querySelector<HTMLElement>('.editor-table-main-viewport');
+        if (!(viewport instanceof HTMLElement)) throw new Error('main viewport が見つかりません');
+        const viewportRect = viewport.getBoundingClientRect();
+        const viewportCenterY = viewportRect.top + (viewportRect.height / 2);
+        const rowHeaders = Array.from(tableElement.querySelectorAll<HTMLElement>(
+            '.editor-table-detached-row-header-layer .editor-table-row-header[data-row-index],'
+            + '.editor-table-grid .editor-table-row-header[data-row-index]'
+        ));
+        let best: { dataRowIndex: number; x: number; y: number; distance: number; } | null = null;
+        for (const rowHeader of rowHeaders) {
+            const rowIndexText = rowHeader.dataset.rowIndex;
+            if (rowIndexText === undefined) continue;
+            const dataRowIndex = Number(rowIndexText);
+            if (!Number.isFinite(dataRowIndex)) continue;
+            const rect = rowHeader.getBoundingClientRect();
+            const isVisibleInViewport = rect.bottom > viewportRect.top
+                && rect.top < viewportRect.bottom
+                && rect.width > 0
+                && rect.height > 0;
+            if (!isVisibleInViewport) continue;
+            const y = rect.top + (rect.height / 2);
+            const distance = Math.abs(y - viewportCenterY);
+            if (best === null || distance < best.distance) {
+                best = {
+                    dataRowIndex,
+                    x: rect.left + (rect.width / 2),
+                    y,
+                    distance,
+                };
+            }
+        }
+        if (best === null) throw new Error('画面内の行ヘッダーが見つかりません');
+        return { dataRowIndex: best.dataRowIndex, x: best.x, y: best.y };
+    });
 }
 
 async function clickContextMenuItemAsync(page: Page, label: string): Promise<void> {
@@ -227,20 +257,22 @@ test.describe('virtual scroll freeze reference hint', () => {
         });
         await expect.poll(async () => getMaxVisibleRowIndexAsync(table)).toBeGreaterThan(80);
 
-        const rowHeader = await getVisibleRowHeaderAsync(table, 90);
-        await rowHeader.click({ button: 'right' });
+        const target = await getVisibleRowHeaderClickTargetAsync(table);
+        expect(target.dataRowIndex).toBeGreaterThan(80);
+        await page.mouse.click(target.x, target.y, { button: 'right' });
         await clickContextMenuItemAsync(page, '上に行を挿入');
 
         await expect(getFrozenRowLocator(page, table, 0).locator('.cell-reverse-reference-hint')).toHaveText('name_1');
         await expect(getFrozenRowLocator(page, table, 1).locator('.cell-reverse-reference-hint')).toHaveText('name_2');
 
         await expect.poll(async () => {
-            const insertedRow = await getRowInfoByIndexAsync(table, 90);
-            const shiftedRow = await getRowInfoByIndexAsync(table, 91);
+            const insertedRow = await getRowInfoByIndexAsync(table, target.dataRowIndex);
+            const shiftedRow = await getRowInfoByIndexAsync(table, target.dataRowIndex + 1);
+            const shiftedIdText = String(target.dataRowIndex + 1);
             return insertedRow.idText === ''
                 && insertedRow.hintText === null
-                && shiftedRow.idText === '91'
-                && shiftedRow.hintText === 'name_91';
+                && shiftedRow.idText === shiftedIdText
+                && shiftedRow.hintText === `name_${shiftedIdText}`;
         }).toBe(true);
     });
 });

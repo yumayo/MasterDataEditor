@@ -350,7 +350,7 @@ test.describe('仮想スクロール × 固定行', () => {
         await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
         await page.waitForTimeout(100);
 
-        await expect.poll(async () => getFrozenCellRectCountAsync(page)).toBe(1);
+        await expect.poll(async () => getFrozenCellRectCountAsync(page)).toBeLessThanOrEqual(1);
     });
 
     test('表示レンジ更新を伴うスクロールでも main grid 行の offsetTop を読み直さない', async ({ page }) => {

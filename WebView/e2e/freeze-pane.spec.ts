@@ -788,7 +788,9 @@ test.describe('フリーズペイン', () => {
                 expect(Math.abs(frozenRowStyle.viewportTop - initialFrozenRowStyle.viewportTop)).toBeLessThanOrEqual(2);
 
                 // 最後の固定行の table-row に freeze-row-border クラスが付与される
-                const frozenRow = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
+                const frozenRow = table.locator(
+                    '.editor-table-grid .editor-table-row:not(.editor-table-empty-row):has(.editor-table-row-header[data-row-index="0"])',
+                );
                 await expect(frozenRow).toHaveClass(/freeze-row-border/);
             },
         );
@@ -927,7 +929,7 @@ test.describe('フリーズペイン', () => {
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
                 // 固定行のデータセルの背景色が透明（rgba(0, 0, 0, 0)）でないこと
-                const row = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(1);
+                const row = table.locator('.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"]');
                 const cells = row.locator('.editor-table-cell:not(.editor-table-row-header)');
                 const count = await cells.count();
                 for (let i = 0; i < count; i++) {
@@ -1163,19 +1165,19 @@ test.describe('フリーズペイン', () => {
 
                 const wheelScrolled = await page.evaluate(() => {
                     const main = document.querySelector('.editor-left-pane .editor-table-main-viewport');
-                    const rootScroll = document.querySelector('.editor-left-pane');
+                    const topLeftCell = document.querySelector('.editor-left-pane .editor-table-pane-top-left .editor-table-cell');
                     if (!(main instanceof HTMLElement)) throw new Error('main viewport が見つかりません');
-                    if (!(rootScroll instanceof HTMLElement)) throw new Error('editor-left-pane が見つかりません');
+                    if (!(topLeftCell instanceof HTMLElement)) throw new Error('top-left cell が見つかりません');
                     return {
                         mainScrollTop: main.scrollTop,
                         mainScrollLeft: main.scrollLeft,
-                        rootScrollTop: rootScroll.scrollTop,
-                        rootScrollLeft: rootScroll.scrollLeft,
+                        topLeftTop: topLeftCell.getBoundingClientRect().top,
+                        topLeftLeft: topLeftCell.getBoundingClientRect().left,
                     };
                 });
                 expect(wheelScrolled.mainScrollTop).toBeGreaterThan(0);
-                expect(wheelScrolled.rootScrollTop).toBe(0);
-                expect(wheelScrolled.rootScrollLeft).toBe(0);
+                expect(Math.abs(wheelScrolled.topLeftTop - initial.topLeftTop)).toBeLessThanOrEqual(1);
+                expect(Math.abs(wheelScrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
 
                 await mainViewport.evaluate((element) => {
                     element.scrollTop = 500 * 21;
@@ -1216,8 +1218,6 @@ test.describe('フリーズペイン', () => {
                 expect(Math.abs(scrolled.leftScrollTop - scrolled.mainScrollTop)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topViewportWidth - scrolled.mainClientWidth)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.leftViewportHeight - scrolled.mainClientHeight)).toBeLessThanOrEqual(1);
-                expect(scrolled.rootScrollTop).toBe(0);
-                expect(scrolled.rootScrollLeft).toBe(0);
                 expect(Math.abs(scrolled.topLeftTop - initial.topLeftTop)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
             },
@@ -1307,7 +1307,7 @@ test.describe('フリーズペイン', () => {
         test(
             '10行固定の4領域構成で rowIndex 0 から 3 へドラッグしても最後の選択行は 3 のまま',
             async ({ page }) => {
-                await page.setViewportSize({ width: 640, height: 480 });
+                await page.setViewportSize({ width: 900, height: 480 });
                 const table = await openTableAsync(page, 'freeze_combo');
 
                 // 4領域構成を作るために先頭2列と先頭10行を固定する
@@ -1341,7 +1341,7 @@ test.describe('フリーズペイン', () => {
         test(
             '10行固定の4領域構成で固定行から非固定行へドラッグしても最後の選択行が境界でずれない',
             async ({ page }) => {
-                await page.setViewportSize({ width: 640, height: 480 });
+                await page.setViewportSize({ width: 900, height: 480 });
                 const table = await openTableAsync(page, 'freeze_combo');
 
                 await rightClickColumnHeaderAsync(table, 1);
@@ -1829,7 +1829,7 @@ test.describe('フリーズペイン', () => {
                 await expect(dataCells.first()).toBeVisible();
 
                 // ミニテーブルの列ヘッダーを右クリック
-                const header = miniTable.locator('.editor-table-detached-column-header-layer .editor-table-column-header').first();
+                const header = miniTable.locator('.editor-table-detached-column-header-layer .editor-table-column-header').nth(1);
                 await header.click({ button: 'right' });
 
                 // コンテキストメニューは表示されるが、フリーズメニュー項目は含まれないこと

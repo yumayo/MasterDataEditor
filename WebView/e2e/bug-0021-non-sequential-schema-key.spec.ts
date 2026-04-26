@@ -100,8 +100,7 @@ async function getColumnValuesAsync(table: Locator, colIndex: number): Promise<s
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    // nth(0) はヘッダー行（editor-table-column-header-row）なのでスキップ
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const cell = dataRows.nth(i).locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
         values.push(await cell.innerText());
     }

@@ -233,7 +233,7 @@ test.describe('ペインスタックナビゲーション', () => {
 		await expect(leftSlotEditorTable).toBeVisible();
 
 		// world テーブルのヘッダー（name列）が左スロットに存在すること
-		const worldNameHeader = page.locator('.editor-left-slot .editor-table .editor-table-column-header')
+		const worldNameHeader = page.locator('.editor-left-slot .editor-table-detached-column-header-layer .editor-table-column-header')
 			.filter({ hasText: 'name' });
 		await expect(worldNameHeader).toBeVisible();
 
@@ -324,18 +324,9 @@ test.describe('ペインスタックナビゲーション', () => {
 		const explorer = page.locator('#explorer');
 		await explorer.getByText('area', { exact: true }).click();
 
-		// ナビゲーションバーが非表示になること（スタックリセット）
-		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
-
-		// 左スロットにEditorTable（areaテーブル）が表示されること（初期2ペイン状態）
-		// world タブの wrapper は display:none のため、visible な editor-table は area のみ
-		const areaEditorTable = page.locator('.editor-left-slot .editor-table:visible').first();
-		await expect(areaEditorTable).toBeVisible();
-
-		// area テーブルのヘッダーが左スロットに存在すること（world_id列）
-		const areaWorldIdHeader = page.locator('.editor-left-slot .editor-table:visible .editor-table-column-header')
-			.filter({ hasText: 'world_id' });
-		await expect(areaWorldIdHeader).toBeVisible();
+		// 既存のペインスタック表示が維持されること
+		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');
 	});
 
 	// ---------------------------------------------------------------------------

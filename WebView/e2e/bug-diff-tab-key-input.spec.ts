@@ -216,8 +216,7 @@ test.describe('差分タブの右ペインEditorTableでのキー入力', () => 
             await page.keyboard.press('Enter');
 
             // rowIndex=2 の行ヘッダーに selected クラスが付いていることを確認する
-            // editor-table-row は nth(0)=ヘッダー行、nth(1)=rowIndex=0、nth(2)=rowIndex=1、nth(3)=rowIndex=2
-            const movedRowHeader = rightTable.locator('.editor-table-row').nth(3).locator('.editor-table-row-header');
+            const movedRowHeader = rightTable.locator('.editor-table-grid .editor-table-row').nth(2).locator('.editor-table-row-header');
             await expect(movedRowHeader).toHaveClass(/selected/);
         },
     );

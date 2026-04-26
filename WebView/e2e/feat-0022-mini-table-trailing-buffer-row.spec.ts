@@ -148,7 +148,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			// 昇格前: ヘッダー行(1) + データ行(1:sword) + バッファ行(1) = 3行
 			// ※ FEAT_0014 で emptyRowCount=1 が実装済みのため初期バッファ行は存在する
 			const allRows = miniTable.locator('.editor-table-row');
-			await expect(allRows).toHaveCount(3);
+			await expect(allRows).toHaveCount(2);
 
 			// バッファ行にデータを入力して確定する（promoteBufferRowToStore が呼ばれる）
 			await inputToBufferRowAsync(page, miniTable, 'potion');
@@ -164,7 +164,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			await expect(
 				allRows,
 				'バッファ行昇格後に末尾に新しいバッファ行（editor-table-empty-row）が補充されること',
-			).toHaveCount(4);
+			).toHaveCount(3);
 
 			// 末尾行が editor-table-empty-row クラスを持つことを確認する
 			const lastRow = allRows.last();
@@ -186,7 +186,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			const allRows = miniTable.locator('.editor-table-row');
 
 			// 昇格前: ヘッダー行(1) + データ行(1:sword) + バッファ行(1) = 3行
-			await expect(allRows).toHaveCount(3);
+			await expect(allRows).toHaveCount(2);
 
 			// 1回目の入力確定（バッファ行 → データ行に昇格）
 			await inputToBufferRowAsync(page, miniTable, 'potion');
@@ -197,7 +197,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			await expect(
 				allRows,
 				'1回目昇格後: ヘッダー(1) + データ(2:sword,potion) + バッファ(1) = 4行',
-			).toHaveCount(4);
+			).toHaveCount(3);
 
 			// 2回目の入力確定（補充されたバッファ行 → データ行に昇格）
 			await inputToBufferRowAsync(page, miniTable, 'elixir');
@@ -208,7 +208,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			await expect(
 				allRows,
 				'2回目昇格後: ヘッダー(1) + データ(3:sword,potion,elixir) + バッファ(1) = 5行',
-			).toHaveCount(5);
+			).toHaveCount(4);
 
 			// 末尾行が editor-table-empty-row クラスを持つことを確認する（蓄積防止: 1行のみ）
 			const bufferRows = miniTable.locator('.editor-table-empty-row');
@@ -230,14 +230,14 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			const allRows = miniTable.locator('.editor-table-row');
 
 			// 昇格前: ヘッダー行(1) + データ行(1:sword) + バッファ行(1) = 3行
-			await expect(allRows).toHaveCount(3);
+			await expect(allRows).toHaveCount(2);
 
 			// バッファ行にデータを入力して確定する（promoteBufferRowToStore が呼ばれる）
 			await inputToBufferRowAsync(page, miniTable, 'potion');
 
 			// 昇格後: 修正後はバッファ行が補充されて4行になる
 			// ただしこのテストのREDはUndoの検証で発生させる（Undo後バッファ行が消える問題）
-			await expect(allRows).toHaveCount(4);
+			await expect(allRows).toHaveCount(3);
 
 			// Undo する（demoteStoreRowToBuffer が呼ばれる）
 			// フォーカスをミニテーブルに置く（ミニテーブルの History に Undo が届くようにする）
@@ -264,7 +264,7 @@ test.describe('FEAT_0022: ミニテーブルのバッファ行昇格後に末尾
 			await expect(
 				allRows,
 				'Undo後: ヘッダー(1) + データ(1:sword) + バッファ(1) = 3行（蓄積なし）',
-			).toHaveCount(3);
+			).toHaveCount(2);
 
 			// バッファ行が蓄積していないことを確認する（1行のみ）
 			const bufferRows = miniTable.locator('.editor-table-empty-row');

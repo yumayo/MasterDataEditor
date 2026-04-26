@@ -504,9 +504,6 @@ export class Selection {
         // EditorTable にセル単位でクラスを付与させる（座標計算不要）
         this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
 
-        // フィルハンドルの位置を更新
-        this.updateFillHandlePosition();
-
         // ヘッダーの選択状態を更新
         this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
 
@@ -517,6 +514,9 @@ export class Selection {
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
         this.editorTable.syncDetachedVisualState();
+
+        // 分離レイヤー同期後に、実際に表示されているセルへフィルハンドルを配置する
+        this.updateFillHandlePosition();
     }
 
     /**
@@ -721,7 +721,7 @@ export class Selection {
             cell.appendChild(this.fillHandle);
         }
         cell.style.zIndex = fillOverlayZIndex.toString();
-        this.fillHandle.style.zIndex = (fillOverlayZIndex + 1).toString();
+        this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
         this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
         this.fillHandle.style.display = 'block';
     }

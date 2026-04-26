@@ -69,6 +69,7 @@ test.describe('CommandPalette', () => {
         const overlay = page.locator('.command-palette-overlay');
 
         // Ctrl+Pでコマンドパレットを表示
+        await page.locator('body').click({position: {x: 1, y: 1}});
         await page.keyboard.press('Control+p');
         await expect(overlay).toHaveClass(/visible/);
 
@@ -84,6 +85,7 @@ test.describe('CommandPalette', () => {
         const overlay = page.locator('.command-palette-overlay');
 
         // Ctrl+Pでコマンドパレットを表示
+        await page.locator('body').click({position: {x: 1, y: 1}});
         await page.keyboard.press('Control+p');
         await expect(overlay).toHaveClass(/visible/);
 

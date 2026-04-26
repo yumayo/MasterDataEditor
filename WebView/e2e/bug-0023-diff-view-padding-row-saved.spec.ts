@@ -156,9 +156,9 @@ test.describe('BUG_0023 — 差分ビューで行追加保存時のパディン�
             await expect(rightTable).toBeVisible();
 
             // 差分ビュー右ペインの初期行数を確認する
-            // ヘッダー行(1) + パディング行(1) + データ行(3) = 5行
+            // パディング行(1) + データ行(3) = 4行
             const allRightRows = rightTable.locator('.editor-table-row');
-            await expect(allRightRows).toHaveCount(5);
+            await expect(allRightRows).toHaveCount(4);
 
             // 右ペインの4行目データ行（id=4の行、rowIndex=3）の行ヘッダーを右クリックして下に行を挿入する。
             // .editor-table-row-header はデータ行専用クラスのため nth(3) がデータ4行目（パディング行含む）。
@@ -173,12 +173,12 @@ test.describe('BUG_0023 — 差分ビューで行追加保存時のパディン�
             await expect(contextMenu).toBeVisible();
             await contextMenu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
 
-            // 挿入後: 右ペインの行数が1増加していること（6行）
-            await expect(allRightRows).toHaveCount(6);
+            // 挿入後: 右ペインの行数が1増加していること（5行）
+            await expect(allRightRows).toHaveCount(5);
 
             // 挿入した行（5行目データ行 = id=4の下）の最初のセルにデータを入力する
-            // 挿入行はヘッダー行除くと5番目なので .editor-table-row のnth(5)
-            const insertedRow = rightTable.locator('.editor-table-row').nth(5);
+            // 挿入行は .editor-table-row の5番目なので nth(4)
+            const insertedRow = rightTable.locator('.editor-table-row').nth(4);
             const firstCell = insertedRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 
             // コンテキストメニュー操作後はEditorTableHandlerのフォーカスが失われる。
@@ -280,8 +280,8 @@ test.describe('BUG_0023 — 差分ビューで行追加保存時のパディン�
             const rightTable = rightPane.locator('.editor-table');
 
             // id=2の行（2番目のデータ行 = パディング行を除く実際のデータ）のid列をダブルクリック
-            // .editor-table-row のnth(2): nth(0)=ヘッダー行, nth(1)=パディング行, nth(2)=id=2行
-            const idRow2 = rightTable.locator('.editor-table-row').nth(2);
+            // .editor-table-row のnth(1): nth(0)=パディング行, nth(1)=id=2行
+            const idRow2 = rightTable.locator('.editor-table-row').nth(1);
             const idCell = idRow2.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
             await idCell.dblclick();
 
@@ -346,8 +346,8 @@ test.describe('BUG_0023 — 差分ビューで行追加保存時のパディン�
             await contextMenu.locator('.context-menu-item', { hasText: '下に行を挿入' }).click();
 
             // 挿入した行に「5,1,1,1」を入力する
-            // 挿入行は .editor-table-row のnth(5)（ヘッダー行含む5番目、0始まりで5番目）
-            const insertedRow = rightTable.locator('.editor-table-row').nth(5);
+            // 挿入行は .editor-table-row のnth(4)
+            const insertedRow = rightTable.locator('.editor-table-row').nth(4);
             const firstCell = insertedRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 
             // コンテキストメニュー操作後はEditorTableHandlerのフォーカスが失われる。
@@ -413,11 +413,11 @@ test.describe('BUG_0023 — 差分ビューで行追加保存時のパディン�
             // 「通常タブのストアが更新されないため古いデータのまま」なので、
             // id=5の行がテーブルに表示されないことでREDになる。
             const dataRows = normalTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-            // ヘッダー行(1) + データ行(4: id=2,3,4,5) = 5行
-            await expect(dataRows).toHaveCount(5);
+            // データ行(4: id=2,3,4,5)
+            await expect(dataRows).toHaveCount(4);
 
-            // 最後のデータ行（id=5）の内容を確認する（4行目データ行: ヘッダー除くnth(3)）
-            const lastDataRow = normalTable.locator('.editor-table-row:not(.editor-table-empty-row)').nth(4);
+            // 最後のデータ行（id=5）の内容を確認する（4行目データ行: nth(3)）
+            const lastDataRow = normalTable.locator('.editor-table-row:not(.editor-table-empty-row)').nth(3);
             const lastDataFirstCell = lastDataRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
             await expect(lastDataFirstCell).toHaveText('5');
         },

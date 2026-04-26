@@ -132,7 +132,7 @@ async function setupAxeAddedAndShopSelectedAsync(page: Page): Promise<Locator> {
 	// Step 2: shop_product タブを開き、バッファ空行に Axe (id=8, group_id=1) を入力する
 	// DOM 構造: row[0]=ヘッダー, row[1]=id=1(Sword), row[2]=id=2(Shield), row[3]=id=3(Potion), row[4]=バッファ空行
 	const shopProductTable = await openTableAsync(page, 'shop_product');
-	const bufferRow = shopProductTable.locator('.editor-table-row').nth(4);
+	const bufferRow = shopProductTable.locator('.editor-table-row').nth(3);
 
 	const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 	await idCell.dblclick();
@@ -191,7 +191,7 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 			const miniTable = await getMiniTableSectionAsync(page, 'shop_product');
 			// 初期状態: ヘッダー行(1) + データ行(2, Sword・Shield) = 3行
 			// バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
-			await expect(miniTable.locator('.editor-table-row:not(.editor-table-empty-row)')).toHaveCount(3);
+			await expect(miniTable.locator('.editor-table-row:not(.editor-table-empty-row)')).toHaveCount(2);
 
 			// Axe を追加して shop WeaponShop 行を選択した状態にする
 			await setupAxeAddedAndShopSelectedAsync(page);
@@ -203,7 +203,7 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 			await expect(
 				refreshedMiniTable.locator('.editor-table-row:not(.editor-table-empty-row)'),
 				'shop_product に追加した Axe（group_id=1）が N:1 ミニテーブルに表示されるべき',
-			).toHaveCount(4);
+			).toHaveCount(3);
 		},
 	);
 
@@ -221,12 +221,12 @@ test.describe('N:1ミニテーブルがストア新規追加行をキャッシ�
 			const allRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
 			const rowCount = await allRows.count();
 			// ヘッダー行(0) + データ行(1,2,3) = 4行あるはず。バグがあれば3行になる。
-			expect(rowCount, 'ミニテーブルの行数が4行（ヘッダー+3データ）であるべき').toBe(4);
+			expect(rowCount, 'ミニテーブルの行数が3データ行であるべき').toBe(3);
 
 			// 最後のデータ行（Axe）の name 列に "Axe" が表示されていることを確認する
 			// データ行インデックス: nth(1)=Sword, nth(2)=Shield, nth(3)=Axe
 			// shop_product のカラム: 行ヘッダー(col=0), id(col=1), group_id(col=2), name(col=3)
-			const axeRow = allRows.nth(3);
+			const axeRow = allRows.nth(2);
 			await expect(axeRow, '3番目のデータ行（Axe）がミニテーブルに存在するべき').toBeVisible();
 			const nameCell = axeRow.locator('.editor-table-cell:not(.editor-table-row-header)').last();
 			await expect(

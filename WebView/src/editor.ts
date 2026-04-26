@@ -18,6 +18,9 @@ export class Editor {
     /** 左ペイン（EditorTableを包む領域） */
     private readonly leftPane: HTMLElement;
 
+    /** 内部スクロール viewport と旧 .editor-left-pane スクロールAPIを同期するための不可視スペーサー */
+    private readonly leftPaneScrollProxy: HTMLElement;
+
     /** 左スロット（表示中の左ペインを格納するラッパー） */
     private readonly leftSlot: HTMLElement;
 
@@ -54,6 +57,9 @@ export class Editor {
     /** 垂直スクロールバーマーカートラック（エラー・git変更行の可視化） */
     private readonly scrollbarMarkerTrack: ScrollbarMarkerTrack;
 
+    private isSyncingLeftPaneFromTable: boolean;
+    private isSyncingTableFromLeftPane: boolean;
+
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
         this.tab = false;
@@ -61,6 +67,8 @@ export class Editor {
         this.savedRightSlotFlexBasis = '';
         this.visibilityListener = false;
         this.relationsPanel = false;
+        this.isSyncingLeftPaneFromTable = false;
+        this.isSyncingTableFromLeftPane = false;
 
         // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
         const navigationBar = document.createElement('div');
@@ -107,8 +115,15 @@ export class Editor {
         const leftPane = document.createElement('div');
         leftPane.classList.add('editor-left-pane');
         leftPane.addEventListener('wheel', (event) => { this.redirectOuterWheelToMainViewport(event); }, { passive: false });
+        leftPane.addEventListener('scroll', () => { this.forwardLeftPaneScrollToActiveTable(); });
+        leftPane.addEventListener('editor-table-scroll-metrics-changed', () => { this.syncActiveTableScrollState(); });
         leftSlot.appendChild(leftPane);
         this.leftPane = leftPane;
+
+        const leftPaneScrollProxy = document.createElement('div');
+        leftPaneScrollProxy.classList.add('editor-left-pane-scroll-proxy');
+        leftPane.appendChild(leftPaneScrollProxy);
+        this.leftPaneScrollProxy = leftPaneScrollProxy;
 
         // 右スロット（RelationsPanel のラッパー）
         const rightSlot = document.createElement('div');
@@ -133,6 +148,45 @@ export class Editor {
     /** leftPane への要素追加（TabからEditorTableのwrapperを追加する） */
     appendChild(element: HTMLElement): void {
         this.leftPane.appendChild(element);
+    }
+
+    syncActiveTableScrollState(): void {
+        if (this.tab === false) return;
+        const activeState = this.tab.getActiveTabState();
+        if (activeState === false) {
+            this.leftPaneScrollProxy.style.height = '100%';
+            this.leftPaneScrollProxy.style.width = '1px';
+            return;
+        }
+        if (!activeState.editorTable.usesInternalScrollLayout()) return;
+        const metrics = activeState.editorTable.getScrollMetrics();
+        this.leftPaneScrollProxy.style.height = `${Math.max(metrics.scrollHeight, metrics.clientHeight)}px`;
+        this.leftPaneScrollProxy.style.width = `${Math.max(metrics.scrollWidth, metrics.clientWidth, 1)}px`;
+
+        if (this.isSyncingTableFromLeftPane) return;
+        this.isSyncingLeftPaneFromTable = true;
+        try {
+            if (this.leftPane.scrollTop !== metrics.scrollTop) this.leftPane.scrollTop = metrics.scrollTop;
+            if (this.leftPane.scrollLeft !== metrics.scrollLeft) this.leftPane.scrollLeft = metrics.scrollLeft;
+        } finally {
+            this.isSyncingLeftPaneFromTable = false;
+        }
+    }
+
+    private forwardLeftPaneScrollToActiveTable(): void {
+        if (this.isSyncingLeftPaneFromTable) return;
+        if (this.tab === false) return;
+        const activeState = this.tab.getActiveTabState();
+        if (activeState === false) return;
+        if (!activeState.editorTable.usesInternalScrollLayout()) return;
+        const metrics = activeState.editorTable.getScrollMetrics();
+        if (this.leftPane.scrollTop === metrics.scrollTop && this.leftPane.scrollLeft === metrics.scrollLeft) return;
+        this.isSyncingTableFromLeftPane = true;
+        try {
+            activeState.editorTable.restoreScrollPosition(this.leftPane.scrollTop, this.leftPane.scrollLeft);
+        } finally {
+            this.isSyncingTableFromLeftPane = false;
+        }
     }
 
     /**

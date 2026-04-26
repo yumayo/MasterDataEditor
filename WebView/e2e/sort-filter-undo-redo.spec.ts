@@ -70,8 +70,7 @@ async function getColumnValuesAsync(table: Locator, colIndex: number): Promise<s
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    // 行0はヘッダー行。データ行は1から始まる。
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const row = dataRows.nth(i);
         const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
         values.push(await cell.innerText());
@@ -87,7 +86,7 @@ async function getVisibleColumnValuesAsync(table: Locator, colIndex: number): Pr
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await dataRows.count();
     const values: string[] = [];
-    for (let i = 1; i < count; i++) {
+    for (let i = 0; i < count; i++) {
         const row = dataRows.nth(i);
         const isVisible = await row.isVisible();
         if (!isVisible) continue;
@@ -132,7 +131,7 @@ async function applyFilterAsync(page: Page): Promise<void> {
 
 /**
  * 指定セルをダブルクリックして値を入力し、Enterで確定する。
- * rowIndex: 1始まり（データ行）, colIndex: 0始まり（行ヘッダー除く）
+ * rowIndex: 0始まり（データ行）, colIndex: 0始まり（行ヘッダー除く）
  */
 async function editCellAsync(table: Locator, page: Page, rowIndex: number, colIndex: number, value: string): Promise<void> {
     const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
@@ -245,7 +244,7 @@ test.describe('ソート・フィルター Undo/Redo', () => {
                 expect(sortedNames).toEqual(['gamma', 'beta', 'alpha']);
 
                 // ソート後の1行目（id=1, name=gamma）の name を "EDITED" に変更
-                await editCellAsync(table, page, 1, 1, 'EDITED');
+                await editCellAsync(table, page, 0, 1, 'EDITED');
                 const afterEdit = await getColumnValuesAsync(table, 1);
                 expect(afterEdit).toEqual(['EDITED', 'beta', 'alpha']);
 
@@ -276,7 +275,7 @@ test.describe('ソート・フィルター Undo/Redo', () => {
                 await clickSortIndicatorAsync(table, 0);
 
                 // ソート後の1行目（id=1）の name を "EDITED" に変更
-                await editCellAsync(table, page, 1, 1, 'EDITED');
+                await editCellAsync(table, page, 0, 1, 'EDITED');
 
                 // Ctrl+Z でセル編集をUndo
                 await page.keyboard.press('Control+z');
@@ -340,7 +339,7 @@ test.describe('ソート・フィルター Undo/Redo', () => {
             const table = await openTableAsync(page, 'item');
 
             // セルを編集 → dirty
-            await editCellAsync(table, page, 1, 1, 'EDITED');
+            await editCellAsync(table, page, 0, 1, 'EDITED');
             const afterEdit = await isTabDirtyAsync(page, 'item');
             expect(afterEdit).toBe(true);
 

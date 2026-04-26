@@ -150,7 +150,7 @@ async function editCellAsync(
     colIndex: number,
     newValue: string,
 ): Promise<void> {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await expect(cell).toBeVisible();
     await cell.dblclick();
@@ -167,7 +167,7 @@ async function editCellAsync(
  * rowIndex: 0始まり（ヘッダー行を除く）
  */
 function getPkCell(table: Locator, rowIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     // PKセルは最初のデータセル（行ヘッダーを除く）
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 }
@@ -196,7 +196,7 @@ async function editMiniTableCellAsync(
     colIndex: number,
     newValue: string,
 ): Promise<void> {
-    const visibleDataCells = miniTable.locator('.editor-table-row').nth(rowIndex + 1).locator(
+    const visibleDataCells = miniTable.locator('.editor-table-row').nth(rowIndex).locator(
         '.editor-table-cell:not(.editor-table-row-header):not([style*="display: none"])',
     );
     const cell = visibleDataCells.nth(colIndex);
@@ -370,8 +370,8 @@ test.describe('テストケース5: ストア全体で重複判定される（�
             // id=20（thunder, enemy_id=2）の行はミニテーブルに表示されない
             const miniTable = await getMiniTableAsync(page, 'skill');
 
-            // ミニテーブルの表示行確認（ヘッダー1行 + データ1行 + バッファ行(1) = 3行）
-            await expect(miniTable.locator('.editor-table-row')).toHaveCount(3);
+            // .editor-table-row はデータ行のみ: データ1行 + バッファ行(1) = 2行
+            await expect(miniTable.locator('.editor-table-row')).toHaveCount(2);
 
             // ミニテーブルの 1行目（id=10, slash）のPKセル（colIndex=0）に
             // ストア上には存在するが表示されていない id=20 を入力する
@@ -381,7 +381,7 @@ test.describe('テストケース5: ストア全体で重複判定される（�
 
             // PKセルに cell-pk-duplicate が付与されることを確認
             // ミニテーブルのPKセル（colIndex=0）は id 列
-            const miniPkCell = miniTable.locator('.editor-table-row').nth(1).locator(
+            const miniPkCell = miniTable.locator('.editor-table-row').nth(0).locator(
                 '.editor-table-cell:not(.editor-table-row-header):not([style*="display: none"])',
             ).nth(0);
 

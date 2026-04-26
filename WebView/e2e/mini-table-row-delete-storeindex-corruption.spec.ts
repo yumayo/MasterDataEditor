@@ -188,11 +188,10 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             await waitForRelationsPanelContentAsync(page);
 
             // quest_reward ミニテーブルが表示されるまで待機する
-            // ヘッダー行(1) + データ行(2) = 3行
-            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+            // バッファ空行を除外してデータ行のみカウントする
             const miniTable = await getMiniTableSectionAsync(page, 'quest_reward');
             const allMiniRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-            await expect(allMiniRows).toHaveCount(3);
+            await expect(allMiniRows).toHaveCount(2);
 
             // ステップ2: ミニテーブルの2行目（id=2, group_id=1, storeIndex=1）の下に行を挿入する
             // → ストアのstoreIndex=2に空行が挿入され、ストアは4行になる
@@ -201,14 +200,13 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             await clickContextMenuItemAsync(page, '下に行を挿入');
 
             // 行が追加されてミニテーブルに3データ行が表示されることを確認する
-            // ヘッダー行(1) + データ行(3) = 4行
-            await expect(allMiniRows).toHaveCount(4);
+            await expect(allMiniRows).toHaveCount(3);
 
             // 追加された3行目（ミニテーブルのrowIndex=2）の各セルにデータを入力する。
             // group_id=1 を入力しないと、ステップ4でquestタブに戻ったときにFKフィルタ
             // （group_id=1）を通過できず、ミニテーブルに表示されなくなるため必須。
-            // ミニテーブルの行: ヘッダー行(1) + データ行(rowIndex=2が3行目) → .nth(3)
-            const insertedRow = miniTable.locator('.editor-table-row').nth(3);
+            // ミニテーブルの行: データ行(rowIndex=2が3行目) → .nth(2)
+            const insertedRow = miniTable.locator('.editor-table-row').nth(2);
             const dataCells = insertedRow.locator('.editor-table-cell:not(.editor-table-row-header)');
             const editField = page.locator('.relations-panel .grid-textfield-active, .relations-panel input').first();
 
@@ -237,11 +235,10 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             // → quest_reward の新しいEditorTableが生成され、storeRowIndicesが [0,1,2,3] になる
             // （ストアは4行: id=1, id=2, id=5(group_id=1,reward_value=999), id=3）
             const questRewardTable = await openTableAsync(page, 'quest_reward');
-            // quest_reward テーブルに4行（ヘッダー+データ4行）表示されていることを確認する
+            // quest_reward テーブルに4データ行表示されていることを確認する
             // バッファ空行を除いた実データ行のみカウントする
             const questRewardDataRows = questRewardTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-            // ヘッダー行(1) + データ行(4) = 5行
-            await expect(questRewardDataRows).toHaveCount(5);
+            await expect(questRewardDataRows).toHaveCount(4);
 
             // ステップ4: questタブに切り替えて戻る
             // → questのEditorTableにはquest_rewardのミニテーブルが表示される
@@ -253,11 +250,10 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
 
             // ミニテーブルが再表示されるまで待機する
             const miniTableAfterSwitch = await getMiniTableSectionAsync(page, 'quest_reward');
-            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+            // バッファ空行を除外してデータ行のみカウントする
             const allMiniRowsAfterSwitch = miniTableAfterSwitch.locator('.editor-table-row:not(.editor-table-empty-row)');
             // ミニテーブルには3行（id=1, id=2, id=5(group_id=1)）が表示される
-            // ヘッダー行(1) + データ行(3) = 4行
-            await expect(allMiniRowsAfterSwitch).toHaveCount(4);
+            await expect(allMiniRowsAfterSwitch).toHaveCount(3);
 
             // ステップ5: ミニテーブルの3行目（追加した id=5 の行）を削除する
             // ミニテーブルのstoreRowIndicesは古い状態 [0, 1, 2] のまま
@@ -268,8 +264,7 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             await clickContextMenuItemAsync(page, '行を削除');
 
             // 行が削除されてミニテーブルに2データ行が表示されることを確認する
-            // ヘッダー行(1) + データ行(2) = 3行
-            await expect(allMiniRowsAfterSwitch).toHaveCount(3);
+            await expect(allMiniRowsAfterSwitch).toHaveCount(2);
 
             // ステップ6: quest_rewardタブに切り替える
             // → reloadCellsFromStore() が呼ばれる
@@ -289,9 +284,9 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             //
             // バッファ空行を除いた実データ行のみカウントする（通常テーブルはemptyRowCount=100）
             const questRewardDataRowsAfter = questRewardTableAfter.locator('.editor-table-row:not(.editor-table-empty-row)');
-            // 期待: ヘッダー行(1) + データ行(3) = 4行
-            // バグ時: ヘッダー行(1) + データ行(4) = 5行（重複行あり）
-            await expect(questRewardDataRowsAfter).toHaveCount(4);
+            // 期待: データ行(3)
+            // バグ時: データ行(4)（重複行あり）
+            await expect(questRewardDataRowsAfter).toHaveCount(3);
 
             // セル値でも正しいデータが表示されていることを確認する
             // バグ時は4行目に id=3 の行が重複して表示される
@@ -328,21 +323,20 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             await selectRowAsync(questTable, 0);
             await waitForRelationsPanelContentAsync(page);
 
-            // ミニテーブルが表示される（ヘッダー行 + 2データ行 = 3行）
-            // バッファ空行（editor-table-empty-row）を除外してヘッダー+データ行のみカウントする
+            // バッファ空行を除外して2データ行のみカウントする
             const miniTable = await getMiniTableSectionAsync(page, 'quest_reward');
             const allMiniRows = miniTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-            await expect(allMiniRows).toHaveCount(3);
+            await expect(allMiniRows).toHaveCount(2);
 
             // ステップ2: ミニテーブルの2行目の下に行を挿入する
             await rightClickMiniTableRowHeaderAsync(miniTable, 1);
             await clickContextMenuItemAsync(page, '下に行を挿入');
-            await expect(allMiniRows).toHaveCount(4);
+            await expect(allMiniRows).toHaveCount(3);
 
             // ステップ3: そのまま（quest_rewardを左ペインで開かずに）ミニテーブルの3行目を削除する
             await rightClickMiniTableRowHeaderAsync(miniTable, 2);
             await clickContextMenuItemAsync(page, '行を削除');
-            await expect(allMiniRows).toHaveCount(3);
+            await expect(allMiniRows).toHaveCount(2);
 
             // ステップ4: quest_rewardテーブルを左ペインで開く
             const questRewardTable = await openTableAsync(page, 'quest_reward');
@@ -356,8 +350,8 @@ test.describe('ミニテーブル行削除後に左ペインEditorTableのstoreR
             //   行追加時にストアに空行が挿入され、行削除時に誤った行が削除されるため
             //   元の3行より増減した行数になる
             const questRewardDataRows = questRewardTable.locator('.editor-table-row:not(.editor-table-empty-row)');
-            // 期待: ヘッダー行(1) + データ行(3) = 4行
-            await expect(questRewardDataRows).toHaveCount(4);
+            // 期待: データ行(3)
+            await expect(questRewardDataRows).toHaveCount(3);
 
             await expectTableDataAsync(questRewardTable, `
                 1, 1, 100

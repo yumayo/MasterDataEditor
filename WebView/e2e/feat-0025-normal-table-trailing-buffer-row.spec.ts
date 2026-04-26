@@ -109,7 +109,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			//   全行数ではなくデータ行のみカウントする（:not(.editor-table-empty-row) で除外）
 			const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
 			// 初期: ヘッダー(1) + データ(1:sword) = 2行（データ行のみ）
-			await expect(dataRows).toHaveCount(2);
+			await expect(dataRows).toHaveCount(1);
 
 			// バッファ行の name 列（col=1）に "potion" を入力して確定する
 			// item のカラム順: id(col=0), name(col=1)
@@ -127,7 +127,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			await expect(
 				dataRows,
 				'バッファ行昇格後: ヘッダー(1) + データ(2:sword,potion) = 3行（データ行のみ）',
-			).toHaveCount(3);
+			).toHaveCount(2);
 
 			// バッファ行が正確に1行であることを確認する（蓄積なし・欠損なし）
 			const bufferRows = table.locator('.editor-table-empty-row');
@@ -147,7 +147,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			// データ行のみのカウント用 Locator（バッファ行を除外）
 			const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
 			// 初期: ヘッダー(1) + データ(1:sword) = 2行
-			await expect(dataRows).toHaveCount(2);
+			await expect(dataRows).toHaveCount(1);
 
 			// 1回目: バッファ行の name 列に "potion" を入力して確定する
 			await inputToBufferRowAsync(page, table, 1, 'potion');
@@ -157,7 +157,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			await expect(
 				dataRows,
 				'1回目昇格後: ヘッダー(1) + データ(2:sword,potion) = 3行',
-			).toHaveCount(3);
+			).toHaveCount(2);
 
 			// 2回目: 補充されたバッファ行の name 列に "elixir" を入力して確定する
 			await inputToBufferRowAsync(page, table, 1, 'elixir');
@@ -167,7 +167,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			await expect(
 				dataRows,
 				'2回目昇格後: ヘッダー(1) + データ(3:sword,potion,elixir) = 4行',
-			).toHaveCount(4);
+			).toHaveCount(3);
 
 			// バッファ行が正確に1行であることを確認する（蓄積なし・欠損なし）
 			const bufferRows = table.locator('.editor-table-empty-row');
@@ -187,7 +187,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			// データ行のみのカウント用 Locator（バッファ行を除外）
 			const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
 			// 初期: ヘッダー(1) + データ(1:sword) = 2行
-			await expect(dataRows).toHaveCount(2);
+			await expect(dataRows).toHaveCount(1);
 
 			// バッファ行の name 列に "potion" を入力して確定する
 			await inputToBufferRowAsync(page, table, 1, 'potion');
@@ -195,7 +195,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			// 昇格後: ヘッダー(1) + データ(2:sword,potion) = 3行
 			// ※ このアサーションがREDになる場合は修正前の状態で失敗するが、
 			//   テスト3のREDはUndoの検証で発生させる
-			await expect(dataRows).toHaveCount(3);
+			await expect(dataRows).toHaveCount(2);
 
 			// Ctrl+Z で Undo する（demoteStoreRowToBuffer が呼ばれる）
 			// テーブルにフォーカスを移してから Undo を送信する
@@ -217,7 +217,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			await expect(
 				dataRows,
 				'Undo後: ヘッダー(1) + データ(1:sword) = 2行（データ行のみ）',
-			).toHaveCount(2);
+			).toHaveCount(1);
 
 			// バッファ行が存在することを確認する（蓄積なし・欠損なし）
 			const bufferRows = table.locator('.editor-table-empty-row');
@@ -236,7 +236,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 
 			// 初期: ヘッダー(1) + データ(1:sword) = 2行（データ行のみ）
 			const dataRows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
-			await expect(dataRows).toHaveCount(2);
+			await expect(dataRows).toHaveCount(1);
 
 			// データ行（sword）の行ヘッダーを右クリックしてコンテキストメニューを開く
 			// コーナーセルは .editor-table-corner-cell なので .editor-table-row-header の nth(0) がデータ行先頭
@@ -252,7 +252,7 @@ test.describe('FEAT_0025: 通常テーブルのバッファ行昇格後に末尾
 			await expect(
 				dataRows,
 				'行削除後: ヘッダー(1) + データ(0行) = 1行（データ行のみ）',
-			).toHaveCount(1);
+			).toHaveCount(0);
 
 			// バッファ行が正確に1行であることを確認する（蓄積なし・欠損なし）
 			const bufferRows = table.locator('.editor-table-empty-row');

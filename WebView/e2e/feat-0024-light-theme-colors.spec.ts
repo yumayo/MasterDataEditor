@@ -61,7 +61,7 @@ function getColumnHeaderCell(table: Locator, colIndex: number): Locator {
  * rowIndex: 0始まり（ヘッダー除く）、colIndex: 0始まり（行ヘッダー除く）
  */
 async function openFkDropdownAsync(page: Page, table: Locator, rowIndex: number, colIndex: number): Promise<Locator> {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     await cell.dblclick();
     const dropdownList = page.locator('.editor-left-pane .grid-dropdown-list');

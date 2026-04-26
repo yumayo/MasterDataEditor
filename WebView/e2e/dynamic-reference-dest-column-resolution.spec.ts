@@ -199,7 +199,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
  * colIndex: 0始まり（行ヘッダーを除く）
  */
 function getReferenceHint(table: Locator, rowIndex: number, colIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     const cell = row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
     return cell.locator('.cell-reference-hint');
 }

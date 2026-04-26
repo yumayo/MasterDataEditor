@@ -34,7 +34,7 @@ async function getSelectedRowHeaderCountAsync(
     table: Locator,
 ): Promise<number> {
     return await table
-        .locator('.editor-table-row-header.selected')
+        .locator('.editor-table-grid .editor-table-row-header.selected')
         .count();
 }
 
@@ -55,9 +55,9 @@ test(
 
         // "value"列（インデックス2）のデータセルへ
         // マウスを移動する
-        // 仮想スクロール有効テーブルでは children[1] が topSpacer のため nth-child(3) が最初のデータ行
         const valueCell = table
-            .locator('.editor-table-row:nth-child(3)')
+            .locator('.editor-table-row')
+            .first()
             .locator(
                 '.editor-table-cell'
                 + ':not(.editor-table-row-header)'
@@ -92,7 +92,8 @@ test(
 
         // 3行目のデータセルへマウスを移動する
         const thirdRowCell = table
-            .locator('.editor-table-row:nth-child(4)')
+            .locator('.editor-table-row')
+            .nth(2)
             .locator(
                 '.editor-table-cell'
                 + ':not(.editor-table-row-header)'

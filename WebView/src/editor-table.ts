@@ -460,7 +460,8 @@ export class EditorTable {
     }
 
     private getLogicalRowIndexFromElement(rowElement: HTMLElement): number | null {
-        if (rowElement.classList.contains('editor-table-column-header-row')) return 0;
+        if (rowElement.classList.contains('editor-table-column-header-row')
+            || rowElement.classList.contains('editor-table-source-column-header-row')) return 0;
         const rowIndexText = rowElement.dataset.rowIndex;
         if (rowIndexText === undefined) return null;
         return Number(rowIndexText) + 1;
@@ -529,6 +530,16 @@ export class EditorTable {
                     this.openFilterDropdown(colIdx, e.currentTarget as HTMLElement);
                 });
             }
+            const sortIndicator = cloneCell.querySelector('.sort-indicator') as HTMLElement | null;
+            if (sortIndicator !== null) {
+                sortIndicator.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+                sortIndicator.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const headerCell = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+                    const colIdx = Number(headerCell.dataset.columnIndex);
+                    this.applySortForColumn(colIdx);
+                });
+            }
         }
         if (cloneCell.classList.contains('editor-table-row-header')) {
             cloneCell.addEventListener('mousedown', (e: MouseEvent) => {
@@ -583,7 +594,8 @@ export class EditorTable {
         const renderedRows = this.getRenderedRowElements();
         for (const renderedRow of renderedRows) {
             const cellCount = renderedRow.children.length;
-            if (renderedRow.classList.contains('editor-table-column-header-row')) {
+            if (renderedRow.classList.contains('editor-table-column-header-row')
+                || renderedRow.classList.contains('editor-table-source-column-header-row')) {
                 for (let col = 0; col < cellCount; col++) {
                     (renderedRow.children[col] as HTMLElement).style.visibility = '';
                 }
@@ -761,7 +773,7 @@ export class EditorTable {
         this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
 
         const detachedCornerRow = document.createElement('div');
-        detachedCornerRow.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
+        detachedCornerRow.classList.add('editor-table-detached-row');
         detachedCornerRow.style.top = '0px';
         for (let col = 0; col < Math.min(fixedLeftColumnCount, headerRow.children.length); col++) {
             const sourceCell = headerRow.children[col] as HTMLElement | null;
@@ -826,6 +838,7 @@ export class EditorTable {
             }
         }
         this.refreshQuadrantViewportRowHeaders(null);
+        this.emitScrollMetricsChanged();
     }
 
     private refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void {
@@ -1089,9 +1102,11 @@ export class EditorTable {
         if (detachedHeaderRow !== null) {
             const availableColumnCount = Math.min(headerRow.children.length - prefixColumnCount, detachedHeaderRow.children.length);
             for (let col = 0; col < availableColumnCount; col++) {
+                const detachedChild = detachedHeaderRow.children[col] as HTMLElement | undefined;
+                if (detachedChild === undefined) continue;
                 this.syncDetachedCellVisualState(
                     headerRow.children[prefixColumnCount + col] as HTMLElement,
-                    detachedHeaderRow.children[col] as HTMLElement
+                    detachedChild
                 );
             }
         }
@@ -1129,9 +1144,11 @@ export class EditorTable {
         if (detachedHeaderRow !== null) {
             const availableColumnCount = Math.min(headerRow.children.length - fixedLeftColumnCount, detachedHeaderRow.children.length);
             for (let col = 0; col < availableColumnCount; col++) {
+                const detachedChild = detachedHeaderRow.children[col] as HTMLElement | undefined;
+                if (detachedChild === undefined) continue;
                 this.syncDetachedCellVisualState(
                     headerRow.children[fixedLeftColumnCount + col] as HTMLElement,
-                    detachedHeaderRow.children[col] as HTMLElement
+                    detachedChild
                 );
             }
         }
@@ -1245,6 +1262,7 @@ export class EditorTable {
         this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
         this.syncFreezeTransforms(scrollTop, scrollLeft);
         this.onScrollForFrozenFillHandle();
+        this.emitScrollMetricsChanged();
     }
 
     refreshDetachedHeaderLayout(): void {
@@ -1524,7 +1542,8 @@ export class EditorTable {
                 cells.push(columnHeaderCell);
             }
             const columnHeaderRow = EditorTable.createRow(cells, 0);
-            columnHeaderRow.classList.add('editor-table-column-header-row');
+            columnHeaderRow.classList.remove('editor-table-row');
+            columnHeaderRow.classList.add('editor-table-source-column-header-row');
             this.gridElement.appendChild(columnHeaderRow);
         }
         // ヘッダー行追加直後に topSpacer をテーブル内に配置する（データ行追加前に必要）
@@ -2222,7 +2241,8 @@ export class EditorTable {
         // データ行インデックス）から算出する。固定行 clone は行要素自身が data-row-index を持つ。
         // ヘッダー行は data-row-index を持たないため children インデックスを使う。
         let row: number = -1;
-        if (rowElement.classList.contains('editor-table-column-header-row')) {
+        if (rowElement.classList.contains('editor-table-column-header-row')
+            || rowElement.classList.contains('editor-table-source-column-header-row')) {
             row = 0;
         } else if (rowElement.dataset.rowIndex !== undefined) {
             // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
@@ -2571,6 +2591,24 @@ export class EditorTable {
         return this.scrollContainer.scrollTop;
     }
 
+    getScrollMetrics(): { scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientHeight: number; clientWidth: number } {
+        return {
+            scrollTop: this.scrollContainer.scrollTop,
+            scrollLeft: this.scrollContainer.scrollLeft,
+            scrollHeight: this.scrollContainer.scrollHeight,
+            scrollWidth: this.scrollContainer.scrollWidth,
+            clientHeight: this.scrollContainer.clientHeight,
+            clientWidth: this.scrollContainer.clientWidth,
+        };
+    }
+
+    private emitScrollMetricsChanged(): void {
+        this.element.dispatchEvent(new CustomEvent('editor-table-scroll-metrics-changed', {
+            bubbles: true,
+            detail: this.getScrollMetrics(),
+        }));
+    }
+
     usesInternalScrollLayout(): boolean {
         return this.usesInternalMainViewport;
     }
@@ -2586,6 +2624,7 @@ export class EditorTable {
         this.scrollContainer.scrollTop = scrollTop;
         this.scrollContainer.scrollLeft = scrollLeft;
         this.syncScrollBoundVisuals();
+        this.emitScrollMetricsChanged();
     }
 
     /**

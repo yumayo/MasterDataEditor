@@ -102,6 +102,7 @@ test.describe('updateFullDataCell', () => {
             tableName: "item",
             items: [{ id: "1", displayText: "剣" }],
             displayColumnName: "ja",
+            displayTextById: new Map([["1", "剣"]]),
         });
         // 表示列(ja=index2)を編集
         cache.updateFullDataCell("item", "1", 2, "太刀");
@@ -135,6 +136,7 @@ test.describe('updateFullDataCell', () => {
             tableName: "item",
             items: [{ id: "1", displayText: "剣" }],
             displayColumnName: "ja",
+            displayTextById: new Map([["1", "剣"]]),
         });
         // 表示列ではないname列(index=1)を編集
         cache.updateFullDataCell("item", "1", 1, "katana");
@@ -160,6 +162,7 @@ test.describe('updateFullDataCell', () => {
             tableName: "item",
             items: [{ id: "1", displayText: "剣" }],
             displayColumnName: "ja",
+            displayTextById: new Map([["1", "剣"]]),
         });
         // ja列のインデックスはheader["id","name","ja"]から2
         cache.updateFullDataCell("item", "1", 2, "太刀");

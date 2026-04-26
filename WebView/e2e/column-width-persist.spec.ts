@@ -201,9 +201,10 @@ test.describe(
                 );
                 await page.goto('/');
 
-                await openTableAsync(page, 'item');
+                const table = await openTableAsync(page, 'item');
 
                 // Ctrl+Sで保存
+                await table.click();
                 await page.keyboard.press('Control+s');
                 await page.waitForTimeout(500);
 

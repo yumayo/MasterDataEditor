@@ -248,7 +248,7 @@ test.describe('blameビュー', () => {
             await blameMenuItem.click();
 
             // 行の children[0] に .blame-cell が表示されることを確認する（行ヘッダーの兄弟要素）
-            const dataRow = table.locator('.editor-table-row').nth(2); // nth(0)=ヘッダー行、nth(1)=データ行1、nth(2)=データ行2
+            const dataRow = table.locator('.editor-table-row').nth(1);
             const blameCell = dataRow.locator('.blame-cell');
             await expect(blameCell).toBeVisible();
 
@@ -271,7 +271,7 @@ test.describe('blameビュー', () => {
             await clickContextMenuItemAsync(page, '変更履歴を表示');
 
             // blame-cell が表示されていることを確認する
-            const dataRow = table.locator('.editor-table-row').nth(2);
+            const dataRow = table.locator('.editor-table-row').nth(1);
             await expect(dataRow.locator('.blame-cell')).toBeVisible();
 
             // 再度行ヘッダーを右クリックしてコンテキストメニューを開く
@@ -304,15 +304,15 @@ test.describe('blame表示時の列選択', () => {
             await expect(table.locator('.blame-cell').first()).toBeVisible();
 
             // name列ヘッダーをクリックする
-            const nameHeader = table.locator('.editor-table-column-header', { hasText: 'name' });
+            const nameHeader = table.locator('.editor-table-column-header-row .editor-table-column-header', { hasText: 'name' });
             await nameHeader.click();
 
             // name列ヘッダーにのみ selected クラスが付与されていること
             await expect(nameHeader).toHaveClass(/selected/);
 
             // 他の列ヘッダー（id, value）には selected クラスが付与されていないこと
-            const idHeader = table.locator('.editor-table-column-header', { hasText: 'id' });
-            const valueHeader = table.locator('.editor-table-column-header', { hasText: 'value' });
+            const idHeader = table.locator('.editor-table-column-header-row .editor-table-column-header', { hasText: 'id' });
+            const valueHeader = table.locator('.editor-table-column-header-row .editor-table-column-header', { hasText: 'value' });
             await expect(idHeader).not.toHaveClass(/selected/);
             await expect(valueHeader).not.toHaveClass(/selected/);
         },
@@ -332,7 +332,7 @@ test.describe('blame表示時の列選択', () => {
             await expect(table.locator('.blame-cell').first()).toBeVisible();
 
             // 1行目のname列セル（2列目のデータセル）をクリックする
-            const firstDataRow = table.locator('.editor-table-row').nth(1);
+            const firstDataRow = table.locator('.editor-table-row').nth(0);
             const nameCell = firstDataRow.locator('.editor-table-cell[data-col="1"]');
             await nameCell.click();
 
@@ -384,8 +384,8 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             await page.mouse.up();
 
             // 移動後: 2, 3, 1 の順になる
-            const row0Id = await table.locator('.editor-table-row').nth(1).locator('.editor-table-cell[data-col="0"]').innerText();
-            const row2Id = await table.locator('.editor-table-row').nth(3).locator('.editor-table-cell[data-col="0"]').innerText();
+            const row0Id = await table.locator('.editor-table-row').nth(0).locator('.editor-table-cell[data-col="0"]').innerText();
+            const row2Id = await table.locator('.editor-table-row').nth(2).locator('.editor-table-cell[data-col="0"]').innerText();
             expect(row0Id).toBe('2');
             expect(row2Id).toBe('1');
 

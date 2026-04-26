@@ -92,7 +92,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
  */
 async function rightClickPkCellAsync(table: Locator, rowIndex: number): Promise<void> {
     // データ行は .editor-table-row の nth(rowIndex + 1)（0番目はヘッダー行）
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     // PK列は行ヘッダーを除く最初のデータセル（id列）
     const pkCell = row.locator('.editor-table-cell:not(.editor-table-row-header)').first();
     await pkCell.click({ button: 'right' });

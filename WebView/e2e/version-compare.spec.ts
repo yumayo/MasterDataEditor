@@ -314,16 +314,14 @@ test.describe('バージョン比較 - 差分表示', () => {
             const leftPane = diffTab.locator('.diff-pane-left');
             const rightPane = diffTab.locator('.diff-pane-right');
 
-            // 左ペイン（aaa1111）にはヘッダー + データ1行が表示されること
+            // 左ペイン（aaa1111）にはデータ1行が表示されること
             // 行ヘッダー列を除くデータセルで検証する
             const leftDataRows = leftPane.locator('.editor-table-row:not(.diff-row-empty)');
-            // ヘッダー行(1) + データ行(1) = 2行
-            await expect(leftDataRows).toHaveCount(2);
+            await expect(leftDataRows).toHaveCount(1);
 
-            // 右ペイン（ccc3333）にはヘッダー + データ3行が表示されること
+            // 右ペイン（ccc3333）にはデータ3行が表示されること
             const rightDataRows = rightPane.locator('.editor-table-row:not(.diff-row-empty)');
-            // ヘッダー行(1) + データ行(3) = 4行
-            await expect(rightDataRows).toHaveCount(4);
+            await expect(rightDataRows).toHaveCount(3);
 
             // 右ペインに追加行（.diff-cell-added）が存在することを検証する
             // item_b と item_c の行が追加されている

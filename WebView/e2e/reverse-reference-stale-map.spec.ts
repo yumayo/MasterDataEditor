@@ -119,7 +119,7 @@ async function setupFlameAddedAndEnemySelectedAsync(page: Page): Promise<Locator
 	// Step 2: skill テーブルを開き、バッファ空行に flame（enemy_id=1）を入力する
 	// DOM構造: row[0]=ヘッダー、row[1]=id=1(slash)、row[2]=id=2(thunder)、row[3]=バッファ空行
 	const skillTable = await openTableAsync(page, 'skill');
-	const bufferRow = skillTable.locator('.editor-table-row').nth(3);
+	const bufferRow = skillTable.locator('.editor-table-row').nth(2);
 
 	const idCell = bufferRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 	await idCell.dblclick();
@@ -177,7 +177,7 @@ test.describe('バッファ空行に追加した行がミニテーブルに反�
 			await waitForRelationsPanelContentAsync(page);
 			const miniTable = await getMiniTableSectionAsync(page, 'skill');
 			// 初期状態: ヘッダー行(1) + データ行(1, slash) + バッファ行(1) = 3行
-			await expect(miniTable.locator('.editor-table-row')).toHaveCount(3);
+			await expect(miniTable.locator('.editor-table-row')).toHaveCount(2);
 
 			// flame を追加して enemy id=1 を選択した状態にする
 			await setupFlameAddedAndEnemySelectedAsync(page);
@@ -188,7 +188,7 @@ test.describe('バッファ空行に追加した行がミニテーブルに反�
 			await expect(
 				refreshedMiniTable.locator('.editor-table-row'),
 				'バッファ空行に追加した flame（enemy_id=1）がミニテーブルに表示されるべき',
-			).toHaveCount(4);
+			).toHaveCount(3);
 		},
 	);
 
@@ -201,7 +201,7 @@ test.describe('バッファ空行に追加した行がミニテーブルに反�
 			const refreshedMiniTable = await getMiniTableSectionAsync(page, 'skill');
 
 			// 2番目のデータ行（ヘッダー行=nth(0)、slash=nth(1)、flame=nth(2)）を確認する
-			const secondDataRow = refreshedMiniTable.locator('.editor-table-row').nth(2);
+			const secondDataRow = refreshedMiniTable.locator('.editor-table-row').nth(1);
 			await expect(secondDataRow, '2番目のデータ行（flame）がミニテーブルに存在するべき').toBeVisible();
 
 			// name列に "flame" が表示されていることを確認する

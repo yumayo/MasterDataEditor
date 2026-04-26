@@ -65,7 +65,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
  * rowIndex: 0始まり（ヘッダー行を除く）
  */
 function getPkCell(table: Locator, rowIndex: number): Locator {
-    const row = table.locator('.editor-table-row').nth(rowIndex + 1);
+    const row = table.locator('.editor-table-row').nth(rowIndex);
     return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
 }
 

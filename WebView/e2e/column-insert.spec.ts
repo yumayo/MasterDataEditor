@@ -57,7 +57,7 @@ async function getRowCellTextsAsync(
 ): Promise<string[]> {
     const row = table
         .locator('.editor-table-row')
-        .nth(rowIndex + 1);
+        .nth(rowIndex);
     const selector =
         '.editor-table-cell'
         + ':not(.editor-table-row-header)';
@@ -164,7 +164,7 @@ async function tamperCellTextAsync(
 ): Promise<void> {
     const row = table
         .locator('.editor-table-row')
-        .nth(rowIndex + 1);
+        .nth(rowIndex);
     await row
         .locator(
             '.editor-table-cell'

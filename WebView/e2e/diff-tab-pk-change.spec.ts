@@ -117,7 +117,7 @@ test.describe('主キー変更時の差分タブ表示', () => {
             await expect(leftPane).toBeVisible();
 
             // diff-row-deleted クラスを持つ行が1つ存在すること
-            const deletedRows = leftPane.locator('.diff-row-deleted');
+            const deletedRows = leftPane.locator('.editor-table-grid .diff-row-deleted');
             await expect(deletedRows).toHaveCount(1);
 
             // 削除行のセル内容が id=3, name=C であること
@@ -153,7 +153,7 @@ test.describe('主キー変更時の差分タブ表示', () => {
             await expect(rightPane).toBeVisible();
 
             // 追加行は行ヘッダーに diff-cell-added が付与された行として特定する
-            const addedRowHeaders = rightPane.locator('.editor-table-row-header.diff-cell-added');
+            const addedRowHeaders = rightPane.locator('.editor-table-grid .editor-table-row-header.diff-cell-added');
             await expect(addedRowHeaders).toHaveCount(1);
 
             // 追加行の全データセルにも diff-cell-added が付与されていること
