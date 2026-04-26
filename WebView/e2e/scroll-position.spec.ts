@@ -207,6 +207,57 @@ test(
 );
 
 test(
+    'ArrowRightで画面外の列へ移動したとき横方向に自動スクロールされること',
+    async ({ page }) => {
+        await page.setViewportSize({ width: 1024, height: 500 });
+
+        const fs = createWideFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara_wide');
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
+
+        const firstCell = getDataCell(table, 0, 0);
+        await firstCell.click();
+
+        const before = await page.evaluate(() => {
+            const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            return { scrollLeft: viewport.scrollLeft, clientWidth: viewport.clientWidth, scrollWidth: viewport.scrollWidth };
+        });
+        expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+        expect(before.scrollLeft).toBe(0);
+
+        for (let i = 0; i < 8; i++) {
+            await page.keyboard.press('ArrowRight');
+        }
+
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
+        const after = await page.evaluate(() => {
+            const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            const focusedCell = document.querySelector('.editor-left-pane .editor-table-cell-focused') as HTMLElement | null;
+            if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            if (focusedCell === null) throw new Error('focusedCell が見つかりません');
+            const viewportRect = viewport.getBoundingClientRect();
+            const focusedRect = focusedCell.getBoundingClientRect();
+            return {
+                scrollLeft: viewport.scrollLeft,
+                focusedRight: focusedRect.right,
+                viewportRight: viewportRect.right,
+            };
+        });
+
+        expect(after.scrollLeft, 'ArrowRightで画面外列へ移動しても横スクロールされていません').toBeGreaterThan(0);
+        expect(
+            after.focusedRight,
+            `ArrowRight後のフォーカスセルが画面外です: focusedRight=${after.focusedRight}, viewportRight=${after.viewportRight}, scrollLeft=${after.scrollLeft}`,
+        ).toBeLessThanOrEqual(after.viewportRight + 1);
+    },
+);
+
+test(
     'セル編集確定後にスクロール位置がリセットされないこと',
     async ({ page }) => {
         // 画面サイズを1024x768に制限してスクロールが発生しやすくする
@@ -529,6 +580,62 @@ test(
             cellRectAfter.bottom,
             `Shift+クリック自動スクロール後もターゲットセルが画面外にある（bottom=${cellRectAfter.bottom}, containerBottom=${containerRectFinal.bottom}）`,
         ).toBeLessThanOrEqual(containerRectFinal.bottom);
+    },
+);
+
+test(
+    '画面上側のセルを自動スクロールで表示するとき1行余計に戻らないこと',
+    async ({ page }) => {
+        await page.setViewportSize({ width: 1024, height: 400 });
+
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'chara');
+        await expect(table.locator('.editor-table-row[data-store-index="0"]')).toBeVisible();
+
+        const targetRowIndex = 20;
+        const initialScrollRowIndex = 70;
+        const setup = await page.evaluate(([scrollRowIndex]) => {
+            const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            const firstRow = document.querySelector('.editor-left-pane .editor-table-row[data-store-index="0"]') as HTMLElement | null;
+            if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            if (firstRow === null) throw new Error('先頭行が見つかりません');
+            const rowHeight = firstRow.getBoundingClientRect().height;
+            viewport.scrollTop = scrollRowIndex * rowHeight;
+            viewport.dispatchEvent(new Event('scroll'));
+            return { rowHeight, scrollTop: viewport.scrollTop };
+        }, [initialScrollRowIndex] as [number]);
+        expect(setup.scrollTop).toBeGreaterThan(targetRowIndex * setup.rowHeight);
+
+        const selectionInvoked = await invokeSelectionAsync(page, 'start', targetRowIndex, 2);
+        expect(selectionInvoked, 'activeEditorTable 経由の selection.start 呼び出しに失敗した').toBe(true);
+
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+
+        const result = await page.evaluate(([rowIdx, colIdx]) => {
+            const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            const row = document.querySelector(`.editor-left-pane .editor-table-row[data-store-index="${rowIdx}"]`) as HTMLElement | null;
+            if (row === null) throw new Error('対象行が見つかりません');
+            const cells = row.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)');
+            const cell = cells[colIdx] as HTMLElement | undefined;
+            if (!cell) throw new Error('対象セルが見つかりません');
+            const viewportRect = viewport.getBoundingClientRect();
+            const cellRect = cell.getBoundingClientRect();
+            return {
+                rowTopInViewport: cellRect.top - viewportRect.top,
+                rowHeight: cellRect.height,
+                scrollTop: viewport.scrollTop,
+            };
+        }, [targetRowIndex, 2] as [number, number]);
+
+        expect(
+            result.rowTopInViewport,
+            `自動スクロール後に対象セルが上端から${result.rowTopInViewport}px下にずれている（行高=${result.rowHeight}px, scrollTop=${result.scrollTop}）`,
+        ).toBeLessThanOrEqual(2);
+        expect(result.rowTopInViewport).toBeGreaterThanOrEqual(-1);
     },
 );
 

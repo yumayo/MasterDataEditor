@@ -463,7 +463,10 @@ export class VirtualScrollController {
         const viewBottom = viewTop + this.scrollContainer.clientHeight;
         let targetScrollTop = this.scrollContainer.scrollTop + this.scrollTopCompensationPx;
         if (rowAbsoluteTop < viewTop) {
-            targetScrollTop = rowAbsoluteTop - headerHeight;
+            const frozenHeight = this.frozenRowCount * rowHeight;
+            // 内部スクロールでは compensation 済みなので、ヘッダー高さを二重に引かない。
+            const topInset = this.scrollTopCompensationPx > 0 ? 0 : headerHeight + frozenHeight;
+            targetScrollTop = rowAbsoluteTop - topInset;
         } else if (rowAbsoluteBottom > viewBottom) {
             targetScrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
         }

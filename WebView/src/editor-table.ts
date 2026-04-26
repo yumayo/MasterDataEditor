@@ -1424,11 +1424,11 @@ export class EditorTable {
         this.virtualScroll.notifyRowRemoved();
     }
 
-    /** 内部モジュール用: バーチャルスクロールの総行数をデータ行数で同期する。
-     * フィルター適用時はフィルター後の行数を使用する。
-     * バッファ行は含まない。ensureTrailingBufferRow() がバッファ行追加後に別途+1を加算する。 */
+    /** 内部モジュール用: バーチャルスクロールの総行数を同期する。
+     * 通常テーブルは末尾バッファ行を含め、差分テーブルは実データ行のみを使う。 */
     syncVirtualScrollTotalRowCount(): void {
-        this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount());
+        const bufferRowCount = this.diffTab === false ? 1 : 0;
+        this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount() + bufferRowCount);
     }
 
     /** 内部モジュール用: バーチャルスクロールで現在DOMに存在するデータ行の開始インデックス（0始まり）を返す */
@@ -3241,10 +3241,7 @@ export class EditorTable {
             return { top: 0, left: 0 };
         }
         let top = this.detachedHeaderTopOffset + this.getHeaderRowHeightPx() + (this.frozenRowCount * this.getDataRowHeightPx());
-        let left = this.getDetachedPrefixWidthPx();
-        for (let dataColumnIdx = 0; dataColumnIdx < this.frozenColumnCount; dataColumnIdx++) {
-            left += this.getColumnLayoutWidthPx(dataColumnIdx);
-        }
+        let left = this.getDetachedPrefixWidthPx() + this.getFrozenColumnAreaWidthPx();
         return { top, left };
     }
 
@@ -3262,13 +3259,12 @@ export class EditorTable {
         if (dataColumnIndex >= this.getColumnCount()) {
             throw new Error(`データ列範囲外です: column=${column}`);
         }
-        let left = this.usesInternalMainViewport ? 0 : this.getDetachedPrefixWidthPx();
         const startIndex = this.usesInternalMainViewport ? this.frozenColumnCount : 0;
-        for (let index = startIndex; index < dataColumnIndex; index++) {
-            left += this.getColumnLayoutWidthPx(index);
-        }
-        const width = this.getColumnLayoutWidthPx(dataColumnIndex);
-        return { left, right: left + width };
+        const prefixWidth = this.usesInternalMainViewport ? 0 : this.getDetachedPrefixWidthPx();
+        const startOffset = this.getRenderedDataBoundaryOffsetPx(startIndex);
+        const left = prefixWidth + this.getRenderedDataBoundaryOffsetPx(dataColumnIndex) - startOffset;
+        const right = prefixWidth + this.getRenderedDataBoundaryOffsetPx(dataColumnIndex + 1) - startOffset;
+        return { left, right };
     }
 
     /**
