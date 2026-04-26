@@ -20,8 +20,8 @@
 }
 
 /* 固定列/固定行の最終セルが選択辺を持つ場合、clip-path: inset(0) が
-   freeze-column-border / freeze-row-border の影用 clip-path を上書きして
-   box-shadow が消えてしまう。複合セレクタで影の描画領域を維持する。 */
+   freeze-column-border / freeze-row-border の境界線用 clip-path を上書きして
+   box-shadow が消えてしまう。複合セレクタで境界線の描画領域を維持する。 */
 .freeze-column-border.sel-top,
 .freeze-column-border.sel-bottom,
 .freeze-column-border.sel-left,
@@ -70,7 +70,7 @@
     clip-path: inset(0);
 }
 
-/* コピー辺でも同様に freeze-*-border の shadow 用 clip-path を維持する */
+/* コピー辺でも同様に freeze-*-border の境界線用 clip-path を維持する */
 .freeze-column-border.copy-top,
 .freeze-column-border.copy-bottom,
 .freeze-column-border.copy-left,

@@ -1269,9 +1269,15 @@ export class EditorTable {
 
     private refreshFreezeVisualState(): void {
         // 固定数変更や構造変更では、既存DOMに残った古い固定クラスを一度すべて落とす。
+        this.syncFreezeStateCssClasses();
         this.clearAllFreezeStyles();
         this.applyFreezeVisualStateToRenderedRows();
         this.refreshDetachedHeaderLayout();
+    }
+
+    private syncFreezeStateCssClasses(): void {
+        this.element.classList.toggle('editor-table--has-frozen-columns', this.frozenColumnCount > 0);
+        this.element.classList.toggle('editor-table--has-frozen-rows', this.frozenRowCount > 0);
     }
 
     private getQuadrantViewportRowTopPx(logicalRowIndex: number): number {

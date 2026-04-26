@@ -17,6 +17,54 @@
     overflow: hidden;
 }
 
+.editor-table--quadrant-layout .editor-table-pane-top-left {
+    z-index: var(--z-index-freeze-corner);
+}
+
+.editor-table--quadrant-layout .editor-table-pane-top-right {
+    z-index: var(--z-index-freeze-row);
+}
+
+.editor-table--quadrant-layout .editor-table-pane-bottom-left {
+    z-index: var(--z-index-freeze-column);
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-left,
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-left {
+    overflow: visible;
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left,
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-right {
+    overflow: visible;
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-left::after,
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-left::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -8px;
+    bottom: 0;
+    width: 8px;
+    pointer-events: none;
+    z-index: 1;
+    background: linear-gradient(to right, rgba(0,0,0,0.15), rgba(0,0,0,0));
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left::before,
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-right::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -8px;
+    height: 8px;
+    pointer-events: none;
+    z-index: 1;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0));
+}
+
 .editor-table-pane-content,
 .editor-table-main-content {
     position: relative;
@@ -168,8 +216,10 @@
     white-space: nowrap;
 }
 
-/* テーブルのセルの上の線の描画 */
-.editor-table-row .editor-table-cell {
+/* テーブルのセルの上の線の描画。
+   固定行/列の分離レイヤーは .editor-table-row ではなく .editor-table-detached-row なので同じ罫線を当てる。 */
+.editor-table-row .editor-table-cell,
+.editor-table-detached-row .editor-table-cell {
     border-bottom: 1px solid var(--background-color);
 }
 
@@ -538,18 +588,17 @@
     background-color: var(--background-sub-color);
 }
 
-/* 固定列の最後のセル（ヘッダー含む）に右影を表示。
-   box-shadow の blur は上下にも広がるため、clip-path で右側のみに制限する。
-   inset(0 -8px 0 0) で右方向に8px（shadow幅2px + blur4px + 余裕2px）だけ描画領域を拡張する。 */
+/* 固定列の最後のセル（ヘッダー含む）に境界線を表示する。
+   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。 */
 .freeze-column-border {
-    box-shadow: 2px 0 4px rgba(0,0,0,0.15);
+    box-shadow: inset -1px 0 0 var(--background-color);
     clip-path: inset(0 -8px 0 0);
 }
 
-/* 固定行の最後の行ヘッダーに下影を表示。
-   clip-path で下方向のみに制限する。 */
+/* 固定行の最後の行ヘッダーに境界線を表示する。
+   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。 */
 .freeze-row-border {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    box-shadow: inset 0 -1px 0 var(--background-color);
     clip-path: inset(0 0 -8px 0);
 }
 

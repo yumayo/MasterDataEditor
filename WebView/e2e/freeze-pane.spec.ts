@@ -1224,6 +1224,87 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
+            '固定行/固定列の罫線が未選択状態でも分離レイヤーに描画される',
+            async ({ page }) => {
+                await page.setViewportSize({ width: 640, height: 480 });
+                const table = await openTableAsync(page, 'freeze_combo');
+
+                await rightClickColumnHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
+                await rightClickRowHeaderAsync(table, 1);
+                await clickContextMenuItemAsync(page, 'この行まで固定');
+
+                const styles = await page.evaluate(() => {
+                    const root = document.querySelector('.editor-left-pane .editor-table');
+                    if (!(root instanceof HTMLElement)) throw new Error('editor table が見つかりません');
+
+                    const frozenRowCell = root.querySelector(
+                        '.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="2"]',
+                    );
+                    const frozenColumnCell = root.querySelector(
+                        '.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="2"] .editor-table-cell[data-col="1"]',
+                    );
+                    const lastFrozenColumn = root.querySelector(
+                        '.editor-table-pane-top-left .editor-table-column-header.freeze-column-border',
+                    );
+                    const lastFrozenRow = root.querySelector(
+                        '.editor-table-detached-frozen-row-layer .editor-table-detached-row.freeze-row-border',
+                    );
+                    const topLeftPane = root.querySelector('.editor-table-pane-top-left');
+                    const topRightPane = root.querySelector('.editor-table-pane-top-right');
+
+                    if (!(frozenRowCell instanceof HTMLElement)) throw new Error('固定行セルが見つかりません');
+                    if (!(frozenColumnCell instanceof HTMLElement)) throw new Error('固定列セルが見つかりません');
+                    if (!(lastFrozenColumn instanceof HTMLElement)) throw new Error('固定列境界が見つかりません');
+                    if (!(lastFrozenRow instanceof HTMLElement)) throw new Error('固定行境界が見つかりません');
+                    if (!(topLeftPane instanceof HTMLElement)) throw new Error('左上ペインが見つかりません');
+                    if (!(topRightPane instanceof HTMLElement)) throw new Error('右上ペインが見つかりません');
+
+                    const frozenRowCellStyle = window.getComputedStyle(frozenRowCell);
+                    const frozenColumnCellStyle = window.getComputedStyle(frozenColumnCell);
+                    const lastFrozenColumnStyle = window.getComputedStyle(lastFrozenColumn);
+                    const lastFrozenRowStyle = window.getComputedStyle(lastFrozenRow);
+                    const columnShadowStyle = window.getComputedStyle(topLeftPane, '::after');
+                    const rowShadowStyle = window.getComputedStyle(topRightPane, '::before');
+
+                    return {
+                        frozenRowCell: {
+                            borderBottomStyle: frozenRowCellStyle.borderBottomStyle,
+                            borderBottomWidth: frozenRowCellStyle.borderBottomWidth,
+                        },
+                        frozenColumnCell: {
+                            borderBottomStyle: frozenColumnCellStyle.borderBottomStyle,
+                            borderBottomWidth: frozenColumnCellStyle.borderBottomWidth,
+                        },
+                        lastFrozenColumnBoxShadow: lastFrozenColumnStyle.boxShadow,
+                        lastFrozenRowBoxShadow: lastFrozenRowStyle.boxShadow,
+                        columnPaneShadow: {
+                            width: columnShadowStyle.width,
+                            backgroundImage: columnShadowStyle.backgroundImage,
+                        },
+                        rowPaneShadow: {
+                            height: rowShadowStyle.height,
+                            backgroundImage: rowShadowStyle.backgroundImage,
+                        },
+                    };
+                });
+
+                expect(styles.frozenRowCell.borderBottomStyle).toBe('solid');
+                expect(styles.frozenRowCell.borderBottomWidth).toBe('1px');
+                expect(styles.frozenColumnCell.borderBottomStyle).toBe('solid');
+                expect(styles.frozenColumnCell.borderBottomWidth).toBe('1px');
+                expect(styles.lastFrozenColumnBoxShadow).toContain('inset');
+                expect(styles.lastFrozenRowBoxShadow).toContain('inset');
+                expect(styles.lastFrozenColumnBoxShadow).not.toContain('4px');
+                expect(styles.lastFrozenRowBoxShadow).not.toContain('4px');
+                expect(styles.columnPaneShadow.width).toBe('8px');
+                expect(styles.columnPaneShadow.backgroundImage).toContain('linear-gradient');
+                expect(styles.rowPaneShadow.height).toBe('8px');
+                expect(styles.rowPaneShadow.backgroundImage).toContain('linear-gradient');
+            },
+        );
+
+        test(
             '10行固定の4領域構成で rowIndex 0 から 3 へドラッグしても最後の選択行は 3 のまま',
             async ({ page }) => {
                 await page.setViewportSize({ width: 640, height: 480 });
