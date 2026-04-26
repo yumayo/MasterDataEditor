@@ -398,6 +398,13 @@ export class EditorTable {
         return parseFloat(column.width);
     }
 
+    private getRenderedDataColumnWidthPx(columnIndex: number): number {
+        const start = this.getRenderedDataBoundaryOffsetPx(columnIndex);
+        const end = this.getRenderedDataBoundaryOffsetPx(columnIndex + 1);
+        const width = end - start;
+        return width > 0 ? width : this.getColumnLayoutWidthPx(columnIndex);
+    }
+
     /**
      * 列ヘッダーの実レイアウトから、データ列先頭を基準にした境界位置を返す。
      * コメント付きヘッダーでは padding / badge / icon により schema.width より実幅が広がるため、
@@ -3187,7 +3194,7 @@ export class EditorTable {
         const cellHeight = ROW_TOTAL_HEIGHT_PX;
         let width = 0;
         for (let i = dataColumnIndex; i < this.getColumnCount(); i++) {
-            width += this.getColumnLayoutWidthPx(i);
+            width += this.getRenderedDataColumnWidthPx(i);
             if (textWidth < width - 14) {
                 break;
             }
