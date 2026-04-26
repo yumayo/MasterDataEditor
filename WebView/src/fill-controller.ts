@@ -18,11 +18,20 @@ export class FillController {
     private readonly history: History;
 
     private mouseupHandler: () => void;
+    private mousedownCaptureHandler: (e: MouseEvent) => void;
+    private dblclickCaptureHandler: (e: MouseEvent) => void;
+    private mousemoveCaptureHandler: (e: MouseEvent) => void;
+    private ownsSyntheticCursor: boolean;
+    private previousBodyCursor: string;
+    private previousDocumentCursor: string;
 
     constructor(table: EditorTable, selection: Selection, history: History) {
         this.table = table;
         this.selection = selection;
         this.history = history;
+        this.ownsSyntheticCursor = false;
+        this.previousBodyCursor = '';
+        this.previousDocumentCursor = '';
 
         // グローバルmouseupイベントハンドラーを定義
         this.mouseupHandler = () => {
@@ -49,6 +58,19 @@ export class FillController {
                 );
             }
         };
+        this.mousedownCaptureHandler = (e: MouseEvent) => {
+            if (e.button !== 0 || !this.isPointInsideFillHandle(e.clientX, e.clientY)) return;
+            this.startFillFromMouseEvent(e);
+        };
+        this.dblclickCaptureHandler = (e: MouseEvent) => {
+            if (e.button !== 0 || !this.isPointInsideFillHandle(e.clientX, e.clientY)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this.fillToMaxRow();
+        };
+        this.mousemoveCaptureHandler = (e: MouseEvent) => {
+            this.updateSyntheticCursor(this.isPointInsideFillHandle(e.clientX, e.clientY));
+        };
     }
 
     /**
@@ -60,11 +82,7 @@ export class FillController {
 
         // フィルハンドルのドラッグ開始
         fillHandle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const anchor = this.selection.getAnchor();
-            this.selection.startFill(anchor.row, anchor.column, e.clientX, e.clientY);
+            this.startFillFromMouseEvent(e);
         });
 
         // フィルハンドルのダブルクリック
@@ -74,6 +92,41 @@ export class FillController {
 
             this.fillToMaxRow();
         });
+    }
+
+    private startFillFromMouseEvent(e: MouseEvent): void {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const anchor = this.selection.getAnchor();
+        this.selection.startFill(anchor.row, anchor.column, e.clientX, e.clientY);
+    }
+
+    private isPointInsideFillHandle(clientX: number, clientY: number): boolean {
+        return this.selection.isPointInsideFillHandleHitArea(clientX, clientY);
+    }
+
+    private updateSyntheticCursor(inside: boolean): void {
+        if (inside) {
+            if (this.ownsSyntheticCursor) return;
+            this.previousBodyCursor = document.body.style.cursor;
+            this.previousDocumentCursor = document.documentElement.style.cursor;
+            document.body.style.cursor = 'crosshair';
+            document.documentElement.style.cursor = 'crosshair';
+            this.ownsSyntheticCursor = true;
+            return;
+        }
+
+        this.clearSyntheticCursor();
+    }
+
+    private clearSyntheticCursor(): void {
+        if (!this.ownsSyntheticCursor) return;
+        document.body.style.cursor = this.previousBodyCursor;
+        document.documentElement.style.cursor = this.previousDocumentCursor;
+        this.previousBodyCursor = '';
+        this.previousDocumentCursor = '';
+        this.ownsSyntheticCursor = false;
     }
 
     /**
@@ -115,6 +168,9 @@ export class FillController {
      * グローバルイベントリスナーを登録する（タブがアクティブになったとき）
      */
     activate(): void {
+        window.addEventListener('mousedown', this.mousedownCaptureHandler, true);
+        window.addEventListener('dblclick', this.dblclickCaptureHandler, true);
+        window.addEventListener('mousemove', this.mousemoveCaptureHandler, true);
         window.addEventListener('mouseup', this.mouseupHandler);
     }
 
@@ -122,6 +178,10 @@ export class FillController {
      * グローバルイベントリスナーを解除する（タブが非アクティブになったとき）
      */
     deactivate(): void {
+        window.removeEventListener('mousedown', this.mousedownCaptureHandler, true);
+        window.removeEventListener('dblclick', this.dblclickCaptureHandler, true);
+        window.removeEventListener('mousemove', this.mousemoveCaptureHandler, true);
         window.removeEventListener('mouseup', this.mouseupHandler);
+        this.clearSyntheticCursor();
     }
 }

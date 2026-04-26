@@ -1738,8 +1738,8 @@ export class EditorTable {
     /**
      * スクロールイベント時に行入れ替えの有無にかかわらず呼ばれる。
      * 固定行・固定列のセルが選択されている場合、fillHandle の位置を更新する。
-     * 固定行/列は transform でスクロール分を打ち消してビューポートに固定されるが、fillHandle は position:absolute で
-     * wrapperElement 内に配置されているため、スクロール時に位置のずれ（プルプル）が発生する。
+     * fillHandle は選択終端セルの子要素として配置されるため、通常スクロールには自然に追従する。
+     * 固定行/列ではスクロールに応じて可視セルが変わる場合があるため、ホストセルを再同期する。
      * 行入れ替え発生時は reapplyRowDecorations → updateFillHandlePosition が呼ばれるので
      * 重複更新になるが、軽量な処理のためパフォーマンス影響は無視できる。
      */

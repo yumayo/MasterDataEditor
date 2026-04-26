@@ -106,8 +106,15 @@
 .copy-right::after { border-right: 2px dashed #0078d7; }
 
 /* ===== フィルハンドル（選択範囲右下の小さな四角） ===== */
+.fill-handle-host {
+    overflow: visible;
+    clip-path: inset(0 -8px -8px 0);
+}
+
 .fill-handle {
     position: absolute;
+    right: -4px;
+    bottom: -4px;
     width: 8px;
     height: 8px;
     background-color: #0078d7;
@@ -212,10 +219,12 @@
     border-color: #808080;
 }
 
+.editor-table--inactive .fill-handle,
 .editor-table--inactive ~ .fill-handle {
     background-color: #808080;
 }
 
+.editor-table--inactive .fill-handle:hover,
 .editor-table--inactive ~ .fill-handle:hover {
     background-color: #666666;
 }

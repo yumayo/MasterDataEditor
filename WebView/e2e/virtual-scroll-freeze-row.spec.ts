@@ -298,10 +298,17 @@ test.describe('仮想スクロール × 固定行', () => {
         await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
         await page.waitForTimeout(50);
 
-        // 安定後のfillHandle の style.top を記録する
-        const initialTop = await page.evaluate(() => {
+        // 安定後の fillHandle とホストセル右下の相対位置を記録する
+        const initialOffset = await page.evaluate(() => {
             const handle = document.querySelector('.fill-handle') as HTMLElement;
-            return parseFloat(handle.style.top);
+            const host = handle.parentElement as HTMLElement | null;
+            if (!(host instanceof HTMLElement)) throw new Error('fillHandle のホストセルが見つかりません');
+            const handleRect = handle.getBoundingClientRect();
+            const hostRect = host.getBoundingClientRect();
+            return {
+                right: handleRect.right - hostRect.right,
+                bottom: handleRect.bottom - hostRect.bottom,
+            };
         });
 
         // 2回目の微小スクロール: 行入れ替えが発生しない量（1px追加）
@@ -309,15 +316,21 @@ test.describe('仮想スクロール × 固定行', () => {
         await scrollContainer.evaluate((el, amount) => { el.scrollTop += amount; }, scrollAmount);
         await page.waitForTimeout(50);
 
-        // スクロール後のfillHandle の style.top を取得する
-        const afterScrollTop = await page.evaluate(() => {
+        // スクロール後もセル右下に対する相対位置が維持されることを確認する
+        const afterScrollOffset = await page.evaluate(() => {
             const handle = document.querySelector('.fill-handle') as HTMLElement;
-            return parseFloat(handle.style.top);
+            const host = handle.parentElement as HTMLElement | null;
+            if (!(host instanceof HTMLElement)) throw new Error('fillHandle のホストセルが見つかりません');
+            const handleRect = handle.getBoundingClientRect();
+            const hostRect = host.getBoundingClientRect();
+            return {
+                right: handleRect.right - hostRect.right,
+                bottom: handleRect.bottom - hostRect.bottom,
+            };
         });
 
-        // 4領域構成では fixed row の可視セルも wrapper 基準の絶対位置が不変なので、
-        // fillHandle の style.top もスクロールで変化しないことが正しい。
-        expect(Math.abs(afterScrollTop - initialTop)).toBeLessThanOrEqual(2);
+        expect(Math.abs(afterScrollOffset.right - initialOffset.right)).toBeLessThanOrEqual(1);
+        expect(Math.abs(afterScrollOffset.bottom - initialOffset.bottom)).toBeLessThanOrEqual(1);
     });
 
     test('固定行選択で表示レンジ更新を伴うスクロールでも fillHandle のセル計測は1回で済む', async ({ page }) => {

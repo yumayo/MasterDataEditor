@@ -47,6 +47,9 @@ export class Selection {
 
     private scrollBinding: ScrollViewportController;
 
+    private fillHandleHostCell: HTMLElement | null;
+    private fillHandleHostPreviousZIndex: string | null;
+
     constructor(editorTable: EditorTable, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
         this.range = { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 };
@@ -62,13 +65,15 @@ export class Selection {
         this.fillTarget = { row: 0, column: 0 };
         this.fillStartMousePosition = { x: 0, y: 0 };
         this.fillCurrentMousePosition = { x: 0, y: 0 };
+        this.fillHandleHostCell = null;
+        this.fillHandleHostPreviousZIndex = null;
 
         // フィルプレビュー範囲表示用の要素を作成（オーバーレイのまま維持）
         const fillPreviewElement = document.createElement('div');
         fillPreviewElement.classList.add('fill-preview');
         this.fillPreviewElement = fillPreviewElement;
 
-        // フィルハンドル要素を作成（DOM追加はtab.ts側で行う — editor-tableの後に配置する必要があるため）
+        // フィルハンドル要素を作成（表示時に選択終端セルへ付け替える）
         this.fillHandle = document.createElement('div');
         this.fillHandle.classList.add('fill-handle');
     }
@@ -652,6 +657,18 @@ export class Selection {
         this.updateFillHandlePosition();
     }
 
+    isPointInsideFillHandleHitArea(clientX: number, clientY: number): boolean {
+        if (!this.fillHandleHostCell || !this.fillHandle.isConnected || this.fillHandle.style.display === 'none') {
+            return false;
+        }
+
+        const hostRect = this.fillHandleHostCell.getBoundingClientRect();
+        return clientX >= hostRect.right - 8
+            && clientX <= hostRect.right + 4
+            && clientY >= hostRect.bottom - 8
+            && clientY <= hostRect.bottom + 4;
+    }
+
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
         let endRow = selectionRange.endRow;
@@ -665,11 +682,17 @@ export class Selection {
         }
 
         const cell = this.editorTable.getVisibleCellOrNull(endRow, endColumn);
-        if (!cell) return;
-        const cellRect = cell.getBoundingClientRect();
+        if (!cell) {
+            this.hideFillHandle();
+            return;
+        }
 
-        // セルの右下にフィルハンドルを配置
-        const editorRect = this.editorElement.getBoundingClientRect();
+        // セルの子要素として右下に配置する。スクロール座標への変換は不要。
+        // ただしテーブルセル同士の描画順には親セルのスタッキング順が効くため、
+        // 既存の inline z-index に戻した状態で基準値を計算する。
+        if (this.fillHandleHostCell === cell && this.fillHandleHostPreviousZIndex !== null) {
+            cell.style.zIndex = this.fillHandleHostPreviousZIndex;
+        }
         const baseZIndexText = window.getComputedStyle(document.documentElement).getPropertyValue('--z-index-fill-handle').trim();
         const baseZIndex = parseInt(baseZIndexText, 10);
         if (Number.isNaN(baseZIndex)) {
@@ -690,11 +713,32 @@ export class Selection {
         }
         const fillOverlayZIndex = Math.max(baseZIndex, effectiveCellZIndex + 1);
 
-        this.fillHandle.style.left = (cellRect.right - editorRect.left + this.editorElement.scrollLeft - 4) + 'px';
-        this.fillHandle.style.top = (cellRect.bottom - editorRect.top + this.editorElement.scrollTop - 4) + 'px';
-        this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
+        if (this.fillHandleHostCell !== cell) {
+            this.restoreFillHandleHostCell();
+            this.fillHandleHostCell = cell;
+            this.fillHandleHostPreviousZIndex = cell.style.zIndex;
+            cell.classList.add('fill-handle-host');
+            cell.appendChild(this.fillHandle);
+        }
+        cell.style.zIndex = fillOverlayZIndex.toString();
+        this.fillHandle.style.zIndex = (fillOverlayZIndex + 1).toString();
         this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
         this.fillHandle.style.display = 'block';
+    }
+
+    private hideFillHandle(): void {
+        this.restoreFillHandleHostCell();
+        this.fillHandleHostCell = null;
+        this.fillHandle.style.display = 'none';
+    }
+
+    private restoreFillHandleHostCell(): void {
+        if (!this.fillHandleHostCell) return;
+        this.fillHandleHostCell.classList.remove('fill-handle-host');
+        if (this.fillHandleHostPreviousZIndex !== null) {
+            this.fillHandleHostCell.style.zIndex = this.fillHandleHostPreviousZIndex;
+        }
+        this.fillHandleHostPreviousZIndex = null;
     }
 
     private hideCopyBorder(): void {
