@@ -54,6 +54,8 @@ export class DiffTab {
     /** destroy() 時にスクロールリスナーを解除するためのバインド済み関数 */
     private readonly boundLeftScroll: () => void;
     private readonly boundRightScroll: () => void;
+    private readonly boundLeftWheel: (e: WheelEvent) => void;
+    private readonly boundRightWheel: (e: WheelEvent) => void;
 
     /** destroy() 時にリサイズハンドルのリスナーを解除するためのバインド済み関数 */
     private readonly boundResizeMouseDown: (e: MouseEvent) => void;
@@ -69,7 +71,7 @@ export class DiffTab {
     /** リサイズハンドル要素（removeEventListener に必要） */
     private readonly resizeHandle: HTMLElement;
 
-    /** スクロール同期の対象となるペイン要素（removeEventListener に必要） */
+    /** スクロール同期のイベントを受けるペイン要素（removeEventListener に必要） */
     private readonly leftPaneElement: HTMLElement;
     private readonly rightPaneElement: HTMLElement;
 
@@ -383,23 +385,38 @@ export class DiffTab {
             this.rightEditorTableHandler.connectOpenEditorTables(openEditorTables);
         }
 
+        this.installPaneScrollProxy(leftPaneElement, this.leftEditorTable);
+        this.installPaneScrollProxy(rightPaneElement, this.rightEditorTable);
+        this.boundLeftWheel = (e: WheelEvent) => this.redirectPaneWheelToEditorTable(e, this.leftEditorTable);
+        this.boundRightWheel = (e: WheelEvent) => this.redirectPaneWheelToEditorTable(e, this.rightEditorTable);
+        leftPaneElement.addEventListener('wheel', this.boundLeftWheel, { passive: false });
+        rightPaneElement.addEventListener('wheel', this.boundRightWheel, { passive: false });
+
         // スクロール同期（左→右、右→左の双方向）—— destroy() で解除するためバインド済み関数をフィールドに保持する
+        // 差分タブも通常テーブルと同じ内部スクロールレイアウトを使うため、
+        // 外側ペインではなく EditorTable から bubbled する scroll metrics イベントで同期する。
         this.boundLeftScroll = () => {
             if (this.isSyncing) return;
             this.isSyncing = true;
-            rightPaneElement.scrollTop = leftPaneElement.scrollTop;
-            rightPaneElement.scrollLeft = leftPaneElement.scrollLeft;
-            this.isSyncing = false;
+            try {
+                const metrics = this.leftEditorTable.getScrollMetrics();
+                this.rightEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+            } finally {
+                this.isSyncing = false;
+            }
         };
         this.boundRightScroll = () => {
             if (this.isSyncing) return;
             this.isSyncing = true;
-            leftPaneElement.scrollTop = rightPaneElement.scrollTop;
-            leftPaneElement.scrollLeft = rightPaneElement.scrollLeft;
-            this.isSyncing = false;
+            try {
+                const metrics = this.rightEditorTable.getScrollMetrics();
+                this.leftEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+            } finally {
+                this.isSyncing = false;
+            }
         };
-        leftPaneElement.addEventListener('scroll', this.boundLeftScroll);
-        rightPaneElement.addEventListener('scroll', this.boundRightScroll);
+        leftPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
+        rightPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
 
         // 初期状態: 左ペイン（HEAD版）を非アクティブ表示にする（右ペインが操作対象）
         this.leftEditorTable.setInactiveAppearance(true);
@@ -707,12 +724,9 @@ export class DiffTab {
     show(): void {
         this.wrapperElement.style.display = '';
         // display:none 中にブラウザがリセットしたスクロール位置を左右両ペインに復元する
-        this.leftPaneElement.scrollLeft = this.savedScrollLeft;
-        this.leftPaneElement.scrollTop = this.savedScrollTop;
-        this.rightPaneElement.scrollLeft = this.savedScrollLeft;
-        this.rightPaneElement.scrollTop = this.savedScrollTop;
-        // ラベルがある場合、列ヘッダー行の top をラベルの実高さ分ずらす。
-        // display:'' 直後なので getBoundingClientRect() で正確な高さを取得できる。
+        this.leftEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
+        this.rightEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
+        // ラベルはテーブルホストの外側に置くため、列ヘッダー行の追加オフセットは不要。
         this.applyLabelOffsetToColumnHeaders();
         // 仮想スクロールの再計算（display:none → display:'' でビューポートサイズが変わるため）
         this.leftEditorTable.forceVirtualScrollRecalculate();
@@ -724,12 +738,10 @@ export class DiffTab {
         this.refreshDiffMarkers();
     }
 
-    /** ラベルの高さを列ヘッダー行の top に反映する */
+    /** 差分タブではラベルをテーブル外に置くため、列ヘッダー行の追加オフセットを使わない */
     private applyLabelOffsetToColumnHeaders(): void {
-        const leftLabel = this.leftPaneElement.querySelector('.diff-pane-label-left') as HTMLElement | null;
-        this.leftEditorTable.setDetachedHeaderTopOffset(leftLabel !== null ? leftLabel.getBoundingClientRect().height : 0);
-        const rightLabel = this.rightPaneElement.querySelector('.diff-pane-label-right') as HTMLElement | null;
-        this.rightEditorTable.setDetachedHeaderTopOffset(rightLabel !== null ? rightLabel.getBoundingClientRect().height : 0);
+        this.leftEditorTable.setDetachedHeaderTopOffset(0);
+        this.rightEditorTable.setDetachedHeaderTopOffset(0);
     }
 
     /**
@@ -741,8 +753,8 @@ export class DiffTab {
     hide(): void {
         if (this.wrapperElement.style.display === 'none') return;
         // display:none にするとブラウザがscrollLeftを0にリセットするため、事前に保存する
-        this.savedScrollLeft = this.leftPaneElement.scrollLeft;
-        this.savedScrollTop = this.leftPaneElement.scrollTop;
+        this.savedScrollLeft = this.leftEditorTable.getScrollLeft();
+        this.savedScrollTop = this.leftEditorTable.getScrollTop();
         this.wrapperElement.style.display = 'none';
     }
 
@@ -752,8 +764,10 @@ export class DiffTab {
      */
     destroy(store: InMemoryTableStore): void {
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
-        this.leftPaneElement.removeEventListener('scroll', this.boundLeftScroll);
-        this.rightPaneElement.removeEventListener('scroll', this.boundRightScroll);
+        this.leftPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
+        this.rightPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
+        this.leftPaneElement.removeEventListener('wheel', this.boundLeftWheel);
+        this.rightPaneElement.removeEventListener('wheel', this.boundRightWheel);
         // リサイズハンドルの mousedown リスナーを解除する
         this.resizeHandle.removeEventListener('mousedown', this.boundResizeMouseDown);
         // ドラッグ操作中に destroy() が呼ばれた場合、document に残存するリスナーを強制解除する
@@ -828,16 +842,18 @@ export class DiffTab {
         // 相互参照解決のため一時的な空オブジェクトを作成（Tab.createEditorTable・createMiniEditorTable と同パターン）
         const editorTable = {} as EditorTable;
 
-        // スクロールコンテナ（paneElement, overflow:auto）内に innerWrapper を配置する。
+        // ペイン内にテーブルホストを配置する。
         // GridTextField/Selection/AreaResizer の position:absolute の含有ブロック（position:relative）となる。
         // 通常テーブル（tab.ts の wrapperElement）やミニテーブル（createMiniEditorTable の wrapperElement）と同じパターン。
-        // paneElement を直接 container として渡すと、getBoundingClientRect() がスクロール分ズレるため不正確になる。
         const innerWrapper = document.createElement('div');
         innerWrapper.classList.add('diff-pane-inner');
         paneElement.appendChild(innerWrapper);
 
-        // scrollControllerの対象はペイン要素（overflow:auto）
-        const scrollController = new ScrollViewportController(paneElement);
+        const mainViewportElement = document.createElement('div');
+        mainViewportElement.classList.add('editor-table-main-viewport');
+
+        // scrollControllerの対象は EditorTable 内部の本文スクロール領域
+        const scrollController = new ScrollViewportController(mainViewportElement);
 
         const selection = new Selection(editorTable, innerWrapper, scrollController);
         const history = new History(editorTable, tabButton, store, tableKey, 100);
@@ -852,7 +868,7 @@ export class DiffTab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, referenceDataCache, store, editorTableHandler,
             selection, contextMenu, history, areaResizer,
-            scrollController, sidebar, paneElement, 0, 'editor-table', true, true, false
+            scrollController, sidebar, mainViewportElement, 0, 'editor-table', true, true, true
         );
 
         Object.assign(editorTable, realEditorTable);
@@ -883,6 +899,53 @@ export class DiffTab {
         }
 
         return { editorTable, editorTableHandler, history, areaResizer, fillController, tableData };
+    }
+
+    /**
+     * 旧実装では .diff-pane-left / .diff-pane-right 自体がスクロールコンテナだった。
+     * 通常テーブルと同じ内部スクロールレイアウトへ移行しても、既存のテストや外部コードが
+     * pane.scrollTop / pane.scrollLeft を使えるよう EditorTable のスクロール位置に委譲する。
+     */
+    private installPaneScrollProxy(paneElement: HTMLElement, editorTable: EditorTable): void {
+        Object.defineProperty(paneElement, 'scrollTop', {
+            configurable: true,
+            get: () => editorTable.getScrollTop(),
+            set: (value: number) => {
+                editorTable.restoreScrollPosition(Number(value), editorTable.getScrollLeft());
+            },
+        });
+        Object.defineProperty(paneElement, 'scrollLeft', {
+            configurable: true,
+            get: () => editorTable.getScrollLeft(),
+            set: (value: number) => {
+                editorTable.restoreScrollPosition(editorTable.getScrollTop(), Number(value));
+            },
+        });
+    }
+
+    private redirectPaneWheelToEditorTable(event: WheelEvent, editorTable: EditorTable): void {
+        if (event.ctrlKey) return;
+        if (!(event.target instanceof Element)) return;
+        const mainViewport = (event.currentTarget as HTMLElement).querySelector('.editor-table-main-viewport');
+        if (mainViewport instanceof HTMLElement && mainViewport.contains(event.target)) return;
+
+        let deltaX = event.deltaX;
+        let deltaY = event.deltaY;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            deltaX *= 16;
+            deltaY *= 16;
+        } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+            const paneElement = event.currentTarget as HTMLElement;
+            deltaX *= paneElement.clientWidth;
+            deltaY *= paneElement.clientHeight;
+        }
+        if (event.shiftKey && deltaX === 0 && deltaY !== 0) {
+            deltaX = deltaY;
+            deltaY = 0;
+        }
+
+        event.preventDefault();
+        editorTable.scrollByInput(deltaY, deltaX);
     }
 
     /**
