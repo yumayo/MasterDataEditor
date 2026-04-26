@@ -43,6 +43,52 @@ function createFileSystem(): MockFileSystem {
 }
 
 /**
+ * 横スクロールと縦スクロールの両方が発生するテーブルを生成する
+ */
+function createWideFileSystem(): MockFileSystem {
+    const header = [
+        'id',
+        'name',
+        'attack',
+        'defense',
+        'speed',
+        'hp',
+        'mp',
+        'critical',
+        'resist',
+        'cost',
+    ];
+    const rows = [header.join(',')];
+    for (let i = 1; i <= 160; i++) {
+        rows.push([
+            i,
+            `chara_${i}`,
+            i * 10,
+            i * 5,
+            i * 3,
+            i * 20,
+            i * 7,
+            i % 100,
+            (i * 2) % 100,
+            i * 11,
+        ].join(','));
+    }
+
+    return {
+        "schema/chara_wide.json": JSON.stringify({
+            header: header.map((name, index) => ({
+                key: index,
+                name,
+                type: index === 1 ? "string" : "int",
+                width: 220,
+            })),
+            primary_key: ["id"],
+        }),
+        "data/chara_wide.csv": rows.join("\n"),
+    };
+}
+
+/**
  * エクスプローラーからテーブルを開き、左ペインの EditorTable Locator を返す
  */
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
@@ -111,6 +157,54 @@ async function invokeSelectionAsync(
         return true;
     }, [mode, rowIndex, colIndex] as ['start' | 'extend', number, number]);
 }
+
+test(
+    '通常EditorTableの縦スクロール同期で横スクロール位置が上書きされないこと',
+    async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 720 });
+
+        const fs = createWideFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTableAsync(page, 'chara_wide');
+
+        const result = await page.evaluate(() => {
+            const outerPane = document.querySelector('.editor-left-pane') as HTMLElement | null;
+            const mainViewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            if (outerPane === null) throw new Error('editor-left-pane が見つかりません');
+            if (mainViewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            if (mainViewport.scrollWidth <= mainViewport.clientWidth) {
+                throw new Error('横スクロールが発生していません');
+            }
+            if (outerPane.scrollHeight <= outerPane.clientHeight) {
+                throw new Error('外側ペインの縦スクロールが発生していません');
+            }
+
+            mainViewport.scrollLeft = mainViewport.scrollWidth;
+            const scrollLeftBefore = mainViewport.scrollLeft;
+            if (scrollLeftBefore <= 0) throw new Error('横スクロール位置を設定できません');
+
+            // 外側ペインは内部ビューポートのスクロールをプロキシしている。
+            // 横位置が右端の状態で縦スクロール同期が入っても、
+            // 内部ビューポートの横位置を外側ペインの値で上書きしてはいけない。
+            outerPane.scrollTop = 900;
+            outerPane.dispatchEvent(new Event('scroll'));
+
+            return {
+                scrollLeftBefore,
+                scrollLeftAfter: mainViewport.scrollLeft,
+                scrollTopAfter: mainViewport.scrollTop,
+            };
+        });
+
+        expect(result.scrollTopAfter).toBeGreaterThan(0);
+        expect(
+            result.scrollLeftAfter,
+            `縦スクロール同期で横スクロール位置が変化した。同期前: scrollLeft=${result.scrollLeftBefore}, 同期後: scrollLeft=${result.scrollLeftAfter}`
+        ).toBe(result.scrollLeftBefore);
+    },
+);
 
 test(
     'セル編集確定後にスクロール位置がリセットされないこと',
