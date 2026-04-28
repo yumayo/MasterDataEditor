@@ -45,6 +45,9 @@ export class Editor {
     /** RelationsPanel の表示/非表示状態（SSOT） */
     private relationsPanelVisible: boolean;
 
+    /** FormPanel 表示中に rightSlot を一時的に表示するためのフラグ */
+    private formPanelForcesRightSlotVisible: boolean;
+
     /** 折りたたみ前の右スロットの flex-basis 値（展開時に復元するため記憶する） */
     private savedRightSlotFlexBasis: string;
 
@@ -64,6 +67,7 @@ export class Editor {
         this.element = editorElement;
         this.tab = false;
         this.relationsPanelVisible = false;
+        this.formPanelForcesRightSlotVisible = false;
         this.savedRightSlotFlexBasis = '';
         this.visibilityListener = false;
         this.relationsPanel = false;
@@ -396,6 +400,24 @@ export class Editor {
      */
     isRelationsPanelVisible(): boolean { return this.relationsPanelVisible; }
 
+    /**
+     * RelationsPanel がトグルで非表示でも、FormPanel 表示中だけ右スロットを表示する。
+     * RelationsPanel の表示状態自体は変更しないため、ツールバーのトグル状態は維持される。
+     */
+    showRightSlotForFormPanel(): void {
+        this.formPanelForcesRightSlotVisible = true;
+        this.applyRelationsPanelVisibility();
+    }
+
+    /**
+     * FormPanel 用の一時表示を解除し、RelationsPanel トグル状態に従って右スロットを戻す。
+     */
+    restoreRightSlotAfterFormPanel(): void {
+        if (!this.formPanelForcesRightSlotVisible) return;
+        this.formPanelForcesRightSlotVisible = false;
+        this.applyRelationsPanelVisibility();
+    }
+
     toggleRelationsPanel(): void {
         if (this.relationsPanelVisible) {
             this.hideRelationsPanel();
@@ -441,7 +463,7 @@ export class Editor {
      * リサイズハンドルも visibility が継承されて当たり判定がなくなる。
      */
     private applyRelationsPanelVisibility(): void {
-        if (this.relationsPanelVisible) {
+        if (this.relationsPanelVisible || this.formPanelForcesRightSlotVisible) {
             // 右スロットを表示する（showDiffView/enterSettingsMode で display:none になっている可能性があるためリセット）
             this.rightSlot.style.display = '';
             this.rightSlot.style.visibility = '';

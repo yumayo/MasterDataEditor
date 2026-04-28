@@ -165,6 +165,41 @@ test.describe('フォームビュー（FEAT_0043）', () => {
     });
 
     // -------------------------------------------------------------------------
+    // テスト（ISSUE_0141）: RelationsPanel非表示時でもフォームビューが表示されること
+    // -------------------------------------------------------------------------
+    test('ISSUE_0141: RelationsPanel非表示時でもフォームビューが表示され、閉じると非表示状態に戻ること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+
+        // RelationsPanel を非表示にする
+        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
+        await toggleButton.click();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+        await expect(page.locator('.relations-panel')).not.toBeVisible();
+        const rightSlot = page.locator('.editor-right-slot');
+        await expect(rightSlot).not.toBeVisible();
+
+        // PK セルを右クリック → 「フォームビューを表示」をクリック
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        // FormPanel 表示中だけ右スロットが表示され、フォームビューが見えること
+        await expect(rightSlot).toBeVisible();
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(page.locator('.relations-panel')).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+
+        // 閉じると FormPanel は消え、RelationsPanel の非表示状態が復元されること
+        await formPanel.locator('.form-panel-close').click();
+        await expect(formPanel).not.toBeVisible();
+        await expect(page.locator('.relations-panel')).not.toBeVisible();
+        await expect(rightSlot).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+    });
+
+    // -------------------------------------------------------------------------
     // テスト（BUG_0027）: フォームビューのz-indexが200であること
     // -------------------------------------------------------------------------
     test('BUG_0027: フォームビューのz-indexが200であること', async ({ page }) => {

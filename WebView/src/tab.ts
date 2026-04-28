@@ -2483,6 +2483,8 @@ export class Tab {
         if (rpParent === null) {
             throw new Error('[Tab] createFormPanel: RelationsPanel が DOM に追加されていません');
         }
+        // RelationsPanel がトグルで非表示の場合でも、FormPanel の表示中だけ右スロットを開く。
+        this.editor.showRightSlotForFormPanel();
         // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
         this.relationsPanel.getPanelElement().style.display = 'none';
         // FormPanel を生成して右スロットにオーバーレイする
@@ -2514,5 +2516,7 @@ export class Tab {
         this.currentFormPanel = false;
         // RelationsPanelを再表示する
         this.relationsPanel.getPanelElement().style.display = '';
+        // FormPanel 表示のために一時的に開いた右スロットを元のトグル状態へ戻す
+        this.editor.restoreRightSlotAfterFormPanel();
     }
 }
