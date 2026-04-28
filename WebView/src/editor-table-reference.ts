@@ -403,24 +403,26 @@ export class EditorTableReference {
      * renderAsHtml が false の場合は通常の `textContent` 設定。
      */
     applyTextOrHtml(cell: HTMLElement, value: string, renderAsHtml: boolean): void {
-        if (renderAsHtml) {
-            cell.dataset.rawValue = value;
-            cell.innerHTML = sanitizeHtml(value);
-            // HTML改行（<br>）が描画されるようにwhiteSpaceをnormalにする
-            cell.style.whiteSpace = 'normal';
-            // 行高さを自然なフォント行高にする（固定px指定を解除）
-            cell.style.lineHeight = 'normal';
-            // はみ出しはクリップのまま維持
-            cell.style.overflow = 'hidden';
-        } else {
-            // data-raw-value が残っている場合はクリアする（モード切替時の残留防止）
-            delete cell.dataset.rawValue;
-            cell.textContent = value;
-            // renderAsHtml モードからテキストモードに戻した場合はスタイルを元に戻す
-            cell.style.whiteSpace = '';
-            cell.style.lineHeight = '';
-            cell.style.overflow = '';
-        }
+        this.withPreservedFillHandle(cell, () => {
+            if (renderAsHtml) {
+                cell.dataset.rawValue = value;
+                cell.innerHTML = sanitizeHtml(value);
+                // HTML改行（<br>）が描画されるようにwhiteSpaceをnormalにする
+                cell.style.whiteSpace = 'normal';
+                // 行高さを自然なフォント行高にする（固定px指定を解除）
+                cell.style.lineHeight = 'normal';
+                // はみ出しはクリップのまま維持
+                cell.style.overflow = 'hidden';
+            } else {
+                // data-raw-value が残っている場合はクリアする（モード切替時の残留防止）
+                delete cell.dataset.rawValue;
+                cell.textContent = value;
+                // renderAsHtml モードからテキストモードに戻した場合はスタイルを元に戻す
+                cell.style.whiteSpace = '';
+                cell.style.lineHeight = '';
+                cell.style.overflow = '';
+            }
+        });
     }
 
     /**
@@ -448,37 +450,39 @@ export class EditorTableReference {
         if (column.type === 'bool') {
             // bool型: テキストをSVGアイコンに置き換える
             // 0以外 → チェックマーク ✓、0 → バツ印 ×、空値 → 表示なし（バッファ空行対応）
-            this.removeBoolDisplay(cell);
-            cell.dataset.rawValue = value;
-            cell.textContent = '';
-            if (value === '') {
-                // 空値（バッファ空行等）: SVGを表示せず aria-checked も設定しない
-                cell.removeAttribute('aria-checked');
-            } else if (value !== '0') {
-                cell.setAttribute('aria-checked', 'true');
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.setAttribute('width', '16');
-                svg.setAttribute('height', '16');
-                svg.setAttribute('viewBox', '0 0 16 16');
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                // チェックマーク ✓
-                path.setAttribute('d', 'M6 11.2L2.5 7.7l1.4-1.4L6 8.4l6.1-6.1 1.4 1.4L6 11.2z');
-                svg.appendChild(path);
-                svg.classList.add('cell-bool-check');
-                cell.appendChild(svg);
-            } else {
-                cell.setAttribute('aria-checked', 'false');
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.setAttribute('width', '16');
-                svg.setAttribute('height', '16');
-                svg.setAttribute('viewBox', '0 0 16 16');
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                // バツ印 ×
-                path.setAttribute('d', 'M12 4.7L11.3 4 8 7.3 4.7 4 4 4.7 7.3 8 4 11.3l.7.7L8 8.7l3.3 3.3.7-.7L8.7 8z');
-                svg.appendChild(path);
-                svg.classList.add('cell-bool-uncheck');
-                cell.appendChild(svg);
-            }
+            this.withPreservedFillHandle(cell, () => {
+                this.removeBoolDisplay(cell);
+                cell.dataset.rawValue = value;
+                cell.textContent = '';
+                if (value === '') {
+                    // 空値（バッファ空行等）: SVGを表示せず aria-checked も設定しない
+                    cell.removeAttribute('aria-checked');
+                } else if (value !== '0') {
+                    cell.setAttribute('aria-checked', 'true');
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', '16');
+                    svg.setAttribute('height', '16');
+                    svg.setAttribute('viewBox', '0 0 16 16');
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    // チェックマーク ✓
+                    path.setAttribute('d', 'M6 11.2L2.5 7.7l1.4-1.4L6 8.4l6.1-6.1 1.4 1.4L6 11.2z');
+                    svg.appendChild(path);
+                    svg.classList.add('cell-bool-check');
+                    cell.appendChild(svg);
+                } else {
+                    cell.setAttribute('aria-checked', 'false');
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', '16');
+                    svg.setAttribute('height', '16');
+                    svg.setAttribute('viewBox', '0 0 16 16');
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    // バツ印 ×
+                    path.setAttribute('d', 'M12 4.7L11.3 4 8 7.3 4.7 4 4 4.7 7.3 8 4 11.3l.7.7L8 8.7l3.3 3.3.7-.7L8.7 8z');
+                    svg.appendChild(path);
+                    svg.classList.add('cell-bool-uncheck');
+                    cell.appendChild(svg);
+                }
+            });
         } else if (column.type === 'int' || column.type === 'long' || column.type === 'float' || column.type === 'double') {
             // 数値型: 右寄せクラスを付与する
             cell.classList.add('cell-numeric');
@@ -501,6 +505,15 @@ export class EditorTableReference {
         const uncheck = cell.querySelector('.cell-bool-uncheck');
         if (uncheck) uncheck.remove();
         cell.removeAttribute('aria-checked');
+    }
+
+    private withPreservedFillHandle(cell: HTMLElement, update: () => void): void {
+        const fillHandle = Array.from(cell.children)
+            .find(child => child instanceof HTMLElement && child.classList.contains('fill-handle')) as HTMLElement | undefined;
+        update();
+        if (fillHandle !== undefined && fillHandle.parentElement !== cell) {
+            cell.appendChild(fillHandle);
+        }
     }
 
     /**

@@ -347,6 +347,28 @@ test.describe('ソース管理パネル', () => {
         },
     );
 
+    test(
+        'CHANGESセクションのテーブル名をクリックして差分タブを開くと右ペインにフィルハンドルが表示されること',
+        async ({ page, sourceControlPage: _sourceControlPage }) => {
+            await page.locator('[data-panel="sourceControl"]').click();
+            await page.locator('.source-control-changes-section').getByText('test').click();
+
+            const rightPane = page.locator('.diff-tab .diff-pane-right');
+            const fillHandle = rightPane.locator('.fill-handle');
+
+            await expect(rightPane.locator('.editor-table')).toBeVisible();
+            await expect(fillHandle).toHaveCount(1);
+            await expect(fillHandle).toBeVisible();
+            await expect.poll(() => fillHandle.evaluate((handle) => {
+                const host = handle.parentElement;
+                if (!(host instanceof HTMLElement)) return false;
+                return host.classList.contains('editor-table-cell')
+                    && !host.classList.contains('editor-table-row-header')
+                    && !host.classList.contains('editor-table-column-header');
+            })).toBe(true);
+        },
+    );
+
     // -------------------------------------------------------------------------
     // テスト5: セル変更の差分表示（左赤・右緑）
     // -------------------------------------------------------------------------
