@@ -152,6 +152,11 @@ export class EditorTableValidationMarkers {
         }
         this.currentErrorDomRows = errorDomRows;
         this.refreshScrollbarMarkers();
+        // 固定行・固定列は可視セルが detached/quadrant layer に複製されるため、
+        // 元セルに付与したエラー class を複製側にも同期する。
+        if (this.getFrozenRowCount() > 0 || this.getFrozenColumnCount() > 0) {
+            this.syncDetachedVisualState();
+        }
     }
 
     // =========================================================================
