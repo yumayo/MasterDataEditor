@@ -51,6 +51,8 @@ type TabScrollPositionPreference =
     | { kind: 'edge'; edge: 'left' | 'right' }
     | { kind: 'middle'; ratio: number };
 
+type FormPanelVisibilityListener = (visible: boolean) => void;
+
 /**
  * タブごとの状態を保持するインターフェース
  */
@@ -203,6 +205,9 @@ export class Tab {
      */
     private currentFormPanel: FormPanel | false;
 
+    /** FormPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
+    private formPanelVisibilityListener: FormPanelVisibilityListener | false;
+
     /**
      * バリデーションパネル（main.tsのconnectValidationPanelで設定される。未設定はfalse）
      * テーブルを開く際にスキーマを登録し、EditorTable に接続するために使用する。
@@ -273,6 +278,7 @@ export class Tab {
         this.tableDefinitionEditor = false;
         this.pendingEditTarget = false;
         this.currentFormPanel = false;
+        this.formPanelVisibilityListener = false;
         this.validationPanel = false;
         this.errorTooltip = false;
         this.editorApi = false;
@@ -357,6 +363,11 @@ export class Tab {
      */
     connectDropdownQuickView(dropdownInput: GridDropdownInput): void {
         dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView);
+    }
+
+    /** FormPanel 表示/非表示変更時のリスナーを設定する（Toolbar から呼ばれる） */
+    connectFormPanelVisibilityListener(listener: FormPanelVisibilityListener): void {
+        this.formPanelVisibilityListener = listener;
     }
 
     /**
@@ -2640,6 +2651,48 @@ export class Tab {
     }
 
     /**
+     * ツールバーのフォームアイコンから、現在選択中の行のフォームビューを開閉する。
+     * RelationsPanel と同じく「現在の選択行を右ペインで見る」操作にする。
+     */
+    toggleFormPanelForActiveRow(): void {
+        if (this.currentFormPanel !== false) {
+            this.closeFormPanel();
+            return;
+        }
+        const target = this.resolveActiveFormPanelTarget();
+        if (target === null) {
+            this.notification.show('フォームビューを表示する行を選択してください');
+            return;
+        }
+        this.showFormPanel(target.tableName, target.pkValue);
+    }
+
+    /**
+     * FormPanel 表示中に通常テーブルの選択行が変わった場合、フォーム内容を現在行へ追従させる。
+     * 選択追従は表示状態の更新であり、ブラウザ履歴には積まない。
+     */
+    refreshFormPanelForSelectedRow(tableName: string, rowIndex: number): void {
+        if (this.currentFormPanel === false) return;
+        if (this.currentFormPanel.containsElement(document.activeElement)) return;
+        const state = this.tabStates.get(tableName);
+        if (!state) return;
+        const pkValue = state.editorTable.getRowPkValue(rowIndex);
+        if (pkValue === '') return;
+        this.currentFormPanel.showForRowAsync(tableName, pkValue).catch(err => {
+            console.error('[Tab] refreshFormPanelForSelectedRow: showForRowAsync failed:', String(err));
+        });
+    }
+
+    private resolveActiveFormPanelTarget(): { tableName: string; pkValue: string } | null {
+        const state = this.getActiveTabState();
+        if (state === false) return null;
+        const rowIndex = state.selection.getFocus().row;
+        const pkValue = state.editorTable.getRowPkValue(rowIndex);
+        if (pkValue === '') return null;
+        return { tableName: state.editorTable.tableName, pkValue };
+    }
+
+    /**
      * フォームビューを表示する（PKセル右クリックメニューから呼ばれる）
      * RelationsPanelの親要素（rightSlot）にFormPanelをオーバーレイして表示する。
      * 既存のFormPanelがあれば破棄してから新しいものを生成する。
@@ -2687,19 +2740,14 @@ export class Tab {
             this.currentFormPanel.remove();
             this.currentFormPanel = false;
         }
-        // RelationsPanelの親要素（rightSlot または setVisiblePanes で設定された要素）を取得する
-        const rpParent = this.relationsPanel.getPanelElement().parentElement;
-        if (rpParent === null) {
-            throw new Error('[Tab] createFormPanel: RelationsPanel が DOM に追加されていません');
-        }
         // RelationsPanel がトグルで非表示の場合でも、FormPanel の表示中だけ右スロットを開く。
-        this.editor.showRightSlotForFormPanel();
-        // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
-        this.relationsPanel.getPanelElement().style.display = 'none';
+        // 表示中の右ペイン内容は Editor 側で一時退避し、閉じたときに復元する。
+        const formPanelHost = this.editor.showRightSlotForFormPanel();
         // FormPanel を生成して右スロットにオーバーレイする
         const formPanel = new FormPanel(this.store, this.referenceDataCache, this, this.notification, this.validationPanel);
-        formPanel.appendTo(rpParent);
+        formPanel.appendTo(formPanelHost);
         this.currentFormPanel = formPanel;
+        this.notifyFormPanelVisibilityListener(true);
         return formPanel;
     }
 
@@ -2727,5 +2775,12 @@ export class Tab {
         this.relationsPanel.getPanelElement().style.display = '';
         // FormPanel 表示のために一時的に開いた右スロットを元のトグル状態へ戻す
         this.editor.restoreRightSlotAfterFormPanel();
+        this.notifyFormPanelVisibilityListener(false);
+    }
+
+    private notifyFormPanelVisibilityListener(visible: boolean): void {
+        if (this.formPanelVisibilityListener !== false) {
+            this.formPanelVisibilityListener(visible);
+        }
     }
 }

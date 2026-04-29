@@ -1,42 +1,44 @@
 {
-    "description": "クエスト報酬マスター",
-    "header": [
-        {
-            "key": 0,
-            "name": "id",
-            "type": "int",
-            "comment": "ID",
-            "width": 100
-        },
-        {
-            "key": 1,
-            "name": "group_id",
-            "type": "int",
-            "comment": "グループID",
-            "width": 100
-        },
-        {
-            "key": 2,
-            "name": "reward_table_id",
-            "type": "int",
-            "comment": "報酬テーブルID",
-            "reference": "table.id",
-            "width": 154
-        },
-        {
-            "key": 3,
-            "name": "reward_record_id",
-            "type": "int",
-            "comment": "報酬レコードID",
-            "reference": {
-                "sourceTable": "table",
-                "sourceMatchColumn": "id",
-                "sourceMatchValue": "reward_table_id",
-                "destTable": "master",
-                "destColumn": "id"
-            },
-            "width": 269
-        }
-    ],
-    "primary_key": ["id"]
+  "header": [
+    {
+      "key": 0,
+      "name": "id",
+      "type": "int",
+      "comment": "ID",
+      "width": 100
+    },
+    {
+      "key": 1,
+      "name": "group_id",
+      "type": "int",
+      "comment": "グループID",
+      "width": 100
+    },
+    {
+      "key": 2,
+      "name": "reward_table_id",
+      "type": "int",
+      "comment": "報酬テーブルID",
+      "reference": "table.id",
+      "width": 154
+    },
+    {
+      "key": 3,
+      "name": "reward_record_id",
+      "type": "int",
+      "comment": "報酬レコードID",
+      "reference": {
+        "sourceTable": "table",
+        "sourceMatchColumn": "id",
+        "sourceMatchValue": "reward_table_id",
+        "destTable": "master",
+        "destColumn": "column"
+      },
+      "width": 269
+    }
+  ],
+  "primary_key": [
+    "id"
+  ],
+  "description": "クエスト報酬マスター"
 }

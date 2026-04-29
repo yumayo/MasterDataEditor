@@ -48,6 +48,9 @@ export class Editor {
     /** FormPanel 表示中に rightSlot を一時的に表示するためのフラグ */
     private formPanelForcesRightSlotVisible: boolean;
 
+    /** FormPanel 表示中に退避した右スロット直下ペインの display 値 */
+    private readonly formPanelHiddenRightSlotDisplays: Map<HTMLElement, string>;
+
     /** 折りたたみ前の右スロットの flex-basis 値（展開時に復元するため記憶する） */
     private savedRightSlotFlexBasis: string;
 
@@ -68,6 +71,7 @@ export class Editor {
         this.tab = false;
         this.relationsPanelVisible = false;
         this.formPanelForcesRightSlotVisible = false;
+        this.formPanelHiddenRightSlotDisplays = new Map();
         this.savedRightSlotFlexBasis = '';
         this.visibilityListener = false;
         this.relationsPanel = false;
@@ -404,9 +408,12 @@ export class Editor {
      * RelationsPanel がトグルで非表示でも、FormPanel 表示中だけ右スロットを表示する。
      * RelationsPanel の表示状態自体は変更しないため、ツールバーのトグル状態は維持される。
      */
-    showRightSlotForFormPanel(): void {
+    showRightSlotForFormPanel(): HTMLElement {
+        if (this.formPanelForcesRightSlotVisible) return this.rightSlot;
         this.formPanelForcesRightSlotVisible = true;
         this.applyRelationsPanelVisibility();
+        this.hideRightSlotChildrenForFormPanel();
+        return this.rightSlot;
     }
 
     /**
@@ -414,8 +421,27 @@ export class Editor {
      */
     restoreRightSlotAfterFormPanel(): void {
         if (!this.formPanelForcesRightSlotVisible) return;
+        this.restoreRightSlotChildrenAfterFormPanel();
         this.formPanelForcesRightSlotVisible = false;
         this.applyRelationsPanelVisibility();
+    }
+
+    private hideRightSlotChildrenForFormPanel(): void {
+        for (const child of Array.from(this.rightSlot.children)) {
+            if (!(child instanceof HTMLElement)) continue;
+            if (child.classList.contains('form-panel')) continue;
+            if (!this.formPanelHiddenRightSlotDisplays.has(child)) {
+                this.formPanelHiddenRightSlotDisplays.set(child, child.style.display);
+            }
+            child.style.display = 'none';
+        }
+    }
+
+    private restoreRightSlotChildrenAfterFormPanel(): void {
+        for (const [element, display] of this.formPanelHiddenRightSlotDisplays.entries()) {
+            if (element.isConnected) element.style.display = display;
+        }
+        this.formPanelHiddenRightSlotDisplays.clear();
     }
 
     toggleRelationsPanel(): void {

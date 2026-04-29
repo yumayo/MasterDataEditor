@@ -10,6 +10,7 @@ import {EditorTable} from "../editor/editor-table";
 export class Toolbar {
     private readonly tab: Tab;
     private readonly editor: Editor;
+    private readonly formToggleButton: HTMLButtonElement;
     private readonly relationsToggleButton: HTMLButtonElement;
 
     constructor(containerElement: HTMLElement, tab: Tab, editor: Editor) {
@@ -26,6 +27,13 @@ export class Toolbar {
         csvExportButton.addEventListener('click', () => this.exportCsvToClipboard(csvExportButton));
         containerElement.appendChild(csvExportButton);
 
+        // FormPanel トグルボタン
+        const formToggle = this.createButton('フォームビューを開く/閉じる', createFormIcon());
+        formToggle.classList.add('toolbar-button-form-toggle');
+        formToggle.addEventListener('click', () => { this.tab.toggleFormPanelForActiveRow(); });
+        containerElement.appendChild(formToggle);
+        this.formToggleButton = formToggle;
+
         // RelationsPanel トグルボタン
         const relationsToggle = this.createButton('RelationsPanel を開く/閉じる', createRelationsIcon());
         relationsToggle.classList.add('toolbar-button-relations-toggle');
@@ -40,6 +48,14 @@ export class Toolbar {
                 this.relationsToggleButton.classList.add('toolbar-button-relations-active');
             } else {
                 this.relationsToggleButton.classList.remove('toolbar-button-relations-active');
+            }
+        });
+
+        this.tab.connectFormPanelVisibilityListener((visible: boolean) => {
+            if (visible) {
+                this.formToggleButton.classList.add('toolbar-button-form-active');
+            } else {
+                this.formToggleButton.classList.remove('toolbar-button-form-active');
             }
         });
     }
@@ -160,6 +176,50 @@ function createCopyIcon(): SVGSVGElement {
     front.setAttribute('stroke', 'currentColor');
     front.setAttribute('stroke-width', '1.2');
     svg.appendChild(front);
+    return svg;
+}
+
+/** フォームビューアイコン（右ペインのフォーム入力を表す）をSVGで作成する */
+function createFormIcon(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.classList.add('toolbar-icon');
+
+    const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    frame.setAttribute('x', '2');
+    frame.setAttribute('y', '2');
+    frame.setAttribute('width', '12');
+    frame.setAttribute('height', '12');
+    frame.setAttribute('rx', '1.3');
+    frame.setAttribute('fill', 'none');
+    frame.setAttribute('stroke', 'currentColor');
+    frame.setAttribute('stroke-width', '1.2');
+    svg.appendChild(frame);
+
+    for (const y of ['5', '8', '11']) {
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        label.setAttribute('x1', '4');
+        label.setAttribute('y1', y);
+        label.setAttribute('x2', '6');
+        label.setAttribute('y2', y);
+        label.setAttribute('stroke', 'currentColor');
+        label.setAttribute('stroke-width', '1.2');
+        label.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(label);
+
+        const value = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        value.setAttribute('x1', '8');
+        value.setAttribute('y1', y);
+        value.setAttribute('x2', '12');
+        value.setAttribute('y2', y);
+        value.setAttribute('stroke', 'currentColor');
+        value.setAttribute('stroke-width', '1.2');
+        value.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(value);
+    }
+
     return svg;
 }
 

@@ -151,6 +151,10 @@ export class FormPanel {
         this.panelElement.remove();
     }
 
+    containsElement(element: Element | null): boolean {
+        return element !== null && this.panelElement.contains(element);
+    }
+
     showForRowAsync(tableName: string, pkValue: string): Promise<void> {
         this.navStack = [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }];
         return this.renderCurrentPageAsync();

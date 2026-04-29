@@ -54,6 +54,7 @@ export class EditorTableRelations {
             }
         }
         this.relationsPanel.updateForRow(rowIndex);
+        if (this.tab !== false) this.tab.refreshFormPanelForSelectedRow(this.tableName, rowIndex);
     }
 
     /**

@@ -143,6 +143,44 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await enableRelationsPanelAsync(page);
     });
 
+    test('右上ツールバーにフォームビューのトグルアイコンが表示されること', async ({ page }) => {
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await expect(toggleButton).toBeVisible();
+    });
+
+    test('フォームビューのトグルアイコンで現在選択行のフォームを開閉できること', async ({ page }) => {
+        await openTableAsync(page, 'quest');
+
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
+
+        await toggleButton.click();
+        await expect(formPanel).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-form-active/);
+    });
+
+    test('フォームビュー表示中に選択行を変えるとフォーム内容も追従すること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+
+        await table.locator('.editor-table-row-header').nth(1).click();
+
+        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('2');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input')).toHaveValue('second_quest');
+    });
+
     // -------------------------------------------------------------------------
     // テスト1: PKセル右クリックで「フォームビューを表示」メニューが表示されること
     // -------------------------------------------------------------------------
@@ -177,6 +215,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         // 右ペインに .form-panel が表示されること
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
+        await expect(page.locator('#toolbar .toolbar-button-form-toggle')).toHaveClass(/toolbar-button-form-active/);
 
         // .form-panel-field 要素が存在すること（各列がフィールドとして表示される）
         const fields = formPanel.locator('.form-panel-field');
@@ -195,6 +234,31 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(valueId).toBeVisible();
         const valueName = formPanel.locator('.form-panel-field-value', { hasText: 'first_quest' });
         await expect(valueName).toBeVisible();
+    });
+
+    test('フォームビューはエディター全体ではなく右ペイン内に表示されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+
+        const isInRightSlot = await formPanel.evaluate(el => el.parentElement?.classList.contains('editor-right-slot') ?? false);
+        expect(isInRightSlot).toBe(true);
+
+        const formBox = await formPanel.boundingBox();
+        const rightSlotBox = await page.locator('.editor-right-slot').boundingBox();
+        const leftSlotBox = await page.locator('.editor-left-slot').boundingBox();
+        expect(formBox).not.toBeNull();
+        expect(rightSlotBox).not.toBeNull();
+        expect(leftSlotBox).not.toBeNull();
+        expect(formBox!.x).toBeGreaterThanOrEqual(rightSlotBox!.x - 1);
+        expect(formBox!.x + formBox!.width).toBeLessThanOrEqual(rightSlotBox!.x + rightSlotBox!.width + 1);
+        expect(formBox!.x).toBeGreaterThanOrEqual(leftSlotBox!.x + leftSlotBox!.width - 1);
     });
 
     // -------------------------------------------------------------------------
@@ -287,6 +351,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         // フォームパネルが非表示になること
         await expect(formPanel).not.toBeVisible();
+        await expect(page.locator('#toolbar .toolbar-button-form-toggle')).not.toHaveClass(/toolbar-button-form-active/);
 
         // RelationsPanel が再び表示されること
         const relationsPanel = page.locator('.relations-panel');
