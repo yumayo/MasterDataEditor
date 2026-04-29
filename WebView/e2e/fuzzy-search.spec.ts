@@ -1,5 +1,5 @@
 import {test, expect} from './fixtures/test';
-import {fuzzyMatch, normalizeForSearch, romajiToHiragana} from '../src/fuzzy-search';
+import {fuzzyMatch, normalizeForSearch, romajiToHiragana} from '../src/search/fuzzy-search';
 
 /**
  * fuzzy-search モジュールのユニットテスト

@@ -11,10 +11,10 @@ import type { Page } from '@playwright/test';
 //   旧仕様のベルマーク・履歴パネル・メッセージ欄は廃止。
 //
 // テスト対象:
-//   WebView/src/notification.ts — NotificationToast クラス
-//   WebView/src/status-bar.ts  — StatusBar クラス
-//   WebView/src/debug-console.ts — DebugConsole クラス
-//   WebView/src/notification.css — スタイル
+//   WebView/src/ui/notification.ts — NotificationToast クラス
+//   WebView/src/ui/status-bar.ts  — StatusBar クラス
+//   WebView/src/panels/debug-console.ts — DebugConsole クラス
+//   WebView/src/ui/notification.css — スタイル
 // =============================================================================
 
 /** window.notification.show() を呼び出すヘルパー */

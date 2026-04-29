@@ -1,5 +1,5 @@
 import {test, expect} from './fixtures/test';
-import {matchesQuery, SearchOptions} from '../src/search-query';
+import {matchesQuery, SearchOptions} from '../src/search/search-query';
 
 /**
  * matchesQuery のユニットテスト（ローマ字・全角半角対応）

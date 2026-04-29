@@ -1,5 +1,5 @@
 import {test, expect} from './fixtures/test';
-import {determineDisplayColumnName, isDisplayColumn} from '../src/config';
+import {determineDisplayColumnName, isDisplayColumn} from '../src/config/config';
 
 /**
  * determineDisplayColumnName / isDisplayColumn の単体テスト

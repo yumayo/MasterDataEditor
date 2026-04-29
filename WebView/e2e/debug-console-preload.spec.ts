@@ -13,9 +13,9 @@ import { test, expect } from './fixtures/test';
 //   前に移動し、起動時の全API通信が DEBUG CONSOLE に記録されること。
 //
 // テスト対象:
-//   WebView/src/main.ts — 初期化順序
-//   WebView/src/debug-console.ts — DebugConsole
-//   WebView/src/background-task-tracker.ts — BackgroundTaskTracker
+//   WebView/src/app/main.ts — 初期化順序
+//   WebView/src/panels/debug-console.ts — DebugConsole
+//   WebView/src/app/background-task-tracker.ts — BackgroundTaskTracker
 // =============================================================================
 
 test.describe('DEBUG CONSOLE preload記録', () => {

@@ -1,0 +1,216 @@
+import {EditorTable} from "./editor-table";
+import {ValidationPanel} from "../panels/validation-panel";
+import {ValidationError} from "../validation/validation-engine";
+import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
+
+/**
+ * バリデーション適用とスクロールバーマーカー更新を担当する。
+ *
+ * EditorTable の Object.assign パターンに合わせ、Proxy で既存ファサードへフォールバックする。
+ */
+export class EditorTableValidationMarkers {
+    [key: string]: any;
+
+    constructor(table: EditorTable) {
+        return new Proxy(this, {
+            get: (target, property, receiver) => {
+                if (property in target) return Reflect.get(target, property, receiver);
+                return Reflect.get(table as any, property);
+            },
+            set: (target, property, value, receiver) => {
+                if (property in target) return Reflect.set(target, property, value, receiver);
+                (table as any)[property] = value;
+                return true;
+            },
+        });
+    }
+
+    /**
+     * ValidationPanel を接続する（Tab.createEditorTable 内から呼ばれる）。
+     * セッター禁止のため connectXxx パターンで相互参照を構築する。
+     */
+    connectValidationPanel(panel: ValidationPanel): void {
+        this.validationPanel = panel;
+    }
+
+    /**
+     * ScrollbarMarkerTrack を接続する（Tab.createEditorTable 内から呼ばれる）。
+     * ミニテーブルでは呼ばない（マーカートラックは左ペインの通常テーブル専用）。
+     */
+    connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void {
+        this.scrollbarMarkerTrack = track;
+        if (this.isActive) this.reattachScrollbarMarkerTrack();
+        // 接続前にデータが蓄積されている場合に即座にマーカーを描画する
+        this.refreshScrollbarMarkers();
+    }
+
+    createScrollbarMarkerTrack(cssClass: string): ScrollbarMarkerTrack {
+        const target = this.resolveScrollbarMarkerTarget();
+        return new ScrollbarMarkerTrack(target.parentElement, target.scrollContainer, cssClass);
+    }
+
+    reattachScrollbarMarkerTrack(): void {
+        if (this.scrollbarMarkerTrack === false) return;
+        if (this.isMiniTable) return;
+        const target = this.resolveScrollbarMarkerTarget();
+        this.scrollbarMarkerTrack.reattach(target.parentElement, target.scrollContainer);
+    }
+
+    resolveScrollbarMarkerTarget(): { parentElement: HTMLElement; scrollContainer: HTMLElement } {
+        if (this.usesInternalMainViewport) return {parentElement: this.bottomRightPane, scrollContainer: this.scrollContainer};
+        const parentElement = this.scrollContainer.parentElement;
+        if (parentElement === null) throw new Error(`[EditorTable.resolveScrollbarMarkerTarget] scrollContainer の親要素がありません: table=${this.tableName}`);
+        return {parentElement, scrollContainer: this.scrollContainer};
+    }
+
+
+    // =========================================================================
+    // バリデーション
+    // =========================================================================
+
+    /**
+     * バリデーションを実行してパネルを更新する。
+     *
+     * 通常テーブル（ValidationPanel 接続済み）:
+     *   validationPanel.runAndUpdate() で全テーブルのバリデーションを実行し、
+     *   ValidationPanel 側が全 EditorTable に applyValidationErrors() を呼ぶ。
+     *
+     * ミニテーブル（ValidationPanel 接続済みだが openEditorTables 未登録）:
+     *   通常ミニテーブル: PK重複のみ検出して自身のDOMに適用する。
+     *   DiffTab右ペイン: PK重複 + 型不一致を検出して自身のDOMに適用する。
+     *   runAndUpdate() は呼ばない（全テーブル再バリデーションのコストを避けるため）。
+     *
+     * ValidationPanel 未接続: 何もしない。
+     */
+    runValidation(): void {
+        if (this.validationPanel === false) return;
+        if (this.isMiniTable) {
+            // DiffTab右ペインはPK重複 + 型不一致の全バリデーションを実行する。
+            // 通常ミニテーブル（RelationsPanel配下）はPK重複のみで十分。
+            const errors = this.diffTab !== false
+                ? this.validationPanel.validateForTable(this.tableName)
+                : this.validationPanel.validatePkDuplicatesForTable(this.tableName);
+            this.applyValidationErrors(errors);
+        } else {
+            this.validationPanel.runAndUpdate();
+        }
+    }
+
+    /**
+     * ValidationPanel から呼ばれる: このテーブルのバリデーションエラーをDOMに適用する。
+     * PK重複エラーには cell-pk-duplicate + cell-error を付与する。
+     * FK参照切れ・型不一致エラーには cell-error を付与する。
+     * エラーがないセルからは両クラスを除去する。
+     */
+    applyValidationErrors(errors: ValidationError[]): void {
+        // ストア列インデックス → エラー種別のマップにグループ化する（key: "storeRow,storeCol"）
+        const pkErrorCells = new Set<string>();
+        const otherErrorCells = new Set<string>();
+        for (const error of errors) {
+            const key = `${error.rowIndex},${error.columnIndex}`;
+            if (error.kind === 'pk-duplicate') { pkErrorCells.add(key); } else { otherErrorCells.add(key); }
+        }
+        const colCount = this.getColumnCount();
+        const offset = this.dataColumnOffset();
+        // DOM列→ストア列のマッピングを columnMapping から事前構築する。
+        const domColToStoreCol: number[] = [];
+        for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+            domColToStoreCol.push(this.getStoreColumnIndex(dataColIdx));
+        }
+        // バーチャルスクロールで新規生成される行にもエラークラスを適用できるようキャッシュに保存する
+        this.cachedPkErrorCells = pkErrorCells;
+        this.cachedOtherErrorCells = otherErrorCells;
+        this.cachedDomColToStoreCol = domColToStoreCol;
+        // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
+        // フィルター適用時は getFilteredDataRowCount() でフィルター後の行数を使う
+        const validationRowCount = this.getFilteredDataRowCount();
+        for (let rowIdx = 1; rowIdx <= validationRowCount; rowIdx++) {
+            const row = this.getRowElement(rowIdx);
+            if (!row) continue;
+            // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
+            const storeRowIdx = this.resolveStoreRowIndex(rowIdx - 1);
+            if (storeRowIdx < 0) continue;
+            for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+                const cell = row.children[dataColIdx + offset] as HTMLElement | null;
+                if (!cell) continue;
+                const storeColIdx = domColToStoreCol[dataColIdx];
+                if (storeColIdx === -1) continue;
+                const key = `${storeRowIdx},${storeColIdx}`;
+                const isPkError = pkErrorCells.has(key);
+                const isOtherError = otherErrorCells.has(key);
+                // cell-pk-duplicate: PKエラーのみ
+                if (isPkError) { cell.classList.add('cell-pk-duplicate'); } else { cell.classList.remove('cell-pk-duplicate'); }
+                // cell-error: PKエラー・FK参照切れ・型不一致
+                if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
+            }
+        }
+        // エラー行をスクロールバーマーカーに反映する（ストア行→DOM行に変換）
+        const errorDomRows = new Set<number>();
+        for (const error of errors) {
+            const domDataRow = this.storeRowIndices.indexOf(error.rowIndex);
+            if (domDataRow !== -1) errorDomRows.add(domDataRow);
+        }
+        this.currentErrorDomRows = errorDomRows;
+        this.refreshScrollbarMarkers();
+    }
+
+    // =========================================================================
+    // スクロールバーマーカー
+    // =========================================================================
+
+    /**
+     * スクロールバーマーカートラックにエラー行・git変更行を反映する。
+     * ミニテーブルではマーカー不要のため何もしない。
+     * データ行インデックスと総データ行数の比率でマーカー位置を算出する。
+     * DOMの表示範囲に依存しないため、仮想スクロール時もすべてのマーカーを描画できる。
+     */
+    refreshScrollbarMarkers(): void {
+        if (this.scrollbarMarkerTrack === false) return;
+        if (this.isMiniTable) return;
+        if (!this.isActive) return;
+        // 総データ行数（バッファ行を含む）をマーカー位置の分母にする。
+        // storeRowIndices.length はデータ行数、+1 でバッファ行1行を考慮する。
+        // ミニテーブルでは呼ばれない（上のガードで早期リターン済み）。
+        const totalDataRowCount = this.storeRowIndices.length + 1;
+        const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, totalDataRowCount);
+        const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, totalDataRowCount);
+        this.scrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
+    }
+
+    /**
+     * データ行インデックスの集合からマーカー描画エントリを構築する。
+     * 各行のマーカー位置を dataRowIndex / totalDataRowCount で比率算出する。
+     * DOM要素の座標に依存しないため、仮想スクロールで表示範囲外の行もマーカーを生成できる。
+     * 連続する行はまとめて1つのエントリにマージする。
+     */
+    buildMarkerEntries(dataRows: Set<number>, totalDataRowCount: number): MarkerEntry[] {
+        if (dataRows.size === 0) return [];
+        const markers: MarkerEntry[] = [];
+        const sorted = Array.from(dataRows).sort((a, b) => a - b);
+        const rowSize = 1 / totalDataRowCount;
+        let rangeStartIdx = sorted[0];
+        let rangeEndIdx = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i] === sorted[i - 1] + 1) {
+                // 連続する行はマージする
+                rangeEndIdx = sorted[i];
+            } else {
+                // 非連続 → 前のレンジを確定して新しいレンジを開始する
+                markers.push({
+                    start: rangeStartIdx / totalDataRowCount,
+                    size: (rangeEndIdx - rangeStartIdx + 1) * rowSize,
+                });
+                rangeStartIdx = sorted[i];
+                rangeEndIdx = sorted[i];
+            }
+        }
+        // 最後のレンジを確定する
+        markers.push({
+            start: rangeStartIdx / totalDataRowCount,
+            size: (rangeEndIdx - rangeStartIdx + 1) * rowSize,
+        });
+        return markers;
+    }
+
+
+}

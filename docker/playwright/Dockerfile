@@ -23,7 +23,8 @@ RUN npx playwright install chromium
 RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' > /app/.env
 
 # テスト用config.jsonを配置
-COPY --chown=node:node WebView/e2e/fixtures/config.json /app/WebView/src/config.json
+RUN mkdir -p /app/WebView/src/config
+COPY --chown=node:node WebView/e2e/fixtures/config.json /app/WebView/src/config/config.json
 
 # テスト結果用のディレクトリを作成しておきます。
 RUN mkdir -p ./test-results && chown node:node ./test-results

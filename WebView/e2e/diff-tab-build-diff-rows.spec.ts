@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures/test';
-import { buildDiffRows, DiffRow } from '../src/diff-rows';
+import { buildDiffRows, DiffRow } from '../src/diff/diff-rows';
 
 // =============================================================================
 // buildDiffRows ユニットテスト

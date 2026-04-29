@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures/test';
-import { InMemoryTableStore } from '../src/in-memory-table-store';
+import { InMemoryTableStore } from '../src/data/in-memory-table-store';
 
 // --- テスト用ヘルパー ---
 
