@@ -33,20 +33,26 @@ import {Tab} from "../tabs/tab";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
 import {saveSchemaDataAsync} from "./editor-actions";
-import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "../references/reference-expression";
-import {ReverseReferenceJumpDialog} from "../ui/reverse-reference-jump-dialog";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 import {VirtualScrollController, RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {EditorTableCellFactory} from "./editor-table-cell-factory";
 import {EditorTableSelectionView} from "./editor-table-selection-view";
+import {EditorTableRenderer} from "./editor-table-renderer";
+import {EditorTableStoreSync} from "./editor-table-store-sync";
+import {EditorTableNavigation} from "./editor-table-navigation";
+import {EditorTableBookmarks} from "./editor-table-bookmarks";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
  *
  * 個別の責務は以下のモジュールに委譲する:
+ * - EditorTableRenderer: 初期描画・仮想スクロール行生成・ライフサイクル
  * - EditorTableReference: 参照ヒント管理
  * - EditorTableContextMenu: コンテキストメニュー
  * - EditorTableStructure: 列/行の構造操作
+ * - EditorTableStoreSync: ストア同期・バッファ空行・FK自動埋め込み
+ * - EditorTableNavigation: 参照/逆参照ジャンプ
+ * - EditorTableBookmarks: ブックマーク操作・視覚マーク復元
  */
 export class EditorTable {
     readonly tableName: string;
@@ -58,14 +64,14 @@ export class EditorTable {
     private readonly handler: EditorTableHandler;
     private readonly contextMenu: ContextMenu;
     private readonly history: History;
-    private readonly selectionDragController: SelectionDragController;
+    readonly selectionDragController: SelectionDragController;
     /** 行ドラッグ移動コントローラー（initializeModulesで再作成されるためreadonlyではない） */
     private rowDragController: RowDragController;
     private readonly referenceDataCache: ReferenceDataCache;
     /** テーブルデータの中央ストア（セル編集の同期用） */
     private readonly store: InMemoryTableStore;
     /** 参照箇所を表示するサイドバー（コンテキストメニュー・ブックマーク操作で使用） */
-    private readonly sidebar: Sidebar;
+    readonly sidebar: Sidebar;
     private readonly scrollContainer: HTMLElement;
     private readonly usesInternalMainViewport: boolean;
     private readonly topLeftPane: HTMLElement;
@@ -95,7 +101,7 @@ export class EditorTable {
     /** リレーションパネル（RelationsPanelのconnectEditorTableで設定される。未設定はfalse） */
     relationsPanel: RelationsPanel | false;
     /** バリデーションパネル（Tab.createEditorTable内でconnectValidationPanel()で設定される。未設定はfalse） */
-    private validationPanel: ValidationPanel | false;
+    validationPanel: ValidationPanel | false;
     /** 差分タブ（DiffTab.buildDiffEditorTableで設定される。未設定はfalse） */
     diffTab: DiffTab | false;
     /**
@@ -108,7 +114,7 @@ export class EditorTable {
     /** refreshGitDiffAsync のレースコンディション防止用リクエストID */
     refreshGitDiffRequestId: number;
     /** 列ソート管理（ミニテーブルでは使用しないが、インスタンスは常に保持する） */
-    private readonly columnSorter: ColumnSorter;
+    readonly columnSorter: ColumnSorter;
     /** 列フィルター管理（ミニテーブルでは使用しないが、インスタンスは常に保持する） */
     private readonly columnFilter: ColumnFilter;
     /** フィルタードロップダウン UI（ミニテーブルでは使用しない。initializeModules() で再作成される） */
@@ -124,16 +130,16 @@ export class EditorTable {
     private isBlameVisible: boolean;
 
     /** 空行数（データ行+バッファ1行） */
-    private readonly emptyRowCount: number;
+    readonly emptyRowCount: number;
     /** ルート要素に付与するCSSクラス名（通常は 'editor-table'、ミニテーブルは別クラス） */
-    private readonly rootCssClass: string;
+    readonly rootCssClass: string;
     /**
      * ミニEditorTableフラグ。RelationsPanelのミニテーブルとして生成された場合はtrue。
      * trueの場合、行選択変化をRelationsPanelに通知しない（自分自身の再描画による自己破棄を防止）。
      */
     private readonly isMiniTable: boolean;
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
-    private autoFillEntries: Array<{ columnName: string; value: string }>;
+    autoFillEntries: Array<{ columnName: string; value: string }>;
     /**
      * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
      * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
@@ -156,18 +162,18 @@ export class EditorTable {
      */
     private filteredRowIndices: number[];
     /** スクロールバーマーカートラック（connectScrollbarMarkerTrackで設定される。未設定はfalse） */
-    private scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
+    scrollbarMarkerTrack: ScrollbarMarkerTrack | false;
     /** 通常テーブルの共有右側マーカーを更新できるアクティブ状態 */
-    private isActive: boolean;
+    isActive: boolean;
     /** 直近のバリデーションで検出されたエラーがあるデータ行インデックス（0始まり）の集合 */
     currentErrorDomRows: Set<number>;
     /** 直近のgit差分で検出された変更があるデータ行インデックス（0始まり）の集合 */
     currentGitChangedDomRows: Set<number>;
     /** バリデーションエラーのストア座標キャッシュ（renderRowForVirtualScroll でクラス適用に使用） */
-    private cachedPkErrorCells: Set<string>;
-    private cachedOtherErrorCells: Set<string>;
+    cachedPkErrorCells: Set<string>;
+    cachedOtherErrorCells: Set<string>;
     /** DOM列→ストア列のマッピングキャッシュ（バリデーションエラークラス適用用） */
-    private cachedDomColToStoreCol: number[];
+    cachedDomColToStoreCol: number[];
     /** バーチャルスクロールコントローラー */
     private readonly virtualScroll: VirtualScrollController;
     /** 固定行列・detached layer 表示同期モジュール */
@@ -180,8 +186,16 @@ export class EditorTable {
     private validationMarkers: EditorTableValidationMarkers;
     /** 選択・コピー範囲・フォーカスセルの視覚状態管理モジュール */
     private selectionView: EditorTableSelectionView;
+    /** 初期描画・仮想スクロール行生成・ライフサイクル管理モジュール */
+    private renderer: EditorTableRenderer;
+    /** ストア同期・バッファ行・FK自動埋め込み管理モジュール */
+    private storeSync: EditorTableStoreSync;
+    /** 参照・逆参照ナビゲーション管理モジュール */
+    private navigation: EditorTableNavigation;
+    /** ブックマーク操作・視覚マーク復元モジュール */
+    private bookmarks: EditorTableBookmarks;
     /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
-    private skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
+    skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
     constructor(
         tableName: string,
@@ -326,6 +340,10 @@ export class EditorTable {
         this.git = new EditorTableGit(this);
         this.validationMarkers = new EditorTableValidationMarkers(this);
         this.selectionView = new EditorTableSelectionView(this);
+        this.renderer = new EditorTableRenderer(this);
+        this.storeSync = new EditorTableStoreSync(this);
+        this.navigation = new EditorTableNavigation(this);
+        this.bookmarks = new EditorTableBookmarks(this);
     }
 
     /**
@@ -354,6 +372,13 @@ export class EditorTable {
         this.validationMarkers = new EditorTableValidationMarkers(this);
         // 選択表示の委譲先も正しい this で再作成する。
         this.selectionView = new EditorTableSelectionView(this);
+        // 初期描画・行生成の委譲先も正しい this で再作成する。
+        this.renderer = new EditorTableRenderer(this);
+        // ストア同期の委譲先も正しい this で再作成する。
+        this.storeSync = new EditorTableStoreSync(this);
+        // ナビゲーション/ブックマークの委譲先も正しい this で再作成する。
+        this.navigation = new EditorTableNavigation(this);
+        this.bookmarks = new EditorTableBookmarks(this);
         // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。
         // 旧インスタンスは realEditorTable（storeRowIndices=[]）を参照しているため破棄が必要。
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
@@ -367,8 +392,8 @@ export class EditorTable {
         // コンストラクタ時点の this は realEditorTable を指すためクロージャが旧オブジェクトを捕捉してしまう。
         // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
         this.virtualScroll.connectRenderRow(
-            (dataRowIndex: number) => this.renderRowForVirtualScroll(dataRowIndex),
-            (update: RenderedRowsUpdate) => this.reapplyRowDecorations(update),
+            (dataRowIndex: number) => this.renderer.renderRowForVirtualScroll(dataRowIndex),
+            (update: RenderedRowsUpdate) => this.renderer.reapplyRowDecorations(update),
             (scrollTop: number, scrollLeft: number) => this.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft)
         );
         if (!this.virtualScroll.handlesScrollEvents()) {
@@ -430,7 +455,7 @@ export class EditorTable {
     private refreshFreezeVisualState(): void { this.layout.refreshFreezeVisualState(); }
     syncFreezeStateCssClasses(): void { this.layout.syncFreezeStateCssClasses(); }
     getQuadrantViewportRowTopPx(logicalRowIndex: number): number { return this.layout.getQuadrantViewportRowTopPx(logicalRowIndex); }
-    private applyFreezeVisualStateToRenderedRows(): void { this.layout.applyFreezeVisualStateToRenderedRows(); }
+    applyFreezeVisualStateToRenderedRows(): void { this.layout.applyFreezeVisualStateToRenderedRows(); }
     syncFreezeTransforms(scrollTop: number, scrollLeft: number): void { this.layout.syncFreezeTransforms(scrollTop, scrollLeft); }
 
     getStoreColumnIndex(domColumnIndex: number): number {
@@ -558,112 +583,17 @@ export class EditorTable {
      * ファクトリ関数から呼び出される
      */
     initialize(): void {
-        this.element.classList.add(this.rootCssClass);
-        if (this.usesInternalMainViewport) this.element.classList.add('editor-table--quadrant-layout');
-        {
-            const cells = [];
-            // 左上隅の空セル
-            const cornerCell = document.createElement('div');
-            cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
-            // comment 付き列が1つでもある場合、ヘッダー行は2行分の高さになるためコーナーセルも合わせる
-            const hasComment = this.tableData.header.some(col => col.comment !== null);
-            if (hasComment) {
-                cornerCell.style.height = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-                cornerCell.style.minHeight = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-                cornerCell.style.maxHeight = 'none';
-            } else {
-                EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
-            }
-            // コーナーセルクリックで全選択
-            cornerCell.addEventListener('mousedown', (e) => {
-                // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
-                if (e.button !== 0) return;
-                this.handler.submitAndHide();
-                this.selection.selectAll();
-            });
-            cells.push(cornerCell);
-            // 列ヘッダー (A, B, C, ...)
-            for (let i = 0; i < this.tableData.header.length; ++i) {
-                // comment がある列は上段に変数名、下段にcommentの2行ヘッダーを生成する
-                const col = this.tableData.header[i];
-                const isPrimaryKey = this.tableData.primaryKeyColumns.includes(col.name);
-                const columnHeaderCell = this.structure.createColumnHeaderCell(col.name, col.comment, i, col.width, isPrimaryKey, col.reference);
-                cells.push(columnHeaderCell);
-            }
-            const columnHeaderRow = EditorTable.createRow(cells, 0);
-            columnHeaderRow.classList.remove('editor-table-row');
-            columnHeaderRow.classList.add('editor-table-source-column-header-row');
-            this.gridElement.appendChild(columnHeaderRow);
-        }
-        // ヘッダー行追加直後に topSpacer をテーブル内に配置する（データ行追加前に必要）
-        this.virtualScroll.attachSpacers();
-        // 通常テーブルはストア、ミニテーブルは呼び出し元から渡された部分行データを初期描画のソースにする。
-        // ミニテーブルは initialize() 後に setStoreRowIndices() で実ストア行へ差し替えられる。
-        const initialStoreRows = this.isMiniTable ? false : this.store.getRows(this.tableName);
-        const initialDataRowCount = initialStoreRows === false ? this.tableData.body.length : initialStoreRows.length;
-        this.storeRowIndices = Array.from({ length: initialDataRowCount }, (_, i) => i);
-        // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
-        // totalRowCount はバッファ行を含むDOM上の総データ行数。
-        // 通常テーブル: emptyRowCount = body.length + 1（データ行 + バッファ行1行）
-        // 差分テーブル: emptyRowCount = 0 だが実データ行が存在するため storeRowIndices.length を使う。
-        // forceRecalculate() が totalRowCount に基づいてDOM行を管理するため、
-        // バッファ行を含めないと forceRecalculate 時にバッファ行がDOMから削除される。
-        this.virtualScroll.updateTotalRowCount(Math.max(this.emptyRowCount, this.storeRowIndices.length));
-        for (let i = 0; i < initialDataRowCount; ++i) {
-            const cells: HTMLElement[] = [];
-            cells.push(this.structure.createRowHeaderCell(String(i + 1), i));
-            for (let j = 0; j < this.tableData.header.length; ++j) {
-                let value = '';
-                if (initialStoreRows !== false) {
-                    const storeRow = initialStoreRows[i];
-                    const storeColumnIndex = this.tableData.columnMapping[j];
-                    value = storeColumnIndex === -1 || storeColumnIndex >= storeRow.length ? '' : storeRow[storeColumnIndex];
-                } else {
-                    value = this.tableData.body[i].values[j];
-                }
-                cells.push(EditorTable.createCell(this, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
-            }
-            const row = EditorTable.createRow(cells, i);
-            row.dataset.rowIndex = String(i);
-            row.dataset.storeIndex = String(i);
-            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
-            this.virtualScroll.appendDataRow(row);
-        }
-        for (let i = 0; i < this.emptyRowCount - initialDataRowCount; ++i) {
-            const row = this.renderBufferRow(initialDataRowCount + i);
-            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
-            this.virtualScroll.appendDataRow(row);
-        }
-        // フィル中のマウス移動イベント
-        this.element.addEventListener('mousemove', (e) => {
-            const target = e.target as HTMLElement;
-            if (target.classList.contains('editor-table-cell')) {
-                const position = this.getCellPositionFromElement(target);
-                if (position) {
-                    this.selection.updateFill(position.row, position.column, e.clientX, e.clientY);
-                }
-            }
-        });
-        // 初期表示時にバリデーションを実行してセルにエラークラスを付与する
-        this.runValidation();
-        // 全行生成後にバーチャルスクロールの初期表示範囲を確立する。
-        // ビューポートに収まる行のみ残し、残りは削除してスペーサーで高さを補完する。
-        this.virtualScroll.forceRecalculate();
-        // forceRecalculate() が初期DOMを作り直すため、その後でブックマーク視覚マークを復元する
-        this.restoreBookmarkMarks();
-        this.refreshFreezeVisualState();
+        this.renderer.initialize();
     }
 
     /** バーチャルスクロールのスペーサーとDOM行を強制再計算する（タブ復帰時に使用） */
     forceVirtualScrollRecalculate(): void {
-        this.virtualScroll.forceRecalculate();
-        this.refreshDetachedHeaderLayout();
+        this.renderer.forceVirtualScrollRecalculate();
     }
 
     /** バーチャルスクロールの全行を破棄して再レンダリングする（diffTab接続後の初期装飾適用に使用） */
     forceVirtualScrollFullRerender(): void {
-        this.virtualScroll.forceFullRerender();
-        this.refreshDetachedHeaderLayout();
+        this.renderer.forceVirtualScrollFullRerender();
     }
 
     /**
@@ -676,29 +606,7 @@ export class EditorTable {
      * @returns 生成された行要素（data-store-index 設定済み）
      */
     renderDataRow(dataRowIndex: number): HTMLElement {
-        const storeRowIndex = this.storeRowIndices[dataRowIndex];
-        const storeRows = this.store.getRows(this.tableName);
-        const columnMapping = this.tableData.columnMapping;
-        const cells: HTMLElement[] = [];
-        // 行ヘッダー（表示上は1始まり）
-        cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
-        for (let j = 0; j < this.tableData.header.length; ++j) {
-            // columnMapping でDOM列→ストア（CSV）列に変換してセル値を取得する
-            const csvColIndex = columnMapping[j];
-            let value: string = '';
-            if (storeRows !== false && csvColIndex !== -1) {
-                const storeRow = storeRows[storeRowIndex];
-                if (csvColIndex < storeRow.length) {
-                    value = storeRow[csvColIndex];
-                }
-            }
-            cells.push(EditorTable.createCell(this, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
-        }
-        const row = EditorTable.createRow(cells, dataRowIndex);
-        row.dataset.rowIndex = String(dataRowIndex);
-        // ソート時にstoreRowIndexからDOM行要素を逆引きするためのインデックスを付与する
-        row.dataset.storeIndex = String(storeRowIndex);
-        return row;
+        return this.renderer.renderDataRow(dataRowIndex);
     }
 
     /**
@@ -709,104 +617,7 @@ export class EditorTable {
      * @returns 生成された行要素（editor-table-empty-row クラス付き）
      */
     renderBufferRow(dataRowIndex: number): HTMLElement {
-        const cells: HTMLElement[] = [];
-        cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
-        for (let j = 0; j < this.tableData.header.length; ++j) {
-            cells.push(EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
-        }
-        const row = EditorTable.createRow(cells, dataRowIndex);
-        row.dataset.rowIndex = String(dataRowIndex);
-        // バッファ行（ユーザーが直接挿入した行と区別するための識別クラス）
-        row.classList.add('editor-table-empty-row');
-        return row;
-    }
-
-    /**
-     * バーチャルスクロールの行動的生成コールバック。
-     * データ行かバッファ行かを判定し、適切なメソッドに委譲する。
-     * filteredRowIndices の長さ（=フィルター後のデータ行数）を境界としてバッファ行を判定する。
-     * フィルター適用時: dataRowIndex を filteredRowIndices 経由で storeRowIndices 上のインデックスに変換する。
-     * フィルター未適用時: hasActiveFilter()=false により dataRowIndex をそのまま使用する。
-     * 生成後にバリデーションエラークラスとgit変更クラスを適用する。
-     *
-     * フィルター適用時: data-row-index をフィルター後の論理インデックス（0,1,2,...）に上書きする。
-     * getCellPosition() は data-row-index を読んで行番号を返し、Selection はこの論理行番号で動作する。
-     * ストアアクセス時は resolveStoreRowIndex() で論理インデックスを storeRowIndices 上のインデックスに変換する。
-     */
-    private renderRowForVirtualScroll(dataRowIndex: number): HTMLElement {
-        const filteredCount = this.getFilteredDataRowCount();
-        if (dataRowIndex < filteredCount) {
-            // フィルター適用時: filteredRowIndices で storeRowIndices 上のインデックスに変換
-            // フィルター未適用時: dataRowIndex をそのまま使用（storeRowIndices[dataRowIndex]）
-            const mappedDataRowIndex = this.columnFilter.hasActiveFilter()
-                ? this.filteredRowIndices[dataRowIndex]
-                : dataRowIndex;
-            const row = this.renderDataRow(mappedDataRowIndex);
-            // フィルター適用時、renderDataRow は mappedDataRowIndex（storeRowIndices上のインデックス）で
-            // data-row-index を設定するが、仮想スクロールの論理行インデックスは dataRowIndex であるべき。
-            // getCellPosition() が data-row-index を読んで行番号を返すため、フィルター後の連続した
-            // 論理行番号（0,1,2,...）に修正する。ストアアクセスは resolveStoreRowIndex() で変換する。
-            if (this.columnFilter.hasActiveFilter()) {
-                const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
-                if (rowHeader) {
-                    rowHeader.dataset.rowIndex = String(dataRowIndex);
-                    // 行ヘッダーのテキストノードも仮想スクロールの論理行番号に更新する
-                    for (const node of Array.from(rowHeader.childNodes)) {
-                        if (node.nodeType === Node.TEXT_NODE) { node.textContent = String(dataRowIndex + 1); break; }
-                    }
-                }
-                row.dataset.rowIndex = String(dataRowIndex);
-                // 行の data-row 属性も論理行インデックスに更新する
-                row.dataset.row = String(dataRowIndex + 1);
-            }
-            this.applyRowDecorations(row, mappedDataRowIndex);
-            // 差分タブ接続時: diffクラスを適用する
-            if (this.diffTab !== false) {
-                this.diffTab.applyDiffDecorationsToRow(row, mappedDataRowIndex, this);
-            }
-            return row;
-        }
-        return this.renderBufferRow(dataRowIndex);
-    }
-
-    /**
-     * バーチャルスクロールで動的生成されたデータ行に、バリデーションエラーとgit変更のクラスを適用する。
-     * applyValidationErrors / applyGitDiffHighlight でキャッシュされた情報を使用する。
-     */
-    private applyRowDecorations(rowElement: HTMLElement, dataRowIndex: number): void {
-        const storeRowIndex = this.storeRowIndices[dataRowIndex];
-        const offset = this.dataColumnOffset();
-        const colCount = this.getColumnCount();
-        // バリデーションエラークラスの適用
-        if (this.cachedPkErrorCells.size > 0 || this.cachedOtherErrorCells.size > 0) {
-            for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
-                const cell = rowElement.children[dataColIdx + offset] as HTMLElement | null;
-                if (!cell) continue;
-                const storeColIdx = dataColIdx < this.cachedDomColToStoreCol.length ? this.cachedDomColToStoreCol[dataColIdx] : -1;
-                if (storeColIdx === -1) continue;
-                const key = `${storeRowIndex},${storeColIdx}`;
-                const isPkError = this.cachedPkErrorCells.has(key);
-                const isOtherError = this.cachedOtherErrorCells.has(key);
-                if (isPkError) { cell.classList.add('cell-pk-duplicate'); }
-                if (isPkError || isOtherError) { cell.classList.add('cell-error'); }
-            }
-        }
-        // git変更クラスの適用
-        if (this.gitDiffTracker !== false) {
-            const storeRows = this.store.getRows(this.tableName);
-            if (storeRows !== false) {
-                const columnMapping = this.tableData.columnMapping;
-                for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
-                    const cell = rowElement.children[dataColIdx + offset] as HTMLElement | null;
-                    if (!cell) continue;
-                    const storeColIdx = dataColIdx < columnMapping.length ? columnMapping[dataColIdx] : -1;
-                    if (storeColIdx === -1) continue;
-                    if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIdx)) {
-                        cell.classList.add('cell-git-changed');
-                    }
-                }
-            }
-        }
+        return this.renderer.renderBufferRow(dataRowIndex);
     }
 
     /**
@@ -818,82 +629,7 @@ export class EditorTable {
      * 重複更新になるが、軽量な処理のためパフォーマンス影響は無視できる。
      */
     onScrollForFrozenFillHandle(): void {
-        if (this.skipFrozenFillHandleRefreshOnNextScrollSync) {
-            this.skipFrozenFillHandleRefreshOnNextScrollSync = false;
-            return;
-        }
-        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
-        const range = this.selection.getSelectionRange();
-        // endRow が固定行内、または endColumn が固定列内にある場合のみ更新する。
-        // endRow はデータ行インデックス（1始まり、ヘッダー行は0）なので frozenRowCount と比較。
-        // endColumn は DOM列インデックス（dataColumnOffset() 含む）なので
-        // データ列インデックスに変換して frozenColumnCount と比較する。
-        const isFrozenRow = this.frozenRowCount > 0 && range.endRow <= this.frozenRowCount;
-        const endDataColumn = range.endColumn - this.dataColumnOffset();
-        const isFrozenColumn = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
-        if (!isFrozenRow && !isFrozenColumn) return;
-        this.selection.refreshFillHandlePosition();
-    }
-
-    /**
-     * バーチャルスクロールで行の入れ替えが完了した後に、表示中の行に装飾を再適用する。
-     * 選択クラス、コピー範囲クラス、フォーカスセル、フリーズペインスタイルを再適用する。
-     * 参照ヒント（FK参照先の表示名）を新しく生成された行に適用する。
-     * バリデーションエラーとgit差分は renderRowForVirtualScroll 内の applyRowDecorations で適用済み。
-     */
-    private reapplyRowDecorations(update: RenderedRowsUpdate): void {
-        // ドラッグ選択中（mousedown→mousemove中）は選択クラス再適用をスキップする。
-        // ドラッグ中に applySelectionClasses を呼ぶと lastSelectionCells のリセットで
-        // 中間状態が壊れ、ドラッグ操作が途中で止まる。
-        // ドラッグ終了後の mouseup → selection.end() → updateRenderer() で正しく再適用される。
-        if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) {
-            this.applyFreezeVisualStateToRenderedRows();
-            if (this.usesInternalMainViewport) {
-                this.refreshQuadrantViewportRowHeaders(update);
-                if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();
-                return;
-            }
-            if (update.triggeredByScroll) {
-                this.refreshDetachedViewportRowHeaders(update);
-                return;
-            }
-            this.refreshDetachedHeaderLayout();
-            return;
-        }
-        this.applyFreezeVisualStateToRenderedRows();
-        this.selection.reapplySelectionClassesOnly(update.triggeredByScroll);
-        const selectionRange = this.selection.getSelectionRange();
-        const isFrozenRowSelection = this.frozenRowCount > 0 && selectionRange.endRow <= this.frozenRowCount;
-        const endDataColumn = selectionRange.endColumn - this.dataColumnOffset();
-        const isFrozenColumnSelection = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
-        this.skipFrozenFillHandleRefreshOnNextScrollSync = update.triggeredByScroll && (isFrozenRowSelection || isFrozenColumnSelection);
-        this.reapplyReferenceAndBookmarkDecorations(update);
-        if (this.usesInternalMainViewport) {
-            this.refreshQuadrantViewportRowHeaders(update);
-            if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();
-            return;
-        }
-        if (update.triggeredByScroll) {
-            this.refreshDetachedViewportRowHeaders(update);
-            return;
-        }
-        this.refreshDetachedHeaderLayout();
-    }
-
-    private reapplyReferenceAndBookmarkDecorations(update: RenderedRowsUpdate): void {
-        if (update.refreshAllRows) {
-            this.reference.updateReferenceHints();
-            this.restoreBookmarkMarks();
-            return;
-        }
-        for (const insertedRange of update.insertedRanges) {
-            if (insertedRange.start >= insertedRange.end) continue;
-            const startDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.start);
-            const endDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.end - 1);
-            if (startDomRow === null || endDomRow === null) continue;
-            this.reference.updateReferenceHintsForRows(startDomRow, endDomRow + 1);
-            this.restoreBookmarkMarksForDataRowRange(insertedRange.start, insertedRange.end);
-        }
+        this.renderer.onScrollForFrozenFillHandle();
     }
 
     /**
@@ -901,7 +637,7 @@ export class EditorTable {
      * appendTo() 完了後（テーブル要素が親要素に追加された後）に呼ぶこと。
      */
     attachSpacers(): void {
-        this.virtualScroll.attachSpacers();
+        this.renderer.attachSpacers();
     }
 
     /**
@@ -911,11 +647,7 @@ export class EditorTable {
      * 非アクティブクラスが意図せず除去されるバグを防ぐためにこの分離が必要。
      */
     activate(): void {
-        this.selectionDragController.activate();
-        this.isActive = true;
-        this.reattachScrollbarMarkerTrack();
-        // タブ切り替え時に保持済みのマーカーデータを再描画する
-        this.refreshScrollbarMarkers();
+        this.renderer.activate();
     }
 
     /**
@@ -924,12 +656,7 @@ export class EditorTable {
      * ここでは操作しない。
      */
     deactivate(): void {
-        this.handler.deactivate();
-        this.selectionDragController.deactivate();
-        const wasActive = this.isActive;
-        this.isActive = false;
-        // 共有右側マーカーは、このテーブルが表示中だった場合だけクリアする。
-        if (wasActive && this.scrollbarMarkerTrack !== false) this.scrollbarMarkerTrack.clear();
+        this.renderer.deactivate();
     }
 
     /**
@@ -938,7 +665,7 @@ export class EditorTable {
      * Ctrl+Z/Ctrl+S などのキーボードショートカットが EditorTableHandler に到達するようにする。
      */
     focusTable(): void {
-        this.handler.activate();
+        this.renderer.focusTable();
     }
 
     /**
@@ -947,16 +674,12 @@ export class EditorTable {
      * selectionDragController は操作しない（handler の排他制御とは独立）。
      */
     setInactiveAppearance(inactive: boolean): void {
-        if (inactive) {
-            this.element.classList.add('editor-table--inactive');
-        } else {
-            this.element.classList.remove('editor-table--inactive');
-        }
+        this.renderer.setInactiveAppearance(inactive);
     }
 
     /** DOMレイアウト完了後にSelectionの視覚位置を現在の内部状態に基づいて更新する */
     refreshSelectionDisplay(): void {
-        this.selection.updateRendererAfterResize();
+        this.renderer.refreshSelectionDisplay();
     }
 
     /**
@@ -964,8 +687,7 @@ export class EditorTable {
      * セル編集UIの表示を禁止してストア汚染を防ぎ、Ctrl+Sも禁止してCSV破壊を防ぐ
      */
     makeReadOnly(): void {
-        this.handler.makeReadOnly();
-        this.contextMenuHandler.makeReadOnly();
+        this.renderer.makeReadOnly();
     }
 
     /**
@@ -973,7 +695,7 @@ export class EditorTable {
      * RelationsPanelのcreateMinEditorTable()で生成された場合にtrueを返す。
      */
     isMiniTableInstance(): boolean {
-        return this.isMiniTable;
+        return this.renderer.isMiniTableInstance();
     }
 
     // =========================================================================
@@ -990,7 +712,7 @@ export class EditorTable {
     // =========================================================================
 
     stopAutoScrollForInput(): void {
-        this.selectionDragController.stopAutoScrollForInput();
+        this.renderer.stopAutoScrollForInput();
     }
 
     // =========================================================================
@@ -1842,135 +1564,7 @@ export class EditorTable {
      * ミニテーブルはフィルタ条件を持つため DOM 行数同期は行わず、セル値の更新のみ行う。
      */
     reloadCellsFromStore(): void {
-        // blameはgit committed dataのため、ストアからの全面リロードで陳腐化する
-        this.hideBlameIfVisible();
-        const storeRows = this.store.getRows(this.tableName);
-        if (storeRows === false) return;
-
-        // DOM列インデックス → ストア列インデックスのマッピングを columnMapping から構築する。
-        const domColumnCount = this.getColumnCount();
-        const storeColumnIndices = this.tableData.columnMapping.slice(0, domColumnCount);
-
-        // 通常テーブルのみ: DOMの行数とストアの行数を同期し、storeRowIndices を [0..storeRows.length-1] に更新する。
-        // ミニテーブルはフィルタ済みのサブセットを表示しており、ストア全行との同期は不適切なため除外する。
-        // ミニテーブルは destroyMiniEditorTables()/buildMiniEditorTableAsync() で都度再構築されるため問題なし。
-        let domRowCountChanged = false;
-        if (!this.isMiniTable) {
-            const currentDataRowCount = this.storeRowIndices.length;
-            if (storeRows.length > currentDataRowCount) {
-                // ストアの方が多い: バッファ空行を昇格してデータ行に変換し、足りなければ新規行を挿入する
-                for (let i = currentDataRowCount; i < storeRows.length; i++) {
-                    const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
-                    const existingRow = this.getRowElement(domRowIndex);
-                    if (existingRow && existingRow.classList.contains('editor-table-empty-row')) {
-                        // バッファ空行をデータ行に昇格する（editor-table-empty-row クラスを除去）
-                        existingRow.classList.remove('editor-table-empty-row');
-                        existingRow.dataset.row = String(domRowIndex);
-                        // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
-                        existingRow.dataset.storeIndex = String(i);
-                    } else {
-                        // バッファ空行が不足している場合は新規行を生成して挿入する
-                        const cells: HTMLElement[] = [this.structure.createRowHeaderCell(String(domRowIndex), i)];
-                        for (let j = 0; j < domColumnCount; j++) {
-                            cells.push(EditorTable.createCell(this, '', j, this.getColumnWidth(j), DEFAULT_ROW_HEIGHT));
-                        }
-                        const newRow = EditorTable.createRow(cells, domRowIndex);
-                        // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
-                        newRow.dataset.storeIndex = String(i);
-                        const insertTarget = this.getRowElement(domRowIndex);
-                        if (insertTarget) {
-                            this.gridElement.insertBefore(newRow, insertTarget);
-                            // DOM行が挿入されたため renderedEnd を同期する
-                            this.virtualScroll.notifyRowAppended();
-                        } else {
-                            // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
-                            this.virtualScroll.appendDataRow(newRow);
-                            // 新しい行がDOMに追加されたため renderedEnd を同期する
-                            this.virtualScroll.notifyRowAppended();
-                        }
-                    }
-                    this.storeRowIndices.push(i);
-                }
-                domRowCountChanged = true;
-            } else if (storeRows.length < currentDataRowCount) {
-                // ストアの方が少ない: 末尾のデータ行をDOMから除去する（バッファ空行は維持する）
-                for (let i = currentDataRowCount - 1; i >= storeRows.length; i--) {
-                    const domRowIndex = i + 1; // 列ヘッダー行を含む DOM インデックス
-                    const rowToRemove = this.getRowElement(domRowIndex);
-                    // 通常テーブルで削除対象がnullまたはバッファ空行である場合は設計上の不整合
-                    if (!rowToRemove || rowToRemove.classList.contains('editor-table-empty-row')) {
-                        throw new Error('[EditorTable.reloadCellsFromStore] DOM行とストアの不整合: 削除対象行が存在しないか空行です。 domRowIndex=' + domRowIndex);
-                    }
-                    rowToRemove.remove();
-                    // DOM行が削除されたため renderedEnd を同期する
-                    this.virtualScroll.notifyRowRemoved();
-                    this.storeRowIndices.splice(i, 1);
-                }
-                domRowCountChanged = true;
-            }
-        }
-
-        // DOM行数が変化した場合は全行の data-row 属性・行ヘッダーテキスト・リサイズハンドルを再ナンバリングする。
-        // insertRowInternal/deleteRow では挿入・削除位置以降の行のみ再ナンバリングするが、
-        // reloadCellsFromStore では複数行が一括で増減する可能性があるため、データ行先頭（domIndex=1）から全行を対象とする。
-        if (domRowCountChanged) this.structure.renumberRowsFrom(1);
-        // ストアとのDOMリロード後も末尾に1行バッファ行を保持する（他経路と同一ガード条件）。
-        // ミニテーブルは都度再構築（destroyMiniEditorTables/buildMiniEditorTableAsync）のため到達しないが、
-        // promoteBufferRowToStore/demoteStoreRowToBuffer/deleteRow と条件を統一する。
-        if (this.diffTab === false) this.ensureTrailingBufferRow();
-        // DOM行数が変化した場合にバーチャルスクロールの総行数を同期する。
-        if (domRowCountChanged) {
-            // getRowCount() は仮想スクロール時にDOM行数しか返さないため、
-            // 論理的な総行数（storeRowIndices + バッファ1行）を使う。
-            this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
-        }
-
-        // storeRowIndices[domDataRow] → storeRow のマッピングで各DOMデータ行のセル値を更新する。
-        // 通常テーブルは上記の同期後に storeRowIndices[i]=i が保証される。
-        // ミニテーブルは filteredRows のストアインデックスを正しく参照できる。
-        for (let domDataRow = 0; domDataRow < this.storeRowIndices.length; domDataRow++) {
-            const domRow = domDataRow + 1; // DOMは1始まり（列ヘッダー行がある）
-            const storeRowIndex = this.storeRowIndices[domDataRow];
-            if (storeRowIndex < 0 || storeRowIndex >= storeRows.length) continue;
-            const rowElement = this.getRowElement(domRow);
-            if (rowElement === null) continue;
-            const storeRowData = storeRows[storeRowIndex];
-
-            for (let domCol = 0; domCol < domColumnCount; domCol++) {
-                const storeColIdx = storeColumnIndices[domCol];
-                if (storeColIdx === -1) continue;
-                const storeValue = storeColIdx < storeRowData.length ? storeRowData[storeColIdx] : '';
-                const cell = rowElement.children[domCol + this.dataColumnOffset()] as HTMLElement | null;
-                if (cell === null) continue;
-                this.reference.setCellValue(cell, storeValue, domCol, domRow);
-            }
-        }
-
-        // DOM行数が変化した場合はコピー範囲を無効化し、選択描画を更新する（範囲が行数外を指す可能性があるため）
-        if (domRowCountChanged) {
-            this.selection.clearCopyRange();
-            this.selection.updateRendererAfterResize();
-        }
-        // DOM行の増減に関わらず git差分ハイライトを再評価する（ストアとDOMのマッピングが変化するため）
-        this.applyGitDiffHighlight();
-        // タブ切替後のDOMリロードでもバリデーションエラークラスを再適用する。
-        // バリデーションを再実行すると参照先テーブルが閉じられている場合にFKエラーが消えてしまうため、
-        // ValidationPanel の currentErrors から自テーブル分だけを取り出してDOMクラスを再適用する。
-        // ミニテーブルは都度 buildMiniEditorTableAsync で再構築されるため対象外。
-        if (this.validationPanel !== false && !this.isMiniTable) {
-            this.applyValidationErrors(this.validationPanel.getErrorsForTable(this.tableName));
-        }
-        // reloadCellsFromStore はストアデータを全面的に上書きするため、ソート状態を維持しても
-        // storeRowIndices が [0..n-1] にリセットされておりソートが無効化されている。
-        // インジケーターをリセットしてUI上のソート表示と実態を一致させる。
-        this.columnSorter.clearAllSorts();
-        this.updateAllSortIndicators();
-        // タブ切替時にフィルター状態が前回タブのままだと整合性が崩れるためリセットする。
-        // ソートリセットと対称に、フィルター状態も UI と実態を一致させる。
-        this.clearFilterState();
-        // セル再作成パス（ソート・行操作等）で消失した data-bookmarked 属性を復元する
-        this.restoreBookmarkMarks();
-        this.refreshFreezeVisualState();
+        this.storeSync.reloadCellsFromStore();
     }
 
     // =========================================================================
@@ -1987,42 +1581,7 @@ export class EditorTable {
      * @param domDataRowIndex DOMデータ行インデックス（0始まり、列ヘッダー行を除く）
      */
     promoteBufferRowToStore(domDataRowIndex: number): void {
-        const storeHeader = this.store.getHeader(this.tableName);
-        if (storeHeader === false) throw new Error('[EditorTable.promoteBufferRowToStore] ストアにテーブルが登録されていません: ' + this.tableName);
-        // ストア行の列数はDOMではなくストアのヘッダー長で決定する。
-        // ミニテーブルはDOM列数がストアのサブセット（FK列を除く）のため getColumnCount() では不正になる。
-        const storeColumnCount = storeHeader.length;
-        // domDataRowIndex が storeRowIndices の末尾を超える場合、間の行も昇格する必要がある。
-        // 例: storeRowIndices=[0,1,2] で domDataRowIndex=5 の場合、3,4,5 を順に追加する。
-        const currentLength = this.storeRowIndices.length;
-        for (let i = currentLength; i <= domDataRowIndex; i++) {
-            // ストアの末尾に空行を追加（getHeader が false でない場合 getRows も必ず存在する）
-            const storeRows = this.store.getRows(this.tableName);
-            if (storeRows === false) throw new Error('[EditorTable.promoteBufferRowToStore] ストア行データが存在しません: ' + this.tableName);
-            const storeRowIndex = storeRows.length;
-            this.store.insertRowAt(this.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
-            this.storeRowIndices.push(storeRowIndex);
-            // ソート中の場合、originalIndices も同期する（バッファ行昇格でストア行数が増えるため）
-            this.columnSorter.notifyRowInserted(storeRowIndex);
-            // DOMの該当行から editor-table-empty-row クラスを除去する（data行として昇格）
-            const domRow = this.getRowElement(i + 1);
-            if (domRow) {
-                domRow.classList.remove('editor-table-empty-row');
-                // ソート時のstoreRowIndex逆引きのためのインデックスを付与する
-                domRow.dataset.storeIndex = String(storeRowIndex);
-            }
-        }
-        // バッファ行昇格後にgit差分ハイライトを再評価する（新規昇格行は新規追加行として changed になる）
-        this.applyGitDiffHighlight();
-        // バッファ行がストアに昇格した後、参照データキャッシュを無効化する。
-        // 昇格行のIDがキャッシュ構築後に入力された場合に古いキャッシュが参照されるのを防ぐ。
-        this.evictOwnReferenceDataCache();
-        // バッファ行昇格後にバリデーションを実行する（新規行のIDが既存と重複する可能性があるため）
-        this.runValidation();
-        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（新規昇格行がフィルター条件を満たさない可能性）
-        this.refreshFilterDisplayIfActive();
-        // 常に末尾にバッファ行を1行保持する（昇格で消えた場合に補充する）。差分タブでは不要。
-        if (this.diffTab === false) this.ensureTrailingBufferRow();
+        this.storeSync.promoteBufferRowToStore(domDataRowIndex);
     }
 
     /**
@@ -2035,39 +1594,14 @@ export class EditorTable {
      * @param domDataRowIndex DOMデータ行インデックス（0始まり）。この行以降を降格する
      */
     demoteStoreRowToBuffer(domDataRowIndex: number): void {
-        // domDataRowIndex 以降の全ての昇格行を末尾から逆順で削除する
-        const currentLength = this.storeRowIndices.length;
-        for (let i = currentLength - 1; i >= domDataRowIndex; i--) {
-            const storeRowIndex = this.storeRowIndices[i];
-            this.store.removeRow(this.tableName, storeRowIndex);
-            this.storeRowIndices.splice(i, 1);
-            // ソート中の場合、originalIndices も同期する（ストア行降格でストア行数が減るため）
-            this.columnSorter.notifyRowDeleted(storeRowIndex);
-            // DOMの該当行に editor-table-empty-row クラスを復元し、storeIndex 属性を削除する（promoteBufferRowToStore との対称性）
-            const domRow = this.getRowElement(i + 1);
-            if (domRow) {
-                domRow.classList.add('editor-table-empty-row');
-                delete domRow.dataset.storeIndex;
-            }
-        }
-        // 降格後にgit差分ハイライトを再評価する（降格行のストアインデックスが変化するため）
-        this.applyGitDiffHighlight();
-        // ストア行降格後に参照データキャッシュを無効化する（Undo時に古いIDがドロップダウンに残るのを防ぐ）。
-        this.evictOwnReferenceDataCache();
-        // 降格によりエラーが解消される可能性があるためバリデーションを再実行する
-        this.runValidation();
-        // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（降格行の除去で表示行数が変化する）
-        this.refreshFilterDisplayIfActive();
-        // Undoにより降格した行がバッファ行に戻ると、バッファ行が蓄積する可能性がある。
-        // 蓄積したバッファ行（2行以上）は末尾から削除し、常に1行だけになるよう整理する。差分タブでは不要。
-        if (this.diffTab === false) this.normalizeTrailingBufferRows();
+        this.storeSync.demoteStoreRowToBuffer(domDataRowIndex);
     }
 
     /**
      * 指定の domDataRowIndex がバッファ空行（ストア未登録）かどうかを判定する
      */
     isBufferRow(domDataRowIndex: number): boolean {
-        return domDataRowIndex >= this.getFilteredDataRowCount();
+        return this.storeSync.isBufferRow(domDataRowIndex);
     }
 
     /**
@@ -2079,10 +1613,7 @@ export class EditorTable {
      * @returns DOM行インデックス（列ヘッダー行を含む: データ行1行目 = 1）、非表示・未登録の場合は null
      */
     storeRowToDomRow(storeRowIndex: number): number | null {
-        const domDataIndex = this.storeRowIndices.indexOf(storeRowIndex);
-        if (domDataIndex === -1) return null;
-        // DOM上は 0行目が列ヘッダーなのでデータ行は +1
-        return domDataIndex + 1;
+        return this.storeSync.storeRowToDomRow(storeRowIndex);
     }
 
     /**
@@ -2095,45 +1626,7 @@ export class EditorTable {
      * @internal EditorTableStructure.deleteRow() からも呼ばれる。外部からは呼ばないこと。
      */
     ensureTrailingBufferRow(): void {
-        // バーチャルスクロールでバッファ行がDOM外（表示範囲外）に存在する場合はスキップする。
-        // バッファ行はフィルター後のデータ行の直後に位置する。
-        // 表示範囲終端がバッファ行位置より手前にある場合、バッファ行はDOM外に存在するが
-        // 論理的には存在し続けるため、重複追加してはならない。
-        // 非仮想スクロール時は renderedEnd が全行をカバーするためこの条件は成立しない。
-        const bufferDataRowIndex = this.getFilteredDataRowCount();
-        const rendered = this.virtualScroll.getRenderedRange();
-        if (rendered.end < bufferDataRowIndex) return;
-
-        // 列ヘッダー行を除いたデータ行の総数（ストア行 + 既存バッファ行。スペーサー行は除外済み）
-        const totalDataRows = this.getRowCount() - 1;
-        // 末尾のDOM行がバッファ行かどうかを確認する（children[0]は列ヘッダーなので+1オフセット）
-        if (totalDataRows > 0) {
-            const lastRow = this.getRowElement(totalDataRows);
-            if (lastRow && lastRow.classList.contains('editor-table-empty-row')) return;
-        }
-        // 新しいバッファ行の行インデックス（0始まり）
-        const newRowIndex = totalDataRows;
-        const cells: HTMLElement[] = [];
-        cells.push(this.structure.createRowHeaderCell(String(newRowIndex + 1), newRowIndex));
-        for (let j = 0; j < this.tableData.header.length; ++j) {
-            cells.push(EditorTable.createCell(this, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
-        }
-        const row = EditorTable.createRow(cells, newRowIndex);
-        row.classList.add('editor-table-empty-row');
-        // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
-        this.virtualScroll.appendDataRow(row);
-        // 新しい行がDOMに追加されたため renderedEnd を同期する（dataRowToDomIndex のインデックス変換に必要）
-        this.virtualScroll.notifyRowAppended();
-        // バッファ行追加によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する。
-        this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount() + 1);
-        // 行追加後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
-        this.structure.renumberRowsFrom(0);
-        // FK列を持つ場合に新バッファ行へ参照ヒント（ドロップダウン等）を適用する
-        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）を考慮する
-        const newDomRow = newRowIndex + this.getDataRowChildOffset();
-        this.updateReferenceHintsForRows(newDomRow, newDomRow);
-        // 行数変化後に選択オーバーレイの描画位置を再計算する
-        this.selection.updateRendererAfterResize();
+        this.storeSync.ensureTrailingBufferRow();
     }
 
     /**
@@ -2142,30 +1635,8 @@ export class EditorTable {
      * demoteStoreRowToBuffer() は降格対象行に必ず editor-table-empty-row を付与するため、
      * このメソッド実行後にバッファ行が0行になることはない。
      */
-    private normalizeTrailingBufferRows(): void {
-        // DOM上のバッファ行（editor-table-empty-row）を末尾から数えて2行目以降を削除する
-        // getRowCount() はスペーサー行を除外した値を返すため安全にループできる
-        const toRemove: HTMLElement[] = [];
-        let bufferRowCount = 0;
-        const rowCount = this.getRowCount();
-        for (let i = rowCount - 1; i >= 1; i--) {
-            const row = this.getRowElement(i);
-            if (!row || !row.classList.contains('editor-table-empty-row')) break;
-            bufferRowCount++;
-            // 2行目以降の余分なバッファ行を削除対象に追加する（末尾の1行は残す）
-            if (bufferRowCount > 1) toRemove.push(row);
-        }
-        for (const row of toRemove) {
-            this.gridElement.removeChild(row);
-            // DOM行が削除されたため renderedEnd を同期する
-            this.virtualScroll.notifyRowRemoved();
-        }
-        // バッファ行削除によりデータ行総数が変化したため、バーチャルスクロールの総行数を更新する
-        if (toRemove.length > 0) this.virtualScroll.updateTotalRowCount(this.getRowCount() - 1);
-        // 行削除後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
-        this.structure.renumberRowsFrom(0);
-        // 行数変化後に選択オーバーレイの描画位置を再計算する
-        this.selection.updateRendererAfterResize();
+    normalizeTrailingBufferRows(): void {
+        this.storeSync.normalizeTrailingBufferRows();
     }
 
     // =========================================================================
@@ -2177,7 +1648,7 @@ export class EditorTable {
      * 1:Nミニテーブルの buildMiniEditorTableAsync() から呼ばれる
      */
     setAutoFillEntries(entries: Array<{ columnName: string; value: string }>): void {
-        this.autoFillEntries = entries;
+        this.storeSync.setAutoFillEntries(entries);
     }
 
     /**
@@ -2186,14 +1657,14 @@ export class EditorTable {
      * storeRowIndices[i] = ストア内の実際の行インデックス（0始まり）。
      */
     setStoreRowIndices(indices: number[]): void {
-        this.storeRowIndices = indices;
+        this.storeSync.setStoreRowIndices(indices);
     }
 
     /**
      * storeRowIndices を内部モジュール（EditorTableStructure）から取得するためのアクセサ
      * 行挿入・削除時に同期するために使用する
      */
-    getStoreRowIndices(): number[] { return this.storeRowIndices; }
+    getStoreRowIndices(): number[] { return this.storeSync.getStoreRowIndices(); }
 
     /**
      * 差分タブの右ペインでのパディング行（.diff-row-empty）のストア行インデックスを返す。
@@ -2202,8 +1673,7 @@ export class EditorTable {
      * diffTab === false の場合は到達不能であり、フォールバックとして空配列を返すことはデータ破壊のリスクがあるため例外を投げる。
      */
     getDiffPaddingStoreRowIndices(): readonly number[] {
-        if (this.diffTab === false) throw new Error('[EditorTable] getDiffPaddingStoreRowIndices: 差分タブ以外のコンテキストで呼び出されました。呼び出し側のガード条件を確認してください。');
-        return this.diffTab.computeCurrentRightPaddingStoreRowIndices();
+        return this.storeSync.getDiffPaddingStoreRowIndices();
     }
 
     notifySortRowInserted(storeRowIndex: number): void { this.sortFilter.notifySortRowInserted(storeRowIndex); }
@@ -2222,13 +1692,13 @@ export class EditorTable {
     clampSelectionToFilteredRange(): void { this.sortFilter.clampSelectionToFilteredRange(); }
     updateFilterActiveClasses(): void { this.sortFilter.updateFilterActiveClasses(); }
     openFilterDropdown(columnIndex: number, anchorElement: HTMLElement): void { this.sortFilter.openFilterDropdown(columnIndex, anchorElement); }
-    private updateAllSortIndicators(): void { this.sortFilter.updateAllSortIndicators(); }
+    updateAllSortIndicators(): void { this.sortFilter.updateAllSortIndicators(); }
 
     /**
      * FK自動埋め込み情報を取得する（InsertRowCommand / InsertRowsCommand から参照）
      */
     getAutoFillEntries(): Array<{ columnName: string; value: string }> {
-        return this.autoFillEntries;
+        return this.storeSync.getAutoFillEntries();
     }
 
     /**
@@ -2242,25 +1712,7 @@ export class EditorTable {
      * @param rowIndex DOMの行インデックス（列ヘッダー行を含む。データ行は1始まり）
      */
     applyAutoFillToRow(rowIndex: number): void {
-        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
-        const domDataRowIndex = rowIndex - 1;
-        const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
-        // 照合失敗（-1）の場合はストア更新不可。DOM更新は継続する。
-        const canUpdateStore = storeRowIndex >= 0;
-        for (const entry of this.autoFillEntries) {
-            const colCount = this.getColumnCount();
-            for (let c = 0; c < colCount; c++) {
-                if (this.getColumnHeaderValue(c) !== entry.columnName) continue;
-                // DOMセルを更新（参照ヒント適用のためreference.setCellValueAt()を使用）
-                this.reference.setCellValueAt(rowIndex, c + this.dataColumnOffset(), entry.value);
-                // ストアをインデックスベースで更新（PK未入力でも動作する）
-                if (canUpdateStore) {
-                    const storeColIndex = this.getStoreColumnIndex(c);
-                    if (storeColIndex !== -1) this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, entry.value);
-                }
-                break;
-            }
-        }
+        this.storeSync.applyAutoFillToRow(rowIndex);
     }
 
     // =========================================================================
@@ -2273,11 +1725,7 @@ export class EditorTable {
      * ここではrelationsPanelの存在確認とPK値取得のみ行う。
      */
     navigateToDefinition(row: number): void {
-        if (this.relationsPanel === false) return;
-        if (!this.isMiniTable) return;
-        const pkValue = this.getRowPkValue(row);
-        if (pkValue === '') return;
-        this.relationsPanel.navigateToDefinition(this.tableName, pkValue);
+        this.navigation.navigateToDefinition(row);
     }
 
     /**
@@ -2287,60 +1735,7 @@ export class EditorTable {
      * @returns ナビゲーションが実行された場合 true
      */
     navigateToReferenceTable(row: number, column: number): boolean {
-        if (this.tab === false) return false;
-        // RelationsPanelが表示中なら何もしない
-        if (this.tab.editor.isRelationsPanelVisible()) return false;
-        const dataColumnIndex = column - this.dataColumnOffset();
-        if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.header.length) return false;
-        const reference = this.tableData.header[dataColumnIndex].reference;
-        if (reference === null) return false;
-        const expr = parseReferenceExpression(reference);
-        const cellValue = this.getCellValueAt(row, column);
-        if (cellValue === '') return false;
-        if (isSimpleReference(expr)) {
-            // 単純参照: 参照先テーブルの参照列の値で行を検索し、その列にフォーカスする
-            // 例: shop.shop_product_group_id(=1) → shop_productテーブルで group_id=1 の行を開き group_id 列を選択
-            // 順方向ジャンプではフィルタ不要のため空文字列・空Setを渡す
-            this.tab.navigateToTableColumnValue(expr.tableName, expr.columnName, cellValue, '', new Set());
-            return true;
-        }
-        if (isDynamicReference(expr)) {
-            // 動的参照（二段リスト）: 中間テーブルからジャンプ先テーブル名と列名を解決する
-            // 順方向ジャンプではジャンプ先が一意に解決されるためフィルタ不要
-            const resolved = this.resolveDynamicReferenceTarget(row, expr);
-            if (resolved === null) return false;
-            this.tab.navigateToTableColumnValue(resolved.tableName, resolved.columnName, cellValue, '', new Set());
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 動的参照の中間テーブルを検索し、ジャンプ先のテーブル名と列名を解決する。
-     * 同一行の sourceMatchValue 列の値で中間テーブルを検索し、
-     * destTable 列からテーブル名、destColumn 列から列名を取得する。
-     */
-    private resolveDynamicReferenceTarget(row: number, expr: DynamicReference): { tableName: string; columnName: string } | null {
-        // 同一行の sourceMatchValue 列の値を取得する
-        const valueColumnIndex = this.reference.resolveValueColumnIndex(expr.filter.valueColumn, 0);
-        if (valueColumnIndex === -1) return null;
-        const filterValue = this.getCellValueAt(row, valueColumnIndex + this.dataColumnOffset());
-        if (filterValue === '') return null;
-        // 中間テーブルの全データをキャッシュから同期取得する
-        const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
-        if (fullData === false) return null;
-        const lookupColumnIndex = fullData.header.indexOf(expr.lookupColumn);
-        if (lookupColumnIndex === -1) return null;
-        const targetColumnIndex = fullData.header.indexOf(expr.targetColumn);
-        if (targetColumnIndex === -1) return null;
-        // filterColumn の値で中間テーブルの行を検索する
-        const matchedRow = this.referenceDataCache.findRowByColumn(fullData, expr.filter.filterColumn, filterValue);
-        if (!matchedRow) return null;
-        const tableName = matchedRow[lookupColumnIndex];
-        if (tableName === '') return null;
-        const columnName = matchedRow[targetColumnIndex];
-        if (columnName === '') return null;
-        return { tableName, columnName };
+        return this.navigation.navigateToReferenceTable(row, column);
     }
 
     /**
@@ -2350,38 +1745,7 @@ export class EditorTable {
      * @returns ナビゲーションが実行された（またはモーダル表示された）場合 true
      */
     navigateToReverseReferenceTable(row: number, column: number): boolean {
-        if (this.tab === false) return false;
-        if (this.tab.editor.isRelationsPanelVisible()) return false;
-        const dataColumnIndex = column - this.dataColumnOffset();
-        if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.header.length) return false;
-        const colName = this.tableData.header[dataColumnIndex].name;
-        if (!this.tableData.primaryKeyColumns.includes(colName)) return false;
-        if (!this.hasReverseReferences()) return false;
-        const pkValue = this.getRowPkValue(row);
-        if (pkValue === '') return false;
-        // PK値に対する逆参照エントリを収集する（parentColumnName でフィルタリング）
-        const allEntries: ReverseReferenceEntry[] = [];
-        for (const parentColName of this.getAllParentColumnNames()) {
-            const colValue = this.getCellValueByColumnName(row, parentColName);
-            if (colValue === '') continue;
-            const entries = this.getReverseReferenceEntries(colValue);
-            for (const entry of entries) {
-                if (entry.parentColumnName === parentColName) allEntries.push(entry);
-            }
-        }
-        if (allEntries.length === 0) return false;
-        if (allEntries.length === 1) {
-            const entry = allEntries[0];
-            // 逆参照ジャンプ: 動的参照の場合は1段目フィルタ情報を渡して正しい行に着地させる
-            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, pkValue, entry.filterColumnName, entry.filterValues);
-            return true;
-        }
-        // 複数の逆参照: モーダルで選択させる
-        const tab = this.tab;
-        ReverseReferenceJumpDialog.open(allEntries, (selected) => {
-            tab.navigateToTableColumnValue(selected.childTableName, selected.childColumnName, pkValue, selected.filterColumnName, selected.filterValues);
-        });
-        return true;
+        return this.navigation.navigateToReverseReferenceTable(row, column);
     }
 
     // =========================================================================
@@ -2392,28 +1756,28 @@ export class EditorTable {
      * セルレベルでブックマークが存在するか確認する
      */
     hasBookmark(tableName: string, pkValue: string, columnName: string): boolean {
-        return this.sidebar.hasBookmark(tableName, pkValue, columnName);
+        return this.bookmarks.hasBookmark(tableName, pkValue, columnName);
     }
 
     /**
      * 行レベルでブックマークが1件以上存在するか確認する（PK列右クリック用）
      */
     hasBookmarkForRow(tableName: string, pkValue: string): boolean {
-        return this.sidebar.hasBookmarkForRow(tableName, pkValue);
+        return this.bookmarks.hasBookmarkForRow(tableName, pkValue);
     }
 
     /**
      * セルレベルでブックマークを追加する
      */
     addBookmark(tableName: string, pkValue: string, columnName: string, label: string): void {
-        this.sidebar.addBookmark(tableName, pkValue, columnName, label);
+        this.bookmarks.addBookmark(tableName, pkValue, columnName, label);
     }
 
     /**
      * セルレベルでブックマークを削除する
      */
     removeBookmark(tableName: string, pkValue: string, columnName: string): void {
-        this.sidebar.removeBookmark(tableName, pkValue, columnName);
+        this.bookmarks.removeBookmark(tableName, pkValue, columnName);
     }
 
     /**
@@ -2421,21 +1785,21 @@ export class EditorTable {
      * 起動後に bookmarks.json を復元したタイミングなど、BookmarkPanel の内容が後から揃う経路で使用する
      */
     reapplyBookmarkMarks(): void {
-        this.restoreBookmarkMarks();
+        this.bookmarks.reapplyBookmarkMarks();
     }
 
     /**
      * 行レベルで全ブックマークを削除する（PK列右クリック「ブックマークを解除」用）
      */
     removeBookmarksForRow(tableName: string, pkValue: string): void {
-        this.sidebar.removeBookmarksForRow(tableName, pkValue);
+        this.bookmarks.removeBookmarksForRow(tableName, pkValue);
     }
 
     /**
      * REFERENCESパネルに逆参照エントリを表示する（コンテキストメニュー「参照箇所を表示」用）
      */
     showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
-        this.sidebar.showReferences(pkValue, entries);
+        this.bookmarks.showReferences(pkValue, entries);
     }
 
     /**
@@ -2443,75 +1807,19 @@ export class EditorTable {
      * PK列右クリックの「ブックマークを解除」（行レベル一括削除）で使用する
      */
     removeBookmarkMarksForRow(row: number): void {
-        const rowElement = this.getRowElement(row);
-        // 設計上 row は有効なDOM行インデックスであるべき
-        if (!rowElement) throw new Error(`[EditorTable.removeBookmarkMarksForRow] rowElement が null: row=${row}`);
-        const cells = rowElement.querySelectorAll<HTMLElement>('.editor-table-cell[data-bookmarked]');
-        for (let i = 0; i < cells.length; i++) {
-            cells[i].removeAttribute('data-bookmarked');
-        }
+        this.bookmarks.removeBookmarkMarksForRow(row);
     }
 
     /**
      * ストアの行データからブックマーク済みセルを検出し data-bookmarked 属性を復元する。
      * reloadCellsFromStore() 末尾から呼ばれ、セル再作成後にブックマーク視覚マークを回復する。
      */
-    private restoreBookmarkMarks(): void {
-        // ミニテーブルや差分タブではブックマーク不要
-        if (this.isMiniTable) return;
-        if (this.tab === false) return;
-        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
-            ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
-            : -1;
-        if (pkColIndex === -1) return;
-        // DOMに存在する行のみ処理する。
-        // 固定行（0〜frozenRowCount-1）は常にDOMに存在し、ビューポート行（rendered.start〜rendered.end）も
-        // DOMに存在する。その間の行（frozenRowCount〜rendered.start）はDOMに存在しないためスキップする。
-        const rendered = this.virtualScroll.getRenderedRange();
-        const loopEnd = Math.min(this.storeRowIndices.length, rendered.end);
-        for (let domDataRow = 0; domDataRow < loopEnd; domDataRow++) {
-            // 固定行とビューポート行の間のギャップはDOMに存在しないためスキップする
-            if (domDataRow >= this.frozenRowCount && domDataRow < rendered.start) continue;
-            const domRow = domDataRow + 1;
-            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
-            if (pkValue === '') continue;
-            for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
-                const columnName = this.tableData.header[domCol].name;
-                const cell = this.getCellOrNull(domRow, domCol + this.dataColumnOffset());
-                if (cell === null) continue;
-                if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
-                    cell.setAttribute('data-bookmarked', '');
-                } else {
-                    cell.removeAttribute('data-bookmarked');
-                }
-            }
-        }
+    restoreBookmarkMarks(): void {
+        this.bookmarks.restoreBookmarkMarks();
     }
 
-    private restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number): void {
-        if (this.isMiniTable) return;
-        if (this.tab === false) return;
-        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
-            ? this.tableData.header.findIndex(h => h.name === this.tableData.primaryKeyColumns[0])
-            : -1;
-        if (pkColIndex === -1) return;
-        for (let dataRowIndex = startDataRowIndex; dataRowIndex < endDataRowIndex; dataRowIndex++) {
-            const domRow = dataRowIndex + 1;
-            const rowElement = this.getRowElement(domRow);
-            if (rowElement === null) continue;
-            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
-            if (pkValue === '') continue;
-            for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
-                const columnName = this.tableData.header[domCol].name;
-                const cell = rowElement.children[domCol + this.dataColumnOffset()];
-                if (!(cell instanceof HTMLElement)) continue;
-                if (this.sidebar.hasBookmark(this.tableName, pkValue, columnName)) {
-                    cell.setAttribute('data-bookmarked', '');
-                } else {
-                    cell.removeAttribute('data-bookmarked');
-                }
-            }
-        }
+    restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number): void {
+        this.bookmarks.restoreBookmarkMarksForDataRowRange(startDataRowIndex, endDataRowIndex);
     }
 
     // =========================================================================
@@ -2919,7 +2227,7 @@ export class EditorTable {
 
     runValidation(): void { this.validationMarkers.runValidation(); }
     public applyValidationErrors(errors: ValidationError[]): void { this.validationMarkers.applyValidationErrors(errors); }
-    private refreshScrollbarMarkers(): void { this.validationMarkers.refreshScrollbarMarkers(); }
+    refreshScrollbarMarkers(): void { this.validationMarkers.refreshScrollbarMarkers(); }
     buildMarkerEntries(dataRows: Set<number>, totalDataRowCount: number): MarkerEntry[] { return this.validationMarkers.buildMarkerEntries(dataRows, totalDataRowCount); }
 
     /**
