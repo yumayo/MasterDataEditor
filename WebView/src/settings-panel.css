@@ -26,6 +26,10 @@
     color: var(--font-color);
 }
 
+.settings-label-text {
+    min-width: 96px;
+}
+
 /* テーマ選択カスタムドロップダウン */
 .settings-dropdown {
     position: relative;
@@ -94,4 +98,63 @@
 .settings-dropdown-list:has(.settings-dropdown-item:hover) .settings-dropdown-item-active:not(:hover) {
     background-color: transparent;
     color: var(--font-color);
+}
+
+/* タブ折り返し */
+.settings-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 38px;
+    height: 22px;
+    cursor: pointer;
+}
+
+.settings-toggle-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.settings-toggle-track {
+    position: relative;
+    display: block;
+    width: 38px;
+    height: 22px;
+    box-sizing: border-box;
+    border: var(--input-border);
+    border-radius: 999px;
+    background-color: var(--background-color);
+    transition: background-color 120ms ease, border-color 120ms ease;
+    pointer-events: none;
+}
+
+.settings-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--font-color);
+    opacity: 0.75;
+    transition: transform 120ms ease, opacity 120ms ease, background-color 120ms ease;
+}
+
+.settings-toggle-input:checked + .settings-toggle-track {
+    border-color: var(--selection-color);
+    background-color: var(--selection-color);
+}
+
+.settings-toggle-input:checked + .settings-toggle-track .settings-toggle-thumb {
+    transform: translateX(16px);
+    background-color: var(--selection-font-color);
+    opacity: 1;
+}
+
+.settings-toggle-input:focus-visible + .settings-toggle-track {
+    outline: 1px solid var(--focus-border);
+    outline-offset: 2px;
 }

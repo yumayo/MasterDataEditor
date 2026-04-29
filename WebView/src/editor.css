@@ -5,8 +5,8 @@
 
     position: fixed;
     left: 300px;
-    top: 48px;
-    height: calc(100vh - 48px - 22px);
+    top: var(--tab-bar-height);
+    height: calc(100vh - var(--tab-bar-height) - var(--status-bar-height));
     width: calc(100vw - 300px);
 
     overflow: hidden;

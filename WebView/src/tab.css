@@ -10,7 +10,7 @@
     left: 300px;
     top: 0;
     box-sizing: border-box;
-    height: 48px;
+    height: var(--tab-bar-height);
     width: calc(100vw - 300px);
     margin: 0;
     border-bottom: 1px solid rgba(128, 128, 128, 0.3);
@@ -26,7 +26,8 @@
 .tab-scroll-area {
     flex: 1;
     min-width: 0;
-    overflow-x: scroll;
+    height: 100%;
+    overflow-x: hidden;
     overflow-y: hidden;
 }
 
@@ -35,12 +36,13 @@
 }
 
 .tab-list {
-    display: flex;
+    position: relative;
+    display: block;
     margin: 0;
     padding: 0;
-    line-height: 44px;
+    line-height: normal;
     list-style: none;
-    white-space: nowrap;
-    /* 親の.tab-scroll-areaの高さを埋めるために100%を設定する */
-    height: 100%;
+    white-space: normal;
+    height: var(--tab-bar-height);
+    min-width: 100%;
 }

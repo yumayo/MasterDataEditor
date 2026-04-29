@@ -137,9 +137,9 @@ export class TabButton {
         this.element.classList.add('tab-button-active');
     }
 
-    /** アクティブ化されたタブボタンが可視領域外にある場合、スムーズスクロールで表示する */
-    scrollIntoViewIfNeeded(): void {
-        this.element.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    /** アクティブ化されたタブボタンが可視領域外にある場合、スクロールして表示する */
+    scrollIntoViewIfNeeded(behavior: ScrollBehavior = 'smooth'): void {
+        this.tab.scrollTabButtonIntoView(this, behavior);
     }
 
     disable() {
@@ -186,7 +186,7 @@ export class TabButton {
 
             if (isDragging) {
                 // ドロップ先のタブを探す
-                this.tab.updateDropIndicator(moveEv.clientX);
+                this.tab.updateDropIndicator(moveEv.clientX, moveEv.clientY);
             }
         };
 
@@ -196,7 +196,7 @@ export class TabButton {
 
             if (isDragging) {
                 // ドロップ処理
-                this.tab.dropTab(upEv.clientX);
+                this.tab.dropTab(upEv.clientX, upEv.clientY);
 
                 this.element.classList.remove('tab-button-dragging');
                 this.tab.clearDropIndicators();

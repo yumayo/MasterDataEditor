@@ -21,6 +21,16 @@ async function clickFirstCellAsync(table: Locator): Promise<void> {
     await table.locator('.editor-table-row:nth-child(3) .editor-table-cell:nth-child(2)').click();
 }
 
+/** スキーマ読み込み完了を待つ */
+async function waitForSchemaAsync(page: Page, tableName: string): Promise<void> {
+    await expect.poll(async () => {
+        return page.evaluate((name) => {
+            const api = (window as unknown as { editorApi?: { schema?: { getSchemaTableNames(): string[] } } }).editorApi;
+            return api?.schema?.getSchemaTableNames().includes(name) ?? false;
+        }, tableName);
+    }).toBe(true);
+}
+
 // =============================================================================
 // Phase 1: データ読み取りAPI (editorApi.data)
 // =============================================================================
@@ -140,6 +150,8 @@ test.describe('Phase 1: データ読み取りAPI', () => {
 test.describe('Phase 1: スキーマAPI', () => {
     test('getSchemaTableNames はスキーマ登録済みテーブル名一覧を返す', async ({ mockFileSystem, page }) => {
         // ページロード時にスキーマは読み込まれる（エクスプローラーに表示される段階で解析済み）
+        await waitForSchemaAsync(page, 'test');
+
         const names = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getSchemaTableNames(): string[] } } }).editorApi.schema.getSchemaTableNames();
         });
@@ -147,6 +159,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getColumns はカラム定義一覧を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const columns = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getColumns(name: string): Array<{ name: string; type: string; defaultValue: string | null }> | null } } }).editorApi.schema.getColumns('test');
         });
@@ -158,6 +172,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getColumns は未登録テーブルに対して null を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const columns = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getColumns(name: string): Array<{ name: string; type: string }> | null } } }).editorApi.schema.getColumns('nonexistent');
         });
@@ -165,6 +181,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getPrimaryKeys は主キー列名配列を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const keys = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getPrimaryKeys(name: string): string[] | null } } }).editorApi.schema.getPrimaryKeys('test');
         });
@@ -172,6 +190,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getPrimaryKeys は未登録テーブルに対して null を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const keys = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getPrimaryKeys(name: string): string[] | null } } }).editorApi.schema.getPrimaryKeys('nonexistent');
         });
@@ -201,6 +221,7 @@ test.describe('Phase 1: スキーマAPI', () => {
         };
         await installMockApiAsync(page, fs);
         await page.goto('/');
+        await waitForSchemaAsync(page, 'quest');
 
         const refs = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getReferences(name: string): Array<{ columnName: string; targetTable: string; targetColumn: string }> | null } } }).editorApi.schema.getReferences('quest');
@@ -211,6 +232,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getReferences は FK参照がないテーブルに対して空配列を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const refs = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getReferences(name: string): Array<{ columnName: string; targetTable: string; targetColumn: string }> | null } } }).editorApi.schema.getReferences('test');
         });
@@ -218,6 +241,8 @@ test.describe('Phase 1: スキーマAPI', () => {
     });
 
     test('getReferences は未登録テーブルに対して null を返す', async ({ mockFileSystem, page }) => {
+        await waitForSchemaAsync(page, 'test');
+
         const refs = await page.evaluate(() => {
             return (window as unknown as { editorApi: { schema: { getReferences(name: string): Array<{ columnName: string; targetTable: string; targetColumn: string }> | null } } }).editorApi.schema.getReferences('nonexistent');
         });

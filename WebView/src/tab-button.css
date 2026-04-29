@@ -1,8 +1,12 @@
 .tab-button {
+    position: absolute;
     display: flex;
     align-items: center;
+    box-sizing: border-box;
+    height: var(--tab-row-height);
     padding-left: 16px;
     padding-right: 4px;
+    overflow: hidden;
 }
 
 /* ラベル部（テーブル名 + description の2行構造コンテナ） */

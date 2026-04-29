@@ -45,6 +45,13 @@ body {
     --input-padding: 4px 8px;
     --input-font-size: 12px;
     --icon-button-hover-bg: rgba(128, 128, 128, 0.2);
+
+    /* レイアウト */
+    --tab-row-height: 48px;
+    --tab-wrap-enabled: 0;
+    --tab-visible-row-count: 1;
+    --tab-bar-height: calc(var(--tab-row-height) * var(--tab-visible-row-count));
+    --status-bar-height: 22px;
 }
 
 [data-theme="dark"] {

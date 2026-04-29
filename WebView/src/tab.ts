@@ -47,6 +47,10 @@ const ER_DIAGRAM_TAB_NAME = 'ER Diagram';
 /** テーブル定義タブの固定名 */
 export const TABLE_DEFINITION_TAB_NAME = '新しいテーブル';
 
+type TabScrollPositionPreference =
+    | { kind: 'edge'; edge: 'left' | 'right' }
+    | { kind: 'middle'; ratio: number };
+
 /**
  * タブごとの状態を保持するインターフェース
  */
@@ -113,6 +117,21 @@ export class Tab {
 
     /** タブバー要素（サイドバー幅連動用） */
     private readonly tabElement: HTMLElement;
+
+    /** タブボタン配置を requestAnimationFrame でまとめるためのID */
+    private tabLayoutFrame: number | false;
+
+    /** 次回タブ配置後にアクティブタブを可視範囲へ入れるか */
+    private scrollActiveTabAfterLayout: boolean;
+
+    /** タブバーの最後の横スクロール位置。スクロールバー消失中も保持する */
+    private tabScrollPositionPreference: TabScrollPositionPreference;
+
+    /** 直近のタブ配置完了時に横スクロールが発生していたか */
+    private tabScrollHadStableOverflow: boolean;
+
+    /** 次回タブ配置後に端寄せ状態を維持するか */
+    private preserveTabScrollEdgeAfterLayout: boolean;
 
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
@@ -227,6 +246,11 @@ export class Tab {
         this.contextMenu = new ContextMenu();
         this.sidebar = sidebar;
         this.tabElement = tabElement;
+        this.tabLayoutFrame = false;
+        this.scrollActiveTabAfterLayout = false;
+        this.tabScrollPositionPreference = { kind: 'edge', edge: 'left' };
+        this.tabScrollHadStableOverflow = false;
+        this.preserveTabScrollEdgeAfterLayout = false;
         this.openEditorTables = new Map();
         this.store = store;
         this.referenceDataCache = referenceDataCache;
@@ -271,6 +295,14 @@ export class Tab {
 
         // NavigationHistory を生成する（Tab と相互参照）。Tab の全メンバが初期化された後で生成する。
         this.navigationHistory = new NavigationHistory(this);
+
+        const tabScrollArea = this.element.parentElement;
+        if (tabScrollArea instanceof HTMLElement) {
+            tabScrollArea.addEventListener('scroll', () => { this.updateTabScrollPositionPreference(tabScrollArea); });
+        }
+
+        window.addEventListener('resize', () => { this.scheduleTabLayout(false, true); });
+        window.addEventListener('tab-wrap-enabled-changed', () => { this.scheduleTabLayout(false, true); });
     }
 
     /**
@@ -293,6 +325,7 @@ export class Tab {
         const widthPx = sidebarWidth + 'px';
         this.tabElement.style.left = widthPx;
         this.tabElement.style.width = 'calc(100vw - ' + widthPx + ')';
+        this.scheduleTabLayout(false, true);
     }
 
     /**
@@ -330,6 +363,171 @@ export class Tab {
      */
     getTabBarElement(): HTMLElement {
         return this.element;
+    }
+
+    /**
+     * タブボタンを配置する。
+     * 折り返しが無効なら1段の横スクロール、有効なら段数上限なしで必要なだけ縦に広げる。
+     */
+    requestTabLayout(): void {
+        this.scheduleTabLayout();
+    }
+
+    private scheduleTabLayout(scrollActiveTabAfterLayout: boolean = false, preserveScrollEdgeAfterLayout: boolean = false): void {
+        if (scrollActiveTabAfterLayout) {
+            this.scrollActiveTabAfterLayout = true;
+        }
+        if (preserveScrollEdgeAfterLayout) {
+            this.preserveTabScrollEdgeAfterLayout = true;
+        }
+        if (this.tabLayoutFrame !== false) {
+            cancelAnimationFrame(this.tabLayoutFrame);
+        }
+        this.tabLayoutFrame = requestAnimationFrame(() => {
+            this.tabLayoutFrame = false;
+            const shouldScrollActiveTab = this.scrollActiveTabAfterLayout;
+            const shouldPreserveScrollEdge = this.preserveTabScrollEdgeAfterLayout;
+            this.scrollActiveTabAfterLayout = false;
+            this.preserveTabScrollEdgeAfterLayout = false;
+            this.layoutTabButtons(shouldScrollActiveTab, shouldPreserveScrollEdge);
+        });
+    }
+
+    private layoutTabButtons(scrollActiveTabAfterLayout: boolean, preserveScrollEdgeAfterLayout: boolean): void {
+        const scrollArea = this.element.parentElement;
+        if (!(scrollArea instanceof HTMLElement)) return;
+
+        const rowHeight = this.getTabRowHeightPx();
+        const tabWrapEnabled = this.isTabWrapEnabled();
+        const viewportWidth = this.getTabViewportWidthPx(scrollArea);
+
+        if (this.tabButtons.length === 0) {
+            scrollArea.style.overflowX = 'hidden';
+            scrollArea.scrollLeft = 0;
+            this.applyVisibleTabRowCount(1);
+            this.element.style.height = rowHeight + 'px';
+            this.element.style.width = '';
+            this.updateTabScrollPositionPreference(scrollArea, true);
+            return;
+        }
+
+        scrollArea.style.overflowX = tabWrapEnabled ? 'hidden' : 'auto';
+        if (tabWrapEnabled && scrollArea.scrollLeft !== 0) {
+            scrollArea.scrollLeft = 0;
+        }
+        // auto 幅の絶対配置要素は親幅で再計算されるため、測定中は親幅を固定する。
+        this.element.style.width = viewportWidth + 'px';
+
+        const rowWidths = [0];
+        let currentRow = 0;
+        let visibleRowCount = 1;
+        let contentWidth = tabWrapEnabled ? viewportWidth : 0;
+
+        for (const tabButton of this.tabButtons) {
+            const element = tabButton.element;
+            element.style.width = '';
+            element.style.left = '0px';
+            element.style.top = '0px';
+
+            const measuredWidth = Math.ceil(element.getBoundingClientRect().width);
+            const width = Math.min(viewportWidth, Math.max(1, measuredWidth));
+
+            if (tabWrapEnabled) {
+                const rowHasContent = rowWidths[currentRow] > 0;
+                const wouldOverflowRow = rowHasContent && rowWidths[currentRow] + width > viewportWidth;
+                if (wouldOverflowRow) {
+                    currentRow++;
+                    rowWidths[currentRow] = 0;
+                    visibleRowCount = currentRow + 1;
+                }
+            }
+
+            const left = rowWidths[currentRow];
+            const top = currentRow * rowHeight;
+            element.style.left = left + 'px';
+            element.style.top = top + 'px';
+            // 親のスクロール幅を広げた後も、測定時の幅から膨らまないように固定する。
+            element.style.width = width + 'px';
+
+            rowWidths[currentRow] = left + width;
+            contentWidth = Math.max(contentWidth, rowWidths[currentRow]);
+        }
+
+        const height = visibleRowCount * rowHeight;
+        this.applyVisibleTabRowCount(visibleRowCount);
+        this.element.style.height = height + 'px';
+        this.element.style.width = Math.max(viewportWidth, contentWidth) + 'px';
+
+        if (scrollActiveTabAfterLayout) {
+            const activeTabButton = this.tabButtons.find(tabButton => tabButton.element.classList.contains('tab-button-active'));
+            if (activeTabButton) {
+                activeTabButton.scrollIntoViewIfNeeded('auto');
+            }
+        } else if (!tabWrapEnabled && preserveScrollEdgeAfterLayout) {
+            this.applyTabScrollPositionPreference(scrollArea);
+        }
+        this.updateTabScrollPositionPreference(scrollArea, true);
+    }
+
+    private getTabScrollRightEdge(scrollArea: HTMLElement): number {
+        return Math.max(0, scrollArea.scrollWidth - scrollArea.clientWidth);
+    }
+
+    private updateTabScrollPositionPreference(scrollArea: HTMLElement, updateStableOverflow: boolean = false): void {
+        if (!updateStableOverflow && (this.tabLayoutFrame !== false || this.preserveTabScrollEdgeAfterLayout)) return;
+        const rightEdge = this.getTabScrollRightEdge(scrollArea);
+        const hasOverflow = rightEdge > 1;
+        const canUpdatePreference = hasOverflow && (this.tabScrollHadStableOverflow || updateStableOverflow);
+        if (updateStableOverflow) this.tabScrollHadStableOverflow = hasOverflow;
+        if (!canUpdatePreference) return;
+        if (scrollArea.scrollLeft <= 1) {
+            this.tabScrollPositionPreference = { kind: 'edge', edge: 'left' };
+        } else if (scrollArea.scrollLeft >= rightEdge - 1) {
+            this.tabScrollPositionPreference = { kind: 'edge', edge: 'right' };
+        } else {
+            this.tabScrollPositionPreference = {
+                kind: 'middle',
+                ratio: Math.min(1, Math.max(0, scrollArea.scrollLeft / rightEdge)),
+            };
+        }
+    }
+
+    private applyTabScrollPositionPreference(scrollArea: HTMLElement): void {
+        const rightEdge = this.getTabScrollRightEdge(scrollArea);
+        const preference = this.tabScrollPositionPreference;
+        const targetScrollLeft = preference.kind === 'edge'
+            ? (preference.edge === 'right' ? rightEdge : 0)
+            : Math.round(rightEdge * preference.ratio);
+        if (Math.abs(scrollArea.scrollLeft - targetScrollLeft) <= 1) return;
+        scrollArea.scrollLeft = targetScrollLeft;
+    }
+
+    scrollTabButtonIntoView(tabButton: TabButton, behavior: ScrollBehavior = 'smooth'): void {
+        if (this.isTabWrapEnabled()) return;
+        tabButton.element.scrollIntoView({ behavior, block: 'nearest', inline: 'nearest' });
+    }
+
+    private getTabRowHeightPx(): number {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--tab-row-height').trim();
+        const value = Number.parseFloat(raw);
+        return Number.isFinite(value) && value > 0 ? value : 48;
+    }
+
+    private getTabViewportWidthPx(scrollArea: HTMLElement): number {
+        const toolbar = this.tabElement.querySelector('.toolbar');
+        const tabWidth = this.tabElement.getBoundingClientRect().width;
+        const toolbarWidth = toolbar instanceof HTMLElement ? toolbar.getBoundingClientRect().width : 0;
+        const availableWidth = Math.max(1, Math.floor(tabWidth - toolbarWidth));
+        return Math.max(1, Math.min(Math.floor(scrollArea.clientWidth), availableWidth));
+    }
+
+    private isTabWrapEnabled(): boolean {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--tab-wrap-enabled').trim();
+        return raw === '1' || raw === 'true';
+    }
+
+    private applyVisibleTabRowCount(value: number): void {
+        document.documentElement.style.setProperty('--tab-visible-row-count', String(value));
     }
 
     /**
@@ -579,6 +777,7 @@ export class Tab {
         this.tabButtons.push(tabButton);
 
         this.element.appendChild(tabButton.element);
+        this.scheduleTabLayout(true);
 
         return tabButton;
     }
@@ -800,6 +999,7 @@ export class Tab {
             // state.wrapperElement.remove() が呼ばれず、ここで除去しないとDOMに残存する）
             this.tabButtons[index].element.remove();
             this.tabButtons.splice(index, 1);
+            this.scheduleTabLayout();
         }
 
         // タブ状態のクリーンアップ
@@ -2094,6 +2294,7 @@ export class Tab {
             // description を後付けで適用する。ExplorerFile 経由で既に設定済みの場合は applyDescription 内でスキップされる。
             if (tableData.description !== null && tableData.description !== '') {
                 tabButton.applyDescription(tableData.description);
+                this.scheduleTabLayout(true);
             }
 
             this.consumePendingNavigation(state);
@@ -2422,12 +2623,12 @@ export class Tab {
         this.dragDrop.clearDraggingTabName();
     }
 
-    updateDropIndicator(clientX: number): void {
-        this.dragDrop.updateDropIndicator(clientX);
+    updateDropIndicator(clientX: number, clientY: number): void {
+        this.dragDrop.updateDropIndicator(clientX, clientY);
     }
 
-    dropTab(clientX: number): void {
-        this.dragDrop.dropTab(clientX);
+    dropTab(clientX: number, clientY: number): void {
+        this.dragDrop.dropTab(clientX, clientY);
     }
 
     /**

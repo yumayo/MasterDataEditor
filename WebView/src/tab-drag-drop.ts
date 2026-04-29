@@ -61,6 +61,7 @@ export class TabDragDrop {
                 tabBarElement.appendChild(fromTabButton.element);
             }
         }
+        this.tab.requestTabLayout();
     }
 
     /**
@@ -97,7 +98,7 @@ export class TabDragDrop {
     /**
      * ドロップインジケーターを更新
      */
-    updateDropIndicator(clientX: number): void {
+    updateDropIndicator(clientX: number, clientY: number): void {
         this.clearDropIndicators();
 
         const tabButtons = this.tab.getTabButtons();
@@ -108,7 +109,7 @@ export class TabDragDrop {
             }
 
             const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right) {
+            if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
                 const midX = rect.left + rect.width / 2;
                 if (clientX < midX) {
                     tabButton.element.classList.add('tab-button-drop-left');
@@ -123,7 +124,7 @@ export class TabDragDrop {
     /**
      * タブをドロップ
      */
-    dropTab(clientX: number): void {
+    dropTab(clientX: number, clientY: number): void {
         if (!this.draggingTabName) {
             return;
         }
@@ -136,7 +137,7 @@ export class TabDragDrop {
             }
 
             const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right) {
+            if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
                 const midX = rect.left + rect.width / 2;
                 const insertBefore = clientX < midX;
                 this.moveTabButton(this.draggingTabName, tabButton.name, insertBefore);

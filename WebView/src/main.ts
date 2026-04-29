@@ -9,7 +9,7 @@ import {CommandPalette} from "./command-palette";
 import {Toolbar} from "./toolbar";
 import {InMemoryTableStore} from "./in-memory-table-store";
 import {ReferenceDataCache} from "./reference-data-cache";
-import {applyStoredThemeAsync} from "./settings-panel";
+import {applyStoredSettingsAsync} from "./settings-panel";
 import {NotificationToast} from "./notification";
 import {ValidationEngine} from "./validation-engine";
 import {ValidationPanel} from "./validation-panel";
@@ -26,8 +26,8 @@ import type {BookmarkEntry} from "./bookmark-panel";
 import {BOOKMARKS_FILE} from "./userdata-path";
 
 (async () => {
-    // 保存済みテーマを起動直後に適用する（body[data-theme] の初期値を上書きする）
-    await applyStoredThemeAsync();
+    // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
+    await applyStoredSettingsAsync();
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
     // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を

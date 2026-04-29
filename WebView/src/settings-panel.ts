@@ -1,18 +1,26 @@
 import {readFileAsync, writeFileAsync} from "./api";
 import {TabButton} from "./tab-button";
-import {THEME_SETTINGS_FILE} from "./userdata-path";
+import {TAB_LAYOUT_SETTINGS_FILE, THEME_SETTINGS_FILE} from "./userdata-path";
 
 /**
  * 設定画面パネル
- * テーマ選択プルダウンを提供する。
+ * テーマ選択とタブ折り返し設定を提供する。
  * - change イベントで body[data-theme] を即時更新し、自動的に userdata/theme.json へ保存する
  * - Ctrl+S による手動保存も引き続き動作する（冪等）
  */
 
 type ThemeValue = 'dark' | 'light';
 
+const DEFAULT_TAB_WRAP_ENABLED = false;
+const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
+const TAB_WRAP_ENABLED_CHANGED_EVENT = 'tab-wrap-enabled-changed';
+
 interface ThemeSettingsFile {
     theme: ThemeValue;
+}
+
+interface TabLayoutSettingsFile {
+    tabWrapEnabled: boolean;
 }
 
 function isThemeValue(value: unknown): value is ThemeValue {
@@ -29,11 +37,39 @@ async function readStoredThemeAsync(): Promise<ThemeValue | null> {
     }
 }
 
+async function readStoredTabWrapEnabledAsync(): Promise<boolean | null> {
+    try {
+        const json = await readFileAsync(TAB_LAYOUT_SETTINGS_FILE);
+        const parsed = JSON.parse(json) as Record<string, unknown>;
+        if (typeof parsed['tabWrapEnabled'] === 'boolean') {
+            return parsed['tabWrapEnabled'];
+        }
+        if (typeof parsed['tabDisplayRowCount'] === 'number') {
+            return parsed['tabDisplayRowCount'] > 1;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function parseAppliedTabWrapEnabled(): boolean {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(TAB_WRAP_ENABLED_CSS_VAR).trim();
+    return raw === '1' || raw === 'true';
+}
+
+export function applyTabWrapEnabled(value: boolean): void {
+    document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, value ? '1' : '0');
+    window.dispatchEvent(new CustomEvent(TAB_WRAP_ENABLED_CHANGED_EVENT));
+}
+
 export class SettingsPanel {
     private readonly element: HTMLElement;
     private selectedTheme: ThemeValue;
     private readonly selectedLabel: HTMLElement;
     private readonly dropdownList: HTMLElement;
+    private selectedTabWrapEnabled: boolean;
+    private readonly tabWrapToggle: HTMLInputElement;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
     private readonly tabButton: TabButton;
 
@@ -50,7 +86,10 @@ export class SettingsPanel {
 
         const label = document.createElement('div');
         label.classList.add('settings-label');
-        label.textContent = 'テーマ';
+        const labelText = document.createElement('span');
+        labelText.classList.add('settings-label-text');
+        labelText.textContent = 'テーマ';
+        label.appendChild(labelText);
 
         // カスタムドロップダウン（ブラウザネイティブ<select>では選択色を制御できないため）
         const dropdown = document.createElement('div');
@@ -99,7 +138,7 @@ export class SettingsPanel {
         dropdown.appendChild(this.dropdownList);
 
         // 現在の body[data-theme] を初期値として反映する
-        // index.html の <body data-theme="dark"> で初期値が設定され、applyStoredThemeAsync() が
+        // index.html の <body data-theme="dark"> で初期値が設定され、applyStoredSettingsAsync() が
         // main.ts で SettingsPanel 生成前に必ず呼ばれるため、getAttribute は常に非 null を返す
         const currentTheme = document.body.getAttribute('data-theme')!;
         const currentOption = options.find(o => o.value === currentTheme)!;
@@ -110,6 +149,41 @@ export class SettingsPanel {
         label.appendChild(dropdown);
         section.appendChild(label);
         this.element.appendChild(section);
+
+        // タブ折り返し設定セクション
+        const tabWrapSection = document.createElement('div');
+        tabWrapSection.classList.add('settings-section');
+
+        const tabWrapLabel = document.createElement('div');
+        tabWrapLabel.classList.add('settings-label');
+        const tabWrapLabelText = document.createElement('span');
+        tabWrapLabelText.classList.add('settings-label-text');
+        tabWrapLabelText.textContent = 'タブを折り返す';
+        tabWrapLabel.appendChild(tabWrapLabelText);
+
+        const tabWrapControl = document.createElement('label');
+        tabWrapControl.classList.add('settings-toggle', 'settings-tab-wrap-toggle');
+
+        this.selectedTabWrapEnabled = parseAppliedTabWrapEnabled();
+        this.tabWrapToggle = document.createElement('input');
+        this.tabWrapToggle.classList.add('settings-toggle-input', 'settings-tab-wrap-checkbox');
+        this.tabWrapToggle.type = 'checkbox';
+        this.tabWrapToggle.checked = this.selectedTabWrapEnabled;
+        this.tabWrapToggle.addEventListener('change', () => {
+            this.selectTabWrapEnabled(this.tabWrapToggle.checked);
+        });
+
+        const tabWrapTrack = document.createElement('span');
+        tabWrapTrack.classList.add('settings-toggle-track');
+        const tabWrapThumb = document.createElement('span');
+        tabWrapThumb.classList.add('settings-toggle-thumb');
+        tabWrapTrack.appendChild(tabWrapThumb);
+
+        tabWrapControl.appendChild(this.tabWrapToggle);
+        tabWrapControl.appendChild(tabWrapTrack);
+        tabWrapLabel.appendChild(tabWrapControl);
+        tabWrapSection.appendChild(tabWrapLabel);
+        this.element.appendChild(tabWrapSection);
     }
 
     private selectTheme(value: ThemeValue, text: string): void {
@@ -117,7 +191,13 @@ export class SettingsPanel {
         this.selectedLabel.textContent = text;
         document.body.dataset.theme = value;
         this.updateItemStyles();
-        this.save();
+        this.saveTheme();
+    }
+
+    private selectTabWrapEnabled(value: boolean): void {
+        this.selectedTabWrapEnabled = value;
+        applyTabWrapEnabled(value);
+        this.saveTabLayout();
     }
 
     /** 選択中アイテムにアクティブスタイルを付与する */
@@ -147,27 +227,67 @@ export class SettingsPanel {
     }
 
     /**
-     * 現在の設定を userdata/theme.json に保存し、dirty 状態を解除する
+     * 現在の設定を保存し、dirty 状態を解除する
      * change イベント（自動保存）および Ctrl+S（手動保存）の両方から呼ばれる
      */
     save(): void {
-        const data: ThemeSettingsFile = {theme: this.selectedTheme};
-        writeFileAsync(THEME_SETTINGS_FILE, JSON.stringify(data))
+        Promise.all([this.writeThemeAsync(), this.writeTabLayoutAsync()])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error('[SettingsPanel] save failed:', String(error));
                 this.tabButton.setDirty(true);
             });
     }
+
+    private saveTheme(): void {
+        this.writeThemeAsync()
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error('[SettingsPanel] save theme failed:', String(error));
+                this.tabButton.setDirty(true);
+            });
+    }
+
+    private saveTabLayout(): void {
+        this.writeTabLayoutAsync()
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error('[SettingsPanel] save tab layout failed:', String(error));
+                this.tabButton.setDirty(true);
+            });
+    }
+
+    private async writeThemeAsync(): Promise<void> {
+        const data: ThemeSettingsFile = {theme: this.selectedTheme};
+        await writeFileAsync(THEME_SETTINGS_FILE, JSON.stringify(data));
+    }
+
+    private async writeTabLayoutAsync(): Promise<void> {
+        const data: TabLayoutSettingsFile = {tabWrapEnabled: this.selectedTabWrapEnabled};
+        await writeFileAsync(TAB_LAYOUT_SETTINGS_FILE, JSON.stringify(data));
+    }
 }
 
 /**
  * アプリケーション起動時に userdata/theme.json から保存済みテーマを読み込んで適用する
- * main.ts の初期化処理で呼ぶ
  */
 export async function applyStoredThemeAsync(): Promise<void> {
     const stored = await readStoredThemeAsync();
     if (stored !== null) {
         document.body.dataset.theme = stored;
     }
+}
+
+/**
+ * アプリケーション起動時に保存済み設定を読み込んで適用する
+ */
+export async function applyStoredSettingsAsync(): Promise<void> {
+    const [theme, tabWrapEnabled] = await Promise.all([
+        readStoredThemeAsync(),
+        readStoredTabWrapEnabledAsync(),
+    ]);
+    if (theme !== null) {
+        document.body.dataset.theme = theme;
+    }
+    applyTabWrapEnabled(tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED);
 }
