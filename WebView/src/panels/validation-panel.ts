@@ -130,32 +130,55 @@ export class ValidationPanel {
      * 非同期競合は pluginRequestId で防止する。
      */
     runAndUpdate(): void {
+        void this.runAndUpdateAsync();
+    }
+
+    /**
+     * バリデーションを実行して結果を返す。
+     * FormPanel のように判定結果をその場で表示したいUIから await して使う。
+     */
+    runAndUpdateAsync(): Promise<ValidationError[]> {
         // バリデーション全体をマクロタスクに遅延させてUIブロックを回避する。
         // セル編集のレンダリングが先に完了した後にバリデーションが走る。
         // requestId で連続呼び出し時の陳腐化を防止する（最新のリクエストのみ実行される）。
         const requestId = ++this.pluginRequestId;
-        setTimeout(() => {
-            if (requestId !== this.pluginRequestId) return;
-            const engineStart = performance.now();
-            const result = this.engine.validate(this.currentErrors);
-            const mergedErrors = [...result.errors, ...result.preservableErrors];
-            const engineDurationUs = Math.round((performance.now() - engineStart) * 1000);
-            this.debugConsole.appendEntry('validate (engine)', engineDurationUs, 'success', 'validation-panel.ts');
-            // プラグインバリデーションは Web Worker で非同期実行する
-            const pluginStart = performance.now();
-            this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
-                if (requestId !== this.pluginRequestId) return;
-                const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
-                this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'success', 'validation-panel.ts');
-                this.applyErrors([...mergedErrors, ...convertPluginErrors(pluginErrors, this.store, this.engine)]);
-            }).catch((e: unknown) => {
-                if (requestId !== this.pluginRequestId) return;
-                const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
-                this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'error', 'validation-panel.ts');
-                const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e), tableName: null, rowIndex: -1, columnName: null }];
-                this.applyErrors([...mergedErrors, ...convertPluginErrors(failError, this.store, this.engine)]);
-            });
-        }, 0);
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                if (requestId !== this.pluginRequestId) {
+                    resolve(this.currentErrors);
+                    return;
+                }
+                const engineStart = performance.now();
+                const result = this.engine.validate(this.currentErrors);
+                const mergedErrors = [...result.errors, ...result.preservableErrors];
+                const engineDurationUs = Math.round((performance.now() - engineStart) * 1000);
+                this.debugConsole.appendEntry('validate (engine)', engineDurationUs, 'success', 'validation-panel.ts');
+                // プラグインバリデーションは Web Worker で非同期実行する
+                const pluginStart = performance.now();
+                this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
+                    if (requestId !== this.pluginRequestId) {
+                        resolve(this.currentErrors);
+                        return;
+                    }
+                    const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
+                    this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'success', 'validation-panel.ts');
+                    const errors = [...mergedErrors, ...convertPluginErrors(pluginErrors, this.store, this.engine)];
+                    this.applyErrors(errors);
+                    resolve(errors);
+                }).catch((e: unknown) => {
+                    if (requestId !== this.pluginRequestId) {
+                        resolve(this.currentErrors);
+                        return;
+                    }
+                    const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
+                    this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'error', 'validation-panel.ts');
+                    const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e), tableName: null, rowIndex: -1, columnName: null }];
+                    const errors = [...mergedErrors, ...convertPluginErrors(failError, this.store, this.engine)];
+                    this.applyErrors(errors);
+                    resolve(errors);
+                });
+            }, 0);
+        });
     }
 
     /**

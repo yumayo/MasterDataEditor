@@ -352,6 +352,14 @@ export class Tab {
     }
 
     /**
+     * フォームビュー等の EditorTable 外コンポーネントにも、
+     * EditorTable と同じ共有 DropdownQuickView を接続する。
+     */
+    connectDropdownQuickView(dropdownInput: GridDropdownInput): void {
+        dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView);
+    }
+
+    /**
      * タブボタン配列を取得する（サブモジュール用）
      */
     getTabButtons(): TabButton[] {
@@ -2689,7 +2697,7 @@ export class Tab {
         // RelationsPanel を非表示にする（DOMは保持して FormPanel をオーバーレイ）
         this.relationsPanel.getPanelElement().style.display = 'none';
         // FormPanel を生成して右スロットにオーバーレイする
-        const formPanel = new FormPanel(this.store, this, this.notification);
+        const formPanel = new FormPanel(this.store, this.referenceDataCache, this, this.notification, this.validationPanel);
         formPanel.appendTo(rpParent);
         this.currentFormPanel = formPanel;
         return formPanel;

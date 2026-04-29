@@ -11,11 +11,18 @@ export type DropdownSelectCallback = (id: string) => void;
  */
 export type DropdownCancelCallback = () => void;
 
+export type DropdownTextProvider = () => string;
+
+export type GridDropdownItem = ReferenceItem & {
+    /** クイックビューで開く行のID。未指定なら id を使用する。 */
+    previewId?: string;
+};
+
 /**
  * 参照列用のドロップダウン付き入力コンポーネント
  *
- * 入力フィールドは EditorTableHandler.element を使用し、
- * ドロップダウンリストとクイックビューパネルを管理する。
+ * 入力フィールド自体は呼び出し側が所有し、
+ * このコンポーネントはドロップダウンリストとクイックビューパネルを管理する。
  *
  * クイックビューは Tab が所有するシングルトン DropdownQuickView を
  * connectDropdownQuickView() で接続することで有効になる。
@@ -25,6 +32,7 @@ export class GridDropdownInput {
     readonly element: HTMLElement;
     private readonly inputElement: HTMLElement;
     private readonly parentElement: HTMLElement;
+    private readonly textProvider: DropdownTextProvider | false;
     private dropdownElement: HTMLElement;
     /** Tab から接続されるシングルトン DropdownQuickView（未接続時は false） */
     private quickView: DropdownQuickView | false;
@@ -33,8 +41,8 @@ export class GridDropdownInput {
     /** キーボード操作によるDOM再構築時にmouseenterイベントを抑制するフラグ */
     private suppressMouseEnterQuickView: boolean;
 
-    private items: ReferenceItem[];
-    private filteredItems: ReferenceItem[];
+    private items: GridDropdownItem[];
+    private filteredItems: GridDropdownItem[];
     private selectedIndex: number;
     private visible: boolean;
 
@@ -46,6 +54,7 @@ export class GridDropdownInput {
         inputElement: HTMLElement,
         onSelect: DropdownSelectCallback,
         onCancel: DropdownCancelCallback,
+        textProvider: DropdownTextProvider | false = false,
     ) {
         this.items = [];
         this.filteredItems = [];
@@ -57,8 +66,9 @@ export class GridDropdownInput {
         this.onCancel = onCancel;
         this.quickView = false;
 
-        // EditorTableHandler.element への参照を保持
+        // 入力要素への参照を保持（EditorTable は contenteditable、FormPanel は input/textarea）
         this.inputElement = inputElement;
+        this.textProvider = textProvider;
 
         // コンテナ要素（ドロップダウンリストの位置決め用）
         this.element = document.createElement('div');
@@ -88,7 +98,7 @@ export class GridDropdownInput {
      * 入力フィールドの表示は呼び出し側（EditorTableHandler）が行う。
      * @param referenceTableName 参照先テーブル名（クイックビュー用）
      */
-    show(rect: DOMRect, items: ReferenceItem[], currentValue: string, referenceTableName: string): void {
+    show(rect: DOMRect, items: GridDropdownItem[], currentValue: string, referenceTableName: string): void {
 
         this.items = items;
         this.visible = true;
@@ -145,12 +155,12 @@ export class GridDropdownInput {
      */
     getSelectedId(): string {
         if (this.filteredItems.length === 0) {
-            return this.inputElement.textContent ?? '';
+            return this.getInputText();
         }
         if (this.selectedIndex >= 0 && this.selectedIndex < this.filteredItems.length) {
             return this.filteredItems[this.selectedIndex].id;
         }
-        return this.inputElement.textContent ?? '';
+        return this.getInputText();
     }
 
     /**
@@ -187,7 +197,7 @@ export class GridDropdownInput {
             const selectedItem = this.filteredItems[this.selectedIndex];
             const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
             if (selectedElement instanceof HTMLElement) {
-                this.quickView.showPreview(this.referenceTableName, selectedItem.id, selectedElement, this.dropdownElement);
+                this.quickView.showPreview(this.referenceTableName, selectedItem.previewId ?? selectedItem.id, selectedElement, this.dropdownElement);
             }
         }
     }
@@ -284,7 +294,7 @@ export class GridDropdownInput {
             // suppressMouseEnterQuickView が true の場合はキーボード操作によるDOM再構築なので無視する
             itemElement.addEventListener('mouseenter', () => {
                 if (this.quickView !== false && !this.suppressMouseEnterQuickView) {
-                    this.quickView.showPreview(this.referenceTableName, item.id, itemElement, this.dropdownElement);
+                    this.quickView.showPreview(this.referenceTableName, item.previewId ?? item.id, itemElement, this.dropdownElement);
                 }
             });
 
@@ -313,5 +323,13 @@ export class GridDropdownInput {
             const itemHeight = selectedElement.offsetHeight;
             this.dropdownElement.scrollTop = itemTop - (listHeight - itemHeight) / 2;
         }
+    }
+
+    private getInputText(): string {
+        if (this.textProvider !== false) return this.textProvider();
+        if (this.inputElement instanceof HTMLInputElement || this.inputElement instanceof HTMLTextAreaElement) {
+            return this.inputElement.value;
+        }
+        return this.inputElement.textContent ?? '';
     }
 }

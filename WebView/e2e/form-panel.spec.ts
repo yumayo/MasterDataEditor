@@ -41,18 +41,42 @@ function createFormPanelTestFileSystem(): MockFileSystem {
             "1,スライム",
             "2,ドラゴン",
         ].join("\n"),
+        "schema/weapon.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/weapon.csv": [
+            "id",
+            "10",
+            "20",
+        ].join("\n"),
+        "schema/weapon_name.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int", reference: "weapon.id" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/weapon_name.csv": [
+            "id,ja",
+            "10,剣",
+            "20,盾",
+        ].join("\n"),
         "schema/quest.json": JSON.stringify({
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+                { key: 3, name: "weapon_id", type: "int", reference: "weapon.id" },
             ],
             primary_key: ["id"],
         }),
         "data/quest.csv": [
-            "id,name,enemy_id",
-            "1,first_quest,1",
-            "2,second_quest,2",
+            "id,name,enemy_id,weapon_id",
+            "1,first_quest,1,10",
+            "2,second_quest,2,20",
         ].join("\n"),
         // item テーブルは quest.id を FK として参照する（quest の逆参照エントリを生成するため）
         "schema/item.json": JSON.stringify({
@@ -96,6 +120,15 @@ async function rightClickPkCellAsync(table: Locator, rowIndex: number): Promise<
     // PK列は行ヘッダーを除く最初のデータセル（id列）
     const pkCell = row.locator('.editor-table-cell:not(.editor-table-row-header)').first();
     await pkCell.click({ button: 'right' });
+}
+
+/**
+ * 指定行・列のデータセルを返す
+ * rowIndex: 0始まり、colIndex: 0始まり（行ヘッダーを除く）
+ */
+function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
+    const row = table.locator('.editor-table-row').nth(rowIndex);
+    return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
 }
 
 // =============================================================================
@@ -258,5 +291,102 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         // RelationsPanel が再び表示されること
         const relationsPanel = page.locator('.relations-panel');
         await expect(relationsPanel).toBeVisible();
+    });
+
+    test('フォーム入力がEditorTableに反映されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        const nameInput = formPanel.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input');
+        await expect(nameInput).toBeVisible();
+
+        await nameInput.fill('edited_quest');
+
+        await expect(getDataCell(table, 0, 1)).toContainText('edited_quest');
+    });
+
+    test('フォーム入力後のバリデーション結果がフォーム内にも表示されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const enemyInput = formPanel.locator('.form-panel-field[data-column-name="enemy_id"] .form-panel-field-input');
+        await expect(enemyInput).toBeVisible();
+
+        await enemyInput.fill('abc');
+
+        const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
+        await expect(enemyField).toHaveClass(/form-panel-field--invalid/);
+        await expect(enemyField.locator('.form-panel-field-error').filter({ hasText: '型 int' })).toBeVisible();
+        await expect(formPanel.locator('.form-panel-validation')).toHaveCount(0);
+        await expect(formPanel).not.toContainText('バリデーションOK');
+        await expect(getDataCell(table, 0, 2)).toHaveClass(/cell-error/);
+    });
+
+    test('参照先と参照元が一覧で表示され、深さインジケーターが表示されないこと', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel.locator('.form-panel-references')).toBeVisible();
+        await expect(formPanel.locator('.form-panel-references')).toContainText('参照先: enemy_id');
+        await expect(formPanel.locator('.form-panel-references')).toContainText('スライム');
+        await expect(formPanel.locator('.form-panel-references')).toContainText('参照元: item');
+        await expect(formPanel.locator('.form-panel-depth-bar')).toHaveCount(0);
+    });
+
+    test('参照列の入力開始時にEditorTable共通ドロップダウンで候補を選択して反映できること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
+        const enemyInput = enemyField.locator('.form-panel-field-input');
+        await expect(enemyField.locator('.form-panel-field-reference-select')).toHaveCount(0);
+
+        await enemyInput.fill('2');
+        const dropdown = formPanel.locator('.grid-dropdown-list');
+        await expect(dropdown).toBeVisible();
+        await expect(dropdown).toContainText('2');
+        await expect(dropdown).toContainText('ドラゴン');
+
+        await dropdown.locator('.grid-dropdown-item', { hasText: 'ドラゴン' }).click();
+
+        await expect(enemyInput).toHaveValue('2');
+        await expect(getDataCell(table, 0, 2)).toContainText('2');
+        await expect(formPanel.locator('.form-panel-references')).toContainText('ドラゴン');
+        await expect(formPanel.locator('.form-panel-field-reference-select')).toHaveCount(0);
+    });
+
+    test('参照列の候補表示名はEditorTableと同じ二段以上先の参照ヒントを使うこと', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const weaponField = formPanel.locator('.form-panel-field[data-column-name="weapon_id"]');
+        const weaponInput = weaponField.locator('.form-panel-field-input');
+
+        await weaponInput.fill('20');
+        const dropdown = formPanel.locator('.grid-dropdown-list');
+        await expect(dropdown).toBeVisible();
+        await expect(dropdown).toContainText('20');
+        await expect(dropdown).toContainText('盾');
+
+        await dropdown.locator('.grid-dropdown-item', { hasText: '盾' }).click();
+
+        await expect(weaponInput).toHaveValue('20');
+        await expect(getDataCell(table, 0, 3)).toContainText('20');
     });
 });

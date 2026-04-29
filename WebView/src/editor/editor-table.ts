@@ -3,7 +3,7 @@ import {Selection, CellPosition, CellRange} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "../ui/context-menu";
 import {History} from "./history";
-import {Command, CellChange, RenderAsHtmlToggleCommand} from "./command";
+import {Command, CellChange, CellChangeCommand, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX, ROW_TOTAL_HEIGHT_PX, ROW_HEADER_WIDTH_PX} from "../core/constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
@@ -1295,6 +1295,27 @@ export class EditorTable {
     executeExternalCommand(command: Command, range: CellRange): void {
         const copyRange = this.selection.getCopyRange();
         this.history.executeCommand(command, range, copyRange);
+    }
+
+    /**
+     * フォームビューなど、EditorTable外のUIからストア座標でセルを編集する。
+     * 通常のセル編集と同じ CellChangeCommand 経由で履歴・Dirty・バリデーションを更新する。
+     */
+    applyExternalCellEditByStoreIndex(storeRowIndex: number, storeColumnIndex: number, newValue: string): boolean {
+        const dataColumnIndex = this.tableData.columnMapping.indexOf(storeColumnIndex);
+        if (dataColumnIndex === -1) return false;
+        const domRow = this.storeRowToDomRow(storeRowIndex);
+        if (domRow === null) return false;
+        const domColumn = dataColumnIndex + this.dataColumnOffset();
+        const oldValue = this.getCellValueAt(domRow, domColumn);
+        if (oldValue === newValue) {
+            this.runValidation();
+            return true;
+        }
+        const range = {startRow: domRow, startColumn: domColumn, endRow: domRow, endColumn: domColumn};
+        const command = new CellChangeCommand(this, [{row: domRow, column: domColumn, oldValue, newValue}], range, this.selection.getCopyRange());
+        this.history.executeCommand(command, range, this.selection.getCopyRange());
+        return true;
     }
 
     /**
