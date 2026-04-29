@@ -214,8 +214,16 @@ export class EditorTableLayout {
         return cloneCell;
     }
 
+    // 固定セルの複製には選択中に fill-handle が入るため、内容同期の差分判定から除外する。
+    private getComparableCellInnerHTML(cell: HTMLElement): string {
+        if (cell.querySelector('.fill-handle') === null) return cell.innerHTML;
+        const clone = cell.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.fill-handle').forEach(element => element.remove());
+        return clone.innerHTML;
+    }
+
     syncDetachedCellVisualState(sourceCell: HTMLElement, detachedCell: HTMLElement): void {
-        if (detachedCell.innerHTML !== sourceCell.innerHTML) {
+        if (this.getComparableCellInnerHTML(detachedCell) !== this.getComparableCellInnerHTML(sourceCell)) {
             const replacement = this.cloneDetachedCell(sourceCell);
             detachedCell.replaceWith(replacement);
             detachedCell = replacement;

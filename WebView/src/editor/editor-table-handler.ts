@@ -912,6 +912,10 @@ export class EditorTableHandler {
         // style.top 変更前にスクロール位置を保存する（変更後はブラウザが 0 にリセットする場合がある）
         const scrollTop = this.scrollController.getScrollTop();
         const scrollLeft = this.scrollController.getScrollLeft();
+        if (this.dropdownActive && this.dropdownInput) {
+            this.dropdownInput.hide();
+            this.dropdownActive = false;
+        }
         this.visible = false;
         this.element.textContent = null;
         this.element.style.width = '0px';

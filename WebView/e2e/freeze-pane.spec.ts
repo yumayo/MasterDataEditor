@@ -169,6 +169,38 @@ function createFillHandleZIndexTestFileSystem(): MockFileSystem {
     };
 }
 
+function createFrozenDropdownTestFileSystem(): MockFileSystem {
+    return {
+        "schema/category.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/category.csv": [
+            "id,name",
+            "1,weapon",
+            "2,armor",
+        ].join("\n"),
+        "schema/frozen_dropdown_test.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "category_id", type: "int", reference: "category.id" },
+                { key: 2, name: "name", type: "string" },
+            ],
+            primary_key: ["id"],
+            frozenRowCount: 1,
+            frozenColumnCount: 2,
+        }),
+        "data/frozen_dropdown_test.csv": [
+            "id,category_id,name",
+            "1,1,sword",
+            "2,2,shield",
+        ].join("\n"),
+    };
+}
+
 /**
  * 多数の固定行を持つテーブルの描画回帰検証用ファイルシステム。
  * fixed row の背景プレートと本文セルの重なり順が崩れると、
@@ -1220,6 +1252,55 @@ test.describe('フリーズペイン', () => {
                 expect(Math.abs(scrolled.leftViewportHeight - scrolled.mainClientHeight)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftTop - initial.topLeftTop)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
+            },
+        );
+
+        test(
+            '固定セルをダブルクリックするとテキストフィールドが表示される',
+            async ({ page }) => {
+                const fs = createFillHandleZIndexTestFileSystem();
+                await installMockApiAsync(page, fs);
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'fill_handle_z_index_test');
+                const fixedCell = table.locator(
+                    '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
+                );
+                await expect(fixedCell).toBeVisible();
+
+                await fixedCell.dblclick();
+
+                const editField = page.locator('.grid-textfield-active');
+                await expect(editField).toBeVisible();
+                await expect(editField).toHaveText('1');
+            },
+        );
+
+        test(
+            '固定セルのプルダウン表示中に他のセルをクリックするとプルダウンが閉じる',
+            async ({ page }) => {
+                const fs = createFrozenDropdownTestFileSystem();
+                await installMockApiAsync(page, fs);
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'frozen_dropdown_test');
+                const fixedDropdownCell = table.locator(
+                    '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+                );
+                await expect(fixedDropdownCell).toBeVisible();
+
+                await fixedDropdownCell.dblclick();
+
+                const dropdownList = page.locator('.grid-dropdown.visible .grid-dropdown-list');
+                await expect(dropdownList).toBeVisible();
+                await expect(dropdownList.locator('.grid-dropdown-item').first()).toBeVisible();
+
+                const otherCell = table.locator(
+                    '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
+                );
+                await otherCell.click();
+
+                await expect(page.locator('.grid-dropdown.visible')).toHaveCount(0);
             },
         );
 
