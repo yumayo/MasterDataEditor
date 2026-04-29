@@ -1,7 +1,7 @@
 import {EditorTableData} from "./model/editor-table-data";
 import {Selection, CellPosition, CellRange} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
-import {ContextMenu, ContextMenuEntry} from "./context-menu";
+import {ContextMenu} from "./context-menu";
 import {History} from "./history";
 import {Command, CellChange, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
@@ -37,6 +37,8 @@ import {parseReferenceExpression, isSimpleReference, isDynamicReference, Dynamic
 import {ReverseReferenceJumpDialog} from "./reverse-reference-jump-dialog";
 import {ScrollbarMarkerTrack, MarkerEntry} from "./scrollbar-marker-track";
 import {VirtualScrollController, RenderedRowsUpdate} from "./virtual-scroll-controller";
+import {EditorTableCellFactory} from "./editor-table-cell-factory";
+import {EditorTableSelectionView} from "./editor-table-selection-view";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -133,23 +135,6 @@ export class EditorTable {
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     private autoFillEntries: Array<{ columnName: string; value: string }>;
     /**
-     * 最後にフォーカスクラスを付与したセルの行列（DOM座標）。
-     * -1 は「まだフォーカスが当たったことがない」状態。
-     * Selection.updateFocusedCellClass の代わりにEditorTable側でクラスを管理する（DOM要素の流出防止）。
-     */
-    private lastFocusedRow: number;
-    private lastFocusedCol: number;
-    /**
-     * 前回 applySelectionClasses() でクラスを付与したセルの記録。
-     * clearSelectionClasses() でクラスを除去するために使用する。
-     */
-    private lastSelectionCells: { row: number; col: number; classes: string[] }[];
-    /**
-     * 前回 applyCopyClasses() でクラスを付与したセルの記録。
-     * clearCopyClasses() でクラスを除去するために使用する。
-     */
-    private lastCopyCells: { row: number; col: number; classes: string[] }[];
-    /**
      * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
      * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
      * forceRefreshRelationsPanel() は refreshCurrentRow() を直接呼ぶためこの値を変更しない。
@@ -193,6 +178,8 @@ export class EditorTable {
     private git: EditorTableGit;
     /** バリデーション適用・スクロールバーマーカー更新モジュール */
     private validationMarkers: EditorTableValidationMarkers;
+    /** 選択・コピー範囲・フォーカスセルの視覚状態管理モジュール */
+    private selectionView: EditorTableSelectionView;
     /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
     private skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
@@ -305,10 +292,6 @@ export class EditorTable {
         this.frozenRowCount = 0;
         this.isBlameVisible = false;
         this.lastNotifiedRow = -1;
-        this.lastFocusedRow = -1;
-        this.lastFocusedCol = -1;
-        this.lastSelectionCells = [];
-        this.lastCopyCells = [];
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.filteredRowIndices = [];
@@ -342,6 +325,7 @@ export class EditorTable {
         this.sortFilter = new EditorTableSortFilter(this);
         this.git = new EditorTableGit(this);
         this.validationMarkers = new EditorTableValidationMarkers(this);
+        this.selectionView = new EditorTableSelectionView(this);
     }
 
     /**
@@ -368,6 +352,8 @@ export class EditorTable {
         this.git = new EditorTableGit(this);
         // バリデーション/マーカーの委譲先も正しい this で再作成する。
         this.validationMarkers = new EditorTableValidationMarkers(this);
+        // 選択表示の委譲先も正しい this で再作成する。
+        this.selectionView = new EditorTableSelectionView(this);
         // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。
         // 旧インスタンスは realEditorTable（storeRowIndices=[]）を参照しているため破棄が必要。
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
@@ -428,9 +414,9 @@ export class EditorTable {
     refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshQuadrantViewportRowHeaders(update); }
     getDetachedViewportRowTopPx(sourceRow: HTMLElement, logicalRowIndex: number): string { return this.layout.getDetachedViewportRowTopPx(sourceRow, logicalRowIndex); }
     createDetachedViewportRowClone(sourceRow: HTMLElement): HTMLElement | null { return this.layout.createDetachedViewportRowClone(sourceRow); }
-    private syncDetachedViewportRowHeaderStates(): void { this.layout.syncDetachedViewportRowHeaderStates(); }
+    syncDetachedViewportRowHeaderStates(): void { this.layout.syncDetachedViewportRowHeaderStates(); }
     refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshDetachedViewportRowHeaders(update); }
-    private syncDetachedLegacyStaticCellStates(): void { this.layout.syncDetachedLegacyStaticCellStates(); }
+    syncDetachedLegacyStaticCellStates(): void { this.layout.syncDetachedLegacyStaticCellStates(); }
     private syncQuadrantStaticCellStates(): void { this.layout.syncQuadrantStaticCellStates(); }
     syncDetachedHeaderScrollOffset(): void { this.layout.syncDetachedHeaderScrollOffset(); }
     setInlineTransformIfChanged(element: HTMLElement, transform: string): void { this.layout.setInlineTransformIfChanged(element, transform); }
@@ -1011,285 +997,12 @@ export class EditorTable {
     // static メソッド
     // =========================================================================
 
-    static createRow(cells: HTMLElement[], rowIndex?: number) {
-        const row = document.createElement('div');
-        row.classList.add('editor-table-row');
-        if (rowIndex !== undefined) {
-            row.dataset.row = String(rowIndex);
-            const firstCell = cells.length > 0 ? cells[0] : null;
-            if (firstCell !== null && firstCell.classList.contains('editor-table-row-header')) {
-                const rowIndexText = firstCell.dataset.rowIndex;
-                if (rowIndexText !== undefined) row.dataset.rowIndex = rowIndexText;
-            }
-        }
-        for (let i = 0; i < cells.length; ++i) {
-            row.appendChild(cells[i]);
-        }
-        return row;
-    }
-
-    /**
-     * セルのDOM要素を作成する
-     *
-     * textContentに値を設定し、イベントリスナーを登録した状態のセル要素を返す。
-     * 参照ヒント(.cell-reference-hint)はこのメソッドでは適用されない。
-     *
-     * 初期描画パス: TabReference.preloadReferenceTables() 完了後に updateReferenceHints() で一括適用
-     */
-    static createCell(table: EditorTable, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string) {
-        const cell = document.createElement('div');
-        cell.classList.add('editor-table-cell');
-        cell.dataset.col = String(columnIndex);
-        EditorTable.applyCellWidth(cell, width);
-        EditorTable.applyCellHeight(cell, height);
-        cell.addEventListener('dblclick', () => {
-            // bool型（FK参照なし）の場合はトグル操作を行い、テキスト編集モードには入らない
-            if (table.getColumnType(columnIndex) === 'bool' && !table.hasColumnReference(columnIndex)) {
-                table.toggleBoolCell();
-                return;
-            }
-            // 参照列の場合はドロップダウンを表示
-            table.handler.enableCellEditModeWithDropdownAsync(true).then((handled) => {
-                if (!handled) {
-                    // ドロップダウンで処理されなかった場合は通常の編集モード
-                    table.handler.enableCellEditMode(true);
-                }
-            });
-        });
-        cell.addEventListener('mousedown', (e) => {
-            console.log('[SelectionDrag] cell mousedown button=' + e.button);
-            // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
-            if (e.button !== 0) return;
-            const position = EditorTable.getCellPosition(cell, table.element);
-            if (!position) return;
-            // 編集中のセルを確定する（Ctrl+クリックでも通常クリックでも共通）
-            table.handler.submitAndHide();
-            // フォーカスの排他制御: 接続先に応じて適切な activateHandler を呼び出す
-            // RelationsPanel 接続時: 全ミニEditorTableを含む排他制御
-            // DiffTab 接続時: 左右ペイン間の排他制御
-            // どちらも未接続（通常テーブル単独）: 直接このhandlerをアクティブ化する
-            if (table.relationsPanel !== false) {
-                table.relationsPanel.activateHandler(table);
-            } else if (table.diffTab !== false) {
-                table.diffTab.activateHandler(table);
-            } else {
-                table.handler.activate();
-            }
-            // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
-            // ペインスタック追加（navigateToDefinition）を先に行い、正しいRPに対して選択状態を設定する。
-            // 逆順（selection.start → navigateToDefinition）だと古いRPに対してnotifyが走り無駄な処理が発生する。
-            if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
-                table.navigateToDefinition(position.row);
-                table.selection.start(position.row, position.column);
-                e.preventDefault();
-                return;
-            }
-            // メインテーブルのCtrl+クリックでFK列の参照先 / PK列の逆参照先テーブルを開く（RelationsPanel非表示時のみ）
-            // start()でセルを選択した後、end()でドラッグ状態を即解除する。
-            // end()を呼ばないとmouseupが発火しないままselecting=trueが残り、戻ったときに範囲選択になる。
-            if ((e.ctrlKey || e.metaKey) && !table.isMiniTable
-                && (table.navigateToReferenceTable(position.row, position.column)
-                    || table.navigateToReverseReferenceTable(position.row, position.column))) {
-                table.selection.start(position.row, position.column);
-                table.selection.end();
-                e.preventDefault();
-                return;
-            }
-            if (e.shiftKey) {
-                table.selection.extendSelection(position.row, position.column);
-            } else {
-                // SelectionDragController を有効化する（window mousemove/mouseup によるドラッグ選択に必要）。
-                // activateTabState 経由で activate が呼ばれるべきだが、HMRリロード後など
-                // タイミングによっては呼ばれないケースがあるため、mousedown 時にも確実に有効化する。
-                // addEventListener の重複登録は SelectionDragController 側でガードする。
-                table.selectionDragController.activate();
-                console.log('[SelectionDrag] selection.start row=' + position.row + ' col=' + position.column);
-                table.selection.start(position.row, position.column);
-            }
-        });
-        cell.addEventListener('contextmenu', (e) => {
-            const position = EditorTable.getCellPosition(cell, table.element);
-            if (!position) return;
-            // 全 parentColumnName の列値でエントリを収集する（非PK列参照にも対応）
-            const allEntries: ReverseReferenceEntry[] = [];
-            for (const colName of table.getAllParentColumnNames()) {
-                const colValue = table.getCellValueByColumnName(position.row, colName);
-                if (colValue === '') continue;
-                const entries = table.getReverseReferenceEntries(colValue);
-                for (const entry of entries) {
-                    if (entry.parentColumnName === colName) allEntries.push(entry);
-                }
-            }
-            // PKセルかどうかを判定する（columnIndex はデータ列インデックス = 行ヘッダーを除いた0始まり）
-            const col = table.tableData.header[columnIndex];
-            const isPkColumn = col !== undefined && table.tableData.primaryKeyColumns.includes(col.name);
-            const pkValue = table.getRowPkValue(position.row);
-            // フォームビュー表示はPKセルかつPK値が空でない場合のみ表示する
-            const canShowFormView = isPkColumn && pkValue !== '' && table.tab !== false;
-            // ブックマーク追加/解除はPK値が取れる通常テーブル（タブあり）でのみ表示する
-            // ミニテーブル（RelationsPanel内）やDiffTabではtab===falseなので抑制される
-            const canShowBookmark = pkValue !== '' && table.tab !== false;
-            // 表示するメニュー項目がない場合はメニューを出さない
-            if (allEntries.length === 0 && !canShowFormView && !canShowBookmark) return;
-            e.preventDefault();
-            e.stopPropagation();
-            // ドラグ状態をリセット
-            table.selection.end();
-            const menuItems: ContextMenuEntry[] = [];
-            if (allEntries.length > 0) {
-                menuItems.push({
-                    label: '参照箇所を表示',
-                    action: () => { table.showReferences(pkValue, allEntries); },
-                });
-            }
-            if (canShowFormView) {
-                // クロージャ内で table.tab の型を Tab として保持する（型ガード後の型を維持するため）
-                const tabRef = table.tab as Tab;
-                menuItems.push({
-                    label: 'フォームビューを表示',
-                    action: () => { tabRef.showFormPanel(table.tableName, pkValue); },
-                });
-            }
-            // セルレベルのブックマーク追加/解除メニュー（修正10: PK列/非PK列のコードを共通化）
-            if (canShowBookmark) {
-                const clickedCol = table.tableData.header[columnIndex];
-                const clickedColumnName = clickedCol ? clickedCol.name : '';
-                if (clickedColumnName !== '') {
-                    // PK列は行レベル判定、非PK列はセルレベル判定
-                    const isBookmarked = isPkColumn
-                        ? table.hasBookmarkForRow(table.tableName, pkValue)
-                        : table.hasBookmark(table.tableName, pkValue, clickedColumnName);
-                    if (isBookmarked) {
-                        menuItems.push({
-                            label: 'ブックマークを解除',
-                            action: () => {
-                                if (isPkColumn) {
-                                    // 行内の全ブックマークを削除し、該当行全セルの視覚マークも除去する
-                                    table.removeBookmarksForRow(table.tableName, pkValue);
-                                    table.removeBookmarkMarksForRow(position.row);
-                                } else {
-                                    table.removeBookmark(table.tableName, pkValue, clickedColumnName);
-                                    cell.removeAttribute('data-bookmarked');
-                                }
-                            },
-                        });
-                    } else {
-                        const cellValue = table.getCellValueAt(position.row, columnIndex + table.dataColumnOffset());
-                        menuItems.push({
-                            label: 'ブックマークに追加',
-                            action: () => {
-                                table.addBookmark(table.tableName, pkValue, clickedColumnName, cellValue);
-                                cell.setAttribute('data-bookmarked', '');
-                            },
-                        });
-                    }
-                }
-            }
-            table.contextMenu.show(e.clientX, e.clientY, menuItems);
-        });
-        // renderAsHtml を考慮してセル値を設定する（初期レンダリング時にHTML描画を正しく適用）
-        // value の実際の型は string のみ（body.values は string[]、バッファ行は '' を渡す）
-        const strValue = value as string;
-        // バッファ空行挿入時等で columnIndex がヘッダー範囲外になる場合は false（テキスト描画）でフォールバック
-        const cellCol = table.tableData.header[columnIndex];
-        table.reference.applyTextOrHtml(cell, strValue, cellCol ? cellCol.renderAsHtml : false);
-        // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
-        table.reference.applyTypedCellStyle(cell, strValue, columnIndex);
-        return cell;
-    }
-
-    public static getCellPosition(cell: HTMLElement, tableElement: HTMLElement): CellPosition | null {
-        const rowElement = cell.parentElement;
-        if (!rowElement) return null;
-        // 行インデックスの取得: ヘッダー行は常に children[0]。
-        // データ行はバーチャルスクロールにより children のインデックスが論理インデックスとずれるため、
-        // 行要素または行ヘッダーの data-row-index 属性（renumberRowsFrom で設定される 0始まりの
-        // データ行インデックス）から算出する。固定行 clone は行要素自身が data-row-index を持つ。
-        // ヘッダー行は data-row-index を持たないため children インデックスを使う。
-        let row: number = -1;
-        if (rowElement.classList.contains('editor-table-column-header-row')
-            || rowElement.classList.contains('editor-table-source-column-header-row')) {
-            row = 0;
-        } else if (rowElement.dataset.rowIndex !== undefined) {
-            // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
-            row = Number(rowElement.dataset.rowIndex) + 1;
-        } else {
-            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-            if (rowHeader && rowHeader.dataset.rowIndex !== undefined) {
-                // data-row-index は 0始まりのデータ行インデックス。DOM行インデックスは +1（ヘッダー行分）。
-                row = Number(rowHeader.dataset.rowIndex) + 1;
-            } else {
-                // ヘッダー行または data-row-index がない行: children のインデックスで探索する
-                for (let i = 0; i < tableElement.children.length; ++i) {
-                    if (tableElement.children[i] === rowElement) {
-                        row = i;
-                        break;
-                    }
-                }
-            }
-        }
-        if (row === -1) return null;
-        const dataColText = cell.dataset.col;
-        if (dataColText !== undefined) {
-            const dataColumn = Number(dataColText);
-            if (!Number.isNaN(dataColumn)) {
-                const dataColumnOffset = tableElement.classList.contains('editor-table--blame-visible') ? 2 : 1;
-                return { row, column: dataColumnOffset + dataColumn };
-            }
-        }
-        let column: number = -1;
-        for (let i = 0; i < rowElement.children.length; ++i) {
-            if (rowElement.children[i] === cell) {
-                column = i;
-                break;
-            }
-        }
-        if (column === -1) return null;
-        return {row, column};
-    }
-
-    /**
-     * セルの値を取得する（参照ヒントを除外）
-     * renderAsHtml モードのセルや bool型セル（SVG表示）は innerHTML/textContent から直接値を取れないため、
-     * data-raw-value に保存した生テキストを返す。
-     */
-    static getCellValue(cell: HTMLElement): string {
-        // renderAsHtml モードおよび bool型セルは data-raw-value に生テキストが保存されている
-        if (cell.dataset.rawValue !== undefined) return cell.dataset.rawValue;
-        // .cell-value 要素があればそこから取得
-        const valueElement = cell.querySelector('.cell-value');
-        if (valueElement) return valueElement.textContent ?? '';
-        // ヒント要素がある場合、直下のテキストノードのみを結合して返す
-        const hasChildElements = cell.querySelector('.cell-reference-hint, .cell-reverse-reference-hint');
-        if (hasChildElements) {
-            let text = '';
-            for (const node of Array.from(cell.childNodes)) {
-                if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? '';
-            }
-            return text;
-        }
-        // そうでなければ textContent をそのまま返す
-        return cell.textContent ?? '';
-    }
-
-    /**
-     * セルに幅のスタイルを適用
-     */
-    static applyCellWidth(cell: HTMLElement, width: string): void {
-        cell.style.width = width;
-        cell.style.minWidth = width;
-        cell.style.maxWidth = width;
-    }
-
-    /**
-     * セルに高さのスタイルを適用
-     */
-    static applyCellHeight(cell: HTMLElement, height: string): void {
-        cell.style.height = height;
-        cell.style.minHeight = height;
-        cell.style.maxHeight = height;
-        cell.style.lineHeight = height;
-    }
+    static createRow(cells: HTMLElement[], rowIndex?: number): HTMLElement { return EditorTableCellFactory.createRow(cells, rowIndex); }
+    static createCell(table: EditorTable, value: number | string | string[] | undefined, columnIndex: number, width: string, height: string): HTMLElement { return EditorTableCellFactory.createCell(table, value, columnIndex, width, height); }
+    public static getCellPosition(cell: HTMLElement, tableElement: HTMLElement): CellPosition | null { return EditorTableCellFactory.getCellPosition(cell, tableElement); }
+    static getCellValue(cell: HTMLElement): string { return EditorTableCellFactory.getCellValue(cell); }
+    static applyCellWidth(cell: HTMLElement, width: string): void { EditorTableCellFactory.applyCellWidth(cell, width); }
+    static applyCellHeight(cell: HTMLElement, height: string): void { EditorTableCellFactory.applyCellHeight(cell, height); }
 
     // =========================================================================
     // DOMゲッター
@@ -1385,151 +1098,12 @@ export class EditorTable {
         return this.getCellOrNull(row, column);
     }
 
-    /**
-     * 指定セルに editor-table-cell-focused クラスを付与し、前のフォーカスセルから除去する。
-     * Selection から呼ばれる（DOM要素の流出防止のため Selection 側でクラスを操作しない）。
-     *
-     * @param row DOM行インデックス（列ヘッダー行を含む: データ行1行目 = 1）
-     * @param col DOM列インデックス（行ヘッダーを含む: データ列1列目 = 1）
-     */
-    markFocusedCell(row: number, col: number): void {
-        // 前のフォーカスセルからクラスを除去する
-        if (this.lastFocusedRow !== -1) {
-            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
-            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
-        }
-        const cell = this.getCellOrNull(row, col);
-        if (cell !== null) {
-            cell.classList.add('editor-table-cell-focused');
-            this.lastFocusedRow = row;
-            this.lastFocusedCol = col;
-        }
-    }
-
-    /**
-     * フォーカスクラスを除去する（タブ切り替えや初期化時に呼ぶ）。
-     */
-    clearFocusedCell(): void {
-        if (this.lastFocusedRow !== -1) {
-            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
-            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
-        }
-        this.lastFocusedRow = -1;
-        this.lastFocusedCol = -1;
-    }
-
-    /**
-     * 選択範囲のセルにクラスを付与する（Selection から呼ばれる）。
-     * 前回付与したクラスを除去してから新しいクラスを付与する。
-     * フォーカスセルには sel-bg を付与しない（Excel同様に白背景で表示）。
-     *
-     * @param range 正規化済みの選択範囲（startRow <= endRow, startColumn <= endColumn）
-     * @param focusRow フォーカスセルのDOM行インデックス
-     * @param focusCol フォーカスセルのDOM列インデックス
-     */
-    applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void {
-        // 前回のクラスを除去する
-        for (const entry of this.lastSelectionCells) {
-            const cell = this.getCellOrNull(entry.row, entry.col);
-            if (cell !== null) cell.classList.remove(...entry.classes);
-        }
-        this.lastSelectionCells = [];
-
-        const { startRow, startColumn, endRow, endColumn } = range;
-
-        // 選択範囲内のセルにクラスを付与する
-        for (let row = startRow; row <= endRow; row++) {
-            for (let col = startColumn; col <= endColumn; col++) {
-                const cell = this.getCellOrNull(row, col);
-                if (cell === null) continue;
-                const classes: string[] = [];
-                // フォーカスセル以外に背景色を付与
-                if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
-                if (row === startRow) classes.push('sel-top');
-                if (row === endRow) classes.push('sel-bottom');
-                if (col === startColumn) classes.push('sel-left');
-                if (col === endColumn) classes.push('sel-right');
-                if (classes.length > 0) {
-                    cell.classList.add(...classes);
-                    this.lastSelectionCells.push({ row, col, classes });
-                }
-            }
-        }
-
-        // 隣接セルのボーダーを透明にする（灰色セルボーダーが青枠を隠す問題を解消）
-        // 上辺: 1つ上の行のセルの border-bottom を透明にする
-        if (startRow > 0) {
-            for (let col = startColumn; col <= endColumn; col++) {
-                const cell = this.getCellOrNull(startRow - 1, col);
-                if (cell === null) continue;
-                cell.classList.add('sel-adj-bottom');
-                this.lastSelectionCells.push({ row: startRow - 1, col, classes: ['sel-adj-bottom'] });
-            }
-        }
-        // 左辺: 1つ左の列のセルの border-right を透明にする
-        if (startColumn > 0) {
-            for (let row = startRow; row <= endRow; row++) {
-                const cell = this.getCellOrNull(row, startColumn - 1);
-                if (cell === null) continue;
-                cell.classList.add('sel-adj-right');
-                this.lastSelectionCells.push({ row, col: startColumn - 1, classes: ['sel-adj-right'] });
-            }
-        }
-    }
-
-    /**
-     * コピー範囲のセルにクラスを付与する（Selection から呼ばれる）。
-     * 前回付与したクラスを除去してから新しいクラスを付与する。
-     *
-     * @param range 正規化済みのコピー範囲
-     */
-    applyCopyClasses(range: CellRange): void {
-        // 前回のクラスを除去する
-        for (const entry of this.lastCopyCells) {
-            const cell = this.getCellOrNull(entry.row, entry.col);
-            if (cell !== null) cell.classList.remove(...entry.classes);
-        }
-        this.lastCopyCells = [];
-
-        const { startRow, startColumn, endRow, endColumn } = range;
-        for (let row = startRow; row <= endRow; row++) {
-            for (let col = startColumn; col <= endColumn; col++) {
-                const cell = this.getCellOrNull(row, col);
-                if (cell === null) continue;
-                const classes: string[] = [];
-                if (row === startRow) classes.push('copy-top');
-                if (row === endRow) classes.push('copy-bottom');
-                if (col === startColumn) classes.push('copy-left');
-                if (col === endColumn) classes.push('copy-right');
-                if (classes.length > 0) {
-                    cell.classList.add(...classes);
-                    this.lastCopyCells.push({ row, col, classes });
-                }
-            }
-        }
-    }
-
-    /**
-     * 選択クラスを全セルから除去する（Selection.hideRenderer() から呼ばれる）。
-     */
-    clearSelectionClasses(): void {
-        for (const entry of this.lastSelectionCells) {
-            const cell = this.getCellOrNull(entry.row, entry.col);
-            if (cell !== null) cell.classList.remove(...entry.classes);
-        }
-        this.lastSelectionCells = [];
-    }
-
-    /**
-     * コピークラスを全セルから除去する（Selection.hideCopyBorder() から呼ばれる）。
-     */
-    clearCopyClasses(): void {
-        for (const entry of this.lastCopyCells) {
-            const cell = this.getCellOrNull(entry.row, entry.col);
-            if (cell !== null) cell.classList.remove(...entry.classes);
-        }
-        this.lastCopyCells = [];
-    }
+    markFocusedCell(row: number, col: number): void { this.selectionView.markFocusedCell(row, col); }
+    clearFocusedCell(): void { this.selectionView.clearFocusedCell(); }
+    applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void { this.selectionView.applySelectionClasses(range, focusRow, focusCol); }
+    applyCopyClasses(range: CellRange): void { this.selectionView.applyCopyClasses(range); }
+    clearSelectionClasses(): void { this.selectionView.clearSelectionClasses(); }
+    clearCopyClasses(): void { this.selectionView.clearCopyClasses(); }
 
     connectValidationPanel(panel: ValidationPanel): void { this.validationMarkers.connectValidationPanel(panel); }
     connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void { this.validationMarkers.connectScrollbarMarkerTrack(track); }
@@ -2252,60 +1826,12 @@ export class EditorTable {
     // UI
     // =========================================================================
 
-    /**
-     * ヘッダーの選択状態を更新する
-     */
     updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, true);
+        this.selectionView.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
     }
 
-    /**
-     * 仮想スクロールの純スクロール時に、静的 detached layer の全同期を避けつつ
-     * source DOM 側の行・列ヘッダー選択状態だけを更新する。
-     */
     updateHeaderSelectionForVirtualScroll(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, false);
-    }
-
-    private applyHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number, syncDetachedLayers: boolean): void {
-        const columnHeaderRow = this.gridElement.children[0] as HTMLElement;
-        // すべての列ヘッダーから選択状態を解除
-        for (let i = 1; i < columnHeaderRow.children.length; i++) {
-            const headerCell = columnHeaderRow.children[i] as HTMLElement;
-            headerCell.classList.remove('selected');
-        }
-        // すべての行ヘッダーから選択状態を解除する。
-        // DOM子要素を直接走査する（仮想スクロール時は論理インデックスとDOMインデックスが一致しないため）。
-        // bottomSpacer は行ヘッダーを持たないためデータ行終了位置まで走査する。
-        const dataRowEnd = this.getDataRowEndChildIndex();
-        for (let i = 1; i < dataRowEnd; i++) {
-            if (this.virtualScroll.isSpacerIndex(i)) continue;
-            const row = this.gridElement.children[i] as HTMLElement;
-            const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
-            if (rowHeader) rowHeader.classList.remove('selected');
-        }
-        // 選択範囲に含まれる列ヘッダーに選択状態を追加
-        for (let col = startColumn; col <= endColumn; col++) {
-            const headerCell = columnHeaderRow.children[col] as HTMLElement;
-            if (headerCell) {
-                headerCell.classList.add('selected');
-            }
-        }
-        // 選択範囲に含まれる行ヘッダーに選択状態を追加
-        for (let row = startRow; row <= endRow; row++) {
-            const rowElement = this.getRowElement(row);
-            if (rowElement) {
-                const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-                if (rowHeader) rowHeader.classList.add('selected');
-            }
-        }
-        if (!syncDetachedLayers) return;
-        if (this.usesInternalMainViewport) {
-            this.syncQuadrantStaticCellStates();
-            return;
-        }
-        this.syncDetachedLegacyStaticCellStates();
-        this.syncDetachedViewportRowHeaderStates();
+        this.selectionView.updateHeaderSelectionForVirtualScroll(startRow, startColumn, endRow, endColumn);
     }
 
     /**
@@ -2916,7 +2442,7 @@ export class EditorTable {
      * 指定行の全データセルから data-bookmarked 属性を除去する
      * PK列右クリックの「ブックマークを解除」（行レベル一括削除）で使用する
      */
-    private removeBookmarkMarksForRow(row: number): void {
+    removeBookmarkMarksForRow(row: number): void {
         const rowElement = this.getRowElement(row);
         // 設計上 row は有効なDOM行インデックスであるべき
         if (!rowElement) throw new Error(`[EditorTable.removeBookmarkMarksForRow] rowElement が null: row=${row}`);
