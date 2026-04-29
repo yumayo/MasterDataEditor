@@ -1,6 +1,13 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {ReferenceDataCache} from "../references/reference-data-cache";
-import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference, DynamicReferenceSchema} from "../references/reference-expression";
+import {
+    parseReferenceExpression,
+    isSimpleReference,
+    isDynamicReference,
+    DynamicReference,
+    DynamicReferenceSchema,
+    isDynamicReferenceSchema,
+} from "../references/reference-expression";
 
 /** バリデーションエラーの種別 */
 export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
@@ -596,6 +603,55 @@ export interface TableSchemaColumn {
     reference: string | DynamicReferenceSchema | null;
     /** スキーマで明示指定されたデフォルト値（文字列化済み）。未指定の場合は null（型デフォルトが使われる） */
     defaultValue: string | null;
+}
+
+/**
+ * スキーマJSONから ValidationEngine 用の TableSchema を構築する。
+ * タブを開かずに全テーブルをバックグラウンド検証する際も、通常のテーブル表示時と同じ
+ * reference / default / primary_key 情報を渡すための変換処理。
+ */
+export function createValidationTableSchemaFromJson(json: Record<string, unknown>): TableSchema {
+    const rawPrimaryKey = json['primary_key'];
+    if (typeof rawPrimaryKey !== 'string' && !Array.isArray(rawPrimaryKey)) {
+        throw new Error('[createValidationTableSchemaFromJson] primary_key がスキーマに存在しないか、不正な型です');
+    }
+    const primaryKeyColumns: readonly string[] = Array.isArray(rawPrimaryKey)
+        ? (rawPrimaryKey as string[])
+        : [rawPrimaryKey];
+    if (primaryKeyColumns.length === 0) {
+        throw new Error('[createValidationTableSchemaFromJson] primary_key が空です');
+    }
+
+    const headerRaw = json['header'];
+    if (!Array.isArray(headerRaw)) {
+        throw new Error('[createValidationTableSchemaFromJson] スキーマJSONに "header" 配列が存在しません');
+    }
+
+    const columns: TableSchemaColumn[] = [];
+    for (let i = 0; i < headerRaw.length; ++i) {
+        const rawColumn = headerRaw[i];
+        if (typeof rawColumn !== 'object' || rawColumn === null) {
+            throw new Error('[createValidationTableSchemaFromJson] header[' + i + '] が不正です');
+        }
+        const column = rawColumn as Record<string, unknown>;
+        const name = column['name'];
+        const type = column['type'];
+        if (typeof name !== 'string' || typeof type !== 'string') {
+            throw new Error('[createValidationTableSchemaFromJson] header[' + i + '] に name または type が存在しません');
+        }
+
+        const referenceRaw = column['reference'];
+        const reference = typeof referenceRaw === 'string'
+            ? referenceRaw
+            : isDynamicReferenceSchema(referenceRaw)
+                ? referenceRaw
+                : null;
+        const defaultRaw = column['default'];
+        const defaultValue = (defaultRaw !== undefined && defaultRaw !== null) ? String(defaultRaw) : null;
+        columns.push({ name, type, reference, defaultValue });
+    }
+
+    return { primaryKeyColumns, columns };
 }
 
 /**

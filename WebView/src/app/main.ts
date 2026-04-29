@@ -11,7 +11,7 @@ import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {applyStoredSettingsAsync} from "../panels/settings-panel";
 import {NotificationToast} from "../ui/notification";
-import {ValidationEngine} from "../validation/validation-engine";
+import {ValidationEngine, createValidationTableSchemaFromJson, type TableSchema} from "../validation/validation-engine";
 import {ValidationPanel} from "../panels/validation-panel";
 import {PluginValidationRunner} from "../validation/plugin-validation-runner";
 import {StatusBar} from "../ui/status-bar";
@@ -169,6 +169,7 @@ import {BOOKMARKS_FILE} from "../config/userdata-path";
     // schemaRegistry は Map 参照を EditorApiImpl に渡すだけなので、中身が空でも先に構築できる。
     // schema ループで後から set() すれば同じインスタンスを参照している EditorApiImpl に自然と反映される。
     const schemaRegistry = new Map<string, SchemaEntry>();
+    const validationSchemas = new Map<string, TableSchema>();
 
     // EditorAPI を構築して window.editorApi として公開する
     const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine, pluginValidationRunner);
@@ -205,25 +206,17 @@ import {BOOKMARKS_FILE} from "../config/userdata-path";
 
         // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
+        validationSchemas.set(tableName, createValidationTableSchemaFromJson(schemaJson));
     }
 
     // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。
     // 全CSVをストアにロード（refCount=1で常駐）し、スキーマを登録して一括検証する。
     // refCountを維持することで、タブ未オープンのテーブルも継続的にバリデーション対象に含める。
     (async () => {
-        for (const [tableName, entry] of schemaRegistry) {
+        for (const [tableName, validationSchema] of validationSchemas) {
             try {
                 await store.registerTableAsync(tableName);
-                const referenceMap = new Map<string, string>();
-                for (const ref of entry.references) {
-                    referenceMap.set(ref.columnName, ref.targetTable + '.' + ref.targetColumn);
-                }
-                validationPanel.registerSchema(tableName, entry.primaryKeys, entry.columns.map(col => ({
-                    name: col.name,
-                    type: col.type,
-                    reference: referenceMap.has(col.name) ? referenceMap.get(col.name)! : null,
-                    defaultValue: col.defaultValue,
-                })));
+                validationPanel.registerSchema(tableName, validationSchema.primaryKeyColumns, validationSchema.columns);
             } catch (e: unknown) {
                 console.error('[main] 起動時バリデーションスキャン: テーブル "' + tableName + '" のロードに失敗:', String(e));
             }

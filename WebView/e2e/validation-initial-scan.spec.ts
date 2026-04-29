@@ -14,6 +14,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   1. 起動後、タブを一つも開かずにステータスバーのエラーバッジにエラー件数が表示される
 //   2. PROBLEMSパネルを開くとエラー項目が表示されている
 //   3. 複数テーブルにまたがるエラーが横断的に検出される
+//   4. タブ未オープンでも動的参照のFK切れを検出する
 // =============================================================================
 
 // =============================================================================
@@ -57,6 +58,66 @@ function createInitialScanFileSystem(): MockFileSystem {
             "2,dragon,500",
             "3,slime,50",
             "3,orc,200",
+        ].join("\n"),
+    };
+}
+
+/**
+ * 動的参照を含む起動時バリデーションテスト用のファイルシステムを生成する。
+ *
+ * shop_product.record_id は table_id の値から参照先テーブルを解決する。
+ * table_id=2 は item.id を指すが、record_id=999 は item に存在しないため
+ * タブ未オープンでもFK切れ1件として検出されるべき。
+ */
+function createInitialDynamicReferenceScanFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "master", type: "string" },
+                { key: 2, name: "column", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/table.csv": [
+            "id,master,column",
+            "1,chara,id",
+            "2,item,id",
+        ].join("\n"),
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/item.csv": [
+            "id,name",
+            "1,sword",
+            "2,shield",
+        ].join("\n"),
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "table_id", type: "int", reference: "table.id" },
+                {
+                    key: 2,
+                    name: "record_id",
+                    type: "int",
+                    reference: {
+                        sourceTable: "table",
+                        sourceMatchColumn: "id",
+                        sourceMatchValue: "table_id",
+                        destTable: "master",
+                        destColumn: "column",
+                    },
+                },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/shop_product.csv": [
+            "id,table_id,record_id",
+            "1,2,999",
         ].join("\n"),
     };
 }
@@ -184,6 +245,34 @@ test.describe('起動時全テーブルバリデーション: テーブル横断
             await expect(productGroup).toBeVisible();
             const enemyGroup = groupHeaders.filter({ hasText: 'enemy' });
             await expect(enemyGroup).toBeVisible();
+        },
+    );
+});
+
+// =============================================================================
+// テストケース4: タブ未オープンでも動的参照のFK切れを検出する
+// =============================================================================
+
+test.describe('起動時全テーブルバリデーション: 動的参照', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createInitialDynamicReferenceScanFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        'タブを一つも開かずに、動的参照のFK切れがPROBLEMSパネルに表示される',
+        async ({ page }) => {
+            const badge = getStatusBarBadge(page);
+
+            await expect(badge.locator('.status-bar-badge-count')).toHaveText('1', { timeout: 10000 });
+
+            await openValidationPanelAsync(page);
+
+            const items = getValidationPanelItems(page);
+            await expect(items).toHaveCount(1);
+            await expect(items.first()).toContainText('shop_product');
+            await expect(items.first()).toContainText('record_id');
+            await expect(items.first()).toContainText('item.id');
         },
     );
 });
