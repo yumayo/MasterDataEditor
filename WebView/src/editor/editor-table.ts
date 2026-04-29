@@ -41,6 +41,7 @@ import {EditorTableRenderer} from "./editor-table-renderer";
 import {EditorTableStoreSync} from "./editor-table-store-sync";
 import {EditorTableNavigation} from "./editor-table-navigation";
 import {EditorTableBookmarks} from "./editor-table-bookmarks";
+import {EditorTableRelations} from "./editor-table-relations";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -53,6 +54,7 @@ import {EditorTableBookmarks} from "./editor-table-bookmarks";
  * - EditorTableStoreSync: ストア同期・バッファ空行・FK自動埋め込み
  * - EditorTableNavigation: 参照/逆参照ジャンプ
  * - EditorTableBookmarks: ブックマーク操作・視覚マーク復元
+ * - EditorTableRelations: RelationsPanel / EditorAPI 連携
  */
 export class EditorTable {
     readonly tableName: string;
@@ -141,12 +143,6 @@ export class EditorTable {
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     autoFillEntries: Array<{ columnName: string; value: string }>;
     /**
-     * 最後にRelationsPanelへ通知したフォーカス行インデックス（重複通知防止用）。
-     * 非ミニテーブルのみ使用する（ミニテーブルは常に通知する）。
-     * forceRefreshRelationsPanel() は refreshCurrentRow() を直接呼ぶためこの値を変更しない。
-     */
-    private lastNotifiedRow: number;
-    /**
      * DOMのデータ行インデックス（0始まり）からストアの行インデックスへのマッピング。
      * 通常テーブル: storeRowIndices[i] = i（DOM行i+1 → ストア行i）。
      * ミニテーブル: filteredRows作成時に各filteredRow がストアの何行目かを記録する。
@@ -194,6 +190,8 @@ export class EditorTable {
     private navigation: EditorTableNavigation;
     /** ブックマーク操作・視覚マーク復元モジュール */
     private bookmarks: EditorTableBookmarks;
+    /** RelationsPanel / EditorAPI 連携モジュール */
+    private relations: EditorTableRelations;
     /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
     skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
@@ -305,7 +303,6 @@ export class EditorTable {
         this.frozenColumnCount = 0;
         this.frozenRowCount = 0;
         this.isBlameVisible = false;
-        this.lastNotifiedRow = -1;
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.filteredRowIndices = [];
@@ -344,6 +341,7 @@ export class EditorTable {
         this.storeSync = new EditorTableStoreSync(this);
         this.navigation = new EditorTableNavigation(this);
         this.bookmarks = new EditorTableBookmarks(this);
+        this.relations = new EditorTableRelations(this);
     }
 
     /**
@@ -379,6 +377,8 @@ export class EditorTable {
         // ナビゲーション/ブックマークの委譲先も正しい this で再作成する。
         this.navigation = new EditorTableNavigation(this);
         this.bookmarks = new EditorTableBookmarks(this);
+        // RelationsPanel / EditorAPI 連携の委譲先も正しい this で再作成する。
+        this.relations = new EditorTableRelations(this);
         // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。
         // 旧インスタンスは realEditorTable（storeRowIndices=[]）を参照しているため破棄が必要。
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
@@ -1828,28 +1828,7 @@ export class EditorTable {
 
     /** 行選択が変化したときにRelationsPanelへ通知し、EditorAPI に行選択イベントを発火する（Selectionから呼ばれる） */
     notifyRowSelectionChanged(rowIndex: number): void {
-        if (this.relationsPanel === false) return;
-        if (this.isMiniTable) {
-            // ミニテーブルの場合: 常に通知する（異なるミニテーブル間の切り替えを正しく検知するため、
-            // 行番号による重複スキップは行わない）
-            const pkValue = this.getRowPkValue(rowIndex);
-            if (pkValue === '') return;
-            this.relationsPanel.notifyMiniTableRowSelectionChanged(this.tableName, pkValue);
-            return;
-        }
-        // 非ミニテーブルの場合: 同一行インデックスへの重複通知を防止してパフォーマンスを保護する
-        if (rowIndex === this.lastNotifiedRow) return;
-        this.lastNotifiedRow = rowIndex;
-        // 重複チェック通過後に EditorAPI へ行選択イベントを発火する（ストアインデックス0始まりで通知）
-        // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
-        if (this.tab !== false) {
-            const domDataRow = rowIndex - 1;
-            const storeRowIndex = this.resolveStoreRowIndex(domDataRow);
-            if (storeRowIndex >= 0) {
-                this.tab.emitRowSelected(this.tableName, storeRowIndex);
-            }
-        }
-        this.relationsPanel.updateForRow(rowIndex);
+        this.relations.notifyRowSelectionChanged(rowIndex);
     }
 
     /**
@@ -1859,10 +1838,7 @@ export class EditorTable {
      * 行変更を伴う操作では notifyRowSelectionChanged() を通じて updateForRow() を呼ぶこと。
      */
     forceRefreshRelationsPanel(): void {
-        if (this.relationsPanel === false) return;
-        // refreshCurrentRow は paneStack をリセットしないため、
-        // セル編集後に定義ジャンプで開いた追加RPが破棄されない
-        this.relationsPanel.refreshCurrentRow(this.selection.getFocus().row);
+        this.relations.forceRefreshRelationsPanel();
     }
 
     // =========================================================================
@@ -1939,17 +1915,7 @@ export class EditorTable {
      */
     applyCellChanges(changes: CellChange[]): CellChange[] {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-        if (this.isMiniTable) {
-            // forceRefreshRelationsPanel() はパネル全体を再構築して編集中のミニEditorTable自身を
-            // 破棄してしまうため、左ペインの参照ヒントのみ更新する
-            if (this.relationsPanel !== false) this.relationsPanel.notifyMiniTableCellChanged();
-        } else {
-            this.forceRefreshRelationsPanel();
-        }
-        // セル編集確定後にバリデーションを実行してパネルとエラークラスを更新する
-        this.runValidation();
-        // フィルター適用中にセル値が変更された場合、フィルター条件との整合性を再評価する
-        this.refreshFilterDisplayIfActive();
+        this.finalizeCellChangeBatch();
         return changes;
     }
 
@@ -1960,16 +1926,18 @@ export class EditorTable {
      */
     replayCellChanges(changes: CellChange[]): void {
         for (const change of changes) this.updateCellValueAt(change.row, change.column, change.newValue);
-        if (this.isMiniTable) {
-            // forceRefreshRelationsPanel() はパネル全体を再構築して編集中のミニEditorTable自身を
-            // 破棄してしまうため、左ペインの参照ヒントのみ更新する
-            if (this.relationsPanel !== false) this.relationsPanel.notifyMiniTableCellChanged();
-        } else {
-            this.forceRefreshRelationsPanel();
-        }
-        // Undo/Redo後にバリデーションを実行してパネルとエラークラスを更新する
+        this.finalizeCellChangeBatch();
+    }
+
+    /**
+     * セル変更バッチ適用後の副作用をまとめて実行する。
+     * 通常編集・Undo/Redo・Fillのどの経路でも同じ順序で後処理する。
+     */
+    private finalizeCellChangeBatch(): void {
+        this.relations.refreshAfterCellChanges();
+        // セル値変更後にバリデーションを実行してパネルとエラークラスを更新する
         this.runValidation();
-        // Undo/Redo後にフィルター条件との整合性を再評価する
+        // フィルター適用中にセル値が変更された場合、フィルター条件との整合性を再評価する
         this.refreshFilterDisplayIfActive();
     }
 

@@ -222,7 +222,7 @@ export class EditorTableRenderer {
             this.applyRowDecorations(row, mappedDataRowIndex);
             // 差分タブ接続時: diffクラスを適用する
             if (this.diffTab !== false) {
-                this.diffTab.applyDiffDecorationsToRow(row, mappedDataRowIndex, this);
+                this.diffTab.applyDiffDecorationsToRow(row, mappedDataRowIndex, this.table);
             }
             return row;
         }
