@@ -1273,6 +1273,15 @@ export class Tab {
     }
 
     /**
+     * 既存テーブルの定義編集タブを開く。
+     * エクスプローラー・タブ・列ヘッダーの各コンテキストメニューから呼ばれる。
+     */
+    openEditTableDefinitionTab(tableName: string): void {
+        this.openEditTableDefinitionTabAsync(tableName)
+            .catch(e => { console.error('テーブル定義編集タブオープンエラー', e); });
+    }
+
+    /**
      * テーブル定義タブをアクティブ化する。
      * enableTabButton(TABLE_DEFINITION_TAB_NAME) から呼ばれる。
      * TableDefinitionEditor の初回生成・再表示を担う。
@@ -1407,8 +1416,7 @@ export class Tab {
             {
                 label: 'テーブル定義を編集',
                 action: () => {
-                    this.openEditTableDefinitionTabAsync(tableName)
-                        .catch(e => { console.error('テーブル定義編集タブオープンエラー', e); });
+                    this.openEditTableDefinitionTab(tableName);
                 },
             },
         ]);
@@ -1417,12 +1425,18 @@ export class Tab {
     /**
      * タブボタンの右クリックコンテキストメニューを表示する。
      * TabButton.onContextMenu から呼ばれる。
-     * 通常テーブルタブの場合のみ「バージョン比較...」項目を表示する。
+     * 通常テーブルタブの場合のみテーブル操作項目を表示する。
      */
     showTabButtonContextMenu(tabName: string, x: number, y: number): void {
-        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブはバージョン比較の対象外
+        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブは通常テーブル操作の対象外
         if (tabName === SETTINGS_TAB_NAME || tabName === ER_DIAGRAM_TAB_NAME || tabName === TABLE_DEFINITION_TAB_NAME || tabName.startsWith(DIFF_TAB_PREFIX)) return;
         this.contextMenu.show(x, y, [
+            {
+                label: 'テーブル定義を編集',
+                action: () => {
+                    this.openEditTableDefinitionTab(tabName);
+                },
+            },
             {
                 label: 'バージョン比較...',
                 action: () => {

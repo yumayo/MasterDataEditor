@@ -433,6 +433,49 @@ test.describe('既存テーブルの定義編集', () => {
         await expect(editDefItem).toBeVisible();
     });
 
+    test('タブの右クリックメニューから「テーブル定義を編集」を開ける', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        const fileItem = explorer.locator('.explorer-file', { hasText: 'test' });
+        await expect(fileItem).toBeVisible();
+        await fileItem.click();
+
+        const tabButton = page.locator('.tab-button').filter({
+            has: page.locator('.tab-button-name', { hasText: /^test$/ }),
+        });
+        await expect(tabButton).toBeVisible();
+        await tabButton.click({ button: 'right' });
+
+        const menu = page.locator('.context-menu.visible');
+        const editDefItem = menu.locator('.context-menu-item', { hasText: 'テーブル定義を編集' });
+        await expect(editDefItem).toBeVisible();
+        await editDefItem.click();
+
+        await expect(getEditor(page)).toBeVisible();
+        await expect(getNameInput(page)).toHaveValue('test');
+    });
+
+    test('列ヘッダーの右クリックメニューから「列の定義を編集」を開ける', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        const fileItem = explorer.locator('.explorer-file', { hasText: 'test' });
+        await expect(fileItem).toBeVisible();
+        await fileItem.click();
+
+        const table = page.locator('.editor-left-pane .editor-table');
+        await expect(table).toBeVisible();
+        const columnHeader = table.locator('.editor-table-column-header-row .editor-table-column-header').nth(1);
+        await columnHeader.click({ button: 'right' });
+
+        const menu = page.locator('.context-menu.visible');
+        const editColumnDefItem = menu.locator('.context-menu-item', { hasText: '列の定義を編集' });
+        await expect(editColumnDefItem).toBeVisible();
+        await editColumnDefItem.click();
+
+        await expect(getEditor(page)).toBeVisible();
+        await expect(getNameInput(page)).toHaveValue('test');
+    });
+
     test('既存テーブルのスキーマが定義エディタに読み込まれる', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
         const explorer = page.locator('#explorer');

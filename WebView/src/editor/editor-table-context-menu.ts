@@ -84,7 +84,18 @@ export class EditorTableContextMenu {
             const renderAsHtmlLabel = this.table.getTableData().header[contextMenuColumnIndex]?.renderAsHtml
                 ? '✓ HTMLとして表示'
                 : '　HTMLとして表示';
+            const tableDefinitionMenuItems: ContextMenuEntry[] = this.table.tab === false ? [] : [
+                {
+                    label: '列の定義を編集',
+                    action: () => {
+                        if (this.table.tab === false) return;
+                        this.table.tab.openEditTableDefinitionTab(this.table.tableName);
+                    },
+                },
+                {separator: true} as ContextMenuEntry,
+            ];
             const menuItems: ContextMenuEntry[] = [
+                ...tableDefinitionMenuItems,
                 {
                     label: renderAsHtmlLabel,
                     action: () => {
