@@ -168,8 +168,10 @@ export class Editor {
         }
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
         const metrics = activeState.editorTable.getScrollMetrics();
-        this.leftPaneScrollProxy.style.height = `${Math.max(metrics.scrollHeight, metrics.clientHeight)}px`;
-        this.leftPaneScrollProxy.style.width = `${Math.max(metrics.scrollWidth, metrics.clientWidth, 1)}px`;
+        const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+        const proxyHeight = maxScrollTop + this.leftPane.clientHeight;
+        this.leftPaneScrollProxy.style.height = `${proxyHeight}px`;
+        this.leftPaneScrollProxy.style.width = `${Math.max(metrics.scrollWidth, 1)}px`;
 
         if (this.isSyncingTableFromLeftPane) return;
         this.isSyncingLeftPaneFromTable = true;

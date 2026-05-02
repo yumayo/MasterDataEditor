@@ -673,6 +673,7 @@ export class Selection {
         const selectionRange = this.getSelectionRange();
         let endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;
+        const isBottomLogicalRow = selectionRange.endRow >= this.editorTable.getLogicalRowCount() - 1;
 
         // バーチャルスクロールでendRowがDOM外の場合、表示範囲の最後の行にクランプする
         // renderedEnd は排他なので -1 し、ヘッダー行分の +1 でDOM行インデックスに変換する
@@ -720,6 +721,8 @@ export class Selection {
             cell.classList.add('fill-handle-host');
             cell.appendChild(this.fillHandle);
         }
+        // 最下行では外側へ出たハンドルが scrollHeight を増やすため内側へ寄せる。
+        cell.classList.toggle('fill-handle-host-bottom-edge', isBottomLogicalRow);
         cell.style.zIndex = fillOverlayZIndex.toString();
         this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
         this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
@@ -735,6 +738,7 @@ export class Selection {
     private restoreFillHandleHostCell(): void {
         if (!this.fillHandleHostCell) return;
         this.fillHandleHostCell.classList.remove('fill-handle-host');
+        this.fillHandleHostCell.classList.remove('fill-handle-host-bottom-edge');
         if (this.fillHandleHostPreviousZIndex !== null) {
             this.fillHandleHostCell.style.zIndex = this.fillHandleHostPreviousZIndex;
         }
