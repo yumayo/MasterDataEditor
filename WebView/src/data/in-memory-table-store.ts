@@ -359,6 +359,37 @@ export class InMemoryTableStore {
     }
 
     /**
+     * Historyを持たない編集元（フォームビュー等）からテーブルをDirtyにする。
+     * Historyがある場合は全HistoryへDirty状態を引き継ぎ、ない場合は補完Dirtyとして保持する。
+     */
+    markTableDirty(tableName: string): void {
+        const set = this.historyRegistry.get(tableName);
+        if (!set) {
+            this.dirtyTableNames.add(tableName);
+            return;
+        }
+        for (const history of set) {
+            history.markInitiallyDirty();
+        }
+        for (const history of set) {
+            history.setTabButtonDirty(true);
+        }
+    }
+
+    /**
+     * History登録がないテーブルでも保存済み状態に戻す。
+     * 通常のEditorTable保存では markAllSaved() を使い、フォームビューの参照テーブル保存で使用する。
+     */
+    markSavedIfRegistered(tableName: string): void {
+        const set = this.historyRegistry.get(tableName);
+        if (!set) {
+            this.dirtyTableNames.delete(tableName);
+            return;
+        }
+        this.markAllSaved(tableName);
+    }
+
+    /**
      * テーブルの全HistoryをmarkSaved状態にする（Ctrl+S保存後に呼ぶ）
      *
      * N^2問題回避のため二相処理で実装する。

@@ -121,6 +121,9 @@ export class FormPanel {
     private readonly nodeMetaById: Map<string, FormNodeMeta>;
     private readonly nodeRenderRequestIds: Map<string, number>;
     private readonly commitTimers: Map<string, number>;
+    private readonly pendingCommitValues: Map<string, { nodeId: string; columnName: string; value: string }>;
+    private readonly editedTableNames: Set<string>;
+    private readonly registeredForEditTableNames: Set<string>;
     private readonly referenceDropdown: GridDropdownInput;
     private activeReferenceField: ActiveReferenceField | null;
     private referenceDropdownRequestId: number;
@@ -140,6 +143,9 @@ export class FormPanel {
         this.nodeMetaById = new Map();
         this.nodeRenderRequestIds = new Map();
         this.commitTimers = new Map();
+        this.pendingCommitValues = new Map();
+        this.editedTableNames = new Set();
+        this.registeredForEditTableNames = new Set();
         this.activeReferenceField = null;
         this.referenceDropdownRequestId = 0;
 
@@ -178,6 +184,7 @@ export class FormPanel {
         this.nodeElementsById.clear();
         this.nodeMetaById.clear();
         this.nodeRenderRequestIds.clear();
+        this.releaseCleanRegisteredTables();
         this.panelElement.remove();
     }
 
@@ -202,6 +209,21 @@ export class FormPanel {
 
     getNavStackSnapshot(): FormPanelNavEntry[] {
         return this.navStack.map(page => ({ ...page }));
+    }
+
+    async flushPendingCommitsAsync(): Promise<void> {
+        const pending = Array.from(this.pendingCommitValues.values());
+        for (const entry of pending) {
+            await this.commitFieldValueAsync(entry.nodeId, entry.columnName, entry.value);
+        }
+    }
+
+    getEditedTableNames(): string[] {
+        return [...this.editedTableNames];
+    }
+
+    markEditedTablesSaved(tableNames: readonly string[]): void {
+        for (const tableName of tableNames) this.editedTableNames.delete(tableName);
     }
 
     private async renderCurrentPageAsync(): Promise<void> {
@@ -496,13 +518,30 @@ export class FormPanel {
         const editorTable = this.tab.getOpenEditorTables().get(data.tableName);
         const reflected = editorTable?.applyExternalCellEditByStoreIndex(data.rowIndex, columnIndex, value) ?? false;
         if (!reflected) {
-            const updated = this.store.updateCellValueByRowIndex(data.tableName, data.rowIndex, columnIndex, value);
+            let updated = this.store.updateCellValueByRowIndex(data.tableName, data.rowIndex, columnIndex, value);
+            if (!updated) {
+                const wasRegistered = this.store.hasTable(data.tableName);
+                await this.store.registerTableAsync(data.tableName);
+                if (!wasRegistered) this.registeredForEditTableNames.add(data.tableName);
+                const storeHeader = this.store.getHeader(data.tableName);
+                const storeRows = this.store.getRows(data.tableName);
+                if (storeHeader !== false && storeRows !== false) {
+                    data.header = storeHeader;
+                    data.rows = storeRows;
+                    data.row = storeRows[data.rowIndex] ?? data.row;
+                    updated = this.store.updateCellValueByRowIndex(data.tableName, data.rowIndex, columnIndex, value);
+                }
+            }
             if (!updated) {
                 console.warn('[FormPanel] commitFieldValueAsync: EditorTable と store のどちらにも反映できませんでした', data.tableName, data.rowIndex, columnIndex);
+            } else {
+                this.store.markTableDirty(data.tableName);
+                this.referenceDataCache.evictEntry(data.tableName);
             }
         }
 
         data.row[columnIndex] = value;
+        this.editedTableNames.add(data.tableName);
         if (columnIndex === data.pkColumnIndex) {
             const meta = this.nodeMetaById.get(nodeId);
             if (meta !== undefined) meta.pkValue = value;
@@ -526,6 +565,7 @@ export class FormPanel {
         const key = this.getCommitTimerKey(nodeId, columnName);
         const existing = this.commitTimers.get(key);
         if (existing !== undefined) window.clearTimeout(existing);
+        this.pendingCommitValues.set(key, { nodeId, columnName, value });
         const timer = window.setTimeout(() => {
             this.commitTimers.delete(key);
             this.commitFieldValueAsync(nodeId, columnName, value).catch(err => {
@@ -1437,14 +1477,23 @@ export class FormPanel {
             window.clearTimeout(timer);
         }
         this.commitTimers.clear();
+        this.pendingCommitValues.clear();
     }
 
     private clearScheduledFieldCommit(nodeId: string, columnName: string): void {
         const key = this.getCommitTimerKey(nodeId, columnName);
         const existing = this.commitTimers.get(key);
-        if (existing === undefined) return;
-        window.clearTimeout(existing);
+        if (existing !== undefined) window.clearTimeout(existing);
         this.commitTimers.delete(key);
+        this.pendingCommitValues.delete(key);
+    }
+
+    private releaseCleanRegisteredTables(): void {
+        for (const tableName of Array.from(this.registeredForEditTableNames)) {
+            if (!this.store.hasTable(tableName) || this.store.isTableDirty(tableName)) continue;
+            this.store.unregisterTable(tableName);
+            this.registeredForEditTableNames.delete(tableName);
+        }
     }
 
     private getCommitTimerKey(nodeId: string, columnName: string): string {

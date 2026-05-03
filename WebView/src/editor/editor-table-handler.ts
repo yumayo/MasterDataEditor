@@ -864,7 +864,13 @@ export class EditorTableHandler {
         Promise.all([
             saveTableDataFromStoreAsync(this.table.tableName, store),
             saveSchemaDataAsync(this.table)
-        ]).then(() => { this.markSavedAndUpdatePanel(); })
+        ]).then(() => {
+            this.markSavedAndUpdatePanel();
+            if (this.table.tab !== false) {
+                this.table.tab.saveCurrentFormPanelEditedTablesAsync(this.table.tableName)
+                    .catch((e: unknown) => { console.error('[EditorTableHandler] saveCurrentFormPanelEditedTablesAsync failed:', e); });
+            }
+        })
           .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
     }
 

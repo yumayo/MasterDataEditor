@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
-import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import { installMockApiAsync, MockFileSystem, readMockFileAsync } from './fixtures/mock-api';
 import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
@@ -594,6 +594,28 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(formPanel.locator('.form-panel-child-host .form-panel-node[data-table-name="enemy"]')).toBeVisible();
         await expect(formPanel.locator('.form-panel-child-host .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('スライム');
         await expect(enemyRef).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    test('REFERENCESで展開した未オープンの参照元行を編集して保存するとCSVに反映されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const itemSection = formPanel.locator('.form-panel-node--root .form-panel-section', { hasText: '参照元: item' });
+        const swordRef = itemSection.locator('.form-panel-ref-item--clickable', { hasText: 'sword' }).first();
+        await expect(swordRef).toBeVisible();
+        await swordRef.click();
+
+        const itemNode = itemSection.locator('.form-panel-child-host .form-panel-node[data-table-name="item"]').first();
+        const nameInput = itemNode.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input');
+        await expect(nameInput).toHaveValue('sword');
+
+        await nameInput.fill('edited_sword');
+        await page.keyboard.press('Control+S');
+
+        await expect.poll(async () => readMockFileAsync(page, 'data/item.csv')).toContain('1,edited_sword,1');
     });
 
     test('1:1の参照元は子フォーム内に自動で添付されること', async ({ page }) => {

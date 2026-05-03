@@ -34,6 +34,7 @@ import type {EditorAPI} from "../editor-api/editor-api-types";
 import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
+import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -1829,10 +1830,21 @@ export class Tab {
      * EditorTable 外にフォーカスがある場合に使用される。
      */
     saveActiveTable(): void {
+        this.saveActiveTableAsync().catch((err: unknown) => {
+            console.error('[Tab] saveActiveTableAsync failed:', err);
+            this.notification.show('保存に失敗しました');
+        });
+    }
+
+    private async saveActiveTableAsync(): Promise<void> {
         if (this.activeTabName === false) return;
         if (this.activeTabName === SETTINGS_TAB_NAME) return;
         if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
         if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
+        const formPanel = this.currentFormPanel;
+        if (formPanel !== false) {
+            await formPanel.flushPendingCommitsAsync();
+        }
         // 差分タブの場合
         if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             const diffTab = this.diffTabs.get(this.activeTabName);
@@ -1843,6 +1855,32 @@ export class Tab {
         const state = this.tabStates.get(this.activeTabName);
         if (!state) throw new Error(`saveActiveTable: タブ '${this.activeTabName}' の状態が見つかりません`);
         state.editorTableHandler.save();
+    }
+
+    async saveCurrentFormPanelEditedTablesAsync(activeTableName: string): Promise<void> {
+        const formPanel = this.currentFormPanel;
+        if (formPanel === false) return;
+        await formPanel.flushPendingCommitsAsync();
+        formPanel.markEditedTablesSaved([activeTableName]);
+        await this.saveFormPanelEditedTablesAsync(formPanel, activeTableName);
+    }
+
+    private async saveFormPanelEditedTablesAsync(formPanel: FormPanel, activeTableName: string): Promise<void> {
+        const tableNames = formPanel.getEditedTableNames().filter(tableName => tableName !== activeTableName);
+        const savedTableNames: string[] = [];
+        for (const tableName of tableNames) {
+            if (!this.store.hasTable(tableName)) continue;
+            await saveTableDataFromStoreAsync(tableName, this.store);
+            this.store.markSavedIfRegistered(tableName);
+            const editorTable = this.openEditorTables.get(tableName);
+            if (editorTable !== undefined) {
+                editorTable.refreshGitDiffAsync()
+                    .catch((e: unknown) => { console.error('[Tab] saveFormPanelEditedTablesAsync: refreshGitDiffAsync failed:', e); });
+            }
+            this.emitTableSaved(tableName);
+            savedTableNames.push(tableName);
+        }
+        formPanel.markEditedTablesSaved(savedTableNames);
     }
 
     /**
