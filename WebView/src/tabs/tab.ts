@@ -147,6 +147,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
+    /** タブ読み込み完了後にナビゲーションするストア行インデックス（-1は無効、ValidationPanelで使用） */
+    private pendingNavigationStoreRowIndex: number;
+
     /** タブ読み込み完了後にナビゲーションする列インデックス（-1は無効、navigateToTableCellで使用） */
     private pendingNavigationColumnIndex: number;
 
@@ -261,6 +264,7 @@ export class Tab {
         this.referenceDataCache = referenceDataCache;
         this.notification = notification;
         this.pendingNavigationPkValue = '';
+        this.pendingNavigationStoreRowIndex = -1;
         this.pendingNavigationColumnIndex = -1;
         this.pendingNavigationColumnName = '';
         this.pendingNavigationFilterColumnName = '';
@@ -624,6 +628,24 @@ export class Tab {
     }
 
     /**
+     * ValidationPanel 用: ストア行インデックスとストア列インデックスでセルへナビゲーションする。
+     * PKが複合主キーの場合や、PK重複が存在する場合でも対象行を一意に選択できる。
+     */
+    navigateToTableStoreCell(tableName: string, storeRowIndex: number, storeColumnIndex: number): void {
+        this.navigationHistory.pushNavigateCell(tableName);
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            this.enableTabButton(tableName);
+            this.navigateToStoreCell(existingState, storeRowIndex, storeColumnIndex);
+            return;
+        }
+        this.pendingNavigationStoreRowIndex = storeRowIndex;
+        this.pendingNavigationColumnIndex = storeColumnIndex;
+        const tabButton = this.append(tableName, null);
+        tabButton.click();
+    }
+
+    /**
      * FK参照ジャンプ用: 参照先テーブルの特定列の値が一致する行を開き、その列にフォーカスする。
      * PK値ではなく参照先列の値（例: group_id=1）で行を検索する。
      * 動的参照の逆参照ジャンプでは filterColumnName / filterValues で1段目の列値も一致する行に絞り込む。
@@ -682,6 +704,23 @@ export class Tab {
                 return;
             }
         }
+    }
+
+    /**
+     * EditorTableのストア行・列インデックスから対象セルを選択状態にする。
+     */
+    private navigateToStoreCell(state: TabState, storeRowIndex: number, storeColumnIndex: number): void {
+        const editorTable = state.editorTable;
+        const domRow = editorTable.storeRowToDomRow(storeRowIndex);
+        if (domRow === null) return;
+        const dataColumnIndex = storeColumnIndex >= 0
+            ? editorTable.getTableData().columnMapping.indexOf(storeColumnIndex)
+            : -1;
+        const domCol = (dataColumnIndex !== -1 ? dataColumnIndex : 0) + editorTable.dataColumnOffset();
+        state.selection.setRange(domRow, domCol, domRow, domCol);
+        state.selection.move(domRow, domCol);
+        state.selection.scrollFocusToCenterVertically();
+        state.editorTableHandler.activate();
     }
 
     /**
@@ -760,8 +799,12 @@ export class Tab {
      * 保留ナビゲーションを実行し、フィールドをリセットする
      */
     consumePendingNavigation(state: TabState): void {
-        if (this.pendingNavigationPkValue === '') return;
-        if (this.pendingNavigationColumnName !== '') {
+        if (this.pendingNavigationPkValue === '' && this.pendingNavigationStoreRowIndex === -1) return;
+        if (this.pendingNavigationStoreRowIndex !== -1) {
+            this.navigateToStoreCell(state, this.pendingNavigationStoreRowIndex, this.pendingNavigationColumnIndex);
+            this.pendingNavigationStoreRowIndex = -1;
+            this.pendingNavigationColumnIndex = -1;
+        } else if (this.pendingNavigationColumnName !== '') {
             this.navigateToCellByColumnValue(
                 state, this.pendingNavigationColumnName, this.pendingNavigationPkValue,
                 this.pendingNavigationFilterColumnName, this.pendingNavigationFilterValues

@@ -3,20 +3,13 @@
     "header": [
         {
             "key": 0,
-            "name": "id",
-            "type": "int",
-            "comment": "ID",
-            "width": 100
-        },
-        {
-            "key": 1,
             "name": "group_id",
             "type": "int",
             "comment": "グループID",
             "width": 100
         },
         {
-            "key": 2,
+            "key": 1,
             "name": "table_id",
             "type": "int",
             "comment": "テーブルID",
@@ -24,7 +17,7 @@
             "width": 120
         },
         {
-            "key": 3,
+            "key": 2,
             "name": "record_id",
             "type": "int",
             "comment": "レコードID",
@@ -38,19 +31,19 @@
             "width": 120
         },
         {
-            "key": 4,
+            "key": 3,
             "name": "price",
             "type": "int",
             "comment": "販売価格",
             "width": 100
         },
         {
-            "key": 5,
+            "key": 4,
             "name": "sort_order",
             "type": "int",
             "comment": "表示順",
             "width": 100
         }
     ],
-    "primary_key": ["id"]
+    "primary_key": ["group_id", "table_id", "record_id"]
 }

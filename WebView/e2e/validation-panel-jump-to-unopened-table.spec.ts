@@ -58,6 +58,31 @@ function createFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 複合主キーを持つ未開テーブルへのジャンプ検証用ファイルシステムを生成する。
+ *
+ * shop_id は1行目と2行目で同じ値だが、product_id まで含めると別行。
+ * 2行目の price は int 型不一致のため、先頭PK列だけでジャンプすると
+ * 1行目の price=500 に誤ってフォーカスしてしまう。
+ */
+function createCompositePkFileSystem(): MockFileSystem {
+    return {
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "shop_id", type: "int" },
+                { key: 1, name: "product_id", type: "int" },
+                { key: 2, name: "price", type: "int" },
+            ],
+            primary_key: ["shop_id", "product_id"],
+        }),
+        "data/shop_product.csv": [
+            "shop_id,product_id,price",
+            "1,101,500",
+            "1,102,abc",
+        ].join("\n"),
+    };
+}
+
 // =============================================================================
 // テストヘルパー関数
 // =============================================================================
@@ -182,6 +207,36 @@ test.describe('バリデーションパネル: 未開テーブルへのエラー
             // 9. フォーカスされたセルの値が FK参照切れの値（999）であることを検証する
             //    これにより正しいセルにフォーカスが当たっていることを確認できる
             await expect(focusedCell).toHaveText('999');
+        },
+    );
+});
+
+test.describe('バリデーションパネル: 複合主キーの未開テーブルジャンプ', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createCompositePkFileSystem());
+        await page.goto('/');
+    });
+
+    test(
+        '複合主キーの全構成列がエラー位置に表示され、未開テーブルでも正しい行のセルにジャンプする',
+        async ({ page }) => {
+            await openValidationPanelAsync(page);
+
+            const compositeError = getValidationPanelItems(page).filter({
+                hasText: 'shop_product.shop_id=1, product_id=102',
+            }).filter({
+                hasText: 'price',
+            });
+            await expect(compositeError.first()).toBeVisible({ timeout: 5000 });
+
+            await compositeError.first().click();
+
+            const reopenedTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="shop_product"] .editor-table`);
+            await expect(reopenedTable).toBeVisible({ timeout: 5000 });
+
+            const focusedCell = reopenedTable.locator('.editor-table-cell-focused');
+            await expect(focusedCell).toBeVisible({ timeout: 5000 });
+            await expect(focusedCell).toHaveText('abc');
         },
     );
 });

@@ -1,4 +1,4 @@
-import {ValidationEngine, ValidationError} from "../validation/validation-engine";
+import {formatValidationPrimaryKeyValues, ValidationEngine, ValidationError} from "../validation/validation-engine";
 import {Tab} from "../tabs/tab";
 import {StatusBar} from "../ui/status-bar";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
@@ -284,9 +284,11 @@ export class ValidationPanel {
                 // プラグインエラーでジャンプ先がある場合はテーブル名・行番号を表示する
                 // ジャンプ先がない場合はファイル名のみ表示する
                 // 通常エラーはテーブル名・行番号・列名を表示する
-                // 主キーが解決できている場合は「テーブル名.PK列名=PK値」形式で表示する
-                const pkColName = this.engine.resolvePkColumnName(error.tableName);
-                const pkPrefix = (error.pkValue !== null && pkColName !== null) ? `${tableName}.${pkColName}=${error.pkValue}` : tableName;
+                // 主キーが解決できている場合は「テーブル名.PK列名=PK値」形式で表示する。
+                // 複合主キーでは構成列をすべて並べる。
+                const pkPrefix = error.primaryKeyValues !== null
+                    ? `${tableName}.${formatValidationPrimaryKeyValues(error.primaryKeyValues)}`
+                    : tableName;
                 if (error.kind === 'plugin' && error.rowIndex === -1) {
                     locationSpan.textContent = `${error.columnName}:`;
                 } else if (error.kind === 'plugin') {
@@ -353,13 +355,13 @@ export class ValidationPanel {
             this.tab.switchToExistingTab(tableName);
             const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
             if (domRow === null) return;
-            const domCol = error.columnIndex + state.editorTable.dataColumnOffset();
+            const domCol = resolveDomColumnForError(state.editorTable, error.columnIndex);
             state.selection.setRange(domRow, domCol, domRow, domCol);
             state.selection.move(domRow, domCol);
             state.editorTableHandler.activate();
         } else {
-            if (error.pkValue === null) return;
-            this.tab.navigateToTableCell(tableName, error.pkValue, error.columnIndex);
+            if (error.rowIndex < 0) return;
+            this.tab.navigateToTableStoreCell(tableName, error.rowIndex, error.columnIndex);
         }
     }
 }
@@ -367,7 +369,7 @@ export class ValidationPanel {
 /**
  * PluginValidationError を ValidationError に変換する。
  * ストア参照によるセル値解決は resolvePluginErrors（共通関数）に委譲する。
- * columnIndex と pkValue は ValidationPanel 固有の関心事のためここで解決する。
+ * columnIndex と primaryKeyValues は ValidationPanel 固有の関心事のためここで解決する。
  */
 function convertPluginErrors(pluginErrors: PluginValidationError[], store: InMemoryTableStore, engine: ValidationEngine): ValidationError[] {
     const resolved = resolvePluginErrors(pluginErrors, store);
@@ -391,8 +393,15 @@ function convertPluginErrors(pluginErrors: PluginValidationError[], store: InMem
             kind: 'plugin',
             message: r.message,
             filterValue: null,
-            pkValue: r.rowIndex !== -1 ? engine.resolvePkValue(r.tableName, r.rowIndex) : null,
+            primaryKeyValues: r.rowIndex !== -1 ? engine.resolvePrimaryKeyValues(r.tableName, r.rowIndex) : null,
         });
     }
     return result;
+}
+
+function resolveDomColumnForError(editorTable: { getTableData(): { columnMapping: readonly number[] }; dataColumnOffset(): number }, storeColumnIndex: number): number {
+    if (storeColumnIndex < 0) return editorTable.dataColumnOffset();
+    const dataColumnIndex = editorTable.getTableData().columnMapping.indexOf(storeColumnIndex);
+    if (dataColumnIndex === -1) return editorTable.dataColumnOffset();
+    return dataColumnIndex + editorTable.dataColumnOffset();
 }

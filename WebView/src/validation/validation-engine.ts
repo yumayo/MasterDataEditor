@@ -12,6 +12,16 @@ import {
 /** バリデーションエラーの種別 */
 export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
 
+/** エラー発生時点の主キー構成列と値 */
+export interface ValidationPrimaryKeyValue {
+    columnName: string;
+    value: string;
+}
+
+export function formatValidationPrimaryKeyValues(values: readonly ValidationPrimaryKeyValue[]): string {
+    return values.map(v => `${v.columnName}=${v.value}`).join(', ');
+}
+
 /** バリデーションエラー情報 */
 export interface ValidationError {
     /** エラーが発生したテーブル名 */
@@ -35,12 +45,11 @@ export interface ValidationError {
      */
     filterValue: string | null;
     /**
-     * エラー生成時点でのPK値（primaryKeyColumns[0] の値）。
-     * タブ閉じ後にエラー項目クリックでジャンプする際、ストアデータが消去されていても
-     * navigateToTableCell に PK値を渡せるようにするため、バリデーション実行時に事前計算して保持する。
-     * PK列なし・PK値空文字の場合は null。
+     * エラー生成時点での主キー値。
+     * 複合主キーの場合は構成列すべてを保持する。
+     * PK列なし・PK構成列のいずれかが空文字の場合は null。
      */
-    pkValue: string | null;
+    primaryKeyValues: readonly ValidationPrimaryKeyValue[] | null;
 }
 
 /**
@@ -96,39 +105,33 @@ export class ValidationEngine {
     }
 
     /**
-     * 行のPK値を取得する（エラー生成時の事前計算用）。
+     * 行の主キー値を取得する（エラー生成時の事前計算用）。
      * header と rows は呼び出し元で既に取得済みなので引数で受け取る。
-     * PK列なし・PK値が空文字の場合は null を返す。
+     * PK列なし・PK構成列のいずれかが空文字の場合は null を返す。
      */
-    private resolvePkValueForRow(schema: TableSchema, header: string[], rows: string[][], rowIndex: number): string | null {
+    private resolvePrimaryKeyValuesForRow(schema: TableSchema, header: string[], rows: string[][], rowIndex: number): readonly ValidationPrimaryKeyValue[] | null {
         if (schema.primaryKeyColumns.length === 0) return null;
-        const pkColIdx = header.indexOf(schema.primaryKeyColumns[0]);
-        if (pkColIdx === -1) return null;
-        const pkValue = rows[rowIndex][pkColIdx];
-        if (pkValue === '') return null;
-        return pkValue;
+        const row = rows[rowIndex];
+        const values: ValidationPrimaryKeyValue[] = [];
+        for (const pkColumnName of schema.primaryKeyColumns) {
+            const pkColIdx = header.indexOf(pkColumnName);
+            if (pkColIdx === -1) return null;
+            const value = row[pkColIdx];
+            if (value === '') return null;
+            values.push({ columnName: pkColumnName, value });
+        }
+        return values;
     }
 
     /**
-     * 指定テーブル・行のPK値を取得する。
-     * プラグインバリデーションエラーのジャンプ先PK値を解決するために使用する。
-     * スキーマ未登録・PK列なし・PK値空文字の場合は null を返す。
+     * 指定テーブル・行の主キー値を取得する。
+     * プラグインバリデーションエラーの表示用主キー値を解決するために使用する。
+     * スキーマ未登録・PK列なし・PK構成列のいずれかが空文字の場合は null を返す。
      */
-    /**
-     * 指定テーブルの先頭PK列名を返す。
-     * スキーマ未登録またはPK列が定義されていない場合は null を返す。
-     */
-    resolvePkColumnName(tableName: string): string | null {
-        const schema = this.schemas.get(tableName);
-        if (schema === undefined) return null;
-        if (schema.primaryKeyColumns.length === 0) return null;
-        return schema.primaryKeyColumns[0];
-    }
-
-    resolvePkValue(tableName: string, rowIndex: number): string | null {
+    resolvePrimaryKeyValues(tableName: string, rowIndex: number): readonly ValidationPrimaryKeyValue[] | null {
         const resolved = this.resolveSchemaAndData(tableName);
         if (resolved === null) return null;
-        return this.resolvePkValueForRow(resolved.schema, resolved.header, resolved.rows, rowIndex);
+        return this.resolvePrimaryKeyValuesForRow(resolved.schema, resolved.header, resolved.rows, rowIndex);
     }
 
     /**
@@ -237,6 +240,8 @@ export class ValidationEngine {
             if (rowIndices.length < 2) continue;
             for (const rowIndex of rowIndices) {
                 const row = rows[rowIndex];
+                const primaryKeyValues = this.resolvePrimaryKeyValuesForRow(schema, header, rows, rowIndex);
+                const primaryKeyLabel = primaryKeyValues !== null ? formatValidationPrimaryKeyValues(primaryKeyValues) : pkColIndices.map(idx => row[idx]).join(',');
                 for (const colIdx of pkColIndices) {
                     errors.push({
                         tableName,
@@ -245,9 +250,9 @@ export class ValidationEngine {
                         columnName: header[colIdx],
                         value: row[colIdx],
                         kind: 'pk-duplicate',
-                        message: `主キー値 "${row[colIdx]}" が重複しています`,
+                        message: `主キー値 "${primaryKeyLabel}" が重複しています`,
                         filterValue: null,
-                        pkValue: this.resolvePkValueForRow(schema, header, rows, rowIndex),
+                        primaryKeyValues,
                     });
                 }
             }
@@ -321,7 +326,10 @@ export class ValidationEngine {
                 for (const prev of previousErrors) {
                     if (prev.kind !== 'fk-broken' || prev.tableName !== tableName || prev.columnName !== colName) continue;
                     if (prev.rowIndex < rows.length && rows[prev.rowIndex][colIdx] === prev.value) {
-                        preservableErrors.push(prev);
+                        preservableErrors.push({
+                            ...prev,
+                            primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, prev.rowIndex),
+                        });
                     }
                 }
                 return;
@@ -350,7 +358,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照先 ${refTableName}.${refColumnName} に値 "${cellValue}" が存在しません`,
                     filterValue: null,
-                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                    primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
             }
         }
@@ -438,7 +446,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照元カラム ${expr.filter.valueColumn} が空のため、参照先を解決できません`,
                     filterValue,
-                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                    primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
                 continue;
             }
@@ -447,7 +455,12 @@ export class ValidationEngine {
             // filterValue も一致する前回エラーのみ引き継ぐ（依存カラム変更時は引き継がない）
             if (filterRows === null) {
                 const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue && e.filterValue === filterValue);
-                if (prev) preservableErrors.push(prev);
+                if (prev) {
+                    preservableErrors.push({
+                        ...prev,
+                        primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
+                    });
+                }
                 continue;
             }
 
@@ -464,7 +477,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `フィルタテーブル ${expr.filter.tableName} に ${expr.filter.filterColumn}="${filterValue}" の行が存在しないため、参照先を解決できません`,
                     filterValue,
-                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                    primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
                 continue;
             }
@@ -523,7 +536,12 @@ export class ValidationEngine {
                 // 未解決テーブル: 現在値と filterValue の両方が一致する前回エラーのみ引き継ぐ
                 // filterValue が変わっていれば参照先テーブルが切り替わったので古いエラーは引き継がない
                 const prev = previousErrors.find(e => e.kind === 'fk-broken' && e.tableName === tableName && e.columnName === colName && e.rowIndex === r && e.value === cellValue && e.filterValue === filterValue);
-                if (prev) preservableErrors.push(prev);
+                if (prev) {
+                    preservableErrors.push({
+                        ...prev,
+                        primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
+                    });
+                }
                 continue;
             }
 
@@ -537,7 +555,7 @@ export class ValidationEngine {
                     kind: 'fk-broken',
                     message: `参照先 ${targetTableName}.${resolvedTargetColumn} に値 "${cellValue}" が存在しません`,
                     filterValue,
-                    pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                    primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
             }
         }
@@ -579,7 +597,7 @@ export class ValidationEngine {
                         kind: 'type-mismatch',
                         message: `値 "${cellValue}" は型 ${colType} と一致しません`,
                         filterValue: null,
-                        pkValue: this.resolvePkValueForRow(schema, header, rows, r),
+                        primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                     });
                 }
             }
