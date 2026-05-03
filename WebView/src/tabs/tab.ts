@@ -24,7 +24,7 @@ import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel} from "../panels/settings-panel";
 import {DiffTab} from "./diff-tab";
-import {FormPanel} from "../panels/form-panel";
+import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
@@ -53,6 +53,10 @@ type TabScrollPositionPreference =
 
 type FormPanelVisibilityListener = (visible: boolean) => void;
 
+export interface FormPanelState {
+    navStack: FormPanelNavEntry[];
+}
+
 /**
  * タブごとの状態を保持するインターフェース
  */
@@ -77,6 +81,8 @@ export interface TabState {
     savedSortKeys: SerializedSortKey[];
     /** タブ非アクティブ時に保存されたフィルター状態（reloadCellsFromStore後に復元するため） */
     savedFilters: SerializedFilters;
+    /** タブ非アクティブ時に開いていたフォームビューの状態。null は閉じている状態を表す。 */
+    formPanelState: FormPanelState | null;
 }
 
 export interface EditorTableFactoryResult {
@@ -1076,6 +1082,11 @@ export class Tab {
         // タブ状態のクリーンアップ
         const state = this.tabStates.get(name);
         if (state) {
+            if (this.activeTabName === name) {
+                state.formPanelState = null;
+                this.removeCurrentFormPanel();
+            }
+
             // 未保存の変更があるかを閉じる前に確認
             const wasDirty = state.history.isDirty();
 
@@ -1284,6 +1295,7 @@ export class Tab {
             // セルDOM・参照ヒントの更新後にRelationsPanelを強制更新する（同一行でもパネルが確実に描画される）
             existingState.editorTable.forceRefreshRelationsPanel();
             this.editor.syncActiveTableScrollState();
+            this.restoreFormPanelForTabState(existingState);
             // 既存タブの再アクティブ化では emitTableOpened を発火しない（Open/Close の対称性を維持するため）
             return;
         }
@@ -1980,8 +1992,8 @@ export class Tab {
      * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
-        // フォームパネルが表示中であれば閉じる（タブ切り替え時に残留しないようにする）
-        this.closeFormPanel();
+        // フォームパネルが表示中であれば、閉じた扱いにせずタブ状態へ退避する。
+        this.suspendFormPanelForTabState(state);
         state.savedScrollLeft = state.editorTable.getScrollLeft();
         state.savedScrollTop = state.editorTable.getScrollTop();
         state.wrapperElement.style.display = 'none';
@@ -2349,6 +2361,7 @@ export class Tab {
                 viewIndex: this.viewIndex,
                 savedSortKeys: [],
                 savedFilters: {},
+                formPanelState: null,
             };
             this.tabStates.set(name, state);
 
@@ -2744,6 +2757,9 @@ export class Tab {
         if (!state) return;
         const pkValue = state.editorTable.getRowPkValue(rowIndex);
         if (pkValue === '') return;
+        this.setActiveFormPanelState({
+            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }],
+        });
         this.currentFormPanel.showForRowAsync(tableName, pkValue).catch(err => {
             console.error('[Tab] refreshFormPanelForSelectedRow: showForRowAsync failed:', String(err));
         });
@@ -2768,10 +2784,14 @@ export class Tab {
      */
     showFormPanel(tableName: string, pkValue: string): void {
         // 履歴に記録する（pushFormPanelOpen 内部の restoring フラグで popstate 復元中は自律的にスキップされる）
-        this.navigationHistory.pushFormPanelOpen(tableName, pkValue);
+        const ownerTabName = this.activeTabName !== false ? this.activeTabName : tableName;
+        this.navigationHistory.pushFormPanelOpen(ownerTabName, pkValue);
 
         // FormPanel を生成して表示する（共通処理）
         const formPanel = this.createFormPanel();
+        this.setActiveFormPanelState({
+            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }],
+        });
         // 指定行のフォームを非同期で描画する
         // FormPanel.renderCurrentPageAsync 内でエラー通知するため、ここでは通知しない（二重通知防止）
         formPanel.showForRowAsync(tableName, pkValue).catch(err => {
@@ -2789,6 +2809,7 @@ export class Tab {
     showFormPanelWithNavStack(_tabName: string, navStack: Array<{tableName: string; pkValue: string; label: string}>): void {
         // FormPanel を生成して表示する（共通処理）
         const formPanel = this.createFormPanel();
+        this.setActiveFormPanelState({ navStack: this.cloneFormPanelNavStack(navStack) });
         // navStack を復元して最後のページを描画する
         formPanel.restoreNavStackAsync(navStack).catch(err => {
             console.error('[Tab] showFormPanelWithNavStack: restoreNavStackAsync failed:', String(err));
@@ -2826,6 +2847,7 @@ export class Tab {
     pushFormDrillDown(navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
         if (this.activeTabName === false) throw new Error('[Tab] pushFormDrillDown: アクティブなタブが存在しない状態でドリルダウンが要求されました');
         this.navigationHistory.pushFormPanelDrillDown(this.activeTabName, navStack);
+        this.setActiveFormPanelState({ navStack: this.cloneFormPanelNavStack(navStack) });
     }
 
     /**
@@ -2833,8 +2855,51 @@ export class Tab {
      * FormPanel.✕ボタンクリックから呼ばれる
      */
     closeFormPanel(): void {
+        this.setActiveFormPanelState(null);
+        this.removeCurrentFormPanel();
+    }
+
+    suspendFormPanelForActiveTab(): void {
+        const state = this.getActiveTabState();
+        if (state === false) {
+            this.removeCurrentFormPanel();
+            return;
+        }
+        this.suspendFormPanelForTabState(state);
+    }
+
+    restoreFormPanelForActiveTab(): void {
+        const state = this.getActiveTabState();
+        if (state === false) return;
+        this.restoreFormPanelForTabState(state);
+    }
+
+    private suspendFormPanelForTabState(state: TabState): void {
         if (this.currentFormPanel === false) return;
-        // FormPanel の DOM 要素を削除する
+        const navStack = this.currentFormPanel.getNavStackSnapshot();
+        state.formPanelState = navStack.length > 0 ? { navStack } : null;
+        this.removeCurrentFormPanel();
+    }
+
+    private restoreFormPanelForTabState(state: TabState): void {
+        if (state.formPanelState === null) return;
+        if (this.currentFormPanel !== false) {
+            if (this.currentFormPanel.isConnected()) {
+                this.notifyFormPanelVisibilityListener(true);
+                return;
+            }
+            this.currentFormPanel.remove();
+            this.currentFormPanel = false;
+        }
+        const navStack = this.cloneFormPanelNavStack(state.formPanelState.navStack);
+        const formPanel = this.createFormPanel();
+        formPanel.restoreNavStackAsync(navStack).catch(err => {
+            console.error('[Tab] restoreFormPanelForTabState: restoreNavStackAsync failed:', String(err));
+        });
+    }
+
+    private removeCurrentFormPanel(): void {
+        if (this.currentFormPanel === false) return;
         this.currentFormPanel.remove();
         this.currentFormPanel = false;
         // RelationsPanelを再表示する
@@ -2842,6 +2907,18 @@ export class Tab {
         // FormPanel 表示のために一時的に開いた右スロットを元のトグル状態へ戻す
         this.editor.restoreRightSlotAfterFormPanel();
         this.notifyFormPanelVisibilityListener(false);
+    }
+
+    private setActiveFormPanelState(formPanelState: FormPanelState | null): void {
+        const state = this.getActiveTabState();
+        if (state === false) return;
+        state.formPanelState = formPanelState === null
+            ? null
+            : { navStack: this.cloneFormPanelNavStack(formPanelState.navStack) };
+    }
+
+    private cloneFormPanelNavStack(navStack: ReadonlyArray<FormPanelNavEntry>): FormPanelNavEntry[] {
+        return navStack.map(page => ({ ...page }));
     }
 
     private notifyFormPanelVisibilityListener(visible: boolean): void {

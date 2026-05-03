@@ -18,11 +18,13 @@ import {ValidationPanel} from "./validation-panel";
 import {GridDropdownInput, GridDropdownItem} from "../ui/grid-dropdown-input";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 
-interface FormPage {
+export interface FormPanelNavEntry {
     tableName: string;
     pkValue: string;
     label: string;
 }
+
+interface FormPage extends FormPanelNavEntry {}
 
 interface CurrentPageData {
     tableName: string;
@@ -155,6 +157,10 @@ export class FormPanel {
         return element !== null && this.panelElement.contains(element);
     }
 
+    isConnected(): boolean {
+        return this.panelElement.isConnected;
+    }
+
     showForRowAsync(tableName: string, pkValue: string): Promise<void> {
         this.navStack = [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }];
         return this.renderCurrentPageAsync();
@@ -163,6 +169,10 @@ export class FormPanel {
     restoreNavStackAsync(navStack: Array<{tableName: string; pkValue: string; label: string}>): Promise<void> {
         this.navStack = [...navStack];
         return this.renderCurrentPageAsync();
+    }
+
+    getNavStackSnapshot(): FormPanelNavEntry[] {
+        return this.navStack.map(page => ({ ...page }));
     }
 
     private drillDownAsync(tableName: string, pkValue: string, label: string): Promise<void> {

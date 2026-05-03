@@ -62,13 +62,14 @@ export class NavigationHistory {
                     this.tab.closeFormPanel();
                     this.tab.showFormPanelWithNavStack(state['tabName'], state['navStack'] as Array<{tableName: string; pkValue: string; label: string}>);
                 } else {
-                    // フォーム以外のエントリ: フォームパネルを閉じる（開いていなければ何もしない）
-                    this.tab.closeFormPanel();
                     if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
+                        this.closeOrSuspendFormPanelForDestination(state['tabName']);
                         // tabName で切り替え + viewIndex は 0 に戻す
                         this.tab.switchToExistingTab(state['tabName']);
                         this.tab.restoreViewIndex(0);
+                        this.tab.restoreFormPanelForActiveTab();
                     } else if (type === 'pane-push' && typeof state['tabName'] === 'string') {
+                        this.closeOrSuspendFormPanelForDestination(state['tabName']);
                         // pane-push エントリには viewIndex/tableName/pkValue が必ず存在する。存在しない場合は設計ミスのため throw する
                         if (typeof state['viewIndex'] !== 'number') throw new Error('[NavigationHistory] pane-push エントリに viewIndex がありません');
                         if (typeof state['tableName'] !== 'string') throw new Error('[NavigationHistory] pane-push エントリに tableName がありません');
@@ -78,9 +79,13 @@ export class NavigationHistory {
                         // その場合は pushRelationsPanel でペインスタックを再構築してから viewIndex を復元する。
                         this.tab.restoreOrRebuildPaneStack(state['viewIndex'], state['tableName'], state['pkValue']);
                     } else if ((type === 'navigate-row' || type === 'navigate-cell') && typeof state['tableName'] === 'string') {
+                        this.closeOrSuspendFormPanelForDestination(state['tableName']);
                         // popstate は「移動先エントリ」の state を返すため、tableName（ジャンプ先）に切り替える
                         // goBack 時は前のエントリ（tab-switch 等）の state が返るため、tab-switch ハンドラが元のタブを自動復元する
                         this.tab.switchToExistingTab(state['tableName']);
+                    } else {
+                        // フォーム以外かつ移動先タブを判断できないエントリでは従来通り閉じる。
+                        this.tab.closeFormPanel();
                     }
                 }
             } finally {
@@ -154,6 +159,15 @@ export class NavigationHistory {
     pushFormPanelDrillDown(tabName: string, navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
         if (this.restoring) return;
         history.pushState({ type: 'form-panel-drilldown', tabName, navStack: [...navStack] }, '');
+    }
+
+    private closeOrSuspendFormPanelForDestination(destinationTabName: string): void {
+        const activeTabName = this.tab.getActiveTabName();
+        if (activeTabName !== false && activeTabName !== destinationTabName) {
+            this.tab.suspendFormPanelForActiveTab();
+            return;
+        }
+        this.tab.closeFormPanel();
     }
 
 }

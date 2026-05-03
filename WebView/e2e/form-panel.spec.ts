@@ -181,6 +181,61 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(formPanel.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input')).toHaveValue('second_quest');
     });
 
+    test('フォームビューの表示状態がタブごとに保持され、復帰時に再表示されること', async ({ page }) => {
+        await openTableAsync(page, 'quest');
+
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+
+        await openTableAsync(page, 'enemy');
+        await expect(formPanel).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-form-active/);
+
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
+
+        await formPanel.locator('.form-panel-close').click();
+        await expect(formPanel).not.toBeVisible();
+
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'enemy' }) }).click();
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
+        await expect(formPanel).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-form-active/);
+    });
+
+    test('ブラウザ履歴でタブ移動してもフォームビューの表示状態が復元されること', async ({ page }) => {
+        await openTableAsync(page, 'quest');
+
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+
+        await openTableAsync(page, 'enemy');
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
+        await expect(formPanel).toBeVisible();
+
+        await page.goBack();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('enemy');
+        await expect(formPanel).not.toBeVisible();
+
+        await page.goForward();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('quest');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
+    });
+
     // -------------------------------------------------------------------------
     // テスト1: PKセル右クリックで「フォームビューを表示」メニューが表示されること
     // -------------------------------------------------------------------------
