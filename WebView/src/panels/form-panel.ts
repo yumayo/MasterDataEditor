@@ -36,6 +36,7 @@ interface CurrentPageData {
     schema: SchemaJson;
     pkColumnName: string;
     pkColumnIndex: number;
+    referenceLockedColumnNames: ReadonlySet<string>;
 }
 
 interface ReferenceSection {
@@ -311,6 +312,8 @@ export class FormPanel {
             }
 
             const row = tableData.rows[rowIndex];
+            const referenceLockedColumnNames = await this.resolveReferenceLockedColumnNamesAsync(tableName, tableData.header, row, schema, requestId);
+            if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
             this.nodeDataById.set(nodeId, {
                 nodeId,
                 tableName,
@@ -321,9 +324,10 @@ export class FormPanel {
                 schema,
                 pkColumnName,
                 pkColumnIndex,
+                referenceLockedColumnNames,
             });
 
-            node.appendChild(this.buildFields(nodeId, row, tableData.header, schema));
+            node.appendChild(this.buildFields(nodeId, row, tableData.header, schema, referenceLockedColumnNames));
             if (includeReferences) {
                 node.appendChild(this.buildReferencesContainer());
 
@@ -347,22 +351,26 @@ export class FormPanel {
             && this.nodeRenderRequestIds.get(nodeId) === nodeRequestId;
     }
 
-    private buildFields(nodeId: string, row: string[], header: string[], schema: SchemaJson): HTMLElement {
+    private buildFields(nodeId: string, row: string[], header: string[], schema: SchemaJson, referenceLockedColumnNames: ReadonlySet<string>): HTMLElement {
         const fields = document.createElement('div');
         fields.classList.add('form-panel-fields');
 
         for (let i = 0; i < header.length; i++) {
             const columnName = header[i];
             const colSchema = schema.header.find(col => col.name === columnName);
-            fields.appendChild(this.buildFieldElement(nodeId, columnName, row[i] ?? '', i, colSchema));
+            fields.appendChild(this.buildFieldElement(nodeId, columnName, row[i] ?? '', i, colSchema, referenceLockedColumnNames.has(columnName)));
         }
 
         return fields;
     }
 
-    private buildFieldElement(nodeId: string, columnName: string, value: string, columnIndex: number, colSchema: SchemaColumn | undefined): HTMLElement {
+    private buildFieldElement(nodeId: string, columnName: string, value: string, columnIndex: number, colSchema: SchemaColumn | undefined, readOnly: boolean): HTMLElement {
         const field = document.createElement('div');
         field.classList.add('form-panel-field');
+        if (readOnly) {
+            field.classList.add('form-panel-field--readonly');
+            field.dataset.readonlyReason = 'reference-id';
+        }
         field.dataset.nodeId = nodeId;
         field.dataset.columnName = columnName;
         field.dataset.columnIndex = String(columnIndex);
@@ -401,6 +409,11 @@ export class FormPanel {
         input.id = inputId;
         input.dataset.columnName = columnName;
         input.dataset.columnIndex = String(columnIndex);
+        if (readOnly) {
+            input.readOnly = true;
+            input.setAttribute('aria-readonly', 'true');
+            input.title = '参照関係を固定するIDはフォームビューでは編集できません';
+        }
         valueWrapper.appendChild(input);
 
         const mirror = document.createElement('span');
@@ -432,39 +445,41 @@ export class FormPanel {
                 }
             }
         };
-        input.addEventListener('input', updateValue);
-        input.addEventListener('change', () => {
-            this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
-                console.error('[FormPanel] field change failed:', err);
-                this.notification.show('フォーム入力の反映に失敗しました');
+        if (!readOnly) {
+            input.addEventListener('input', updateValue);
+            input.addEventListener('change', () => {
+                this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
+                    console.error('[FormPanel] field change failed:', err);
+                    this.notification.show('フォーム入力の反映に失敗しました');
+                });
             });
-        });
-        input.addEventListener('blur', () => {
-            this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
-                console.error('[FormPanel] field blur commit failed:', err);
-                this.notification.show('フォーム入力の反映に失敗しました');
+            input.addEventListener('blur', () => {
+                this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
+                    console.error('[FormPanel] field blur commit failed:', err);
+                    this.notification.show('フォーム入力の反映に失敗しました');
+                });
+                if (this.isActiveReferenceInput(input)) {
+                    this.hideReferenceDropdown();
+                }
             });
-            if (this.isActiveReferenceInput(input)) {
-                this.hideReferenceDropdown();
+            input.addEventListener('keydown', (event) => {
+                const keyboardEvent = event as KeyboardEvent;
+                if (colSchema?.reference && this.handleReferenceDropdownKeydown(keyboardEvent, nodeId, columnName, input, mirror, valueWrapper)) {
+                    return;
+                }
+                if (keyboardEvent.key !== 'Enter' || input instanceof HTMLTextAreaElement) return;
+                keyboardEvent.preventDefault();
+                input.blur();
+            });
+            if (colSchema?.reference) {
+                input.addEventListener('focus', () => {
+                    this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
+                        .catch(err => {
+                            console.error('[FormPanel] reference dropdown focus failed:', err);
+                            this.notification.show('参照候補の表示に失敗しました');
+                        });
+                });
             }
-        });
-        input.addEventListener('keydown', (event) => {
-            const keyboardEvent = event as KeyboardEvent;
-            if (colSchema?.reference && this.handleReferenceDropdownKeydown(keyboardEvent, nodeId, columnName, input, mirror, valueWrapper)) {
-                return;
-            }
-            if (keyboardEvent.key !== 'Enter' || input instanceof HTMLTextAreaElement) return;
-            keyboardEvent.preventDefault();
-            input.blur();
-        });
-        if (colSchema?.reference) {
-            input.addEventListener('focus', () => {
-                this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
-                    .catch(err => {
-                        console.error('[FormPanel] reference dropdown focus failed:', err);
-                        this.notification.show('参照候補の表示に失敗しました');
-                    });
-            });
         }
 
         field.appendChild(header);
@@ -506,6 +521,7 @@ export class FormPanel {
         this.clearScheduledFieldCommit(nodeId, columnName);
         const data = this.nodeDataById.get(nodeId);
         if (data === undefined) return;
+        if (data.referenceLockedColumnNames.has(columnName)) return;
         const columnIndex = data.header.indexOf(columnName);
         if (columnIndex === -1) return;
 
@@ -753,6 +769,33 @@ export class FormPanel {
             rows: targetData.rows,
             schema: targetSchema,
         };
+    }
+
+    private async resolveReferenceLockedColumnNamesAsync(
+        tableName: string,
+        header: string[],
+        row: string[],
+        schema: SchemaJson,
+        requestId: number,
+    ): Promise<Set<string>> {
+        const lockedColumnNames = new Set<string>();
+        const primaryKeyColumnNames = this.getPrimaryKeyColumnNames(schema);
+        if (primaryKeyColumnNames.length === 1) {
+            const primaryKeyColumn = schema.header.find(column => column.name === primaryKeyColumnNames[0]);
+            if (primaryKeyColumn?.reference) lockedColumnNames.add(primaryKeyColumn.name);
+        }
+
+        const reverseMap = await this.reverseReferenceResolver.resolveAsync(tableName);
+        if (requestId !== this.currentRequestId) return lockedColumnNames;
+
+        for (const [parentColumnValue, entries] of reverseMap) {
+            for (const entry of entries) {
+                const columnIndex = header.indexOf(entry.parentColumnName);
+                if (columnIndex === -1) continue;
+                if ((row[columnIndex] ?? '') === parentColumnValue) lockedColumnNames.add(entry.parentColumnName);
+            }
+        }
+        return lockedColumnNames;
     }
 
     private async buildReferenceFieldDropdownItemsAsync(tableName: string, referenceColumnName: string, header: string[], rows: string[][], schema: SchemaJson): Promise<GridDropdownItem[]> {

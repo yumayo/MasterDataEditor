@@ -137,6 +137,17 @@ textarea.form-panel-field-input {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus-border, #569cd6) 45%, transparent);
 }
 
+.form-panel-field--readonly .form-panel-field-input {
+    background: color-mix(in srgb, var(--hover-color) 45%, var(--background-color));
+    color: color-mix(in srgb, var(--font-color) 72%, transparent);
+    cursor: not-allowed;
+}
+
+.form-panel-field--readonly .form-panel-field-input:focus {
+    border-color: var(--border-color);
+    box-shadow: none;
+}
+
 .form-panel-field--invalid .form-panel-field-input {
     border-color: #d16969;
     background: color-mix(in srgb, #d16969 10%, var(--background-color));

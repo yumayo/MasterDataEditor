@@ -70,13 +70,14 @@ function createFormPanelTestFileSystem(): MockFileSystem {
                 { key: 1, name: "name", type: "string" },
                 { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
                 { key: 3, name: "weapon_id", type: "int", reference: "weapon.id" },
+                { key: 4, name: "recommended_level", type: "int" },
             ],
             primary_key: ["id"],
         }),
         "data/quest.csv": [
-            "id,name,enemy_id,weapon_id",
-            "1,first_quest,1,10",
-            "2,second_quest,2,20",
+            "id,name,enemy_id,weapon_id,recommended_level",
+            "1,first_quest,1,10,5",
+            "2,second_quest,2,20,12",
         ].join("\n"),
         // item テーブルは quest.id を FK として参照する（quest の逆参照エントリを生成するため）
         "schema/item.json": JSON.stringify({
@@ -551,17 +552,17 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
 
         const formPanel = page.locator('.form-panel');
-        const enemyInput = formPanel.locator('.form-panel-field[data-column-name="enemy_id"] .form-panel-field-input');
-        await expect(enemyInput).toBeVisible();
+        const levelInput = formPanel.locator('.form-panel-field[data-column-name="recommended_level"] .form-panel-field-input');
+        await expect(levelInput).toBeVisible();
 
-        await enemyInput.fill('abc');
+        await levelInput.fill('abc');
 
-        const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
-        await expect(enemyField).toHaveClass(/form-panel-field--invalid/);
-        await expect(enemyField.locator('.form-panel-field-error').filter({ hasText: '型 int' })).toBeVisible();
+        const levelField = formPanel.locator('.form-panel-field[data-column-name="recommended_level"]');
+        await expect(levelField).toHaveClass(/form-panel-field--invalid/);
+        await expect(levelField.locator('.form-panel-field-error').filter({ hasText: '型 int' })).toBeVisible();
         await expect(formPanel.locator('.form-panel-validation')).toHaveCount(0);
         await expect(formPanel).not.toContainText('バリデーションOK');
-        await expect(getDataCell(table, 0, 2)).toHaveClass(/cell-error/);
+        await expect(getDataCell(table, 0, 4)).toHaveClass(/cell-error/);
     });
 
     test('参照先と参照元が一覧で表示され、深さインジケーターが表示されないこと', async ({ page }) => {
@@ -636,12 +637,40 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const weaponNameSection = weaponNode.locator(':scope > .form-panel-references .form-panel-section', { hasText: '参照元: weapon_name' });
         await expect(weaponNameSection).toBeVisible();
         await expect(weaponNameSection.locator('.form-panel-ref-item--clickable')).toHaveCount(0);
-        await expect(weaponNameSection.locator('.form-panel-node[data-table-name="weapon_name"]')).toBeVisible();
-        await expect(weaponNameSection.locator('.form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
+        const weaponNameNode = weaponNameSection.locator('.form-panel-node[data-table-name="weapon_name"]');
+        await expect(weaponNameNode).toBeVisible();
+        const weaponNameIdField = weaponNameNode.locator('.form-panel-field[data-column-name="id"]');
+        const weaponNameJaField = weaponNameNode.locator('.form-panel-field[data-column-name="ja"]');
+        await expect(weaponNameIdField).toHaveClass(/form-panel-field--readonly/);
+        await expect(weaponNameIdField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', true);
+        await expect(weaponNameJaField).not.toHaveClass(/form-panel-field--readonly/);
+        await expect(weaponNameJaField.locator('.form-panel-field-input')).toHaveValue('剣');
         await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
     });
 
-    test('参照列の入力開始時にEditorTable共通ドロップダウンで候補を選択して反映できること', async ({ page }) => {
+    test('参照される側のIDだけフォームビューで読み取り専用になること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const idField = formPanel.locator('.form-panel-field[data-column-name="id"]');
+        const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
+        const weaponField = formPanel.locator('.form-panel-field[data-column-name="weapon_id"]');
+        const nameField = formPanel.locator('.form-panel-field[data-column-name="name"]');
+
+        await expect(idField).toHaveClass(/form-panel-field--readonly/);
+        await expect(enemyField).not.toHaveClass(/form-panel-field--readonly/);
+        await expect(weaponField).not.toHaveClass(/form-panel-field--readonly/);
+        await expect(nameField).not.toHaveClass(/form-panel-field--readonly/);
+        await expect(idField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', true);
+        await expect(enemyField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', false);
+        await expect(weaponField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', false);
+        await expect(nameField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', false);
+    });
+
+    test('参照する側の参照列はドロップダウンで候補を選択して反映できること', async ({ page }) => {
         const table = await openTableAsync(page, 'quest');
         await rightClickPkCellAsync(table, 0);
         const menu = page.locator('.context-menu.visible');
@@ -651,6 +680,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
         const enemyInput = enemyField.locator('.form-panel-field-input');
         await expect(enemyField.locator('.form-panel-field-reference-select')).toHaveCount(0);
+        await expect(enemyInput).toHaveJSProperty('readOnly', false);
 
         await enemyInput.fill('2');
         const dropdown = formPanel.locator('.grid-dropdown-list');
@@ -676,6 +706,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const weaponField = formPanel.locator('.form-panel-field[data-column-name="weapon_id"]');
         const weaponInput = weaponField.locator('.form-panel-field-input');
 
+        await expect(weaponField).not.toHaveClass(/form-panel-field--readonly/);
+        await expect(weaponInput).toHaveJSProperty('readOnly', false);
         await weaponInput.fill('20');
         const dropdown = formPanel.locator('.grid-dropdown-list');
         await expect(dropdown).toBeVisible();
