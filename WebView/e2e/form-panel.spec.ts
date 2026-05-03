@@ -271,6 +271,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
         await expect(page.locator('#toolbar .toolbar-button-form-toggle')).toHaveClass(/toolbar-button-form-active/);
+        await expect(page.locator('.relations-panel')).not.toBeVisible();
+        await expect(page.locator('#toolbar .toolbar-button-relations-toggle')).not.toHaveClass(/toolbar-button-relations-active/);
 
         // .form-panel-field 要素が存在すること（各列がフィールドとして表示される）
         const fields = formPanel.locator('.form-panel-field');
@@ -382,9 +384,9 @@ test.describe('フォームビュー（FEAT_0043）', () => {
     });
 
     // -------------------------------------------------------------------------
-    // テスト3: フォームビューの ✕ ボタンで閉じて RelationsPanel に戻ること
+    // テスト3: フォームビューの ✕ ボタンで閉じること
     // -------------------------------------------------------------------------
-    test('フォームビューの ✕ ボタンをクリックすると RelationsPanel に戻ること', async ({ page }) => {
+    test('フォームビューの ✕ ボタンをクリックするとフォームビューだけが閉じること', async ({ page }) => {
         const table = await openTableAsync(page, 'quest');
 
         // フォームビューを表示する
@@ -408,9 +410,10 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(formPanel).not.toBeVisible();
         await expect(page.locator('#toolbar .toolbar-button-form-toggle')).not.toHaveClass(/toolbar-button-form-active/);
 
-        // RelationsPanel が再び表示されること
+        // フォームビュー表示時に閉じたRelationsPanelは再表示しないこと
         const relationsPanel = page.locator('.relations-panel');
-        await expect(relationsPanel).toBeVisible();
+        await expect(relationsPanel).not.toBeVisible();
+        await expect(page.locator('#toolbar .toolbar-button-relations-toggle')).not.toHaveClass(/toolbar-button-relations-active/);
     });
 
     test('フォーム入力がEditorTableに反映されること', async ({ page }) => {

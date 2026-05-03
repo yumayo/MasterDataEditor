@@ -145,6 +145,48 @@ test.describe('RelationsPanel トグルボタン', () => {
         await toggleButton.click();
         await expect(relationsPanel).toBeVisible();
     });
+
+    test('RelationsPanelの表示状態がタブごとに保持されること', async ({ page }) => {
+        await setupRelationsPanelAsync(page);
+
+        const relationsPanel = page.locator('.relations-panel');
+        const toggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
+        await expect(relationsPanel).toBeVisible();
+        await expect(toggleButton).toHaveClass(/toolbar-button-relations-active/);
+
+        await page.locator('#explorer').getByText('enemy', { exact: true }).click();
+        await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table')).toBeVisible();
+        await expect(relationsPanel).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
+        await expect(relationsPanel).toBeVisible();
+        await expect(toggleButton).toHaveClass(/toolbar-button-relations-active/);
+
+        await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'enemy' }) }).click();
+        await expect(relationsPanel).not.toBeVisible();
+        await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+    });
+
+    test('RelationsPanelを開くと同じタブのフォームビューが閉じること', async ({ page }) => {
+        await setupRelationsPanelAsync(page);
+
+        const relationsPanel = page.locator('.relations-panel');
+        const relationsToggleButton = page.locator('#toolbar .toolbar-button-relations-toggle');
+        const formToggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+
+        await formToggleButton.click();
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(relationsPanel).not.toBeVisible();
+        await expect(relationsToggleButton).not.toHaveClass(/toolbar-button-relations-active/);
+
+        await relationsToggleButton.click();
+        await expect(formPanel).not.toBeVisible();
+        await expect(relationsPanel).toBeVisible();
+        await expect(formToggleButton).not.toHaveClass(/toolbar-button-form-active/);
+        await expect(relationsToggleButton).toHaveClass(/toolbar-button-relations-active/);
+    });
 });
 
 // =============================================================================

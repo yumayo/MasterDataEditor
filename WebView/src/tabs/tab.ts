@@ -81,6 +81,8 @@ export interface TabState {
     savedSortKeys: SerializedSortKey[];
     /** タブ非アクティブ時に保存されたフィルター状態（reloadCellsFromStore後に復元するため） */
     savedFilters: SerializedFilters;
+    /** タブごとの RelationsPanel 表示状態 */
+    relationsPanelVisible: boolean;
     /** タブ非アクティブ時に開いていたフォームビューの状態。null は閉じている状態を表す。 */
     formPanelState: FormPanelState | null;
 }
@@ -214,6 +216,9 @@ export class Tab {
      */
     private currentFormPanel: FormPanel | false;
 
+    /** 通常タブがまだない状態でRelationsトグルされた場合に、新規タブへ適用する初期表示状態 */
+    private defaultRelationsPanelVisible: boolean;
+
     /** FormPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
     private formPanelVisibilityListener: FormPanelVisibilityListener | false;
 
@@ -288,6 +293,7 @@ export class Tab {
         this.tableDefinitionEditor = false;
         this.pendingEditTarget = false;
         this.currentFormPanel = false;
+        this.defaultRelationsPanelVisible = false;
         this.formPanelVisibilityListener = false;
         this.validationPanel = false;
         this.errorTooltip = false;
@@ -1994,6 +2000,7 @@ export class Tab {
     private deactivateTabState(state: TabState): void {
         // フォームパネルが表示中であれば、閉じた扱いにせずタブ状態へ退避する。
         this.suspendFormPanelForTabState(state);
+        state.relationsPanelVisible = this.editor.isRelationsPanelVisible();
         state.savedScrollLeft = state.editorTable.getScrollLeft();
         state.savedScrollTop = state.editorTable.getScrollTop();
         state.wrapperElement.style.display = 'none';
@@ -2027,6 +2034,7 @@ export class Tab {
      * 初回アクティブ化（createTabState 内）では state.paneStack が初期化済みであること。
      */
     activateTabState(state: TabState): void {
+        this.applyRelationsPanelVisibilityForTabState(state);
         state.wrapperElement.style.display = '';
         // グローバルリレーションパネルにアクティブなEditorTableを接続する
         // connectEditorTable内でEditorTable.relationsPanel フィールドも設定される（相互参照）
@@ -2361,6 +2369,7 @@ export class Tab {
                 viewIndex: this.viewIndex,
                 savedSortKeys: [],
                 savedFilters: {},
+                relationsPanelVisible: this.defaultRelationsPanelVisible,
                 formPanelState: null,
             };
             this.tabStates.set(name, state);
@@ -2730,6 +2739,38 @@ export class Tab {
     }
 
     /**
+     * ツールバーのRelationsアイコンから、現在のタブだけRelationsPanelを開閉する。
+     */
+    toggleRelationsPanelForActiveTab(): void {
+        const state = this.getActiveTabState();
+        if (state === false) {
+            this.defaultRelationsPanelVisible = !this.defaultRelationsPanelVisible;
+            if (this.defaultRelationsPanelVisible) {
+                this.editor.showRelationsPanel();
+            } else {
+                this.editor.hideRelationsPanel();
+            }
+            return;
+        }
+        state.relationsPanelVisible = !state.relationsPanelVisible;
+        if (state.relationsPanelVisible) {
+            this.closeFormPanel();
+        }
+        this.applyRelationsPanelVisibilityForTabState(state);
+        if (state.relationsPanelVisible) {
+            state.editorTable.forceRefreshRelationsPanel();
+        }
+    }
+
+    private applyRelationsPanelVisibilityForTabState(state: TabState): void {
+        if (state.relationsPanelVisible) {
+            this.editor.showRelationsPanel();
+        } else {
+            this.editor.hideRelationsPanel();
+        }
+    }
+
+    /**
      * ツールバーのフォームアイコンから、現在選択中の行のフォームビューを開閉する。
      * RelationsPanel と同じく「現在の選択行を右ペインで見る」操作にする。
      */
@@ -2822,13 +2863,14 @@ export class Tab {
      * showFormPanel と showFormPanelWithNavStack の両方から呼ばれる。
      */
     private createFormPanel(): FormPanel {
+        this.closeRelationsPanelForActiveTab();
         // 既存のFormPanelを破棄する（新しいPK値で開き直す場合）
         if (this.currentFormPanel !== false) {
             this.currentFormPanel.remove();
             this.currentFormPanel = false;
         }
-        // RelationsPanel がトグルで非表示の場合でも、FormPanel の表示中だけ右スロットを開く。
-        // 表示中の右ペイン内容は Editor 側で一時退避し、閉じたときに復元する。
+        // FormPanel 表示中だけ右スロットを開く。
+        // RelationsPanel は排他表示のため、create 前に現在タブ側で閉じておく。
         const formPanelHost = this.editor.showRightSlotForFormPanel();
         // FormPanel を生成して右スロットにオーバーレイする
         const formPanel = new FormPanel(this.store, this.referenceDataCache, this, this.notification, this.validationPanel);
@@ -2836,6 +2878,14 @@ export class Tab {
         this.currentFormPanel = formPanel;
         this.notifyFormPanelVisibilityListener(true);
         return formPanel;
+    }
+
+    private closeRelationsPanelForActiveTab(): void {
+        const state = this.getActiveTabState();
+        if (state !== false) {
+            state.relationsPanelVisible = false;
+        }
+        this.editor.hideRelationsPanel();
     }
 
     /**
@@ -2851,7 +2901,7 @@ export class Tab {
     }
 
     /**
-     * フォームビューを閉じてRelationsPanelを再表示する
+     * フォームビューを閉じる
      * FormPanel.✕ボタンクリックから呼ばれる
      */
     closeFormPanel(): void {
@@ -2902,7 +2952,7 @@ export class Tab {
         if (this.currentFormPanel === false) return;
         this.currentFormPanel.remove();
         this.currentFormPanel = false;
-        // RelationsPanelを再表示する
+        // FormPanel表示中に一時退避していた右スロット内容のdisplay値を戻す
         this.relationsPanel.getPanelElement().style.display = '';
         // FormPanel 表示のために一時的に開いた右スロットを元のトグル状態へ戻す
         this.editor.restoreRightSlotAfterFormPanel();

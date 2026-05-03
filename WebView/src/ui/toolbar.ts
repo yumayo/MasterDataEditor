@@ -38,7 +38,7 @@ export class Toolbar {
         const relationsToggle = this.createButton('RelationsPanel を開く/閉じる', createRelationsIcon());
         relationsToggle.classList.add('toolbar-button-relations-toggle');
         // 初期状態: RelationsPanel は非表示なのでアクティブクラスは付与しない
-        relationsToggle.addEventListener('click', () => { this.editor.toggleRelationsPanel(); });
+        relationsToggle.addEventListener('click', () => { this.tab.toggleRelationsPanelForActiveTab(); });
         containerElement.appendChild(relationsToggle);
         this.relationsToggleButton = relationsToggle;
 
