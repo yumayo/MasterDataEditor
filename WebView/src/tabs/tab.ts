@@ -2841,26 +2841,9 @@ export class Tab {
     }
 
     /**
-     * navStack を復元してフォームビューを表示する（popstate 復元専用）
-     * NavigationHistory の form-panel-drilldown ハンドラから呼ばれる。
-     * 履歴への push は行わない（popstate 復元のため）。
-     * @param _tabName タブ名（将来のタブ切り替え復元用。現状は未使用）
-     * @param navStack 復元するナビゲーションスタック
-     */
-    showFormPanelWithNavStack(_tabName: string, navStack: Array<{tableName: string; pkValue: string; label: string}>): void {
-        // FormPanel を生成して表示する（共通処理）
-        const formPanel = this.createFormPanel();
-        this.setActiveFormPanelState({ navStack: this.cloneFormPanelNavStack(navStack) });
-        // navStack を復元して最後のページを描画する
-        formPanel.restoreNavStackAsync(navStack).catch(err => {
-            console.error('[Tab] showFormPanelWithNavStack: restoreNavStackAsync failed:', String(err));
-        });
-    }
-
-    /**
      * FormPanel を生成して右スロットにオーバーレイする共通処理。
      * 既存の FormPanel があれば破棄してから新しいものを生成する。
-     * showFormPanel と showFormPanelWithNavStack の両方から呼ばれる。
+     * showFormPanel と restoreFormPanelForTabState の両方から呼ばれる。
      */
     private createFormPanel(): FormPanel {
         this.closeRelationsPanelForActiveTab();
@@ -2889,20 +2872,8 @@ export class Tab {
     }
 
     /**
-     * フォームパネル内のドリルダウンをブラウザ履歴に記録する。
-     * FormPanel.drillDownAsync から呼ばれる。
-     * NavigationHistory.restoring 中は自動的にスキップされる。
-     * @param navStack ドリルダウン後の完全なナビゲーションスタック
-     */
-    pushFormDrillDown(navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
-        if (this.activeTabName === false) throw new Error('[Tab] pushFormDrillDown: アクティブなタブが存在しない状態でドリルダウンが要求されました');
-        this.navigationHistory.pushFormPanelDrillDown(this.activeTabName, navStack);
-        this.setActiveFormPanelState({ navStack: this.cloneFormPanelNavStack(navStack) });
-    }
-
-    /**
      * フォームビューを閉じる
-     * FormPanel.✕ボタンクリックから呼ばれる
+     * ツールバーのフォームビュー切り替えや履歴復元から呼ばれる
      */
     closeFormPanel(): void {
         this.setActiveFormPanelState(null);

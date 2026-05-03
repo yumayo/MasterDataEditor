@@ -1,49 +1,53 @@
 {
-    "description": "ショップ商品マスター",
-    "header": [
-        {
-            "key": 0,
-            "name": "group_id",
-            "type": "int",
-            "comment": "グループID",
-            "width": 100
-        },
-        {
-            "key": 1,
-            "name": "table_id",
-            "type": "int",
-            "comment": "テーブルID",
-            "reference": "table.id",
-            "width": 120
-        },
-        {
-            "key": 2,
-            "name": "record_id",
-            "type": "int",
-            "comment": "レコードID",
-            "reference": {
-                "sourceTable": "table",
-                "sourceMatchColumn": "id",
-                "sourceMatchValue": "table_id",
-                "destTable": "master",
-                "destColumn": "id"
-            },
-            "width": 120
-        },
-        {
-            "key": 3,
-            "name": "price",
-            "type": "int",
-            "comment": "販売価格",
-            "width": 100
-        },
-        {
-            "key": 4,
-            "name": "sort_order",
-            "type": "int",
-            "comment": "表示順",
-            "width": 100
-        }
-    ],
-    "primary_key": ["group_id", "table_id", "record_id"]
+  "header": [
+    {
+      "key": 0,
+      "name": "group_id",
+      "type": "int",
+      "comment": "グループID",
+      "width": 100
+    },
+    {
+      "key": 1,
+      "name": "table_id",
+      "type": "int",
+      "comment": "テーブルID",
+      "reference": "table.id",
+      "width": 120
+    },
+    {
+      "key": 2,
+      "name": "record_id",
+      "type": "int",
+      "comment": "レコードID",
+      "reference": {
+        "sourceTable": "table",
+        "sourceMatchColumn": "id",
+        "sourceMatchValue": "table_id",
+        "destTable": "master",
+        "destColumn": "column"
+      },
+      "width": 120
+    },
+    {
+      "key": 3,
+      "name": "price",
+      "type": "int",
+      "comment": "販売価格",
+      "width": 100
+    },
+    {
+      "key": 4,
+      "name": "sort_order",
+      "type": "int",
+      "comment": "表示順",
+      "width": 100
+    }
+  ],
+  "primary_key": [
+    "group_id",
+    "table_id",
+    "record_id"
+  ],
+  "description": "ショップ商品マスター"
 }

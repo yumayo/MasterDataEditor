@@ -10,7 +10,6 @@ import {Tab} from "./tab";
  *   - navigate-row:         REFERENCESパネルからのジャンプ（tableName）
  *   - navigate-cell:        検索パネルからのジャンプ（tableName）
  *   - form-panel-open:      フォームパネル開（tabName, pkValue）
- *   - form-panel-drilldown: フォームパネル内ドリルダウン（tabName, navStack）
  *
  * Tab との相互参照で密結合する。
  * Tab コンストラクタ末尾で生成され、Tab.enableTabButton() から pushTabSwitch() が呼ばれる。
@@ -55,12 +54,6 @@ export class NavigationHistory {
                     // フォームパネルを閉じて、ルートページで再オープンする（restoring中なので履歴pushはスキップされる）
                     this.tab.closeFormPanel();
                     this.tab.showFormPanel(state['tabName'], state['pkValue']);
-                } else if (type === 'form-panel-drilldown' && typeof state['tabName'] === 'string' && Array.isArray(state['navStack'])) {
-                    // フォーム復元前にタブを切り替える（異なるタブで開いたフォームの復元に必要）
-                    this.tab.switchToExistingTab(state['tabName']);
-                    // フォームパネルを閉じて、navStack全体を復元して再オープンする
-                    this.tab.closeFormPanel();
-                    this.tab.showFormPanelWithNavStack(state['tabName'], state['navStack'] as Array<{tableName: string; pkValue: string; label: string}>);
                 } else {
                     if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
                         this.closeOrSuspendFormPanelForDestination(state['tabName']);
@@ -150,15 +143,6 @@ export class NavigationHistory {
     pushFormPanelOpen(tabName: string, pkValue: string): void {
         if (this.restoring) return;
         history.pushState({ type: 'form-panel-open', tabName, pkValue }, '');
-    }
-
-    /**
-     * フォームパネル内のドリルダウンをブラウザ履歴に記録する。
-     * navStack 全体をディープコピーして保存し、goBack/goForward で復元可能にする。
-     */
-    pushFormPanelDrillDown(tabName: string, navStack: ReadonlyArray<{tableName: string; pkValue: string; label: string}>): void {
-        if (this.restoring) return;
-        history.pushState({ type: 'form-panel-drilldown', tabName, navStack: [...navStack] }, '');
     }
 
     private closeOrSuspendFormPanelForDestination(destinationTabName: string): void {

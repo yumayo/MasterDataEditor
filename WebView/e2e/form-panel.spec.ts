@@ -9,7 +9,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 // 機能概要:
 //   PKセルを右クリック → コンテキストメニューの「フォームビューを表示」をクリック
 //   → 右ペインにフォームビューが表示される。
-//   フォームビューは選択行の全列を key:value 形式で縦表示し、右上の ✕ ボタンで閉じる。
+//   フォームビューは選択行の全列を key:value 形式で縦表示し、右上ツールバーのトグルで閉じる。
 //
 // テーブル構成:
 //   enemy: id(PK), ja(string) — 敵マスタ
@@ -212,7 +212,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
         await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
 
-        await formPanel.locator('.form-panel-close').click();
+        await toggleButton.click();
         await expect(formPanel).not.toBeVisible();
 
         await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'enemy' }) }).click();
@@ -283,6 +283,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(page.locator('#toolbar .toolbar-button-form-toggle')).toHaveClass(/toolbar-button-form-active/);
         await expect(page.locator('.relations-panel')).not.toBeVisible();
         await expect(page.locator('#toolbar .toolbar-button-relations-toggle')).not.toHaveClass(/toolbar-button-relations-active/);
+        await expect(formPanel.locator('.form-panel-header')).toHaveCount(0);
+        await expect(formPanel.locator('.form-panel-close')).toHaveCount(0);
 
         // .form-panel-field 要素が存在すること（各列がフィールドとして表示される）
         const fields = formPanel.locator('.form-panel-field');
@@ -355,8 +357,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(page.locator('.relations-panel')).not.toBeVisible();
         await expect(toggleButton).not.toHaveClass(/toolbar-button-relations-active/);
 
-        // 閉じると FormPanel は消え、RelationsPanel の非表示状態が復元されること
-        await formPanel.locator('.form-panel-close').click();
+        // ツールバーのトグルで閉じると FormPanel は消え、RelationsPanel の非表示状態が復元されること
+        await page.locator('#toolbar .toolbar-button-form-toggle').click();
         await expect(formPanel).not.toBeVisible();
         await expect(page.locator('.relations-panel')).not.toBeVisible();
         await expect(rightSlot).not.toBeVisible();
@@ -394,9 +396,9 @@ test.describe('フォームビュー（FEAT_0043）', () => {
     });
 
     // -------------------------------------------------------------------------
-    // テスト3: フォームビューの ✕ ボタンで閉じること
+    // テスト3: フォームビューのトグルボタンで閉じること
     // -------------------------------------------------------------------------
-    test('フォームビューの ✕ ボタンをクリックするとフォームビューだけが閉じること', async ({ page }) => {
+    test('フォームビューのトグルボタンをクリックするとフォームビューだけが閉じること', async ({ page }) => {
         const table = await openTableAsync(page, 'quest');
 
         // フォームビューを表示する
@@ -409,12 +411,10 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
 
-        // .form-panel-close ボタン（SVG ✕）が存在すること
-        const closeButton = formPanel.locator('.form-panel-close');
-        await expect(closeButton).toBeVisible();
+        await expect(formPanel.locator('.form-panel-header')).toHaveCount(0);
+        await expect(formPanel.locator('.form-panel-close')).toHaveCount(0);
 
-        // ✕ ボタンをクリックする
-        await closeButton.click();
+        await page.locator('#toolbar .toolbar-button-form-toggle').click();
 
         // フォームパネルが非表示になること
         await expect(formPanel).not.toBeVisible();
@@ -474,6 +474,48 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(formPanel.locator('.form-panel-references')).toContainText('スライム');
         await expect(formPanel.locator('.form-panel-references')).toContainText('参照元: item');
         await expect(formPanel.locator('.form-panel-depth-bar')).toHaveCount(0);
+    });
+
+    test('参照アイテムをクリックするとフォーム内に子フォームとして展開されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const enemySection = formPanel.locator('.form-panel-section', { hasText: '参照先: enemy_id' });
+        const enemyRef = enemySection.locator('.form-panel-ref-item--clickable', { hasText: 'スライム' }).first();
+        await expect(enemyRef).toBeVisible();
+        await enemyRef.click();
+
+        await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-child-host .form-panel-title-table')).toHaveText('enemy');
+        await expect(formPanel.locator('.form-panel-child-host .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('スライム');
+        await expect(enemyRef).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    test('展開した子フォームからさらに参照元を展開できること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const weaponSection = formPanel.locator('.form-panel-node--root .form-panel-section', { hasText: '参照先: weapon_id' });
+        const weaponRef = weaponSection.locator('.form-panel-ref-item--clickable').first();
+        await expect(weaponRef).toBeVisible();
+        await weaponRef.click();
+
+        const weaponNode = formPanel.locator('.form-panel-child-host .form-panel-node', { hasText: 'weapon' }).first();
+        await expect(weaponNode.locator(':scope > .form-panel-title .form-panel-title-table')).toHaveText('weapon');
+        const weaponNameSection = weaponNode.locator('.form-panel-section', { hasText: '参照元: weapon_name' });
+        const weaponNameRef = weaponNameSection.locator('.form-panel-ref-item--clickable', { hasText: '剣' }).first();
+        await expect(weaponNameRef).toBeVisible();
+        await weaponNameRef.click();
+
+        await expect(weaponNode.locator('.form-panel-child-host .form-panel-title-table')).toHaveText('weapon_name');
+        await expect(weaponNode.locator('.form-panel-child-host .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
+        await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
     });
 
     test('参照列の入力開始時にEditorTable共通ドロップダウンで候補を選択して反映できること', async ({ page }) => {

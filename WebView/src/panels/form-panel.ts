@@ -27,6 +27,7 @@ export interface FormPanelNavEntry {
 interface FormPage extends FormPanelNavEntry {}
 
 interface CurrentPageData {
+    nodeId: string;
     tableName: string;
     header: string[];
     rows: string[][];
@@ -60,10 +61,18 @@ interface ReferenceFieldDropdownData {
 }
 
 interface ActiveReferenceField {
+    nodeId: string;
     columnName: string;
     input: HTMLInputElement | HTMLTextAreaElement;
     mirror: HTMLElement;
     valueWrapper: HTMLElement;
+}
+
+interface FormNodeMeta {
+    tableName: string;
+    pkValue: string;
+    parentNodeId: string | null;
+    depth: number;
 }
 
 /**
@@ -83,7 +92,11 @@ export class FormPanel {
     private readonly validationPanel: ValidationPanel | false;
     private navStack: FormPage[];
     private currentRequestId: number;
-    private currentPageData: CurrentPageData | null;
+    private nextNodeRenderRequestId: number;
+    private readonly nodeDataById: Map<string, CurrentPageData>;
+    private readonly nodeElementsById: Map<string, HTMLElement>;
+    private readonly nodeMetaById: Map<string, FormNodeMeta>;
+    private readonly nodeRenderRequestIds: Map<string, number>;
     private readonly commitTimers: Map<string, number>;
     private readonly referenceDropdown: GridDropdownInput;
     private activeReferenceField: ActiveReferenceField | null;
@@ -98,7 +111,11 @@ export class FormPanel {
         this.validationPanel = validationPanel;
         this.navStack = [];
         this.currentRequestId = 0;
-        this.currentPageData = null;
+        this.nextNodeRenderRequestId = 0;
+        this.nodeDataById = new Map();
+        this.nodeElementsById = new Map();
+        this.nodeMetaById = new Map();
+        this.nodeRenderRequestIds = new Map();
         this.commitTimers = new Map();
         this.activeReferenceField = null;
         this.referenceDropdownRequestId = 0;
@@ -108,27 +125,9 @@ export class FormPanel {
         panel.classList.add('form-panel--preparing');
         this.panelElement = panel;
 
-        const header = document.createElement('div');
-        header.classList.add('form-panel-header');
-
-        const breadcrumb = document.createElement('div');
-        breadcrumb.classList.add('form-panel-breadcrumb');
-        header.appendChild(breadcrumb);
-
-        const closeButton = document.createElement('button');
-        closeButton.classList.add('form-panel-close');
-        closeButton.type = 'button';
-        closeButton.setAttribute('aria-label', 'フォームビューを閉じる');
-        closeButton.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M1 1L13 13M13 1L1 13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>`;
-        closeButton.addEventListener('click', () => { this.tab.closeFormPanel(); });
-        header.appendChild(closeButton);
-
         const content = document.createElement('div');
         content.classList.add('form-panel-content');
 
-        this.panelElement.appendChild(header);
         this.panelElement.appendChild(content);
 
         this.referenceDropdown = new GridDropdownInput(
@@ -152,6 +151,10 @@ export class FormPanel {
         ++this.currentRequestId;
         this.clearCommitTimers();
         this.hideReferenceDropdown();
+        this.nodeDataById.clear();
+        this.nodeElementsById.clear();
+        this.nodeMetaById.clear();
+        this.nodeRenderRequestIds.clear();
         this.panelElement.remove();
     }
 
@@ -169,7 +172,8 @@ export class FormPanel {
     }
 
     restoreNavStackAsync(navStack: Array<{tableName: string; pkValue: string; label: string}>): Promise<void> {
-        this.navStack = [...navStack];
+        const root = navStack[0];
+        this.navStack = root === undefined ? [] : [{ ...root }];
         return this.renderCurrentPageAsync();
     }
 
@@ -177,65 +181,29 @@ export class FormPanel {
         return this.navStack.map(page => ({ ...page }));
     }
 
-    private drillDownAsync(tableName: string, pkValue: string, label: string): Promise<void> {
-        this.navStack.push({ tableName, pkValue, label });
-        this.tab.pushFormDrillDown(this.navStack);
-        return this.renderCurrentPageAsync();
-    }
-
     private async renderCurrentPageAsync(): Promise<void> {
         const requestId = ++this.currentRequestId;
-        const page = this.navStack[this.navStack.length - 1];
-        this.currentPageData = null;
+        const page = this.navStack[0];
         this.clearCommitTimers();
         this.hideReferenceDropdown();
+        this.nodeDataById.clear();
+        this.nodeElementsById.clear();
+        this.nodeMetaById.clear();
+        this.nodeRenderRequestIds.clear();
         this.panelElement.classList.add('form-panel--preparing');
-        this.renderBreadcrumb();
 
         const content = this.getContentElement();
         content.replaceChildren(this.buildMessage('読み込み中...', 'form-panel-loading'));
 
+        if (page === undefined) {
+            content.replaceChildren(this.buildMessage('フォームビューを表示する行を選択してください', 'form-panel-not-found'));
+            this.revealIfCurrent(requestId);
+            return;
+        }
+
         try {
-            const [tableData, schema] = await Promise.all([
-                this.resolveTableDataAsync(page.tableName),
-                this.loadSchemaJsonAsync(page.tableName),
-            ]);
+            await this.renderNodeIntoAsync(content, 'root', page.tableName, page.pkValue, 0, null, requestId);
             if (requestId !== this.currentRequestId) return;
-
-            const pkColumnName = extractFirstPrimaryKeyColumn(schema);
-            const pkColumnIndex = tableData.header.indexOf(pkColumnName);
-            const rowIndex = pkColumnIndex === -1
-                ? -1
-                : tableData.rows.findIndex(row => row[pkColumnIndex] === page.pkValue);
-
-            content.replaceChildren();
-            content.appendChild(this.buildTitle(page.tableName, page.pkValue));
-
-            if (rowIndex === -1) {
-                content.appendChild(this.buildMessage(`PK "${page.pkValue}" の行が見つかりません`, 'form-panel-not-found'));
-                this.revealIfCurrent(requestId);
-                return;
-            }
-
-            const row = tableData.rows[rowIndex];
-            this.currentPageData = {
-                tableName: page.tableName,
-                header: tableData.header,
-                rows: tableData.rows,
-                row,
-                rowIndex,
-                schema,
-                pkColumnName,
-                pkColumnIndex,
-            };
-
-            content.appendChild(this.buildFields(row, tableData.header, schema));
-            content.appendChild(this.buildReferencesContainer());
-
-            await Promise.all([
-                this.refreshValidationAsync(requestId),
-                this.renderReferencesAsync(requestId),
-            ]);
             this.revealIfCurrent(requestId);
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
@@ -251,33 +219,83 @@ export class FormPanel {
         this.panelElement.classList.remove('form-panel--preparing');
     }
 
-    private renderBreadcrumb(): void {
-        const breadcrumb = this.panelElement.querySelector('.form-panel-breadcrumb') as HTMLElement;
-        breadcrumb.replaceChildren();
-        for (let i = 0; i < this.navStack.length; i++) {
-            if (i > 0) {
-                const sep = document.createElement('span');
-                sep.classList.add('form-panel-breadcrumb-sep');
-                sep.textContent = '/';
-                breadcrumb.appendChild(sep);
+    private async renderNodeIntoAsync(
+        container: HTMLElement,
+        nodeId: string,
+        tableName: string,
+        pkValue: string,
+        depth: number,
+        parentNodeId: string | null,
+        requestId: number,
+    ): Promise<void> {
+        const nodeRequestId = ++this.nextNodeRenderRequestId;
+        this.nodeRenderRequestIds.set(nodeId, nodeRequestId);
+
+        const node = document.createElement('div');
+        node.classList.add('form-panel-node');
+        node.classList.add(depth === 0 ? 'form-panel-node--root' : 'form-panel-node--child');
+        node.dataset.nodeId = nodeId;
+        node.dataset.tableName = tableName;
+        node.dataset.pkValue = pkValue;
+        node.dataset.depth = String(depth);
+        this.nodeElementsById.set(nodeId, node);
+        this.nodeMetaById.set(nodeId, { tableName, pkValue, parentNodeId, depth });
+
+        container.replaceChildren(node);
+        node.replaceChildren(this.buildMessage('読み込み中...', 'form-panel-loading'));
+
+        try {
+            const [tableData, schema] = await Promise.all([
+                this.resolveTableDataAsync(tableName),
+                this.loadSchemaJsonAsync(tableName),
+            ]);
+            if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
+
+            const pkColumnName = extractFirstPrimaryKeyColumn(schema);
+            const pkColumnIndex = tableData.header.indexOf(pkColumnName);
+            const rowIndex = pkColumnIndex === -1
+                ? -1
+                : tableData.rows.findIndex(row => row[pkColumnIndex] === pkValue);
+
+            node.replaceChildren();
+            node.appendChild(this.buildTitle(tableName, pkValue));
+
+            if (rowIndex === -1) {
+                node.appendChild(this.buildMessage(`PK "${pkValue}" の行が見つかりません`, 'form-panel-not-found'));
+                return;
             }
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.classList.add('form-panel-breadcrumb-item');
-            if (i === this.navStack.length - 1) {
-                item.classList.add('form-panel-breadcrumb-item--current');
-                item.disabled = true;
-            } else {
-                item.classList.add('form-panel-breadcrumb-item--link');
-                const capturedIndex = i;
-                item.addEventListener('click', () => {
-                    const delta = capturedIndex - (this.navStack.length - 1);
-                    history.go(delta);
-                });
-            }
-            item.textContent = this.navStack[i].label;
-            breadcrumb.appendChild(item);
+
+            const row = tableData.rows[rowIndex];
+            this.nodeDataById.set(nodeId, {
+                nodeId,
+                tableName,
+                header: tableData.header,
+                rows: tableData.rows,
+                row,
+                rowIndex,
+                schema,
+                pkColumnName,
+                pkColumnIndex,
+            });
+
+            node.appendChild(this.buildFields(nodeId, row, tableData.header, schema));
+            node.appendChild(this.buildReferencesContainer());
+
+            await Promise.all([
+                this.refreshValidationAsync(requestId),
+                this.renderReferencesAsync(nodeId, requestId),
+            ]);
+        } catch (err) {
+            if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
+            node.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
+            console.error('[FormPanel] renderNodeIntoAsync failed:', err);
+            this.notification.show('フォームの表示に失敗しました');
         }
+    }
+
+    private isNodeRenderCurrent(nodeId: string, nodeRequestId: number, requestId: number): boolean {
+        return requestId === this.currentRequestId
+            && this.nodeRenderRequestIds.get(nodeId) === nodeRequestId;
     }
 
     private buildTitle(tableName: string, pkValue: string): HTMLElement {
@@ -297,22 +315,23 @@ export class FormPanel {
         return title;
     }
 
-    private buildFields(row: string[], header: string[], schema: SchemaJson): HTMLElement {
+    private buildFields(nodeId: string, row: string[], header: string[], schema: SchemaJson): HTMLElement {
         const fields = document.createElement('div');
         fields.classList.add('form-panel-fields');
 
         for (let i = 0; i < header.length; i++) {
             const columnName = header[i];
             const colSchema = schema.header.find(col => col.name === columnName);
-            fields.appendChild(this.buildFieldElement(columnName, row[i] ?? '', i, colSchema));
+            fields.appendChild(this.buildFieldElement(nodeId, columnName, row[i] ?? '', i, colSchema));
         }
 
         return fields;
     }
 
-    private buildFieldElement(columnName: string, value: string, columnIndex: number, colSchema: SchemaColumn | undefined): HTMLElement {
+    private buildFieldElement(nodeId: string, columnName: string, value: string, columnIndex: number, colSchema: SchemaColumn | undefined): HTMLElement {
         const field = document.createElement('div');
         field.classList.add('form-panel-field');
+        field.dataset.nodeId = nodeId;
         field.dataset.columnName = columnName;
         field.dataset.columnIndex = String(columnIndex);
 
@@ -368,12 +387,12 @@ export class FormPanel {
         const updateValue = () => {
             const nextValue = input.value;
             updateFieldDisplay(nextValue);
-            this.scheduleFieldCommit(columnName, nextValue);
+            this.scheduleFieldCommit(nodeId, columnName, nextValue);
             if (colSchema?.reference) {
                 if (this.isActiveReferenceInput(input) && this.referenceDropdown.isVisible()) {
                     this.referenceDropdown.onInputChanged(nextValue);
                 } else {
-                    this.showReferenceDropdownForInputAsync(columnName, input, mirror, valueWrapper, true)
+                    this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, true)
                         .catch(err => {
                             console.error('[FormPanel] reference dropdown input failed:', err);
                             this.notification.show('参照候補の表示に失敗しました');
@@ -383,13 +402,13 @@ export class FormPanel {
         };
         input.addEventListener('input', updateValue);
         input.addEventListener('change', () => {
-            this.commitFieldValueAsync(columnName, input.value).catch(err => {
+            this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
                 console.error('[FormPanel] field change failed:', err);
                 this.notification.show('フォーム入力の反映に失敗しました');
             });
         });
         input.addEventListener('blur', () => {
-            this.commitFieldValueAsync(columnName, input.value).catch(err => {
+            this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
                 console.error('[FormPanel] field blur commit failed:', err);
                 this.notification.show('フォーム入力の反映に失敗しました');
             });
@@ -399,7 +418,7 @@ export class FormPanel {
         });
         input.addEventListener('keydown', (event) => {
             const keyboardEvent = event as KeyboardEvent;
-            if (colSchema?.reference && this.handleReferenceDropdownKeydown(keyboardEvent, columnName, input, mirror, valueWrapper)) {
+            if (colSchema?.reference && this.handleReferenceDropdownKeydown(keyboardEvent, nodeId, columnName, input, mirror, valueWrapper)) {
                 return;
             }
             if (keyboardEvent.key !== 'Enter' || input instanceof HTMLTextAreaElement) return;
@@ -408,7 +427,7 @@ export class FormPanel {
         });
         if (colSchema?.reference) {
             input.addEventListener('focus', () => {
-                this.showReferenceDropdownForInputAsync(columnName, input, mirror, valueWrapper, false)
+                this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
                     .catch(err => {
                         console.error('[FormPanel] reference dropdown focus failed:', err);
                         this.notification.show('参照候補の表示に失敗しました');
@@ -451,10 +470,10 @@ export class FormPanel {
         return container;
     }
 
-    private async commitFieldValueAsync(columnName: string, value: string): Promise<void> {
-        this.clearScheduledFieldCommit(columnName);
-        const data = this.currentPageData;
-        if (data === null) return;
+    private async commitFieldValueAsync(nodeId: string, columnName: string, value: string): Promise<void> {
+        this.clearScheduledFieldCommit(nodeId, columnName);
+        const data = this.nodeDataById.get(nodeId);
+        if (data === undefined) return;
         const columnIndex = data.header.indexOf(columnName);
         if (columnIndex === -1) return;
 
@@ -475,28 +494,33 @@ export class FormPanel {
 
         data.row[columnIndex] = value;
         if (columnIndex === data.pkColumnIndex) {
-            const currentPage = this.navStack[this.navStack.length - 1];
-            currentPage.pkValue = value;
-            currentPage.label = `${data.tableName} / ${value}`;
-            this.renderBreadcrumb();
-            const pkTitle = this.panelElement.querySelector('.form-panel-title-pk');
-            if (pkTitle !== null) pkTitle.textContent = value;
+            const meta = this.nodeMetaById.get(nodeId);
+            if (meta !== undefined) meta.pkValue = value;
+            if (nodeId === 'root') {
+                const currentPage = this.navStack[0];
+                if (currentPage !== undefined) {
+                    currentPage.pkValue = value;
+                    currentPage.label = `${data.tableName} / ${value}`;
+                }
+            }
+            const pkTitle = this.nodeElementsById.get(nodeId)?.querySelector('.form-panel-title-pk');
+            if (pkTitle !== null && pkTitle !== undefined) pkTitle.textContent = value;
         }
 
         const requestId = this.currentRequestId;
         await Promise.all([
             this.refreshValidationAsync(requestId),
-            this.renderReferencesAsync(requestId),
+            this.renderReferencesAsync(nodeId, requestId),
         ]);
     }
 
-    private scheduleFieldCommit(columnName: string, value: string): void {
-        const key = `${this.currentRequestId}:${columnName}`;
+    private scheduleFieldCommit(nodeId: string, columnName: string, value: string): void {
+        const key = this.getCommitTimerKey(nodeId, columnName);
         const existing = this.commitTimers.get(key);
         if (existing !== undefined) window.clearTimeout(existing);
         const timer = window.setTimeout(() => {
             this.commitTimers.delete(key);
-            this.commitFieldValueAsync(columnName, value).catch(err => {
+            this.commitFieldValueAsync(nodeId, columnName, value).catch(err => {
                 console.error('[FormPanel] field input commit failed:', err);
                 this.notification.show('フォーム入力の反映に失敗しました');
             });
@@ -505,8 +529,6 @@ export class FormPanel {
     }
 
     private async refreshValidationAsync(requestId: number): Promise<void> {
-        const data = this.currentPageData;
-        if (data === null) return;
         if (this.validationPanel === false) {
             this.renderValidationErrors([]);
             return;
@@ -518,20 +540,21 @@ export class FormPanel {
     }
 
     private async showReferenceDropdownForInputAsync(
+        nodeId: string,
         columnName: string,
         input: HTMLInputElement | HTMLTextAreaElement,
         mirror: HTMLElement,
         valueWrapper: HTMLElement,
         filterByInput: boolean,
     ): Promise<void> {
-        const data = this.currentPageData;
-        if (data === null) return;
+        const data = this.nodeDataById.get(nodeId);
+        if (data === undefined) return;
         const colSchema = data.schema.header.find(col => col.name === columnName);
         if (!colSchema?.reference) return;
 
         const requestId = this.currentRequestId;
         const dropdownRequestId = ++this.referenceDropdownRequestId;
-        this.activeReferenceField = { columnName, input, mirror, valueWrapper };
+        this.activeReferenceField = { nodeId, columnName, input, mirror, valueWrapper };
 
         const dropdownData = await this.resolveFieldReferenceDropdownDataAsync(data, colSchema, requestId);
         if (requestId !== this.currentRequestId || dropdownRequestId !== this.referenceDropdownRequestId) return;
@@ -548,6 +571,7 @@ export class FormPanel {
 
     private handleReferenceDropdownKeydown(
         event: KeyboardEvent,
+        nodeId: string,
         columnName: string,
         input: HTMLInputElement | HTMLTextAreaElement,
         mirror: HTMLElement,
@@ -556,7 +580,7 @@ export class FormPanel {
         if (!this.isActiveReferenceInput(input) || !this.referenceDropdown.isVisible()) {
             if (event.key === 'ArrowDown') {
                 event.preventDefault();
-                this.showReferenceDropdownForInputAsync(columnName, input, mirror, valueWrapper, false)
+                this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
                     .catch(err => {
                         console.error('[FormPanel] reference dropdown keydown failed:', err);
                         this.notification.show('参照候補の表示に失敗しました');
@@ -600,7 +624,7 @@ export class FormPanel {
         active.mirror.textContent = id === '' ? '—' : id;
         active.valueWrapper.classList.toggle('form-panel-field-value--empty', id === '');
         this.activeReferenceField = null;
-        this.commitFieldValueAsync(active.columnName, id).catch(err => {
+        this.commitFieldValueAsync(active.nodeId, active.columnName, id).catch(err => {
             console.error('[FormPanel] reference dropdown selection failed:', err);
             this.notification.show('参照候補の反映に失敗しました');
         });
@@ -716,22 +740,23 @@ export class FormPanel {
     }
 
     private renderValidationErrors(errors: ValidationError[]): void {
-        const data = this.currentPageData;
-        if (data === null) return;
-
-        const rowErrors = errors.filter(error => error.tableName === data.tableName && error.rowIndex === data.rowIndex);
-
         for (const field of Array.from(this.panelElement.querySelectorAll('.form-panel-field'))) {
             field.classList.remove('form-panel-field--invalid');
             const fieldErrors = field.querySelector('.form-panel-field-errors');
             if (fieldErrors !== null) fieldErrors.replaceChildren();
         }
 
-        for (const error of rowErrors) {
-            if (error.columnIndex >= 0) {
-                const field = this.panelElement.querySelector(`.form-panel-field[data-column-index="${error.columnIndex}"]`) as HTMLElement | null;
-                const fieldErrors = field?.querySelector('.form-panel-field-errors') as HTMLElement | null;
-                if (field !== null && fieldErrors !== null) {
+        for (const data of this.nodeDataById.values()) {
+            const nodeElement = this.nodeElementsById.get(data.nodeId);
+            if (nodeElement === undefined || !nodeElement.isConnected) continue;
+            const rowErrors = errors.filter(error => error.tableName === data.tableName && error.rowIndex === data.rowIndex);
+
+            for (const error of rowErrors) {
+                if (error.columnIndex < 0) continue;
+                for (const field of Array.from(nodeElement.querySelectorAll('.form-panel-field')) as HTMLElement[]) {
+                    if (field.dataset.nodeId !== data.nodeId || field.dataset.columnIndex !== String(error.columnIndex)) continue;
+                    const fieldErrors = field.querySelector('.form-panel-field-errors') as HTMLElement | null;
+                    if (fieldErrors === null) continue;
                     field.classList.add('form-panel-field--invalid');
                     const fieldError = document.createElement('div');
                     fieldError.classList.add('form-panel-field-error');
@@ -742,10 +767,12 @@ export class FormPanel {
         }
     }
 
-    private async renderReferencesAsync(requestId: number): Promise<void> {
-        const data = this.currentPageData;
-        if (data === null) return;
-        const body = this.panelElement.querySelector('.form-panel-references-body') as HTMLElement | null;
+    private async renderReferencesAsync(nodeId: string, requestId: number): Promise<void> {
+        const data = this.nodeDataById.get(nodeId);
+        if (data === undefined) return;
+        const nodeElement = this.nodeElementsById.get(nodeId);
+        if (nodeElement === undefined || !nodeElement.isConnected) return;
+        const body = nodeElement.querySelector('.form-panel-references-body') as HTMLElement | null;
         if (body === null) return;
         body.textContent = '読み込み中...';
 
@@ -756,6 +783,7 @@ export class FormPanel {
             ]);
             if (requestId !== this.currentRequestId) return;
 
+            this.removeNodeDescendants(nodeId);
             body.replaceChildren();
             const sections = [...outgoing, ...incoming];
             if (sections.length === 0) {
@@ -763,7 +791,7 @@ export class FormPanel {
                 return;
             }
             for (const section of sections) {
-                body.appendChild(this.buildReferenceSection(section));
+                body.appendChild(this.buildReferenceSection(section, nodeId));
             }
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
@@ -891,7 +919,7 @@ export class FormPanel {
         return sections;
     }
 
-    private buildReferenceSection(section: ReferenceSection): HTMLElement {
+    private buildReferenceSection(section: ReferenceSection, parentNodeId: string): HTMLElement {
         const container = document.createElement('div');
         container.classList.add('form-panel-section');
 
@@ -922,24 +950,32 @@ export class FormPanel {
         if (section.items.length === 0) {
             list.appendChild(this.buildMessage(section.emptyText, 'form-panel-section-empty'));
         } else {
-            for (const item of section.items) list.appendChild(this.buildReferenceItemElement(item));
+            for (const item of section.items) list.appendChild(this.buildReferenceItemElement(item, parentNodeId));
         }
         container.appendChild(list);
         return container;
     }
 
-    private buildReferenceItemElement(item: ReferenceItem): HTMLElement {
-        const element = document.createElement(item.canOpen ? 'button' : 'div');
+    private buildReferenceItemElement(item: ReferenceItem, parentNodeId: string): HTMLElement {
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('form-panel-ref-node');
+
+        const alreadyInPath = this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue);
+        const canExpand = item.canOpen && !alreadyInPath;
+        const element = document.createElement(canExpand ? 'button' : 'div');
         element.classList.add('form-panel-ref-item');
-        if (item.canOpen) {
+        if (canExpand) {
             (element as HTMLButtonElement).type = 'button';
             element.classList.add('form-panel-ref-item--clickable');
+            element.setAttribute('aria-expanded', 'false');
             element.addEventListener('click', () => {
-                this.drillDownAsync(item.tableName, item.pkValue, item.primaryText).catch(err => {
-                    console.error('[FormPanel] drillDownAsync failed:', err);
-                    this.notification.show('フォームのドリルダウンに失敗しました');
+                this.toggleReferenceExpansionAsync(wrapper, element as HTMLButtonElement, parentNodeId, item).catch(err => {
+                    console.error('[FormPanel] toggleReferenceExpansionAsync failed:', err);
+                    this.notification.show('参照先の展開に失敗しました');
                 });
             });
+        } else if (alreadyInPath) {
+            element.classList.add('form-panel-ref-item--cycle');
         }
         if (item.missing) element.classList.add('form-panel-ref-item--missing');
 
@@ -953,7 +989,47 @@ export class FormPanel {
 
         element.appendChild(main);
         element.appendChild(sub);
-        return element;
+        wrapper.appendChild(element);
+        return wrapper;
+    }
+
+    private async toggleReferenceExpansionAsync(wrapper: HTMLElement, trigger: HTMLButtonElement, parentNodeId: string, item: ReferenceItem): Promise<void> {
+        const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue);
+        const existingHost = Array.from(wrapper.children).find(child => child.classList.contains('form-panel-child-host')) as HTMLElement | undefined;
+        if (existingHost !== undefined) {
+            this.removeNodeBranch(childNodeId);
+            existingHost.remove();
+            wrapper.classList.remove('form-panel-ref-node--expanded');
+            trigger.classList.remove('form-panel-ref-item--expanded');
+            trigger.setAttribute('aria-expanded', 'false');
+            return;
+        }
+
+        const childHost = document.createElement('div');
+        childHost.classList.add('form-panel-child-host');
+        wrapper.appendChild(childHost);
+        wrapper.classList.add('form-panel-ref-node--expanded');
+        trigger.classList.add('form-panel-ref-item--expanded');
+        trigger.setAttribute('aria-expanded', 'true');
+
+        const parentMeta = this.nodeMetaById.get(parentNodeId);
+        const childDepth = parentMeta === undefined ? 1 : parentMeta.depth + 1;
+        await this.renderNodeIntoAsync(childHost, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, this.currentRequestId);
+    }
+
+    private makeChildNodeId(parentNodeId: string, tableName: string, pkValue: string): string {
+        return `${parentNodeId}>${encodeURIComponent(tableName)}=${encodeURIComponent(pkValue)}`;
+    }
+
+    private isReferenceInAncestorPath(parentNodeId: string, tableName: string, pkValue: string): boolean {
+        let currentNodeId: string | null = parentNodeId;
+        while (currentNodeId !== null) {
+            const meta = this.nodeMetaById.get(currentNodeId);
+            if (meta === undefined) return false;
+            if (meta.tableName === tableName && meta.pkValue === pkValue) return true;
+            currentNodeId = meta.parentNodeId;
+        }
+        return false;
     }
 
     private createReferenceItem(tableName: string, header: string[], row: string[], schema: SchemaJson, missing: boolean): ReferenceItem {
@@ -1007,12 +1083,43 @@ export class FormPanel {
         this.commitTimers.clear();
     }
 
-    private clearScheduledFieldCommit(columnName: string): void {
-        const key = `${this.currentRequestId}:${columnName}`;
+    private clearScheduledFieldCommit(nodeId: string, columnName: string): void {
+        const key = this.getCommitTimerKey(nodeId, columnName);
         const existing = this.commitTimers.get(key);
         if (existing === undefined) return;
         window.clearTimeout(existing);
         this.commitTimers.delete(key);
+    }
+
+    private getCommitTimerKey(nodeId: string, columnName: string): string {
+        return `${this.currentRequestId}:${nodeId}:${columnName}`;
+    }
+
+    private removeNodeDescendants(parentNodeId: string): void {
+        for (const nodeId of Array.from(this.nodeMetaById.keys())) {
+            if (nodeId === parentNodeId) continue;
+            if (this.isDescendantNode(nodeId, parentNodeId)) this.removeNodeBranch(nodeId);
+        }
+    }
+
+    private removeNodeBranch(nodeId: string): void {
+        for (const candidateId of Array.from(this.nodeMetaById.keys())) {
+            if (candidateId === nodeId || this.isDescendantNode(candidateId, nodeId)) {
+                this.nodeDataById.delete(candidateId);
+                this.nodeElementsById.delete(candidateId);
+                this.nodeMetaById.delete(candidateId);
+                this.nodeRenderRequestIds.delete(candidateId);
+            }
+        }
+    }
+
+    private isDescendantNode(nodeId: string, ancestorNodeId: string): boolean {
+        let current = this.nodeMetaById.get(nodeId)?.parentNodeId ?? null;
+        while (current !== null) {
+            if (current === ancestorNodeId) return true;
+            current = this.nodeMetaById.get(current)?.parentNodeId ?? null;
+        }
+        return false;
     }
 
     private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] }> {
