@@ -267,8 +267,9 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
-        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(formPanel.locator('.form-panel-title')).toHaveCount(0);
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('1');
         await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
 
         await toggleButton.click();
@@ -284,11 +285,11 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('1');
 
         await table.locator('.editor-table-row-header').nth(1).click();
 
-        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('2');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('2');
         await expect(formPanel.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input')).toHaveValue('second_quest');
     });
 
@@ -300,8 +301,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
-        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('1');
 
         await openTableAsync(page, 'enemy');
         await expect(formPanel).not.toBeVisible();
@@ -309,8 +310,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
-        await expect(formPanel.locator('.form-panel-title-pk')).toHaveText('1');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('1');
         await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
 
         await toggleButton.click();
@@ -330,7 +331,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
 
         await openTableAsync(page, 'enemy');
         await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: 'quest' }) }).click();
@@ -343,7 +344,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await page.goForward();
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('quest');
         await expect(formPanel).toBeVisible();
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
         await expect(toggleButton).toHaveClass(/toolbar-button-form-active/);
     });
 
@@ -589,8 +590,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(enemyRef).toBeVisible();
         await enemyRef.click();
 
-        await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
-        await expect(formPanel.locator('.form-panel-child-host .form-panel-title-table')).toHaveText('enemy');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+        await expect(formPanel.locator('.form-panel-child-host .form-panel-node[data-table-name="enemy"]')).toBeVisible();
         await expect(formPanel.locator('.form-panel-child-host .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('スライム');
         await expect(enemyRef).toHaveAttribute('aria-expanded', 'true');
     });
@@ -607,14 +608,15 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(weaponRef).toBeVisible();
         await weaponRef.click();
 
-        const weaponNode = formPanel.locator('.form-panel-child-host .form-panel-node', { hasText: 'weapon' }).first();
-        await expect(weaponNode.locator(':scope > .form-panel-title .form-panel-title-table')).toHaveText('weapon');
-        await expect(weaponNode.locator(':scope > .form-panel-attachments')).toBeVisible();
-        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-attached-section', { hasText: '参照元: weapon_name' })).toBeVisible();
-        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-title-table')).toHaveText('weapon_name');
-        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
-        await expect(weaponNode.locator(':scope > .form-panel-references .form-panel-section', { hasText: '参照元: weapon_name' })).toHaveCount(0);
-        await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
+        const weaponNode = formPanel.locator('.form-panel-child-host .form-panel-node[data-table-name="weapon"]').first();
+        await expect(weaponNode).toHaveAttribute('data-table-name', 'weapon');
+        await expect(weaponNode.locator(':scope > .form-panel-attachments')).toHaveCount(0);
+        const weaponNameSection = weaponNode.locator(':scope > .form-panel-references .form-panel-section', { hasText: '参照元: weapon_name' });
+        await expect(weaponNameSection).toBeVisible();
+        await expect(weaponNameSection.locator('.form-panel-ref-item--clickable')).toHaveCount(0);
+        await expect(weaponNameSection.locator('.form-panel-node[data-table-name="weapon_name"]')).toBeVisible();
+        await expect(weaponNameSection.locator('.form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
     });
 
     test('参照列の入力開始時にEditorTable共通ドロップダウンで候補を選択して反映できること', async ({ page }) => {
@@ -681,12 +683,17 @@ test.describe('フォームビューの参照行見出し', () => {
         const formPanel = page.locator('.form-panel');
         const productSection = formPanel.locator('.form-panel-section', { hasText: '参照先: shop_product_group_id' });
         await expect(productSection).toBeVisible();
+        await expect(productSection.locator('.form-panel-section-detail')).toHaveCount(0);
 
         const charaProduct = productSection.locator('.form-panel-ref-item', { hasText: 'キャラ: ネイト' });
         await expect(charaProduct).toBeVisible();
-        await expect(charaProduct).toContainText('shop_product.group_id=9, table_id=1, record_id=14');
+        await expect(charaProduct.locator('.form-panel-ref-item-sub')).toHaveCount(0);
         await expect(charaProduct).toContainText('販売価格=1090');
         await expect(charaProduct).toContainText('表示順=15');
+        await charaProduct.click();
+
+        const expandedProduct = productSection.locator('.form-panel-child-host .form-panel-node', { hasText: 'shop_product' }).first();
+        await expect(expandedProduct.locator(':scope > .form-panel-references .form-panel-section', { hasText: '参照元: shop' })).toHaveCount(0);
 
         const itemProduct = productSection.locator('.form-panel-ref-item', { hasText: 'アイテム: 神聖な弓' });
         await expect(itemProduct).toBeVisible();
@@ -711,7 +718,7 @@ test.describe('フォームビューの表示タイミング', () => {
         const formPanel = page.locator('.form-panel');
         await expect(formPanel).not.toBeVisible({ timeout: 100 });
         await expect(formPanel).toBeVisible({ timeout: 5000 });
-        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
         await expect(formPanel.locator('.form-panel-references')).toContainText('参照先: enemy_id');
     });
 });

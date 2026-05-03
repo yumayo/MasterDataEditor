@@ -675,11 +675,11 @@ test.describe('フォームパネルのインライン参照展開', () => {
 		const formPanel = page.locator('.form-panel');
 		await expect(formPanel).toBeVisible();
 
-		// フォームのタイトルに quest テーブル名が表示されていること（ルートページの確認）
-		await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
+		// ルートフォームが quest テーブルを表示していること
+		await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
 
 		// N:1参照先（enemy）の参照アイテムをクリックして、その場に子フォームを展開する
-		const enemySection = formPanel.locator('.form-panel-section', { hasText: '→ enemy' });
+		const enemySection = formPanel.locator('.form-panel-section', { hasText: '参照先: enemy_id' });
 		await expect(enemySection).toBeVisible();
 		const refItem = enemySection.locator('.form-panel-ref-item--clickable').first();
 		await expect(refItem).toBeVisible();
@@ -690,8 +690,8 @@ test.describe('フォームパネルのインライン参照展開', () => {
 		await openFormAndExpandEnemyAsync(page);
 
 		const formPanel = page.locator('.form-panel');
-		await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
-		await expect(formPanel.locator('.form-panel-child-host .form-panel-title-table')).toHaveText('enemy');
+		await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+		await expect(formPanel.locator('.form-panel-child-host .form-panel-node[data-table-name="enemy"]')).toBeVisible();
 		await expect(formPanel.locator('.form-panel-child-host')).toContainText('スライム');
 
 		const state = await page.evaluate(() => history.state);

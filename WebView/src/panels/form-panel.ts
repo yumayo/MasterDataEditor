@@ -39,8 +39,10 @@ interface CurrentPageData {
 }
 
 interface ReferenceSection {
+    relationKind: 'outgoing' | 'incoming';
+    eyebrow: string;
+    heading: string;
     title: string;
-    detail: string;
     badge: string;
     emptyText: string;
     items: ReferenceItem[];
@@ -51,7 +53,6 @@ interface ReferenceItem {
     tableName: string;
     pkValue: string;
     primaryText: string;
-    secondaryText: string;
     metaParts: string[];
     canOpen: boolean;
     missing: boolean;
@@ -74,7 +75,6 @@ interface DisplayCandidate {
 interface RowReferenceSummary {
     kind: 'simple' | 'dynamic';
     primaryText: string;
-    detailText: string;
     consumedColumns: Set<string>;
 }
 
@@ -282,7 +282,6 @@ export class FormPanel {
                 : tableData.rows.findIndex(row => row[pkColumnIndex] === pkValue);
 
             node.replaceChildren();
-            node.appendChild(this.buildTitle(tableName, pkValue));
 
             if (rowIndex === -1) {
                 node.appendChild(this.buildMessage(`PK "${pkValue}" の行が見つかりません`, 'form-panel-not-found'));
@@ -304,7 +303,6 @@ export class FormPanel {
 
             node.appendChild(this.buildFields(nodeId, row, tableData.header, schema));
             if (includeReferences) {
-                node.appendChild(this.buildAttachmentsContainer());
                 node.appendChild(this.buildReferencesContainer());
 
                 await Promise.all([
@@ -325,23 +323,6 @@ export class FormPanel {
     private isNodeRenderCurrent(nodeId: string, nodeRequestId: number, requestId: number): boolean {
         return requestId === this.currentRequestId
             && this.nodeRenderRequestIds.get(nodeId) === nodeRequestId;
-    }
-
-    private buildTitle(tableName: string, pkValue: string): HTMLElement {
-        const title = document.createElement('div');
-        title.classList.add('form-panel-title');
-
-        const table = document.createElement('span');
-        table.classList.add('form-panel-title-table');
-        table.textContent = tableName;
-
-        const pk = document.createElement('span');
-        pk.classList.add('form-panel-title-pk');
-        pk.textContent = pkValue;
-
-        title.appendChild(table);
-        title.appendChild(pk);
-        return title;
     }
 
     private buildFields(nodeId: string, row: string[], header: string[], schema: SchemaJson): HTMLElement {
@@ -499,19 +480,6 @@ export class FormPanel {
         return container;
     }
 
-    private buildAttachmentsContainer(): HTMLElement {
-        const container = document.createElement('div');
-        container.classList.add('form-panel-attachments', 'form-panel-attachments--empty');
-        const title = document.createElement('div');
-        title.classList.add('form-panel-attachments-title');
-        title.textContent = '1:1';
-        const body = document.createElement('div');
-        body.classList.add('form-panel-attachments-body');
-        container.appendChild(title);
-        container.appendChild(body);
-        return container;
-    }
-
     private async commitFieldValueAsync(nodeId: string, columnName: string, value: string): Promise<void> {
         this.clearScheduledFieldCommit(nodeId, columnName);
         const data = this.nodeDataById.get(nodeId);
@@ -545,8 +513,6 @@ export class FormPanel {
                     currentPage.label = `${data.tableName} / ${value}`;
                 }
             }
-            const pkTitle = this.nodeElementsById.get(nodeId)?.querySelector('.form-panel-title-pk');
-            if (pkTitle !== null && pkTitle !== undefined) pkTitle.textContent = value;
         }
 
         const requestId = this.currentRequestId;
@@ -814,14 +780,10 @@ export class FormPanel {
         if (data === undefined) return;
         const nodeElement = this.nodeElementsById.get(nodeId);
         if (nodeElement === undefined || !nodeElement.isConnected) return;
-        const attachmentsContainer = nodeElement.querySelector('.form-panel-attachments') as HTMLElement | null;
-        const attachmentsBody = nodeElement.querySelector('.form-panel-attachments-body') as HTMLElement | null;
         const referencesContainer = nodeElement.querySelector('.form-panel-references') as HTMLElement | null;
         const body = nodeElement.querySelector('.form-panel-references-body') as HTMLElement | null;
         if (body === null) return;
         referencesContainer?.classList.remove('form-panel-references--empty');
-        attachmentsContainer?.classList.add('form-panel-attachments--empty');
-        if (attachmentsBody !== null) attachmentsBody.replaceChildren();
         body.textContent = '読み込み中...';
 
         try {
@@ -834,34 +796,27 @@ export class FormPanel {
             this.removeNodeDescendants(nodeId);
             body.replaceChildren();
             const sections = [...outgoing, ...incoming];
-            const attachedSections = sections.filter(section => section.attached);
-            const referenceSections = sections.filter(section => !section.attached);
-
-            if (attachmentsContainer !== null && attachmentsBody !== null && attachedSections.length > 0) {
-                attachmentsContainer.classList.remove('form-panel-attachments--empty');
-                for (const section of attachedSections) {
-                    const attachedSection = this.buildAttachedReferenceSection(section);
-                    attachmentsBody.appendChild(attachedSection);
-                    await this.renderAttachedReferenceSectionAsync(attachedSection, section, nodeId, requestId);
-                    if (requestId !== this.currentRequestId) return;
-                }
-            }
+            const referenceSections = sections.filter(section =>
+                this.hasVisibleReferenceItems(section, nodeId)
+            );
 
             if (referenceSections.length === 0) {
-                if (attachedSections.length > 0) {
-                    referencesContainer?.classList.add('form-panel-references--empty');
-                    return;
-                }
                 body.appendChild(this.buildMessage('参照なし', 'form-panel-section-empty'));
                 return;
             }
             for (const section of referenceSections) {
-                body.appendChild(this.buildReferenceSection(section, nodeId));
+                const sectionElement = this.buildReferenceSection(section, nodeId);
+                body.appendChild(sectionElement);
+                if (section.attached) {
+                    const attachedHost = sectionElement.querySelector('.form-panel-attached-host') as HTMLElement | null;
+                    if (attachedHost !== null) {
+                        await this.renderAttachedReferenceSectionAsync(attachedHost, section, nodeId, requestId);
+                        if (requestId !== this.currentRequestId) return;
+                    }
+                }
             }
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
-            attachmentsContainer?.classList.add('form-panel-attachments--empty');
-            if (attachmentsBody !== null) attachmentsBody.replaceChildren();
             referencesContainer?.classList.remove('form-panel-references--empty');
             body.replaceChildren(this.buildMessage('参照一覧の取得に失敗しました', 'form-panel-section-empty'));
             console.error('[FormPanel] renderReferencesAsync failed:', err);
@@ -950,8 +905,10 @@ export class FormPanel {
         requestId: number,
     ): Promise<ReferenceSection> {
         return {
+            relationKind: 'outgoing',
+            eyebrow: `参照先: ${sourceColumnName}`,
+            heading: targetTableName,
             title: `参照先: ${sourceColumnName} → ${targetTableName}`,
-            detail: `${sourceColumnName}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
             badge: `${matchedRows.length}`,
             emptyText: `値 "${fkValue}" に一致する参照先がありません`,
             items: await Promise.all(matchedRows.map(row => this.createReferenceItemAsync(targetTableName, targetHeader, row, targetSchema, false, requestId))),
@@ -980,8 +937,10 @@ export class FormPanel {
             const filteredRows = fkColIdx === -1 ? [] : childData.rows.filter(row => row[fkColIdx] === pkValue);
             const items = await Promise.all(filteredRows.map(row => this.createReferenceItemAsync(entry.childTableName, childData.header, row, childSchema, false, requestId)));
             sections.push({
+                relationKind: 'incoming',
+                eyebrow: `参照元: ${entry.childTableName}`,
+                heading: entry.childTableName,
                 title: `参照元: ${entry.childTableName}`,
-                detail: `${entry.childTableName}.${entry.childColumnName}=${pkValue}`,
                 badge: `${filteredRows.length}`,
                 emptyText: '参照元の行はありません',
                 items,
@@ -1008,47 +967,20 @@ export class FormPanel {
         return !this.isReferenceInAncestorPath(data.nodeId, items[0].tableName, items[0].pkValue);
     }
 
-    private buildAttachedReferenceSection(section: ReferenceSection): HTMLElement {
-        const container = document.createElement('div');
-        container.classList.add('form-panel-attached-section');
-
-        const header = document.createElement('div');
-        header.classList.add('form-panel-attached-header');
-
-        const titleWrap = document.createElement('div');
-        titleWrap.classList.add('form-panel-section-title-wrap');
-        const title = document.createElement('div');
-        title.classList.add('form-panel-section-title');
-        title.textContent = section.title;
-        const detail = document.createElement('div');
-        detail.classList.add('form-panel-section-detail');
-        detail.textContent = section.detail;
-        titleWrap.appendChild(title);
-        titleWrap.appendChild(detail);
-
-        const badge = document.createElement('span');
-        badge.classList.add('form-panel-section-badge');
-        badge.textContent = section.badge;
-
+    private buildAttachedReferenceHost(): HTMLElement {
         const host = document.createElement('div');
         host.classList.add('form-panel-attached-host');
-
-        header.appendChild(titleWrap);
-        header.appendChild(badge);
-        container.appendChild(header);
-        container.appendChild(host);
-        return container;
+        return host;
     }
 
     private async renderAttachedReferenceSectionAsync(
-        container: HTMLElement,
+        host: HTMLElement,
         section: ReferenceSection,
         parentNodeId: string,
         requestId: number,
     ): Promise<void> {
         const item = section.items[0];
-        const host = container.querySelector('.form-panel-attached-host') as HTMLElement | null;
-        if (item === undefined || host === null || !item.canOpen) return;
+        if (item === undefined || !item.canOpen) return;
         if (this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue)) return;
 
         const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue);
@@ -1057,23 +989,32 @@ export class FormPanel {
         await this.renderNodeIntoAsync(host, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, requestId, false);
     }
 
+    private hasVisibleReferenceItems(section: ReferenceSection, parentNodeId: string): boolean {
+        return section.items.length === 0 || this.getVisibleReferenceItems(section, parentNodeId).length > 0;
+    }
+
+    private getVisibleReferenceItems(section: ReferenceSection, parentNodeId: string): ReferenceItem[] {
+        return section.items.filter(item => !this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue));
+    }
+
     private buildReferenceSection(section: ReferenceSection, parentNodeId: string): HTMLElement {
         const container = document.createElement('div');
         container.classList.add('form-panel-section');
+        container.classList.add(`form-panel-section--${section.relationKind}`);
 
         const header = document.createElement('div');
         header.classList.add('form-panel-section-header');
 
         const titleWrap = document.createElement('div');
         titleWrap.classList.add('form-panel-section-title-wrap');
+        const eyebrow = document.createElement('div');
+        eyebrow.classList.add('form-panel-section-eyebrow');
+        eyebrow.textContent = section.eyebrow;
         const title = document.createElement('div');
         title.classList.add('form-panel-section-title');
-        title.textContent = section.title;
-        const detail = document.createElement('div');
-        detail.classList.add('form-panel-section-detail');
-        detail.textContent = section.detail;
+        title.textContent = section.heading;
+        titleWrap.appendChild(eyebrow);
         titleWrap.appendChild(title);
-        titleWrap.appendChild(detail);
 
         const badge = document.createElement('span');
         badge.classList.add('form-panel-section-badge');
@@ -1087,8 +1028,12 @@ export class FormPanel {
         list.classList.add('form-panel-reference-list');
         if (section.items.length === 0) {
             list.appendChild(this.buildMessage(section.emptyText, 'form-panel-section-empty'));
+        } else if (section.attached) {
+            list.appendChild(this.buildAttachedReferenceHost());
         } else {
-            for (const item of section.items) list.appendChild(this.buildReferenceItemElement(item, parentNodeId));
+            for (const item of this.getVisibleReferenceItems(section, parentNodeId)) {
+                list.appendChild(this.buildReferenceItemElement(item, parentNodeId));
+            }
         }
         container.appendChild(list);
         return container;
@@ -1121,12 +1066,7 @@ export class FormPanel {
         main.classList.add('form-panel-ref-item-main');
         main.textContent = item.primaryText;
 
-        const sub = document.createElement('div');
-        sub.classList.add('form-panel-ref-item-sub');
-        sub.textContent = item.secondaryText;
-
         element.appendChild(main);
-        element.appendChild(sub);
         if (item.metaParts.length > 0) {
             const meta = document.createElement('div');
             meta.classList.add('form-panel-ref-item-meta');
@@ -1199,16 +1139,11 @@ export class FormPanel {
         const primaryText = useReferenceSummary
             ? primarySummary.primaryText
             : display.text;
-        const secondaryParts = [this.formatRowIdentityText(tableName, header, row, schema, pkColumnName, pkValue)];
-        if (useReferenceSummary && primarySummary.detailText !== '') {
-            secondaryParts.push(primarySummary.detailText);
-        }
         const metaParts = this.collectScalarMetaParts(header, row, schema, display, summaries);
         return {
             tableName,
             pkValue,
             primaryText: primaryText !== '' ? primaryText : '(PK値なし)',
-            secondaryText: secondaryParts.filter(part => part !== '').join(' / '),
             metaParts,
             canOpen: pkValue !== '' && !missing,
             missing,
@@ -1336,7 +1271,6 @@ export class FormPanel {
         return {
             kind: 'simple',
             primaryText: `${label}: ${valueText}`,
-            detailText: `${sourceColumn.name}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
             consumedColumns: new Set([sourceColumn.name]),
         };
     }
@@ -1411,7 +1345,6 @@ export class FormPanel {
         return {
             kind: 'dynamic',
             primaryText: `${typeText}: ${valueText}`,
-            detailText: `${sourceColumn.name}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
             consumedColumns: new Set([sourceColumn.name, expr.filter.valueColumn]),
         };
     }
@@ -1450,19 +1383,6 @@ export class FormPanel {
             if (parts.length >= 4) break;
         }
         return parts;
-    }
-
-    private formatRowIdentityText(tableName: string, header: string[], row: string[], schema: SchemaJson, pkColumnName: string, pkValue: string): string {
-        const primaryKeyColumns = this.getPrimaryKeyColumnNames(schema);
-        const parts = primaryKeyColumns
-            .map(columnName => {
-                const colIdx = header.indexOf(columnName);
-                const value = colIdx !== -1 ? (row[colIdx] ?? '') : '';
-                return value !== '' ? `${columnName}=${value}` : '';
-            })
-            .filter(part => part !== '');
-        if (parts.length > 0) return `${tableName}.${parts.join(', ')}`;
-        return pkValue !== '' ? `${tableName}.${pkColumnName}=${pkValue}` : tableName;
     }
 
     private formatColumnValue(column: SchemaColumn, value: string): string {
