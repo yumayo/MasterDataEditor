@@ -73,6 +73,17 @@ export function invalidateFileCacheEntry(filename: string): void {
     fileCache.delete(filename);
 }
 
+/** schema/ と data/ 以下のキャッシュを無効化する。外部ファイル変更通知を受けたときに使用する。 */
+export function invalidateMasterDataFileCaches(): void {
+    for (const filename of Array.from(fileCache.keys())) {
+        if (filename.startsWith('schema/') || filename.startsWith('data/')) {
+            fileCache.delete(filename);
+        }
+    }
+    dirCache.delete('schema');
+    dirCache.delete('data');
+}
+
 /**
  * ファイルから文字列データを読み込む（汎用API）
  * キャッシュにヒットすればC#への問い合わせをスキップする。

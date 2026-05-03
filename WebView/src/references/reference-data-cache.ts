@@ -83,10 +83,14 @@ export class ReferenceDataCache {
 
         try {
             const data = await promise;
-            this.cache.set(tableName, data);
+            if (this.loadingPromises.get(tableName) === promise) {
+                this.cache.set(tableName, data);
+            }
             return data;
         } finally {
-            this.loadingPromises.delete(tableName);
+            if (this.loadingPromises.get(tableName) === promise) {
+                this.loadingPromises.delete(tableName);
+            }
         }
     }
 
@@ -127,6 +131,14 @@ export class ReferenceDataCache {
         this.fullDataCache.delete(tableName);
         this.loadingPromises.delete(tableName);
         this.fullDataLoadingPromises.delete(tableName);
+    }
+
+    /** 全参照データキャッシュを除去する。外部ファイル変更通知後の再読み込みに使用する。 */
+    evictAll(): void {
+        this.cache.clear();
+        this.fullDataCache.clear();
+        this.loadingPromises.clear();
+        this.fullDataLoadingPromises.clear();
     }
 
     /**
@@ -492,10 +504,14 @@ export class ReferenceDataCache {
 
         try {
             const data = await promise;
-            this.fullDataCache.set(tableName, data);
+            if (this.fullDataLoadingPromises.get(tableName) === promise) {
+                this.fullDataCache.set(tableName, data);
+            }
             return data;
         } finally {
-            this.fullDataLoadingPromises.delete(tableName);
+            if (this.fullDataLoadingPromises.get(tableName) === promise) {
+                this.fullDataLoadingPromises.delete(tableName);
+            }
         }
     }
 

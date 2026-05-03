@@ -5,7 +5,7 @@ using System.Threading;
 namespace App.MasterDataEditor;
 
 /// <summary>
-/// data/ ディレクトリの *.csv ファイルを監視し、
+/// 指定ディレクトリの対象ファイルを監視し、
 /// 変更・追加・削除を検知して WebView に file_changed メッセージを送信する。
 /// 短時間に連続するイベントを300msのデバウンスで1回にまとめる。
 /// </summary>
@@ -19,11 +19,11 @@ public sealed class FileWatcher : IDisposable
 	/// <summary>デバウンス間隔（ミリ秒）</summary>
 	private const int DebounceIntervalMs = 300;
 
-	public FileWatcher(string dataDirectory, Action onFileChanged)
+	public FileWatcher(string directory, string filter, Action onFileChanged)
 	{
 		_onFileChanged = onFileChanged;
 
-		_watcher = new FileSystemWatcher(dataDirectory, "*.csv")
+		_watcher = new FileSystemWatcher(directory, filter)
 		{
 			NotifyFilter = NotifyFilters.FileName
 			               | NotifyFilters.LastWrite

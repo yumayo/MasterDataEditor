@@ -44,6 +44,8 @@ export class InMemoryTableStore {
      * markAllSaved(保存完了) または registerHistory(Historyへの引き継ぎ) で除去される。
      */
     private readonly dirtyTableNames: Set<string>;
+    /** 外部ファイル変更通知後、次回登録時にCSVから再読み込みする対象 */
+    private readonly staleTableNames: Set<string>;
 
     constructor() {
         this.headers = new Map();
@@ -51,6 +53,7 @@ export class InMemoryTableStore {
         this.refCounts = new Map();
         this.historyRegistry = new Map();
         this.dirtyTableNames = new Set();
+        this.staleTableNames = new Set();
     }
 
     /** テーブル登録（テスト・外部データ注入用の同期API） */
@@ -63,10 +66,20 @@ export class InMemoryTableStore {
         this.headers.set(tableName, header);
         this.rows.set(tableName, body);
         this.refCounts.set(tableName, 1);
+        this.staleTableNames.delete(tableName);
     }
 
     /** テーブル登録（ファイルから読み込み、キャッシュ済みなら参照カウントのみ増やす） */
     async registerTableAsync(tableName: string): Promise<Csv> {
+        if (this.headers.has(tableName) && this.staleTableNames.has(tableName) && !this.isTableDirty(tableName)) {
+            const csv = await this.loadCsvFromFileAsync(tableName);
+            this.headers.set(tableName, csv.header);
+            this.rows.set(tableName, csv.body);
+            this.refCounts.set(tableName, (this.refCounts.get(tableName) ?? 0) + 1);
+            this.dirtyTableNames.delete(tableName);
+            this.staleTableNames.delete(tableName);
+            return this.getCsv(tableName) as Csv;
+        }
         if (this.refCounts.has(tableName)) {
             // 通常パス: 参照カウントが残っている場合はカウントのみ増加してデータを保持する
             this.refCounts.set(tableName, this.refCounts.get(tableName)! + 1);
@@ -78,10 +91,15 @@ export class InMemoryTableStore {
             this.refCounts.set(tableName, 1);
             return this.getCsv(tableName) as Csv;
         }
+        const csv = await this.loadCsvFromFileAsync(tableName);
+        this.registerTable(tableName, csv.header, csv.body);
+        return csv;
+    }
+
+    private async loadCsvFromFileAsync(tableName: string): Promise<Csv> {
         const csvText = await readFileAsync('data/' + tableName + '.csv');
         const csv = new Csv();
         csv.load(csvText);
-        this.registerTable(tableName, csv.header, csv.body);
         return csv;
     }
 
@@ -97,13 +115,19 @@ export class InMemoryTableStore {
      */
     async reloadTableDataAsync(tableName: string): Promise<void> {
         if (!this.headers.has(tableName)) throw new Error('[InMemoryTableStore] reloadTableDataAsync: テーブル "' + tableName + '" はストアに存在しません');
-        const csvText = await readFileAsync('data/' + tableName + '.csv');
-        const csv = new Csv();
-        csv.load(csvText);
+        const csv = await this.loadCsvFromFileAsync(tableName);
         this.headers.set(tableName, csv.header);
         this.rows.set(tableName, csv.body);
         // CSV巻き戻し後は補完Dirty状態をクリアする
         this.dirtyTableNames.delete(tableName);
+        this.staleTableNames.delete(tableName);
+    }
+
+    /** 外部ファイル変更通知後、キャッシュ済みテーブルを次回登録時に再読み込み対象にする */
+    markAllTablesStale(): void {
+        for (const tableName of this.headers.keys()) {
+            this.staleTableNames.add(tableName);
+        }
     }
 
     /** 参照カウント減少、0になったら削除（ただしDirtyデータは保持する） */

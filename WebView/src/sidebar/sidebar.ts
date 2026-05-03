@@ -11,7 +11,7 @@ import {EditorTable} from "../editor/editor-table";
 import {Editor} from "../editor/editor";
 import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
-import {invalidateGitStatusCache, invalidateGitShowCache, readFileAsync, gitShowAtCommitAsync, LogEntry} from "../app/api";
+import {invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry} from "../app/api";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -122,6 +122,10 @@ export class Sidebar {
                 return;
             }
             if (data.type !== 'file_changed' && data.type !== 'git_changed') return;
+            if (data.type === 'file_changed') {
+                invalidateMasterDataFileCaches();
+                this.tab.notifyExternalFileChanged();
+            }
             invalidateGitStatusCache();
             invalidateGitShowCache();
             this.sourceControlPanel.refreshAsync().catch(e => { console.error('バッジ更新失敗', e); });

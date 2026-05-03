@@ -16,6 +16,7 @@ public class WebView2Handler : IDisposable
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
 	private readonly IDisposable _fileWatcherHandle;
+	private readonly IDisposable _schemaWatcherHandle;
 	private readonly IDisposable _gitWatcherHandle;
 	/// <summary>
 	/// MCP ToolとWebView2間の非同期ブリッジ。
@@ -41,7 +42,7 @@ public class WebView2Handler : IDisposable
 		var dataDirectory = Path.Combine(AppEnvironment.GetWorkDir(), "data");
 		if (Directory.Exists(dataDirectory))
 		{
-			_fileWatcherHandle = new FileWatcher(dataDirectory, () =>
+			_fileWatcherHandle = new FileWatcher(dataDirectory, "*.csv", () =>
 			{
 				SendMessageToWebView(new { type = "file_changed" });
 			});
@@ -51,6 +52,22 @@ public class WebView2Handler : IDisposable
 		{
 			_fileWatcherHandle = NullDisposable.Instance;
 			Logger.Info($"data/ ディレクトリが存在しないためファイル監視をスキップ: {dataDirectory}");
+		}
+
+		// schema/ ディレクトリのJSONファイル変更も監視する
+		var schemaDirectory = Path.Combine(AppEnvironment.GetWorkDir(), "schema");
+		if (Directory.Exists(schemaDirectory))
+		{
+			_schemaWatcherHandle = new FileWatcher(schemaDirectory, "*.json", () =>
+			{
+				SendMessageToWebView(new { type = "file_changed" });
+			});
+			Logger.Info($"スキーマ監視を開始: {schemaDirectory}");
+		}
+		else
+		{
+			_schemaWatcherHandle = NullDisposable.Instance;
+			Logger.Info($"schema/ ディレクトリが存在しないためファイル監視をスキップ: {schemaDirectory}");
 		}
 
 		// .git/ ディレクトリ全体を監視し、git操作時に git_changed メッセージを送信する
@@ -185,6 +202,7 @@ public class WebView2Handler : IDisposable
 	public void Dispose()
 	{
 		_fileWatcherHandle.Dispose();
+		_schemaWatcherHandle.Dispose();
 		_gitWatcherHandle.Dispose();
 	}
 

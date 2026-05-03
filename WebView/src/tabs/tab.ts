@@ -362,6 +362,15 @@ export class Tab {
     }
 
     /**
+     * FileSystemWatcher から外部ファイル変更通知を受けたときに呼ばれる。
+     * 開いているタブは維持し、次回タブ生成時にcleanなストアキャッシュだけ再読み込みする。
+     */
+    notifyExternalFileChanged(): void {
+        this.store.markAllTablesStale();
+        this.referenceDataCache.evictAll();
+    }
+
+    /**
      * フォームビュー等の EditorTable 外コンポーネントにも、
      * EditorTable と同じ共有 DropdownQuickView を接続する。
      */
