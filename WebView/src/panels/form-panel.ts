@@ -105,6 +105,7 @@ export class FormPanel {
 
         const panel = document.createElement('div');
         panel.classList.add('form-panel');
+        panel.classList.add('form-panel--preparing');
         this.panelElement = panel;
 
         const header = document.createElement('div');
@@ -148,6 +149,7 @@ export class FormPanel {
     }
 
     remove(): void {
+        ++this.currentRequestId;
         this.clearCommitTimers();
         this.hideReferenceDropdown();
         this.panelElement.remove();
@@ -187,6 +189,7 @@ export class FormPanel {
         this.currentPageData = null;
         this.clearCommitTimers();
         this.hideReferenceDropdown();
+        this.panelElement.classList.add('form-panel--preparing');
         this.renderBreadcrumb();
 
         const content = this.getContentElement();
@@ -210,6 +213,7 @@ export class FormPanel {
 
             if (rowIndex === -1) {
                 content.appendChild(this.buildMessage(`PK "${page.pkValue}" の行が見つかりません`, 'form-panel-not-found'));
+                this.revealIfCurrent(requestId);
                 return;
             }
 
@@ -232,12 +236,19 @@ export class FormPanel {
                 this.refreshValidationAsync(requestId),
                 this.renderReferencesAsync(requestId),
             ]);
+            this.revealIfCurrent(requestId);
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
             content.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
+            this.revealIfCurrent(requestId);
             console.error('[FormPanel] renderCurrentPageAsync failed:', err);
             this.notification.show('フォームの表示に失敗しました');
         }
+    }
+
+    private revealIfCurrent(requestId: number): void {
+        if (requestId !== this.currentRequestId) return;
+        this.panelElement.classList.remove('form-panel--preparing');
     }
 
     private renderBreadcrumb(): void {

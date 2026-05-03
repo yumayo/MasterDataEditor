@@ -18,6 +18,10 @@
     overflow: hidden;
 }
 
+.form-panel--preparing {
+    visibility: hidden;
+}
+
 .form-panel-header {
     min-height: 36px;
     padding: 7px 36px 7px 12px;

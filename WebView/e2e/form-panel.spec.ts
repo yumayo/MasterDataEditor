@@ -96,6 +96,16 @@ function createFormPanelTestFileSystem(): MockFileSystem {
     };
 }
 
+function createSlowValidationFormPanelTestFileSystem(): MockFileSystem {
+    return {
+        ...createFormPanelTestFileSystem(),
+        "plugins/slow-form-validation.js": [
+            "const end = Date.now() + 700;",
+            "while (Date.now() < end) {}",
+        ].join("\n"),
+    };
+}
+
 /**
  * エクスプローラーからテーブルを開き、左ペインの EditorTable Locator を返す
  * タブ名で絞り込むことで strict mode violation を回避する
@@ -511,5 +521,27 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         await expect(weaponInput).toHaveValue('20');
         await expect(getDataCell(table, 0, 3)).toContainText('20');
+    });
+});
+
+test.describe('フォームビューの表示タイミング', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createSlowValidationFormPanelTestFileSystem());
+        await page.goto('/');
+        await enableRelationsPanelAsync(page);
+    });
+
+    test('バリデーション完了前にフォームビューを可視化しないこと', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).not.toBeVisible({ timeout: 100 });
+        await expect(formPanel).toBeVisible({ timeout: 5000 });
+        await expect(formPanel.locator('.form-panel-title-table')).toHaveText('quest');
+        await expect(formPanel.locator('.form-panel-references')).toContainText('参照先: enemy_id');
     });
 });
