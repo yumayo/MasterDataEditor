@@ -595,7 +595,7 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(enemyRef).toHaveAttribute('aria-expanded', 'true');
     });
 
-    test('展開した子フォームからさらに参照元を展開できること', async ({ page }) => {
+    test('1:1の参照元は子フォーム内に自動で添付されること', async ({ page }) => {
         const table = await openTableAsync(page, 'quest');
         await rightClickPkCellAsync(table, 0);
         const menu = page.locator('.context-menu.visible');
@@ -609,13 +609,11 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const weaponNode = formPanel.locator('.form-panel-child-host .form-panel-node', { hasText: 'weapon' }).first();
         await expect(weaponNode.locator(':scope > .form-panel-title .form-panel-title-table')).toHaveText('weapon');
-        const weaponNameSection = weaponNode.locator('.form-panel-section', { hasText: '参照元: weapon_name' });
-        const weaponNameRef = weaponNameSection.locator('.form-panel-ref-item--clickable', { hasText: '剣' }).first();
-        await expect(weaponNameRef).toBeVisible();
-        await weaponNameRef.click();
-
-        await expect(weaponNode.locator('.form-panel-child-host .form-panel-title-table')).toHaveText('weapon_name');
-        await expect(weaponNode.locator('.form-panel-child-host .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
+        await expect(weaponNode.locator(':scope > .form-panel-attachments')).toBeVisible();
+        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-attached-section', { hasText: '参照元: weapon_name' })).toBeVisible();
+        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-title-table')).toHaveText('weapon_name');
+        await expect(weaponNode.locator(':scope > .form-panel-attachments .form-panel-field[data-column-name="ja"] .form-panel-field-input')).toHaveValue('剣');
+        await expect(weaponNode.locator(':scope > .form-panel-references .form-panel-section', { hasText: '参照元: weapon_name' })).toHaveCount(0);
         await expect(formPanel.locator('.form-panel-node--root > .form-panel-title .form-panel-title-table')).toHaveText('quest');
     });
 

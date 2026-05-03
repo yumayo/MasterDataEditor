@@ -203,12 +203,35 @@ textarea.form-panel-field-input {
     padding-top: 10px;
 }
 
+.form-panel-references--empty,
+.form-panel-attachments--empty {
+    display: none;
+}
+
 .form-panel-references-title {
     padding-left: 0;
     border-bottom: none;
 }
 
 .form-panel-references-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.form-panel-attachments {
+    margin: -4px 0 16px;
+}
+
+.form-panel-attachments-title {
+    padding: 0 0 7px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    opacity: 0.72;
+}
+
+.form-panel-attachments-body {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -221,7 +244,8 @@ textarea.form-panel-field-input {
     overflow: hidden;
 }
 
-.form-panel-section-header {
+.form-panel-section-header,
+.form-panel-attached-header {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -260,6 +284,25 @@ textarea.form-panel-field-input {
     text-align: center;
     font-size: 10px;
     font-variant-numeric: tabular-nums;
+}
+
+.form-panel-attached-section {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--background-color);
+    overflow: hidden;
+}
+
+.form-panel-attached-host {
+    padding: 8px 10px 10px;
+}
+
+.form-panel-attached-host .form-panel-node--child {
+    padding-top: 0;
+}
+
+.form-panel-attached-host .form-panel-fields {
+    margin-bottom: 0;
 }
 
 .form-panel-reference-list {
