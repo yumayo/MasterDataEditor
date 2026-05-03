@@ -587,8 +587,9 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         const formPanel = page.locator('.form-panel');
         const enemySection = formPanel.locator('.form-panel-section', { hasText: '参照先: enemy_id' });
-        const enemyRef = enemySection.locator('.form-panel-ref-item--clickable', { hasText: 'スライム' }).first();
+        const enemyRef = enemySection.locator('.form-panel-ref-item--clickable').first();
         await expect(enemyRef).toBeVisible();
+        await expect(enemyRef).toContainText('スライム');
         await enemyRef.click();
 
         await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
@@ -645,7 +646,33 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(weaponNameIdField.locator('.form-panel-field-input')).toHaveJSProperty('readOnly', true);
         await expect(weaponNameJaField).not.toHaveClass(/form-panel-field--readonly/);
         await expect(weaponNameJaField.locator('.form-panel-field-input')).toHaveValue('剣');
+
+        await weaponNameJaField.locator('.form-panel-field-input').fill('槍');
+        await expect(weaponRef).toContainText('槍');
+        await expect(getDataCell(table, 0, 3)).toContainText('槍');
         await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
+    });
+
+    test('フォームビューで参照先の表示名を変更するとフォーム内表示とEditorTableの参照ヒントも更新されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const enemySection = formPanel.locator('.form-panel-section', { hasText: '参照先: enemy_id' });
+        const enemyRef = enemySection.locator('.form-panel-ref-item--clickable').first();
+        await expect(enemyRef).toBeVisible();
+        await expect(enemyRef).toContainText('スライム');
+        await enemyRef.click();
+
+        const enemyNode = formPanel.locator('.form-panel-child-host .form-panel-node[data-table-name="enemy"]').first();
+        const enemyNameInput = enemyNode.locator('.form-panel-field[data-column-name="ja"] .form-panel-field-input');
+        await expect(enemyNameInput).toHaveValue('スライム');
+
+        await enemyNameInput.fill('ゴーレム');
+        await expect(enemyRef).toContainText('ゴーレム');
+        await expect(getDataCell(table, 0, 2)).toContainText('ゴーレム');
     });
 
     test('参照される側のIDだけフォームビューで読み取り専用になること', async ({ page }) => {

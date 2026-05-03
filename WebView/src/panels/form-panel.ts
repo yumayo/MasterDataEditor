@@ -17,6 +17,7 @@ import {ValidationError} from "../validation/validation-engine";
 import {ValidationPanel} from "./validation-panel";
 import {GridDropdownInput, GridDropdownItem} from "../ui/grid-dropdown-input";
 import {ReferenceDataCache} from "../references/reference-data-cache";
+import {EditorTableData} from "../data/models/editor-table-data";
 
 export interface FormPanelNavEntry {
     tableName: string;
@@ -530,6 +531,7 @@ export class FormPanel {
             await this.refreshValidationAsync(this.currentRequestId);
             return;
         }
+        const previousPkValue = data.pkColumnIndex !== -1 ? (data.row[data.pkColumnIndex] ?? '') : '';
 
         const editorTable = this.tab.getOpenEditorTables().get(data.tableName);
         const reflected = editorTable?.applyExternalCellEditByStoreIndex(data.rowIndex, columnIndex, value) ?? false;
@@ -573,7 +575,7 @@ export class FormPanel {
         const requestId = this.currentRequestId;
         await Promise.all([
             this.refreshValidationAsync(requestId),
-            this.renderReferencesAsync(nodeId, requestId),
+            this.refreshCommittedReferenceViewsAsync(nodeId, data, previousPkValue, requestId),
         ]);
     }
 
@@ -769,6 +771,136 @@ export class FormPanel {
             rows: targetData.rows,
             schema: targetSchema,
         };
+    }
+
+    private async refreshCommittedReferenceViewsAsync(
+        nodeId: string,
+        data: CurrentPageData,
+        previousPkValue: string,
+        requestId: number,
+    ): Promise<void> {
+        this.referenceDataCache.evictAll();
+        await this.refreshOpenEditorTableReferenceHintsAsync(requestId);
+        if (requestId !== this.currentRequestId) return;
+
+        await this.renderReferencesAsync(nodeId, requestId);
+        if (requestId !== this.currentRequestId) return;
+
+        const changedItem = await this.createReferenceItemAsync(data.tableName, data.header, data.row, data.schema, false, requestId);
+        if (requestId !== this.currentRequestId) return;
+        await this.refreshVisibleReferenceItemsAsync(requestId, changedItem, previousPkValue);
+    }
+
+    private async refreshOpenEditorTableReferenceHintsAsync(requestId: number): Promise<void> {
+        const openTables = Array.from(this.tab.getOpenEditorTables().entries());
+        await Promise.all(openTables.map(([, editorTable]) => this.preloadEditorTableReferenceDataAsync(editorTable.getTableData(), requestId)));
+        if (requestId !== this.currentRequestId) return;
+
+        await Promise.all(openTables.map(async ([tableName, editorTable]) => {
+            const reverseMap = await this.reverseReferenceResolver.resolveAsync(tableName);
+            if (requestId !== this.currentRequestId) return;
+            editorTable.updateReverseReferenceHints(reverseMap);
+            editorTable.updateReferenceHints();
+        }));
+    }
+
+    private async preloadEditorTableReferenceDataAsync(tableData: EditorTableData, requestId: number): Promise<void> {
+        const simpleReferenceTableNames = new Set<string>();
+        const dynamicLookups: Array<{ filterTableName: string; lookupColumn: string }> = [];
+
+        for (const column of tableData.header) {
+            if (!column.reference) continue;
+            const expr = parseReferenceExpression(column.reference);
+            if (isDynamicReference(expr)) {
+                dynamicLookups.push({ filterTableName: expr.filter.tableName, lookupColumn: expr.lookupColumn });
+            } else {
+                simpleReferenceTableNames.add(expr.tableName);
+            }
+        }
+
+        await Promise.all(Array.from(simpleReferenceTableNames).map(tableName =>
+            this.referenceDataCache.get(tableName).catch(() => {})
+        ));
+        if (requestId !== this.currentRequestId) return;
+
+        const intermediateTableNames = Array.from(new Set(dynamicLookups.map(lookup => lookup.filterTableName)));
+        await Promise.all(intermediateTableNames.map(async tableName => {
+            const fullData = await this.referenceDataCache.getFullDataAsync(tableName).catch(() => null);
+            if (fullData === null || requestId !== this.currentRequestId) return;
+
+            const targetTableNames = new Set<string>();
+            for (const lookup of dynamicLookups) {
+                if (lookup.filterTableName !== tableName) continue;
+                const lookupColumnIndex = fullData.header.indexOf(lookup.lookupColumn);
+                if (lookupColumnIndex === -1) continue;
+                fullData.rows.forEach(row => {
+                    const targetTableName = row[lookupColumnIndex];
+                    if (targetTableName !== '') targetTableNames.add(targetTableName);
+                });
+            }
+            await Promise.all(Array.from(targetTableNames).flatMap(targetTableName => [
+                this.referenceDataCache.get(targetTableName).catch(() => {}),
+                this.referenceDataCache.getFullDataAsync(targetTableName).catch(() => {}),
+            ]));
+        }));
+    }
+
+    private async refreshVisibleReferenceItemsAsync(
+        requestId: number,
+        changedItem: ReferenceItem,
+        previousPkValue: string,
+    ): Promise<void> {
+        this.applyChangedReferenceItemToVisibleElements(changedItem, previousPkValue);
+
+        const itemElements = Array.from(this.panelElement.querySelectorAll('.form-panel-ref-item[data-ref-table-name][data-ref-pk-value]')) as HTMLElement[];
+        const itemKeys = new Map<string, { tableName: string; pkValue: string; elements: HTMLElement[] }>();
+        for (const element of itemElements) {
+            const tableName = element.dataset.refTableName;
+            const pkValue = element.dataset.refPkValue;
+            if (tableName === undefined || pkValue === undefined || pkValue === '') continue;
+            const key = `${tableName}\n${pkValue}`;
+            const existing = itemKeys.get(key);
+            if (existing !== undefined) {
+                existing.elements.push(element);
+            } else {
+                itemKeys.set(key, { tableName, pkValue, elements: [element] });
+            }
+        }
+
+        await Promise.all(Array.from(itemKeys.values()).map(async entry => {
+            const item = await this.resolveReferenceItemByPkAsync(entry.tableName, entry.pkValue, requestId);
+            if (item === null || requestId !== this.currentRequestId) return;
+            for (const element of entry.elements) {
+                if (!element.isConnected) continue;
+                this.applyReferenceItemContent(element, item);
+            }
+        }));
+    }
+
+    private applyChangedReferenceItemToVisibleElements(item: ReferenceItem, previousPkValue: string): void {
+        const elements = Array.from(this.panelElement.querySelectorAll('.form-panel-ref-item[data-ref-table-name][data-ref-pk-value]')) as HTMLElement[];
+        for (const element of elements) {
+            if (element.dataset.refTableName !== item.tableName) continue;
+            const elementPkValue = element.dataset.refPkValue;
+            if (elementPkValue !== previousPkValue && elementPkValue !== item.pkValue) continue;
+            element.dataset.refPkValue = item.pkValue;
+            this.applyReferenceItemContent(element, item);
+        }
+    }
+
+    private async resolveReferenceItemByPkAsync(tableName: string, pkValue: string, requestId: number): Promise<ReferenceItem | null> {
+        const [tableData, schema] = await Promise.all([
+            this.resolveTableDataAsync(tableName),
+            this.loadSchemaJsonAsync(tableName),
+        ]);
+        if (requestId !== this.currentRequestId) return null;
+
+        const pkColumnName = extractFirstPrimaryKeyColumn(schema);
+        const pkColumnIndex = tableData.header.indexOf(pkColumnName);
+        if (pkColumnIndex === -1) return null;
+        const row = tableData.rows.find(candidate => (candidate[pkColumnIndex] ?? '') === pkValue);
+        if (row === undefined) return null;
+        return this.createReferenceItemAsync(tableName, tableData.header, row, schema, false, requestId);
     }
 
     private async resolveReferenceLockedColumnNamesAsync(
@@ -1135,7 +1267,12 @@ export class FormPanel {
             element.classList.add('form-panel-ref-item--clickable');
             element.setAttribute('aria-expanded', 'false');
             element.addEventListener('click', () => {
-                this.toggleReferenceExpansionAsync(wrapper, element as HTMLButtonElement, parentNodeId, item).catch(err => {
+                const currentItem = {
+                    ...item,
+                    tableName: element.dataset.refTableName ?? item.tableName,
+                    pkValue: element.dataset.refPkValue ?? item.pkValue,
+                };
+                this.toggleReferenceExpansionAsync(wrapper, element as HTMLButtonElement, parentNodeId, currentItem).catch(err => {
                     console.error('[FormPanel] toggleReferenceExpansionAsync failed:', err);
                     this.notification.show('参照先の展開に失敗しました');
                 });
@@ -1144,7 +1281,16 @@ export class FormPanel {
             element.classList.add('form-panel-ref-item--cycle');
         }
         if (item.missing) element.classList.add('form-panel-ref-item--missing');
+        element.dataset.refTableName = item.tableName;
+        element.dataset.refPkValue = item.pkValue;
+        this.applyReferenceItemContent(element, item);
 
+        wrapper.appendChild(element);
+        return wrapper;
+    }
+
+    private applyReferenceItemContent(element: HTMLElement, item: ReferenceItem): void {
+        element.replaceChildren();
         const main = document.createElement('div');
         main.classList.add('form-panel-ref-item-main');
         main.textContent = item.primaryText;
@@ -1161,8 +1307,6 @@ export class FormPanel {
             }
             element.appendChild(meta);
         }
-        wrapper.appendChild(element);
-        return wrapper;
     }
 
     private async toggleReferenceExpansionAsync(wrapper: HTMLElement, trigger: HTMLButtonElement, parentNodeId: string, item: ReferenceItem): Promise<void> {
