@@ -306,7 +306,7 @@ textarea.form-panel-field-input {
     border-left: 5px solid currentColor;
     opacity: 0.62;
     transition: transform 120ms ease;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
 }
 
 .form-panel-ref-item--expanded::before {
@@ -330,7 +330,8 @@ textarea.form-panel-field-input {
 }
 
 .form-panel-ref-item-main,
-.form-panel-ref-item-sub {
+.form-panel-ref-item-sub,
+.form-panel-ref-item-meta-chip {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -342,13 +343,34 @@ textarea.form-panel-field-input {
 }
 
 .form-panel-ref-item--clickable .form-panel-ref-item-main,
-.form-panel-ref-item--clickable .form-panel-ref-item-sub {
+.form-panel-ref-item--clickable .form-panel-ref-item-sub,
+.form-panel-ref-item--clickable .form-panel-ref-item-meta {
     grid-column: 2;
 }
 
 .form-panel-ref-item-sub {
     font-size: 10px;
     opacity: 0.58;
+}
+
+.form-panel-ref-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+    margin-top: 2px;
+}
+
+.form-panel-ref-item-meta-chip {
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--hover-color);
+    color: var(--font-color);
+    font-size: 10px;
+    line-height: 1.45;
+    opacity: 0.82;
 }
 
 .form-panel-child-host {

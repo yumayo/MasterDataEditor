@@ -51,8 +51,30 @@ interface ReferenceItem {
     pkValue: string;
     primaryText: string;
     secondaryText: string;
+    metaParts: string[];
     canOpen: boolean;
     missing: boolean;
+}
+
+type DisplayCandidateSource =
+    | 'display-column'
+    | 'reference-cache'
+    | 'natural-column'
+    | 'scalar-column'
+    | 'pk'
+    | 'none';
+
+interface DisplayCandidate {
+    text: string;
+    source: DisplayCandidateSource;
+    columnName: string | null;
+}
+
+interface RowReferenceSummary {
+    kind: 'simple' | 'dynamic';
+    primaryText: string;
+    detailText: string;
+    consumedColumns: Set<string>;
 }
 
 interface ReferenceFieldDropdownData {
@@ -816,7 +838,7 @@ export class FormPanel {
                 const targetSchema = await this.loadSchemaJsonAsync(expr.tableName);
                 if (requestId !== this.currentRequestId) return sections;
                 const matchedRows = this.filterRowsByColumn(targetData.rows, targetData.header, expr.columnName, fkValue);
-                sections.push(this.buildOutgoingSection(
+                sections.push(await this.buildOutgoingSectionAsync(
                     column.name,
                     fkValue,
                     expr.tableName,
@@ -824,6 +846,7 @@ export class FormPanel {
                     targetData.header,
                     matchedRows,
                     targetSchema,
+                    requestId,
                 ));
             } else if (isDynamicReference(expr)) {
                 const section = await this.resolveDynamicOutgoingReferenceSectionAsync(expr, column.name, fkValue, data, requestId);
@@ -867,10 +890,10 @@ export class FormPanel {
         if (requestId !== this.currentRequestId) return null;
 
         const matchedRows = this.filterRowsByColumn(targetData.rows, targetData.header, targetColumnName, fkValue);
-        return this.buildOutgoingSection(columnName, fkValue, targetTableName, targetColumnName, targetData.header, matchedRows, targetSchema);
+        return this.buildOutgoingSectionAsync(columnName, fkValue, targetTableName, targetColumnName, targetData.header, matchedRows, targetSchema, requestId);
     }
 
-    private buildOutgoingSection(
+    private async buildOutgoingSectionAsync(
         sourceColumnName: string,
         fkValue: string,
         targetTableName: string,
@@ -878,13 +901,14 @@ export class FormPanel {
         targetHeader: string[],
         matchedRows: string[][],
         targetSchema: SchemaJson,
-    ): ReferenceSection {
+        requestId: number,
+    ): Promise<ReferenceSection> {
         return {
             title: `参照先: ${sourceColumnName} → ${targetTableName}`,
             detail: `${sourceColumnName}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
             badge: `${matchedRows.length}`,
             emptyText: `値 "${fkValue}" に一致する参照先がありません`,
-            items: matchedRows.map(row => this.createReferenceItem(targetTableName, targetHeader, row, targetSchema, false)),
+            items: await Promise.all(matchedRows.map(row => this.createReferenceItemAsync(targetTableName, targetHeader, row, targetSchema, false, requestId))),
         };
     }
 
@@ -912,7 +936,7 @@ export class FormPanel {
                 detail: `${entry.childTableName}.${entry.childColumnName}=${pkValue}`,
                 badge: `${filteredRows.length}`,
                 emptyText: '参照元の行はありません',
-                items: filteredRows.map(row => this.createReferenceItem(entry.childTableName, childData.header, row, childSchema, false)),
+                items: await Promise.all(filteredRows.map(row => this.createReferenceItemAsync(entry.childTableName, childData.header, row, childSchema, false, requestId))),
             });
         }
 
@@ -989,6 +1013,17 @@ export class FormPanel {
 
         element.appendChild(main);
         element.appendChild(sub);
+        if (item.metaParts.length > 0) {
+            const meta = document.createElement('div');
+            meta.classList.add('form-panel-ref-item-meta');
+            for (const part of item.metaParts) {
+                const chip = document.createElement('span');
+                chip.classList.add('form-panel-ref-item-meta-chip');
+                chip.textContent = part;
+                meta.appendChild(chip);
+            }
+            element.appendChild(meta);
+        }
         wrapper.appendChild(element);
         return wrapper;
     }
@@ -1032,24 +1067,311 @@ export class FormPanel {
         return false;
     }
 
-    private createReferenceItem(tableName: string, header: string[], row: string[], schema: SchemaJson, missing: boolean): ReferenceItem {
+    private async createReferenceItemAsync(
+        tableName: string,
+        header: string[],
+        row: string[],
+        schema: SchemaJson,
+        missing: boolean,
+        requestId: number,
+    ): Promise<ReferenceItem> {
         const pkColumnName = extractFirstPrimaryKeyColumn(schema);
         const pkColIdx = header.indexOf(pkColumnName);
-        const displayColIdx = this.resolveReferenceDisplayColumnIndex(header, pkColumnName);
         const pkValue = pkColIdx !== -1 ? (row[pkColIdx] ?? '') : '';
-        const displayValue = displayColIdx !== -1 ? (row[displayColIdx] ?? '') : '';
-        const primaryText = displayValue !== '' ? displayValue : (pkValue !== '' ? `${pkColumnName}=${pkValue}` : '(PK値なし)');
-        const secondaryText = pkValue !== '' && displayValue !== pkValue
-            ? `${tableName}.${pkColumnName}=${pkValue}`
-            : tableName;
+        const display = await this.resolveRowDisplayCandidateAsync(tableName, header, row, schema, pkColumnName, pkValue, requestId);
+        const summaries = missing ? [] : await this.resolveRowReferenceSummariesAsync(header, row, schema, requestId);
+        const primarySummary = summaries.find(summary => summary.kind === 'dynamic') ?? summaries[0];
+        const useReferenceSummary = primarySummary !== undefined && !this.isStrongDisplayCandidate(display);
+        const primaryText = useReferenceSummary
+            ? primarySummary.primaryText
+            : display.text;
+        const secondaryParts = [this.formatRowIdentityText(tableName, header, row, schema, pkColumnName, pkValue)];
+        if (useReferenceSummary && primarySummary.detailText !== '') {
+            secondaryParts.push(primarySummary.detailText);
+        }
+        const metaParts = this.collectScalarMetaParts(header, row, schema, display, summaries);
         return {
             tableName,
             pkValue,
-            primaryText,
-            secondaryText,
+            primaryText: primaryText !== '' ? primaryText : '(PK値なし)',
+            secondaryText: secondaryParts.filter(part => part !== '').join(' / '),
+            metaParts,
             canOpen: pkValue !== '' && !missing,
             missing,
         };
+    }
+
+    private async resolveRowDisplayCandidateAsync(
+        tableName: string,
+        header: string[],
+        row: string[],
+        schema: SchemaJson,
+        pkColumnName: string,
+        pkValue: string,
+        requestId: number,
+    ): Promise<DisplayCandidate> {
+        const displayColumnName = determineDisplayColumnName(header);
+        if (displayColumnName !== '') {
+            const displayColIdx = header.indexOf(displayColumnName);
+            const displayValue = displayColIdx !== -1 ? (row[displayColIdx] ?? '') : '';
+            if (displayValue !== '') {
+                return { text: displayValue, source: 'display-column', columnName: displayColumnName };
+            }
+        }
+
+        const cachedDisplayText = await this.resolveCachedDisplayTextAsync(tableName, pkValue, requestId);
+        if (cachedDisplayText !== null) {
+            return { text: cachedDisplayText, source: 'reference-cache', columnName: pkColumnName };
+        }
+
+        const primaryKeyColumns = new Set(this.getPrimaryKeyColumnNames(schema));
+        const referenceColumns = new Set(schema.header.filter(column => column.reference).map(column => column.name));
+        for (const column of schema.header) {
+            if (primaryKeyColumns.has(column.name) || referenceColumns.has(column.name)) continue;
+            if (!this.isNaturalDisplayColumnName(column.name)) continue;
+            const colIdx = header.indexOf(column.name);
+            const value = colIdx !== -1 ? (row[colIdx] ?? '') : '';
+            if (value !== '') return { text: value, source: 'natural-column', columnName: column.name };
+        }
+
+        for (const column of schema.header) {
+            if (primaryKeyColumns.has(column.name) || referenceColumns.has(column.name)) continue;
+            const colIdx = header.indexOf(column.name);
+            const value = colIdx !== -1 ? (row[colIdx] ?? '') : '';
+            if (value !== '') {
+                return {
+                    text: this.formatColumnValue(column, value),
+                    source: 'scalar-column',
+                    columnName: column.name,
+                };
+            }
+        }
+
+        if (pkValue !== '') return { text: `${pkColumnName}=${pkValue}`, source: 'pk', columnName: pkColumnName };
+        return { text: '', source: 'none', columnName: null };
+    }
+
+    private async resolveCachedDisplayTextAsync(tableName: string, pkValue: string, requestId: number): Promise<string | null> {
+        if (pkValue === '') return null;
+        try {
+            const referenceData = await this.referenceDataCache.get(tableName);
+            if (requestId !== this.currentRequestId) return null;
+            const displayText = referenceData.displayTextById.get(pkValue);
+            if (displayText === undefined || displayText === '' || displayText === pkValue) return null;
+            return displayText;
+        } catch (err) {
+            console.warn(`[FormPanel] reference display cache failed: ${tableName}`, err);
+            return null;
+        }
+    }
+
+    private async resolveRowReferenceSummariesAsync(
+        header: string[],
+        row: string[],
+        schema: SchemaJson,
+        requestId: number,
+    ): Promise<RowReferenceSummary[]> {
+        const summaries: RowReferenceSummary[] = [];
+        for (const column of schema.header) {
+            if (!column.reference) continue;
+            const colIdx = header.indexOf(column.name);
+            const fkValue = colIdx !== -1 ? (row[colIdx] ?? '') : '';
+            if (fkValue === '') continue;
+
+            const expr = parseReferenceExpression(column.reference);
+            const summary = isSimpleReference(expr)
+                ? await this.resolveSimpleReferenceSummaryAsync(column, expr.tableName, expr.columnName, fkValue, requestId)
+                : await this.resolveDynamicReferenceSummaryAsync(column, expr, header, row, requestId);
+            if (requestId !== this.currentRequestId) return summaries;
+            if (summary !== null) summaries.push(summary);
+        }
+        return summaries;
+    }
+
+    private async resolveSimpleReferenceSummaryAsync(
+        sourceColumn: SchemaColumn,
+        targetTableName: string,
+        targetColumnName: string,
+        fkValue: string,
+        requestId: number,
+    ): Promise<RowReferenceSummary | null> {
+        const [targetData, targetSchema] = await Promise.all([
+            this.resolveTableDataAsync(targetTableName),
+            this.loadSchemaJsonAsync(targetTableName),
+        ]);
+        if (requestId !== this.currentRequestId) return null;
+
+        const matchedRow = this.filterRowsByColumn(targetData.rows, targetData.header, targetColumnName, fkValue)[0];
+        const display = matchedRow === undefined
+            ? null
+            : await this.resolveRowDisplayCandidateAsync(
+                targetTableName,
+                targetData.header,
+                matchedRow,
+                targetSchema,
+                extractFirstPrimaryKeyColumn(targetSchema),
+                this.resolveRowPrimaryKeyValue(targetData.header, matchedRow, targetSchema),
+                requestId,
+            );
+        if (requestId !== this.currentRequestId) return null;
+
+        const label = this.getColumnDisplayLabel(sourceColumn);
+        const valueText = display?.text !== undefined && display.text !== ''
+            ? display.text
+            : `${targetTableName}.${targetColumnName}=${fkValue}`;
+        return {
+            kind: 'simple',
+            primaryText: `${label}: ${valueText}`,
+            detailText: `${sourceColumn.name}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
+            consumedColumns: new Set([sourceColumn.name]),
+        };
+    }
+
+    private async resolveDynamicReferenceSummaryAsync(
+        sourceColumn: SchemaColumn,
+        expr: DynamicReference,
+        header: string[],
+        row: string[],
+        requestId: number,
+    ): Promise<RowReferenceSummary | null> {
+        const valueColIdx = header.indexOf(expr.filter.valueColumn);
+        const fkColIdx = header.indexOf(sourceColumn.name);
+        if (valueColIdx === -1 || fkColIdx === -1) return null;
+        const valueColumnValue = row[valueColIdx] ?? '';
+        const fkValue = row[fkColIdx] ?? '';
+        if (valueColumnValue === '' || fkValue === '') return null;
+
+        const [filterTableData, filterSchema] = await Promise.all([
+            this.resolveTableDataAsync(expr.filter.tableName),
+            this.loadSchemaJsonAsync(expr.filter.tableName),
+        ]);
+        if (requestId !== this.currentRequestId) return null;
+
+        const filterColIdx = filterTableData.header.indexOf(expr.filter.filterColumn);
+        const lookupColIdx = filterTableData.header.indexOf(expr.lookupColumn);
+        const targetColumnColIdx = filterTableData.header.indexOf(expr.targetColumn);
+        if (filterColIdx === -1 || lookupColIdx === -1 || targetColumnColIdx === -1) return null;
+
+        const filterRow = filterTableData.rows.find(candidate => candidate[filterColIdx] === valueColumnValue);
+        if (filterRow === undefined) return null;
+
+        const targetTableName = filterRow[lookupColIdx] ?? '';
+        const targetColumnName = filterRow[targetColumnColIdx] ?? '';
+        if (targetTableName === '' || targetColumnName === '') return null;
+
+        const [targetData, targetSchema] = await Promise.all([
+            this.resolveTableDataAsync(targetTableName),
+            this.loadSchemaJsonAsync(targetTableName),
+        ]);
+        if (requestId !== this.currentRequestId) return null;
+
+        const targetRow = this.filterRowsByColumn(targetData.rows, targetData.header, targetColumnName, fkValue)[0];
+        const [filterDisplay, targetDisplay] = await Promise.all([
+            this.resolveRowDisplayCandidateAsync(
+                expr.filter.tableName,
+                filterTableData.header,
+                filterRow,
+                filterSchema,
+                extractFirstPrimaryKeyColumn(filterSchema),
+                this.resolveRowPrimaryKeyValue(filterTableData.header, filterRow, filterSchema),
+                requestId,
+            ),
+            targetRow === undefined
+                ? Promise.resolve<DisplayCandidate>({ text: '', source: 'none', columnName: null })
+                : this.resolveRowDisplayCandidateAsync(
+                    targetTableName,
+                    targetData.header,
+                    targetRow,
+                    targetSchema,
+                    extractFirstPrimaryKeyColumn(targetSchema),
+                    this.resolveRowPrimaryKeyValue(targetData.header, targetRow, targetSchema),
+                    requestId,
+                ),
+        ]);
+        if (requestId !== this.currentRequestId) return null;
+
+        const typeText = filterDisplay.text !== '' ? filterDisplay.text : targetTableName;
+        const valueText = targetDisplay.text !== ''
+            ? targetDisplay.text
+            : `${targetTableName}.${targetColumnName}=${fkValue}`;
+        return {
+            kind: 'dynamic',
+            primaryText: `${typeText}: ${valueText}`,
+            detailText: `${sourceColumn.name}=${fkValue} -> ${targetTableName}.${targetColumnName}`,
+            consumedColumns: new Set([sourceColumn.name, expr.filter.valueColumn]),
+        };
+    }
+
+    private resolveRowPrimaryKeyValue(header: string[], row: string[], schema: SchemaJson): string {
+        const pkColumnName = extractFirstPrimaryKeyColumn(schema);
+        const pkColIdx = header.indexOf(pkColumnName);
+        return pkColIdx !== -1 ? (row[pkColIdx] ?? '') : '';
+    }
+
+    private collectScalarMetaParts(
+        header: string[],
+        row: string[],
+        schema: SchemaJson,
+        display: DisplayCandidate,
+        summaries: RowReferenceSummary[],
+    ): string[] {
+        const excludedColumns = new Set(this.getPrimaryKeyColumnNames(schema));
+        for (const column of schema.header) {
+            if (column.reference) excludedColumns.add(column.name);
+        }
+        if (display.columnName !== null && this.isStrongDisplayCandidate(display)) {
+            excludedColumns.add(display.columnName);
+        }
+        for (const summary of summaries) {
+            for (const columnName of summary.consumedColumns) excludedColumns.add(columnName);
+        }
+
+        const parts: string[] = [];
+        for (const column of schema.header) {
+            if (excludedColumns.has(column.name)) continue;
+            const colIdx = header.indexOf(column.name);
+            const value = colIdx !== -1 ? (row[colIdx] ?? '') : '';
+            if (value === '') continue;
+            parts.push(this.formatColumnValue(column, value));
+            if (parts.length >= 4) break;
+        }
+        return parts;
+    }
+
+    private formatRowIdentityText(tableName: string, header: string[], row: string[], schema: SchemaJson, pkColumnName: string, pkValue: string): string {
+        const primaryKeyColumns = this.getPrimaryKeyColumnNames(schema);
+        const parts = primaryKeyColumns
+            .map(columnName => {
+                const colIdx = header.indexOf(columnName);
+                const value = colIdx !== -1 ? (row[colIdx] ?? '') : '';
+                return value !== '' ? `${columnName}=${value}` : '';
+            })
+            .filter(part => part !== '');
+        if (parts.length > 0) return `${tableName}.${parts.join(', ')}`;
+        return pkValue !== '' ? `${tableName}.${pkColumnName}=${pkValue}` : tableName;
+    }
+
+    private formatColumnValue(column: SchemaColumn, value: string): string {
+        return `${this.getColumnDisplayLabel(column)}=${value}`;
+    }
+
+    private getColumnDisplayLabel(column: SchemaColumn): string {
+        return column.comment !== undefined && column.comment !== '' ? column.comment : column.name;
+    }
+
+    private isStrongDisplayCandidate(display: DisplayCandidate): boolean {
+        return display.source === 'display-column'
+            || display.source === 'reference-cache'
+            || display.source === 'natural-column';
+    }
+
+    private isNaturalDisplayColumnName(columnName: string): boolean {
+        return /(^|_)(name|title|label|enum)(_|$)/.test(columnName);
+    }
+
+    private getPrimaryKeyColumnNames(schema: SchemaJson): string[] {
+        if (Array.isArray(schema.primary_key)) return schema.primary_key;
+        return [schema.primary_key];
     }
 
     private resolveReferenceDisplayColumnIndex(header: string[], pkColumnName: string): number {

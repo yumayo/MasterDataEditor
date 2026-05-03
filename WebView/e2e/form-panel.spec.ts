@@ -106,6 +106,107 @@ function createSlowValidationFormPanelTestFileSystem(): MockFileSystem {
     };
 }
 
+function createShopProductFormPanelTestFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "enum", type: "enum" },
+                { key: 2, name: "comment", type: "string" },
+                { key: 3, name: "master", type: "string" },
+                { key: 4, name: "column", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/table.csv": [
+            "id,enum,comment,master,column",
+            "1,chara,キャラ,chara,id",
+            "2,item,アイテム,item,id",
+        ].join("\n"),
+        "schema/chara.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/chara.csv": [
+            "id",
+            "14",
+        ].join("\n"),
+        "schema/chara_name.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int", reference: "chara.id" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/chara_name.csv": [
+            "id,ja",
+            "14,ネイト",
+        ].join("\n"),
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/item.csv": [
+            "id",
+            "3",
+        ].join("\n"),
+        "schema/item_name.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int", reference: "item.id" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/item_name.csv": [
+            "id,ja",
+            "3,神聖な弓",
+        ].join("\n"),
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "group_id", type: "int", comment: "グループID" },
+                { key: 1, name: "table_id", type: "int", comment: "テーブルID", reference: "table.id" },
+                {
+                    key: 2,
+                    name: "record_id",
+                    type: "int",
+                    comment: "レコードID",
+                    reference: {
+                        sourceTable: "table",
+                        sourceMatchColumn: "id",
+                        sourceMatchValue: "table_id",
+                        destTable: "master",
+                        destColumn: "column",
+                    },
+                },
+                { key: 3, name: "price", type: "int", comment: "販売価格" },
+                { key: 4, name: "sort_order", type: "int", comment: "表示順" },
+            ],
+            primary_key: ["group_id", "table_id", "record_id"],
+        }),
+        "data/shop_product.csv": [
+            "group_id,table_id,record_id,price,sort_order",
+            "9,1,14,1090,15",
+            "9,2,3,8677,7",
+        ].join("\n"),
+        "schema/shop.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "shop_product_group_id", type: "int", reference: "shop_product.group_id" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/shop.csv": [
+            "id,name,shop_product_group_id",
+            "1,WeaponShop,9",
+        ].join("\n"),
+    };
+}
+
 /**
  * エクスプローラーからテーブルを開き、左ペインの EditorTable Locator を返す
  * タブ名で絞り込むことで strict mode violation を回避する
@@ -563,6 +664,35 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         await expect(weaponInput).toHaveValue('20');
         await expect(getDataCell(table, 0, 3)).toContainText('20');
+    });
+});
+
+test.describe('フォームビューの参照行見出し', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createShopProductFormPanelTestFileSystem());
+        await page.goto('/');
+        await enableRelationsPanelAsync(page);
+    });
+
+    test('表示列がない参照行は動的参照先の商品種別と表示名を見出しにすること', async ({ page }) => {
+        await openTableAsync(page, 'shop');
+
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+
+        const formPanel = page.locator('.form-panel');
+        const productSection = formPanel.locator('.form-panel-section', { hasText: '参照先: shop_product_group_id' });
+        await expect(productSection).toBeVisible();
+
+        const charaProduct = productSection.locator('.form-panel-ref-item', { hasText: 'キャラ: ネイト' });
+        await expect(charaProduct).toBeVisible();
+        await expect(charaProduct).toContainText('shop_product.group_id=9, table_id=1, record_id=14');
+        await expect(charaProduct).toContainText('販売価格=1090');
+        await expect(charaProduct).toContainText('表示順=15');
+
+        const itemProduct = productSection.locator('.form-panel-ref-item', { hasText: 'アイテム: 神聖な弓' });
+        await expect(itemProduct).toBeVisible();
+        await expect(itemProduct).toContainText('販売価格=8677');
     });
 });
 
