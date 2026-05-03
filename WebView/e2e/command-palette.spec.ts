@@ -180,6 +180,27 @@ test.describe('CommandPalette', () => {
         await expect(items.nth(1)).toHaveClass(/selected/);
     });
 
+    test('マウスでhoverした項目から矢印キー選択が継続する', async ({page}) => {
+        await setupTestPageAsync(page);
+
+        // Ctrl+Pでコマンドパレットを開く
+        await page.keyboard.press('Control+p');
+        const items = page.locator('.command-palette-item');
+        const selectedBackground = await items.nth(0).evaluate(el => getComputedStyle(el).backgroundColor);
+
+        // 2番目の項目をマウスで選択すると、内部の選択indexも同期されること
+        await items.nth(1).hover();
+        await expect(items.nth(0)).not.toHaveClass(/selected/);
+        await expect(items.nth(1)).toHaveClass(/selected/);
+
+        // ↓キーはhover前の先頭ではなく、hoverした2番目から継続して先頭へ循環すること
+        await page.keyboard.press('ArrowDown');
+        await expect(items.nth(0)).toHaveClass(/selected/);
+        await expect(items.nth(1)).not.toHaveClass(/selected/);
+        await expect(items.nth(0)).toHaveCSS('background-color', selectedBackground);
+        await expect(items.nth(1)).not.toHaveCSS('background-color', selectedBackground);
+    });
+
     test('Enterキーで選択中のテーブルタブが開く', async ({page}) => {
         await setupTestPageAsync(page);
 

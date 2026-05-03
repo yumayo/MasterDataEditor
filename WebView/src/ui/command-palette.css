@@ -63,18 +63,6 @@
     color: var(--selection-font-color);
 }
 
-/* ホバー: 青色ハイライト */
-.command-palette-item:hover {
-    background: var(--selection-color);
-    color: var(--selection-font-color);
-}
-
-/* リスト内でホバーがあるとき、ホバー対象でない選択項目の青色を消す */
-.command-palette-list:has(.command-palette-item:hover) .command-palette-item.selected:not(:hover) {
-    background: transparent;
-    color: var(--font-color);
-}
-
 /* 項目名 */
 .command-palette-item-name {
     flex: 1;

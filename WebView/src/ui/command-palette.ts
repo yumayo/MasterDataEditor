@@ -149,7 +149,7 @@ export class CommandPalette {
                     const delta = e.key === 'ArrowDown' ? 1 : -1;
                     this.selectedIndex = (this.selectedIndex + delta + visibleItems.length) % visibleItems.length;
                 }
-                this.updateSelection(visibleItems);
+                this.updateSelection(visibleItems, true);
                 return;
             }
         });
@@ -290,10 +290,8 @@ export class CommandPalette {
                 nameElement.textContent = item.displayName;
             }
 
-            const clickIndex = i;
-            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                this.confirmSelection(clickIndex);
+            this.bindItemSelection(itemElement, i, () => {
+                this.confirmSelection(i);
             });
 
             itemElement.appendChild(nameElement);
@@ -357,10 +355,8 @@ export class CommandPalette {
             descElement.classList.add('command-palette-item-description');
             descElement.textContent = item.columnName + ': ' + item.label + ' (' + item.rowKey + ')';
             itemElement.appendChild(descElement);
-            const clickIndex = i;
-            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                this.confirmSelection(clickIndex);
+            this.bindItemSelection(itemElement, i, () => {
+                this.confirmSelection(i);
             });
             this.listElement.appendChild(itemElement);
         }
@@ -471,10 +467,8 @@ export class CommandPalette {
             valueElement.textContent = result.columnName + '=' + result.matchValue;
             itemElement.appendChild(valueElement);
 
-            const clickIndex = i;
-            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                this.confirmSelection(clickIndex);
+            this.bindItemSelection(itemElement, i, () => {
+                this.confirmSelection(i);
             });
 
             this.listElement.appendChild(itemElement);
@@ -553,10 +547,8 @@ export class CommandPalette {
                 itemElement.appendChild(commentElement);
             }
 
-            const clickIndex = i;
-            itemElement.addEventListener('mousedown', (e: MouseEvent) => {
-                e.preventDefault();
-                this.completeTab(clickIndex);
+            this.bindItemSelection(itemElement, i, () => {
+                this.completeTab(i);
             });
 
             this.listElement.appendChild(itemElement);
@@ -580,16 +572,38 @@ export class CommandPalette {
         }
     }
 
+    /** マウス操作で選択状態と内部indexを同期してから項目アクションを実行する */
+    private bindItemSelection(itemElement: HTMLElement, index: number, action: () => void): void {
+        itemElement.addEventListener('mouseenter', () => {
+            this.selectIndex(index, false);
+        });
+        itemElement.addEventListener('mousedown', (e: MouseEvent) => {
+            e.preventDefault();
+            this.selectIndex(index, false);
+            action();
+        });
+    }
+
+    private selectIndex(index: number, scrollIntoView: boolean): void {
+        const visibleItems = this.listElement.querySelectorAll('.command-palette-item');
+        if (visibleItems.length === 0) return;
+        if (index < 0 || index >= visibleItems.length) return;
+        this.selectedIndex = index;
+        this.updateSelection(visibleItems, scrollIntoView);
+    }
+
     /**
      * 選択状態を更新する
      * selectedIndexに基づいてselectedクラスを付け替え、
-     * 選択項目が見えるようにスクロールする
+     * 必要な場合は選択項目が見えるようにスクロールする
      */
-    private updateSelection(visibleItems: NodeListOf<Element>): void {
+    private updateSelection(visibleItems: NodeListOf<Element>, scrollIntoView: boolean): void {
         for (let i = 0; i < visibleItems.length; ++i) {
             visibleItems[i].classList.remove('selected');
         }
         visibleItems[this.selectedIndex].classList.add('selected');
-        visibleItems[this.selectedIndex].scrollIntoView({block: 'nearest'});
+        if (scrollIntoView) {
+            visibleItems[this.selectedIndex].scrollIntoView({block: 'nearest'});
+        }
     }
 }
