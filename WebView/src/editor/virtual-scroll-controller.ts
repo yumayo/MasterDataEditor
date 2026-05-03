@@ -95,10 +95,10 @@ export class VirtualScrollController {
     private afterRowsUpdated: ((update: RenderedRowsUpdate) => void) | false;
 
     /**
-     * スクロールイベント時に常に呼ばれるコールバック。行入れ替え有無にかかわらず実行される。
-     * 固定行のフィルハンドル位置更新など、スクロール位置に依存する軽量な処理を登録する。
+     * 行入れ替え有無にかかわらず、スクロール後に同期する表示レイヤー処理。
+     * 固定行/列の分離ビューポートやフィルハンドルなど、スクロール位置に依存する処理を登録する。
      */
-    private afterScroll: ((scrollTop: number, scrollLeft: number) => void) | false;
+    private syncScrollBoundVisuals: (scrollTop: number, scrollLeft: number) => void;
     /** 初回 recalculate では既存DOMの装飾を差分計算できないため full refresh を強制する */
     private hasCompletedInitialRowsUpdate: boolean;
     /** 現在の recalculate が scroll イベント起点かどうか */
@@ -125,7 +125,7 @@ export class VirtualScrollController {
         this.isRecalculating = false;
         this.renderRow = false;
         this.afterRowsUpdated = false;
-        this.afterScroll = false;
+        this.syncScrollBoundVisuals = () => {};
         this.hasCompletedInitialRowsUpdate = false;
         this.isHandlingScrollEvent = false;
         this.currentScrollTop = 0;
@@ -156,11 +156,11 @@ export class VirtualScrollController {
     connectRenderRow(
         renderRow: (dataRowIndex: number) => HTMLElement,
         afterRowsUpdated: (update: RenderedRowsUpdate) => void,
-        afterScroll: (scrollTop: number, scrollLeft: number) => void
+        syncScrollBoundVisuals: (scrollTop: number, scrollLeft: number) => void
     ): void {
         this.renderRow = renderRow;
         this.afterRowsUpdated = afterRowsUpdated;
-        this.afterScroll = afterScroll;
+        this.syncScrollBoundVisuals = syncScrollBoundVisuals;
     }
 
     /**
@@ -219,11 +219,7 @@ export class VirtualScrollController {
         } finally {
             this.isHandlingScrollEvent = false;
         }
-        // 行入れ替え有無にかかわらず、スクロール時に常にコールバックを呼ぶ。
-        // 固定行のフィルハンドル位置更新に必要。
-        if (this.afterScroll !== false) {
-            this.afterScroll(this.currentScrollTop, this.currentScrollLeft);
-        }
+        this.syncScrollBoundVisuals(this.currentScrollTop, this.currentScrollLeft);
     }
 
     handlesScrollEvents(): boolean {
@@ -474,6 +470,7 @@ export class VirtualScrollController {
         if (rawTargetScrollTop !== this.scrollContainer.scrollTop) {
             this.scrollContainer.scrollTop = rawTargetScrollTop;
             this.recalculate();
+            this.syncScrollBoundVisuals(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
             // スペーサーがテーブル内（display:table-row）にあるため、recalculate のDOM操作後に
             // ブラウザの非同期レイアウト再計算で scrollTop がリセットされることがある。
             // rAF 後に scrollTop を再設定して非同期リセットに対応する。
