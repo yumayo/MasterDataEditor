@@ -180,6 +180,23 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     return table;
 }
 
+async function clickSortIndicatorAsync(table: Locator, colIndex: number): Promise<void> {
+    const headerRow = table.locator('.editor-table-column-header-row');
+    const headerCell = headerRow.locator('.editor-table-column-header').nth(colIndex);
+    await headerCell.locator('.sort-indicator').click();
+}
+
+async function applyFilterBySearchAsync(page: Page, table: Locator, colIndex: number, query: string): Promise<void> {
+    const headerRow = table.locator('.editor-table-column-header-row');
+    const headerCell = headerRow.locator('.editor-table-column-header').nth(colIndex);
+    await headerCell.locator('.filter-icon').click();
+    const dropdown = page.locator('.filter-dropdown.visible');
+    await expect(dropdown).toBeVisible();
+    await dropdown.locator('.filter-search-input').fill(query);
+    await dropdown.locator('.filter-apply').click();
+    await expect(dropdown).toBeHidden();
+}
+
 /**
  * canvas を上半分（0%〜50%）と下半分（50%〜100%）に分割して各区間の色を検出する。
  * スクロールバー領域全体を100%としたマーカー位置の検証に使用する。
@@ -549,6 +566,56 @@ gitTest.describe('ScrollbarMarkerTrack git変更', () => {
             const positions = await detectMarkerPositionsAsync(page);
             expect(positions.upper.hasGreen).toBe(false);
             expect(positions.lower.hasGreen).toBe(true);
+        },
+    );
+
+    gitTest(
+        'ソート後にgit変更マーカーが表示順に合わせて再配置される',
+        async ({ page, gitMarkerPage: _gitMarkerPage }) => {
+            const table = await openTableAsync(page, 'item');
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.lower.hasGreen;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
+
+            await clickSortIndicatorAsync(table, 0);
+            await clickSortIndicatorAsync(table, 0);
+
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.upper.hasGreen && !p.lower.hasGreen;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
+        },
+    );
+
+    gitTest(
+        'フィルター後にgit変更マーカーがフィルター後の表示行基準で再生成される',
+        async ({ page, gitMarkerPage: _gitMarkerPage }) => {
+            const table = await openTableAsync(page, 'item');
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.lower.hasGreen;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
+
+            await applyFilterBySearchAsync(page, table, 0, '100');
+            await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('1 / 100 行');
+
+            await expect.poll(
+                async () => {
+                    const p = await detectMarkerPositionsAsync(page);
+                    return p.upper.hasGreen;
+                },
+                { timeout: 5000 },
+            ).toBe(true);
         },
     );
 

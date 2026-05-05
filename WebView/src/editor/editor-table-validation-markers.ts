@@ -144,13 +144,6 @@ export class EditorTableValidationMarkers {
                 if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
             }
         }
-        // エラー行をスクロールバーマーカーに反映する（ストア行→DOM行に変換）
-        const errorDomRows = new Set<number>();
-        for (const error of errors) {
-            const domDataRow = this.storeRowIndices.indexOf(error.rowIndex);
-            if (domDataRow !== -1) errorDomRows.add(domDataRow);
-        }
-        this.currentErrorDomRows = errorDomRows;
         this.refreshScrollbarMarkers();
         // 固定行・固定列は可視セルが detached/quadrant layer に複製されるため、
         // 元セルに付与したエラー class を複製側にも同期する。
@@ -173,13 +166,63 @@ export class EditorTableValidationMarkers {
         if (this.scrollbarMarkerTrack === false) return;
         if (this.isMiniTable) return;
         if (!this.isActive) return;
-        // 総データ行数（バッファ行を含む）をマーカー位置の分母にする。
-        // storeRowIndices.length はデータ行数、+1 でバッファ行1行を考慮する。
-        // ミニテーブルでは呼ばれない（上のガードで早期リターン済み）。
-        const totalDataRowCount = this.storeRowIndices.length + 1;
+        this.currentErrorDomRows = this.collectErrorMarkerRows();
+        this.currentGitChangedDomRows = this.collectGitChangedMarkerRows();
+        // 総データ行数（フィルター後の表示行 + バッファ行）をマーカー位置の分母にする。
+        // フィルター中は非表示行をスクロール範囲に含めないため、マーカーも表示行基準で配置する。
+        const totalDataRowCount = this.getFilteredDataRowCount() + 1;
         const errorMarkers = this.buildMarkerEntries(this.currentErrorDomRows, totalDataRowCount);
         const gitMarkers = this.buildMarkerEntries(this.currentGitChangedDomRows, totalDataRowCount);
         this.scrollbarMarkerTrack.updateNormal(errorMarkers, gitMarkers);
+    }
+
+    private collectErrorMarkerRows(): Set<number> {
+        const errorStoreRows = new Set<number>();
+        this.addStoreRowsFromErrorCache(this.cachedPkErrorCells, errorStoreRows);
+        this.addStoreRowsFromErrorCache(this.cachedOtherErrorCells, errorStoreRows);
+        return this.mapStoreRowsToVisibleDataRows(errorStoreRows);
+    }
+
+    private addStoreRowsFromErrorCache(cache: Set<string>, output: Set<number>): void {
+        for (const key of cache) {
+            const commaIndex = key.indexOf(',');
+            if (commaIndex === -1) continue;
+            const storeRowIndex = Number(key.slice(0, commaIndex));
+            if (Number.isInteger(storeRowIndex) && storeRowIndex >= 0) output.add(storeRowIndex);
+        }
+    }
+
+    private collectGitChangedMarkerRows(): Set<number> {
+        if (this.gitDiffTracker === false) return new Set<number>();
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return new Set<number>();
+        const changedRows = new Set<number>();
+        const visibleRowCount = this.getFilteredDataRowCount();
+        const columnMapping = this.tableData.columnMapping;
+        for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
+            const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
+            if (storeRowIndex < 0) continue;
+            for (let domColIndex = 0; domColIndex < columnMapping.length; domColIndex++) {
+                const storeColIndex = columnMapping[domColIndex];
+                if (storeColIndex === -1) continue;
+                if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) {
+                    changedRows.add(dataRowIndex);
+                    break;
+                }
+            }
+        }
+        return changedRows;
+    }
+
+    private mapStoreRowsToVisibleDataRows(storeRows: Set<number>): Set<number> {
+        const visibleRows = new Set<number>();
+        if (storeRows.size === 0) return visibleRows;
+        const visibleRowCount = this.getFilteredDataRowCount();
+        for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
+            const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
+            if (storeRows.has(storeRowIndex)) visibleRows.add(dataRowIndex);
+        }
+        return visibleRows;
     }
 
     /**

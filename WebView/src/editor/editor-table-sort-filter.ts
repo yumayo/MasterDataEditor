@@ -94,6 +94,7 @@ export class EditorTableSortFilter {
         this.structure.renumberRowsFrom(1);
         this.selection.updateRendererAfterResize();
         this.updateAllSortIndicators();
+        this.refreshScrollbarMarkers();
     }
 
     /**
@@ -140,6 +141,7 @@ export class EditorTableSortFilter {
         this.updateAllSortIndicators();
         // ソート後もフィルター状態を維持する（フィルター適用中の場合は表示/非表示を再計算する）
         this.refreshFilterDisplayIfActive();
+        this.refreshScrollbarMarkers();
 
         // ソート状態をスキーマJSONに永続化する（fire-and-forget）
         saveSchemaDataAsync(this.table);
@@ -179,6 +181,7 @@ export class EditorTableSortFilter {
         this.selection.updateRendererAfterResize();
         this.updateAllSortIndicators();
         this.refreshFilterDisplayIfActive();
+        this.refreshScrollbarMarkers();
         // ソート状態をスキーマJSONに永続化する（fire-and-forget）
         saveSchemaDataAsync(this.table);
     }
@@ -296,6 +299,7 @@ export class EditorTableSortFilter {
             this.filterRowCountElement.style.display = 'none';
             this.selection.updateRendererAfterResize();
             this.refreshFreezeVisualState();
+            this.refreshScrollbarMarkers();
             return;
         }
 
@@ -350,6 +354,7 @@ export class EditorTableSortFilter {
         // 行の display 変更後に選択オーバーレイの描画位置を再計算する（非表示行にまたがる選択を解消）
         this.selection.updateRendererAfterResize();
         this.refreshFreezeVisualState();
+        this.refreshScrollbarMarkers();
     }
 
     /**
