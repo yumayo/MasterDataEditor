@@ -37,6 +37,8 @@ body {
     --diff-added-bg: rgba(81, 184, 81, 0.2);
     --diff-empty-bg: rgba(128, 128, 128, 0.1);
     --diff-empty-opacity: 0.4;
+    --git-changed-bg: rgba(81, 184, 81, 0.2);
+    --git-changed-frozen-bg: #d3e7d3;
 
     /* UI共通トークン */
     --border-radius: 4px;
@@ -77,6 +79,8 @@ body {
     --diff-added-bg: rgba(81, 184, 81, 0.2);
     --diff-empty-bg: rgba(128, 128, 128, 0.1);
     --diff-empty-opacity: 0.4;
+    --git-changed-bg: rgba(81, 184, 81, 0.2);
+    --git-changed-frozen-bg: #30483a;
 }
 
 *::-webkit-scrollbar {

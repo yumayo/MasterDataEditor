@@ -452,7 +452,7 @@
 
 /* git変更セルのハイライト（HEAD版との差分があるセルを緑背景で表示） */
 .cell-git-changed {
-    background-color: rgba(81, 184, 81, 0.2);
+    background-color: var(--git-changed-bg);
 }
 
 /* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示） */
@@ -585,6 +585,12 @@
 
 .freeze-cell {
     background-color: var(--background-sub-color);
+}
+
+/* 固定行・固定列は透過防止の不透明背景を持つため、git差分色も不透明色で上書きする。 */
+.freeze-row .editor-table-cell.cell-git-changed:not(.editor-table-row-header),
+.freeze-cell.cell-git-changed {
+    background-color: var(--git-changed-frozen-bg);
 }
 
 /* 固定列の最後のセル（ヘッダー含む）に境界線を表示する。
