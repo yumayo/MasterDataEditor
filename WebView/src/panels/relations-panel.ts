@@ -801,9 +801,10 @@ export class RelationsPanel {
         if (requestId !== this.currentRequestId) return;
         this.panelElement.appendChild(content);
 
-        // DOM追加後にSelectionの視覚位置をレイアウトに基づいて更新する
-        // createMiniEditorTable 時点ではDOMがレイアウトされていないため getBoundingClientRect が0を返す
+        // DOM追加後に分離ヘッダーとSelectionの視覚位置をレイアウトに基づいて更新する。
+        // createMiniEditorTable 時点ではDOMがレイアウトされていないため offsetLeft/getBoundingClientRect が0を返す。
         for (const miniTable of this.miniEditorTables) {
+            miniTable.refreshDetachedHeaderLayout();
             miniTable.refreshSelectionDisplay();
         }
     }
