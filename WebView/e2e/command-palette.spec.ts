@@ -276,7 +276,7 @@ test.describe('CommandPalette', () => {
         await expect(page.locator('.command-palette-item-name').nth(0)).toHaveText('item');
     });
 
-    test('コマンドパレットの角は直角（border-radius: 0px）である', async ({page}) => {
+    test('コマンドパレットの角は共通の角丸で表示される', async ({page}) => {
         // setupTestPageAsync は不要（パレットのスタイルはデータ依存なし）
         await installMockApiAsync(page, createTestFileSystem());
         await page.goto('/');
@@ -284,9 +284,12 @@ test.describe('CommandPalette', () => {
         // Ctrl+Pでコマンドパレットを表示
         await page.keyboard.press('Control+p');
 
-        // .command-palette の border-radius が 0px であること（現在は 6px なので RED）
+        // .command-palette の border-radius が共通トークンと同じであること
+        const expectedRadius = await page.evaluate(() =>
+            getComputedStyle(document.documentElement).getPropertyValue('--border-radius').trim()
+        );
         const palette = page.locator('.command-palette');
-        await expect(palette).toHaveCSS('border-radius', '0px');
+        await expect(palette).toHaveCSS('border-radius', expectedRadius);
     });
 
     test('ローマ字入力でdescriptionにマッチしてフィルタリングされる', async ({page}) => {
