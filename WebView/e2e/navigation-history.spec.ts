@@ -57,6 +57,31 @@ function createNavigationTestFileSystem(): MockFileSystem {
 	};
 }
 
+function createWideNavigationTestFileSystem(): MockFileSystem {
+	const createSchema = (columnCount: number): string => JSON.stringify({
+		header: Array.from({ length: columnCount }, (_, index) => ({
+			key: index,
+			name: index === 0 ? 'id' : `column_${index}`,
+			type: index === 0 ? 'int' : 'string',
+		})),
+		primary_key: ['id'],
+	});
+	const createCsv = (prefix: string, rowCount: number, columnCount: number): string => {
+		const header = Array.from({ length: columnCount }, (_, index) => index === 0 ? 'id' : `column_${index}`);
+		const rows = [header.join(',')];
+		for (let row = 1; row <= rowCount; row++) {
+			rows.push(Array.from({ length: columnCount }, (_, col) => col === 0 ? String(row) : `${prefix}_${row}_${col}`).join(','));
+		}
+		return rows.join('\n');
+	};
+	return {
+		"schema/item.json": createSchema(24),
+		"data/item.csv": createCsv('item', 40, 24),
+		"schema/quest.json": createSchema(24),
+		"data/quest.csv": createCsv('quest', 40, 24),
+	};
+}
+
 /**
  * 定義ジャンプ・paneStack深化テスト用のファイルシステムを生成する
  *
@@ -162,6 +187,45 @@ async function openTableAsync(page: Page, tableName: string): Promise<void> {
 	await explorer.getByText(tableName, { exact: true }).click();
 	// タブが開かれてアクティブになるまで待機する
 	await expect(page.locator(`.tab-button-active`)).toContainText(tableName);
+}
+
+async function setActiveTableScrollLeftAsync(page: Page, scrollLeft: number): Promise<number> {
+	await page.evaluate((value) => {
+		const wrappers = Array.from(document.querySelectorAll('.editor-left-pane .tab-wrapper')) as HTMLElement[];
+		const activeWrapper = wrappers.find(wrapper => wrapper.style.display !== 'none');
+		const element = activeWrapper?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+		if (element === null) throw new Error('active editor-table-main-viewport not found');
+		element.scrollLeft = value;
+		element.dispatchEvent(new Event('scroll'));
+	}, scrollLeft);
+	await page.waitForFunction((value) => {
+		const wrappers = Array.from(document.querySelectorAll('.editor-left-pane .tab-wrapper')) as HTMLElement[];
+		const activeWrapper = wrappers.find(wrapper => wrapper.style.display !== 'none');
+		const element = activeWrapper?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+		return element !== null && element.scrollLeft > 0 && element.scrollLeft <= value;
+	}, scrollLeft);
+	return page.evaluate(() => {
+		const wrappers = Array.from(document.querySelectorAll('.editor-left-pane .tab-wrapper')) as HTMLElement[];
+		const activeWrapper = wrappers.find(wrapper => wrapper.style.display !== 'none');
+		const element = activeWrapper?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+		if (element === null) throw new Error('active editor-table-main-viewport not found');
+		return element.scrollLeft;
+	});
+}
+
+async function expectActiveTableScrollLeftRestoredAsync(page: Page, expected: number): Promise<void> {
+	await page.waitForFunction((value) => {
+		const wrappers = Array.from(document.querySelectorAll('.editor-left-pane .tab-wrapper')) as HTMLElement[];
+		const activeWrapper = wrappers.find(wrapper => wrapper.style.display !== 'none');
+		const element = activeWrapper?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+		return element !== null && element.scrollLeft >= value - 2;
+	}, expected, { timeout: 5000 });
+}
+
+async function clickTabButtonAsync(page: Page, tableName: string): Promise<void> {
+	await page.locator('.tab-button').filter({
+		has: page.locator('.tab-button-name', { hasText: new RegExp(`^${tableName}$`) }),
+	}).click();
 }
 
 /**
@@ -270,6 +334,48 @@ test.describe('ブラウザ History API によるタブナビゲーション', (
 		// 進む: item → quest
 		await page.goForward();
 		await expect(page.locator('.tab-button-active')).toContainText('quest');
+	});
+
+	test('ブラウザの戻る進むで復帰したタブの横スクロール位置が維持される', async ({ page }) => {
+		const fs = createWideNavigationTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+		await enableRelationsPanelAsync(page);
+
+		await openTableAsync(page, 'item');
+		const itemScrollLeft = await setActiveTableScrollLeftAsync(page, 520);
+
+		await openTableAsync(page, 'quest');
+		const questScrollLeft = await setActiveTableScrollLeftAsync(page, 640);
+
+		await page.goBack();
+		await expect(page.locator('.tab-button-active')).toContainText('item');
+		await expectActiveTableScrollLeftRestoredAsync(page, itemScrollLeft);
+
+		await page.goForward();
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+		await expectActiveTableScrollLeftRestoredAsync(page, questScrollLeft);
+	});
+
+	test('タブクリックで復帰したタブの横スクロール位置が維持される', async ({ page }) => {
+		const fs = createWideNavigationTestFileSystem();
+		await installMockApiAsync(page, fs);
+		await page.goto('/');
+		await enableRelationsPanelAsync(page);
+
+		await openTableAsync(page, 'item');
+		const itemScrollLeft = await setActiveTableScrollLeftAsync(page, 520);
+
+		await openTableAsync(page, 'quest');
+		const questScrollLeft = await setActiveTableScrollLeftAsync(page, 640);
+
+		await clickTabButtonAsync(page, 'item');
+		await expect(page.locator('.tab-button-active')).toContainText('item');
+		await expectActiveTableScrollLeftRestoredAsync(page, itemScrollLeft);
+
+		await clickTabButtonAsync(page, 'quest');
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+		await expectActiveTableScrollLeftRestoredAsync(page, questScrollLeft);
 	});
 
 	// ---------------------------------------------------------------------------

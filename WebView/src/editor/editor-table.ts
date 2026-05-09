@@ -858,6 +858,16 @@ export class EditorTable {
         }));
     }
 
+    emitSelectionChanged(): void {
+        this.element.dispatchEvent(new CustomEvent('editor-table-selection-changed', {
+            bubbles: true,
+            detail: {
+                focus: {...this.selection.getFocus()},
+                range: {...this.selection.getRange()},
+            },
+        }));
+    }
+
     usesInternalScrollLayout(): boolean {
         return this.usesInternalMainViewport;
     }

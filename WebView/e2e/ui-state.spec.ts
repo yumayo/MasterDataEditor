@@ -24,6 +24,26 @@ function createCsv(prefix: string): string {
     ].join("\n");
 }
 
+function createWideSchema(columnCount: number): string {
+    return JSON.stringify({
+        header: Array.from({length: columnCount}, (_, index) => ({
+            key: index,
+            name: index === 0 ? 'id' : `column_${index}`,
+            type: index === 0 ? 'int' : 'string',
+        })),
+        primary_key: ['id'],
+    });
+}
+
+function createWideCsv(rowCount: number, columnCount: number): string {
+    const header = Array.from({length: columnCount}, (_, index) => index === 0 ? 'id' : `column_${index}`);
+    const rows = [header.join(',')];
+    for (let row = 1; row <= rowCount; row++) {
+        rows.push(Array.from({length: columnCount}, (_, col) => col === 0 ? String(row) : `r${row}_c${col}`).join(','));
+    }
+    return rows.join('\n');
+}
+
 async function openTestTableAsync(page: Page): Promise<void> {
     await page.locator('#explorer .explorer-file').getByText('test', {exact: true}).click();
     await expect(page.locator('.tab-button-active')).toHaveText(/test/);
@@ -48,7 +68,7 @@ async function waitForSavedUiStateAsync(page: Page): Promise<void> {
             const parsed = JSON.parse(raw) as {
                 sidebar?: {width?: number; activePanel?: string};
                 bottomPanel?: {visible?: boolean; height?: number; activeTab?: string};
-                tabs?: {open?: Array<{name?: string; description?: string | null; diff?: unknown}>; active?: string | null};
+                tabs?: {open?: Array<{name?: string; description?: string | null; diff?: unknown}>; active?: string | null; scroll?: {scrollLeft?: number; scrollTop?: number}};
             };
             return parsed.sidebar?.activePanel === 'bookmarks'
                 && typeof parsed.sidebar.width === 'number'
@@ -86,14 +106,40 @@ test.describe('UI状態のuserdata永続化', () => {
         const state = JSON.parse(raw) as {
             sidebar: {width: number; activePanel: string};
             bottomPanel: {visible: boolean; height: number; activeTab: string};
-            tabs: {open: Array<{name: string; description: string | null; diff: unknown}>; active: string | null};
+            tabs: {
+                open: Array<{
+                    name: string;
+                    description: string | null;
+                    diff: unknown;
+                    scroll?: {scrollLeft: number; scrollTop: number} | null;
+                    editorTable?: unknown;
+                }>;
+                active: string | null;
+                scroll: {scrollLeft: number; scrollTop: number};
+            };
         };
         expect(state.sidebar.activePanel).toBe('bookmarks');
         expect(state.sidebar.width).toBeGreaterThanOrEqual(360);
         expect(state.bottomPanel.visible).toBe(true);
         expect(state.bottomPanel.activeTab).toBe('debug');
         expect(state.bottomPanel.height).toBeGreaterThan(300);
-        expect(state.tabs.open).toContainEqual({name: 'test', description: null, diff: null});
+        expect(state.tabs.scroll).toMatchObject({scrollLeft: expect.any(Number), scrollTop: expect.any(Number)});
+        const testTab = state.tabs.open.find(tab => tab.name === 'test');
+        expect(testTab).toMatchObject({
+            name: 'test',
+            description: null,
+            diff: null,
+            scroll: {scrollLeft: expect.any(Number), scrollTop: expect.any(Number)},
+            editorTable: {
+                scroll: {scrollLeft: expect.any(Number), scrollTop: expect.any(Number)},
+                relationsPanelVisible: false,
+                formPanel: null,
+                selection: {
+                    focus: {row: 1, column: 1},
+                    range: {startRow: 1, startColumn: 1, endRow: 1, endColumn: 1},
+                },
+            },
+        });
         expect(state.tabs.active).toBe('test');
     });
 
@@ -122,6 +168,210 @@ test.describe('UI状態のuserdata永続化', () => {
         await expect(page.locator('.editor-table')).toBeVisible();
     });
 
+    test('ui-stateのEditorTable状態から参照パネルと選択セルが復元される', async ({page}) => {
+        const fs = createDefaultFileSystem();
+        fs[UI_STATE_FILE] = JSON.stringify({
+            tabs: {
+                open: [{
+                    name: 'test',
+                    description: null,
+                    diff: null,
+                    scroll: {scrollLeft: 0, scrollTop: 0},
+                    editorTable: {
+                        scroll: {scrollLeft: 0, scrollTop: 0},
+                        relationsPanelVisible: true,
+                        formPanel: null,
+                        selection: {
+                            focus: {row: 2, column: 2},
+                            range: {startRow: 2, startColumn: 2, endRow: 2, endColumn: 2},
+                        },
+                    },
+                }],
+                active: 'test',
+                scroll: {scrollLeft: 0, scrollTop: 0},
+            },
+        });
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await expect(page.locator('.relations-panel')).toBeVisible();
+        await expect(page.locator('#toolbar .toolbar-button-relations-toggle')).toHaveClass(/toolbar-button-relations-active/);
+        const focused = page.locator('.editor-left-pane .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="1"]');
+        await expect(focused).toHaveClass(/editor-table-cell-focused/);
+    });
+
+    test('EditorTableのスクロール・フォームビュー・選択セルがuserdataへ保存され起動時に復元される', async ({page}) => {
+        const fs = createDefaultFileSystem();
+        fs['schema/test.json'] = createWideSchema(18);
+        fs['data/test.csv'] = createWideCsv(80, 18);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTestTableAsync(page);
+        const viewport = page.locator('.editor-left-pane .editor-table-main-viewport');
+        await viewport.evaluate((element) => {
+            element.scrollTop = 900;
+            element.scrollLeft = 320;
+        });
+        await page.waitForFunction(() => {
+            const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            return element !== null && element.scrollTop >= 800 && element.scrollLeft >= 200;
+        });
+
+        const targetCell = page.locator('.editor-left-pane .editor-table-row[data-row-index="30"] .editor-table-cell[data-col="5"]');
+        await expect(targetCell).toBeVisible();
+        await targetCell.click();
+        await page.locator('#toolbar .toolbar-button-form-toggle').click();
+        await expect(page.locator('.form-panel')).toBeVisible();
+
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const parsed = JSON.parse(raw) as {
+                tabs?: {
+                    open?: Array<{
+                        name?: string;
+                        scroll?: {scrollLeft?: number; scrollTop?: number} | null;
+                        editorTable?: {
+                            scroll?: {scrollLeft?: number; scrollTop?: number};
+                            relationsPanelVisible?: boolean;
+                            formPanel?: {navStack?: Array<{tableName?: string; pkValue?: string}>} | null;
+                            selection?: {focus?: {row?: number; column?: number}; range?: {startRow?: number; startColumn?: number; endRow?: number; endColumn?: number}};
+                        } | null;
+                    }>;
+                };
+            };
+            const tab = parsed.tabs?.open?.find(item => item.name === 'test');
+            return tab?.scroll?.scrollTop !== undefined
+                && tab.scroll.scrollTop > 0
+                && tab.scroll.scrollLeft !== undefined
+                && tab.scroll.scrollLeft > 0
+                && tab.editorTable?.scroll?.scrollTop !== undefined
+                && tab.editorTable.scroll.scrollTop > 0
+                && tab.editorTable.scroll.scrollLeft !== undefined
+                && tab.editorTable.scroll.scrollLeft > 0
+                && tab.editorTable.relationsPanelVisible === false
+                && tab.editorTable.formPanel?.navStack?.[0]?.tableName === 'test'
+                && tab.editorTable.formPanel.navStack[0].pkValue === '31'
+                && tab.editorTable.selection?.focus?.row === 31
+                && tab.editorTable.selection.focus.column === 6;
+        }, UI_STATE_FILE, {timeout: 5000});
+
+        const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
+        const restoredFs = createDefaultFileSystem();
+        restoredFs['schema/test.json'] = createWideSchema(18);
+        restoredFs['data/test.csv'] = createWideCsv(80, 18);
+        restoredFs[UI_STATE_FILE] = savedRaw;
+
+        const secondPage = await page.context().newPage();
+        await installMockApiAsync(secondPage, restoredFs);
+        await secondPage.goto('/');
+
+        await expect(secondPage.locator('.form-panel')).toBeVisible();
+        await expect(secondPage.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('31');
+        await secondPage.waitForFunction(() => {
+            const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            return element !== null && element.scrollTop > 0 && element.scrollLeft > 0;
+        });
+        const focusedInfo = await secondPage.evaluate(() => {
+            const cell = document.querySelector('.editor-left-pane .editor-table-cell-focused') as HTMLElement | null;
+            const row = cell?.closest('.editor-table-row') as HTMLElement | null;
+            return {
+                rowIndex: row?.dataset.rowIndex ?? null,
+                col: cell?.dataset.col ?? null,
+            };
+        });
+        expect(focusedInfo).toEqual({rowIndex: '30', col: '5'});
+        await secondPage.close();
+    });
+
+    test('EditorTableの横スクロールがフォームビューなしでも起動時に復元される', async ({page}) => {
+        const fs = createDefaultFileSystem();
+        fs['schema/test.json'] = createWideSchema(24);
+        fs['data/test.csv'] = createWideCsv(40, 24);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTestTableAsync(page);
+        const viewport = page.locator('.editor-left-pane .editor-table-main-viewport');
+        await viewport.evaluate((element) => {
+            element.scrollLeft = 520;
+            element.dispatchEvent(new Event('scroll'));
+        });
+        await page.waitForFunction(() => {
+            const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            return element !== null && element.scrollLeft >= 300;
+        });
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const parsed = JSON.parse(raw) as {tabs?: {open?: Array<{name?: string; editorTable?: {scroll?: {scrollLeft?: number}} | null}>}};
+            const tab = parsed.tabs?.open?.find(item => item.name === 'test');
+            return typeof tab?.editorTable?.scroll?.scrollLeft === 'number' && tab.editorTable.scroll.scrollLeft >= 300;
+        }, UI_STATE_FILE, {timeout: 5000});
+
+        const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
+        const saved = JSON.parse(savedRaw) as {tabs: {open: Array<{name: string; editorTable: {scroll: {scrollLeft: number}} | null}>}};
+        const savedScrollLeft = saved.tabs.open.find(tab => tab.name === 'test')?.editorTable?.scroll.scrollLeft ?? 0;
+
+        const restoredFs = createDefaultFileSystem();
+        restoredFs['schema/test.json'] = createWideSchema(24);
+        restoredFs['data/test.csv'] = createWideCsv(40, 24);
+        restoredFs[UI_STATE_FILE] = savedRaw;
+
+        const secondPage = await page.context().newPage();
+        await installMockApiAsync(secondPage, restoredFs);
+        await secondPage.goto('/');
+
+        await expect(secondPage.locator('.tab-button-active')).toHaveText(/test/);
+        await expect(secondPage.locator('.form-panel')).toHaveCount(0);
+        await secondPage.waitForFunction((expected) => {
+            const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            return element !== null && element.scrollLeft >= expected - 2;
+        }, savedScrollLeft, {timeout: 5000});
+        await secondPage.close();
+    });
+
+    test('フォームビューを閉じた状態がuserdataへ保存され起動時に再表示されない', async ({page}) => {
+        const fs = createDefaultFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTestTableAsync(page);
+        const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
+        await toggleButton.click();
+        await expect(page.locator('.form-panel')).toBeVisible();
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const parsed = JSON.parse(raw) as {tabs?: {open?: Array<{name?: string; editorTable?: {formPanel?: unknown} | null}>}};
+            const tab = parsed.tabs?.open?.find(item => item.name === 'test');
+            return tab?.editorTable?.formPanel !== null && tab?.editorTable?.formPanel !== undefined;
+        }, UI_STATE_FILE, {timeout: 5000});
+
+        await toggleButton.click();
+        await expect(page.locator('.form-panel')).toHaveCount(0);
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const parsed = JSON.parse(raw) as {tabs?: {open?: Array<{name?: string; editorTable?: {formPanel?: unknown} | null}>}};
+            const tab = parsed.tabs?.open?.find(item => item.name === 'test');
+            return tab?.editorTable?.formPanel === null;
+        }, UI_STATE_FILE, {timeout: 5000});
+
+        const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
+        const secondPage = await page.context().newPage();
+        const restoredFs = createDefaultFileSystem();
+        restoredFs[UI_STATE_FILE] = savedRaw;
+        await installMockApiAsync(secondPage, restoredFs);
+        await secondPage.goto('/');
+
+        await expect(secondPage.locator('.tab-button-active')).toHaveText(/test/);
+        await expect(secondPage.locator('.form-panel')).toHaveCount(0);
+        await expect(secondPage.locator('#toolbar .toolbar-button-form-toggle')).not.toHaveClass(/toolbar-button-form-active/);
+        await secondPage.close();
+    });
+
     test('tab-button-descriptionがuserdataへ保存され、起動時はタブレイアウトだけ先に復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         fs['schema/test.json'] = createSchema('Test table description\nsecond line');
@@ -141,7 +391,7 @@ test.describe('UI状態のuserdata永続化', () => {
 
         const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
         const saved = JSON.parse(savedRaw) as {tabs: {open: Array<{name: string; description: string | null; diff: unknown}>}};
-        expect(saved.tabs.open).toContainEqual({name: 'test', description: 'Test table description', diff: null});
+        expect(saved.tabs.open.find(tab => tab.name === 'test')).toMatchObject({name: 'test', description: 'Test table description', diff: null});
 
         const restoredFs = createDefaultFileSystem();
         restoredFs['schema/test.json'] = createSchema('Test table description\nsecond line');

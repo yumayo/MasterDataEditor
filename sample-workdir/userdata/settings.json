@@ -1,4 +1,4 @@
 {
-    "theme": "dark",
-    "tabWrapEnabled": true
+  "theme": "dark",
+  "tabWrapEnabled": false
 }

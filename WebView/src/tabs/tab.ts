@@ -35,7 +35,7 @@ import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
-import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab} from "../app/ui-state";
+import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab, UiScrollPosition, UiStoredEditorTableState, UiStoredSelectionState, UiStoredFormPanelState} from "../app/ui-state";
 import {DebugApiDetailTab} from "./debug-api-detail-tab";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 
@@ -143,6 +143,18 @@ export class Tab {
 
     /** タブバーの最後の横スクロール位置。スクロールバー消失中も保持する */
     private tabScrollPositionPreference: TabScrollPositionPreference;
+
+    /** ui-state 復元時に次回レイアウト後へ適用するタブバーのスクロール位置 */
+    private pendingTabBarScrollPosition: UiScrollPosition | null;
+
+    /** ui-state からのタブ復元中は、アクティブタブへの自動スクロールより保存位置を優先する */
+    private restoringTabsFromUiState: boolean;
+
+    /** まだTabStateを構築していない復元タブのスクロール位置 */
+    private readonly restoredTabScrollPositions: Map<string, UiScrollPosition>;
+
+    /** まだTabStateを構築していない復元タブのEditorTable状態 */
+    private readonly restoredEditorTableStates: Map<string, UiStoredEditorTableState>;
 
     /** 直近のタブ配置完了時に横スクロールが発生していたか */
     private tabScrollHadStableOverflow: boolean;
@@ -302,6 +314,10 @@ export class Tab {
         this.tabLayoutFrame = false;
         this.scrollActiveTabAfterLayout = false;
         this.tabScrollPositionPreference = { kind: 'edge', edge: 'left' };
+        this.pendingTabBarScrollPosition = null;
+        this.restoringTabsFromUiState = false;
+        this.restoredTabScrollPositions = new Map();
+        this.restoredEditorTableStates = new Map();
         this.tabScrollHadStableOverflow = false;
         this.preserveTabScrollEdgeAfterLayout = false;
         this.editorTableLayoutRefreshFrame = false;
@@ -363,7 +379,10 @@ export class Tab {
 
         const tabScrollArea = this.element.parentElement;
         if (tabScrollArea instanceof HTMLElement) {
-            tabScrollArea.addEventListener('scroll', () => { this.updateTabScrollPositionPreference(tabScrollArea); });
+            tabScrollArea.addEventListener('scroll', () => {
+                this.updateTabScrollPositionPreference(tabScrollArea);
+                this.persistTabs();
+            });
         }
 
         window.addEventListener('resize', () => {
@@ -465,6 +484,9 @@ export class Tab {
     }
 
     private scheduleTabLayout(scrollActiveTabAfterLayout: boolean = false, preserveScrollEdgeAfterLayout: boolean = false): void {
+        if (this.restoringTabsFromUiState && this.pendingTabBarScrollPosition !== null) {
+            scrollActiveTabAfterLayout = false;
+        }
         if (scrollActiveTabAfterLayout) {
             this.scrollActiveTabAfterLayout = true;
         }
@@ -606,6 +628,10 @@ export class Tab {
         } else if (!tabWrapEnabled && preserveScrollEdgeAfterLayout) {
             this.applyTabScrollPositionPreference(scrollArea);
         }
+        if (this.pendingTabBarScrollPosition !== null) {
+            this.applyTabBarScrollPosition(scrollArea, this.pendingTabBarScrollPosition);
+            this.pendingTabBarScrollPosition = null;
+        }
         this.updateTabScrollPositionPreference(scrollArea, true);
     }
 
@@ -640,6 +666,25 @@ export class Tab {
             : Math.round(rightEdge * preference.ratio);
         if (Math.abs(scrollArea.scrollLeft - targetScrollLeft) <= 1) return;
         scrollArea.scrollLeft = targetScrollLeft;
+    }
+
+    private applyTabBarScrollPosition(scrollArea: HTMLElement, position: UiScrollPosition): void {
+        const targetScrollLeft = Math.max(0, Math.min(this.getTabScrollRightEdge(scrollArea), position.scrollLeft));
+        if (Math.abs(scrollArea.scrollLeft - targetScrollLeft) > 1) {
+            scrollArea.scrollLeft = targetScrollLeft;
+        }
+        if (Math.abs(scrollArea.scrollTop - position.scrollTop) > 1) {
+            scrollArea.scrollTop = Math.max(0, position.scrollTop);
+        }
+    }
+
+    private getTabBarScrollPosition(): UiScrollPosition {
+        const scrollArea = this.element.parentElement;
+        if (!(scrollArea instanceof HTMLElement)) return {scrollLeft: 0, scrollTop: 0};
+        return {
+            scrollLeft: Math.max(0, Math.round(scrollArea.scrollLeft)),
+            scrollTop: Math.max(0, Math.round(scrollArea.scrollTop)),
+        };
     }
 
     scrollTabButtonIntoView(tabButton: TabButton, behavior: ScrollBehavior = 'smooth'): void {
@@ -692,6 +737,138 @@ export class Tab {
         return this.activeTabName;
     }
 
+    private cloneUiScrollPosition(position: UiScrollPosition): UiScrollPosition {
+        return {scrollLeft: position.scrollLeft, scrollTop: position.scrollTop};
+    }
+
+    private cloneUiSelectionState(selection: UiStoredSelectionState): UiStoredSelectionState {
+        return {
+            focus: {...selection.focus},
+            range: {...selection.range},
+        };
+    }
+
+    private cloneUiFormPanelState(state: UiStoredFormPanelState): UiStoredFormPanelState {
+        return {
+            navStack: state.navStack.map(page => ({...page})),
+        };
+    }
+
+    private cloneUiEditorTableState(state: UiStoredEditorTableState): UiStoredEditorTableState {
+        return {
+            scroll: this.cloneUiScrollPosition(state.scroll),
+            relationsPanelVisible: state.relationsPanelVisible,
+            formPanel: state.formPanel === null ? null : this.cloneUiFormPanelState(state.formPanel),
+            selection: this.cloneUiSelectionState(state.selection),
+        };
+    }
+
+    private getStoredTabScrollPosition(name: string): UiScrollPosition | null {
+        const diffTab = this.diffTabs.get(name);
+        if (diffTab !== undefined) {
+            return diffTab.getScrollPosition();
+        }
+        const state = this.tabStates.get(name);
+        if (state !== undefined) {
+            if (state.wrapperElement.style.display === 'none') {
+                return {
+                    scrollLeft: Math.max(0, Math.round(state.savedScrollLeft)),
+                    scrollTop: Math.max(0, Math.round(state.savedScrollTop)),
+                };
+            }
+            return {
+                scrollLeft: Math.max(0, Math.round(state.editorTable.getScrollLeft())),
+                scrollTop: Math.max(0, Math.round(state.editorTable.getScrollTop())),
+            };
+        }
+        const restored = this.restoredTabScrollPositions.get(name);
+        return restored === undefined ? null : this.cloneUiScrollPosition(restored);
+    }
+
+    private connectDiffTabUiState(diffTabName: string, diffTab: DiffTab): void {
+        diffTab.connectUiStateChangeListener(() => { this.persistTabs(); });
+        const restoredScroll = this.restoredTabScrollPositions.get(diffTabName);
+        if (restoredScroll !== undefined) {
+            diffTab.restoreScrollPosition(restoredScroll.scrollTop, restoredScroll.scrollLeft);
+        }
+    }
+
+    private getFormPanelStateForPersist(name: string, state: TabState): UiStoredFormPanelState | null {
+        if (state.formPanelState === null) return null;
+        if (this.activeTabName === name && this.currentFormPanel !== false) {
+            const navStack = this.currentFormPanel.getNavStackSnapshot();
+            return navStack.length > 0 ? {navStack: navStack.map(page => ({...page}))} : null;
+        }
+        return this.cloneUiFormPanelState(state.formPanelState);
+    }
+
+    private serializeEditorTableUiState(name: string): UiStoredEditorTableState | null {
+        const state = this.tabStates.get(name);
+        if (state === undefined) {
+            const restored = this.restoredEditorTableStates.get(name);
+            return restored === undefined ? null : this.cloneUiEditorTableState(restored);
+        }
+
+        const isVisible = state.wrapperElement.style.display !== 'none';
+        const scroll = isVisible
+            ? {
+                scrollLeft: Math.max(0, Math.round(state.editorTable.getScrollLeft())),
+                scrollTop: Math.max(0, Math.round(state.editorTable.getScrollTop())),
+            }
+            : {
+                scrollLeft: Math.max(0, Math.round(state.savedScrollLeft)),
+                scrollTop: Math.max(0, Math.round(state.savedScrollTop)),
+            };
+        const editorTableState: UiStoredEditorTableState = {
+            scroll,
+            relationsPanelVisible: state.relationsPanelVisible,
+            formPanel: this.getFormPanelStateForPersist(name, state),
+            selection: {
+                focus: {...state.selection.getFocus()},
+                range: {...state.selection.getRange()},
+            },
+        };
+        this.restoredEditorTableStates.set(name, this.cloneUiEditorTableState(editorTableState));
+        this.restoredTabScrollPositions.set(name, this.cloneUiScrollPosition(editorTableState.scroll));
+        return editorTableState;
+    }
+
+    private bindEditorTableUiStatePersistence(wrapperElement: HTMLElement): void {
+        const persist = () => { this.persistTabs(); };
+        wrapperElement.addEventListener('editor-table-scroll-metrics-changed', persist);
+        wrapperElement.addEventListener('editor-table-selection-changed', persist);
+    }
+
+    private cloneStoredFormPanelStateAsRuntime(state: UiStoredFormPanelState | null): FormPanelState | null {
+        return state === null ? null : {
+            navStack: state.navStack.map(page => ({...page})),
+        };
+    }
+
+    private hasPendingNavigation(): boolean {
+        return this.pendingNavigationPkValue !== ''
+            || this.pendingNavigationBookmarkKey !== ''
+            || this.pendingNavigationStoreRowIndex !== -1
+            || this.pendingNavigationColumnIndex !== -1
+            || this.pendingNavigationColumnName !== '';
+    }
+
+    private restoreEditorTableScrollPositionAfterLayout(state: TabState, scroll: UiScrollPosition): void {
+        const scrollTop = Math.max(0, Math.round(scroll.scrollTop));
+        const scrollLeft = Math.max(0, Math.round(scroll.scrollLeft));
+        const apply = () => {
+            if (state.wrapperElement.style.display === 'none') return;
+            state.editorTable.restoreScrollPosition(scrollTop, scrollLeft);
+            state.savedScrollTop = scrollTop;
+            state.savedScrollLeft = scrollLeft;
+            this.editor.syncActiveTableScrollState();
+        };
+        requestAnimationFrame(() => {
+            apply();
+            requestAnimationFrame(apply);
+        });
+    }
+
     private persistTabs(activeTabName: string | false | null = this.activeTabName): void {
         const open: UiStoredTab[] = [];
         for (const tabButton of this.tabButtons) {
@@ -703,19 +880,27 @@ export class Tab {
                     name: tabButton.name,
                     description: null,
                     diff: {...diff},
+                    scroll: this.getStoredTabScrollPosition(tabButton.name),
+                    editorTable: null,
                 });
                 continue;
             }
+            const editorTable = this.isPersistentSpecialTabName(tabButton.name)
+                ? null
+                : this.serializeEditorTableUiState(tabButton.name);
             open.push({
                 name: tabButton.name,
                 description: tabButton.getDescriptionText(),
                 diff: null,
+                scroll: editorTable === null ? this.getStoredTabScrollPosition(tabButton.name) : this.cloneUiScrollPosition(editorTable.scroll),
+                editorTable,
             });
         }
 
         this.uiStateStore.setTabs(
             open,
-            activeTabName !== null && activeTabName !== false && this.isTemporaryTabName(activeTabName) ? false : activeTabName
+            activeTabName !== null && activeTabName !== false && this.isTemporaryTabName(activeTabName) ? false : activeTabName,
+            this.getTabBarScrollPosition()
         );
     }
 
@@ -751,7 +936,7 @@ export class Tab {
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             // 既存タブをアクティブにして行を選択
-            this.enableTabButton(tableName);
+            this.enableTabButtonForNavigationJump(tableName);
             this.navigateToRow(existingState, pkValue);
             return;
         }
@@ -772,7 +957,7 @@ export class Tab {
         this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
-            this.enableTabButton(tableName);
+            this.enableTabButtonForNavigationJump(tableName);
             this.navigateToCell(existingState, pkValue, columnIndex);
             return;
         }
@@ -792,7 +977,7 @@ export class Tab {
         this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
-            this.enableTabButton(tableName);
+            this.enableTabButtonForNavigationJump(tableName);
             this.navigateToStoreCell(existingState, storeRowIndex, storeColumnIndex);
             return;
         }
@@ -812,7 +997,7 @@ export class Tab {
         this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
-            this.enableTabButton(tableName);
+            this.enableTabButtonForNavigationJump(tableName);
             this.navigateToCellByColumnValue(existingState, columnName, value, filterColumnName, filterValues);
             return;
         }
@@ -969,7 +1154,7 @@ export class Tab {
         }
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
-            this.enableTabButton(tableName);
+            this.enableTabButtonForNavigationJump(tableName);
             this.navigateToBookmarkCell(existingState, rowKey, columnIndex);
             return;
         }
@@ -1036,46 +1221,67 @@ export class Tab {
     }
 
     async restoreTabsFromUiStateAsync(tabs: UiTabsState): Promise<void> {
-        const restoredTabs: UiStoredTab[] = tabs.open.map(tab => ({...tab}));
-        if (tabs.active !== null && !restoredTabs.some(tab => tab.name === tabs.active)) {
-            restoredTabs.push({ name: tabs.active, description: null, diff: null });
-        }
-
-        const restoredNames = new Set<string>();
-        for (const tab of restoredTabs) {
-            const name = tab.name;
-            if (this.isTemporaryTabName(name)) continue;
-            if (name.startsWith(DIFF_TAB_PREFIX) && tab.diff === null) continue;
-            if (tab.diff !== null && !name.startsWith(DIFF_TAB_PREFIX)) continue;
-            if (tab.diff !== null) {
-                this.diffTabMetadata.set(name, {...tab.diff});
+        this.restoringTabsFromUiState = true;
+        this.pendingTabBarScrollPosition = this.cloneUiScrollPosition(tabs.scroll);
+        try {
+            const restoredTabs: UiStoredTab[] = tabs.open.map(tab => ({
+                name: tab.name,
+                description: tab.description,
+                diff: tab.diff === null ? null : {...tab.diff},
+                scroll: tab.scroll === null ? null : this.cloneUiScrollPosition(tab.scroll),
+                editorTable: tab.editorTable === null ? null : this.cloneUiEditorTableState(tab.editorTable),
+            }));
+            if (tabs.active !== null && !restoredTabs.some(tab => tab.name === tabs.active)) {
+                restoredTabs.push({ name: tabs.active, description: null, diff: null, scroll: null, editorTable: null });
             }
-            this.append(name, tab.description);
-            restoredNames.add(name);
-        }
 
-        if (tabs.active !== null && restoredNames.has(tabs.active)) {
-            if (tabs.active.startsWith(DIFF_TAB_PREFIX)) {
-                const opened = await this.openRestoredDiffTabAsync(tabs.active);
+            const restoredNames = new Set<string>();
+            for (const tab of restoredTabs) {
+                const name = tab.name;
+                if (this.isTemporaryTabName(name)) continue;
+                if (name.startsWith(DIFF_TAB_PREFIX) && tab.diff === null) continue;
+                if (tab.diff !== null && !name.startsWith(DIFF_TAB_PREFIX)) continue;
+                if (tab.scroll !== null) {
+                    this.restoredTabScrollPositions.set(name, this.cloneUiScrollPosition(tab.scroll));
+                }
+                if (tab.editorTable !== null) {
+                    this.restoredEditorTableStates.set(name, this.cloneUiEditorTableState(tab.editorTable));
+                    this.restoredTabScrollPositions.set(name, this.cloneUiScrollPosition(tab.editorTable.scroll));
+                }
+                if (tab.diff !== null) {
+                    this.diffTabMetadata.set(name, {...tab.diff});
+                }
+                this.append(name, tab.description);
+                restoredNames.add(name);
+            }
+
+            if (tabs.active !== null && restoredNames.has(tabs.active)) {
+                if (tabs.active.startsWith(DIFF_TAB_PREFIX)) {
+                    const opened = await this.openRestoredDiffTabAsync(tabs.active);
+                    if (!opened) {
+                        this.removeTabButton(tabs.active);
+                    }
+                    return;
+                }
+
+                if (this.isPersistentSpecialTabName(tabs.active)) {
+                    this.enableTabButton(tabs.active);
+                    return;
+                }
+
+                const opened = await this.openTableAsync(tabs.active);
                 if (!opened) {
                     this.removeTabButton(tabs.active);
                 }
                 return;
             }
 
-            if (this.isPersistentSpecialTabName(tabs.active)) {
-                this.enableTabButton(tabs.active);
-                return;
-            }
-
-            const opened = await this.openTableAsync(tabs.active);
-            if (!opened) {
-                this.removeTabButton(tabs.active);
-            }
-            return;
+            this.persistTabs();
+        } finally {
+            this.restoringTabsFromUiState = false;
+            this.pendingTabBarScrollPosition = this.cloneUiScrollPosition(tabs.scroll);
+            this.scheduleTabLayout(false);
         }
-
-        this.persistTabs();
     }
 
     private async openRestoredDiffTabAsync(diffTabName: string): Promise<boolean> {
@@ -1377,6 +1583,8 @@ export class Tab {
     }
 
     removeTabButton(name: string) {
+        this.restoredTabScrollPositions.delete(name);
+        this.restoredEditorTableStates.delete(name);
         const index = this.tabButtons.findIndex(x => x.name === name);
         if (index !== -1) {
             // DOMからタブボタン要素を除去する（差分タブは tabStates に登録されないため
@@ -1486,7 +1694,20 @@ export class Tab {
         }
     }
 
-    enableTabButton(name: string) {
+    enableTabButton(name: string): void {
+        const existingState = this.activateTabButton(name);
+        if (existingState === null) return;
+        this.restoreEditorTableScrollPositionAfterLayout(existingState, {
+            scrollLeft: existingState.savedScrollLeft,
+            scrollTop: existingState.savedScrollTop,
+        });
+    }
+
+    private enableTabButtonForNavigationJump(name: string): void {
+        this.activateTabButton(name);
+    }
+
+    private activateTabButton(name: string): TabState | null {
 
         // ちょっと面倒なので、一回全部無効な状態にします。
         this.tabButtons.forEach(x => x.disable());
@@ -1495,7 +1716,7 @@ export class Tab {
         const tabButton = this.tabButtons.find(x => x.name === name);
         if (!tabButton) {
             // アクティブにする対象がいなかったら何もしないです。
-            return;
+            return null;
         }
 
         // タブを有効化し、タブボタンが可視領域外であればスクロールして表示する
@@ -1519,34 +1740,34 @@ export class Tab {
                     console.error('[Tab] enableTabButton: lazy diff restore failed:', error);
                     this.removeTabButton(name);
                 });
-                return;
+                return null;
             }
             this.activateDiffTab(name);
-            return;
+            return null;
         }
 
         // ER図タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name === ER_DIAGRAM_TAB_NAME) {
             this.activateErDiagramTab();
-            return;
+            return null;
         }
 
         // 設定タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name === SETTINGS_TAB_NAME) {
             this.activateSettingsTab();
-            return;
+            return null;
         }
 
         // テーブル定義タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name === TABLE_DEFINITION_TAB_NAME) {
             this.activateTableDefinitionTab();
-            return;
+            return null;
         }
 
         // API詳細タブは EditorTable を持たない一時タブのため専用の有効化処理を行う
         if (name === DEBUG_API_DETAIL_TAB_NAME) {
             this.activateDebugApiDetailTab();
-            return;
+            return null;
         }
 
         // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
@@ -1586,12 +1807,14 @@ export class Tab {
         // （設定タブ・差分タブはここに到達しない）
         this.navigationHistory.pushTabSwitch(name);
 
-        // 同一タブが既にアクティブな状態で enableTabButton が呼ばれた場合（popstate復元・同一タブ再クリック等）:
+        // 同一タブが既にアクティブな状態でタブ有効化が呼ばれた場合（popstate復元・同一タブ再クリック等）:
         // deactivateTabState()がスキップされるため、ここで明示的にstateを更新しないと
-        // activateTabState()が古いstate.paneStackを復元してpaneStack深化状態が失われる。
+        // activateTabState()が古いスクロール位置やstate.paneStackを復元して現在状態が失われる。
         if (this.activeTabName === name) {
             const currentState = this.tabStates.get(name);
-            if (!currentState) throw new Error(`[Tab] enableTabButton: アクティブタブ "${name}" の状態が tabStates に存在しません`);
+            if (!currentState) throw new Error(`[Tab] activateTabButton: アクティブタブ "${name}" の状態が tabStates に存在しません`);
+            currentState.savedScrollLeft = currentState.editorTable.getScrollLeft();
+            currentState.savedScrollTop = currentState.editorTable.getScrollTop();
             currentState.paneStack = this.paneStack.slice();
             currentState.viewIndex = this.viewIndex;
         }
@@ -1618,6 +1841,7 @@ export class Tab {
             // activateTabState で復元された scrollTop に基づき、正しい範囲の行を表示する。
             // これがないと、前タブのスクロール位置でDOM行が構築されたままになる。
             existingState.editorTable.forceVirtualScrollRecalculate();
+            existingState.selection.updateRendererAfterResize();
             if (existingState.savedSortKeys.length > 0) {
                 existingState.editorTable.restoreSortState(existingState.savedSortKeys);
             }
@@ -1631,13 +1855,13 @@ export class Tab {
             this.editor.syncActiveTableScrollState();
             this.restoreFormPanelForTabState(existingState);
             // 既存タブの再アクティブ化では emitTableOpened を発火しない（Open/Close の対称性を維持するため）
-            return;
+            return existingState;
         }
 
         // 読み込み中の同名タブがある場合は、既存の非同期処理の完了を待つ。
         if (this.loadingTabNames.has(name)) {
             this.persistTabs(name);
-            return;
+            return null;
         }
 
         // 新しいタブ状態を作成
@@ -1646,6 +1870,7 @@ export class Tab {
         this.createTabState(name, tabButton);
         // テーブルオープンイベントを発火する（EditorAPI が接続済みの場合のみ）
         if (this.editorApi !== false) this.editorApi.emitTableOpened(name);
+        return null;
     }
 
     /**
@@ -1991,6 +2216,7 @@ export class Tab {
             leftDisplay, rightDisplay
         );
         this.diffTabs.set(diffTabName, diffTab);
+        this.connectDiffTabUiState(diffTabName, diffTab);
 
         // タブボタンをクリックしてアクティブ化する
         tabButton.click();
@@ -2355,6 +2581,7 @@ export class Tab {
             leftLabel, rightLabel
         );
         this.diffTabs.set(diffTabName, diffTab);
+        this.connectDiffTabUiState(diffTabName, diffTab);
         if (leftLabel === null && rightLabel === null) {
             this.diffTabMetadata.set(diffTabName, {tableName, gitPath, isStaged, isNew});
         } else {
@@ -2483,11 +2710,17 @@ export class Tab {
      * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
+        // FormPanel 退避で右スロットが閉じると左ペイン幅が変わり、scrollLeft がクランプされる。
+        // その前に、ユーザーが見ていたレイアウトでのスクロール位置を保存する。
+        // NavigationHistory 経由では deactivateTabState より先に FormPanel だけ退避されるため、
+        // formPanelState が残っていて currentFormPanel がない場合は、退避時に保存済みの値を維持する。
+        if (this.currentFormPanel !== false || state.formPanelState === null) {
+            state.savedScrollLeft = state.editorTable.getScrollLeft();
+            state.savedScrollTop = state.editorTable.getScrollTop();
+        }
         // フォームパネルが表示中であれば、閉じた扱いにせずタブ状態へ退避する。
         this.suspendFormPanelForTabState(state);
         state.relationsPanelVisible = this.editor.isRelationsPanelVisible();
-        state.savedScrollLeft = state.editorTable.getScrollLeft();
-        state.savedScrollTop = state.editorTable.getScrollTop();
         state.wrapperElement.style.display = 'none';
         // グローバルリレーションパネルのEditorTable接続を完全解除する（relationsPanel内でフィールドもリセットされる）
         this.relationsPanel.disconnectEditorTable();
@@ -2827,9 +3060,14 @@ export class Tab {
             // EditorTableHandler に参照データキャッシュとドロップダウンを設定
             editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
-            // 初期選択をA1（row=1, column=1）に設定
-            selection.setRange(1, 1, 1, 1);
-            selection.move(1, 1);
+            const restoredEditorTableState = this.restoredEditorTableStates.get(name);
+            if (restoredEditorTableState !== undefined) {
+                selection.restoreState(restoredEditorTableState.selection.range, restoredEditorTableState.selection.focus);
+            } else {
+                // 初期選択をA1（row=1, column=1）に設定
+                selection.setRange(1, 1, 1, 1);
+                selection.move(1, 1);
+            }
 
             // git statusを取得してこのテーブルのGitDiffTrackerを構築・接続し、全セルのハイライトを適用する
             await editorTable.refreshGitDiffAsync();
@@ -2842,6 +3080,8 @@ export class Tab {
             }
 
             const initialPaneStack = this.createInitialPaneStack();
+            const restoredScroll = restoredEditorTableState?.scroll ?? {scrollLeft: 0, scrollTop: 0};
+            const restoredFormPanelState = this.cloneStoredFormPanelStateAsRuntime(restoredEditorTableState?.formPanel ?? null);
 
             // 初回アクティブ化の前にペインスタックの初期状態を作成する
             // activateTabState() は state.paneStack / state.viewIndex から復元するため、
@@ -2855,16 +3095,17 @@ export class Tab {
                 fillController,
                 wrapperElement,
                 dropdownInput,
-                savedScrollLeft: 0,
-                savedScrollTop: 0,
+                savedScrollLeft: restoredScroll.scrollLeft,
+                savedScrollTop: restoredScroll.scrollTop,
                 paneStack: initialPaneStack,
                 viewIndex: 0,
                 savedSortKeys: [],
                 savedFilters: {},
-                relationsPanelVisible: this.defaultRelationsPanelVisible,
-                formPanelState: null,
+                relationsPanelVisible: restoredFormPanelState !== null ? false : (restoredEditorTableState?.relationsPanelVisible ?? this.defaultRelationsPanelVisible),
+                formPanelState: restoredFormPanelState,
             };
             this.tabStates.set(name, state);
+            this.bindEditorTableUiStatePersistence(wrapperElement);
 
             // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
             // activateTabState の前にチェックする理由:
@@ -2900,10 +3141,19 @@ export class Tab {
                 this.sidebar.notifyActiveTableChanged(name);
                 state.editorTable.forceVirtualScrollRecalculate();
                 this.editor.syncActiveTableScrollState();
+                state.selection.updateRendererAfterResize();
 
                 // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
                 state.editorTable.forceRefreshRelationsPanel();
+                const hadPendingNavigation = this.hasPendingNavigation();
                 this.consumePendingNavigation(state);
+                if (!hadPendingNavigation) {
+                    this.restoreFormPanelForTabState(state);
+                    if (restoredEditorTableState !== undefined) {
+                        this.restoreEditorTableScrollPositionAfterLayout(state, restoredEditorTableState.scroll);
+                    }
+                }
+                this.persistTabs();
             } else {
                 this.persistTabs();
             }
@@ -3281,6 +3531,7 @@ export class Tab {
             } else {
                 this.editor.hideRelationsPanel();
             }
+            this.persistTabs();
             return;
         }
         state.relationsPanelVisible = !state.relationsPanelVisible;
@@ -3291,6 +3542,7 @@ export class Tab {
         if (state.relationsPanelVisible) {
             state.editorTable.forceRefreshRelationsPanel();
         }
+        this.persistTabs();
     }
 
     private applyRelationsPanelVisibilityForTabState(state: TabState): void {
@@ -3407,8 +3659,8 @@ export class Tab {
      * ツールバーのフォームビュー切り替えや履歴復元から呼ばれる
      */
     closeFormPanel(): void {
-        this.setActiveFormPanelState(null);
         this.removeCurrentFormPanel();
+        this.setActiveFormPanelState(null);
     }
 
     suspendFormPanelForActiveTab(): void {
@@ -3428,6 +3680,10 @@ export class Tab {
 
     private suspendFormPanelForTabState(state: TabState): void {
         if (this.currentFormPanel === false) return;
+        // NavigationHistory の popstate では、タブ切り替え前に FormPanel だけを退避する。
+        // 右スロットを戻す前に保存しないと、左ペイン幅が広がった状態で scrollLeft がクランプされる。
+        state.savedScrollLeft = state.editorTable.getScrollLeft();
+        state.savedScrollTop = state.editorTable.getScrollTop();
         const navStack = this.currentFormPanel.getNavStackSnapshot();
         state.formPanelState = navStack.length > 0 ? { navStack } : null;
         this.removeCurrentFormPanel();
@@ -3467,6 +3723,7 @@ export class Tab {
         state.formPanelState = formPanelState === null
             ? null
             : { navStack: this.cloneFormPanelNavStack(formPanelState.navStack) };
+        this.persistTabs();
     }
 
     private cloneFormPanelNavStack(navStack: ReadonlyArray<FormPanelNavEntry>): FormPanelNavEntry[] {

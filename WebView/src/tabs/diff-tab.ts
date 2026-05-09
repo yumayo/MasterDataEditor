@@ -108,6 +108,8 @@ export class DiffTab {
     private readonly rightAddedRows: Set<number>;
     /** 右ペインの初期パディング行のデータ行インデックス → ストア行インデックス */
     private readonly rightPaddingStoreIndices: Map<number, number>;
+    /** ui-state 永続化を呼び出すためのリスナー */
+    private uiStateChangeListener: (() => void) | false;
 
     constructor(
         tableName: string,
@@ -141,6 +143,7 @@ export class DiffTab {
         this.rightCellClasses = new Map();
         this.rightAddedRows = new Set();
         this.rightPaddingStoreIndices = new Map();
+        this.uiStateChangeListener = false;
 
         // スキーマをパースしてPK列名（配列）を取得する
         const schema = JSON.parse(schemaJson) as SchemaJson;
@@ -401,6 +404,9 @@ export class DiffTab {
             try {
                 const metrics = this.leftEditorTable.getScrollMetrics();
                 this.rightEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+                this.savedScrollTop = metrics.scrollTop;
+                this.savedScrollLeft = metrics.scrollLeft;
+                this.notifyUiStateChange();
             } finally {
                 this.isSyncing = false;
             }
@@ -411,6 +417,9 @@ export class DiffTab {
             try {
                 const metrics = this.rightEditorTable.getScrollMetrics();
                 this.leftEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+                this.savedScrollTop = metrics.scrollTop;
+                this.savedScrollLeft = metrics.scrollLeft;
+                this.notifyUiStateChange();
             } finally {
                 this.isSyncing = false;
             }
@@ -713,6 +722,35 @@ export class DiffTab {
      */
     saveRightPane(): void {
         this.rightEditorTableHandler.save();
+    }
+
+    connectUiStateChangeListener(listener: () => void): void {
+        this.uiStateChangeListener = listener;
+    }
+
+    getScrollPosition(): { scrollLeft: number; scrollTop: number } {
+        if (this.wrapperElement.style.display === 'none') {
+            return {
+                scrollLeft: Math.max(0, Math.round(this.savedScrollLeft)),
+                scrollTop: Math.max(0, Math.round(this.savedScrollTop)),
+            };
+        }
+        return {
+            scrollLeft: Math.max(0, Math.round(this.leftEditorTable.getScrollLeft())),
+            scrollTop: Math.max(0, Math.round(this.leftEditorTable.getScrollTop())),
+        };
+    }
+
+    restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
+        this.savedScrollTop = Math.max(0, Math.round(scrollTop));
+        this.savedScrollLeft = Math.max(0, Math.round(scrollLeft));
+        if (this.wrapperElement.style.display === 'none') return;
+        this.leftEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
+        this.rightEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
+    }
+
+    private notifyUiStateChange(): void {
+        if (this.uiStateChangeListener !== false) this.uiStateChangeListener();
     }
 
     /**

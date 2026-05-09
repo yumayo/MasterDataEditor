@@ -392,6 +392,29 @@ export class Selection {
         return this.range;
     }
 
+    restoreState(range: CellRange, focus: CellPosition): void {
+        const maxRow = Math.max(1, this.editorTable.getLogicalRowCount() - 1);
+        const minColumn = this.editorTable.dataColumnOffset();
+        const maxColumn = Math.max(minColumn, this.editorTable.getTotalColumnCount() - 1);
+        const clampRow = (row: number) => Math.max(1, Math.min(maxRow, Math.round(row)));
+        const clampColumn = (column: number) => Math.max(minColumn, Math.min(maxColumn, Math.round(column)));
+
+        this.range = {
+            startRow: clampRow(range.startRow),
+            startColumn: clampColumn(range.startColumn),
+            endRow: clampRow(range.endRow),
+            endColumn: clampColumn(range.endColumn),
+        };
+        this.focus = {
+            row: clampRow(focus.row),
+            column: clampColumn(focus.column),
+        };
+        this.selecting = false;
+        this.selectingColumn = false;
+        this.selectingRow = false;
+        this.updateRenderer();
+    }
+
     getSelectionRange(): CellRange {
         return {
             startRow: Math.min(this.range.startRow, this.range.endRow),
@@ -517,6 +540,7 @@ export class Selection {
 
         // 分離レイヤー同期後に、実際に表示されているセルへフィルハンドルを配置する
         this.updateFillHandlePosition();
+        this.editorTable.emitSelectionChanged();
     }
 
     /**

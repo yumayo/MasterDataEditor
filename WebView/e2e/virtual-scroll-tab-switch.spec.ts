@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures/test';
+import type { Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
 // =============================================================================
@@ -71,6 +72,87 @@ function createLargeFileSystem(): MockFileSystem {
         'data/weapon.csv': generateCsv('weapon', 1000),
         'data/enemy.csv': generateCsv('enemy', 1000),
     };
+}
+
+/** 横・縦スクロールが両方発生する1000行テーブルのファイルシステム */
+function createWideLargeFileSystem(): MockFileSystem {
+    const columns = ['id', 'name', 'value', 'hp', 'mp', 'attack', 'defense', 'speed', 'critical', 'resist', 'cost', 'memo'];
+    const schema = JSON.stringify({
+        header: columns.map((name, index) => ({
+            key: index,
+            name,
+            type: index === 1 || index === 11 ? 'string' : 'int',
+            width: 220,
+        })),
+        primary_key: ['id'],
+    });
+    const buildCsv = (prefix: string): string => {
+        const rows = [columns.join(',')];
+        for (let i = 1; i <= 1000; i++) {
+            rows.push([
+                i,
+                `${prefix}_${i}`,
+                i * 10,
+                i * 20,
+                i * 7,
+                i * 3,
+                i * 4,
+                i * 5,
+                i % 100,
+                (i * 2) % 100,
+                i * 11,
+                `${prefix}_memo_${i}`,
+            ].join(','));
+        }
+        return rows.join('\n');
+    };
+    return {
+        'schema/weapon.json': schema,
+        'schema/enemy.json': schema,
+        'data/weapon.csv': buildCsv('weapon'),
+        'data/enemy.csv': buildCsv('enemy'),
+    };
+}
+
+interface HorizontalScrollSnapshot {
+    scrollLeft: number;
+    scrollTop: number;
+    scrollWidth: number;
+    clientWidth: number;
+    maxScrollLeft: number;
+    viewportLeft: number;
+    contentLeft: number;
+    overflowX: string;
+    scrollbarWidthStyle: string;
+}
+
+async function getHorizontalScrollSnapshotAsync(viewport: Locator): Promise<HorizontalScrollSnapshot> {
+    return viewport.evaluate((element) => {
+        const content = element.querySelector('.editor-table-main-content') as HTMLElement | null;
+        const viewportRect = element.getBoundingClientRect();
+        const contentRect = content?.getBoundingClientRect() ?? viewportRect;
+        const style = getComputedStyle(element);
+        return {
+            scrollLeft: element.scrollLeft,
+            scrollTop: element.scrollTop,
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            maxScrollLeft: Math.max(0, element.scrollWidth - element.clientWidth),
+            viewportLeft: viewportRect.left,
+            contentLeft: contentRect.left,
+            overflowX: style.overflowX,
+            scrollbarWidthStyle: style.getPropertyValue('scrollbar-width'),
+        };
+    });
+}
+
+function expectHorizontalScrollApplied(snapshot: HorizontalScrollSnapshot, expectedScrollLeft: number, context: string): void {
+    expect(snapshot.scrollWidth, `${context}: 横スクロール可能なコンテンツ幅がありません`).toBeGreaterThan(snapshot.clientWidth + 100);
+    expect(snapshot.maxScrollLeft, `${context}: 横スクロール可能範囲が不足しています`).toBeGreaterThan(100);
+    expect(snapshot.overflowX, `${context}: 横スクロール可能なoverflow設定ではありません`).toMatch(/auto|scroll/);
+    expect(snapshot.scrollbarWidthStyle, `${context}: スクロールバーがCSSで非表示にされています`).not.toBe('none');
+    expect(snapshot.contentLeft, `${context}: コンテンツが横スクロール位置に応じて移動していません`).toBeLessThan(snapshot.viewportLeft - 50);
+    expect(snapshot.scrollLeft, `${context}: 横スクロール位置が復元されていません`).toBe(expectedScrollLeft);
 }
 
 test.describe('バーチャルスクロール タブ切替', () => {
@@ -245,6 +327,140 @@ test.describe('バーチャルスクロール タブ切替', () => {
         expect(scrollTopB, 'テーブルBのスクロール位置は先頭付近であること').toBeLessThan(100);
 
         // ブラウザ側で未キャッチ例外が発生していないこと
+        expect(pageErrors, '未キャッチ例外が発生していないこと').toHaveLength(0);
+    });
+
+    test('横スクロール済みの既存タブへ戻っても横位置が維持される', async ({ page }) => {
+        const pageErrors: Error[] = [];
+        page.on('pageerror', (error) => pageErrors.push(error));
+
+        const fs = createWideLargeFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await page.locator('#explorer .explorer-file').getByText('weapon', { exact: true }).click();
+        const weaponViewport = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="weapon"] .editor-table-main-viewport');
+        await expect(weaponViewport).toBeVisible();
+
+        await page.locator('#explorer .explorer-file').getByText('enemy', { exact: true }).click();
+        const enemyViewport = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table-main-viewport');
+        await expect(enemyViewport).toBeVisible();
+
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponViewport).toBeVisible();
+        await weaponViewport.evaluate((element) => {
+            element.scrollLeft = 640;
+            element.scrollTop = 8400;
+            element.dispatchEvent(new Event('scroll'));
+        });
+        const before = await getHorizontalScrollSnapshotAsync(weaponViewport);
+        expectHorizontalScrollApplied(before, before.scrollLeft, 'テスト前提');
+        expect(before.scrollTop, 'テスト前提: 縦スクロール位置を設定できること').toBeGreaterThan(0);
+
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponViewport).toBeVisible();
+        const afterActiveTabClick = await getHorizontalScrollSnapshotAsync(weaponViewport);
+        expect(afterActiveTabClick.scrollTop, `アクティブタブ再クリック後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterActiveTabClick.scrollTop}`).toBe(before.scrollTop);
+        expectHorizontalScrollApplied(afterActiveTabClick, before.scrollLeft, 'アクティブタブ再クリック後');
+
+        await page.locator('.tab-button').getByText('enemy', { exact: true }).click();
+        await expect(enemyViewport).toBeVisible();
+
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponViewport).toBeVisible();
+        await page.waitForTimeout(300);
+
+        const after = await getHorizontalScrollSnapshotAsync(weaponViewport);
+
+        expect(after.scrollTop, `縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${after.scrollTop}`).toBeGreaterThan(0);
+        expectHorizontalScrollApplied(after, before.scrollLeft, 'タブクリック復帰後');
+
+        await page.locator('.tab-button').getByText('enemy', { exact: true }).click();
+        await expect(enemyViewport).toBeVisible();
+        await page.evaluate(() => { history.back(); });
+        await expect(weaponViewport).toBeVisible();
+        await page.waitForTimeout(300);
+
+        const afterBack = await getHorizontalScrollSnapshotAsync(weaponViewport);
+
+        expect(afterBack.scrollTop, `戻るボタン後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterBack.scrollTop}`).toBeGreaterThan(0);
+        expectHorizontalScrollApplied(afterBack, before.scrollLeft, '戻るボタン復帰後');
+        expect(pageErrors, '未キャッチ例外が発生していないこと').toHaveLength(0);
+    });
+
+    test('フォームビュー表示中の既存タブへ戻っても横位置が維持される', async ({ page }) => {
+        const pageErrors: Error[] = [];
+        page.on('pageerror', (error) => pageErrors.push(error));
+
+        const fs = createWideLargeFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await page.locator('#explorer .explorer-file').getByText('weapon', { exact: true }).click();
+        const weaponViewport = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="weapon"] .editor-table-main-viewport');
+        await expect(weaponViewport).toBeVisible();
+
+        await page.locator('#toolbar .toolbar-button-form-toggle').click();
+        await expect(page.locator('.form-panel')).toBeVisible();
+
+        await weaponViewport.evaluate((element) => {
+            element.scrollLeft = element.scrollWidth;
+            element.scrollTop = 8400;
+            element.dispatchEvent(new Event('scroll'));
+        });
+        const before = await getHorizontalScrollSnapshotAsync(weaponViewport);
+        expectHorizontalScrollApplied(before, before.scrollLeft, 'フォームビュー表示中のテスト前提');
+        expect(before.scrollTop, 'テスト前提: フォームビュー表示中に縦スクロール位置を設定できること').toBeGreaterThan(0);
+
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toBeVisible();
+        const afterActiveTabClick = await getHorizontalScrollSnapshotAsync(weaponViewport);
+        expect(afterActiveTabClick.scrollTop, `フォームビュー表示中のアクティブタブ再クリック後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterActiveTabClick.scrollTop}`).toBe(before.scrollTop);
+        expectHorizontalScrollApplied(afterActiveTabClick, before.scrollLeft, 'フォームビュー表示中のアクティブタブ再クリック後');
+
+        await page.locator('#explorer .explorer-file').getByText('enemy', { exact: true }).click();
+        const enemyViewport = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table-main-viewport');
+        await expect(enemyViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toHaveCount(0);
+
+        await page.locator('.tab-button').getByText('weapon', { exact: true }).click();
+        await expect(weaponViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toBeVisible();
+        await page.waitForTimeout(500);
+
+        const afterClick = await getHorizontalScrollSnapshotAsync(weaponViewport);
+
+        expect(afterClick.scrollTop, `フォームビュー復元後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterClick.scrollTop}`).toBeGreaterThan(0);
+        expectHorizontalScrollApplied(afterClick, before.scrollLeft, 'フォームビューのタブクリック復帰後');
+
+        await page.locator('.tab-button').getByText('enemy', { exact: true }).click();
+        await expect(enemyViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toHaveCount(0);
+
+        await page.evaluate(() => { history.back(); });
+        await expect(weaponViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toBeVisible();
+        await page.waitForTimeout(500);
+
+        const afterBack = await getHorizontalScrollSnapshotAsync(weaponViewport);
+
+        expect(afterBack.scrollTop, `フォームビューの戻る復元後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterBack.scrollTop}`).toBeGreaterThan(0);
+        expectHorizontalScrollApplied(afterBack, before.scrollLeft, 'フォームビューの戻る復帰後');
+
+        await page.evaluate(() => { history.back(); });
+        await expect(enemyViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toHaveCount(0);
+
+        await page.evaluate(() => { history.forward(); });
+        await expect(weaponViewport).toBeVisible();
+        await expect(page.locator('.form-panel')).toBeVisible();
+        await page.waitForTimeout(500);
+
+        const afterForward = await getHorizontalScrollSnapshotAsync(weaponViewport);
+
+        expect(afterForward.scrollTop, `フォームビューの進む復元後に縦スクロール位置が復元されていません: before=${before.scrollTop}, after=${afterForward.scrollTop}`).toBeGreaterThan(0);
+        expectHorizontalScrollApplied(afterForward, before.scrollLeft, 'フォームビューの進む復帰後');
         expect(pageErrors, '未キャッチ例外が発生していないこと').toHaveLength(0);
     });
 });
