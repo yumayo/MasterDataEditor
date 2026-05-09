@@ -9,10 +9,6 @@
     display: block;
 }
 
-.timeline-entries {
-    padding: 0 8px;
-}
-
 .timeline-entry {
     padding: 6px 4px;
     border-bottom: 1px solid var(--border-color);
@@ -20,11 +16,20 @@
 }
 
 .timeline-entry-selected {
-    background: var(--list-active-bg);
+    background-color: rgba(0, 122, 204, 0.15);
+    outline: 1px solid rgba(0, 122, 204, 0.4);
 }
 
-.timeline-entry:hover {
-    background: var(--list-hover-bg);
+.timeline-entry:not(.timeline-entry-selected):hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .timeline-entry:not(.timeline-entry-selected):hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .timeline-entry-selected {
+    background-color: rgba(0, 122, 204, 0.2);
 }
 
 .timeline-entry-message {
