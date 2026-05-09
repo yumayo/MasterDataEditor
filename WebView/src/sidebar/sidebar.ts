@@ -9,9 +9,10 @@ import {TimelinePanel} from "../panels/timeline-panel";
 import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
 import {EditorTable} from "../editor/editor-table";
 import {Editor} from "../editor/editor";
-import {DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
+import {MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
 import {invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry} from "../app/api";
+import type {UiStateStore} from "../app/ui-state";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -32,16 +33,19 @@ export class Sidebar {
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly timelinePanel: TimelinePanel;
     private readonly directory: ExplorerDirectory;
+    private readonly uiStateStore: UiStateStore;
     constructor(
         explorerElement: HTMLElement,
         tab: Tab,
         editor: Editor,
         openEditorTables: Map<string, EditorTable>,
-        activityBarOrder?: ActivityBarItem[]
+        activityBarOrder: ActivityBarItem[] | undefined,
+        uiStateStore: UiStateStore
     ) {
         this.explorerElement = explorerElement;
         this.tab = tab;
         this.editor = editor;
+        this.uiStateStore = uiStateStore;
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
@@ -101,18 +105,24 @@ export class Sidebar {
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 0);
 
-        // 初期幅を適用
-        this.applyWidth(DEFAULT_SIDEBAR_WIDTH);
+        const storedSidebarState = this.uiStateStore.getState().sidebar;
+        this.applyWidth(storedSidebarState.width);
 
         // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプし、実際に変化した量を返す
         const resizeHandle = new ResizeHandle('horizontal', (delta: number): number => {
             const currentWidth = this.explorerElement.getBoundingClientRect().width;
             const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, currentWidth + delta));
             this.applyWidth(newWidth);
+            this.uiStateStore.setSidebarWidth(newWidth);
             // 実際に変化したピクセル数を返す（クランプで動けなかった分はゼロ寄りになる）
             return newWidth - currentWidth;
         });
         resizeHandle.appendTo(explorerElement);
+
+        this.activityBar.activateItem(storedSidebarState.activePanel);
+        if (storedSidebarState.activePanel !== 'erDiagram') {
+            this.switchPanel(storedSidebarState.activePanel);
+        }
 
         // C# FileSystemWatcher / GitWatcher からのプッシュ通知を受信してバッジとパネルを更新する
         window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
@@ -188,6 +198,7 @@ export class Sidebar {
     showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
         this.referencesPanel.showEntries(pkValue, entries);
         this.activityBar.activateItem('references');
+        this.uiStateStore.setActiveActivityBarItem('references');
         this.switchPanel('references');
     }
 
@@ -197,6 +208,7 @@ export class Sidebar {
      */
     activateSearchPanel(): void {
         this.activityBar.activateItem('search');
+        this.uiStateStore.setActiveActivityBarItem('search');
         this.switchPanel('search');
         this.searchPanel.hideReplaceMode();
         this.searchPanel.focus();
@@ -208,6 +220,7 @@ export class Sidebar {
      */
     activateSearchPanelWithReplace(): void {
         this.activityBar.activateItem('search');
+        this.uiStateStore.setActiveActivityBarItem('search');
         this.switchPanel('search');
         this.searchPanel.showReplaceMode();
         this.searchPanel.focus();
@@ -301,6 +314,7 @@ export class Sidebar {
     }
 
     private switchPanel(item: ActivityBarItem): void {
+        this.uiStateStore.setActiveActivityBarItem(item);
         // ER図はサイドバーパネルではなく専用タブを開く特別扱い
         // アクティビティバーの active 状態は変更しない（前のパネルのまま維持する）
         if (item === 'erDiagram') {

@@ -62,6 +62,7 @@ export class TabDragDrop {
             }
         }
         this.tab.requestTabLayout();
+        this.tab.notifyTabOrderChanged();
     }
 
     /**

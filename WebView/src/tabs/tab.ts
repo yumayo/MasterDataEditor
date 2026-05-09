@@ -35,6 +35,7 @@ import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
+import type {UiStateStore, UiTabsState} from "../app/ui-state";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -263,7 +264,10 @@ export class Tab {
     /** コミット選択ダイアログ（バージョン比較用） */
     private readonly commitSelectorDialog: CommitSelectorDialog;
 
-    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
+    /** userdata/ui-state.json へのUI状態保存 */
+    private readonly uiStateStore: UiStateStore;
+
+    constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast, uiStateStore: UiStateStore) {
         this.editor = editor;
         this.element = tabContentElement;
         this.tabButtons = [];
@@ -309,6 +313,7 @@ export class Tab {
         this.editorApi = false;
         this.pendingTableOpens = new Map();
         this.commitSelectorDialog = new CommitSelectorDialog();
+        this.uiStateStore = uiStateStore;
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
         // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
@@ -658,11 +663,23 @@ export class Tab {
         return this.activeTabName;
     }
 
+    private persistTabs(activeTabName: string | false | null = this.activeTabName): void {
+        this.uiStateStore.setTabs(
+            this.tabButtons.map(tabButton => tabButton.name),
+            activeTabName
+        );
+    }
+
+    notifyTabOrderChanged(): void {
+        this.persistTabs();
+    }
+
     /**
      * アクティブタブ名を設定する（サブモジュール用）
      */
     setActiveTabNameInternal(name: string): void {
         this.activeTabName = name;
+        this.persistTabs();
     }
 
     /**
@@ -956,8 +973,48 @@ export class Tab {
 
         this.element.appendChild(tabButton.element);
         this.scheduleTabLayout(true);
+        this.persistTabs();
 
         return tabButton;
+    }
+
+    async restoreTabsFromUiStateAsync(tabs: UiTabsState): Promise<void> {
+        const names = [...tabs.open];
+        if (tabs.active !== null && !names.includes(tabs.active)) {
+            names.push(tabs.active);
+        }
+
+        const restoredNames = new Set<string>();
+        for (const name of names) {
+            if (name.startsWith(DIFF_TAB_PREFIX)) continue;
+            if (name === SETTINGS_TAB_NAME) {
+                this.openSettingsTab();
+                restoredNames.add(name);
+                continue;
+            }
+            if (name === ER_DIAGRAM_TAB_NAME) {
+                this.openErDiagramTab();
+                restoredNames.add(name);
+                continue;
+            }
+            if (name === TABLE_DEFINITION_TAB_NAME) {
+                this.openTableDefinitionTab();
+                restoredNames.add(name);
+                continue;
+            }
+            const opened = await this.openTableAsync(name);
+            if (opened) {
+                restoredNames.add(name);
+            } else {
+                this.removeTabButton(name);
+            }
+        }
+
+        if (tabs.active !== null && restoredNames.has(tabs.active)) {
+            this.enableTabButton(tabs.active);
+        } else {
+            this.persistTabs();
+        }
     }
 
     /**
@@ -1069,6 +1126,7 @@ export class Tab {
         if (prev) { this.enableTabButton(prev.name); return; }
         // アクティブだったタブを閉じて他にタブがない場合、エクスプローラーのハイライトをクリアする
         this.sidebar.clearExplorerHighlight();
+        this.persistTabs(false);
     }
 
     /**
@@ -1255,6 +1313,7 @@ export class Tab {
             this.destroyExtraRelationsPanels(state.paneStack);
         }
 
+        this.persistTabs();
     }
 
     /**
@@ -1376,6 +1435,7 @@ export class Tab {
         const existingState = this.tabStates.get(name);
         if (existingState) {
             this.activeTabName = name;
+            this.persistTabs();
             this.activateTabState(existingState);
             this.sidebar.notifyActiveTableChanged(name);
             // 他タブでストアが変更されたセルのDOMを同期する
@@ -1482,6 +1542,7 @@ export class Tab {
         }
 
         this.activeTabName = TABLE_DEFINITION_TAB_NAME;
+        this.persistTabs();
 
         // 既存テーブル編集時はタブボタンの表示テキストをテーブル名に更新する（新規作成時は「新しいテーブル」のまま）
         if (this.pendingEditTarget !== false) {
@@ -1776,6 +1837,7 @@ export class Tab {
         }
 
         this.activeTabName = ER_DIAGRAM_TAB_NAME;
+        this.persistTabs();
 
         // 初回のみ ErDiagramTab とラッパーを生成する
         if (this.erDiagramWrapperElement === false) {
@@ -1855,6 +1917,7 @@ export class Tab {
         }
         // アクティブ名を設定タブ名に更新する（getActiveTabName() で '設定' が返るようにする）
         this.activeTabName = SETTINGS_TAB_NAME;
+        this.persistTabs();
 
         // SettingsPanel の TabButton を取得する
         // openSettingsTab() → append() で必ず tabButton が生成されるため、存在しない状態は論理エラー
@@ -2060,6 +2123,7 @@ export class Tab {
         }
 
         this.activeTabName = diffTabName;
+        this.persistTabs();
 
         // RelationsPanel を非表示にする（差分ビューに不要）
         this.relationsPanel.disconnectEditorTable();
@@ -2111,6 +2175,7 @@ export class Tab {
             this.enableTabButton(remainingNormal.name);
         } else {
             this.sidebar.clearExplorerHighlight();
+            this.persistTabs(this.activeTabName);
         }
     }
 
@@ -2514,6 +2579,7 @@ export class Tab {
 
             // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
             this.activeTabName = name;
+            this.persistTabs();
             this.activateTabState(state);
             this.sidebar.notifyActiveTableChanged(name);
             state.editorTable.forceVirtualScrollRecalculate();

@@ -1,8 +1,9 @@
 import {ResizeHandle} from "../ui/resize-handle";
 import type {ValidationPanel} from "./validation-panel";
 import type {DebugConsole} from "./debug-console";
+import type {UiStateStore} from "../app/ui-state";
 
-type BottomTab = 'problems' | 'debug';
+export type BottomTab = 'problems' | 'debug';
 
 /**
  * ボトムパネル
@@ -23,16 +24,20 @@ export class BottomPanel {
     private readonly problemsTabBtn: HTMLElement;
     private readonly debugTabBtn: HTMLElement;
     private readonly clearBtn: HTMLElement;
+    private readonly uiStateStore: UiStateStore;
     private activeTab: BottomTab;
 
-    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole) {
+    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole, uiStateStore: UiStateStore) {
         this.validationPanel = validationPanel;
         this.debugConsole = debugConsole;
-        this.activeTab = 'problems';
+        this.uiStateStore = uiStateStore;
+        const storedState = this.uiStateStore.getState().bottomPanel;
+        this.activeTab = storedState.activeTab;
 
         const panel = document.createElement('div');
         panel.classList.add('bottom-panel');
-        panel.style.display = 'none';
+        panel.style.display = storedState.visible ? '' : 'none';
+        panel.style.height = `${storedState.height}px`;
         this.element = panel;
 
         // 縦方向リサイズハンドル（上端に配置し、上方向ドラッグで高さを増やす）
@@ -40,6 +45,7 @@ export class BottomPanel {
             const currentHeight = this.element.getBoundingClientRect().height;
             const newHeight = Math.max(80, currentHeight - delta);
             this.element.style.height = `${newHeight}px`;
+            this.uiStateStore.setBottomPanelState({height: newHeight});
             return currentHeight - newHeight;
         });
         resizeHandle.prependTo(this.element);
@@ -73,8 +79,8 @@ export class BottomPanel {
         closeBtn.setAttribute('title', 'パネルを閉じる');
         closeBtn.setAttribute('aria-label', 'パネルを閉じる');
         closeBtn.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 8.707l3.646 3.647.708-.708L8.707 8l3.647-3.646-.708-.708L8 7.293 4.354 3.646l-.708.708L7.293 8l-3.647 3.646.708.708z"/></svg>`;
-        closeBtn.addEventListener('click', () => { this.element.style.display = 'none'; });
-        closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.element.style.display = 'none'; });
+        closeBtn.addEventListener('click', () => { this.hide(); });
+        closeBtn.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.hide(); });
 
         // アクションボタン群を右寄せグループにまとめる
         const actions = document.createElement('div');
@@ -99,12 +105,17 @@ export class BottomPanel {
      */
     toggleTab(tab: BottomTab): void {
         if (this.element.style.display !== 'none' && this.activeTab === tab) {
-            this.element.style.display = 'none';
+            this.hide();
             return;
         }
         this.activeTab = tab;
         this.element.style.display = '';
         this.applyTabState();
+        this.uiStateStore.setBottomPanelState({
+            visible: true,
+            activeTab: this.activeTab,
+            height: this.element.getBoundingClientRect().height,
+        });
     }
 
     /**
@@ -120,6 +131,16 @@ export class BottomPanel {
         btn.textContent = label;
         btn.addEventListener('click', () => { this.toggleTab(tab); });
         return btn;
+    }
+
+    private hide(): void {
+        const height = this.element.getBoundingClientRect().height;
+        this.element.style.display = 'none';
+        this.uiStateStore.setBottomPanelState({
+            visible: false,
+            activeTab: this.activeTab,
+            height,
+        });
     }
 
     private applyTabState(): void {

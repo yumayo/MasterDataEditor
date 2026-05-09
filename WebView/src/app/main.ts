@@ -25,11 +25,16 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-
 import type {BookmarkEntry} from "../panels/bookmark-panel";
 import {BOOKMARKS_FILE} from "../config/userdata-path";
 import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
+import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
 (async () => {
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
-    const activityBarOrder = await readStoredActivityBarOrderAsync();
+    const [activityBarOrder, storedUiState] = await Promise.all([
+        readStoredActivityBarOrderAsync(),
+        readStoredUiStateAsync(),
+    ]);
+    const uiStateStore = new UiStateStore(storedUiState);
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
     // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を
@@ -73,14 +78,15 @@ import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
 
-    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache, notification);
+    const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache, notification, uiStateStore);
 
     const realSidebar = new Sidebar(
         explorerElement,
         tab,
         editor,
         tab.getOpenEditorTables(),
-        activityBarOrder
+        activityBarOrder,
+        uiStateStore
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
@@ -107,7 +113,7 @@ import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
     const validationEngine = new ValidationEngine(store, referenceDataCache);
     const pluginValidationRunner = new PluginValidationRunner(store);
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
-    const bottomPanel = new BottomPanel(validationPanel, debugConsole);
+    const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
     const realStatusBar = new StatusBar(bottomPanel, notification);
     Object.assign(statusBar, realStatusBar);
     Object.setPrototypeOf(statusBar, StatusBar.prototype);
@@ -211,6 +217,8 @@ import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
         validationSchemas.set(tableName, createValidationTableSchemaFromJson(schemaJson));
     }
+
+    await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
 
     // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。
     // 全CSVをストアにロード（refCount=1で常駐）し、スキーマを登録して一括検証する。
