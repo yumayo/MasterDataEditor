@@ -54,6 +54,7 @@ interface ReferenceSection {
 interface ReferenceItem {
     tableName: string;
     pkValue: string;
+    pkColumnIndex: number;
     primaryText: string;
     metaParts: string[];
     canOpen: boolean;
@@ -1295,6 +1296,7 @@ export class FormPanel {
     private buildReferenceItemElement(item: ReferenceItem, parentNodeId: string): HTMLElement {
         const wrapper = document.createElement('div');
         wrapper.classList.add('form-panel-ref-node');
+        if (item.canOpen) wrapper.classList.add('form-panel-ref-node--jumpable');
 
         const alreadyInPath = this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue);
         const canExpand = item.canOpen && !alreadyInPath;
@@ -1324,7 +1326,39 @@ export class FormPanel {
         this.applyReferenceItemContent(element, item);
 
         wrapper.appendChild(element);
+        if (item.canOpen) wrapper.appendChild(this.buildReferenceJumpButton(element, item));
         return wrapper;
+    }
+
+    private buildReferenceJumpButton(trigger: HTMLElement, item: ReferenceItem): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.classList.add('form-panel-ref-jump-button');
+        button.title = 'EditorTableで開く';
+        button.setAttribute('aria-label', 'EditorTableで開く');
+        button.innerHTML = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4H3.5A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9 2h5v5"/><path d="M8 8l6-6"/></svg>';
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.jumpToReferenceItemAsync(trigger, item).catch(err => {
+                console.error('[FormPanel] jumpToReferenceItemAsync failed:', err);
+                this.notification.show('EditorTableへのジャンプに失敗しました');
+            });
+        });
+        return button;
+    }
+
+    private async jumpToReferenceItemAsync(trigger: HTMLElement, item: ReferenceItem): Promise<void> {
+        const tableName = trigger.dataset.refTableName ?? item.tableName;
+        const pkValue = trigger.dataset.refPkValue ?? item.pkValue;
+        if (tableName === '' || pkValue === '') return;
+        this.hideReferenceDropdown();
+        await this.flushPendingCommitsAsync();
+        if (item.pkColumnIndex !== -1) {
+            this.tab.navigateToTableCell(tableName, pkValue, item.pkColumnIndex);
+        } else {
+            this.tab.navigateToTableRow(tableName, pkValue);
+        }
     }
 
     private applyReferenceItemContent(element: HTMLElement, item: ReferenceItem): void {
@@ -1408,6 +1442,7 @@ export class FormPanel {
         return {
             tableName,
             pkValue,
+            pkColumnIndex: pkColIdx,
             primaryText: primaryText !== '' ? primaryText : '(PK値なし)',
             metaParts,
             canOpen: pkValue !== '' && !missing,

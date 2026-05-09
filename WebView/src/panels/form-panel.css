@@ -288,6 +288,7 @@ textarea.form-panel-field-input {
 
 .form-panel-ref-node {
     min-width: 0;
+    position: relative;
 }
 
 .form-panel-ref-node--expanded {
@@ -337,6 +338,39 @@ textarea.form-panel-field-input {
 
 .form-panel-ref-item--expanded {
     background: var(--hover-color);
+}
+
+.form-panel-ref-node--jumpable > .form-panel-ref-item {
+    padding-right: 36px;
+}
+
+.form-panel-ref-jump-button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--background-sub-color);
+    color: var(--font-color);
+    cursor: pointer;
+}
+
+.form-panel-ref-node--jumpable > .form-panel-ref-jump-button {
+    display: flex;
+}
+
+.form-panel-ref-jump-button:hover {
+    background: color-mix(in srgb, var(--hover-color) 72%, var(--background-sub-color));
+}
+
+.form-panel-ref-jump-button svg {
+    pointer-events: none;
 }
 
 .form-panel-ref-item--missing {

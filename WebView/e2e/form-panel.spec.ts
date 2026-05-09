@@ -618,6 +618,28 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(enemyRef).toHaveAttribute('aria-expanded', 'true');
     });
 
+    test('未展開の参照アイテムでもジャンプボタンでEditorTableを開き対象セルを選択できること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const enemySection = formPanel.locator('.form-panel-section', { hasText: '参照先: enemy_id' });
+        const enemyRef = enemySection.locator('.form-panel-ref-item--clickable').first();
+        await expect(enemyRef).toHaveAttribute('aria-expanded', 'false');
+
+        const jumpButton = enemySection.locator('.form-panel-ref-jump-button').first();
+        await expect(jumpButton).toBeVisible();
+        await jumpButton.click();
+
+        const enemyTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="enemy"] .editor-table');
+        await expect(enemyTable).toBeVisible();
+        const focusedCell = enemyTable.locator('.editor-table-cell-focused');
+        await expect(focusedCell).toBeVisible();
+        await expect(focusedCell).toHaveText('1');
+    });
+
     test('REFERENCESで展開した未オープンの参照元行を編集して保存するとCSVに反映されること', async ({ page }) => {
         const table = await openTableAsync(page, 'quest');
         await rightClickPkCellAsync(table, 0);
