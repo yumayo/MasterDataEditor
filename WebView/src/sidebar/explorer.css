@@ -17,29 +17,14 @@
     cursor: pointer;
 }
 
-.explorer-file:hover {
-    background-color: rgba(0, 0, 0, 0.1);
+.explorer-file:not(.explorer-file-active):hover {
+    background-color: var(--panel-item-hover-bg);
 }
 
-[data-theme="dark"] .explorer-file:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-/* アクティブなファイルノードのハイライト（タブの選択色と統一） */
+/* アクティブなファイルノードのハイライト */
 .explorer-file-active {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-[data-theme="dark"] .explorer-file-active {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-.explorer-file-active:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .explorer-file-active:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
 }
 
 /* フィルター入力欄: ファイルリスト上部のファジー検索用テキストフィールド */

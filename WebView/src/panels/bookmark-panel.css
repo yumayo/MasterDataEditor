@@ -92,8 +92,13 @@
     user-select: none;
 }
 
-.bookmark-entry:hover {
-    background: color-mix(in srgb, var(--hover-color) 58%, var(--background-color));
+.bookmark-entry:not(.bookmark-entry-selected):hover {
+    background: var(--panel-item-hover-bg);
+}
+
+.bookmark-entry-selected {
+    background: var(--panel-item-selected-bg);
+    border-color: var(--panel-item-selected-outline);
 }
 
 .bookmark-entry:focus-visible {

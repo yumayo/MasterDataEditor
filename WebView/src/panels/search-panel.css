@@ -120,11 +120,7 @@
 }
 
 .search-result-item:not(.search-result-item-focused):hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .search-result-item:not(.search-result-item-focused):hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--panel-item-hover-bg);
 }
 
 .search-result-location {
@@ -203,12 +199,8 @@
 
 /* カレントマッチのフォーカス表示 */
 .search-result-item-focused {
-    background-color: rgba(0, 122, 204, 0.15);
-    outline: 1px solid rgba(0, 122, 204, 0.4);
-}
-
-[data-theme="dark"] .search-result-item-focused {
-    background-color: rgba(0, 122, 204, 0.2);
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
 }
 
 /* 置換プレビュー */

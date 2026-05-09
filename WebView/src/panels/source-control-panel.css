@@ -70,28 +70,13 @@
     height: 14px;
 }
 
-.source-control-file-item:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .source-control-file-item:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+.source-control-file-item:not(.source-control-file-item-active):hover {
+    background-color: var(--panel-item-hover-bg);
 }
 
 .source-control-file-item-active {
-    background-color: rgba(0, 0, 0, 0.05);
-}
-
-[data-theme="dark"] .source-control-file-item-active {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-.source-control-file-item-active:hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .source-control-file-item-active:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
 }
 
 .source-control-busy .source-control-action-btn {

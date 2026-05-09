@@ -379,11 +379,13 @@ export class BookmarkPanel {
         entryElement.appendChild(deleteButton);
         // クリックでジャンプ
         entryElement.addEventListener('click', () => {
+            this.selectEntryElement(entryElement);
             this.navigateToBookmark(tableName, rowKey, columnName);
         });
         entryElement.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
+                this.selectEntryElement(entryElement);
                 this.navigateToBookmark(tableName, rowKey, columnName);
             }
         });
@@ -401,6 +403,16 @@ export class BookmarkPanel {
      */
     private navigateToBookmark(tableName: string, rowKey: string, columnName: string): void {
         this.tab.navigateToBookmark(tableName, rowKey, columnName);
+    }
+
+    private selectEntryElement(entryElement: HTMLElement): void {
+        const previousSelected = this.contentElement.querySelectorAll('.bookmark-entry-selected');
+        for (let i = 0; i < previousSelected.length; i++) {
+            previousSelected[i].classList.remove('bookmark-entry-selected');
+            previousSelected[i].removeAttribute('aria-current');
+        }
+        entryElement.classList.add('bookmark-entry-selected');
+        entryElement.setAttribute('aria-current', 'true');
     }
 
     private toggleGroupCollapsed(groupElement: HTMLElement, tableName: string): void {

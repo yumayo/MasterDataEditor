@@ -63,14 +63,14 @@
     cursor: pointer;
 }
 
-.debug-console-row:hover {
-    background-color: var(--hover-color);
+.debug-console-row:not(.debug-console-row-selected):hover {
+    background-color: var(--panel-item-hover-bg);
 }
 
-.debug-console-row-selected,
-.debug-console-row-selected:hover {
-    background-color: var(--selection-color);
-    color: var(--selection-font-color);
+.debug-console-row-selected {
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
+    outline-offset: -1px;
 }
 
 .debug-console-row:focus-visible {
@@ -127,11 +127,6 @@
 
 .debug-console-row-error .debug-console-col-status {
     color: var(--error-color);
-}
-
-.debug-console-row-selected .debug-console-col-label,
-.debug-console-row-selected .debug-console-col-status {
-    color: var(--selection-font-color);
 }
 
 .debug-api-detail-tab-wrapper {

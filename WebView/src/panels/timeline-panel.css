@@ -16,20 +16,12 @@
 }
 
 .timeline-entry-selected {
-    background-color: rgba(0, 122, 204, 0.15);
-    outline: 1px solid rgba(0, 122, 204, 0.4);
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
 }
 
 .timeline-entry:not(.timeline-entry-selected):hover {
-    background-color: rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="dark"] .timeline-entry:not(.timeline-entry-selected):hover {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-[data-theme="dark"] .timeline-entry-selected {
-    background-color: rgba(0, 122, 204, 0.2);
+    background-color: var(--panel-item-hover-bg);
 }
 
 .timeline-entry-message {

@@ -70,8 +70,13 @@
     user-select: none;
 }
 
-.validation-panel-item:hover {
-    background-color: var(--hover-color);
+.validation-panel-item:not(.validation-panel-item-selected):hover {
+    background-color: var(--panel-item-hover-bg);
+}
+
+.validation-panel-item-selected {
+    background-color: var(--panel-item-selected-bg);
+    outline: 1px solid var(--panel-item-selected-outline);
 }
 
 .validation-panel-item-kind {

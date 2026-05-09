@@ -38,6 +38,8 @@ export class ValidationPanel {
     private pluginRequestId = 0;
     /** グループ折り畳み状態（テーブル名 → 折り畳まれているか） */
     private readonly collapsedGroups = new Set<string>();
+    /** 現在選択中のエラー項目を再描画後も復元するためのキー */
+    private selectedErrorKey: string | null;
 
     constructor(engine: ValidationEngine, tab: Tab, statusBar: StatusBar, store: InMemoryTableStore, debugConsole: DebugConsole, pluginRunner: PluginValidationRunner) {
         this.engine = engine;
@@ -47,6 +49,7 @@ export class ValidationPanel {
         this.debugConsole = debugConsole;
         this.pluginRunner = pluginRunner;
         this.currentErrors = [];
+        this.selectedErrorKey = null;
 
         const panel = document.createElement('div');
         panel.classList.add('validation-panel');
@@ -355,6 +358,11 @@ export class ValidationPanel {
             for (const error of tableErrors) {
                 const item = document.createElement('div');
                 item.classList.add('validation-panel-item');
+                const errorKey = this.createErrorSelectionKey(error);
+                if (this.selectedErrorKey === errorKey) {
+                    item.classList.add('validation-panel-item-selected');
+                    item.setAttribute('aria-current', 'true');
+                }
 
                 const kindSpan = document.createElement('span');
                 kindSpan.classList.add('validation-panel-item-kind');
@@ -400,11 +408,19 @@ export class ValidationPanel {
 
                 // ジャンプ先が特定できるエラーにのみクリックジャンプ機能を付与する
                 const canJump = error.kind !== 'plugin' || error.rowIndex !== -1;
+                item.addEventListener('click', () => {
+                    this.selectErrorItem(item, error);
+                    if (canJump) this.jumpToError(error);
+                });
                 if (canJump) {
                     item.setAttribute('role', 'button');
                     item.setAttribute('tabindex', '0');
-                    item.addEventListener('click', () => { this.jumpToError(error); });
-                    item.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.jumpToError(error); });
+                    item.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            this.selectErrorItem(item, error);
+                            this.jumpToError(error);
+                        }
+                    });
                 }
 
                 itemsContainer.appendChild(item);
@@ -456,6 +472,30 @@ export class ValidationPanel {
             if (error.rowIndex < 0) return;
             this.tab.navigateToTableStoreCell(tableName, error.rowIndex, error.columnIndex);
         }
+    }
+
+    private selectErrorItem(item: HTMLElement, error: ValidationError): void {
+        this.selectedErrorKey = this.createErrorSelectionKey(error);
+        const previousSelected = this.element.querySelectorAll('.validation-panel-item-selected');
+        for (let i = 0; i < previousSelected.length; i++) {
+            previousSelected[i].classList.remove('validation-panel-item-selected');
+            previousSelected[i].removeAttribute('aria-current');
+        }
+        item.classList.add('validation-panel-item-selected');
+        item.setAttribute('aria-current', 'true');
+    }
+
+    private createErrorSelectionKey(error: ValidationError): string {
+        return JSON.stringify([
+            error.tableName,
+            error.rowIndex,
+            error.columnIndex,
+            error.columnName,
+            error.kind,
+            error.value,
+            error.message,
+            error.filterValue,
+        ]);
     }
 }
 

@@ -17,6 +17,9 @@ body {
     --subtle-border-color: rgba(0, 0, 0, 0.06);
     --hover-color: rgba(0, 0, 0, 0.05);
     --hover-color-strong: rgba(0, 0, 0, 0.1);
+    --panel-item-hover-bg: rgba(0, 0, 0, 0.1);
+    --panel-item-selected-bg: rgba(0, 122, 204, 0.15);
+    --panel-item-selected-outline: rgba(0, 122, 204, 0.4);
     --selection-color: #2196f3;
     --selection-font-color: #ffffff;
     --scroll-bar-background-color: rgba(0, 0, 0, 0.2);
@@ -65,6 +68,8 @@ body {
     --subtle-border-color: rgba(255, 255, 255, 0.05);
     --hover-color: rgba(255, 255, 255, 0.07);
     --hover-color-strong: rgba(255, 255, 255, 0.15);
+    --panel-item-hover-bg: rgba(255, 255, 255, 0.05);
+    --panel-item-selected-bg: rgba(0, 122, 204, 0.2);
     --scroll-bar-background-color: rgba(255, 255, 255, 0.2);
     --reference-hint-color: #777777;
 
