@@ -188,7 +188,7 @@ export class Tab {
     /**
      * ペインスタック。
      * [0] は leftPane の HTMLElement（EditorTable群のコンテナ）、[1..] は RelationsPanel インスタンス。
-     * enableTabButton → activateTabState → initPaneStack() で初期化される。
+     * enableTabButton → activateTabState で初期化される。
      */
     private paneStack: Array<{ element: HTMLElement; panel: RelationsPanel | false }>;
 
@@ -272,8 +272,11 @@ export class Tab {
     /** EditorAPI（connectEditorApi で後から接続する。未接続時は false） */
     private editorApi: EditorAPI | false;
 
+    /** TabState 構築中の通常テーブルタブ名 */
+    private readonly loadingTabNames: Set<string>;
+
     /** openTableAsync() で待機中の resolve 関数を保持するマップ（キー: テーブル名） */
-    private readonly pendingTableOpens: Map<string, (success: boolean) => void>;
+    private readonly pendingTableOpens: Map<string, Array<(success: boolean) => void>>;
 
     /** コミット選択ダイアログ（バージョン比較用） */
     private readonly commitSelectorDialog: CommitSelectorDialog;
@@ -328,6 +331,7 @@ export class Tab {
         this.validationPanel = false;
         this.errorTooltip = false;
         this.editorApi = false;
+        this.loadingTabNames = new Set();
         this.pendingTableOpens = new Map();
         this.commitSelectorDialog = new CommitSelectorDialog();
         this.uiStateStore = uiStateStore;
@@ -1510,7 +1514,15 @@ export class Tab {
             return;
         }
 
+        // 読み込み中の同名タブがある場合は、既存の非同期処理の完了を待つ。
+        if (this.loadingTabNames.has(name)) {
+            this.persistTabs(name);
+            return;
+        }
+
         // 新しいタブ状態を作成
+        this.loadingTabNames.add(name);
+        this.persistTabs(name);
         this.createTabState(name, tabButton);
         // テーブルオープンイベントを発火する（EditorAPI が接続済みの場合のみ）
         if (this.editorApi !== false) this.editorApi.emitTableOpened(name);
@@ -2373,7 +2385,7 @@ export class Tab {
 
     /**
      * タブ状態をアクティブ化（DOMを表示してイベントリスナーを登録）
-     * state に保存されたペインスタックを復元する（initPaneStack() は呼ばない）。
+     * state に保存されたペインスタックを復元する。
      * 初回アクティブ化（createTabState 内）では state.paneStack が初期化済みであること。
      */
     activateTabState(state: TabState): void {
@@ -2391,7 +2403,7 @@ export class Tab {
         state.editorTableHandler.enable();
 
         // state に保存されたペインスタックと viewIndex を復元する
-        // deactivateTabState() で保存された状態であり、initPaneStack() は呼ばない
+        // deactivateTabState() または createTabState() で保存された状態をそのまま使用する
         // slice() でコピーを復元する（参照共有による paneStack の相互汚染を防ぐ）
         this.paneStack = state.paneStack.slice();
         this.viewIndex = state.viewIndex;
@@ -2411,21 +2423,11 @@ export class Tab {
         state.selection.updateRendererAfterResize();
     }
 
-    /**
-     * ペインスタックを初期状態（EditorTable + relationsPanel の2ペイン）にリセットする
-     * タブ切替時（activateTabState）に呼ばれる
-     */
-    private initPaneStack(): void {
-        // viewIndex より右にある追加 RP を破棄してから初期化する
-        this.truncateStackAfterIndex(0);
-        const leftPaneElement = this.editor.getLeftPaneForScroll();
-        const rpElement = this.relationsPanel.getPanelElement();
-        this.paneStack = [
-            { element: leftPaneElement, panel: false },
-            { element: rpElement, panel: this.relationsPanel },
+    private createInitialPaneStack(): Array<{ element: HTMLElement; panel: RelationsPanel | false }> {
+        return [
+            { element: this.editor.getLeftPaneForScroll(), panel: false },
+            { element: this.relationsPanel.getPanelElement(), panel: this.relationsPanel },
         ];
-        this.viewIndex = 0;
-        this.updateVisiblePanes();
     }
 
     /**
@@ -2609,9 +2611,20 @@ export class Tab {
         // タブの名前から同名のマスターデータを取り出してきます。
         readFileAsync("schema/" + name + ".json").then(async (text) => {
             const json = JSON.parse(text);
+            if (!this.tabButtons.includes(tabButton)) {
+                this.loadingTabNames.delete(name);
+                this.resolvePendingTableOpen(name, false);
+                return;
+            }
 
             // 中央ストアにCSVを読み込み・登録
             const csv = await this.store.registerTableAsync(name);
+            if (!this.tabButtons.includes(tabButton)) {
+                this.store.unregisterTable(name);
+                this.loadingTabNames.delete(name);
+                this.resolvePendingTableOpen(name, false);
+                return;
+            }
             // 通常テーブルはフィルター・ソートアイコンを持つため hasIcons: true
             const tableData = EditorTableData.parse(json, csv, true);
 
@@ -2691,12 +2704,18 @@ export class Tab {
             // git statusを取得してこのテーブルのGitDiffTrackerを構築・接続し、全セルのハイライトを適用する
             await editorTable.refreshGitDiffAsync();
 
-            // 初回アクティブ化の前にペインスタックを初期状態に設定する
-            // activateTabState() は state.paneStack / state.viewIndex から復元するため、
-            // createTabState() では initPaneStack() を呼んでフィールドを初期化してから state に格納する
-            this.initPaneStack();
+            if (!this.tabButtons.includes(tabButton)) {
+                this.discardCreatedTabState(name, wrapperElement, editorTable, editorTableHandler, history, areaResizer, fillController);
+                this.loadingTabNames.delete(name);
+                this.resolvePendingTableOpen(name, false);
+                return;
+            }
 
-            // タブ状態を保存（initPaneStack() 後のフィールド値を初期値として記録する）
+            const initialPaneStack = this.createInitialPaneStack();
+
+            // 初回アクティブ化の前にペインスタックの初期状態を作成する
+            // activateTabState() は state.paneStack / state.viewIndex から復元するため、
+            // createTabState() では現在表示中のタブを触らずに初期値だけを state に格納する
             const state: TabState = {
                 editorTable,
                 selection,
@@ -2708,8 +2727,8 @@ export class Tab {
                 dropdownInput,
                 savedScrollLeft: 0,
                 savedScrollTop: 0,
-                paneStack: this.paneStack.slice(),
-                viewIndex: this.viewIndex,
+                paneStack: initialPaneStack,
+                viewIndex: 0,
                 savedSortKeys: [],
                 savedFilters: {},
                 relationsPanelVisible: this.defaultRelationsPanelVisible,
@@ -2723,23 +2742,9 @@ export class Tab {
             //   ミニテーブルのDirty Historyが失われるため、破棄前にチェックする必要がある。
             const isDirtyOnCreate = this.store.isTableDirty(name);
 
-            // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
-            this.activeTabName = name;
-            this.persistTabs();
-            this.activateTabState(state);
-            this.sidebar.notifyActiveTableChanged(name);
-            state.editorTable.forceVirtualScrollRecalculate();
-            this.editor.syncActiveTableScrollState();
-
             if (isDirtyOnCreate) {
                 tabButton.setDirty(true);
             }
-
-            // openTableAsync() で待機中の呼び出し元には、タブの正式なアクティブ化が完了してから通知する。
-            this.resolvePendingTableOpen(name, true);
-
-            // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
-            state.editorTable.forceRefreshRelationsPanel();
 
             // navigateToTableRow / navigateToTableCell / CommandPalette 経由で null で生成されたタブボタンに
             // description を後付けで適用する。ExplorerFile 経由で既に設定済みの場合は applyDescription 内でスキップされる。
@@ -2748,21 +2753,68 @@ export class Tab {
                 this.scheduleTabLayout(true);
             }
 
-            this.consumePendingNavigation(state);
+            const shouldActivate = tabButton.element.classList.contains('tab-button-active');
+            this.loadingTabNames.delete(name);
+
+            if (shouldActivate) {
+                // 読み込み完了時点で別の通常タブが表示中なら、ここで確実に非表示化する。
+                if (this.activeTabName && this.activeTabName !== name) {
+                    const previousState = this.tabStates.get(this.activeTabName);
+                    if (previousState && previousState.wrapperElement.style.display !== 'none') {
+                        this.deactivateTabState(previousState);
+                    }
+                }
+
+                // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
+                this.activeTabName = name;
+                this.persistTabs();
+                this.activateTabState(state);
+                this.sidebar.notifyActiveTableChanged(name);
+                state.editorTable.forceVirtualScrollRecalculate();
+                this.editor.syncActiveTableScrollState();
+
+                // 新規タブ初回表示時にRelationsPanelを強制更新する（初期フォーカス行でパネルを確実に描画）
+                state.editorTable.forceRefreshRelationsPanel();
+                this.consumePendingNavigation(state);
+            } else {
+                this.persistTabs();
+            }
+
+            // openTableAsync() で待機中の呼び出し元には、TabState の構築完了後に通知する。
+            this.resolvePendingTableOpen(name, true);
         }).catch(() => {
             // スキーマ読み込み失敗時にpending解決を通知する
+            this.loadingTabNames.delete(name);
             this.resolvePendingTableOpen(name, false);
         });
     }
 
     private resolvePendingTableOpen(name: string, success: boolean): void {
-        for (const [pendingName, pendingResolve] of this.pendingTableOpens) {
-            if (pendingName === name) {
-                this.pendingTableOpens.delete(pendingName);
-                pendingResolve(success);
-                return;
-            }
+        const pendingResolves = this.pendingTableOpens.get(name);
+        if (!pendingResolves) return;
+        this.pendingTableOpens.delete(name);
+        for (const resolve of pendingResolves) {
+            resolve(success);
         }
+    }
+
+    private discardCreatedTabState(
+        name: string,
+        wrapperElement: HTMLElement,
+        editorTable: EditorTable,
+        editorTableHandler: EditorTableHandler,
+        history: History,
+        areaResizer: AreaResizer,
+        fillController: FillController
+    ): void {
+        editorTable.deactivate();
+        areaResizer.deactivate();
+        fillController.deactivate();
+        editorTableHandler.deactivate();
+        history.unregister();
+        this.store.unregisterTable(name);
+        wrapperElement.remove();
+        this.openEditorTables.delete(name);
     }
 
     /**
@@ -3025,9 +3077,16 @@ export class Tab {
             return Promise.resolve(true);
         }
 
+        const existingPendingResolves = this.pendingTableOpens.get(tableName);
+        if (existingPendingResolves) {
+            return new Promise<boolean>((resolve) => {
+                existingPendingResolves.push(resolve);
+            });
+        }
+
         return new Promise<boolean>((resolve) => {
             // pending解決を登録する
-            this.pendingTableOpens.set(tableName, resolve);
+            this.pendingTableOpens.set(tableName, [resolve]);
             // TabButton を作成（既存なら取得）して有効化する
             // description は null で良い（createTabState内でスキーマから後付けされる）
             this.append(tableName, null);
