@@ -13,7 +13,7 @@
             "name": "recover_stamina",
             "type": "int",
             "comment": "スタミナ回復量",
-            "width": 100
+            "width": 219
         },
         {
             "key": 2,
@@ -62,12 +62,5 @@
     "primary_key": [
         "id"
     ],
-    "frozenRowCount": 10,
-    "frozenColumnCount": 2,
-    "sortKeys": [
-        {
-            "columnName": "defence",
-            "direction": "asc"
-        }
-    ]
+    "frozenColumnCount": 2
 }

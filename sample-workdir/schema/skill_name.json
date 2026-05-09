@@ -6,14 +6,18 @@
             "name": "id",
             "type": "int",
             "comment": "ID",
-            "reference": "skill.id"
+            "reference": "skill.id",
+            "width": 78
         },
         {
             "key": 1,
             "name": "ja",
             "type": "string",
-            "comment": "名前(日本語)"
+            "comment": "名前(日本語)",
+            "width": 77
         }
     ],
-    "primary_key": ["id"]
+    "primary_key": [
+        "id"
+    ]
 }
