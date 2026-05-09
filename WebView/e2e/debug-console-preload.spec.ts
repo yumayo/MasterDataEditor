@@ -1,4 +1,28 @@
 import { test, expect } from './fixtures/test';
+import { installMockApiAsync, type MockFileSystem } from './fixtures/mock-api';
+
+function createTallApiDetailFileSystem(): MockFileSystem {
+    const rows = Array.from({ length: 180 }, (_, index) => {
+        const id = index + 1;
+        return `${id},name_${id}_${'x'.repeat(80)},${id * 10}`;
+    });
+    return {
+        'schema/large.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'name', type: 'string' },
+                { key: 2, name: 'value', type: 'int' },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/large.csv': [
+            'id,name,value',
+            ...rows,
+        ].join('\n'),
+        'userdata/bookmarks.json': '[]',
+        'plugins/.gitkeep': '',
+    };
+}
 
 // =============================================================================
 // BUG: 初回起動時の preload API通信が DEBUG CONSOLE に記録されない
@@ -138,6 +162,93 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(detailTab).toContainText('find_files_response');
         await expect(detailTab).toContainText('"cache": true');
         await expect(detailTab).toContainText('"success": true');
+    });
+
+    test('API詳細のrequest/responseはそれぞれ独立して縦スクロールできる', async ({ page }) => {
+        await installMockApiAsync(page, createTallApiDetailFileSystem());
+        await page.goto('/');
+        await page.waitForFunction(() => Boolean((window as unknown as { __editorApiBridge?: unknown }).__editorApiBridge));
+
+        await page.evaluate(() => {
+            const webview = (window as unknown as { chrome: { webview: { postMessage(message: string): void } } }).chrome.webview;
+            const extraLines = Array.from({ length: 160 }, (_, index) => ({
+                line: index + 1,
+                text: 'request debug payload ' + 'x'.repeat(100),
+            }));
+            webview.postMessage(JSON.stringify({
+                type: 'editor_api_request',
+                requestId: 'scroll-detail-1',
+                method: 'data.readTableDataAsync',
+                params: {
+                    tableName: 'large',
+                    extraLines,
+                },
+            }));
+        });
+
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', { hasText: 'DEBUG CONSOLE' }).click();
+
+        const debugConsole = page.locator('.debug-console');
+        await expect(debugConsole).toBeVisible();
+
+        const mcpRow = debugConsole.locator('.debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: '[MCP] data.readTableDataAsync' }),
+        }).last();
+        await expect(mcpRow).toBeVisible();
+        await mcpRow.click();
+
+        const detailTab = page.locator('.debug-api-detail-tab');
+        await expect(detailTab).toBeVisible();
+        const preBlocks = detailTab.locator('.debug-api-detail-pre');
+        await expect(preBlocks).toHaveCount(2);
+        await expect(preBlocks.first()).toHaveCSS('overflow-y', 'scroll');
+        await expect(preBlocks.nth(1)).toHaveCSS('overflow-y', 'scroll');
+
+        const metrics = await detailTab.evaluate(() => {
+            const preElements = Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-tab .debug-api-detail-pre'));
+            const outer = document.querySelector<HTMLElement>('.editor-left-pane');
+            if (preElements.length !== 2 || outer === null) throw new Error('API詳細のスクロール要素が見つかりません');
+            return {
+                requestCanScroll: preElements[0].scrollHeight > preElements[0].clientHeight,
+                responseCanScroll: preElements[1].scrollHeight > preElements[1].clientHeight,
+                outerOverflow: outer.scrollHeight - outer.clientHeight,
+            };
+        });
+        expect(metrics.requestCanScroll).toBe(true);
+        expect(metrics.responseCanScroll).toBe(true);
+        expect(metrics.outerOverflow).toBeLessThanOrEqual(1);
+
+        const scrollState = await detailTab.evaluate(() => {
+            const [requestPre, responsePre] = Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-tab .debug-api-detail-pre'));
+            const outer = document.querySelector<HTMLElement>('.editor-left-pane');
+            if (requestPre === undefined || responsePre === undefined || outer === null) throw new Error('API詳細のスクロール要素が見つかりません');
+
+            requestPre.scrollTop = 0;
+            responsePre.scrollTop = 0;
+            outer.scrollTop = 0;
+
+            requestPre.scrollTop = 120;
+            const afterRequestScroll = {
+                requestTop: requestPre.scrollTop,
+                responseTop: responsePre.scrollTop,
+                outerTop: outer.scrollTop,
+            };
+
+            responsePre.scrollTop = 180;
+            return {
+                afterRequestScroll,
+                requestTopAfterResponseScroll: requestPre.scrollTop,
+                responseTopAfterResponseScroll: responsePre.scrollTop,
+                outerTopAfterResponseScroll: outer.scrollTop,
+            };
+        });
+        expect(scrollState.afterRequestScroll.requestTop).toBeGreaterThan(0);
+        expect(scrollState.afterRequestScroll.responseTop).toBe(0);
+        expect(scrollState.afterRequestScroll.outerTop).toBe(0);
+        expect(scrollState.responseTopAfterResponseScroll).toBeGreaterThan(0);
+        expect(scrollState.requestTopAfterResponseScroll).toBe(scrollState.afterRequestScroll.requestTop);
+        expect(scrollState.outerTopAfterResponseScroll).toBe(0);
     });
 
     test('validate (engine) 行クリックでリクエストとレスポンスを確認でき、詳細ボタンがない', async ({ page, mockFileSystem }) => {
