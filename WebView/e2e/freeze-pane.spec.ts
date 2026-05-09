@@ -398,6 +398,22 @@ function getVisibleColumnHeaderLocator(table: Locator, columnIndex: number): Loc
     ].join(',')).first();
 }
 
+async function getColumnHeaderTextCenterOffsetAsync(header: Locator): Promise<number> {
+    return await header.evaluate((element) => {
+        const nameElement = element.querySelector('.column-header-name');
+        const commentElement = element.querySelector('.column-header-comment');
+        if (!(nameElement instanceof HTMLElement) || !(commentElement instanceof HTMLElement)) {
+            throw new Error('comment付き列ヘッダーの name/comment 要素が見つかりません');
+        }
+        const headerRect = element.getBoundingClientRect();
+        const nameRect = nameElement.getBoundingClientRect();
+        const commentRect = commentElement.getBoundingClientRect();
+        const textCenter = (Math.min(nameRect.top, commentRect.top) + Math.max(nameRect.bottom, commentRect.bottom)) / 2;
+        const headerCenter = (headerRect.top + headerRect.bottom) / 2;
+        return Math.abs(textCenter - headerCenter);
+    });
+}
+
 async function getComputedZIndexAsync(page: Page, selector: string): Promise<number> {
     return await page.evaluate((targetSelector) => {
         const element = document.querySelector(targetSelector);
@@ -1026,6 +1042,22 @@ test.describe('フリーズペイン', () => {
                 const firstScrollableRowFixedCellRect = await getVisibleCellRectAsync(table, 12, 1);
                 const firstScrollableRowMainCellRect = await getVisibleCellRectAsync(table, 12, 2);
                 expect(Math.abs(firstScrollableRowFixedCellRect.top - firstScrollableRowMainCellRect.top)).toBeLessThanOrEqual(1);
+            },
+        );
+
+        test(
+            'コメント付き固定列ヘッダーのname/commentが縦中央に配置される',
+            async ({ page }) => {
+                const fs = createQuadrantHeaderOffsetRegressionFileSystem();
+                await installMockApiAsync(page, fs);
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'quadrant_header_offset');
+
+                const fixedHeader = getVisibleColumnHeaderLocator(table, 1);
+                const normalHeader = getVisibleColumnHeaderLocator(table, 2);
+                expect(await getColumnHeaderTextCenterOffsetAsync(fixedHeader)).toBeLessThanOrEqual(1);
+                expect(await getColumnHeaderTextCenterOffsetAsync(normalHeader)).toBeLessThanOrEqual(1);
             },
         );
 

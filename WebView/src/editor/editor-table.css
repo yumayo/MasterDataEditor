@@ -228,7 +228,8 @@
     background-color: var(--background-color);
 }
 
-.editor-table-detached-row.editor-table-column-header-row {
+.editor-table-detached-row.editor-table-column-header-row,
+.editor-table-detached-corner-layer > .editor-table-detached-row {
     display: table;
 }
 
