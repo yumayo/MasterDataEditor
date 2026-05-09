@@ -1421,7 +1421,7 @@ export class EditorTableHandler {
         // ミニテーブルや差分タブでは動作しない（正当なガード）
         if (this.table.tab === false) return;
         const focus = this.selection.getFocus();
-        const pkValue = this.table.getRowPkValue(focus.row);
+        const pkValue = this.table.getRowBookmarkKey(focus.row);
         // 修正6: PK値が空の場合はバッファ空行等で設計上ありえない操作 → throw
         if (pkValue === '') throw new Error('[EditorTableHandler.toggleBookmark] pkValue が空文字列: row=' + focus.row);
         // フォーカスセルの列名を取得する（column=0は行ヘッダーなのでデータ列は1始まり）

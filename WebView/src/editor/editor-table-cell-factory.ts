@@ -125,11 +125,12 @@ export class EditorTableCellFactory {
             const col = tableData.header[columnIndex];
             const isPkColumn = col !== undefined && tableData.primaryKeyColumns.includes(col.name);
             const pkValue = table.getRowPkValue(position.row);
+            const bookmarkRowKey = table.getRowBookmarkKey(position.row);
             // フォームビュー表示はPKセルかつPK値が空でない場合のみ表示する
             const canShowFormView = isPkColumn && pkValue !== '' && table.tab !== false;
-            // ブックマーク追加/解除はPK値が取れる通常テーブル（タブあり）でのみ表示する
+            // ブックマーク追加/解除はブックマーク用行キーが取れる通常テーブル（タブあり）でのみ表示する
             // ミニテーブル（RelationsPanel内）やDiffTabではtab===falseなので抑制される
-            const canShowBookmark = pkValue !== '' && table.tab !== false;
+            const canShowBookmark = bookmarkRowKey !== '' && table.tab !== false;
             // 表示するメニュー項目がない場合はメニューを出さない
             if (allEntries.length === 0 && !canShowFormView && !canShowBookmark) return;
             e.preventDefault();
@@ -158,18 +159,18 @@ export class EditorTableCellFactory {
                 if (clickedColumnName !== '') {
                     // PK列は行レベル判定、非PK列はセルレベル判定
                     const isBookmarked = isPkColumn
-                        ? table.hasBookmarkForRow(table.tableName, pkValue)
-                        : table.hasBookmark(table.tableName, pkValue, clickedColumnName);
+                        ? table.hasBookmarkForRow(table.tableName, bookmarkRowKey)
+                        : table.hasBookmark(table.tableName, bookmarkRowKey, clickedColumnName);
                     if (isBookmarked) {
                         menuItems.push({
                             label: 'ブックマークを解除',
                             action: () => {
                                 if (isPkColumn) {
                                     // 行内の全ブックマークを削除し、該当行全セルの視覚マークも除去する
-                                    table.removeBookmarksForRow(table.tableName, pkValue);
+                                    table.removeBookmarksForRow(table.tableName, bookmarkRowKey);
                                     table.removeBookmarkMarksForRow(position.row);
                                 } else {
-                                    table.removeBookmark(table.tableName, pkValue, clickedColumnName);
+                                    table.removeBookmark(table.tableName, bookmarkRowKey, clickedColumnName);
                                     cell.removeAttribute('data-bookmarked');
                                 }
                             },
@@ -179,7 +180,7 @@ export class EditorTableCellFactory {
                         menuItems.push({
                             label: 'ブックマークに追加',
                             action: () => {
-                                table.addBookmark(table.tableName, pkValue, clickedColumnName, cellValue);
+                                table.addBookmark(table.tableName, bookmarkRowKey, clickedColumnName, cellValue);
                                 cell.setAttribute('data-bookmarked', '');
                             },
                         });

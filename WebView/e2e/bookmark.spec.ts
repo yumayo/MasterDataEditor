@@ -16,9 +16,9 @@ function createBookmarkTestFileSystem(): MockFileSystem {
     return {
         "schema/item.json": JSON.stringify({
             header: [
-                {key: 0, name: "id", type: "int"},
-                {key: 1, name: "name", type: "string"},
-                {key: 2, name: "value", type: "int"},
+                {key: 0, name: "id", type: "int", comment: "アイテムID"},
+                {key: 1, name: "name", type: "string", comment: "アイテム名"},
+                {key: 2, name: "value", type: "int", comment: "効果値"},
             ],
             primary_key: ["id"],
         }),
@@ -129,6 +129,25 @@ function createBookmarkTestFileSystemWithPersistence(bookmarks: object[]): MockF
     const base = createBookmarkTestFileSystem();
     base[BOOKMARKS_FILE] = JSON.stringify(bookmarks);
     return base;
+}
+
+function createCompositeBookmarkTestFileSystem(): MockFileSystem {
+    return {
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                {key: 0, name: "shop_id", type: "int", comment: "ショップID"},
+                {key: 1, name: "product_id", type: "int", comment: "商品ID"},
+                {key: 2, name: "name", type: "string", comment: "商品名"},
+            ],
+            primary_key: ["shop_id", "product_id"],
+        }),
+        "data/shop_product.csv": [
+            "shop_id,product_id,name",
+            "1,10,Sword",
+            "1,20,Shield",
+            "2,10,Potion",
+        ].join("\n"),
+    };
 }
 
 test.describe('ブックマーク機能', () => {
@@ -288,6 +307,61 @@ test.describe('ブックマーク機能', () => {
         expect(groupNames).toContain('enemy');
     });
 
+    test('テーブルグループを折り畳み・展開できる', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        await rightClickCellAsync(page, table, 1, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+
+        await openBookmarkPanelAsync(page);
+        const group = page.locator('.bookmark-group', {has: page.locator('.bookmark-group-header', {hasText: 'item'})});
+        const header = group.locator('.bookmark-group-header');
+        const items = group.locator('.bookmark-group-items');
+        await expect(header).toHaveAttribute('aria-expanded', 'true');
+        await expect(items).toHaveAttribute('aria-hidden', 'false');
+        await expect(group.locator('.bookmark-entry').first()).toBeVisible();
+
+        await header.click();
+        await expect(header).toHaveAttribute('aria-expanded', 'false');
+        await expect(items).toHaveAttribute('aria-hidden', 'true');
+        await expect(group.locator('.bookmark-entry').first()).not.toBeVisible();
+
+        await header.click();
+        await expect(header).toHaveAttribute('aria-expanded', 'true');
+        await expect(items).toHaveAttribute('aria-hidden', 'false');
+        await expect(group.locator('.bookmark-entry').first()).toBeVisible();
+    });
+
+    test('ブックマークエントリにフォーム風の列情報と値が表示される', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+
+        await openBookmarkPanelAsync(page);
+        const entry = getBookmarkEntries(page).first();
+        await expect(entry.locator('.bookmark-entry-field-label')).toHaveText('name');
+        await expect(entry.locator('.bookmark-entry-field-comment')).toHaveText('アイテム名');
+        await expect(entry.locator('.bookmark-entry-field-chip--type')).toHaveText('string');
+        await expect(entry.locator('.bookmark-entry-field-value')).toHaveText('Sword');
+        await expect(entry.locator('.bookmark-entry-location-chip--pk')).toHaveText('PK id=1');
+        await expect(entry.locator('.bookmark-entry-location-chip--column')).toHaveCount(0);
+    });
+
+    test('削除ボタン表示時にエントリ幅が変わらない', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await rightClickCellAsync(page, table, 0, 1);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+
+        await openBookmarkPanelAsync(page);
+        const entry = getBookmarkEntries(page).first();
+        const widthBefore = await entry.evaluate(el => (el as HTMLElement).offsetWidth);
+        await entry.hover();
+        await expect(entry.locator('.bookmark-entry-delete')).toBeVisible();
+        const widthAfter = await entry.evaluate(el => (el as HTMLElement).offsetWidth);
+        expect(widthAfter).toBe(widthBefore);
+    });
+
     test('グループ内のブックマークが全削除されるとグループも消える', async ({page}) => {
         // item テーブルの1行目をブックマーク
         const itemTable = await openTableAsync(page, 'item');
@@ -311,6 +385,41 @@ test.describe('ブックマーク機能', () => {
         // 残りのグループは item であること
         const remainingHeader = groups.first().locator('.bookmark-group-header');
         await expect(remainingHeader).toHaveText('item');
+    });
+});
+
+// =========================================================================
+// 複合主キーブックマーク
+// =========================================================================
+test.describe('複合主キーブックマーク', () => {
+    test.beforeEach(async ({page}) => {
+        const fs = createCompositeBookmarkTestFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('複合主キーの全構成列を行キーにして表示とジャンプができる', async ({page}) => {
+        const table = await openTableAsync(page, 'shop_product');
+        await rightClickCellAsync(page, table, 0, 2);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+        await rightClickCellAsync(page, table, 1, 2);
+        await clickContextMenuItemAsync(page, 'ブックマークに追加');
+
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(2);
+        await expect(entries.nth(0)).toHaveAttribute('data-pk-value', '1\t10');
+        await expect(entries.nth(1)).toHaveAttribute('data-pk-value', '1\t20');
+
+        const firstPkChips = entries.nth(0).locator('.bookmark-entry-location-chip--pk');
+        await expect(firstPkChips).toHaveCount(2);
+        await expect(firstPkChips.nth(0)).toHaveText('PK shop_id=1');
+        await expect(firstPkChips.nth(1)).toHaveText('PK product_id=10');
+        await expect(entries.nth(0).locator('.bookmark-entry-location-chip--column')).toHaveCount(0);
+
+        await entries.nth(1).click();
+        const focusedCell = table.locator('.editor-table-cell-focused');
+        await expect(focusedCell).toHaveText('Shield');
     });
 });
 
@@ -339,7 +448,7 @@ test.describe('セルレベルブックマーク', () => {
         await expect(entries).toHaveCount(2);
     });
 
-    test('エントリの表示形式が「列名: ラベル（主キー値）」である', async ({page}) => {
+    test('エントリの表示形式が「列名: ラベル（主キー名=値）」である', async ({page}) => {
         // item テーブルを開いて1行目の name 列（値: Sword, PK: 1）をブックマーク追加
         const table = await openTableAsync(page, 'item');
         await rightClickCellAsync(page, table, 0, 1);
@@ -348,8 +457,8 @@ test.describe('セルレベルブックマーク', () => {
         await openBookmarkPanelAsync(page);
         const entries = getBookmarkEntries(page);
         await expect(entries).toHaveCount(1);
-        // エントリのテキストに「name: Sword (1)」が含まれること
-        await expect(entries.first()).toHaveText(/name:\s*Sword\s*\(1\)/);
+        // エントリのテキストに「name: Sword (id=1)」が含まれること
+        await expect(entries.first()).toHaveText(/name:\s*Sword\s*\(id=1\)/);
     });
 
     test('ブックマーク済みセルの右クリックで解除メニューが表示され、別列は追加メニューが表示される', async ({page}) => {
@@ -453,7 +562,7 @@ test.describe('ブックマーク永続化', () => {
         const entries = getBookmarkEntries(page);
         await expect(entries).toHaveCount(1);
         // 復元されたエントリの内容が正しいこと
-        await expect(entries.first()).toHaveText(/name:\s*Shield\s*\(2\)/);
+        await expect(entries.first()).toHaveText(/name:\s*Shield\s*\(id=2\)/);
     });
 
     test('ブックマーク削除後にbookmarks.jsonから該当エントリが除去される', async ({page}) => {

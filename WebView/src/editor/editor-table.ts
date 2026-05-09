@@ -2028,6 +2028,11 @@ export class EditorTable {
         return this.reference.getRowPkValue(rowIndex);
     }
 
+    /** ブックマーク用の行キーを取得する */
+    getRowBookmarkKey(rowIndex: number): string {
+        return this.reference.getRowBookmarkKey(rowIndex);
+    }
+
     /**
      * 動的参照のvalueColumn名から列インデックスを解決する
      */

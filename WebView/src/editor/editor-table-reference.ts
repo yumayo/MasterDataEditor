@@ -244,6 +244,24 @@ export class EditorTableReference {
     }
 
     /**
+     * ブックマーク用の行キーを取得する。
+     * 複合主キーでは全PK構成列の値をタブ区切りで連結する。
+     */
+    getRowBookmarkKey(rowIndex: number): string {
+        const values: string[] = [];
+        for (const pkColumnName of this.tableData.primaryKeyColumns) {
+            const pkColumnIndex = this.tableData.header.findIndex(
+                col => col.name === pkColumnName
+            );
+            if (pkColumnIndex === -1) return '';
+            const value = this.table.getCellValueAt(rowIndex, pkColumnIndex + this.table.dataColumnOffset());
+            if (value === '') return '';
+            values.push(value);
+        }
+        return values.join('\t');
+    }
+
+    /**
      * 指定セルの参照ヒント文字列を状態から解決して返す。
      * DOM未描画行でも取得できるため、CSV出力や自動列幅計算で使用する。
      */

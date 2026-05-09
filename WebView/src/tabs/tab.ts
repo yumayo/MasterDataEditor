@@ -159,6 +159,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
+    /** タブ読み込み完了後にナビゲーションするブックマーク行キー（空文字列は無効） */
+    private pendingNavigationBookmarkKey: string;
+
     /** タブ読み込み完了後にナビゲーションするストア行インデックス（-1は無効、ValidationPanelで使用） */
     private pendingNavigationStoreRowIndex: number;
 
@@ -280,6 +283,7 @@ export class Tab {
         this.referenceDataCache = referenceDataCache;
         this.notification = notification;
         this.pendingNavigationPkValue = '';
+        this.pendingNavigationBookmarkKey = '';
         this.pendingNavigationStoreRowIndex = -1;
         this.pendingNavigationColumnIndex = -1;
         this.pendingNavigationColumnName = '';
@@ -786,6 +790,25 @@ export class Tab {
     }
 
     /**
+     * ブックマーク行キーが一致する行のセルを選択状態にする。
+     * 単一PKではPK値そのもの、複合PKでは全PK構成列をタブ区切りで連結したキーを使う。
+     */
+    private navigateToBookmarkCell(state: TabState, rowKey: string, columnIndex: number): void {
+        const editorTable = state.editorTable;
+        const rowCount = editorTable.getLogicalRowCount();
+        const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
+        for (let r = 1; r < rowCount; r++) {
+            if (editorTable.getRowBookmarkKey(r) === rowKey) {
+                state.selection.setRange(r, col, r, col);
+                state.selection.move(r, col);
+                state.selection.scrollFocusToCenterVertically();
+                state.editorTableHandler.activate();
+                return;
+            }
+        }
+    }
+
+    /**
      * EditorTableのストア行・列インデックスから対象セルを選択状態にする。
      */
     private navigateToStoreCell(state: TabState, storeRowIndex: number, storeColumnIndex: number): void {
@@ -860,16 +883,26 @@ export class Tab {
 
     /**
      * ブックマーク先のテーブル・セルにジャンプする（BookmarkPanel / CommandPalette 共通ロジック）
-     * columnName からテーブルヘッダーの列インデックスを解決して navigateToTableCell に渡す。
+     * columnName からテーブルヘッダーの列インデックスを解決し、ブックマーク用行キーで対象行を探す。
      * 列が見つからない場合は行単位でジャンプする（スキーマ変更でカラムが消えた場合のフォールバック）。
      */
     navigateToBookmark(tableName: string, rowKey: string, columnName: string): void {
         const columnIndex = this.resolveColumnIndex(tableName, columnName);
         if (columnIndex !== -1) {
-            this.navigateToTableCell(tableName, rowKey, columnIndex);
+            this.navigationHistory.pushNavigateCell(tableName);
         } else {
-            this.navigateToTableRow(tableName, rowKey);
+            this.navigationHistory.pushNavigateRow(tableName);
         }
+        const existingState = this.tabStates.get(tableName);
+        if (existingState) {
+            this.enableTabButton(tableName);
+            this.navigateToBookmarkCell(existingState, rowKey, columnIndex);
+            return;
+        }
+        this.pendingNavigationBookmarkKey = rowKey;
+        this.pendingNavigationColumnIndex = columnIndex;
+        const tabButton = this.append(tableName, null);
+        tabButton.click();
     }
 
     /**
@@ -878,10 +911,14 @@ export class Tab {
      * 保留ナビゲーションを実行し、フィールドをリセットする
      */
     consumePendingNavigation(state: TabState): void {
-        if (this.pendingNavigationPkValue === '' && this.pendingNavigationStoreRowIndex === -1) return;
+        if (this.pendingNavigationPkValue === '' && this.pendingNavigationBookmarkKey === '' && this.pendingNavigationStoreRowIndex === -1) return;
         if (this.pendingNavigationStoreRowIndex !== -1) {
             this.navigateToStoreCell(state, this.pendingNavigationStoreRowIndex, this.pendingNavigationColumnIndex);
             this.pendingNavigationStoreRowIndex = -1;
+            this.pendingNavigationColumnIndex = -1;
+        } else if (this.pendingNavigationBookmarkKey !== '') {
+            this.navigateToBookmarkCell(state, this.pendingNavigationBookmarkKey, this.pendingNavigationColumnIndex);
+            this.pendingNavigationBookmarkKey = '';
             this.pendingNavigationColumnIndex = -1;
         } else if (this.pendingNavigationColumnName !== '') {
             this.navigateToCellByColumnValue(

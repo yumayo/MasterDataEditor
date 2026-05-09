@@ -75,10 +75,7 @@ export class EditorTableBookmarks {
         // ミニテーブルや差分タブではブックマーク不要
         if (this.isMiniTable) return;
         if (this.tab === false) return;
-        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
-            ? this.tableData.header.findIndex((h: any) => h.name === this.tableData.primaryKeyColumns[0])
-            : -1;
-        if (pkColIndex === -1) return;
+        if (this.tableData.primaryKeyColumns.length === 0) return;
         // DOMに存在する行のみ処理する。
         // 固定行（0〜frozenRowCount-1）は常にDOMに存在し、ビューポート行（rendered.start〜rendered.end）も
         // DOMに存在する。その間の行（frozenRowCount〜rendered.start）はDOMに存在しないためスキップする。
@@ -88,7 +85,7 @@ export class EditorTableBookmarks {
             // 固定行とビューポート行の間のギャップはDOMに存在しないためスキップする
             if (domDataRow >= this.frozenRowCount && domDataRow < rendered.start) continue;
             const domRow = domDataRow + 1;
-            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
+            const pkValue = this.getRowBookmarkKey(domRow);
             if (pkValue === '') continue;
             for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
                 const columnName = this.tableData.header[domCol].name;
@@ -106,15 +103,12 @@ export class EditorTableBookmarks {
     restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number): void {
         if (this.isMiniTable) return;
         if (this.tab === false) return;
-        const pkColIndex = this.tableData.primaryKeyColumns.length > 0
-            ? this.tableData.header.findIndex((h: any) => h.name === this.tableData.primaryKeyColumns[0])
-            : -1;
-        if (pkColIndex === -1) return;
+        if (this.tableData.primaryKeyColumns.length === 0) return;
         for (let dataRowIndex = startDataRowIndex; dataRowIndex < endDataRowIndex; dataRowIndex++) {
             const domRow = dataRowIndex + 1;
             const rowElement = this.getRowElement(domRow);
             if (rowElement === null) continue;
-            const pkValue = this.getCellValueAt(domRow, pkColIndex + this.dataColumnOffset());
+            const pkValue = this.getRowBookmarkKey(domRow);
             if (pkValue === '') continue;
             for (let domCol = 0; domCol < this.getColumnCount(); domCol++) {
                 const columnName = this.tableData.header[domCol].name;
