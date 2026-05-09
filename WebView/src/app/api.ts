@@ -154,10 +154,14 @@ export interface GitStatusResult {
 // ファイル書き込み・git操作で無効化し、それ以外はキャッシュを返す。
 // =========================================================================
 let gitStatusCache: GitStatusResult | false = false;
+let gitStatusInFlight: Promise<GitStatusResult> | false = false;
+let gitStatusRevision = 0;
 
 /** git status キャッシュを無効化する。writeFileAsync / git操作 / ファイルウォッチャー / gitアイコンクリック後に呼ばれる。 */
 export function invalidateGitStatusCache(): void {
     gitStatusCache = false;
+    gitStatusInFlight = false;
+    gitStatusRevision++;
 }
 
 /**
@@ -170,9 +174,17 @@ export async function gitStatusAsync(): Promise<GitStatusResult> {
         if (tracker !== false) tracker.recordCacheHit('git_status', startTime);
         return gitStatusCache;
     }
-    const result = await postMessageAsync<GitStatusResult>('git_status', {});
-    gitStatusCache = result;
-    return result;
+    if (gitStatusInFlight !== false) return gitStatusInFlight;
+    const revision = gitStatusRevision;
+    gitStatusInFlight = postMessageAsync<GitStatusResult>('git_status', {})
+        .then((result) => {
+            if (revision === gitStatusRevision) gitStatusCache = result;
+            return result;
+        })
+        .finally(() => {
+            if (revision === gitStatusRevision) gitStatusInFlight = false;
+        });
+    return gitStatusInFlight;
 }
 
 // =========================================================================

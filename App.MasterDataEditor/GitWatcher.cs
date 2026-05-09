@@ -6,8 +6,8 @@ namespace App.MasterDataEditor;
 
 /// <summary>
 /// .git/ ディレクトリ全体を監視し、git操作を検知して通知する。
-/// index の Changed イベントのみ除外する。
-/// git status が index の stat キャッシュを更新するため、
+/// git status が index の stat キャッシュや index.lock を更新する場合があるため、
+/// それらの自己通知は除外する。
 /// 除外しないと通知→git status→index更新→通知の無限ループになる。
 /// ステージング変更（git add/reset）は index.lock → index のアトミック置換で
 /// Created イベントが発火するため、そちらで検知する。
@@ -51,6 +51,9 @@ public sealed class GitWatcher : IDisposable
 		// index.lock: git status がロックファイルを Created/Deleted するため
 		// 通知→git status→発火の無限ループを引き起こす
 		if (relativePath == "index.lock") return;
+		// index の Changed は git status の stat キャッシュ更新で発火するため除外する。
+		// git add/reset などの実操作は index.lock から index への置換で Created/Renamed も発火する。
+		if (relativePath == "index" && e.ChangeType == WatcherChangeTypes.Changed) return;
 		ResetDebounceTimer();
 	}
 

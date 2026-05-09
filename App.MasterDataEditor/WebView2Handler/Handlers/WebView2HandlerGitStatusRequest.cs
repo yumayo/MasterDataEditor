@@ -13,7 +13,7 @@ namespace App.MasterDataEditor
 			{
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
-				var output = GitCommandHelper.RunGitCommand(gitRoot, "status", "--porcelain");
+				var output = GitCommandHelper.RunGitCommand(gitRoot, "--no-optional-locks", "status", "--porcelain");
 				var changes = new List<object>();
 				var staged = new List<object>();
 
