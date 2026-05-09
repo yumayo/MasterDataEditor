@@ -57,7 +57,6 @@ export class EditorTableCellFactory {
             });
         });
         cell.addEventListener('mousedown', (e) => {
-            console.log('[SelectionDrag] cell mousedown button=' + e.button);
             // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する
             if (e.button !== 0) return;
             const position = EditorTableCellFactory.getCellPosition(cell, tableAny.element as HTMLElement);
@@ -103,7 +102,6 @@ export class EditorTableCellFactory {
                 // タイミングによっては呼ばれないケースがあるため、mousedown 時にも確実に有効化する。
                 // addEventListener の重複登録は SelectionDragController 側でガードする。
                 tableAny.selectionDragController.activate();
-                console.log('[SelectionDrag] selection.start row=' + position.row + ' col=' + position.column);
                 table.getSelection().start(position.row, position.column);
             }
         });

@@ -233,7 +233,6 @@ export class EditorTableSortFilter {
         // 全行を破棄して renderRowForVirtualScroll 経由で再レンダリングする。
         const range = this.virtualScroll.getRenderedRange();
         if (range.end - range.start < indices.length) {
-            console.log(`[VirtualScroll] rearrangeDomRows: 仮想スクロール有効のため全行再レンダリング (DOM=${range.end - range.start}行, 全体=${indices.length}行)`);
             this.virtualScroll.forceFullRerender();
             return;
         }

@@ -29,7 +29,6 @@ export class SelectionDragController {
             this.lastMouseY = e.clientY;
             const isActive = selection.isSelectingColumn() || selection.isSelectingRow() || selection.isSelecting();
             if (isActive) {
-                console.log('[SelectionDrag] mousemove selecting x=' + e.clientX + ' y=' + e.clientY);
                 this.updateSelectionFromPoint(e.clientX, e.clientY);
                 this.updateAutoScrollState(e.clientX, e.clientY);
             } else {

@@ -6,7 +6,6 @@ import {
     getLayoutBorderBoxWidthPx,
     getLayoutLeftRelativeToPx,
     getLayoutRightRelativeToPx,
-    getLayoutTopRelativeToPx,
 } from "../core/layout-metrics";
 
 /**
@@ -337,7 +336,7 @@ export class EditorTableLayout {
                 if (rowIndexText !== undefined) {
                     detachedRow.dataset.rowIndex = rowIndexText;
                     const logicalRowIndex = Number(rowIndexText) + 1;
-                    detachedRow.style.top = this.getDetachedViewportRowTopPx(rowElement, logicalRowIndex);
+                    detachedRow.style.top = this.getDetachedViewportRowTopPx(logicalRowIndex);
                     if (logicalRowIndex <= this.frozenRowCount) {
                         const frozenRowTop = this.getFrozenRowTopPx(logicalRowIndex);
                         const frozenRowHeight = this.getRenderedRowHeightPx(rowElement);
@@ -364,7 +363,6 @@ export class EditorTableLayout {
                     }
                 }
             }
-            if (detachedRow.style.top === '') detachedRow.style.top = `${getLayoutTopRelativeToPx(rowElement, this.element)}px`;
             if (rowElement.classList.contains('freeze-row')) detachedRow.classList.add('freeze-row');
             if (rowElement.classList.contains('freeze-row-border')) detachedRow.classList.add('freeze-row-border');
             for (let col = 0; col < this.dataColumnOffset(); col++) {
@@ -468,7 +466,7 @@ export class EditorTableLayout {
             if (rowHeader === null) continue;
             const rowIndexText = rowHeader.dataset.rowIndex;
             if (rowIndexText === undefined) continue;
-            const rowTop = this.getQuadrantViewportRowTopPx(logicalRowIndex, rowElement);
+            const rowTop = this.getQuadrantViewportRowTopPx(logicalRowIndex);
 
             if (logicalRowIndex <= this.frozenRowCount) {
                 const frozenRowHeight = this.getRenderedRowHeightPx(rowElement);
@@ -529,7 +527,7 @@ export class EditorTableLayout {
                 const detachedLeftRow = document.createElement('div');
                 detachedLeftRow.classList.add('editor-table-detached-row');
                 detachedLeftRow.dataset.rowIndex = rowIndexText;
-                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex, rowElement)}px`;
+                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
                 for (let col = 0; col < Math.min(fixedLeftColumnCount, rowElement.children.length); col++) {
                     const sourceCell = rowElement.children[col] as HTMLElement | null;
                     if (sourceCell === null) continue;
@@ -599,7 +597,7 @@ export class EditorTableLayout {
                 const detachedLeftRow = document.createElement('div');
                 detachedLeftRow.classList.add('editor-table-detached-row');
                 detachedLeftRow.dataset.rowIndex = rowIndexText;
-                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex, sourceRow)}px`;
+                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
                 for (let col = 0; col < Math.min(fixedLeftColumnCount, sourceRow.children.length); col++) {
                     const sourceCell = sourceRow.children[col] as HTMLElement | null;
                     if (sourceCell === null) continue;
@@ -627,16 +625,16 @@ export class EditorTableLayout {
             const logicalRowIndex = Number(rowIndexText) + 1;
             const sourceRow = this.getRowElement(logicalRowIndex);
             if (sourceRow === null) continue;
-            detachedRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex, sourceRow)}px`;
+            detachedRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
         }
     }
 
     /** legacy detached-layer 用: row header clone の top 座標を旧 full rebuild と同じ規則で返す */
-    getDetachedViewportRowTopPx(sourceRow: HTMLElement, logicalRowIndex: number): string {
+    getDetachedViewportRowTopPx(logicalRowIndex: number): string {
         if (logicalRowIndex <= this.frozenRowCount) {
             return `${this.getFrozenRowTopPx(logicalRowIndex)}px`;
         }
-        return `${getLayoutTopRelativeToPx(sourceRow, this.element)}px`;
+        return `${this.getHeaderRowHeightPx() + ((logicalRowIndex - 1) * this.getDataRowHeightPx())}px`;
     }
 
     /** legacy detached-layer 用: 行ヘッダー clone を1行分生成する */
@@ -649,7 +647,7 @@ export class EditorTableLayout {
         const detachedRow = document.createElement('div');
         detachedRow.classList.add('editor-table-detached-row');
         detachedRow.dataset.rowIndex = rowIndexText;
-        detachedRow.style.top = this.getDetachedViewportRowTopPx(sourceRow, logicalRowIndex);
+        detachedRow.style.top = this.getDetachedViewportRowTopPx(logicalRowIndex);
         this.syncDetachedRowVisualState(sourceRow, detachedRow);
         const prefixColumnCount = Math.min(this.dataColumnOffset(), sourceRow.children.length);
         for (let col = 0; col < prefixColumnCount; col++) {
@@ -671,7 +669,7 @@ export class EditorTableLayout {
             if (rowIndexText === undefined) continue;
             const sourceRow = this.getRowElement(Number(rowIndexText) + 1);
             if (sourceRow === null) continue;
-            detachedRow.style.top = this.getDetachedViewportRowTopPx(sourceRow, Number(rowIndexText) + 1);
+            detachedRow.style.top = this.getDetachedViewportRowTopPx(Number(rowIndexText) + 1);
             this.syncDetachedRowVisualState(sourceRow, detachedRow);
             const syncCount = Math.min(prefixColumnCount, sourceRow.children.length, detachedRow.children.length);
             for (let col = 0; col < syncCount; col++) {
@@ -998,13 +996,9 @@ export class EditorTableLayout {
         return top;
     }
 
-    getQuadrantViewportRowTopPx(logicalRowIndex: number, sourceRow: HTMLElement | null = null): number {
+    getQuadrantViewportRowTopPx(logicalRowIndex: number): number {
         if (logicalRowIndex <= this.frozenRowCount) {
             return this.getFrozenRowTopPx(logicalRowIndex);
-        }
-        if (sourceRow !== null && getLayoutBorderBoxHeightPx(sourceRow) > 0) {
-            const measuredTop = getLayoutTopRelativeToPx(sourceRow, this.mainContent);
-            if (Number.isFinite(measuredTop)) return measuredTop;
         }
         const rowHeight = this.getDataRowHeightPx();
         return (logicalRowIndex - 1 - this.frozenRowCount) * rowHeight;

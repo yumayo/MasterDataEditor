@@ -142,7 +142,7 @@ export class VirtualScrollController {
 
         if (enabled) {
             this.scrollListener = () => this.onScroll();
-            this.scrollContainer.addEventListener('scroll', this.scrollListener);
+            this.scrollContainer.addEventListener('scroll', this.scrollListener, { passive: true });
         } else {
             this.scrollListener = false;
         }
@@ -562,8 +562,8 @@ export class VirtualScrollController {
     }
 
     private recalculateCore(): void {
-        // 実行時の行高さを測定する（DPIスケーリング対応）
-        this.measureActualRowHeight();
+        // スクロール中は測定済みの値を使う。DOM差し替え後に layout read を挟むと強制レイアウトが連発する。
+        if (!this.isHandlingScrollEvent) this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const previousRenderedStart = this.renderedStart;
         const previousRenderedEnd = this.renderedEnd;
@@ -571,7 +571,7 @@ export class VirtualScrollController {
         const scrollTopWithoutCompensation = this.isHandlingScrollEvent ? this.currentScrollTop : this.scrollContainer.scrollTop;
         const scrollTop = scrollTopWithoutCompensation + this.scrollTopCompensationPx;
         const viewportHeight = this.scrollContainer.clientHeight;
-        const headerHeight = this.getHeaderHeight();
+        const headerHeight = this.isHandlingScrollEvent ? this.actualHeaderHeight : this.getHeaderHeight();
 
         // topSpacer がテーブル内にあるため、scrollTop にはヘッダー高さが含まれる。
         // 固定行は transform でヘッダー直下に固定表示されるため、
@@ -589,8 +589,6 @@ export class VirtualScrollController {
         const newEnd = Math.min(this.totalRowCount, lastVisibleRow + this.frozenRowCount + VirtualScrollController.OVERSCAN);
 
         if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
-
-        console.log(`[VirtualScroll] recalculate: scrollTop=${scrollTop}, firstVisibleRow=${firstVisibleRow}, range=[${newStart},${newEnd}), old=[${this.renderedStart},${this.renderedEnd}), totalRows=${this.totalRowCount}, rowHeight=${rowHeight}`);
 
         // スペーサー高さを行の入れ替え「前」に設定する。
         // 行を削除してからスペーサーを設定すると、一時的にコンテンツ高さが激減し
