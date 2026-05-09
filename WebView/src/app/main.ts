@@ -24,10 +24,12 @@ import {ErrorTooltip} from "../ui/error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-api-types";
 import type {BookmarkEntry} from "../panels/bookmark-panel";
 import {BOOKMARKS_FILE} from "../config/userdata-path";
+import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
 
 (async () => {
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
+    const activityBarOrder = await readStoredActivityBarOrderAsync();
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
     // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を
@@ -77,7 +79,8 @@ import {BOOKMARKS_FILE} from "../config/userdata-path";
         explorerElement,
         tab,
         editor,
-        tab.getOpenEditorTables()
+        tab.getOpenEditorTables(),
+        activityBarOrder
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);

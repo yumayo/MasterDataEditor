@@ -1,8 +1,59 @@
+import {readFileAsync, writeFileAsync} from "../app/api";
+import {ACTIVITY_BAR_ORDER_FILE} from "../config/userdata-path";
+
 /**
  * アクティビティバーの項目種別
  * erDiagram はサイドバーパネルではなく専用タブを開く特別なアイテム
  */
 export type ActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
+
+const DEFAULT_ACTIVITY_BAR_ORDER: ActivityBarItem[] = [
+    'files',
+    'references',
+    'search',
+    'bookmarks',
+    'erDiagram',
+    'sourceControl',
+    'history',
+];
+
+interface ActivityBarOrderSettingsFile {
+    order: ActivityBarItem[];
+}
+
+function isActivityBarItem(value: unknown): value is ActivityBarItem {
+    return typeof value === 'string' && DEFAULT_ACTIVITY_BAR_ORDER.includes(value as ActivityBarItem);
+}
+
+function normalizeActivityBarOrder(rawOrder: unknown): ActivityBarItem[] {
+    const result: ActivityBarItem[] = [];
+    if (Array.isArray(rawOrder)) {
+        for (const item of rawOrder) {
+            if (!isActivityBarItem(item) || result.includes(item)) continue;
+            result.push(item);
+        }
+    }
+    for (const item of DEFAULT_ACTIVITY_BAR_ORDER) {
+        if (!result.includes(item)) result.push(item);
+    }
+    return result;
+}
+
+export async function readStoredActivityBarOrderAsync(): Promise<ActivityBarItem[]> {
+    try {
+        const json = await readFileAsync(ACTIVITY_BAR_ORDER_FILE);
+        const parsed = JSON.parse(json) as unknown;
+        if (Array.isArray(parsed)) {
+            return normalizeActivityBarOrder(parsed);
+        }
+        if (parsed !== null && typeof parsed === 'object') {
+            return normalizeActivityBarOrder((parsed as Record<string, unknown>)['order']);
+        }
+        return [...DEFAULT_ACTIVITY_BAR_ORDER];
+    } catch {
+        return [...DEFAULT_ACTIVITY_BAR_ORDER];
+    }
+}
 
 /**
  * ファイルアイコン（SVG）
@@ -77,49 +128,43 @@ const SETTINGS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill=
 export class ActivityBar {
     private readonly element: HTMLElement;
     private activeItem: ActivityBarItem;
-    private readonly filesButton: HTMLElement;
-    private readonly referencesButton: HTMLElement;
-    private readonly searchButton: HTMLElement;
-    private readonly bookmarksButton: HTMLElement;
-    private readonly erDiagramButton: HTMLElement;
-    private readonly sourceControlButton: HTMLElement;
-    private readonly historyButton: HTMLElement;
+    private readonly buttons: Map<ActivityBarItem, HTMLElement>;
+    private readonly settingsButton: HTMLElement;
+    private order: ActivityBarItem[];
+    private draggedItem: ActivityBarItem | null;
+    private suppressNextClick: boolean;
     private readonly onItemClick: (item: ActivityBarItem) => void;
     private readonly onSettingsClick: () => void;
 
-    constructor(onItemClick: (item: ActivityBarItem) => void, onSettingsClick: () => void) {
+    constructor(onItemClick: (item: ActivityBarItem) => void, onSettingsClick: () => void, initialOrder: ActivityBarItem[] = DEFAULT_ACTIVITY_BAR_ORDER) {
         this.onItemClick = onItemClick;
         this.onSettingsClick = onSettingsClick;
         this.activeItem = 'files';
+        this.order = normalizeActivityBarOrder(initialOrder);
+        this.draggedItem = null;
+        this.suppressNextClick = false;
 
         this.element = document.createElement('div');
         this.element.classList.add('activity-bar');
 
-        this.filesButton = this.createButton(FILES_ICON_SVG, 'files');
-        this.referencesButton = this.createButton(REFERENCES_ICON_SVG, 'references');
-        this.searchButton = this.createButton(SEARCH_ICON_SVG, 'search');
-        this.bookmarksButton = this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks');
-        this.erDiagramButton = this.createButton(ER_DIAGRAM_ICON_SVG, 'erDiagram');
-        this.sourceControlButton = this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl');
-        this.historyButton = this.createButton(HISTORY_ICON_SVG, 'history');
-
-        // 配置順序: files, references, search, bookmarks, erDiagram, sourceControl, history
-        this.element.appendChild(this.filesButton);
-        this.element.appendChild(this.referencesButton);
-        this.element.appendChild(this.searchButton);
-        this.element.appendChild(this.bookmarksButton);
-        this.element.appendChild(this.erDiagramButton);
-        this.element.appendChild(this.sourceControlButton);
-        this.element.appendChild(this.historyButton);
+        this.buttons = new Map<ActivityBarItem, HTMLElement>([
+            ['files', this.createButton(FILES_ICON_SVG, 'files')],
+            ['references', this.createButton(REFERENCES_ICON_SVG, 'references')],
+            ['search', this.createButton(SEARCH_ICON_SVG, 'search')],
+            ['bookmarks', this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks')],
+            ['erDiagram', this.createButton(ER_DIAGRAM_ICON_SVG, 'erDiagram')],
+            ['sourceControl', this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl')],
+            ['history', this.createButton(HISTORY_ICON_SVG, 'history')],
+        ]);
 
         // 歯車ボタンは margin-top: auto で下部固定
-        const settingsButton = document.createElement('div');
-        settingsButton.classList.add('activity-bar-item', 'activity-bar-settings');
-        settingsButton.innerHTML = SETTINGS_ICON_SVG;
-        settingsButton.setAttribute('data-panel', 'settings');
-        settingsButton.addEventListener('click', () => { this.onSettingsClick(); });
-        this.element.appendChild(settingsButton);
+        this.settingsButton = document.createElement('div');
+        this.settingsButton.classList.add('activity-bar-item', 'activity-bar-settings');
+        this.settingsButton.innerHTML = SETTINGS_ICON_SVG;
+        this.settingsButton.setAttribute('data-panel', 'settings');
+        this.settingsButton.addEventListener('click', () => { this.onSettingsClick(); });
 
+        this.renderButtons();
         this.updateActiveState();
     }
 
@@ -144,9 +189,18 @@ export class ActivityBar {
     private createButton(svgHtml: string, item: ActivityBarItem): HTMLElement {
         const button = document.createElement('div');
         button.classList.add('activity-bar-item');
+        button.draggable = true;
         button.innerHTML = svgHtml;
         button.setAttribute('data-panel', item);
+        button.addEventListener('dragstart', (event: DragEvent) => { this.onDragStart(event, item); });
+        button.addEventListener('dragover', (event: DragEvent) => { this.onDragOver(event, item); });
+        button.addEventListener('drop', (event: DragEvent) => { this.onDrop(event, item); });
+        button.addEventListener('dragend', () => { this.onDragEnd(); });
         button.addEventListener('click', () => {
+            if (this.suppressNextClick) {
+                this.suppressNextClick = false;
+                return;
+            }
             this.activateItem(item);
             this.onItemClick(item);
         });
@@ -159,7 +213,8 @@ export class ActivityBar {
      * count === 0: バッジ要素をDOMから除去する
      */
     updateSourceControlBadge(count: number): void {
-        const existing = this.sourceControlButton.querySelector('.activity-bar-badge');
+        const sourceControlButton = this.getButton('sourceControl');
+        const existing = sourceControlButton.querySelector('.activity-bar-badge');
         if (count === 0) {
             if (existing) existing.remove();
             return;
@@ -172,19 +227,105 @@ export class ActivityBar {
         const badge = document.createElement('span');
         badge.classList.add('activity-bar-badge');
         badge.textContent = String(count);
-        this.sourceControlButton.appendChild(badge);
+        sourceControlButton.appendChild(badge);
+    }
+
+    private renderButtons(): void {
+        for (const item of this.order) {
+            this.element.appendChild(this.getButton(item));
+        }
+        this.element.appendChild(this.settingsButton);
+    }
+
+    private getButton(item: ActivityBarItem): HTMLElement {
+        const button = this.buttons.get(item);
+        if (button === undefined) {
+            throw new Error(`Unknown activity bar item: ${item}`);
+        }
+        return button;
+    }
+
+    private onDragStart(event: DragEvent, item: ActivityBarItem): void {
+        this.draggedItem = item;
+        this.getButton(item).classList.add('activity-bar-item-dragging');
+        if (event.dataTransfer !== null) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', item);
+        }
+    }
+
+    private onDragOver(event: DragEvent, targetItem: ActivityBarItem): void {
+        if (this.draggedItem === null || this.draggedItem === targetItem) return;
+        event.preventDefault();
+        if (event.dataTransfer !== null) {
+            event.dataTransfer.dropEffect = 'move';
+        }
+        this.updateDropIndicator(event, targetItem);
+    }
+
+    private onDrop(event: DragEvent, targetItem: ActivityBarItem): void {
+        if (this.draggedItem === null || this.draggedItem === targetItem) return;
+        const draggedItem = this.draggedItem;
+        event.preventDefault();
+        const targetButton = this.getButton(targetItem);
+        const rect = targetButton.getBoundingClientRect();
+        const insertAfter = event.clientY > rect.top + rect.height / 2;
+        const nextOrder = this.order.filter(item => item !== draggedItem);
+        const targetIndex = nextOrder.indexOf(targetItem);
+        nextOrder.splice(insertAfter ? targetIndex + 1 : targetIndex, 0, draggedItem);
+        if (nextOrder.join('\n') === this.order.join('\n')) return;
+        this.order = nextOrder;
+        this.renderButtons();
+        this.updateActiveState();
+        this.persistOrder();
+        this.suppressNextClick = true;
+    }
+
+    private onDragEnd(): void {
+        const draggedItem = this.draggedItem;
+        this.draggedItem = null;
+        this.clearDragVisualState();
+        if (draggedItem !== null) {
+            this.suppressNextClick = true;
+            window.setTimeout(() => { this.suppressNextClick = false; }, 0);
+        }
+    }
+
+    private updateDropIndicator(event: DragEvent, targetItem: ActivityBarItem): void {
+        this.clearDropIndicator();
+        const targetButton = this.getButton(targetItem);
+        const rect = targetButton.getBoundingClientRect();
+        const insertAfter = event.clientY > rect.top + rect.height / 2;
+        targetButton.classList.add(insertAfter ? 'activity-bar-item-drop-after' : 'activity-bar-item-drop-before');
+    }
+
+    private clearDragVisualState(): void {
+        for (const button of this.buttons.values()) {
+            button.classList.remove('activity-bar-item-dragging');
+        }
+        this.clearDropIndicator();
+    }
+
+    private clearDropIndicator(): void {
+        for (const button of this.buttons.values()) {
+            button.classList.remove('activity-bar-item-drop-before', 'activity-bar-item-drop-after');
+        }
+    }
+
+    private persistOrder(): void {
+        const data: ActivityBarOrderSettingsFile = {order: this.order};
+        writeFileAsync(ACTIVITY_BAR_ORDER_FILE, JSON.stringify(data))
+            .catch((error: unknown) => {
+                console.error('[ActivityBar] save order failed:', String(error));
+            });
     }
 
     /**
      * アクティブ状態の視覚表現を更新する
      */
     private updateActiveState(): void {
-        this.filesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'files');
-        this.referencesButton.classList.toggle('activity-bar-item-active', this.activeItem === 'references');
-        this.searchButton.classList.toggle('activity-bar-item-active', this.activeItem === 'search');
-        this.bookmarksButton.classList.toggle('activity-bar-item-active', this.activeItem === 'bookmarks');
-        this.erDiagramButton.classList.toggle('activity-bar-item-active', this.activeItem === 'erDiagram');
-        this.sourceControlButton.classList.toggle('activity-bar-item-active', this.activeItem === 'sourceControl');
-        this.historyButton.classList.toggle('activity-bar-item-active', this.activeItem === 'history');
+        for (const [item, button] of this.buttons) {
+            button.classList.toggle('activity-bar-item-active', this.activeItem === item);
+        }
     }
 }

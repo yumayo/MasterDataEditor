@@ -36,7 +36,8 @@ export class Sidebar {
         explorerElement: HTMLElement,
         tab: Tab,
         editor: Editor,
-        openEditorTables: Map<string, EditorTable>
+        openEditorTables: Map<string, EditorTable>,
+        activityBarOrder?: ActivityBarItem[]
     ) {
         this.explorerElement = explorerElement;
         this.tab = tab;
@@ -45,7 +46,8 @@ export class Sidebar {
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
             (item: ActivityBarItem) => { this.switchPanel(item); },
-            () => { this.tab.openSettingsTab(); }
+            () => { this.tab.openSettingsTab(); },
+            activityBarOrder
         );
         this.activityBar.appendTo(explorerElement);
 
