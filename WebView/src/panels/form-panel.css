@@ -75,20 +75,37 @@
 
 .form-panel-field-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 4px;
 }
 
-.form-panel-field-label {
+.form-panel-field-label-group {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.form-panel-field-label,
+.form-panel-field-comment {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.form-panel-field-label {
     font-size: 9px;
-    opacity: 0.58;
+    opacity: 0.82;
     font-weight: 600;
+    line-height: 1.25;
+}
+
+.form-panel-field-comment {
+    font-size: 10px;
+    line-height: 1.3;
+    opacity: 0.58;
 }
 
 .form-panel-field-meta {

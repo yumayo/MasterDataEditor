@@ -67,8 +67,8 @@ function createFormPanelTestFileSystem(): MockFileSystem {
         "schema/quest.json": JSON.stringify({
             header: [
                 { key: 0, name: "id", type: "int" },
-                { key: 1, name: "name", type: "string" },
-                { key: 2, name: "enemy_id", type: "int", reference: "enemy.id" },
+                { key: 1, name: "name", type: "string", comment: "クエスト名" },
+                { key: 2, name: "enemy_id", type: "int", comment: "敵ID", reference: "enemy.id" },
                 { key: 3, name: "weapon_id", type: "int", reference: "weapon.id" },
                 { key: 4, name: "recommended_level", type: "int" },
             ],
@@ -406,6 +406,26 @@ test.describe('フォームビュー（FEAT_0043）', () => {
         await expect(valueId).toBeVisible();
         const valueName = formPanel.locator('.form-panel-field-value', { hasText: 'first_quest' });
         await expect(valueName).toBeVisible();
+    });
+
+    test('フォームフィールドに列コメントが表示されること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+
+        await rightClickPkCellAsync(table, 0);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        const nameField = formPanel.locator('.form-panel-field[data-column-name="name"]');
+        await expect(nameField.locator('.form-panel-field-label')).toHaveText('name');
+        await expect(nameField.locator('.form-panel-field-comment')).toHaveText('クエスト名');
+
+        const enemyField = formPanel.locator('.form-panel-field[data-column-name="enemy_id"]');
+        await expect(enemyField.locator('.form-panel-field-comment')).toHaveText('敵ID');
+
+        const weaponField = formPanel.locator('.form-panel-field[data-column-name="weapon_id"]');
+        await expect(weaponField.locator('.form-panel-field-comment')).toHaveCount(0);
     });
 
     test('フォームビューはエディター全体ではなく右ペイン内に表示されること', async ({ page }) => {

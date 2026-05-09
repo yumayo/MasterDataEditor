@@ -396,12 +396,25 @@ export class FormPanel {
         const header = document.createElement('div');
         header.classList.add('form-panel-field-header');
 
+        const labelGroup = document.createElement('div');
+        labelGroup.classList.add('form-panel-field-label-group');
+
         const label = document.createElement('label');
         label.classList.add('form-panel-field-label');
         const inputId = `form-field-${this.currentRequestId}-${columnIndex}`;
         label.htmlFor = inputId;
         label.textContent = columnName;
-        header.appendChild(label);
+        labelGroup.appendChild(label);
+
+        const columnComment = this.getVisibleColumnComment(colSchema);
+        if (columnComment !== null) {
+            const comment = document.createElement('div');
+            comment.classList.add('form-panel-field-comment');
+            comment.textContent = columnComment;
+            if (colSchema?.comment !== undefined) comment.title = colSchema.comment;
+            labelGroup.appendChild(comment);
+        }
+        header.appendChild(labelGroup);
 
         const meta = document.createElement('div');
         meta.classList.add('form-panel-field-meta');
@@ -504,6 +517,13 @@ export class FormPanel {
         field.appendChild(valueWrapper);
         field.appendChild(errorList);
         return field;
+    }
+
+    private getVisibleColumnComment(colSchema: SchemaColumn | undefined): string | null {
+        const comment = colSchema?.comment;
+        if (comment === undefined || comment === '') return null;
+        const firstLine = comment.split('\n')[0];
+        return firstLine === '' ? null : firstLine;
     }
 
     private createFieldInput(value: string, colSchema: SchemaColumn | undefined): HTMLInputElement | HTMLTextAreaElement {
