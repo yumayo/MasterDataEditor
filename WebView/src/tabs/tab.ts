@@ -1,6 +1,6 @@
 import {EditorTableData} from "../data/models/editor-table-data";
 import {TabButton} from "./tab-button";
-import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync} from "../app/api";
+import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitStatusEntry} from "../app/api";
 import {CommitSelectorDialog} from "../ui/commit-selector-dialog";
 import {Editor} from "../editor/editor";
 import {EditorTable} from "../editor/editor-table";
@@ -35,7 +35,7 @@ import {ErDiagramTab} from "./er-diagram-tab";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
-import type {UiStateStore, UiTabsState} from "../app/ui-state";
+import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab} from "../app/ui-state";
 import {DebugApiDetailTab} from "./debug-api-detail-tab";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 
@@ -204,6 +204,12 @@ export class Tab {
     /** 差分タブのDiffTabインスタンスマップ（キー: 差分タブ名 = DIFF_TAB_PREFIX + tableName） */
     private readonly diffTabs: Map<string, DiffTab>;
 
+    /** 復元・保存用のGit差分タブメタデータ（キー: 差分タブ名） */
+    private readonly diffTabMetadata: Map<string, UiStoredDiffTab>;
+
+    /** 復元済み差分タブの実体ロード中フラグ */
+    private readonly loadingDiffTabNames: Set<string>;
+
     /** ER図タブのラッパー要素（ER図タブが開かれた後に生成される。未生成時は false） */
     private erDiagramWrapperElement: HTMLElement | false;
 
@@ -317,6 +323,8 @@ export class Tab {
         this.settingsPanel = false;
         this.settingsWrapperElement = false;
         this.diffTabs = new Map();
+        this.diffTabMetadata = new Map();
+        this.loadingDiffTabNames = new Set();
         this.erDiagramWrapperElement = false;
         this.erDiagramTab = false;
         this.tableDefinitionWrapperElement = false;
@@ -685,14 +693,38 @@ export class Tab {
     }
 
     private persistTabs(activeTabName: string | false | null = this.activeTabName): void {
+        const open: UiStoredTab[] = [];
+        for (const tabButton of this.tabButtons) {
+            if (this.isTemporaryTabName(tabButton.name)) continue;
+            if (tabButton.name.startsWith(DIFF_TAB_PREFIX)) {
+                const diff = this.diffTabMetadata.get(tabButton.name);
+                if (diff === undefined) continue;
+                open.push({
+                    name: tabButton.name,
+                    description: null,
+                    diff: {...diff},
+                });
+                continue;
+            }
+            open.push({
+                name: tabButton.name,
+                description: tabButton.getDescriptionText(),
+                diff: null,
+            });
+        }
+
         this.uiStateStore.setTabs(
-            this.tabButtons.map(tabButton => tabButton.name).filter(name => !this.isTemporaryTabName(name)),
+            open,
             activeTabName !== null && activeTabName !== false && this.isTemporaryTabName(activeTabName) ? false : activeTabName
         );
     }
 
     private isTemporaryTabName(name: string): boolean {
         return name === DEBUG_API_DETAIL_TAB_NAME;
+    }
+
+    private isPersistentSpecialTabName(name: string): boolean {
+        return name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME;
     }
 
     notifyTabOrderChanged(): void {
@@ -1004,43 +1036,115 @@ export class Tab {
     }
 
     async restoreTabsFromUiStateAsync(tabs: UiTabsState): Promise<void> {
-        const names = [...tabs.open];
-        if (tabs.active !== null && !names.includes(tabs.active)) {
-            names.push(tabs.active);
+        const restoredTabs: UiStoredTab[] = tabs.open.map(tab => ({...tab}));
+        if (tabs.active !== null && !restoredTabs.some(tab => tab.name === tabs.active)) {
+            restoredTabs.push({ name: tabs.active, description: null, diff: null });
         }
 
         const restoredNames = new Set<string>();
-        for (const name of names) {
+        for (const tab of restoredTabs) {
+            const name = tab.name;
             if (this.isTemporaryTabName(name)) continue;
-            if (name.startsWith(DIFF_TAB_PREFIX)) continue;
-            if (name === SETTINGS_TAB_NAME) {
-                this.openSettingsTab();
-                restoredNames.add(name);
-                continue;
+            if (name.startsWith(DIFF_TAB_PREFIX) && tab.diff === null) continue;
+            if (tab.diff !== null && !name.startsWith(DIFF_TAB_PREFIX)) continue;
+            if (tab.diff !== null) {
+                this.diffTabMetadata.set(name, {...tab.diff});
             }
-            if (name === ER_DIAGRAM_TAB_NAME) {
-                this.openErDiagramTab();
-                restoredNames.add(name);
-                continue;
-            }
-            if (name === TABLE_DEFINITION_TAB_NAME) {
-                this.openTableDefinitionTab();
-                restoredNames.add(name);
-                continue;
-            }
-            const opened = await this.openTableAsync(name);
-            if (opened) {
-                restoredNames.add(name);
-            } else {
-                this.removeTabButton(name);
-            }
+            this.append(name, tab.description);
+            restoredNames.add(name);
         }
 
         if (tabs.active !== null && restoredNames.has(tabs.active)) {
-            this.enableTabButton(tabs.active);
-        } else {
-            this.persistTabs();
+            if (tabs.active.startsWith(DIFF_TAB_PREFIX)) {
+                const opened = await this.openRestoredDiffTabAsync(tabs.active);
+                if (!opened) {
+                    this.removeTabButton(tabs.active);
+                }
+                return;
+            }
+
+            if (this.isPersistentSpecialTabName(tabs.active)) {
+                this.enableTabButton(tabs.active);
+                return;
+            }
+
+            const opened = await this.openTableAsync(tabs.active);
+            if (!opened) {
+                this.removeTabButton(tabs.active);
+            }
+            return;
         }
+
+        this.persistTabs();
+    }
+
+    private async openRestoredDiffTabAsync(diffTabName: string): Promise<boolean> {
+        if (this.diffTabs.has(diffTabName)) {
+            this.enableTabButton(diffTabName);
+            return true;
+        }
+
+        const metadata = this.diffTabMetadata.get(diffTabName);
+        if (metadata === undefined) return false;
+        if (this.loadingDiffTabNames.has(diffTabName)) return true;
+
+        this.loadingDiffTabNames.add(diffTabName);
+        try {
+            const restored = await this.resolveRestoredGitDiffEntryAsync(metadata);
+            if (restored === null) return false;
+
+            const {entry, isStaged} = restored;
+            const tableName = entry.tableName;
+            if (entry.isNew) {
+                const [schemaJson, currentCsv] = await Promise.all([
+                    readFileAsync(`schema/${tableName}.json`),
+                    readFileAsync(`data/${tableName}.csv`),
+                ]);
+                const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
+                this.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path, null, null, entry.isNew);
+                return true;
+            }
+
+            const [schemaJson, currentCsv, headCsv] = await Promise.all([
+                readFileAsync(`schema/${tableName}.json`),
+                readFileAsync(`data/${tableName}.csv`),
+                gitShowFreshAsync(entry.path),
+            ]);
+            this.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path, null, null, entry.isNew);
+            return true;
+        } catch (error: unknown) {
+            console.error('[Tab] openRestoredDiffTabAsync failed:', error);
+            this.notification.show('Git差分タブの復元に失敗しました');
+            return false;
+        } finally {
+            this.loadingDiffTabNames.delete(diffTabName);
+        }
+    }
+
+    private async resolveRestoredGitDiffEntryAsync(metadata: UiStoredDiffTab): Promise<{entry: GitStatusEntry; isStaged: boolean} | null> {
+        const status = await gitStatusAsync();
+        const primary = metadata.isStaged ? status.staged : status.changes;
+        const secondary = metadata.isStaged ? status.changes : status.staged;
+
+        const primaryEntry = this.findGitStatusEntry(primary, metadata);
+        if (primaryEntry !== null) return {entry: primaryEntry, isStaged: metadata.isStaged};
+
+        const secondaryEntry = this.findGitStatusEntry(secondary, metadata);
+        if (secondaryEntry !== null) return {entry: secondaryEntry, isStaged: !metadata.isStaged};
+
+        return null;
+    }
+
+    private findGitStatusEntry(entries: GitStatusEntry[], metadata: UiStoredDiffTab): GitStatusEntry | null {
+        const pathMatch = entries.find(entry => entry.path === metadata.gitPath);
+        if (pathMatch !== undefined) return pathMatch;
+        const tableMatch = entries.find(entry => entry.tableName === metadata.tableName);
+        return tableMatch ?? null;
+    }
+
+    private buildHeaderOnlyCsv(schemaJson: string): string {
+        const schema = JSON.parse(schemaJson) as { header: { name: string }[] };
+        return schema.header.map(col => col.name).join(',');
     }
 
     /**
@@ -1156,11 +1260,13 @@ export class Tab {
                 this.editor.leaveSettingsMode();
                 this.activeTabName = false;
             }
-            // DIFF_TAB_PREFIX で始まるタブ名が closeTab に渡された時点で diffTabs に存在するのが不変条件
             const diffTabToDestroy = this.diffTabs.get(name);
-            if (!diffTabToDestroy) throw new Error(`[Tab] performCloseTab: diffTabs に存在しないキーが渡された: ${name}`);
-            diffTabToDestroy.destroy(this.store);
-            this.diffTabs.delete(name);
+            if (diffTabToDestroy !== undefined) {
+                diffTabToDestroy.destroy(this.store);
+                this.diffTabs.delete(name);
+            }
+            this.diffTabMetadata.delete(name);
+            this.loadingDiffTabNames.delete(name);
         }
 
         if (!wasActive) return;
@@ -1278,6 +1384,11 @@ export class Tab {
             this.tabButtons[index].element.remove();
             this.tabButtons.splice(index, 1);
             this.scheduleTabLayout();
+        }
+
+        if (name.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabMetadata.delete(name);
+            this.loadingDiffTabNames.delete(name);
         }
 
         // タブ状態のクリーンアップ
@@ -1401,6 +1512,15 @@ export class Tab {
 
         // 差分タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name.startsWith(DIFF_TAB_PREFIX)) {
+            if (!this.diffTabs.has(name)) {
+                this.openRestoredDiffTabAsync(name).then((opened) => {
+                    if (!opened) this.removeTabButton(name);
+                }).catch((error: unknown) => {
+                    console.error('[Tab] enableTabButton: lazy diff restore failed:', error);
+                    this.removeTabButton(name);
+                });
+                return;
+            }
             this.activateDiffTab(name);
             return;
         }
@@ -2200,7 +2320,7 @@ export class Tab {
      * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
      *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
      */
-    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null): void {
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false): void {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
 
         // 既存の差分タブが開いている場合は破棄して再作成する（最新データで差分表示するため）
@@ -2235,6 +2355,11 @@ export class Tab {
             leftLabel, rightLabel
         );
         this.diffTabs.set(diffTabName, diffTab);
+        if (leftLabel === null && rightLabel === null) {
+            this.diffTabMetadata.set(diffTabName, {tableName, gitPath, isStaged, isNew});
+        } else {
+            this.diffTabMetadata.delete(diffTabName);
+        }
 
         // タブボタンをクリックしてアクティブ化する
         tabButton.click();
@@ -2306,18 +2431,23 @@ export class Tab {
      * 直接 destroy → Map クリーンアップ → removeTabButton の順で処理する
      */
     closeAllDiffTabs(): void {
-        if (this.diffTabs.size === 0) return;
+        const diffTabNames = Array.from(new Set([
+            ...this.diffTabs.keys(),
+            ...this.tabButtons.map(btn => btn.name).filter(name => name.startsWith(DIFF_TAB_PREFIX)),
+        ]));
+        if (diffTabNames.length === 0) return;
         // アクティブタブが差分タブの場合は leaveSettingsMode を一度だけ呼んで状態を復元する
         if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             this.editor.leaveSettingsMode();
             this.activeTabName = false;
         }
         // 全差分タブを直接破棄する（closeTab経由だと enterSettingsMode/leaveSettingsMode が中間的に呼ばれるため）
-        const diffTabNames = Array.from(this.diffTabs.keys());
         for (const name of diffTabNames) {
-            // diffTabNames は diffTabs.keys() のスナップショットなので存在が保証されている
-            this.diffTabs.get(name)!.destroy(this.store);
-            this.diffTabs.delete(name);
+            const diffTab = this.diffTabs.get(name);
+            if (diffTab !== undefined) {
+                diffTab.destroy(this.store);
+                this.diffTabs.delete(name);
+            }
             this.removeTabButton(name);
         }
 
@@ -2746,12 +2876,10 @@ export class Tab {
                 tabButton.setDirty(true);
             }
 
-            // navigateToTableRow / navigateToTableCell / CommandPalette 経由で null で生成されたタブボタンに
-            // description を後付けで適用する。ExplorerFile 経由で既に設定済みの場合は applyDescription 内でスキップされる。
-            if (tableData.description !== null && tableData.description !== '') {
-                tabButton.applyDescription(tableData.description);
-                this.scheduleTabLayout(true);
-            }
+            // 保存済みUI状態の description は実ファイル読み込み前の仮表示として使う。
+            // スキーマ読み込み後は実スキーマの値で更新し、削除されていればタブボタンからも消す。
+            tabButton.applyDescription(tableData.description);
+            this.scheduleTabLayout(true);
 
             const shouldActivate = tabButton.element.classList.contains('tab-button-active');
             this.loadingTabNames.delete(name);

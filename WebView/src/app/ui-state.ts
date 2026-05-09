@@ -16,8 +16,21 @@ export interface UiBottomPanelState {
     activeTab: UiBottomPanelTab;
 }
 
+export interface UiStoredTab {
+    name: string;
+    description: string | null;
+    diff: UiStoredDiffTab | null;
+}
+
+export interface UiStoredDiffTab {
+    tableName: string;
+    gitPath: string;
+    isStaged: boolean;
+    isNew: boolean;
+}
+
 export interface UiTabsState {
-    open: string[];
+    open: UiStoredTab[];
     active: string | null;
 }
 
@@ -35,6 +48,7 @@ export interface UiState {
 const DEFAULT_BOTTOM_PANEL_HEIGHT = 300;
 const MIN_BOTTOM_PANEL_HEIGHT = 80;
 const MAX_TAB_NAME_LENGTH = 256;
+const MAX_TAB_DESCRIPTION_LENGTH = 512;
 const MAX_STORED_TABS = 100;
 export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
@@ -66,7 +80,7 @@ function cloneState(state: UiState): UiState {
         },
         bottomPanel: {...state.bottomPanel},
         tabs: {
-            open: [...state.tabs.open],
+            open: state.tabs.open.map(tab => ({...tab})),
             active: state.tabs.active,
         },
     };
@@ -118,16 +132,48 @@ function normalizeTabName(value: unknown): string | null {
     return name;
 }
 
+function normalizeTabDescription(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    if (value === '' || value.length > MAX_TAB_DESCRIPTION_LENGTH) return null;
+    return value;
+}
+
+function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
+    const record = asRecord(value);
+    if (record === null) return null;
+    const tableName = normalizeTabName(record['tableName']);
+    const gitPath = normalizeTabName(record['gitPath']);
+    if (tableName === null || gitPath === null) return null;
+    return {
+        tableName,
+        gitPath,
+        isStaged: record['isStaged'] === true,
+        isNew: record['isNew'] === true,
+    };
+}
+
+function normalizeStoredTab(value: unknown): UiStoredTab | null {
+    const record = asRecord(value);
+    if (record === null) return null;
+    const name = normalizeTabName(record['name']);
+    if (name === null) return null;
+    return {
+        name,
+        description: normalizeTabDescription(record['description']),
+        diff: normalizeStoredDiffTab(record['diff']),
+    };
+}
+
 function normalizeTabs(value: unknown): UiTabsState {
     const record = asRecord(value);
     if (record === null) return cloneState(DEFAULT_UI_STATE).tabs;
 
-    const open: string[] = [];
+    const open: UiStoredTab[] = [];
     if (Array.isArray(record['open'])) {
-        for (const rawName of record['open']) {
-            const name = normalizeTabName(rawName);
-            if (name === null || open.includes(name)) continue;
-            open.push(name);
+        for (const rawTab of record['open']) {
+            const tab = normalizeStoredTab(rawTab);
+            if (tab === null || open.some(item => item.name === tab.name)) continue;
+            open.push(tab);
             if (open.length >= MAX_STORED_TABS) break;
         }
     }
@@ -219,12 +265,12 @@ export class UiStateStore {
         this.schedulePersist();
     }
 
-    setTabs(open: string[], active: string | false | null): void {
-        const normalizedOpen: string[] = [];
-        for (const rawName of open) {
-            const name = normalizeTabName(rawName);
-            if (name === null || normalizedOpen.includes(name)) continue;
-            normalizedOpen.push(name);
+    setTabs(open: UiStoredTab[], active: string | false | null): void {
+        const normalizedOpen: UiStoredTab[] = [];
+        for (const rawTab of open) {
+            const tab = normalizeStoredTab(rawTab);
+            if (tab === null || normalizedOpen.some(item => item.name === tab.name)) continue;
+            normalizedOpen.push(tab);
             if (normalizedOpen.length >= MAX_STORED_TABS) break;
         }
         this.state.tabs.open = normalizedOpen;

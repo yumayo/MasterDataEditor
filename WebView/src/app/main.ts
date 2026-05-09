@@ -189,6 +189,10 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
     (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;
 
+    // 保存済みタブは、schema 一覧や全ファイル preload の完了を待たずにまずタブバーへ復元する。
+    // restoreTabsFromUiStateAsync は非アクティブタブの中身を作らず、アクティブタブだけを読み込む。
+    await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
+
     // バックグラウンド preload の完了を待つ（並列読み込みがUI初期化中に進行している）
     await preloading;
 
@@ -216,7 +220,10 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
         validationSchemas.set(tableName, createValidationTableSchemaFromJson(schemaJson));
     }
 
-    await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
+    const activeTabName = tab.getActiveTabName();
+    if (activeTabName !== false) {
+        sidebar.highlightExplorerFile(activeTabName);
+    }
 
     // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。
     // 全CSVをストアにロード（refCount=1で常駐）し、スキーマを登録して一括検証する。

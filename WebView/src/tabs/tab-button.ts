@@ -88,18 +88,42 @@ export class TabButton {
     }
 
     /**
-     * スキーマ読み込み後に description を後付けで適用する。
+     * 現在タブボタンに表示している description を取得する。
+     * 保存済みUI状態からタブレイアウトだけを復元するために使用する。
+     */
+    getDescriptionText(): string | null {
+        const descSpan = this.element.querySelector('.tab-button-description');
+        if (!(descSpan instanceof HTMLElement)) return null;
+        const text = descSpan.textContent;
+        return text !== null && text !== '' ? text : null;
+    }
+
+    /**
+     * スキーマ読み込み後に description を適用する。
      * ExplorerFile クリック以外の経路（navigateToTableRow / CommandPalette 等）で
      * null で生成されたタブボタンに description span を挿入する。
-     * 既に description span が存在する場合（ExplorerFile 経由で既に設定済み）は何もしない。
+     * 保存済みUI状態から仮の description が入っている場合は実スキーマの値で更新する。
      */
-    applyDescription(description: string): void {
+    applyDescription(description: string | null): void {
         const label = this.element.querySelector('.tab-button-label');
         if (!label) throw new Error('[TabButton] applyDescription: .tab-button-label が見つかりません');
-        if (label.querySelector('.tab-button-description')) return;
-        // description は1行目のみ使用し、name の後（2行目）に追加する
+        const current = label.querySelector('.tab-button-description');
+        if (description === null) {
+            current?.remove();
+            return;
+        }
+
         const firstLine = extractFirstLineFromDescription(description);
-        if (firstLine === null) return;
+        if (firstLine === null) {
+            current?.remove();
+            return;
+        }
+        if (current instanceof HTMLElement) {
+            current.textContent = firstLine;
+            return;
+        }
+
+        // description は1行目のみ使用し、name の後（2行目）に追加する
         const descSpan = document.createElement('span');
         descSpan.classList.add('tab-button-description');
         descSpan.textContent = firstLine;
