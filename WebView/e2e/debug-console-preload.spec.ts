@@ -116,6 +116,8 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         }).first();
         await expect(findFilesRow.locator('.debug-console-detail-button')).toHaveCount(0);
         await findFilesRow.click();
+        await expect(findFilesRow).toHaveClass(/debug-console-row-selected/);
+        await expect(findFilesRow).toHaveCSS('background-color', 'rgb(33, 150, 243)');
 
         await expect(page.locator('.tab-button', { hasText: 'API 詳細' })).toBeVisible();
         const detailTab = page.locator('.debug-api-detail-tab');
@@ -151,6 +153,9 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         }).first();
         await expect(writeFileRow).toBeVisible();
         await writeFileRow.click();
+        await expect(findFilesRow).not.toHaveClass(/debug-console-row-selected/);
+        await expect(writeFileRow).toHaveClass(/debug-console-row-selected/);
+        await expect(writeFileRow).toHaveCSS('background-color', 'rgb(33, 150, 243)');
         await expect(detailTab).toContainText('"data": {');
         await expect(detailTab).toContainText('"bottomPanel": {');
     });

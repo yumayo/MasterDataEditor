@@ -34,12 +34,14 @@ export class DebugConsole {
     /** ログエントリの件数カウンター（DOM先頭削除と同期して管理） */
     private entryCount: number;
     private detailOpenHandler: DebugConsoleDetailOpenHandler | false;
+    private selectedRow: HTMLElement | null;
 
     private static readonly MAX_ENTRIES = 1000;
 
     constructor() {
         this.entryCount = 0;
         this.detailOpenHandler = false;
+        this.selectedRow = null;
 
         const panel = document.createElement('div');
         panel.classList.add('debug-console');
@@ -91,6 +93,9 @@ export class DebugConsole {
         const isAtBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 8;
         if (this.entryCount >= DebugConsole.MAX_ENTRIES) {
             if (this.list.firstChild) {
+                if (this.list.firstChild === this.selectedRow) {
+                    this.selectedRow = null;
+                }
                 this.list.removeChild(this.list.firstChild);
             }
             this.entryCount--;
@@ -112,6 +117,7 @@ export class DebugConsole {
             this.list.removeChild(this.list.firstChild);
         }
         this.entryCount = 0;
+        this.selectedRow = null;
     }
 
     /**
@@ -211,12 +217,12 @@ export class DebugConsole {
         row.setAttribute('tabindex', '0');
         row.setAttribute('aria-label', `${label} のリクエスト/レスポンスを表示`);
         row.addEventListener('click', () => {
-            this.openDetail(detail);
+            this.openDetail(row, detail);
         });
         row.addEventListener('keydown', (event: KeyboardEvent) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
-            this.openDetail(detail);
+            this.openDetail(row, detail);
         });
 
         const timeSpan = document.createElement('span');
@@ -255,9 +261,20 @@ export class DebugConsole {
         return row;
     }
 
-    private openDetail(detail: DebugConsoleEntryDetail): void {
+    private openDetail(row: HTMLElement, detail: DebugConsoleEntryDetail): void {
         if (this.detailOpenHandler === false) return;
+        this.selectRow(row);
         this.detailOpenHandler(detail);
+    }
+
+    private selectRow(row: HTMLElement): void {
+        if (this.selectedRow !== null) {
+            this.selectedRow.classList.remove('debug-console-row-selected');
+            this.selectedRow.removeAttribute('aria-current');
+        }
+        this.selectedRow = row;
+        row.classList.add('debug-console-row-selected');
+        row.setAttribute('aria-current', 'true');
     }
 
     /** マイクロ秒値をms単位にフォーマットする（小数点第一位表示） */
