@@ -16,6 +16,7 @@ import {isDynamicReferenceSchema} from "../references/reference-expression";
 import {calculateGridLayout, ER_NODE_WIDTH} from "./er-diagram-layout";
 import type {Tab} from "./tab";
 import {ER_DIAGRAM_LAYOUT_FILE} from "../config/userdata-path";
+import {stringifyJsonForFile} from "../core/json-format";
 
 // =========================================================================
 // 内部データ型
@@ -742,7 +743,7 @@ export class ErDiagramTab {
             nodes[name] = { x: pos.x, y: pos.y };
         }
         const data: SavedLayout = { nodes, viewBox: { ...this.viewBox } };
-        writeFileAsync(ER_DIAGRAM_LAYOUT_FILE, JSON.stringify(data)).catch(e => { console.error('ER図レイアウト保存エラー', e); });
+        writeFileAsync(ER_DIAGRAM_LAYOUT_FILE, stringifyJsonForFile(data)).catch(e => { console.error('ER図レイアウト保存エラー', e); });
     }
 
     /** ホイールズーム: カーソル位置を中心にズームイン・アウトする */

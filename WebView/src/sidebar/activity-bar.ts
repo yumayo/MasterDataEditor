@@ -1,59 +1,10 @@
-import {readFileAsync, writeFileAsync} from "../app/api";
-import {ACTIVITY_BAR_ORDER_FILE} from "../config/userdata-path";
+import {DEFAULT_ACTIVITY_BAR_ORDER, normalizeActivityBarOrder, type UiActivityBarItem} from "../app/ui-state";
 
 /**
  * アクティビティバーの項目種別
  * erDiagram はサイドバーパネルではなく専用タブを開く特別なアイテム
  */
-export type ActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
-
-const DEFAULT_ACTIVITY_BAR_ORDER: ActivityBarItem[] = [
-    'files',
-    'references',
-    'search',
-    'bookmarks',
-    'erDiagram',
-    'sourceControl',
-    'history',
-];
-
-interface ActivityBarOrderSettingsFile {
-    order: ActivityBarItem[];
-}
-
-function isActivityBarItem(value: unknown): value is ActivityBarItem {
-    return typeof value === 'string' && DEFAULT_ACTIVITY_BAR_ORDER.includes(value as ActivityBarItem);
-}
-
-function normalizeActivityBarOrder(rawOrder: unknown): ActivityBarItem[] {
-    const result: ActivityBarItem[] = [];
-    if (Array.isArray(rawOrder)) {
-        for (const item of rawOrder) {
-            if (!isActivityBarItem(item) || result.includes(item)) continue;
-            result.push(item);
-        }
-    }
-    for (const item of DEFAULT_ACTIVITY_BAR_ORDER) {
-        if (!result.includes(item)) result.push(item);
-    }
-    return result;
-}
-
-export async function readStoredActivityBarOrderAsync(): Promise<ActivityBarItem[]> {
-    try {
-        const json = await readFileAsync(ACTIVITY_BAR_ORDER_FILE);
-        const parsed = JSON.parse(json) as unknown;
-        if (Array.isArray(parsed)) {
-            return normalizeActivityBarOrder(parsed);
-        }
-        if (parsed !== null && typeof parsed === 'object') {
-            return normalizeActivityBarOrder((parsed as Record<string, unknown>)['order']);
-        }
-        return [...DEFAULT_ACTIVITY_BAR_ORDER];
-    } catch {
-        return [...DEFAULT_ACTIVITY_BAR_ORDER];
-    }
-}
+export type ActivityBarItem = UiActivityBarItem;
 
 /**
  * ファイルアイコン（SVG）
@@ -135,10 +86,17 @@ export class ActivityBar {
     private suppressNextClick: boolean;
     private readonly onItemClick: (item: ActivityBarItem) => void;
     private readonly onSettingsClick: () => void;
+    private readonly onOrderChanged: (order: ActivityBarItem[]) => void;
 
-    constructor(onItemClick: (item: ActivityBarItem) => void, onSettingsClick: () => void, initialOrder: ActivityBarItem[] = DEFAULT_ACTIVITY_BAR_ORDER) {
+    constructor(
+        onItemClick: (item: ActivityBarItem) => void,
+        onSettingsClick: () => void,
+        initialOrder: ActivityBarItem[] = DEFAULT_ACTIVITY_BAR_ORDER,
+        onOrderChanged: (order: ActivityBarItem[]) => void = () => {},
+    ) {
         this.onItemClick = onItemClick;
         this.onSettingsClick = onSettingsClick;
+        this.onOrderChanged = onOrderChanged;
         this.activeItem = 'files';
         this.order = normalizeActivityBarOrder(initialOrder);
         this.draggedItem = null;
@@ -313,11 +271,7 @@ export class ActivityBar {
     }
 
     private persistOrder(): void {
-        const data: ActivityBarOrderSettingsFile = {order: this.order};
-        writeFileAsync(ACTIVITY_BAR_ORDER_FILE, JSON.stringify(data))
-            .catch((error: unknown) => {
-                console.error('[ActivityBar] save order failed:', String(error));
-            });
+        this.onOrderChanged([...this.order]);
     }
 
     /**

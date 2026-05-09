@@ -24,16 +24,12 @@ import {ErrorTooltip} from "../ui/error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-api-types";
 import type {BookmarkEntry} from "../panels/bookmark-panel";
 import {BOOKMARKS_FILE} from "../config/userdata-path";
-import {readStoredActivityBarOrderAsync} from "../sidebar/activity-bar";
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
 (async () => {
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
-    const [activityBarOrder, storedUiState] = await Promise.all([
-        readStoredActivityBarOrderAsync(),
-        readStoredUiStateAsync(),
-    ]);
+    const storedUiState = await readStoredUiStateAsync();
     const uiStateStore = new UiStateStore(storedUiState);
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
@@ -85,7 +81,6 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
         tab,
         editor,
         tab.getOpenEditorTables(),
-        activityBarOrder,
         uiStateStore
     );
     Object.assign(sidebar, realSidebar);

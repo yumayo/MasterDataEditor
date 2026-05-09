@@ -15,6 +15,7 @@
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {Csv} from "../data/csv";
 import type {Tab} from "./tab";
+import {stringifyJsonForFile} from "../core/json-format";
 
 /** テーブル名の有効文字パターン: 英数字とアンダースコアのみ */
 const TABLE_NAME_PATTERN = /^[a-zA-Z0-9_]+$/;
@@ -795,7 +796,7 @@ export class TableDefinitionEditor {
             const schema: Record<string, unknown> = { header: headerArray, primary_key: primaryKeys };
             if (description !== '') schema['description'] = description;
             this.applyReverseRefPriorityToSchema(schema);
-            await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
+            await writeFileAsync('schema/' + tableName + '.json', stringifyJsonForFile(schema));
             await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
             this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
         }
@@ -898,7 +899,7 @@ export class TableDefinitionEditor {
         newCsv.body = newBody;
 
         // スキーマとCSVを保存する
-        await writeFileAsync('schema/' + tableName + '.json', JSON.stringify(schema, null, 2));
+        await writeFileAsync('schema/' + tableName + '.json', stringifyJsonForFile(schema));
         // Csv.toString() は末尾に改行を付与する。データ行がない場合はヘッダーのみ出力する。
         // 元の保存形式と合わせるため、末尾改行を除去する
         const csvString = newCsv.toString().replace(/\n$/, '');

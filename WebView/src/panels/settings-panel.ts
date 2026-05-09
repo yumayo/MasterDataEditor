@@ -1,11 +1,12 @@
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
-import {TAB_LAYOUT_SETTINGS_FILE, THEME_SETTINGS_FILE} from "../config/userdata-path";
+import {SETTINGS_FILE} from "../config/userdata-path";
+import {stringifyJsonForFile} from "../core/json-format";
 
 /**
  * 設定画面パネル
  * テーマ選択とタブ折り返し設定を提供する。
- * - change イベントで body[data-theme] を即時更新し、自動的に userdata/theme.json へ保存する
+ * - change イベントで body[data-theme] を即時更新し、自動的に userdata/settings.json へ保存する
  * - Ctrl+S による手動保存も引き続き動作する（冪等）
  */
 
@@ -15,42 +16,69 @@ const DEFAULT_TAB_WRAP_ENABLED = false;
 const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
 const TAB_WRAP_ENABLED_CHANGED_EVENT = 'tab-wrap-enabled-changed';
 
-interface ThemeSettingsFile {
-    theme: ThemeValue;
+interface SettingsFile {
+    theme?: ThemeValue;
+    tabWrapEnabled: boolean;
 }
 
-interface TabLayoutSettingsFile {
-    tabWrapEnabled: boolean;
+interface StoredSettings {
+    theme: ThemeValue | null;
+    tabWrapEnabled: boolean | null;
 }
 
 function isThemeValue(value: unknown): value is ThemeValue {
     return value === 'dark' || value === 'light';
 }
 
-async function readStoredThemeAsync(): Promise<ThemeValue | null> {
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+async function readSettingsRecordAsync(path: string): Promise<Record<string, unknown> | null> {
     try {
-        const json = await readFileAsync(THEME_SETTINGS_FILE);
-        const parsed = JSON.parse(json) as Record<string, unknown>;
-        return isThemeValue(parsed['theme']) ? parsed['theme'] : null;
+        const json = await readFileAsync(path);
+        return asRecord(JSON.parse(json) as unknown);
     } catch {
         return null;
     }
 }
 
-async function readStoredTabWrapEnabledAsync(): Promise<boolean | null> {
-    try {
-        const json = await readFileAsync(TAB_LAYOUT_SETTINGS_FILE);
-        const parsed = JSON.parse(json) as Record<string, unknown>;
-        if (typeof parsed['tabWrapEnabled'] === 'boolean') {
-            return parsed['tabWrapEnabled'];
-        }
-        if (typeof parsed['tabDisplayRowCount'] === 'number') {
-            return parsed['tabDisplayRowCount'] > 1;
-        }
-        return null;
-    } catch {
-        return null;
+function readThemeFromRecord(record: Record<string, unknown> | null): ThemeValue | null {
+    if (record === null) return null;
+    return isThemeValue(record['theme']) ? record['theme'] : null;
+}
+
+function readTabWrapEnabledFromRecord(record: Record<string, unknown> | null): boolean | null {
+    if (record === null) return null;
+    if (typeof record['tabWrapEnabled'] === 'boolean') {
+        return record['tabWrapEnabled'];
     }
+    return null;
+}
+
+async function readStoredSettingsAsync(): Promise<StoredSettings> {
+    const settingsRecord = await readSettingsRecordAsync(SETTINGS_FILE);
+    return {
+        theme: readThemeFromRecord(settingsRecord),
+        tabWrapEnabled: readTabWrapEnabledFromRecord(settingsRecord),
+    };
+}
+
+async function writeSettingsFileAsync(settings: SettingsFile): Promise<void> {
+    const data: Record<string, unknown> = {...(await readSettingsRecordAsync(SETTINGS_FILE) ?? {})};
+    data['theme'] = settings.theme;
+    data['tabWrapEnabled'] = settings.tabWrapEnabled;
+    await writeFileAsync(SETTINGS_FILE, stringifyJsonForFile(data));
+}
+
+let settingsWriteChain: Promise<void> = Promise.resolve();
+
+function enqueueSettingsWriteAsync(settings: SettingsFile): Promise<void> {
+    const writePromise = settingsWriteChain
+        .catch(() => undefined)
+        .then(() => writeSettingsFileAsync(settings));
+    settingsWriteChain = writePromise;
+    return writePromise;
 }
 
 function parseAppliedTabWrapEnabled(): boolean {
@@ -231,7 +259,7 @@ export class SettingsPanel {
      * change イベント（自動保存）および Ctrl+S（手動保存）の両方から呼ばれる
      */
     save(): void {
-        Promise.all([this.writeThemeAsync(), this.writeTabLayoutAsync()])
+        this.writeSettingsAsync()
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error('[SettingsPanel] save failed:', String(error));
@@ -240,7 +268,7 @@ export class SettingsPanel {
     }
 
     private saveTheme(): void {
-        this.writeThemeAsync()
+        this.writeSettingsAsync()
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error('[SettingsPanel] save theme failed:', String(error));
@@ -249,7 +277,7 @@ export class SettingsPanel {
     }
 
     private saveTabLayout(): void {
-        this.writeTabLayoutAsync()
+        this.writeSettingsAsync()
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error('[SettingsPanel] save tab layout failed:', String(error));
@@ -257,24 +285,21 @@ export class SettingsPanel {
             });
     }
 
-    private async writeThemeAsync(): Promise<void> {
-        const data: ThemeSettingsFile = {theme: this.selectedTheme};
-        await writeFileAsync(THEME_SETTINGS_FILE, JSON.stringify(data));
-    }
-
-    private async writeTabLayoutAsync(): Promise<void> {
-        const data: TabLayoutSettingsFile = {tabWrapEnabled: this.selectedTabWrapEnabled};
-        await writeFileAsync(TAB_LAYOUT_SETTINGS_FILE, JSON.stringify(data));
+    private async writeSettingsAsync(): Promise<void> {
+        await enqueueSettingsWriteAsync({
+            theme: this.selectedTheme,
+            tabWrapEnabled: this.selectedTabWrapEnabled,
+        });
     }
 }
 
 /**
- * アプリケーション起動時に userdata/theme.json から保存済みテーマを読み込んで適用する
+ * アプリケーション起動時に userdata/settings.json から保存済みテーマを読み込んで適用する
  */
 export async function applyStoredThemeAsync(): Promise<void> {
-    const stored = await readStoredThemeAsync();
-    if (stored !== null) {
-        document.body.dataset.theme = stored;
+    const settings = await readStoredSettingsAsync();
+    if (settings.theme !== null) {
+        document.body.dataset.theme = settings.theme;
     }
 }
 
@@ -282,12 +307,9 @@ export async function applyStoredThemeAsync(): Promise<void> {
  * アプリケーション起動時に保存済み設定を読み込んで適用する
  */
 export async function applyStoredSettingsAsync(): Promise<void> {
-    const [theme, tabWrapEnabled] = await Promise.all([
-        readStoredThemeAsync(),
-        readStoredTabWrapEnabledAsync(),
-    ]);
-    if (theme !== null) {
-        document.body.dataset.theme = theme;
+    const settings = await readStoredSettingsAsync();
+    if (settings.theme !== null) {
+        document.body.dataset.theme = settings.theme;
     }
-    applyTabWrapEnabled(tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED);
+    applyTabWrapEnabled(settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED);
 }

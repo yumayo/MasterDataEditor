@@ -60,6 +60,9 @@ test.describe('UI状態のuserdata永続化', () => {
         await waitForSavedUiStateAsync(page);
 
         const raw = await readMockFileAsync(page, UI_STATE_FILE);
+        expect(raw).not.toContain('\r');
+        expect(raw.endsWith('\n')).toBe(true);
+        expect(raw).toContain('\n    "sidebar": {');
         const state = JSON.parse(raw) as {
             sidebar: {width: number; activePanel: string};
             bottomPanel: {visible: boolean; height: number; activeTab: string};

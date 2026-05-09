@@ -2,7 +2,7 @@ import { Page } from '@playwright/test';
 import { test, expect } from './fixtures/test';
 import { createDefaultFileSystem, installMockApiAsync, readMockFileAsync } from './fixtures/mock-api';
 
-const THEME_FILE = 'userdata/theme.json';
+const SETTINGS_FILE = 'userdata/settings.json';
 const THEME_STORAGE_KEY = 'master-data-editor-theme';
 
 async function openSettingsTabAsync(page: Page): Promise<void> {
@@ -16,7 +16,7 @@ async function selectThemeAsync(page: Page, theme: 'dark' | 'light'): Promise<vo
     await page.locator(`.settings-dropdown-item[data-value="${theme}"]`).click();
 }
 
-async function waitForThemeFileAsync(page: Page, expectedTheme: 'dark' | 'light'): Promise<void> {
+async function waitForSettingsThemeAsync(page: Page, expectedTheme: 'dark' | 'light'): Promise<void> {
     await page.waitForFunction(
         ({ path, theme }) => {
             const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
@@ -30,7 +30,7 @@ async function waitForThemeFileAsync(page: Page, expectedTheme: 'dark' | 'light'
                 return false;
             }
         },
-        { path: THEME_FILE, theme: expectedTheme },
+        { path: SETTINGS_FILE, theme: expectedTheme },
         { timeout: 5000 },
     );
 }
@@ -45,10 +45,10 @@ async function waitForThemeFileAsync(page: Page, expectedTheme: 'dark' | 'light'
 //   4. ドロップダウン変更時に body[data-theme] が即時更新される
 //   5. テーマ変更時に自動保存されるため dirty マークが表示されない
 //   6. Ctrl+S は冪等に動作する（自動保存済みでもエラーにならない）
-//   7. テーマ変更時に userdata/theme.json へ保存される
-//   8. 起動時に userdata/theme.json からテーマを読み込む
+//   7. テーマ変更時に userdata/settings.json へ保存される
+//   8. 起動時に userdata/settings.json からテーマを読み込む
 //   9. 設定タブを閉じて再度開いた場合にテーマドロップダウンが正しく動作する
-//   10. reload 後も userdata/theme.json からテーマが維持される
+//   10. reload 後も userdata/settings.json からテーマが維持される
 // =============================================================================
 
 test.describe('設定画面', () => {
@@ -140,29 +140,32 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト7: テーマ変更時に userdata/theme.json へ保存されること
+    // テスト7: テーマ変更時に userdata/settings.json へ保存されること
     // ---------------------------------------------------------------------------
     test(
-        'テーマ変更時にuserdata/theme.jsonへ現在のテーマが保存されること',
+        'テーマ変更時にuserdata/settings.jsonへ現在のテーマが保存されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
             await selectThemeAsync(page, 'light');
-            await waitForThemeFileAsync(page, 'light');
+            await waitForSettingsThemeAsync(page, 'light');
 
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
-            const themeJson = await readMockFileAsync(page, THEME_FILE);
-            expect(JSON.parse(themeJson)).toEqual({ theme: 'light' });
+            const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
+            expect(settingsJson).not.toContain('\r');
+            expect(settingsJson.endsWith('\n')).toBe(true);
+            expect(settingsJson).toContain('\n    "theme": "light"');
+            expect(JSON.parse(settingsJson)).toEqual({ theme: 'light', tabWrapEnabled: false });
         },
     );
 
     // ---------------------------------------------------------------------------
-    // テスト8: 起動時に userdata/theme.json からテーマが読み込まれること
+    // テスト8: 起動時に userdata/settings.json からテーマが読み込まれること
     // ---------------------------------------------------------------------------
     test(
-        '起動時にuserdata/theme.jsonが存在すればそのテーマが適用されること',
+        '起動時にuserdata/settings.jsonが存在すればそのテーマが適用されること',
         async ({ page }) => {
             const fs = createDefaultFileSystem();
-            fs[THEME_FILE] = JSON.stringify({ theme: 'light' });
+            fs[SETTINGS_FILE] = JSON.stringify({ theme: 'light', tabWrapEnabled: false });
             await installMockApiAsync(page, fs);
             await page.goto('/');
 
@@ -205,10 +208,10 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト10: reload 後も userdata/theme.json からテーマが維持されること
+    // テスト10: reload 後も userdata/settings.json からテーマが維持されること
     // ---------------------------------------------------------------------------
     test(
-        'テーマ変更後にlocalStorageを空にしてreloadしてもuserdata/theme.jsonからテーマが復元されること',
+        'テーマ変更後にlocalStorageを空にしてreloadしてもuserdata/settings.jsonからテーマが復元されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
             await selectThemeAsync(page, 'light');
@@ -221,8 +224,8 @@ test.describe('設定画面', () => {
                     filename: path,
                     data,
                 }));
-            }, { path: THEME_FILE, data: JSON.stringify({ theme: 'light' }) });
-            await waitForThemeFileAsync(page, 'light');
+            }, { path: SETTINGS_FILE, data: JSON.stringify({ theme: 'light', tabWrapEnabled: false }) });
+            await waitForSettingsThemeAsync(page, 'light');
 
             await page.evaluate((storageKey: string) => {
                 localStorage.removeItem(storageKey);

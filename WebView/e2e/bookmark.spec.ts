@@ -515,6 +515,9 @@ test.describe('ブックマーク永続化', () => {
         await waitForBookmarkCountAsync(page, 1);
         // userdata/bookmarks.json がモックファイルシステムに書き込まれていること
         const json = await readMockFileAsync(page, BOOKMARKS_FILE);
+        expect(json).not.toContain('\r');
+        expect(json.endsWith('\n')).toBe(true);
+        expect(json).toContain('\n        "tableName": "item"');
         const bookmarks = JSON.parse(json) as object[];
         expect(bookmarks).toHaveLength(1);
         // 保存形式の検証: tableName, rowKey, columnName, label, createdAt が含まれること

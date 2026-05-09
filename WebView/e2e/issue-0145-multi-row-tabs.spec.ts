@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test';
 import type { Page } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
-const TAB_LAYOUT_FILE = 'userdata/tab-layout.json';
+const SETTINGS_FILE = 'userdata/settings.json';
 const TABLE_COUNT = 18;
 const LONG_TABLE_NAME = `very_long_table_name_${'segment_'.repeat(40)}`;
 
@@ -28,7 +28,7 @@ function createManyTablesFileSystem(): MockFileSystem {
 function createLongTabNameFileSystem(): MockFileSystem {
     const fs: MockFileSystem = {
         'userdata/bookmarks.json': '[]',
-        'userdata/tab-layout.json': JSON.stringify({ tabWrapEnabled: true }),
+        'userdata/settings.json': JSON.stringify({ tabWrapEnabled: true }),
         'plugins/.gitkeep': '',
     };
     const names = [
@@ -70,7 +70,7 @@ async function selectTabWrapEnabledAsync(page: Page, enabled: boolean): Promise<
                 return false;
             }
         },
-        { path: TAB_LAYOUT_FILE, expected: enabled },
+        { path: SETTINGS_FILE, expected: enabled },
         { timeout: 5000 },
     );
 }
@@ -237,7 +237,7 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
 
     test('保存済みのタブ折り返し設定を復元する', async ({ page }) => {
         const fs = createManyTablesFileSystem();
-        fs[TAB_LAYOUT_FILE] = JSON.stringify({ tabWrapEnabled: true });
+        fs[SETTINGS_FILE] = JSON.stringify({ tabWrapEnabled: true });
         await installMockApiAsync(page, fs);
         await page.goto('/');
 
@@ -259,15 +259,6 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
         expect(metrics.cssWrapEnabled).toBe('1');
         expect(metrics.visibleRowCount).toBeGreaterThan(1);
         expect(metrics.hasHorizontalOverflow).toBe(false);
-    });
-
-    test('旧タブ表示段数設定は折り返し設定として読み替える', async ({ page }) => {
-        const fs = createManyTablesFileSystem();
-        fs[TAB_LAYOUT_FILE] = JSON.stringify({ tabDisplayRowCount: 3 });
-        await installMockApiAsync(page, fs);
-        await page.goto('/');
-
-        await expect(page.locator('html')).toHaveCSS('--tab-wrap-enabled', '1');
     });
 
     test('1段表示の横スクロール境界でタブ間に空白を挟まない', async ({ page }) => {
@@ -368,7 +359,7 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
     test('折り返し表示で最後に開いた設定タブも横方向の可視範囲に収まる', async ({ page }) => {
         await page.setViewportSize({ width: 520, height: 1400 });
         const fs = createManyTablesFileSystem();
-        fs[TAB_LAYOUT_FILE] = JSON.stringify({ tabWrapEnabled: true });
+        fs[SETTINGS_FILE] = JSON.stringify({ tabWrapEnabled: true });
         await installMockApiAsync(page, fs);
         await page.goto('/');
 

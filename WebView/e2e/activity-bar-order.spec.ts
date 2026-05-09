@@ -2,7 +2,7 @@ import {test, expect} from './fixtures/test';
 import type {Page} from '@playwright/test';
 import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync} from './fixtures/mock-api';
 
-const ACTIVITY_BAR_ORDER_FILE = 'userdata/activity-bar-order.json';
+const UI_STATE_FILE = 'userdata/ui-state.json';
 const DEFAULT_ORDER = ['files', 'references', 'search', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
 
 async function getActivityBarOrderAsync(page: Page): Promise<string[]> {
@@ -19,19 +19,19 @@ async function waitForActivityBarOrderAsync(page: Page, expected: string[]): Pro
     }, expected, {timeout: 5000});
 }
 
-async function waitForActivityBarOrderFileAsync(page: Page, expected: string[]): Promise<void> {
+async function waitForActivityBarOrderSavedAsync(page: Page, expected: string[]): Promise<void> {
     await page.waitForFunction(
         ({path, order}: {path: string; order: string[]}) => {
             const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
             if (typeof raw !== 'string') return false;
             try {
-                const parsed = JSON.parse(raw) as {order?: string[]};
-                return Array.isArray(parsed.order) && parsed.order.join('\n') === order.join('\n');
+                const parsed = JSON.parse(raw) as {activityBar?: {order?: string[]}};
+                return Array.isArray(parsed.activityBar?.order) && parsed.activityBar.order.join('\n') === order.join('\n');
             } catch {
                 return false;
             }
         },
-        {path: ACTIVITY_BAR_ORDER_FILE, order: expected},
+        {path: UI_STATE_FILE, order: expected},
         {timeout: 5000},
     );
 }
@@ -47,7 +47,7 @@ async function dragActivityBarItemBeforeAsync(page: Page, sourcePanel: string, t
 }
 
 test.describe('アクティビティバー並び替え', () => {
-    test('アイコンをドラッグして並び替えるとuserdataへ保存される', async ({page}) => {
+    test('アイコンをドラッグして並び替えるとui-stateへ保存される', async ({page}) => {
         await installMockApiAsync(page, createDefaultFileSystem());
         await page.goto('/');
 
@@ -56,16 +56,19 @@ test.describe('アクティビティバー並び替え', () => {
         const expected = ['search', 'files', 'references', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
         await dragActivityBarItemBeforeAsync(page, 'search', 'files');
         await waitForActivityBarOrderAsync(page, expected);
-        await waitForActivityBarOrderFileAsync(page, expected);
+        await waitForActivityBarOrderSavedAsync(page, expected);
 
-        const raw = await readMockFileAsync(page, ACTIVITY_BAR_ORDER_FILE);
-        expect(JSON.parse(raw)).toEqual({order: expected});
+        const raw = await readMockFileAsync(page, UI_STATE_FILE);
+        expect(raw).not.toContain('\r');
+        expect(raw.endsWith('\n')).toBe(true);
+        expect(raw).toContain('\n    "activityBar": {');
+        expect((JSON.parse(raw) as {activityBar: {order: string[]}}).activityBar.order).toEqual(expected);
     });
 
-    test('userdataに保存された順序で起動時に復元される', async ({page}) => {
+    test('ui-stateに保存された順序で起動時に復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         const savedOrder = ['history', 'sourceControl', 'erDiagram', 'bookmarks', 'search', 'references', 'files'];
-        fs[ACTIVITY_BAR_ORDER_FILE] = JSON.stringify({order: savedOrder});
+        fs[UI_STATE_FILE] = JSON.stringify({activityBar: {order: savedOrder}});
         await installMockApiAsync(page, fs);
         await page.goto('/');
 

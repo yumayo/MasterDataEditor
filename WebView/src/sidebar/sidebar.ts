@@ -39,19 +39,20 @@ export class Sidebar {
         tab: Tab,
         editor: Editor,
         openEditorTables: Map<string, EditorTable>,
-        activityBarOrder: ActivityBarItem[] | undefined,
         uiStateStore: UiStateStore
     ) {
         this.explorerElement = explorerElement;
         this.tab = tab;
         this.editor = editor;
         this.uiStateStore = uiStateStore;
+        const storedUiState = this.uiStateStore.getState();
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
             (item: ActivityBarItem) => { this.switchPanel(item); },
             () => { this.tab.openSettingsTab(); },
-            activityBarOrder
+            storedUiState.activityBar.order,
+            (order: ActivityBarItem[]) => { this.uiStateStore.setActivityBarOrder(order); },
         );
         this.activityBar.appendTo(explorerElement);
 
@@ -105,7 +106,7 @@ export class Sidebar {
         // ExplorerDirectory をファイルパネル内に構築
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 0);
 
-        const storedSidebarState = this.uiStateStore.getState().sidebar;
+        const storedSidebarState = storedUiState.sidebar;
         this.applyWidth(storedSidebarState.width);
 
         // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプし、実際に変化した量を返す

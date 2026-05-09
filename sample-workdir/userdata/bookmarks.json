@@ -1,1 +1,23 @@
-[{"tableName":"chara","rowKey":"21","columnName":"recover_hp","label":"10","createdAt":"2026-05-06T15:45:39.803Z"},{"tableName":"chara","rowKey":"19","columnName":"attack","label":"10","createdAt":"2026-05-06T15:45:41.747Z"}]
+[
+    {
+        "tableName": "chara",
+        "rowKey": "21",
+        "columnName": "recover_hp",
+        "label": "10",
+        "createdAt": "2026-05-06T15:45:39.803Z"
+    },
+    {
+        "tableName": "chara",
+        "rowKey": "19",
+        "columnName": "attack",
+        "label": "10",
+        "createdAt": "2026-05-06T15:45:41.747Z"
+    },
+    {
+        "tableName": "shop_product",
+        "rowKey": "89\t3\t34",
+        "columnName": "record_id",
+        "label": "34",
+        "createdAt": "2026-05-09T08:21:10.495Z"
+    }
+]

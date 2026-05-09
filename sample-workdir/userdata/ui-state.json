@@ -1,0 +1,34 @@
+{
+    "sidebar": {
+        "width": 422,
+        "activePanel": "files"
+    },
+    "activityBar": {
+        "order": [
+            "files",
+            "search",
+            "bookmarks",
+            "sourceControl",
+            "history",
+            "references",
+            "erDiagram"
+        ]
+    },
+    "bottomPanel": {
+        "visible": true,
+        "height": 481,
+        "activeTab": "problems"
+    },
+    "tabs": {
+        "open": [
+            "area",
+            "armor",
+            "armor_name",
+            "gacha",
+            "event",
+            "event_enemy",
+            "skill"
+        ],
+        "active": "skill"
+    }
+}

@@ -1,6 +1,7 @@
 import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE} from "../config/userdata-path";
+import {stringifyJsonForFile} from "../core/json-format";
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -21,8 +22,13 @@ export interface UiTabsState {
     active: string | null;
 }
 
+export interface UiActivityBarState {
+    order: UiActivityBarItem[];
+}
+
 export interface UiState {
     sidebar: UiSidebarState;
+    activityBar: UiActivityBarState;
     bottomPanel: UiBottomPanelState;
     tabs: UiTabsState;
 }
@@ -31,13 +37,16 @@ const DEFAULT_BOTTOM_PANEL_HEIGHT = 300;
 const MIN_BOTTOM_PANEL_HEIGHT = 80;
 const MAX_TAB_NAME_LENGTH = 256;
 const MAX_STORED_TABS = 100;
-const ACTIVITY_BAR_ITEMS: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
+export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
 
 const DEFAULT_UI_STATE: UiState = {
     sidebar: {
         width: DEFAULT_SIDEBAR_WIDTH,
         activePanel: 'files',
+    },
+    activityBar: {
+        order: [...DEFAULT_ACTIVITY_BAR_ORDER],
     },
     bottomPanel: {
         visible: false,
@@ -53,6 +62,9 @@ const DEFAULT_UI_STATE: UiState = {
 function cloneState(state: UiState): UiState {
     return {
         sidebar: {...state.sidebar},
+        activityBar: {
+            order: [...state.activityBar.order],
+        },
         bottomPanel: {...state.bottomPanel},
         tabs: {
             open: [...state.tabs.open],
@@ -71,9 +83,27 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
 }
 
 function normalizeActivityBarItem(value: unknown, fallback: UiActivityBarItem): UiActivityBarItem {
-    return typeof value === 'string' && ACTIVITY_BAR_ITEMS.includes(value as UiActivityBarItem)
+    return typeof value === 'string' && DEFAULT_ACTIVITY_BAR_ORDER.includes(value as UiActivityBarItem)
         ? value as UiActivityBarItem
         : fallback;
+}
+
+function isActivityBarItem(value: unknown): value is UiActivityBarItem {
+    return typeof value === 'string' && DEFAULT_ACTIVITY_BAR_ORDER.includes(value as UiActivityBarItem);
+}
+
+export function normalizeActivityBarOrder(rawOrder: unknown): UiActivityBarItem[] {
+    const result: UiActivityBarItem[] = [];
+    if (Array.isArray(rawOrder)) {
+        for (const item of rawOrder) {
+            if (!isActivityBarItem(item) || result.includes(item)) continue;
+            result.push(item);
+        }
+    }
+    for (const item of DEFAULT_ACTIVITY_BAR_ORDER) {
+        if (!result.includes(item)) result.push(item);
+    }
+    return result;
 }
 
 function normalizeBottomPanelTab(value: unknown, fallback: UiBottomPanelTab): UiBottomPanelTab {
@@ -115,6 +145,7 @@ function normalizeUiState(value: unknown): UiState {
     if (record === null) return cloneState(DEFAULT_UI_STATE);
 
     const sidebar = asRecord(record['sidebar']);
+    const activityBar = asRecord(record['activityBar']);
     const bottomPanel = asRecord(record['bottomPanel']);
     const defaults = DEFAULT_UI_STATE;
 
@@ -122,6 +153,9 @@ function normalizeUiState(value: unknown): UiState {
         sidebar: {
             width: clampNumber(sidebar?.['width'], MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, defaults.sidebar.width),
             activePanel: normalizeActivityBarItem(sidebar?.['activePanel'], defaults.sidebar.activePanel),
+        },
+        activityBar: {
+            order: normalizeActivityBarOrder(activityBar?.['order']),
         },
         bottomPanel: {
             visible: typeof bottomPanel?.['visible'] === 'boolean' ? bottomPanel['visible'] as boolean : defaults.bottomPanel.visible,
@@ -135,7 +169,7 @@ function normalizeUiState(value: unknown): UiState {
 export async function readStoredUiStateAsync(): Promise<UiState> {
     try {
         const json = await readFileAsync(UI_STATE_FILE);
-        return normalizeUiState(JSON.parse(json));
+        return normalizeUiState(JSON.parse(json) as unknown);
     } catch {
         return cloneState(DEFAULT_UI_STATE);
     }
@@ -165,6 +199,11 @@ export class UiStateStore {
 
     setActiveActivityBarItem(item: UiActivityBarItem): void {
         this.state.sidebar.activePanel = item;
+        this.schedulePersist();
+    }
+
+    setActivityBarOrder(order: UiActivityBarItem[]): void {
+        this.state.activityBar.order = normalizeActivityBarOrder(order);
         this.schedulePersist();
     }
 
@@ -211,7 +250,7 @@ export class UiStateStore {
         }
 
         this.writeInFlight = true;
-        const data = JSON.stringify(this.state);
+        const data = stringifyJsonForFile(this.state);
         writeFileAsync(UI_STATE_FILE, data)
             .catch((error: unknown) => {
                 console.error('[UiStateStore] save failed:', String(error));
