@@ -1,11 +1,16 @@
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 
+interface PayloadView {
+    lineNumbers: HTMLElement;
+    code: HTMLElement;
+}
+
 export class DebugApiDetailTab {
     private readonly element: HTMLElement;
     private readonly titleElement: HTMLElement;
     private readonly metaElement: HTMLElement;
-    private readonly requestPre: HTMLElement;
-    private readonly responsePre: HTMLElement;
+    private readonly requestView: PayloadView;
+    private readonly responseView: PayloadView;
 
     constructor(detail: DebugConsoleEntryDetail) {
         const element = document.createElement('div');
@@ -32,11 +37,11 @@ export class DebugApiDetailTab {
 
         const requestSection = this.createSection('Request');
         body.appendChild(requestSection.section);
-        this.requestPre = requestSection.pre;
+        this.requestView = requestSection.view;
 
         const responseSection = this.createSection('Response');
         body.appendChild(responseSection.section);
-        this.responsePre = responseSection.pre;
+        this.responseView = responseSection.view;
 
         this.update(detail);
     }
@@ -61,11 +66,11 @@ export class DebugApiDetailTab {
         this.titleElement.textContent = detail.apiName;
         this.titleElement.title = detail.apiName;
         this.renderMeta(detail);
-        this.requestPre.textContent = this.formatPayload(detail.request);
-        this.responsePre.textContent = this.formatPayload(detail.response ?? { success: false, error: detail.error ?? 'No response' });
+        this.renderPayload(this.requestView, this.formatPayload(detail.request));
+        this.renderPayload(this.responseView, this.formatPayload(detail.response ?? { success: false, error: detail.error ?? 'No response' }));
     }
 
-    private createSection(title: string): { section: HTMLElement; pre: HTMLElement } {
+    private createSection(title: string): { section: HTMLElement; view: PayloadView } {
         const section = document.createElement('section');
         section.classList.add('debug-api-detail-section');
 
@@ -74,11 +79,21 @@ export class DebugApiDetailTab {
         heading.textContent = title;
         section.appendChild(heading);
 
-        const pre = document.createElement('pre');
-        pre.classList.add('debug-api-detail-pre');
-        section.appendChild(pre);
+        const container = document.createElement('div');
+        container.classList.add('debug-api-detail-pre');
 
-        return { section, pre };
+        const lineNumbers = document.createElement('div');
+        lineNumbers.classList.add('debug-api-detail-line-numbers');
+        lineNumbers.setAttribute('aria-hidden', 'true');
+        container.appendChild(lineNumbers);
+
+        const code = document.createElement('pre');
+        code.classList.add('debug-api-detail-code');
+        container.appendChild(code);
+
+        section.appendChild(container);
+
+        return { section, view: { lineNumbers, code } };
     }
 
     private renderMeta(detail: DebugConsoleEntryDetail): void {
@@ -100,6 +115,15 @@ export class DebugApiDetailTab {
         span.textContent = text;
         span.title = text;
         this.metaElement.appendChild(span);
+    }
+
+    private renderPayload(view: PayloadView, value: string): void {
+        const normalizedValue = value.replace(/\r\n?/g, '\n');
+        const lineCount = normalizedValue.split('\n').length;
+        const lineNumbers = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n');
+        view.lineNumbers.textContent = lineNumbers;
+        view.lineNumbers.style.setProperty('--debug-api-detail-line-number-width', `${Math.max(4, String(lineCount).length)}ch`);
+        view.code.textContent = normalizedValue;
     }
 
     private formatPayload(value: unknown): string {

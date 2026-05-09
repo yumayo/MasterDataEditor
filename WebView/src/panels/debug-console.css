@@ -205,9 +205,10 @@
 
 .debug-api-detail-pre {
     flex: 1;
+    display: flex;
+    align-items: stretch;
     min-height: 0;
     margin: 0;
-    padding: 10px;
     overflow-x: auto;
     overflow-y: scroll;
     scrollbar-gutter: stable;
@@ -216,4 +217,35 @@
     line-height: 1.45;
     white-space: pre;
     tab-size: 4;
+}
+
+.debug-api-detail-line-numbers {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    flex: 0 0 auto;
+    width: var(--debug-api-detail-line-number-width, 4ch);
+    min-width: 4ch;
+    align-self: flex-start;
+    min-height: max-content;
+    padding: 10px 8px 10px 10px;
+    border-right: 1px solid var(--subtle-border-color);
+    background-color: var(--background-color);
+    color: var(--secondary-font-color);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    white-space: pre;
+}
+
+.debug-api-detail-code {
+    flex: 1 0 auto;
+    min-width: max-content;
+    margin: 0;
+    padding: 10px;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    white-space: pre;
+    tab-size: inherit;
 }

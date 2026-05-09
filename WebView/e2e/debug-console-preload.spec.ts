@@ -128,6 +128,27 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         const detailTab = page.locator('.debug-api-detail-tab');
         await expect(detailTab).toBeVisible();
         await expect(detailTab.locator('.debug-api-detail-pre').first()).toHaveCSS('overflow-y', 'scroll');
+        const lineNumbers = detailTab.locator('.debug-api-detail-line-numbers');
+        await expect(lineNumbers).toHaveCount(2);
+        await expect(lineNumbers.first()).toHaveCSS('text-align', 'right');
+        await expect(lineNumbers.nth(1)).toHaveCSS('text-align', 'right');
+        const lineNumberMetrics = await detailTab.evaluate(() => {
+            return Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-section')).map(section => {
+                const numbers = section.querySelector<HTMLElement>('.debug-api-detail-line-numbers');
+                const code = section.querySelector<HTMLElement>('.debug-api-detail-code');
+                if (numbers === null || code === null) throw new Error('API詳細の行番号要素が見つかりません');
+                return {
+                    firstLineNumber: numbers.textContent?.split('\n')[0],
+                    lineNumberCount: numbers.textContent?.split('\n').length,
+                    codeLineCount: code.textContent?.split('\n').length,
+                };
+            });
+        });
+        expect(lineNumberMetrics).toHaveLength(2);
+        for (const metric of lineNumberMetrics) {
+            expect(metric.firstLineNumber).toBe('1');
+            expect(metric.lineNumberCount).toBe(metric.codeLineCount);
+        }
         await expect(detailTab).toContainText('find_files_request');
         await expect(detailTab).toContainText('find_files_response');
         await expect(detailTab).toContainText('"success": true');
@@ -207,16 +228,22 @@ test.describe('DEBUG CONSOLE preload記録', () => {
 
         const metrics = await detailTab.evaluate(() => {
             const preElements = Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-tab .debug-api-detail-pre'));
+            const lineNumberElements = Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-tab .debug-api-detail-line-numbers'));
+            const codeElements = Array.from(document.querySelectorAll<HTMLElement>('.debug-api-detail-tab .debug-api-detail-code'));
             const outer = document.querySelector<HTMLElement>('.editor-left-pane');
-            if (preElements.length !== 2 || outer === null) throw new Error('API詳細のスクロール要素が見つかりません');
+            if (preElements.length !== 2 || lineNumberElements.length !== 2 || codeElements.length !== 2 || outer === null) throw new Error('API詳細のスクロール要素が見つかりません');
             return {
                 requestCanScroll: preElements[0].scrollHeight > preElements[0].clientHeight,
                 responseCanScroll: preElements[1].scrollHeight > preElements[1].clientHeight,
+                requestLineNumbersFillContent: lineNumberElements[0].offsetHeight >= codeElements[0].offsetHeight,
+                responseLineNumbersFillContent: lineNumberElements[1].offsetHeight >= codeElements[1].offsetHeight,
                 outerOverflow: outer.scrollHeight - outer.clientHeight,
             };
         });
         expect(metrics.requestCanScroll).toBe(true);
         expect(metrics.responseCanScroll).toBe(true);
+        expect(metrics.requestLineNumbersFillContent).toBe(true);
+        expect(metrics.responseLineNumbersFillContent).toBe(true);
         expect(metrics.outerOverflow).toBeLessThanOrEqual(1);
 
         const scrollState = await detailTab.evaluate(() => {
