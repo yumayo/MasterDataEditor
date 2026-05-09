@@ -1,4 +1,5 @@
 import {ROW_TOTAL_HEIGHT_PX} from "../core/constant";
+import {getLayoutBorderBoxHeightPx} from "../core/layout-metrics";
 
 export interface RenderedDataRowRange {
     start: number;
@@ -518,7 +519,7 @@ export class VirtualScrollController {
     private measureHeaderHeight(): void {
         const headerRow = this.tableElement.children[0] as HTMLElement | null;
         if (headerRow === null) return;
-        const measured = headerRow.getBoundingClientRect().height;
+        const measured = getLayoutBorderBoxHeightPx(headerRow);
         if (measured > 0) this.actualHeaderHeight = measured;
     }
 
@@ -540,7 +541,7 @@ export class VirtualScrollController {
         // 例: 125%スケーリングでは border 1px が 0.8px にレンダリングされ、行高さが 20.8px になるが
         // offsetHeight は 21 を返す。スペーサー高さ計算にこの誤差が蓄積すると scrollHeight が変動し
         // スクロールバーのつまみ位置がずれる。getBoundingClientRect().height は小数精度を持つ。
-        const measured = firstDataRow.getBoundingClientRect().height;
+        const measured = getLayoutBorderBoxHeightPx(firstDataRow);
         if (measured > 0) this.actualRowHeight = measured;
     }
 

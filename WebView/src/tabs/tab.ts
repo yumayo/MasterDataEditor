@@ -144,6 +144,9 @@ export class Tab {
     /** 次回タブ配置後に端寄せ状態を維持するか */
     private preserveTabScrollEdgeAfterLayout: boolean;
 
+    /** 表示倍率・viewport変化後のEditorTable再レイアウトをrequestAnimationFrameでまとめるためのID */
+    private editorTableLayoutRefreshFrame: number | false;
+
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
@@ -271,6 +274,7 @@ export class Tab {
         this.tabScrollPositionPreference = { kind: 'edge', edge: 'left' };
         this.tabScrollHadStableOverflow = false;
         this.preserveTabScrollEdgeAfterLayout = false;
+        this.editorTableLayoutRefreshFrame = false;
         this.openEditorTables = new Map();
         this.store = store;
         this.referenceDataCache = referenceDataCache;
@@ -324,8 +328,12 @@ export class Tab {
             tabScrollArea.addEventListener('scroll', () => { this.updateTabScrollPositionPreference(tabScrollArea); });
         }
 
-        window.addEventListener('resize', () => { this.scheduleTabLayout(false, true); });
+        window.addEventListener('resize', () => {
+            this.scheduleTabLayout(false, true);
+            this.scheduleActiveEditorTableLayoutRefresh();
+        });
         window.addEventListener('tab-wrap-enabled-changed', () => { this.scheduleTabLayout(false, true); });
+        this.installViewportScaleChangeListeners();
     }
 
     /**
@@ -436,6 +444,55 @@ export class Tab {
             this.preserveTabScrollEdgeAfterLayout = false;
             this.layoutTabButtons(shouldScrollActiveTab, shouldPreserveScrollEdge);
         });
+    }
+
+    private scheduleActiveEditorTableLayoutRefresh(): void {
+        if (this.editorTableLayoutRefreshFrame !== false) {
+            cancelAnimationFrame(this.editorTableLayoutRefreshFrame);
+        }
+        this.editorTableLayoutRefreshFrame = requestAnimationFrame(() => {
+            this.editorTableLayoutRefreshFrame = false;
+            this.refreshActiveEditorTableLayout();
+        });
+    }
+
+    private refreshActiveEditorTableLayout(): void {
+        if (this.activeTabName === false) return;
+        const activeState = this.tabStates.get(this.activeTabName);
+        if (!activeState) return;
+        const editorTable = activeState.editorTable;
+        if (editorTable.getFrozenColumnCount() === 0 && editorTable.getFrozenRowCount() === 0) return;
+        editorTable.refreshDetachedHeaderLayout();
+        editorTable.refreshSelectionDisplay();
+        this.editor.syncActiveTableScrollState();
+    }
+
+    private installViewportScaleChangeListeners(): void {
+        const scheduleRefresh = () => { this.scheduleActiveEditorTableLayoutRefresh(); };
+        window.visualViewport?.addEventListener('resize', scheduleRefresh);
+        window.visualViewport?.addEventListener('scroll', scheduleRefresh);
+
+        const observedElements = [document.documentElement, document.body].filter((element): element is HTMLElement => element instanceof HTMLElement);
+        if (observedElements.length > 0) {
+            const observer = new MutationObserver(scheduleRefresh);
+            for (const element of observedElements) {
+                observer.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
+            }
+        }
+
+        let resolutionQuery: MediaQueryList | false = false;
+        const bindResolutionQuery = () => {
+            if (resolutionQuery !== false) {
+                resolutionQuery.removeEventListener('change', onResolutionChange);
+            }
+            resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+            resolutionQuery.addEventListener('change', onResolutionChange);
+        };
+        const onResolutionChange = () => {
+            bindResolutionQuery();
+            scheduleRefresh();
+        };
+        bindResolutionQuery();
     }
 
     private layoutTabButtons(scrollActiveTabAfterLayout: boolean, preserveScrollEdgeAfterLayout: boolean): void {

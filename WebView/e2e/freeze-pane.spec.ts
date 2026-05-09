@@ -1054,6 +1054,38 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
+            'ズームアウト後も固定列セルと通常セルの位置と幅が一致する',
+            async ({ page }) => {
+                const fs = createQuadrantHeaderOffsetRegressionFileSystem();
+                await installMockApiAsync(page, fs);
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'quadrant_header_offset');
+
+                await page.evaluate(() => {
+                    document.documentElement.style.zoom = '0.75';
+                });
+                await page.waitForTimeout(50);
+
+                const lastFrozenHeader = getVisibleColumnHeaderLocator(table, 1);
+                const firstNonFrozenHeader = getVisibleColumnHeaderLocator(table, 2);
+                const lastFrozenHeaderBox = await lastFrozenHeader.boundingBox();
+                const firstNonFrozenHeaderBox = await firstNonFrozenHeader.boundingBox();
+                if (lastFrozenHeaderBox === null || firstNonFrozenHeaderBox === null) {
+                    throw new Error('列ヘッダーの境界矩形が取得できません');
+                }
+                expect(Math.abs(lastFrozenHeaderBox.x + lastFrozenHeaderBox.width - firstNonFrozenHeaderBox.x)).toBeLessThanOrEqual(1);
+
+                for (const rowIndex of [12, 24, 40]) {
+                    const fixedCellRect = await getVisibleCellRectAsync(table, rowIndex, 1);
+                    const normalCellRect = await getVisibleCellRectAsync(table, rowIndex, 2);
+                    expect(Math.abs(fixedCellRect.top - normalCellRect.top)).toBeLessThanOrEqual(1);
+                    expect(Math.abs(fixedCellRect.height - normalCellRect.height)).toBeLessThanOrEqual(1);
+                }
+            },
+        );
+
+        test(
             '列固定後に行固定して大きくスクロールしても固定列が維持される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_combo');
