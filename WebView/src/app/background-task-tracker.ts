@@ -40,7 +40,7 @@ export class BackgroundTaskTracker {
         try {
             const result = await promise;
             const elapsedUs = Math.round((performance.now() - startTime) * 1000);
-            this.debugConsole.appendEntry(label, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
+            this.debugConsole.appendEntry(detail?.apiName ?? label, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
             return result;
         } catch (e: unknown) {
             const elapsedUs = Math.round((performance.now() - startTime) * 1000);
@@ -48,7 +48,7 @@ export class BackgroundTaskTracker {
             if (completedDetail !== undefined && completedDetail.error === undefined) {
                 completedDetail.error = e instanceof Error ? e.message : String(e);
             }
-            this.debugConsole.appendEntry(label, elapsedUs, 'error', caller, completedDetail);
+            this.debugConsole.appendEntry(detail?.apiName ?? label, elapsedUs, 'error', caller, completedDetail);
             throw e;
         } finally {
             this.tasks.delete(id);
@@ -63,7 +63,7 @@ export class BackgroundTaskTracker {
     recordCacheHit(label: string, startTime: number, detail?: DebugConsoleEntryDetail): void {
         const caller = parseCallerInfo(BackgroundTaskTracker.SKIP_PATTERNS);
         const elapsedUs = Math.round((performance.now() - startTime) * 1000);
-        this.debugConsole.appendEntry(`${label} (cache)`, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
+        this.debugConsole.appendEntry(detail?.apiName ?? `${label} (cache)`, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
     }
 
     private completeDetail(detail: DebugConsoleEntryDetail | undefined, status: 'success' | 'error', caller: string, durationUs: number): DebugConsoleEntryDetail | undefined {

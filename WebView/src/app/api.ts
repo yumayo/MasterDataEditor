@@ -324,7 +324,7 @@ function postMessageAsync<T>(
     apiName: string,
     requestData: Record<string, unknown>
 ): Promise<T> {
-    const detail = createApiDebugDetail(apiName);
+    const detail = createApiDebugDetail(apiName, requestData);
     const promise = sendRequest<T>(apiName, requestData, detail);
     // トラッカーが設定されている場合はバックグラウンドタスクとして追跡する
     if (tracker !== false) {
@@ -425,9 +425,9 @@ function sendRequest<T>(
     });
 }
 
-function createApiDebugDetail(apiName: string): DebugConsoleEntryDetail {
+function createApiDebugDetail(apiName: string, requestData: Record<string, unknown>): DebugConsoleEntryDetail {
     return {
-        apiName,
+        apiName: createApiDebugLabel(apiName, requestData, false),
         requestId: String(nextRequestId++),
         request: {},
         startedAt: new Date().toISOString(),
@@ -441,7 +441,7 @@ function createCacheDebugDetail<T>(
 ): DebugConsoleEntryDetail {
     const requestId = String(nextRequestId++);
     return {
-        apiName: `${apiName} (cache)`,
+        apiName: createApiDebugLabel(apiName, requestData, true),
         requestId,
         request: {
             type: `${apiName}_request`,
@@ -457,6 +457,26 @@ function createCacheDebugDetail<T>(
         },
         startedAt: new Date().toISOString(),
     };
+}
+
+function createApiDebugLabel(apiName: string, requestData: Record<string, unknown>, cache: boolean): string {
+    const target = getApiDebugTarget(apiName, requestData);
+    const label = target === false ? apiName : `${apiName} (${target})`;
+    return cache ? `${label} (cache)` : label;
+}
+
+function getApiDebugTarget(apiName: string, requestData: Record<string, unknown>): string | false {
+    if (apiName === 'read_file' || apiName === 'write_file') {
+        return getDebugString(requestData.filename);
+    }
+    if (apiName === 'find_files' || apiName === 'read_files') {
+        return getDebugString(requestData.directory);
+    }
+    return false;
+}
+
+function getDebugString(value: unknown): string | false {
+    return typeof value === 'string' && value.length > 0 ? value : false;
 }
 
 function writeApiLog(phase: 'request' | 'response', apiName: string, requestId: string, payload: unknown): void {

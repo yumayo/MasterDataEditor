@@ -77,17 +77,10 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         const rowCount = await rows.count();
         expect(rowCount, 'preload時のAPI通信ログが1件以上記録されていること').toBeGreaterThanOrEqual(4);
 
-        // find_files ラベルを持つエントリが存在すること
-        const findFilesLabels = debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'find_files' });
-        await expect(findFilesLabels.first()).toBeVisible();
-        const findFilesCount = await findFilesLabels.count();
-        expect(findFilesCount, 'find_files のAPI呼び出しが2回記録されていること').toBeGreaterThanOrEqual(2);
-
-        // read_file ラベルを持つエントリが存在すること
-        const readFileLabels = debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'read_file' });
-        await expect(readFileLabels.first()).toBeVisible();
-        const readFileCount = await readFileLabels.count();
-        expect(readFileCount, 'read_file のAPI呼び出しが2回以上記録されていること').toBeGreaterThanOrEqual(2);
+        await expect(debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'find_files (schema)' }).first()).toBeVisible();
+        await expect(debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'find_files (data)' }).first()).toBeVisible();
+        await expect(debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'read_file (schema/test.json)' }).first()).toBeVisible();
+        await expect(debugConsole.locator('.debug-console-row .debug-console-col-label', { hasText: 'read_file (data/test.csv)' }).first()).toBeVisible();
     });
 
     test('preload時のAPI通信はすべて成功ステータスで記録されている', async ({ page, mockFileSystem }) => {
@@ -106,7 +99,7 @@ test.describe('DEBUG CONSOLE preload記録', () => {
 
         // preload 由来のエントリ（find_files, read_file）にエラーがないことを確認する。
         // git_status 等の preload 以外のAPI呼び出しはテスト環境でエラーになり得るため除外する。
-        const preloadErrorRows = debugConsole.locator('.debug-console-row.debug-console-row-error .debug-console-col-label', { hasText: /^(find_files|read_file)$/ });
+        const preloadErrorRows = debugConsole.locator('.debug-console-row.debug-console-row-error .debug-console-col-label', { hasText: /^(find_files|read_file)( \(.+\))?$/ });
         const preloadErrorCount = await preloadErrorRows.count();
         expect(preloadErrorCount, 'preload API通信にエラーステータスのエントリがないこと').toBe(0);
     });
@@ -154,7 +147,7 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(detailTab).toContainText('"success": true');
 
         const writeFileRow = debugConsole.locator('.debug-console-row', {
-            has: page.locator('.debug-console-col-label', { hasText: 'write_file' }),
+            has: page.locator('.debug-console-col-label', { hasText: 'write_file (userdata/ui-state.json)' }),
         }).first();
         await expect(writeFileRow).toBeVisible();
         await writeFileRow.click();
@@ -170,7 +163,7 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(debugConsole).toBeVisible();
 
         const cacheRow = debugConsole.locator('.debug-console-row', {
-            has: page.locator('.debug-console-col-label', { hasText: 'find_files (cache)' }),
+            has: page.locator('.debug-console-col-label', { hasText: 'find_files (schema) (cache)' }),
         }).first();
         await expect(cacheRow).toBeVisible();
         await expect(cacheRow.locator('.debug-console-detail-button')).toHaveCount(0);
