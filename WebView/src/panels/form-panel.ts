@@ -233,37 +233,53 @@ export class FormPanel {
         const page = this.navStack[0];
         this.clearCommitTimers();
         this.hideReferenceDropdown();
+        const content = this.getContentElement();
+        const keepCurrentContentVisible = content.childElementCount > 0 && !this.panelElement.classList.contains('form-panel--preparing');
+
         this.nodeDataById.clear();
         this.nodeElementsById.clear();
         this.nodeMetaById.clear();
         this.nodeRenderRequestIds.clear();
-        this.panelElement.classList.add('form-panel--preparing');
+        this.panelElement.classList.toggle('form-panel--updating', keepCurrentContentVisible);
+        this.panelElement.setAttribute('aria-busy', 'true');
+        if (!keepCurrentContentVisible) this.panelElement.classList.add('form-panel--preparing');
 
-        const content = this.getContentElement();
-        content.replaceChildren(this.buildMessage('読み込み中...', 'form-panel-loading'));
+        const nextContent = document.createElement('div');
 
         if (page === undefined) {
-            content.replaceChildren(this.buildMessage('フォームビューを表示する行を選択してください', 'form-panel-not-found'));
-            this.revealIfCurrent(requestId);
+            nextContent.replaceChildren(this.buildMessage('フォームビューを表示する行を選択してください', 'form-panel-not-found'));
+            this.replaceContentIfCurrent(content, nextContent, requestId);
             return;
         }
 
         try {
-            await this.renderNodeIntoAsync(content, 'root', page.tableName, page.pkValue, 0, null, requestId);
+            await this.renderNodeIntoAsync(nextContent, 'root', page.tableName, page.pkValue, 0, null, requestId, true, nextContent);
             if (requestId !== this.currentRequestId) return;
-            this.revealIfCurrent(requestId);
+            this.replaceContentIfCurrent(content, nextContent, requestId);
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
-            content.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
-            this.revealIfCurrent(requestId);
+            this.nodeDataById.clear();
+            this.nodeElementsById.clear();
+            this.nodeMetaById.clear();
+            this.nodeRenderRequestIds.clear();
+            nextContent.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
+            this.replaceContentIfCurrent(content, nextContent, requestId);
             console.error('[FormPanel] renderCurrentPageAsync failed:', err);
             this.notification.show('フォームの表示に失敗しました');
         }
     }
 
+    private replaceContentIfCurrent(content: HTMLElement, nextContent: HTMLElement, requestId: number): void {
+        if (requestId !== this.currentRequestId) return;
+        content.replaceChildren(...Array.from(nextContent.childNodes));
+        this.revealIfCurrent(requestId);
+    }
+
     private revealIfCurrent(requestId: number): void {
         if (requestId !== this.currentRequestId) return;
         this.panelElement.classList.remove('form-panel--preparing');
+        this.panelElement.classList.remove('form-panel--updating');
+        this.panelElement.removeAttribute('aria-busy');
     }
 
     private async renderNodeIntoAsync(
@@ -275,6 +291,7 @@ export class FormPanel {
         parentNodeId: string | null,
         requestId: number,
         includeReferences: boolean = true,
+        renderRoot: HTMLElement = this.panelElement,
     ): Promise<void> {
         const nodeRequestId = ++this.nextNodeRenderRequestId;
         this.nodeRenderRequestIds.set(nodeId, nodeRequestId);
@@ -333,11 +350,11 @@ export class FormPanel {
                 node.appendChild(this.buildReferencesContainer());
 
                 await Promise.all([
-                    this.refreshValidationAsync(requestId),
-                    this.renderReferencesAsync(nodeId, requestId),
+                    this.refreshValidationAsync(requestId, renderRoot),
+                    this.renderReferencesAsync(nodeId, requestId, renderRoot),
                 ]);
             } else {
-                await this.refreshValidationAsync(requestId);
+                await this.refreshValidationAsync(requestId, renderRoot);
             }
         } catch (err) {
             if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
@@ -594,15 +611,15 @@ export class FormPanel {
         this.commitTimers.set(key, timer);
     }
 
-    private async refreshValidationAsync(requestId: number): Promise<void> {
+    private async refreshValidationAsync(requestId: number, renderRoot: HTMLElement = this.panelElement): Promise<void> {
         if (this.validationPanel === false) {
-            this.renderValidationErrors([]);
+            this.renderValidationErrors([], renderRoot);
             return;
         }
 
         const errors = await this.validationPanel.runAndUpdateAsync();
         if (requestId !== this.currentRequestId) return;
-        this.renderValidationErrors(errors);
+        this.renderValidationErrors(errors, renderRoot);
     }
 
     private async showReferenceDropdownForInputAsync(
@@ -962,8 +979,8 @@ export class FormPanel {
         return result;
     }
 
-    private renderValidationErrors(errors: ValidationError[]): void {
-        for (const field of Array.from(this.panelElement.querySelectorAll('.form-panel-field'))) {
+    private renderValidationErrors(errors: ValidationError[], renderRoot: HTMLElement = this.panelElement): void {
+        for (const field of Array.from(renderRoot.querySelectorAll('.form-panel-field'))) {
             field.classList.remove('form-panel-field--invalid');
             const fieldErrors = field.querySelector('.form-panel-field-errors');
             if (fieldErrors !== null) fieldErrors.replaceChildren();
@@ -971,7 +988,7 @@ export class FormPanel {
 
         for (const data of this.nodeDataById.values()) {
             const nodeElement = this.nodeElementsById.get(data.nodeId);
-            if (nodeElement === undefined || !nodeElement.isConnected) continue;
+            if (nodeElement === undefined || !renderRoot.contains(nodeElement)) continue;
             const rowErrors = errors.filter(error => error.tableName === data.tableName && error.rowIndex === data.rowIndex);
 
             for (const error of rowErrors) {
@@ -990,11 +1007,11 @@ export class FormPanel {
         }
     }
 
-    private async renderReferencesAsync(nodeId: string, requestId: number): Promise<void> {
+    private async renderReferencesAsync(nodeId: string, requestId: number, renderRoot: HTMLElement = this.panelElement): Promise<void> {
         const data = this.nodeDataById.get(nodeId);
         if (data === undefined) return;
         const nodeElement = this.nodeElementsById.get(nodeId);
-        if (nodeElement === undefined || !nodeElement.isConnected) return;
+        if (nodeElement === undefined) return;
         const referencesContainer = nodeElement.querySelector('.form-panel-references') as HTMLElement | null;
         const body = nodeElement.querySelector('.form-panel-references-body') as HTMLElement | null;
         if (body === null) return;
@@ -1025,7 +1042,7 @@ export class FormPanel {
                 if (section.attached) {
                     const attachedHost = sectionElement.querySelector('.form-panel-attached-host') as HTMLElement | null;
                     if (attachedHost !== null) {
-                        await this.renderAttachedReferenceSectionAsync(attachedHost, section, nodeId, requestId);
+                        await this.renderAttachedReferenceSectionAsync(attachedHost, section, nodeId, requestId, renderRoot);
                         if (requestId !== this.currentRequestId) return;
                     }
                 }
@@ -1193,6 +1210,7 @@ export class FormPanel {
         section: ReferenceSection,
         parentNodeId: string,
         requestId: number,
+        renderRoot: HTMLElement = this.panelElement,
     ): Promise<void> {
         const item = section.items[0];
         if (item === undefined || !item.canOpen) return;
@@ -1201,7 +1219,7 @@ export class FormPanel {
         const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue);
         const parentMeta = this.nodeMetaById.get(parentNodeId);
         const childDepth = parentMeta === undefined ? 1 : parentMeta.depth + 1;
-        await this.renderNodeIntoAsync(host, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, requestId, false);
+        await this.renderNodeIntoAsync(host, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, requestId, false, renderRoot);
     }
 
     private hasVisibleReferenceItems(section: ReferenceSection, parentNodeId: string): boolean {

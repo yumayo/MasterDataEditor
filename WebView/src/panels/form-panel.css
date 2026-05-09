@@ -22,6 +22,10 @@
     visibility: hidden;
 }
 
+.form-panel--updating {
+    pointer-events: none;
+}
+
 .form-panel-content {
     flex: 1;
     overflow-y: auto;

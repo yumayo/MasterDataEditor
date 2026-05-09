@@ -802,4 +802,20 @@ test.describe('フォームビューの表示タイミング', () => {
         await expect(formPanel.locator('.form-panel-node--root')).toHaveAttribute('data-table-name', 'quest');
         await expect(formPanel.locator('.form-panel-references')).toContainText('参照先: enemy_id');
     });
+
+    test('行選択でフォームを更新中も現在の内容を表示し続けること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+        await page.locator('#toolbar .toolbar-button-form-toggle').click();
+
+        const formPanel = page.locator('.form-panel');
+        const idInput = formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input');
+        await expect(formPanel).toBeVisible({ timeout: 5000 });
+        await expect(idInput).toHaveValue('1');
+
+        await table.locator('.editor-table-row-header').nth(1).click();
+
+        await expect(formPanel).toBeVisible({ timeout: 100 });
+        await expect(idInput).toHaveValue('1', { timeout: 100 });
+        await expect(idInput).toHaveValue('2', { timeout: 5000 });
+    });
 });
