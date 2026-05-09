@@ -60,8 +60,8 @@ export class GitDiffTracker {
             const pk = GitDiffTracker.buildCompositeKey(row, headPkIndices);
             // HEAD行をcurrentHeader順に並べ替えて格納する
             const remapped = GitDiffTracker.remapRow(row, headHeaderMap, currentHeader);
-            // PK重複は後勝ち（HEADデータの整合性はgitが保証する前提）
-            map.set(pk, remapped);
+            // PK重複時はCSV上で最初に見つかった行を採用する（findFirst）。
+            if (!map.has(pk)) map.set(pk, remapped);
         }
         return map;
     }

@@ -2,45 +2,13 @@
  * 差分ビュー
  * HEAD版CSVと現在版CSVの差分を左右2ペインで表示する読み取り専用ビュー
  */
-import {GitDiffTracker} from "./git-diff-tracker";
-
-/**
- * スキーマJSONのヘッダー列定義
- */
-interface SchemaColumn {
-    key: number;
-    name: string;
-    type: string;
-}
+import {buildDiffRows, DiffRow} from "./diff-rows";
 
 /**
  * スキーマJSON
  */
 interface SchemaJson {
-    header: SchemaColumn[];
     primary_key: string[];
-}
-
-/**
- * 差分計算結果の1行分（discriminated union）
- * kind に応じて保持するフィールドが異なるため、as キャストが不要になる
- */
-type DiffRow =
-    | { kind: 'modified';   headValues: string[]; currentValues: string[]; changedColumnIndices: Set<number> }
-    | { kind: 'unchanged';  headValues: string[]; currentValues: string[] }
-    | { kind: 'deleted';    headValues: string[] }
-    | { kind: 'added';      currentValues: string[] };
-
-/**
- * CSVを行と列に分割する
- * ヘッダー行を除いたデータ行と、PK列インデックスを返す
- */
-function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
-    const lines = csvText.split('\n').filter(l => l.trim() !== '');
-    if (lines.length === 0) return { header: [], rows: [] };
-    const header = lines[0].split(',').map(c => c.trim());
-    const rows = lines.slice(1).map(l => l.split(',').map(c => c.trim()));
-    return { header, rows };
 }
 
 /**
@@ -55,95 +23,7 @@ export class DiffView {
         const schema = JSON.parse(schemaJson) as SchemaJson;
         const primaryKeyNames: readonly string[] = schema.primary_key;
 
-        const head = parseCsv(headCsv);
-        const current = parseCsv(currentCsv);
-
-        // 表示に使う列ヘッダーは現在版を優先し、なければHEAD版を使う
-        const displayColumns = current.header.length > 0 ? current.header : head.header;
-
-        // 列名→元ヘッダー上のインデックスのマップを構築する（GitDiffTracker.remapRow で使用）
-        const headHeaderMap = GitDiffTracker.buildHeaderIndexMap(head.header);
-        const currentHeaderMap = GitDiffTracker.buildHeaderIndexMap(current.header);
-
-        // 複合PKの各列インデックスを取得する（HEAD版・現在版でそれぞれ独立して解決する）
-        const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
-        const pkIndicesInCurrent = primaryKeyNames.map(name => current.header.indexOf(name));
-
-        // HEAD版・現在版のデータを複合PKキーでMapに変換する
-        // 複合PKキー = 全PK列値をタブ区切りで連結した文字列
-        // PKキーが重複している場合は行番号サフィックスを付けて一意にする
-        const buildUniqueKeyMap = (rows: string[][], pkIndices: number[]): Map<string, string[]> => {
-            const map = new Map<string, string[]>();
-            // 各rawPKが何行目で使われたかを記録する（重複検出用）
-            const seenIndices = new Map<string, number>();
-            for (let i = 0; i < rows.length; i++) {
-                const row = rows[i];
-                // GitDiffTracker.buildCompositeKey() で複合PKキーを生成する（コピペ排除）
-                const rawPk = GitDiffTracker.buildCompositeKey(row, pkIndices);
-                if (!seenIndices.has(rawPk)) {
-                    // 初出: rawPKをそのまま使う。後で重複が判明した場合に備えてインデックスを記録する
-                    seenIndices.set(rawPk, i);
-                    map.set(rawPk, row);
-                } else {
-                    // 重複: 初出エントリを "_row<初出index>" キーに移動してから新エントリを追加する
-                    const firstIndex = seenIndices.get(rawPk)!;
-                    if (map.has(rawPk)) {
-                        // 初出エントリがまだ rawPK キーにある場合は移動する（2回目の重複時のみ）
-                        const firstRow = map.get(rawPk)!;
-                        map.delete(rawPk);
-                        map.set(rawPk + '_row' + firstIndex, firstRow);
-                        // seenIndices の値を -1 にして「移動済み」を示す（3回目以降は rawPK で map.has しない）
-                        seenIndices.set(rawPk, -1);
-                    }
-                    map.set(rawPk + '_row' + i, row);
-                }
-            }
-            return map;
-        };
-
-        const headMap = buildUniqueKeyMap(head.rows, pkIndicesInHead);
-        const currentMap = buildUniqueKeyMap(current.rows, pkIndicesInCurrent);
-
-        // 全PK値を収集してソートする
-        const allPkValues = new Set<string>([...headMap.keys(), ...currentMap.keys()]);
-        const sortedPkValues = [...allPkValues].sort((a, b) => {
-            const numA = Number(a);
-            const numB = Number(b);
-            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-            return a.localeCompare(b);
-        });
-
-        // 差分行リストを構築する
-        const diffRows: DiffRow[] = [];
-        for (const pk of sortedPkValues) {
-            // Map.has() で存在を確認してから Map.get() で値を取得する（undefined を使わない）
-            const hasHead = headMap.has(pk);
-            const hasCurrent = currentMap.has(pk);
-            const headRow = hasHead ? headMap.get(pk)! : null;
-            const currentRow = hasCurrent ? currentMap.get(pk)! : null;
-
-            if (headRow !== null && currentRow !== null) {
-                // 両方に存在 → 表示ヘッダー順に並べ替えてからセル単位で比較する
-                const remappedHead = GitDiffTracker.remapRow(headRow, headHeaderMap, displayColumns);
-                const remappedCurrent = GitDiffTracker.remapRow(currentRow, currentHeaderMap, displayColumns);
-                const changedIndices = new Set<number>();
-                for (let i = 0; i < displayColumns.length; i++) {
-                    if (remappedHead[i] !== remappedCurrent[i]) changedIndices.add(i);
-                }
-                const kind = changedIndices.size > 0 ? 'modified' as const : 'unchanged' as const;
-                if (kind === 'modified') {
-                    diffRows.push({ kind, headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices });
-                } else {
-                    diffRows.push({ kind, headValues: remappedHead, currentValues: remappedCurrent });
-                }
-            } else if (headRow !== null) {
-                // HEAD版にのみ存在 → 削除行（表示ヘッダー順に並べ替える）
-                diffRows.push({ kind: 'deleted', headValues: GitDiffTracker.remapRow(headRow, headHeaderMap, displayColumns) });
-            } else if (currentRow !== null) {
-                // 現在版にのみ存在 → 追加行（表示ヘッダー順に並べ替える）
-                diffRows.push({ kind: 'added', currentValues: GitDiffTracker.remapRow(currentRow, currentHeaderMap, displayColumns) });
-            }
-        }
+        const { diffRows, displayHeader } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
 
         // ルート要素を構築する
         this.element = document.createElement('div');
@@ -168,12 +48,12 @@ export class DiffView {
         rightPane.appendChild(rightLabel);
 
         // 列ヘッダー行を追加する
-        leftPane.appendChild(this.buildHeaderRow(displayColumns));
-        rightPane.appendChild(this.buildHeaderRow(displayColumns));
+        leftPane.appendChild(this.buildHeaderRow(displayHeader));
+        rightPane.appendChild(this.buildHeaderRow(displayHeader));
 
         // 各差分行をレンダリングする
         for (const row of diffRows) {
-            const { leftRow, rightRow } = this.buildDiffRowPair(row, displayColumns);
+            const { leftRow, rightRow } = this.buildDiffRowPair(row, displayHeader);
             leftPane.appendChild(leftRow);
             rightPane.appendChild(rightRow);
         }

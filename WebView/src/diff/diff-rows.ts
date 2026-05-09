@@ -38,52 +38,109 @@ function parseCsv(csvText: string): { header: string[]; rows: string[][] } {
 }
 
 /**
- * CSV行を複合PKキー値でMapに変換する（順序はarrayで保持する）
- * 複合PKキー = 全PK列値をタブ区切りで連結した文字列（単一PKは列値のみ）
- * PKキーが重複している行は "_row<index>" サフィックスで一意化する
+ * 比較用キーを構築する。
+ * 通常はPKのみで照合し、HEAD/Current のどちらかでPKが重複している値だけ
+ * CSVデータ行インデックスも含めて照合する。
  */
-function buildUniqueKeyMap(rows: string[][], pkIndices: number[]): { map: Map<string, string[]>; order: string[] } {
-    const map = new Map<string, string[]>();
-    const order: string[] = [];
-    const seenIndices = new Map<string, number>();
+function buildComparisonKey(rawPk: string, rowIndex: number, duplicatePkValues: ReadonlySet<string>): string {
+    if (duplicatePkValues.has(rawPk)) return JSON.stringify(['row', rawPk, rowIndex]);
+    return JSON.stringify(['pk', rawPk]);
+}
+
+interface KeyedRow {
+    key: string;
+    row: string[];
+    rawPk: string;
+    rowIndex: number;
+}
+
+interface DiffRowWithSortKey {
+    diffRow: DiffRow;
+    rawPk: string;
+}
+
+/**
+ * CSV行を比較用キーのMapに変換する（順序はarrayで保持する）
+ */
+function buildKeyedRowMap(rows: string[][], pkIndices: number[], duplicatePkValues: ReadonlySet<string>): { map: Map<string, KeyedRow>; order: KeyedRow[] } {
+    const map = new Map<string, KeyedRow>();
+    const order: KeyedRow[] = [];
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        // GitDiffTracker.buildCompositeKey() で複合PKキーを生成する（コピペ排除）
         const rawPk = GitDiffTracker.buildCompositeKey(row, pkIndices);
-        if (!seenIndices.has(rawPk)) {
-            seenIndices.set(rawPk, i);
-            map.set(rawPk, row);
-            order.push(rawPk);
-        } else {
-            const firstIndex = seenIndices.get(rawPk)!;
-            if (map.has(rawPk)) {
-                // 初出エントリを "_row<初出index>" キーに移動する
-                const firstRow = map.get(rawPk)!;
-                map.delete(rawPk);
-                const firstKey = rawPk + '_row' + firstIndex;
-                map.set(firstKey, firstRow);
-                const orderIdx = order.indexOf(rawPk);
-                if (orderIdx !== -1) order[orderIdx] = firstKey;
-                seenIndices.set(rawPk, -1);
-            }
-            const newKey = rawPk + '_row' + i;
-            map.set(newKey, row);
-            order.push(newKey);
-        }
+        const key = buildComparisonKey(rawPk, i, duplicatePkValues);
+        const keyedRow = { key, row, rawPk, rowIndex: i };
+        map.set(key, keyedRow);
+        order.push(keyedRow);
     }
     return { map, order };
 }
 
 /**
+ * HEAD/Current のどちらか一方で重複しているPK値を収集する。
+ * 両方に1行ずつ存在する通常の一致は重複扱いにしない。
+ */
+function findDuplicatePkValues(
+    headRows: string[][],
+    headPkIndices: number[],
+    currentRows: string[][],
+    currentPkIndices: number[]
+): Set<string> {
+    const duplicatePkValues = new Set<string>();
+
+    const collectDuplicates = (rows: string[][], pkIndices: number[]): void => {
+        const counts = new Map<string, number>();
+        for (const row of rows) {
+            const rawPk = GitDiffTracker.buildCompositeKey(row, pkIndices);
+            const next = (counts.get(rawPk) ?? 0) + 1;
+            counts.set(rawPk, next);
+            if (next === 2) duplicatePkValues.add(rawPk);
+        }
+    };
+
+    collectDuplicates(headRows, headPkIndices);
+    collectDuplicates(currentRows, currentPkIndices);
+    return duplicatePkValues;
+}
+
+function comparePkForDisplay(a: string, b: string): number {
+    const aParts = a.split('\t');
+    const bParts = b.split('\t');
+    const length = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < length; i++) {
+        const aValue = i < aParts.length ? aParts[i] : '';
+        const bValue = i < bParts.length ? bParts[i] : '';
+        if (aValue === bValue) continue;
+
+        const aNumber = Number(aValue);
+        const bNumber = Number(bValue);
+        if (aValue !== '' && bValue !== '' && Number.isFinite(aNumber) && Number.isFinite(bNumber) && aNumber !== bNumber) {
+            return aNumber - bNumber;
+        }
+
+        return aValue.localeCompare(bValue);
+    }
+    return 0;
+}
+
+function insertAddedRowByPrimaryKey(diffRows: DiffRowWithSortKey[], addedRow: DiffRowWithSortKey): void {
+    const insertIndex = diffRows.findIndex(row => comparePkForDisplay(row.rawPk, addedRow.rawPk) > 0);
+    if (insertIndex === -1) {
+        diffRows.push(addedRow);
+    } else {
+        diffRows.splice(insertIndex, 0, addedRow);
+    }
+}
+
+/**
  * HEAD版とCurrent版のCSVを行順でマージして差分行リストを構築する
- * ファイル行順を維持するため PKソートは行わない。
  *
  * アルゴリズム:
  * 1. HEAD版の order 順にループする
  *    - Current版にも存在する行 → modified/unchanged（元の位置に配置）
  *    - Current版に存在しない行 → deleted（HEAD版の元の位置に配置される）
- * 2. Current版の order 順にループし、HEAD版に存在しない行を added として末尾に追加する
- * これにより、削除行が HEAD版の元の位置に配置され、added行は末尾にまとめて配置される。
+ * 2. Current版の order 順にループし、HEAD版に存在しない行を added として主キー順の位置に挿入する
+ * これにより、削除行は HEAD版の元の位置に配置しつつ、追加行は主キー順の位置に表示される。
  */
 export function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[]; newColumnIndices: ReadonlySet<number> } {
     const head = parseCsv(headCsvText);
@@ -106,27 +163,20 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
     const pkIndicesInHead = primaryKeyNames.map(name => head.header.indexOf(name));
     const pkIndicesInCurrent = primaryKeyNames.map(name => current.header.indexOf(name));
 
-    const { map: headMap, order: headOrder } = buildUniqueKeyMap(head.rows, pkIndicesInHead);
-    const { map: currentMap, order: currentOrder } = buildUniqueKeyMap(current.rows, pkIndicesInCurrent);
+    const duplicatePkValues = findDuplicatePkValues(head.rows, pkIndicesInHead, current.rows, pkIndicesInCurrent);
+    const { map: headMap, order: headOrder } = buildKeyedRowMap(head.rows, pkIndicesInHead, duplicatePkValues);
+    const { map: currentMap, order: currentOrder } = buildKeyedRowMap(current.rows, pkIndicesInCurrent, duplicatePkValues);
 
     // HEAD版の order 順に処理する（削除行を元の位置に配置するため）
     const processedCurrentKeys = new Set<string>();
-    const diffRows: DiffRow[] = [];
+    const rowsWithSortKey: DiffRowWithSortKey[] = [];
 
-    for (const headKey of headOrder) {
-        const headRow = headMap.get(headKey)!;
-        // HEAD版キーと対応するCurrent版エントリを解決する
-        // "_row<index>"サフィックスの正規化を考慮して Current版 Map を検索する:
-        //   1. 完全一致（重複PKでサフィックス付きキーが一致する場合）
-        //   2. rawPKによる照合（HEAD版が重複なしキー、Current版も重複なしキーで一致する場合）
-        const currentEntryRawPk = headKey.includes('_row') ? headKey.substring(0, headKey.lastIndexOf('_row')) : headKey;
-        const currentEntry: { key: string; row: string[] } | null =
-            currentMap.has(headKey) ? { key: headKey, row: currentMap.get(headKey)! } :
-            currentMap.has(currentEntryRawPk) ? { key: currentEntryRawPk, row: currentMap.get(currentEntryRawPk)! } :
-            null;
+    for (const headEntry of headOrder) {
+        const headRow = headEntry.row;
+        const currentEntry = currentMap.has(headEntry.key) ? currentMap.get(headEntry.key)! : null;
 
         if (currentEntry !== null) {
-            processedCurrentKeys.add(currentEntry.key);
+            processedCurrentKeys.add(headEntry.key);
             // 両方に存在 → 表示ヘッダー順に並べ替えてからセル単位で比較する
             const remappedHead = GitDiffTracker.remapRow(headRow, headHeaderMap, displayHeader);
             const remappedCurrent = GitDiffTracker.remapRow(currentEntry.row, currentHeaderMap, displayHeader);
@@ -135,27 +185,28 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
                 if (remappedHead[i] !== remappedCurrent[i]) changedIndices.add(i);
             }
             if (changedIndices.size > 0) {
-                diffRows.push({ kind: 'modified', headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices });
+                rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'modified', headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices } });
             } else {
-                diffRows.push({ kind: 'unchanged', headValues: remappedHead, currentValues: remappedCurrent });
+                rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'unchanged', headValues: remappedHead, currentValues: remappedCurrent } });
             }
         } else {
             // Current版に存在しない → HEAD版の元の位置に削除行を配置する（表示ヘッダー順に並べ替える）
-            diffRows.push({ kind: 'deleted', headValues: GitDiffTracker.remapRow(headRow, headHeaderMap, displayHeader) });
+            rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'deleted', headValues: GitDiffTracker.remapRow(headRow, headHeaderMap, displayHeader) } });
         }
     }
 
-    // Current版の order 順にループして、HEAD版に存在しない行を added として末尾に追加する
-    for (const currentKey of currentOrder) {
-        if (processedCurrentKeys.has(currentKey)) continue;
-        // rawPK で HEAD版に存在しないかを確認する（"_row<index>"サフィックスを除去して照合）
-        const addedRawPk = currentKey.includes('_row') ? currentKey.substring(0, currentKey.lastIndexOf('_row')) : currentKey;
-        const existsInHead = headMap.has(currentKey) || headMap.has(addedRawPk);
-        if (!existsInHead) {
-            diffRows.push({ kind: 'added', currentValues: GitDiffTracker.remapRow(currentMap.get(currentKey)!, currentHeaderMap, displayHeader) });
+    // Current版の order 順にループして、HEAD版に存在しない行を added として主キー順の位置に挿入する
+    for (const currentEntry of currentOrder) {
+        if (processedCurrentKeys.has(currentEntry.key)) continue;
+        if (!headMap.has(currentEntry.key)) {
+            insertAddedRowByPrimaryKey(rowsWithSortKey, {
+                rawPk: currentEntry.rawPk,
+                diffRow: { kind: 'added', currentValues: GitDiffTracker.remapRow(currentEntry.row, currentHeaderMap, displayHeader) },
+            });
         }
     }
 
+    const diffRows = rowsWithSortKey.map(row => row.diffRow);
     return { diffRows, displayHeader, newColumnIndices };
 }
 

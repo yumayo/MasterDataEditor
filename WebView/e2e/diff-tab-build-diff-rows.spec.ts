@@ -103,6 +103,91 @@ test.describe('buildDiffRows — 削除行の位置検証', () => {
 });
 
 // =============================================================================
+// 主キー重複時の行番号フォールバック検証
+//
+// 期待する動作:
+//   通常はPKで行を対応付ける。
+//   ただしHEAD/Currentのどちらかで同じPKが複数行に出る場合、そのPK値だけは
+//   CSVデータ行インデックスも含めて対応付ける。
+// =============================================================================
+
+test.describe('buildDiffRows — 主キー重複時の行番号フォールバック', () => {
+
+    test('Current側でPKが重複した場合、同じ行番号のHEAD行と対応し、余剰行は主キー順の位置でaddedになること', () => {
+        const headCsv = makeCsv([['1', 'a'], ['2', 'b']]);
+        const currentCsv = makeCsv([['1', 'a_changed'], ['1', 'a_added'], ['2', 'b']]);
+
+        const { diffRows } = buildDiffRows(headCsv, currentCsv, ['id']);
+
+        expect(diffRows).toHaveLength(3);
+
+        expect(diffRows[0].kind).toBe('modified');
+        const modified = diffRows[0] as Extract<DiffRow, { kind: 'modified' }>;
+        expect(modified.headValues).toEqual(['1', 'a']);
+        expect(modified.currentValues).toEqual(['1', 'a_changed']);
+
+        expect(diffRows[1].kind).toBe('added');
+        expect((diffRows[1] as Extract<DiffRow, { kind: 'added' }>).currentValues).toEqual(['1', 'a_added']);
+
+        expect(diffRows[2].kind).toBe('unchanged');
+        expect((diffRows[2] as Extract<DiffRow, { kind: 'unchanged' }>).headValues[0]).toBe('2');
+    });
+
+    test('Current側にだけ存在する新規PK行は主キー順の位置でaddedになること', () => {
+        const headCsv = makeCsv([['1', 'a'], ['3', 'c']]);
+        const currentCsv = makeCsv([['1', 'a'], ['2', 'b_added'], ['3', 'c']]);
+
+        const { diffRows } = buildDiffRows(headCsv, currentCsv, ['id']);
+
+        expect(diffRows).toHaveLength(3);
+        expect(diffRows[0].kind).toBe('unchanged');
+        expect((diffRows[0] as Extract<DiffRow, { kind: 'unchanged' }>).headValues[0]).toBe('1');
+
+        expect(diffRows[1].kind).toBe('added');
+        expect((diffRows[1] as Extract<DiffRow, { kind: 'added' }>).currentValues).toEqual(['2', 'b_added']);
+
+        expect(diffRows[2].kind).toBe('unchanged');
+        expect((diffRows[2] as Extract<DiffRow, { kind: 'unchanged' }>).headValues[0]).toBe('3');
+    });
+
+    test('HEAD側でPKが重複した場合、Currentに対応する行番号がない重複行だけdeletedになること', () => {
+        const headCsv = makeCsv([['1', 'a'], ['1', 'a_deleted'], ['2', 'b']]);
+        const currentCsv = makeCsv([['1', 'a'], ['2', 'b']]);
+
+        const { diffRows } = buildDiffRows(headCsv, currentCsv, ['id']);
+
+        expect(diffRows).toHaveLength(3);
+
+        expect(diffRows[0].kind).toBe('unchanged');
+        expect((diffRows[0] as Extract<DiffRow, { kind: 'unchanged' }>).headValues).toEqual(['1', 'a']);
+
+        expect(diffRows[1].kind).toBe('deleted');
+        expect((diffRows[1] as Extract<DiffRow, { kind: 'deleted' }>).headValues).toEqual(['1', 'a_deleted']);
+
+        expect(diffRows[2].kind).toBe('unchanged');
+        expect((diffRows[2] as Extract<DiffRow, { kind: 'unchanged' }>).headValues[0]).toBe('2');
+    });
+
+    test('重複PKが同じCSV行番号に存在する場合はdeleted/addedではなくセル差分として扱うこと', () => {
+        const headCsv = makeCsv([['1', 'a'], ['1', 'b'], ['2', 'c']]);
+        const currentCsv = makeCsv([['1', 'a'], ['1', 'b_changed'], ['2', 'c']]);
+
+        const { diffRows } = buildDiffRows(headCsv, currentCsv, ['id']);
+
+        expect(diffRows).toHaveLength(3);
+        expect(diffRows[0].kind).toBe('unchanged');
+
+        expect(diffRows[1].kind).toBe('modified');
+        const modified = diffRows[1] as Extract<DiffRow, { kind: 'modified' }>;
+        expect(modified.headValues).toEqual(['1', 'b']);
+        expect(modified.currentValues).toEqual(['1', 'b_changed']);
+
+        expect(diffRows[2].kind).toBe('unchanged');
+    });
+
+});
+
+// =============================================================================
 // 列追加・削除・並べ替え時の列名ベースマッチング検証
 //
 // 現状のバグ: セル比較がインデックスベースのため、列が追加されると
