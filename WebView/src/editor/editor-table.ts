@@ -2144,36 +2144,18 @@ export class EditorTable {
     public moveRow(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
         if (fromDomDataRowIndex === toDomDataRowIndex) return;
         // blame-cell は各行要素の children[0] に配置されており、行要素ごとDOM移動するため陳腐化しない
-        // ストアの行を移動する
-        const fromStoreIndex = this.storeRowIndices[fromDomDataRowIndex];
-        // 移動先のストアインデックスを計算する:
-        // from を抜いた後に to の位置に挿入するため、store.moveRow に渡すインデックスは
-        // storeRowIndices[toDomDataRowIndex] を基準に、fromStoreIndex との前後関係で補正する
-        let toStoreIndex: number;
-        if (toDomDataRowIndex < this.storeRowIndices.length) {
-            // from を抜く前のインデックスから補正する
-            // ただし storeRowIndices は from の行を抜く前の状態なので注意が必要
-            // from < to の場合: from を抜くとインデックスが1つずれるため toDomDataRowIndex + 1 番目の値を使う
-            //                   が、storeRowIndices はまだ更新前なので toDomDataRowIndex の値がそのまま
-            //                   store.moveRow の「抜いた後のインデックス」になる
-            // from > to の場合: to の位置は from を抜いても変わらない
-            const originalToStoreIndex = this.storeRowIndices[toDomDataRowIndex];
-            if (fromStoreIndex < originalToStoreIndex) {
-                // from を抜くとストア上で originalToStoreIndex が1つ前にずれる
-                toStoreIndex = originalToStoreIndex - 1;
-            } else {
-                toStoreIndex = originalToStoreIndex;
-            }
-        } else {
-            // 末尾に挿入する場合: ストアの最終行の次
-            const lastStoreIndex = this.storeRowIndices[this.storeRowIndices.length - 1];
-            if (fromStoreIndex <= lastStoreIndex) {
-                toStoreIndex = lastStoreIndex;
-            } else {
-                toStoreIndex = lastStoreIndex + 1;
-            }
-        }
-        this.store.moveRow(this.tableName, fromStoreIndex, toStoreIndex);
+        // フィルター適用中は表示行が storeRowIndices の部分列になるため、手動行移動は扱わない。
+        if (this.columnFilter.hasActiveFilter()) return;
+        // ストアの行順を、移動後の表示順そのものに並び替える。
+        // 下方向移動では toDomDataRowIndex が「fromを抜いた後」の位置なので、
+        // store.moveRow の挿入先をストアインデックスから逆算すると1行ずれるケースがある。
+        const storeRows = this.store.getRows(this.tableName);
+        if (storeRows === false) return;
+        const movedStoreRowIndices = [...this.storeRowIndices];
+        const [movedStoreRowIndex] = movedStoreRowIndices.splice(fromDomDataRowIndex, 1);
+        movedStoreRowIndices.splice(toDomDataRowIndex, 0, movedStoreRowIndex);
+        if (!isCompleteStoreRowPermutation(movedStoreRowIndices, storeRows.length)) return;
+        this.store.replaceAllRows(this.tableName, movedStoreRowIndices.map(storeRowIndex => storeRows[storeRowIndex]));
         // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
         const fromDomIndex = fromDomDataRowIndex + 1;
         const toDomIndex = toDomDataRowIndex + 1;
@@ -2227,4 +2209,14 @@ export class EditorTable {
         if (!this.isMiniTable) saveSchemaDataAsync(this);
     }
 
+}
+
+function isCompleteStoreRowPermutation(indices: readonly number[], rowCount: number): boolean {
+    if (indices.length !== rowCount) return false;
+    const seen = new Set<number>();
+    for (const index of indices) {
+        if (index < 0 || index >= rowCount || seen.has(index)) return false;
+        seen.add(index);
+    }
+    return true;
 }
