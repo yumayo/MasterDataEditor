@@ -348,6 +348,27 @@ test.describe('ソース管理パネル', () => {
     );
 
     test(
+        'CHANGESセクションのファイルアイコンボタンをクリックすると差分ではなく通常エディターで開くこと',
+        async ({ page, sourceControlPage: _sourceControlPage }) => {
+            await page.locator('[data-panel="sourceControl"]').click();
+
+            const fileItem = page.locator('.source-control-changes-section .source-control-file-item').first();
+            await fileItem.hover();
+
+            const openFileButton = fileItem.locator('.source-control-action-btn[data-action="open-file"]');
+            await expect(openFileButton).toBeVisible();
+            await expect(openFileButton.locator('svg')).toBeVisible();
+
+            await openFileButton.click();
+
+            await expect(page.locator('.diff-tab')).not.toBeVisible();
+            await expect(page.locator('.editor-left-pane .editor-table')).toBeVisible();
+            const activeTab = page.locator('.tab-button-active');
+            await expect(activeTab.locator('.tab-button-name')).toHaveText('test');
+        },
+    );
+
+    test(
         'CHANGESセクションのテーブル名をクリックして差分タブを開くと右ペインにフィルハンドルが表示されること',
         async ({ page, sourceControlPage: _sourceControlPage }) => {
             await page.locator('[data-panel="sourceControl"]').click();

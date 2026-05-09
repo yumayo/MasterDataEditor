@@ -156,6 +156,15 @@ export class SourceControlPanel {
         const actions = document.createElement('div');
         actions.classList.add('source-control-actions');
 
+        actions.appendChild(this.createActionButton(
+            '<svg viewBox="0 0 16 16"><path d="M4 2.5h5.5l2.5 2.5v8.5H4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9.5 2.5V5H12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+            'open-file', 'エディターで開く',
+            (e: MouseEvent) => {
+                e.stopPropagation();
+                this.openFileInEditor(entry, description);
+            },
+        ));
+
         if (isStaged) {
             // stagedセクション: 「-」ボタン（unstage）のみ
             // git checkout -- はステージを解除しないためdiscardボタンは置かない
@@ -213,6 +222,19 @@ export class SourceControlPanel {
         btn.innerHTML = svgHtml;
         btn.addEventListener('click', onClick);
         return btn;
+    }
+
+    /**
+     * Source Control上のファイルを差分タブではなく通常エディターで開く。
+     * ExplorerFile.onClick と同じく TabButton を作成してクリックする経路に揃える。
+     */
+    private openFileInEditor(entry: GitStatusEntry, description: string): void {
+        ++this.currentRequestId;
+        this.element.querySelectorAll('.source-control-file-item-active').forEach(el => {
+            el.classList.remove('source-control-file-item-active');
+        });
+        const tabButton = this.tab.append(entry.tableName, description === '' ? null : description);
+        tabButton.click();
     }
 
     /**
