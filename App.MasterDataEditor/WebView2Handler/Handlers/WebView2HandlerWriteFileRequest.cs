@@ -1,11 +1,18 @@
 using System;
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace App.MasterDataEditor
 {
 	public static class WebView2HandlerWriteFileRequest
 	{
+		private static readonly JsonSerializerOptions JsonWriteOptions = new()
+		{
+			Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+			WriteIndented = true
+		};
+
 		public static object Invoke(JsonElement root, string requestId)
 		{
 			try
@@ -65,7 +72,7 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				var data = dataElement.GetString();
+				var data = GetFileContent(dataElement);
 				Directory.CreateDirectory(AppEnvironment.GetDirectoryName(filePath));
 				File.WriteAllText(filePath, data);
 				AfterSaveHookRunner.StartIfExists(workDir, filename);
@@ -88,6 +95,16 @@ namespace App.MasterDataEditor
 					error = ex.Message,
 				};
 			}
+		}
+
+		private static string GetFileContent(JsonElement dataElement)
+		{
+			if (dataElement.ValueKind == JsonValueKind.String)
+			{
+				return dataElement.GetString() ?? "";
+			}
+
+			return JsonSerializer.Serialize(dataElement, JsonWriteOptions).Replace("\r\n", "\n") + "\n";
 		}
 	}
 }

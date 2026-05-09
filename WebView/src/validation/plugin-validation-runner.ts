@@ -26,6 +26,23 @@ export interface ResolvedPluginError {
     message: string;
 }
 
+export interface PluginValidationRunDebugPayload {
+    request: unknown;
+    response: unknown;
+}
+
+export interface PluginValidationRunResult {
+    errors: PluginValidationError[];
+    debug: PluginValidationRunDebugPayload;
+}
+
+type PluginFileEntry = { name: string; type: 'file' | 'directory' };
+type PluginEntry = { name: string; content: string };
+type PluginTableData = Record<string, { header: string[]; rows: string[][] }>;
+type PluginTableDataDebugSnapshot = Record<string, { header: string[]; rowCount: number; rowsPreview: string[][] }>;
+
+const DEBUG_ROW_PREVIEW_LIMIT = 5;
+
 /**
  * PluginValidationError をストア参照で解決し、テーブル名・行・列・セル値を確定させる。
  * コンテキスト付きエラー（行オブジェクトが渡された assert）はストアから列インデックスとセル値を解決する。
@@ -85,16 +102,41 @@ export class PluginValidationRunner {
      * 無限ループ等でWorkerが応答しない場合は WORKER_TIMEOUT_MS 後にタイムアウトエラーを返す。
      */
     async runAllPluginsAsync(): Promise<PluginValidationError[]> {
+        return (await this.runAllPluginsWithDebugAsync()).errors;
+    }
+
+    async runAllPluginsWithDebugAsync(requestId: string = ''): Promise<PluginValidationRunResult> {
+        const request = {
+            type: 'validate_plugin_request',
+            requestId,
+            directory: 'plugins',
+            files: [] as PluginFileEntry[],
+            plugins: [] as PluginEntry[],
+            tableData: {} as PluginTableDataDebugSnapshot,
+        };
+
         // plugins/ ディレクトリのファイル一覧を取得する（存在しなければ空配列を返す）
-        let files: { name: string; type: 'file' | 'directory' }[];
+        let files: PluginFileEntry[];
         try {
             files = await findFilesAsync("plugins");
-        } catch {
-            return [];
+            request.files = files;
+        } catch (e: unknown) {
+            const response = {
+                type: 'validate_plugin_response',
+                requestId,
+                success: true,
+                data: {
+                    errors: [] as PluginValidationError[],
+                    skipped: true,
+                    reason: 'plugins directory not found',
+                    message: String(e),
+                },
+            };
+            return { errors: [], debug: { request, response } };
         }
 
         // プラグインファイルを読み込む
-        const plugins: { name: string; content: string }[] = [];
+        const plugins: PluginEntry[] = [];
         const readErrors: PluginValidationError[] = [];
         for (const file of files) {
             if (file.type !== 'file') continue;
@@ -112,11 +154,24 @@ export class PluginValidationRunner {
                 });
             }
         }
+        request.plugins = plugins;
 
-        if (plugins.length === 0) return readErrors;
+        if (plugins.length === 0) {
+            const response = {
+                type: 'validate_plugin_response',
+                requestId,
+                success: true,
+                data: {
+                    errors: readErrors,
+                    readErrors,
+                    workerErrors: [] as PluginValidationError[],
+                },
+            };
+            return { errors: readErrors, debug: { request, response } };
+        }
 
         // ストアの全テーブルデータをシリアライズする（Worker に structured clone で送信される）
-        const tableData: Record<string, { header: string[]; rows: string[][] }> = {};
+        const tableData: PluginTableData = {};
         for (const tableName of this.store.getTableNames()) {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
@@ -124,9 +179,33 @@ export class PluginValidationRunner {
                 tableData[tableName] = { header, rows };
             }
         }
+        request.tableData = this.createTableDataDebugSnapshot(tableData);
 
         const workerErrors = await this.executeInWorkerAsync(plugins, tableData);
-        return [...readErrors, ...workerErrors];
+        const errors = [...readErrors, ...workerErrors];
+        const response = {
+            type: 'validate_plugin_response',
+            requestId,
+            success: true,
+            data: {
+                errors,
+                readErrors,
+                workerErrors,
+            },
+        };
+        return { errors, debug: { request, response } };
+    }
+
+    private createTableDataDebugSnapshot(tableData: PluginTableData): PluginTableDataDebugSnapshot {
+        const snapshot: PluginTableDataDebugSnapshot = {};
+        for (const [tableName, data] of Object.entries(tableData)) {
+            snapshot[tableName] = {
+                header: data.header,
+                rowCount: data.rows.length,
+                rowsPreview: data.rows.slice(0, DEBUG_ROW_PREVIEW_LIMIT),
+            };
+        }
+        return snapshot;
     }
 
     /**
@@ -135,8 +214,8 @@ export class PluginValidationRunner {
      * タイムアウト・Worker エラー時はエラー情報を返す（reject しない）。
      */
     private executeInWorkerAsync(
-        plugins: { name: string; content: string }[],
-        tableData: Record<string, { header: string[]; rows: string[][] }>,
+        plugins: PluginEntry[],
+        tableData: PluginTableData,
     ): Promise<PluginValidationError[]> {
         return new Promise((resolve) => {
             const worker = new SandboxWorker();

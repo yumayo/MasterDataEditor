@@ -1,5 +1,5 @@
 import type {StatusBar} from "../ui/status-bar";
-import type {DebugConsole} from "../panels/debug-console";
+import type {DebugConsole, DebugConsoleEntryDetail} from "../panels/debug-console";
 import {parseCallerInfo} from "../core/caller-info";
 
 /**
@@ -30,7 +30,7 @@ export class BackgroundTaskTracker {
      * 処理開始時にラベルを登録し、完了時（成功・失敗問わず）に削除する。
      * 完了後は経過時間・成否・呼び出し元情報を DebugConsole に記録する。
      */
-    async trackAsync<T>(label: string, promise: Promise<T>): Promise<T> {
+    async trackAsync<T>(label: string, promise: Promise<T>, detail?: DebugConsoleEntryDetail): Promise<T> {
         // await 前にスタックを取得しないと呼び出し元情報が消える
         const caller = parseCallerInfo(BackgroundTaskTracker.SKIP_PATTERNS);
         const id = this.nextId++;
@@ -39,10 +39,16 @@ export class BackgroundTaskTracker {
         this.statusBar.updateBackgroundTasks(this.tasks);
         try {
             const result = await promise;
-            this.debugConsole.appendEntry(label, Math.round((performance.now() - startTime) * 1000), 'success', caller);
+            const elapsedUs = Math.round((performance.now() - startTime) * 1000);
+            this.debugConsole.appendEntry(label, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
             return result;
         } catch (e: unknown) {
-            this.debugConsole.appendEntry(label, Math.round((performance.now() - startTime) * 1000), 'error', caller);
+            const elapsedUs = Math.round((performance.now() - startTime) * 1000);
+            const completedDetail = this.completeDetail(detail, 'error', caller, elapsedUs);
+            if (completedDetail !== undefined && completedDetail.error === undefined) {
+                completedDetail.error = e instanceof Error ? e.message : String(e);
+            }
+            this.debugConsole.appendEntry(label, elapsedUs, 'error', caller, completedDetail);
             throw e;
         } finally {
             this.tasks.delete(id);
@@ -54,9 +60,20 @@ export class BackgroundTaskTracker {
      * キャッシュヒット時の記録をデバッグコンソールに追加する。
      * C#への通信は発生しないため同期的に即座に記録する。
      */
-    recordCacheHit(label: string, startTime: number): void {
+    recordCacheHit(label: string, startTime: number, detail?: DebugConsoleEntryDetail): void {
         const caller = parseCallerInfo(BackgroundTaskTracker.SKIP_PATTERNS);
         const elapsedUs = Math.round((performance.now() - startTime) * 1000);
-        this.debugConsole.appendEntry(`${label} (cache)`, elapsedUs, 'success', caller);
+        this.debugConsole.appendEntry(`${label} (cache)`, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
+    }
+
+    private completeDetail(detail: DebugConsoleEntryDetail | undefined, status: 'success' | 'error', caller: string, durationUs: number): DebugConsoleEntryDetail | undefined {
+        if (detail === undefined) return undefined;
+        return {
+            ...detail,
+            status,
+            caller,
+            durationUs,
+            completedAt: detail.completedAt ?? new Date().toISOString(),
+        };
     }
 }

@@ -1,4 +1,6 @@
 import type {BackgroundTaskTracker} from "./background-task-tracker";
+import type {DebugConsoleEntryDetail} from "../panels/debug-console";
+import {stringifyJsonForFile} from "../core/json-format";
 
 /** postMessageAsync に統合されるバックグラウンドタスクトラッカー（main.ts で設定される） */
 let tracker: BackgroundTaskTracker | false = false;
@@ -59,12 +61,14 @@ export async function preloadAllFilesAsync(): Promise<void> {
 }
 
 /**
- * ファイルに文字列データを書き込む（汎用API）
+ * ファイルに文字列またはJSONデータを書き込む（汎用API）
  * 書き込み後にキャッシュも更新する。
  */
-export async function writeFileAsync(filename: string, data: string): Promise<void> {
+export type WriteFileData = string | object;
+
+export async function writeFileAsync(filename: string, data: WriteFileData): Promise<void> {
     await postMessageAsync('write_file', { filename, data });
-    fileCache.set(filename, data);
+    fileCache.set(filename, serializeWriteFileData(data));
     invalidateGitStatusCache();
 }
 
@@ -92,7 +96,9 @@ export async function readFileAsync(filename: string): Promise<string> {
     const startTime = performance.now();
     const cached = fileCache.get(filename);
     if (cached !== undefined) {
-        if (tracker !== false) tracker.recordCacheHit('read_file', startTime);
+        if (tracker !== false) {
+            tracker.recordCacheHit('read_file', startTime, createCacheDebugDetail('read_file', { filename }, cached));
+        }
         return cached;
     }
     const result = await postMessageAsync<string>('read_file', { filename });
@@ -123,7 +129,9 @@ export async function findFilesAsync(directory: string): Promise<File[]> {
     const startTime = performance.now();
     const cached = dirCache.get(directory);
     if (cached !== undefined) {
-        if (tracker !== false) tracker.recordCacheHit('find_files', startTime);
+        if (tracker !== false) {
+            tracker.recordCacheHit('find_files', startTime, createCacheDebugDetail('find_files', { directory }, cached));
+        }
         return cached;
     }
     const result = await postMessageAsync<File[]>('find_files', { directory });
@@ -171,7 +179,9 @@ export function invalidateGitStatusCache(): void {
 export async function gitStatusAsync(): Promise<GitStatusResult> {
     const startTime = performance.now();
     if (gitStatusCache !== false) {
-        if (tracker !== false) tracker.recordCacheHit('git_status', startTime);
+        if (tracker !== false) {
+            tracker.recordCacheHit('git_status', startTime, createCacheDebugDetail('git_status', {}, gitStatusCache));
+        }
         return gitStatusCache;
     }
     if (gitStatusInFlight !== false) return gitStatusInFlight;
@@ -207,7 +217,9 @@ export async function gitShowAsync(path: string): Promise<string> {
     const startTime = performance.now();
     const cached = gitShowCache.get(path);
     if (cached !== undefined) {
-        if (tracker !== false) tracker.recordCacheHit('git_show', startTime);
+        if (tracker !== false) {
+            tracker.recordCacheHit('git_show', startTime, createCacheDebugDetail('git_show', { path }, cached));
+        }
         return cached;
     }
     const result = await postMessageAsync<string>('git_show', { path });
@@ -312,23 +324,42 @@ function postMessageAsync<T>(
     apiName: string,
     requestData: Record<string, unknown>
 ): Promise<T> {
-    const promise = sendRequest<T>(apiName, requestData);
+    const detail = createApiDebugDetail(apiName);
+    const promise = sendRequest<T>(apiName, requestData, detail);
     // トラッカーが設定されている場合はバックグラウンドタスクとして追跡する
     if (tracker !== false) {
-        return tracker.trackAsync(apiName, promise);
+        return tracker.trackAsync(apiName, promise, detail);
     }
     return promise;
 }
 
 function sendRequest<T>(
     apiName: string,
-    requestData: Record<string, unknown>
+    requestData: Record<string, unknown>,
+    detail: DebugConsoleEntryDetail
 ): Promise<T> {
-    const requestId = String(nextRequestId++);
+    const requestId = detail.requestId || String(nextRequestId++);
+    const requestMessage = {
+        type: `${apiName}_request`,
+        requestId,
+        ...requestData
+    };
+    detail.request = requestMessage;
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             window.chrome.webview.removeEventListener('message', responseHandler);
-            reject(new Error(`${apiName} timeout (requestId=${requestId})`));
+            const errorMessage = `${apiName} timeout (requestId=${requestId})`;
+            const response = {
+                type: `${apiName}_response`,
+                requestId,
+                success: false,
+                error: errorMessage,
+            };
+            detail.response = response;
+            detail.error = errorMessage;
+            detail.completedAt = new Date().toISOString();
+            writeApiLog('response', apiName, requestId, response);
+            reject(new Error(errorMessage));
         }, 10000);
 
         const responseHandler = (event: MessageEvent) => {
@@ -341,6 +372,12 @@ function sendRequest<T>(
 
                 clearTimeout(timeout);
                 window.chrome.webview.removeEventListener('message', responseHandler);
+                detail.response = responseData;
+                detail.completedAt = new Date().toISOString();
+                if (!responseData.success) {
+                    detail.error = (responseData.error as string) || `${apiName} failed`;
+                }
+                writeApiLog('response', apiName, requestId, responseData);
 
                 if (responseData.success) {
                     resolve(responseData.data as T);
@@ -351,20 +388,90 @@ function sendRequest<T>(
             } catch (error) {
                 clearTimeout(timeout);
                 window.chrome.webview.removeEventListener('message', responseHandler);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                const response = {
+                    type: `${apiName}_response`,
+                    requestId,
+                    success: false,
+                    error: errorMessage,
+                };
+                detail.response = response;
+                detail.error = errorMessage;
+                detail.completedAt = new Date().toISOString();
+                writeApiLog('response', apiName, requestId, response);
                 reject(error);
             }
         };
 
         try {
             window.chrome.webview.addEventListener('message', responseHandler);
-            window.chrome.webview.postMessage(JSON.stringify({
-                type: `${apiName}_request`,
-                requestId,
-                ...requestData
-            }));
+            writeApiLog('request', apiName, requestId, requestMessage);
+            window.chrome.webview.postMessage(JSON.stringify(requestMessage));
         } catch (error) {
             clearTimeout(timeout);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const response = {
+                type: `${apiName}_response`,
+                requestId,
+                success: false,
+                error: errorMessage,
+            };
+            detail.response = response;
+            detail.error = errorMessage;
+            detail.completedAt = new Date().toISOString();
+            writeApiLog('response', apiName, requestId, response);
             reject(error);
         }
     });
+}
+
+function createApiDebugDetail(apiName: string): DebugConsoleEntryDetail {
+    return {
+        apiName,
+        requestId: String(nextRequestId++),
+        request: {},
+        startedAt: new Date().toISOString(),
+    };
+}
+
+function createCacheDebugDetail<T>(
+    apiName: string,
+    requestData: Record<string, unknown>,
+    data: T
+): DebugConsoleEntryDetail {
+    const requestId = String(nextRequestId++);
+    return {
+        apiName: `${apiName} (cache)`,
+        requestId,
+        request: {
+            type: `${apiName}_request`,
+            requestId,
+            ...requestData,
+        },
+        response: {
+            type: `${apiName}_response`,
+            requestId,
+            success: true,
+            cache: true,
+            data,
+        },
+        startedAt: new Date().toISOString(),
+    };
+}
+
+function writeApiLog(phase: 'request' | 'response', apiName: string, requestId: string, payload: unknown): void {
+    console.info(`[API ${phase}] ${apiName} requestId=${requestId} ${safeStringify(payload)}`);
+}
+
+function safeStringify(value: unknown): string {
+    try {
+        return JSON.stringify(value);
+    } catch (error) {
+        return String(error);
+    }
+}
+
+function serializeWriteFileData(data: WriteFileData): string {
+    if (typeof data === 'string') return data;
+    return stringifyJsonForFile(data);
 }

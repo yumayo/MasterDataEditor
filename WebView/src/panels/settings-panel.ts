@@ -1,7 +1,6 @@
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
 import {SETTINGS_FILE} from "../config/userdata-path";
-import {stringifyJsonForFile} from "../core/json-format";
 
 /**
  * 設定画面パネル
@@ -68,7 +67,7 @@ async function writeSettingsFileAsync(settings: SettingsFile): Promise<void> {
     const data: Record<string, unknown> = {...(await readSettingsRecordAsync(SETTINGS_FILE) ?? {})};
     data['theme'] = settings.theme;
     data['tabWrapEnabled'] = settings.tabWrapEnabled;
-    await writeFileAsync(SETTINGS_FILE, stringifyJsonForFile(data));
+    await writeFileAsync(SETTINGS_FILE, data);
 }
 
 let settingsWriteChain: Promise<void> = Promise.resolve();

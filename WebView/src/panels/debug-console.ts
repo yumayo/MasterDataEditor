@@ -12,17 +12,34 @@
  * カラムヘッダーの右端ハンドルをドラッグすることで各列の幅を変更できる。
  * ドラッグ中はリスト全体のセルを即時更新する（Undo不要のデバッグ機能のためシンプル実装）。
  */
+export interface DebugConsoleEntryDetail {
+    apiName: string;
+    requestId?: string;
+    request: unknown;
+    response?: unknown;
+    error?: string;
+    status?: 'success' | 'error';
+    caller?: string;
+    durationUs?: number;
+    startedAt?: string;
+    completedAt?: string;
+}
+
+type DebugConsoleDetailOpenHandler = (detail: DebugConsoleEntryDetail) => void;
+
 export class DebugConsole {
 
     private readonly element: HTMLElement;
     private readonly list: HTMLElement;
     /** ログエントリの件数カウンター（DOM先頭削除と同期して管理） */
     private entryCount: number;
+    private detailOpenHandler: DebugConsoleDetailOpenHandler | false;
 
     private static readonly MAX_ENTRIES = 1000;
 
     constructor() {
         this.entryCount = 0;
+        this.detailOpenHandler = false;
 
         const panel = document.createElement('div');
         panel.classList.add('debug-console');
@@ -69,7 +86,7 @@ export class DebugConsole {
      * @param durationUs 経過時間（マイクロ秒）
      * @param caller 呼び出し元情報（"filename.ts:行番号" 形式）
      */
-    appendEntry(label: string, durationUs: number, status: 'success' | 'error', caller: string): void {
+    appendEntry(label: string, durationUs: number, status: 'success' | 'error', caller: string, detail?: DebugConsoleEntryDetail): void {
         // 追加前にスクロール位置が最下部付近かどうかを判定（tail動作の判定）
         const isAtBottom = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < 8;
         if (this.entryCount >= DebugConsole.MAX_ENTRIES) {
@@ -78,7 +95,8 @@ export class DebugConsole {
             }
             this.entryCount--;
         }
-        this.list.appendChild(this.createRow(label, this.formatDuration(durationUs), status, caller));
+        const entryDetail = detail ?? this.createFallbackDetail(label, durationUs, status, caller);
+        this.list.appendChild(this.createRow(label, this.formatDuration(durationUs), status, caller, entryDetail));
         this.entryCount++;
         // スクロールが最下部にある場合のみ自動追従する（tailモード）
         if (isAtBottom) {
@@ -108,6 +126,36 @@ export class DebugConsole {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+    }
+
+    connectDetailOpenHandler(handler: DebugConsoleDetailOpenHandler): void {
+        this.detailOpenHandler = handler;
+    }
+
+    private createFallbackDetail(label: string, durationUs: number, status: 'success' | 'error', caller: string): DebugConsoleEntryDetail {
+        const requestId = `debug-${Date.now()}-${this.entryCount}`;
+        return {
+            apiName: label,
+            requestId,
+            request: {
+                type: 'debug_console_entry_request',
+                requestId,
+                label,
+                caller,
+            },
+            response: {
+                type: 'debug_console_entry_response',
+                requestId,
+                success: status === 'success',
+                status,
+                label,
+            },
+            status,
+            caller,
+            durationUs,
+            startedAt: new Date(Date.now() - durationUs / 1000).toISOString(),
+            completedAt: new Date().toISOString(),
+        };
     }
 
     private createHeaderCell(text: string, colClass: string): HTMLElement {
@@ -156,9 +204,20 @@ export class DebugConsole {
         });
     }
 
-    private createRow(label: string, durationText: string, status: 'success' | 'error', caller: string): HTMLElement {
+    private createRow(label: string, durationText: string, status: 'success' | 'error', caller: string, detail: DebugConsoleEntryDetail): HTMLElement {
         const row = document.createElement('div');
         row.classList.add('debug-console-row', status === 'success' ? 'debug-console-row-success' : 'debug-console-row-error');
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '0');
+        row.setAttribute('aria-label', `${label} のリクエスト/レスポンスを表示`);
+        row.addEventListener('click', () => {
+            this.openDetail(detail);
+        });
+        row.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            this.openDetail(detail);
+        });
 
         const timeSpan = document.createElement('span');
         timeSpan.classList.add('debug-console-col-time');
@@ -194,6 +253,11 @@ export class DebugConsole {
         row.appendChild(statusSpan);
 
         return row;
+    }
+
+    private openDetail(detail: DebugConsoleEntryDetail): void {
+        if (this.detailOpenHandler === false) return;
+        this.detailOpenHandler(detail);
     }
 
     /** マイクロ秒値をms単位にフォーマットする（小数点第一位表示） */

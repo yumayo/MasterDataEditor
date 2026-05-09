@@ -86,4 +86,84 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         const preloadErrorCount = await preloadErrorRows.count();
         expect(preloadErrorCount, 'preload API通信にエラーステータスのエントリがないこと').toBe(0);
     });
+
+    test('API通信行クリックでリクエストとレスポンスを一時タブで確認できる', async ({ page, mockFileSystem }) => {
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', { hasText: 'DEBUG CONSOLE' }).click();
+
+        const debugConsole = page.locator('.debug-console');
+        await expect(debugConsole).toBeVisible();
+
+        const findFilesRow = debugConsole.locator('.debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: 'find_files' }),
+        }).first();
+        await expect(findFilesRow.locator('.debug-console-detail-button')).toHaveCount(0);
+        await findFilesRow.click();
+
+        await expect(page.locator('.tab-button', { hasText: 'API 詳細' })).toBeVisible();
+        const detailTab = page.locator('.debug-api-detail-tab');
+        await expect(detailTab).toBeVisible();
+        await expect(detailTab.locator('.debug-api-detail-pre').first()).toHaveCSS('overflow-y', 'scroll');
+        await expect(detailTab).toContainText('find_files_request');
+        await expect(detailTab).toContainText('find_files_response');
+        await expect(detailTab).toContainText('"success": true');
+
+        const writeFileRow = debugConsole.locator('.debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: 'write_file' }),
+        }).first();
+        await expect(writeFileRow).toBeVisible();
+        await writeFileRow.click();
+        await expect(detailTab).toContainText('"data": {');
+        await expect(detailTab).toContainText('"bottomPanel": {');
+    });
+
+    test('キャッシュヒット行クリックでリクエストとレスポンスを一時タブで確認できる', async ({ page, mockFileSystem }) => {
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', { hasText: 'DEBUG CONSOLE' }).click();
+
+        const debugConsole = page.locator('.debug-console');
+        await expect(debugConsole).toBeVisible();
+
+        const cacheRow = debugConsole.locator('.debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: 'find_files (cache)' }),
+        }).first();
+        await expect(cacheRow).toBeVisible();
+        await expect(cacheRow.locator('.debug-console-detail-button')).toHaveCount(0);
+        await cacheRow.click();
+
+        const detailTab = page.locator('.debug-api-detail-tab');
+        await expect(detailTab).toBeVisible();
+        await expect(detailTab).toContainText('find_files_request');
+        await expect(detailTab).toContainText('"directory": "schema"');
+        await expect(detailTab).toContainText('find_files_response');
+        await expect(detailTab).toContainText('"cache": true');
+        await expect(detailTab).toContainText('"success": true');
+    });
+
+    test('validate (engine) 行クリックでリクエストとレスポンスを確認でき、詳細ボタンがない', async ({ page, mockFileSystem }) => {
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', { hasText: 'DEBUG CONSOLE' }).click();
+
+        const debugConsole = page.locator('.debug-console');
+        await expect(debugConsole).toBeVisible();
+
+        await page.waitForFunction(() => {
+            const rows = document.querySelectorAll('.debug-console .debug-console-row');
+            const buttons = document.querySelectorAll('.debug-console .debug-console-row .debug-console-detail-button');
+            return rows.length > 0 && buttons.length === 0;
+        });
+
+        const engineRow = debugConsole.locator('.debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: 'validate (engine)' }),
+        }).last();
+        await expect(engineRow).toBeVisible();
+        await engineRow.click();
+
+        const detailTab = page.locator('.debug-api-detail-tab');
+        await expect(detailTab).toBeVisible();
+        await expect(detailTab).toContainText('validate_engine_request');
+        await expect(detailTab).toContainText('"tableData": {');
+        await expect(detailTab).toContainText('validate_engine_response');
+        await expect(detailTab).toContainText('"success": true');
+    });
 });

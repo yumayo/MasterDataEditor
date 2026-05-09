@@ -2,10 +2,14 @@ import {formatValidationPrimaryKeyValues, ValidationEngine, ValidationError} fro
 import {Tab} from "../tabs/tab";
 import {StatusBar} from "../ui/status-bar";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
-import {DebugConsole} from "./debug-console";
+import {DebugConsole, type DebugConsoleEntryDetail} from "./debug-console";
 import {resolvePluginErrors} from "../validation/plugin-validation-runner";
 import type {PluginValidationRunner, PluginValidationError} from "../validation/plugin-validation-runner";
 import {DynamicReferenceSchema} from "../references/reference-expression";
+
+type ValidationTableDebugSnapshot = Record<string, { header: string[]; rowCount: number; rowsPreview: string[][] }>;
+
+const DEBUG_ROW_PREVIEW_LIMIT = 5;
 
 /**
  * バリデーションエラーパネル
@@ -149,20 +153,47 @@ export class ValidationPanel {
                     return;
                 }
                 const engineStart = performance.now();
+                const engineDebugRequestId = `engine-${requestId}`;
+                const engineRequest = this.createEngineValidationRequest(engineDebugRequestId);
                 const result = this.engine.validate(this.currentErrors);
                 const mergedErrors = [...result.errors, ...result.preservableErrors];
                 const engineDurationUs = Math.round((performance.now() - engineStart) * 1000);
-                this.debugConsole.appendEntry('validate (engine)', engineDurationUs, 'success', 'validation-panel.ts');
+                this.debugConsole.appendEntry(
+                    'validate (engine)',
+                    engineDurationUs,
+                    'success',
+                    'validation-panel.ts',
+                    this.createValidationDebugDetail(
+                        'validate (engine)',
+                        engineDebugRequestId,
+                        engineRequest,
+                        {
+                            type: 'validate_engine_response',
+                            requestId: engineDebugRequestId,
+                            success: true,
+                            data: result,
+                        },
+                        'success',
+                        engineDurationUs,
+                    ),
+                );
                 // プラグインバリデーションは Web Worker で非同期実行する
                 const pluginStart = performance.now();
-                this.pluginRunner.runAllPluginsAsync().then((pluginErrors) => {
+                const pluginDebugRequestId = `plugin-${requestId}`;
+                this.pluginRunner.runAllPluginsWithDebugAsync(pluginDebugRequestId).then((pluginResult) => {
                     if (requestId !== this.pluginRequestId) {
                         resolve(this.currentErrors);
                         return;
                     }
                     const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
-                    this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'success', 'validation-panel.ts');
-                    const errors = [...mergedErrors, ...convertPluginErrors(pluginErrors, this.store, this.engine)];
+                    this.debugConsole.appendEntry(
+                        'validate (plugin)',
+                        pluginDurationUs,
+                        'success',
+                        'validation-panel.ts',
+                        this.createValidationDebugDetail('validate (plugin)', pluginDebugRequestId, pluginResult.debug.request, pluginResult.debug.response, 'success', pluginDurationUs),
+                    );
+                    const errors = [...mergedErrors, ...convertPluginErrors(pluginResult.errors, this.store, this.engine)];
                     this.applyErrors(errors);
                     resolve(errors);
                 }).catch((e: unknown) => {
@@ -171,7 +202,22 @@ export class ValidationPanel {
                         return;
                     }
                     const pluginDurationUs = Math.round((performance.now() - pluginStart) * 1000);
-                    this.debugConsole.appendEntry('validate (plugin)', pluginDurationUs, 'error', 'validation-panel.ts');
+                    const errorMessage = e instanceof Error ? e.message : String(e);
+                    this.debugConsole.appendEntry(
+                        'validate (plugin)',
+                        pluginDurationUs,
+                        'error',
+                        'validation-panel.ts',
+                        this.createValidationDebugDetail(
+                            'validate (plugin)',
+                            pluginDebugRequestId,
+                            { type: 'validate_plugin_request', requestId: pluginDebugRequestId, directory: 'plugins' },
+                            { type: 'validate_plugin_response', requestId: pluginDebugRequestId, success: false, error: errorMessage },
+                            'error',
+                            pluginDurationUs,
+                            errorMessage,
+                        ),
+                    );
                     const failError: PluginValidationError[] = [{ pluginName: '(system)', message: 'プラグインバリデーション実行失敗: ' + String(e), tableName: null, rowIndex: -1, columnName: null }];
                     const errors = [...mergedErrors, ...convertPluginErrors(failError, this.store, this.engine)];
                     this.applyErrors(errors);
@@ -179,6 +225,53 @@ export class ValidationPanel {
                 });
             }, 0);
         });
+    }
+
+    private createEngineValidationRequest(requestId: string): unknown {
+        return {
+            type: 'validate_engine_request',
+            requestId,
+            previousErrors: this.currentErrors,
+            tableData: this.createStoreDebugSnapshot(),
+        };
+    }
+
+    private createStoreDebugSnapshot(): ValidationTableDebugSnapshot {
+        const snapshot: ValidationTableDebugSnapshot = {};
+        for (const tableName of this.store.getTableNames()) {
+            const header = this.store.getHeader(tableName);
+            const rows = this.store.getRows(tableName);
+            if (header === false || rows === false) continue;
+            snapshot[tableName] = {
+                header,
+                rowCount: rows.length,
+                rowsPreview: rows.slice(0, DEBUG_ROW_PREVIEW_LIMIT),
+            };
+        }
+        return snapshot;
+    }
+
+    private createValidationDebugDetail(
+        apiName: string,
+        requestId: string,
+        request: unknown,
+        response: unknown,
+        status: 'success' | 'error',
+        durationUs: number,
+        error?: string,
+    ): DebugConsoleEntryDetail {
+        return {
+            apiName,
+            requestId,
+            request,
+            response,
+            status,
+            caller: 'validation-panel.ts',
+            durationUs,
+            error,
+            startedAt: new Date(Date.now() - durationUs / 1000).toISOString(),
+            completedAt: new Date().toISOString(),
+        };
     }
 
     /**

@@ -229,6 +229,36 @@ test.describe('プラグインバリデーション: assertエラーがパネル
             await expect(pluginErrorWithMessage.first()).toBeVisible();
         },
     );
+
+    test(
+        'validate (plugin) 行クリックでリクエストとレスポンスを確認できる',
+        async ({ page }) => {
+            const badge = getStatusBarBadge(page);
+            await expect(badge.locator('.status-bar-badge-count')).not.toHaveText('0', { timeout: 10000 });
+
+            await badge.click();
+            await page.locator('.bottom-panel-tab', { hasText: 'DEBUG CONSOLE' }).click();
+
+            const debugConsole = page.locator('.debug-console');
+            await expect(debugConsole).toBeVisible();
+
+            const pluginRow = debugConsole.locator('.debug-console-row', {
+                has: page.locator('.debug-console-col-label', { hasText: 'validate (plugin)' }),
+            }).last();
+            await expect(pluginRow).toBeVisible();
+            await expect(pluginRow.locator('.debug-console-detail-button')).toHaveCount(0);
+            await pluginRow.click();
+
+            const detailTab = page.locator('.debug-api-detail-tab');
+            await expect(detailTab).toBeVisible();
+            await expect(detailTab).toContainText('validate_plugin_request');
+            await expect(detailTab).toContainText('balance-check.js');
+            await expect(detailTab).toContainText('"tableData": {');
+            await expect(detailTab).toContainText('validate_plugin_response');
+            await expect(detailTab).toContainText('"errors": [');
+            await expect(detailTab).toContainText('合計値110が100以上です');
+        },
+    );
 });
 
 // =============================================================================

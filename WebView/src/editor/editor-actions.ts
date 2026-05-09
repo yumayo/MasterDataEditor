@@ -5,7 +5,6 @@ import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand
 import {generateSeriesData} from "./fill-series";
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
-import {stringifyJsonForFile} from "../core/json-format";
 
 /**
  * フォーカスセルの情報を取得する。
@@ -374,7 +373,7 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
         delete existingSchema.filters;
     }
 
-    await writeFileAsync(schemaPath, stringifyJsonForFile(existingSchema));
+    await writeFileAsync(schemaPath, existingSchema);
 }
 
 /**

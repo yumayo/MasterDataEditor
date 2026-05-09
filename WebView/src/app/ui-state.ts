@@ -1,7 +1,6 @@
 import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE} from "../config/userdata-path";
-import {stringifyJsonForFile} from "../core/json-format";
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -250,8 +249,7 @@ export class UiStateStore {
         }
 
         this.writeInFlight = true;
-        const data = stringifyJsonForFile(this.state);
-        writeFileAsync(UI_STATE_FILE, data)
+        writeFileAsync(UI_STATE_FILE, this.state)
             .catch((error: unknown) => {
                 console.error('[UiStateStore] save failed:', String(error));
             })

@@ -76,6 +76,17 @@ export async function installMockApiAsync(
                 sessionStorage.setItem(MOCK_FS_INSTANCE_KEY, instanceId);
             }
 
+            function serializeWriteFileData(data: unknown): string {
+                if (typeof data === "string") {
+                    return data;
+                }
+                const json = JSON.stringify(data, null, 4);
+                if (json === undefined) {
+                    throw new Error("Cannot stringify write_file data as JSON");
+                }
+                return json.replace(/\r\n?/g, "\n") + "\n";
+            }
+
             const listeners: Handler[] = [];
 
             /**
@@ -212,7 +223,7 @@ export async function installMockApiAsync(
 
                 if (type === "write_file_request") {
                     const filename = request.filename as string;
-                    const data = request.data as string;
+                    const data = serializeWriteFileData(request.data);
                     const mockWindow = window as unknown as MockApiWindow;
                     runtimeFs[filename] = data;
                     persistMockFs();

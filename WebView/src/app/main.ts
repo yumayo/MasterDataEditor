@@ -75,6 +75,9 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     const sidebar = {} as Sidebar;
 
     const tab = new Tab(editor, sidebar, tabContentElement, tabElement, store, referenceDataCache, notification, uiStateStore);
+    debugConsole.connectDetailOpenHandler((detail) => {
+        tab.openDebugApiDetailTab(detail);
+    });
 
     const realSidebar = new Sidebar(
         explorerElement,

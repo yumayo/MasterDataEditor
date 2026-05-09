@@ -1,4 +1,4 @@
-import type {DebugConsole} from "../panels/debug-console";
+import type {DebugConsole, DebugConsoleEntryDetail} from "../panels/debug-console";
 import type {EditorAPI} from "./editor-api-types";
 
 /**
@@ -46,29 +46,61 @@ export class EditorApiBridge {
     /** リクエストをディスパッチしてレスポンスを返す（非同期メソッドにも対応） */
     private async handleRequestAsync(requestId: string, method: string, params: Record<string, unknown>): Promise<void> {
         const startTime = performance.now();
+        const request = {
+            type: 'editor_api_request',
+            requestId,
+            method,
+            params,
+        };
         try {
             const result = await this.dispatch(method, params);
             const elapsedUs = Math.round((performance.now() - startTime) * 1000);
-            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'success', 'C#→WebView');
-            // awaitポイント後にdispose済みの場合は応答を捨てる（WebView2ライフサイクル保護）
-            if (this.listener === false) return;
-            window.chrome.webview.postMessage(JSON.stringify({
+            const response = {
                 type: 'editor_api_response',
                 requestId,
                 success: true,
                 data: result,
-            }));
+            };
+            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'success', 'C#→WebView', this.createDebugDetail(method, requestId, request, response, 'success', elapsedUs));
+            // awaitポイント後にdispose済みの場合は応答を捨てる（WebView2ライフサイクル保護）
+            if (this.listener === false) return;
+            window.chrome.webview.postMessage(JSON.stringify(response));
         } catch (e) {
             const elapsedUs = Math.round((performance.now() - startTime) * 1000);
-            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'error', 'C#→WebView');
-            if (this.listener === false) return;
-            window.chrome.webview.postMessage(JSON.stringify({
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            const response = {
                 type: 'editor_api_response',
                 requestId,
                 success: false,
-                error: e instanceof Error ? e.message : String(e),
-            }));
+                error: errorMessage,
+            };
+            this.debugConsole.appendEntry('[MCP] ' + method, elapsedUs, 'error', 'C#→WebView', this.createDebugDetail(method, requestId, request, response, 'error', elapsedUs, errorMessage));
+            if (this.listener === false) return;
+            window.chrome.webview.postMessage(JSON.stringify(response));
         }
+    }
+
+    private createDebugDetail(
+        method: string,
+        requestId: string,
+        request: unknown,
+        response: unknown,
+        status: 'success' | 'error',
+        durationUs: number,
+        error?: string,
+    ): DebugConsoleEntryDetail {
+        return {
+            apiName: '[MCP] ' + method,
+            requestId,
+            request,
+            response,
+            status,
+            caller: 'C#→WebView',
+            durationUs,
+            error,
+            startedAt: new Date(Date.now() - durationUs / 1000).toISOString(),
+            completedAt: new Date().toISOString(),
+        };
     }
 
     /** メソッド名を名前空間.メソッド名に分割してディスパッチする */

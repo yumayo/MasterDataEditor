@@ -36,6 +36,8 @@ import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
 import type {UiStateStore, UiTabsState} from "../app/ui-state";
+import {DebugApiDetailTab} from "./debug-api-detail-tab";
+import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -48,6 +50,9 @@ const ER_DIAGRAM_TAB_NAME = 'ER Diagram';
 
 /** テーブル定義タブの固定名 */
 export const TABLE_DEFINITION_TAB_NAME = '新しいテーブル';
+
+/** DEBUG CONSOLE のAPI詳細を表示する一時タブ名 */
+const DEBUG_API_DETAIL_TAB_NAME = 'API 詳細';
 
 type TabScrollPositionPreference =
     | { kind: 'edge'; edge: 'left' | 'right' }
@@ -211,6 +216,15 @@ export class Tab {
     /** テーブル定義タブのインスタンス（未生成時は false） */
     private tableDefinitionEditor: TableDefinitionEditor | false;
 
+    /** DEBUG CONSOLE のAPI詳細タブのラッパー要素（一時タブ。未生成時は false） */
+    private debugApiDetailWrapperElement: HTMLElement | false;
+
+    /** DEBUG CONSOLE のAPI詳細タブのインスタンス（未生成時は false） */
+    private debugApiDetailTab: DebugApiDetailTab | false;
+
+    /** API詳細タブを次に表示するときに反映する詳細情報 */
+    private pendingDebugApiDetail: DebugConsoleEntryDetail | null;
+
     /**
      * 次回 activateTableDefinitionTab 呼び出し時に使用する編集対象情報。
      * openEditTableDefinitionTabAsync で設定し、activateTableDefinitionTab で消費される。
@@ -304,6 +318,9 @@ export class Tab {
         this.erDiagramTab = false;
         this.tableDefinitionWrapperElement = false;
         this.tableDefinitionEditor = false;
+        this.debugApiDetailWrapperElement = false;
+        this.debugApiDetailTab = false;
+        this.pendingDebugApiDetail = null;
         this.pendingEditTarget = false;
         this.currentFormPanel = false;
         this.defaultRelationsPanelVisible = false;
@@ -665,9 +682,13 @@ export class Tab {
 
     private persistTabs(activeTabName: string | false | null = this.activeTabName): void {
         this.uiStateStore.setTabs(
-            this.tabButtons.map(tabButton => tabButton.name),
-            activeTabName
+            this.tabButtons.map(tabButton => tabButton.name).filter(name => !this.isTemporaryTabName(name)),
+            activeTabName !== null && activeTabName !== false && this.isTemporaryTabName(activeTabName) ? false : activeTabName
         );
+    }
+
+    private isTemporaryTabName(name: string): boolean {
+        return name === DEBUG_API_DETAIL_TAB_NAME;
     }
 
     notifyTabOrderChanged(): void {
@@ -986,6 +1007,7 @@ export class Tab {
 
         const restoredNames = new Set<string>();
         for (const name of names) {
+            if (this.isTemporaryTabName(name)) continue;
             if (name.startsWith(DIFF_TAB_PREFIX)) continue;
             if (name === SETTINGS_TAB_NAME) {
                 this.openSettingsTab();
@@ -1058,7 +1080,7 @@ export class Tab {
         this.removeTabButton(name);
 
         // テーブルクローズイベントを発火する（設定タブ・差分タブ・ER図タブ・テーブル定義タブは通常テーブルではないため除外する）
-        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && name !== ER_DIAGRAM_TAB_NAME && name !== TABLE_DEFINITION_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
+        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && name !== ER_DIAGRAM_TAB_NAME && name !== TABLE_DEFINITION_TAB_NAME && name !== DEBUG_API_DETAIL_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
             this.editorApi.emitTableClosed(name);
         }
 
@@ -1106,6 +1128,22 @@ export class Tab {
             }
             this.tableDefinitionEditor = false;
             this.tableDefinitionWrapperElement = false;
+        }
+
+        // API詳細タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
+        if (name === DEBUG_API_DETAIL_TAB_NAME) {
+            if (wasActive) {
+                this.editor.leaveSettingsMode();
+            }
+            if (this.debugApiDetailTab !== false) {
+                this.debugApiDetailTab.remove();
+            }
+            if (this.debugApiDetailWrapperElement !== false) {
+                this.debugApiDetailWrapperElement.remove();
+            }
+            this.debugApiDetailTab = false;
+            this.debugApiDetailWrapperElement = false;
+            this.pendingDebugApiDetail = null;
         }
 
         // 差分タブが閉じられた場合: 対象の DiffTab を破棄してマップから除去する
@@ -1350,8 +1388,8 @@ export class Tab {
         tabButton.scrollIntoViewIfNeeded();
 
         // エクスプローラーのハイライトを更新する
-        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
-        if (name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
+        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブ・API詳細タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
+        if (name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME || name === DEBUG_API_DETAIL_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
             this.sidebar.clearExplorerHighlight();
         } else {
             this.sidebar.highlightExplorerFile(name);
@@ -1381,9 +1419,15 @@ export class Tab {
             return;
         }
 
-        // 設定タブ・ER図タブ・テーブル定義タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
+        // API詳細タブは EditorTable を持たない一時タブのため専用の有効化処理を行う
+        if (name === DEBUG_API_DETAIL_TAB_NAME) {
+            this.activateDebugApiDetailTab();
+            return;
+        }
+
+        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
         // この判定は activateTabState() より前で行う必要がある（activateTabState 内は常に通常タブの文脈）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME) {
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
@@ -1400,6 +1444,11 @@ export class Tab {
         // テーブル定義タブが表示中であれば非表示にする
         if (this.tableDefinitionWrapperElement !== false) {
             this.tableDefinitionWrapperElement.style.display = 'none';
+        }
+
+        // API詳細タブが表示中であれば非表示にする
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
         }
 
         // 現在アクティブなタブが差分タブの場合のみ非表示にして leaveSettingsMode() を呼ぶ
@@ -1498,6 +1547,19 @@ export class Tab {
     }
 
     /**
+     * DEBUG CONSOLE のAPI詳細を一時タブに表示する。
+     * 一時タブは ui-state に保存せず、別の行を開いた場合は同じタブ内容を差し替える。
+     */
+    openDebugApiDetailTab(detail: DebugConsoleEntryDetail): void {
+        this.pendingDebugApiDetail = detail;
+        const tabButton = this.append(DEBUG_API_DETAIL_TAB_NAME, null);
+        tabButton.click();
+        if (this.debugApiDetailTab !== false) {
+            this.debugApiDetailTab.update(detail);
+        }
+    }
+
+    /**
      * 既存テーブルの定義編集タブを開く。
      * エクスプローラー・タブ・列ヘッダーの各コンテキストメニューから呼ばれる。
      */
@@ -1507,14 +1569,76 @@ export class Tab {
     }
 
     /**
+     * API詳細タブをアクティブ化する。
+     * DEBUG CONSOLE のログ行クリックから開かれる一時タブで、通常テーブルとは独立して全幅表示する。
+     */
+    private activateDebugApiDetailTab(): void {
+        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+            this.editor.leaveSettingsMode();
+        }
+
+        // 差分タブがアクティブだった場合: 全差分タブを非表示にする
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabs.forEach(diffTab => diffTab.hide());
+        }
+
+        // 通常テーブルタブがアクティブなら非アクティブ化する
+        if (this.activeTabName && this.activeTabName !== DEBUG_API_DETAIL_TAB_NAME) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+
+        // 他の特殊タブが表示中であれば非表示にする
+        if (this.settingsWrapperElement !== false) {
+            this.settingsWrapperElement.style.display = 'none';
+        }
+        if (this.erDiagramWrapperElement !== false) {
+            this.erDiagramWrapperElement.style.display = 'none';
+        }
+        if (this.tableDefinitionWrapperElement !== false) {
+            this.tableDefinitionWrapperElement.style.display = 'none';
+        }
+
+        this.activeTabName = DEBUG_API_DETAIL_TAB_NAME;
+        this.persistTabs();
+
+        const detail = this.pendingDebugApiDetail;
+        this.pendingDebugApiDetail = null;
+
+        if (this.debugApiDetailWrapperElement === false) {
+            if (detail === null) return;
+            const wrapper = document.createElement('div');
+            wrapper.classList.add('tab-wrapper', 'debug-api-detail-tab-wrapper');
+            this.editor.appendChild(wrapper);
+            this.debugApiDetailWrapperElement = wrapper;
+
+            this.debugApiDetailTab = new DebugApiDetailTab(detail);
+            this.debugApiDetailTab.appendTo(wrapper);
+        } else if (detail !== null && this.debugApiDetailTab !== false) {
+            this.debugApiDetailTab.update(detail);
+        }
+
+        this.relationsPanel.disconnectEditorTable();
+        this.editor.enterSettingsMode();
+
+        this.debugApiDetailWrapperElement.style.display = '';
+        if (this.debugApiDetailTab !== false) {
+            this.debugApiDetailTab.show();
+        }
+    }
+
+    /**
      * テーブル定義タブをアクティブ化する。
      * enableTabButton(TABLE_DEFINITION_TAB_NAME) から呼ばれる。
      * TableDefinitionEditor の初回生成・再表示を担う。
      * 設定タブと同様に全幅表示する。
      */
     private activateTableDefinitionTab(): void {
-        // 設定タブ・差分タブ・ER図タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元する
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+        // 設定タブ・差分タブ・ER図タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元する
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
             this.editor.leaveSettingsMode();
         }
 
@@ -1539,6 +1663,11 @@ export class Tab {
         // ER図タブが表示中であれば非表示にする
         if (this.erDiagramWrapperElement !== false) {
             this.erDiagramWrapperElement.style.display = 'none';
+        }
+
+        // API詳細タブが表示中であれば非表示にする
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
         }
 
         this.activeTabName = TABLE_DEFINITION_TAB_NAME;
@@ -1654,8 +1783,8 @@ export class Tab {
      * 通常テーブルタブの場合のみテーブル操作項目を表示する。
      */
     showTabButtonContextMenu(tabName: string, x: number, y: number): void {
-        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブは通常テーブル操作の対象外
-        if (tabName === SETTINGS_TAB_NAME || tabName === ER_DIAGRAM_TAB_NAME || tabName === TABLE_DEFINITION_TAB_NAME || tabName.startsWith(DIFF_TAB_PREFIX)) return;
+        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブ・API詳細タブは通常テーブル操作の対象外
+        if (tabName === SETTINGS_TAB_NAME || tabName === ER_DIAGRAM_TAB_NAME || tabName === TABLE_DEFINITION_TAB_NAME || tabName === DEBUG_API_DETAIL_TAB_NAME || tabName.startsWith(DIFF_TAB_PREFIX)) return;
         this.contextMenu.show(x, y, [
             {
                 label: 'テーブル定義を編集',
@@ -1807,9 +1936,9 @@ export class Tab {
      * 設定タブと同様に全幅表示する。
      */
     private activateErDiagramTab(): void {
-        // 設定タブ・差分タブ・テーブル定義タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // 設定タブ・差分タブ・テーブル定義タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
         // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
             this.editor.leaveSettingsMode();
         }
 
@@ -1834,6 +1963,11 @@ export class Tab {
         // テーブル定義タブが表示中であれば非表示にする
         if (this.tableDefinitionWrapperElement !== false) {
             this.tableDefinitionWrapperElement.style.display = 'none';
+        }
+
+        // API詳細タブが表示中であれば非表示にする
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
         }
 
         this.activeTabName = ER_DIAGRAM_TAB_NAME;
@@ -1908,6 +2042,11 @@ export class Tab {
             this.tableDefinitionWrapperElement.style.display = 'none';
         }
 
+        // API詳細タブが表示中であれば非表示にする
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
+        }
+
         // 通常テーブルタブがアクティブなら非アクティブ化する
         if (this.activeTabName && this.activeTabName !== SETTINGS_TAB_NAME) {
             const previousState = this.tabStates.get(this.activeTabName);
@@ -1975,6 +2114,7 @@ export class Tab {
         if (this.activeTabName === SETTINGS_TAB_NAME) return;
         if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
         if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
+        if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
         if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) return;
         const state = this.tabStates.get(this.activeTabName);
         if (!state) throw new Error(`focusActiveEditorTable: タブ '${this.activeTabName}' の状態が見つかりません`);
@@ -1998,6 +2138,7 @@ export class Tab {
         if (this.activeTabName === SETTINGS_TAB_NAME) return;
         if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
         if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
+        if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
         const formPanel = this.currentFormPanel;
         if (formPanel !== false) {
             await formPanel.flushPendingCommitsAsync();
@@ -2094,16 +2235,16 @@ export class Tab {
      */
     private activateDiffTab(diffTabName: string): void {
         // 通常テーブルタブがアクティブなら非アクティブ化する
-        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME && this.activeTabName !== ER_DIAGRAM_TAB_NAME && this.activeTabName !== TABLE_DEFINITION_TAB_NAME) {
+        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME && this.activeTabName !== ER_DIAGRAM_TAB_NAME && this.activeTabName !== TABLE_DEFINITION_TAB_NAME && this.activeTabName !== DEBUG_API_DETAIL_TAB_NAME) {
             const previousState = this.tabStates.get(this.activeTabName);
             if (previousState) {
                 this.deactivateTabState(previousState);
             }
         }
 
-        // 設定タブ・ER図タブ・テーブル定義タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
         // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME) {
+        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
@@ -2120,6 +2261,11 @@ export class Tab {
         // テーブル定義タブが表示中であれば非表示にする
         if (this.tableDefinitionWrapperElement !== false) {
             this.tableDefinitionWrapperElement.style.display = 'none';
+        }
+
+        // API詳細タブが表示中であれば非表示にする
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
         }
 
         this.activeTabName = diffTabName;
@@ -2169,7 +2315,7 @@ export class Tab {
         // enableTabButton は highlightExplorerFile / activateTabState も内包するため、
         // ハイライト・スクロール位置復元・activeTabName の更新がすべてここで完結する。
         const remainingNormal = this.tabButtons.find(
-            btn => btn.name !== SETTINGS_TAB_NAME && btn.name !== ER_DIAGRAM_TAB_NAME && btn.name !== TABLE_DEFINITION_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
+            btn => btn.name !== SETTINGS_TAB_NAME && btn.name !== ER_DIAGRAM_TAB_NAME && btn.name !== TABLE_DEFINITION_TAB_NAME && btn.name !== DEBUG_API_DETAIL_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
         );
         if (remainingNormal) {
             this.enableTabButton(remainingNormal.name);
