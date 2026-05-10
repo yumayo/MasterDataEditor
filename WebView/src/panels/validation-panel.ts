@@ -457,21 +457,8 @@ export class ValidationPanel {
      * エラー項目クリック時に該当テーブルタブを開き、対象セルにフォーカスする。
      */
     private jumpToError(error: ValidationError): void {
-        const tableName = error.tableName;
-        const tabStates = this.tab.getTabStates();
-        const state = tabStates.get(tableName);
-        if (state) {
-            this.tab.switchToExistingTab(tableName);
-            const domRow = state.editorTable.storeRowToDomRow(error.rowIndex);
-            if (domRow === null) return;
-            const domCol = resolveDomColumnForError(state.editorTable, error.columnIndex);
-            state.selection.setRange(domRow, domCol, domRow, domCol);
-            state.selection.move(domRow, domCol);
-            state.editorTableHandler.activate();
-        } else {
-            if (error.rowIndex < 0) return;
-            this.tab.navigateToTableStoreCell(tableName, error.rowIndex, error.columnIndex);
-        }
+        if (error.rowIndex < 0) return;
+        this.tab.navigateToTableStoreCell(error.tableName, error.rowIndex, error.columnIndex);
     }
 
     private selectErrorItem(item: HTMLElement, error: ValidationError): void {
@@ -530,11 +517,4 @@ function convertPluginErrors(pluginErrors: PluginValidationError[], store: InMem
         });
     }
     return result;
-}
-
-function resolveDomColumnForError(editorTable: { getTableData(): { columnMapping: readonly number[] }; dataColumnOffset(): number }, storeColumnIndex: number): number {
-    if (storeColumnIndex < 0) return editorTable.dataColumnOffset();
-    const dataColumnIndex = editorTable.getTableData().columnMapping.indexOf(storeColumnIndex);
-    if (dataColumnIndex === -1) return editorTable.dataColumnOffset();
-    return dataColumnIndex + editorTable.dataColumnOffset();
 }

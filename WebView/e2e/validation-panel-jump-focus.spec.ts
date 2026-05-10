@@ -63,6 +63,20 @@ function createFkFileSystem(): MockFileSystem {
     };
 }
 
+function createLargeFkFileSystem(): MockFileSystem {
+    const productRows = ['1,999,broken_sword'];
+    for (let i = 2; i <= 240; i++) {
+        productRows.push(`${i},2,item_${i}`);
+    }
+    return {
+        ...createFkFileSystem(),
+        "data/product.csv": [
+            "id,category_id,name",
+            ...productRows,
+        ].join("\n"),
+    };
+}
+
 /**
  * PK重複テスト用のファイルシステムを生成する
  * item テーブル: id=1 が2行あるため初期状態でPK重複が発生する
@@ -112,6 +126,25 @@ function getValidationPanelItems(page: Page): Locator {
  */
 async function openValidationPanelAsync(page: Page): Promise<void> {
     await page.locator('.status-bar-badge').click();
+}
+
+function getTableMainViewport(page: Page, tableName: string): Locator {
+    return page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table-main-viewport`);
+}
+
+async function waitForAnimationFrames(page: Page, count: number): Promise<void> {
+    await page.evaluate((frameCount) => new Promise<void>((resolve) => {
+        let remaining = frameCount;
+        const next = () => {
+            remaining--;
+            if (remaining <= 0) {
+                resolve();
+                return;
+            }
+            requestAnimationFrame(next);
+        };
+        requestAnimationFrame(next);
+    }), count);
 }
 
 // =============================================================================
@@ -214,6 +247,43 @@ test.describe('ISSUE_0102: PROBLEMSパネルからジャンプ後のキー入力
             // 8. 入力した文字がテキストフィールドに実際に反映されていることを検証する
             //    async完了後にshow()でtextContentがnullクリアされるバグを検出するためのアサーション
             await expect(editField).toHaveText('x');
+        },
+    );
+
+    test(
+        '別タブからPROBLEMSのエラーへジャンプした後、保存済みスクロール位置に戻らない',
+        async ({ page }) => {
+            await installMockApiAsync(page, createLargeFkFileSystem());
+            await page.goto('/');
+
+            await openTableAsync(page, 'category');
+            await openTableAsync(page, 'product');
+
+            const productViewport = getTableMainViewport(page, 'product');
+            await expect(productViewport).toBeVisible();
+            await productViewport.evaluate((el) => {
+                el.scrollTop = el.scrollHeight;
+                el.dispatchEvent(new Event('scroll'));
+            });
+            await waitForAnimationFrames(page, 2);
+            const bottomScrollTop = await productViewport.evaluate((el) => el.scrollTop);
+            expect(bottomScrollTop, 'テスト前提: product を下方にスクロールできること').toBeGreaterThan(1000);
+
+            await openTableAsync(page, 'category');
+            await openValidationPanelAsync(page);
+            const productFkError = getValidationPanelItems(page).filter({ hasText: 'product' });
+            await expect(productFkError.first()).toBeVisible();
+
+            await productFkError.first().click();
+            await waitForAnimationFrames(page, 4);
+
+            const activeProductViewport = getTableMainViewport(page, 'product');
+            await expect(activeProductViewport).toBeVisible();
+            const afterJumpScrollTop = await activeProductViewport.evaluate((el) => el.scrollTop);
+            expect(afterJumpScrollTop, `ジャンプ後に保存済みスクロール位置へ戻っています: before=${bottomScrollTop}, after=${afterJumpScrollTop}`).toBeLessThan(200);
+
+            const focusedCell = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="product"] .editor-table-cell-focused`);
+            await expect(focusedCell).toHaveText('999');
         },
     );
 });
