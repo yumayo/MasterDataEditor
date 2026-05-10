@@ -58,8 +58,6 @@ test.describe('datetime型セル入力', () => {
         await picker.locator('.date-time-picker-hour-input').fill('13');
         await picker.locator('.date-time-picker-minute-input').fill('40');
         await picker.locator('.date-time-picker-second-input').fill('55');
-        await expect(page.locator('.grid-textfield-active')).toHaveText('2026-05-15 13:40:55');
-        await page.mouse.click(5, 5);
 
         await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
         await expect(cell).toContainText('2026-05-15 13:40:55');
@@ -146,6 +144,34 @@ test.describe('datetime型セル入力', () => {
 
         await expect(hourInput).toHaveValue('23');
         await expect(input).toHaveText('2026-05-10 23:30:45');
+    });
+
+    test('datetime型セルの秒まで入力するとカレンダーを閉じて確定する', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const hourInput = picker.locator('.date-time-picker-hour-input');
+        const minuteInput = picker.locator('.date-time-picker-minute-input');
+        const secondInput = picker.locator('.date-time-picker-second-input');
+
+        await hourInput.focus();
+        await hourInput.selectText();
+        await page.keyboard.type('12');
+        await expect(minuteInput).toBeFocused();
+
+        await page.keyboard.type('34');
+        await expect(secondInput).toBeFocused();
+
+        await page.keyboard.press('5');
+        await page.keyboard.press('6');
+        await expect(secondInput).toHaveValue('56');
+        await expect(picker.locator('.date-time-picker-popover')).toBeVisible();
+        await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
+        await expect(page.locator('.grid-textfield-active')).toHaveCount(0);
+        await expect(cell).toContainText('2026-05-10 12:34:56');
     });
 
     test('datetime型セルのテキスト編集はカレンダーへ即時反映される', async ({ page }) => {

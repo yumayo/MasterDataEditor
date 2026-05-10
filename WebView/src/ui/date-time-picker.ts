@@ -42,6 +42,7 @@ export class DateTimePicker {
     private draftParts: DateTimeParts;
     private visibleYear: number;
     private visibleMonth: number;
+    private finalTimeInputCloseFrame: number | null;
 
     constructor(options: DateTimePickerOptions) {
         this.onCommit = options.onCommit;
@@ -51,6 +52,7 @@ export class DateTimePicker {
         this.draftParts = parseDateTimeParts(this.value) ?? dateToParts(new Date());
         this.visibleYear = this.draftParts.year;
         this.visibleMonth = this.draftParts.month;
+        this.finalTimeInputCloseFrame = null;
 
         this.element = document.createElement('div');
         this.element.classList.add('date-time-picker', ...(options.rootClassNames ?? []));
@@ -268,6 +270,7 @@ export class DateTimePicker {
     }
 
     destroy(): void {
+        this.clearFinalTimeInputCloseFrame();
         document.removeEventListener('mousedown', this.outsideClickHandler);
         document.removeEventListener('keydown', this.escKeyHandler);
         this.element.remove();
@@ -285,6 +288,7 @@ export class DateTimePicker {
     }
 
     private hide(notifyDismiss = true): void {
+        this.clearFinalTimeInputCloseFrame();
         const wasVisible = this.popover.classList.contains('visible');
         this.popover.classList.remove('visible');
         this.input.setAttribute('aria-expanded', 'false');
@@ -310,10 +314,12 @@ export class DateTimePicker {
         let explicitDigitCount = 0;
         let pendingInsertedDigitCount = 0;
         input.addEventListener('focus', () => {
+            this.clearFinalTimeInputCloseFrame();
             explicitDigitCount = 0;
             pendingInsertedDigitCount = 0;
         });
         input.addEventListener('beforeinput', (event: InputEvent) => {
+            this.clearFinalTimeInputCloseFrame();
             pendingInsertedDigitCount = 0;
             if (event.inputType.startsWith('delete')) {
                 explicitDigitCount = 0;
@@ -346,7 +352,7 @@ export class DateTimePicker {
             this.commitDraft(false);
             if (explicitDigitCount >= 2 && input.value.length === 2 && (input.selectionStart ?? 0) === 2) {
                 explicitDigitCount = 0;
-                this.focusNextTimeInput(input);
+                if (!this.focusNextTimeInput(input)) this.scheduleFinalTimeInputClose();
             }
         });
         input.addEventListener('blur', () => {
@@ -358,15 +364,32 @@ export class DateTimePicker {
         return input;
     }
 
-    private focusNextTimeInput(input: HTMLInputElement): void {
+    private focusNextTimeInput(input: HTMLInputElement): boolean {
         const nextInput = input === this.hourInput
             ? this.minuteInput
             : input === this.minuteInput
                 ? this.secondInput
                 : null;
-        if (nextInput === null) return;
+        if (nextInput === null) return false;
         nextInput.focus({ preventScroll: true });
         nextInput.select();
+        return true;
+    }
+
+    private scheduleFinalTimeInputClose(): void {
+        this.clearFinalTimeInputCloseFrame();
+        this.finalTimeInputCloseFrame = window.requestAnimationFrame(() => {
+            this.finalTimeInputCloseFrame = window.requestAnimationFrame(() => {
+                this.finalTimeInputCloseFrame = null;
+                if (this.popover.classList.contains('visible')) this.hide();
+            });
+        });
+    }
+
+    private clearFinalTimeInputCloseFrame(): void {
+        if (this.finalTimeInputCloseFrame === null) return;
+        window.cancelAnimationFrame(this.finalTimeInputCloseFrame);
+        this.finalTimeInputCloseFrame = null;
     }
 
     private createTimeUnit(labelText: string, input: HTMLInputElement): HTMLElement {
