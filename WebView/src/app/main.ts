@@ -14,7 +14,7 @@ import {NotificationToast} from "../ui/notification";
 import {ValidationEngine, createValidationTableSchemaFromJson, type TableSchema} from "../validation/validation-engine";
 import {ValidationPanel} from "../panels/validation-panel";
 import {PluginValidationRunner} from "../validation/plugin-validation-runner";
-import {StatusBar} from "../ui/status-bar";
+import {bindStatusBarActions, createStatusBarActions, StatusBar} from "../ui/status-bar";
 import {BackgroundTaskTracker} from "./background-task-tracker";
 import {DebugConsole} from "../panels/debug-console";
 import {BottomPanel} from "../panels/bottom-panel";
@@ -27,24 +27,23 @@ import {BOOKMARKS_FILE} from "../config/userdata-path";
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
 (async () => {
+    // ステータスバーは起動直後から予約領域を実体として描画する。
+    // BottomPanel 操作用の action port は後段で Object.assign して実装する。
+    const debugConsole = new DebugConsole();
+    const notification = new NotificationToast(debugConsole);
+    const statusBarActions = createStatusBarActions();
+    const statusBar = new StatusBar(statusBarActions, notification);
+    statusBar.appendTo(document.body);
+    // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
+    (window as unknown as Record<string, unknown>)['notification'] = notification;
+
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
     const storedUiState = await readStoredUiStateAsync();
     const uiStateStore = new UiStateStore(storedUiState);
 
     // preload 前に DEBUG CONSOLE 追跡基盤を構築する。
-    // preloadAllFilesAsync() 内の C# 通信（find_files × 2, read_file × N）を
-    // BackgroundTaskTracker 経由で DEBUG CONSOLE に記録するため、先に生成する必要がある。
-    // StatusBar は BottomPanel 生成後でないと本物を作れないため、
-    // updateBackgroundTasks() の no-op をプロトタイプに持つ stub を用意する。
-    // 後で Object.setPrototypeOf(statusBar, StatusBar.prototype) が呼ばれると
-    // プロトタイプが差し替わり本物のメソッドが有効になる。
-    const debugConsole = new DebugConsole();
-    const statusBar = Object.create({
-        updateBackgroundTasks() {},
-        updateCount() {},
-        appendTo() {},
-    }) as StatusBar;
+    // 設定ファイル未作成時の read_file 失敗は通常状態なので、設定/UI状態読み込み後に追跡を開始する。
     const backgroundTaskTracker = new BackgroundTaskTracker(statusBar, debugConsole);
     configureBackgroundTracker(backgroundTaskTracker);
 
@@ -66,10 +65,6 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
     // 参照データキャッシュ（アプリケーション全体で1つ、中央ストア経由でインメモリデータを取得する）
     const referenceDataCache = new ReferenceDataCache(store);
-
-    // 通知ポップアップを初期化（アプリ全体で1つ。Tab より先に生成し、Tab 経由で子コンポーネントに伝播させる）
-    // DebugConsole を渡して通知発行時にログ記録する。StatusBar のコンストラクタに渡してステータスバー内に配置する
-    const notification = new NotificationToast(debugConsole);
 
     // Tab → Sidebar の循環依存を Object.assign パターンで解決する
     const sidebar = {} as Sidebar;
@@ -105,16 +100,13 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     // コマンドパレットを初期化（タブへの密結合、クエリ式検索でストアデータを参照するため openEditorTables を渡す）
     const commandPalette = new CommandPalette(tab, document.body, tab.getOpenEditorTables());
 
-    // statusBar stub は preload 前に生成済み（DEBUG CONSOLE 追跡基盤として）。
-    // ここでは pluginRunner → validationPanel → bottomPanel → realStatusBar の順で生成し、
-    // Object.assign + setPrototypeOf で stub を本物に昇格させる（Tab ↔ Sidebar と同じパターン）。
+    // StatusBar は起動直後にDOMだけ先行描画済み。
+    // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
     const pluginValidationRunner = new PluginValidationRunner(store);
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
     const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
-    const realStatusBar = new StatusBar(bottomPanel, notification);
-    Object.assign(statusBar, realStatusBar);
-    Object.setPrototypeOf(statusBar, StatusBar.prototype);
+    bindStatusBarActions(statusBarActions, bottomPanel);
 
     tab.connectValidationPanel(validationPanel);
     // エラーツールチップを生成して Tab に接続する（全 EditorTable で共有するシングルトン）
@@ -122,11 +114,6 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     tab.connectErrorTooltip(errorTooltip);
     // ボトムパネル（PROBLEMS / DEBUG CONSOLE）を editor 下段に配置する
     editor.appendBottomPanel(bottomPanel);
-    // ステータスバーは画面幅いっぱいに表示するため body 直下に配置する
-    statusBar.appendTo(document.body);
-
-    // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
-    (window as unknown as Record<string, unknown>)['notification'] = notification;
 
     // テスト用: window.editorを公開（activeEditorTableへのアクセスを提供）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

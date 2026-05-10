@@ -37,6 +37,12 @@
     background-color: var(--hover-color);
 }
 
+.status-bar-notification-slot {
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
 /* バッジ内アイコン */
 .status-bar-badge-icon {
     display: flex;
@@ -130,4 +136,3 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-

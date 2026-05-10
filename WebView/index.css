@@ -6,6 +6,9 @@ body {
 
     /* エディターなので小さめのフォントにします。 */
     font-size: 13px;
+
+    background-color: var(--background-color);
+    color: var(--font-color);
 }
 
 :root {
