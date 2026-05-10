@@ -23,6 +23,7 @@ export interface FormPanelNavEntry {
     tableName: string;
     pkValue: string;
     label: string;
+    storeRowIndex?: number;
 }
 
 interface FormPage extends FormPanelNavEntry {}
@@ -54,11 +55,17 @@ interface ReferenceSection {
 interface ReferenceItem {
     tableName: string;
     pkValue: string;
+    storeRowIndex: number | null;
     pkColumnIndex: number;
     primaryText: string;
     metaParts: string[];
     canOpen: boolean;
     missing: boolean;
+}
+
+interface IndexedRow {
+    row: string[];
+    storeRowIndex: number;
 }
 
 type DisplayCandidateSource =
@@ -97,6 +104,7 @@ interface ActiveReferenceField {
 interface FormNodeMeta {
     tableName: string;
     pkValue: string;
+    storeRowIndex: number | null;
     parentNodeId: string | null;
     depth: number;
 }
@@ -199,19 +207,29 @@ export class FormPanel {
         return this.panelElement.isConnected;
     }
 
-    showForRowAsync(tableName: string, pkValue: string): Promise<void> {
-        this.navStack = [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }];
+    showForRowAsync(tableName: string, pkValue: string, storeRowIndex: number | null = null): Promise<void> {
+        this.navStack = [{ tableName, pkValue, label: `${tableName} / ${pkValue}`, ...this.buildOptionalStoreRowIndex(storeRowIndex) }];
         return this.renderCurrentPageAsync();
     }
 
-    restoreNavStackAsync(navStack: Array<{tableName: string; pkValue: string; label: string}>): Promise<void> {
+    restoreNavStackAsync(navStack: Array<{tableName: string; pkValue: string; label: string; storeRowIndex?: number}>): Promise<void> {
         const root = navStack[0];
-        this.navStack = root === undefined ? [] : [{ ...root }];
+        this.navStack = root === undefined ? [] : [{
+            tableName: root.tableName,
+            pkValue: root.pkValue,
+            label: root.label,
+            ...this.buildOptionalStoreRowIndex(root.storeRowIndex ?? null),
+        }];
         return this.renderCurrentPageAsync();
     }
 
     getNavStackSnapshot(): FormPanelNavEntry[] {
-        return this.navStack.map(page => ({ ...page }));
+        return this.navStack.map(page => ({
+            tableName: page.tableName,
+            pkValue: page.pkValue,
+            label: page.label,
+            ...this.buildOptionalStoreRowIndex(page.storeRowIndex ?? null),
+        }));
     }
 
     async flushPendingCommitsAsync(): Promise<void> {
@@ -254,7 +272,7 @@ export class FormPanel {
         }
 
         try {
-            await this.renderNodeIntoAsync(nextContent, 'root', page.tableName, page.pkValue, 0, null, requestId, true, nextContent);
+            await this.renderNodeIntoAsync(nextContent, 'root', page.tableName, page.pkValue, page.storeRowIndex ?? null, 0, null, requestId, true, nextContent);
             if (requestId !== this.currentRequestId) return;
             this.replaceContentIfCurrent(content, nextContent, requestId);
         } catch (err) {
@@ -288,6 +306,7 @@ export class FormPanel {
         nodeId: string,
         tableName: string,
         pkValue: string,
+        storeRowIndex: number | null,
         depth: number,
         parentNodeId: string | null,
         requestId: number,
@@ -303,9 +322,10 @@ export class FormPanel {
         node.dataset.nodeId = nodeId;
         node.dataset.tableName = tableName;
         node.dataset.pkValue = pkValue;
+        if (storeRowIndex !== null) node.dataset.storeRowIndex = String(storeRowIndex);
         node.dataset.depth = String(depth);
         this.nodeElementsById.set(nodeId, node);
-        this.nodeMetaById.set(nodeId, { tableName, pkValue, parentNodeId, depth });
+        this.nodeMetaById.set(nodeId, { tableName, pkValue, storeRowIndex, parentNodeId, depth });
 
         container.replaceChildren(node);
         node.replaceChildren(this.buildMessage('読み込み中...', 'form-panel-loading'));
@@ -319,9 +339,7 @@ export class FormPanel {
 
             const pkColumnName = extractFirstPrimaryKeyColumn(schema);
             const pkColumnIndex = tableData.header.indexOf(pkColumnName);
-            const rowIndex = pkColumnIndex === -1
-                ? -1
-                : tableData.rows.findIndex(row => row[pkColumnIndex] === pkValue);
+            const rowIndex = this.resolveTargetRowIndex(tableData.rows, pkColumnIndex, pkValue, storeRowIndex);
 
             node.replaceChildren();
 
@@ -331,6 +349,8 @@ export class FormPanel {
             }
 
             const row = tableData.rows[rowIndex];
+            node.dataset.storeRowIndex = String(rowIndex);
+            this.nodeMetaById.set(nodeId, { tableName, pkValue, storeRowIndex: rowIndex, parentNodeId, depth });
             const referenceLockedColumnNames = await this.resolveReferenceLockedColumnNamesAsync(tableName, tableData.header, row, schema, requestId);
             if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
             this.nodeDataById.set(nodeId, {
@@ -606,6 +626,7 @@ export class FormPanel {
                 if (currentPage !== undefined) {
                     currentPage.pkValue = value;
                     currentPage.label = `${data.tableName} / ${value}`;
+                    currentPage.storeRowIndex = data.rowIndex;
                 }
             }
         }
@@ -824,7 +845,7 @@ export class FormPanel {
         await this.renderReferencesAsync(nodeId, requestId);
         if (requestId !== this.currentRequestId) return;
 
-        const changedItem = await this.createReferenceItemAsync(data.tableName, data.header, data.row, data.schema, false, requestId);
+        const changedItem = await this.createReferenceItemAsync(data.tableName, data.header, data.row, data.schema, false, requestId, data.rowIndex);
         if (requestId !== this.currentRequestId) return;
         await this.refreshVisibleReferenceItemsAsync(requestId, changedItem, previousPkValue);
     }
@@ -891,22 +912,23 @@ export class FormPanel {
         this.applyChangedReferenceItemToVisibleElements(changedItem, previousPkValue);
 
         const itemElements = Array.from(this.panelElement.querySelectorAll('.form-panel-ref-item[data-ref-table-name][data-ref-pk-value]')) as HTMLElement[];
-        const itemKeys = new Map<string, { tableName: string; pkValue: string; elements: HTMLElement[] }>();
+        const itemKeys = new Map<string, { tableName: string; pkValue: string; storeRowIndex: number | null; elements: HTMLElement[] }>();
         for (const element of itemElements) {
             const tableName = element.dataset.refTableName;
             const pkValue = element.dataset.refPkValue;
             if (tableName === undefined || pkValue === undefined || pkValue === '') continue;
-            const key = `${tableName}\n${pkValue}`;
+            const storeRowIndex = this.parseOptionalStoreRowIndex(element.dataset.refStoreRowIndex);
+            const key = `${tableName}\n${pkValue}\n${storeRowIndex ?? ''}`;
             const existing = itemKeys.get(key);
             if (existing !== undefined) {
                 existing.elements.push(element);
             } else {
-                itemKeys.set(key, { tableName, pkValue, elements: [element] });
+                itemKeys.set(key, { tableName, pkValue, storeRowIndex, elements: [element] });
             }
         }
 
         await Promise.all(Array.from(itemKeys.values()).map(async entry => {
-            const item = await this.resolveReferenceItemByPkAsync(entry.tableName, entry.pkValue, requestId);
+            const item = await this.resolveReferenceItemByIdentityAsync(entry.tableName, entry.pkValue, entry.storeRowIndex, requestId);
             if (item === null || requestId !== this.currentRequestId) return;
             for (const element of entry.elements) {
                 if (!element.isConnected) continue;
@@ -919,14 +941,17 @@ export class FormPanel {
         const elements = Array.from(this.panelElement.querySelectorAll('.form-panel-ref-item[data-ref-table-name][data-ref-pk-value]')) as HTMLElement[];
         for (const element of elements) {
             if (element.dataset.refTableName !== item.tableName) continue;
+            const elementStoreRowIndex = this.parseOptionalStoreRowIndex(element.dataset.refStoreRowIndex);
+            if (item.storeRowIndex !== null && elementStoreRowIndex !== item.storeRowIndex) continue;
             const elementPkValue = element.dataset.refPkValue;
             if (elementPkValue !== previousPkValue && elementPkValue !== item.pkValue) continue;
             element.dataset.refPkValue = item.pkValue;
+            if (item.storeRowIndex !== null) element.dataset.refStoreRowIndex = String(item.storeRowIndex);
             this.applyReferenceItemContent(element, item);
         }
     }
 
-    private async resolveReferenceItemByPkAsync(tableName: string, pkValue: string, requestId: number): Promise<ReferenceItem | null> {
+    private async resolveReferenceItemByIdentityAsync(tableName: string, pkValue: string, storeRowIndex: number | null, requestId: number): Promise<ReferenceItem | null> {
         const [tableData, schema] = await Promise.all([
             this.resolveTableDataAsync(tableName),
             this.loadSchemaJsonAsync(tableName),
@@ -936,9 +961,9 @@ export class FormPanel {
         const pkColumnName = extractFirstPrimaryKeyColumn(schema);
         const pkColumnIndex = tableData.header.indexOf(pkColumnName);
         if (pkColumnIndex === -1) return null;
-        const row = tableData.rows.find(candidate => (candidate[pkColumnIndex] ?? '') === pkValue);
-        if (row === undefined) return null;
-        return this.createReferenceItemAsync(tableName, tableData.header, row, schema, false, requestId);
+        const rowIndex = this.resolveTargetRowIndex(tableData.rows, pkColumnIndex, pkValue, storeRowIndex);
+        if (rowIndex === -1) return null;
+        return this.createReferenceItemAsync(tableName, tableData.header, tableData.rows[rowIndex], schema, false, requestId, rowIndex);
     }
 
     private async resolveReferenceLockedColumnNamesAsync(
@@ -1091,7 +1116,7 @@ export class FormPanel {
                 if (requestId !== this.currentRequestId) return sections;
                 const targetSchema = await this.loadSchemaJsonAsync(expr.tableName);
                 if (requestId !== this.currentRequestId) return sections;
-                const matchedRows = this.filterRowsByColumn(targetData.rows, targetData.header, expr.columnName, fkValue);
+                const matchedRows = this.filterRowsByColumnWithIndex(targetData.rows, targetData.header, expr.columnName, fkValue);
                 sections.push(await this.buildOutgoingSectionAsync(
                     column.name,
                     fkValue,
@@ -1143,7 +1168,7 @@ export class FormPanel {
         ]);
         if (requestId !== this.currentRequestId) return null;
 
-        const matchedRows = this.filterRowsByColumn(targetData.rows, targetData.header, targetColumnName, fkValue);
+        const matchedRows = this.filterRowsByColumnWithIndex(targetData.rows, targetData.header, targetColumnName, fkValue);
         return this.buildOutgoingSectionAsync(columnName, fkValue, targetTableName, targetColumnName, targetData.header, matchedRows, targetSchema, requestId);
     }
 
@@ -1153,7 +1178,7 @@ export class FormPanel {
         targetTableName: string,
         targetColumnName: string,
         targetHeader: string[],
-        matchedRows: string[][],
+        matchedRows: IndexedRow[],
         targetSchema: SchemaJson,
         requestId: number,
     ): Promise<ReferenceSection> {
@@ -1164,7 +1189,7 @@ export class FormPanel {
             title: `参照先: ${sourceColumnName} → ${targetTableName}`,
             badge: `${matchedRows.length}`,
             emptyText: `値 "${fkValue}" に一致する参照先がありません`,
-            items: await Promise.all(matchedRows.map(row => this.createReferenceItemAsync(targetTableName, targetHeader, row, targetSchema, false, requestId))),
+            items: await Promise.all(matchedRows.map(({row, storeRowIndex}) => this.createReferenceItemAsync(targetTableName, targetHeader, row, targetSchema, false, requestId, storeRowIndex))),
             attached: false,
         };
     }
@@ -1187,8 +1212,8 @@ export class FormPanel {
             if (requestId !== this.currentRequestId) return sections;
 
             const fkColIdx = childData.header.indexOf(entry.childColumnName);
-            const filteredRows = fkColIdx === -1 ? [] : childData.rows.filter(row => row[fkColIdx] === pkValue);
-            const items = await Promise.all(filteredRows.map(row => this.createReferenceItemAsync(entry.childTableName, childData.header, row, childSchema, false, requestId)));
+            const filteredRows = fkColIdx === -1 ? [] : this.filterRowsByColumnWithIndex(childData.rows, childData.header, entry.childColumnName, pkValue);
+            const items = await Promise.all(filteredRows.map(({row, storeRowIndex}) => this.createReferenceItemAsync(entry.childTableName, childData.header, row, childSchema, false, requestId, storeRowIndex)));
             sections.push({
                 relationKind: 'incoming',
                 eyebrow: `参照元: ${entry.childTableName}`,
@@ -1208,7 +1233,7 @@ export class FormPanel {
         data: CurrentPageData,
         entry: ReverseReferenceEntry,
         childSchema: SchemaJson,
-        filteredRows: string[][],
+        filteredRows: IndexedRow[],
         items: ReferenceItem[],
     ): boolean {
         if (entry.isDynamic) return false;
@@ -1217,7 +1242,7 @@ export class FormPanel {
         if (filteredRows.length !== 1 || items.length !== 1) return false;
         const childPrimaryKeys = this.getPrimaryKeyColumnNames(childSchema);
         if (childPrimaryKeys.length !== 1 || childPrimaryKeys[0] !== entry.childColumnName) return false;
-        return !this.isReferenceInAncestorPath(data.nodeId, items[0].tableName, items[0].pkValue);
+        return !this.isReferenceInAncestorPath(data.nodeId, items[0].tableName, items[0].pkValue, items[0].storeRowIndex);
     }
 
     private buildAttachedReferenceHost(): HTMLElement {
@@ -1235,12 +1260,12 @@ export class FormPanel {
     ): Promise<void> {
         const item = section.items[0];
         if (item === undefined || !item.canOpen) return;
-        if (this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue)) return;
+        if (this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue, item.storeRowIndex)) return;
 
-        const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue);
+        const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue, item.storeRowIndex);
         const parentMeta = this.nodeMetaById.get(parentNodeId);
         const childDepth = parentMeta === undefined ? 1 : parentMeta.depth + 1;
-        await this.renderNodeIntoAsync(host, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, requestId, false, renderRoot);
+        await this.renderNodeIntoAsync(host, childNodeId, item.tableName, item.pkValue, item.storeRowIndex, childDepth, parentNodeId, requestId, false, renderRoot);
     }
 
     private hasVisibleReferenceItems(section: ReferenceSection, parentNodeId: string): boolean {
@@ -1248,7 +1273,7 @@ export class FormPanel {
     }
 
     private getVisibleReferenceItems(section: ReferenceSection, parentNodeId: string): ReferenceItem[] {
-        return section.items.filter(item => !this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue));
+        return section.items.filter(item => !this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue, item.storeRowIndex));
     }
 
     private buildReferenceSection(section: ReferenceSection, parentNodeId: string): HTMLElement {
@@ -1298,7 +1323,7 @@ export class FormPanel {
         wrapper.classList.add('form-panel-ref-node');
         if (item.canOpen) wrapper.classList.add('form-panel-ref-node--jumpable');
 
-        const alreadyInPath = this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue);
+        const alreadyInPath = this.isReferenceInAncestorPath(parentNodeId, item.tableName, item.pkValue, item.storeRowIndex);
         const canExpand = item.canOpen && !alreadyInPath;
         const element = document.createElement(canExpand ? 'button' : 'div');
         element.classList.add('form-panel-ref-item');
@@ -1311,6 +1336,7 @@ export class FormPanel {
                     ...item,
                     tableName: element.dataset.refTableName ?? item.tableName,
                     pkValue: element.dataset.refPkValue ?? item.pkValue,
+                    storeRowIndex: this.parseOptionalStoreRowIndex(element.dataset.refStoreRowIndex) ?? item.storeRowIndex,
                 };
                 this.toggleReferenceExpansionAsync(wrapper, element as HTMLButtonElement, parentNodeId, currentItem).catch(err => {
                     console.error('[FormPanel] toggleReferenceExpansionAsync failed:', err);
@@ -1323,6 +1349,7 @@ export class FormPanel {
         if (item.missing) element.classList.add('form-panel-ref-item--missing');
         element.dataset.refTableName = item.tableName;
         element.dataset.refPkValue = item.pkValue;
+        if (item.storeRowIndex !== null) element.dataset.refStoreRowIndex = String(item.storeRowIndex);
         this.applyReferenceItemContent(element, item);
 
         wrapper.appendChild(element);
@@ -1351,9 +1378,14 @@ export class FormPanel {
     private async jumpToReferenceItemAsync(trigger: HTMLElement, item: ReferenceItem): Promise<void> {
         const tableName = trigger.dataset.refTableName ?? item.tableName;
         const pkValue = trigger.dataset.refPkValue ?? item.pkValue;
+        const storeRowIndex = this.parseOptionalStoreRowIndex(trigger.dataset.refStoreRowIndex) ?? item.storeRowIndex;
         if (tableName === '' || pkValue === '') return;
         this.hideReferenceDropdown();
         await this.flushPendingCommitsAsync();
+        if (storeRowIndex !== null) {
+            this.tab.navigateToTableStoreCell(tableName, storeRowIndex, item.pkColumnIndex);
+            return;
+        }
         if (item.pkColumnIndex !== -1) {
             this.tab.navigateToTableCell(tableName, pkValue, item.pkColumnIndex);
         } else {
@@ -1382,7 +1414,7 @@ export class FormPanel {
     }
 
     private async toggleReferenceExpansionAsync(wrapper: HTMLElement, trigger: HTMLButtonElement, parentNodeId: string, item: ReferenceItem): Promise<void> {
-        const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue);
+        const childNodeId = this.makeChildNodeId(parentNodeId, item.tableName, item.pkValue, item.storeRowIndex);
         const existingHost = Array.from(wrapper.children).find(child => child.classList.contains('form-panel-child-host')) as HTMLElement | undefined;
         if (existingHost !== undefined) {
             this.removeNodeBranch(childNodeId);
@@ -1402,22 +1434,29 @@ export class FormPanel {
 
         const parentMeta = this.nodeMetaById.get(parentNodeId);
         const childDepth = parentMeta === undefined ? 1 : parentMeta.depth + 1;
-        await this.renderNodeIntoAsync(childHost, childNodeId, item.tableName, item.pkValue, childDepth, parentNodeId, this.currentRequestId);
+        await this.renderNodeIntoAsync(childHost, childNodeId, item.tableName, item.pkValue, item.storeRowIndex, childDepth, parentNodeId, this.currentRequestId);
     }
 
-    private makeChildNodeId(parentNodeId: string, tableName: string, pkValue: string): string {
-        return `${parentNodeId}>${encodeURIComponent(tableName)}=${encodeURIComponent(pkValue)}`;
+    private makeChildNodeId(parentNodeId: string, tableName: string, pkValue: string, storeRowIndex: number | null): string {
+        const rowPart = storeRowIndex === null ? '' : `#${storeRowIndex}`;
+        return `${parentNodeId}>${encodeURIComponent(tableName)}=${encodeURIComponent(pkValue)}${rowPart}`;
     }
 
-    private isReferenceInAncestorPath(parentNodeId: string, tableName: string, pkValue: string): boolean {
+    private isReferenceInAncestorPath(parentNodeId: string, tableName: string, pkValue: string, storeRowIndex: number | null): boolean {
         let currentNodeId: string | null = parentNodeId;
         while (currentNodeId !== null) {
             const meta = this.nodeMetaById.get(currentNodeId);
             if (meta === undefined) return false;
-            if (meta.tableName === tableName && meta.pkValue === pkValue) return true;
+            if (this.isSameRowIdentity(meta, tableName, pkValue, storeRowIndex)) return true;
             currentNodeId = meta.parentNodeId;
         }
         return false;
+    }
+
+    private isSameRowIdentity(meta: FormNodeMeta, tableName: string, pkValue: string, storeRowIndex: number | null): boolean {
+        if (meta.tableName !== tableName) return false;
+        if (meta.storeRowIndex !== null && storeRowIndex !== null) return meta.storeRowIndex === storeRowIndex;
+        return meta.pkValue === pkValue;
     }
 
     private async createReferenceItemAsync(
@@ -1427,6 +1466,7 @@ export class FormPanel {
         schema: SchemaJson,
         missing: boolean,
         requestId: number,
+        storeRowIndex: number | null = null,
     ): Promise<ReferenceItem> {
         const pkColumnName = extractFirstPrimaryKeyColumn(schema);
         const pkColIdx = header.indexOf(pkColumnName);
@@ -1442,6 +1482,7 @@ export class FormPanel {
         return {
             tableName,
             pkValue,
+            storeRowIndex,
             pkColumnIndex: pkColIdx,
             primaryText: primaryText !== '' ? primaryText : '(PK値なし)',
             metaParts,
@@ -1719,6 +1760,36 @@ export class FormPanel {
         const colIdx = header.indexOf(columnName);
         if (colIdx === -1) return [];
         return rows.filter(row => row[colIdx] === value);
+    }
+
+    private filterRowsByColumnWithIndex(rows: string[][], header: string[], columnName: string, value: string): IndexedRow[] {
+        const colIdx = header.indexOf(columnName);
+        if (colIdx === -1) return [];
+        const result: IndexedRow[] = [];
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i][colIdx] === value) result.push({row: rows[i], storeRowIndex: i});
+        }
+        return result;
+    }
+
+    private resolveTargetRowIndex(rows: string[][], pkColumnIndex: number, pkValue: string, storeRowIndex: number | null): number {
+        if (storeRowIndex !== null && storeRowIndex >= 0 && storeRowIndex < rows.length) {
+            if (pkColumnIndex === -1 || (rows[storeRowIndex][pkColumnIndex] ?? '') === pkValue) return storeRowIndex;
+        }
+        if (pkColumnIndex === -1) return -1;
+        return rows.findIndex(row => (row[pkColumnIndex] ?? '') === pkValue);
+    }
+
+    private buildOptionalStoreRowIndex(storeRowIndex: number | null): {storeRowIndex: number} | Record<string, never> {
+        return storeRowIndex !== null && Number.isInteger(storeRowIndex) && storeRowIndex >= 0
+            ? {storeRowIndex}
+            : {};
+    }
+
+    private parseOptionalStoreRowIndex(value: string | undefined): number | null {
+        if (value === undefined || value === '') return null;
+        const parsed = Number(value);
+        return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
     }
 
     private getContentElement(): HTMLElement {

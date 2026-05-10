@@ -9,7 +9,7 @@ import {Tab} from "./tab";
  *   - pane-push:            定義ジャンプ（paneStack深化）(tabName, viewIndex=N)
  *   - navigate-row:         REFERENCESパネルからのジャンプ（tableName）
  *   - navigate-cell:        検索パネルからのジャンプ（tableName）
- *   - form-panel-open:      フォームパネル開（tabName, pkValue）
+ *   - form-panel-open:      フォームパネル開（tabName, pkValue, storeRowIndex）
  *
  * Tab との相互参照で密結合する。
  * Tab コンストラクタ末尾で生成され、Tab.enableTabButton() から pushTabSwitch() が呼ばれる。
@@ -53,7 +53,10 @@ export class NavigationHistory {
                     this.tab.switchToExistingTab(state['tabName']);
                     // フォームパネルを閉じて、ルートページで再オープンする（restoring中なので履歴pushはスキップされる）
                     this.tab.closeFormPanel();
-                    this.tab.showFormPanel(state['tabName'], state['pkValue']);
+                    const storeRowIndex = typeof state['storeRowIndex'] === 'number' && Number.isInteger(state['storeRowIndex']) && state['storeRowIndex'] >= 0
+                        ? state['storeRowIndex']
+                        : null;
+                    this.tab.showFormPanel(state['tabName'], state['pkValue'], storeRowIndex);
                 } else {
                     if (type === 'tab-switch' && typeof state['tabName'] === 'string') {
                         this.closeOrSuspendFormPanelForDestination(state['tabName']);
@@ -140,9 +143,14 @@ export class NavigationHistory {
      * フォームパネルを開いたことをブラウザ履歴に記録する。
      * goForward でこのエントリに到達したとき、popstate ハンドラがフォームパネルを再オープンする。
      */
-    pushFormPanelOpen(tabName: string, pkValue: string): void {
+    pushFormPanelOpen(tabName: string, pkValue: string, storeRowIndex: number | null = null): void {
         if (this.restoring) return;
-        history.pushState({ type: 'form-panel-open', tabName, pkValue }, '');
+        history.pushState({
+            type: 'form-panel-open',
+            tabName,
+            pkValue,
+            ...(storeRowIndex !== null ? {storeRowIndex} : {}),
+        }, '');
     }
 
     private closeOrSuspendFormPanelForDestination(destinationTabName: string): void {

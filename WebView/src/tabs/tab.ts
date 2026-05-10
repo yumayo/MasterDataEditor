@@ -3575,7 +3575,7 @@ export class Tab {
             this.notification.show('フォームビューを表示する行を選択してください');
             return;
         }
-        this.showFormPanel(target.tableName, target.pkValue);
+        this.showFormPanel(target.tableName, target.pkValue, target.storeRowIndex);
     }
 
     /**
@@ -3589,21 +3589,23 @@ export class Tab {
         if (!state) return;
         const pkValue = state.editorTable.getRowPkValue(rowIndex);
         if (pkValue === '') return;
+        const storeRowIndex = state.editorTable.resolveStoreRowIndex(rowIndex - 1);
         this.setActiveFormPanelState({
-            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }],
+            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}`, ...(storeRowIndex >= 0 ? {storeRowIndex} : {}) }],
         });
-        this.currentFormPanel.showForRowAsync(tableName, pkValue).catch(err => {
+        this.currentFormPanel.showForRowAsync(tableName, pkValue, storeRowIndex >= 0 ? storeRowIndex : null).catch(err => {
             console.error('[Tab] refreshFormPanelForSelectedRow: showForRowAsync failed:', String(err));
         });
     }
 
-    private resolveActiveFormPanelTarget(): { tableName: string; pkValue: string } | null {
+    private resolveActiveFormPanelTarget(): { tableName: string; pkValue: string; storeRowIndex: number | null } | null {
         const state = this.getActiveTabState();
         if (state === false) return null;
         const rowIndex = state.selection.getFocus().row;
         const pkValue = state.editorTable.getRowPkValue(rowIndex);
         if (pkValue === '') return null;
-        return { tableName: state.editorTable.tableName, pkValue };
+        const storeRowIndex = state.editorTable.resolveStoreRowIndex(rowIndex - 1);
+        return { tableName: state.editorTable.tableName, pkValue, storeRowIndex: storeRowIndex >= 0 ? storeRowIndex : null };
     }
 
     /**
@@ -3614,19 +3616,19 @@ export class Tab {
      * @param tableName 対象テーブル名
      * @param pkValue 対象行のPK値
      */
-    showFormPanel(tableName: string, pkValue: string): void {
+    showFormPanel(tableName: string, pkValue: string, storeRowIndex: number | null = null): void {
         // 履歴に記録する（pushFormPanelOpen 内部の restoring フラグで popstate 復元中は自律的にスキップされる）
         const ownerTabName = this.activeTabName !== false ? this.activeTabName : tableName;
-        this.navigationHistory.pushFormPanelOpen(ownerTabName, pkValue);
+        this.navigationHistory.pushFormPanelOpen(ownerTabName, pkValue, storeRowIndex);
 
         // FormPanel を生成して表示する（共通処理）
         const formPanel = this.createFormPanel();
         this.setActiveFormPanelState({
-            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}` }],
+            navStack: [{ tableName, pkValue, label: `${tableName} / ${pkValue}`, ...(storeRowIndex !== null ? {storeRowIndex} : {}) }],
         });
         // 指定行のフォームを非同期で描画する
         // FormPanel.renderCurrentPageAsync 内でエラー通知するため、ここでは通知しない（二重通知防止）
-        formPanel.showForRowAsync(tableName, pkValue).catch(err => {
+        formPanel.showForRowAsync(tableName, pkValue, storeRowIndex).catch(err => {
             console.error('[Tab] showFormPanel: showForRowAsync failed:', String(err));
         });
     }

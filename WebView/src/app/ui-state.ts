@@ -42,6 +42,7 @@ export interface UiStoredFormPanelNavEntry {
     tableName: string;
     pkValue: string;
     label: string;
+    storeRowIndex?: number;
 }
 
 export interface UiStoredFormPanelState {
@@ -307,7 +308,10 @@ function normalizeStoredFormPanelNavEntry(value: unknown): UiStoredFormPanelNavE
     const pkValue = normalizeLimitedString(record['pkValue'], MAX_TAB_NAME_LENGTH);
     if (tableName === null || pkValue === null) return null;
     const label = normalizeLimitedString(record['label'], MAX_FORM_PANEL_LABEL_LENGTH) ?? `${tableName} / ${pkValue}`;
-    return {tableName, pkValue, label};
+    const storeRowIndex = clampNumber(record['storeRowIndex'], 0, MAX_CELL_INDEX, -1);
+    return storeRowIndex >= 0
+        ? {tableName, pkValue, label, storeRowIndex}
+        : {tableName, pkValue, label};
 }
 
 function normalizeStoredFormPanelState(value: unknown): UiStoredFormPanelState | null {

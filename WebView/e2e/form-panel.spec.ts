@@ -107,6 +107,17 @@ function createSlowValidationFormPanelTestFileSystem(): MockFileSystem {
     };
 }
 
+function createDuplicatePkFormPanelTestFileSystem(): MockFileSystem {
+    return {
+        ...createFormPanelTestFileSystem(),
+        "data/quest.csv": [
+            "id,name,enemy_id,weapon_id,recommended_level",
+            "1,first_duplicate_quest,1,10,5",
+            "1,second_duplicate_quest,2,20,12",
+        ].join("\n"),
+    };
+}
+
 function createShopProductFormPanelTestFileSystem(): MockFileSystem {
     return {
         "schema/table.json": JSON.stringify({
@@ -787,6 +798,34 @@ test.describe('フォームビュー（FEAT_0043）', () => {
 
         await expect(weaponInput).toHaveValue('20');
         await expect(getDataCell(table, 0, 3)).toContainText('20');
+    });
+});
+
+test.describe('フォームビューの重複PK行', () => {
+    test.beforeEach(async ({ page }) => {
+        await installMockApiAsync(page, createDuplicatePkFormPanelTestFileSystem());
+        await page.goto('/');
+        await enableRelationsPanelAsync(page);
+    });
+
+    test('PKが重複していても右クリックした行のフォームを表示し編集も同じ行へ反映すること', async ({ page }) => {
+        const table = await openTableAsync(page, 'quest');
+
+        await rightClickPkCellAsync(table, 1);
+        const menu = page.locator('.context-menu.visible');
+        await expect(menu).toBeVisible();
+        await menu.locator('.context-menu-item', { hasText: 'フォームビューを表示' }).click();
+
+        const formPanel = page.locator('.form-panel');
+        await expect(formPanel).toBeVisible();
+        await expect(formPanel.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('1');
+        const nameInput = formPanel.locator('.form-panel-field[data-column-name="name"] .form-panel-field-input');
+        await expect(nameInput).toHaveValue('second_duplicate_quest');
+
+        await nameInput.fill('edited_second_duplicate_quest');
+
+        await expect(getDataCell(table, 0, 1)).toContainText('first_duplicate_quest');
+        await expect(getDataCell(table, 1, 1)).toContainText('edited_second_duplicate_quest');
     });
 });
 

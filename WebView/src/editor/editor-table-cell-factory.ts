@@ -123,6 +123,7 @@ export class EditorTableCellFactory {
             const col = tableData.header[columnIndex];
             const isPkColumn = col !== undefined && tableData.primaryKeyColumns.includes(col.name);
             const pkValue = table.getRowPkValue(position.row);
+            const storeRowIndex = table.resolveStoreRowIndex(position.row - 1);
             const bookmarkRowKey = table.getRowBookmarkKey(position.row);
             // フォームビュー表示はPKセルかつPK値が空でない場合のみ表示する
             const canShowFormView = isPkColumn && pkValue !== '' && table.tab !== false;
@@ -147,7 +148,7 @@ export class EditorTableCellFactory {
                 const tabRef = table.tab as Tab;
                 menuItems.push({
                     label: 'フォームビューを表示',
-                    action: () => { tabRef.showFormPanel(table.tableName, pkValue); },
+                    action: () => { tabRef.showFormPanel(table.tableName, pkValue, storeRowIndex >= 0 ? storeRowIndex : null); },
                 });
             }
             // セルレベルのブックマーク追加/解除メニュー（修正10: PK列/非PK列のコードを共通化）
