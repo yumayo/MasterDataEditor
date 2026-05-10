@@ -15,8 +15,8 @@ function createDateTimeInputFileSystem(): MockFileSystem {
         }),
         'data/event.csv': [
             'id,start_at,name',
-            '1,2026-05-10T12:30:45,alpha',
-            '2,2026-02-30T00:00:00,beta',
+            '1,2026-05-10 12:30:45,alpha',
+            '2,2026-02-30 00:00:00,beta',
         ].join('\n'),
     };
 }
@@ -39,29 +39,24 @@ test.describe('datetime型セル入力', () => {
         await page.goto('/');
     });
 
-    test('datetime型セルは自作カレンダーで日時を設定できる', async ({ page }) => {
+    test('datetime型セルは通常のテキストフィールドで日時を設定できる', async ({ page }) => {
         const table = await openTableAsync(page, 'event');
         const cell = getDataCell(table, 0, 1);
 
         await cell.dblclick();
 
-        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
-        await expect(picker).toHaveCount(1);
-        await expect(picker.locator('.grid-date-time-picker-input')).toHaveAttribute('type', 'text');
-        await expect(picker.locator('.date-time-picker-popover')).toBeVisible();
-        await expect(picker.locator('.date-time-picker-second-input')).toBeVisible();
-
-        await picker.locator('.date-time-picker-day[aria-label="2026-05-15"]').click();
-        await picker.locator('.date-time-picker-hour-input').fill('13');
-        await picker.locator('.date-time-picker-minute-input').fill('40');
-        await picker.locator('.date-time-picker-second-input').fill('55');
-        await picker.locator('.date-time-picker-apply').click();
-
+        const input = page.locator('.grid-textfield-active');
+        await expect(input).toBeVisible();
         await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
-        await expect(cell).toContainText('2026-05-15T13:40:55');
+
+        await page.keyboard.press('Control+a');
+        await page.keyboard.insertText('2026-05-15 13:40:55');
+        await page.keyboard.press('Enter');
+
+        await expect(cell).toContainText('2026-05-15 13:40:55');
 
         await page.keyboard.press('Control+s');
-        await expect.poll(async () => await readMockFileAsync(page, 'data/event.csv')).toContain('1,2026-05-15T13:40:55,alpha');
+        await expect.poll(async () => await readMockFileAsync(page, 'data/event.csv')).toContain('1,2026-05-15 13:40:55,alpha');
     });
 
     test('datetime型の不正な日時は型不一致として表示され、修正すると解消する', async ({ page }) => {
@@ -71,10 +66,11 @@ test.describe('datetime型セル入力', () => {
         await expect(invalidCell).toHaveClass(/cell-error/, { timeout: 10000 });
 
         await invalidCell.dblclick();
-        const input = page.locator('.grid-date-time-picker-active .grid-date-time-picker-input');
+        const input = page.locator('.grid-textfield-active');
         await expect(input).toBeVisible();
-        await input.fill('2026-02-28T00:00:00');
-        await input.press('Enter');
+        await page.keyboard.press('Control+a');
+        await page.keyboard.insertText('2026-02-28 00:00:00');
+        await page.keyboard.press('Enter');
 
         await expect(invalidCell).not.toHaveClass(/cell-error/);
     });

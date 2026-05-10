@@ -57,7 +57,7 @@ export class DateTimePicker {
         this.input.inputMode = 'numeric';
         this.input.autocomplete = 'off';
         this.input.spellcheck = false;
-        this.input.placeholder = 'YYYY-MM-DDTHH:mm:ss';
+        this.input.placeholder = 'YYYY-MM-DD HH:mm:ss';
         this.input.classList.add('date-time-picker-input', ...(options.inputClassNames ?? []));
         this.input.value = this.value;
         this.input.setAttribute('aria-haspopup', 'dialog');
@@ -492,7 +492,7 @@ function isValidDateTimeParts(parts: DateTimeParts): boolean {
 }
 
 function formatDateTimeParts(parts: DateTimeParts): string {
-    return `${String(parts.year).padStart(4, '0')}-${pad2(parts.month)}-${pad2(parts.day)}T${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}`;
+    return `${String(parts.year).padStart(4, '0')}-${pad2(parts.month)}-${pad2(parts.day)} ${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}`;
 }
 
 function dateToParts(date: Date): DateTimeParts {

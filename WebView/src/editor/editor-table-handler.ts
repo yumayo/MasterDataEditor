@@ -5,7 +5,6 @@ import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
-import {DateTimePicker} from "../ui/date-time-picker";
 import {EditorTableData} from "../data/models/editor-table-data";
 import {
     parseReferenceExpression,
@@ -57,8 +56,6 @@ export class EditorTableHandler {
     private readonly history: History;
     private readonly scrollController: ScrollViewportController;
     private textField: GridTextField | undefined;
-    private inputContainer: HTMLElement | undefined;
-    private dateTimePicker: DateTimePicker | undefined;
 
     private active: boolean;
     private visible: boolean;
@@ -99,7 +96,6 @@ export class EditorTableHandler {
     private dropdownInput: GridDropdownInput | undefined;
     private tableData: EditorTableData | undefined;
     private dropdownActive: boolean;
-    private dateTimePickerActive: boolean;
     /** エラー通知トースト */
     private readonly notification: NotificationToast;
 
@@ -128,7 +124,6 @@ export class EditorTableHandler {
         this.gitPath = '';
         this.openEditorTables = false;
         this.dropdownActive = false;
-        this.dateTimePickerActive = false;
         this.pendingScrollRestoreId = 0;
 
         // contenteditable element を作成
@@ -204,7 +199,6 @@ export class EditorTableHandler {
      */
     deactivate(): void {
         this.active = false;
-        this.hideDateTimePicker(false);
         // タブ切り替え等で deactivate された後も rAF コールバックが実行されないようキャンセルする
         if (this.pendingScrollRestoreId !== 0) {
             window.cancelAnimationFrame(this.pendingScrollRestoreId);
@@ -256,7 +250,6 @@ export class EditorTableHandler {
      * element の public 露出を避けるため、このメソッド経由で生成する
      */
     createGridTextField(container: HTMLElement, table: EditorTable, selection: Selection): GridTextField {
-        this.inputContainer = container;
         return new GridTextField(this.element, container, table, selection);
     }
 
@@ -324,46 +317,6 @@ export class EditorTableHandler {
         this.textField.show(rect, target.cellValue, preserveContent);
 
         this.visible = true;
-    }
-
-    /**
-     * datetime型セルの編集モードを開始する。
-     * 既存の自作 DateTimePicker をセル位置に表示する。
-     */
-    enableDateTimeCellEditMode(preserveContent: boolean, initialText: string | null = null): void {
-        if (this.readOnly) return;
-        if (!this.inputContainer) return;
-
-        const focus = this.selection.getFocus();
-        const dataColIndex = focus.column - this.table.dataColumnOffset();
-        if (dataColIndex < 0 || this.table.getColumnType(dataColIndex) !== 'datetime' || this.table.hasColumnReference(dataColIndex)) return;
-
-        this.active = true;
-        this.table.ensureRowVisible(focus.row);
-
-        const target = getTarget(this.table, this.selection);
-        const cellRect = target.cellRect;
-        const rect = new DOMRect(cellRect.left - 1, cellRect.top, cellRect.width + 1, cellRect.height);
-        const initialValue = initialText !== null ? initialText : (preserveContent ? target.cellValue : '');
-
-        const picker = this.ensureDateTimePicker();
-        const pickerElement = picker.getElement();
-        const containerRect = this.inputContainer.getBoundingClientRect();
-        pickerElement.style.left = (rect.left - containerRect.left) + 'px';
-        pickerElement.style.top = (rect.top - containerRect.top) + 'px';
-        pickerElement.style.setProperty('--date-time-picker-width', Math.max(rect.width, 240) + 'px');
-        pickerElement.classList.add('grid-date-time-picker-active');
-
-        picker.setValue(initialValue);
-        this.dateTimePickerActive = true;
-        picker.open();
-        picker.focusInput();
-        if (initialText === null) {
-            picker.selectInput();
-        } else {
-            const input = picker.getInput();
-            input.setSelectionRange(input.value.length, input.value.length);
-        }
     }
 
     /**
@@ -795,22 +748,6 @@ export class EditorTableHandler {
             }
         }
 
-        // datetime型セルでは文字入力開始時にも自作カレンダー入力を表示する。
-        // 直接入力は DateTimePicker のテキスト欄で受けるため、contenteditable には入らない。
-        {
-            const focus = this.selection.getFocus();
-            const dataColIndex = focus.column - this.table.dataColumnOffset();
-            if (dataColIndex >= 0
-                && this.table.getColumnType(dataColIndex) === 'datetime'
-                && !this.table.hasColumnReference(dataColIndex)
-                && (keyboardEvent.key === 'Process' || /^[0-9/: T-]$/.test(keyboardEvent.key))) {
-                if (this.readOnly) return;
-                keyboardEvent.preventDefault();
-                this.enableDateTimeCellEditMode(false, keyboardEvent.key === 'Process' ? null : keyboardEvent.key);
-                return;
-            }
-        }
-
         // 文字入力による編集モード開始
         // Ctrl/Meta+キーの組み合わせはショートカットなので編集モードを開始しない
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
@@ -820,9 +757,6 @@ export class EditorTableHandler {
             const focus = this.selection.getFocus();
             const dataColIndex = focus.column - this.table.dataColumnOffset();
             if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
-                return;
-            }
-            if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'datetime' && !this.table.hasColumnReference(dataColIndex)) {
                 return;
             }
         }
@@ -1001,71 +935,10 @@ export class EditorTableHandler {
         this.focusWithoutScrolling(scrollTop, scrollLeft);
     }
 
-    private ensureDateTimePicker(): DateTimePicker {
-        if (this.dateTimePicker !== undefined) return this.dateTimePicker;
-        if (!this.inputContainer) throw new Error('[EditorTableHandler.ensureDateTimePicker] inputContainer が未設定です');
-        this.dateTimePicker = new DateTimePicker({
-            value: '',
-            rootClassNames: ['grid-date-time-picker'],
-            inputClassNames: ['grid-date-time-picker-input'],
-            onCommit: (value: string) => { this.submitDateTimePickerValue(value); },
-            onDismiss: () => { this.hideDateTimePicker(); },
-        });
-        this.dateTimePicker.getInput().addEventListener('keydown', (event: KeyboardEvent) => {
-            if (event.key !== 'Tab') return;
-            event.preventDefault();
-            this.submitDateTimePickerAndHide();
-            if (event.shiftKey) {
-                moveCellLeftWithinSelection(this.table, this.selection);
-            } else {
-                moveCellRightWithinSelection(this.table, this.selection);
-            }
-        });
-        this.inputContainer.appendChild(this.dateTimePicker.getElement());
-        return this.dateTimePicker;
-    }
-
-    private submitDateTimePickerValue(value: string): void {
-        if (!this.dateTimePickerActive) return;
-        const target = getTarget(this.table, this.selection);
-        if (target.cellValue !== value) {
-            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
-            const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: value }];
-            this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
-        }
-        this.hideDateTimePicker();
-    }
-
-    private submitDateTimePickerAndHide(): void {
-        if (!this.dateTimePickerActive) return;
-        const picker = this.dateTimePicker;
-        if (picker !== undefined) picker.commitInput(false);
-        this.hideDateTimePicker();
-    }
-
-    private hideDateTimePicker(restoreFocus = true): void {
-        if (!this.dateTimePickerActive && this.dateTimePicker === undefined) return;
-        const scrollTop = this.scrollController.getScrollTop();
-        const scrollLeft = this.scrollController.getScrollLeft();
-        this.dateTimePickerActive = false;
-        if (this.dateTimePicker !== undefined) {
-            this.dateTimePicker.close();
-            const pickerElement = this.dateTimePicker.getElement();
-            pickerElement.style.top = '-99999px';
-            pickerElement.style.left = '-99999px';
-            pickerElement.classList.remove('grid-date-time-picker-active');
-        }
-        if (restoreFocus) this.focusWithoutScrolling(scrollTop, scrollLeft);
-    }
-
     /**
      * テキスト入力を確定して非表示にする（外部から呼ばれる用）
      */
     submitAndHide(): void {
-        if (this.dateTimePickerActive) {
-            this.submitDateTimePickerAndHide();
-            return;
-        }
         this.submitText();
         this.hide();
     }
