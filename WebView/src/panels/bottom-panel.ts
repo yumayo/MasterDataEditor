@@ -15,6 +15,8 @@ export type BottomTab = 'problems' | 'debug';
  * StatusBar のエラーバッジクリック → toggleTab('problems')
  * StatusBar の DEBUG ボタンクリック → toggleTab('debug')
  * で開閉とタブ切り替えを一括管理する。
+ *
+ * パネル内のタブクリックは selectTab() を使い、同じタブを押しても閉じない。
  */
 export class BottomPanel {
 
@@ -102,20 +104,15 @@ export class BottomPanel {
      * 指定タブをトグルする。
      * パネルが非表示 or 別タブが表示中 → 指定タブで表示する。
      * 同じタブが既に表示中 → パネルを閉じる。
+     *
+     * ステータスバーなど、パネル外からの開閉操作用。
      */
     toggleTab(tab: BottomTab): void {
         if (this.element.style.display !== 'none' && this.activeTab === tab) {
             this.hide();
             return;
         }
-        this.activeTab = tab;
-        this.element.style.display = '';
-        this.applyTabState();
-        this.uiStateStore.setBottomPanelState({
-            visible: true,
-            activeTab: this.activeTab,
-            height: this.element.getBoundingClientRect().height,
-        });
+        this.selectTab(tab);
     }
 
     /**
@@ -129,8 +126,19 @@ export class BottomPanel {
         const btn = document.createElement('div');
         btn.classList.add('bottom-panel-tab');
         btn.textContent = label;
-        btn.addEventListener('click', () => { this.toggleTab(tab); });
+        btn.addEventListener('click', () => { this.selectTab(tab); });
         return btn;
+    }
+
+    private selectTab(tab: BottomTab): void {
+        this.activeTab = tab;
+        this.element.style.display = '';
+        this.applyTabState();
+        this.uiStateStore.setBottomPanelState({
+            visible: true,
+            activeTab: this.activeTab,
+            height: this.element.getBoundingClientRect().height,
+        });
     }
 
     private hide(): void {
