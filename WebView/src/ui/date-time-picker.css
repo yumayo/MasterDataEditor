@@ -8,6 +8,28 @@
     min-width: var(--date-time-picker-width, 240px);
 }
 
+.grid-date-time-picker {
+    --date-time-picker-control-height: 24px;
+    --date-time-picker-width: 240px;
+
+    position: absolute;
+    top: -99999px;
+    left: -99999px;
+    z-index: var(--z-index-date-time-picker);
+}
+
+.grid-date-time-picker .date-time-picker-input {
+    border: 1px solid var(--focus-border);
+    border-radius: 0;
+    color: var(--font-color);
+    background-color: var(--background-color);
+    font-size: 13px;
+}
+
+.grid-date-time-picker .date-time-picker-input:focus {
+    outline: none;
+}
+
 .date-time-picker-input {
     width: 100%;
     height: var(--date-time-picker-control-height);

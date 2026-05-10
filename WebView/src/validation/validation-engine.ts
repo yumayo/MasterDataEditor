@@ -667,18 +667,20 @@ export class ValidationEngine {
         for (const col of schema.columns) {
             const colIdx = header.indexOf(col.name);
             if (colIdx === -1) continue;
-            // int / float / double のみ検証対象。string型や未知の型はスキップする
+            // int / float / double / datetime のみ検証対象。string型や未知の型はスキップする
             const colType = col.type;
-            if (colType !== 'int' && colType !== 'long' && colType !== 'float' && colType !== 'double') continue;
+            if (colType !== 'int' && colType !== 'long' && colType !== 'float' && colType !== 'double' && colType !== 'datetime') continue;
             for (let r = 0; r < rows.length; r++) {
                 const cellValue = rows[r][colIdx];
                 // 空文字は未入力扱いでエラー対象外
                 if (cellValue === '') continue;
                 const trimmed = cellValue.trim();
                 // 型チェック: 16進・8進・2進リテラルを排除するため正規表現で10進数のみ許可する
-                const isValid = colType === 'int' || colType === 'long'
-                    ? /^[+-]?\d+$/.test(trimmed)
-                    : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed);
+                const isValid = colType === 'datetime'
+                    ? parseTemporalValue(trimmed).kind === 'valid'
+                    : colType === 'int' || colType === 'long'
+                        ? /^[+-]?\d+$/.test(trimmed)
+                        : /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed);
                 if (!isValid) {
                     errors.push({
                         tableName,

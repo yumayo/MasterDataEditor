@@ -48,6 +48,11 @@ export class EditorTableCellFactory {
                 table.toggleBoolCell();
                 return;
             }
+            // datetime型（FK参照なし）は自作カレンダーで編集する
+            if (table.getColumnType(columnIndex) === 'datetime' && !table.hasColumnReference(columnIndex)) {
+                table.getHandler().enableDateTimeCellEditMode(true);
+                return;
+            }
             // 参照列の場合はドロップダウンを表示
             table.getHandler().enableCellEditModeWithDropdownAsync(true).then((handled: boolean) => {
                 if (!handled) {

@@ -3,6 +3,7 @@ export interface DateTimePickerOptions {
     inputClassNames?: string[];
     rootClassNames?: string[];
     onCommit: (value: string) => void;
+    onDismiss?: () => void;
 }
 
 interface DateTimeParts {
@@ -32,6 +33,7 @@ export class DateTimePicker {
     private readonly minuteInput: HTMLInputElement;
     private readonly secondInput: HTMLInputElement;
     private readonly onCommit: (value: string) => void;
+    private readonly onDismiss: (() => void) | null;
     private readonly outsideClickHandler: (event: MouseEvent) => void;
     private readonly escKeyHandler: (event: KeyboardEvent) => void;
     private value: string;
@@ -41,6 +43,7 @@ export class DateTimePicker {
 
     constructor(options: DateTimePickerOptions) {
         this.onCommit = options.onCommit;
+        this.onDismiss = options.onDismiss ?? null;
         this.value = normalizeDateTimeInputToSeconds(options.value) ?? options.value.trim();
         this.draftParts = parseDateTimeParts(this.value) ?? dateToParts(new Date());
         this.visibleYear = this.draftParts.year;
@@ -140,8 +143,15 @@ export class DateTimePicker {
             this.input.classList.remove('date-time-picker-input-invalid');
             this.input.removeAttribute('aria-invalid');
         });
-        this.input.addEventListener('change', () => { this.commitTextInput(); });
-        this.input.addEventListener('blur', () => { this.commitTextInput(); });
+        this.input.addEventListener('change', () => {
+            if (this.element.contains(document.activeElement)) return;
+            this.commitTextInput();
+        });
+        this.input.addEventListener('blur', (event: FocusEvent) => {
+            const focusTarget = event.relatedTarget;
+            if (focusTarget instanceof Node && this.element.contains(focusTarget)) return;
+            this.commitTextInput();
+        });
         this.input.addEventListener('keydown', (event: KeyboardEvent) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -177,11 +187,12 @@ export class DateTimePicker {
         });
         clearButton.addEventListener('click', () => {
             this.commitValue('');
-            this.hide();
+            this.hide(false);
         });
         applyButton.addEventListener('click', () => {
+            if (!this.readTextInputIntoDraft()) return;
             this.commitDraft();
-            this.hide();
+            this.hide(false);
         });
 
         this.outsideClickHandler = (event: MouseEvent) => {
@@ -210,6 +221,30 @@ export class DateTimePicker {
 
     getInput(): HTMLInputElement {
         return this.input;
+    }
+
+    open(): void {
+        this.show();
+    }
+
+    close(): void {
+        this.hide(false);
+    }
+
+    commitInput(markInvalid = true): boolean {
+        return this.commitTextInput(markInvalid);
+    }
+
+    isOpen(): boolean {
+        return this.popover.classList.contains('visible');
+    }
+
+    focusInput(): void {
+        this.input.focus({ preventScroll: true });
+    }
+
+    selectInput(): void {
+        this.input.select();
     }
 
     getValue(): string {
@@ -249,9 +284,11 @@ export class DateTimePicker {
         this.input.setAttribute('aria-expanded', 'true');
     }
 
-    private hide(): void {
+    private hide(notifyDismiss = true): void {
+        const wasVisible = this.popover.classList.contains('visible');
         this.popover.classList.remove('visible');
         this.input.setAttribute('aria-expanded', 'false');
+        if (wasVisible && notifyDismiss && this.onDismiss !== null) this.onDismiss();
     }
 
     private createIconButton(label: string, path: string): HTMLButtonElement {
@@ -354,11 +391,11 @@ export class DateTimePicker {
         this.updateTimeInputs();
     }
 
-    private commitTextInput(markInvalid = true): void {
+    private commitTextInput(markInvalid = true): boolean {
         const raw = this.input.value.trim();
         if (raw === '') {
             this.commitValue('');
-            return;
+            return true;
         }
         const normalized = normalizeDateTimeInputToSeconds(raw);
         if (normalized === null) {
@@ -366,9 +403,35 @@ export class DateTimePicker {
                 this.input.classList.add('date-time-picker-input-invalid');
                 this.input.setAttribute('aria-invalid', 'true');
             }
-            return;
+            return false;
         }
         this.commitValue(normalized);
+        return true;
+    }
+
+    private readTextInputIntoDraft(markInvalid = true): boolean {
+        const raw = this.input.value.trim();
+        if (raw === '') {
+            this.commitValue('');
+            return false;
+        }
+        const parsed = parseDateTimeParts(raw);
+        if (parsed === null) {
+            if (markInvalid) {
+                this.input.classList.add('date-time-picker-input-invalid');
+                this.input.setAttribute('aria-invalid', 'true');
+            }
+            return false;
+        }
+        const normalized = formatDateTimeParts(parsed);
+        if (normalized !== this.value) {
+            this.draftParts = parsed;
+            this.visibleYear = parsed.year;
+            this.visibleMonth = parsed.month;
+            this.updateTimeInputs();
+            this.renderCalendar();
+        }
+        return true;
     }
 
     private commitDraft(): void {
@@ -382,6 +445,7 @@ export class DateTimePicker {
         this.input.value = nextValue;
         this.input.classList.remove('date-time-picker-input-invalid');
         this.input.removeAttribute('aria-invalid');
+        if (nextValue === previousValue) return;
         const parsed = parseDateTimeParts(nextValue);
         if (parsed !== null) {
             this.draftParts = parsed;
@@ -390,7 +454,7 @@ export class DateTimePicker {
             this.updateTimeInputs();
             this.renderCalendar();
         }
-        if (nextValue !== previousValue) this.onCommit(nextValue);
+        this.onCommit(nextValue);
     }
 }
 

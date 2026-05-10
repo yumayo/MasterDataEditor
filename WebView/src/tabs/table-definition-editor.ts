@@ -26,7 +26,7 @@ const COLUMN_NAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 const SIMPLE_REFERENCE_PATTERN = /^[a-zA-Z0-9_]+\.[a-zA-Z0-9_]+$/;
 
 /** 列の型選択肢 */
-const COLUMN_TYPES = ['string', 'int', 'float', 'double', 'bool'] as const;
+const COLUMN_TYPES = ['string', 'int', 'float', 'double', 'bool', 'datetime'] as const;
 
 /** ドラッグ開始の閾値（px） */
 const DRAG_THRESHOLD = 5;
