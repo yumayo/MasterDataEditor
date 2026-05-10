@@ -95,9 +95,9 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             const thirdBeginCell = getDataCell(table, 2, 1);
             const thirdEndCell = getDataCell(table, 2, 2);
 
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(secondPkCell).toHaveClass(/cell-error/);
+            await expect(thirdPkCell).not.toHaveClass(/cell-error/);
             await expect(firstBeginCell).toHaveClass(/cell-error/);
             await expect(firstEndCell).toHaveClass(/cell-error/);
             await expect(secondBeginCell).toHaveClass(/cell-error/);
@@ -108,9 +108,9 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             await setExportValidationDateTimeAsync(page, '2026-05-12T00:00:00');
             await page.locator('.tab-button').filter({ hasText: 'item' }).click();
 
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(secondPkCell).toHaveClass(/cell-error/);
+            await expect(thirdPkCell).not.toHaveClass(/cell-error/);
             await expect(firstBeginCell).toHaveClass(/cell-error/);
             await expect(firstEndCell).toHaveClass(/cell-error/);
             await expect(secondBeginCell).toHaveClass(/cell-error/);
@@ -138,8 +138,8 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             const firstPkCell = getPkCell(table, 0);
             const secondPkCell = getPkCell(table, 1);
 
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(secondPkCell).toHaveClass(/cell-error/);
         },
     );
 
@@ -154,9 +154,9 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             const secondPkCell = getPkCell(table, 1);
             const thirdPkCell = getPkCell(table, 2);
 
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(secondPkCell).toHaveClass(/cell-error/);
+            await expect(thirdPkCell).not.toHaveClass(/cell-error/);
         },
     );
 });

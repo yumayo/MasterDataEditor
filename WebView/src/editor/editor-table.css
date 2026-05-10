@@ -458,12 +458,6 @@
     background-color: var(--git-changed-bg);
 }
 
-/* 主キー重複セルのハイライト（重複したPK値のセルに赤波線を表示） */
-.cell-pk-duplicate {
-    text-decoration: underline wavy red;
-    text-underline-offset: 2px;
-}
-
 /* エラーセル: 赤波線（下線）
    background-image でセル幅全体に波線を描画する。::after 擬似要素はコピー範囲ボーダーが使用するため空けておく。
    background-position: bottom で下端に配置し、background-size で波線の高さを制御する。 */

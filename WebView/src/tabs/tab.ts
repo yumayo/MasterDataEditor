@@ -3048,7 +3048,7 @@ export class Tab {
 
             // ValidationPanel が接続されている場合: openEditorTables.set() 完了後に全テーブルバリデーションを実行する。
             // createEditorTable() 内ではなくここで呼ぶことで、今開いたテーブルが applyErrorClassesToAllEditorTables()
-            // の対象に含まれ、初期表示時の重複PKにも cell-pk-duplicate クラスが正しく付与される。
+            // の対象に含まれ、初期表示時の重複PKにも cell-error クラスが正しく付与される。
             if (this.validationPanel !== false) {
                 this.validationPanel.runAndUpdate();
             }

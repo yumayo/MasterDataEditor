@@ -247,7 +247,6 @@ export class EditorTableRenderer {
                 const key = `${storeRowIndex},${storeColIdx}`;
                 const isPkError = this.cachedPkErrorCells.has(key);
                 const isOtherError = this.cachedOtherErrorCells.has(key);
-                if (isPkError) { cell.classList.add('cell-pk-duplicate'); }
                 if (isPkError || isOtherError) { cell.classList.add('cell-error'); }
             }
         }

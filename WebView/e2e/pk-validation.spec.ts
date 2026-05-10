@@ -7,7 +7,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 // 主キーバリデーション機能のテスト
 //
 // 機能概要:
-//   主キーが重複したセルには `cell-pk-duplicate` CSSクラスを付与して
+//   主キーが重複したセルには `cell-error` CSSクラスを付与して
 //   赤波線を表示し、ユーザーにPK重複を視覚的に通知する。
 //
 // 重複判定の範囲:
@@ -15,8 +15,8 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   ミニテーブルでフィルタされていない行も含めて重複チェックを行う。
 //
 // テストケース一覧:
-//   1. PK値が重複した場合、両方のPKセルに cell-pk-duplicate クラスが付与される
-//   2. PK値の重複が解消された場合、cell-pk-duplicate クラスが除去される
+//   1. PK値が重複した場合、両方のPKセルに cell-error クラスが付与される
+//   2. PK値の重複が解消された場合、cell-error クラスが除去される
 //   3. 空のPK値は重複チェックの対象外（空値が複数あってもクラスが付かない）
 //   4. テーブル初期表示時に既存の重複PKが検出される（初期表示から赤波線表示）
 //   5. ストア全体で重複判定される（ミニテーブルで表示されていない行との重複も検出）
@@ -81,7 +81,7 @@ function createInitialDuplicateFileSystem(): MockFileSystem {
  * enemy_id=1 の行を選択してミニテーブルを表示すると、id=10 の行のみが見える。
  * ミニテーブルで新しい行に id=20 を入力した場合、
  * ミニテーブル上には id=20 の行は表示されていないが、
- * ストア全体（enemy_id=2 の行）と重複しているため cell-pk-duplicate が付与される必要がある。
+ * ストア全体（enemy_id=2 の行）と重複しているため cell-error が付与される必要がある。
  */
 function createMiniTableStoreWideDuplicateFileSystem(): MockFileSystem {
     return {
@@ -211,10 +211,10 @@ async function editMiniTableCellAsync(
 }
 
 // =============================================================================
-// テストケース1: PK値が重複した場合、両方のPKセルに cell-pk-duplicate が付与される
+// テストケース1: PK値が重複した場合、両方のPKセルに cell-error が付与される
 // =============================================================================
 
-test.describe('テストケース1: PK値が重複した場合、両方のPKセルに cell-pk-duplicate が付与される', () => {
+test.describe('テストケース1: PK値が重複した場合、両方のPKセルに cell-error が付与される', () => {
     test.beforeEach(async ({ page }) => {
         const fs = createItemFileSystem();
         await installMockApiAsync(page, fs);
@@ -222,32 +222,32 @@ test.describe('テストケース1: PK値が重複した場合、両方のPKセ�
     });
 
     test(
-        '2行目のPKセルを1行目と同じ値に変更すると、両方のPKセルに cell-pk-duplicate が付与される',
+        '2行目のPKセルを1行目と同じ値に変更すると、両方のPKセルに cell-error が付与される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item');
 
-            // 初期状態: id=1,2,3 で重複なし。PKセルに cell-pk-duplicate クラスが付いていないことを確認
+            // 初期状態: id=1,2,3 で重複なし。PKセルに cell-error クラスが付いていないことを確認
             const firstPkCell = getPkCell(table, 0);
             const secondPkCell = getPkCell(table, 1);
-            await expect(firstPkCell).not.toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).not.toHaveClass(/cell-error/);
+            await expect(secondPkCell).not.toHaveClass(/cell-error/);
 
             // 2行目のid（=2）を1行目と同じ値（=1）に変更して重複を発生させる
             await editCellAsync(table, page, 1, 0, '1');
 
-            // 両方のPKセルに cell-pk-duplicate クラスが付与されることを確認
+            // 両方のPKセルに cell-error クラスが付与されることを確認
             // 実装前はこのアサーションが失敗してREDになる
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/);
+            await expect(secondPkCell).toHaveClass(/cell-error/);
         },
     );
 });
 
 // =============================================================================
-// テストケース2: PK値の重複が解消された場合、cell-pk-duplicate クラスが除去される
+// テストケース2: PK値の重複が解消された場合、cell-error クラスが除去される
 // =============================================================================
 
-test.describe('テストケース2: PK値の重複が解消された場合、cell-pk-duplicate クラスが除去される', () => {
+test.describe('テストケース2: PK値の重複が解消された場合、cell-error クラスが除去される', () => {
     test.beforeEach(async ({ page }) => {
         const fs = createItemFileSystem();
         await installMockApiAsync(page, fs);
@@ -255,7 +255,7 @@ test.describe('テストケース2: PK値の重複が解消された場合、cel
     });
 
     test(
-        'PK重複を解消する値に変更すると cell-pk-duplicate クラスが除去される',
+        'PK重複を解消する値に変更すると cell-error クラスが除去される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item');
             const firstPkCell = getPkCell(table, 0);
@@ -265,16 +265,16 @@ test.describe('テストケース2: PK値の重複が解消された場合、cel
             await editCellAsync(table, page, 1, 0, '1');
 
             // 重複状態を確認（実装後に初めて通る）
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/);
+            await expect(secondPkCell).toHaveClass(/cell-error/);
 
             // 重複を解消する: 2行目のidをユニークな値 "99" に変更する
             await editCellAsync(table, page, 1, 0, '99');
 
-            // cell-pk-duplicate クラスが両方のセルから除去されることを確認
+            // cell-error クラスが両方のセルから除去されることを確認
             // 実装前はこのアサーションが失敗してREDになる
-            await expect(firstPkCell).not.toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).not.toHaveClass(/cell-error/);
+            await expect(secondPkCell).not.toHaveClass(/cell-error/);
         },
     );
 });
@@ -291,7 +291,7 @@ test.describe('テストケース3: 空のPK値は重複チェックの対象外
     });
 
     test(
-        '空のPKセルが複数あっても cell-pk-duplicate が付与されない',
+        '空のPKセルが複数あっても cell-error が付与されない',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item');
 
@@ -301,13 +301,13 @@ test.describe('テストケース3: 空のPK値は重複チェックの対象外
             // 2行目のid（=2）を空文字に変更する
             await editCellAsync(table, page, 1, 0, '');
 
-            // 空のPKセルには cell-pk-duplicate が付与されないことを確認
+            // 空のPKセルには cell-error が付与されないことを確認
             // 空値は「未入力」であり重複判定の対象外とする
             // 実装前はこのアサーションが失敗してREDになる
             const firstPkCell = getPkCell(table, 0);
             const secondPkCell = getPkCell(table, 1);
-            await expect(firstPkCell).not.toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).not.toHaveClass(/cell-error/);
+            await expect(secondPkCell).not.toHaveClass(/cell-error/);
         },
     );
 });
@@ -325,7 +325,7 @@ test.describe('テストケース4: テーブル初期表示時に既存の重�
     });
 
     test(
-        'テーブルを開いた時点で既存のPK重複行に cell-pk-duplicate が付与される',
+        'テーブルを開いた時点で既存のPK重複行に cell-error が付与される',
         async ({ page }) => {
             const table = await openTableAsync(page, 'item');
 
@@ -334,14 +334,14 @@ test.describe('テストケース4: テーブル初期表示時に既存の重�
             const secondPkCell = getPkCell(table, 1);
             const thirdPkCell = getPkCell(table, 2);
 
-            // 初期表示の時点で id=1 の両行に cell-pk-duplicate が付与されることを確認
+            // 初期表示の時点で id=1 の両行に cell-error が付与されることを確認
             // テーブルオープン直後にバリデーションが実行される
             // 実装前はこのアサーションが失敗してREDになる
-            await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/);
-            await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
+            await expect(firstPkCell).toHaveClass(/cell-error/);
+            await expect(secondPkCell).toHaveClass(/cell-error/);
 
-            // id=3 の行（重複していない）には cell-pk-duplicate が付与されないことを確認
-            await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            // id=3 の行（重複していない）には cell-error が付与されないことを確認
+            await expect(thirdPkCell).not.toHaveClass(/cell-error/);
         },
     );
 });
@@ -359,7 +359,7 @@ test.describe('テストケース5: ストア全体で重複判定される（�
     });
 
     test(
-        'ミニテーブルで表示されていない行（別enemy_idの行）と同じPK値を入力すると cell-pk-duplicate が付与される',
+        'ミニテーブルで表示されていない行（別enemy_idの行）と同じPK値を入力すると cell-error が付与される',
         async ({ page }) => {
             // enemy テーブルを開いて id=1（スライム）の行を選択する
             const enemyTable = await openTableAsync(page, 'enemy');
@@ -379,7 +379,7 @@ test.describe('テストケース5: ストア全体で重複判定される（�
             // ストア全体に id=20 が存在するため重複として検出されるべき
             await editMiniTableCellAsync(miniTable, page, 0, 0, '20');
 
-            // PKセルに cell-pk-duplicate が付与されることを確認
+            // PKセルに cell-error が付与されることを確認
             // ミニテーブルのPKセル（colIndex=0）は id 列
             const miniPkCell = miniTable.locator('.editor-table-row').nth(0).locator(
                 '.editor-table-cell:not(.editor-table-row-header):not([style*="display: none"])',
@@ -387,7 +387,7 @@ test.describe('テストケース5: ストア全体で重複判定される（�
 
             // ストア全体で重複判定するため、表示外の行（id=20）との重複も検出される
             // 実装前はこのアサーションが失敗してREDになる
-            await expect(miniPkCell).toHaveClass(/cell-pk-duplicate/);
+            await expect(miniPkCell).toHaveClass(/cell-error/);
         },
     );
 });

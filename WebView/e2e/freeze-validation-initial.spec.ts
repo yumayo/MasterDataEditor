@@ -44,13 +44,11 @@ test.describe('起動時バリデーションとフリーズペイン', () => {
             '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
         );
         await expect(frozenCornerPkCell).toHaveClass(/cell-error/);
-        await expect(frozenCornerPkCell).toHaveClass(/cell-pk-duplicate/);
 
         const frozenColumnPkCell = table.locator(
             '.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
         );
         await expect(frozenColumnPkCell).toHaveClass(/cell-error/);
-        await expect(frozenColumnPkCell).toHaveClass(/cell-pk-duplicate/);
 
         const frozenRowTypeErrorCell = table.locator(
             '.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="2"]',

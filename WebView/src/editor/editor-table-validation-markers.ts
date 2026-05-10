@@ -98,9 +98,8 @@ export class EditorTableValidationMarkers {
 
     /**
      * ValidationPanel から呼ばれる: このテーブルのバリデーションエラーをDOMに適用する。
-     * PK重複エラーには cell-pk-duplicate + cell-error を付与する。
-     * FK参照切れ・型不一致エラーには cell-error を付与する。
-     * エラーがないセルからは両クラスを除去する。
+     * PK重複・FK参照切れ・型不一致エラーには cell-error を付与する。
+     * エラーがないセルからは cell-error を除去する。
      */
     applyValidationErrors(errors: ValidationError[]): void {
         // ストア列インデックス → エラー種別のマップにグループ化する（key: "storeRow,storeCol"）
@@ -138,9 +137,7 @@ export class EditorTableValidationMarkers {
                 const key = `${storeRowIdx},${storeColIdx}`;
                 const isPkError = pkErrorCells.has(key);
                 const isOtherError = otherErrorCells.has(key);
-                // cell-pk-duplicate: PKエラーのみ
-                if (isPkError) { cell.classList.add('cell-pk-duplicate'); } else { cell.classList.remove('cell-pk-duplicate'); }
-                // cell-error: PKエラー・FK参照切れ・型不一致
+                // cell-error: PK重複・FK参照切れ・型不一致
                 if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
             }
         }
