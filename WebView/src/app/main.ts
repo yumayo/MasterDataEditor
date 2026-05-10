@@ -9,7 +9,7 @@ import {CommandPalette} from "../ui/command-palette";
 import {Toolbar} from "../ui/toolbar";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {ReferenceDataCache} from "../references/reference-data-cache";
-import {applyStoredSettingsAsync} from "../panels/settings-panel";
+import {applyStoredSettingsAsync, EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, getAppliedExportValidationSettings, type ExportValidationSettings} from "../panels/settings-panel";
 import {NotificationToast} from "../ui/notification";
 import {ValidationEngine, createValidationTableSchemaFromJson, type TableSchema} from "../validation/validation-engine";
 import {ValidationPanel} from "../panels/validation-panel";
@@ -103,10 +103,17 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     // StatusBar は起動直後にDOMだけ先行描画済み。
     // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
     const validationEngine = new ValidationEngine(store, referenceDataCache);
+    validationEngine.setExportValidationSettings(getAppliedExportValidationSettings());
     const pluginValidationRunner = new PluginValidationRunner(store);
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
     const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
+
+    window.addEventListener(EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, (event: Event) => {
+        const value = (event as CustomEvent<ExportValidationSettings>).detail;
+        validationEngine.setExportValidationSettings(value);
+        validationPanel.runAndUpdate();
+    });
 
     tab.connectValidationPanel(validationPanel);
     // エラーツールチップを生成して Tab に接続する（全 EditorTable で共有するシングルトン）

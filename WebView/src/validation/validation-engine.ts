@@ -9,6 +9,15 @@ import {
     isDynamicReferenceSchema,
 } from "../references/reference-expression";
 
+const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
+const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
+
+export interface ExportValidationSettings {
+    dateTime: string;
+    beginColumnName: string;
+    endColumnName: string;
+}
+
 /** バリデーションエラーの種別 */
 export type ValidationErrorKind = 'pk-duplicate' | 'fk-broken' | 'type-mismatch' | 'plugin';
 
@@ -80,6 +89,10 @@ export class ValidationEngine {
      * テーブル名 → { primaryKeyColumns, columns: { name, reference | null }[] }
      */
     private readonly schemas: Map<string, TableSchema>;
+    private exportValidationDateTimeText = '';
+    private exportValidationDateTimeMs: number | null = null;
+    private exportBeginDateColumnName = DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME;
+    private exportEndDateColumnName = DEFAULT_EXPORT_END_DATE_COLUMN_NAME;
 
     constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.store = store;
@@ -102,6 +115,18 @@ export class ValidationEngine {
      */
     unregisterSchema(tableName: string): void {
         this.schemas.delete(tableName);
+    }
+
+    /**
+     * export期間列を考慮するPK検証設定を反映する。
+     * 時刻が空・不正、または期間列名が未設定の場合は従来どおり全行をPK重複判定の対象にする。
+     */
+    setExportValidationSettings(settings: ExportValidationSettings): void {
+        this.exportValidationDateTimeText = settings.dateTime;
+        this.exportBeginDateColumnName = settings.beginColumnName.trim();
+        this.exportEndDateColumnName = settings.endColumnName.trim();
+        const parsed = parseTemporalValue(settings.dateTime);
+        this.exportValidationDateTimeMs = parsed.kind === 'valid' ? parsed.ms : null;
     }
 
     /**
@@ -219,6 +244,7 @@ export class ValidationEngine {
             if (idx === -1) return; // PK列がヘッダーに存在しない場合はスキップ
             pkColIndices.push(idx);
         }
+        const exportWindow = this.resolveExportWindowColumnIndices(header);
         // 各PK値の出現行インデックスを記録する（空値はスキップ）
         const pkToRows = new Map<string, number[]>();
         for (let r = 0; r < rows.length; r++) {
@@ -228,6 +254,7 @@ export class ValidationEngine {
                 if (row[idx] === '') { hasEmpty = true; break; }
             }
             if (hasEmpty) continue;
+            if (exportWindow !== null && !this.isRowActiveAtExportValidationTime(row, exportWindow)) continue;
             const compositeKey = pkColIndices.map(idx => row[idx]).join('\0');
             if (pkToRows.has(compositeKey)) {
                 pkToRows.get(compositeKey)!.push(r);
@@ -250,13 +277,35 @@ export class ValidationEngine {
                         columnName: header[colIdx],
                         value: row[colIdx],
                         kind: 'pk-duplicate',
-                        message: `主キー値 "${primaryKeyLabel}" が重複しています`,
+                        message: exportWindow === null
+                            ? `主キー値 "${primaryKeyLabel}" が重複しています`
+                            : `主キー値 "${primaryKeyLabel}" が出力フィルター時刻 "${this.exportValidationDateTimeText}" で重複しています`,
                         filterValue: null,
                         primaryKeyValues,
                     });
                 }
             }
         }
+    }
+
+    private resolveExportWindowColumnIndices(header: string[]): { beginIndex: number; endIndex: number } | null {
+        if (this.exportValidationDateTimeMs === null) return null;
+        if (this.exportBeginDateColumnName === '' || this.exportEndDateColumnName === '') return null;
+        const beginIndex = header.indexOf(this.exportBeginDateColumnName);
+        const endIndex = header.indexOf(this.exportEndDateColumnName);
+        if (beginIndex === -1 || endIndex === -1) return null;
+        return { beginIndex, endIndex };
+    }
+
+    private isRowActiveAtExportValidationTime(row: string[], exportWindow: { beginIndex: number; endIndex: number }): boolean {
+        if (this.exportValidationDateTimeMs === null) return true;
+        const begin = parseTemporalValue(row[exportWindow.beginIndex]);
+        const end = parseTemporalValue(row[exportWindow.endIndex]);
+        if (begin.kind === 'invalid' || end.kind === 'invalid') return true;
+        if (begin.kind === 'valid' && end.kind === 'valid' && begin.ms > end.ms) return true;
+        if (begin.kind === 'valid' && this.exportValidationDateTimeMs < begin.ms) return false;
+        if (end.kind === 'valid' && this.exportValidationDateTimeMs >= end.ms) return false;
+        return true;
     }
 
     // -------------------------------------------------------------------------
@@ -684,6 +733,56 @@ const TYPE_DEFAULT_VALUES: Readonly<Record<string, string>> = {
     'double': '0',
     'bool': '0',
 };
+
+type ParsedTemporalValue =
+    | { kind: 'empty' }
+    | { kind: 'valid'; ms: number }
+    | { kind: 'invalid' };
+
+function parseTemporalValue(value: string): ParsedTemporalValue {
+    const trimmed = value.trim();
+    if (trimmed === '') return { kind: 'empty' };
+
+    const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?(?:\s*(Z|[+-]\d{2}:?\d{2}))?$/.exec(trimmed);
+    if (match !== null) {
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const hour = match[4] === undefined ? 0 : Number(match[4]);
+        const minute = match[5] === undefined ? 0 : Number(match[5]);
+        const second = match[6] === undefined ? 0 : Number(match[6]);
+        const millisecond = match[7] === undefined ? 0 : Number(match[7].padEnd(3, '0'));
+        const timezone = match[8];
+
+        if (timezone !== undefined) {
+            const normalizedTimezone = timezone === 'Z'
+                ? 'Z'
+                : timezone.includes(':')
+                    ? timezone
+                    : `${timezone.slice(0, 3)}:${timezone.slice(3)}`;
+            const normalized = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}.${String(millisecond).padStart(3, '0')}${normalizedTimezone}`;
+            const parsed = Date.parse(normalized);
+            return Number.isFinite(parsed) ? { kind: 'valid', ms: parsed } : { kind: 'invalid' };
+        }
+
+        const date = new Date(year, month - 1, day, hour, minute, second, millisecond);
+        if (
+            date.getFullYear() !== year
+            || date.getMonth() !== month - 1
+            || date.getDate() !== day
+            || date.getHours() !== hour
+            || date.getMinutes() !== minute
+            || date.getSeconds() !== second
+            || date.getMilliseconds() !== millisecond
+        ) {
+            return { kind: 'invalid' };
+        }
+        return { kind: 'valid', ms: date.getTime() };
+    }
+
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? { kind: 'valid', ms: parsed } : { kind: 'invalid' };
+}
 
 /**
  * セル値がFK検証をスキップすべきデフォルト値であるかを判定する。

@@ -7,33 +7,98 @@
 
 /* 設定パネル全体 */
 .settings-panel {
-    padding: 24px;
-    max-width: 600px;
+    --settings-panel-padding: 24px;
+    --settings-section-gap: 24px;
+    --settings-row-gap: 12px;
+    --settings-label-control-gap: 16px;
+    --settings-label-width: 140px;
+    --settings-control-width: 220px;
+    --settings-control-padding: var(--input-padding);
+
+    padding: var(--settings-panel-padding);
+    max-width: 640px;
     color: var(--font-color);
 }
 
 /* 設定セクション（テーマ等のグループ） */
 .settings-section {
-    margin-bottom: 24px;
+    margin-bottom: var(--settings-section-gap);
+}
+
+.settings-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 25px;
+    box-sizing: border-box;
+    padding: 4px 12px;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--background-sub-color);
+    color: var(--font-color);
+    font-size: 11px;
+    font-weight: bold;
+    text-align: left;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+}
+
+.settings-section-header:hover {
+    background-color: var(--hover-color);
+}
+
+.settings-section-chevron {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    transform: rotate(90deg);
+}
+
+.settings-section-header[aria-expanded="false"] .settings-section-chevron {
+    transform: rotate(0deg);
+}
+
+.settings-section-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.settings-section-items {
+    padding-top: var(--settings-row-gap);
+}
+
+.settings-section-items[aria-hidden="true"] {
+    display: none;
 }
 
 /* ラベル（テーマ選択等） */
 .settings-label {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--settings-label-control-gap);
+    min-height: 28px;
     font-size: 14px;
     color: var(--font-color);
 }
 
+.settings-section .settings-label + .settings-label {
+    margin-top: var(--settings-row-gap);
+}
+
 .settings-label-text {
-    min-width: 96px;
+    width: var(--settings-label-width);
+    min-width: var(--settings-label-width);
 }
 
 /* テーマ選択カスタムドロップダウン */
 .settings-dropdown {
     position: relative;
-    min-width: 120px;
+    width: var(--settings-control-width);
+    min-width: var(--settings-control-width);
 }
 
 .settings-dropdown-trigger {
@@ -41,7 +106,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: var(--input-padding);
+    padding: var(--settings-control-padding);
     font-size: var(--input-font-size);
     color: var(--font-color);
     background-color: var(--background-color);
@@ -100,12 +165,35 @@
     color: var(--font-color);
 }
 
+.settings-datetime-input,
+.settings-text-input {
+    width: var(--settings-control-width);
+    box-sizing: border-box;
+    padding: var(--settings-control-padding);
+    font-size: var(--input-font-size);
+    color: var(--font-color);
+    background-color: var(--background-color);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+}
+
+.settings-datetime-input:hover,
+.settings-text-input:hover {
+    border-color: rgba(128, 128, 128, 0.7);
+}
+
+.settings-datetime-input:focus,
+.settings-text-input:focus {
+    border-color: var(--focus-border);
+    outline: none;
+}
+
 /* タブ折り返し */
 .settings-toggle {
     position: relative;
     display: inline-flex;
     align-items: center;
-    width: 38px;
+    width: var(--settings-control-width);
     height: 22px;
     cursor: pointer;
 }

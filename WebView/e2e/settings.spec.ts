@@ -16,6 +16,21 @@ async function selectThemeAsync(page: Page, theme: 'dark' | 'light'): Promise<vo
     await page.locator(`.settings-dropdown-item[data-value="${theme}"]`).click();
 }
 
+async function setExportValidationDateTimeAsync(page: Page, value: string): Promise<void> {
+    const input = page.locator('.settings-export-validation-datetime-input');
+    await input.fill(value);
+    await input.blur();
+}
+
+async function setExportValidationColumnNamesAsync(page: Page, beginColumnName: string, endColumnName: string): Promise<void> {
+    const beginInput = page.locator('.settings-export-begin-date-column-input');
+    const endInput = page.locator('.settings-export-end-date-column-input');
+    await beginInput.fill(beginColumnName);
+    await beginInput.blur();
+    await endInput.fill(endColumnName);
+    await endInput.blur();
+}
+
 async function waitForSettingsThemeAsync(page: Page, expectedTheme: 'dark' | 'light'): Promise<void> {
     await page.waitForFunction(
         ({ path, theme }) => {
@@ -31,6 +46,41 @@ async function waitForSettingsThemeAsync(page: Page, expectedTheme: 'dark' | 'li
             }
         },
         { path: SETTINGS_FILE, theme: expectedTheme },
+        { timeout: 5000 },
+    );
+}
+
+async function waitForSettingsExportValidationDateTimeAsync(page: Page, expectedValue: string): Promise<void> {
+    await page.waitForFunction(
+        ({ path, value }) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            try {
+                const parsed = JSON.parse(raw) as { exportValidationDateTime?: string };
+                return parsed.exportValidationDateTime === value;
+            } catch {
+                return false;
+            }
+        },
+        { path: SETTINGS_FILE, value: expectedValue },
+        { timeout: 5000 },
+    );
+}
+
+async function waitForSettingsExportValidationColumnNamesAsync(page: Page, expectedBeginColumnName: string, expectedEndColumnName: string): Promise<void> {
+    await page.waitForFunction(
+        ({ path, beginColumnName, endColumnName }) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            try {
+                const parsed = JSON.parse(raw) as { exportBeginDateColumnName?: string; exportEndDateColumnName?: string };
+                return parsed.exportBeginDateColumnName === beginColumnName
+                    && parsed.exportEndDateColumnName === endColumnName;
+            } catch {
+                return false;
+            }
+        },
+        { path: SETTINGS_FILE, beginColumnName: expectedBeginColumnName, endColumnName: expectedEndColumnName },
         { timeout: 5000 },
     );
 }
@@ -86,6 +136,27 @@ test.describe('設定画面', () => {
             await expect(trigger).toBeVisible();
             await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="light"]')).toHaveCount(1);
             await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="dark"]')).toHaveCount(1);
+        },
+    );
+
+    test(
+        '設定セクションの見出しクリックでグループを折り畳み・展開できること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const header = page.locator('.settings-section-header').filter({ hasText: '出力フィルター' });
+            const input = page.locator('.settings-export-validation-datetime-input');
+
+            await expect(header).toHaveAttribute('aria-expanded', 'true');
+            await expect(input).toBeVisible();
+
+            await header.click();
+            await expect(header).toHaveAttribute('aria-expanded', 'false');
+            await expect(input).toBeHidden();
+
+            await header.click();
+            await expect(header).toHaveAttribute('aria-expanded', 'true');
+            await expect(input).toBeVisible();
         },
     );
 
@@ -154,7 +225,13 @@ test.describe('設定画面', () => {
             expect(settingsJson).not.toContain('\r');
             expect(settingsJson.endsWith('\n')).toBe(true);
             expect(settingsJson).toContain('\n    "theme": "light"');
-            expect(JSON.parse(settingsJson)).toEqual({ theme: 'light', tabWrapEnabled: false });
+            expect(JSON.parse(settingsJson)).toEqual({
+                theme: 'light',
+                tabWrapEnabled: false,
+                exportValidationDateTime: '',
+                exportBeginDateColumnName: 'export_begin_date',
+                exportEndDateColumnName: 'export_end_date',
+            });
         },
     );
 
@@ -234,6 +311,54 @@ test.describe('設定画面', () => {
             await page.reload();
 
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+        },
+    );
+
+    test(
+        '出力フィルター時刻を変更するとuserdata/settings.jsonへ保存されること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const input = page.locator('.settings-export-validation-datetime-input');
+            await expect(input).toBeVisible();
+
+            await setExportValidationDateTimeAsync(page, '2026-05-10T12:30');
+            await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10T12:30');
+
+            const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
+            expect(JSON.parse(settingsJson)).toEqual({
+                theme: 'dark',
+                tabWrapEnabled: false,
+                exportValidationDateTime: '2026-05-10T12:30',
+                exportBeginDateColumnName: 'export_begin_date',
+                exportEndDateColumnName: 'export_end_date',
+            });
+        },
+    );
+
+    test(
+        'export期間列名を変更するとuserdata/settings.jsonへ保存されること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const beginInput = page.locator('.settings-export-begin-date-column-input');
+            const endInput = page.locator('.settings-export-end-date-column-input');
+            await expect(beginInput).toBeVisible();
+            await expect(endInput).toBeVisible();
+            await expect(beginInput).toHaveValue('export_begin_date');
+            await expect(endInput).toHaveValue('export_end_date');
+
+            await setExportValidationColumnNamesAsync(page, 'start_at', 'finish_at');
+            await waitForSettingsExportValidationColumnNamesAsync(page, 'start_at', 'finish_at');
+
+            const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
+            expect(JSON.parse(settingsJson)).toEqual({
+                theme: 'dark',
+                tabWrapEnabled: false,
+                exportValidationDateTime: '',
+                exportBeginDateColumnName: 'start_at',
+                exportEndDateColumnName: 'finish_at',
+            });
         },
     );
 });

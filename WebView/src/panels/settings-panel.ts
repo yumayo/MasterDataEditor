@@ -12,17 +12,33 @@ import {SETTINGS_FILE} from "../config/userdata-path";
 type ThemeValue = 'dark' | 'light';
 
 const DEFAULT_TAB_WRAP_ENABLED = false;
+const DEFAULT_EXPORT_VALIDATION_DATE_TIME = '';
+const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
+const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
 const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
 const TAB_WRAP_ENABLED_CHANGED_EVENT = 'tab-wrap-enabled-changed';
+export const EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT = 'export-validation-settings-changed';
+
+export interface ExportValidationSettings {
+    dateTime: string;
+    beginColumnName: string;
+    endColumnName: string;
+}
 
 interface SettingsFile {
     theme?: ThemeValue;
     tabWrapEnabled: boolean;
+    exportValidationDateTime: string;
+    exportBeginDateColumnName: string;
+    exportEndDateColumnName: string;
 }
 
 interface StoredSettings {
     theme: ThemeValue | null;
     tabWrapEnabled: boolean | null;
+    exportValidationDateTime: string | null;
+    exportBeginDateColumnName: string | null;
+    exportEndDateColumnName: string | null;
 }
 
 function isThemeValue(value: unknown): value is ThemeValue {
@@ -55,11 +71,26 @@ function readTabWrapEnabledFromRecord(record: Record<string, unknown> | null): b
     return null;
 }
 
+function readExportValidationDateTimeFromRecord(record: Record<string, unknown> | null): string | null {
+    if (record === null) return null;
+    return typeof record['exportValidationDateTime'] === 'string'
+        ? record['exportValidationDateTime']
+        : null;
+}
+
+function readStringSettingFromRecord(record: Record<string, unknown> | null, key: string): string | null {
+    if (record === null) return null;
+    return typeof record[key] === 'string' ? record[key] : null;
+}
+
 async function readStoredSettingsAsync(): Promise<StoredSettings> {
     const settingsRecord = await readSettingsRecordAsync(SETTINGS_FILE);
     return {
         theme: readThemeFromRecord(settingsRecord),
         tabWrapEnabled: readTabWrapEnabledFromRecord(settingsRecord),
+        exportValidationDateTime: readExportValidationDateTimeFromRecord(settingsRecord),
+        exportBeginDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportBeginDateColumnName'),
+        exportEndDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportEndDateColumnName'),
     };
 }
 
@@ -67,6 +98,9 @@ async function writeSettingsFileAsync(settings: SettingsFile): Promise<void> {
     const data: Record<string, unknown> = {...(await readSettingsRecordAsync(SETTINGS_FILE) ?? {})};
     data['theme'] = settings.theme;
     data['tabWrapEnabled'] = settings.tabWrapEnabled;
+    data['exportValidationDateTime'] = settings.exportValidationDateTime;
+    data['exportBeginDateColumnName'] = settings.exportBeginDateColumnName;
+    data['exportEndDateColumnName'] = settings.exportEndDateColumnName;
     await writeFileAsync(SETTINGS_FILE, data);
 }
 
@@ -85,9 +119,34 @@ function parseAppliedTabWrapEnabled(): boolean {
     return raw === '1' || raw === 'true';
 }
 
+let appliedExportValidationSettings: ExportValidationSettings = {
+    dateTime: DEFAULT_EXPORT_VALIDATION_DATE_TIME,
+    beginColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
+    endColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
+};
+
 export function applyTabWrapEnabled(value: boolean): void {
     document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, value ? '1' : '0');
     window.dispatchEvent(new CustomEvent(TAB_WRAP_ENABLED_CHANGED_EVENT));
+}
+
+export function applyExportValidationSettings(value: ExportValidationSettings): void {
+    appliedExportValidationSettings = {...value};
+    window.dispatchEvent(new CustomEvent(EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, {
+        detail: {...appliedExportValidationSettings},
+    }));
+}
+
+export function applyExportValidationDateTime(value: string): void {
+    applyExportValidationSettings({...appliedExportValidationSettings, dateTime: value});
+}
+
+export function applyExportValidationColumnNames(beginColumnName: string, endColumnName: string): void {
+    applyExportValidationSettings({...appliedExportValidationSettings, beginColumnName, endColumnName});
+}
+
+export function getAppliedExportValidationSettings(): ExportValidationSettings {
+    return {...appliedExportValidationSettings};
 }
 
 export class SettingsPanel {
@@ -97,8 +156,16 @@ export class SettingsPanel {
     private readonly dropdownList: HTMLElement;
     private selectedTabWrapEnabled: boolean;
     private readonly tabWrapToggle: HTMLInputElement;
+    private selectedExportValidationDateTime: string;
+    private readonly exportValidationDateTimeInput: HTMLInputElement;
+    private selectedExportBeginDateColumnName: string;
+    private readonly exportBeginDateColumnNameInput: HTMLInputElement;
+    private selectedExportEndDateColumnName: string;
+    private readonly exportEndDateColumnNameInput: HTMLInputElement;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
     private readonly tabButton: TabButton;
+    private readonly collapsedSections = new Set<string>();
+    private nextSectionId = 0;
 
     constructor(tabButton: TabButton) {
         this.tabButton = tabButton;
@@ -107,9 +174,9 @@ export class SettingsPanel {
         this.element = document.createElement('div');
         this.element.classList.add('settings-panel');
 
-        // テーマ設定セクション
-        const section = document.createElement('div');
-        section.classList.add('settings-section');
+        // 表示設定セクション
+        const displaySection = this.createSection('表示');
+        const displaySectionItems = this.getSectionItemsElement(displaySection);
 
         const label = document.createElement('div');
         label.classList.add('settings-label');
@@ -174,12 +241,7 @@ export class SettingsPanel {
         this.updateItemStyles();
 
         label.appendChild(dropdown);
-        section.appendChild(label);
-        this.element.appendChild(section);
-
-        // タブ折り返し設定セクション
-        const tabWrapSection = document.createElement('div');
-        tabWrapSection.classList.add('settings-section');
+        displaySectionItems.appendChild(label);
 
         const tabWrapLabel = document.createElement('div');
         tabWrapLabel.classList.add('settings-label');
@@ -209,8 +271,142 @@ export class SettingsPanel {
         tabWrapControl.appendChild(this.tabWrapToggle);
         tabWrapControl.appendChild(tabWrapTrack);
         tabWrapLabel.appendChild(tabWrapControl);
-        tabWrapSection.appendChild(tabWrapLabel);
-        this.element.appendChild(tabWrapSection);
+        displaySectionItems.appendChild(tabWrapLabel);
+        this.element.appendChild(displaySection);
+
+        // export_begin_date / export_end_date を使った出力フィルター時刻
+        const exportValidationSection = this.createSection('出力フィルター');
+        const exportValidationSectionItems = this.getSectionItemsElement(exportValidationSection);
+
+        const exportValidationLabel = document.createElement('label');
+        exportValidationLabel.classList.add('settings-label');
+        const exportValidationLabelText = document.createElement('span');
+        exportValidationLabelText.classList.add('settings-label-text');
+        exportValidationLabelText.textContent = '出力フィルター時刻';
+        exportValidationLabel.appendChild(exportValidationLabelText);
+
+        const currentExportValidationSettings = getAppliedExportValidationSettings();
+        this.selectedExportValidationDateTime = currentExportValidationSettings.dateTime;
+        this.exportValidationDateTimeInput = document.createElement('input');
+        this.exportValidationDateTimeInput.classList.add('settings-datetime-input', 'settings-export-validation-datetime-input');
+        this.exportValidationDateTimeInput.type = 'datetime-local';
+        this.exportValidationDateTimeInput.value = this.selectedExportValidationDateTime;
+        this.exportValidationDateTimeInput.addEventListener('change', () => {
+            this.selectExportValidationDateTime(this.exportValidationDateTimeInput.value);
+        });
+        this.exportValidationDateTimeInput.addEventListener('blur', () => {
+            if (this.exportValidationDateTimeInput.value !== this.selectedExportValidationDateTime) {
+                this.selectExportValidationDateTime(this.exportValidationDateTimeInput.value);
+            }
+        });
+
+        exportValidationLabel.appendChild(this.exportValidationDateTimeInput);
+        exportValidationSectionItems.appendChild(exportValidationLabel);
+
+        const exportBeginDateColumnLabel = document.createElement('label');
+        exportBeginDateColumnLabel.classList.add('settings-label');
+        const exportBeginDateColumnLabelText = document.createElement('span');
+        exportBeginDateColumnLabelText.classList.add('settings-label-text');
+        exportBeginDateColumnLabelText.textContent = '開始日時列';
+        exportBeginDateColumnLabel.appendChild(exportBeginDateColumnLabelText);
+
+        this.selectedExportBeginDateColumnName = currentExportValidationSettings.beginColumnName;
+        this.exportBeginDateColumnNameInput = document.createElement('input');
+        this.exportBeginDateColumnNameInput.classList.add('settings-text-input', 'settings-export-begin-date-column-input');
+        this.exportBeginDateColumnNameInput.type = 'text';
+        this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
+        this.exportBeginDateColumnNameInput.addEventListener('change', () => {
+            this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
+        });
+        this.exportBeginDateColumnNameInput.addEventListener('blur', () => {
+            if (this.exportBeginDateColumnNameInput.value !== this.selectedExportBeginDateColumnName) {
+                this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
+            }
+        });
+        exportBeginDateColumnLabel.appendChild(this.exportBeginDateColumnNameInput);
+        exportValidationSectionItems.appendChild(exportBeginDateColumnLabel);
+
+        const exportEndDateColumnLabel = document.createElement('label');
+        exportEndDateColumnLabel.classList.add('settings-label');
+        const exportEndDateColumnLabelText = document.createElement('span');
+        exportEndDateColumnLabelText.classList.add('settings-label-text');
+        exportEndDateColumnLabelText.textContent = '終了日時列';
+        exportEndDateColumnLabel.appendChild(exportEndDateColumnLabelText);
+
+        this.selectedExportEndDateColumnName = currentExportValidationSettings.endColumnName;
+        this.exportEndDateColumnNameInput = document.createElement('input');
+        this.exportEndDateColumnNameInput.classList.add('settings-text-input', 'settings-export-end-date-column-input');
+        this.exportEndDateColumnNameInput.type = 'text';
+        this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
+        this.exportEndDateColumnNameInput.addEventListener('change', () => {
+            this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
+        });
+        this.exportEndDateColumnNameInput.addEventListener('blur', () => {
+            if (this.exportEndDateColumnNameInput.value !== this.selectedExportEndDateColumnName) {
+                this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
+            }
+        });
+        exportEndDateColumnLabel.appendChild(this.exportEndDateColumnNameInput);
+        exportValidationSectionItems.appendChild(exportEndDateColumnLabel);
+
+        this.element.appendChild(exportValidationSection);
+    }
+
+    private createSection(title: string): HTMLElement {
+        const section = document.createElement('div');
+        section.classList.add('settings-section');
+        section.setAttribute('role', 'group');
+        section.dataset.sectionName = title;
+
+        const collapsed = this.collapsedSections.has(title);
+        const itemsId = `settings-section-items-${++this.nextSectionId}`;
+
+        const header = document.createElement('button');
+        header.type = 'button';
+        header.classList.add('settings-section-header');
+        header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        header.setAttribute('aria-controls', itemsId);
+
+        const chevron = document.createElement('span');
+        chevron.classList.add('settings-section-chevron');
+        chevron.innerHTML = `<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M5.7 13.7L5 13l4.6-4.6L5 3.7l.7-.7 5.3 5.4z"/></svg>`;
+
+        const name = document.createElement('span');
+        name.classList.add('settings-section-name');
+        name.textContent = title;
+
+        header.appendChild(chevron);
+        header.appendChild(name);
+        header.addEventListener('click', () => { this.toggleSection(section, title); });
+
+        const items = document.createElement('div');
+        items.id = itemsId;
+        items.classList.add('settings-section-items');
+        items.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+
+        section.appendChild(header);
+        section.appendChild(items);
+        return section;
+    }
+
+    private toggleSection(section: HTMLElement, title: string): void {
+        const header = section.querySelector<HTMLElement>('.settings-section-header');
+        const items = section.querySelector<HTMLElement>('.settings-section-items');
+        if (header === null || items === null) return;
+        const expanded = header.getAttribute('aria-expanded') === 'true';
+        header.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        items.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+        if (expanded) {
+            this.collapsedSections.add(title);
+        } else {
+            this.collapsedSections.delete(title);
+        }
+    }
+
+    private getSectionItemsElement(section: HTMLElement): HTMLElement {
+        const items = section.querySelector<HTMLElement>('.settings-section-items');
+        if (items === null) throw new Error('[SettingsPanel.getSectionItemsElement] .settings-section-items が見つかりません');
+        return items;
     }
 
     private selectTheme(value: ThemeValue, text: string): void {
@@ -225,6 +421,21 @@ export class SettingsPanel {
         this.selectedTabWrapEnabled = value;
         applyTabWrapEnabled(value);
         this.saveTabLayout();
+    }
+
+    private selectExportValidationDateTime(value: string): void {
+        this.selectedExportValidationDateTime = value;
+        applyExportValidationDateTime(value);
+        this.saveExportValidationDateTime();
+    }
+
+    private selectExportValidationColumnNames(beginColumnName: string, endColumnName: string): void {
+        this.selectedExportBeginDateColumnName = beginColumnName.trim();
+        this.selectedExportEndDateColumnName = endColumnName.trim();
+        this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
+        this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
+        applyExportValidationColumnNames(this.selectedExportBeginDateColumnName, this.selectedExportEndDateColumnName);
+        this.saveExportValidationColumnNames();
     }
 
     /** 選択中アイテムにアクティブスタイルを付与する */
@@ -284,10 +495,31 @@ export class SettingsPanel {
             });
     }
 
+    private saveExportValidationDateTime(): void {
+        this.writeSettingsAsync()
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error('[SettingsPanel] save export validation date time failed:', String(error));
+                this.tabButton.setDirty(true);
+            });
+    }
+
+    private saveExportValidationColumnNames(): void {
+        this.writeSettingsAsync()
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error('[SettingsPanel] save export validation column names failed:', String(error));
+                this.tabButton.setDirty(true);
+            });
+    }
+
     private async writeSettingsAsync(): Promise<void> {
         await enqueueSettingsWriteAsync({
             theme: this.selectedTheme,
             tabWrapEnabled: this.selectedTabWrapEnabled,
+            exportValidationDateTime: this.selectedExportValidationDateTime,
+            exportBeginDateColumnName: this.selectedExportBeginDateColumnName,
+            exportEndDateColumnName: this.selectedExportEndDateColumnName,
         });
     }
 }
@@ -311,4 +543,9 @@ export async function applyStoredSettingsAsync(): Promise<void> {
         document.body.dataset.theme = settings.theme;
     }
     applyTabWrapEnabled(settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED);
+    applyExportValidationSettings({
+        dateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
+        beginColumnName: settings.exportBeginDateColumnName ?? DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
+        endColumnName: settings.exportEndDateColumnName ?? DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
+    });
 }
