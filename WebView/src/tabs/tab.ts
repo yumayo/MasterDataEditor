@@ -2103,16 +2103,24 @@ export class Tab {
      * closeTableDefinitionAndOpenTable との違い: エクスプローラーへの追加を行わない（既存テーブルのため）。
      * また、既にタブが開かれている場合はストアとDOMを再読み込みして最新状態を反映する。
      */
-    closeTableDefinitionAndReopenTable(tableName: string, description: string | null): void {
-        // テーブル定義タブを閉じる
-        this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
-
-        // 既にテーブルタブが開かれている場合: ストアのキャッシュとDOMを無効化して再読み込みする
+    async closeTableDefinitionAndReopenTable(tableName: string, description: string | null): Promise<void> {
+        // 既にテーブルタブが開かれている場合は先に閉じる。
+        // 定義タブを先に閉じると前の通常タブが一瞬アクティブ化され、古いストアヘッダーが再利用されるため。
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             // タブを閉じて再オープンすることで最新のスキーマ・CSVを読み込む
             this.performCloseTab(tableName);
         }
+
+        // 起動時バリデーションなどでストアに常駐しているCSVキャッシュも最新ファイルへ同期する。
+        // これを行わないと、追加列はスキーマ上に表示されても保存時に古いCSVヘッダーで上書きされる。
+        if (this.store.hasTable(tableName)) {
+            await this.store.reloadTableDataAsync(tableName);
+            this.referenceDataCache.evictEntry(tableName);
+        }
+
+        // テーブル定義タブを閉じる
+        this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
 
         // テーブルを通常タブで開く（既にエクスプローラーに存在するため appendFile は呼ばない）
         const tabButton = this.append(tableName, description);

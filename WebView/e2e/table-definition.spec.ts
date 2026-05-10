@@ -554,6 +554,50 @@ test.describe('既存テーブルの定義編集', () => {
         ]);
     });
 
+    test('開いているテーブルの定義編集で追加した列に入力して保存できる', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        const fileItem = explorer.locator('.explorer-file', { hasText: 'test' });
+        await expect(fileItem).toBeVisible();
+        await fileItem.click();
+
+        const table = page.locator('.editor-left-pane .editor-table');
+        await expect(table).toBeVisible();
+
+        const tabButton = page.locator('.tab-button').filter({
+            has: page.locator('.tab-button-name', { hasText: /^test$/ }),
+        });
+        await expect(tabButton).toBeVisible();
+        await tabButton.click({ button: 'right' });
+        const menu = page.locator('.context-menu.visible');
+        await menu.locator('.context-menu-item', { hasText: 'テーブル定義を編集' }).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        await getAddColumnButton(page).click();
+        const newRow = page.locator('.table-definition-column-row').nth(3);
+        await newRow.locator('.column-name-input').fill('new_col');
+        await newRow.locator('.column-type-select').selectOption('string');
+        await getSaveButton(page).click();
+        await expect(getEditor(page)).toHaveCount(0);
+        await expect.poll(async () => await readMockFileAsync(page, 'data/test.csv')).toContain('new_col');
+
+        const reopenedTable = page.locator('.editor-left-pane .editor-table');
+        await expect(reopenedTable).toBeVisible();
+        const newColumnCell = reopenedTable.locator('.editor-table-row').nth(0).locator('.editor-table-cell').nth(4);
+        await newColumnCell.dblclick();
+        await page.keyboard.type('added_value');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Control+S');
+
+        await expect.poll(async () => await readMockFileAsync(page, 'data/test.csv')).toContain('added_value');
+        await expectCsvAsync(page, 'data/test.csv', `
+            id, name,   value, new_col
+            1,  item_a, 100,  added_value
+            2,  item_b, 200,
+            3,  item_c, 300,
+        `);
+    });
+
     test('列を削除して保存するとCSVから該当列が除去される', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
         const explorer = page.locator('#explorer');

@@ -906,7 +906,7 @@ export class TableDefinitionEditor {
 
         // テーブル定義タブを閉じてテーブルを再オープンする
         // description が空文字の場合は null として渡す（新規作成の saveAsync と同じ規約）
-        this.tab.closeTableDefinitionAndReopenTable(tableName, description !== '' ? description : null);
+        await this.tab.closeTableDefinitionAndReopenTable(tableName, description !== '' ? description : null);
     }
 
     /**
