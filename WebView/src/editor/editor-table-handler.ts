@@ -463,7 +463,17 @@ export class EditorTableHandler {
      * 入力イベント時の処理（リサイズとドロップダウンフィルタリング）
      */
     private onBeforeInput(event: InputEvent): void {
-        if (!this.active || !this.dateTimePickerActive) return;
+        if (!this.active) return;
+
+        if (!this.dateTimePickerActive) {
+            if (this.visible && this.isFocusedBoolColumnWithoutReference()) {
+                const inputText = this.readBeforeInputText(event);
+                if (inputText !== null && /\D/.test(inputText)) {
+                    event.preventDefault();
+                }
+            }
+            return;
+        }
 
         const selection = this.getTextFieldSelectionOffsets();
         const result = applyDateTimeTextInputEdit(
@@ -493,7 +503,7 @@ export class EditorTableHandler {
     private onInput(): void {
         if (!this.active) return;
 
-        const text = this.dateTimePickerActive ? this.normalizeDateTimeTextFieldInput() : (this.element.textContent ?? '');
+        const text = this.dateTimePickerActive ? this.normalizeDateTimeTextFieldInput() : this.normalizeBoolTextFieldInputIfNeeded();
 
         // ドロップダウンがアクティブな場合はフィルタリング
         if (this.dropdownActive && this.dropdownInput) {
@@ -623,6 +633,13 @@ export class EditorTableHandler {
                     if (this.textField) this.textField.resizeTextField(String(newValue));
                     return;
                 }
+                // bool型の入力フィルタ: 数字・制御キー以外をブロック
+                if (colType === 'bool') {
+                    if (!this.isAllowedDigitKey(keyboardEvent)) {
+                        keyboardEvent.preventDefault();
+                    }
+                    return;
+                }
                 // int型の入力フィルタ: 数字・+・-・制御キー以外をブロック
                 if (colType === 'int' || colType === 'long') {
                     if (!this.isAllowedNumericKey(keyboardEvent)) {
@@ -654,6 +671,16 @@ export class EditorTableHandler {
         // 数字と符号を許可する
         if (/^[0-9+\-]$/.test(e.key)) return true;
         return false;
+    }
+
+    /**
+     * bool型の編集モードで許可されるキーかどうかを判定する。
+     * 数字(0-9)と編集用の制御キーだけを許可する。
+     */
+    private isAllowedDigitKey(e: KeyboardEvent): boolean {
+        if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') return true;
+        if (e.ctrlKey || e.metaKey) return true;
+        return /^[0-9]$/.test(e.key);
     }
 
     /**
@@ -891,13 +918,15 @@ export class EditorTableHandler {
         // 文字入力による編集モード開始
         // Ctrl/Meta+キーの組み合わせはショートカットなので編集モードを開始しない
         if (keyboardEvent.ctrlKey || keyboardEvent.metaKey) return;
-        // bool型列（FK参照なし）では文字キーによる編集モード侵入をブロックする
-        // （Space/Delete/Backspaceのみ操作可能）
+        // bool型列（FK参照なし）は数字キーのみテキスト編集を開始する
         {
             const focus = this.selection.getFocus();
             const dataColIndex = focus.column - this.table.dataColumnOffset();
             if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
-                return;
+                if (!/^[0-9]$/.test(keyboardEvent.key)) {
+                    if (keyboardEvent.key.length === 1 || keyboardEvent.key === 'Process') keyboardEvent.preventDefault();
+                    return;
+                }
             }
             if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'datetime' && !this.table.hasColumnReference(dataColIndex)) {
                 return;
@@ -1042,10 +1071,24 @@ export class EditorTableHandler {
     private submitText(): void {
         if (!this.visible) return;
         const target = getTarget(this.table, this.selection);
-        const text = this.element.textContent ?? '';
+        const text = this.normalizeSubmittedTextForColumn(target.column, this.element.textContent ?? '');
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: text }];
         this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
+    }
+
+    private normalizeSubmittedTextForColumn(column: number, text: string): string {
+        const dataColIndex = column - this.table.dataColumnOffset();
+        if (dataColIndex >= 0 && this.table.getColumnType(dataColIndex) === 'bool' && !this.table.hasColumnReference(dataColIndex)) {
+            return this.normalizeBoolTextValue(text);
+        }
+        return text;
+    }
+
+    private normalizeBoolTextValue(text: string): string {
+        const digits = text.replace(/\D/g, '');
+        if (digits === '') return '';
+        return /^0+$/.test(digits) ? '0' : '1';
     }
 
     /**
@@ -1117,6 +1160,26 @@ export class EditorTableHandler {
         this.element.textContent = result.value;
         this.setTextFieldCaretOffset(result.selectionStart);
         return result.value;
+    }
+
+    private normalizeBoolTextFieldInputIfNeeded(): string {
+        const text = this.element.textContent ?? '';
+        if (!this.visible || !this.isFocusedBoolColumnWithoutReference()) return text;
+
+        const digits = text.replace(/\D/g, '');
+        if (digits === text) return text;
+
+        this.element.textContent = digits;
+        this.setTextFieldCaretOffset(digits.length);
+        return digits;
+    }
+
+    private isFocusedBoolColumnWithoutReference(): boolean {
+        const focus = this.selection.getFocus();
+        const dataColIndex = focus.column - this.table.dataColumnOffset();
+        return dataColIndex >= 0
+            && this.table.getColumnType(dataColIndex) === 'bool'
+            && !this.table.hasColumnReference(dataColIndex);
     }
 
     private moveDateTimeTextFieldCaretAcrossSeparator(event: KeyboardEvent): boolean {

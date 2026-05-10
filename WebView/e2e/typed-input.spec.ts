@@ -9,7 +9,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   スキーマで定義された列の型（bool, int, float, double）に応じて、
 //   セルの表示形式と入力方法を切り替える。
 //
-//   - bool型: チェックマークSVG表示、ダブルクリック/SpaceキーでTrue/Falseトグル
+//   - bool型: チェックマークSVG表示、ダブルクリック/SpaceキーでTrue/Falseトグル、数字キー入力で数値テキスト入力
 //   - int型: 数字・+・-以外の文字をkeydownでフィルタ、編集中の上下矢印でインクリメント/デクリメント
 //   - float/double型: 数字・+・-・.・e・E以外をフィルタ、上下矢印で増減
 //   - 数値型（int/float/double）: セルに .cell-numeric クラスで右寄せ表示
@@ -20,7 +20,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   プロダクションコードに型別入力コントロールが未実装のため、すべてのテストが失敗する。
 //   - .cell-bool-check / .cell-bool-uncheck クラスが存在しない
 //   - .cell-numeric クラスが存在しない
-//   - bool型トグルのCommandが存在しない
+//   - bool型テキスト入力とトグルのCommandが存在しない
 //   - 数値型の入力フィルタが未実装
 //   - 数値型の上下矢印インクリメント/デクリメントが未実装
 //
@@ -28,10 +28,11 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   1. bool型セルがチェックマークで表示される
 //   2. bool型セルをダブルクリックするとトグルされる
 //   3. bool型セルでSpaceキーを押すとトグルされる
-//   4. int型セルで文字入力がフィルタされる
-//   5. int型セルで上矢印を押すと値がインクリメントされる
-//   6. 数値型セルが右寄せで表示される
-//   7. bool型トグルがCtrl+Zでundo可能
+//   4. bool型セルで数字キーを押すと数値テキスト入力できる
+//   5. int型セルで文字入力がフィルタされる
+//   6. int型セルで上矢印を押すと値がインクリメントされる
+//   7. 数値型セルが右寄せで表示される
+//   8. bool型テキスト入力がCtrl+Zでundo可能
 // =============================================================================
 
 // =============================================================================
@@ -196,11 +197,9 @@ test.describe('データ型別入力コントロール', () => {
 		await cell.dblclick();
 
 		// テキスト入力モードには入らず、値がfalseにトグルされる
-		// GridTextFieldが表示されていないことを確認（bool型はインライン編集ではなくトグル）
 		const editField = page.locator('.grid-textfield-active');
 		await expect(editField).not.toBeVisible();
 
-		// セルの表示が .cell-bool-uncheck に変わる
 		await expect(cell.locator('.cell-bool-uncheck')).toBeVisible();
 		await expect(cell.locator('.cell-bool-check')).not.toBeVisible();
 
@@ -238,7 +237,40 @@ test.describe('データ型別入力コントロール', () => {
 	});
 
 	// =============================================================================
-	// テストケース4: int型セルで文字入力がフィルタされる
+	// テストケース4: bool型セルで数字キーを押すと数値テキスト入力できる
+	// =============================================================================
+
+	test('bool型セルで数字キーを押すと数値テキスト入力できる', async ({ page }) => {
+		const table = await openTableAsync(page, 'typed_test');
+		const cell = getDataCell(table, 0, 2);
+		await expect(cell.locator('.cell-bool-check')).toBeVisible();
+
+		await selectCellAsync(table, 0, 2);
+		await page.keyboard.press('0');
+		const editField = page.locator('.grid-textfield-active');
+		await expect(editField).toBeVisible();
+		await expect(editField).toHaveText('0');
+
+		// 数字以外は入力できない
+		await page.keyboard.press('a');
+		await expect(editField).toHaveText('0');
+
+		await page.keyboard.press('Enter');
+		await expect(cell.locator('.cell-bool-uncheck')).toBeVisible();
+		await expect(cell.locator('.cell-bool-check')).not.toBeVisible();
+
+		// 0以外の数字は true として確定される
+		await selectCellAsync(table, 0, 2);
+		await page.keyboard.press('2');
+		await expect(editField).toBeVisible();
+		await expect(editField).toHaveText('2');
+		await page.keyboard.press('Enter');
+		await expect(cell.locator('.cell-bool-check')).toBeVisible();
+		await expect(cell.locator('.cell-bool-uncheck')).not.toBeVisible();
+	});
+
+	// =============================================================================
+	// テストケース5: int型セルで文字入力がフィルタされる
 	// =============================================================================
 
 	test('int型セルで文字入力がフィルタされる', async ({ page }) => {
@@ -279,7 +311,7 @@ test.describe('データ型別入力コントロール', () => {
 	});
 
 	// =============================================================================
-	// テストケース5: int型セルで上矢印を押すと値がインクリメントされる
+	// テストケース6: int型セルで上矢印を押すと値がインクリメントされる
 	// =============================================================================
 
 	test('int型セルで上矢印を押すと値がインクリメントされる', async ({ page }) => {
@@ -312,7 +344,7 @@ test.describe('データ型別入力コントロール', () => {
 	});
 
 	// =============================================================================
-	// テストケース6: 数値型セルが右寄せで表示される
+	// テストケース7: 数値型セルが右寄せで表示される
 	// =============================================================================
 
 	test('数値型セルが右寄せで表示される', async ({ page }) => {
@@ -345,10 +377,10 @@ test.describe('データ型別入力コントロール', () => {
 	});
 
 	// =============================================================================
-	// テストケース7: bool型トグルがCtrl+Zでundo可能
+	// テストケース8: bool型テキスト入力がCtrl+Zでundo可能
 	// =============================================================================
 
-	test('bool型トグルがCtrl+Zでundo可能', async ({ page }) => {
+	test('bool型テキスト入力がCtrl+Zでundo可能', async ({ page }) => {
 		const table = await openTableAsync(page, 'typed_test');
 
 		// 1行目のactive列（初期値: true）
@@ -358,8 +390,12 @@ test.describe('データ型別入力コントロール', () => {
 		// 初期状態を確認: true → .cell-bool-check が表示
 		await expect(cell.locator('.cell-bool-check')).toBeVisible();
 
-		// ダブルクリックでトグル: true → false
-		await cell.dblclick();
+		// 数字キー入力で true → false
+		await selectCellAsync(table, 0, 2);
+		await page.keyboard.press('0');
+		const editField = page.locator('.grid-textfield-active');
+		await expect(editField).toBeVisible();
+		await page.keyboard.press('Enter');
 		await expect(cell.locator('.cell-bool-uncheck')).toBeVisible();
 
 		// Ctrl+Z で Undo: false → true に戻る
@@ -367,7 +403,7 @@ test.describe('データ型別入力コントロール', () => {
 		await expect(cell.locator('.cell-bool-check')).toBeVisible();
 		await expect(cell.locator('.cell-bool-uncheck')).not.toBeVisible();
 
-		// Ctrl+Y で Redo: true → false に再度トグル
+		// Ctrl+Y で Redo: true → false に戻る
 		await page.keyboard.press('Control+y');
 		await expect(cell.locator('.cell-bool-uncheck')).toBeVisible();
 		await expect(cell.locator('.cell-bool-check')).not.toBeVisible();

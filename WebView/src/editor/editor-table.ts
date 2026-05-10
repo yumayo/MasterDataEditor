@@ -559,7 +559,7 @@ export class EditorTable {
 
     /**
      * bool型セルのトグル操作を handler に委譲する。
-     * createCell の dblclick ハンドラから呼ばれる（デメテルの法則: getHandler().toggleBoolCell() を避ける）。
+     * createCell の dblclick ハンドラや Spaceキーから呼ばれる（デメテルの法則: getHandler().toggleBoolCell() を避ける）。
      */
     toggleBoolCell(): void {
         this.handler.toggleBoolCell();
