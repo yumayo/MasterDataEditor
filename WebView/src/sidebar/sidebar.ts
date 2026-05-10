@@ -11,7 +11,7 @@ import {EditorTable} from "../editor/editor-table";
 import {Editor} from "../editor/editor";
 import {MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
-import {consumeSuppressedFileChangedNotification, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
+import {consumeSuppressedSelfSaveGitRefresh, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
 import type {UiStateStore} from "../app/ui-state";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
@@ -128,18 +128,23 @@ export class Sidebar {
         // C# FileSystemWatcher / GitWatcher からのプッシュ通知を受信してバッジとパネルを更新する
         window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
             if (typeof event.data !== 'string') return;
-            let data: { type: string };
+            let data: { type: string; filename?: string; filenames?: string[] };
             try {
                 data = JSON.parse(event.data) as { type: string };
             } catch {
                 return;
             }
             if (data.type !== 'file_changed' && data.type !== 'git_changed') return;
+            let skipGitRefresh = false;
             if (data.type === 'file_changed') {
-                if (consumeSuppressedFileChangedNotification()) return;
                 invalidateMasterDataFileCaches();
                 this.tab.notifyExternalFileChanged();
+                const filenames = Array.isArray(data.filenames)
+                    ? data.filenames
+                    : (typeof data.filename === 'string' ? [data.filename] : undefined);
+                skipGitRefresh = consumeSuppressedSelfSaveGitRefresh(filenames);
             }
+            if (skipGitRefresh) return;
             invalidateGitStatusCache();
             invalidateGitShowCache();
             this.sourceControlPanel.refreshAsync().catch(e => { console.error('バッジ更新失敗', e); });

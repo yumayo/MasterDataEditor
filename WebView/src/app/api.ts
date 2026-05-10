@@ -68,12 +68,15 @@ export type WriteFileData = string | object;
 
 export interface WriteFileOptions {
     invalidateGitStatus?: boolean;
-    suppressFileChangedNotification?: boolean;
+    suppressSelfSaveGitRefresh?: boolean;
 }
 
-let suppressedFileChangedNotificationCount = 0;
-let suppressedFileChangedNotificationDeadline = 0;
-const SUPPRESSED_FILE_CHANGED_NOTIFICATION_MS = 1500;
+const suppressedSelfSaveGitRefreshPaths = new Map<string, number>();
+let suppressedSelfSaveGitRefreshDeadline = 0;
+// FileWatcher はアプリ自身の保存にも file_changed を返す。
+// 保存処理側ですでに git_status を1回取り直しているため、その直後の重複した
+// git_status だけを抑止する。ファイルキャッシュの無効化は sidebar 側で常に行う。
+const SELF_SAVE_GIT_REFRESH_SUPPRESSION_MS = 1500;
 
 function isMasterDataFile(filename: string): boolean {
     return filename.startsWith('schema/') || filename.startsWith('data/');
@@ -83,26 +86,45 @@ function affectsGitStatus(filename: string): boolean {
     return filename.startsWith('data/') && filename.endsWith('.csv');
 }
 
-function suppressNextFileChangedNotification(filename: string): void {
+function suppressNextSelfSaveGitRefresh(filename: string): void {
     if (!isMasterDataFile(filename)) return;
-    suppressedFileChangedNotificationCount++;
-    suppressedFileChangedNotificationDeadline = performance.now() + SUPPRESSED_FILE_CHANGED_NOTIFICATION_MS;
+    suppressedSelfSaveGitRefreshPaths.set(filename, (suppressedSelfSaveGitRefreshPaths.get(filename) ?? 0) + 1);
+    suppressedSelfSaveGitRefreshDeadline = performance.now() + SELF_SAVE_GIT_REFRESH_SUPPRESSION_MS;
 }
 
-export function consumeSuppressedFileChangedNotification(): boolean {
-    if (suppressedFileChangedNotificationCount <= 0) return false;
-    if (performance.now() > suppressedFileChangedNotificationDeadline) {
-        suppressedFileChangedNotificationCount = 0;
+export function consumeSuppressedSelfSaveGitRefresh(filenames: readonly string[] | undefined): boolean {
+    if (suppressedSelfSaveGitRefreshPaths.size === 0) return false;
+    if (performance.now() > suppressedSelfSaveGitRefreshDeadline) {
+        suppressedSelfSaveGitRefreshPaths.clear();
         return false;
     }
-    suppressedFileChangedNotificationCount--;
-    return true;
+    if (filenames === undefined || filenames.length === 0) return false;
+
+    let allFilesAreSelfSave = true;
+    const consumedFilenames: string[] = [];
+    for (const filename of filenames) {
+        const remainingCount = suppressedSelfSaveGitRefreshPaths.get(filename) ?? 0;
+        if (remainingCount <= 0) {
+            allFilesAreSelfSave = false;
+            continue;
+        }
+        consumedFilenames.push(filename);
+    }
+    for (const filename of consumedFilenames) {
+        const remainingCount = (suppressedSelfSaveGitRefreshPaths.get(filename) ?? 1) - 1;
+        if (remainingCount <= 0) {
+            suppressedSelfSaveGitRefreshPaths.delete(filename);
+        } else {
+            suppressedSelfSaveGitRefreshPaths.set(filename, remainingCount);
+        }
+    }
+    return allFilesAreSelfSave && consumedFilenames.length > 0;
 }
 
 export async function writeFileAsync(filename: string, data: WriteFileData, options: WriteFileOptions = {}): Promise<void> {
     await postMessageAsync('write_file', { filename, data });
     fileCache.set(filename, serializeWriteFileData(data));
-    if (options.suppressFileChangedNotification === true) suppressNextFileChangedNotification(filename);
+    if (options.suppressSelfSaveGitRefresh === true) suppressNextSelfSaveGitRefresh(filename);
     if (options.invalidateGitStatus !== false && affectsGitStatus(filename)) invalidateGitStatusCache();
 }
 

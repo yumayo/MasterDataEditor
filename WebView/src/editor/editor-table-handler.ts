@@ -996,7 +996,7 @@ export class EditorTableHandler {
         const store = this.table.getStore();
         const saveWriteOptions: WriteFileOptions = {
             invalidateGitStatus: false,
-            suppressFileChangedNotification: true,
+            suppressSelfSaveGitRefresh: true,
         };
         // 差分タブの右ペイン: saveTargetTableName が設定されている場合は元テーブル名で保存する。
         // ストアキーは "tableName:diff:current" だが保存先は元の tableName にする。

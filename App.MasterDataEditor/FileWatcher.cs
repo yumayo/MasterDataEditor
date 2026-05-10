@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace App.MasterDataEditor;
@@ -12,14 +14,15 @@ namespace App.MasterDataEditor;
 public sealed class FileWatcher : IDisposable
 {
 	private readonly FileSystemWatcher _watcher;
-	private readonly Action _onFileChanged;
+	private readonly Action<string[]> _onFileChanged;
 	private readonly object _lock = new();
+	private readonly HashSet<string> _pendingPaths = new(StringComparer.OrdinalIgnoreCase);
 	private Timer? _debounceTimer;
 
 	/// <summary>デバウンス間隔（ミリ秒）</summary>
 	private const int DebounceIntervalMs = 300;
 
-	public FileWatcher(string directory, string filter, Action onFileChanged)
+	public FileWatcher(string directory, string filter, Action<string[]> onFileChanged)
 	{
 		_onFileChanged = onFileChanged;
 
@@ -44,7 +47,7 @@ public sealed class FileWatcher : IDisposable
 	/// </summary>
 	private void OnFileEvent(object sender, FileSystemEventArgs e)
 	{
-		ResetDebounceTimer();
+		ResetDebounceTimer(e.FullPath);
 	}
 
 	/// <summary>
@@ -52,7 +55,7 @@ public sealed class FileWatcher : IDisposable
 	/// </summary>
 	private void OnFileRenamed(object sender, RenamedEventArgs e)
 	{
-		ResetDebounceTimer();
+		ResetDebounceTimer(e.OldFullPath, e.FullPath);
 	}
 
 	/// <summary>
@@ -61,13 +64,33 @@ public sealed class FileWatcher : IDisposable
 	/// FileSystemWatcher のイベントは複数スレッドプールスレッドから同時呼び出しされるため
 	/// lock で排他制御する。
 	/// </summary>
-	private void ResetDebounceTimer()
+	private void ResetDebounceTimer(params string[] fullPaths)
 	{
 		lock (_lock)
 		{
+			foreach (var fullPath in fullPaths)
+			{
+				if (!string.IsNullOrWhiteSpace(fullPath))
+				{
+					_pendingPaths.Add(fullPath);
+				}
+			}
 			_debounceTimer?.Dispose();
-			_debounceTimer = new Timer(_ => _onFileChanged(), null, DebounceIntervalMs, Timeout.Infinite);
+			_debounceTimer = new Timer(_ => FlushPendingPaths(), null, DebounceIntervalMs, Timeout.Infinite);
 		}
+	}
+
+	private void FlushPendingPaths()
+	{
+		string[] paths;
+		lock (_lock)
+		{
+			paths = _pendingPaths.ToArray();
+			_pendingPaths.Clear();
+			_debounceTimer?.Dispose();
+			_debounceTimer = null;
+		}
+		_onFileChanged(paths);
 	}
 
 	public void Dispose()

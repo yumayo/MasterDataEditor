@@ -42,9 +42,9 @@ public class WebView2Handler : IDisposable
 		var dataDirectory = Path.Combine(AppEnvironment.GetWorkDir(), "data");
 		if (Directory.Exists(dataDirectory))
 		{
-			_fileWatcherHandle = new FileWatcher(dataDirectory, "*.csv", () =>
+			_fileWatcherHandle = new FileWatcher(dataDirectory, "*.csv", changedPaths =>
 			{
-				SendMessageToWebView(new { type = "file_changed" });
+				SendMessageToWebView(new { type = "file_changed", filenames = ToWorkDirRelativePaths(changedPaths) });
 			});
 			Logger.Info($"ファイル監視を開始: {dataDirectory}");
 		}
@@ -58,9 +58,9 @@ public class WebView2Handler : IDisposable
 		var schemaDirectory = Path.Combine(AppEnvironment.GetWorkDir(), "schema");
 		if (Directory.Exists(schemaDirectory))
 		{
-			_schemaWatcherHandle = new FileWatcher(schemaDirectory, "*.json", () =>
+			_schemaWatcherHandle = new FileWatcher(schemaDirectory, "*.json", changedPaths =>
 			{
-				SendMessageToWebView(new { type = "file_changed" });
+				SendMessageToWebView(new { type = "file_changed", filenames = ToWorkDirRelativePaths(changedPaths) });
 			});
 			Logger.Info($"スキーマ監視を開始: {schemaDirectory}");
 		}
@@ -86,6 +86,14 @@ public class WebView2Handler : IDisposable
 			_gitWatcherHandle = NullDisposable.Instance;
 			Logger.Info($".git/ が存在しないためGit監視をスキップ: {gitDirectory}");
 		}
+	}
+
+	private static string[] ToWorkDirRelativePaths(string[] fullPaths)
+	{
+		var workDir = AppEnvironment.GetWorkDir();
+		return fullPaths
+			.Select(path => Path.GetRelativePath(workDir, path).Replace('\\', '/'))
+			.ToArray();
 	}
 
 	private void OnConsoleAPICalled(object? sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)

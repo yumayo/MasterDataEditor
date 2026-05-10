@@ -167,7 +167,7 @@ test.describe('保存後のgit差分ハイライト更新', () => {
                 (window as unknown as { __onAfterWriteFile: (filename: string) => void }).__onAfterWriteFile = (filename: string) => {
                     if (filename !== "data/quest.csv" && filename !== "schema/quest.json") return;
                     window.setTimeout(() => {
-                        window.chrome.webview.postMessage(JSON.stringify({ type: "file_changed" }));
+                        window.chrome.webview.postMessage(JSON.stringify({ type: "file_changed", filenames: [filename] }));
                     }, 20);
                 };
             }, { statusAfterSave: GIT_STATUS_AFTER_SAVE, headCsv: HEAD_QUEST_CSV });
