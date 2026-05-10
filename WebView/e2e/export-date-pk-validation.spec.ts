@@ -47,8 +47,12 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
 }
 
 function getPkCell(table: Locator, rowIndex: number): Locator {
+    return getDataCell(table, rowIndex, 0);
+}
+
+function getDataCell(table: Locator, rowIndex: number, columnIndex: number): Locator {
     return table.locator('.editor-table-row').nth(rowIndex)
-        .locator('.editor-table-cell:not(.editor-table-row-header)').nth(0);
+        .locator('.editor-table-cell:not(.editor-table-row-header)').nth(columnIndex);
 }
 
 async function setExportValidationDateTimeAsync(page: Page, value: string): Promise<void> {
@@ -84,10 +88,22 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             const firstPkCell = getPkCell(table, 0);
             const secondPkCell = getPkCell(table, 1);
             const thirdPkCell = getPkCell(table, 2);
+            const firstBeginCell = getDataCell(table, 0, 1);
+            const firstEndCell = getDataCell(table, 0, 2);
+            const secondBeginCell = getDataCell(table, 1, 1);
+            const secondEndCell = getDataCell(table, 1, 2);
+            const thirdBeginCell = getDataCell(table, 2, 1);
+            const thirdEndCell = getDataCell(table, 2, 2);
 
             await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
             await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
             await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstBeginCell).toHaveClass(/cell-error/);
+            await expect(firstEndCell).toHaveClass(/cell-error/);
+            await expect(secondBeginCell).toHaveClass(/cell-error/);
+            await expect(secondEndCell).toHaveClass(/cell-error/);
+            await expect(thirdBeginCell).not.toHaveClass(/cell-error/);
+            await expect(thirdEndCell).not.toHaveClass(/cell-error/);
 
             await setExportValidationDateTimeAsync(page, '2026-05-12T00:00:00');
             await page.locator('.tab-button').filter({ hasText: 'item' }).click();
@@ -95,6 +111,12 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
             await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
             await expect(thirdPkCell).not.toHaveClass(/cell-pk-duplicate/);
+            await expect(firstBeginCell).toHaveClass(/cell-error/);
+            await expect(firstEndCell).toHaveClass(/cell-error/);
+            await expect(secondBeginCell).toHaveClass(/cell-error/);
+            await expect(secondEndCell).toHaveClass(/cell-error/);
+            await expect(thirdBeginCell).not.toHaveClass(/cell-error/);
+            await expect(thirdEndCell).not.toHaveClass(/cell-error/);
         },
     );
 

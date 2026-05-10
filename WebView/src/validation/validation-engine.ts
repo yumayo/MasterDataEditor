@@ -281,7 +281,10 @@ export class ValidationEngine {
                 const row = rows[rowIndex];
                 const primaryKeyValues = this.resolvePrimaryKeyValuesForRow(schema, header, rows, rowIndex);
                 const primaryKeyLabel = primaryKeyValues !== null ? formatValidationPrimaryKeyValues(primaryKeyValues) : pkColIndices.map(idx => row[idx]).join(',');
-                for (const colIdx of pkColIndices) {
+                const errorColIndices = exportWindow === null
+                    ? pkColIndices
+                    : Array.from(new Set([...pkColIndices, exportWindow.beginIndex, exportWindow.endIndex]));
+                for (const colIdx of errorColIndices) {
                     errors.push({
                         tableName,
                         rowIndex,
