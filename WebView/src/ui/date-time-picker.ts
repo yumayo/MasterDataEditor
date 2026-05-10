@@ -124,13 +124,8 @@ export class DateTimePicker {
         clearButton.type = 'button';
         clearButton.classList.add('date-time-picker-action');
         clearButton.textContent = 'クリア';
-        const applyButton = document.createElement('button');
-        applyButton.type = 'button';
-        applyButton.classList.add('date-time-picker-action', 'date-time-picker-apply');
-        applyButton.textContent = '適用';
         actions.appendChild(nowButton);
         actions.appendChild(clearButton);
-        actions.appendChild(applyButton);
 
         this.popover.appendChild(header);
         this.popover.appendChild(weekdayRow);
@@ -145,6 +140,7 @@ export class DateTimePicker {
         this.input.addEventListener('input', () => {
             this.input.classList.remove('date-time-picker-input-invalid');
             this.input.removeAttribute('aria-invalid');
+            this.syncDraftFromText(this.input.value);
         });
         this.input.addEventListener('change', () => {
             if (this.element.contains(document.activeElement)) return;
@@ -187,15 +183,10 @@ export class DateTimePicker {
             this.visibleMonth = this.draftParts.month;
             this.updateTimeInputs();
             this.renderCalendar();
+            this.commitDraft();
         });
         clearButton.addEventListener('click', () => {
             this.commitValue('');
-            this.hide(false);
-        });
-        applyButton.addEventListener('click', () => {
-            if (!this.readTextInputIntoDraft()) return;
-            this.commitDraft();
-            this.hide(false);
         });
 
         this.outsideClickHandler = (event: MouseEvent) => {
@@ -262,14 +253,18 @@ export class DateTimePicker {
         this.input.value = normalized;
         this.input.classList.remove('date-time-picker-input-invalid');
         this.input.removeAttribute('aria-invalid');
-        const parsed = parseDateTimeParts(normalized);
-        if (parsed !== null) {
-            this.draftParts = parsed;
-            this.visibleYear = parsed.year;
-            this.visibleMonth = parsed.month;
-            this.updateTimeInputs();
-            this.renderCalendar();
-        }
+        this.syncDraftFromText(normalized);
+    }
+
+    syncDraftFromText(value: string): boolean {
+        const parsed = parseDateTimeParts(value);
+        if (parsed === null) return false;
+        this.draftParts = parsed;
+        this.visibleYear = parsed.year;
+        this.visibleMonth = parsed.month;
+        this.updateTimeInputs();
+        this.renderCalendar();
+        return true;
     }
 
     destroy(): void {
@@ -312,13 +307,66 @@ export class DateTimePicker {
         input.inputMode = 'numeric';
         input.autocomplete = 'off';
         input.classList.add('date-time-picker-time-input', className);
+        let explicitDigitCount = 0;
+        let pendingInsertedDigitCount = 0;
+        input.addEventListener('focus', () => {
+            explicitDigitCount = 0;
+            pendingInsertedDigitCount = 0;
+        });
+        input.addEventListener('beforeinput', (event: InputEvent) => {
+            pendingInsertedDigitCount = 0;
+            if (event.inputType.startsWith('delete')) {
+                explicitDigitCount = 0;
+                return;
+            }
+            if (event.inputType !== 'insertText' && event.inputType !== 'insertFromPaste' && event.inputType !== 'insertReplacementText') return;
+
+            const text = event.data ?? '';
+            if (text === '') return;
+            if (!/^\d+$/.test(text)) {
+                event.preventDefault();
+                return;
+            }
+
+            const selectionStart = input.selectionStart ?? input.value.length;
+            const selectionEnd = input.selectionEnd ?? selectionStart;
+            const rawValue = input.value.slice(0, selectionStart) + text + input.value.slice(selectionEnd);
+            const normalized = normalizeTimeInputDigitsValue(rawValue, selectionStart + text.length).value;
+            if (normalized !== '' && Number(normalized) > max) {
+                event.preventDefault();
+                return;
+            }
+
+            pendingInsertedDigitCount = text.length;
+        });
         input.addEventListener('input', () => {
-            input.value = input.value.replace(/[^\d]/g, '').slice(0, 2);
+            normalizeTimeInputDigits(input);
+            explicitDigitCount += pendingInsertedDigitCount;
+            pendingInsertedDigitCount = 0;
+            this.commitDraft(false);
+            if (explicitDigitCount >= 2 && input.value.length === 2 && (input.selectionStart ?? 0) === 2) {
+                explicitDigitCount = 0;
+                this.focusNextTimeInput(input);
+            }
         });
         input.addEventListener('blur', () => {
+            explicitDigitCount = 0;
+            pendingInsertedDigitCount = 0;
             input.value = pad2(readBoundedNumber(input.value, 0, max));
+            this.commitDraft();
         });
         return input;
+    }
+
+    private focusNextTimeInput(input: HTMLInputElement): void {
+        const nextInput = input === this.hourInput
+            ? this.minuteInput
+            : input === this.minuteInput
+                ? this.secondInput
+                : null;
+        if (nextInput === null) return;
+        nextInput.focus({ preventScroll: true });
+        nextInput.select();
     }
 
     private createTimeUnit(labelText: string, input: HTMLInputElement): HTMLElement {
@@ -375,6 +423,7 @@ export class DateTimePicker {
                 this.visibleYear = parts.year;
                 this.visibleMonth = parts.month;
                 this.renderCalendar();
+                this.commitDraft();
             });
             this.calendarGrid.appendChild(button);
         }
@@ -386,14 +435,14 @@ export class DateTimePicker {
         this.secondInput.value = pad2(this.draftParts.second);
     }
 
-    private readTimeInputsIntoDraft(): void {
+    private readTimeInputsIntoDraft(normalizeInputs = true): void {
         this.draftParts = {
             ...this.draftParts,
             hour: readBoundedNumber(this.hourInput.value, 0, 23),
             minute: readBoundedNumber(this.minuteInput.value, 0, 59),
             second: readBoundedNumber(this.secondInput.value, 0, 59),
         };
-        this.updateTimeInputs();
+        if (normalizeInputs) this.updateTimeInputs();
     }
 
     private commitTextInput(markInvalid = true): boolean {
@@ -414,37 +463,12 @@ export class DateTimePicker {
         return true;
     }
 
-    private readTextInputIntoDraft(markInvalid = true): boolean {
-        const raw = this.input.value.trim();
-        if (raw === '') {
-            this.commitValue('');
-            return false;
-        }
-        const parsed = parseDateTimeParts(raw);
-        if (parsed === null) {
-            if (markInvalid) {
-                this.input.classList.add('date-time-picker-input-invalid');
-                this.input.setAttribute('aria-invalid', 'true');
-            }
-            return false;
-        }
-        const normalized = formatDateTimeParts(parsed);
-        if (normalized !== this.value) {
-            this.draftParts = parsed;
-            this.visibleYear = parsed.year;
-            this.visibleMonth = parsed.month;
-            this.updateTimeInputs();
-            this.renderCalendar();
-        }
-        return true;
+    private commitDraft(syncDraftControls = true): void {
+        this.readTimeInputsIntoDraft(syncDraftControls);
+        this.commitValue(formatDateTimeParts(this.draftParts), syncDraftControls);
     }
 
-    private commitDraft(): void {
-        this.readTimeInputsIntoDraft();
-        this.commitValue(formatDateTimeParts(this.draftParts));
-    }
-
-    private commitValue(nextValue: string): void {
+    private commitValue(nextValue: string, syncDraftControls = true): void {
         const previousValue = this.value;
         this.value = nextValue;
         this.input.value = nextValue;
@@ -452,7 +476,7 @@ export class DateTimePicker {
         this.input.removeAttribute('aria-invalid');
         if (nextValue === previousValue) return;
         const parsed = parseDateTimeParts(nextValue);
-        if (parsed !== null) {
+        if (parsed !== null && syncDraftControls) {
             this.draftParts = parsed;
             this.visibleYear = parsed.year;
             this.visibleMonth = parsed.month;
@@ -519,6 +543,30 @@ function readBoundedNumber(value: string, min: number, max: number): number {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return min;
     return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function normalizeTimeInputDigits(input: HTMLInputElement): void {
+    const rawValue = input.value;
+    const rawSelectionStart = input.selectionStart ?? rawValue.length;
+    const result = normalizeTimeInputDigitsValue(rawValue, rawSelectionStart);
+
+    if (rawValue === result.value) return;
+    input.value = result.value;
+    input.setSelectionRange(result.selectionStart, result.selectionStart);
+}
+
+function normalizeTimeInputDigitsValue(rawValue: string, rawSelectionStart: number): { value: string; selectionStart: number } {
+    const digitsBeforeCursor = rawValue.slice(0, rawSelectionStart).replace(/[^\d]/g, '').length;
+    const digits = rawValue.replace(/[^\d]/g, '');
+
+    let normalized = digits;
+    let nextSelectionStart = digitsBeforeCursor;
+    if (digits.length > 2) {
+        const sliceStart = Math.min(Math.max(digitsBeforeCursor - 2, 0), digits.length - 2);
+        normalized = digits.slice(sliceStart, sliceStart + 2);
+        nextSelectionStart = Math.min(Math.max(digitsBeforeCursor - sliceStart, 0), normalized.length);
+    }
+    return { value: normalized, selectionStart: nextSelectionStart };
 }
 
 function pad2(value: number): string {

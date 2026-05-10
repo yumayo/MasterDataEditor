@@ -462,6 +462,9 @@ export class EditorTableHandler {
         }
 
         if (!this.textField) return;
+        if (this.dateTimePickerActive && this.dateTimePicker !== undefined) {
+            this.dateTimePicker.syncDraftFromText(text);
+        }
         this.textField.resizeTextField(text);
     }
 
@@ -1035,7 +1038,7 @@ export class EditorTableHandler {
         this.dateTimePicker = new DateTimePicker({
             value: '',
             rootClassNames: ['grid-date-time-picker'],
-            onCommit: (value: string) => { this.submitDateTimePickerValue(value); },
+            onCommit: (value: string) => { this.applyDateTimePickerValueToTextField(value); },
             onDismiss: () => { this.submitDateTimePickerAndHide(); },
             ignoreOutsideClick: (target: Node) => this.element.contains(target),
         });
@@ -1053,16 +1056,10 @@ export class EditorTableHandler {
         return this.dateTimePicker;
     }
 
-    private submitDateTimePickerValue(value: string): void {
+    private applyDateTimePickerValueToTextField(value: string): void {
         if (!this.dateTimePickerActive) return;
-        const target = getTarget(this.table, this.selection);
-        if (target.cellValue !== value) {
-            const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
-            const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: value }];
-            this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
-        }
-        this.hideDateTimePicker(false);
-        this.hide();
+        this.element.textContent = value;
+        if (this.textField) this.textField.resizeTextField(value);
     }
 
     private submitDateTimePickerAndHide(): void {

@@ -355,9 +355,9 @@ test.describe('設定画面', () => {
             await expect(secondInput).toBeVisible();
             await expect(secondInput).toHaveAttribute('type', 'text');
             await expect(secondInput).toHaveValue('45');
+            await expect(popover.locator('.date-time-picker-apply')).toHaveCount(0);
 
             await secondInput.fill('46');
-            await popover.locator('.date-time-picker-apply').click();
             await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10 12:30:46');
         },
     );

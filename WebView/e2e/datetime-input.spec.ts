@@ -51,12 +51,15 @@ test.describe('datetime型セル入力', () => {
         await expect(picker.locator(':scope > .date-time-picker-input')).toBeHidden();
         await expect(picker.locator('.date-time-picker-popover')).toBeVisible();
         await expect(picker.locator('.date-time-picker-second-input')).toBeVisible();
+        await expect(picker.locator('.date-time-picker-apply')).toHaveCount(0);
 
         await picker.locator('.date-time-picker-day[aria-label="2026-05-15"]').click();
+        await expect(page.locator('.grid-textfield-active')).toHaveText('2026-05-15 12:30:45');
         await picker.locator('.date-time-picker-hour-input').fill('13');
         await picker.locator('.date-time-picker-minute-input').fill('40');
         await picker.locator('.date-time-picker-second-input').fill('55');
-        await picker.locator('.date-time-picker-apply').click();
+        await expect(page.locator('.grid-textfield-active')).toHaveText('2026-05-15 13:40:55');
+        await page.mouse.click(5, 5);
 
         await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
         await expect(cell).toContainText('2026-05-15 13:40:55');
@@ -79,6 +82,93 @@ test.describe('datetime型セル入力', () => {
         await page.keyboard.press('Enter');
 
         await expect(invalidCell).not.toHaveClass(/cell-error/);
+    });
+
+    test('datetime型セルの時刻入力は末尾カーソルから2桁を打ち直せる', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const input = page.locator('.grid-textfield-active');
+        const hourInput = picker.locator('.date-time-picker-hour-input');
+        const minuteInput = picker.locator('.date-time-picker-minute-input');
+        await hourInput.fill('00');
+        await expect(input).toHaveText('2026-05-10 00:30:45');
+
+        await hourInput.focus();
+        await hourInput.evaluate((element) => {
+            const textInput = element as HTMLInputElement;
+            textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+        });
+        await page.keyboard.type('10');
+
+        await expect(hourInput).toHaveValue('10');
+        await expect(input).toHaveText('2026-05-10 10:30:45');
+        await expect(minuteInput).toBeFocused();
+
+        await hourInput.fill('00');
+        await hourInput.focus();
+        await hourInput.evaluate((element) => {
+            const textInput = element as HTMLInputElement;
+            textInput.setSelectionRange(0, 0);
+        });
+        await page.keyboard.type('1');
+        await expect(hourInput).toHaveValue('10');
+        await expect(hourInput).toHaveJSProperty('selectionStart', 1);
+        await expect(hourInput).toBeFocused();
+
+        await page.keyboard.type('2');
+        await expect(hourInput).toHaveValue('12');
+        await expect(input).toHaveText('2026-05-10 12:30:45');
+        await expect(minuteInput).toBeFocused();
+    });
+
+    test('datetime型セルの時刻入力は範囲外の数値を入力できない', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const input = page.locator('.grid-textfield-active');
+        const hourInput = picker.locator('.date-time-picker-hour-input');
+        await hourInput.fill('23');
+        await expect(input).toHaveText('2026-05-10 23:30:45');
+
+        await hourInput.focus();
+        await hourInput.evaluate((element) => {
+            const textInput = element as HTMLInputElement;
+            textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+        });
+        await page.keyboard.type('4');
+
+        await expect(hourInput).toHaveValue('23');
+        await expect(input).toHaveText('2026-05-10 23:30:45');
+    });
+
+    test('datetime型セルのテキスト編集はカレンダーへ即時反映される', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const input = page.locator('.grid-textfield-active');
+        await expect(picker).toHaveCount(1);
+
+        await page.keyboard.press('Control+a');
+        await page.keyboard.insertText('2026-06-20 09:10:11');
+
+        await expect(picker.locator('.date-time-picker-month-label')).toHaveText('2026-06');
+        await expect(picker.locator('.date-time-picker-day-selected')).toHaveAttribute('aria-label', '2026-06-20');
+        await expect(picker.locator('.date-time-picker-hour-input')).toHaveValue('09');
+        await expect(picker.locator('.date-time-picker-minute-input')).toHaveValue('10');
+        await expect(picker.locator('.date-time-picker-second-input')).toHaveValue('11');
+
+        await picker.locator('.date-time-picker-day[aria-label="2026-06-21"]').click();
+        await expect(input).toHaveText('2026-06-21 09:10:11');
     });
 
     test('テーブル定義エディタでdatetime型列を作成できる', async ({ page }) => {
