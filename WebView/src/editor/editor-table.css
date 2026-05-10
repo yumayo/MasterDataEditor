@@ -97,6 +97,8 @@
 
 .editor-table-main-viewport {
     overflow: auto;
+    /* 仮想スクロールの行差し替え中に、ブラウザの scroll anchoring がつまみ位置を補正しないようにする。 */
+    overflow-anchor: none;
 }
 
 .editor-table-grid {

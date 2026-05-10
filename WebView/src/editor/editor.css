@@ -90,6 +90,8 @@
 .editor-left-pane {
     flex: 1 1 auto;
     overflow: auto;
+    /* 内部ビューポートとの scrollTop 同期中にブラウザの補正が入るとスクロールバー位置がずれる。 */
+    overflow-anchor: none;
     position: relative;
     scrollbar-width: none;
 }
@@ -107,4 +109,3 @@
     pointer-events: none;
     opacity: 0;
 }
-
