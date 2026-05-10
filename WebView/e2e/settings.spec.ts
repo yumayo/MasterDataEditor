@@ -363,6 +363,80 @@ test.describe('設定画面', () => {
     );
 
     test(
+        '出力フィルター時刻は数字入力中に区切り記号を自動挿入すること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const input = page.locator('.settings-export-validation-datetime-input');
+            await input.fill('');
+            await input.focus();
+            await page.keyboard.type('20260510123445');
+
+            await expect(input).toHaveValue('2026-05-10 12:34:45');
+            await input.blur();
+            await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10 12:34:45');
+        },
+    );
+
+    test(
+        '出力フィルター時刻は途中入力で後続の桁をずらさず上書きすること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const input = page.locator('.settings-export-validation-datetime-input');
+            await setExportValidationDateTimeAsync(page, '2026-05-10 12:34:45');
+            await input.focus();
+            await input.evaluate((element) => {
+                const textInput = element as HTMLInputElement;
+                textInput.setSelectionRange(5, 5);
+            });
+            await page.keyboard.type('11');
+
+            await expect(input).toHaveValue('2026-11-10 12:34:45');
+            await input.blur();
+            await waitForSettingsExportValidationDateTimeAsync(page, '2026-11-10 12:34:45');
+        },
+    );
+
+    test(
+        '出力フィルター時刻は日付末尾のカーソル位置で空白を補完すること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const input = page.locator('.settings-export-validation-datetime-input');
+            await input.focus();
+            await input.evaluate((element) => {
+                const textInput = element as HTMLInputElement;
+                textInput.value = '2026-05-10';
+                textInput.setSelectionRange(10, 10);
+            });
+            await page.keyboard.press('ArrowRight');
+
+            await expect(input).toHaveValue('2026-05-10 ');
+            await expect(input).toHaveJSProperty('selectionStart', 11);
+        },
+    );
+
+    test(
+        '出力フィルター時刻はありえない月を入力できないこと',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const input = page.locator('.settings-export-validation-datetime-input');
+            await input.fill('');
+            await input.focus();
+            await page.keyboard.type('2026');
+            await expect(input).toHaveValue('2026-');
+
+            await page.keyboard.type('3');
+            await expect(input).toHaveValue('2026-');
+
+            await page.keyboard.type('0');
+            await expect(input).toHaveValue('2026-0');
+        },
+    );
+
+    test(
         'export期間列名を変更するとuserdata/settings.jsonへ保存されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);

@@ -168,7 +168,6 @@ test.describe('datetime型セル入力', () => {
         await page.keyboard.press('5');
         await page.keyboard.press('6');
         await expect(secondInput).toHaveValue('56');
-        await expect(picker.locator('.date-time-picker-popover')).toBeVisible();
         await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
         await expect(page.locator('.grid-textfield-active')).toHaveCount(0);
         await expect(cell).toContainText('2026-05-10 12:34:56');
@@ -195,6 +194,102 @@ test.describe('datetime型セル入力', () => {
 
         await picker.locator('.date-time-picker-day[aria-label="2026-06-21"]').click();
         await expect(input).toHaveText('2026-06-21 09:10:11');
+    });
+
+    test('datetime型セルのテキスト編集は数字入力中に区切り記号を自動挿入する', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const input = page.locator('.grid-textfield-active');
+        await expect(picker).toHaveCount(1);
+
+        await page.keyboard.press('Control+a');
+        await page.keyboard.type('20260620091011');
+
+        await expect(input).toHaveText('2026-06-20 09:10:11');
+        await expect(picker.locator('.date-time-picker-month-label')).toHaveText('2026-06');
+        await expect(picker.locator('.date-time-picker-day-selected')).toHaveAttribute('aria-label', '2026-06-20');
+        await expect(picker.locator('.date-time-picker-hour-input')).toHaveValue('09');
+        await expect(picker.locator('.date-time-picker-minute-input')).toHaveValue('10');
+        await expect(picker.locator('.date-time-picker-second-input')).toHaveValue('11');
+    });
+
+    test('datetime型セルのテキスト編集は途中入力で後続の桁をずらさず上書きする', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        const input = page.locator('.grid-textfield-active');
+        await expect(input).toHaveText('2026-05-10 12:30:45');
+
+        await input.focus();
+        await input.evaluate((element) => {
+            const textNode = element.firstChild;
+            if (textNode === null) throw new Error('text node not found');
+            const range = document.createRange();
+            range.setStart(textNode, 5);
+            range.collapse(true);
+            const selection = window.getSelection();
+            if (selection === null) throw new Error('selection not found');
+            selection.removeAllRanges();
+            selection.addRange(range);
+        });
+        await page.keyboard.type('11');
+
+        await expect(input).toHaveText('2026-11-10 12:30:45');
+        await expect(picker.locator('.date-time-picker-month-label')).toHaveText('2026-11');
+        await expect(picker.locator('.date-time-picker-day-selected')).toHaveAttribute('aria-label', '2026-11-10');
+        await expect(picker.locator('.date-time-picker-hour-input')).toHaveValue('12');
+        await expect(picker.locator('.date-time-picker-minute-input')).toHaveValue('30');
+        await expect(picker.locator('.date-time-picker-second-input')).toHaveValue('45');
+    });
+
+    test('datetime型セルのテキスト編集は日付末尾のカーソル位置で空白を補完する', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const input = page.locator('.grid-textfield-active');
+        await input.focus();
+        await input.evaluate((element) => {
+            element.textContent = '2026-05-10';
+            const textNode = element.firstChild;
+            if (textNode === null) throw new Error('text node not found');
+            const range = document.createRange();
+            range.setStart(textNode, 10);
+            range.collapse(true);
+            const selection = window.getSelection();
+            if (selection === null) throw new Error('selection not found');
+            selection.removeAllRanges();
+            selection.addRange(range);
+        });
+        await page.keyboard.press('ArrowRight');
+
+        await expect(input).toHaveText('2026-05-10 ');
+    });
+
+    test('datetime型セルのテキスト編集はありえない月を入力できない', async ({ page }) => {
+        const table = await openTableAsync(page, 'event');
+        const cell = getDataCell(table, 0, 1);
+
+        await cell.dblclick();
+
+        const input = page.locator('.grid-textfield-active');
+        await page.keyboard.press('Control+a');
+        await page.keyboard.type('2026');
+        await expect(input).toHaveText('2026-');
+
+        await page.keyboard.type('3');
+        await expect(input).toHaveText('2026-');
+
+        await page.keyboard.type('0');
+        await expect(input).toHaveText('2026-0');
     });
 
     test('テーブル定義エディタでdatetime型列を作成できる', async ({ page }) => {

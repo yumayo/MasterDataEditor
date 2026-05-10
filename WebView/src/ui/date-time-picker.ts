@@ -17,10 +17,106 @@ interface DateTimeParts {
 }
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+const DATE_TIME_INPUT_GROUP_SIZES = [4, 2, 2, 2, 2, 2] as const;
+const DATE_TIME_INPUT_GROUP_END_SLOT_INDICES = [4, 6, 8, 10, 12, 14] as const;
+const DATE_TIME_INPUT_SEPARATORS = ['-', '-', ' ', ':', ':'] as const;
+const DATE_TIME_INPUT_MAX_DIGITS = DATE_TIME_INPUT_GROUP_SIZES.reduce((sum, size) => sum + size, 0);
+const DATE_TIME_INPUT_SLOT_TEXT_INDICES = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18] as const;
+const DATE_TIME_INPUT_FULL_LENGTH = 19;
+const DATE_TIME_INPUT_ALLOWED_PATTERN = /^[\d\sT:/-]*$/;
+const DATE_TIME_INPUT_SEPARATOR_PATTERN = /[-\sT:/]/;
 
 export function normalizeDateTimeInputToSeconds(value: string): string | null {
     const parts = parseDateTimeParts(value);
     return parts === null ? null : formatDateTimeParts(parts);
+}
+
+export function normalizeDateTimeTextInputValue(rawValue: string, rawSelectionStart: number): { value: string; selectionStart: number } | null {
+    if (!DATE_TIME_INPUT_ALLOWED_PATTERN.test(rawValue)) return null;
+
+    const slots = readValidDateTimeInputSlots(rawValue);
+    const selectionSlots = readValidDateTimeInputSlots(rawValue.slice(0, rawSelectionStart));
+    const value = formatDateTimeInputSlots(slots);
+
+    return {
+        value,
+        selectionStart: Math.min(formatDateTimeInputSlots(selectionSlots).length, value.length),
+    };
+}
+
+export function appendDateTimeDateSeparatorIfNeeded(
+    rawValue: string,
+    rawSelectionStart: number,
+    rawSelectionEnd: number,
+): { value: string; selectionStart: number; selectionEnd: number } | null {
+    if (rawSelectionStart !== rawSelectionEnd) return null;
+    if (rawSelectionStart !== 10 || rawValue.length !== 10) return null;
+    if (!/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(rawValue)) return null;
+    if (parseDateTimeParts(rawValue) === null) return null;
+    return { value: `${rawValue} `, selectionStart: 11, selectionEnd: 11 };
+}
+
+export function applyDateTimeTextInputEdit(
+    rawValue: string,
+    rawSelectionStart: number,
+    rawSelectionEnd: number,
+    inputType: string,
+    inputText: string | null,
+): { value: string; selectionStart: number; selectionEnd: number } | null {
+    if (inputType !== 'insertText' && inputType !== 'insertFromPaste' && inputType !== 'insertReplacementText') return null;
+    if (inputText === null || inputText === '') return null;
+
+    const selectionStart = clampNumber(rawSelectionStart, 0, rawValue.length);
+    const selectionEnd = clampNumber(rawSelectionEnd, selectionStart, rawValue.length);
+    if (!DATE_TIME_INPUT_ALLOWED_PATTERN.test(inputText)) {
+        return { value: rawValue, selectionStart, selectionEnd: selectionStart };
+    }
+
+    const currentDigits = inputText.replace(/[^\d]/g, '');
+    const normalizedCurrentValue = normalizeDateTimeTextInputValue(rawValue, selectionStart)?.value ?? rawValue;
+    if (currentDigits === '') {
+        const nextSlotIndex = findDateTimeInputSlotIndexAtOrAfterTextIndex(selectionEnd);
+        const nextSelectionStart = nextSlotIndex >= DATE_TIME_INPUT_SLOT_TEXT_INDICES.length
+            ? normalizedCurrentValue.length
+            : Math.min(DATE_TIME_INPUT_SLOT_TEXT_INDICES[nextSlotIndex], normalizedCurrentValue.length);
+        return { value: normalizedCurrentValue, selectionStart: nextSelectionStart, selectionEnd: nextSelectionStart };
+    }
+
+    let slots = selectionStart === 0 && selectionEnd >= rawValue.length
+        ? createEmptyDateTimeInputSlots()
+        : readValidDateTimeInputSlots(rawValue);
+    let slotIndex = findDateTimeInputSlotIndexAtOrAfterTextIndex(selectionStart);
+    if (slotIndex >= DATE_TIME_INPUT_SLOT_TEXT_INDICES.length) {
+        const nextValue = formatDateTimeInputSlots(slots);
+        return { value: nextValue, selectionStart: nextValue.length, selectionEnd: nextValue.length };
+    }
+
+    let lastWrittenSlotIndex = slotIndex;
+    let wroteDigit = false;
+    for (const digit of currentDigits) {
+        if (slotIndex >= DATE_TIME_INPUT_SLOT_TEXT_INDICES.length) break;
+        const nextSlots = [...slots];
+        nextSlots[slotIndex] = digit;
+        const acceptedSlots = coerceDateTimeInputSlotsAfterWrite(nextSlots, slotIndex);
+        if (acceptedSlots === null) break;
+        slots = acceptedSlots;
+        lastWrittenSlotIndex = slotIndex;
+        wroteDigit = true;
+        slotIndex++;
+    }
+
+    const nextValue = formatDateTimeInputSlots(slots);
+    if (!wroteDigit) {
+        const nextSelectionStart = Math.min(selectionStart, nextValue.length);
+        return { value: nextValue, selectionStart: nextSelectionStart, selectionEnd: nextSelectionStart };
+    }
+    const nextSelectionStart = Math.min(getDateTimeTextInputCaretIndexAfterSlot(lastWrittenSlotIndex), nextValue.length);
+    return { value: nextValue, selectionStart: nextSelectionStart, selectionEnd: nextSelectionStart };
+}
+
+export function isDateTimeTextInputSeparator(value: string, index: number): boolean {
+    if (index < 0 || index >= value.length) return false;
+    return DATE_TIME_INPUT_SEPARATOR_PATTERN.test(value.charAt(index));
 }
 
 export class DateTimePicker {
@@ -139,9 +235,38 @@ export class DateTimePicker {
         this.element.appendChild(this.toggleButton);
         this.element.appendChild(this.popover);
 
+        this.input.addEventListener('focus', () => {
+            appendDateTimeDateSeparatorToInputIfNeeded(this.input);
+        });
+        this.input.addEventListener('click', () => {
+            appendDateTimeDateSeparatorToInputIfNeeded(this.input);
+        });
+        this.input.addEventListener('keyup', () => {
+            appendDateTimeDateSeparatorToInputIfNeeded(this.input);
+        });
+        this.input.addEventListener('beforeinput', (event: InputEvent) => {
+            const selectionStart = this.input.selectionStart ?? this.input.value.length;
+            const selectionEnd = this.input.selectionEnd ?? selectionStart;
+            const result = applyDateTimeTextInputEdit(
+                this.input.value,
+                selectionStart,
+                selectionEnd,
+                event.inputType,
+                readBeforeInputText(event),
+            );
+            if (result === null) return;
+
+            event.preventDefault();
+            this.input.classList.remove('date-time-picker-input-invalid');
+            this.input.removeAttribute('aria-invalid');
+            this.input.value = result.value;
+            this.input.setSelectionRange(result.selectionStart, result.selectionEnd);
+            this.syncDraftFromText(this.input.value);
+        });
         this.input.addEventListener('input', () => {
             this.input.classList.remove('date-time-picker-input-invalid');
             this.input.removeAttribute('aria-invalid');
+            normalizeDateTimeTextInputElement(this.input);
             this.syncDraftFromText(this.input.value);
         });
         this.input.addEventListener('change', () => {
@@ -154,6 +279,7 @@ export class DateTimePicker {
             this.commitTextInput();
         });
         this.input.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (moveDateTimeTextInputCaretAcrossSeparator(this.input, event)) return;
             if (event.key === 'Enter') {
                 event.preventDefault();
                 this.commitTextInput();
@@ -511,7 +637,7 @@ export class DateTimePicker {
 }
 
 function parseDateTimeParts(value: string): DateTimeParts | null {
-    const trimmed = value.trim();
+    const trimmed = value.trim().replace(/:+$/, '');
     if (trimmed === '') return null;
     const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2})(?::(\d{1,2})(?::(\d{1,2}))?)?)?$/.exec(trimmed);
     if (match === null) return null;
@@ -590,6 +716,260 @@ function normalizeTimeInputDigitsValue(rawValue: string, rawSelectionStart: numb
         nextSelectionStart = Math.min(Math.max(digitsBeforeCursor - sliceStart, 0), normalized.length);
     }
     return { value: normalized, selectionStart: nextSelectionStart };
+}
+
+function normalizeDateTimeTextInputElement(input: HTMLInputElement): void {
+    const rawValue = input.value;
+    const rawSelectionStart = input.selectionStart ?? rawValue.length;
+    const result = normalizeDateTimeTextInputValue(rawValue, rawSelectionStart);
+
+    if (result === null || rawValue === result.value) return;
+    input.value = result.value;
+    input.setSelectionRange(result.selectionStart, result.selectionStart);
+}
+
+function appendDateTimeDateSeparatorToInputIfNeeded(input: HTMLInputElement): void {
+    const result = appendDateTimeDateSeparatorIfNeeded(
+        input.value,
+        input.selectionStart ?? input.value.length,
+        input.selectionEnd ?? input.value.length,
+    );
+    if (result === null) return;
+    input.value = result.value;
+    input.setSelectionRange(result.selectionStart, result.selectionEnd);
+}
+
+function createEmptyDateTimeInputSlots(): string[] {
+    return Array.from({ length: DATE_TIME_INPUT_SLOT_TEXT_INDICES.length }, () => '');
+}
+
+function readValidDateTimeInputSlots(value: string): string[] {
+    const sourceSlots = readDateTimeInputSlots(value);
+    const slots = createEmptyDateTimeInputSlots();
+
+    for (let i = 0; i < sourceSlots.length; i++) {
+        const digit = sourceSlots[i];
+        if (digit === '') continue;
+
+        const nextSlots = [...slots];
+        nextSlots[i] = digit;
+        if (!isDateTimeInputSlotsAllowed(nextSlots)) break;
+        slots[i] = digit;
+    }
+
+    return slots;
+}
+
+function readDateTimeInputSlots(value: string): string[] {
+    const slots = createEmptyDateTimeInputSlots();
+    if (hasDateTimeInputAlignedSeparators(value)) {
+        for (let i = 0; i < DATE_TIME_INPUT_SLOT_TEXT_INDICES.length; i++) {
+            const digit = value.charAt(DATE_TIME_INPUT_SLOT_TEXT_INDICES[i]);
+            if (/^\d$/.test(digit)) slots[i] = digit;
+        }
+        return slots;
+    }
+
+    const digits = value.replace(/[^\d]/g, '').slice(0, DATE_TIME_INPUT_MAX_DIGITS);
+    for (let i = 0; i < digits.length; i++) {
+        slots[i] = digits.charAt(i);
+    }
+    return slots;
+}
+
+function hasDateTimeInputAlignedSeparators(value: string): boolean {
+    let textIndex = 0;
+    for (let i = 0; i < DATE_TIME_INPUT_GROUP_SIZES.length; i++) {
+        textIndex += DATE_TIME_INPUT_GROUP_SIZES[i];
+        if (i >= DATE_TIME_INPUT_SEPARATORS.length || textIndex >= value.length) continue;
+        const char = value.charAt(textIndex);
+        if (char !== '' && !DATE_TIME_INPUT_SEPARATOR_PATTERN.test(char)) return false;
+        textIndex++;
+    }
+    return true;
+}
+
+function formatDateTimeInputSlots(slots: readonly string[]): string {
+    const lastFilledSlotIndex = findLastFilledDateTimeInputSlotIndex(slots);
+    if (lastFilledSlotIndex < 0) return '';
+
+    let result = '';
+    let slotIndex = 0;
+    for (let groupIndex = 0; groupIndex < DATE_TIME_INPUT_GROUP_SIZES.length; groupIndex++) {
+        const groupSize = DATE_TIME_INPUT_GROUP_SIZES[groupIndex];
+        for (let i = 0; i < groupSize && slotIndex <= lastFilledSlotIndex; i++) {
+            result += slots[slotIndex] ?? '';
+            slotIndex++;
+        }
+
+        const groupEndSlotIndex = DATE_TIME_INPUT_GROUP_END_SLOT_INDICES[groupIndex];
+        const groupIsComplete = slotIndex === groupEndSlotIndex && slots[groupEndSlotIndex - 1] !== '';
+        if (groupIndex < DATE_TIME_INPUT_SEPARATORS.length && groupIsComplete && slotIndex - 1 <= lastFilledSlotIndex) {
+            result += DATE_TIME_INPUT_SEPARATORS[groupIndex];
+        }
+        if (slotIndex > lastFilledSlotIndex) break;
+    }
+
+    return result;
+}
+
+function isDateTimeInputSlotsAllowed(slots: readonly string[]): boolean {
+    const year = readDateTimeInputCompleteSlotNumber(slots, 0, 4);
+    if (year !== null && year < 1) return false;
+
+    const monthFirstDigit = readDateTimeInputSlotDigit(slots, 4);
+    if (monthFirstDigit !== null && monthFirstDigit > 1) return false;
+    const month = readDateTimeInputCompleteSlotNumber(slots, 4, 2);
+    if (month !== null && (month < 1 || month > 12)) return false;
+
+    const maxDay = month === null
+        ? 31
+        : getDaysInDateTimeInputMonth(year ?? 2000, month);
+    const dayFirstDigit = readDateTimeInputSlotDigit(slots, 6);
+    if (dayFirstDigit !== null && dayFirstDigit > Math.floor(maxDay / 10)) return false;
+    const day = readDateTimeInputCompleteSlotNumber(slots, 6, 2);
+    if (day !== null && (day < 1 || day > maxDay)) return false;
+
+    const hourFirstDigit = readDateTimeInputSlotDigit(slots, 8);
+    if (hourFirstDigit !== null && hourFirstDigit > 2) return false;
+    const hour = readDateTimeInputCompleteSlotNumber(slots, 8, 2);
+    if (hour !== null && hour > 23) return false;
+
+    const minuteFirstDigit = readDateTimeInputSlotDigit(slots, 10);
+    if (minuteFirstDigit !== null && minuteFirstDigit > 5) return false;
+    const minute = readDateTimeInputCompleteSlotNumber(slots, 10, 2);
+    if (minute !== null && minute > 59) return false;
+
+    const secondFirstDigit = readDateTimeInputSlotDigit(slots, 12);
+    if (secondFirstDigit !== null && secondFirstDigit > 5) return false;
+    const second = readDateTimeInputCompleteSlotNumber(slots, 12, 2);
+    if (second !== null && second > 59) return false;
+
+    return true;
+}
+
+function coerceDateTimeInputSlotsAfterWrite(slots: readonly string[], writtenSlotIndex: number): string[] | null {
+    const groupCoercedSlots = coerceDateTimeInputCurrentGroupAfterWrite(slots, writtenSlotIndex);
+    if (groupCoercedSlots === null) return null;
+
+    const coercedSlots = writtenSlotIndex < 6
+        ? coerceDateTimeInputDayForMonth(groupCoercedSlots)
+        : groupCoercedSlots;
+    return isDateTimeInputSlotsAllowed(coercedSlots) ? coercedSlots : null;
+}
+
+function coerceDateTimeInputCurrentGroupAfterWrite(slots: readonly string[], writtenSlotIndex: number): string[] | null {
+    if (isDateTimeInputSlotsAllowed(slots)) return [...slots];
+
+    const groupRange = getDateTimeInputGroupSlotRange(writtenSlotIndex);
+    if (groupRange === null || writtenSlotIndex !== groupRange.start || groupRange.start === 0) return null;
+    if (slots.slice(writtenSlotIndex + 1, groupRange.end).some((digit) => digit === '')) return null;
+
+    const suffixLength = groupRange.end - writtenSlotIndex - 1;
+    const maxSuffixValue = 10 ** suffixLength;
+    for (let suffixValue = 0; suffixValue < maxSuffixValue; suffixValue++) {
+        const candidateSlots = [...slots];
+        const suffix = String(suffixValue).padStart(suffixLength, '0');
+        for (let i = 0; i < suffixLength; i++) {
+            candidateSlots[writtenSlotIndex + 1 + i] = suffix.charAt(i);
+        }
+        if (isDateTimeInputSlotsAllowed(candidateSlots)) return candidateSlots;
+    }
+
+    return null;
+}
+
+function coerceDateTimeInputDayForMonth(slots: readonly string[]): string[] {
+    const month = readDateTimeInputCompleteSlotNumber(slots, 4, 2);
+    const day = readDateTimeInputCompleteSlotNumber(slots, 6, 2);
+    if (month === null || day === null) return [...slots];
+
+    const year = readDateTimeInputCompleteSlotNumber(slots, 0, 4) ?? 2000;
+    const maxDay = getDaysInDateTimeInputMonth(year, month);
+    if (day <= maxDay) return [...slots];
+
+    const coercedSlots = [...slots];
+    const coercedDay = pad2(maxDay);
+    coercedSlots[6] = coercedDay.charAt(0);
+    coercedSlots[7] = coercedDay.charAt(1);
+    return coercedSlots;
+}
+
+function getDateTimeInputGroupSlotRange(slotIndex: number): { start: number; end: number } | null {
+    let start = 0;
+    for (const groupSize of DATE_TIME_INPUT_GROUP_SIZES) {
+        const end = start + groupSize;
+        if (slotIndex >= start && slotIndex < end) return { start, end };
+        start = end;
+    }
+    return null;
+}
+
+function readDateTimeInputSlotDigit(slots: readonly string[], index: number): number | null {
+    const digit = slots[index];
+    return digit === '' || digit === undefined ? null : Number(digit);
+}
+
+function readDateTimeInputCompleteSlotNumber(slots: readonly string[], startIndex: number, length: number): number | null {
+    const digits = slots.slice(startIndex, startIndex + length);
+    if (digits.some((digit) => digit === '')) return null;
+    return Number(digits.join(''));
+}
+
+function getDaysInDateTimeInputMonth(year: number, month: number): number {
+    return new Date(year, month, 0).getDate();
+}
+
+function findLastFilledDateTimeInputSlotIndex(slots: readonly string[]): number {
+    for (let i = slots.length - 1; i >= 0; i--) {
+        if (slots[i] !== '') return i;
+    }
+    return -1;
+}
+
+function findDateTimeInputSlotIndexAtOrAfterTextIndex(textIndex: number): number {
+    for (let i = 0; i < DATE_TIME_INPUT_SLOT_TEXT_INDICES.length; i++) {
+        if (DATE_TIME_INPUT_SLOT_TEXT_INDICES[i] >= textIndex) return i;
+    }
+    return DATE_TIME_INPUT_SLOT_TEXT_INDICES.length;
+}
+
+function getDateTimeTextInputCaretIndexAfterSlot(slotIndex: number): number {
+    if (slotIndex < 0) return 0;
+    let textIndex = DATE_TIME_INPUT_SLOT_TEXT_INDICES[slotIndex] + 1;
+    while (textIndex < DATE_TIME_INPUT_FULL_LENGTH && isDateTimeInputMaskSeparatorIndex(textIndex)) {
+        textIndex++;
+    }
+    return textIndex;
+}
+
+function isDateTimeInputMaskSeparatorIndex(textIndex: number): boolean {
+    return !DATE_TIME_INPUT_SLOT_TEXT_INDICES.includes(textIndex as typeof DATE_TIME_INPUT_SLOT_TEXT_INDICES[number]);
+}
+
+function readBeforeInputText(event: InputEvent): string | null {
+    if (event.data !== null) return event.data;
+    return event.dataTransfer?.getData('text/plain') ?? event.dataTransfer?.getData('text') ?? null;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function moveDateTimeTextInputCaretAcrossSeparator(input: HTMLInputElement, event: KeyboardEvent): boolean {
+    if (event.key !== 'Backspace' && event.key !== 'Delete') return false;
+
+    const selectionStart = input.selectionStart ?? input.value.length;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+    if (selectionStart !== selectionEnd) return false;
+
+    const separatorIndex = event.key === 'Backspace' ? selectionStart - 1 : selectionStart;
+    if (!isDateTimeTextInputSeparator(input.value, separatorIndex)) return false;
+
+    event.preventDefault();
+    const nextSelectionStart = event.key === 'Backspace' ? separatorIndex : separatorIndex + 1;
+    input.setSelectionRange(nextSelectionStart, nextSelectionStart);
+    return true;
 }
 
 function pad2(value: number): string {

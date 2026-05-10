@@ -5,7 +5,14 @@ import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
-import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
+import {
+    appendDateTimeDateSeparatorIfNeeded,
+    applyDateTimeTextInputEdit,
+    DateTimePicker,
+    isDateTimeTextInputSeparator,
+    normalizeDateTimeInputToSeconds,
+    normalizeDateTimeTextInputValue,
+} from "../ui/date-time-picker";
 import {EditorTableData} from "../data/models/editor-table-data";
 import {
     parseReferenceExpression,
@@ -104,6 +111,9 @@ export class EditorTableHandler {
     private readonly notification: NotificationToast;
 
     private readonly boundOnKeydown: (e: KeyboardEvent) => void;
+    private readonly boundOnBeforeInput: (e: InputEvent) => void;
+    private readonly boundOnKeyup: (e: KeyboardEvent) => void;
+    private readonly boundOnMouseup: (e: MouseEvent) => void;
     private readonly boundOnFocusout: (e: FocusEvent) => void;
     private readonly boundOnPaste: (e: ClipboardEvent) => void;
 
@@ -143,10 +153,16 @@ export class EditorTableHandler {
 
         // イベントリスナーを登録
         this.boundOnKeydown = this.onKeydown.bind(this);
+        this.boundOnBeforeInput = this.onBeforeInput.bind(this);
+        this.boundOnKeyup = this.onKeyup.bind(this);
+        this.boundOnMouseup = this.onMouseup.bind(this);
         this.boundOnFocusout = this.onFocusout.bind(this);
         this.boundOnPaste = this.onPaste.bind(this);
 
         this.element.addEventListener('keydown', this.boundOnKeydown);
+        this.element.addEventListener('beforeinput', this.boundOnBeforeInput);
+        this.element.addEventListener('keyup', this.boundOnKeyup);
+        this.element.addEventListener('mouseup', this.boundOnMouseup);
         this.element.addEventListener('focusout', this.boundOnFocusout);
         this.element.addEventListener('paste', this.boundOnPaste);
         this.element.addEventListener('input', this.onInput.bind(this));
@@ -446,10 +462,38 @@ export class EditorTableHandler {
     /**
      * 入力イベント時の処理（リサイズとドロップダウンフィルタリング）
      */
+    private onBeforeInput(event: InputEvent): void {
+        if (!this.active || !this.dateTimePickerActive) return;
+
+        const selection = this.getTextFieldSelectionOffsets();
+        const result = applyDateTimeTextInputEdit(
+            this.element.textContent ?? '',
+            selection.start,
+            selection.end,
+            event.inputType,
+            this.readBeforeInputText(event),
+        );
+        if (result === null) return;
+
+        event.preventDefault();
+        this.element.textContent = result.value;
+        this.setTextFieldCaretOffset(result.selectionStart);
+        if (this.dateTimePicker !== undefined) this.dateTimePicker.syncDraftFromText(result.value);
+        if (this.textField !== undefined) this.textField.resizeTextField(result.value);
+    }
+
+    private onKeyup(_event: KeyboardEvent): void {
+        this.appendDateTimeDateSeparatorToTextFieldIfNeeded();
+    }
+
+    private onMouseup(_event: MouseEvent): void {
+        this.appendDateTimeDateSeparatorToTextFieldIfNeeded();
+    }
+
     private onInput(): void {
         if (!this.active) return;
 
-        const text = this.element.textContent ?? '';
+        const text = this.dateTimePickerActive ? this.normalizeDateTimeTextFieldInput() : (this.element.textContent ?? '');
 
         // ドロップダウンがアクティブな場合はフィルタリング
         if (this.dropdownActive && this.dropdownInput) {
@@ -475,6 +519,8 @@ export class EditorTableHandler {
         if (!this.active) return;
 
         this.table.stopAutoScrollForInput();
+
+        if (this.dateTimePickerActive && this.moveDateTimeTextFieldCaretAcrossSeparator(keyboardEvent)) return;
 
         // ドロップダウンがアクティブな場合
         if (this.dropdownActive) {
@@ -1060,6 +1106,94 @@ export class EditorTableHandler {
         if (!this.dateTimePickerActive) return;
         this.element.textContent = value;
         if (this.textField) this.textField.resizeTextField(value);
+    }
+
+    private normalizeDateTimeTextFieldInput(): string {
+        const text = this.element.textContent ?? '';
+        const selectionOffset = this.getTextFieldSelectionOffsets().start;
+        const result = normalizeDateTimeTextInputValue(text, selectionOffset);
+        if (result === null || result.value === text) return text;
+
+        this.element.textContent = result.value;
+        this.setTextFieldCaretOffset(result.selectionStart);
+        return result.value;
+    }
+
+    private moveDateTimeTextFieldCaretAcrossSeparator(event: KeyboardEvent): boolean {
+        if (event.key !== 'Backspace' && event.key !== 'Delete') return false;
+
+        const selection = window.getSelection();
+        if (selection === null || selection.rangeCount === 0 || !selection.isCollapsed) return false;
+
+        const text = this.element.textContent ?? '';
+        const selectionOffset = this.getTextFieldSelectionOffsets().start;
+        const separatorIndex = event.key === 'Backspace' ? selectionOffset - 1 : selectionOffset;
+        if (!isDateTimeTextInputSeparator(text, separatorIndex)) return false;
+
+        event.preventDefault();
+        this.setTextFieldCaretOffset(event.key === 'Backspace' ? separatorIndex : separatorIndex + 1);
+        return true;
+    }
+
+    private appendDateTimeDateSeparatorToTextFieldIfNeeded(): void {
+        if (!this.active || !this.dateTimePickerActive) return;
+
+        const selection = this.getTextFieldSelectionOffsets();
+        const result = appendDateTimeDateSeparatorIfNeeded(this.element.textContent ?? '', selection.start, selection.end);
+        if (result === null) return;
+
+        this.element.textContent = result.value;
+        this.setTextFieldCaretOffset(result.selectionStart);
+        if (this.dateTimePicker !== undefined) this.dateTimePicker.syncDraftFromText(result.value);
+        if (this.textField !== undefined) this.textField.resizeTextField(result.value);
+    }
+
+    private getTextFieldSelectionOffsets(): { start: number; end: number } {
+        const textLength = this.element.textContent?.length ?? 0;
+        const selection = window.getSelection();
+        if (selection === null || selection.rangeCount === 0) return { start: textLength, end: textLength };
+
+        const range = selection.getRangeAt(0);
+        if (!this.element.contains(range.startContainer) || !this.element.contains(range.endContainer)) {
+            return { start: textLength, end: textLength };
+        }
+
+        const startRange = document.createRange();
+        startRange.selectNodeContents(this.element);
+        startRange.setEnd(range.startContainer, range.startOffset);
+
+        const endRange = document.createRange();
+        endRange.selectNodeContents(this.element);
+        endRange.setEnd(range.endContainer, range.endOffset);
+
+        return { start: startRange.toString().length, end: endRange.toString().length };
+    }
+
+    private setTextFieldCaretOffset(offset: number): void {
+        let textNode = this.element.firstChild;
+        if (!(textNode instanceof Text)) {
+            this.element.textContent = this.element.textContent ?? '';
+            textNode = this.element.firstChild;
+        }
+        if (!(textNode instanceof Text)) {
+            textNode = document.createTextNode('');
+            this.element.appendChild(textNode);
+        }
+
+        const clampedOffset = Math.max(0, Math.min(offset, textNode.textContent?.length ?? 0));
+        const range = document.createRange();
+        range.setStart(textNode, clampedOffset);
+        range.collapse(true);
+
+        const selection = window.getSelection();
+        if (selection === null) return;
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    private readBeforeInputText(event: InputEvent): string | null {
+        if (event.data !== null) return event.data;
+        return event.dataTransfer?.getData('text/plain') ?? event.dataTransfer?.getData('text') ?? null;
     }
 
     private submitDateTimePickerAndHide(): void {
