@@ -42,6 +42,7 @@ import {EditorTableStoreSync} from "./editor-table-store-sync";
 import {EditorTableNavigation} from "./editor-table-navigation";
 import {EditorTableBookmarks} from "./editor-table-bookmarks";
 import {EditorTableRelations} from "./editor-table-relations";
+import type {GitStatusResult} from "../app/api";
 
 /**
  * EditorTable — マスターデータ編集テーブルのファサード
@@ -1879,7 +1880,7 @@ export class EditorTable {
     connectGitDiffTracker(tracker: GitDiffTracker): void { this.git.connectGitDiffTracker(tracker); }
     updateSingleCellGitHighlight(cell: HTMLElement, storeRows: string[][], storeRowIndex: number, columnIndex: number): void { this.git.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, columnIndex); }
     applyGitDiffHighlight(): void { this.git.applyGitDiffHighlight(); }
-    async refreshGitDiffAsync(): Promise<void> { return this.git.refreshGitDiffAsync(); }
+    async refreshGitDiffAsync(statusResult?: GitStatusResult | false): Promise<void> { return this.git.refreshGitDiffAsync(statusResult); }
     async refreshGitDiffForDiffTabAsync(gitPath: string): Promise<void> { return this.git.refreshGitDiffForDiffTabAsync(gitPath); }
 
     // =========================================================================

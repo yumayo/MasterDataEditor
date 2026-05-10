@@ -61,6 +61,8 @@ export async function installMockApiAsync(
             type AfterWriteHook = (filename: string, data: string) => void;
             type MockApiWindow = {
                 __mockFs: MockFileSystem;
+                __mockApiRequests: string[];
+                __mockApiRequestDetails: Array<{ type: string; filename?: string }>;
                 __onAfterWriteFile?: AfterWriteHook;
             };
             const MOCK_FS_STORAGE_KEY = '__mockFs';
@@ -150,11 +152,18 @@ export async function installMockApiAsync(
              */
             // テストからMockFileSystemを参照可能にする（readMockFileAsync経由でアクセス）
             (window as unknown as MockApiWindow).__mockFs = runtimeFs;
+            (window as unknown as MockApiWindow).__mockApiRequests = [];
+            (window as unknown as MockApiWindow).__mockApiRequestDetails = [];
             persistMockFs();
 
             function handleRequest(message: string): void {
                 const request = JSON.parse(message);
                 const type = request.type as string;
+                (window as unknown as MockApiWindow).__mockApiRequests.push(type);
+                (window as unknown as MockApiWindow).__mockApiRequestDetails.push({
+                    type,
+                    filename: typeof request.filename === "string" ? request.filename as string : undefined,
+                });
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
 

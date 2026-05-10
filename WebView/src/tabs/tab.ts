@@ -1,6 +1,6 @@
 import {EditorTableData} from "../data/models/editor-table-data";
 import {TabButton} from "./tab-button";
-import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitStatusEntry} from "../app/api";
+import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitStatusEntry, type GitStatusResult} from "../app/api";
 import {CommitSelectorDialog} from "../ui/commit-selector-dialog";
 import {Editor} from "../editor/editor";
 import {EditorTable} from "../editor/editor-table";
@@ -3488,6 +3488,10 @@ export class Tab {
     /** テーブル保存イベントを EditorAPI に委譲する（EditorTable から呼ばれる） */
     emitTableSaved(tableName: string): void {
         if (this.editorApi !== false) this.editorApi.emitTableSaved(tableName);
+    }
+
+    async refreshSourceControlAsync(statusResult?: GitStatusResult): Promise<void> {
+        await this.sidebar.refreshSourceControlAsync(statusResult);
     }
 
     /** 行選択変更イベントを EditorAPI に委譲する（EditorTable から呼ばれる） */

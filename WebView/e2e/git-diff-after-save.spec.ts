@@ -162,6 +162,14 @@ test.describe('保存後のgit差分ハイライト更新', () => {
                 (window as unknown as {
                     __mockGitHeadFiles: Record<string, string>;
                 }).__mockGitHeadFiles = { "data/quest.csv": args.headCsv };
+                (window as unknown as { __mockApiRequests: string[] }).__mockApiRequests = [];
+                (window as unknown as { __mockApiRequestDetails: Array<{ type: string; filename?: string }> }).__mockApiRequestDetails = [];
+                (window as unknown as { __onAfterWriteFile: (filename: string) => void }).__onAfterWriteFile = (filename: string) => {
+                    if (filename !== "data/quest.csv" && filename !== "schema/quest.json") return;
+                    window.setTimeout(() => {
+                        window.chrome.webview.postMessage(JSON.stringify({ type: "file_changed" }));
+                    }, 20);
+                };
             }, { statusAfterSave: GIT_STATUS_AFTER_SAVE, headCsv: HEAD_QUEST_CSV });
 
             // Ctrl+S で保存する
@@ -170,6 +178,20 @@ test.describe('保存後のgit差分ハイライト更新', () => {
             // 保存後、変更セルに .cell-git-changed が付与されることを確認する
             // markSavedAndUpdatePanel() → refreshGitDiffAsync() → GitDiffTracker 再構築 → applyGitDiffHighlight()
             await expect(targetCell).toHaveClass(/cell-git-changed/);
+
+            await page.waitForTimeout(100);
+            const requestCounts = await page.evaluate(() => {
+                const requests = (window as unknown as { __mockApiRequestDetails: Array<{ type: string; filename?: string }> }).__mockApiRequestDetails;
+                return {
+                    tableWrites: requests.filter(request =>
+                        request.type === "write_file_request"
+                        && (request.filename === "data/quest.csv" || request.filename === "schema/quest.json")
+                    ).length,
+                    gitStatus: requests.filter(request => request.type === "git_status_request").length,
+                };
+            });
+            expect(requestCounts.tableWrites).toBe(2);
+            expect(requestCounts.gitStatus).toBe(1);
         },
     );
 

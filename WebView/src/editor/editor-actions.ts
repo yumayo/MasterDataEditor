@@ -3,7 +3,7 @@ import {Selection, FillDirection} from "./selection";
 import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {generateSeriesData} from "./fill-series";
-import {readFileAsync, writeFileAsync} from "../app/api";
+import {readFileAsync, writeFileAsync, type WriteFileOptions} from "../app/api";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
@@ -321,7 +321,7 @@ export function applyFillSeries(
  * 既存JSONを読み込んで列幅・renderAsHtml・フリーズペイン状態を更新することで、
  * serialize()では保持できないフィールド（unique_key, index等）を破壊しない
  */
-export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
+export async function saveSchemaDataAsync(table: EditorTable, writeOptions?: WriteFileOptions): Promise<void> {
     const tableName = table.tableName;
     const schemaPath = `schema/${tableName}.json`;
 
@@ -373,7 +373,7 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
         delete existingSchema.filters;
     }
 
-    await writeFileAsync(schemaPath, existingSchema);
+    await writeFileAsync(schemaPath, existingSchema, writeOptions);
 }
 
 /**
@@ -387,7 +387,7 @@ export async function saveSchemaDataAsync(table: EditorTable): Promise<void> {
  * @param tableName 保存するテーブル名（= ファイルパス `data/tableName.csv` の tableName）
  * @param store InMemoryTableStore（全行全列データを持つ）
  */
-export async function saveTableDataFromStoreAsync(tableName: string, store: InMemoryTableStore): Promise<void> {
+export async function saveTableDataFromStoreAsync(tableName: string, store: InMemoryTableStore, writeOptions?: WriteFileOptions): Promise<void> {
     const csvPath = `data/${tableName}.csv`;
     const csv = store.getCsv(tableName);
     if (csv === false) {
@@ -395,7 +395,7 @@ export async function saveTableDataFromStoreAsync(tableName: string, store: InMe
         // ストアに存在しないまま保存が呼ばれたのはバグなので例外で知らせる
         throw new Error(`[saveTableDataFromStoreAsync] テーブル "${tableName}" がストアに存在しません`);
     }
-    await writeFileAsync(csvPath, csv.toString());
+    await writeFileAsync(csvPath, csv.toString(), writeOptions);
 }
 
 /**
@@ -411,11 +411,11 @@ export async function saveTableDataFromStoreAsync(tableName: string, store: InMe
  * @param storeKey ストアのキー（差分タブでは "tableName:diff:current" 等の専用キー）
  * @param paddingStoreRowIndices 保存から除外するストア行インデックス（パディング行）
  */
-export async function saveDiffTableDataFromStoreAsync(saveTableName: string, store: InMemoryTableStore, storeKey: string, paddingStoreRowIndices: readonly number[]): Promise<void> {
+export async function saveDiffTableDataFromStoreAsync(saveTableName: string, store: InMemoryTableStore, storeKey: string, paddingStoreRowIndices: readonly number[], writeOptions?: WriteFileOptions): Promise<void> {
     const csvPath = `data/${saveTableName}.csv`;
     const csv = store.getCsvWithoutRows(storeKey, paddingStoreRowIndices);
     if (csv === false) {
         throw new Error(`[saveDiffTableDataFromStoreAsync] ストアキー "${storeKey}" がストアに存在しません`);
     }
-    await writeFileAsync(csvPath, csv.toString());
+    await writeFileAsync(csvPath, csv.toString(), writeOptions);
 }

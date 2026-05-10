@@ -33,6 +33,7 @@ import {
 } from "./editor-actions";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {NotificationToast} from "../ui/notification";
+import {gitStatusAsync, invalidateGitStatusCache, type GitStatusResult, type WriteFileOptions} from "../app/api";
 
 /**
  * 参照解決の結果
@@ -94,6 +95,8 @@ export class EditorTableHandler {
      * false の場合は通常タブのDOM同期をスキップする（通常テーブル・ミニテーブル・差分タブ左ペイン）。
      */
     private openEditorTables: Map<string, EditorTable> | false;
+    /** 保存処理の多重起動を防ぐための in-flight Promise。 */
+    private saveInFlight: Promise<void> | false;
     /**
      * focusWithoutScrolling() が発行した rAF の ID。
      * 0 は「未発行」を表す（requestAnimationFrame は 0 を返さないため安全なセンチネル値）。
@@ -137,6 +140,7 @@ export class EditorTableHandler {
         this.saveTargetTableName = '';
         this.gitPath = '';
         this.openEditorTables = false;
+        this.saveInFlight = false;
         this.dropdownActive = false;
         this.dateTimePickerActive = false;
         this.pendingScrollRestoreId = 0;
@@ -977,7 +981,23 @@ export class EditorTableHandler {
      */
     save(): void {
         if (this.readOnly) return;
+        if (this.saveInFlight !== false) return;
+        this.saveInFlight = this.saveAsync()
+            .catch((e: unknown) => {
+                console.error('[EditorTableHandler] save failed:', e);
+                this.notification.show('保存に失敗しました');
+            })
+            .finally(() => {
+                this.saveInFlight = false;
+            });
+    }
+
+    private async saveAsync(): Promise<void> {
         const store = this.table.getStore();
+        const saveWriteOptions: WriteFileOptions = {
+            invalidateGitStatus: false,
+            suppressFileChangedNotification: true,
+        };
         // 差分タブの右ペイン: saveTargetTableName が設定されている場合は元テーブル名で保存する。
         // ストアキーは "tableName:diff:current" だが保存先は元の tableName にする。
         if (this.saveTargetTableName !== '') {
@@ -988,62 +1008,54 @@ export class EditorTableHandler {
             // - 保存後は通常テーブルのストアも最新CSVに更新してタブ再オープン時に反映する
             // - 保存後は refreshGitDiffForDiffTabAsync で gitPath（gitルート相対パス）を使ってgit差分ハイライトを更新する
             const paddingIndices = this.table.getDiffPaddingStoreRowIndices();
-            saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName, paddingIndices)
-                .then(() => {
-                    // this.table.tableName = "quest_reward:diff:current" で markAllSaved を呼ぶ。
-                    // 差分タブの History は this.table.tableName（不正パスキー）で historyRegistry に登録されており、
-                    // saveTargetTableName（"quest_reward"）では登録されていない。
-                    store.markAllSaved(this.table.tableName);
-                    if (this.table.relationsPanel !== false) {
-                        this.table.relationsPanel.updateDirtyMark(this.saveTargetTableName, false);
-                    }
-                    // 通常テーブルのストアが存在する場合（タブが開いている、またはキャッシュ中）は
-                    // ファイルから再読み込みして最新状態に更新する。
-                    // これにより通常タブを開いたときに差分タブで保存したデータが反映される。
-                    // ただし通常テーブルがDirty状態の場合は未保存変更が上書きされるためスキップする。
-                    if (store.hasTable(this.saveTargetTableName) && !store.isTableDirty(this.saveTargetTableName)) {
-                        store.reloadTableDataAsync(this.saveTargetTableName)
-                            .then(() => {
-                                // 通常タブが既に開かれている場合は reloadCellsFromStore() でストアの最新データをDOMに反映する。
-                                if (this.openEditorTables !== false && this.openEditorTables.has(this.saveTargetTableName)) {
-                                    (this.openEditorTables.get(this.saveTargetTableName) as EditorTable).reloadCellsFromStore();
-                                }
-                            })
-                            .catch((e: unknown) => { throw new Error('[EditorTableHandler] reloadTableDataAsync failed: ' + String(e)); });
-                    }
-                    // 保存後にgit差分ハイライトを更新する。
-                    // gitPath（gitルート相対パス）を渡してHEAD版CSVとの差分を再計算する。
-                    this.table.refreshGitDiffForDiffTabAsync(this.gitPath)
-                        .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffForDiffTabAsync failed:', e); });
-                    // テーブル保存イベントを EditorAPI に発火する（差分タブの場合は元テーブル名を使用する）
-                    if (this.table.tab !== false) this.table.tab.emitTableSaved(this.saveTargetTableName);
-                })
-                .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveDiffTableDataFromStoreAsync failed: ' + String(e)); });
+            await saveDiffTableDataFromStoreAsync(this.saveTargetTableName, store, this.table.tableName, paddingIndices, saveWriteOptions);
+            // this.table.tableName = "quest_reward:diff:current" で markAllSaved を呼ぶ。
+            // 差分タブの History は this.table.tableName（不正パスキー）で historyRegistry に登録されており、
+            // saveTargetTableName（"quest_reward"）では登録されていない。
+            store.markAllSaved(this.table.tableName);
+            if (this.table.relationsPanel !== false) {
+                this.table.relationsPanel.updateDirtyMark(this.saveTargetTableName, false);
+            }
+            // 通常テーブルのストアが存在する場合（タブが開いている、またはキャッシュ中）は
+            // ファイルから再読み込みして最新状態に更新する。
+            // これにより通常タブを開いたときに差分タブで保存したデータが反映される。
+            // ただし通常テーブルがDirty状態の場合は未保存変更が上書きされるためスキップする。
+            if (store.hasTable(this.saveTargetTableName) && !store.isTableDirty(this.saveTargetTableName)) {
+                await store.reloadTableDataAsync(this.saveTargetTableName);
+                // 通常タブが既に開かれている場合は reloadCellsFromStore() でストアの最新データをDOMに反映する。
+                if (this.openEditorTables !== false && this.openEditorTables.has(this.saveTargetTableName)) {
+                    (this.openEditorTables.get(this.saveTargetTableName) as EditorTable).reloadCellsFromStore();
+                }
+            }
+            // 保存後にgit差分ハイライトを更新する。
+            // gitPath（gitルート相対パス）を渡してHEAD版CSVとの差分を再計算する。
+            await Promise.all([
+                this.table.refreshGitDiffForDiffTabAsync(this.gitPath),
+                this.refreshSourceControlAfterSaveAsync(),
+            ]);
+            // テーブル保存イベントを EditorAPI に発火する（差分タブの場合は元テーブル名を使用する）
+            if (this.table.tab !== false) this.table.tab.emitTableSaved(this.saveTargetTableName);
             return;
         }
         if (this.table.isMiniTableInstance()) {
             // ミニEditorTableの場合はストアの全列データからCSVを保存する。
             // DOM上はFK列が欠落したフィルタ済みデータのみ表示しているが、
             // ストアは全列・全行データを保持しているため、ストア経由で保存すればCSVを破壊しない。
-            saveTableDataFromStoreAsync(this.table.tableName, store)
-                .then(() => { this.markSavedAndUpdatePanel(); })
-                .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
+            await saveTableDataFromStoreAsync(this.table.tableName, store, saveWriteOptions);
+            await this.markSavedAndUpdatePanelAsync();
             return;
         }
         // 通常テーブルの保存: ストアから直接CSVを生成して保存する。
         // ストアはSSOTとして全行・全列のデータを保持しているため、
         // 行挿入・削除を含む全変更を正確にCSVに反映できる。
-        Promise.all([
-            saveTableDataFromStoreAsync(this.table.tableName, store),
-            saveSchemaDataAsync(this.table)
-        ]).then(() => {
-            this.markSavedAndUpdatePanel();
-            if (this.table.tab !== false) {
-                this.table.tab.saveCurrentFormPanelEditedTablesAsync(this.table.tableName)
-                    .catch((e: unknown) => { console.error('[EditorTableHandler] saveCurrentFormPanelEditedTablesAsync failed:', e); });
-            }
-        })
-          .catch((e: unknown) => { throw new Error('[EditorTableHandler] saveTableDataFromStoreAsync failed: ' + String(e)); });
+        await Promise.all([
+            saveTableDataFromStoreAsync(this.table.tableName, store, saveWriteOptions),
+            saveSchemaDataAsync(this.table, saveWriteOptions)
+        ]);
+        await this.markSavedAndUpdatePanelAsync();
+        if (this.table.tab !== false) {
+            await this.table.tab.saveCurrentFormPanelEditedTablesAsync(this.table.tableName);
+        }
     }
 
     /**
@@ -1052,17 +1064,36 @@ export class EditorTableHandler {
      * markAllSavedは二相処理（setTabButtonDirtyのみ）でnotifyChange()を呼ばないため、
      * RelationsPanelのDirtyマークは呼び出し元で明示的に更新する必要がある。
      */
-    private markSavedAndUpdatePanel(): void {
+    private async markSavedAndUpdatePanelAsync(): Promise<void> {
         this.table.getStore().markAllSaved(this.table.tableName);
         if (this.table.relationsPanel !== false) {
             this.table.relationsPanel.updateDirtyMark(this.table.tableName, false);
         }
-        // 保存完了後にgit差分を再取得してセルのハイライトを更新する
-        this.table.refreshGitDiffAsync()
-            .catch((e: unknown) => { console.error('[EditorTableHandler] refreshGitDiffAsync failed:', e); });
+        const statusResult = await this.fetchGitStatusAfterSaveAsync();
+        await Promise.all([
+            this.table.refreshGitDiffAsync(statusResult),
+            statusResult !== false && this.table.tab !== false ? this.table.tab.refreshSourceControlAsync(statusResult) : Promise.resolve(),
+        ]);
         // テーブル保存イベントを EditorAPI に発火する
         // EditorTable の中継メソッドを経由せず Tab に直接アクセスする
         if (this.table.tab !== false) this.table.tab.emitTableSaved(this.table.tableName);
+    }
+
+    private async refreshSourceControlAfterSaveAsync(): Promise<void> {
+        if (this.table.tab === false) return;
+        const statusResult = await this.fetchGitStatusAfterSaveAsync();
+        if (statusResult === false) return;
+        await this.table.tab.refreshSourceControlAsync(statusResult);
+    }
+
+    private async fetchGitStatusAfterSaveAsync(): Promise<GitStatusResult | false> {
+        invalidateGitStatusCache();
+        try {
+            return await gitStatusAsync();
+        } catch (e: unknown) {
+            console.warn('[EditorTableHandler] 保存後のgit status取得をスキップしました:', e);
+            return false;
+        }
     }
 
     /**

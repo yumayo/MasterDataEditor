@@ -120,6 +120,8 @@ export class TableDefinitionEditor {
     private readonly advancedSection: HTMLElement;
     /** 詳細オプショントグルボタン要素（セクション展開状態と連動） */
     private readonly advancedToggle: HTMLButtonElement;
+    /** 保存ボタンの多重クリックによる二重保存を防ぐ。 */
+    private saveInFlight: boolean;
 
     constructor(tab: Tab, existingTableNames: ReadonlyArray<string>, editTarget: EditTarget | false) {
         this.tab = tab;
@@ -128,6 +130,7 @@ export class TableDefinitionEditor {
         this.undoStack = [];
         this.isDragPending = false;
         this.isDragging = false;
+        this.saveInFlight = false;
         this.dragStartY = 0;
         this.currentInsertIndex = 0;
         // dragSourceRow はドラッグ操作中のみ参照される。初期値としてダミー要素を設定し、メンバ変数nullを回避する
@@ -761,43 +764,49 @@ export class TableDefinitionEditor {
      * 新規モードではCSVヘッダーのみ生成、編集モードでは既存CSVの列構造を同期する。
      */
     private async saveAsync(): Promise<void> {
+        if (this.saveInFlight) return;
         if (!this.validate()) return;
+        this.saveInFlight = true;
+        try {
 
-        const tableName = this.nameInput.value.trim();
-        const description = this.descInput.value.trim();
+            const tableName = this.nameInput.value.trim();
+            const description = this.descInput.value.trim();
 
-        // 列定義を収集する
-        const columnRows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
-        const primaryKeys: string[] = [];
-        const columnNames: string[] = [];
-        for (let i = 0; i < columnRows.length; i++) {
-            const row = columnRows[i];
-            const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
-            const isPk = (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked;
-            columnNames.push(colName);
-            if (isPk) primaryKeys.push(colName);
-        }
-
-        if (this.editTarget !== false) {
-            // 編集モード: 元スキーマのメタデータを引き継いでheader配列を組み立てる
-            await this.saveEditModeAsync(this.editTarget, tableName, description, primaryKeys, columnNames, columnRows);
-        } else {
-            // 新規モード: UI入力値を含む完全なheader配列を組み立てる
-            const headerArray: Array<Record<string, unknown>> = [];
+            // 列定義を収集する
+            const columnRows = this.columnsContainer.querySelectorAll('.table-definition-column-row');
+            const primaryKeys: string[] = [];
+            const columnNames: string[] = [];
             for (let i = 0; i < columnRows.length; i++) {
-                const row = columnRows[i] as HTMLElement;
+                const row = columnRows[i];
                 const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
-                const colType = (row.querySelector('.column-type-select') as HTMLSelectElement).value;
-                const entry: Record<string, unknown> = { key: i, name: colName, type: colType };
-                this.applyColumnExtrasToEntry(row, entry);
-                headerArray.push(entry);
+                const isPk = (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked;
+                columnNames.push(colName);
+                if (isPk) primaryKeys.push(colName);
             }
-            const schema: Record<string, unknown> = { header: headerArray, primary_key: primaryKeys };
-            if (description !== '') schema['description'] = description;
-            this.applyReverseRefPriorityToSchema(schema);
-            await writeFileAsync('schema/' + tableName + '.json', schema);
-            await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
-            this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
+
+            if (this.editTarget !== false) {
+                // 編集モード: 元スキーマのメタデータを引き継いでheader配列を組み立てる
+                await this.saveEditModeAsync(this.editTarget, tableName, description, primaryKeys, columnNames, columnRows);
+            } else {
+                // 新規モード: UI入力値を含む完全なheader配列を組み立てる
+                const headerArray: Array<Record<string, unknown>> = [];
+                for (let i = 0; i < columnRows.length; i++) {
+                    const row = columnRows[i] as HTMLElement;
+                    const colName = (row.querySelector('.column-name-input') as HTMLInputElement).value.trim();
+                    const colType = (row.querySelector('.column-type-select') as HTMLSelectElement).value;
+                    const entry: Record<string, unknown> = { key: i, name: colName, type: colType };
+                    this.applyColumnExtrasToEntry(row, entry);
+                    headerArray.push(entry);
+                }
+                const schema: Record<string, unknown> = { header: headerArray, primary_key: primaryKeys };
+                if (description !== '') schema['description'] = description;
+                this.applyReverseRefPriorityToSchema(schema);
+                await writeFileAsync('schema/' + tableName + '.json', schema);
+                await writeFileAsync('data/' + tableName + '.csv', columnNames.join(','));
+                this.tab.closeTableDefinitionAndOpenTable(tableName, description !== '' ? description : null);
+            }
+        } finally {
+            this.saveInFlight = false;
         }
     }
 

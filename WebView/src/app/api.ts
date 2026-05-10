@@ -66,10 +66,44 @@ export async function preloadAllFilesAsync(): Promise<void> {
  */
 export type WriteFileData = string | object;
 
-export async function writeFileAsync(filename: string, data: WriteFileData): Promise<void> {
+export interface WriteFileOptions {
+    invalidateGitStatus?: boolean;
+    suppressFileChangedNotification?: boolean;
+}
+
+let suppressedFileChangedNotificationCount = 0;
+let suppressedFileChangedNotificationDeadline = 0;
+const SUPPRESSED_FILE_CHANGED_NOTIFICATION_MS = 1500;
+
+function isMasterDataFile(filename: string): boolean {
+    return filename.startsWith('schema/') || filename.startsWith('data/');
+}
+
+function affectsGitStatus(filename: string): boolean {
+    return filename.startsWith('data/') && filename.endsWith('.csv');
+}
+
+function suppressNextFileChangedNotification(filename: string): void {
+    if (!isMasterDataFile(filename)) return;
+    suppressedFileChangedNotificationCount++;
+    suppressedFileChangedNotificationDeadline = performance.now() + SUPPRESSED_FILE_CHANGED_NOTIFICATION_MS;
+}
+
+export function consumeSuppressedFileChangedNotification(): boolean {
+    if (suppressedFileChangedNotificationCount <= 0) return false;
+    if (performance.now() > suppressedFileChangedNotificationDeadline) {
+        suppressedFileChangedNotificationCount = 0;
+        return false;
+    }
+    suppressedFileChangedNotificationCount--;
+    return true;
+}
+
+export async function writeFileAsync(filename: string, data: WriteFileData, options: WriteFileOptions = {}): Promise<void> {
     await postMessageAsync('write_file', { filename, data });
     fileCache.set(filename, serializeWriteFileData(data));
-    invalidateGitStatusCache();
+    if (options.suppressFileChangedNotification === true) suppressNextFileChangedNotification(filename);
+    if (options.invalidateGitStatus !== false && affectsGitStatus(filename)) invalidateGitStatusCache();
 }
 
 /** ファイルキャッシュの特定エントリを無効化する。テストやファイルウォッチャーで外部変更された場合に呼ぶ。 */
@@ -118,7 +152,7 @@ interface File {
 export async function deleteFileAsync(filename: string): Promise<void> {
     await postMessageAsync('delete_file', { filename });
     fileCache.delete(filename);
-    invalidateGitStatusCache();
+    if (affectsGitStatus(filename)) invalidateGitStatusCache();
 }
 
 /**

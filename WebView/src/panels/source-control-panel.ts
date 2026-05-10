@@ -1,4 +1,4 @@
-import { gitStatusAsync, gitShowFreshAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry, invalidateGitStatusCache, invalidateGitShowCache } from '../app/api';
+import { gitStatusAsync, gitShowFreshAsync, gitAddAsync, gitResetAsync, gitDiscardAsync, GitStatusEntry, GitStatusResult, invalidateGitStatusCache, invalidateGitShowCache } from '../app/api';
 import { readFileAsync } from '../app/api';
 import { Tab } from '../tabs/tab';
 import { ActivityBar } from '../sidebar/activity-bar';
@@ -83,9 +83,9 @@ export class SourceControlPanel {
      * スキーマをすべて並列取得してから各セクションを構築する
      * 非同期中断が2箇所あるため requestId で競合状態を防ぐ
      */
-    async refreshAsync(): Promise<void> {
+    async refreshAsync(statusResult?: GitStatusResult): Promise<void> {
         const requestId = ++this.currentRequestId;
-        const result = await gitStatusAsync();
+        const result = statusResult ?? await gitStatusAsync();
         if (requestId !== this.currentRequestId) return;
         const allEntries = [...result.staged, ...result.changes];
 

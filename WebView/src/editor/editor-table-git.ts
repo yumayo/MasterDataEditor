@@ -231,29 +231,38 @@ export class EditorTableGit {
      * テーブルオープン時および保存後（markSavedAndUpdatePanel）に呼ばれ、差分状態をセルに反映する。
      * git statusの取得に失敗した場合（git管理外環境等）は何もしない。
      */
-    async refreshGitDiffAsync(): Promise<void> {
+    async refreshGitDiffAsync(statusResult?: GitStatusResult | false): Promise<void> {
         const requestId = ++this.refreshGitDiffRequestId;
-        let statusResult: GitStatusResult;
-        try {
-            statusResult = await gitStatusAsync();
-        } catch (e) {
-            // gitリポジトリでない環境や通信エラーでは差分ハイライト更新をスキップする
-            console.warn('[EditorTable] refreshGitDiffAsync: git status の取得に失敗しました:', e);
-            // git変更マーカーをクリアする（古いマーカーが残存するのを防止）
+        let currentStatusResult = statusResult;
+        if (currentStatusResult === false) {
+            this.gitDiffTracker = false;
+            this.applyGitDiffHighlight();
             this.currentGitChangedDomRows = new Set();
             this.refreshScrollbarMarkers();
             return;
         }
+        if (currentStatusResult === undefined) {
+            try {
+                currentStatusResult = await gitStatusAsync();
+            } catch (e) {
+                // gitリポジトリでない環境や通信エラーでは差分ハイライト更新をスキップする
+                console.warn('[EditorTable] refreshGitDiffAsync: git status の取得に失敗しました:', e);
+                // git変更マーカーをクリアする（古いマーカーが残存するのを防止）
+                this.currentGitChangedDomRows = new Set();
+                this.refreshScrollbarMarkers();
+                return;
+            }
+        }
         // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
         if (requestId !== this.refreshGitDiffRequestId) return;
-        const entryIndex = statusResult.changes.findIndex(e => e.tableName === this.tableName);
+        const entryIndex = currentStatusResult.changes.findIndex(e => e.tableName === this.tableName);
         if (entryIndex === -1) {
             // changesに含まれない場合は差分なし → トラッカーをfalseにリセットして全ハイライトを除去する
             this.gitDiffTracker = false;
             this.applyGitDiffHighlight();
             return;
         }
-        const entry = statusResult.changes[entryIndex];
+        const entry = currentStatusResult.changes[entryIndex];
         // PK列が定義されていない場合はハイライト不要（空キーで全行が一致扱いになるのを防ぐ）
         if (this.tableData.primaryKeyColumns.length === 0) {
             this.gitDiffTracker = false;
