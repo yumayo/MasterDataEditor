@@ -12,6 +12,17 @@ import {
 const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
 const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
 
+type ExportWindowColumnIndices = { beginIndex: number; endIndex: number };
+
+type ExportRowWindow =
+    | { kind: 'valid'; beginMs: number | null; endMs: number | null }
+    | { kind: 'unknown' };
+
+interface PrimaryKeyRowEntry {
+    rowIndex: number;
+    exportWindow: ExportRowWindow | null;
+}
+
 export interface ExportValidationSettings {
     dateTime: string;
     beginColumnName: string;
@@ -89,7 +100,6 @@ export class ValidationEngine {
      * テーブル名 → { primaryKeyColumns, columns: { name, reference | null }[] }
      */
     private readonly schemas: Map<string, TableSchema>;
-    private exportValidationDateTimeText = '';
     private exportValidationDateTimeMs: number | null = null;
     private exportBeginDateColumnName = DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME;
     private exportEndDateColumnName = DEFAULT_EXPORT_END_DATE_COLUMN_NAME;
@@ -122,7 +132,6 @@ export class ValidationEngine {
      * 時刻が空・不正、または期間列名が未設定の場合は従来どおり全行をPK重複判定の対象にする。
      */
     setExportValidationSettings(settings: ExportValidationSettings): void {
-        this.exportValidationDateTimeText = settings.dateTime;
         this.exportBeginDateColumnName = settings.beginColumnName.trim();
         this.exportEndDateColumnName = settings.endColumnName.trim();
         const parsed = parseTemporalValue(settings.dateTime);
@@ -245,8 +254,8 @@ export class ValidationEngine {
             pkColIndices.push(idx);
         }
         const exportWindow = this.resolveExportWindowColumnIndices(header);
-        // 各PK値の出現行インデックスを記録する（空値はスキップ）
-        const pkToRows = new Map<string, number[]>();
+        // 各PK値の出現行を記録する（空値はスキップ）
+        const pkToRows = new Map<string, PrimaryKeyRowEntry[]>();
         for (let r = 0; r < rows.length; r++) {
             const row = rows[r];
             let hasEmpty = false;
@@ -254,18 +263,21 @@ export class ValidationEngine {
                 if (row[idx] === '') { hasEmpty = true; break; }
             }
             if (hasEmpty) continue;
-            if (exportWindow !== null && !this.isRowActiveAtExportValidationTime(row, exportWindow)) continue;
             const compositeKey = pkColIndices.map(idx => row[idx]).join('\0');
+            const rowEntry: PrimaryKeyRowEntry = {
+                rowIndex: r,
+                exportWindow: exportWindow !== null ? this.resolveRowExportWindow(row, exportWindow) : null,
+            };
             if (pkToRows.has(compositeKey)) {
-                pkToRows.get(compositeKey)!.push(r);
+                pkToRows.get(compositeKey)!.push(rowEntry);
             } else {
-                pkToRows.set(compositeKey, [r]);
+                pkToRows.set(compositeKey, [rowEntry]);
             }
         }
-        // 2件以上の行が同じPK値を持つ場合、すべての行をエラーとして登録する
-        for (const [, rowIndices] of pkToRows) {
-            if (rowIndices.length < 2) continue;
-            for (const rowIndex of rowIndices) {
+        // 2件以上の行が同じPK値を持つ場合、衝突している行をエラーとして登録する
+        for (const [, rowEntries] of pkToRows) {
+            const duplicateRowIndices = this.resolveDuplicatePrimaryKeyRowIndices(rowEntries, exportWindow !== null);
+            for (const rowIndex of duplicateRowIndices) {
                 const row = rows[rowIndex];
                 const primaryKeyValues = this.resolvePrimaryKeyValuesForRow(schema, header, rows, rowIndex);
                 const primaryKeyLabel = primaryKeyValues !== null ? formatValidationPrimaryKeyValues(primaryKeyValues) : pkColIndices.map(idx => row[idx]).join(',');
@@ -279,7 +291,7 @@ export class ValidationEngine {
                         kind: 'pk-duplicate',
                         message: exportWindow === null
                             ? `主キー値 "${primaryKeyLabel}" が重複しています`
-                            : `主キー値 "${primaryKeyLabel}" が出力フィルター時刻 "${this.exportValidationDateTimeText}" で重複しています`,
+                            : `主キー値 "${primaryKeyLabel}" の出力フィルター期間が重複しています`,
                         filterValue: null,
                         primaryKeyValues,
                     });
@@ -288,7 +300,25 @@ export class ValidationEngine {
         }
     }
 
-    private resolveExportWindowColumnIndices(header: string[]): { beginIndex: number; endIndex: number } | null {
+    private resolveDuplicatePrimaryKeyRowIndices(rowEntries: PrimaryKeyRowEntry[], usesExportWindow: boolean): number[] {
+        if (rowEntries.length < 2) return [];
+        if (!usesExportWindow) return rowEntries.map(entry => entry.rowIndex);
+
+        const duplicateRowIndices = new Set<number>();
+        for (let i = 0; i < rowEntries.length - 1; i++) {
+            const left = rowEntries[i];
+            for (let j = i + 1; j < rowEntries.length; j++) {
+                const right = rowEntries[j];
+                if (left.exportWindow === null || right.exportWindow === null) continue;
+                if (!this.doExportWindowsOverlap(left.exportWindow, right.exportWindow)) continue;
+                duplicateRowIndices.add(left.rowIndex);
+                duplicateRowIndices.add(right.rowIndex);
+            }
+        }
+        return Array.from(duplicateRowIndices).sort((left, right) => left - right);
+    }
+
+    private resolveExportWindowColumnIndices(header: string[]): ExportWindowColumnIndices | null {
         if (this.exportValidationDateTimeMs === null) return null;
         if (this.exportBeginDateColumnName === '' || this.exportEndDateColumnName === '') return null;
         const beginIndex = header.indexOf(this.exportBeginDateColumnName);
@@ -297,15 +327,25 @@ export class ValidationEngine {
         return { beginIndex, endIndex };
     }
 
-    private isRowActiveAtExportValidationTime(row: string[], exportWindow: { beginIndex: number; endIndex: number }): boolean {
-        if (this.exportValidationDateTimeMs === null) return true;
+    private resolveRowExportWindow(row: string[], exportWindow: ExportWindowColumnIndices): ExportRowWindow {
         const begin = parseTemporalValue(row[exportWindow.beginIndex]);
         const end = parseTemporalValue(row[exportWindow.endIndex]);
-        if (begin.kind === 'invalid' || end.kind === 'invalid') return true;
-        if (begin.kind === 'valid' && end.kind === 'valid' && begin.ms > end.ms) return true;
-        if (begin.kind === 'valid' && this.exportValidationDateTimeMs < begin.ms) return false;
-        if (end.kind === 'valid' && this.exportValidationDateTimeMs >= end.ms) return false;
-        return true;
+        if (begin.kind === 'invalid' || end.kind === 'invalid') return { kind: 'unknown' };
+        if (begin.kind === 'valid' && end.kind === 'valid' && begin.ms > end.ms) return { kind: 'unknown' };
+        return {
+            kind: 'valid',
+            beginMs: begin.kind === 'valid' ? begin.ms : null,
+            endMs: end.kind === 'valid' ? end.ms : null,
+        };
+    }
+
+    private doExportWindowsOverlap(left: ExportRowWindow, right: ExportRowWindow): boolean {
+        if (left.kind === 'unknown' || right.kind === 'unknown') return true;
+        const leftBeginMs = left.beginMs ?? Number.NEGATIVE_INFINITY;
+        const leftEndMs = left.endMs ?? Number.POSITIVE_INFINITY;
+        const rightBeginMs = right.beginMs ?? Number.NEGATIVE_INFINITY;
+        const rightEndMs = right.endMs ?? Number.POSITIVE_INFINITY;
+        return leftBeginMs <= rightEndMs && rightBeginMs <= leftEndMs;
     }
 
     // -------------------------------------------------------------------------
