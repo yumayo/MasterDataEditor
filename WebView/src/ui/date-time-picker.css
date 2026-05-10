@@ -8,6 +8,26 @@
     min-width: var(--date-time-picker-width, 240px);
 }
 
+.grid-date-time-picker {
+    --date-time-picker-width: 240px;
+
+    position: absolute;
+    top: -99999px;
+    left: -99999px;
+    height: var(--date-time-picker-control-height);
+    z-index: var(--z-index-date-time-picker);
+    pointer-events: none;
+}
+
+.grid-date-time-picker > .date-time-picker-input,
+.grid-date-time-picker > .date-time-picker-toggle {
+    display: none;
+}
+
+.grid-date-time-picker .date-time-picker-popover {
+    pointer-events: auto;
+}
+
 .date-time-picker-input {
     width: 100%;
     height: var(--date-time-picker-control-height);

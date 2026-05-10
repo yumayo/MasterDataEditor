@@ -4,6 +4,7 @@ export interface DateTimePickerOptions {
     rootClassNames?: string[];
     onCommit: (value: string) => void;
     onDismiss?: () => void;
+    ignoreOutsideClick?: (target: Node) => boolean;
 }
 
 interface DateTimeParts {
@@ -34,6 +35,7 @@ export class DateTimePicker {
     private readonly secondInput: HTMLInputElement;
     private readonly onCommit: (value: string) => void;
     private readonly onDismiss: (() => void) | null;
+    private readonly ignoreOutsideClick: ((target: Node) => boolean) | null;
     private readonly outsideClickHandler: (event: MouseEvent) => void;
     private readonly escKeyHandler: (event: KeyboardEvent) => void;
     private value: string;
@@ -44,6 +46,7 @@ export class DateTimePicker {
     constructor(options: DateTimePickerOptions) {
         this.onCommit = options.onCommit;
         this.onDismiss = options.onDismiss ?? null;
+        this.ignoreOutsideClick = options.ignoreOutsideClick ?? null;
         this.value = normalizeDateTimeInputToSeconds(options.value) ?? options.value.trim();
         this.draftParts = parseDateTimeParts(this.value) ?? dateToParts(new Date());
         this.visibleYear = this.draftParts.year;
@@ -197,7 +200,9 @@ export class DateTimePicker {
 
         this.outsideClickHandler = (event: MouseEvent) => {
             if (!this.popover.classList.contains('visible')) return;
-            if (!this.element.contains(event.target as Node)) this.hide();
+            const target = event.target as Node;
+            if (this.ignoreOutsideClick !== null && this.ignoreOutsideClick(target)) return;
+            if (!this.element.contains(target)) this.hide();
         };
         document.addEventListener('mousedown', this.outsideClickHandler);
 

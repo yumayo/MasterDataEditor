@@ -39,20 +39,26 @@ test.describe('datetime型セル入力', () => {
         await page.goto('/');
     });
 
-    test('datetime型セルは通常のテキストフィールドで日時を設定できる', async ({ page }) => {
+    test('datetime型セルはDateTimePickerで日時を設定できる', async ({ page }) => {
         const table = await openTableAsync(page, 'event');
         const cell = getDataCell(table, 0, 1);
 
         await cell.dblclick();
 
-        const input = page.locator('.grid-textfield-active');
-        await expect(input).toBeVisible();
+        const picker = page.locator('.grid-date-time-picker.grid-date-time-picker-active');
+        await expect(picker).toHaveCount(1);
+        await expect(page.locator('.grid-textfield-active')).toBeVisible();
+        await expect(picker.locator(':scope > .date-time-picker-input')).toBeHidden();
+        await expect(picker.locator('.date-time-picker-popover')).toBeVisible();
+        await expect(picker.locator('.date-time-picker-second-input')).toBeVisible();
+
+        await picker.locator('.date-time-picker-day[aria-label="2026-05-15"]').click();
+        await picker.locator('.date-time-picker-hour-input').fill('13');
+        await picker.locator('.date-time-picker-minute-input').fill('40');
+        await picker.locator('.date-time-picker-second-input').fill('55');
+        await picker.locator('.date-time-picker-apply').click();
+
         await expect(page.locator('.grid-date-time-picker-active')).toHaveCount(0);
-
-        await page.keyboard.press('Control+a');
-        await page.keyboard.insertText('2026-05-15 13:40:55');
-        await page.keyboard.press('Enter');
-
         await expect(cell).toContainText('2026-05-15 13:40:55');
 
         await page.keyboard.press('Control+s');
