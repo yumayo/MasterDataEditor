@@ -322,17 +322,43 @@ test.describe('設定画面', () => {
             const input = page.locator('.settings-export-validation-datetime-input');
             await expect(input).toBeVisible();
 
-            await setExportValidationDateTimeAsync(page, '2026-05-10T12:30');
-            await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10T12:30');
+            await setExportValidationDateTimeAsync(page, '2026-05-10T12:30:45');
+            await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10T12:30:45');
 
             const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
             expect(JSON.parse(settingsJson)).toEqual({
                 theme: 'dark',
                 tabWrapEnabled: false,
-                exportValidationDateTime: '2026-05-10T12:30',
+                exportValidationDateTime: '2026-05-10T12:30:45',
                 exportBeginDateColumnName: 'export_begin_date',
                 exportEndDateColumnName: 'export_end_date',
             });
+        },
+    );
+
+    test(
+        '出力フィルター時刻は秒入力付きの自作カレンダーで指定できること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const picker = page.locator('.settings-export-validation-date-time-picker');
+            const input = picker.locator('.settings-export-validation-datetime-input');
+            await expect(input).toBeVisible();
+            await expect(input).toHaveAttribute('type', 'text');
+
+            await setExportValidationDateTimeAsync(page, '2026-05-10T12:30:45');
+            await picker.locator('.date-time-picker-toggle').click();
+            const popover = picker.locator('.date-time-picker-popover');
+            await expect(popover).toBeVisible();
+            await expect(popover.locator('.date-time-picker-day')).toHaveCount(42);
+            const secondInput = popover.locator('.date-time-picker-second-input');
+            await expect(secondInput).toBeVisible();
+            await expect(secondInput).toHaveAttribute('type', 'text');
+            await expect(secondInput).toHaveValue('45');
+
+            await secondInput.fill('46');
+            await popover.locator('.date-time-picker-apply').click();
+            await waitForSettingsExportValidationDateTimeAsync(page, '2026-05-10T12:30:46');
         },
     );
 

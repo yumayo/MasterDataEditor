@@ -73,7 +73,7 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
     test(
         '設定時刻で有効期間が重なる同一PKだけ重複エラーにする',
         async ({ page }) => {
-            await installMockApiAsync(page, createExportDatePkFileSystem('2026-05-09T12:00'));
+            await installMockApiAsync(page, createExportDatePkFileSystem('2026-05-09T12:00:00'));
             await page.goto('/');
 
             const table = await openTableAsync(page, 'item');
@@ -83,7 +83,7 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
             await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
 
-            await setExportValidationDateTimeAsync(page, '2026-05-10T00:00');
+            await setExportValidationDateTimeAsync(page, '2026-05-10T00:00:00');
             await page.locator('.tab-button').filter({ hasText: 'item' }).click();
 
             await expect(firstPkCell).not.toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
@@ -94,7 +94,7 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
     test(
         'settings.jsonで指定したexport期間列名を使ってPK重複を判定する',
         async ({ page }) => {
-            await installMockApiAsync(page, createExportDatePkFileSystem('2026-05-09T12:00', 'start_at', 'finish_at'));
+            await installMockApiAsync(page, createExportDatePkFileSystem('2026-05-09T12:00:00', 'start_at', 'finish_at'));
             await page.goto('/');
 
             const table = await openTableAsync(page, 'item');
@@ -104,7 +104,7 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             await expect(firstPkCell).toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });
             await expect(secondPkCell).toHaveClass(/cell-pk-duplicate/);
 
-            await setExportValidationDateTimeAsync(page, '2026-05-10T00:00');
+            await setExportValidationDateTimeAsync(page, '2026-05-10T00:00:00');
             await page.locator('.tab-button').filter({ hasText: 'item' }).click();
 
             await expect(firstPkCell).not.toHaveClass(/cell-pk-duplicate/, { timeout: 10000 });

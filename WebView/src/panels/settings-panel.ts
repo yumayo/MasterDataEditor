@@ -1,6 +1,7 @@
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
 import {SETTINGS_FILE} from "../config/userdata-path";
+import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
 
 /**
  * 設定画面パネル
@@ -157,7 +158,7 @@ export class SettingsPanel {
     private selectedTabWrapEnabled: boolean;
     private readonly tabWrapToggle: HTMLInputElement;
     private selectedExportValidationDateTime: string;
-    private readonly exportValidationDateTimeInput: HTMLInputElement;
+    private readonly exportValidationDateTimePicker: DateTimePicker;
     private selectedExportBeginDateColumnName: string;
     private readonly exportBeginDateColumnNameInput: HTMLInputElement;
     private selectedExportEndDateColumnName: string;
@@ -286,21 +287,17 @@ export class SettingsPanel {
         exportValidationLabel.appendChild(exportValidationLabelText);
 
         const currentExportValidationSettings = getAppliedExportValidationSettings();
-        this.selectedExportValidationDateTime = currentExportValidationSettings.dateTime;
-        this.exportValidationDateTimeInput = document.createElement('input');
-        this.exportValidationDateTimeInput.classList.add('settings-datetime-input', 'settings-export-validation-datetime-input');
-        this.exportValidationDateTimeInput.type = 'datetime-local';
-        this.exportValidationDateTimeInput.value = this.selectedExportValidationDateTime;
-        this.exportValidationDateTimeInput.addEventListener('change', () => {
-            this.selectExportValidationDateTime(this.exportValidationDateTimeInput.value);
-        });
-        this.exportValidationDateTimeInput.addEventListener('blur', () => {
-            if (this.exportValidationDateTimeInput.value !== this.selectedExportValidationDateTime) {
-                this.selectExportValidationDateTime(this.exportValidationDateTimeInput.value);
-            }
+        this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(currentExportValidationSettings.dateTime) ?? currentExportValidationSettings.dateTime;
+        this.exportValidationDateTimePicker = new DateTimePicker({
+            value: this.selectedExportValidationDateTime,
+            rootClassNames: ['settings-date-time-picker', 'settings-export-validation-date-time-picker'],
+            inputClassNames: ['settings-datetime-input', 'settings-export-validation-datetime-input'],
+            onCommit: (value: string) => {
+                this.selectExportValidationDateTime(value);
+            },
         });
 
-        exportValidationLabel.appendChild(this.exportValidationDateTimeInput);
+        exportValidationLabel.appendChild(this.exportValidationDateTimePicker.getElement());
         exportValidationSectionItems.appendChild(exportValidationLabel);
 
         const exportBeginDateColumnLabel = document.createElement('label');
@@ -424,8 +421,9 @@ export class SettingsPanel {
     }
 
     private selectExportValidationDateTime(value: string): void {
-        this.selectedExportValidationDateTime = value;
-        applyExportValidationDateTime(value);
+        this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(value) ?? value.trim();
+        this.exportValidationDateTimePicker.setValue(this.selectedExportValidationDateTime);
+        applyExportValidationDateTime(this.selectedExportValidationDateTime);
         this.saveExportValidationDateTime();
     }
 

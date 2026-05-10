@@ -13,6 +13,7 @@
     --settings-label-control-gap: 16px;
     --settings-label-width: 140px;
     --settings-control-width: 220px;
+    --settings-control-height: 28px;
     --settings-control-padding: var(--input-padding);
 
     padding: var(--settings-panel-padding);
@@ -106,6 +107,8 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    height: var(--settings-control-height);
+    box-sizing: border-box;
     padding: var(--settings-control-padding);
     font-size: var(--input-font-size);
     color: var(--font-color);
@@ -168,6 +171,7 @@
 .settings-datetime-input,
 .settings-text-input {
     width: var(--settings-control-width);
+    height: var(--settings-control-height);
     box-sizing: border-box;
     padding: var(--settings-control-padding);
     font-size: var(--input-font-size);
@@ -188,13 +192,17 @@
     outline: none;
 }
 
+.settings-date-time-picker {
+    --date-time-picker-width: var(--settings-control-width);
+}
+
 /* タブ折り返し */
 .settings-toggle {
     position: relative;
     display: inline-flex;
     align-items: center;
     width: var(--settings-control-width);
-    height: 22px;
+    height: var(--settings-control-height);
     cursor: pointer;
 }
 

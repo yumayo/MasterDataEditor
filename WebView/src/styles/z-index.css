@@ -41,6 +41,7 @@
     --z-index-reverse-reference-jump-dialog: 1800;
 
     /* ─── 最前面 UI ─── */
+    --z-index-date-time-picker: 1000;
     --z-index-filter-dropdown-container: 1000;
     --z-index-dropdown-quick-view: 1000;
     --z-index-error-tooltip: 1200;
