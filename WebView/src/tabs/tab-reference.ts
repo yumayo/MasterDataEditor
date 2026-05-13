@@ -92,10 +92,11 @@ export class TabReference {
                     if (lookup.filterTableName !== intermediateName) continue;
                     const lookupColumnIndex = fullData.header.indexOf(lookup.lookupColumn);
                     if (lookupColumnIndex === -1) continue;
-                    fullData.rows.forEach(row => {
+                    const rows = fullData.allRows ?? Array.from(fullData.rows.values());
+                    for (const row of rows) {
                         const targetName = row[lookupColumnIndex];
                         if (targetName !== '') targetTableNames.add(targetName);
-                    });
+                    }
                 }
                 // 参照先テーブルをプリロード（存在しないテーブルの失敗は無視する）
                 // get() に加えて getFullDataAsync() でもプリロードする。

@@ -1,5 +1,5 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
-import {ReferenceDataCache} from "../references/reference-data-cache";
+import {ReferenceDataCache, type ReferenceTableFullData} from "../references/reference-data-cache";
 import {
     parseReferenceExpression,
     isSimpleReference,
@@ -17,6 +17,12 @@ type ExportWindowColumnIndices = { beginIndex: number; endIndex: number };
 type ExportRowWindow =
     | { kind: 'valid'; beginMs: number | null; endMs: number | null }
     | { kind: 'unknown' };
+
+interface ReferenceValueSets {
+    activeValues: Set<string>;
+    allValues: Set<string>;
+    usesExportWindow: boolean;
+}
 
 interface PrimaryKeyRowEntry {
     rowIndex: number;
@@ -98,9 +104,10 @@ export class ValidationEngine {
     /**
      * バリデーション対象テーブルのスキーマ情報。
      * テーブル名 → { primaryKeyColumns, columns: { name, reference | null }[] }
-     */
+    */
     private readonly schemas: Map<string, TableSchema>;
     private exportValidationDateTimeMs: number | null = null;
+    private exportValidationDateTimeText = '';
     private exportBeginDateColumnName = DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME;
     private exportEndDateColumnName = DEFAULT_EXPORT_END_DATE_COLUMN_NAME;
 
@@ -132,6 +139,7 @@ export class ValidationEngine {
      * 時刻が空・不正、または期間列名が未設定の場合は従来どおり全行をPK重複判定の対象にする。
      */
     setExportValidationSettings(settings: ExportValidationSettings): void {
+        this.exportValidationDateTimeText = settings.dateTime.trim();
         this.exportBeginDateColumnName = settings.beginColumnName.trim();
         this.exportEndDateColumnName = settings.endColumnName.trim();
         const parsed = parseTemporalValue(settings.dateTime);
@@ -399,25 +407,23 @@ export class ValidationEngine {
         previousErrors: ValidationError[],
         preservableErrors: ValidationError[],
     ): void {
+        const sourceExportWindow = this.resolveExportWindowColumnIndices(header);
         // 参照先テーブルの有効値セットを構築する（ストア優先、未ロードならReferenceDataCacheにフォールバック）
-        let refColIdx: number;
-        const validValues = new Set<string>();
+        let refValues: ReferenceValueSets;
         const storeRefHeader = this.store.getHeader(refTableName);
         const storeRefRows = this.store.getRows(refTableName);
         if (storeRefHeader !== false && storeRefRows !== false) {
-            refColIdx = storeRefHeader.indexOf(refColumnName);
-            if (refColIdx === -1) return;
-            for (const refRow of storeRefRows) {
-                const val = refRow[refColIdx];
-                if (val !== '') validValues.add(val);
-            }
+            const resolvedValues = this.collectReferenceValueSets(storeRefHeader, storeRefRows, refColumnName);
+            if (resolvedValues === null) return;
+            refValues = resolvedValues;
         } else {
             const fullData = this.referenceDataCache.getFullDataSync(refTableName);
             if (fullData === false) {
                 // 参照先テーブルがストアにもキャッシュにもない: 現在のストア値と一致する前回エラーのみを引き継ぐ
                 for (const prev of previousErrors) {
                     if (prev.kind !== 'fk-broken' || prev.tableName !== tableName || prev.columnName !== colName) continue;
-                    if (prev.rowIndex < rows.length && rows[prev.rowIndex][colIdx] === prev.value) {
+                    if (prev.rowIndex >= rows.length || !this.isFkSourceRowActive(rows[prev.rowIndex], sourceExportWindow)) continue;
+                    if (rows[prev.rowIndex][colIdx] === prev.value) {
                         preservableErrors.push({
                             ...prev,
                             primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, prev.rowIndex),
@@ -426,21 +432,19 @@ export class ValidationEngine {
                 }
                 return;
             }
-            refColIdx = fullData.header.indexOf(refColumnName);
-            if (refColIdx === -1) return;
-            for (const row of fullData.rows.values()) {
-                const val = row[refColIdx];
-                if (val !== '') validValues.add(val);
-            }
+            const resolvedValues = this.collectReferenceValueSets(fullData.header, this.getFullDataRows(fullData), refColumnName);
+            if (resolvedValues === null) return;
+            refValues = resolvedValues;
         }
         // 各行のFK値が参照先に存在するか検証する
         for (let r = 0; r < rows.length; r++) {
+            if (!this.isFkSourceRowActive(rows[r], sourceExportWindow)) continue;
             const cellValue = rows[r][colIdx];
             // 空値は未入力扱いでエラー対象外
             if (cellValue === '') continue;
             // デフォルト値はFK検証をスキップする（「参照なし」を意味する値）
             if (isFkDefaultValue(cellValue, colType, colDefaultValue)) continue;
-            if (!validValues.has(cellValue)) {
+            if (!refValues.activeValues.has(cellValue)) {
                 errors.push({
                     tableName,
                     rowIndex: r,
@@ -448,7 +452,7 @@ export class ValidationEngine {
                     columnName: colName,
                     value: cellValue,
                     kind: 'fk-broken',
-                    message: `参照先 ${refTableName}.${refColumnName} に値 "${cellValue}" が存在しません`,
+                    message: this.createReferenceNotFoundMessage(refTableName, refColumnName, cellValue, refValues),
                     filterValue: null,
                     primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
@@ -481,6 +485,7 @@ export class ValidationEngine {
         previousErrors: ValidationError[],
         preservableErrors: ValidationError[],
     ): void {
+        const sourceExportWindow = this.resolveExportWindowColumnIndices(header);
         // valueColumn のインデックスをフィルタテーブル取得より先に解決する
         // （filterValue === '' チェックはフィルタテーブルが不要なため）
         const valueColIdx = header.indexOf(expr.filter.valueColumn);
@@ -491,6 +496,7 @@ export class ValidationEngine {
         // filterValue が空でない行のみスキップ（filterValue が空の行はフィルタ不要でエラー検出可能）
         let filterHeader: string[] | null = null;
         let filterRows: string[][] | null = null;
+        let filterAllRows: string[][] | null = null;
         let filterColIdx = -1;
         let lookupColIdx = -1;
         let targetColumnColIdx = -1;
@@ -498,12 +504,15 @@ export class ValidationEngine {
         const storeFilterRows = this.store.getRows(expr.filter.tableName);
         if (storeFilterHeader !== false && storeFilterRows !== false) {
             filterHeader = storeFilterHeader;
-            filterRows = storeFilterRows;
+            filterAllRows = storeFilterRows;
+            filterRows = this.getRowsActiveAtExportValidationDateTime(storeFilterHeader, storeFilterRows);
         } else {
             const fullData = this.referenceDataCache.getFullDataSync(expr.filter.tableName);
             if (fullData !== false) {
+                const fullRows = Array.from(this.getFullDataRows(fullData));
                 filterHeader = fullData.header;
-                filterRows = Array.from(fullData.rows.values());
+                filterAllRows = fullRows;
+                filterRows = this.getRowsActiveAtExportValidationDateTime(fullData.header, fullRows);
             }
         }
         if (filterHeader !== null) {
@@ -514,13 +523,15 @@ export class ValidationEngine {
             if (filterColIdx === -1 || lookupColIdx === -1 || targetColumnColIdx === -1) {
                 filterHeader = null;
                 filterRows = null;
+                filterAllRows = null;
             }
         }
 
         // 最終テーブルのキャッシュ（同一テーブルへの複数行チェックを効率化）
-        const targetValidValuesCache = new Map<string, Set<string> | null>();
+        const targetValidValuesCache = new Map<string, ReferenceValueSets | null>();
 
         for (let r = 0; r < rows.length; r++) {
+            if (!this.isFkSourceRowActive(rows[r], sourceExportWindow)) continue;
             const cellValue = rows[r][colIdx];
             // 空値は未入力扱いでエラー対象外
             if (cellValue === '') continue;
@@ -567,7 +578,7 @@ export class ValidationEngine {
                     columnName: colName,
                     value: cellValue,
                     kind: 'fk-broken',
-                    message: `フィルタテーブル ${expr.filter.tableName} に ${expr.filter.filterColumn}="${filterValue}" の行が存在しないため、参照先を解決できません`,
+                    message: this.createFilterRowNotFoundMessage(expr.filter.tableName, expr.filter.filterColumn, filterValue, filterHeader, filterAllRows, filterColIdx),
                     filterValue,
                     primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
@@ -588,15 +599,10 @@ export class ValidationEngine {
                 const targetRows = this.store.getRows(targetTableName);
                 if (targetHeader !== false && targetRows !== false) {
                     // ストアにロード済み: ストアのデータで有効値セットを構築する
-                    const targetColIdx = targetHeader.indexOf(resolvedTargetColumn);
-                    if (targetColIdx === -1) {
+                    const validValues = this.collectReferenceValueSets(targetHeader, targetRows, resolvedTargetColumn);
+                    if (validValues === null) {
                         targetValidValuesCache.set(cacheKey, null);
                     } else {
-                        const validValues = new Set<string>();
-                        for (const targetRow of targetRows) {
-                            const val = targetRow[targetColIdx];
-                            if (val !== '') validValues.add(val);
-                        }
                         targetValidValuesCache.set(cacheKey, validValues);
                     }
                 } else {
@@ -610,12 +616,7 @@ export class ValidationEngine {
                         if (targetColIdx === -1) {
                             targetValidValuesCache.set(cacheKey, null);
                         } else {
-                            // ReferenceTableFullData.rows は Map<string, string[]> なので values() を走査する
-                            const validValues = new Set<string>();
-                            for (const row of fullData.rows.values()) {
-                                const val = row[targetColIdx];
-                                if (val !== '') validValues.add(val);
-                            }
+                            const validValues = this.collectReferenceValueSets(fullData.header, this.getFullDataRows(fullData), resolvedTargetColumn);
                             targetValidValuesCache.set(cacheKey, validValues);
                         }
                     }
@@ -637,7 +638,7 @@ export class ValidationEngine {
                 continue;
             }
 
-            if (!validValues.has(cellValue)) {
+            if (!validValues.activeValues.has(cellValue)) {
                 errors.push({
                     tableName,
                     rowIndex: r,
@@ -645,12 +646,87 @@ export class ValidationEngine {
                     columnName: colName,
                     value: cellValue,
                     kind: 'fk-broken',
-                    message: `参照先 ${targetTableName}.${resolvedTargetColumn} に値 "${cellValue}" が存在しません`,
+                    message: this.createReferenceNotFoundMessage(targetTableName, resolvedTargetColumn, cellValue, validValues),
                     filterValue,
                     primaryKeyValues: this.resolvePrimaryKeyValuesForRow(schema, header, rows, r),
                 });
             }
         }
+    }
+
+    private collectReferenceValueSets(header: string[], rows: Iterable<string[]>, referenceColumnName: string): ReferenceValueSets | null {
+        const refColIdx = header.indexOf(referenceColumnName);
+        if (refColIdx === -1) return null;
+        const exportWindow = this.resolveExportWindowColumnIndices(header);
+        const activeValues = new Set<string>();
+        const allValues = new Set<string>();
+        for (const row of rows) {
+            const val = row[refColIdx];
+            if (val === '') continue;
+            allValues.add(val);
+            if (!this.isRowActiveAtExportValidationDateTime(row, exportWindow)) continue;
+            activeValues.add(val);
+        }
+        return { activeValues, allValues, usesExportWindow: exportWindow !== null };
+    }
+
+    private createReferenceNotFoundMessage(tableName: string, columnName: string, cellValue: string, values: ReferenceValueSets): string {
+        if (this.isValueOutsideExportValidationDateTime(cellValue, values)) {
+            return `参照先 ${tableName}.${columnName} に値 "${cellValue}" は存在しますが、${this.exportValidationDateTimePointLabel()} 時点では出力期間外です`;
+        }
+        return `参照先 ${tableName}.${columnName} に値 "${cellValue}" が存在しません`;
+    }
+
+    private createFilterRowNotFoundMessage(tableName: string, columnName: string, value: string, header: string[] | null, rows: string[][] | null, columnIndex: number): string {
+        if (header !== null && rows !== null && this.isRowValueOnlyOutsideExportValidationDateTime(header, rows, columnIndex, value)) {
+            return `フィルタテーブル ${tableName} に ${columnName}="${value}" の行は存在しますが、${this.exportValidationDateTimePointLabel()} 時点では出力期間外のため、参照先を解決できません`;
+        }
+        return `フィルタテーブル ${tableName} に ${columnName}="${value}" の行が存在しないため、参照先を解決できません`;
+    }
+
+    private isValueOutsideExportValidationDateTime(value: string, values: ReferenceValueSets): boolean {
+        return values.usesExportWindow && values.allValues.has(value) && !values.activeValues.has(value);
+    }
+
+    private isRowValueOnlyOutsideExportValidationDateTime(header: string[], rows: string[][], columnIndex: number, value: string): boolean {
+        const exportWindow = this.resolveExportWindowColumnIndices(header);
+        if (exportWindow === null) return false;
+        let foundOutside = false;
+        for (const row of rows) {
+            if (row[columnIndex] !== value) continue;
+            if (this.isRowActiveAtExportValidationDateTime(row, exportWindow)) return false;
+            foundOutside = true;
+        }
+        return foundOutside;
+    }
+
+    private exportValidationDateTimePointLabel(): string {
+        return this.exportValidationDateTimeText === ''
+            ? '設定日時'
+            : this.exportValidationDateTimeText;
+    }
+
+    private getRowsActiveAtExportValidationDateTime(header: string[], rows: string[][]): string[][] {
+        const exportWindow = this.resolveExportWindowColumnIndices(header);
+        if (exportWindow === null) return rows;
+        return rows.filter(row => this.isRowActiveAtExportValidationDateTime(row, exportWindow));
+    }
+
+    private getFullDataRows(fullData: ReferenceTableFullData): Iterable<string[]> {
+        return fullData.allRows ?? fullData.rows.values();
+    }
+
+    private isFkSourceRowActive(row: string[], exportWindow: ExportWindowColumnIndices | null): boolean {
+        return this.isRowActiveAtExportValidationDateTime(row, exportWindow);
+    }
+
+    private isRowActiveAtExportValidationDateTime(row: string[], exportWindow: ExportWindowColumnIndices | null): boolean {
+        if (exportWindow === null || this.exportValidationDateTimeMs === null) return true;
+        const rowWindow = this.resolveRowExportWindow(row, exportWindow);
+        if (rowWindow.kind === 'unknown') return true;
+        const beginMs = rowWindow.beginMs ?? Number.NEGATIVE_INFINITY;
+        const endMs = rowWindow.endMs ?? Number.POSITIVE_INFINITY;
+        return beginMs <= this.exportValidationDateTimeMs && this.exportValidationDateTimeMs <= endMs;
     }
 
     // -------------------------------------------------------------------------

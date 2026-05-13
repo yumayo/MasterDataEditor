@@ -39,6 +39,45 @@ function createExportDatePkFileSystem(
     };
 }
 
+function createExportDateFkFileSystem(exportValidationDateTime: string): MockFileSystem {
+    return {
+        [SETTINGS_FILE]: JSON.stringify({
+            theme: 'dark',
+            tabWrapEnabled: false,
+            exportValidationDateTime,
+            exportBeginDateColumnName: 'export_begin_date',
+            exportEndDateColumnName: 'export_end_date',
+        }),
+        'schema/chara.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'export_begin_date', type: 'datetime' },
+                { key: 2, name: 'export_end_date', type: 'datetime' },
+                { key: 3, name: 'name', type: 'string' },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/chara.csv': [
+            'id,export_begin_date,export_end_date,name',
+            '1,2026-01-01 00:00:00,2026-02-28 23:59:59,winter',
+            '1,2026-05-01 00:00:00,2026-05-31 23:59:59,may',
+            '2,,,stable',
+        ].join('\n'),
+        'schema/chara_name.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int', reference: 'chara.id' },
+                { key: 1, name: 'ja', type: 'string' },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/chara_name.csv': [
+            'id,ja',
+            '1,アリス',
+            '2,ボブ',
+        ].join('\n'),
+    };
+}
+
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     await page.locator('#explorer').getByText(tableName, { exact: true }).click();
     const table = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table`);
@@ -157,6 +196,36 @@ test.describe('export_begin_date/export_end_date付きPK検証', () => {
             await expect(firstPkCell).toHaveClass(/cell-error/, { timeout: 10000 });
             await expect(secondPkCell).toHaveClass(/cell-error/);
             await expect(thirdPkCell).not.toHaveClass(/cell-error/);
+        },
+    );
+});
+
+test.describe('export_begin_date/export_end_date付きFK検証', () => {
+    test(
+        '参照先行が設定時刻の出力期間外ならFK参照切れにする',
+        async ({ page }) => {
+            await installMockApiAsync(page, createExportDateFkFileSystem('2026-03-18 10:00:00'));
+            await page.goto('/');
+
+            const table = await openTableAsync(page, 'chara_name');
+            const inactiveCharaIdCell = getDataCell(table, 0, 0);
+            const stableCharaIdCell = getDataCell(table, 1, 0);
+
+            await expect(inactiveCharaIdCell).toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(stableCharaIdCell).not.toHaveClass(/cell-error/);
+
+            await page.locator('.status-bar-badge').click();
+            const errorMessage = page.locator('.validation-panel .validation-panel-item-message').first();
+            await expect(errorMessage).toContainText('2026-03-18 10:00:00 時点');
+            await expect(errorMessage).toContainText('出力期間外');
+            await expect(errorMessage).not.toContainText('exportValidationDateTime');
+            await expect(errorMessage).not.toContainText('存在しません');
+
+            await setExportValidationDateTimeAsync(page, '2026-05-15 00:00:00');
+            await page.locator('.tab-button').filter({ hasText: 'chara_name' }).click();
+
+            await expect(inactiveCharaIdCell).not.toHaveClass(/cell-error/, { timeout: 10000 });
+            await expect(stableCharaIdCell).not.toHaveClass(/cell-error/);
         },
     );
 });

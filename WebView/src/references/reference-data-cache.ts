@@ -31,6 +31,8 @@ export interface ReferenceTableFullData {
     tableName: string;
     header: string[];               // 全カラム名
     rows: Map<string, string[]>;    // id → 全カラム値
+    /** 同一IDの期間違い行を含めた全行。rows はIDキーのため重複IDを保持できない。 */
+    allRows?: string[][];
     displayColumnName: string;
     displayColumnIndex: number;
     /** このテーブルのPK列名（スキーマの primary_key から取得） */
@@ -613,6 +615,7 @@ export class ReferenceDataCache {
             tableName,
             header: csv.header,
             rows,
+            allRows: csv.body,
             displayColumnName,
             displayColumnIndex,
             primaryKeyColumnName: pkColumnName,
