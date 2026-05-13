@@ -2,7 +2,7 @@ import {Page} from '@playwright/test';
 import {test, expect} from './fixtures/test';
 import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync} from './fixtures/mock-api';
 
-const UI_STATE_FILE = 'user:.masterdataeditor/ui-state.json';
+const UI_STATE_FILE = 'user:ui-state.json';
 
 function createSchema(description?: string): string {
     return JSON.stringify({

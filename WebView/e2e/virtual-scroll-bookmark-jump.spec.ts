@@ -30,7 +30,7 @@ function createFileSystem(): MockFileSystem {
         }),
         'data/item.csv': generateCsv(1000),
         // 800行目の name 列にブックマーク設定済み
-        'user:.masterdataeditor/bookmarks.json': JSON.stringify([
+        'user:bookmarks.json': JSON.stringify([
             { tableName: 'item', rowKey: '800', columnName: 'name', label: 'item_800', createdAt: '2026-01-01T00:00:00.000Z' },
         ]),
     };

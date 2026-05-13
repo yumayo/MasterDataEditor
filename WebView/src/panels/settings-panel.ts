@@ -1,6 +1,6 @@
 import {readFileAsync, writeFileAsync, type FileScope} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
-import {SETTINGS_FILE} from "../config/masterdataeditor-path";
+import {USER_SETTINGS_FILE, WORKSPACE_SETTINGS_FILE} from "../config/masterdataeditor-path";
 import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
 
 /**
@@ -24,6 +24,10 @@ export const EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT = 'export-validation-setti
 const SETTINGS_SCOPE_OPTIONS: Record<SettingsScope, { scope: FileScope }> = {
     workspace: {scope: 'workspace'},
     user: {scope: 'user'},
+};
+const SETTINGS_FILES: Record<SettingsScope, string> = {
+    workspace: WORKSPACE_SETTINGS_FILE,
+    user: USER_SETTINGS_FILE,
 };
 const SETTINGS_SCOPE_LABELS: Record<SettingsScope, string> = {
     user: 'User',
@@ -86,9 +90,9 @@ function createEmptySettingsState(): ScopedSettingsState {
     };
 }
 
-async function readSettingsRecordAsync(path: string, scope: SettingsScope): Promise<Record<string, unknown> | null> {
+async function readSettingsRecordAsync(scope: SettingsScope): Promise<Record<string, unknown> | null> {
     try {
-        const json = await readFileAsync(path, SETTINGS_SCOPE_OPTIONS[scope]);
+        const json = await readFileAsync(SETTINGS_FILES[scope], SETTINGS_SCOPE_OPTIONS[scope]);
         return asRecord(JSON.parse(json) as unknown);
     } catch {
         return null;
@@ -131,7 +135,7 @@ function readSettingsValuesFromRecord(settingsRecord: Record<string, unknown> | 
 }
 
 async function readScopedSettingsAsync(scope: SettingsScope): Promise<SettingsValues> {
-    return readSettingsValuesFromRecord(await readSettingsRecordAsync(SETTINGS_FILE, scope));
+    return readSettingsValuesFromRecord(await readSettingsRecordAsync(scope));
 }
 
 async function readStoredSettingsAsync(): Promise<ScopedSettingsState> {
@@ -223,7 +227,7 @@ function applySettingsPatchToState(settingsState: ScopedSettingsState, scope: Se
 }
 
 async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsFile): Promise<void> {
-    const data: Record<string, unknown> = {...(await readSettingsRecordAsync(SETTINGS_FILE, scope) ?? {})};
+    const data: Record<string, unknown> = {...(await readSettingsRecordAsync(scope) ?? {})};
     if (Object.prototype.hasOwnProperty.call(settings, 'theme')) {
         data['theme'] = settings.theme;
     }
@@ -239,7 +243,7 @@ async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsFi
     if (Object.prototype.hasOwnProperty.call(settings, 'exportEndDateColumnName')) {
         data['exportEndDateColumnName'] = settings.exportEndDateColumnName;
     }
-    await writeFileAsync(SETTINGS_FILE, data, SETTINGS_SCOPE_OPTIONS[scope]);
+    await writeFileAsync(SETTINGS_FILES[scope], data, SETTINGS_SCOPE_OPTIONS[scope]);
 }
 
 let settingsWriteChain: Promise<void> = Promise.resolve();

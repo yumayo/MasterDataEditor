@@ -8,7 +8,7 @@ const LONG_TABLE_NAME = `very_long_table_name_${'segment_'.repeat(40)}`;
 
 function createManyTablesFileSystem(): MockFileSystem {
     const fs: MockFileSystem = {
-        'user:.masterdataeditor/bookmarks.json': '[]',
+        'user:bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
     for (let i = 0; i < TABLE_COUNT; i++) {
@@ -27,7 +27,7 @@ function createManyTablesFileSystem(): MockFileSystem {
 
 function createLongTabNameFileSystem(): MockFileSystem {
     const fs: MockFileSystem = {
-        'user:.masterdataeditor/bookmarks.json': '[]',
+        'user:bookmarks.json': '[]',
         '.masterdataeditor/settings.json': JSON.stringify({ tabWrapEnabled: true }),
         'plugins/.gitkeep': '',
     };

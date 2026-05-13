@@ -19,7 +19,7 @@ function createDuplicatePkFileSystem(): MockFileSystem {
             '2,item_c,300',
             '3,item_d,400',
         ].join('\n'),
-        'user:.masterdataeditor/bookmarks.json': '[]',
+        'user:bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
 }

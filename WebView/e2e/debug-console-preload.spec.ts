@@ -19,7 +19,7 @@ function createTallApiDetailFileSystem(): MockFileSystem {
             'id,name,value',
             ...rows,
         ].join('\n'),
-        'user:.masterdataeditor/bookmarks.json': '[]',
+        'user:bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
 }
@@ -158,7 +158,7 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(detailTab).toContainText('"success": true');
 
         const writeFileRow = debugConsole.locator('.debug-console-row', {
-            has: page.locator('.debug-console-col-label', { hasText: 'write_file (user:.masterdataeditor/ui-state.json)' }),
+            has: page.locator('.debug-console-col-label', { hasText: 'write_file (user:ui-state.json)' }),
         }).first();
         await expect(writeFileRow).toBeVisible();
         await writeFileRow.click();

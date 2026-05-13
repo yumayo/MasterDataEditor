@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/test';
 import { createDefaultFileSystem, installMockApiAsync, readMockFileAsync } from './fixtures/mock-api';
 
 const SETTINGS_FILE = '.masterdataeditor/settings.json';
-const USER_SETTINGS_FILE = 'user:.masterdataeditor/settings.json';
+const USER_SETTINGS_FILE = 'user:settings.json';
 const THEME_STORAGE_KEY = 'master-data-editor-theme';
 
 async function openSettingsTabAsync(page: Page): Promise<void> {

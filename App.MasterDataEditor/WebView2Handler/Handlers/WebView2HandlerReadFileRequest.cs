@@ -24,8 +24,11 @@ namespace App.MasterDataEditor
 
 				var filename = filenameElement.GetString();
 				var scope = GetScope(root);
+				var relativeFilename = scope == "user" && filename != null
+					? AppEnvironment.NormalizeUserDataRelativePath(filename)
+					: filename;
 
-				if (string.IsNullOrEmpty(filename) || !HelperFile.IsValidFilename(filename) || scope == null)
+				if (string.IsNullOrEmpty(relativeFilename) || !HelperFile.IsValidFilename(relativeFilename) || scope == null)
 				{
 					Logger.Warning($"ファイル読み込み拒否: 無効なファイル名 {filename}");
 					return new
@@ -39,11 +42,11 @@ namespace App.MasterDataEditor
 
 				var baseDir = GetBaseDirectory(scope);
 				Directory.CreateDirectory(baseDir);
-				var filePath = HelperFile.ResolveSafePath(baseDir, filename);
+				var filePath = HelperFile.ResolveSafePath(baseDir, relativeFilename);
 
 				if (filePath == null)
 				{
-					Logger.Warning($"ファイル読み込み拒否: baseDir外へのアクセス scope={scope} filename={filename}");
+					Logger.Warning($"ファイル読み込み拒否: baseDir外へのアクセス scope={scope} filename={filename} relativeFilename={relativeFilename}");
 					return new
 					{
 						type = "read_file_response",

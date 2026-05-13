@@ -15,7 +15,7 @@ function createFileSystem(): MockFileSystem {
         'schema/enemy.json': schema,
         'data/weapon.csv': ['id,name', '1,Sword'].join('\n'),
         'data/enemy.csv': ['id,name', '1,Slime'].join('\n'),
-        'user:.masterdataeditor/bookmarks.json': '[]',
+        'user:bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
 }

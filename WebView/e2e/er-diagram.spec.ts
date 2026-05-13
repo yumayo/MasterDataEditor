@@ -2,7 +2,7 @@ import {test, expect} from './fixtures/test';
 import {Page, Locator} from '@playwright/test';
 import {installMockApiAsync, MockFileSystem, readMockFileAsync} from './fixtures/mock-api';
 
-const ER_DIAGRAM_LAYOUT_FILE = 'user:.masterdataeditor/er-diagram-layout.json';
+const ER_DIAGRAM_LAYOUT_FILE = 'user:er-diagram-layout.json';
 
 // =============================================================================
 // ER図機能テスト
@@ -263,7 +263,7 @@ test.describe('ER図機能', () => {
 });
 
 test.describe('ER図レイアウト永続化', () => {
-    test('ズーム操作後にuser:.masterdataeditor/er-diagram-layout.jsonへ保存される', async ({page}) => {
+    test('ズーム操作後にuser:er-diagram-layout.jsonへ保存される', async ({page}) => {
         const fs = createErDiagramTestFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
@@ -280,7 +280,7 @@ test.describe('ER図レイアウト永続化', () => {
         expect(layout.viewBox.h).toBeGreaterThan(0);
     });
 
-    test('user:.masterdataeditor/er-diagram-layout.jsonが存在すれば起動時にviewBoxを復元する', async ({page}) => {
+    test('user:er-diagram-layout.jsonが存在すれば起動時にviewBoxを復元する', async ({page}) => {
         const fs = createErDiagramTestFileSystemWithSavedLayout({
             nodes: {},
             viewBox: {x: 10, y: 20, w: 333, h: 444},

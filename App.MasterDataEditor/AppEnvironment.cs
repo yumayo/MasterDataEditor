@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace App.MasterDataEditor;
 
@@ -69,6 +70,23 @@ internal static class AppEnvironment
 
 	public static string GetUserDataDir()
 	{
+		return Path.Combine(GetUserDataRootDir(), "projects", GetWorkspaceUserDataDirectoryName(GetWorkDir()));
+	}
+
+	public static string NormalizeUserDataRelativePath(string filename)
+	{
+		var normalized = filename.Replace('\\', '/');
+		const string workspaceSettingsDirectory = ".masterdataeditor/";
+		if (normalized.StartsWith(workspaceSettingsDirectory, StringComparison.OrdinalIgnoreCase))
+		{
+			return normalized[workspaceSettingsDirectory.Length..];
+		}
+
+		return normalized;
+	}
+
+	private static string GetUserDataRootDir()
+	{
 		var value = Environment.GetEnvironmentVariable("MASTER_DATA_EDITOR_USERDATA_DIR");
 		if (!string.IsNullOrWhiteSpace(value))
 		{
@@ -82,6 +100,36 @@ internal static class AppEnvironment
 		}
 
 		return Path.Combine(appData, "App.MasterDataEditor");
+	}
+
+	private static string GetWorkspaceUserDataDirectoryName(string workDir)
+	{
+		var fullPath = Path.GetFullPath(workDir);
+		var root = Path.GetPathRoot(fullPath) ?? "";
+		string projectPath;
+
+		if (root.Length >= 2 && root[1] == ':')
+		{
+			var drive = char.ToLowerInvariant(root[0]).ToString();
+			var relativePath = fullPath[root.Length..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			projectPath = string.IsNullOrEmpty(relativePath) ? drive : $"{drive}/{relativePath}";
+		}
+		else
+		{
+			projectPath = fullPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+		}
+
+		var chars = projectPath
+			.Replace('\\', '/')
+			.Select(c => IsUserDataDirectoryNameCharacter(c) ? c : '-')
+			.ToArray();
+		var name = new string(chars).Trim('-');
+		return "-" + (string.IsNullOrWhiteSpace(name) ? "workspace" : name);
+	}
+
+	private static bool IsUserDataDirectoryNameCharacter(char value)
+	{
+		return char.IsLetterOrDigit(value) || value == '_' || value == '-';
 	}
 
 	public static int GetDevPort()

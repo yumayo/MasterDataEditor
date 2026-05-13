@@ -3,7 +3,7 @@ import {Page, Locator} from '@playwright/test';
 import {installMockApiAsync, MockFileSystem, readMockFileAsync} from './fixtures/mock-api';
 import {getDataCell} from './fixtures/test-utils';
 
-const BOOKMARKS_FILE = 'user:.masterdataeditor/bookmarks.json';
+const BOOKMARKS_FILE = 'user:bookmarks.json';
 
 /**
  * ブックマークテスト用のファイルシステムを生成する
@@ -513,7 +513,7 @@ test.describe('ブックマーク永続化', () => {
         await clickContextMenuItemAsync(page, 'ブックマークに追加');
         // persistAsync() の完了を待つ
         await waitForBookmarkCountAsync(page, 1);
-        // user:.masterdataeditor/bookmarks.json がモックファイルシステムに書き込まれていること
+        // user:bookmarks.json がモックファイルシステムに書き込まれていること
         const json = await readMockFileAsync(page, BOOKMARKS_FILE);
         expect(json).not.toContain('\r');
         expect(json.endsWith('\n')).toBe(true);
