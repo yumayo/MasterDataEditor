@@ -1,78 +1,78 @@
 {
-    "description": "バフマスター",
-    "header": [
-        {
-            "key": 0,
-            "name": "id",
-            "type": "int",
-            "comment": "ID",
-            "width": 80
-        },
-        {
-            "key": 1,
-            "name": "name",
-            "type": "string",
-            "comment": "バフ名",
-            "width": 150
-        },
-        {
-            "key": 2,
-            "name": "duration",
-            "type": "int",
-            "comment": "持続ターン数",
-            "width": 100
-        },
-        {
-            "key": 3,
-            "name": "rate",
-            "type": "float",
-            "comment": "効果倍率",
-            "width": 100
-        },
-        {
-            "key": 4,
-            "name": "probability",
-            "type": "double",
-            "comment": "発動確率",
-            "width": 100
-        },
-        {
-            "key": 5,
-            "name": "stackable",
-            "type": "bool",
-            "comment": "重ね掛け可能",
-            "width": 100
-        },
-        {
-            "key": 6,
-            "name": "dispellable",
-            "type": "bool",
-            "comment": "解除可能",
-            "width": 100
-        },
-        {
-            "key": 7,
-            "name": "cooldown_ms",
-            "type": "long",
-            "comment": "クールダウン(ms)",
-            "width": 120
-        },
-        {
-            "key": 8,
-            "name": "start_at",
-            "type": "datetime",
-            "comment": "有効開始日時",
-            "width": 180
-        },
-        {
-            "key": 9,
-            "name": "description",
-            "type": "string",
-            "comment": "説明",
-            "width": 200
-        }
-    ],
-    "primary_key": [
-        "id"
-    ]
+  "description": "バフマスター",
+  "header": [
+    {
+      "key": 0,
+      "name": "id",
+      "type": "int",
+      "comment": "ID",
+      "width": 80
+    },
+    {
+      "key": 1,
+      "name": "name",
+      "type": "string",
+      "comment": "バフ名",
+      "width": 150
+    },
+    {
+      "key": 2,
+      "name": "duration",
+      "type": "int",
+      "comment": "持続ターン数",
+      "width": 100
+    },
+    {
+      "key": 3,
+      "name": "rate",
+      "type": "float",
+      "comment": "効果倍率",
+      "width": 100
+    },
+    {
+      "key": 4,
+      "name": "probability",
+      "type": "double",
+      "comment": "発動確率",
+      "width": 100
+    },
+    {
+      "key": 5,
+      "name": "stackable",
+      "type": "bool",
+      "comment": "重ね掛け可能",
+      "width": 100
+    },
+    {
+      "key": 6,
+      "name": "dispellable",
+      "type": "bool",
+      "comment": "解除可能",
+      "width": 100
+    },
+    {
+      "key": 7,
+      "name": "cooldown_ms",
+      "type": "long",
+      "comment": "クールダウン(ms)",
+      "width": 120
+    },
+    {
+      "key": 8,
+      "name": "start_at",
+      "type": "datetime",
+      "comment": "有効開始日時",
+      "width": 180
+    },
+    {
+      "key": 9,
+      "name": "description",
+      "type": "string",
+      "comment": "説明",
+      "width": 200
+    }
+  ],
+  "primary_key": [
+    "id"
+  ]
 }
