@@ -21,6 +21,27 @@ export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
 const fileCache = new Map<string, string>();
 const dirCache = new Map<string, File[]>();
 
+export type FileScope = 'workspace' | 'user';
+
+export interface FileScopeOptions {
+    scope?: FileScope;
+}
+
+function getFileScope(options: FileScopeOptions = {}): FileScope {
+    return options.scope ?? 'workspace';
+}
+
+function getFileCacheKey(filename: string, options: FileScopeOptions = {}): string {
+    const scope = getFileScope(options);
+    return scope === 'workspace' ? filename : `${scope}:${filename}`;
+}
+
+function createFileRequestData(filename: string, options: FileScopeOptions = {}): Record<string, unknown> {
+    const scope = getFileScope(options);
+    if (scope === 'workspace') return { filename };
+    return { filename, scope };
+}
+
 /**
  * 起動時に schema/ と data/ 以下の全ファイルを一括読み込みしてキャッシュに格納する。
  * main.ts の初期化冒頭で呼び出すこと。
@@ -67,6 +88,7 @@ export async function preloadAllFilesAsync(): Promise<void> {
 export type WriteFileData = string | object;
 
 export interface WriteFileOptions {
+    scope?: FileScope;
     invalidateGitStatus?: boolean;
     suppressSelfSaveGitRefresh?: boolean;
 }
@@ -122,15 +144,16 @@ export function consumeSuppressedSelfSaveGitRefresh(filenames: readonly string[]
 }
 
 export async function writeFileAsync(filename: string, data: WriteFileData, options: WriteFileOptions = {}): Promise<void> {
-    await postMessageAsync('write_file', { filename, data });
-    fileCache.set(filename, serializeWriteFileData(data));
+    await postMessageAsync('write_file', { ...createFileRequestData(filename, options), data });
+    fileCache.set(getFileCacheKey(filename, options), serializeWriteFileData(data));
     if (options.suppressSelfSaveGitRefresh === true) suppressNextSelfSaveGitRefresh(filename);
-    if (options.invalidateGitStatus !== false && affectsGitStatus(filename)) invalidateGitStatusCache();
+    if (getFileScope(options) === 'workspace' && options.invalidateGitStatus !== false && affectsGitStatus(filename)) invalidateGitStatusCache();
 }
 
 /** ファイルキャッシュの特定エントリを無効化する。テストやファイルウォッチャーで外部変更された場合に呼ぶ。 */
 export function invalidateFileCacheEntry(filename: string): void {
     fileCache.delete(filename);
+    fileCache.delete(getFileCacheKey(filename, { scope: 'user' }));
 }
 
 /** schema/ と data/ 以下のキャッシュを無効化する。外部ファイル変更通知を受けたときに使用する。 */
@@ -148,17 +171,19 @@ export function invalidateMasterDataFileCaches(): void {
  * ファイルから文字列データを読み込む（汎用API）
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
-export async function readFileAsync(filename: string): Promise<string> {
+export async function readFileAsync(filename: string, options: FileScopeOptions = {}): Promise<string> {
     const startTime = performance.now();
-    const cached = fileCache.get(filename);
+    const cacheKey = getFileCacheKey(filename, options);
+    const requestData = createFileRequestData(filename, options);
+    const cached = fileCache.get(cacheKey);
     if (cached !== undefined) {
         if (tracker !== false) {
-            tracker.recordCacheHit('read_file', startTime, createCacheDebugDetail('read_file', { filename }, cached));
+            tracker.recordCacheHit('read_file', startTime, createCacheDebugDetail('read_file', requestData, cached));
         }
         return cached;
     }
-    const result = await postMessageAsync<string>('read_file', { filename });
-    fileCache.set(filename, result);
+    const result = await postMessageAsync<string>('read_file', requestData);
+    fileCache.set(cacheKey, result);
     return result;
 }
 
@@ -523,7 +548,10 @@ function createApiDebugLabel(apiName: string, requestData: Record<string, unknow
 
 function getApiDebugTarget(apiName: string, requestData: Record<string, unknown>): string | false {
     if (apiName === 'read_file' || apiName === 'write_file') {
-        return getDebugString(requestData.filename);
+        const filename = getDebugString(requestData.filename);
+        const scope = getDebugString(requestData.scope);
+        if (filename === false) return false;
+        return scope === false || scope === 'workspace' ? filename : `${scope}:${filename}`;
     }
     if (apiName === 'find_files' || apiName === 'read_files') {
         return getDebugString(requestData.directory);

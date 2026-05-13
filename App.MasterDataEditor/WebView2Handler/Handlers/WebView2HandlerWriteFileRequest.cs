@@ -42,8 +42,9 @@ namespace App.MasterDataEditor
 				}
 
 				var filename = filenameElement.GetString();
+				var scope = GetScope(root);
 
-				if (string.IsNullOrEmpty(filename) || !HelperFile.IsValidFilename(filename))
+				if (string.IsNullOrEmpty(filename) || !HelperFile.IsValidFilename(filename) || scope == null)
 				{
 					Logger.Warning($"ファイル書き込み拒否: 無効なファイル名 {filename}");
 					return new
@@ -57,12 +58,13 @@ namespace App.MasterDataEditor
 				}
 
 				var workDir = AppEnvironment.GetWorkDir();
-				Directory.CreateDirectory(workDir);
-				var filePath = HelperFile.ResolveSafePath(workDir, filename);
+				var baseDir = GetBaseDirectory(scope, workDir);
+				Directory.CreateDirectory(baseDir);
+				var filePath = HelperFile.ResolveSafePath(baseDir, filename);
 
 				if (filePath == null)
 				{
-					Logger.Warning($"ファイル書き込み拒否: workDir外へのアクセス {filename}");
+					Logger.Warning($"ファイル書き込み拒否: baseDir外へのアクセス scope={scope} filename={filename}");
 					return new
 					{
 						type = "write_file_response",
@@ -75,7 +77,10 @@ namespace App.MasterDataEditor
 				var data = GetFileContent(dataElement);
 				Directory.CreateDirectory(AppEnvironment.GetDirectoryName(filePath));
 				File.WriteAllText(filePath, data);
-				AfterSaveHookRunner.StartIfExists(workDir, filename);
+				if (scope == "workspace")
+				{
+					AfterSaveHookRunner.StartIfExists(workDir, filename);
+				}
 
 				return new
 				{
@@ -95,6 +100,24 @@ namespace App.MasterDataEditor
 					error = ex.Message,
 				};
 			}
+		}
+
+		private static string? GetScope(JsonElement root)
+		{
+			if (!root.TryGetProperty("scope", out var scopeElement))
+			{
+				return "workspace";
+			}
+
+			var scope = scopeElement.GetString();
+			return scope == "workspace" || scope == "user" ? scope : null;
+		}
+
+		private static string GetBaseDirectory(string scope, string workDir)
+		{
+			return scope == "user"
+				? AppEnvironment.GetUserDataDir()
+				: workDir;
 		}
 
 		private static string GetFileContent(JsonElement dataElement)

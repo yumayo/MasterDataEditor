@@ -21,6 +21,48 @@
     color: var(--font-color);
 }
 
+.settings-scope-tabs {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    margin-bottom: 18px;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background-color: var(--background-color);
+}
+
+.settings-scope-tab {
+    min-width: 96px;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 0 14px;
+    border: none;
+    border-right: var(--input-border);
+    background-color: transparent;
+    color: var(--font-color);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.settings-scope-tab:last-child {
+    border-right: none;
+}
+
+.settings-scope-tab:hover {
+    background-color: var(--hover-color);
+}
+
+.settings-scope-tab-active {
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
+.settings-scope-tab-active:hover {
+    background-color: var(--selection-color);
+    color: var(--selection-font-color);
+}
+
 /* 設定セクション（テーマ等のグループ） */
 .settings-section {
     margin-bottom: var(--settings-section-gap);

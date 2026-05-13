@@ -67,6 +67,23 @@ internal static class AppEnvironment
 		return Path.Combine(repoRoot, "sample-workdir");
 	}
 
+	public static string GetUserDataDir()
+	{
+		var value = Environment.GetEnvironmentVariable("MASTER_DATA_EDITOR_USERDATA_DIR");
+		if (!string.IsNullOrWhiteSpace(value))
+		{
+			return Path.GetFullPath(value);
+		}
+
+		var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+		if (string.IsNullOrWhiteSpace(appData))
+		{
+			appData = AppDomain.CurrentDomain.BaseDirectory;
+		}
+
+		return Path.Combine(appData, "App.MasterDataEditor");
+	}
+
 	public static int GetDevPort()
 	{
 		// NOTE: ガイドラインよりも実行のしやすさを優先するため特別にフォールバックを許可

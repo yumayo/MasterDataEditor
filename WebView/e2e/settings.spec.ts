@@ -3,6 +3,7 @@ import { test, expect } from './fixtures/test';
 import { createDefaultFileSystem, installMockApiAsync, readMockFileAsync } from './fixtures/mock-api';
 
 const SETTINGS_FILE = 'userdata/settings.json';
+const USER_SETTINGS_FILE = 'user:userdata/settings.json';
 const THEME_STORAGE_KEY = 'master-data-editor-theme';
 
 async function openSettingsTabAsync(page: Page): Promise<void> {
@@ -14,6 +15,12 @@ async function selectThemeAsync(page: Page, theme: 'dark' | 'light'): Promise<vo
     const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
     await trigger.click();
     await page.locator(`.settings-dropdown-item[data-value="${theme}"]`).click();
+}
+
+async function selectSettingsScopeAsync(page: Page, scope: 'user' | 'workspace'): Promise<void> {
+    const tab = page.locator(`.settings-scope-tab[data-scope="${scope}"]`);
+    await tab.click();
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
 async function setExportValidationDateTimeAsync(page: Page, value: string): Promise<void> {
@@ -32,6 +39,10 @@ async function setExportValidationColumnNamesAsync(page: Page, beginColumnName: 
 }
 
 async function waitForSettingsThemeAsync(page: Page, expectedTheme: 'dark' | 'light'): Promise<void> {
+    await waitForSettingsThemeAtPathAsync(page, SETTINGS_FILE, expectedTheme);
+}
+
+async function waitForSettingsThemeAtPathAsync(page: Page, settingsFile: string, expectedTheme: 'dark' | 'light'): Promise<void> {
     await page.waitForFunction(
         ({ path, theme }) => {
             const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
@@ -45,7 +56,7 @@ async function waitForSettingsThemeAsync(page: Page, expectedTheme: 'dark' | 'li
                 return false;
             }
         },
-        { path: SETTINGS_FILE, theme: expectedTheme },
+        { path: settingsFile, theme: expectedTheme },
         { timeout: 5000 },
     );
 }
@@ -160,6 +171,49 @@ test.describe('設定画面', () => {
         },
     );
 
+    test(
+        '設定画面でUserとWorkspaceの設定スコープを切り替えられること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const workspaceTab = page.locator('.settings-scope-tab[data-scope="workspace"]');
+            const userTab = page.locator('.settings-scope-tab[data-scope="user"]');
+            await expect(workspaceTab).toBeVisible();
+            await expect(userTab).toBeVisible();
+            await expect(workspaceTab).toHaveAttribute('aria-selected', 'true');
+
+            await selectSettingsScopeAsync(page, 'user');
+            await selectThemeAsync(page, 'light');
+            await waitForSettingsThemeAtPathAsync(page, USER_SETTINGS_FILE, 'light');
+
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+        },
+    );
+
+    test(
+        'User設定がWorkspace設定より優先され、未設定のキーはWorkspace設定が使われること',
+        async ({ page }) => {
+            const fs = createDefaultFileSystem();
+            fs[SETTINGS_FILE] = JSON.stringify({
+                theme: 'dark',
+                tabWrapEnabled: true,
+                exportValidationDateTime: '2026-05-10 12:00:00',
+            });
+            fs[USER_SETTINGS_FILE] = JSON.stringify({ theme: 'light' });
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+            await expect.poll(async () => page.evaluate(() => (
+                getComputedStyle(document.documentElement).getPropertyValue('--tab-wrap-enabled').trim()
+            ))).toBe('1');
+            await openSettingsTabAsync(page);
+            await expect(page.locator('.settings-scope-tab[data-scope="user"]')).toHaveAttribute('aria-selected', 'true');
+            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ライト/);
+            await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('2026-05-10 12:00:00');
+        },
+    );
+
     // ---------------------------------------------------------------------------
     // テスト4: プルダウンでライト選択時にテーマが即時反映されること
     // ---------------------------------------------------------------------------
@@ -227,10 +281,6 @@ test.describe('設定画面', () => {
             expect(settingsJson).toContain('\n    "theme": "light"');
             expect(JSON.parse(settingsJson)).toEqual({
                 theme: 'light',
-                tabWrapEnabled: false,
-                exportValidationDateTime: '',
-                exportBeginDateColumnName: 'export_begin_date',
-                exportEndDateColumnName: 'export_end_date',
             });
         },
     );
@@ -327,11 +377,7 @@ test.describe('設定画面', () => {
 
             const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
             expect(JSON.parse(settingsJson)).toEqual({
-                theme: 'dark',
-                tabWrapEnabled: false,
                 exportValidationDateTime: '2026-05-10 12:30:45',
-                exportBeginDateColumnName: 'export_begin_date',
-                exportEndDateColumnName: 'export_end_date',
             });
         },
     );
@@ -453,9 +499,6 @@ test.describe('設定画面', () => {
 
             const settingsJson = await readMockFileAsync(page, SETTINGS_FILE);
             expect(JSON.parse(settingsJson)).toEqual({
-                theme: 'dark',
-                tabWrapEnabled: false,
-                exportValidationDateTime: '',
                 exportBeginDateColumnName: 'start_at',
                 exportEndDateColumnName: 'finish_at',
             });

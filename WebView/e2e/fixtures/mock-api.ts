@@ -62,7 +62,7 @@ export async function installMockApiAsync(
             type MockApiWindow = {
                 __mockFs: MockFileSystem;
                 __mockApiRequests: string[];
-                __mockApiRequestDetails: Array<{ type: string; filename?: string }>;
+                __mockApiRequestDetails: Array<{ type: string; filename?: string; scope?: string }>;
                 __onAfterWriteFile?: AfterWriteHook;
             };
             const MOCK_FS_STORAGE_KEY = '__mockFs';
@@ -87,6 +87,10 @@ export async function installMockApiAsync(
                     throw new Error("Cannot stringify write_file data as JSON");
                 }
                 return json.replace(/\r\n?/g, "\n") + "\n";
+            }
+
+            function getScopedFileKey(filename: string, scope: unknown): string {
+                return scope === "user" ? `user:${filename}` : filename;
             }
 
             const listeners: Handler[] = [];
@@ -163,6 +167,7 @@ export async function installMockApiAsync(
                 (window as unknown as MockApiWindow).__mockApiRequestDetails.push({
                     type,
                     filename: typeof request.filename === "string" ? request.filename as string : undefined,
+                    scope: typeof request.scope === "string" ? request.scope as string : undefined,
                 });
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
@@ -216,19 +221,20 @@ export async function installMockApiAsync(
 
                 if (type === "read_file_request") {
                     const filename = request.filename as string;
-                    if (filename in runtimeFs) {
+                    const fileKey = getScopedFileKey(filename, request.scope);
+                    if (fileKey in runtimeFs) {
                         dispatch({
                             type: "read_file_response",
                             requestId,
                             success: true,
-                            data: runtimeFs[filename],
+                            data: runtimeFs[fileKey],
                         });
                     } else {
                         dispatch({
                             type: "read_file_response",
                             requestId,
                             success: false,
-                            error: "File not found: " + filename,
+                            error: "File not found: " + fileKey,
                         });
                     }
                     return;
@@ -236,9 +242,10 @@ export async function installMockApiAsync(
 
                 if (type === "write_file_request") {
                     const filename = request.filename as string;
+                    const fileKey = getScopedFileKey(filename, request.scope);
                     const data = serializeWriteFileData(request.data);
                     const mockWindow = window as unknown as MockApiWindow;
-                    runtimeFs[filename] = data;
+                    runtimeFs[fileKey] = data;
                     persistMockFs();
                     dispatch({
                         type: "write_file_response",
@@ -247,7 +254,7 @@ export async function installMockApiAsync(
                     });
                     // ファイル書き込み後フック: テストから登録することで保存後の状態を動的に変更できる
                     const hook = mockWindow.__onAfterWriteFile;
-                    if (hook) { hook(filename, data); }
+                    if (hook) { hook(fileKey, data); }
                     return;
                 }
 
