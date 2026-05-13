@@ -1,4 +1,13 @@
 import {Tab} from "./tab";
+import type {TabButton} from "./tab-button";
+
+type DropIndicatorSide = 'left' | 'right';
+
+interface TabDropPosition {
+    readonly indicatorTabButton: TabButton;
+    readonly indicatorSide: DropIndicatorSide;
+    readonly insertBefore: boolean;
+}
 
 /**
  * タブドラッグアンドドロップモジュール
@@ -101,25 +110,11 @@ export class TabDragDrop {
      */
     updateDropIndicator(clientX: number, clientY: number): void {
         this.clearDropIndicators();
-
-        const tabButtons = this.tab.getTabButtons();
-        for (const tabButton of tabButtons) {
-            // ドラッグ中のタブはスキップ
-            if (tabButton.name === this.draggingTabName) {
-                continue;
-            }
-
-            const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-                const midX = rect.left + rect.width / 2;
-                if (clientX < midX) {
-                    tabButton.element.classList.add('tab-button-drop-left');
-                } else {
-                    tabButton.element.classList.add('tab-button-drop-right');
-                }
-                break;
-            }
-        }
+        const position = this.findDropPosition(clientX, clientY);
+        if (position === false) return;
+        position.indicatorTabButton.element.classList.add(
+            position.indicatorSide === 'left' ? 'tab-button-drop-left' : 'tab-button-drop-right',
+        );
     }
 
     /**
@@ -130,20 +125,26 @@ export class TabDragDrop {
             return;
         }
 
+        const position = this.findDropPosition(clientX, clientY);
+        if (position === false) return;
+        this.moveTabButton(this.draggingTabName, position.indicatorTabButton.name, position.insertBefore);
+    }
+
+    private findDropPosition(clientX: number, clientY: number): TabDropPosition | false {
+        if (!this.draggingTabName) return false;
+
         const tabButtons = this.tab.getTabButtons();
         for (const tabButton of tabButtons) {
-            // ドラッグ中のタブはスキップ
-            if (tabButton.name === this.draggingTabName) {
-                continue;
-            }
-
+            if (tabButton.name === this.draggingTabName) continue;
             const rect = tabButton.element.getBoundingClientRect();
-            if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
-                const midX = rect.left + rect.width / 2;
-                const insertBefore = clientX < midX;
-                this.moveTabButton(this.draggingTabName, tabButton.name, insertBefore);
-                break;
-            }
+            if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) continue;
+            const insertBefore = clientX < rect.left + rect.width / 2;
+            return {
+                indicatorTabButton: tabButton,
+                indicatorSide: insertBefore ? 'left' : 'right',
+                insertBefore,
+            };
         }
+        return false;
     }
 }

@@ -51,17 +51,21 @@
     position: absolute;
     left: 6px;
     right: 6px;
-    height: 2px;
+    height: 3px;
     border-radius: 1px;
     background-color: var(--selection-color);
+    pointer-events: none;
+    z-index: 2;
 }
 
 .activity-bar-item-drop-before::before {
-    top: 2px;
+    top: 0;
+    transform: translateY(-50%);
 }
 
 .activity-bar-item-drop-after::after {
-    bottom: 2px;
+    bottom: 0;
+    transform: translateY(50%);
 }
 
 /* 歯車アイコン（設定）: アクティビティバー下部に固定 */

@@ -173,14 +173,34 @@
     pointer-events: none;
 }
 
+.tab-button-drop-left,
+.tab-button-drop-right {
+    overflow: visible;
+}
+
+.tab-button-drop-left::before,
+.tab-button-drop-right::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 1px;
+    background-color: var(--selection-color, #007fd4);
+    pointer-events: none;
+    z-index: 2;
+}
+
 /* ドロップ位置のインジケーター（左側） */
-.tab-button-drop-left {
-    box-shadow: inset 3px 0 0 0 var(--selection-color, #007fd4);
+.tab-button-drop-left::before {
+    left: 0;
+    transform: translateX(-50%);
 }
 
 /* ドロップ位置のインジケーター（右側） */
-.tab-button-drop-right {
-    box-shadow: inset -3px 0 0 0 var(--selection-color, #007fd4);
+.tab-button-drop-right::after {
+    right: 0;
+    transform: translateX(50%);
 }
 
 /* マウスオーバー時はポインターカーソル */

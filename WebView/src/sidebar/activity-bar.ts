@@ -1,5 +1,15 @@
 import {DEFAULT_ACTIVITY_BAR_ORDER, normalizeActivityBarOrder, type UiActivityBarItem} from "../app/ui-state";
 
+const DRAG_THRESHOLD = 5;
+
+type DropIndicatorSide = 'before' | 'after';
+
+interface ActivityBarDropPosition {
+    readonly indicatorItem: ActivityBarItem;
+    readonly indicatorSide: DropIndicatorSide;
+    readonly insertAfter: boolean;
+}
+
 /**
  * アクティビティバーの項目種別
  * erDiagram はサイドバーパネルではなく専用タブを開く特別なアイテム
@@ -147,13 +157,9 @@ export class ActivityBar {
     private createButton(svgHtml: string, item: ActivityBarItem): HTMLElement {
         const button = document.createElement('div');
         button.classList.add('activity-bar-item');
-        button.draggable = true;
         button.innerHTML = svgHtml;
         button.setAttribute('data-panel', item);
-        button.addEventListener('dragstart', (event: DragEvent) => { this.onDragStart(event, item); });
-        button.addEventListener('dragover', (event: DragEvent) => { this.onDragOver(event, item); });
-        button.addEventListener('drop', (event: DragEvent) => { this.onDrop(event, item); });
-        button.addEventListener('dragend', () => { this.onDragEnd(); });
+        button.addEventListener('mousedown', (event: MouseEvent) => { this.onMouseDown(event, item); });
         button.addEventListener('click', () => {
             if (this.suppressNextClick) {
                 this.suppressNextClick = false;
@@ -203,35 +209,56 @@ export class ActivityBar {
         return button;
     }
 
-    private onDragStart(event: DragEvent, item: ActivityBarItem): void {
-        this.draggedItem = item;
-        this.getButton(item).classList.add('activity-bar-item-dragging');
-        if (event.dataTransfer !== null) {
-            event.dataTransfer.effectAllowed = 'move';
-            event.dataTransfer.setData('text/plain', item);
-        }
-    }
+    private onMouseDown(event: MouseEvent, item: ActivityBarItem): void {
+        if (event.button !== 0) return;
 
-    private onDragOver(event: DragEvent, targetItem: ActivityBarItem): void {
-        if (this.draggedItem === null || this.draggedItem === targetItem) return;
         event.preventDefault();
-        if (event.dataTransfer !== null) {
-            event.dataTransfer.dropEffect = 'move';
-        }
-        this.updateDropIndicator(event, targetItem);
+        const startX = event.clientX;
+        const startY = event.clientY;
+        let isDragging = false;
+
+        const onMouseMove = (moveEvent: MouseEvent): void => {
+            const dx = Math.abs(moveEvent.clientX - startX);
+            const dy = Math.abs(moveEvent.clientY - startY);
+
+            if (!isDragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
+                isDragging = true;
+                this.draggedItem = item;
+                this.getButton(item).classList.add('activity-bar-item-dragging');
+                document.body.style.cursor = 'grabbing';
+            }
+
+            if (isDragging) {
+                moveEvent.preventDefault();
+                this.updateDropIndicator(moveEvent.clientX, moveEvent.clientY);
+            }
+        };
+
+        const onMouseUp = (upEvent: MouseEvent): void => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+
+            if (isDragging) {
+                upEvent.preventDefault();
+                this.dropAt(upEvent.clientX, upEvent.clientY);
+                this.onDragEnd();
+            }
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
     }
 
-    private onDrop(event: DragEvent, targetItem: ActivityBarItem): void {
-        if (this.draggedItem === null || this.draggedItem === targetItem) return;
+    private dropAt(clientX: number, clientY: number): void {
+        const position = this.findDropPosition(clientX, clientY);
+        if (this.draggedItem === null || position === null) return;
         const draggedItem = this.draggedItem;
-        event.preventDefault();
-        const targetButton = this.getButton(targetItem);
-        const rect = targetButton.getBoundingClientRect();
-        const insertAfter = event.clientY > rect.top + rect.height / 2;
+        const originalOrder = this.order.join('\n');
+        const targetItem = position.indicatorItem;
         const nextOrder = this.order.filter(item => item !== draggedItem);
         const targetIndex = nextOrder.indexOf(targetItem);
-        nextOrder.splice(insertAfter ? targetIndex + 1 : targetIndex, 0, draggedItem);
-        if (nextOrder.join('\n') === this.order.join('\n')) return;
+        nextOrder.splice(position.insertAfter ? targetIndex + 1 : targetIndex, 0, draggedItem);
+        if (nextOrder.join('\n') === originalOrder) return;
         this.order = nextOrder;
         this.renderButtons();
         this.updateActiveState();
@@ -242,6 +269,7 @@ export class ActivityBar {
     private onDragEnd(): void {
         const draggedItem = this.draggedItem;
         this.draggedItem = null;
+        document.body.style.cursor = '';
         this.clearDragVisualState();
         if (draggedItem !== null) {
             this.suppressNextClick = true;
@@ -249,12 +277,34 @@ export class ActivityBar {
         }
     }
 
-    private updateDropIndicator(event: DragEvent, targetItem: ActivityBarItem): void {
+    private updateDropIndicator(clientX: number, clientY: number): void {
         this.clearDropIndicator();
-        const targetButton = this.getButton(targetItem);
-        const rect = targetButton.getBoundingClientRect();
-        const insertAfter = event.clientY > rect.top + rect.height / 2;
-        targetButton.classList.add(insertAfter ? 'activity-bar-item-drop-after' : 'activity-bar-item-drop-before');
+        const position = this.findDropPosition(clientX, clientY);
+        if (position === null) return;
+        this.getButton(position.indicatorItem).classList.add(
+            position.indicatorSide === 'before' ? 'activity-bar-item-drop-before' : 'activity-bar-item-drop-after',
+        );
+    }
+
+    private findDropPosition(clientX: number, clientY: number): ActivityBarDropPosition | null {
+        if (this.draggedItem === null) return null;
+
+        const activityBarRect = this.element.getBoundingClientRect();
+        if (clientX < activityBarRect.left || clientX > activityBarRect.right) return null;
+
+        for (const item of this.order) {
+            if (item === this.draggedItem) continue;
+            const button = this.getButton(item);
+            const rect = button.getBoundingClientRect();
+            if (clientY < rect.top || clientY > rect.bottom) continue;
+            const insertAfter = clientY > rect.top + rect.height / 2;
+            return {
+                indicatorItem: item,
+                indicatorSide: insertAfter ? 'after' : 'before',
+                insertAfter,
+            };
+        }
+        return null;
     }
 
     private clearDragVisualState(): void {
