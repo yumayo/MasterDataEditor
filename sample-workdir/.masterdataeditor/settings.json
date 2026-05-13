@@ -1,7 +1,3 @@
 {
-  "theme": "dark",
-  "tabWrapEnabled": false,
-  "exportValidationDateTime": "2026-10-10 10:00:00",
-  "exportBeginDateColumnName": "export_begin_date",
-  "exportEndDateColumnName": "export_end_date"
+  "exportValidationDateTime": "2026-03-20 00:00:00"
 }

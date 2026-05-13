@@ -52,6 +52,9 @@ interface SettingsFile {
     exportEndDateColumnName?: string;
 }
 
+type SettingsKey = keyof SettingsValues;
+type SettingsPatch = Partial<SettingsValues>;
+
 interface SettingsValues {
     theme: ThemeValue | null;
     tabWrapEnabled: boolean | null;
@@ -60,10 +63,26 @@ interface SettingsValues {
     exportEndDateColumnName: string | null;
 }
 
+interface DefaultedSettingsValues {
+    theme: ThemeValue;
+    tabWrapEnabled: boolean;
+    exportValidationDateTime: string;
+    exportBeginDateColumnName: string;
+    exportEndDateColumnName: string;
+}
+
 interface ScopedSettingsState {
     user: SettingsValues;
     workspace: SettingsValues;
 }
+
+const SETTING_KEYS: readonly SettingsKey[] = [
+    'theme',
+    'tabWrapEnabled',
+    'exportValidationDateTime',
+    'exportBeginDateColumnName',
+    'exportEndDateColumnName',
+];
 
 function isThemeValue(value: unknown): value is ThemeValue {
     return value === 'dark' || value === 'light';
@@ -88,6 +107,40 @@ function createEmptySettingsState(): ScopedSettingsState {
         user: createEmptySettingsValues(),
         workspace: createEmptySettingsValues(),
     };
+}
+
+function createDefaultedSettingsValues(settings: SettingsValues): DefaultedSettingsValues {
+    return {
+        theme: settings.theme ?? DEFAULT_THEME,
+        tabWrapEnabled: settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED,
+        exportValidationDateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
+        exportBeginDateColumnName: settings.exportBeginDateColumnName ?? DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
+        exportEndDateColumnName: settings.exportEndDateColumnName ?? DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
+    };
+}
+
+function createApplicationDefaultSettings(): DefaultedSettingsValues {
+    return {
+        theme: DEFAULT_THEME,
+        tabWrapEnabled: DEFAULT_TAB_WRAP_ENABLED,
+        exportValidationDateTime: DEFAULT_EXPORT_VALIDATION_DATE_TIME,
+        exportBeginDateColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
+        exportEndDateColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
+    };
+}
+
+function getDefaultedSettingValue(settings: DefaultedSettingsValues, key: SettingsKey): ThemeValue | boolean | string {
+    switch (key) {
+        case 'theme': return settings.theme;
+        case 'tabWrapEnabled': return settings.tabWrapEnabled;
+        case 'exportValidationDateTime': return settings.exportValidationDateTime;
+        case 'exportBeginDateColumnName': return settings.exportBeginDateColumnName;
+        case 'exportEndDateColumnName': return settings.exportEndDateColumnName;
+    }
+}
+
+function isSettingKey(value: string): value is SettingsKey {
+    return SETTING_KEYS.includes(value as SettingsKey);
 }
 
 async function readSettingsRecordAsync(scope: SettingsScope): Promise<Record<string, unknown> | null> {
@@ -143,7 +196,7 @@ async function readStoredSettingsAsync(): Promise<ScopedSettingsState> {
         readScopedSettingsAsync('workspace'),
         readScopedSettingsAsync('user'),
     ]);
-    return {workspace, user};
+    return normalizeSettingsState({workspace, user});
 }
 
 function resolveEffectiveSettings(settingsState: ScopedSettingsState): SettingsValues {
@@ -157,14 +210,36 @@ function resolveEffectiveSettings(settingsState: ScopedSettingsState): SettingsV
 }
 
 function resolveSettingsForScopeView(scope: SettingsScope, settingsState: ScopedSettingsState): SettingsValues {
-    const settings = settingsState[scope];
-    if (scope === 'workspace') return {...settings};
+    return {...settingsState[scope]};
+}
+
+function resolveDefaultedSettingsForScopeView(scope: SettingsScope, settingsState: ScopedSettingsState): DefaultedSettingsValues {
+    return createDefaultedSettingsValues(resolveSettingsForScopeView(scope, settingsState));
+}
+
+function normalizeSettingsValueForScopeDefault<T extends ThemeValue | boolean | string>(
+    value: T | null,
+    defaultValue: T,
+): T | null {
+    if (value === null) return null;
+    return value === defaultValue ? null : value;
+}
+
+function normalizeSettingsValues(settings: SettingsValues): SettingsValues {
+    const defaultSettings = createApplicationDefaultSettings();
     return {
-        theme: settings.theme ?? settingsState.workspace.theme,
-        tabWrapEnabled: settings.tabWrapEnabled ?? settingsState.workspace.tabWrapEnabled,
-        exportValidationDateTime: settings.exportValidationDateTime ?? settingsState.workspace.exportValidationDateTime,
-        exportBeginDateColumnName: settings.exportBeginDateColumnName ?? settingsState.workspace.exportBeginDateColumnName,
-        exportEndDateColumnName: settings.exportEndDateColumnName ?? settingsState.workspace.exportEndDateColumnName,
+        theme: normalizeSettingsValueForScopeDefault(settings.theme, defaultSettings.theme),
+        tabWrapEnabled: normalizeSettingsValueForScopeDefault(settings.tabWrapEnabled, defaultSettings.tabWrapEnabled),
+        exportValidationDateTime: normalizeSettingsValueForScopeDefault(settings.exportValidationDateTime, defaultSettings.exportValidationDateTime),
+        exportBeginDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportBeginDateColumnName, defaultSettings.exportBeginDateColumnName),
+        exportEndDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportEndDateColumnName, defaultSettings.exportEndDateColumnName),
+    };
+}
+
+function normalizeSettingsState(settingsState: ScopedSettingsState): ScopedSettingsState {
+    return {
+        workspace: normalizeSettingsValues(settingsState.workspace),
+        user: normalizeSettingsValues(settingsState.user),
     };
 }
 
@@ -213,35 +288,55 @@ function applySettingsStateToRuntime(settingsState: ScopedSettingsState): void {
     applyExportValidationSettings(getDefaultedExportValidationSettings(effectiveSettings));
 }
 
-function applySettingsPatchToState(settingsState: ScopedSettingsState, scope: SettingsScope, patch: SettingsFile): ScopedSettingsState {
-    const nextScopeSettings = {...settingsState[scope]};
-    if (patch.theme !== undefined) nextScopeSettings.theme = patch.theme;
-    if (patch.tabWrapEnabled !== undefined) nextScopeSettings.tabWrapEnabled = patch.tabWrapEnabled;
-    if (patch.exportValidationDateTime !== undefined) nextScopeSettings.exportValidationDateTime = patch.exportValidationDateTime;
-    if (patch.exportBeginDateColumnName !== undefined) nextScopeSettings.exportBeginDateColumnName = patch.exportBeginDateColumnName;
-    if (patch.exportEndDateColumnName !== undefined) nextScopeSettings.exportEndDateColumnName = patch.exportEndDateColumnName;
-    return {
-        ...settingsState,
-        [scope]: nextScopeSettings,
-    };
+function normalizeSettingsPatch(patch: SettingsPatch): SettingsPatch {
+    const defaultSettings = createApplicationDefaultSettings();
+    const normalizedPatch: SettingsPatch = {};
+    if (Object.prototype.hasOwnProperty.call(patch, 'theme')) {
+        normalizedPatch.theme = patch.theme === defaultSettings.theme ? null : patch.theme ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'tabWrapEnabled')) {
+        normalizedPatch.tabWrapEnabled = patch.tabWrapEnabled === defaultSettings.tabWrapEnabled ? null : patch.tabWrapEnabled ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'exportValidationDateTime')) {
+        normalizedPatch.exportValidationDateTime = patch.exportValidationDateTime === defaultSettings.exportValidationDateTime ? null : patch.exportValidationDateTime ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'exportBeginDateColumnName')) {
+        normalizedPatch.exportBeginDateColumnName = patch.exportBeginDateColumnName === defaultSettings.exportBeginDateColumnName ? null : patch.exportBeginDateColumnName ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'exportEndDateColumnName')) {
+        normalizedPatch.exportEndDateColumnName = patch.exportEndDateColumnName === defaultSettings.exportEndDateColumnName ? null : patch.exportEndDateColumnName ?? null;
+    }
+    return normalizedPatch;
 }
 
-async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsFile): Promise<void> {
+function applySettingsPatchToState(settingsState: ScopedSettingsState, scope: SettingsScope, patch: SettingsPatch): ScopedSettingsState {
+    const nextScopeSettings = {...settingsState[scope]};
+    const normalizedPatch = normalizeSettingsPatch(patch);
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'theme')) nextScopeSettings.theme = normalizedPatch.theme ?? null;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'tabWrapEnabled')) nextScopeSettings.tabWrapEnabled = normalizedPatch.tabWrapEnabled ?? null;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportValidationDateTime')) nextScopeSettings.exportValidationDateTime = normalizedPatch.exportValidationDateTime ?? null;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportBeginDateColumnName')) nextScopeSettings.exportBeginDateColumnName = normalizedPatch.exportBeginDateColumnName ?? null;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportEndDateColumnName')) nextScopeSettings.exportEndDateColumnName = normalizedPatch.exportEndDateColumnName ?? null;
+    return normalizeSettingsState({
+        ...settingsState,
+        [scope]: nextScopeSettings,
+    });
+}
+
+async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsValues): Promise<void> {
     const data: Record<string, unknown> = {...(await readSettingsRecordAsync(scope) ?? {})};
-    if (Object.prototype.hasOwnProperty.call(settings, 'theme')) {
-        data['theme'] = settings.theme;
+    for (const key of SETTING_KEYS) {
+        delete data[key];
     }
-    if (Object.prototype.hasOwnProperty.call(settings, 'tabWrapEnabled')) {
-        data['tabWrapEnabled'] = settings.tabWrapEnabled;
+    const settingsFile = createSettingsFileFromValues(settings);
+    if (settingsFile.theme !== undefined) data['theme'] = settingsFile.theme;
+    if (settingsFile.tabWrapEnabled !== undefined) data['tabWrapEnabled'] = settingsFile.tabWrapEnabled;
+    if (settingsFile.exportValidationDateTime !== undefined) data['exportValidationDateTime'] = settingsFile.exportValidationDateTime;
+    if (settingsFile.exportBeginDateColumnName !== undefined) {
+        data['exportBeginDateColumnName'] = settingsFile.exportBeginDateColumnName;
     }
-    if (Object.prototype.hasOwnProperty.call(settings, 'exportValidationDateTime')) {
-        data['exportValidationDateTime'] = settings.exportValidationDateTime;
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'exportBeginDateColumnName')) {
-        data['exportBeginDateColumnName'] = settings.exportBeginDateColumnName;
-    }
-    if (Object.prototype.hasOwnProperty.call(settings, 'exportEndDateColumnName')) {
-        data['exportEndDateColumnName'] = settings.exportEndDateColumnName;
+    if (settingsFile.exportEndDateColumnName !== undefined) {
+        data['exportEndDateColumnName'] = settingsFile.exportEndDateColumnName;
     }
     await writeFileAsync(SETTINGS_FILES[scope], data, SETTINGS_SCOPE_OPTIONS[scope]);
 }
@@ -249,7 +344,7 @@ async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsFi
 let settingsWriteChain: Promise<void> = Promise.resolve();
 let loadedSettingsState: ScopedSettingsState = createEmptySettingsState();
 
-function enqueueSettingsWriteAsync(scope: SettingsScope, settings: SettingsFile): Promise<void> {
+function enqueueSettingsWriteAsync(scope: SettingsScope, settings: SettingsValues): Promise<void> {
     const writePromise = settingsWriteChain
         .catch(() => undefined)
         .then(() => writeSettingsFileAsync(scope, settings));
@@ -336,6 +431,7 @@ export class SettingsPanel {
 
         const label = document.createElement('div');
         label.classList.add('settings-label');
+        label.dataset.settingKey = 'theme';
         const labelText = document.createElement('span');
         labelText.classList.add('settings-label-text');
         labelText.textContent = 'テーマ';
@@ -393,6 +489,7 @@ export class SettingsPanel {
 
         const tabWrapLabel = document.createElement('div');
         tabWrapLabel.classList.add('settings-label');
+        tabWrapLabel.dataset.settingKey = 'tabWrapEnabled';
         const tabWrapLabelText = document.createElement('span');
         tabWrapLabelText.classList.add('settings-label-text');
         tabWrapLabelText.textContent = 'タブを折り返す';
@@ -428,6 +525,7 @@ export class SettingsPanel {
 
         const exportValidationLabel = document.createElement('label');
         exportValidationLabel.classList.add('settings-label');
+        exportValidationLabel.dataset.settingKey = 'exportValidationDateTime';
         const exportValidationLabelText = document.createElement('span');
         exportValidationLabelText.classList.add('settings-label-text');
         exportValidationLabelText.textContent = '出力フィルター時刻';
@@ -449,6 +547,7 @@ export class SettingsPanel {
 
         const exportBeginDateColumnLabel = document.createElement('label');
         exportBeginDateColumnLabel.classList.add('settings-label');
+        exportBeginDateColumnLabel.dataset.settingKey = 'exportBeginDateColumnName';
         const exportBeginDateColumnLabelText = document.createElement('span');
         exportBeginDateColumnLabelText.classList.add('settings-label-text');
         exportBeginDateColumnLabelText.textContent = '開始日時列';
@@ -472,6 +571,7 @@ export class SettingsPanel {
 
         const exportEndDateColumnLabel = document.createElement('label');
         exportEndDateColumnLabel.classList.add('settings-label');
+        exportEndDateColumnLabel.dataset.settingKey = 'exportEndDateColumnName';
         const exportEndDateColumnLabelText = document.createElement('span');
         exportEndDateColumnLabelText.classList.add('settings-label-text');
         exportEndDateColumnLabelText.textContent = '終了日時列';
@@ -495,6 +595,7 @@ export class SettingsPanel {
 
         this.element.appendChild(exportValidationSection);
         this.updateScopeButtonStyles();
+        this.updateSettingDifferenceMarkers();
     }
 
     private createScopeButton(scope: SettingsScope): HTMLButtonElement {
@@ -543,6 +644,19 @@ export class SettingsPanel {
         this.selectedExportEndDateColumnName = exportValidationSettings.endColumnName;
         this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
         this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
+        this.updateSettingDifferenceMarkers();
+    }
+
+    private updateSettingDifferenceMarkers(): void {
+        const currentSettings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
+        const defaultSettings = createApplicationDefaultSettings();
+        for (const label of Array.from(this.element.querySelectorAll<HTMLElement>('.settings-label[data-setting-key]'))) {
+            const key = label.dataset.settingKey;
+            if (key === undefined || !isSettingKey(key)) continue;
+            const differs = getDefaultedSettingValue(currentSettings, key) !== getDefaultedSettingValue(defaultSettings, key);
+            label.classList.toggle('settings-label-default-different', differs);
+            label.dataset.defaultDifferent = differs ? 'true' : 'false';
+        }
     }
 
     private createSection(title: string): HTMLElement {
@@ -603,6 +717,7 @@ export class SettingsPanel {
     }
 
     private selectTheme(value: ThemeValue): void {
+        if (this.selectedTheme === value) return;
         this.selectedTheme = value;
         this.selectedLabel.textContent = getThemeText(value);
         this.updateItemStyles();
@@ -610,25 +725,35 @@ export class SettingsPanel {
     }
 
     private selectTabWrapEnabled(value: boolean): void {
+        if (this.selectedTabWrapEnabled === value) return;
         this.selectedTabWrapEnabled = value;
         this.applyAndSaveSettingsPatch({tabWrapEnabled: value}, 'save tab layout failed');
     }
 
     private selectExportValidationDateTime(value: string): void {
-        this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(value) ?? value.trim();
+        const nextValue = normalizeDateTimeInputToSeconds(value) ?? value.trim();
+        if (this.selectedExportValidationDateTime === nextValue) return;
+        this.selectedExportValidationDateTime = nextValue;
         this.exportValidationDateTimePicker.setValue(this.selectedExportValidationDateTime);
         this.applyAndSaveSettingsPatch({exportValidationDateTime: this.selectedExportValidationDateTime}, 'save export validation date time failed');
     }
 
     private selectExportValidationColumnNames(beginColumnName: string, endColumnName: string): void {
-        this.selectedExportBeginDateColumnName = beginColumnName.trim();
-        this.selectedExportEndDateColumnName = endColumnName.trim();
+        const nextBeginColumnName = beginColumnName.trim();
+        const nextEndColumnName = endColumnName.trim();
+        const patch: SettingsPatch = {};
+        if (this.selectedExportBeginDateColumnName !== nextBeginColumnName) {
+            patch.exportBeginDateColumnName = nextBeginColumnName;
+        }
+        if (this.selectedExportEndDateColumnName !== nextEndColumnName) {
+            patch.exportEndDateColumnName = nextEndColumnName;
+        }
+        if (Object.keys(patch).length === 0) return;
+        this.selectedExportBeginDateColumnName = nextBeginColumnName;
+        this.selectedExportEndDateColumnName = nextEndColumnName;
         this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
         this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
-        this.applyAndSaveSettingsPatch({
-            exportBeginDateColumnName: this.selectedExportBeginDateColumnName,
-            exportEndDateColumnName: this.selectedExportEndDateColumnName,
-        }, 'save export validation column names failed');
+        this.applyAndSaveSettingsPatch(patch, 'save export validation column names failed');
     }
 
     /** 選択中アイテムにアクティブスタイルを付与する */
@@ -662,7 +787,7 @@ export class SettingsPanel {
      * change イベント（自動保存）および Ctrl+S（手動保存）の両方から呼ばれる
      */
     save(): void {
-        this.writeSettingsAsync(createSettingsFileFromValues(loadedSettingsState[this.activeScope]))
+        this.writeSettingsAsync(loadedSettingsState[this.activeScope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error('[SettingsPanel] save failed:', String(error));
@@ -670,10 +795,11 @@ export class SettingsPanel {
             });
     }
 
-    private applyAndSaveSettingsPatch(settings: SettingsFile, errorContext: string): void {
+    private applyAndSaveSettingsPatch(settings: SettingsPatch, errorContext: string): void {
         loadedSettingsState = applySettingsPatchToState(loadedSettingsState, this.activeScope, settings);
         applySettingsStateToRuntime(loadedSettingsState);
-        this.writeSettingsAsync(settings)
+        this.updateSettingDifferenceMarkers();
+        this.writeSettingsAsync(loadedSettingsState[this.activeScope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error(`[SettingsPanel] ${errorContext}:`, String(error));
@@ -681,7 +807,7 @@ export class SettingsPanel {
             });
     }
 
-    private async writeSettingsAsync(settings: SettingsFile): Promise<void> {
+    private async writeSettingsAsync(settings: SettingsValues): Promise<void> {
         await enqueueSettingsWriteAsync(this.activeScope, settings);
     }
 }

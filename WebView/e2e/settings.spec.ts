@@ -96,6 +96,23 @@ async function waitForSettingsExportValidationColumnNamesAsync(page: Page, expec
     );
 }
 
+async function waitForSettingsKeyAbsentAsync(page: Page, settingsFile: string, key: string): Promise<void> {
+    await page.waitForFunction(
+        ({ path, settingKey }) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            try {
+                const parsed = JSON.parse(raw) as Record<string, unknown>;
+                return !Object.prototype.hasOwnProperty.call(parsed, settingKey);
+            } catch {
+                return false;
+            }
+        },
+        { path: settingsFile, settingKey: key },
+        { timeout: 5000 },
+    );
+}
+
 // =============================================================================
 // 設定画面（テーマ設定）テスト
 //
@@ -191,7 +208,7 @@ test.describe('設定画面', () => {
     );
 
     test(
-        'User設定がWorkspace設定より優先され、未設定のキーはWorkspace設定が使われること',
+        '実効設定ではUser設定がWorkspace設定より優先され、フォームの未設定キーはデフォルト値を表示すること',
         async ({ page }) => {
             const fs = createDefaultFileSystem();
             fs[SETTINGS_FILE] = JSON.stringify({
@@ -210,7 +227,8 @@ test.describe('設定画面', () => {
             await openSettingsTabAsync(page);
             await expect(page.locator('.settings-scope-tab[data-scope="user"]')).toHaveAttribute('aria-selected', 'true');
             await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ライト/);
-            await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('2026-05-10 12:00:00');
+            await expect(page.locator('.settings-tab-wrap-checkbox')).not.toBeChecked();
+            await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('');
         },
     );
 
@@ -282,6 +300,68 @@ test.describe('設定画面', () => {
             expect(JSON.parse(settingsJson)).toEqual({
                 theme: 'light',
             });
+        },
+    );
+
+    test(
+        'デフォルトと異なる設定項目の左にマークが表示されること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const themeLabel = page.locator('.settings-label[data-setting-key="theme"]');
+            const tabWrapLabel = page.locator('.settings-label[data-setting-key="tabWrapEnabled"]');
+            await expect(themeLabel).toHaveAttribute('data-default-different', 'false');
+            await expect(tabWrapLabel).toHaveAttribute('data-default-different', 'false');
+
+            await selectThemeAsync(page, 'light');
+            await expect(themeLabel).toHaveAttribute('data-default-different', 'true');
+            await expect(tabWrapLabel).toHaveAttribute('data-default-different', 'false');
+
+            await selectThemeAsync(page, 'dark');
+            await expect(themeLabel).toHaveAttribute('data-default-different', 'false');
+            await waitForSettingsKeyAbsentAsync(page, SETTINGS_FILE, 'theme');
+            expect(JSON.parse(await readMockFileAsync(page, SETTINGS_FILE))).toEqual({});
+        },
+    );
+
+    test(
+        '保存済みJSON内のデフォルト値キーは保存時に削除され、未設定項目はデフォルト値で表示されること',
+        async ({ page }) => {
+            const fs = createDefaultFileSystem();
+            fs[SETTINGS_FILE] = JSON.stringify({
+                theme: 'dark',
+                tabWrapEnabled: false,
+                exportBeginDateColumnName: 'export_begin_date',
+                exportEndDateColumnName: 'finish_at',
+            });
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+            await openSettingsTabAsync(page);
+
+            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+            await expect(page.locator('.settings-tab-wrap-checkbox')).not.toBeChecked();
+            await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('export_begin_date');
+            await expect(page.locator('.settings-export-end-date-column-input')).toHaveValue('finish_at');
+
+            const settingsTabButton = page.locator('.tab-button').filter({ hasText: '設定' });
+            await settingsTabButton.click();
+            await page.keyboard.press('Control+s');
+
+            await page.waitForFunction(
+                ({ path }) => {
+                    const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+                    if (typeof raw !== 'string') return false;
+                    try {
+                        const parsed = JSON.parse(raw) as Record<string, unknown>;
+                        return Object.keys(parsed).length === 1
+                            && parsed.exportEndDateColumnName === 'finish_at';
+                    } catch {
+                        return false;
+                    }
+                },
+                { path: SETTINGS_FILE },
+                { timeout: 5000 },
+            );
         },
     );
 
@@ -501,6 +581,42 @@ test.describe('設定画面', () => {
             expect(JSON.parse(settingsJson)).toEqual({
                 exportBeginDateColumnName: 'start_at',
                 exportEndDateColumnName: 'finish_at',
+            });
+        },
+    );
+
+    test(
+        '変更したexport期間列名だけが.masterdataeditor/settings.jsonへ保存されること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const beginInput = page.locator('.settings-export-begin-date-column-input');
+            const beginLabel = page.locator('.settings-label[data-setting-key="exportBeginDateColumnName"]');
+            const endLabel = page.locator('.settings-label[data-setting-key="exportEndDateColumnName"]');
+
+            await beginInput.fill('start_at');
+            await beginInput.blur();
+
+            await page.waitForFunction(
+                ({ path }) => {
+                    const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+                    if (typeof raw !== 'string') return false;
+                    try {
+                        const parsed = JSON.parse(raw) as Record<string, unknown>;
+                        return parsed.exportBeginDateColumnName === 'start_at'
+                            && !Object.prototype.hasOwnProperty.call(parsed, 'exportEndDateColumnName');
+                    } catch {
+                        return false;
+                    }
+                },
+                { path: SETTINGS_FILE },
+                { timeout: 5000 },
+            );
+
+            await expect(beginLabel).toHaveAttribute('data-default-different', 'true');
+            await expect(endLabel).toHaveAttribute('data-default-different', 'false');
+            expect(JSON.parse(await readMockFileAsync(page, SETTINGS_FILE))).toEqual({
+                exportBeginDateColumnName: 'start_at',
             });
         },
     );

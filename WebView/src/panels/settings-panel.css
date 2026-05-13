@@ -12,6 +12,7 @@
     --settings-row-gap: 12px;
     --settings-label-control-gap: 16px;
     --settings-label-width: 140px;
+    --settings-label-marker-size: 6px;
     --settings-control-width: 220px;
     --settings-control-height: 28px;
     --settings-control-padding: var(--input-padding);
@@ -126,6 +127,20 @@
     min-height: 28px;
     font-size: 14px;
     color: var(--font-color);
+}
+
+.settings-label::before {
+    content: "";
+    width: var(--settings-label-marker-size);
+    height: var(--settings-label-marker-size);
+    flex: 0 0 var(--settings-label-marker-size);
+    border-radius: 50%;
+    background-color: var(--selection-color);
+    opacity: 0;
+}
+
+.settings-label-default-different::before {
+    opacity: 1;
 }
 
 .settings-section .settings-label + .settings-label {
