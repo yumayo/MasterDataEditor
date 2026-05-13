@@ -2,8 +2,8 @@ import { Page } from '@playwright/test';
 import { test, expect } from './fixtures/test';
 import { createDefaultFileSystem, installMockApiAsync, readMockFileAsync } from './fixtures/mock-api';
 
-const SETTINGS_FILE = 'userdata/settings.json';
-const USER_SETTINGS_FILE = 'user:userdata/settings.json';
+const SETTINGS_FILE = '.masterdataeditor/settings.json';
+const USER_SETTINGS_FILE = 'user:.masterdataeditor/settings.json';
 const THEME_STORAGE_KEY = 'master-data-editor-theme';
 
 async function openSettingsTabAsync(page: Page): Promise<void> {
@@ -106,10 +106,10 @@ async function waitForSettingsExportValidationColumnNamesAsync(page: Page, expec
 //   4. ドロップダウン変更時に body[data-theme] が即時更新される
 //   5. テーマ変更時に自動保存されるため dirty マークが表示されない
 //   6. Ctrl+S は冪等に動作する（自動保存済みでもエラーにならない）
-//   7. テーマ変更時に userdata/settings.json へ保存される
-//   8. 起動時に userdata/settings.json からテーマを読み込む
+//   7. テーマ変更時に .masterdataeditor/settings.json へ保存される
+//   8. 起動時に .masterdataeditor/settings.json からテーマを読み込む
 //   9. 設定タブを閉じて再度開いた場合にテーマドロップダウンが正しく動作する
-//   10. reload 後も userdata/settings.json からテーマが維持される
+//   10. reload 後も .masterdataeditor/settings.json からテーマが維持される
 // =============================================================================
 
 test.describe('設定画面', () => {
@@ -265,10 +265,10 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト7: テーマ変更時に userdata/settings.json へ保存されること
+    // テスト7: テーマ変更時に .masterdataeditor/settings.json へ保存されること
     // ---------------------------------------------------------------------------
     test(
-        'テーマ変更時にuserdata/settings.jsonへ現在のテーマが保存されること',
+        'テーマ変更時に.masterdataeditor/settings.jsonへ現在のテーマが保存されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
             await selectThemeAsync(page, 'light');
@@ -286,10 +286,10 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト8: 起動時に userdata/settings.json からテーマが読み込まれること
+    // テスト8: 起動時に .masterdataeditor/settings.json からテーマが読み込まれること
     // ---------------------------------------------------------------------------
     test(
-        '起動時にuserdata/settings.jsonが存在すればそのテーマが適用されること',
+        '起動時に.masterdataeditor/settings.jsonが存在すればそのテーマが適用されること',
         async ({ page }) => {
             const fs = createDefaultFileSystem();
             fs[SETTINGS_FILE] = JSON.stringify({ theme: 'light', tabWrapEnabled: false });
@@ -335,10 +335,10 @@ test.describe('設定画面', () => {
     );
 
     // ---------------------------------------------------------------------------
-    // テスト10: reload 後も userdata/settings.json からテーマが維持されること
+    // テスト10: reload 後も .masterdataeditor/settings.json からテーマが維持されること
     // ---------------------------------------------------------------------------
     test(
-        'テーマ変更後にlocalStorageを空にしてreloadしてもuserdata/settings.jsonからテーマが復元されること',
+        'テーマ変更後にlocalStorageを空にしてreloadしても.masterdataeditor/settings.jsonからテーマが復元されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
             await selectThemeAsync(page, 'light');
@@ -365,7 +365,7 @@ test.describe('設定画面', () => {
     );
 
     test(
-        '出力フィルター時刻を変更するとuserdata/settings.jsonへ保存されること',
+        '出力フィルター時刻を変更すると.masterdataeditor/settings.jsonへ保存されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
 
@@ -483,7 +483,7 @@ test.describe('設定画面', () => {
     );
 
     test(
-        'export期間列名を変更するとuserdata/settings.jsonへ保存されること',
+        'export期間列名を変更すると.masterdataeditor/settings.jsonへ保存されること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
 

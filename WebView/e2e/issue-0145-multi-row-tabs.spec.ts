@@ -2,13 +2,13 @@ import { test, expect } from './fixtures/test';
 import type { Page } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
-const SETTINGS_FILE = 'userdata/settings.json';
+const SETTINGS_FILE = '.masterdataeditor/settings.json';
 const TABLE_COUNT = 18;
 const LONG_TABLE_NAME = `very_long_table_name_${'segment_'.repeat(40)}`;
 
 function createManyTablesFileSystem(): MockFileSystem {
     const fs: MockFileSystem = {
-        'userdata/bookmarks.json': '[]',
+        'user:.masterdataeditor/bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
     for (let i = 0; i < TABLE_COUNT; i++) {
@@ -27,8 +27,8 @@ function createManyTablesFileSystem(): MockFileSystem {
 
 function createLongTabNameFileSystem(): MockFileSystem {
     const fs: MockFileSystem = {
-        'userdata/bookmarks.json': '[]',
-        'userdata/settings.json': JSON.stringify({ tabWrapEnabled: true }),
+        'user:.masterdataeditor/bookmarks.json': '[]',
+        '.masterdataeditor/settings.json': JSON.stringify({ tabWrapEnabled: true }),
         'plugins/.gitkeep': '',
     };
     const names = [

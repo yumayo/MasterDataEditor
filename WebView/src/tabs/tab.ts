@@ -299,7 +299,7 @@ export class Tab {
     /** コミット選択ダイアログ（バージョン比較用） */
     private readonly commitSelectorDialog: CommitSelectorDialog;
 
-    /** userdata/ui-state.json へのUI状態保存 */
+    /** User スコープの ui-state.json へのUI状態保存 */
     private readonly uiStateStore: UiStateStore;
 
     constructor(editor: Editor, sidebar: Sidebar, tabContentElement: HTMLElement, tabElement: HTMLElement, store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast, uiStateStore: UiStateStore) {

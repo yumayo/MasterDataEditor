@@ -39,7 +39,7 @@ export function createDefaultFileSystem(): MockFileSystem {
     return {
         "schema/test.json": schema,
         "data/test.csv": csv,
-        "userdata/bookmarks.json": "[]",
+        "user:.masterdataeditor/bookmarks.json": "[]",
         "plugins/.gitkeep": "",
     };
 }

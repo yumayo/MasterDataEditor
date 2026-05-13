@@ -1,6 +1,6 @@
 import {readFileAsync, writeFileAsync, type FileScope} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
-import {SETTINGS_FILE} from "../config/userdata-path";
+import {SETTINGS_FILE} from "../config/masterdataeditor-path";
 import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
 
 /**

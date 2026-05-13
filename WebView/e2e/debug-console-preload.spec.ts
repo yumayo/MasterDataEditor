@@ -19,7 +19,7 @@ function createTallApiDetailFileSystem(): MockFileSystem {
             'id,name,value',
             ...rows,
         ].join('\n'),
-        'userdata/bookmarks.json': '[]',
+        'user:.masterdataeditor/bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
 }
@@ -117,7 +117,16 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(findFilesRow.locator('.debug-console-detail-button')).toHaveCount(0);
         await findFilesRow.click();
         await expect(findFilesRow).toHaveClass(/debug-console-row-selected/);
-        await expect(findFilesRow).toHaveCSS('background-color', 'rgb(33, 150, 243)');
+        const selectedBackgroundColor = await page.evaluate(() => {
+            const color = getComputedStyle(document.body).getPropertyValue('--panel-item-selected-bg').trim();
+            const element = document.createElement('div');
+            element.style.backgroundColor = color;
+            document.body.appendChild(element);
+            const normalized = getComputedStyle(element).backgroundColor;
+            element.remove();
+            return normalized;
+        });
+        await expect(findFilesRow).toHaveCSS('background-color', selectedBackgroundColor);
 
         await expect(page.locator('.tab-button', { hasText: 'API 詳細' })).toBeVisible();
         const detailTab = page.locator('.debug-api-detail-tab');
@@ -149,13 +158,13 @@ test.describe('DEBUG CONSOLE preload記録', () => {
         await expect(detailTab).toContainText('"success": true');
 
         const writeFileRow = debugConsole.locator('.debug-console-row', {
-            has: page.locator('.debug-console-col-label', { hasText: 'write_file (userdata/ui-state.json)' }),
+            has: page.locator('.debug-console-col-label', { hasText: 'write_file (user:.masterdataeditor/ui-state.json)' }),
         }).first();
         await expect(writeFileRow).toBeVisible();
         await writeFileRow.click();
         await expect(findFilesRow).not.toHaveClass(/debug-console-row-selected/);
         await expect(writeFileRow).toHaveClass(/debug-console-row-selected/);
-        await expect(writeFileRow).toHaveCSS('background-color', 'rgb(33, 150, 243)');
+        await expect(writeFileRow).toHaveCSS('background-color', selectedBackgroundColor);
         await expect(detailTab).toContainText('"data": {');
         await expect(detailTab).toContainText('"bottomPanel": {');
     });

@@ -2,7 +2,7 @@ import {Page} from '@playwright/test';
 import {test, expect} from './fixtures/test';
 import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync} from './fixtures/mock-api';
 
-const UI_STATE_FILE = 'userdata/ui-state.json';
+const UI_STATE_FILE = 'user:.masterdataeditor/ui-state.json';
 
 function createSchema(description?: string): string {
     return JSON.stringify({
@@ -86,8 +86,8 @@ async function waitForSavedUiStateAsync(page: Page): Promise<void> {
     }, UI_STATE_FILE, {timeout: 5000});
 }
 
-test.describe('UI状態のuserdata永続化', () => {
-    test('サイドバー・ボトムパネル・アクティビティバー・表示タブがuserdataへ保存される', async ({page, mockFileSystem}) => {
+test.describe('UI状態のUserスコープ永続化', () => {
+    test('サイドバー・ボトムパネル・アクティビティバー・表示タブがUserスコープへ保存される', async ({page, mockFileSystem}) => {
         await openTestTableAsync(page);
 
         await page.locator('.activity-bar-item[data-panel="bookmarks"]').click();
@@ -143,7 +143,7 @@ test.describe('UI状態のuserdata永続化', () => {
         expect(state.tabs.active).toBe('test');
     });
 
-    test('userdata/ui-state.jsonが存在すれば起動時にUI状態が復元される', async ({page}) => {
+    test('Userスコープのui-state.jsonが存在すれば起動時にUI状態が復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         fs[UI_STATE_FILE] = JSON.stringify({
             sidebar: {width: 420, activePanel: 'bookmarks'},
@@ -200,7 +200,7 @@ test.describe('UI状態のuserdata永続化', () => {
         await expect(focused).toHaveClass(/editor-table-cell-focused/);
     });
 
-    test('EditorTableのスクロール・フォームビュー・選択セルがuserdataへ保存され起動時に復元される', async ({page}) => {
+    test('EditorTableのスクロール・フォームビュー・選択セルがUserスコープへ保存され起動時に復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         fs['schema/test.json'] = createWideSchema(18);
         fs['data/test.csv'] = createWideCsv(80, 18);
@@ -332,7 +332,7 @@ test.describe('UI状態のuserdata永続化', () => {
         await secondPage.close();
     });
 
-    test('フォームビューを閉じた状態がuserdataへ保存され起動時に再表示されない', async ({page}) => {
+    test('フォームビューを閉じた状態がUserスコープへ保存され起動時に再表示されない', async ({page}) => {
         const fs = createDefaultFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
@@ -372,7 +372,7 @@ test.describe('UI状態のuserdata永続化', () => {
         await secondPage.close();
     });
 
-    test('tab-button-descriptionがuserdataへ保存され、起動時はタブレイアウトだけ先に復元される', async ({page}) => {
+    test('tab-button-descriptionがUserスコープへ保存され、起動時はタブレイアウトだけ先に復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         fs['schema/test.json'] = createSchema('Test table description\nsecond line');
         fs['schema/other.json'] = createSchema('Other table description');

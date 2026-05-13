@@ -25,7 +25,7 @@ test.describe('ステータスバー起動時描画', () => {
                     const raw = typeof message === 'string' ? message : JSON.stringify(message);
                     try {
                         const request = JSON.parse(raw) as { type?: string; filename?: string };
-                        if (request.type === 'read_file_request' && request.filename === 'userdata/settings.json') {
+                        if (request.type === 'read_file_request' && request.filename === '.masterdataeditor/settings.json') {
                             chromeWindow.__statusBarStartupSettingsReadBlocked = true;
                             window.setTimeout(() => {
                                 chromeWindow.__statusBarStartupSettingsReadReleased = true;

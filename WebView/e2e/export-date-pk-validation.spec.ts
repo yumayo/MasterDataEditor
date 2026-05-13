@@ -2,7 +2,7 @@ import { Page, Locator } from '@playwright/test';
 import { test, expect } from './fixtures/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
-const SETTINGS_FILE = 'userdata/settings.json';
+const SETTINGS_FILE = '.masterdataeditor/settings.json';
 
 function createExportDatePkFileSystem(
     exportValidationDateTime: string,

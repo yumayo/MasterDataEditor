@@ -1,6 +1,6 @@
 import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
-import {UI_STATE_FILE} from "../config/userdata-path";
+import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -419,7 +419,7 @@ function normalizeUiState(value: unknown): UiState {
 
 export async function readStoredUiStateAsync(): Promise<UiState> {
     try {
-        const json = await readFileAsync(UI_STATE_FILE);
+        const json = await readFileAsync(UI_STATE_FILE, UI_STATE_FILE_OPTIONS);
         return normalizeUiState(JSON.parse(json) as unknown);
     } catch {
         return cloneState(DEFAULT_UI_STATE);
@@ -502,7 +502,7 @@ export class UiStateStore {
         }
 
         this.writeInFlight = true;
-        writeFileAsync(UI_STATE_FILE, this.state)
+        writeFileAsync(UI_STATE_FILE, this.state, UI_STATE_FILE_OPTIONS)
             .catch((error: unknown) => {
                 console.error('[UiStateStore] save failed:', String(error));
             })

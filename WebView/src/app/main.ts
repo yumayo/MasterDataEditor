@@ -23,7 +23,7 @@ import {EditorApiBridge} from "../editor-api/editor-api-bridge";
 import {ErrorTooltip} from "../ui/error-tooltip";
 import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-api-types";
 import type {BookmarkEntry} from "../panels/bookmark-panel";
-import {BOOKMARKS_FILE} from "../config/userdata-path";
+import {BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS} from "../config/masterdataeditor-path";
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
 (async () => {
@@ -87,7 +87,7 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
     // 起動直後に bookmarks.json からブックマークを復元する。
     // schema 読み込み完了を待つ必要はなく、先に復元しておくことで初回テーブル表示時の視覚マーク適用を安定させる。
     try {
-        const bookmarksJson = await readFileAsync(BOOKMARKS_FILE);
+        const bookmarksJson = await readFileAsync(BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS);
         const bookmarkEntries = JSON.parse(bookmarksJson) as BookmarkEntry[];
         sidebar.restoreBookmarks(bookmarkEntries);
     } catch {
