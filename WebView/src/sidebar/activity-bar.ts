@@ -47,6 +47,17 @@ const BOOKMARKS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill
 </svg>`;
 
 /**
+ * Viewプラグインアイコン（SVG — ウィンドウ形状）
+ */
+const VIEWS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="4" width="18" height="16" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M3 8H21" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M7 12H11V16H7V12Z" fill="currentColor"/>
+  <path d="M13 12H18V13.5H13V12Z" fill="currentColor"/>
+  <path d="M13 15H18V16.5H13V15Z" fill="currentColor"/>
+</svg>`;
+
+/**
  * ER図アイコン（SVG — ノード＋エッジ形状）
  * 2つの矩形ノードを線で結んだER図を表現する
  */
@@ -120,6 +131,7 @@ export class ActivityBar {
             ['references', this.createButton(REFERENCES_ICON_SVG, 'references')],
             ['search', this.createButton(SEARCH_ICON_SVG, 'search')],
             ['bookmarks', this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks')],
+            ['views', this.createButton(VIEWS_ICON_SVG, 'views')],
             ['erDiagram', this.createButton(ER_DIAGRAM_ICON_SVG, 'erDiagram')],
             ['sourceControl', this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl')],
             ['history', this.createButton(HISTORY_ICON_SVG, 'history')],

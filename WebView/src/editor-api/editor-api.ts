@@ -1,5 +1,5 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
-import {Tab} from "../tabs/tab";
+import {Tab, type TabState} from "../tabs/tab";
 import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from "../editor/command";
 import {readFileAsync} from "../app/api";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
@@ -10,6 +10,8 @@ import type {PluginValidationRunner} from "../validation/plugin-validation-runne
 import {resolvePluginErrors} from "../validation/plugin-validation-runner";
 import {SearchEngine} from "../search/search-engine";
 import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, SearchResultInfo, ValidationErrorInfo} from "./editor-api-types";
+
+type EditorApiCellValueChange = { row: number; column: number; value: string };
 
 /**
  * EditorAPI の実装
@@ -253,6 +255,99 @@ export class EditorApiImpl implements EditorAPI {
         // edit 名前空間のクロージャからイベントハンドラーにアクセスするためのキャプチャ
         const cellChangedHandlers = this.cellChangedHandlers;
         const tableSavedHandlers = this.tableSavedHandlers;
+        const apiRegisteredTableNames = new Set<string>();
+
+        const emitCellChanged = (events: EditorCellChangeEvent[]): void => {
+            if (events.length === 0) return;
+            const handlers = [...cellChangedHandlers];
+            for (let i = 0; i < events.length; ++i) {
+                const event = events[i];
+                for (let j = 0; j < handlers.length; ++j) {
+                    try { handlers[j](event); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
+                }
+            }
+        };
+
+        const applyCellChangesToTab = (tableName: string, tabState: TabState, changes: EditorApiCellValueChange[], activateTable: boolean): boolean => {
+            const rows = store.getRows(tableName);
+            if (rows === false) return false;
+            const cellChanges: CellChange[] = [];
+            const events: EditorCellChangeEvent[] = [];
+            for (let i = 0; i < changes.length; ++i) {
+                const c = changes[i];
+                if (c.row < 0 || c.row >= rows.length) return false;
+                if (c.column < 0 || c.column >= rows[c.row].length) return false;
+                const oldValue = rows[c.row][c.column];
+                cellChanges.push({
+                    row: c.row + 1,
+                    column: c.column + tabState.editorTable.dataColumnOffset(),
+                    oldValue,
+                    newValue: c.value,
+                });
+                events.push({tableName, row: c.row, column: c.column, oldValue, newValue: c.value});
+            }
+            if (cellChanges.length === 0) return true;
+
+            let minRow = cellChanges[0].row, maxRow = cellChanges[0].row;
+            let minCol = cellChanges[0].column, maxCol = cellChanges[0].column;
+            for (let i = 1; i < cellChanges.length; ++i) {
+                if (cellChanges[i].row < minRow) minRow = cellChanges[i].row;
+                if (cellChanges[i].row > maxRow) maxRow = cellChanges[i].row;
+                if (cellChanges[i].column < minCol) minCol = cellChanges[i].column;
+                if (cellChanges[i].column > maxCol) maxCol = cellChanges[i].column;
+            }
+            const range = { startRow: minRow, startColumn: minCol, endRow: maxRow, endColumn: maxCol };
+            const command = new CellChangeCommand(tabState.editorTable, cellChanges, range, range);
+            tabState.history.executeCommand(command, range, range);
+
+            if (activateTable) {
+                tab.switchToExistingTab(tableName);
+                const lastChange = cellChanges[cellChanges.length - 1];
+                tabState.selection.setRange(lastChange.row, lastChange.column, lastChange.row, lastChange.column);
+                tabState.selection.move(lastChange.row, lastChange.column);
+                tabState.editorTableHandler.activate();
+            }
+
+            emitCellChanged(events);
+            return true;
+        };
+
+        const ensureTableRegisteredForApiEditAsync = async (tableName: string): Promise<boolean> => {
+            if (store.getHeader(tableName) !== false) return true;
+            try {
+                await store.registerTableAsync(tableName);
+                apiRegisteredTableNames.add(tableName);
+                return true;
+            } catch (error: unknown) {
+                console.error('[EditorAPI] registerTableAsync failed:', error);
+                return false;
+            }
+        };
+
+        const applyCellChangesToStoreAsync = async (tableName: string, changes: EditorApiCellValueChange[]): Promise<boolean> => {
+            const tabState = tab.getTabStateByName(tableName);
+            if (tabState !== null) {
+                return applyCellChangesToTab(tableName, tabState, changes, false);
+            }
+            if (changes.length === 0) return true;
+            if (!await ensureTableRegisteredForApiEditAsync(tableName)) return false;
+            const rows = store.getRows(tableName);
+            if (rows === false) return false;
+            const events: EditorCellChangeEvent[] = [];
+            for (let i = 0; i < changes.length; ++i) {
+                const c = changes[i];
+                if (c.row < 0 || c.row >= rows.length) return false;
+                if (c.column < 0 || c.column >= rows[c.row].length) return false;
+                events.push({tableName, row: c.row, column: c.column, oldValue: rows[c.row][c.column], newValue: c.value});
+            }
+            for (let i = 0; i < changes.length; ++i) {
+                const c = changes[i];
+                store.updateCellValueByRowIndex(tableName, c.row, c.column, c.value);
+            }
+            store.markTableDirty(tableName);
+            emitCellChanged(events);
+            return true;
+        };
 
         // edit 名前空間: コマンドパターンを使った書き込み操作（Undo/Redo 対応）
         // EditorAPI の row/column はストアインデックス（0始まり）だが、
@@ -264,76 +359,18 @@ export class EditorApiImpl implements EditorAPI {
             setCellValue(tableName: string, row: number, column: number, value: string): boolean {
                 const tabState = tab.getTabStateByName(tableName);
                 if (!tabState) return false;
-                const rows = store.getRows(tableName);
-                if (rows === false) return false;
-                if (row < 0 || row >= rows.length) return false;
-                if (column < 0 || column >= rows[row].length) return false;
-                const oldValue = rows[row][column];
-                // DOM インデックスに変換する
-                const domRow = row + 1;
-                const domColumn = column + tabState.editorTable.dataColumnOffset();
-                const changes: CellChange[] = [{ row: domRow, column: domColumn, oldValue, newValue: value }];
-                const range = { startRow: domRow, startColumn: domColumn, endRow: domRow, endColumn: domColumn };
-                const command = new CellChangeCommand(tabState.editorTable, changes, range, range);
-                tabState.history.executeCommand(command, range, range);
-                // タブを最前面にして更新セルを選択状態にする
-                tab.switchToExistingTab(tableName);
-                tabState.selection.setRange(domRow, domColumn, domRow, domColumn);
-                tabState.selection.move(domRow, domColumn);
-                tabState.editorTableHandler.activate();
-                // セル変更イベントはストアインデックスで発火する（外部API視点）
-                // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
-                const handlers = [...cellChangedHandlers];
-                for (let i = 0; i < handlers.length; ++i) {
-                    try { handlers[i]({ tableName, row, column, oldValue, newValue: value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
-                }
-                return true;
+                return applyCellChangesToTab(tableName, tabState, [{ row, column, value }], true);
             },
             setCellValues(tableName: string, changes: Array<{ row: number; column: number; value: string }>): boolean {
                 const tabState = tab.getTabStateByName(tableName);
                 if (!tabState) return false;
-                const rows = store.getRows(tableName);
-                if (rows === false) return false;
-                // 全変更の oldValue を取得して CellChange[] を構築する（DOM インデックスに変換）
-                const cellChanges: CellChange[] = [];
-                for (let i = 0; i < changes.length; ++i) {
-                    const c = changes[i];
-                    if (c.row < 0 || c.row >= rows.length) return false;
-                    if (c.column < 0 || c.column >= rows[c.row].length) return false;
-                    cellChanges.push({ row: c.row + 1, column: c.column + tabState.editorTable.dataColumnOffset(), oldValue: rows[c.row][c.column], newValue: c.value });
-                }
-                // 空配列の場合は何もせず成功を返す
-                if (cellChanges.length === 0) return true;
-                // 範囲は DOM インデックスで包含するバウンディングボックスとする
-                let minRow = cellChanges[0].row, maxRow = cellChanges[0].row;
-                let minCol = cellChanges[0].column, maxCol = cellChanges[0].column;
-                for (let i = 1; i < cellChanges.length; ++i) {
-                    if (cellChanges[i].row < minRow) minRow = cellChanges[i].row;
-                    if (cellChanges[i].row > maxRow) maxRow = cellChanges[i].row;
-                    if (cellChanges[i].column < minCol) minCol = cellChanges[i].column;
-                    if (cellChanges[i].column > maxCol) maxCol = cellChanges[i].column;
-                }
-                const range = { startRow: minRow, startColumn: minCol, endRow: maxRow, endColumn: maxCol };
-                const command = new CellChangeCommand(tabState.editorTable, cellChanges, range, range);
-                tabState.history.executeCommand(command, range, range);
-                // タブを最前面にして最後の変更セルを選択状態にする
-                tab.switchToExistingTab(tableName);
-                const lastChange = cellChanges[cellChanges.length - 1];
-                tabState.selection.setRange(lastChange.row, lastChange.column, lastChange.row, lastChange.column);
-                tabState.selection.move(lastChange.row, lastChange.column);
-                tabState.editorTableHandler.activate();
-                // セル変更イベントはストアインデックスで発火する（外部API視点）
-                // oldValue は cellChanges から取得する（executeCommand 後はストアが更新済みのため rows を参照してはならない）
-                // ハンドラー実行中の dispose() によるインデックスずれを防止するためスナップショットを使用する
-                const handlers = [...cellChangedHandlers];
-                for (let i = 0; i < cellChanges.length; ++i) {
-                    const cc = cellChanges[i];
-                    const c = changes[i];
-                    for (let j = 0; j < handlers.length; ++j) {
-                        try { handlers[j]({ tableName, row: c.row, column: c.column, oldValue: cc.oldValue, newValue: c.value }); } catch (e) { console.error('[EditorAPI] イベントハンドラーでエラーが発生しました:', e); }
-                    }
-                }
-                return true;
+                return applyCellChangesToTab(tableName, tabState, changes, true);
+            },
+            async setCellValueAsync(tableName: string, row: number, column: number, value: string): Promise<boolean> {
+                return applyCellChangesToStoreAsync(tableName, [{ row, column, value }]);
+            },
+            async setCellValuesAsync(tableName: string, changes: Array<{ row: number; column: number; value: string }>): Promise<boolean> {
+                return applyCellChangesToStoreAsync(tableName, changes);
             },
             insertRow(tableName: string, rowIndex: number): boolean {
                 const tabState = tab.getTabStateByName(tableName);
@@ -372,10 +409,10 @@ export class EditorApiImpl implements EditorAPI {
             async saveTableAsync(tableName: string): Promise<boolean> {
                 if (store.getHeader(tableName) === false) return false;
                 await saveTableDataFromStoreAsync(tableName, store);
-                // Dirty状態をクリアする（タブが開いている場合のみ: Historyレジストリが必要）
+                // Dirty状態をクリアする。HistoryがないViewプラグイン経由の編集にも対応する。
+                store.markSavedIfRegistered(tableName);
                 const tabState = tab.getTabStateByName(tableName);
                 if (tabState) {
-                    store.markAllSaved(tableName);
                     // RelationsPanel のDirtyマークを更新する（通常保存パスと同等の後処理）
                     if (tabState.editorTable.relationsPanel !== false) {
                         tabState.editorTable.relationsPanel.updateDirtyMark(tableName, false);
@@ -383,6 +420,10 @@ export class EditorApiImpl implements EditorAPI {
                     // 保存完了後にgit差分を再取得してセルのハイライトを更新する
                     tabState.editorTable.refreshGitDiffAsync()
                         .catch((e: unknown) => { console.error('[EditorAPI] refreshGitDiffAsync failed:', e); });
+                }
+                if (apiRegisteredTableNames.has(tableName)) {
+                    store.unregisterTable(tableName);
+                    apiRegisteredTableNames.delete(tableName);
                 }
                 // テーブル保存イベントを発火する
                 const snapshot = [...tableSavedHandlers];

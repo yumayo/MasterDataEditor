@@ -25,6 +25,7 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-
 import type {BookmarkEntry} from "../panels/bookmark-panel";
 import {BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS} from "../config/masterdataeditor-path";
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
+import {ViewPluginHost} from "../plugins/view-plugin-host";
 
 (async () => {
     // ステータスバーは起動直後から予約領域を実体として描画する。
@@ -74,12 +75,31 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
         tab.openDebugApiDetailTab(detail);
     });
 
+    // schemaRegistry は Map 参照を EditorApiImpl に渡すだけなので、中身が空でも先に構築できる。
+    // schema ループで後から set() すれば同じインスタンスを参照している EditorApiImpl に自然と反映される。
+    const schemaRegistry = new Map<string, SchemaEntry>();
+    const validationSchemas = new Map<string, TableSchema>();
+
+    const validationEngine = new ValidationEngine(store, referenceDataCache);
+    validationEngine.setExportValidationSettings(getAppliedExportValidationSettings());
+    const pluginValidationRunner = new PluginValidationRunner(store);
+
+    // EditorAPI を構築して window.editorApi として公開する。
+    // ViewプラグインにもこのAPIを渡すため、Sidebar構築前に用意する。
+    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine, pluginValidationRunner);
+    tab.connectEditorApi(editorApi);
+    (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
+
+    const viewPluginHost = new ViewPluginHost(editorApi, notification);
+    tab.connectViewPluginHost(viewPluginHost);
+
     const realSidebar = new Sidebar(
         explorerElement,
         tab,
         editor,
         tab.getOpenEditorTables(),
-        uiStateStore
+        uiStateStore,
+        viewPluginHost,
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
@@ -102,9 +122,6 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
     // StatusBar は起動直後にDOMだけ先行描画済み。
     // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
-    const validationEngine = new ValidationEngine(store, referenceDataCache);
-    validationEngine.setExportValidationSettings(getAppliedExportValidationSettings());
-    const pluginValidationRunner = new PluginValidationRunner(store);
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
     const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
@@ -167,16 +184,6 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
         }
     }, true);
 
-    // schemaRegistry は Map 参照を EditorApiImpl に渡すだけなので、中身が空でも先に構築できる。
-    // schema ループで後から set() すれば同じインスタンスを参照している EditorApiImpl に自然と反映される。
-    const schemaRegistry = new Map<string, SchemaEntry>();
-    const validationSchemas = new Map<string, TableSchema>();
-
-    // EditorAPI を構築して window.editorApi として公開する
-    const editorApi = new EditorApiImpl(store, tab, schemaRegistry, validationEngine, pluginValidationRunner);
-    tab.connectEditorApi(editorApi);
-    (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
-
     // C# ↔ WebView ブリッジを構築する（コンストラクタでリスナー登録完了）
     const bridge = new EditorApiBridge(editorApi, debugConsole);
 
@@ -185,6 +192,7 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 
     // 保存済みタブは、schema 一覧や全ファイル preload の完了を待たずにまずタブバーへ復元する。
     // restoreTabsFromUiStateAsync は非アクティブタブの中身を作らず、アクティブタブだけを読み込む。
+    // Viewプラグインがアクティブだった場合は、プラグイン読み込み後に表示を再開する。
     await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
 
     // バックグラウンド preload の完了を待つ（並列読み込みがUI初期化中に進行している）
@@ -213,6 +221,9 @@ import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
         validationSchemas.set(tableName, createValidationTableSchemaFromJson(schemaJson));
     }
+
+    await viewPluginHost.loadPluginsAsync();
+    tab.restorePendingViewPluginTabFromUiState();
 
     const activeTabName = tab.getActiveTabName();
     if (activeTabName !== false) {

@@ -6,6 +6,8 @@ import {SearchPanel} from "../panels/search-panel";
 import {BookmarkPanel, BookmarkEntry} from "../panels/bookmark-panel";
 import {SourceControlPanel} from "../panels/source-control-panel";
 import {TimelinePanel} from "../panels/timeline-panel";
+import {ViewPluginPanel} from "../panels/view-plugin-panel";
+import type {ViewPluginHost} from "../plugins/view-plugin-host";
 import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
 import {EditorTable} from "../editor/editor-table";
 import {Editor} from "../editor/editor";
@@ -32,6 +34,7 @@ export class Sidebar {
     private readonly bookmarkPanel: BookmarkPanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly timelinePanel: TimelinePanel;
+    private readonly viewPluginPanel: ViewPluginPanel;
     private readonly directory: ExplorerDirectory;
     private readonly uiStateStore: UiStateStore;
     constructor(
@@ -39,7 +42,8 @@ export class Sidebar {
         tab: Tab,
         editor: Editor,
         openEditorTables: Map<string, EditorTable>,
-        uiStateStore: UiStateStore
+        uiStateStore: UiStateStore,
+        viewPluginHost: ViewPluginHost,
     ) {
         this.explorerElement = explorerElement;
         this.tab = tab;
@@ -88,6 +92,12 @@ export class Sidebar {
         // ブックマークパネル
         this.bookmarkPanel = new BookmarkPanel(tab);
         this.bookmarkPanel.appendTo(sidebarContent);
+
+        // Viewプラグインパネル
+        this.viewPluginPanel = new ViewPluginPanel(viewPluginHost, (pluginId: string) => {
+            this.tab.openViewPluginTab(pluginId);
+        });
+        this.viewPluginPanel.appendTo(sidebarContent);
 
         // ソース管理パネル（差分タブを開くために Tab への参照が必要）
         this.sourceControlPanel = new SourceControlPanel(tab, this.activityBar);
@@ -200,6 +210,21 @@ export class Sidebar {
      */
     clearExplorerHighlight(): void {
         this.directory.clearHighlight();
+    }
+
+    /**
+     * 指定Viewプラグインをアクティブ（ハイライト）状態にする
+     * 他のViewプラグインのハイライトは解除する
+     */
+    highlightViewPlugin(pluginId: string): void {
+        this.viewPluginPanel.setActivePlugin(pluginId);
+    }
+
+    /**
+     * 全Viewプラグイン項目のハイライトを解除する
+     */
+    clearViewPluginHighlight(): void {
+        this.viewPluginPanel.clearActivePlugin();
     }
 
     /**
@@ -337,6 +362,7 @@ export class Sidebar {
         this.referencesPanel.hide();
         this.searchPanel.hide();
         this.bookmarkPanel.hide();
+        this.viewPluginPanel.hide();
         this.sourceControlPanel.hide();
         this.timelinePanel.hide();
 
@@ -367,6 +393,8 @@ export class Sidebar {
             this.searchPanel.show();
         } else if (item === 'bookmarks') {
             this.bookmarkPanel.show();
+        } else if (item === 'views') {
+            this.viewPluginPanel.show();
         }
     }
 

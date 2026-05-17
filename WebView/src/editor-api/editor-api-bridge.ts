@@ -150,6 +150,8 @@ export class EditorApiBridge {
         switch (methodName) {
             case 'setCellValue': return this.api.edit.setCellValue(this.requireString(params, 'tableName'), this.requireNumber(params, 'row'), this.requireNumber(params, 'column'), this.requireString(params, 'value'));
             case 'setCellValues': return this.api.edit.setCellValues(this.requireString(params, 'tableName'), this.requireArray(params, 'changes'));
+            case 'setCellValueAsync': return this.api.edit.setCellValueAsync(this.requireString(params, 'tableName'), this.requireNumber(params, 'row'), this.requireNumber(params, 'column'), this.requireString(params, 'value'));
+            case 'setCellValuesAsync': return this.api.edit.setCellValuesAsync(this.requireString(params, 'tableName'), this.requireArray(params, 'changes'));
             case 'insertRow': return this.api.edit.insertRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
             case 'deleteRow': return this.api.edit.deleteRow(this.requireString(params, 'tableName'), this.requireNumber(params, 'rowIndex'));
             case 'openTableAsync': return this.api.edit.openTableAsync(this.requireString(params, 'tableName'));

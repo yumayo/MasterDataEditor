@@ -2,7 +2,7 @@ import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 
-export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'erDiagram' | 'sourceControl' | 'history';
+export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'views' | 'erDiagram' | 'sourceControl' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
 
 export interface UiSidebarState {
@@ -61,6 +61,7 @@ export interface UiStoredTab {
     description: string | null;
     pinned: boolean;
     diff: UiStoredDiffTab | null;
+    view: UiStoredViewPluginTab | null;
     scroll: UiScrollPosition | null;
     editorTable: UiStoredEditorTableState | null;
 }
@@ -70,6 +71,10 @@ export interface UiStoredDiffTab {
     gitPath: string;
     isStaged: boolean;
     isNew: boolean;
+}
+
+export interface UiStoredViewPluginTab {
+    pluginId: string;
 }
 
 export interface UiTabsState {
@@ -98,7 +103,7 @@ const MAX_FORM_PANEL_NAV_STACK = 20;
 const MAX_FORM_PANEL_LABEL_LENGTH = 512;
 const MAX_SCROLL_POSITION = 1_000_000_000;
 const MAX_CELL_INDEX = 1_000_000;
-export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'erDiagram', 'sourceControl', 'history'];
+export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'views', 'erDiagram', 'sourceControl', 'history'];
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
 const DEFAULT_SCROLL_POSITION: UiScrollPosition = {scrollLeft: 0, scrollTop: 0};
 const DEFAULT_SELECTION_STATE: UiStoredSelectionState = {
@@ -175,12 +180,17 @@ function cloneStoredDiffTab(diff: UiStoredDiffTab): UiStoredDiffTab {
     return {...diff};
 }
 
+function cloneStoredViewPluginTab(view: UiStoredViewPluginTab): UiStoredViewPluginTab {
+    return {...view};
+}
+
 function cloneStoredTab(tab: UiStoredTab): UiStoredTab {
     return {
         name: tab.name,
         description: tab.description,
         pinned: tab.pinned,
         diff: tab.diff === null ? null : cloneStoredDiffTab(tab.diff),
+        view: tab.view === null ? null : cloneStoredViewPluginTab(tab.view),
         scroll: tab.scroll === null ? null : cloneScrollPosition(tab.scroll),
         editorTable: tab.editorTable === null ? null : cloneEditorTableState(tab.editorTable),
     };
@@ -355,6 +365,14 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
     };
 }
 
+function normalizeStoredViewPluginTab(value: unknown): UiStoredViewPluginTab | null {
+    const record = asRecord(value);
+    if (record === null) return null;
+    const pluginId = normalizeTabName(record['pluginId']);
+    if (pluginId === null) return null;
+    return {pluginId};
+}
+
 function normalizeStoredTab(value: unknown): UiStoredTab | null {
     const record = asRecord(value);
     if (record === null) return null;
@@ -367,6 +385,7 @@ function normalizeStoredTab(value: unknown): UiStoredTab | null {
         description: normalizeTabDescription(record['description']),
         pinned: record['pinned'] === true,
         diff: normalizeStoredDiffTab(record['diff']),
+        view: normalizeStoredViewPluginTab(record['view']),
         scroll,
         editorTable,
     };

@@ -38,6 +38,7 @@ import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
 import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab, UiScrollPosition, UiStoredEditorTableState, UiStoredSelectionState, UiStoredFormPanelState} from "../app/ui-state";
 import {DebugApiDetailTab} from "./debug-api-detail-tab";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
+import {ViewPluginHost, type ViewPluginMount} from "../plugins/view-plugin-host";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -53,6 +54,9 @@ export const TABLE_DEFINITION_TAB_NAME = '新しいテーブル';
 
 /** DEBUG CONSOLE のAPI詳細を表示する一時タブ名 */
 const DEBUG_API_DETAIL_TAB_NAME = 'API 詳細';
+
+/** Viewプラグインタブ名のプレフィックス */
+const VIEW_PLUGIN_TAB_PREFIX = 'View: ';
 
 type TabScrollPositionPreference =
     | { kind: 'edge'; edge: 'left' | 'right' }
@@ -150,6 +154,9 @@ export class Tab {
     /** ui-state からのタブ復元中は、アクティブタブへの自動スクロールより保存位置を優先する */
     private restoringTabsFromUiState: boolean;
 
+    /** ui-state 復元時にViewプラグイン読み込み完了後へ遅延するアクティブViewタブ名 */
+    private pendingRestoredViewPluginActiveTabName: string | null;
+
     /** まだTabStateを構築していない復元タブのスクロール位置 */
     private readonly restoredTabScrollPositions: Map<string, UiScrollPosition>;
 
@@ -243,6 +250,21 @@ export class Tab {
     /** API詳細タブを次に表示するときに反映する詳細情報 */
     private pendingDebugApiDetail: DebugConsoleEntryDetail | null;
 
+    /** Viewプラグインホスト（main.tsで接続される。未接続時はfalse） */
+    private viewPluginHost: ViewPluginHost | false;
+
+    /** ViewプラグインID -> タブ名 */
+    private readonly viewPluginTabNamesById: Map<string, string>;
+
+    /** Viewプラグインタブ名 -> プラグインID */
+    private readonly viewPluginIdsByTabName: Map<string, string>;
+
+    /** Viewプラグインタブ名 -> ラッパー要素 */
+    private readonly viewPluginWrapperElements: Map<string, HTMLElement>;
+
+    /** Viewプラグインタブ名 -> マウント解除ハンドル */
+    private readonly viewPluginMounts: Map<string, ViewPluginMount>;
+
     /**
      * 次回 activateTableDefinitionTab 呼び出し時に使用する編集対象情報。
      * openEditTableDefinitionTabAsync で設定し、activateTableDefinitionTab で消費される。
@@ -316,6 +338,7 @@ export class Tab {
         this.tabScrollPositionPreference = { kind: 'edge', edge: 'left' };
         this.pendingTabBarScrollPosition = null;
         this.restoringTabsFromUiState = false;
+        this.pendingRestoredViewPluginActiveTabName = null;
         this.restoredTabScrollPositions = new Map();
         this.restoredEditorTableStates = new Map();
         this.tabScrollHadStableOverflow = false;
@@ -348,6 +371,11 @@ export class Tab {
         this.debugApiDetailWrapperElement = false;
         this.debugApiDetailTab = false;
         this.pendingDebugApiDetail = null;
+        this.viewPluginHost = false;
+        this.viewPluginTabNamesById = new Map();
+        this.viewPluginIdsByTabName = new Map();
+        this.viewPluginWrapperElements = new Map();
+        this.viewPluginMounts = new Map();
         this.pendingEditTarget = false;
         this.currentFormPanel = false;
         this.defaultRelationsPanelVisible = false;
@@ -768,6 +796,13 @@ export class Tab {
         if (diffTab !== undefined) {
             return diffTab.getScrollPosition();
         }
+        const viewPluginWrapper = this.viewPluginWrapperElements.get(name);
+        if (viewPluginWrapper !== undefined) {
+            return {
+                scrollLeft: Math.max(0, Math.round(viewPluginWrapper.scrollLeft)),
+                scrollTop: Math.max(0, Math.round(viewPluginWrapper.scrollTop)),
+            };
+        }
         const state = this.tabStates.get(name);
         if (state !== undefined) {
             if (state.wrapperElement.style.display === 'none') {
@@ -881,6 +916,21 @@ export class Tab {
                     description: null,
                     pinned: tabButton.isPinned(),
                     diff: {...diff},
+                    view: null,
+                    scroll: this.getStoredTabScrollPosition(tabButton.name),
+                    editorTable: null,
+                });
+                continue;
+            }
+            if (this.isViewPluginTabName(tabButton.name)) {
+                const pluginId = this.viewPluginIdsByTabName.get(tabButton.name);
+                if (pluginId === undefined) continue;
+                open.push({
+                    name: tabButton.name,
+                    description: tabButton.getDescriptionText(),
+                    pinned: tabButton.isPinned(),
+                    diff: null,
+                    view: {pluginId},
                     scroll: this.getStoredTabScrollPosition(tabButton.name),
                     editorTable: null,
                 });
@@ -894,6 +944,7 @@ export class Tab {
                 description: tabButton.getDescriptionText(),
                 pinned: tabButton.isPinned(),
                 diff: null,
+                view: null,
                 scroll: editorTable === null ? this.getStoredTabScrollPosition(tabButton.name) : this.cloneUiScrollPosition(editorTable.scroll),
                 editorTable,
             });
@@ -912,6 +963,45 @@ export class Tab {
 
     private isPersistentSpecialTabName(name: string): boolean {
         return name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME;
+    }
+
+    private isViewPluginTabName(name: string): boolean {
+        return name.startsWith(VIEW_PLUGIN_TAB_PREFIX);
+    }
+
+    private isFullWidthSpecialTabName(name: string): boolean {
+        return name === SETTINGS_TAB_NAME
+            || name === ER_DIAGRAM_TAB_NAME
+            || name === TABLE_DEFINITION_TAB_NAME
+            || name === DEBUG_API_DETAIL_TAB_NAME
+            || this.isViewPluginTabName(name)
+            || name.startsWith(DIFF_TAB_PREFIX);
+    }
+
+    private syncSidebarSelectionForTab(name: string): void {
+        if (this.isViewPluginTabName(name)) {
+            this.sidebar.clearExplorerHighlight();
+            const pluginId = this.viewPluginIdsByTabName.get(name);
+            if (pluginId === undefined) {
+                this.sidebar.clearViewPluginHighlight();
+            } else {
+                this.sidebar.highlightViewPlugin(pluginId);
+            }
+            return;
+        }
+
+        this.sidebar.clearViewPluginHighlight();
+        if (this.isFullWidthSpecialTabName(name)) {
+            this.sidebar.clearExplorerHighlight();
+            return;
+        }
+
+        this.sidebar.highlightExplorerFile(name);
+    }
+
+    private clearSidebarSelection(): void {
+        this.sidebar.clearExplorerHighlight();
+        this.sidebar.clearViewPluginHighlight();
     }
 
     notifyTabOrderChanged(): void {
@@ -1251,17 +1341,31 @@ export class Tab {
                 description: tab.description,
                 pinned: tab.pinned,
                 diff: tab.diff === null ? null : {...tab.diff},
+                view: tab.view === null ? null : {...tab.view},
                 scroll: tab.scroll === null ? null : this.cloneUiScrollPosition(tab.scroll),
                 editorTable: tab.editorTable === null ? null : this.cloneUiEditorTableState(tab.editorTable),
             }));
             if (tabs.active !== null && !restoredTabs.some(tab => tab.name === tabs.active)) {
-                restoredTabs.push({ name: tabs.active, description: null, pinned: false, diff: null, scroll: null, editorTable: null });
+                restoredTabs.push({ name: tabs.active, description: null, pinned: false, diff: null, view: null, scroll: null, editorTable: null });
             }
 
             const restoredNames = new Set<string>();
             for (const tab of restoredTabs) {
                 const name = tab.name;
                 if (this.isTemporaryTabName(name)) continue;
+                if (tab.view !== null) {
+                    if (!this.isViewPluginTabName(name) || tab.diff !== null) continue;
+                    if (this.viewPluginTabNamesById.has(tab.view.pluginId)) continue;
+                    if (tab.scroll !== null) {
+                        this.restoredTabScrollPositions.set(name, this.cloneUiScrollPosition(tab.scroll));
+                    }
+                    this.viewPluginTabNamesById.set(tab.view.pluginId, name);
+                    this.viewPluginIdsByTabName.set(name, tab.view.pluginId);
+                    this.append(name, tab.description, tab.pinned);
+                    restoredNames.add(name);
+                    continue;
+                }
+                if (this.isViewPluginTabName(name)) continue;
                 if (name.startsWith(DIFF_TAB_PREFIX) && tab.diff === null) continue;
                 if (tab.diff !== null && !name.startsWith(DIFF_TAB_PREFIX)) continue;
                 if (tab.scroll !== null) {
@@ -1284,6 +1388,11 @@ export class Tab {
                     if (!opened) {
                         this.removeTabButton(tabs.active);
                     }
+                    return;
+                }
+
+                if (this.viewPluginIdsByTabName.has(tabs.active)) {
+                    this.pendingRestoredViewPluginActiveTabName = tabs.active;
                     return;
                 }
 
@@ -1416,8 +1525,8 @@ export class Tab {
 
         this.removeTabButton(name);
 
-        // テーブルクローズイベントを発火する（設定タブ・差分タブ・ER図タブ・テーブル定義タブは通常テーブルではないため除外する）
-        if (this.editorApi !== false && name !== SETTINGS_TAB_NAME && name !== ER_DIAGRAM_TAB_NAME && name !== TABLE_DEFINITION_TAB_NAME && name !== DEBUG_API_DETAIL_TAB_NAME && !name.startsWith(DIFF_TAB_PREFIX)) {
+        // テーブルクローズイベントを発火する（特殊タブは通常テーブルではないため除外する）
+        if (this.editorApi !== false && !this.isFullWidthSpecialTabName(name)) {
             this.editorApi.emitTableClosed(name);
         }
 
@@ -1486,6 +1595,15 @@ export class Tab {
             this.pendingDebugApiDetail = null;
         }
 
+        // Viewプラグインタブが閉じられた場合: マウント解除して DOM からラッパーを除去する
+        if (this.isViewPluginTabName(name)) {
+            if (wasActive) {
+                this.editor.leaveSettingsMode();
+                this.activeTabName = false;
+            }
+            this.destroyViewPluginTab(name);
+        }
+
         // 差分タブが閉じられた場合: 対象の DiffTab を破棄してマップから除去する
         if (name.startsWith(DIFF_TAB_PREFIX)) {
             if (wasActive) {
@@ -1504,8 +1622,8 @@ export class Tab {
         if (!wasActive) return;
         if (next) { this.enableTabButton(next.name); return; }
         if (prev) { this.enableTabButton(prev.name); return; }
-        // アクティブだったタブを閉じて他にタブがない場合、エクスプローラーのハイライトをクリアする
-        this.sidebar.clearExplorerHighlight();
+        // アクティブだったタブを閉じて他にタブがない場合、サイドバーの選択状態をクリアする
+        this.clearSidebarSelection();
         this.persistTabs(false);
     }
 
@@ -1749,13 +1867,8 @@ export class Tab {
         tabButton.enable();
         tabButton.scrollIntoViewIfNeeded();
 
-        // エクスプローラーのハイライトを更新する
-        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブ・API詳細タブはエクスプローラーに対応するファイルがないのでクリア、通常テーブルはハイライト
-        if (name === SETTINGS_TAB_NAME || name === ER_DIAGRAM_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME || name === DEBUG_API_DETAIL_TAB_NAME || name.startsWith(DIFF_TAB_PREFIX)) {
-            this.sidebar.clearExplorerHighlight();
-        } else {
-            this.sidebar.highlightExplorerFile(name);
-        }
+        // サイドバーの選択状態をアクティブタブに同期する
+        this.syncSidebarSelectionForTab(name);
 
         // 差分タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name.startsWith(DIFF_TAB_PREFIX)) {
@@ -1796,31 +1909,20 @@ export class Tab {
             return null;
         }
 
-        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
+        // Viewプラグインタブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
+        if (this.isViewPluginTabName(name)) {
+            this.activateViewPluginTab(name);
+            return null;
+        }
+
+        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブから通常テーブルタブへの復帰時: rightSlot・ナビゲーションバーを復元する
         // この判定は activateTabState() より前で行う必要がある（activateTabState 内は常に通常タブの文脈）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) {
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName)) {
             this.editor.leaveSettingsMode();
         }
 
-        // 設定タブが表示中であれば非表示にする
-        if (this.settingsWrapperElement !== false) {
-            this.settingsWrapperElement.style.display = 'none';
-        }
-
-        // ER図タブが表示中であれば非表示にする
-        if (this.erDiagramWrapperElement !== false) {
-            this.erDiagramWrapperElement.style.display = 'none';
-        }
-
-        // テーブル定義タブが表示中であれば非表示にする
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.style.display = 'none';
-        }
-
-        // API詳細タブが表示中であれば非表示にする
-        if (this.debugApiDetailWrapperElement !== false) {
-            this.debugApiDetailWrapperElement.style.display = 'none';
-        }
+        this.hidePersistentSpecialTabWrappers();
+        this.hideAllViewPluginTabs();
 
         // 現在アクティブなタブが差分タブの場合のみ非表示にして leaveSettingsMode() を呼ぶ
         // （通常タブ→通常タブの切り替え時に余分な leaveSettingsMode() が呼ばれないようにする）
@@ -1943,6 +2045,32 @@ export class Tab {
     }
 
     /**
+     * Viewプラグインを専用タブとして開く。
+     * タブ本体はプラグインIDで管理し、表示名は "View: <title>" とする。
+     */
+    openViewPluginTab(pluginId: string): void {
+        if (this.viewPluginHost === false) {
+            this.notification.show('Viewプラグインホストが初期化されていません');
+            return;
+        }
+        const plugin = this.viewPluginHost.getPlugin(pluginId);
+        if (plugin === null) {
+            this.notification.show('Viewプラグインが見つかりません: ' + pluginId);
+            return;
+        }
+
+        let tabName = this.viewPluginTabNamesById.get(plugin.id);
+        if (tabName === undefined) {
+            tabName = this.createViewPluginTabName(plugin.title, plugin.id);
+            this.viewPluginTabNamesById.set(plugin.id, tabName);
+            this.viewPluginIdsByTabName.set(tabName, plugin.id);
+        }
+
+        const tabButton = this.append(tabName, plugin.description);
+        tabButton.click();
+    }
+
+    /**
      * 既存テーブルの定義編集タブを開く。
      * エクスプローラー・タブ・列ヘッダーの各コンテキストメニューから呼ばれる。
      */
@@ -1952,12 +2080,27 @@ export class Tab {
     }
 
     /**
+     * エクスプローラーファイルの右クリックメニューを表示する。
+     * ExplorerFile の contextmenu イベントハンドラから呼ばれる。
+     */
+    showExplorerContextMenu(tableName: string, x: number, y: number): void {
+        this.contextMenu.show(x, y, [
+            {
+                label: 'テーブル定義を編集',
+                action: () => {
+                    this.openEditTableDefinitionTab(tableName);
+                },
+            },
+        ]);
+    }
+
+    /**
      * API詳細タブをアクティブ化する。
      * DEBUG CONSOLE のログ行クリックから開かれる一時タブで、通常テーブルとは独立して全幅表示する。
      */
     private activateDebugApiDetailTab(): void {
-        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+        // 設定タブ・差分タブ・ER図タブ・テーブル定義タブ・Viewプラグインタブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== DEBUG_API_DETAIL_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
@@ -1984,6 +2127,7 @@ export class Tab {
         if (this.tableDefinitionWrapperElement !== false) {
             this.tableDefinitionWrapperElement.style.display = 'none';
         }
+        this.hideAllViewPluginTabs();
 
         this.activeTabName = DEBUG_API_DETAIL_TAB_NAME;
         this.persistTabs();
@@ -2014,14 +2158,147 @@ export class Tab {
     }
 
     /**
+     * Viewプラグインタブをアクティブ化する。
+     * 設定タブと同じ全幅表示で、プラグインが返すDOMを左ペイン全体に描画する。
+     */
+    private activateViewPluginTab(tabName: string): void {
+        if (this.viewPluginHost === false) {
+            this.notification.show('Viewプラグインホストが初期化されていません');
+            return;
+        }
+
+        // 他の全幅タブから来た場合は一度通常レイアウトへ戻して内部状態を揃える。
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName)) {
+            this.editor.leaveSettingsMode();
+        }
+
+        if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.diffTabs.forEach(diffTab => diffTab.hide());
+        }
+
+        if (this.activeTabName && !this.isFullWidthSpecialTabName(this.activeTabName)) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+
+        this.hidePersistentSpecialTabWrappers();
+        this.hideAllViewPluginTabs();
+
+        this.activeTabName = tabName;
+        this.persistTabs();
+
+        const pluginId = this.viewPluginIdsByTabName.get(tabName);
+        if (pluginId === undefined) {
+            this.notification.show('Viewプラグインタブの情報が見つかりません: ' + tabName);
+            return;
+        }
+
+        let wrapper = this.viewPluginWrapperElements.get(tabName);
+        if (wrapper === undefined) {
+            wrapper = document.createElement('div');
+            wrapper.classList.add('tab-wrapper', 'view-plugin-tab-wrapper');
+            wrapper.dataset.viewPluginId = pluginId;
+            wrapper.style.display = 'none';
+            this.editor.appendChild(wrapper);
+            this.viewPluginWrapperElements.set(tabName, wrapper);
+
+            const root = document.createElement('div');
+            root.classList.add('view-plugin-tab-root');
+            root.dataset.viewPluginId = pluginId;
+            wrapper.appendChild(root);
+
+            const tabButton = this.tabButtons.find(button => button.name === tabName);
+            const mount = this.viewPluginHost.mountView(pluginId, root, {
+                onDirtyChanged: (dirty: boolean) => {
+                    tabButton?.setDirty(dirty);
+                },
+            });
+            if (mount !== null) {
+                this.viewPluginMounts.set(tabName, mount);
+            }
+        }
+
+        this.relationsPanel.disconnectEditorTable();
+        this.editor.enterSettingsMode();
+        wrapper.style.display = '';
+        const restoredScroll = this.restoredTabScrollPositions.get(tabName);
+        if (restoredScroll !== undefined) {
+            this.restoredTabScrollPositions.delete(tabName);
+            requestAnimationFrame(() => {
+                wrapper.scrollLeft = restoredScroll.scrollLeft;
+                wrapper.scrollTop = restoredScroll.scrollTop;
+            });
+        }
+        this.navigationHistory.pushTabSwitch(tabName);
+    }
+
+    private createViewPluginTabName(title: string, pluginId: string): string {
+        const baseName = VIEW_PLUGIN_TAB_PREFIX + title;
+        if (!this.tabButtons.some(button => button.name === baseName) && !this.viewPluginIdsByTabName.has(baseName)) {
+            return baseName;
+        }
+        return VIEW_PLUGIN_TAB_PREFIX + title + ' (' + pluginId + ')';
+    }
+
+    private hidePersistentSpecialTabWrappers(): void {
+        if (this.settingsWrapperElement !== false) {
+            this.settingsWrapperElement.style.display = 'none';
+        }
+        if (this.erDiagramWrapperElement !== false) {
+            this.erDiagramWrapperElement.style.display = 'none';
+        }
+        if (this.tableDefinitionWrapperElement !== false) {
+            this.tableDefinitionWrapperElement.style.display = 'none';
+        }
+        if (this.debugApiDetailWrapperElement !== false) {
+            this.debugApiDetailWrapperElement.style.display = 'none';
+        }
+    }
+
+    private hideAllViewPluginTabs(): void {
+        this.viewPluginWrapperElements.forEach(wrapper => {
+            wrapper.style.display = 'none';
+        });
+    }
+
+    private destroyViewPluginTab(tabName: string): void {
+        const mount = this.viewPluginMounts.get(tabName);
+        if (mount !== undefined) {
+            mount.dispose();
+            this.viewPluginMounts.delete(tabName);
+        }
+        const wrapper = this.viewPluginWrapperElements.get(tabName);
+        if (wrapper !== undefined) {
+            wrapper.remove();
+            this.viewPluginWrapperElements.delete(tabName);
+        }
+        const pluginId = this.viewPluginIdsByTabName.get(tabName);
+        if (pluginId !== undefined) {
+            this.viewPluginTabNamesById.delete(pluginId);
+            this.viewPluginIdsByTabName.delete(tabName);
+        }
+    }
+
+    private async saveViewPluginTabAsync(tabName: string): Promise<void> {
+        const mount = this.viewPluginMounts.get(tabName);
+        if (mount === undefined) return;
+        const saved = await mount.saveAsync();
+        if (!saved) return;
+        const tabButton = this.tabButtons.find(button => button.name === tabName);
+        tabButton?.setDirty(false);
+    }
+
+    /**
      * テーブル定義タブをアクティブ化する。
      * enableTabButton(TABLE_DEFINITION_TAB_NAME) から呼ばれる。
      * TableDefinitionEditor の初回生成・再表示を担う。
      * 設定タブと同様に全幅表示する。
      */
     private activateTableDefinitionTab(): void {
-        // 設定タブ・差分タブ・ER図タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元する
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+        // 設定タブ・差分タブ・ER図タブ・API詳細タブ・Viewプラグインタブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元する
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== TABLE_DEFINITION_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
@@ -2052,6 +2329,7 @@ export class Tab {
         if (this.debugApiDetailWrapperElement !== false) {
             this.debugApiDetailWrapperElement.style.display = 'none';
         }
+        this.hideAllViewPluginTabs();
 
         this.activeTabName = TABLE_DEFINITION_TAB_NAME;
         this.persistTabs();
@@ -2154,21 +2432,6 @@ export class Tab {
     }
 
     /**
-     * エクスプローラーファイルの右クリックメニューを表示する。
-     * ExplorerFile の contextmenu イベントハンドラから呼ばれる。
-     */
-    showExplorerContextMenu(tableName: string, x: number, y: number): void {
-        this.contextMenu.show(x, y, [
-            {
-                label: 'テーブル定義を編集',
-                action: () => {
-                    this.openEditTableDefinitionTab(tableName);
-                },
-            },
-        ]);
-    }
-
-    /**
      * タブボタンの右クリックコンテキストメニューを表示する。
      * TabButton.onContextMenu から呼ばれる。
      * 固定/固定解除は永続タブ全体、テーブル操作は通常テーブルタブに表示する。
@@ -2187,8 +2450,12 @@ export class Tab {
             },
         ];
 
-        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブ・API詳細タブは通常テーブル操作の対象外
-        if (tabName !== SETTINGS_TAB_NAME && tabName !== ER_DIAGRAM_TAB_NAME && tabName !== TABLE_DEFINITION_TAB_NAME && !tabName.startsWith(DIFF_TAB_PREFIX)) {
+        // 差分タブ・設定タブ・ER図タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブは通常テーブル操作の対象外
+        if (tabName !== SETTINGS_TAB_NAME
+            && tabName !== ER_DIAGRAM_TAB_NAME
+            && tabName !== TABLE_DEFINITION_TAB_NAME
+            && !tabName.startsWith(DIFF_TAB_PREFIX)
+            && !this.isViewPluginTabName(tabName)) {
             items.push(
                 { separator: true },
                 {
@@ -2360,9 +2627,9 @@ export class Tab {
      * 設定タブと同様に全幅表示する。
      */
     private activateErDiagramTab(): void {
-        // 設定タブ・差分タブ・テーブル定義タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // 設定タブ・差分タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
         // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME || (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX))) {
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== ER_DIAGRAM_TAB_NAME) {
             this.editor.leaveSettingsMode();
         }
 
@@ -2393,6 +2660,7 @@ export class Tab {
         if (this.debugApiDetailWrapperElement !== false) {
             this.debugApiDetailWrapperElement.style.display = 'none';
         }
+        this.hideAllViewPluginTabs();
 
         this.activeTabName = ER_DIAGRAM_TAB_NAME;
         this.persistTabs();
@@ -2451,6 +2719,10 @@ export class Tab {
      * 代わりに既存アクティブタブを非アクティブ化してから設定パネルを表示する。
      */
     private activateSettingsTab(): void {
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== SETTINGS_TAB_NAME) {
+            this.editor.leaveSettingsMode();
+        }
+
         // 差分タブがアクティブだった場合: 全差分タブを非表示にする
         if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             this.diffTabs.forEach(diffTab => diffTab.hide());
@@ -2470,6 +2742,7 @@ export class Tab {
         if (this.debugApiDetailWrapperElement !== false) {
             this.debugApiDetailWrapperElement.style.display = 'none';
         }
+        this.hideAllViewPluginTabs();
 
         // 通常テーブルタブがアクティブなら非アクティブ化する
         if (this.activeTabName && this.activeTabName !== SETTINGS_TAB_NAME) {
@@ -2539,6 +2812,7 @@ export class Tab {
         if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
         if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
         if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
+        if (this.isViewPluginTabName(this.activeTabName)) return;
         if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) return;
         const state = this.tabStates.get(this.activeTabName);
         if (!state) throw new Error(`focusActiveEditorTable: タブ '${this.activeTabName}' の状態が見つかりません`);
@@ -2563,6 +2837,10 @@ export class Tab {
         if (this.activeTabName === ER_DIAGRAM_TAB_NAME) return;
         if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
         if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
+        if (this.isViewPluginTabName(this.activeTabName)) {
+            await this.saveViewPluginTabAsync(this.activeTabName);
+            return;
+        }
         const formPanel = this.currentFormPanel;
         if (formPanel !== false) {
             await formPanel.flushPendingCommitsAsync();
@@ -2665,38 +2943,21 @@ export class Tab {
      */
     private activateDiffTab(diffTabName: string): void {
         // 通常テーブルタブがアクティブなら非アクティブ化する
-        if (this.activeTabName && !this.activeTabName.startsWith(DIFF_TAB_PREFIX) && this.activeTabName !== SETTINGS_TAB_NAME && this.activeTabName !== ER_DIAGRAM_TAB_NAME && this.activeTabName !== TABLE_DEFINITION_TAB_NAME && this.activeTabName !== DEBUG_API_DETAIL_TAB_NAME) {
+        if (this.activeTabName && !this.isFullWidthSpecialTabName(this.activeTabName)) {
             const previousState = this.tabStates.get(this.activeTabName);
             if (previousState) {
                 this.deactivateTabState(previousState);
             }
         }
 
-        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
+        // 設定タブ・ER図タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元しておく
         // （次の enterSettingsMode() で再び非表示にするが、内部状態を一貫させるために呼ぶ）
-        if (this.activeTabName === SETTINGS_TAB_NAME || this.activeTabName === ER_DIAGRAM_TAB_NAME || this.activeTabName === TABLE_DEFINITION_TAB_NAME || this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) {
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && !this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             this.editor.leaveSettingsMode();
         }
 
-        // 設定タブが表示中であれば非表示にする
-        if (this.settingsWrapperElement !== false) {
-            this.settingsWrapperElement.style.display = 'none';
-        }
-
-        // ER図タブが表示中であれば非表示にする
-        if (this.erDiagramWrapperElement !== false) {
-            this.erDiagramWrapperElement.style.display = 'none';
-        }
-
-        // テーブル定義タブが表示中であれば非表示にする
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.style.display = 'none';
-        }
-
-        // API詳細タブが表示中であれば非表示にする
-        if (this.debugApiDetailWrapperElement !== false) {
-            this.debugApiDetailWrapperElement.style.display = 'none';
-        }
+        this.hidePersistentSpecialTabWrappers();
+        this.hideAllViewPluginTabs();
 
         this.activeTabName = diffTabName;
         this.persistTabs();
@@ -2750,12 +3011,12 @@ export class Tab {
         // enableTabButton は highlightExplorerFile / activateTabState も内包するため、
         // ハイライト・スクロール位置復元・activeTabName の更新がすべてここで完結する。
         const remainingNormal = this.tabButtons.find(
-            btn => btn.name !== SETTINGS_TAB_NAME && btn.name !== ER_DIAGRAM_TAB_NAME && btn.name !== TABLE_DEFINITION_TAB_NAME && btn.name !== DEBUG_API_DETAIL_TAB_NAME && !btn.name.startsWith(DIFF_TAB_PREFIX)
+            btn => !this.isFullWidthSpecialTabName(btn.name)
         );
         if (remainingNormal) {
             this.enableTabButton(remainingNormal.name);
         } else {
-            this.sidebar.clearExplorerHighlight();
+            this.clearSidebarSelection();
             this.persistTabs(this.activeTabName);
         }
     }
@@ -3541,6 +3802,40 @@ export class Tab {
     /** EditorAPI を後から接続する（main.ts で EditorAPI 構築後に呼ばれる） */
     connectEditorApi(api: EditorAPI): void {
         this.editorApi = api;
+    }
+
+    /** Viewプラグインホストを後から接続する（main.tsで構築後に呼ばれる） */
+    connectViewPluginHost(host: ViewPluginHost): void {
+        this.viewPluginHost = host;
+    }
+
+    /** ui-state復元でアクティブだったViewプラグインタブを、プラグイン読み込み後に表示する */
+    restorePendingViewPluginTabFromUiState(): void {
+        const tabName = this.pendingRestoredViewPluginActiveTabName;
+        if (tabName === null) return;
+        this.pendingRestoredViewPluginActiveTabName = null;
+
+        const pluginId = this.viewPluginIdsByTabName.get(tabName);
+        if (pluginId === undefined) return;
+        if (this.viewPluginHost === false || this.viewPluginHost.getPlugin(pluginId) === null) {
+            this.destroyViewPluginTab(tabName);
+            this.removeTabButton(tabName);
+            this.activateFirstAvailableRestoredTab();
+            return;
+        }
+
+        this.enableTabButton(tabName);
+    }
+
+    private activateFirstAvailableRestoredTab(): void {
+        if (this.activeTabName !== false) return;
+        const tabButton = this.tabButtons[0];
+        if (tabButton !== undefined) {
+            tabButton.click();
+            return;
+        }
+        this.clearSidebarSelection();
+        this.persistTabs(false);
     }
 
     /** テーブル保存イベントを EditorAPI に委譲する（EditorTable から呼ばれる） */
