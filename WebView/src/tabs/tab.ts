@@ -1407,6 +1407,9 @@ export class Tab {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
             }
+            if (this.settingsPanel !== false) {
+                this.settingsPanel.destroy();
+            }
             if (this.settingsWrapperElement !== false) {
                 this.settingsWrapperElement.remove();
             }

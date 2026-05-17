@@ -55,6 +55,12 @@ interface SettingsFile {
 type SettingsKey = keyof SettingsValues;
 type SettingsPatch = Partial<SettingsValues>;
 
+interface SettingsHistoryEntry {
+    scope: SettingsScope;
+    before: ScopedSettingsState;
+    after: ScopedSettingsState;
+}
+
 interface SettingsValues {
     theme: ThemeValue | null;
     tabWrapEnabled: boolean | null;
@@ -243,6 +249,30 @@ function normalizeSettingsState(settingsState: ScopedSettingsState): ScopedSetti
     };
 }
 
+function cloneSettingsValues(settings: SettingsValues): SettingsValues {
+    return {...settings};
+}
+
+function cloneSettingsState(settingsState: ScopedSettingsState): ScopedSettingsState {
+    return {
+        workspace: cloneSettingsValues(settingsState.workspace),
+        user: cloneSettingsValues(settingsState.user),
+    };
+}
+
+function areSettingsValuesEqual(left: SettingsValues, right: SettingsValues): boolean {
+    return left.theme === right.theme
+        && left.tabWrapEnabled === right.tabWrapEnabled
+        && left.exportValidationDateTime === right.exportValidationDateTime
+        && left.exportBeginDateColumnName === right.exportBeginDateColumnName
+        && left.exportEndDateColumnName === right.exportEndDateColumnName;
+}
+
+function areSettingsStatesEqual(left: ScopedSettingsState, right: ScopedSettingsState): boolean {
+    return areSettingsValuesEqual(left.workspace, right.workspace)
+        && areSettingsValuesEqual(left.user, right.user);
+}
+
 function hasAnySettingsValue(settings: SettingsValues): boolean {
     return settings.theme !== null
         || settings.tabWrapEnabled !== null
@@ -399,15 +429,29 @@ export class SettingsPanel {
     private readonly exportEndDateColumnNameInput: HTMLInputElement;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
     private readonly tabButton: TabButton;
+    private readonly documentKeydownHandler: (event: KeyboardEvent) => void;
     private readonly collapsedSections = new Set<string>();
+    private readonly undoStack: SettingsHistoryEntry[];
+    private readonly redoStack: SettingsHistoryEntry[];
     private nextSectionId = 0;
 
     constructor(tabButton: TabButton) {
         this.tabButton = tabButton;
+        this.undoStack = [];
+        this.redoStack = [];
+        this.documentKeydownHandler = (event: KeyboardEvent) => {
+            if (!this.isVisible()) return;
+            this.handleKeyDown(event);
+        };
+        document.addEventListener('keydown', this.documentKeydownHandler, true);
 
         // 設定パネル全体のコンテナ
         this.element = document.createElement('div');
         this.element.classList.add('settings-panel');
+        this.element.tabIndex = 0;
+        this.element.addEventListener('keydown', (event: KeyboardEvent) => {
+            this.handleKeyDown(event);
+        });
 
         this.activeScope = hasAnySettingsValue(loadedSettingsState.user) ? 'user' : 'workspace';
         const userScopeButton = this.createScopeButton('user');
@@ -485,6 +529,7 @@ export class SettingsPanel {
         this.updateItemStyles();
 
         label.appendChild(dropdown);
+        label.appendChild(this.createSettingResetButton('theme'));
         displaySectionItems.appendChild(label);
 
         const tabWrapLabel = document.createElement('div');
@@ -516,6 +561,7 @@ export class SettingsPanel {
         tabWrapControl.appendChild(this.tabWrapToggle);
         tabWrapControl.appendChild(tabWrapTrack);
         tabWrapLabel.appendChild(tabWrapControl);
+        tabWrapLabel.appendChild(this.createSettingResetButton('tabWrapEnabled'));
         displaySectionItems.appendChild(tabWrapLabel);
         this.element.appendChild(displaySection);
 
@@ -543,6 +589,7 @@ export class SettingsPanel {
         });
 
         exportValidationLabel.appendChild(this.exportValidationDateTimePicker.getElement());
+        exportValidationLabel.appendChild(this.createSettingResetButton('exportValidationDateTime'));
         exportValidationSectionItems.appendChild(exportValidationLabel);
 
         const exportBeginDateColumnLabel = document.createElement('label');
@@ -567,6 +614,7 @@ export class SettingsPanel {
             }
         });
         exportBeginDateColumnLabel.appendChild(this.exportBeginDateColumnNameInput);
+        exportBeginDateColumnLabel.appendChild(this.createSettingResetButton('exportBeginDateColumnName'));
         exportValidationSectionItems.appendChild(exportBeginDateColumnLabel);
 
         const exportEndDateColumnLabel = document.createElement('label');
@@ -591,6 +639,7 @@ export class SettingsPanel {
             }
         });
         exportEndDateColumnLabel.appendChild(this.exportEndDateColumnNameInput);
+        exportEndDateColumnLabel.appendChild(this.createSettingResetButton('exportEndDateColumnName'));
         exportValidationSectionItems.appendChild(exportEndDateColumnLabel);
 
         this.element.appendChild(exportValidationSection);
@@ -656,6 +705,12 @@ export class SettingsPanel {
             const differs = getDefaultedSettingValue(currentSettings, key) !== getDefaultedSettingValue(defaultSettings, key);
             label.classList.toggle('settings-label-default-different', differs);
             label.dataset.defaultDifferent = differs ? 'true' : 'false';
+        }
+        for (const button of Array.from(this.element.querySelectorAll<HTMLButtonElement>('.settings-reset-setting-button[data-setting-key]'))) {
+            const key = button.dataset.settingKey;
+            if (key === undefined || !isSettingKey(key)) continue;
+            const differs = getDefaultedSettingValue(currentSettings, key) !== getDefaultedSettingValue(defaultSettings, key);
+            button.disabled = !differs;
         }
     }
 
@@ -756,6 +811,40 @@ export class SettingsPanel {
         this.applyAndSaveSettingsPatch(patch, 'save export validation column names failed');
     }
 
+    private createSettingResetButton(key: SettingsKey): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.classList.add('settings-reset-setting-button');
+        button.dataset.settingKey = key;
+        button.textContent = 'デフォルト';
+        button.addEventListener('click', (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.resetSettingToDefault(key);
+        });
+        return button;
+    }
+
+    private resetSettingToDefault(key: SettingsKey): void {
+        const currentSettings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
+        const defaultSettings = createApplicationDefaultSettings();
+        if (getDefaultedSettingValue(currentSettings, key) === getDefaultedSettingValue(defaultSettings, key)) return;
+        this.closeDropdown();
+        this.applyAndSaveSettingsPatch(this.createDefaultSettingPatch(key), 'reset setting to default failed');
+        this.updateControlsFromActiveScope();
+    }
+
+    private createDefaultSettingPatch(key: SettingsKey): SettingsPatch {
+        const defaults = createApplicationDefaultSettings();
+        switch (key) {
+            case 'theme': return { theme: defaults.theme };
+            case 'tabWrapEnabled': return { tabWrapEnabled: defaults.tabWrapEnabled };
+            case 'exportValidationDateTime': return { exportValidationDateTime: defaults.exportValidationDateTime };
+            case 'exportBeginDateColumnName': return { exportBeginDateColumnName: defaults.exportBeginDateColumnName };
+            case 'exportEndDateColumnName': return { exportEndDateColumnName: defaults.exportEndDateColumnName };
+        }
+    }
+
     /** 選択中アイテムにアクティブスタイルを付与する */
     private updateItemStyles(): void {
         for (const item of Array.from(this.dropdownList.children) as HTMLElement[]) {
@@ -780,6 +869,13 @@ export class SettingsPanel {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+        this.element.focus({preventScroll: true});
+    }
+
+    destroy(): void {
+        document.removeEventListener('keydown', this.documentKeydownHandler, true);
+        this.exportValidationDateTimePicker.destroy();
+        this.element.remove();
     }
 
     /**
@@ -796,10 +892,86 @@ export class SettingsPanel {
     }
 
     private applyAndSaveSettingsPatch(settings: SettingsPatch, errorContext: string): void {
-        loadedSettingsState = applySettingsPatchToState(loadedSettingsState, this.activeScope, settings);
+        const before = cloneSettingsState(loadedSettingsState);
+        const after = applySettingsPatchToState(loadedSettingsState, this.activeScope, settings);
+        if (areSettingsStatesEqual(before, after)) return;
+        this.pushUndoEntry({scope: this.activeScope, before, after: cloneSettingsState(after)});
+        loadedSettingsState = after;
         applySettingsStateToRuntime(loadedSettingsState);
         this.updateSettingDifferenceMarkers();
         this.writeSettingsAsync(loadedSettingsState[this.activeScope])
+            .then(() => { this.tabButton.setDirty(false); })
+            .catch((error: unknown) => {
+                console.error(`[SettingsPanel] ${errorContext}:`, String(error));
+                this.tabButton.setDirty(true);
+            });
+    }
+
+    private pushUndoEntry(entry: SettingsHistoryEntry): void {
+        this.undoStack.push(entry);
+        if (this.undoStack.length > 100) this.undoStack.shift();
+        this.redoStack.length = 0;
+    }
+
+    private isVisible(): boolean {
+        return this.element.isConnected && this.element.getClientRects().length > 0;
+    }
+
+    private handleKeyDown(event: KeyboardEvent): void {
+        if (!event.ctrlKey || event.altKey) return;
+        const key = event.key.toLowerCase();
+        const isUndo = key === 'z' && !event.shiftKey;
+        const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+        if (!isUndo && !isRedo) return;
+        if (this.shouldLetNativeTextHistoryHandle(event.target)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (isUndo) {
+            this.undoSettingsChange();
+        } else {
+            this.redoSettingsChange();
+        }
+    }
+
+    private shouldLetNativeTextHistoryHandle(target: EventTarget | null): boolean {
+        if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return false;
+        if (target === this.tabWrapToggle) return false;
+        if (target === this.exportBeginDateColumnNameInput) {
+            return target.value !== this.selectedExportBeginDateColumnName;
+        }
+        if (target === this.exportEndDateColumnNameInput) {
+            return target.value !== this.selectedExportEndDateColumnName;
+        }
+        if (target === this.exportValidationDateTimePicker.getInput()) {
+            return target.value !== this.selectedExportValidationDateTime;
+        }
+        return true;
+    }
+
+    private undoSettingsChange(): void {
+        const entry = this.undoStack.pop();
+        if (entry === undefined) return;
+        this.redoStack.push(entry);
+        this.applyHistoryState(entry.before, entry.scope, 'undo settings failed');
+    }
+
+    private redoSettingsChange(): void {
+        const entry = this.redoStack.pop();
+        if (entry === undefined) return;
+        this.undoStack.push(entry);
+        this.applyHistoryState(entry.after, entry.scope, 'redo settings failed');
+    }
+
+    private applyHistoryState(settingsState: ScopedSettingsState, scope: SettingsScope, errorContext: string): void {
+        loadedSettingsState = cloneSettingsState(settingsState);
+        this.activeScope = scope;
+        this.closeDropdown();
+        this.exportValidationDateTimePicker.close();
+        applySettingsStateToRuntime(loadedSettingsState);
+        this.updateScopeButtonStyles();
+        this.updateControlsFromActiveScope();
+        this.writeSettingsAsync(loadedSettingsState[scope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
                 console.error(`[SettingsPanel] ${errorContext}:`, String(error));

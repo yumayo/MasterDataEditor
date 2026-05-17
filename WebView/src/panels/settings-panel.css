@@ -64,6 +64,36 @@
     color: var(--selection-font-color);
 }
 
+.settings-reset-setting-button {
+    flex: 0 0 auto;
+    margin-left: auto;
+    height: var(--settings-control-height);
+    box-sizing: border-box;
+    padding: 0 10px;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    background-color: var(--background-color);
+    color: var(--font-color);
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.settings-reset-setting-button:hover:not(:disabled) {
+    border-color: rgba(128, 128, 128, 0.7);
+    background-color: var(--hover-color);
+}
+
+.settings-reset-setting-button:focus-visible {
+    outline: 1px solid var(--focus-border);
+    outline-offset: 2px;
+}
+
+.settings-reset-setting-button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 /* 設定セクション（テーマ等のグループ） */
 .settings-section {
     margin-bottom: var(--settings-section-gap);

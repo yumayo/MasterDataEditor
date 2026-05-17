@@ -113,6 +113,22 @@ async function waitForSettingsKeyAbsentAsync(page: Page, settingsFile: string, k
     );
 }
 
+async function waitForSettingsJsonAsync(page: Page, settingsFile: string, expected: Record<string, unknown>): Promise<void> {
+    await page.waitForFunction(
+        ({ path, expectedJson }) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            try {
+                return JSON.stringify(JSON.parse(raw) as Record<string, unknown>) === expectedJson;
+            } catch {
+                return false;
+            }
+        },
+        { path: settingsFile, expectedJson: JSON.stringify(expected) },
+        { timeout: 5000 },
+    );
+}
+
 // =============================================================================
 // 設定画面（テーマ設定）テスト
 //
@@ -321,6 +337,112 @@ test.describe('設定画面', () => {
             await expect(themeLabel).toHaveAttribute('data-default-different', 'false');
             await waitForSettingsKeyAbsentAsync(page, SETTINGS_FILE, 'theme');
             expect(JSON.parse(await readMockFileAsync(page, SETTINGS_FILE))).toEqual({});
+        },
+    );
+
+    test(
+        '各設定行のデフォルトボタンで個別に初期値へ戻せること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const themeResetButton = page.locator('.settings-reset-setting-button[data-setting-key="theme"]');
+            const dateTimeResetButton = page.locator('.settings-reset-setting-button[data-setting-key="exportValidationDateTime"]');
+            const beginColumnResetButton = page.locator('.settings-reset-setting-button[data-setting-key="exportBeginDateColumnName"]');
+            const endColumnResetButton = page.locator('.settings-reset-setting-button[data-setting-key="exportEndDateColumnName"]');
+            await expect(themeResetButton).toBeVisible();
+            await expect(themeResetButton).toBeDisabled();
+            await expect(dateTimeResetButton).toBeDisabled();
+
+            await selectThemeAsync(page, 'light');
+            await setExportValidationDateTimeAsync(page, '2026-05-10 12:30:45');
+            await setExportValidationColumnNamesAsync(page, 'start_at', 'finish_at');
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                theme: 'light',
+                exportValidationDateTime: '2026-05-10 12:30:45',
+                exportBeginDateColumnName: 'start_at',
+                exportEndDateColumnName: 'finish_at',
+            });
+            await expect(themeResetButton).toBeEnabled();
+            await expect(dateTimeResetButton).toBeEnabled();
+            await expect(beginColumnResetButton).toBeEnabled();
+            await expect(endColumnResetButton).toBeEnabled();
+
+            await themeResetButton.click();
+
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                exportValidationDateTime: '2026-05-10 12:30:45',
+                exportBeginDateColumnName: 'start_at',
+                exportEndDateColumnName: 'finish_at',
+            });
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
+            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+            await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('2026-05-10 12:30:45');
+            await expect(themeResetButton).toBeDisabled();
+            await expect(dateTimeResetButton).toBeEnabled();
+
+            await beginColumnResetButton.click();
+
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                exportValidationDateTime: '2026-05-10 12:30:45',
+                exportEndDateColumnName: 'finish_at',
+            });
+            await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('export_begin_date');
+            await expect(page.locator('.settings-export-end-date-column-input')).toHaveValue('finish_at');
+            await expect(beginColumnResetButton).toBeDisabled();
+            await expect(endColumnResetButton).toBeEnabled();
+
+            await endColumnResetButton.click();
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                exportValidationDateTime: '2026-05-10 12:30:45',
+            });
+            await expect(page.locator('.settings-export-end-date-column-input')).toHaveValue('export_end_date');
+
+            await dateTimeResetButton.click();
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {});
+            await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('');
+            await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('export_begin_date');
+            await expect(page.locator('.settings-export-end-date-column-input')).toHaveValue('export_end_date');
+            await expect(dateTimeResetButton).toBeDisabled();
+        },
+    );
+
+    test(
+        'Ctrl+ZとCtrl+Yで設定変更をUndo/Redoできること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            await selectThemeAsync(page, 'light');
+            await page.locator('.settings-export-begin-date-column-input').fill('start_at');
+            await page.locator('.settings-export-begin-date-column-input').blur();
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                theme: 'light',
+                exportBeginDateColumnName: 'start_at',
+            });
+
+            await page.keyboard.press('Control+Z');
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                theme: 'light',
+            });
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+            await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('export_begin_date');
+
+            await page.keyboard.press('Control+Z');
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {});
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
+            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+
+            await page.keyboard.press('Control+Y');
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                theme: 'light',
+            });
+            await expect(page.locator('body')).toHaveAttribute('data-theme', 'light');
+
+            await page.keyboard.press('Control+Y');
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                theme: 'light',
+                exportBeginDateColumnName: 'start_at',
+            });
+            await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('start_at');
         },
     );
 
