@@ -54,7 +54,13 @@ function createViewPluginFileSystem(): MockFileSystem {
             "        api.view.setDirty(true);",
             "      }",
             "    });",
-            "    container.append(count, dirtyButton, button);",
+            "    const notifyButton = document.createElement('button');",
+            "    notifyButton.className = 'summary-notify';",
+            "    notifyButton.textContent = 'notify';",
+            "    notifyButton.addEventListener('click', () => {",
+            "      api.notification.show('plugin success notification', 'success');",
+            "    });",
+            "    container.append(count, dirtyButton, button, notifyButton);",
             "  }",
             "});",
         ].join("\n"),
@@ -131,6 +137,12 @@ test.describe('Viewプラグイン', () => {
         await page.keyboard.press('Control+S');
         await expect(viewRoot).toHaveAttribute('data-saved', 'yes');
         await expect(page.locator('.tab-button-active .tab-button-dirty-visible')).toHaveCount(0);
+
+        await viewRoot.locator('.summary-notify').click();
+        const notificationEntry = page.locator('.debug-console-list .debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: 'plugin success notification' }),
+        });
+        await expect(notificationEntry).toHaveClass(/debug-console-row-success/);
 
         await viewRoot.locator('.summary-edit').click();
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');

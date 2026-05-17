@@ -28,7 +28,7 @@ window.masterDataEditor.registerViewPlugin({
 - `api.edit`: テーブルを開く、セル更新、行追加/削除、保存
 - `api.events`: エディターイベントの購読
 - `api.view`: Viewタブの dirty 状態と保存処理
-- `api.notification.show(message)`: トースト通知の表示
+- `api.notification.show(message, status?)`: トースト通知の表示。`status` は `'success'` または `'error'`（省略時は `'error'`）
 
 View上のUIから編集する場合は、タブを切り替えずに更新できる `api.edit.setCellValueAsync()` / `api.edit.setCellValuesAsync()` を使ってください。
 既存の `api.edit.setCellValue()` / `api.edit.setCellValues()` は、開いているテーブルを通常のエディター操作として更新し、そのテーブルをアクティブ化します。
@@ -88,7 +88,7 @@ type ViewPluginApi = {
         onSave(handler: () => void | boolean | Promise<void | boolean>): { dispose(): void };
         saveAsync(): Promise<boolean>;
     };
-    notification: { show(message: string): void };
+    notification: { show(message: string, status?: 'success' | 'error'): void };
 };
 
 function QuestSummary({api}: {api: ViewPluginApi}) {

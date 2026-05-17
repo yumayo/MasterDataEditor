@@ -347,7 +347,7 @@ window.masterDataEditor.registerViewPlugin({
             actions.append(
                 createActionButton('保存', async () => {
                     const saved = await api.view.saveAsync();
-                    if (saved) api.notification.show('ショップ商品ビューを保存しました');
+                    if (saved) api.notification.show('ショップ商品ビューを保存しました', 'success');
                 }),
                 createActionButton('shopを開く', () => { api.edit.openTableAsync('shop'); }),
                 createActionButton('shop_productを開く', () => { api.edit.openTableAsync('shop_product'); }),

@@ -1,5 +1,5 @@
 /**
- * システムエラー通知（トーストポップアップ）
+ * システム通知（トーストポップアップ）
  *
  * show() 呼び出し時にトーストポップアップを右下に展開する（最大3件スタック）。
  * さらに DebugConsole にエントリを追記してログを残す。
@@ -11,6 +11,8 @@
  */
 import type {DebugConsole} from "../panels/debug-console";
 import {parseCallerInfo} from "../core/caller-info";
+
+export type NotificationStatus = 'success' | 'error';
 
 export class NotificationToast {
     /**
@@ -60,16 +62,16 @@ export class NotificationToast {
     }
 
     /**
-     * エラー通知を表示する。
+     * 通知を表示する。
      * トーストポップアップを表示し、DebugConsole に記録する。
      * 最大3件を超える場合は最も古いトーストを即時削除する（タイマーもキャンセル）。
      */
-    show(message: string): void {
+    show(message: string, status: NotificationStatus = 'error'): void {
         // スタックトレースは show() の呼び出し元を特定するため、最初に取得する
         const caller = parseCallerInfo(NotificationToast.SKIP_PATTERNS);
 
         // DebugConsole にエントリを追記する（通知は瞬時の操作なので duration=0）
-        this.debugConsole.appendEntry(message, 0, 'error', caller);
+        this.debugConsole.appendEntry(message, 0, status, caller);
 
         // 最大件数を超える場合は最古のトーストを強制削除する
         if (this.activeToasts.size >= NotificationToast.MAX_TOASTS) {
@@ -84,7 +86,7 @@ export class NotificationToast {
 
         // 新しいトースト要素を生成してトーストエリアに追加する
         const toast = document.createElement('div');
-        toast.classList.add('notification-toast');
+        toast.classList.add('notification-toast', `notification-toast-${status}`);
         toast.setAttribute('role', 'alert');
         toast.textContent = message;
         this.toastAreaElement.appendChild(toast);

@@ -1,9 +1,9 @@
 import {findFilesAsync, readFileAsync} from "../app/api";
 import type {EditorAPI} from "../editor-api/editor-api-types";
-import type {NotificationToast} from "../ui/notification";
+import type {NotificationStatus, NotificationToast} from "../ui/notification";
 
 export interface ViewPluginNotificationAPI {
-    show(message: string): void;
+    show(message: string, status?: NotificationStatus): void;
 }
 
 export interface ViewPluginAPI {
@@ -89,8 +89,8 @@ export class ViewPluginHost {
             edit: editorApi.edit,
             events: editorApi.events,
             notification: {
-                show: (message: string) => {
-                    this.notification.show(message);
+                show: (message: string, status?: NotificationStatus) => {
+                    this.notification.show(message, status);
                 },
             },
         };

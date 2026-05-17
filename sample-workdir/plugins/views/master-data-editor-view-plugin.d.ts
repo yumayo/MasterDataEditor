@@ -33,7 +33,7 @@ declare global {
         edit: EditorAPI['edit'];
         events: EditorAPI['events'];
         view: ViewPluginRuntimeAPI;
-        notification: { show(message: string): void };
+        notification: { show(message: string, status?: 'success' | 'error'): void };
     }
 
     type ViewPluginSaveHandler = () => void | boolean | Promise<void | boolean>;

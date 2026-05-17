@@ -18,11 +18,11 @@ import type { Page } from '@playwright/test';
 // =============================================================================
 
 /** window.notification.show() を呼び出すヘルパー */
-async function showNotificationAsync(page: Page, message: string): Promise<void> {
-    await page.evaluate((msg) => {
-        const n = (window as unknown as Record<string, { show(m: string): void }>)['notification'];
-        n.show(msg);
-    }, message);
+async function showNotificationAsync(page: Page, message: string, status?: 'success' | 'error'): Promise<void> {
+    await page.evaluate(({msg, nextStatus}) => {
+        const n = (window as unknown as Record<string, { show(m: string, s?: 'success' | 'error'): void }>)['notification'];
+        n.show(msg, nextStatus);
+    }, {msg: message, nextStatus: status});
 }
 
 test.describe('Notification', () => {
@@ -75,6 +75,30 @@ test.describe('Notification', () => {
         expect(toastAreaBottom).toBeLessThanOrEqual(statusBarTop + 2);
     });
 
+    test('バックグラウンド処理インジケーター表示時もトーストの右端位置がずれない', async ({ page, mockFileSystem }) => {
+        await showNotificationAsync(page, '右端固定トースト');
+
+        const toast = page.locator('.notification-toast', { hasText: '右端固定トースト' });
+        await expect(toast).toBeVisible();
+        const beforeBox = await toast.boundingBox();
+        expect(beforeBox).not.toBeNull();
+
+        await page.evaluate(() => {
+            const indicator = document.querySelector<HTMLElement>('.status-bar-background-indicator');
+            const count = document.querySelector<HTMLElement>('.status-bar-background-count');
+            if (indicator === null || count === null) throw new Error('バックグラウンド処理インジケーターが見つかりません');
+            count.textContent = '1';
+            indicator.style.display = '';
+        });
+        await expect(page.locator('.status-bar-background-indicator')).toBeVisible();
+
+        const afterBox = await toast.boundingBox();
+        expect(afterBox).not.toBeNull();
+        const beforeRight = (beforeBox as NonNullable<typeof beforeBox>).x + (beforeBox as NonNullable<typeof beforeBox>).width;
+        const afterRight = (afterBox as NonNullable<typeof afterBox>).x + (afterBox as NonNullable<typeof afterBox>).width;
+        expect(Math.abs(afterRight - beforeRight)).toBeLessThanOrEqual(1);
+    });
+
     // -------------------------------------------------------------------------
     // 新仕様: DEBUG CONSOLE への記録
     // -------------------------------------------------------------------------
@@ -96,6 +120,19 @@ test.describe('Notification', () => {
         // 呼び出し元列に呼び出し元ファイル情報が表示されること
         const callerCell = logEntry.locator('.debug-console-col-caller');
         await expect(callerCell).not.toHaveText('');
+    });
+
+    test('success指定の通知はDEBUG CONSOLEで成功扱いになる', async ({ page, mockFileSystem }) => {
+        await showNotificationAsync(page, '保存完了通知', 'success');
+
+        const toast = page.locator('.notification-toast', { hasText: '保存完了通知' });
+        await expect(toast).toHaveClass(/notification-toast-success/);
+
+        const logEntry = page.locator('.debug-console-list .debug-console-row', {
+            has: page.locator('.debug-console-col-label', { hasText: '保存完了通知' }),
+        });
+        await expect(logEntry).toHaveClass(/debug-console-row-success/);
+        await expect(logEntry.locator('.debug-console-col-status')).toHaveText('✓');
     });
 
     // -------------------------------------------------------------------------
