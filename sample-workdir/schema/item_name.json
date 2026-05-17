@@ -22,7 +22,23 @@
             "type": "string",
             "comment": "名前(日本語)",
             "width": 256
+        },
+        {
+            "key": 3,
+            "name": "export_begin_date",
+            "type": "datetime",
+            "comment": "出力予定日",
+            "width": 187
+        },
+        {
+            "key": 4,
+            "name": "export_end_date",
+            "type": "datetime",
+            "comment": "削除予定日",
+            "width": 175
         }
     ],
-    "primary_key": ["id"]
+    "primary_key": [
+        "id"
+    ]
 }

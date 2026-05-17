@@ -1,6 +1,6 @@
-id,enum,comment,master,column
-1,chara,キャラ,chara,id
-2,item,アイテム,item,id
-3,enemy,エネミー,enemy,id
-4,weapon,武器,weapon,id
-5,armor,防具,armor,id
+id,enum,comment,master,column,export_begin_date,export_end_date
+1,chara,キャラ,chara,id,,
+2,item,アイテム,item,id,,
+3,enemy,エネミー,enemy,id,,
+4,weapon,武器,weapon,id,,
+5,armor,防具,armor,id,,

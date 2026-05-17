@@ -51,6 +51,20 @@
             "type": "int",
             "comment": "レアリティ",
             "width": 100
+        },
+        {
+            "key": 6,
+            "name": "export_begin_date",
+            "type": "datetime",
+            "comment": "出力予定日",
+            "width": 187
+        },
+        {
+            "key": 7,
+            "name": "export_end_date",
+            "type": "datetime",
+            "comment": "削除予定日",
+            "width": 175
         }
     ],
     "primary_key": [

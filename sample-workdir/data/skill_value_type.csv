@@ -1,3 +1,3 @@
-id,enum,comment
-1,percentage,パーセンテージ
-2,value,実数値
+id,enum,comment,export_begin_date,export_end_date
+1,percentage,パーセンテージ,,
+2,value,実数値,,

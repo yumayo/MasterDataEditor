@@ -23,6 +23,20 @@
       "comment": "報酬グループID",
       "reference": "quest_reward.group_id",
       "width": 160
+    },
+    {
+      "key": 3,
+      "name": "export_begin_date",
+      "type": "datetime",
+      "comment": "出力予定日",
+      "width": 187
+    },
+    {
+      "key": 4,
+      "name": "export_end_date",
+      "type": "datetime",
+      "comment": "削除予定日",
+      "width": 175
     }
   ],
   "primary_key": [
