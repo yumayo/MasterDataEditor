@@ -59,6 +59,7 @@ export interface UiStoredEditorTableState {
 export interface UiStoredTab {
     name: string;
     description: string | null;
+    pinned: boolean;
     diff: UiStoredDiffTab | null;
     scroll: UiScrollPosition | null;
     editorTable: UiStoredEditorTableState | null;
@@ -178,6 +179,7 @@ function cloneStoredTab(tab: UiStoredTab): UiStoredTab {
     return {
         name: tab.name,
         description: tab.description,
+        pinned: tab.pinned,
         diff: tab.diff === null ? null : cloneStoredDiffTab(tab.diff),
         scroll: tab.scroll === null ? null : cloneScrollPosition(tab.scroll),
         editorTable: tab.editorTable === null ? null : cloneEditorTableState(tab.editorTable),
@@ -363,6 +365,7 @@ function normalizeStoredTab(value: unknown): UiStoredTab | null {
     return {
         name,
         description: normalizeTabDescription(record['description']),
+        pinned: record['pinned'] === true,
         diff: normalizeStoredDiffTab(record['diff']),
         scroll,
         editorTable,

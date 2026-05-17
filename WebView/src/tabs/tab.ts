@@ -7,7 +7,7 @@ import {EditorTable} from "../editor/editor-table";
 import {Selection} from "../editor/selection";
 import {History} from "../editor/history";
 import {AreaResizer} from "../editor/area-resizer";
-import {ContextMenu} from "../ui/context-menu";
+import {ContextMenu, type ContextMenuEntry} from "../ui/context-menu";
 import {ScrollViewportController} from "../editor/scroll-viewport-controller";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
@@ -879,6 +879,7 @@ export class Tab {
                 open.push({
                     name: tabButton.name,
                     description: null,
+                    pinned: tabButton.isPinned(),
                     diff: {...diff},
                     scroll: this.getStoredTabScrollPosition(tabButton.name),
                     editorTable: null,
@@ -891,6 +892,7 @@ export class Tab {
             open.push({
                 name: tabButton.name,
                 description: tabButton.getDescriptionText(),
+                pinned: tabButton.isPinned(),
                 diff: null,
                 scroll: editorTable === null ? this.getStoredTabScrollPosition(tabButton.name) : this.cloneUiScrollPosition(editorTable.scroll),
                 editorTable,
@@ -1202,7 +1204,7 @@ export class Tab {
      * すでに追加されている名前だった場合は何もせず、その要素を返却します。
      * description は TabButton の2行表示に使用します（null の場合は1行表示）。
      */
-    append(name: string, description: string | null) {
+    append(name: string, description: string | null, pinned: boolean = false) {
 
         // すでに同じ名前のオブジェクトが追加されていたら何もしないです。
         let tabButton = this.tabButtons.find(x => x.name === name);
@@ -1210,14 +1212,34 @@ export class Tab {
             return tabButton;
         }
 
-        tabButton = new TabButton(this.editor, this, name, description);
-        this.tabButtons.push(tabButton);
-
-        this.element.appendChild(tabButton.element);
+        tabButton = new TabButton(this.editor, this, name, description, pinned);
+        const insertIndex = this.getTabButtonInsertIndexForPinnedState(pinned);
+        this.insertTabButtonAt(tabButton, insertIndex);
         this.scheduleTabLayout(true);
         this.persistTabs();
 
         return tabButton;
+    }
+
+    private getTabButtonInsertIndexForPinnedState(pinned: boolean): number {
+        if (!pinned) return this.tabButtons.length;
+        const firstUnpinnedIndex = this.tabButtons.findIndex(tabButton => !tabButton.isPinned());
+        return firstUnpinnedIndex === -1 ? this.tabButtons.length : firstUnpinnedIndex;
+    }
+
+    private insertTabButtonAt(tabButton: TabButton, insertIndex: number): void {
+        const index = Math.min(Math.max(0, insertIndex), this.tabButtons.length);
+        this.tabButtons.splice(index, 0, tabButton);
+        const referenceElement = this.tabButtons[index + 1]?.element ?? null;
+        this.element.insertBefore(tabButton.element, referenceElement);
+    }
+
+    private repositionTabButtonForPinnedState(tabButton: TabButton): void {
+        const currentIndex = this.tabButtons.findIndex(item => item.name === tabButton.name);
+        if (currentIndex === -1) return;
+        this.tabButtons.splice(currentIndex, 1);
+        const insertIndex = this.getTabButtonInsertIndexForPinnedState(tabButton.isPinned());
+        this.insertTabButtonAt(tabButton, insertIndex);
     }
 
     async restoreTabsFromUiStateAsync(tabs: UiTabsState): Promise<void> {
@@ -1227,12 +1249,13 @@ export class Tab {
             const restoredTabs: UiStoredTab[] = tabs.open.map(tab => ({
                 name: tab.name,
                 description: tab.description,
+                pinned: tab.pinned,
                 diff: tab.diff === null ? null : {...tab.diff},
                 scroll: tab.scroll === null ? null : this.cloneUiScrollPosition(tab.scroll),
                 editorTable: tab.editorTable === null ? null : this.cloneUiEditorTableState(tab.editorTable),
             }));
             if (tabs.active !== null && !restoredTabs.some(tab => tab.name === tabs.active)) {
-                restoredTabs.push({ name: tabs.active, description: null, diff: null, scroll: null, editorTable: null });
+                restoredTabs.push({ name: tabs.active, description: null, pinned: false, diff: null, scroll: null, editorTable: null });
             }
 
             const restoredNames = new Set<string>();
@@ -1251,7 +1274,7 @@ export class Tab {
                 if (tab.diff !== null) {
                     this.diffTabMetadata.set(name, {...tab.diff});
                 }
-                this.append(name, tab.description);
+                this.append(name, tab.description, tab.pinned);
                 restoredNames.add(name);
             }
 
@@ -2148,26 +2171,58 @@ export class Tab {
     /**
      * タブボタンの右クリックコンテキストメニューを表示する。
      * TabButton.onContextMenu から呼ばれる。
-     * 通常テーブルタブの場合のみテーブル操作項目を表示する。
+     * 固定/固定解除は永続タブ全体、テーブル操作は通常テーブルタブに表示する。
      */
     showTabButtonContextMenu(tabName: string, x: number, y: number): void {
+        if (this.isTemporaryTabName(tabName)) return;
+        const tabButton = this.tabButtons.find(button => button.name === tabName);
+        if (tabButton === undefined) return;
+
+        const items: ContextMenuEntry[] = [
+            {
+                label: tabButton.isPinned() ? 'タブの固定を解除' : 'タブを固定',
+                action: () => {
+                    this.setTabPinned(tabName, !tabButton.isPinned());
+                },
+            },
+        ];
+
         // 差分タブ・設定タブ・ER図タブ・テーブル定義タブ・API詳細タブは通常テーブル操作の対象外
-        if (tabName === SETTINGS_TAB_NAME || tabName === ER_DIAGRAM_TAB_NAME || tabName === TABLE_DEFINITION_TAB_NAME || tabName === DEBUG_API_DETAIL_TAB_NAME || tabName.startsWith(DIFF_TAB_PREFIX)) return;
-        this.contextMenu.show(x, y, [
-            {
-                label: 'テーブル定義を編集',
-                action: () => {
-                    this.openEditTableDefinitionTab(tabName);
+        if (tabName !== SETTINGS_TAB_NAME && tabName !== ER_DIAGRAM_TAB_NAME && tabName !== TABLE_DEFINITION_TAB_NAME && !tabName.startsWith(DIFF_TAB_PREFIX)) {
+            items.push(
+                { separator: true },
+                {
+                    label: 'テーブル定義を編集',
+                    action: () => {
+                        this.openEditTableDefinitionTab(tabName);
+                    },
                 },
-            },
-            {
-                label: 'バージョン比較...',
-                action: () => {
-                    this.openVersionCompareFlowAsync(tabName)
-                        .catch(e => { this.notification.show('バージョン比較に失敗しました: ' + String(e)); });
+                {
+                    label: 'バージョン比較...',
+                    action: () => {
+                        this.openVersionCompareFlowAsync(tabName)
+                            .catch(e => { this.notification.show('バージョン比較に失敗しました: ' + String(e)); });
+                    },
                 },
-            },
-        ]);
+            );
+        }
+
+        this.contextMenu.show(x, y, items);
+    }
+
+    setTabPinned(tabName: string, pinned: boolean): void {
+        if (this.isTemporaryTabName(tabName)) return;
+        const tabButton = this.tabButtons.find(button => button.name === tabName);
+        if (tabButton === undefined || tabButton.isPinned() === pinned) return;
+
+        tabButton.setPinned(pinned);
+        this.repositionTabButtonForPinnedState(tabButton);
+        this.scheduleTabLayout(false, true);
+        this.persistTabs();
+    }
+
+    isTabPinned(tabName: string): boolean {
+        return this.tabButtons.find(button => button.name === tabName)?.isPinned() === true;
     }
 
     /**

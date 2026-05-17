@@ -41,6 +41,9 @@ export class TabDragDrop {
         if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
             return;
         }
+        if (this.tab.isTabPinned(fromName) !== this.tab.isTabPinned(toName)) {
+            return;
+        }
 
         const fromTabButton = tabButtons[fromIndex];
         const toTabButton = tabButtons[toIndex];
@@ -134,8 +137,10 @@ export class TabDragDrop {
         if (!this.draggingTabName) return false;
 
         const tabButtons = this.tab.getTabButtons();
+        const draggingTabPinned = this.tab.isTabPinned(this.draggingTabName);
         for (const tabButton of tabButtons) {
             if (tabButton.name === this.draggingTabName) continue;
+            if (tabButton.isPinned() !== draggingTabPinned) continue;
             const rect = tabButton.element.getBoundingClientRect();
             if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) continue;
             const insertBefore = clientX < rect.left + rect.width / 2;

@@ -10,13 +10,16 @@ export class TabButton {
     readonly element: HTMLLIElement;
     readonly name: string;
 
+    private pinnedIndicator: HTMLElement;
     private dirtyIndicator: HTMLElement;
     private closeButton: HTMLButtonElement;
+    private pinned: boolean;
 
-    constructor(editor: Editor, tab: Tab, name: string, description: string | null) {
+    constructor(editor: Editor, tab: Tab, name: string, description: string | null, pinned: boolean = false) {
         this.editor = editor;
         this.name = name;
         this.tab = tab;
+        this.pinned = false;
 
         this.element = document.createElement('li');
         this.element.classList.add('tab-button');
@@ -27,6 +30,11 @@ export class TabButton {
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
         this.element.addEventListener('contextmenu', this.onContextMenu.bind(this));
+
+        this.pinnedIndicator = document.createElement('span');
+        this.pinnedIndicator.classList.add('tab-button-pin-indicator');
+        this.pinnedIndicator.setAttribute('aria-hidden', 'true');
+        this.element.appendChild(this.pinnedIndicator);
 
         // ラベル部（テーブル名を1行目、description を2行目とする2行構造）
         const labelContainer = document.createElement('div');
@@ -66,6 +74,16 @@ export class TabButton {
         buttonContainer.appendChild(this.closeButton);
 
         this.element.appendChild(buttonContainer);
+        this.setPinned(pinned);
+    }
+
+    setPinned(pinned: boolean): void {
+        this.pinned = pinned;
+        this.element.classList.toggle('tab-button-pinned', pinned);
+    }
+
+    isPinned(): boolean {
+        return this.pinned;
     }
 
     /**

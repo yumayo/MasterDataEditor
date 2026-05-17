@@ -9,6 +9,51 @@
     overflow: hidden;
 }
 
+.tab-button-pinned {
+    padding-left: 8px;
+}
+
+.tab-button-pin-indicator {
+    display: none;
+    position: relative;
+    flex: 0 0 12px;
+    width: 12px;
+    height: 14px;
+    margin-right: 4px;
+    color: var(--selection-color, #007fd4);
+}
+
+.tab-button-pinned .tab-button-pin-indicator {
+    display: block;
+}
+
+.tab-button-pin-indicator::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 2px;
+    width: 6px;
+    height: 7px;
+    border: 1.5px solid currentColor;
+    border-bottom: 0;
+    border-radius: 1px 1px 0 0;
+    transform: rotate(45deg);
+    transform-origin: center;
+}
+
+.tab-button-pin-indicator::after {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 7px;
+    width: 1.5px;
+    height: 7px;
+    border-radius: 1px;
+    background: currentColor;
+    transform: rotate(45deg);
+    transform-origin: top center;
+}
+
 /* ラベル部（テーブル名 + description の2行構造コンテナ） */
 .tab-button-label {
     display: flex;
