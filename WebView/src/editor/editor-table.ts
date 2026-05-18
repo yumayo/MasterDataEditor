@@ -1997,10 +1997,10 @@ export class EditorTable {
      * 初回テーブル展開時は notifyRowSelectionChanged() が先に走り、逆参照マップが未設定のため
      * 1:Nエントリが0件になる。ここで forceRefreshRelationsPanel() を呼ぶことで1:Nも表示される。
      */
-    updateReverseReferenceHints(map: ReverseReferenceMap): void {
+    updateReverseReferenceHints(map: ReverseReferenceMap, refreshRelationsPanel = true): void {
         this.reference.updateReverseReferenceHints(map);
         this.syncDetachedFrozenClonesAfterVisualContentChange();
-        if (!this.isMiniTable) {
+        if (refreshRelationsPanel && !this.isMiniTable) {
             this.forceRefreshRelationsPanel();
         }
     }

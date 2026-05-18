@@ -190,11 +190,6 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // テスト用: window.__editorApiBridge を公開する（e2eテストから dispose を呼び出す）
     (window as unknown as { __editorApiBridge: EditorApiBridge })['__editorApiBridge'] = bridge;
 
-    // 保存済みタブは、schema 一覧や全ファイル preload の完了を待たずにまずタブバーへ復元する。
-    // restoreTabsFromUiStateAsync は非アクティブタブの中身を作らず、アクティブタブだけを読み込む。
-    // Viewプラグインがアクティブだった場合は、プラグイン読み込み後に表示を再開する。
-    await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
-
     // バックグラウンド preload の完了を待つ（並列読み込みがUI初期化中に進行している）
     await preloading;
 
@@ -225,6 +220,11 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     }
     referenceDataCache.markSchemaIndexComplete();
     tab.markReverseReferenceSchemaIndexComplete();
+
+    // 保存済みタブはスキーマ索引を構築してから復元する。
+    // アクティブタブの逆参照解決が、起動直後に schema/ 全体を独自スキャンすることを避ける。
+    // Viewプラグインがアクティブだった場合は、プラグイン読み込み後に表示を再開する。
+    await tab.restoreTabsFromUiStateAsync(storedUiState.tabs);
 
     await viewPluginHost.loadPluginsAsync();
     tab.restorePendingViewPluginTabFromUiState();

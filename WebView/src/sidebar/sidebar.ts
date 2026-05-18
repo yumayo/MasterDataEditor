@@ -147,12 +147,14 @@ export class Sidebar {
             if (data.type !== 'file_changed' && data.type !== 'git_changed') return;
             let skipGitRefresh = false;
             if (data.type === 'file_changed') {
-                invalidateMasterDataFileCaches();
-                this.tab.notifyExternalFileChanged();
                 const filenames = Array.isArray(data.filenames)
                     ? data.filenames
                     : (typeof data.filename === 'string' ? [data.filename] : undefined);
                 skipGitRefresh = consumeSuppressedSelfSaveGitRefresh(filenames);
+                if (!skipGitRefresh) {
+                    invalidateMasterDataFileCaches();
+                    this.tab.notifyExternalFileChanged(filenames);
+                }
             }
             if (skipGitRefresh) return;
             invalidateGitStatusCache();

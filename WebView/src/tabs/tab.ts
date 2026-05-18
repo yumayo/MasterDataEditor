@@ -362,6 +362,11 @@ export class Tab {
         this.pendingNavigationFilterValues = new Set();
         this.dragDrop = new TabDragDrop(this);
         this.reference = new TabReference(this.referenceDataCache, this.reverseReferenceEngine, this.notification);
+        this.reverseReferenceEngine.subscribeMapUpdated((tableName, map) => {
+            const editorTable = this.openEditorTables.get(tableName);
+            if (editorTable === undefined) return;
+            editorTable.updateReverseReferenceHints(map, tableName === this.activeTabName);
+        });
         this.paneStack = [];
         this.viewIndex = 0;
         this.settingsPanel = false;
@@ -476,11 +481,20 @@ export class Tab {
      * FileSystemWatcher から外部ファイル変更通知を受けたときに呼ばれる。
      * 開いているタブは維持し、次回タブ生成時にcleanなストアキャッシュだけ再読み込みする。
      */
-    notifyExternalFileChanged(): void {
+    notifyExternalFileChanged(filenames?: readonly string[]): void {
         this.store.markAllTablesStale();
         this.referenceDataCache.evictAll();
+        if (this.isDataOnlyFileChange(filenames)) {
+            this.reverseReferenceEngine.invalidateData();
+            return;
+        }
         this.referenceDataCache.invalidateSchemaIndex();
         this.reverseReferenceEngine.invalidateAll();
+    }
+
+    private isDataOnlyFileChange(filenames?: readonly string[]): boolean {
+        if (filenames === undefined || filenames.length === 0) return false;
+        return filenames.every(filename => filename.startsWith('data/') && filename.endsWith('.csv'));
     }
 
     registerSchemaForReverseReferences(tableName: string, schemaJson: Record<string, unknown>): void {
