@@ -353,7 +353,7 @@ async function getTableScrollContainerAsync(page: Page): Promise<Locator> {
  * colIndex: 0始まり（行ヘッダーを除くデータ列）
  */
 async function rightClickColumnHeaderAsync(table: Locator, colIndex: number): Promise<void> {
-    const header = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header').nth(colIndex);
+    const header = getVisibleColumnHeaderLocator(table, colIndex);
     await header.click({ button: 'right' });
 }
 
@@ -1239,10 +1239,10 @@ test.describe('フリーズペイン', () => {
                 });
                 expect(['auto', 'scroll']).toContain(initial.mainOverflowX);
                 expect(['auto', 'scroll']).toContain(initial.mainOverflowY);
-                expect(initial.topOverflowX).toBe('hidden');
-                expect(initial.topOverflowY).toBe('hidden');
-                expect(initial.leftOverflowX).toBe('hidden');
-                expect(initial.leftOverflowY).toBe('hidden');
+                expect(initial.topOverflowX).toBe('clip');
+                expect(initial.topOverflowY).toBe('clip');
+                expect(initial.leftOverflowX).toBe('clip');
+                expect(initial.leftOverflowY).toBe('clip');
                 expect(initial.mainScrollbarWidth).toBeGreaterThan(0);
                 expect(initial.mainScrollbarHeight).toBeGreaterThan(0);
                 expect(Math.abs(initial.topViewportWidth - initial.mainClientWidth)).toBeLessThanOrEqual(1);
@@ -1310,12 +1310,31 @@ test.describe('フリーズペイン', () => {
 
                 expect(scrolled.mainScrollTop).toBeGreaterThan(0);
                 expect(scrolled.mainScrollLeft).toBeGreaterThan(0);
-                expect(Math.abs(scrolled.topScrollLeft - scrolled.mainScrollLeft)).toBeLessThanOrEqual(1);
-                expect(Math.abs(scrolled.leftScrollTop - scrolled.mainScrollTop)).toBeLessThanOrEqual(1);
+                expect(scrolled.topScrollLeft).toBe(0);
+                expect(scrolled.leftScrollTop).toBe(0);
                 expect(Math.abs(scrolled.topViewportWidth - scrolled.mainClientWidth)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.leftViewportHeight - scrolled.mainClientHeight)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftTop - initial.topLeftTop)).toBeLessThanOrEqual(1);
                 expect(Math.abs(scrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
+
+                const aligned = await page.evaluate(() => {
+                    const headerCell = document.querySelector('.editor-left-pane .editor-table-pane-top-right .editor-table-column-header[data-col="2"]');
+                    const bodyRow = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-row[data-row-index="500"]');
+                    const bodyCell = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-row[data-row-index="500"] .editor-table-cell[data-col="2"]');
+                    const detachedRow = document.querySelector('.editor-left-pane .editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="500"]');
+                    if (!(headerCell instanceof HTMLElement)) throw new Error('header cell が見つかりません');
+                    if (!(bodyRow instanceof HTMLElement)) throw new Error('body row が見つかりません');
+                    if (!(bodyCell instanceof HTMLElement)) throw new Error('body cell が見つかりません');
+                    if (!(detachedRow instanceof HTMLElement)) throw new Error('detached row が見つかりません');
+                    return {
+                        headerLeft: headerCell.getBoundingClientRect().left,
+                        bodyCellLeft: bodyCell.getBoundingClientRect().left,
+                        detachedRowTop: detachedRow.getBoundingClientRect().top,
+                        bodyRowTop: bodyRow.getBoundingClientRect().top,
+                    };
+                });
+                expect(Math.abs(aligned.headerLeft - aligned.bodyCellLeft)).toBeLessThanOrEqual(1);
+                expect(Math.abs(aligned.detachedRowTop - aligned.bodyRowTop)).toBeLessThanOrEqual(1);
             },
         );
 

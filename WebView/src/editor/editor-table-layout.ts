@@ -156,6 +156,7 @@ export class EditorTableLayout {
             // detached layer は flex レイアウトなので、table レイアウトで確定した実幅をそのまま引き継ぐ。
             const computedStyle = window.getComputedStyle(sourceCell);
             const renderedWidth = getLayoutBorderBoxWidthPx(sourceCell);
+            cloneCell.style.boxSizing = computedStyle.boxSizing;
             const width = computedStyle.boxSizing === 'border-box'
                 ? renderedWidth
                 : renderedWidth
@@ -536,7 +537,7 @@ export class EditorTableLayout {
                 fragment.appendChild(detachedLeftRow);
             }
             this.detachedRowHeaderLayer.replaceChildren(fragment);
-            this.syncQuadrantViewportRowHeaderPositions();
+            this.syncQuadrantViewportRowHeaderPositions(scrollTop);
             this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
         };
         if (update === null || update.refreshAllRows || this.detachedRowHeaderLayer.childElementCount === 0) {
@@ -597,7 +598,7 @@ export class EditorTableLayout {
                 const detachedLeftRow = document.createElement('div');
                 detachedLeftRow.classList.add('editor-table-detached-row');
                 detachedLeftRow.dataset.rowIndex = rowIndexText;
-                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
+                detachedLeftRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex) - scrollTop}px`;
                 for (let col = 0; col < Math.min(fixedLeftColumnCount, sourceRow.children.length); col++) {
                     const sourceCell = sourceRow.children[col] as HTMLElement | null;
                     if (sourceCell === null) continue;
@@ -611,11 +612,11 @@ export class EditorTableLayout {
             }
             this.detachedRowHeaderLayer.appendChild(fragment);
         }
-        this.syncQuadrantViewportRowHeaderPositions();
+        this.syncQuadrantViewportRowHeaderPositions(scrollTop);
         this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
     }
 
-    syncQuadrantViewportRowHeaderPositions(): void {
+    syncQuadrantViewportRowHeaderPositions(scrollTop: number = this.scrollContainer.scrollTop): void {
         if (!this.usesInternalMainViewport) return;
         const detachedRows = this.detachedRowHeaderLayer.children;
         for (let rowIndex = 0; rowIndex < detachedRows.length; rowIndex++) {
@@ -625,7 +626,7 @@ export class EditorTableLayout {
             const logicalRowIndex = Number(rowIndexText) + 1;
             const sourceRow = this.getRowElement(logicalRowIndex);
             if (sourceRow === null) continue;
-            detachedRow.style.top = `${this.getQuadrantViewportRowTopPx(logicalRowIndex)}px`;
+            this.setInlineTopIfChanged(detachedRow, `${this.getQuadrantViewportRowTopPx(logicalRowIndex) - scrollTop}px`);
         }
     }
 
@@ -891,10 +892,20 @@ export class EditorTableLayout {
         element.style.zIndex = zIndex;
     }
 
+    setInlineLeftIfChanged(element: HTMLElement, left: string): void {
+        if (element.style.left === left) return;
+        element.style.left = left;
+    }
+
+    setInlineTopIfChanged(element: HTMLElement, top: string): void {
+        if (element.style.top === top) return;
+        element.style.top = top;
+    }
+
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void {
         if (this.usesInternalMainViewport) {
-            this.topRightViewport.scrollLeft = scrollLeft;
-            this.leftBottomViewport.scrollTop = scrollTop;
+            this.setInlineLeftIfChanged(this.topRightContent, `${-scrollLeft}px`);
+            this.syncQuadrantViewportRowHeaderPositions(scrollTop);
             return;
         }
         this.virtualScroll.setScrollTopCompensationPx(0);

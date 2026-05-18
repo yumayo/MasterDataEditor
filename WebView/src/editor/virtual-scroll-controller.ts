@@ -1,5 +1,5 @@
 import {ROW_TOTAL_HEIGHT_PX} from "../core/constant";
-import {getLayoutBorderBoxHeightPx} from "../core/layout-metrics";
+import {getLayoutBorderBoxHeightPx, getLayoutBorderBoxWidthPx} from "../core/layout-metrics";
 
 export interface RenderedDataRowRange {
     start: number;
@@ -17,14 +17,12 @@ export interface RenderedRowsUpdate {
 /**
  * バーチャルスクロールの制御を担うコントローラー。
  *
- * 方式B（テーブル内スペーサー）を採用する。
- * topSpacer / bottomSpacer は共にテーブル内に display:table-row として配置する。
- * テーブル高さ = header + topSpacer + frozenRows + viewportRows + bottomSpacer
- *             = header + totalRowCount * rowHeight（常に一定）
- * これによりテーブルが常に全スクロール範囲をカバーし、
- * ヘッダー行は detached layer 側で常時表示される。
- * コンポジタースレッドの非同期スクロール中でも、ビューポートがテーブル外に出ることがなく、
- * ヘッダーや行が消える問題が発生しない。
+ * 仮想スクロール有効時は表示中の row div を通常フローから外し、論理行番号に基づく
+ * top 絶対座標で配置する。
+ * topSpacer / bottomSpacer は DOM インデックス互換とスクロール範囲確保のために残す。
+ * bottomSpacer の高さ = header + totalRowCount * rowHeight（常に一定）
+ * これにより行差し替え時にテーブルレイアウトへ大きなギャップ更新を入れず、
+ * 各行の座標をブラウザの通常フローではなくこちらで直接管理する。
  *
  * テーブル内 DOM 構造:
  *   [0]=header, [1]=topSpacer, [2..2+frozen)=固定行, [2+frozen..)=ビューポート行, [last]=bottomSpacer
@@ -108,6 +106,12 @@ export class VirtualScrollController {
     private currentScrollTop: number;
     /** 現在処理中の scroll event で先に取得した scrollLeft */
     private currentScrollLeft: number;
+    /** absolute row layout の前回ジオメトリ。変化した時だけ既存行の top を再同期する。 */
+    private absoluteRowsLastHeaderHeight: number;
+    private absoluteRowsLastRowHeight: number;
+    private absoluteRowsLastTotalRowCount: number;
+    private absoluteCellBorderBoxWidths: number[];
+    private absoluteRowsLastCellWidthsKey: string;
 
     constructor(
         tableElement: HTMLElement,
@@ -131,6 +135,11 @@ export class VirtualScrollController {
         this.isHandlingScrollEvent = false;
         this.currentScrollTop = 0;
         this.currentScrollLeft = 0;
+        this.absoluteRowsLastHeaderHeight = -1;
+        this.absoluteRowsLastRowHeight = -1;
+        this.absoluteRowsLastTotalRowCount = -1;
+        this.absoluteCellBorderBoxWidths = [];
+        this.absoluteRowsLastCellWidthsKey = '';
 
         // enabled=false（ミニテーブル）では全行がDOMに存在する
         this.renderedStart = 0;
@@ -166,16 +175,17 @@ export class VirtualScrollController {
 
     /**
      * スペーサー要素を生成し配置する。
-     * topSpacer: テーブル内のヘッダー行直後（children[1]）に display:table-row + table-cell として挿入する。
-     * bottomSpacer: テーブル内の末尾に display:table-row + table-cell として追加する。
+     * topSpacer: DOM インデックス互換のためヘッダー行直後（children[1]）に挿入する。
+     * bottomSpacer: スクロール範囲確保のためテーブル内の末尾に追加する。
      * ヘッダー行が既に存在する状態（initialize() のヘッダー追加直後）で呼ぶこと。
      * enabled=false の場合は何もしない。
      */
     attachSpacers(): void {
         if (!this.enabled) return;
+        this.tableElement.classList.add('editor-table-grid--absolute-rows');
+        this.positionHeaderRow();
 
-        // 上部スペーサー: テーブル内にヘッダー行直後に挿入する（display:table-row）
-        // table-row の高さを制御するため、内部に table-cell を配置する
+        // 上部スペーサー: 既存の children インデックス互換のためヘッダー行直後に置く。
         const topRow = document.createElement('div');
         topRow.classList.add('virtual-scroll-top-spacer');
         const topCell = document.createElement('div');
@@ -192,11 +202,7 @@ export class VirtualScrollController {
         // topSpacer はセル要素を参照する（高さ制御のため）
         this.topSpacer = topCell;
 
-        // 下部スペーサー: テーブル内の末尾に追加する（display:table-row）
-        // topSpacer と同じ構造でテーブル内に配置することで、テーブル高さが常に
-        // header + topSpacer + frozenRows + viewportRows + bottomSpacer = 全コンテンツ高さ となり、
-        // どのスクロール位置でもビューポートがテーブル内に収まる。
-        // これにより分離ヘッダーとデータ領域のスクロール整合が高速スクロール時にも崩れにくくなる。
+        // 下部スペーサー: absolute 行が通常フローから外れるため、スクロール範囲だけをここで確保する。
         const bottomRow = document.createElement('div');
         bottomRow.classList.add('virtual-scroll-bottom-spacer');
         const bottomCell = document.createElement('div');
@@ -207,6 +213,7 @@ export class VirtualScrollController {
         // bottomSpacer はセル要素を参照する（高さ制御のため）
         this.bottomSpacer = bottomCell;
         this.bottomSpacerRow = bottomRow;
+        this.syncAbsoluteRowGeometry();
     }
 
     /** スクロールイベントハンドラ。同期的に再計算を実行する */
@@ -230,6 +237,7 @@ export class VirtualScrollController {
     /** 総行数が変化した際に呼ぶ */
     updateTotalRowCount(count: number): void {
         this.totalRowCount = count;
+        this.syncAbsoluteRowGeometry();
         if (!this.enabled) {
             // ミニテーブルでは renderedEnd も同期する
             this.renderedEnd = count;
@@ -305,6 +313,7 @@ export class VirtualScrollController {
         // 固定行を再生成してDOMに配置する（常にtopSpacer直後に存在する必要がある）
         for (let i = 0; i < this.frozenRowCount; i++) {
             const row = this.renderRow(i);
+            this.positionDataRow(row, i);
             this.tableElement.appendChild(row);
         }
         // bottomSpacer をテーブル末尾に再追加する
@@ -385,6 +394,7 @@ export class VirtualScrollController {
     refreshMeasuredGeometry(): void {
         this.measureHeaderHeight();
         this.measureActualRowHeight();
+        if (this.syncAbsoluteRowGeometry()) this.positionExistingRows();
     }
 
     getActualRowHeightPx(): number {
@@ -415,6 +425,7 @@ export class VirtualScrollController {
      * 行追加による renderedEnd の更新は notifyRowAppended() で行うこと。
      */
     appendDataRow(row: HTMLElement): void {
+        this.positionDataRowFromDataset(row);
         if (this.bottomSpacerRow !== false) {
             this.tableElement.insertBefore(row, this.bottomSpacerRow);
         } else {
@@ -501,11 +512,120 @@ export class VirtualScrollController {
         if (this.bottomSpacerRow !== false) {
             this.bottomSpacerRow.remove();
         }
+        this.tableElement.classList.remove('editor-table-grid--absolute-rows');
     }
 
     // =========================================================================
     // 内部メソッド
     // =========================================================================
+
+    private usesAbsoluteRowLayout(): boolean {
+        return this.enabled;
+    }
+
+    private setInlineTopIfChanged(element: HTMLElement, top: string): void {
+        if (element.style.top === top) return;
+        element.style.top = top;
+    }
+
+    private positionHeaderRow(): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        const headerRow = this.tableElement.children[0] as HTMLElement | null;
+        if (headerRow === null) return;
+        this.setInlineTopIfChanged(headerRow, '0px');
+    }
+
+    private getDataRowTopPx(dataRowIndex: number, headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): number {
+        return headerHeight + (dataRowIndex * rowHeight);
+    }
+
+    private positionDataRow(row: HTMLElement, dataRowIndex: number, headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        this.applyAbsoluteCellWidths(row);
+        this.setInlineTopIfChanged(row, `${this.getDataRowTopPx(dataRowIndex, headerHeight, rowHeight)}px`);
+    }
+
+    private positionDataRowFromDataset(row: HTMLElement): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        const dataRowIndexText = row.dataset.rowIndex;
+        if (dataRowIndexText === undefined) return;
+        const dataRowIndex = Number(dataRowIndexText);
+        if (!Number.isFinite(dataRowIndex)) return;
+        this.positionDataRow(row, dataRowIndex);
+    }
+
+    private positionExistingRows(headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        this.positionHeaderRow();
+        for (let index = VirtualScrollController.DATA_ROW_START_INDEX; index < this.tableElement.children.length; index++) {
+            const row = this.tableElement.children[index] as HTMLElement | null;
+            if (row === null || row === this.bottomSpacerRow) continue;
+            if (row.classList.contains('virtual-scroll-top-spacer') || row.classList.contains('virtual-scroll-bottom-spacer')) continue;
+            const dataRowIndexText = row.dataset.rowIndex;
+            if (dataRowIndexText === undefined) continue;
+            const dataRowIndex = Number(dataRowIndexText);
+            if (!Number.isFinite(dataRowIndex)) continue;
+            this.positionDataRow(row, dataRowIndex, headerHeight, rowHeight);
+        }
+    }
+
+    private syncAbsoluteRowGeometry(headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): boolean {
+        if (!this.usesAbsoluteRowLayout()) return false;
+        this.positionHeaderRow();
+        const cellWidthsChanged = (!this.isHandlingScrollEvent || this.absoluteCellBorderBoxWidths.length === 0)
+            ? this.syncAbsoluteCellWidthCache()
+            : false;
+
+        if (this.topSpacer !== false && this.topSpacer.style.height !== '0px') {
+            this.topSpacer.style.height = '0px';
+        }
+        if (this.bottomSpacer !== false) {
+            const contentHeight = Math.max(0, headerHeight + (this.totalRowCount * rowHeight));
+            const height = `${contentHeight}px`;
+            if (this.bottomSpacer.style.height !== height) this.bottomSpacer.style.height = height;
+        }
+
+        const changed = this.absoluteRowsLastHeaderHeight !== headerHeight
+            || this.absoluteRowsLastRowHeight !== rowHeight
+            || this.absoluteRowsLastTotalRowCount !== this.totalRowCount
+            || cellWidthsChanged;
+        this.absoluteRowsLastHeaderHeight = headerHeight;
+        this.absoluteRowsLastRowHeight = rowHeight;
+        this.absoluteRowsLastTotalRowCount = this.totalRowCount;
+        return changed;
+    }
+
+    private syncAbsoluteCellWidthCache(): boolean {
+        if (!this.usesAbsoluteRowLayout()) return false;
+        const headerRow = this.tableElement.children[0] as HTMLElement | null;
+        if (headerRow === null) return false;
+        const widths: number[] = [];
+        for (let index = 0; index < headerRow.children.length; index++) {
+            const cell = headerRow.children[index] as HTMLElement | null;
+            widths.push(cell === null ? 0 : getLayoutBorderBoxWidthPx(cell));
+        }
+        const key = widths.map(width => width.toFixed(3)).join(',');
+        if (key === this.absoluteRowsLastCellWidthsKey) return false;
+        this.absoluteCellBorderBoxWidths = widths;
+        this.absoluteRowsLastCellWidthsKey = key;
+        return true;
+    }
+
+    private applyAbsoluteCellWidths(row: HTMLElement): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        if (this.absoluteCellBorderBoxWidths.length === 0) this.syncAbsoluteCellWidthCache();
+        const count = Math.min(row.children.length, this.absoluteCellBorderBoxWidths.length);
+        for (let index = 0; index < count; index++) {
+            const width = this.absoluteCellBorderBoxWidths[index];
+            if (width <= 0) continue;
+            const cell = row.children[index] as HTMLElement | null;
+            if (cell === null) continue;
+            const widthPx = `${width}px`;
+            if (cell.style.width !== widthPx) cell.style.width = widthPx;
+            if (cell.style.minWidth !== widthPx) cell.style.minWidth = widthPx;
+            if (cell.style.maxWidth !== widthPx) cell.style.maxWidth = widthPx;
+        }
+    }
 
     /**
      * ヘッダー行の実際の高さを取得する。
@@ -572,6 +692,8 @@ export class VirtualScrollController {
         const scrollTop = scrollTopWithoutCompensation + this.scrollTopCompensationPx;
         const viewportHeight = this.scrollContainer.clientHeight;
         const headerHeight = this.isHandlingScrollEvent ? this.actualHeaderHeight : this.getHeaderHeight();
+        const absoluteGeometryChanged = this.syncAbsoluteRowGeometry(headerHeight, rowHeight);
+        if (absoluteGeometryChanged) this.positionExistingRows(headerHeight, rowHeight);
 
         // topSpacer がテーブル内にあるため、scrollTop にはヘッダー高さが含まれる。
         // 固定行は transform でヘッダー直下に固定表示されるため、
@@ -597,11 +719,15 @@ export class VirtualScrollController {
         // topSpacer は固定行の後のギャップを埋めるため、固定行の高さ分を差し引く。
         const savedScrollLeft = this.isHandlingScrollEvent ? this.currentScrollLeft : this.scrollContainer.scrollLeft;
 
-        if (this.topSpacer !== false) {
-            this.topSpacer.style.height = `${Math.max(0, (newStart - this.frozenRowCount) * rowHeight)}px`;
-        }
-        if (this.bottomSpacer !== false) {
-            this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * rowHeight)}px`;
+        if (this.usesAbsoluteRowLayout()) {
+            this.syncAbsoluteRowGeometry(headerHeight, rowHeight);
+        } else {
+            if (this.topSpacer !== false) {
+                this.topSpacer.style.height = `${Math.max(0, (newStart - this.frozenRowCount) * rowHeight)}px`;
+            }
+            if (this.bottomSpacer !== false) {
+                this.bottomSpacer.style.height = `${Math.max(0, (this.totalRowCount - newEnd) * rowHeight)}px`;
+            }
         }
 
         this.updateRenderedRows(newStart, newEnd);
@@ -701,6 +827,7 @@ export class VirtualScrollController {
             // 新しい範囲の行をすべて生成する（bottomSpacer の直前に挿入）
             for (let i = newStart; i < newEnd; i++) {
                 const row = this.renderRow(i);
+                this.positionDataRow(row, i);
                 if (bottomRef !== null) {
                     this.tableElement.insertBefore(row, bottomRef);
                 } else {
@@ -733,6 +860,7 @@ export class VirtualScrollController {
             const insertRef = this.tableElement.children[viewportDomStart];
             for (let i = newStart; i < overlapStart; i++) {
                 const row = this.renderRow(i);
+                this.positionDataRow(row, i);
                 this.tableElement.insertBefore(row, insertRef);
             }
 
@@ -740,6 +868,7 @@ export class VirtualScrollController {
             // bottomSpacer の直前に挿入する
             for (let i = overlapEnd; i < newEnd; i++) {
                 const row = this.renderRow(i);
+                this.positionDataRow(row, i);
                 if (bottomRef !== null) {
                     this.tableElement.insertBefore(row, bottomRef);
                 } else {

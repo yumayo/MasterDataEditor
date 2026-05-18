@@ -79,14 +79,12 @@
 }
 
 .editor-table-top-viewport {
-    overflow-x: hidden;
-    overflow-y: hidden;
+    overflow: clip;
     scrollbar-width: none;
 }
 
 .editor-table-left-viewport {
-    overflow-x: hidden;
-    overflow-y: hidden;
+    overflow: clip;
     scrollbar-width: none;
 }
 
@@ -105,6 +103,22 @@
     display: table;
     position: relative;
     width: max-content;
+}
+
+.editor-table-grid--absolute-rows {
+    display: block;
+}
+
+.editor-table-grid--absolute-rows .editor-table-row,
+.editor-table-grid--absolute-rows .editor-table-source-column-header-row {
+    display: table;
+    position: absolute;
+    left: 0;
+    width: max-content;
+}
+
+.editor-table-grid--absolute-rows .editor-table-row .editor-table-cell {
+    box-sizing: border-box;
 }
 
 .editor-table-detached-layer {
@@ -159,7 +173,7 @@
     background-color: var(--background-sub-color);
 }
 
-/* topSpacer: テーブル内に配置される display:table-row */
+/* topSpacer: DOMインデックス互換用。absolute row layout では高さを持たない。 */
 .virtual-scroll-top-spacer {
     display: table-row;
     overflow-anchor: none;
@@ -175,7 +189,7 @@
     font-size: 0;
 }
 
-/* bottomSpacer: テーブル内に配置される display:table-row（topSpacerと同構造） */
+/* bottomSpacer: absolute row layout では通常フロー上のスクロール範囲だけを確保する。 */
 .virtual-scroll-bottom-spacer {
     display: table-row;
     overflow-anchor: none;
@@ -189,6 +203,17 @@
     border: none;
     line-height: 0;
     font-size: 0;
+}
+
+.editor-table-grid--absolute-rows .virtual-scroll-top-spacer,
+.editor-table-grid--absolute-rows .virtual-scroll-bottom-spacer {
+    display: block;
+    pointer-events: none;
+}
+
+.editor-table-grid--absolute-rows .virtual-scroll-top-spacer-cell,
+.editor-table-grid--absolute-rows .virtual-scroll-bottom-spacer-cell {
+    display: block;
 }
 
 .editor-table-row,
@@ -591,17 +616,17 @@
 }
 
 /* 固定列の最後のセル（ヘッダー含む）に境界線を表示する。
-   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。 */
+   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。
+   clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
 .freeze-column-border {
     box-shadow: inset -1px 0 0 var(--background-color);
-    clip-path: inset(0 -8px 0 0);
 }
 
 /* 固定行の最後の行ヘッダーに境界線を表示する。
-   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。 */
+   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。
+   clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
 .freeze-row-border {
     box-shadow: inset 0 -1px 0 var(--background-color);
-    clip-path: inset(0 0 -8px 0);
 }
 
 /* ==========================================================================
