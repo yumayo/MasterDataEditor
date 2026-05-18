@@ -10,6 +10,7 @@ import {AreaResizer} from "../editor/area-resizer";
 import {ContextMenu, type ContextMenuEntry} from "../ui/context-menu";
 import {ScrollViewportController} from "../editor/scroll-viewport-controller";
 import {ReferenceDataCache} from "../references/reference-data-cache";
+import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
 import {DropdownQuickView} from "../ui/dropdown-quick-view";
 import {FillController} from "../editor/fill-controller";
@@ -181,6 +182,9 @@ export class Tab {
     /** 参照データキャッシュ（全タブで共有） */
     private readonly referenceDataCache: ReferenceDataCache;
 
+    /** 逆参照マップの共有エンジン */
+    private readonly reverseReferenceEngine: ReverseReferenceEngine;
+
     /** タブ読み込み完了後にナビゲーションするPK値（空文字列は無効） */
     private pendingNavigationPkValue: string;
 
@@ -348,6 +352,7 @@ export class Tab {
         this.store = store;
         this.referenceDataCache = referenceDataCache;
         this.notification = notification;
+        this.reverseReferenceEngine = new ReverseReferenceEngine(this.store, this.notification);
         this.pendingNavigationPkValue = '';
         this.pendingNavigationBookmarkKey = '';
         this.pendingNavigationStoreRowIndex = -1;
@@ -356,7 +361,7 @@ export class Tab {
         this.pendingNavigationFilterColumnName = '';
         this.pendingNavigationFilterValues = new Set();
         this.dragDrop = new TabDragDrop(this);
-        this.reference = new TabReference(this.store, this.referenceDataCache, this.notification);
+        this.reference = new TabReference(this.referenceDataCache, this.reverseReferenceEngine, this.notification);
         this.paneStack = [];
         this.viewIndex = 0;
         this.settingsPanel = false;
@@ -395,7 +400,7 @@ export class Tab {
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
-        this.relationsPanel = new RelationsPanel(this.store, this.notification);
+        this.relationsPanel = new RelationsPanel(this.store, this.reverseReferenceEngine, this.notification);
         this.editor.appendRelationsPanel(this.relationsPanel);
         // ミニEditorTable生成のファクトリとしてTab自身を接続する（相互参照）
         this.relationsPanel.connectTab(this);
@@ -474,6 +479,16 @@ export class Tab {
     notifyExternalFileChanged(): void {
         this.store.markAllTablesStale();
         this.referenceDataCache.evictAll();
+        this.referenceDataCache.invalidateSchemaIndex();
+        this.reverseReferenceEngine.invalidateAll();
+    }
+
+    registerSchemaForReverseReferences(tableName: string, schemaJson: Record<string, unknown>): void {
+        this.reverseReferenceEngine.registerSchema(tableName, schemaJson);
+    }
+
+    markReverseReferenceSchemaIndexComplete(): void {
+        this.reverseReferenceEngine.markSchemaIndexComplete();
     }
 
     /**
@@ -2390,6 +2405,8 @@ export class Tab {
      * TableDefinitionEditor.saveAsync() から呼ばれる。
      */
     closeTableDefinitionAndOpenTable(tableName: string, description: string | null): void {
+        this.referenceDataCache.invalidateSchemaIndex();
+        this.reverseReferenceEngine.invalidateAll();
         // テーブル定義タブを閉じる（performCloseTab 内で destroy() + DOM除去 + フィールドリセットが行われる）
         this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
 
@@ -2408,6 +2425,8 @@ export class Tab {
      * また、既にタブが開かれている場合はストアとDOMを再読み込みして最新状態を反映する。
      */
     async closeTableDefinitionAndReopenTable(tableName: string, description: string | null): Promise<void> {
+        this.referenceDataCache.invalidateSchemaIndex();
+        this.reverseReferenceEngine.invalidateAll();
         // 既にテーブルタブが開かれている場合は先に閉じる。
         // 定義タブを先に閉じると前の通常タブが一瞬アクティブ化され、古いストアヘッダーが再利用されるため。
         const existingState = this.tabStates.get(tableName);
@@ -3236,7 +3255,7 @@ export class Tab {
         this.truncateStackAfterIndex(this.viewIndex);
 
         // 新しい RelationsPanel を生成してスタックに追加する
-        const rp = new RelationsPanel(this.store, this.notification);
+        const rp = new RelationsPanel(this.store, this.reverseReferenceEngine, this.notification);
         rp.connectTab(this);
         // ペインスタック経由で表示される RP は即座に visible にする（visibleガードを通過させるため）
         rp.notifyVisibilityChanged(true);
@@ -4006,7 +4025,7 @@ export class Tab {
         // RelationsPanel は排他表示のため、create 前に現在タブ側で閉じておく。
         const formPanelHost = this.editor.showRightSlotForFormPanel();
         // FormPanel を生成して右スロットにオーバーレイする
-        const formPanel = new FormPanel(this.store, this.referenceDataCache, this, this.notification, this.validationPanel);
+        const formPanel = new FormPanel(this.store, this.referenceDataCache, this.reverseReferenceEngine, this, this.notification, this.validationPanel);
         formPanel.appendTo(formPanelHost);
         this.currentFormPanel = formPanel;
         this.notifyFormPanelVisibilityListener(true);

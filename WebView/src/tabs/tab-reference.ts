@@ -3,8 +3,7 @@ import {EditorTable} from "../editor/editor-table";
 import {EditorTableData} from "../data/models/editor-table-data";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {parseReferenceExpression, isDynamicReference} from "../references/reference-expression";
-import {ReverseReferenceResolver} from "../references/reverse-reference-resolver";
-import {InMemoryTableStore} from "../data/in-memory-table-store";
+import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {NotificationToast} from "../ui/notification";
 
 /**
@@ -16,13 +15,13 @@ import {NotificationToast} from "../ui/notification";
  * - タブ切り替え時の参照ヒント再更新
  */
 export class TabReference {
-    private readonly store: InMemoryTableStore;
     private readonly referenceDataCache: ReferenceDataCache;
+    private readonly reverseReferenceEngine: ReverseReferenceEngine;
     private readonly notification: NotificationToast;
 
-    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, notification: NotificationToast) {
-        this.store = store;
+    constructor(referenceDataCache: ReferenceDataCache, reverseReferenceEngine: ReverseReferenceEngine, notification: NotificationToast) {
         this.referenceDataCache = referenceDataCache;
+        this.reverseReferenceEngine = reverseReferenceEngine;
         this.notification = notification;
     }
 
@@ -47,8 +46,7 @@ export class TabReference {
      * 逆参照を非同期で解決し、ヒントを更新する
      */
     resolveReverseReferencesAsync(tableName: string, editorTable: EditorTable): void {
-        const resolver = new ReverseReferenceResolver(this.store, this.notification);
-        resolver.resolveAsync(tableName).then(reverseMap => {
+        this.reverseReferenceEngine.resolveAsync(tableName).then(reverseMap => {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {
             console.warn('Failed to resolve reverse references:', error);

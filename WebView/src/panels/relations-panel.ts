@@ -8,7 +8,8 @@ import {Tab} from "../tabs/tab";
 import {FillController} from "../editor/fill-controller";
 import {AreaResizer} from "../editor/area-resizer";
 import {History} from "../editor/history";
-import {ReverseReferenceResolver, ReverseReferenceRow} from "../references/reverse-reference-resolver";
+import {ReverseReferenceRow} from "../references/reverse-reference-resolver";
+import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {ResizeHandle} from "../ui/resize-handle";
 import {NotificationToast} from "../ui/notification";
 
@@ -50,6 +51,7 @@ interface RelationEntry {
 export class RelationsPanel {
     private readonly panelElement: HTMLElement;
     private readonly store: InMemoryTableStore;
+    private readonly reverseReferenceEngine: ReverseReferenceEngine;
     private readonly notification: NotificationToast;
     /** 現在接続中のEditorTable。未接続時はfalse */
     private currentEditorTable: EditorTable | false;
@@ -78,8 +80,9 @@ export class RelationsPanel {
     private baseTableName: string | false;
     /** パネルの表示/非表示状態。非表示時はミニテーブルの構築・更新をスキップしてリソースを節約する */
     private visible: boolean;
-    constructor(store: InMemoryTableStore, notification: NotificationToast) {
+    constructor(store: InMemoryTableStore, reverseReferenceEngine: ReverseReferenceEngine, notification: NotificationToast) {
         this.store = store;
+        this.reverseReferenceEngine = reverseReferenceEngine;
         this.notification = notification;
         this.currentEditorTable = false;
         this.currentEntries = [];
@@ -1092,9 +1095,8 @@ export class RelationsPanel {
             }
         }
 
-        // 1:N（逆参照）の解決: ReverseReferenceResolver で逆参照マップを構築する
-        const resolver = new ReverseReferenceResolver(this.store, this.notification);
-        const reverseMap = await resolver.resolveAsync(tableName);
+        // 1:N（逆参照）の解決: 共有エンジンで逆参照マップを取得する
+        const reverseMap = await this.reverseReferenceEngine.resolveAsync(tableName);
         if (requestId !== this.currentRequestId) return entries;
 
         // PK値で逆参照エントリを取得する

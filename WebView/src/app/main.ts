@@ -220,7 +220,11 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
         // スキーマJSONから SchemaEntry を構築して schemaRegistry に登録する
         schemaRegistry.set(tableName, createSchemaEntryFromJson(schemaJson));
         validationSchemas.set(tableName, createValidationTableSchemaFromJson(schemaJson));
+        referenceDataCache.registerSchema(tableName, schemaJson);
+        tab.registerSchemaForReverseReferences(tableName, schemaJson);
     }
+    referenceDataCache.markSchemaIndexComplete();
+    tab.markReverseReferenceSchemaIndexComplete();
 
     await viewPluginHost.loadPluginsAsync();
     tab.restorePendingViewPluginTabFromUiState();

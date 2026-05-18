@@ -39,6 +39,16 @@ export interface ReferenceTableFullData {
     primaryKeyColumnName: string;
 }
 
+interface ReverseReferenceChainCandidate {
+    childTableName: string;
+    priority: number;
+}
+
+interface ReverseReferenceChainContribution {
+    parentTableName: string;
+    candidate: ReverseReferenceChainCandidate;
+}
+
 
 /**
  * 参照テーブルデータのキャッシュを管理するクラス
@@ -53,6 +63,12 @@ export class ReferenceDataCache {
 
     /** テーブルデータの中央ストア（インメモリデータ優先取得用） */
     private readonly store: InMemoryTableStore;
+    /** 表示名補完用: 親テーブル名 → 逆参照チェーン候補 */
+    private readonly reverseChainCandidatesByParent: Map<string, ReverseReferenceChainCandidate[]>;
+    /** 表示名補完用: 子テーブル名 → 登録済み候補（再登録時の除去用） */
+    private readonly reverseChainContributionByChild: Map<string, ReverseReferenceChainContribution>;
+    /** 起動時の全スキーマ登録が完了しているか */
+    private reverseChainSchemaIndexComplete: boolean;
 
     constructor(store: InMemoryTableStore) {
         this.cache = new Map();
@@ -60,6 +76,36 @@ export class ReferenceDataCache {
         this.fullDataCache = new Map();
         this.fullDataLoadingPromises = new Map();
         this.store = store;
+        this.reverseChainCandidatesByParent = new Map();
+        this.reverseChainContributionByChild = new Map();
+        this.reverseChainSchemaIndexComplete = false;
+    }
+
+    /**
+     * 起動時に読み込んだスキーマを表示名補完用インデックスへ登録する。
+     * これにより ReferenceDataCache がテーブル読み込み時に全 schema を再走査しなくて済む。
+     */
+    registerSchema(tableName: string, schema: Record<string, unknown>): void {
+        this.removeReverseChainContribution(tableName);
+        const contribution = this.createReverseChainContribution(tableName, schema);
+        if (contribution === null) return;
+        this.reverseChainContributionByChild.set(tableName, contribution);
+        let candidates = this.reverseChainCandidatesByParent.get(contribution.parentTableName);
+        if (candidates === undefined) {
+            candidates = [];
+            this.reverseChainCandidatesByParent.set(contribution.parentTableName, candidates);
+        }
+        candidates.push(contribution.candidate);
+    }
+
+    markSchemaIndexComplete(): void {
+        this.reverseChainSchemaIndexComplete = true;
+    }
+
+    invalidateSchemaIndex(): void {
+        this.reverseChainCandidatesByParent.clear();
+        this.reverseChainContributionByChild.clear();
+        this.reverseChainSchemaIndexComplete = false;
     }
 
     /**
@@ -305,83 +351,9 @@ export class ReferenceDataCache {
         tableName: string,
         items: ReferenceItem[]
     ): Promise<void> {
-        const schemaFiles =
-            await findFilesAsync("schema");
-
-        // 全候補を収集し、最高優先度の子テーブルを選択する
-        const candidates: Array<{
-            childTableName: string;
-            priority: number;
-        }> = [];
-
-        for (const file of schemaFiles) {
-            if (file.type !== 'file') continue;
-            if (!file.name.endsWith('.json')) continue;
-
-            const childTableName =
-                file.name.replace('.json', '');
-            if (childTableName === tableName) continue;
-
-            try {
-                const schemaText = await readFileAsync(
-                    `schema/${childTableName}.json`
-                );
-                const childSchema = JSON.parse(
-                    schemaText
-                );
-                if (!childSchema.header
-                    || !Array.isArray(
-                        childSchema.header
-                    )) {
-                    continue;
-                }
-
-                // id列がこのテーブルを参照しているか
-                // 子テーブルのPK列名をスキーマから取得する
-                let childPkColumnName: string;
-                try {
-                    childPkColumnName = extractFirstPrimaryKeyColumn(childSchema);
-                } catch {
-                    continue;
-                }
-                const idEntry =
-                    childSchema.header.find(
-                        (h: {
-                            name: string;
-                            reference?: string | DynamicReferenceSchema;
-                        }) =>
-                            h.name === childPkColumnName
-                    );
-                if (!idEntry
-                    || !idEntry.reference) {
-                    continue;
-                }
-
-                const refExpr =
-                    parseReferenceExpression(
-                        idEntry.reference
-                    );
-                if (!isSimpleReference(refExpr)
-                    || refExpr.tableName
-                        !== tableName) {
-                    continue;
-                }
-
-                // 子テーブルに表示列があるか
-                const childColumnNames = (childSchema.header as Array<{name: string}>).map(h => h.name);
-                if (determineDisplayColumnName(childColumnNames) === '') continue;
-
-                // スキーマから逆参照の表示優先度を読み取る
-                const priority = readReverseReferencePriority(childSchema);
-
-                candidates.push({
-                    childTableName,
-                    priority,
-                });
-            } catch {
-                continue;
-            }
-        }
+        const candidates = this.reverseChainSchemaIndexComplete
+            ? [...(this.reverseChainCandidatesByParent.get(tableName) ?? [])]
+            : await this.resolveReverseReferenceChainCandidatesByScanningAsync(tableName);
 
         if (candidates.length === 0) return;
 
@@ -407,6 +379,73 @@ export class ReferenceDataCache {
                 item.displayText = childItem.displayText;
             }
         }
+    }
+
+    private async resolveReverseReferenceChainCandidatesByScanningAsync(tableName: string): Promise<ReverseReferenceChainCandidate[]> {
+        const candidates: ReverseReferenceChainCandidate[] = [];
+        const schemaFiles = await findFilesAsync("schema");
+        for (const file of schemaFiles) {
+            if (file.type !== 'file') continue;
+            if (!file.name.endsWith('.json')) continue;
+
+            const childTableName =
+                file.name.replace('.json', '');
+            if (childTableName === tableName) continue;
+
+            try {
+                const schemaText = await readFileAsync(
+                    `schema/${childTableName}.json`
+                );
+                const childSchema = JSON.parse(
+                    schemaText
+                ) as Record<string, unknown>;
+                const contribution = this.createReverseChainContribution(childTableName, childSchema);
+                if (contribution !== null && contribution.parentTableName === tableName) {
+                    candidates.push(contribution.candidate);
+                }
+            } catch {
+                continue;
+            }
+        }
+        return candidates;
+    }
+
+    private createReverseChainContribution(tableName: string, schema: Record<string, unknown>): ReverseReferenceChainContribution | null {
+        const header = schema['header'];
+        if (!Array.isArray(header)) return null;
+        let childPkColumnName: string;
+        try {
+            childPkColumnName = extractFirstPrimaryKeyColumn(schema);
+        } catch {
+            return null;
+        }
+        const idEntry = (header as Array<{ name?: unknown; reference?: string | DynamicReferenceSchema }>).find(h => h.name === childPkColumnName);
+        if (!idEntry || !idEntry.reference) return null;
+        const refExpr = parseReferenceExpression(idEntry.reference);
+        if (!isSimpleReference(refExpr)) return null;
+        const childColumnNames = (header as Array<{ name?: unknown }>)
+            .map(h => typeof h.name === 'string' ? h.name : '')
+            .filter(name => name !== '');
+        if (determineDisplayColumnName(childColumnNames) === '') return null;
+        return {
+            parentTableName: refExpr.tableName,
+            candidate: {
+                childTableName: tableName,
+                priority: readReverseReferencePriority(schema),
+            },
+        };
+    }
+
+    private removeReverseChainContribution(tableName: string): void {
+        const contribution = this.reverseChainContributionByChild.get(tableName);
+        if (contribution === undefined) return;
+        const candidates = this.reverseChainCandidatesByParent.get(contribution.parentTableName);
+        if (candidates !== undefined) {
+            const index = candidates.findIndex(candidate => candidate.childTableName === tableName);
+            if (index !== -1) candidates.splice(index, 1);
+            if (candidates.length === 0) this.reverseChainCandidatesByParent.delete(contribution.parentTableName);
+        }
+        this.reverseChainContributionByChild.delete(tableName);
     }
 
     /**

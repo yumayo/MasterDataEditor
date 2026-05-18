@@ -1,4 +1,4 @@
-import {findFilesAsync, readFileAsync} from "../app/api";
+import {readFileAsync} from "../app/api";
 import {determineDisplayColumnName} from "../config/config";
 import {Csv} from "../data/csv";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
@@ -75,11 +75,16 @@ export interface ReverseReferenceEntry {
 export type ReverseReferenceMap =
     Map<string, ReverseReferenceEntry[]>;
 
+export interface ReverseReferenceChildSchema {
+    tableName: string;
+    schema: Record<string, unknown>;
+}
+
 /**
  * 逆参照を解決するクラス
  *
- * 親テーブルを開いたとき、どの子テーブルから参照されているかを
- * 発見し、PK値ごとにグループ化したマップを構築する。
+ * 共有エンジンが絞り込んだ子テーブルスキーマを走査し、
+ * PK値ごとにグループ化したマップを構築する。
  */
 export class ReverseReferenceResolver {
 
@@ -94,34 +99,23 @@ export class ReverseReferenceResolver {
     }
 
     /**
-     * 指定テーブルを参照している全子テーブルを走査し、
+     * 指定テーブルを参照している候補子テーブルを走査し、
      * 逆参照マップを構築する
      * @param tableName 親テーブル名
      */
     async resolveAsync(
         tableName: string,
+        candidateChildSchemas: readonly ReverseReferenceChildSchema[],
     ): Promise<ReverseReferenceMap> {
         const map: ReverseReferenceMap = new Map();
 
-        // 全スキーマファイルを列挙
-        const schemaFiles =
-            await findFilesAsync("schema");
-
-        // 各スキーマを読み込み、tableName を参照している列を探す
         const childPromises: Promise<void>[] = [];
-        for (const file of schemaFiles) {
-            if (file.type !== 'file') continue;
-            // .json 拡張子のみ対象
-            if (!file.name.endsWith('.json')) continue;
-
-            const childTableName =
-                file.name.replace('.json', '');
-            // 自分自身は除外
-            if (childTableName === tableName) continue;
-
+        for (const childSchema of candidateChildSchemas) {
+            if (childSchema.tableName === tableName) continue;
             childPromises.push(
                 this.processChildTableAsync(
-                    childTableName,
+                    childSchema.tableName,
+                    childSchema.schema,
                     tableName,
                     map
                 )
@@ -206,14 +200,10 @@ export class ReverseReferenceResolver {
      */
     private async processChildTableAsync(
         childTableName: string,
+        schema: Record<string, unknown>,
         parentTableName: string,
         map: ReverseReferenceMap
     ): Promise<void> {
-        // スキーマを読み込む
-        const schemaText = await readFileAsync(
-            `schema/${childTableName}.json`
-        );
-        const schema = JSON.parse(schemaText);
         if (!schema.header
             || !Array.isArray(schema.header)) {
             return;

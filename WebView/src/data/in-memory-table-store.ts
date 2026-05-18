@@ -46,6 +46,8 @@ export class InMemoryTableStore {
     private readonly dirtyTableNames: Set<string>;
     /** 外部ファイル変更通知後、次回登録時にCSVから再読み込みする対象 */
     private readonly staleTableNames: Set<string>;
+    /** データ内容の更新世代。参照系キャッシュの鮮度判定に使用する。 */
+    private dataRevision: number;
 
     constructor() {
         this.headers = new Map();
@@ -54,6 +56,16 @@ export class InMemoryTableStore {
         this.historyRegistry = new Map();
         this.dirtyTableNames = new Set();
         this.staleTableNames = new Set();
+        this.dataRevision = 0;
+    }
+
+    /** テーブルデータ内容の更新世代を返す */
+    getDataRevision(): number {
+        return this.dataRevision;
+    }
+
+    private bumpDataRevision(): void {
+        this.dataRevision++;
     }
 
     /** テーブル登録（テスト・外部データ注入用の同期API） */
@@ -78,6 +90,7 @@ export class InMemoryTableStore {
             this.refCounts.set(tableName, (this.refCounts.get(tableName) ?? 0) + 1);
             this.dirtyTableNames.delete(tableName);
             this.staleTableNames.delete(tableName);
+            this.bumpDataRevision();
             return this.getCsv(tableName) as Csv;
         }
         if (this.refCounts.has(tableName)) {
@@ -118,6 +131,7 @@ export class InMemoryTableStore {
         const csv = await this.loadCsvFromFileAsync(tableName);
         this.headers.set(tableName, csv.header);
         this.rows.set(tableName, csv.body);
+        this.bumpDataRevision();
         // CSV巻き戻し後は補完Dirty状態をクリアする
         this.dirtyTableNames.delete(tableName);
         this.staleTableNames.delete(tableName);
@@ -128,6 +142,7 @@ export class InMemoryTableStore {
         for (const tableName of this.headers.keys()) {
             this.staleTableNames.add(tableName);
         }
+        this.bumpDataRevision();
     }
 
     /** 参照カウント減少、0になったら削除（ただしDirtyデータは保持する） */
@@ -205,7 +220,9 @@ export class InMemoryTableStore {
         if (rowIndex < 0 || rowIndex >= tableRows.length) return false;
         const row = tableRows[rowIndex];
         if (columnIndex < 0 || columnIndex >= row.length) return false;
+        if (row[columnIndex] === value) return true;
         row[columnIndex] = value;
+        this.bumpDataRevision();
         return true;
     }
 
@@ -213,12 +230,14 @@ export class InMemoryTableStore {
     replaceAllRows(tableName: string, newRows: string[][]): void {
         if (!this.rows.has(tableName)) return;
         this.rows.set(tableName, newRows);
+        this.bumpDataRevision();
     }
 
     /** 行追加 */
     appendRow(tableName: string, values: string[]): void {
         if (!this.rows.has(tableName)) return;
         this.rows.get(tableName)!.push(values);
+        this.bumpDataRevision();
     }
 
     /** 指定インデックスに列を挿入する */
@@ -230,6 +249,7 @@ export class InMemoryTableStore {
         for (const row of rows) {
             row.splice(columnIndex, 0, valueFactory());
         }
+        this.bumpDataRevision();
     }
 
     /** 指定インデックスの列を削除する */
@@ -242,6 +262,7 @@ export class InMemoryTableStore {
         for (const row of rows) {
             if (columnIndex < row.length) row.splice(columnIndex, 1);
         }
+        this.bumpDataRevision();
     }
 
     /** 指定インデックスの列名を更新する */
@@ -249,7 +270,9 @@ export class InMemoryTableStore {
         if (!this.headers.has(tableName)) return;
         const header = this.headers.get(tableName)!;
         if (columnIndex < 0 || columnIndex >= header.length) return;
+        if (header[columnIndex] === columnName) return;
         header[columnIndex] = columnName;
+        this.bumpDataRevision();
     }
 
     /** 行削除（テーブル未登録・行インデックス範囲外の場合は何もしない） */
@@ -258,6 +281,7 @@ export class InMemoryTableStore {
         const tableRows = this.rows.get(tableName)!;
         if (rowIndex < 0 || rowIndex >= tableRows.length) return;
         tableRows.splice(rowIndex, 1);
+        this.bumpDataRevision();
     }
 
     /** 指定インデックスに行を挿入する */
@@ -265,6 +289,7 @@ export class InMemoryTableStore {
         if (!this.rows.has(tableName)) return;
         const tableRows = this.rows.get(tableName)!;
         tableRows.splice(rowIndex, 0, values);
+        this.bumpDataRevision();
     }
 
     /** 行を移動する（fromIndex の行を取り出して toIndex に挿入する） */
@@ -278,6 +303,7 @@ export class InMemoryTableStore {
         // toIndex が fromIndex より大きい場合、splice で1行減っているため toIndex はそのまま正しい
         // （呼び出し元が「移動後の挿入位置」を渡す前提）
         tableRows.splice(toIndex, 0, row);
+        this.bumpDataRevision();
     }
 
     /** 指定キー列の値で行をグループ化したMapを構築する */

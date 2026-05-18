@@ -1,5 +1,6 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
-import {ReverseReferenceResolver, ReverseReferenceEntry} from "../references/reverse-reference-resolver";
+import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
+import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {determineDisplayColumnName} from "../config/config";
 import {readFileAsync} from "../app/api";
 import {Csv} from "../data/csv";
@@ -120,7 +121,7 @@ export class FormPanel {
     private readonly panelElement: HTMLElement;
     private readonly store: InMemoryTableStore;
     private readonly referenceDataCache: ReferenceDataCache;
-    private readonly reverseReferenceResolver: ReverseReferenceResolver;
+    private readonly reverseReferenceEngine: ReverseReferenceEngine;
     private readonly tab: Tab;
     private readonly notification: NotificationToast;
     private readonly validationPanel: ValidationPanel | false;
@@ -139,10 +140,10 @@ export class FormPanel {
     private activeReferenceField: ActiveReferenceField | null;
     private referenceDropdownRequestId: number;
 
-    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, tab: Tab, notification: NotificationToast, validationPanel: ValidationPanel | false) {
+    constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache, reverseReferenceEngine: ReverseReferenceEngine, tab: Tab, notification: NotificationToast, validationPanel: ValidationPanel | false) {
         this.store = store;
         this.referenceDataCache = referenceDataCache;
-        this.reverseReferenceResolver = new ReverseReferenceResolver(store, notification);
+        this.reverseReferenceEngine = reverseReferenceEngine;
         this.tab = tab;
         this.notification = notification;
         this.validationPanel = validationPanel;
@@ -856,7 +857,7 @@ export class FormPanel {
         if (requestId !== this.currentRequestId) return;
 
         await Promise.all(openTables.map(async ([tableName, editorTable]) => {
-            const reverseMap = await this.reverseReferenceResolver.resolveAsync(tableName);
+            const reverseMap = await this.reverseReferenceEngine.resolveAsync(tableName);
             if (requestId !== this.currentRequestId) return;
             editorTable.updateReverseReferenceHints(reverseMap);
             editorTable.updateReferenceHints();
@@ -980,7 +981,7 @@ export class FormPanel {
             if (primaryKeyColumn?.reference) lockedColumnNames.add(primaryKeyColumn.name);
         }
 
-        const reverseMap = await this.reverseReferenceResolver.resolveAsync(tableName);
+        const reverseMap = await this.reverseReferenceEngine.resolveAsync(tableName);
         if (requestId !== this.currentRequestId) return lockedColumnNames;
 
         for (const [parentColumnValue, entries] of reverseMap) {
@@ -1196,7 +1197,7 @@ export class FormPanel {
 
     private async resolveIncomingReferenceSectionsAsync(data: CurrentPageData, requestId: number): Promise<ReferenceSection[]> {
         const sections: ReferenceSection[] = [];
-        const reverseMap = await this.reverseReferenceResolver.resolveAsync(data.tableName);
+        const reverseMap = await this.reverseReferenceEngine.resolveAsync(data.tableName);
         if (requestId !== this.currentRequestId) return sections;
 
         const pkValue = data.pkColumnIndex !== -1 ? (data.row[data.pkColumnIndex] ?? '') : '';
