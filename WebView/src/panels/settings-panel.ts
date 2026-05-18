@@ -15,6 +15,7 @@ type SettingsScope = 'workspace' | 'user';
 
 const DEFAULT_THEME: ThemeValue = 'dark';
 const DEFAULT_TAB_WRAP_ENABLED = false;
+const DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED = false;
 const DEFAULT_EXPORT_VALIDATION_DATE_TIME = '';
 const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
 const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
@@ -47,6 +48,7 @@ export interface ExportValidationSettings {
 interface SettingsFile {
     theme?: ThemeValue;
     tabWrapEnabled?: boolean;
+    referenceJumpTemporaryFilterEnabled?: boolean;
     exportValidationDateTime?: string;
     exportBeginDateColumnName?: string;
     exportEndDateColumnName?: string;
@@ -64,6 +66,7 @@ interface SettingsHistoryEntry {
 interface SettingsValues {
     theme: ThemeValue | null;
     tabWrapEnabled: boolean | null;
+    referenceJumpTemporaryFilterEnabled: boolean | null;
     exportValidationDateTime: string | null;
     exportBeginDateColumnName: string | null;
     exportEndDateColumnName: string | null;
@@ -72,6 +75,7 @@ interface SettingsValues {
 interface DefaultedSettingsValues {
     theme: ThemeValue;
     tabWrapEnabled: boolean;
+    referenceJumpTemporaryFilterEnabled: boolean;
     exportValidationDateTime: string;
     exportBeginDateColumnName: string;
     exportEndDateColumnName: string;
@@ -85,6 +89,7 @@ interface ScopedSettingsState {
 const SETTING_KEYS: readonly SettingsKey[] = [
     'theme',
     'tabWrapEnabled',
+    'referenceJumpTemporaryFilterEnabled',
     'exportValidationDateTime',
     'exportBeginDateColumnName',
     'exportEndDateColumnName',
@@ -102,6 +107,7 @@ function createEmptySettingsValues(): SettingsValues {
     return {
         theme: null,
         tabWrapEnabled: null,
+        referenceJumpTemporaryFilterEnabled: null,
         exportValidationDateTime: null,
         exportBeginDateColumnName: null,
         exportEndDateColumnName: null,
@@ -119,6 +125,7 @@ function createDefaultedSettingsValues(settings: SettingsValues): DefaultedSetti
     return {
         theme: settings.theme ?? DEFAULT_THEME,
         tabWrapEnabled: settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED,
+        referenceJumpTemporaryFilterEnabled: settings.referenceJumpTemporaryFilterEnabled ?? DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED,
         exportValidationDateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
         exportBeginDateColumnName: settings.exportBeginDateColumnName ?? DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
         exportEndDateColumnName: settings.exportEndDateColumnName ?? DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
@@ -129,6 +136,7 @@ function createApplicationDefaultSettings(): DefaultedSettingsValues {
     return {
         theme: DEFAULT_THEME,
         tabWrapEnabled: DEFAULT_TAB_WRAP_ENABLED,
+        referenceJumpTemporaryFilterEnabled: DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED,
         exportValidationDateTime: DEFAULT_EXPORT_VALIDATION_DATE_TIME,
         exportBeginDateColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
         exportEndDateColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
@@ -139,6 +147,7 @@ function getDefaultedSettingValue(settings: DefaultedSettingsValues, key: Settin
     switch (key) {
         case 'theme': return settings.theme;
         case 'tabWrapEnabled': return settings.tabWrapEnabled;
+        case 'referenceJumpTemporaryFilterEnabled': return settings.referenceJumpTemporaryFilterEnabled;
         case 'exportValidationDateTime': return settings.exportValidationDateTime;
         case 'exportBeginDateColumnName': return settings.exportBeginDateColumnName;
         case 'exportEndDateColumnName': return settings.exportEndDateColumnName;
@@ -171,6 +180,11 @@ function readTabWrapEnabledFromRecord(record: Record<string, unknown> | null): b
     return null;
 }
 
+function readBooleanSettingFromRecord(record: Record<string, unknown> | null, key: string): boolean | null {
+    if (record === null) return null;
+    return typeof record[key] === 'boolean' ? record[key] : null;
+}
+
 function readExportValidationDateTimeFromRecord(record: Record<string, unknown> | null): string | null {
     if (record === null) return null;
     return typeof record['exportValidationDateTime'] === 'string'
@@ -187,6 +201,7 @@ function readSettingsValuesFromRecord(settingsRecord: Record<string, unknown> | 
     return {
         theme: readThemeFromRecord(settingsRecord),
         tabWrapEnabled: readTabWrapEnabledFromRecord(settingsRecord),
+        referenceJumpTemporaryFilterEnabled: readBooleanSettingFromRecord(settingsRecord, 'referenceJumpTemporaryFilterEnabled'),
         exportValidationDateTime: readExportValidationDateTimeFromRecord(settingsRecord),
         exportBeginDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportBeginDateColumnName'),
         exportEndDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportEndDateColumnName'),
@@ -209,6 +224,7 @@ function resolveEffectiveSettings(settingsState: ScopedSettingsState): SettingsV
     return {
         theme: settingsState.user.theme ?? settingsState.workspace.theme,
         tabWrapEnabled: settingsState.user.tabWrapEnabled ?? settingsState.workspace.tabWrapEnabled,
+        referenceJumpTemporaryFilterEnabled: settingsState.user.referenceJumpTemporaryFilterEnabled ?? settingsState.workspace.referenceJumpTemporaryFilterEnabled,
         exportValidationDateTime: settingsState.user.exportValidationDateTime ?? settingsState.workspace.exportValidationDateTime,
         exportBeginDateColumnName: settingsState.user.exportBeginDateColumnName ?? settingsState.workspace.exportBeginDateColumnName,
         exportEndDateColumnName: settingsState.user.exportEndDateColumnName ?? settingsState.workspace.exportEndDateColumnName,
@@ -236,6 +252,7 @@ function normalizeSettingsValues(settings: SettingsValues): SettingsValues {
     return {
         theme: normalizeSettingsValueForScopeDefault(settings.theme, defaultSettings.theme),
         tabWrapEnabled: normalizeSettingsValueForScopeDefault(settings.tabWrapEnabled, defaultSettings.tabWrapEnabled),
+        referenceJumpTemporaryFilterEnabled: normalizeSettingsValueForScopeDefault(settings.referenceJumpTemporaryFilterEnabled, defaultSettings.referenceJumpTemporaryFilterEnabled),
         exportValidationDateTime: normalizeSettingsValueForScopeDefault(settings.exportValidationDateTime, defaultSettings.exportValidationDateTime),
         exportBeginDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportBeginDateColumnName, defaultSettings.exportBeginDateColumnName),
         exportEndDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportEndDateColumnName, defaultSettings.exportEndDateColumnName),
@@ -263,6 +280,7 @@ function cloneSettingsState(settingsState: ScopedSettingsState): ScopedSettingsS
 function areSettingsValuesEqual(left: SettingsValues, right: SettingsValues): boolean {
     return left.theme === right.theme
         && left.tabWrapEnabled === right.tabWrapEnabled
+        && left.referenceJumpTemporaryFilterEnabled === right.referenceJumpTemporaryFilterEnabled
         && left.exportValidationDateTime === right.exportValidationDateTime
         && left.exportBeginDateColumnName === right.exportBeginDateColumnName
         && left.exportEndDateColumnName === right.exportEndDateColumnName;
@@ -276,6 +294,7 @@ function areSettingsStatesEqual(left: ScopedSettingsState, right: ScopedSettings
 function hasAnySettingsValue(settings: SettingsValues): boolean {
     return settings.theme !== null
         || settings.tabWrapEnabled !== null
+        || settings.referenceJumpTemporaryFilterEnabled !== null
         || settings.exportValidationDateTime !== null
         || settings.exportBeginDateColumnName !== null
         || settings.exportEndDateColumnName !== null;
@@ -293,6 +312,10 @@ function getDefaultedTabWrapEnabled(settings: SettingsValues): boolean {
     return settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED;
 }
 
+function getDefaultedReferenceJumpTemporaryFilterEnabled(settings: SettingsValues): boolean {
+    return settings.referenceJumpTemporaryFilterEnabled ?? DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED;
+}
+
 function getDefaultedExportValidationSettings(settings: SettingsValues): ExportValidationSettings {
     return {
         dateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
@@ -305,6 +328,7 @@ function createSettingsFileFromValues(settings: SettingsValues): SettingsFile {
     const file: SettingsFile = {};
     if (settings.theme !== null) file.theme = settings.theme;
     if (settings.tabWrapEnabled !== null) file.tabWrapEnabled = settings.tabWrapEnabled;
+    if (settings.referenceJumpTemporaryFilterEnabled !== null) file.referenceJumpTemporaryFilterEnabled = settings.referenceJumpTemporaryFilterEnabled;
     if (settings.exportValidationDateTime !== null) file.exportValidationDateTime = settings.exportValidationDateTime;
     if (settings.exportBeginDateColumnName !== null) file.exportBeginDateColumnName = settings.exportBeginDateColumnName;
     if (settings.exportEndDateColumnName !== null) file.exportEndDateColumnName = settings.exportEndDateColumnName;
@@ -315,6 +339,7 @@ function applySettingsStateToRuntime(settingsState: ScopedSettingsState): void {
     const effectiveSettings = resolveEffectiveSettings(settingsState);
     document.body.dataset.theme = getDefaultedTheme(effectiveSettings);
     applyTabWrapEnabled(getDefaultedTabWrapEnabled(effectiveSettings));
+    applyReferenceJumpTemporaryFilterEnabled(getDefaultedReferenceJumpTemporaryFilterEnabled(effectiveSettings));
     applyExportValidationSettings(getDefaultedExportValidationSettings(effectiveSettings));
 }
 
@@ -326,6 +351,11 @@ function normalizeSettingsPatch(patch: SettingsPatch): SettingsPatch {
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'tabWrapEnabled')) {
         normalizedPatch.tabWrapEnabled = patch.tabWrapEnabled === defaultSettings.tabWrapEnabled ? null : patch.tabWrapEnabled ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'referenceJumpTemporaryFilterEnabled')) {
+        normalizedPatch.referenceJumpTemporaryFilterEnabled = patch.referenceJumpTemporaryFilterEnabled === defaultSettings.referenceJumpTemporaryFilterEnabled
+            ? null
+            : patch.referenceJumpTemporaryFilterEnabled ?? null;
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'exportValidationDateTime')) {
         normalizedPatch.exportValidationDateTime = patch.exportValidationDateTime === defaultSettings.exportValidationDateTime ? null : patch.exportValidationDateTime ?? null;
@@ -344,6 +374,9 @@ function applySettingsPatchToState(settingsState: ScopedSettingsState, scope: Se
     const normalizedPatch = normalizeSettingsPatch(patch);
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'theme')) nextScopeSettings.theme = normalizedPatch.theme ?? null;
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'tabWrapEnabled')) nextScopeSettings.tabWrapEnabled = normalizedPatch.tabWrapEnabled ?? null;
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'referenceJumpTemporaryFilterEnabled')) {
+        nextScopeSettings.referenceJumpTemporaryFilterEnabled = normalizedPatch.referenceJumpTemporaryFilterEnabled ?? null;
+    }
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportValidationDateTime')) nextScopeSettings.exportValidationDateTime = normalizedPatch.exportValidationDateTime ?? null;
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportBeginDateColumnName')) nextScopeSettings.exportBeginDateColumnName = normalizedPatch.exportBeginDateColumnName ?? null;
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportEndDateColumnName')) nextScopeSettings.exportEndDateColumnName = normalizedPatch.exportEndDateColumnName ?? null;
@@ -361,6 +394,9 @@ async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsVa
     const settingsFile = createSettingsFileFromValues(settings);
     if (settingsFile.theme !== undefined) data['theme'] = settingsFile.theme;
     if (settingsFile.tabWrapEnabled !== undefined) data['tabWrapEnabled'] = settingsFile.tabWrapEnabled;
+    if (settingsFile.referenceJumpTemporaryFilterEnabled !== undefined) {
+        data['referenceJumpTemporaryFilterEnabled'] = settingsFile.referenceJumpTemporaryFilterEnabled;
+    }
     if (settingsFile.exportValidationDateTime !== undefined) data['exportValidationDateTime'] = settingsFile.exportValidationDateTime;
     if (settingsFile.exportBeginDateColumnName !== undefined) {
         data['exportBeginDateColumnName'] = settingsFile.exportBeginDateColumnName;
@@ -387,10 +423,19 @@ let appliedExportValidationSettings: ExportValidationSettings = {
     beginColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
     endColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
 };
+let appliedReferenceJumpTemporaryFilterEnabled = DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED;
 
 export function applyTabWrapEnabled(value: boolean): void {
     document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, value ? '1' : '0');
     window.dispatchEvent(new CustomEvent(TAB_WRAP_ENABLED_CHANGED_EVENT));
+}
+
+export function applyReferenceJumpTemporaryFilterEnabled(value: boolean): void {
+    appliedReferenceJumpTemporaryFilterEnabled = value;
+}
+
+export function isReferenceJumpTemporaryFilterEnabled(): boolean {
+    return appliedReferenceJumpTemporaryFilterEnabled;
 }
 
 export function applyExportValidationSettings(value: ExportValidationSettings): void {
@@ -421,6 +466,8 @@ export class SettingsPanel {
     private readonly dropdownList: HTMLElement;
     private selectedTabWrapEnabled: boolean;
     private readonly tabWrapToggle: HTMLInputElement;
+    private selectedReferenceJumpTemporaryFilterEnabled: boolean;
+    private readonly referenceJumpTemporaryFilterToggle: HTMLInputElement;
     private selectedExportValidationDateTime: string;
     private readonly exportValidationDateTimePicker: DateTimePicker;
     private selectedExportBeginDateColumnName: string;
@@ -563,6 +610,38 @@ export class SettingsPanel {
         tabWrapLabel.appendChild(tabWrapControl);
         tabWrapLabel.appendChild(this.createSettingResetButton('tabWrapEnabled'));
         displaySectionItems.appendChild(tabWrapLabel);
+
+        const referenceJumpTemporaryFilterLabel = document.createElement('div');
+        referenceJumpTemporaryFilterLabel.classList.add('settings-label');
+        referenceJumpTemporaryFilterLabel.dataset.settingKey = 'referenceJumpTemporaryFilterEnabled';
+        const referenceJumpTemporaryFilterLabelText = document.createElement('span');
+        referenceJumpTemporaryFilterLabelText.classList.add('settings-label-text');
+        referenceJumpTemporaryFilterLabelText.textContent = 'ジャンプ時フィルター';
+        referenceJumpTemporaryFilterLabel.appendChild(referenceJumpTemporaryFilterLabelText);
+
+        const referenceJumpTemporaryFilterControl = document.createElement('label');
+        referenceJumpTemporaryFilterControl.classList.add('settings-toggle', 'settings-reference-jump-temporary-filter-toggle');
+
+        this.selectedReferenceJumpTemporaryFilterEnabled = getDefaultedReferenceJumpTemporaryFilterEnabled(initialSettings);
+        this.referenceJumpTemporaryFilterToggle = document.createElement('input');
+        this.referenceJumpTemporaryFilterToggle.classList.add('settings-toggle-input', 'settings-reference-jump-temporary-filter-checkbox');
+        this.referenceJumpTemporaryFilterToggle.type = 'checkbox';
+        this.referenceJumpTemporaryFilterToggle.checked = this.selectedReferenceJumpTemporaryFilterEnabled;
+        this.referenceJumpTemporaryFilterToggle.addEventListener('change', () => {
+            this.selectReferenceJumpTemporaryFilterEnabled(this.referenceJumpTemporaryFilterToggle.checked);
+        });
+
+        const referenceJumpTemporaryFilterTrack = document.createElement('span');
+        referenceJumpTemporaryFilterTrack.classList.add('settings-toggle-track');
+        const referenceJumpTemporaryFilterThumb = document.createElement('span');
+        referenceJumpTemporaryFilterThumb.classList.add('settings-toggle-thumb');
+        referenceJumpTemporaryFilterTrack.appendChild(referenceJumpTemporaryFilterThumb);
+
+        referenceJumpTemporaryFilterControl.appendChild(this.referenceJumpTemporaryFilterToggle);
+        referenceJumpTemporaryFilterControl.appendChild(referenceJumpTemporaryFilterTrack);
+        referenceJumpTemporaryFilterLabel.appendChild(referenceJumpTemporaryFilterControl);
+        referenceJumpTemporaryFilterLabel.appendChild(this.createSettingResetButton('referenceJumpTemporaryFilterEnabled'));
+        displaySectionItems.appendChild(referenceJumpTemporaryFilterLabel);
         this.element.appendChild(displaySection);
 
         // export_begin_date / export_end_date を使った出力フィルター時刻
@@ -686,6 +765,9 @@ export class SettingsPanel {
         this.selectedTabWrapEnabled = getDefaultedTabWrapEnabled(settings);
         this.tabWrapToggle.checked = this.selectedTabWrapEnabled;
 
+        this.selectedReferenceJumpTemporaryFilterEnabled = getDefaultedReferenceJumpTemporaryFilterEnabled(settings);
+        this.referenceJumpTemporaryFilterToggle.checked = this.selectedReferenceJumpTemporaryFilterEnabled;
+
         const exportValidationSettings = getDefaultedExportValidationSettings(settings);
         this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(exportValidationSettings.dateTime) ?? exportValidationSettings.dateTime;
         this.exportValidationDateTimePicker.setValue(this.selectedExportValidationDateTime);
@@ -785,6 +867,12 @@ export class SettingsPanel {
         this.applyAndSaveSettingsPatch({tabWrapEnabled: value}, 'save tab layout failed');
     }
 
+    private selectReferenceJumpTemporaryFilterEnabled(value: boolean): void {
+        if (this.selectedReferenceJumpTemporaryFilterEnabled === value) return;
+        this.selectedReferenceJumpTemporaryFilterEnabled = value;
+        this.applyAndSaveSettingsPatch({referenceJumpTemporaryFilterEnabled: value}, 'save reference jump temporary filter failed');
+    }
+
     private selectExportValidationDateTime(value: string): void {
         const nextValue = normalizeDateTimeInputToSeconds(value) ?? value.trim();
         if (this.selectedExportValidationDateTime === nextValue) return;
@@ -839,6 +927,7 @@ export class SettingsPanel {
         switch (key) {
             case 'theme': return { theme: defaults.theme };
             case 'tabWrapEnabled': return { tabWrapEnabled: defaults.tabWrapEnabled };
+            case 'referenceJumpTemporaryFilterEnabled': return { referenceJumpTemporaryFilterEnabled: defaults.referenceJumpTemporaryFilterEnabled };
             case 'exportValidationDateTime': return { exportValidationDateTime: defaults.exportValidationDateTime };
             case 'exportBeginDateColumnName': return { exportBeginDateColumnName: defaults.exportBeginDateColumnName };
             case 'exportEndDateColumnName': return { exportEndDateColumnName: defaults.exportEndDateColumnName };
@@ -937,6 +1026,7 @@ export class SettingsPanel {
     private shouldLetNativeTextHistoryHandle(target: EventTarget | null): boolean {
         if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return false;
         if (target === this.tabWrapToggle) return false;
+        if (target === this.referenceJumpTemporaryFilterToggle) return false;
         if (target === this.exportBeginDateColumnNameInput) {
             return target.value !== this.selectedExportBeginDateColumnName;
         }

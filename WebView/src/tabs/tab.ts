@@ -23,7 +23,7 @@ import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {RelationsPanel} from "../panels/relations-panel";
 import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
-import {SettingsPanel} from "../panels/settings-panel";
+import {SettingsPanel, isReferenceJumpTemporaryFilterEnabled} from "../panels/settings-panel";
 import {DiffTab} from "./diff-tab";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
@@ -1212,7 +1212,9 @@ export class Tab {
      */
     private navigateToCellByColumnValue(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         const editorTable = state.editorTable;
-        this.applyTemporaryNavigationFilter(state, columnName, value, filterColumnName, filterValues);
+        if (isReferenceJumpTemporaryFilterEnabled()) {
+            this.applyTemporaryNavigationFilter(state, columnName, value, filterColumnName, filterValues);
+        }
         const rowCount = editorTable.getLogicalRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getCellValueByColumnName(r, columnName) !== value) continue;
