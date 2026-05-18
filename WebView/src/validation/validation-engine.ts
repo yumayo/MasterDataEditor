@@ -8,6 +8,7 @@ import {
     DynamicReferenceSchema,
     isDynamicReferenceSchema,
 } from "../references/reference-expression";
+import {isGlobalValidationTargetTable} from "./validation-table-scope";
 
 const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
 const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
@@ -231,6 +232,7 @@ export class ValidationEngine {
         // スキップされた列・行についてストア上の現在値を照合して引き継ぎ可能なエラーを収集する
         const preservableErrors: ValidationError[] = [];
         for (const [tableName, schema] of this.schemas) {
+            if (!isGlobalValidationTargetTable(tableName)) continue;
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             // ストアに存在しないテーブルはスキップ（タブ未オープン等）

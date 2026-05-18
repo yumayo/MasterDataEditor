@@ -6,6 +6,7 @@ import {DebugConsole, type DebugConsoleEntryDetail} from "./debug-console";
 import {resolvePluginErrors} from "../validation/plugin-validation-runner";
 import type {PluginValidationRunner, PluginValidationError} from "../validation/plugin-validation-runner";
 import {DynamicReferenceSchema} from "../references/reference-expression";
+import {isGlobalValidationTargetTable} from "../validation/validation-table-scope";
 
 type ValidationTableDebugSnapshot = Record<string, { header: string[]; rowCount: number; rowsPreview: string[][] }>;
 
@@ -242,6 +243,7 @@ export class ValidationPanel {
     private createStoreDebugSnapshot(): ValidationTableDebugSnapshot {
         const snapshot: ValidationTableDebugSnapshot = {};
         for (const tableName of this.store.getTableNames()) {
+            if (!isGlobalValidationTargetTable(tableName)) continue;
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             if (header === false || rows === false) continue;

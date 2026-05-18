@@ -76,6 +76,35 @@ interface DiffValidationFixtures {
     diffValidationPage: void;
 }
 
+interface EditorApiBridgeResponse {
+    type: 'editor_api_response';
+    requestId: string;
+    success: boolean;
+    data?: unknown;
+    error?: string;
+}
+
+async function callEditorApiAsync(page: Page, method: string, params: Record<string, unknown>): Promise<EditorApiBridgeResponse> {
+    const requestId = `diff-validation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return page.evaluate(({ requestId, method, params }) => {
+        return new Promise<EditorApiBridgeResponse>((resolve) => {
+            const handler = (event: MessageEvent) => {
+                const data = JSON.parse(event.data) as EditorApiBridgeResponse;
+                if (data.type !== 'editor_api_response' || data.requestId !== requestId) return;
+                window.chrome.webview.removeEventListener('message', handler);
+                resolve(data);
+            };
+            window.chrome.webview.addEventListener('message', handler);
+            window.chrome.webview.postMessage(JSON.stringify({
+                type: 'editor_api_request',
+                requestId,
+                method,
+                params,
+            }));
+        });
+    }, { requestId, method, params });
+}
+
 const test = base.extend<DiffValidationFixtures>({
     diffValidationPage: async ({ page }, use) => {
         // gitモックデータを window に設定する（installMockApiAsync より前に実行が必須）
@@ -130,6 +159,40 @@ test.describe('BUG_0107: 差分タブのバリデーション', () => {
 
             // int 型列に文字列を入力したため、型不一致バリデーションエラーで cell-error が付与される
             await expect(valueCell).toHaveClass(/cell-error/);
+        },
+    );
+
+    test(
+        '差分タブ右ペインのエラーは全体バリデーション対象に含めないこと',
+        async ({ page, diffValidationPage: _diffValidationPage }) => {
+            // ソース管理パネルを開き、差分タブを表示する
+            await page.locator('[data-panel="sourceControl"]').click();
+            await page.locator('.source-control-changes-section').getByText('test').click();
+
+            const diffTab = page.locator('.diff-tab');
+            await expect(diffTab).toBeVisible();
+
+            const rightPane = diffTab.locator('.diff-pane-right');
+            const rightTable = rightPane.locator('.editor-table');
+            await expect(rightTable).toBeVisible();
+
+            const firstDataRow = rightTable.locator('.editor-table-row').nth(1);
+            const valueCell = firstDataRow.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
+            await valueCell.dblclick();
+
+            const editField = page.locator('.grid-textfield-active');
+            await expect(editField).toBeVisible();
+            await page.keyboard.press('Control+a');
+            await page.keyboard.insertText('abc');
+            await page.keyboard.press('Enter');
+            await expect(valueCell).toHaveClass(/cell-error/);
+
+            const result = await callEditorApiAsync(page, 'data.getValidationErrorsAsync', {});
+            expect(result.success).toBe(true);
+
+            const errors = result.data as Array<{ tableName: string }>;
+            expect(errors.some(error => error.tableName.includes(':diff:'))).toBe(false);
+            expect(errors).toHaveLength(0);
         },
     );
 });
