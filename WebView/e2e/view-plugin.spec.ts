@@ -60,7 +60,14 @@ function createViewPluginFileSystem(): MockFileSystem {
             "    notifyButton.addEventListener('click', () => {",
             "      api.notification.show('plugin success notification', 'success');",
             "    });",
-            "    container.append(count, dirtyButton, button, notifyButton);",
+            "    const openButton = document.createElement('button');",
+            "    openButton.className = 'summary-open-table';",
+            "    openButton.textContent = 'open table';",
+            "    openButton.addEventListener('click', async () => {",
+            "      const opened = await api.edit.openTableAsync('test');",
+            "      container.dataset.opened = opened ? 'yes' : 'no';",
+            "    });",
+            "    container.append(count, dirtyButton, button, notifyButton, openButton);",
             "  }",
             "});",
         ].join("\n"),
@@ -158,6 +165,29 @@ test.describe('Viewプラグイン', () => {
         await page.keyboard.press('Control+S');
         await expect(viewRoot).toHaveAttribute('data-saved', 'yes');
         await expect(page.locator('.tab-button-active .tab-button-dirty-visible')).toHaveCount(0);
+    });
+
+    test('Viewタブから開いた既存テーブルを戻る後にもう一度開ける', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem());
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
+        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const openButton = viewRoot.locator('.summary-open-table');
+
+        await openButton.click();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('test');
+        await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
+
+        await page.evaluate(() => { history.back(); });
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
+        await expect(viewRoot).toBeVisible();
+
+        await openButton.click();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('test');
+        await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
     });
 
     test('ui-stateからViewタブを復元して起動時に表示する', async ({page}) => {

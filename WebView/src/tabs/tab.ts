@@ -3794,10 +3794,10 @@ export class Tab {
      * スキーマ読み込み失敗時は false を返す。
      */
     openTableAsync(tableName: string): Promise<boolean> {
-        // 既にTabStateが存在する場合はそのまま成功を返す
-        // enableTabButton は呼ばない（reloadCellsFromStore 等の重い副作用を避けるため）
-        // setCellValue / setCellValues は TabState の存在のみを要求し、アクティブタブである必要はない
+        // 既にTabStateが存在する場合は、API名どおり既存タブをアクティブ化して成功を返す。
+        // Viewプラグインから開いた後にブラウザ履歴で戻った場合も、再実行で表示を復帰できる必要がある。
         if (this.tabStates.has(tableName)) {
+            this.enableTabButton(tableName);
             return Promise.resolve(true);
         }
 
