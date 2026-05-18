@@ -923,6 +923,8 @@ export class Tab {
         const apply = () => {
             if (state.wrapperElement.style.display === 'none') return;
             state.editorTable.restoreScrollPosition(scrollTop, scrollLeft);
+            state.editorTable.forceVirtualScrollRecalculate();
+            state.selection.updateRendererAfterResize();
             state.savedScrollTop = scrollTop;
             state.savedScrollLeft = scrollLeft;
             this.editor.syncActiveTableScrollState();
