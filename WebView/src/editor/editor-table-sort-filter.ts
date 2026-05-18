@@ -110,6 +110,17 @@ export class EditorTableSortFilter {
     }
 
     /**
+     * ジャンプ操作用の一時フィルターを適用する。
+     * スキーマ永続化や Undo/Redo 履歴には含めない。
+     */
+    applyTemporaryFilterState(filters: SerializedFilters): void {
+        const storeColumnNames = this.store.getHeader(this.tableName);
+        if (storeColumnNames === false) return;
+        this.columnFilter.applyTemporaryFilters(filters, storeColumnNames);
+        this.applyFilterDisplay();
+    }
+
+    /**
      * 指定列のソートをトグルし、DOMの行順を更新する。
      * ソートはView変換のみ（ストア順序は変えない）。
      * ミニテーブルでは呼ばれない（ソートインジケーターが存在しないため）。

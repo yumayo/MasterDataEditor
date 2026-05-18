@@ -23,9 +23,15 @@ export class ColumnFilter {
      * セット内の値を持つ行のみ表示される。
      */
     private readonly filterMap: Map<number, Set<string>>;
+    /**
+     * ナビゲーション等で一時的に適用するフィルター。
+     * スキーマ永続化対象の filterMap とは分離し、serializeFilters() には含めない。
+     */
+    private readonly temporaryFilterMap: Map<number, Set<string>>;
 
     constructor() {
         this.filterMap = new Map();
+        this.temporaryFilterMap = new Map();
     }
 
     /**
@@ -36,7 +42,26 @@ export class ColumnFilter {
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      */
     applyFilter(storeColumnIndex: number, selectedValues: Set<string>): void {
+        this.temporaryFilterMap.clear();
         this.filterMap.set(storeColumnIndex, new Set(selectedValues));
+    }
+
+    /**
+     * 一時フィルターを列名ベースの表現から復元して適用する。
+     * 既存の永続フィルターは保持するが、一時フィルター適用中の表示判定では一時側を優先する。
+     */
+    applyTemporaryFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {
+        this.temporaryFilterMap.clear();
+        const nameToStoreIndex = new Map<string, number>();
+        for (let i = 0; i < storeColumnNames.length; i++) {
+            nameToStoreIndex.set(storeColumnNames[i], i);
+        }
+        for (const columnName of Object.keys(serialized)) {
+            const storeColIdx = nameToStoreIndex.get(columnName);
+            if (storeColIdx !== null && storeColIdx !== undefined) {
+                this.temporaryFilterMap.set(storeColIdx, new Set(serialized[columnName]));
+            }
+        }
     }
 
     /**
@@ -45,6 +70,7 @@ export class ColumnFilter {
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      */
     clearFilter(storeColumnIndex: number): void {
+        this.temporaryFilterMap.clear();
         this.filterMap.delete(storeColumnIndex);
     }
 
@@ -53,13 +79,14 @@ export class ColumnFilter {
      */
     clearAllFilters(): void {
         this.filterMap.clear();
+        this.temporaryFilterMap.clear();
     }
 
     /**
      * いずれかの列でフィルターが適用中かどうかを返す。
      */
     hasActiveFilter(): boolean {
-        return this.filterMap.size > 0;
+        return this.getEffectiveFilterMap().size > 0;
     }
 
     /**
@@ -68,7 +95,7 @@ export class ColumnFilter {
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      */
     isColumnFiltered(storeColumnIndex: number): boolean {
-        return this.filterMap.has(storeColumnIndex);
+        return this.getEffectiveFilterMap().has(storeColumnIndex);
     }
 
     /**
@@ -80,10 +107,11 @@ export class ColumnFilter {
      * @param storeRows ストアの全行データ（storeRows[storeRowIndex][storeColumnIndex] = 値）
      */
     computeFilteredIndices(sortedIndices: number[], storeRows: string[][]): number[] {
-        if (!this.hasActiveFilter()) return sortedIndices;
+        const effectiveFilterMap = this.getEffectiveFilterMap();
+        if (effectiveFilterMap.size === 0) return sortedIndices;
         // filterMap の内容をスナップショットとして取り出す（forEach で Map を走査）
         const filterEntries: Array<{ storeColumnIndex: number; selectedValues: Set<string> }> = [];
-        this.filterMap.forEach((selectedValues, storeColumnIndex) => {
+        effectiveFilterMap.forEach((selectedValues, storeColumnIndex) => {
             filterEntries.push({ storeColumnIndex, selectedValues });
         });
         return sortedIndices.filter(storeRowIndex => {
@@ -128,8 +156,9 @@ export class ColumnFilter {
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      */
     getSelectedValues(storeColumnIndex: number): Set<string> | null {
-        if (!this.filterMap.has(storeColumnIndex)) return null;
-        return this.filterMap.get(storeColumnIndex) as Set<string>;
+        const effectiveFilterMap = this.getEffectiveFilterMap();
+        if (!effectiveFilterMap.has(storeColumnIndex)) return null;
+        return effectiveFilterMap.get(storeColumnIndex) as Set<string>;
     }
 
     /**
@@ -157,6 +186,8 @@ export class ColumnFilter {
      * @param storeColumnNames ストア（CSV）の列名配列（storeColumnNames[storeColIndex] = 列名）
      */
     restoreFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {
+        this.filterMap.clear();
+        this.temporaryFilterMap.clear();
         // 列名 → ストア列インデックスのマップを構築
         const nameToStoreIndex = new Map<string, number>();
         for (let i = 0; i < storeColumnNames.length; i++) {
@@ -168,5 +199,9 @@ export class ColumnFilter {
                 this.filterMap.set(storeColIdx, new Set(serialized[columnName]));
             }
         }
+    }
+
+    private getEffectiveFilterMap(): Map<number, Set<string>> {
+        return this.temporaryFilterMap.size > 0 ? this.temporaryFilterMap : this.filterMap;
     }
 }

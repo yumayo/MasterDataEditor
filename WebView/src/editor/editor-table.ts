@@ -1715,6 +1715,7 @@ export class EditorTable {
     refreshFilterDisplayIfActive(): void { this.sortFilter.refreshFilterDisplayIfActive(); }
     restoreSortState(serializedSortKeys: SerializedSortKey[]): void { this.sortFilter.restoreSortState(serializedSortKeys); }
     restoreFilterState(serializedFilters: SerializedFilters): void { this.sortFilter.restoreFilterState(serializedFilters); }
+    applyTemporaryFilterState(filters: SerializedFilters): void { this.sortFilter.applyTemporaryFilterState(filters); }
     applySortForColumn(columnIndex: number): void { this.sortFilter.applySortForColumn(columnIndex); }
     applySortState(sortKeys: SerializedSortKey[]): void { this.sortFilter.applySortState(sortKeys); }
     applyFilterState(filters: SerializedFilters): void { this.sortFilter.applyFilterState(filters); }

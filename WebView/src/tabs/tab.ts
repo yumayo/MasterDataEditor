@@ -1212,6 +1212,7 @@ export class Tab {
      */
     private navigateToCellByColumnValue(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         const editorTable = state.editorTable;
+        this.applyTemporaryNavigationFilter(state, columnName, value, filterColumnName, filterValues);
         const rowCount = editorTable.getLogicalRowCount();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getCellValueByColumnName(r, columnName) !== value) continue;
@@ -1229,6 +1230,15 @@ export class Tab {
             state.editorTableHandler.activate();
             return;
         }
+    }
+
+    private applyTemporaryNavigationFilter(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
+        const filters: SerializedFilters = {};
+        filters[columnName] = [value];
+        if (filterColumnName !== '' && filterValues.size > 0 && filterColumnName !== columnName) {
+            filters[filterColumnName] = Array.from(filterValues);
+        }
+        state.editorTable.applyTemporaryFilterState(filters);
     }
 
     /**
