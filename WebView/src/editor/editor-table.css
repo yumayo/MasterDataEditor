@@ -4,6 +4,43 @@
     width: max-content;
 
     user-select: none;
+    --editor-table-grid-line-width: 1px;
+    --editor-table-grid-line-scale: 1;
+}
+
+@media (min-resolution: 1.25dppx) {
+    .editor-table {
+        --editor-table-grid-line-width: 0.8px;
+        --editor-table-grid-line-scale: 0.8;
+    }
+}
+
+@media (min-resolution: 1.5dppx) {
+    .editor-table {
+        --editor-table-grid-line-width: 0.6666667px;
+        --editor-table-grid-line-scale: 0.6666667;
+    }
+}
+
+@media (min-resolution: 2dppx) {
+    .editor-table {
+        --editor-table-grid-line-width: 0.5px;
+        --editor-table-grid-line-scale: 0.5;
+    }
+}
+
+@media (min-resolution: 2.5dppx) {
+    .editor-table {
+        --editor-table-grid-line-width: 0.4px;
+        --editor-table-grid-line-scale: 0.4;
+    }
+}
+
+@media (min-resolution: 3dppx) {
+    .editor-table {
+        --editor-table-grid-line-width: 0.3333333px;
+        --editor-table-grid-line-scale: 0.3333333;
+    }
 }
 
 .editor-table--quadrant-layout {
@@ -39,17 +76,19 @@
     overflow: visible;
 }
 
+/* 固定境界の広いグラデーション影は通常罫線と重なって太く見えるため描画しない。
+   境界線はセルの fractional inset shadow に一本化する。 */
 .editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-left::after,
 .editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-left::after {
     content: '';
     position: absolute;
     top: 0;
-    right: -8px;
+    right: 0;
     bottom: 0;
-    width: 8px;
+    width: 0;
     pointer-events: none;
     z-index: 1;
-    background: linear-gradient(to right, rgba(0,0,0,0.15), rgba(0,0,0,0));
+    background: none;
 }
 
 .editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left::before,
@@ -58,11 +97,11 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -8px;
-    height: 8px;
+    bottom: 0;
+    height: 0;
     pointer-events: none;
     z-index: 1;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0));
+    background: none;
 }
 
 .editor-table-pane-content,
@@ -166,6 +205,14 @@
     pointer-events: auto;
 }
 
+/* detached 行ヘッダーは行ピッチ(21px)に対してセル高(20px)のため、余った1pxに
+   background-sub-color が見える。行ヘッダーだけ背景を行ピッチまで伸ばして隙間を作らない。 */
+.editor-table-detached-row-header-layer .editor-table-row-header {
+    height: 21px !important;
+    min-height: 21px !important;
+    max-height: 21px !important;
+}
+
 .editor-table-detached-frozen-row-background {
     position: absolute;
     left: 0;
@@ -227,6 +274,8 @@
     display: table-cell;
     /* 擬似要素（::before / ::after）の包含ブロックにするために必要 */
     position: relative;
+    --editor-table-grid-right-color: var(--background-color);
+    --editor-table-grid-bottom-color: transparent;
 
     padding-left: 6px;
     padding-right: 6px;
@@ -234,19 +283,24 @@
     overflow: hidden;
 
     white-space: nowrap;
+
+    box-shadow:
+        inset calc(var(--editor-table-grid-line-width) * -1) 0 0 var(--editor-table-grid-right-color),
+        inset 0 calc(var(--editor-table-grid-line-width) * -1) 0 var(--editor-table-grid-bottom-color);
 }
 
-/* テーブルのセルの上の線の描画。
+/* テーブルのセルの下線のレイアウト幅。
    固定行/列の分離レイヤーは .editor-table-row ではなく .editor-table-detached-row なので同じ罫線を当てる。 */
 .editor-table-row .editor-table-cell,
 .editor-table-source-column-header-row .editor-table-cell,
 .editor-table-detached-row .editor-table-cell {
-    border-bottom: 1px solid var(--background-color);
+    --editor-table-grid-bottom-color: var(--background-color);
+    border-bottom: 1px solid transparent;
 }
 
-/* テーブルのセルの左の線の描画 */
+/* テーブルのセルの右の線のレイアウト幅。実線は box-shadow で描画する。 */
 .editor-table-cell {
-    border-right: 1px solid var(--background-color);
+    border-right: 1px solid transparent;
 }
 
 /* 列ヘッダー行のスタイル */
@@ -386,15 +440,78 @@
 
 /* 選択された列ヘッダーのスタイル */
 .editor-table-column-header.selected {
+    --editor-table-grid-right-color: transparent;
+    --editor-table-grid-bottom-color: transparent;
     background-color: var(--background-color);
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
+    background-origin: border-box;
+    background-repeat: no-repeat;
+    background-position: left top;
+    background-size: 100% calc(100% - 1px);
+}
+
+.editor-table-column-header.selected.selected-column-end {
+    background-size: calc(100% - 1px) calc(100% - 1px);
+}
+
+.editor-table-column-header.selected::before,
+.editor-table-row-header.selected::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    pointer-events: none;
+    background-color: var(--background-color);
+    transform: scaleX(var(--editor-table-grid-line-scale));
+    transform-origin: right;
+    z-index: 1;
+}
+
+.editor-table-column-header.selected::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    pointer-events: none;
+    background-color: var(--background-color);
+    transform: scaleY(var(--editor-table-grid-line-scale));
+    transform-origin: bottom;
+    z-index: 1;
 }
 
 /* 選択された行ヘッダーのスタイル（ドラッグ移動可能を示す grab カーソル付き） */
 .editor-table-row-header.selected {
+    --editor-table-grid-right-color: transparent;
+    --editor-table-grid-bottom-color: transparent;
     background-color: var(--background-color);
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
+    background-origin: border-box;
+    background-repeat: no-repeat;
+    background-position: left top;
+    background-size: calc(100% - 1px) 100%;
     cursor: grab;
+}
+
+.editor-table-row-header.selected.selected-row-end {
+    background-size: calc(100% - 1px) calc(100% - 1px);
+}
+
+.editor-table-row-header.selected::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    pointer-events: none;
+    background-color: var(--background-color);
+    transform: scaleY(var(--editor-table-grid-line-scale));
+    transform-origin: bottom;
+    z-index: 1;
 }
 
 /* 非アクティブテーブルのヘッダー選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
@@ -616,17 +733,15 @@
 }
 
 /* 固定列の最後のセル（ヘッダー含む）に境界線を表示する。
-   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。
    clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
 .freeze-column-border {
-    box-shadow: inset -1px 0 0 var(--background-color);
+    --editor-table-grid-right-color: var(--background-color);
+    border-right-color: transparent;
 }
 
-/* 固定行の最後の行ヘッダーに境界線を表示する。
-   スクロール中も出し続ける影は .editor-table-pane-* の疑似要素で描画する。
-   clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
-.freeze-row-border {
-    box-shadow: inset 0 -1px 0 var(--background-color);
+.freeze-row-border .editor-table-cell {
+    --editor-table-grid-bottom-color: var(--background-color);
+    border-bottom-color: transparent;
 }
 
 /* ==========================================================================

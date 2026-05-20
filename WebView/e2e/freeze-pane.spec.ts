@@ -1427,7 +1427,9 @@ test.describe('フリーズペイン', () => {
                     const frozenRowCellStyle = window.getComputedStyle(frozenRowCell);
                     const frozenColumnCellStyle = window.getComputedStyle(frozenColumnCell);
                     const lastFrozenColumnStyle = window.getComputedStyle(lastFrozenColumn);
-                    const lastFrozenRowStyle = window.getComputedStyle(lastFrozenRow);
+                    const lastFrozenRowCell = lastFrozenRow.querySelector('.editor-table-cell');
+                    if (!(lastFrozenRowCell instanceof HTMLElement)) throw new Error('固定行境界セルが見つかりません');
+                    const lastFrozenRowCellStyle = window.getComputedStyle(lastFrozenRowCell);
                     const columnShadowStyle = window.getComputedStyle(topLeftPane, '::after');
                     const rowShadowStyle = window.getComputedStyle(topRightPane, '::before');
 
@@ -1441,7 +1443,7 @@ test.describe('フリーズペイン', () => {
                             borderBottomWidth: frozenColumnCellStyle.borderBottomWidth,
                         },
                         lastFrozenColumnBoxShadow: lastFrozenColumnStyle.boxShadow,
-                        lastFrozenRowBoxShadow: lastFrozenRowStyle.boxShadow,
+                        lastFrozenRowCellBoxShadow: lastFrozenRowCellStyle.boxShadow,
                         columnPaneShadow: {
                             width: columnShadowStyle.width,
                             backgroundImage: columnShadowStyle.backgroundImage,
@@ -1458,13 +1460,13 @@ test.describe('フリーズペイン', () => {
                 expect(styles.frozenColumnCell.borderBottomStyle).toBe('solid');
                 expect(styles.frozenColumnCell.borderBottomWidth).toBe('1px');
                 expect(styles.lastFrozenColumnBoxShadow).toContain('inset');
-                expect(styles.lastFrozenRowBoxShadow).toContain('inset');
+                expect(styles.lastFrozenRowCellBoxShadow).toContain('inset');
                 expect(styles.lastFrozenColumnBoxShadow).not.toContain('4px');
-                expect(styles.lastFrozenRowBoxShadow).not.toContain('4px');
-                expect(styles.columnPaneShadow.width).toBe('8px');
-                expect(styles.columnPaneShadow.backgroundImage).toContain('linear-gradient');
-                expect(styles.rowPaneShadow.height).toBe('8px');
-                expect(styles.rowPaneShadow.backgroundImage).toContain('linear-gradient');
+                expect(styles.lastFrozenRowCellBoxShadow).not.toContain('4px');
+                expect(styles.columnPaneShadow.width).toBe('0px');
+                expect(styles.columnPaneShadow.backgroundImage).toBe('none');
+                expect(styles.rowPaneShadow.height).toBe('0px');
+                expect(styles.rowPaneShadow.backgroundImage).toBe('none');
             },
         );
 

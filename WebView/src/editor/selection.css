@@ -61,6 +61,17 @@
 .sel-left::before { border-left: 2px solid #0078d7; }
 .sel-right::before { border-right: 2px solid #0078d7; }
 
+/* 選択枠に隣接する通常グリッド線を消し、2pxの選択枠と重なって太く見えるのを防ぐ。 */
+.editor-table-cell.sel-adj-bottom {
+    --editor-table-grid-bottom-color: transparent;
+    border-bottom-color: transparent;
+}
+
+.editor-table-cell.sel-adj-right {
+    --editor-table-grid-right-color: transparent;
+    border-right-color: transparent;
+}
+
 /* ===== コピー範囲（点線）— ::after で描画 ===== */
 
 /* コピー辺セルも同様に border-box クリップに切り替える */

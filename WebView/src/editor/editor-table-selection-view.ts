@@ -189,7 +189,7 @@ export class EditorTableSelectionView {
         // すべての列ヘッダーから選択状態を解除
         for (let i = 1; i < columnHeaderRow.children.length; i++) {
             const headerCell = columnHeaderRow.children[i] as HTMLElement;
-            headerCell.classList.remove('selected');
+            headerCell.classList.remove('selected', 'selected-column-end');
         }
         // すべての行ヘッダーから選択状態を解除する。
         // DOM子要素を直接走査する（仮想スクロール時は論理インデックスとDOMインデックスが一致しないため）。
@@ -199,13 +199,14 @@ export class EditorTableSelectionView {
             if (this.virtualScroll.isSpacerIndex(i)) continue;
             const row = this.gridElement.children[i] as HTMLElement;
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
-            if (rowHeader) rowHeader.classList.remove('selected');
+            if (rowHeader) rowHeader.classList.remove('selected', 'selected-row-end');
         }
         // 選択範囲に含まれる列ヘッダーに選択状態を追加
         for (let col = startColumn; col <= endColumn; col++) {
             const headerCell = columnHeaderRow.children[col] as HTMLElement;
             if (headerCell) {
                 headerCell.classList.add('selected');
+                if (col === endColumn) headerCell.classList.add('selected-column-end');
             }
         }
         // 選択範囲に含まれる行ヘッダーに選択状態を追加
@@ -213,7 +214,10 @@ export class EditorTableSelectionView {
             const rowElement = this.getRowElement(row);
             if (rowElement) {
                 const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-                if (rowHeader) rowHeader.classList.add('selected');
+                if (rowHeader) {
+                    rowHeader.classList.add('selected');
+                    if (row === endRow) rowHeader.classList.add('selected-row-end');
+                }
             }
         }
         if (!syncDetachedLayers) return;
