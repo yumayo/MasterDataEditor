@@ -146,6 +146,13 @@
     background-image: linear-gradient(var(--diff-deleted-bg), var(--diff-deleted-bg));
 }
 
+.diff-pane-left .editor-table-row.diff-row-empty,
+.diff-pane-right .editor-table-row.diff-row-empty,
+.diff-pane-left .editor-table-row.diff-row-empty .editor-table-cell,
+.diff-pane-right .editor-table-row.diff-row-empty .editor-table-cell {
+    border-width: 0;
+}
+
 .diff-pane-left .editor-table-row.diff-row-empty .editor-table-cell,
 .diff-pane-right .editor-table-row.diff-row-empty .editor-table-cell {
     background-color: var(--diff-empty-bg);
@@ -219,4 +226,3 @@
     max-width: 100%;
     box-sizing: border-box;
 }
-

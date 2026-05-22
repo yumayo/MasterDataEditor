@@ -163,6 +163,39 @@ test.describe('差分ビューのパディング行同期', () => {
             // 左ペインの挿入位置（データ1行目 = .editor-table-row の nth(0)）に diff-row-empty クラスが付いていること
             const firstLeftDataRow = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRow).toHaveClass(/diff-row-empty/);
+
+            const emptyRowBorder = await firstLeftDataRow.evaluate((row) => {
+                const style = window.getComputedStyle(row);
+                return {
+                    top: style.borderTopWidth,
+                    right: style.borderRightWidth,
+                    bottom: style.borderBottomWidth,
+                    left: style.borderLeftWidth,
+                };
+            });
+            expect(emptyRowBorder.top).toBe('0px');
+            expect(emptyRowBorder.right).toBe('0px');
+            expect(emptyRowBorder.bottom).toBe('0px');
+            expect(emptyRowBorder.left).toBe('0px');
+
+            const emptyRowCellBorders = await firstLeftDataRow.locator('.editor-table-cell').evaluateAll((cells) =>
+                cells.map((cell) => {
+                    const style = window.getComputedStyle(cell);
+                    return {
+                        top: style.borderTopWidth,
+                        right: style.borderRightWidth,
+                        bottom: style.borderBottomWidth,
+                        left: style.borderLeftWidth,
+                    };
+                }),
+            );
+            expect(emptyRowCellBorders.length).toBeGreaterThan(0);
+            for (const border of emptyRowCellBorders) {
+                expect(border.top).toBe('0px');
+                expect(border.right).toBe('0px');
+                expect(border.bottom).toBe('0px');
+                expect(border.left).toBe('0px');
+            }
         },
     );
 
