@@ -824,9 +824,7 @@ export class EditorTable {
     markFocusedCell(row: number, col: number): void { this.selectionView.markFocusedCell(row, col); }
     clearFocusedCell(): void { this.selectionView.clearFocusedCell(); }
     applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void { this.selectionView.applySelectionClasses(range, focusRow, focusCol); }
-    applyCopyClasses(range: CellRange): void { this.selectionView.applyCopyClasses(range); }
     clearSelectionClasses(): void { this.selectionView.clearSelectionClasses(); }
-    clearCopyClasses(): void { this.selectionView.clearCopyClasses(); }
 
     connectValidationPanel(panel: ValidationPanel): void { this.validationMarkers.connectValidationPanel(panel); }
     connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void { this.validationMarkers.connectScrollbarMarkerTrack(track); }

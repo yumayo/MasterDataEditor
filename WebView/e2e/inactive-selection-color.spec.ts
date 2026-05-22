@@ -8,24 +8,23 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //
 // 実装方針:
 //   EditorTable が deactivate されたとき、コンテナ要素に CSS クラス
-//   `editor-table--inactive` を付与し、その子孫の .selection の border-color を
+//   `editor-table--inactive` を付与し、隣接する .selection-overlay-border の border-color を
 //   灰色系に変更する。activate されたときはクラスを除去して青色に戻す。
 //
-//   注意: .selection-background は複数セル選択時のみ表示されるため、
-//   単一セルクリック後の色検証には .selection の border-color を使用する。
+//   注意: 選択枠はセルの疑似要素ではなく独立 overlay で描画する。
 //
 // テーブル構成:
 //   enemy: id, ja（敵名テーブル）
 //   quest: id, name, enemy_id（クエスト。enemy.id を FK として参照）
 //
 // テストシナリオ:
-//   1. quest テーブルを開いて左ペインのセルを選択 → .selection の border-color が青色
+//   1. quest テーブルを開いて左ペインのセルを選択 → .selection-overlay-border の border-color が青色
 //   2. 右ペインのミニテーブル（enemy の N:1）のセルをクリック
 //      → 左ペインに editor-table--inactive クラスが付与される
-//      → 左ペインの .selection の border-color が灰色系になる
+//      → 左ペインの .selection-overlay-border の border-color が灰色系になる
 //   3. 左ペインのセルを再クリック
 //      → editor-table--inactive クラスが除去される
-//      → .selection の border-color が青色に戻る
+//      → .selection-overlay-border の border-color が青色に戻る
 // =============================================================================
 
 /**
@@ -93,32 +92,34 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * 選択セル（sel-top クラス付き）の ::before 疑似要素の border-top-color を取得し、
+ * EditorTable と同じ wrapper に配置されている selection overlay の border-top-color を取得し、
  * colorFragment が含まれるかどうかを返す。
- * セルベース選択方式では ::before 疑似要素にボーダーが描画されるため、
- * window.getComputedStyle(el, '::before') で取得する。
  */
-async function hasSelectionBorderColorAsync(el: Locator, colorFragment: string): Promise<boolean> {
-    const color = await el.evaluate((e: Element) => window.getComputedStyle(e, '::before').borderTopColor);
+async function hasSelectionBorderColorAsync(table: Locator, colorFragment: string): Promise<boolean> {
+    const color = await table.evaluate((e: Element) => {
+        const border = e.parentElement?.querySelector<HTMLElement>('.selection-overlay-border');
+        if (border === undefined || border === null) return '';
+        return window.getComputedStyle(border).borderTopColor;
+    });
     return color.includes(colorFragment) || color.includes(colorFragment.replace(/, /g, ','));
 }
 
 /**
- * 選択セルの ::before ボーダーが「青色系」かどうかを返す
- * アクティブ時: sel-top::before { border-top: 2px solid #0078d7; }
+ * 選択 overlay のボーダーが「青色系」かどうかを返す
+ * アクティブ時: .selection-overlay-border { border: 2px solid #0078d7; }
  * #0078d7 = rgb(0, 120, 215)
  */
-async function isBlueBorderAsync(el: Locator): Promise<boolean> {
-    return hasSelectionBorderColorAsync(el, '0, 120, 215');
+async function isBlueBorderAsync(table: Locator): Promise<boolean> {
+    return hasSelectionBorderColorAsync(table, '0, 120, 215');
 }
 
 /**
- * 選択セルの ::before ボーダーが「灰色系」かどうかを返す
- * 非アクティブ時: .editor-table--inactive .sel-top::before { border-top-color: #808080; }
+ * 選択 overlay のボーダーが「灰色系」かどうかを返す
+ * 非アクティブ時: .editor-table--inactive ~ .selection-overlay .selection-overlay-border { border-color: #808080; }
  * #808080 = rgb(128, 128, 128)
  */
-async function isGrayBorderAsync(el: Locator): Promise<boolean> {
-    return hasSelectionBorderColorAsync(el, '128, 128, 128');
+async function isGrayBorderAsync(table: Locator): Promise<boolean> {
+    return hasSelectionBorderColorAsync(table, '128, 128, 128');
 }
 
 // データセルを絞り込むセレクタ（行ヘッダー・列ヘッダー・コーナーセルを除外）
@@ -157,10 +158,10 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             await expect(mainDataCell).toBeVisible();
             await mainDataCell.click();
 
-            // 左ペインに sel-top クラスを持つセルが存在し、::before の border-color が青色であることを確認する（前提確認）
+            // 左ペインに sel-top クラスを持つセルが存在し、overlay の border-color が青色であることを確認する（前提確認）
             const mainSelectionCell = page.locator('.editor-left-pane .sel-top').first();
             await expect(mainSelectionCell).toBeVisible();
-            expect(await isBlueBorderAsync(mainSelectionCell)).toBe(true);
+            await expect.poll(() => isBlueBorderAsync(mainTable)).toBe(true);
 
             // 右ペインのミニテーブルのセルをクリックして、右ペインをアクティブにする
             await miniDataCell.click();
@@ -168,8 +169,8 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             // 左ペインの EditorTable に editor-table--inactive クラスが付与されることを確認する
             await expect(mainTable).toHaveClass(/editor-table--inactive/);
 
-            // 左ペインの選択セルの ::before border-color が灰色系（非アクティブ色）になることを確認する
-            await expect.poll(() => isGrayBorderAsync(mainSelectionCell)).toBe(true);
+            // 左ペインの選択 overlay の border-color が灰色系（非アクティブ色）になることを確認する
+            await expect.poll(() => isGrayBorderAsync(mainTable)).toBe(true);
         },
     );
 
@@ -209,10 +210,10 @@ test.describe('非アクティブテーブルのセル選択色', () => {
             // editor-table--inactive クラスが除去されることを確認する
             await expect(mainTable).not.toHaveClass(/editor-table--inactive/);
 
-            // 左ペインの選択セルの ::before border-color が青色（アクティブ色）に戻ることを確認する
+            // 左ペインの選択 overlay の border-color が青色（アクティブ色）に戻ることを確認する
             const mainSelectionCell = page.locator('.editor-left-pane .sel-top').first();
             await expect(mainSelectionCell).toBeVisible();
-            await expect.poll(() => isBlueBorderAsync(mainSelectionCell)).toBe(true);
+            await expect.poll(() => isBlueBorderAsync(mainTable)).toBe(true);
         },
     );
 });

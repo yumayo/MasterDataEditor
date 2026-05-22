@@ -1,119 +1,36 @@
-/* ===== 選択範囲（実線）— ::before で描画 ===== */
-/* 辺セルのみ overflow: visible にし clip-path: inset(0) で border-box クリップに切り替える。
-   これにより ::before を border 領域まで拡張でき、セル間の1px隙間を埋められる。
-   隣接セルの灰色ボーダーは sel-adj-* クラスで透明にして青枠を最前面にする。 */
-
-/* 選択範囲の背景色（フォーカスセルには付与しない）
-   データセルは通常 transparent なので、半透明の background-color だけだと
-   分離した固定行ヘッダーや固定列の上に描画されたとき背面が透けてしまう。
-   不透明な background-color を下地に敷き、選択色は background-image で重ねる。 */
-.sel-bg {
-    background-color: var(--background-sub-color);
-    background-image: linear-gradient(rgba(0, 120, 215, 0.2), rgba(0, 120, 215, 0.2));
-}
-
-/* 辺セルは overflow を border-box クリップに切り替える
-   （padding-box クリップの overflow: hidden だと ::before の拡張分が切られる） */
-.sel-top, .sel-bottom, .sel-left, .sel-right {
-    overflow: visible;
-    clip-path: inset(0);
-}
-
-/* 固定列/固定行の最終セルが選択辺を持つ場合は、
-   選択枠が固定境界で途切れないように選択中のセルだけ描画領域を広げる。 */
-.freeze-column-border.sel-top,
-.freeze-column-border.sel-bottom,
-.freeze-column-border.sel-left,
-.freeze-column-border.sel-right {
-    clip-path: inset(0 -8px 0 0);
-}
-.freeze-row-border.sel-top,
-.freeze-row-border.sel-bottom,
-.freeze-row-border.sel-left,
-.freeze-row-border.sel-right {
-    clip-path: inset(0 0 -8px 0);
-}
-.freeze-column-border.freeze-row-border.sel-top,
-.freeze-column-border.freeze-row-border.sel-bottom,
-.freeze-column-border.freeze-row-border.sel-left,
-.freeze-column-border.freeze-row-border.sel-right {
-    clip-path: inset(0 -8px -8px 0);
-}
-
-/* 擬似要素の共通設定（選択ボーダーのあるセルのみ生成）
-   右と下は -1px で border-right / border-bottom 領域まで拡張し、
-   選択辺が行・列境界のグリッド線で途切れないようにする。
-   sel-bottom / sel-right セルだけ拡張を止め、選択枠をセル内に留める。 */
-.sel-top::before, .sel-bottom::before, .sel-left::before, .sel-right::before {
-    content: '';
+/* ===== 選択範囲（実線・背景）— 独立 overlay で描画 ===== */
+.selection-overlay {
     position: absolute;
-    inset: 0 -1px -1px 0;
-    pointer-events: none;
-    z-index: var(--z-index-selection-border);
-}
-/* 選択範囲の下辺セル: ::before を border-bottom 領域まで伸ばさない */
-.sel-bottom::before { bottom: 0; }
-/* 選択範囲の右辺セル: ::before を border-right 領域まで伸ばさない */
-.sel-right::before { right: 0; }
-
-.sel-top::before { border-top: 2px solid #0078d7; }
-.sel-bottom::before { border-bottom: 2px solid #0078d7; }
-.sel-left::before { border-left: 2px solid #0078d7; }
-.sel-right::before { border-right: 2px solid #0078d7; }
-
-/* 選択枠に隣接する通常グリッド線を消し、2pxの選択枠と重なって太く見えるのを防ぐ。 */
-.editor-table-cell.sel-adj-bottom {
-    --editor-table-grid-bottom-color: transparent;
-    border-bottom-color: transparent;
-}
-
-.editor-table-cell.sel-adj-right {
-    --editor-table-grid-right-color: transparent;
-    border-right-color: transparent;
-}
-
-/* ===== コピー範囲（点線）— ::after で描画 ===== */
-
-/* コピー辺セルも同様に border-box クリップに切り替える */
-.copy-top, .copy-bottom, .copy-left, .copy-right {
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
     overflow: visible;
-    clip-path: inset(0);
-}
-
-/* コピー辺でも同様に、固定境界で点線が途切れないようにする。 */
-.freeze-column-border.copy-top,
-.freeze-column-border.copy-bottom,
-.freeze-column-border.copy-left,
-.freeze-column-border.copy-right {
-    clip-path: inset(0 -8px 0 0);
-}
-.freeze-row-border.copy-top,
-.freeze-row-border.copy-bottom,
-.freeze-row-border.copy-left,
-.freeze-row-border.copy-right {
-    clip-path: inset(0 0 -8px 0);
-}
-.freeze-column-border.freeze-row-border.copy-top,
-.freeze-column-border.freeze-row-border.copy-bottom,
-.freeze-column-border.freeze-row-border.copy-left,
-.freeze-column-border.freeze-row-border.copy-right {
-    clip-path: inset(0 -8px -8px 0);
-}
-
-.copy-top::after, .copy-bottom::after, .copy-left::after, .copy-right::after {
-    content: '';
-    position: absolute;
-    inset: 0 -1px -1px 0;
     pointer-events: none;
-    z-index: var(--z-index-copy-border);
+    z-index: var(--z-index-selection-range-bg);
 }
-.copy-bottom::after { bottom: 0; }
-.copy-right::after { right: 0; }
 
-.copy-top::after { border-top: 2px dashed #0078d7; }
-.copy-bottom::after { border-bottom: 2px dashed #0078d7; }
-.copy-left::after { border-left: 2px dashed #0078d7; }
-.copy-right::after { border-right: 2px dashed #0078d7; }
+.selection-overlay-part {
+    position: absolute;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.selection-overlay-bg {
+    z-index: 0;
+    background-color: rgba(0, 120, 215, 0.2);
+}
+
+.selection-overlay-border {
+    z-index: 1;
+    border: 2px solid #0078d7;
+}
+
+/* ===== コピー範囲（点線）— 独立 overlay で描画 ===== */
+.copy-overlay-border {
+    z-index: 2;
+    border: 2px dashed #0078d7;
+}
 
 /* ===== フィルハンドル（選択範囲右下の小さな四角） ===== */
 .fill-handle-host {
@@ -156,84 +73,16 @@
     display: none;
 }
 
-/* ===== 選択背景 × エラー波線 / ブックマーク の複合 =====
-   cell-error や data-bookmarked も background-image を使うため、
-   sel-bg と同時に付与されると後勝ちで片方が消える。
-   複合セレクタで background-image を重ね合わせて両方描画する。 */
-.sel-bg.cell-error {
-    background-color: var(--background-sub-color);
-    background-image:
-        linear-gradient(rgba(0, 120, 215, 0.2), rgba(0, 120, 215, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
-    background-repeat: repeat, repeat-x;
-    background-position: center, bottom left;
-    background-size: auto, 6px 3px;
-}
-
-.sel-bg.editor-table-cell[data-bookmarked] {
-    background-color: var(--background-sub-color);
-    background-image:
-        linear-gradient(rgba(0, 120, 215, 0.2), rgba(0, 120, 215, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E");
-    background-repeat: repeat, no-repeat;
-    background-position: center, top right;
-    background-size: auto, 8px 8px;
-}
-
-.sel-bg.cell-error.editor-table-cell[data-bookmarked] {
-    background-color: var(--background-sub-color);
-    background-image:
-        linear-gradient(rgba(0, 120, 215, 0.2), rgba(0, 120, 215, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E"),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
-    background-repeat: repeat, no-repeat, repeat-x;
-    background-position: center, top right, bottom left;
-    background-size: auto, 8px 8px, 6px 3px;
-}
-
 /* ===== 非アクティブテーブル ===== */
-.editor-table--inactive .sel-bg {
-    background-color: var(--background-sub-color);
-    background-image: linear-gradient(rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.2));
+.editor-table--inactive ~ .selection-overlay .selection-overlay-bg {
+    background-color: rgba(128, 128, 128, 0.2);
 }
 
-.editor-table--inactive .sel-bg.cell-error {
-    background-image:
-        linear-gradient(rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
-    background-repeat: repeat, repeat-x;
-    background-position: center, bottom left;
-    background-size: auto, 6px 3px;
+.editor-table--inactive ~ .selection-overlay .selection-overlay-border {
+    border-color: #808080;
 }
 
-.editor-table--inactive .sel-bg.editor-table-cell[data-bookmarked] {
-    background-image:
-        linear-gradient(rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E");
-    background-repeat: repeat, no-repeat;
-    background-position: center, top right;
-    background-size: auto, 8px 8px;
-}
-
-.editor-table--inactive .sel-bg.cell-error.editor-table-cell[data-bookmarked] {
-    background-image:
-        linear-gradient(rgba(128, 128, 128, 0.2), rgba(128, 128, 128, 0.2)),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E"),
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
-    background-repeat: repeat, no-repeat, repeat-x;
-    background-position: center, top right, bottom left;
-    background-size: auto, 8px 8px, 6px 3px;
-}
-
-.editor-table--inactive .sel-top::before { border-top-color: #808080; }
-.editor-table--inactive .sel-bottom::before { border-bottom-color: #808080; }
-.editor-table--inactive .sel-left::before { border-left-color: #808080; }
-.editor-table--inactive .sel-right::before { border-right-color: #808080; }
-
-.editor-table--inactive .copy-top::after,
-.editor-table--inactive .copy-bottom::after,
-.editor-table--inactive .copy-left::after,
-.editor-table--inactive .copy-right::after {
+.editor-table--inactive ~ .selection-overlay .copy-overlay-border {
     border-color: #808080;
 }
 

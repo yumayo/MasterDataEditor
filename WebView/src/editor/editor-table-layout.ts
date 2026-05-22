@@ -958,6 +958,7 @@ export class EditorTableLayout {
         this.syncFreezeTransforms(scrollTop, scrollLeft);
         this.onScrollForFrozenFillHandle();
         this.emitScrollMetricsChanged();
+        this.selection.refreshScrollBoundOverlays();
     }
 
     refreshDetachedHeaderLayout(): void {

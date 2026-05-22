@@ -22,7 +22,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 // 期待動作:
 //   ミニテーブルのセルをCtrl+クリックしてペインスタックが追加された後、
 //   左スロットに移動したRelationsPanelのミニテーブルで Ctrl+クリックしたセルに
-//   選択ボーダー（.selection 要素が visible かつ border-color が青色）が表示されること。
+//   選択ボーダー（.selection-overlay-border が生成され、border-color が青色）が表示されること。
 //
 // テーブル構成:
 //   enemy: id, ja（敵名テーブル。参照なし）
@@ -105,12 +105,16 @@ async function waitForRelationsPanelContentAsync(page: Page): Promise<void> {
 }
 
 /**
- * 選択セル（sel-top クラス付き）の ::before 疑似要素の border-top-color を取得し、
+ * EditorTable と同じ wrapper に配置されている selection overlay の border-top-color を取得し、
  * 青色系かどうかを返す。
  * #0078d7 = rgb(0, 120, 215)
  */
-async function isBlueBorderAsync(el: Locator): Promise<boolean> {
-	const color = await el.evaluate((e: Element) => window.getComputedStyle(e, '::before').borderTopColor);
+async function isBlueBorderAsync(table: Locator): Promise<boolean> {
+	const color = await table.evaluate((e: Element) => {
+		const border = e.parentElement?.querySelector<HTMLElement>('.selection-overlay-border');
+		if (border === undefined || border === null) return '';
+		return window.getComputedStyle(border).borderTopColor;
+	});
 	const fragment = '0, 120, 215';
 	return color.includes(fragment) || color.includes(fragment.replace(/, /g, ','));
 }
@@ -249,11 +253,10 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 			await expect.poll(() => getSelectionTopAsync(leftSlotMiniTable)).toBeGreaterThan(0);
 
 			// 選択ボーダーが青色（アクティブ色）であること
-			// sel-top セルの ::before border-color がアクティブ色 #0078d7 = rgb(0, 120, 215) であることを確認する
+			// overlay の border-color がアクティブ色 #0078d7 = rgb(0, 120, 215) であることを確認する
 			// 修正前: selection.start() が呼ばれないため sel-top セルが存在しない → テスト失敗（RED）
-			// 修正後: selection.start() が呼ばれ sel-top セルが存在し青色ボーダー → テスト成功（GREEN）
-			const leftSlotSelCell = page.locator('.editor-left-slot .relations-panel .sel-top').first();
-			await expect.poll(() => isBlueBorderAsync(leftSlotSelCell)).toBe(true);
+			// 修正後: selection.start() が呼ばれ sel-top セルと青色 overlay が存在する → テスト成功（GREEN）
+			await expect.poll(() => isBlueBorderAsync(leftSlotMiniTable)).toBe(true);
 		},
 	);
 

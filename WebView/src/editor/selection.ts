@@ -17,6 +17,8 @@ export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 export class Selection {
 
+    selectionOverlayElement: HTMLElement;
+
     fillPreviewElement: HTMLElement;
 
     private range: CellRange;
@@ -49,6 +51,8 @@ export class Selection {
 
     private fillHandleHostCell: HTMLElement | null;
     private fillHandleHostPreviousZIndex: string | null;
+    private selectionOverlayParts: HTMLElement[];
+    private copyOverlayParts: HTMLElement[];
 
     constructor(editorTable: EditorTable, editorElement: HTMLElement, scrollBinding: ScrollViewportController) {
         // 初期位置はA1（row=1, column=1）、row=0は列ヘッダー、column=0は行ヘッダー
@@ -67,6 +71,12 @@ export class Selection {
         this.fillCurrentMousePosition = { x: 0, y: 0 };
         this.fillHandleHostCell = null;
         this.fillHandleHostPreviousZIndex = null;
+        this.selectionOverlayParts = [];
+        this.copyOverlayParts = [];
+
+        const selectionOverlayElement = document.createElement('div');
+        selectionOverlayElement.classList.add('selection-overlay');
+        this.selectionOverlayElement = selectionOverlayElement;
 
         // フィルプレビュー範囲表示用の要素を作成（オーバーレイのまま維持）
         const fillPreviewElement = document.createElement('div');
@@ -513,11 +523,9 @@ export class Selection {
     }
 
     private updateCopyRenderer(): void {
-        if (!this.hasCopyRange()) {
-            this.editorTable.clearCopyClasses();
-            return;
-        }
-        this.editorTable.applyCopyClasses(this.copyRange);
+        this.clearCopyOverlay();
+        if (!this.hasCopyRange()) return;
+        this.updateCopyOverlay(this.copyRange);
     }
 
     private updateRenderer(): void {
@@ -537,6 +545,10 @@ export class Selection {
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
         this.editorTable.syncDetachedVisualState();
+        this.updateSelectionOverlay(selectionRange);
+        if (this.hasCopyRange()) {
+            this.updateCopyRenderer();
+        }
 
         // 分離レイヤー同期後に、実際に表示されているセルへフィルハンドルを配置する
         this.updateFillHandlePosition();
@@ -634,11 +646,6 @@ export class Selection {
         // 選択範囲を更新
         this.updateRenderer();
 
-        // コピー範囲を更新
-        if (this.hasCopyRange()) {
-            this.updateCopyRenderer();
-        }
-
         // フィルプレビューを更新
         if (this.filling) {
             this.updateFillPreview();
@@ -647,7 +654,7 @@ export class Selection {
 
     /**
      * 選択範囲のCSSクラスのみを再適用する（スクロール位置やフィルハンドルは変更しない）。
-     * バーチャルスクロールでDOM行が入れ替わった際に、新しい行に選択背景色を適用するために使う。
+     * バーチャルスクロールでDOM行が入れ替わった際に、選択状態クラスとoverlayを再適用するために使う。
      * updateRendererAfterResize() と異なり、スクロール移動やRelationsPanel通知を行わないため
      * ドラッグ選択中に呼んでもドラッグを妨害しない。
      */
@@ -663,11 +670,218 @@ export class Selection {
         } else {
             this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
         }
+        this.updateSelectionOverlay(selectionRange);
         // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
         this.updateFillHandlePosition();
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }
+    }
+
+    /**
+     * スクロール位置に依存する overlay だけを再計算する。
+     * 仮想スクロールの行入れ替えが発生しない微小スクロールでも、selection/copy overlay は
+     * セルの getBoundingClientRect() に追従させる必要がある。
+     */
+    refreshScrollBoundOverlays(): void {
+        this.updateSelectionOverlay(this.getSelectionRange());
+        if (this.hasCopyRange()) {
+            this.updateCopyRenderer();
+        }
+        if (this.filling) {
+            this.updateFillPreview();
+        }
+    }
+
+    private forEachVisibleRangeCell(range: CellRange, callback: (row: number, column: number, cell: HTMLElement) => void): boolean {
+        const normalizedRange = this.normalizeCellRange(range);
+        const { startRow, startColumn, endRow, endColumn } = normalizedRange;
+        let hasVisibleCell = false;
+        for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
+            for (let row = rowStart; row <= rowEnd; row++) {
+                for (let column = startColumn; column <= endColumn; column++) {
+                    const cell = this.editorTable.getVisibleCellOrNull(row, column);
+                    if (cell === null) continue;
+                    callback(row, column, cell);
+                    hasVisibleCell = true;
+                }
+            }
+        }
+        return hasVisibleCell;
+    }
+
+    private normalizeCellRange(range: CellRange): CellRange {
+        return {
+            startRow: Math.min(range.startRow, range.endRow),
+            startColumn: Math.min(range.startColumn, range.endColumn),
+            endRow: Math.max(range.startRow, range.endRow),
+            endColumn: Math.max(range.startColumn, range.endColumn),
+        };
+    }
+
+    private getVisibleSelectedRowRanges(startRow: number, endRow: number): Array<[number, number]> {
+        const ranges: Array<[number, number]> = [];
+        const appendIntersection = (rangeStart: number, rangeEnd: number): void => {
+            const intersectStart = Math.max(startRow, rangeStart);
+            const intersectEnd = Math.min(endRow, rangeEnd);
+            if (intersectStart <= intersectEnd) ranges.push([intersectStart, intersectEnd]);
+        };
+
+        if (startRow <= 0 && endRow >= 0) appendIntersection(0, 0);
+
+        const frozenRowCount = this.editorTable.getFrozenRowCount();
+        if (frozenRowCount > 0) appendIntersection(1, frozenRowCount);
+
+        const renderedStartRow = this.editorTable.getVirtualScrollRenderedStart() + 1;
+        const renderedEndRow = this.editorTable.getVirtualScrollRenderedEnd();
+        appendIntersection(renderedStartRow, renderedEndRow);
+
+        if (ranges.length <= 1) return ranges;
+        ranges.sort((a, b) => a[0] - b[0]);
+        const merged: Array<[number, number]> = [];
+        for (const [rangeStart, rangeEnd] of ranges) {
+            const previous = merged[merged.length - 1];
+            if (previous !== undefined && rangeStart <= previous[1] + 1) {
+                previous[1] = Math.max(previous[1], rangeEnd);
+                continue;
+            }
+            merged.push([rangeStart, rangeEnd]);
+        }
+        return merged;
+    }
+
+    private updateSelectionOverlay(selectionRange: CellRange): void {
+        this.clearSelectionOverlay();
+
+        const hostRect = this.editorElement.getBoundingClientRect();
+        let selectionLeft = Number.POSITIVE_INFINITY;
+        let selectionTop = Number.POSITIVE_INFINITY;
+        let selectionRight = Number.NEGATIVE_INFINITY;
+        let selectionBottom = Number.NEGATIVE_INFINITY;
+        let focusRect: { left: number; top: number; right: number; bottom: number } | null = null;
+
+        const hasVisibleCell = this.forEachVisibleRangeCell(selectionRange, (row, column, cell) => {
+            const rect = cell.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            const left = rect.left - hostRect.left;
+            const top = rect.top - hostRect.top;
+            const right = rect.right - hostRect.left;
+            const bottom = rect.bottom - hostRect.top;
+
+            selectionLeft = Math.min(selectionLeft, left);
+            selectionTop = Math.min(selectionTop, top);
+            selectionRight = Math.max(selectionRight, right);
+            selectionBottom = Math.max(selectionBottom, bottom);
+
+            if (row === this.focus.row && column === this.focus.column) {
+                focusRect = { left, top, right, bottom };
+            }
+        });
+        if (!hasVisibleCell || selectionLeft === Number.POSITIVE_INFINITY) return;
+
+        const visualSelectionRight = selectionRight - 1;
+        const visualSelectionBottom = selectionBottom - 1;
+
+        if (focusRect === null) {
+            this.appendSelectionOverlayPart(
+                'selection-overlay-bg',
+                selectionLeft, selectionTop,
+                visualSelectionRight - selectionLeft, visualSelectionBottom - selectionTop,
+            );
+        } else {
+            const visualFocusBottom = Math.min(focusRect.bottom, visualSelectionBottom);
+            this.appendSelectionOverlayPart(
+                'selection-overlay-bg',
+                selectionLeft, selectionTop,
+                visualSelectionRight - selectionLeft, focusRect.top - selectionTop,
+            );
+            this.appendSelectionOverlayPart(
+                'selection-overlay-bg',
+                selectionLeft, focusRect.bottom,
+                visualSelectionRight - selectionLeft, visualSelectionBottom - focusRect.bottom,
+            );
+            this.appendSelectionOverlayPart(
+                'selection-overlay-bg',
+                selectionLeft, focusRect.top,
+                focusRect.left - selectionLeft, visualFocusBottom - focusRect.top,
+            );
+            this.appendSelectionOverlayPart(
+                'selection-overlay-bg',
+                focusRect.right, focusRect.top,
+                visualSelectionRight - focusRect.right, visualFocusBottom - focusRect.top,
+            );
+        }
+
+        this.appendSelectionOverlayPart(
+            'selection-overlay-border',
+            selectionLeft, selectionTop,
+            visualSelectionRight - selectionLeft, visualSelectionBottom - selectionTop,
+        );
+    }
+
+    private appendSelectionOverlayPart(classNames: string, left: number, top: number, width: number, height: number): void {
+        this.appendOverlayPart(this.selectionOverlayParts, classNames, left, top, width, height);
+    }
+
+    private updateCopyOverlay(copyRange: CellRange): void {
+        const bounds = this.getVisibleRangeBounds(copyRange);
+        if (bounds === null) return;
+        this.appendCopyOverlayPart(
+            'copy-overlay-border',
+            bounds.left, bounds.top,
+            bounds.right - bounds.left - 1, bounds.bottom - bounds.top - 1,
+        );
+    }
+
+    private getVisibleRangeBounds(range: CellRange): { left: number; top: number; right: number; bottom: number } | null {
+        const hostRect = this.editorElement.getBoundingClientRect();
+        let left = Number.POSITIVE_INFINITY;
+        let top = Number.POSITIVE_INFINITY;
+        let right = Number.NEGATIVE_INFINITY;
+        let bottom = Number.NEGATIVE_INFINITY;
+        let hasVisibleCell = false;
+
+        this.forEachVisibleRangeCell(range, (_row, _column, cell) => {
+            const rect = cell.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+            left = Math.min(left, rect.left - hostRect.left);
+            top = Math.min(top, rect.top - hostRect.top);
+            right = Math.max(right, rect.right - hostRect.left);
+            bottom = Math.max(bottom, rect.bottom - hostRect.top);
+            hasVisibleCell = true;
+        });
+
+        return hasVisibleCell ? { left, top, right, bottom } : null;
+    }
+
+    private appendCopyOverlayPart(classNames: string, left: number, top: number, width: number, height: number): void {
+        this.appendOverlayPart(this.copyOverlayParts, classNames, left, top, width, height);
+    }
+
+    private appendOverlayPart(parts: HTMLElement[], classNames: string, left: number, top: number, width: number, height: number): void {
+        if (width <= 0 || height <= 0) return;
+        const part = document.createElement('div');
+        part.className = `selection-overlay-part ${classNames}`;
+        part.style.left = `${left}px`;
+        part.style.top = `${top}px`;
+        part.style.width = `${width}px`;
+        part.style.height = `${height}px`;
+        this.selectionOverlayElement.appendChild(part);
+        parts.push(part);
+    }
+
+    private clearSelectionOverlay(): void {
+        for (const part of this.selectionOverlayParts) {
+            part.remove();
+        }
+        this.selectionOverlayParts = [];
+    }
+
+    private clearCopyOverlay(): void {
+        for (const part of this.copyOverlayParts) {
+            part.remove();
+        }
+        this.copyOverlayParts = [];
     }
 
     /**
@@ -770,7 +984,7 @@ export class Selection {
     }
 
     private hideCopyBorder(): void {
-        this.editorTable.clearCopyClasses();
+        this.clearCopyOverlay();
     }
 
     startFill(row: number, column: number, mouseX: number, mouseY: number): void {

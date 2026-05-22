@@ -4,43 +4,6 @@
     width: max-content;
 
     user-select: none;
-    --editor-table-grid-line-width: 1px;
-    --editor-table-grid-line-scale: 1;
-}
-
-@media (min-resolution: 1.25dppx) {
-    .editor-table {
-        --editor-table-grid-line-width: 0.8px;
-        --editor-table-grid-line-scale: 0.8;
-    }
-}
-
-@media (min-resolution: 1.5dppx) {
-    .editor-table {
-        --editor-table-grid-line-width: 0.6666667px;
-        --editor-table-grid-line-scale: 0.6666667;
-    }
-}
-
-@media (min-resolution: 2dppx) {
-    .editor-table {
-        --editor-table-grid-line-width: 0.5px;
-        --editor-table-grid-line-scale: 0.5;
-    }
-}
-
-@media (min-resolution: 2.5dppx) {
-    .editor-table {
-        --editor-table-grid-line-width: 0.4px;
-        --editor-table-grid-line-scale: 0.4;
-    }
-}
-
-@media (min-resolution: 3dppx) {
-    .editor-table {
-        --editor-table-grid-line-width: 0.3333333px;
-        --editor-table-grid-line-scale: 0.3333333;
-    }
 }
 
 .editor-table--quadrant-layout {
@@ -74,34 +37,6 @@
 .editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left,
 .editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-right {
     overflow: visible;
-}
-
-/* 固定境界の広いグラデーション影は通常罫線と重なって太く見えるため描画しない。
-   境界線はセルの fractional inset shadow に一本化する。 */
-.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-left::after,
-.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-left::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 0;
-    pointer-events: none;
-    z-index: 1;
-    background: none;
-}
-
-.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left::before,
-.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-right::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 0;
-    pointer-events: none;
-    z-index: 1;
-    background: none;
 }
 
 .editor-table-pane-content,
@@ -272,7 +207,6 @@
 
 .editor-table-cell {
     display: table-cell;
-    /* 擬似要素（::before / ::after）の包含ブロックにするために必要 */
     position: relative;
     --editor-table-grid-right-color: var(--background-color);
     --editor-table-grid-bottom-color: transparent;
@@ -284,9 +218,8 @@
 
     white-space: nowrap;
 
-    box-shadow:
-        inset calc(var(--editor-table-grid-line-width) * -1) 0 0 var(--editor-table-grid-right-color),
-        inset 0 calc(var(--editor-table-grid-line-width) * -1) 0 var(--editor-table-grid-bottom-color);
+    border-right: 1px solid var(--editor-table-grid-right-color);
+    border-bottom: 1px solid var(--editor-table-grid-bottom-color);
 }
 
 /* テーブルのセルの下線のレイアウト幅。
@@ -295,12 +228,6 @@
 .editor-table-source-column-header-row .editor-table-cell,
 .editor-table-detached-row .editor-table-cell {
     --editor-table-grid-bottom-color: var(--background-color);
-    border-bottom: 1px solid transparent;
-}
-
-/* テーブルのセルの右の線のレイアウト幅。実線は box-shadow で描画する。 */
-.editor-table-cell {
-    border-right: 1px solid transparent;
 }
 
 /* 列ヘッダー行のスタイル */
@@ -440,84 +367,34 @@
 
 /* 選択された列ヘッダーのスタイル */
 .editor-table-column-header.selected {
-    --editor-table-grid-right-color: transparent;
-    --editor-table-grid-bottom-color: transparent;
+    --editor-table-selected-header-fill: color-mix(in srgb, #0078d7 30%, var(--background-color));
     background-color: var(--background-color);
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
     background-origin: border-box;
+    background-clip: border-box;
     background-repeat: no-repeat;
     background-position: left top;
-    background-size: 100% calc(100% - 1px);
-}
-
-.editor-table-column-header.selected.selected-column-end {
-    background-size: calc(100% - 1px) calc(100% - 1px);
-}
-
-.editor-table-column-header.selected::before,
-.editor-table-row-header.selected::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 1px;
-    pointer-events: none;
-    background-color: var(--background-color);
-    transform: scaleX(var(--editor-table-grid-line-scale));
-    transform-origin: right;
-    z-index: 1;
-}
-
-.editor-table-column-header.selected::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 1px;
-    pointer-events: none;
-    background-color: var(--background-color);
-    transform: scaleY(var(--editor-table-grid-line-scale));
-    transform-origin: bottom;
-    z-index: 1;
+    background-size: 100% 100%;
 }
 
 /* 選択された行ヘッダーのスタイル（ドラッグ移動可能を示す grab カーソル付き） */
 .editor-table-row-header.selected {
-    --editor-table-grid-right-color: transparent;
-    --editor-table-grid-bottom-color: transparent;
+    --editor-table-selected-header-fill: color-mix(in srgb, #0078d7 30%, var(--background-color));
     background-color: var(--background-color);
     background-image: linear-gradient(rgba(0, 120, 215, 0.3), rgba(0, 120, 215, 0.3));
     background-origin: border-box;
+    background-clip: border-box;
     background-repeat: no-repeat;
     background-position: left top;
-    background-size: calc(100% - 1px) 100%;
+    background-size: 100% 100%;
     cursor: grab;
-}
-
-.editor-table-row-header.selected.selected-row-end {
-    background-size: calc(100% - 1px) calc(100% - 1px);
-}
-
-.editor-table-row-header.selected::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 1px;
-    pointer-events: none;
-    background-color: var(--background-color);
-    transform: scaleY(var(--editor-table-grid-line-scale));
-    transform-origin: bottom;
-    z-index: 1;
 }
 
 /* 非アクティブテーブルのヘッダー選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
 .editor-table--inactive .editor-table-column-header.selected,
 .editor-table--inactive .editor-table-row-header.selected,
 .editor-table--inactive .editor-table-joined-column-header.selected {
+    --editor-table-selected-header-fill: color-mix(in srgb, #808080 30%, var(--background-color));
     background-image: linear-gradient(rgba(128, 128, 128, 0.3), rgba(128, 128, 128, 0.3));
 }
 
@@ -601,7 +478,6 @@
 }
 
 /* エラーセル: 赤波線（下線）
-   background-image でセル幅全体に波線を描画する。::after 擬似要素はコピー範囲ボーダーが使用するため空けておく。
    background-position: bottom で下端に配置し、background-size で波線の高さを制御する。 */
 .cell-error {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2 Q1.5 0 3 2 Q4.5 4 6 2' fill='none' stroke='rgb(255,60,60)' stroke-width='1'/%3E%3C/svg%3E");
@@ -614,8 +490,7 @@
 .editor-table-cell-focused {
 }
 
-/* ブックマーク済みセルの視覚マーク: 右上にオレンジ色の三角形を background-image で表示する。
-   ::after 擬似要素はコピー範囲ボーダーが使用するため空けておく。 */
+/* ブックマーク済みセルの視覚マーク: 右上にオレンジ色の三角形を background-image で表示する。 */
 .editor-table-cell[data-bookmarked] {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpolygon points='0,0 8,0 8,8' fill='%23FF8C00'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -736,12 +611,10 @@
    clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
 .freeze-column-border {
     --editor-table-grid-right-color: var(--background-color);
-    border-right-color: transparent;
 }
 
 .freeze-row-border .editor-table-cell {
     --editor-table-grid-bottom-color: var(--background-color);
-    border-bottom-color: transparent;
 }
 
 /* ==========================================================================

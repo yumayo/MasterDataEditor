@@ -1,7 +1,7 @@
 import {test, expect} from './fixtures/test';
 
 test(
-    '固定列境界は通常borderとshadowを二重描画しない',
+    '固定列境界は通常borderで描画しshadowを使わない',
     async ({page, mockFileSystem}) => {
         await page.locator('#explorer').getByText('test', {exact: true}).click();
         const table = page.locator('.editor-left-pane .editor-table');
@@ -15,19 +15,21 @@ test(
             editor.activeEditorTable.freezeColumns(1);
         });
 
-        const boundaryCell = table.locator('.freeze-column-border').first();
+        const boundaryCell = table.locator(
+            '.freeze-column-border:not(.editor-table-column-header):not(.editor-table-row-header)',
+        ).first();
         await expect(boundaryCell).toBeVisible();
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).borderRightColor)
-        ).toBe('rgba(0, 0, 0, 0)');
+        ).not.toBe('rgba(0, 0, 0, 0)');
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).boxShadow)
-        ).toContain('inset');
+        ).toBe('none');
     },
 );
 
 test(
-    '固定行境界は通常borderとshadowを二重描画しない',
+    '固定行境界は通常borderで描画しshadowを使わない',
     async ({page, mockFileSystem}) => {
         await page.locator('#explorer').getByText('test', {exact: true}).click();
         const table = page.locator('.editor-left-pane .editor-table');
@@ -41,14 +43,15 @@ test(
             editor.activeEditorTable.freezeRows(1);
         });
 
-        const boundaryRow = table.locator('.freeze-row-border').first();
-        await expect(boundaryRow).toBeVisible();
-        const boundaryCell = boundaryRow.locator('.editor-table-cell').first();
+        const boundaryCell = table.locator(
+            '.freeze-row-border .editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header)',
+        ).first();
+        await expect(boundaryCell).toBeVisible();
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).borderBottomColor)
-        ).toBe('rgba(0, 0, 0, 0)');
+        ).not.toBe('rgba(0, 0, 0, 0)');
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).boxShadow)
-        ).toContain('inset');
+        ).toBe('none');
     },
 );

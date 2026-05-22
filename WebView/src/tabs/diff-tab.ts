@@ -914,6 +914,7 @@ export class DiffTab {
         editorTable.initializeModules(notification);
 
         editorTable.appendTo(innerWrapper);
+        innerWrapper.appendChild(selection.selectionOverlayElement);
         innerWrapper.appendChild(selection.fillPreviewElement);
         innerWrapper.appendChild(selection.fillHandle);
         editorTableHandler.appendTo(innerWrapper);
