@@ -1907,6 +1907,13 @@ export class EditorTable {
         if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.columnMapping.length) return;
         const storeColIndex = this.getStoreColumnIndex(dataColumnIndex);
         if (storeColIndex === -1) return;
+        const rowsBeforeUpdate = this.store.getRows(this.tableName);
+        const oldValue = rowsBeforeUpdate !== false
+            && storeRowIndex < rowsBeforeUpdate.length
+            && storeColIndex < rowsBeforeUpdate[storeRowIndex].length
+            ? rowsBeforeUpdate[storeRowIndex][storeColIndex]
+            : '';
+        if (oldValue === value) return;
         // ストア更新はDOM有無に関わらず常に実行する
         this.store.updateCellValueByRowIndex(this.tableName, storeRowIndex, storeColIndex, value);
         // DOM上に行が存在する場合のみDOM操作（参照ヒント・git差分ハイライト等）を行う。

@@ -353,7 +353,10 @@ export class ValidationEngine {
     }
 
     private doExportWindowsOverlap(left: ExportRowWindow, right: ExportRowWindow): boolean {
-        if (left.kind === 'unknown' || right.kind === 'unknown') return true;
+        // 日付不正や begin > end の行は期間として比較できないため、
+        // PK期間重複としては扱わない。ここで true にすると「重複」ではなく
+        // 「期間不正」の状態まで重複エラーとして表示されてしまう。
+        if (left.kind === 'unknown' || right.kind === 'unknown') return false;
         const leftBeginMs = left.beginMs ?? Number.NEGATIVE_INFINITY;
         const leftEndMs = left.endMs ?? Number.POSITIVE_INFINITY;
         const rightBeginMs = right.beginMs ?? Number.NEGATIVE_INFINITY;
@@ -725,7 +728,8 @@ export class ValidationEngine {
     private isRowActiveAtExportValidationDateTime(row: string[], exportWindow: ExportWindowColumnIndices | null): boolean {
         if (exportWindow === null || this.exportValidationDateTimeMs === null) return true;
         const rowWindow = this.resolveRowExportWindow(row, exportWindow);
-        if (rowWindow.kind === 'unknown') return true;
+        // 日付不正や begin > end の行は、その日時に出力される行としては扱わない。
+        if (rowWindow.kind === 'unknown') return false;
         const beginMs = rowWindow.beginMs ?? Number.NEGATIVE_INFINITY;
         const endMs = rowWindow.endMs ?? Number.POSITIVE_INFINITY;
         return beginMs <= this.exportValidationDateTimeMs && this.exportValidationDateTimeMs <= endMs;
