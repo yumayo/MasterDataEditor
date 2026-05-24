@@ -294,7 +294,7 @@ export class EditorTableStoreSync {
         const newDomRow = newRowIndex + this.getDataRowChildOffset();
         this.updateReferenceHintsForRows(newDomRow, newDomRow);
         // 行数変化後に選択オーバーレイの描画位置を再計算する
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
     }
 
     /**
@@ -323,7 +323,7 @@ export class EditorTableStoreSync {
         // 行削除後に行ヘッダーの番号（data-row属性・行番号テキスト）を振り直す
         this.structure.renumberRowsFrom(0);
         // 行数変化後に選択オーバーレイの描画位置を再計算する
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
     }
 
     /** 行追加時に自動埋め込みするFK列名と値のペアを設定する */

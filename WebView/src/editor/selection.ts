@@ -528,7 +528,7 @@ export class Selection {
         this.updateCopyOverlay(this.copyRange);
     }
 
-    private updateRenderer(): void {
+    private updateRenderer(notifyRowSelection: boolean = true): void {
         const selectionRange = this.getSelectionRange();
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
 
@@ -539,7 +539,7 @@ export class Selection {
         this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
 
         // フォーカス行が変化したときにRelationsPanelへ通知する（重複制御はEditorTable側で行う）
-        this.editorTable.notifyRowSelectionChanged(this.focus.row);
+        if (notifyRowSelection) this.editorTable.notifyRowSelectionChanged(this.focus.row);
 
         // フォーカスセルに editor-table-cell-focused クラスを付与する（ジャンプ確認用）
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
@@ -642,9 +642,9 @@ export class Selection {
     /**
      * リサイズ後に描画領域を更新する（area-resizerから呼び出される）
      */
-    updateRendererAfterResize(): void {
+    updateRendererAfterResize(notifyRowSelection: boolean = true): void {
         // 選択範囲を更新
-        this.updateRenderer();
+        this.updateRenderer(notifyRowSelection);
 
         // フィルプレビューを更新
         if (this.filling) {

@@ -276,6 +276,7 @@
     flex-direction: column;
     gap: 2px;
     z-index: var(--z-index-column-header-badge-area);
+    pointer-events: none;
 }
 
 /* バッジありのヘッダーセルは padding-left を広げてテキストとバッジが重ならないようにする */
@@ -303,6 +304,7 @@
     margin-left: 0;
     vertical-align: middle;
     cursor: default;
+    pointer-events: none;
 }
 
 /* PK バッジ — ゴールド系（不透明色で行選択ハイライトに透過しない） */

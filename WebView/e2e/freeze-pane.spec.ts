@@ -1442,8 +1442,16 @@ test.describe('フリーズペイン', () => {
                             borderBottomStyle: frozenColumnCellStyle.borderBottomStyle,
                             borderBottomWidth: frozenColumnCellStyle.borderBottomWidth,
                         },
-                        lastFrozenColumnBoxShadow: lastFrozenColumnStyle.boxShadow,
-                        lastFrozenRowCellBoxShadow: lastFrozenRowCellStyle.boxShadow,
+                        lastFrozenColumn: {
+                            borderRightStyle: lastFrozenColumnStyle.borderRightStyle,
+                            borderRightWidth: lastFrozenColumnStyle.borderRightWidth,
+                            boxShadow: lastFrozenColumnStyle.boxShadow,
+                        },
+                        lastFrozenRowCell: {
+                            borderBottomStyle: lastFrozenRowCellStyle.borderBottomStyle,
+                            borderBottomWidth: lastFrozenRowCellStyle.borderBottomWidth,
+                            boxShadow: lastFrozenRowCellStyle.boxShadow,
+                        },
                         columnPaneShadow: {
                             width: columnShadowStyle.width,
                             backgroundImage: columnShadowStyle.backgroundImage,
@@ -1459,13 +1467,15 @@ test.describe('フリーズペイン', () => {
                 expect(styles.frozenRowCell.borderBottomWidth).toBe('1px');
                 expect(styles.frozenColumnCell.borderBottomStyle).toBe('solid');
                 expect(styles.frozenColumnCell.borderBottomWidth).toBe('1px');
-                expect(styles.lastFrozenColumnBoxShadow).toContain('inset');
-                expect(styles.lastFrozenRowCellBoxShadow).toContain('inset');
-                expect(styles.lastFrozenColumnBoxShadow).not.toContain('4px');
-                expect(styles.lastFrozenRowCellBoxShadow).not.toContain('4px');
-                expect(styles.columnPaneShadow.width).toBe('0px');
+                expect(styles.lastFrozenColumn.borderRightStyle).toBe('solid');
+                expect(styles.lastFrozenColumn.borderRightWidth).toBe('1px');
+                expect(styles.lastFrozenColumn.boxShadow).toBe('none');
+                expect(styles.lastFrozenRowCell.borderBottomStyle).toBe('solid');
+                expect(styles.lastFrozenRowCell.borderBottomWidth).toBe('1px');
+                expect(styles.lastFrozenRowCell.boxShadow).toBe('none');
+                expect(['0px', 'auto']).toContain(styles.columnPaneShadow.width);
                 expect(styles.columnPaneShadow.backgroundImage).toBe('none');
-                expect(styles.rowPaneShadow.height).toBe('0px');
+                expect(['0px', 'auto']).toContain(styles.rowPaneShadow.height);
                 expect(styles.rowPaneShadow.backgroundImage).toBe('none');
             },
         );

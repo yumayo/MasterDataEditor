@@ -516,6 +516,7 @@ export class DiffTab {
             // 行挿入のUndo: 左ペインのパディング行データを削除し、右ペインのDOM行も削除する
             this.leftRowClasses.delete(dataRowIndex);
             rightRow.remove();
+            this.rightEditorTable.notifyVirtualScrollRowRemoved();
             // headRowValuesPerDomRow から挿入行を削除して行インデックスを同期する
             this.headRowValuesPerDomRow.splice(dataRowIndex, 1);
             // 左ペインのストアから行を削除する

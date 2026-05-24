@@ -99,7 +99,9 @@ test.describe('DEBUG CONSOLE preload記録', () => {
 
         // preload 由来のエントリ（find_files, read_file）にエラーがないことを確認する。
         // git_status 等の preload 以外のAPI呼び出しはテスト環境でエラーになり得るため除外する。
-        const preloadErrorRows = debugConsole.locator('.debug-console-row.debug-console-row-error .debug-console-col-label', { hasText: /^(find_files|read_file)( \(.+\))?$/ });
+        const preloadErrorRows = debugConsole.locator('.debug-console-row.debug-console-row-error .debug-console-col-label', {
+            hasText: /^(find_files \((schema|data)\)|read_file \((schema\/test\.json|data\/test\.csv)\))$/,
+        });
         const preloadErrorCount = await preloadErrorRows.count();
         expect(preloadErrorCount, 'preload API通信にエラーステータスのエントリがないこと').toBe(0);
     });

@@ -2103,6 +2103,7 @@ export class EditorTable {
 
     /** 複数行挿入（Commandを使用してhistoryに追加） */
     public insertRows(rowIndex: number, count: number): void {
+        if (this.isMiniTable && this.relationsPanel !== false) this.relationsPanel.invalidatePendingRenderRequests();
         this.structure.insertRows(rowIndex, count);
         this.reapplyFreezeStylesAfterStructureChange();
     }

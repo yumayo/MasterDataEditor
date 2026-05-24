@@ -30,6 +30,9 @@ export class EditorTableContextMenu {
         return (e: MouseEvent) => {
             // 左クリック以外は無視
             if (e.button !== 0) return;
+            if (this.table.isMiniTableInstance() && this.table.relationsPanel !== false) {
+                this.table.relationsPanel.invalidatePendingRenderRequests();
+            }
             this.table.getHandler().submitAndHide();
             const clickedColumnIndex = parseInt(columnHeaderCell.dataset.col!) + this.table.dataColumnOffset();
             if (e.shiftKey) {
@@ -50,6 +53,9 @@ export class EditorTableContextMenu {
         return (e: MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
+            if (this.table.isMiniTableInstance() && this.table.relationsPanel !== false) {
+                this.table.relationsPanel.invalidatePendingRenderRequests();
+            }
             // 読み取り専用の場合はコンテキストメニューを表示しない
             if (this.readOnly) return;
             const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);

@@ -335,15 +335,18 @@ test.describe('差分ビューのパディング行同期', () => {
             await expect(firstLeftDataRowAfterInsert).toHaveClass(/diff-row-empty/);
 
             // 右ペインのセルをクリックしてフォーカスを確保してからUndoする
-            const firstRightDataCell = rightTable.locator('.editor-table-row').nth(0)
+            // 先頭行は固定ヘッダーと重なることがあるため、安定してクリックできる2行目を使う。
+            const focusRightDataCell = rightTable.locator('.editor-table-pane-bottom-right .editor-table-row').nth(1)
                 .locator('.editor-table-cell:not(.editor-table-row-header)').first();
-            await firstRightDataCell.click();
-            await page.keyboard.press('Control+z');
+            await focusRightDataCell.click();
+            await rightPane.locator('.grid-textfield').press('Control+z');
 
             // Undo後: 左ペインの行数が初期状態に戻ること
             // 現行実装では同期処理がないため、このアサーションが失敗してREDになる
             const afterUndoLeftRowCount = await leftTable.locator('.editor-table-row').count();
             expect(afterUndoLeftRowCount).toBe(initialLeftRowCount);
+            const afterUndoRightRowCount = await rightTable.locator('.editor-table-row').count();
+            expect(afterUndoRightRowCount).toBe(initialRightRowCount);
 
             // Undo後: 挿入位置にパディング行がなくなること（元の行に戻る）
             const firstLeftDataRowAfterUndo = leftTable.locator('.editor-table-row').nth(0);
@@ -356,11 +359,12 @@ test.describe('差分ビューのパディング行同期', () => {
             await rightCellBeforeRedo.click();
 
             // Redo: Ctrl+Y でやり直す（Ctrl+Yはアクティブなハンドラに直接届く）
-            await page.keyboard.press('Control+y');
+            await rightPane.locator('.grid-textfield').press('Control+y');
 
             // Redo後: 左ペインに再びパディング行が挿入されること
             // toHaveCount はPlaywright auto-retrying assertionのため、DOMの更新を待機する
             await expect(leftTable.locator('.editor-table-row')).toHaveCount(initialLeftRowCount + 1);
+            await expect(rightTable.locator('.editor-table-row')).toHaveCount(initialRightRowCount + 1);
             const firstLeftDataRowAfterRedo = leftTable.locator('.editor-table-row').nth(0);
             await expect(firstLeftDataRowAfterRedo).toHaveClass(/diff-row-empty/);
         },

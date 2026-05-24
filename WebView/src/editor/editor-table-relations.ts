@@ -14,9 +14,15 @@ export class EditorTableRelations {
      * forceRefreshRelationsPanel() は refreshCurrentRow() を直接呼ぶためこの値を変更しない。
      */
     private lastNotifiedRow: number;
+    /**
+     * ミニテーブルで最後に右隣ペインへ通知した行キー。
+     * 同一行の再描画だけでRelationsPanelを再生成して、ミニテーブルのUndo履歴を失わないようにする。
+     */
+    private lastNotifiedMiniKey: string;
 
     constructor(table: EditorTable) {
         this.lastNotifiedRow = -1;
+        this.lastNotifiedMiniKey = '';
         return new Proxy(this, {
             get: (target, property, receiver) => {
                 if (property in target) return Reflect.get(target, property, receiver);
@@ -34,10 +40,14 @@ export class EditorTableRelations {
     notifyRowSelectionChanged(rowIndex: number): void {
         if (this.relationsPanel === false) return;
         if (this.isMiniTable) {
-            // ミニテーブルの場合: 常に通知する（異なるミニテーブル間の切り替えを正しく検知するため、
-            // 行番号による重複スキップは行わない）
+            // ミニテーブルの場合: テーブル名+PKで重複通知を抑止する。
+            // 行挿入などの内部再描画でもSelection更新が走るため、同一行を毎回通知すると
+            // RelationsPanelが同じミニテーブルを再生成し、Undo履歴が空になってしまう。
             const pkValue = this.getRowPkValue(rowIndex);
             if (pkValue === '') return;
+            const miniKey = `${this.tableName}\0${pkValue}`;
+            if (miniKey === this.lastNotifiedMiniKey) return;
+            this.lastNotifiedMiniKey = miniKey;
             this.relationsPanel.notifyMiniTableRowSelectionChanged(this.tableName, pkValue);
             return;
         }

@@ -204,6 +204,9 @@ export class RelationsPanel {
      * の全handlerを対象として排他制御を行う
      */
     activateHandler(targetEditorTable: EditorTable): void {
+        if (targetEditorTable.isMiniTableInstance()) {
+            this.invalidatePendingRenderRequests();
+        }
         // メインEditorTableのhandlerを制御し、視覚状態を非アクティブに更新する
         if (this.currentEditorTable !== false && this.currentEditorTable !== targetEditorTable) {
             this.currentEditorTable.getHandler().deactivate();
@@ -230,6 +233,15 @@ export class RelationsPanel {
         if (targetIdx !== -1 && targetIdx < headers.length) {
             headers[targetIdx].classList.add('relations-table-header--active');
         }
+    }
+
+    /**
+     * 進行中の非同期再描画を無効化する。
+     * ミニテーブル操作中に、直前の行選択などから遅れて完了した再描画が
+     * 操作中のミニテーブルを破棄してUndo履歴を失わせないようにする。
+     */
+    invalidatePendingRenderRequests(): void {
+        this.currentRequestId++;
     }
 
     /**
@@ -731,6 +743,10 @@ export class RelationsPanel {
         }
     }
 
+    private hasActiveMiniHistory(): boolean {
+        return this.miniHistories.some(history => history.isDirty() || history.canRedo());
+    }
+
     /**
      * currentEntries を非同期で描画する
      * 全エントリを縦に並べて常時表示する
@@ -745,6 +761,7 @@ export class RelationsPanel {
         // 呼び出し元のガードと二重カウントになるため、ここでは現在値を読むだけにする。
         const requestId = this.currentRequestId;
 
+        if (this.hasActiveMiniHistory()) return;
         this.destroyMiniEditorTables();
         this.clearContentArea();
 

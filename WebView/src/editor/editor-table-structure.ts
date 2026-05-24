@@ -111,7 +111,7 @@ export class EditorTableStructure {
         // コピー範囲をクリア（列構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
         // 列挿入によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
         this.table.clearSortState();
         // 列挿入によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
@@ -218,7 +218,7 @@ export class EditorTableStructure {
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
         // 行挿入後にgit差分ハイライトを全セル再評価する（新規行や後続行のストアインデックスが変化するため）
         this.table.applyGitDiffHighlight();
         // 行挿入後に参照データキャッシュを無効化する。
@@ -341,7 +341,7 @@ export class EditorTableStructure {
         // コピー範囲をクリア（列構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
         // 列削除によりsortKeysのcolumnIndexが陳腐化するため、ソート状態をリセットする
         this.table.clearSortState();
         // 列削除によりfilterMapのcolumnIndexが陳腐化するため、フィルター状態もリセットする
@@ -397,7 +397,7 @@ export class EditorTableStructure {
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲の描画を更新（ヘッダーの背景色を正しく表示するため）
-        this.selection.updateRendererAfterResize();
+        this.selection.updateRendererAfterResize(false);
         // 行削除後にgit差分ハイライトを全セル再評価する（後続行のストアインデックスが変化するため）
         this.table.applyGitDiffHighlight();
         // 行削除後に参照データキャッシュを無効化する。

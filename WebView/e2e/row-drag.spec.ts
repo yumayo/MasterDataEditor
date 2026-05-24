@@ -47,14 +47,14 @@ async function getRowIdValuesAsync(table: Locator, count: number): Promise<strin
  */
 async function dragRowAsync(table: Locator, fromRowIndex: number, toRowIndex: number): Promise<void> {
     // ドラッグ元の行ヘッダー
-    const fromHeader = table.locator('.editor-table-row-header').nth(fromRowIndex);
+    const fromHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(fromRowIndex);
     const fromBox = await fromHeader.boundingBox();
     if (!fromBox) throw new Error('fromHeader bounding box is null');
     const startX = fromBox.x + fromBox.width / 2;
     const startY = fromBox.y + fromBox.height / 2;
 
     // ドロップ先の行ヘッダー
-    const toHeader = table.locator('.editor-table-row-header').nth(toRowIndex);
+    const toHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(toRowIndex);
     const toBox = await toHeader.boundingBox();
     if (!toBox) throw new Error('toHeader bounding box is null');
     const endX = toBox.x + toBox.width / 2;
@@ -88,7 +88,7 @@ async function clickFirstCellAsync(table: Locator): Promise<void> {
  * rowIndex: 0始まり（ヘッダー行を除くデータ行のインデックス）
  */
 async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
-    const header = table.locator('.editor-table-row-header').nth(rowIndex);
+    const header = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex);
     await header.click();
 }
 
@@ -97,7 +97,7 @@ async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
  * rowIndex: 0始まり（ヘッダー行を除くデータ行のインデックス）
  */
 async function isRowSelectedAsync(table: Locator, rowIndex: number): Promise<boolean> {
-    const header = table.locator('.editor-table-row-header').nth(rowIndex);
+    const header = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex);
     return header.evaluate(el => el.classList.contains('selected'));
 }
 
@@ -107,13 +107,13 @@ async function isRowSelectedAsync(table: Locator, rowIndex: number): Promise<boo
  * fromRowIndex, toRowIndex: 0始まり（ヘッダー行を除くデータ行のインデックス）
  */
 async function dragRowHeaderWithoutSelectAsync(page: Page, table: Locator, fromRowIndex: number, toRowIndex: number): Promise<void> {
-    const fromHeader = table.locator('.editor-table-row-header').nth(fromRowIndex);
+    const fromHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(fromRowIndex);
     const fromBox = await fromHeader.boundingBox();
     if (!fromBox) throw new Error('fromHeader bounding box is null');
     const startX = fromBox.x + fromBox.width / 2;
     const startY = fromBox.y + fromBox.height / 2;
 
-    const toHeader = table.locator('.editor-table-row-header').nth(toRowIndex);
+    const toHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(toRowIndex);
     const toBox = await toHeader.boundingBox();
     if (!toBox) throw new Error('toHeader bounding box is null');
     const endX = toBox.x + toBox.width / 2;
@@ -180,7 +180,8 @@ test.describe('行ドラッグ移動', () => {
         await selectRowAsync(table, 2);
 
         // ドラッグ元の行ヘッダー（3行目）
-        const fromHeader = table.locator('.editor-table-row-header').nth(2);
+        const fromHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
+        await expect(fromHeader).toHaveClass(/selected/);
         const fromBox = await fromHeader.boundingBox();
         if (!fromBox) throw new Error('bounding box is null');
         const startX = fromBox.x + fromBox.width / 2;
@@ -189,7 +190,8 @@ test.describe('行ドラッグ移動', () => {
         // mousedown して5px以上移動するとドラッグ開始
         await page.mouse.move(startX, startY);
         await page.mouse.down();
-        await page.mouse.move(startX, startY - 10);
+        await page.mouse.move(startX, startY - 30);
+        await page.waitForTimeout(50);
 
         // インジケーターが表示されていることを確認
         const indicator = page.locator('.row-drag-indicator');
@@ -332,7 +334,7 @@ test.describe('行ドラッグ操作の分離（選択済み行 vs 未選択行�
 
         // まず1〜3行目を選択する（1行目をクリック → Shiftクリックで3行目まで拡張）
         await selectRowAsync(table, 0);
-        const thirdHeader = table.locator('.editor-table-row-header').nth(2);
+        const thirdHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
         await thirdHeader.click({ modifiers: ['Shift'] });
 
         // 1〜3行目がすべて選択されていること
@@ -356,17 +358,17 @@ test.describe('行ドラッグ操作の分離（選択済み行 vs 未選択行�
         await selectRowAsync(table, 1);
 
         // 選択済みの2行目の行ヘッダーはcursorがgrabであること
-        const selectedHeader = table.locator('.editor-table-row-header').nth(1);
+        const selectedHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(1);
         const selectedCursor = await selectedHeader.evaluate(el => window.getComputedStyle(el).cursor);
         expect(selectedCursor).toBe('grab');
 
         // 未選択の1行目（index=0）の行ヘッダーはcursorがgrabでないこと
-        const unselectedHeader = table.locator('.editor-table-row-header').nth(0);
+        const unselectedHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(0);
         const unselectedCursor = await unselectedHeader.evaluate(el => window.getComputedStyle(el).cursor);
         expect(unselectedCursor).not.toBe('grab');
 
         // 未選択の3行目（index=2）も同様にgrabでないこと
-        const anotherUnselectedHeader = table.locator('.editor-table-row-header').nth(2);
+        const anotherUnselectedHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
         const anotherCursor = await anotherUnselectedHeader.evaluate(el => window.getComputedStyle(el).cursor);
         expect(anotherCursor).not.toBe('grab');
     });

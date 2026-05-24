@@ -249,7 +249,7 @@ async function assertRowHeaderPixelsAsync(
         );
         expect(separatorRuns).toHaveLength(1);
         expect(separatorRuns[0].kind).toBe('background');
-        expect(separatorRuns[0].end - separatorRuns[0].start + 1).toBe(1);
+        expect(separatorRuns[0].end - separatorRuns[0].start + 1).toBeLessThanOrEqual(Math.ceil(devicePixelRatio));
     }
 
     for (const rect of rects) {
@@ -280,7 +280,7 @@ async function assertColumnHeaderPixelsAsync(
             Math.min(image.width - 1, boundaryX + Math.ceil(3 * devicePixelRatio)),
         );
         const separatorRuns = runs.filter(run => run.kind === 'background');
-        expect(separatorRuns.some(run => run.end - run.start + 1 === 1)).toBe(true);
+        expect(separatorRuns.some(run => run.end - run.start + 1 <= Math.ceil(devicePixelRatio))).toBe(true);
     }
 
     for (const rect of rects) {

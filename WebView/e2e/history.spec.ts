@@ -121,8 +121,10 @@ const test = base.extend<HistoryFixtures>({
  * 行ヘッダーを右クリックしてコンテキストメニューを開く
  */
 async function rightClickRowHeaderAsync(table: Locator, rowIndex: number): Promise<void> {
-    const header = table.locator('.editor-table-row-header').nth(rowIndex);
-    await header.click({ button: 'right' });
+    const header = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex);
+    const box = await header.boundingBox();
+    if (!box) throw new Error('row header bounding box is null');
+    await header.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
 }
 
 /**
@@ -359,8 +361,8 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             await expect(table.locator('.blame-cell').first()).toBeVisible();
 
             // 1行目（index=0）を選択する
-            const firstHeader = table.locator('.editor-table-row-header').nth(0);
-            await firstHeader.click();
+            const firstHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(0);
+            await firstHeader.click({ force: true });
             // 1行目が選択されていることを確認する
             await expect(firstHeader).toHaveClass(/selected/);
 
@@ -371,7 +373,7 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             const startY = fromBox.y + fromBox.height / 2;
 
             // ドロップ先: 3行目（index=2）の下端
-            const lastHeader = table.locator('.editor-table-row-header').nth(2);
+            const lastHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
             const lastBox = await lastHeader.boundingBox();
             if (!lastBox) throw new Error('lastHeader bounding box is null');
             const endX = lastBox.x + lastBox.width / 2;
@@ -390,11 +392,11 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             expect(row2Id).toBe('1');
 
             // 移動先の行（index=2、元の1行目）が選択状態になること
-            const movedHeader = table.locator('.editor-table-row-header').nth(2);
+            const movedHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
             await expect(movedHeader).toHaveClass(/selected/);
 
             // 移動元の位置（index=0）は選択されていないこと
-            const firstPos = table.locator('.editor-table-row-header').nth(0);
+            const firstPos = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(0);
             await expect(firstPos).not.toHaveClass(/selected/);
 
             // blame-cell がまだ表示されていること（blameが解除されていないこと）

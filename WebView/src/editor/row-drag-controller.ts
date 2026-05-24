@@ -221,8 +221,10 @@ export class RowDragController {
         const storeRowCount = this.table.getStoreRowIndices().length;
         // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
         const offset = this.table.getDataRowChildOffset();
-        // テーブル要素の水平範囲をインジケーターに適用する
-        const tableRect = tableElement.getBoundingClientRect();
+        // absolute row layout の gridElement は内容幅を持たない場合があるため、
+        // インジケーターの水平範囲は可視テーブルルートから取得する。
+        const tableRoot = tableElement.closest('.editor-table') as HTMLElement | null;
+        const tableRect = (tableRoot ?? tableElement).getBoundingClientRect();
         this.indicator.style.left = tableRect.left + 'px';
         this.indicator.style.width = tableRect.width + 'px';
         // 各行の矩形を走査して、マウス位置に最も近い行間を特定する

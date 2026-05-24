@@ -87,6 +87,7 @@ test.describe('検索パネル', () => {
     });
 
     test('Ctrl+Shift+FでSEARCHパネルがアクティブになること', async ({page}) => {
+        await expect(page.locator('.activity-bar-item[data-panel="search"]')).toBeVisible();
         await page.keyboard.press('Control+Shift+F');
         // SEARCHパネルが表示されていることを確認
         const searchPanel = page.locator('.search-panel.sidebar-panel-active');

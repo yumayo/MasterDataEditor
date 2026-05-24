@@ -152,19 +152,20 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // グローバルキーボードショートカットを登録
     document.addEventListener('keydown', (e: KeyboardEvent) => {
         const key = e.key.toLowerCase();
-        if (e.ctrlKey && e.shiftKey && key === 'f') {
+        const primaryModifier = e.ctrlKey || e.metaKey;
+        if (primaryModifier && e.shiftKey && key === 'f') {
             e.preventDefault();
             sidebar.activateSearchPanel();
         }
-        if (e.ctrlKey && !e.shiftKey && key === 'h') {
+        if (primaryModifier && !e.shiftKey && key === 'h') {
             e.preventDefault();
             sidebar.activateSearchPanelWithReplace();
         }
-        if (e.ctrlKey && !e.shiftKey && key === 'p') {
+        if (primaryModifier && !e.shiftKey && key === 'p') {
             e.preventDefault();
             commandPalette.show();
         }
-    });
+    }, true);
 
     // グローバル Ctrl+S をキャプチャフェーズで処理する。
     // EditorTable 内にフォーカスがある場合は EditorTableHandler のバブリングハンドラに任せ、

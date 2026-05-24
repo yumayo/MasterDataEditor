@@ -201,14 +201,7 @@ export class EditorTableLayout {
             }
         }
         if (cloneCell.classList.contains('editor-table-row-header')) {
-            cloneCell.addEventListener('mousedown', (e: MouseEvent) => {
-                if (e.button !== 0) return;
-                const rowIndexText = cloneCell.dataset.rowIndex;
-                if (rowIndexText === undefined) throw new Error('分離行ヘッダーに rowIndex がありません');
-                this.getRowDragController().onRowHeaderMouseDown(Number(rowIndexText), e.clientY, cloneCell, e);
-            });
-            cloneCell.addEventListener('mousedown', this.contextMenuHandler.createRowHeaderClickHandler(cloneCell));
-            cloneCell.addEventListener('contextmenu', this.contextMenuHandler.createRowHeaderContextMenuHandler(cloneCell));
+            this.forwardClonedCellPointerInteractions(cloneCell, sourceCell);
         }
         if (cloneCell.classList.contains('editor-table-corner-cell')) {
             cloneCell.addEventListener('mousedown', (e) => {
