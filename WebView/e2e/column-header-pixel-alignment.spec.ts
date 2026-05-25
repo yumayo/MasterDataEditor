@@ -138,13 +138,13 @@ async function getBodyCellJunctionPixelsAsync(page: Page): Promise<{
 }> {
     const metrics = await page.evaluate(() => {
         const cell00 = document.querySelector<HTMLElement>(
-            '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
+            '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
         );
         const cell01 = document.querySelector<HTMLElement>(
-            '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+            '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
         );
         const cell10 = document.querySelector<HTMLElement>(
-            '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
+            '.editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
         );
         if (cell00 === null || cell01 === null || cell10 === null) {
             throw new Error('target body cells not found');
@@ -294,7 +294,7 @@ test.describe('column header pixel alignment', () => {
         const metrics = await page.evaluate(() => {
             const tableEl = document.querySelector<HTMLElement>('.editor-left-pane .editor-table');
             const header = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-detached-column-header-layer .editor-table-column-header[data-col="0"]');
-            const body = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index] .editor-table-cell[data-col="0"]');
+            const body = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-grid .editor-table-row[data-row-index] .editor-table-cell[data-col="0"]');
             const nextBody = body?.parentElement?.querySelector<HTMLElement>('.editor-table-cell[data-col="1"]') ?? null;
             if (tableEl === null || header === null || body === null || nextBody === null) throw new Error('target cells not found');
             const tableRect = tableEl.getBoundingClientRect();
@@ -319,7 +319,7 @@ test.describe('column header pixel alignment', () => {
         expect(Math.abs(metrics.nextBodyLeftCss - metrics.bodyRightCss)).toBeLessThan(0.01);
 
         const headerCell = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="0"]');
-        const bodyCell = table.locator('.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index] .editor-table-cell[data-col="0"]').first();
+        const bodyCell = table.locator('.editor-table-grid .editor-table-row[data-row-index] .editor-table-cell[data-col="0"]').first();
         const headerCorner = await getBottomRightBrightnessAsync(page, headerCell);
         const bodyCorner = await getBottomRightBrightnessAsync(page, bodyCell);
 
@@ -365,7 +365,7 @@ test.describe('column header pixel alignment', () => {
 
         const metrics = await page.evaluate(() => {
             const row = document.querySelector<HTMLElement>('.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="69"] .editor-table-row-header');
-            const data = document.querySelector<HTMLElement>('.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="69"] .editor-table-cell[data-col="0"]');
+            const data = document.querySelector<HTMLElement>('.editor-table-grid .editor-table-row[data-row-index="69"] .editor-table-cell[data-col="0"]');
             if (row === null || data === null) throw new Error('target row cells not found');
             const rowStyle = getComputedStyle(row);
             const rr = row.getBoundingClientRect();
@@ -442,10 +442,10 @@ test.describe('body cell junction pixel alignment', () => {
 
         const selectedClasses = await page.evaluate(() => {
             const selectors = [
-                '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
-                '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
-                '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
-                '.editor-table-main-viewport .editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="1"]',
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+                '.editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
+                '.editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="1"]',
             ];
             return selectors.map((selector) => {
                 const cell = document.querySelector<HTMLElement>(selector);

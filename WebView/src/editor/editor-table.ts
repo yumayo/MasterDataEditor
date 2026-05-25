@@ -281,7 +281,7 @@ export class EditorTable {
             this.bottomRightPane.appendChild(this.scrollContainer);
             this.scrollContainer.classList.add('editor-table-main-viewport');
             this.scrollContainer.appendChild(this.mainContent);
-            this.mainContent.appendChild(this.gridElement);
+            this.bottomRightPane.appendChild(this.gridElement);
             this.element.appendChild(this.topLeftPane);
             this.element.appendChild(this.topRightPane);
             this.element.appendChild(this.bottomLeftPane);

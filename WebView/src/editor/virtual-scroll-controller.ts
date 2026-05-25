@@ -17,10 +17,10 @@ export interface RenderedRowsUpdate {
 /**
  * バーチャルスクロールの制御を担うコントローラー。
  *
- * 仮想スクロール有効時は表示中の row div を通常フローから外し、論理行番号に基づく
- * top 絶対座標で配置する。
+ * 仮想スクロール有効時は表示中の row div を通常フローから外し、表示範囲の開始行を基準に
+ * リベースした小さい top 座標で配置する。
  * topSpacer / bottomSpacer は DOM インデックス互換とスクロール範囲確保のために残す。
- * bottomSpacer の高さ = header + totalRowCount * rowHeight（常に一定）
+ * bottomSpacer の高さ = header + totalRowCount * rowHeight（viewport anchored では 0）
  * これにより行差し替え時にテーブルレイアウトへ大きなギャップ更新を入れず、
  * 各行の座標をブラウザの通常フローではなくこちらで直接管理する。
  *
@@ -110,6 +110,10 @@ export class VirtualScrollController {
     private absoluteRowsLastHeaderHeight: number;
     private absoluteRowsLastRowHeight: number;
     private absoluteRowsLastTotalRowCount: number;
+    /** 表示中の行座標を小さい値へリベースするための基準行と、外側レイアウトから与えられる top オフセット。 */
+    private absoluteRowsOriginDataRowIndex: number;
+    private absoluteRowsLayoutTopOffsetPx: number;
+    private absoluteRowsViewportAnchored: boolean;
     private absoluteCellBorderBoxWidths: number[];
     private absoluteRowsLastCellWidthsKey: string;
 
@@ -138,6 +142,9 @@ export class VirtualScrollController {
         this.absoluteRowsLastHeaderHeight = -1;
         this.absoluteRowsLastRowHeight = -1;
         this.absoluteRowsLastTotalRowCount = -1;
+        this.absoluteRowsOriginDataRowIndex = 0;
+        this.absoluteRowsLayoutTopOffsetPx = 0;
+        this.absoluteRowsViewportAnchored = false;
         this.absoluteCellBorderBoxWidths = [];
         this.absoluteRowsLastCellWidthsKey = '';
 
@@ -285,6 +292,26 @@ export class VirtualScrollController {
 
     setScrollTopCompensationPx(value: number): void {
         this.scrollTopCompensationPx = value;
+    }
+
+    /**
+     * absolute rows の親グリッドに適用するレイアウト由来の top オフセットを設定する。
+     * EditorTableLayout の quadrant layout では固定ヘッダー分だけ上へずらす必要がある。
+     */
+    setAbsoluteRowsLayoutTopOffsetPx(value: number): void {
+        if (this.absoluteRowsLayoutTopOffsetPx === value) return;
+        this.absoluteRowsLayoutTopOffsetPx = value;
+        this.syncAbsoluteRowsContainerTop();
+    }
+
+    /**
+     * true の場合、行グリッドはスクロール内容ではなくビューポート直下のオーバーレイとして配置される。
+     * 親グリッドの top から scrollTop を差し引き、親・子の両方をビューポート近傍の座標に保つ。
+     */
+    setAbsoluteRowsViewportAnchored(enabled: boolean): void {
+        if (this.absoluteRowsViewportAnchored === enabled) return;
+        this.absoluteRowsViewportAnchored = enabled;
+        this.syncAbsoluteRowGeometry();
     }
 
     /** 表示範囲を強制再計算する（行挿入/削除/ソート/フィルター後） */
@@ -529,6 +556,29 @@ export class VirtualScrollController {
         element.style.top = top;
     }
 
+    private formatTopPx(value: number): string {
+        return `${Math.round(value)}px`;
+    }
+
+    private syncAbsoluteRowsContainerTop(rowHeight: number = this.actualRowHeight): void {
+        if (!this.usesAbsoluteRowLayout()) return;
+        const scrollTop = this.absoluteRowsViewportAnchored
+            ? (this.isHandlingScrollEvent ? this.currentScrollTop : this.scrollContainer.scrollTop)
+            : 0;
+        this.setInlineTopIfChanged(
+            this.tableElement,
+            this.formatTopPx(this.absoluteRowsLayoutTopOffsetPx + (this.absoluteRowsOriginDataRowIndex * rowHeight) - scrollTop)
+        );
+    }
+
+    private setAbsoluteRowsOriginDataRowIndex(dataRowIndex: number, rowHeight: number = this.actualRowHeight): boolean {
+        const nextOrigin = Math.max(this.frozenRowCount, dataRowIndex);
+        const changed = this.absoluteRowsOriginDataRowIndex !== nextOrigin;
+        this.absoluteRowsOriginDataRowIndex = nextOrigin;
+        this.syncAbsoluteRowsContainerTop(rowHeight);
+        return changed;
+    }
+
     private positionHeaderRow(): void {
         if (!this.usesAbsoluteRowLayout()) return;
         const headerRow = this.tableElement.children[0] as HTMLElement | null;
@@ -537,13 +587,16 @@ export class VirtualScrollController {
     }
 
     private getDataRowTopPx(dataRowIndex: number, headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): number {
-        return headerHeight + (dataRowIndex * rowHeight);
+        if (dataRowIndex < this.frozenRowCount) {
+            return headerHeight + (dataRowIndex * rowHeight);
+        }
+        return headerHeight + ((dataRowIndex - this.absoluteRowsOriginDataRowIndex) * rowHeight);
     }
 
     private positionDataRow(row: HTMLElement, dataRowIndex: number, headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): void {
         if (!this.usesAbsoluteRowLayout()) return;
         this.applyAbsoluteCellWidths(row);
-        this.setInlineTopIfChanged(row, `${this.getDataRowTopPx(dataRowIndex, headerHeight, rowHeight)}px`);
+        this.setInlineTopIfChanged(row, this.formatTopPx(this.getDataRowTopPx(dataRowIndex, headerHeight, rowHeight)));
     }
 
     private positionDataRowFromDataset(row: HTMLElement): void {
@@ -573,6 +626,7 @@ export class VirtualScrollController {
     private syncAbsoluteRowGeometry(headerHeight: number = this.actualHeaderHeight, rowHeight: number = this.actualRowHeight): boolean {
         if (!this.usesAbsoluteRowLayout()) return false;
         this.positionHeaderRow();
+        this.syncAbsoluteRowsContainerTop(rowHeight);
         const cellWidthsChanged = (!this.isHandlingScrollEvent || this.absoluteCellBorderBoxWidths.length === 0)
             ? this.syncAbsoluteCellWidthCache()
             : false;
@@ -581,7 +635,9 @@ export class VirtualScrollController {
             this.topSpacer.style.height = '0px';
         }
         if (this.bottomSpacer !== false) {
-            const contentHeight = Math.max(0, headerHeight + (this.totalRowCount * rowHeight));
+            const contentHeight = this.absoluteRowsViewportAnchored
+                ? 0
+                : Math.max(0, headerHeight + (this.totalRowCount * rowHeight));
             const height = `${contentHeight}px`;
             if (this.bottomSpacer.style.height !== height) this.bottomSpacer.style.height = height;
         }
@@ -712,6 +768,7 @@ export class VirtualScrollController {
         const newEnd = Math.min(this.totalRowCount, lastVisibleRow + this.frozenRowCount + VirtualScrollController.OVERSCAN);
 
         if (newStart === this.renderedStart && newEnd === this.renderedEnd) return;
+        const originChanged = this.setAbsoluteRowsOriginDataRowIndex(newStart, rowHeight);
 
         // スペーサー高さを行の入れ替え「前」に設定する。
         // 行を削除してからスペーサーを設定すると、一時的にコンテンツ高さが激減し
@@ -735,6 +792,7 @@ export class VirtualScrollController {
 
         this.renderedStart = newStart;
         this.renderedEnd = newEnd;
+        if (originChanged || absoluteGeometryChanged) this.positionExistingRows(headerHeight, rowHeight);
 
         // 行の入れ替え後に装飾（選択クラス、バリデーション、git差分等）を再適用する
         if (this.afterRowsUpdated !== false) {

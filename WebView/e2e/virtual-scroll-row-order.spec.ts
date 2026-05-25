@@ -201,4 +201,47 @@ test.describe('バーチャルスクロール行順序', () => {
             }
         }
     });
+
+    test('表示中の行DOMのtopがスクロール位置近傍にリベースされる', async ({ page }) => {
+        const fs: MockFileSystem = {
+            'schema/item.json': JSON.stringify({
+                header: [
+                    { key: 0, name: 'id', type: 'int' },
+                    { key: 1, name: 'name', type: 'string' },
+                    { key: 2, name: 'value', type: 'int' },
+                ],
+                primary_key: ['id'],
+            }),
+            'data/item.csv': generateCsv(5000),
+        };
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await page.locator('#explorer .explorer-file').getByText('item', { exact: true }).click();
+        const table = page.locator('.editor-left-slot .editor-table:visible').first();
+        await expect(table).toBeVisible();
+
+        const scrollContainer = page.locator('.editor-left-pane');
+        await scrollContainer.evaluate((el) => { el.scrollTop = 4000 * 21; });
+        await page.waitForTimeout(300);
+
+        const topMetrics = await table.evaluate((tableElement) => {
+            const rows = Array.from(tableElement.querySelectorAll<HTMLElement>(
+                '.editor-table-grid .editor-table-row:not(.editor-table-empty-row)'
+            ));
+            const rowTops = rows
+                .map(row => Number.parseFloat(row.style.top))
+                .filter(top => Number.isFinite(top));
+            const grid = tableElement.querySelector<HTMLElement>('.editor-table-grid');
+            return {
+                count: rowTops.length,
+                maxAbsRowTop: Math.max(...rowTops.map(top => Math.abs(top))),
+                gridTop: grid === null ? Number.NaN : Number.parseFloat(grid.style.top),
+            };
+        });
+
+        expect(topMetrics.count).toBeGreaterThan(0);
+        expect(topMetrics.maxAbsRowTop).toBeLessThan(5000);
+        expect(Math.abs(topMetrics.gridTop)).toBeLessThan(5000);
+    });
 });

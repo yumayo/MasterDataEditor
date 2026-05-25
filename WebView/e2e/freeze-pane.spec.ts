@@ -1319,8 +1319,8 @@ test.describe('フリーズペイン', () => {
 
                 const aligned = await page.evaluate(() => {
                     const headerCell = document.querySelector('.editor-left-pane .editor-table-pane-top-right .editor-table-column-header[data-col="2"]');
-                    const bodyRow = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-row[data-row-index="500"]');
-                    const bodyCell = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-row[data-row-index="500"] .editor-table-cell[data-col="2"]');
+                    const bodyRow = document.querySelector('.editor-left-pane .editor-table-grid .editor-table-row[data-row-index="500"]');
+                    const bodyCell = document.querySelector('.editor-left-pane .editor-table-grid .editor-table-row[data-row-index="500"] .editor-table-cell[data-col="2"]');
                     const detachedRow = document.querySelector('.editor-left-pane .editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="500"]');
                     if (!(headerCell instanceof HTMLElement)) throw new Error('header cell が見つかりません');
                     if (!(bodyRow instanceof HTMLElement)) throw new Error('body row が見つかりません');

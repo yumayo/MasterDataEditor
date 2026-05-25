@@ -51,7 +51,7 @@ test.describe('固定列セルの上矢印スクロール', () => {
         const afterSecondArrow = await scrollContainer.evaluate((element) => element.scrollTop);
 
         const metrics = await page.evaluate(() => {
-            const row = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)') as HTMLElement | null;
+            const row = document.querySelector('.editor-left-pane .editor-table-grid .editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)') as HTMLElement | null;
             const focusedCell = document.querySelector('.editor-left-pane .editor-table-detached-row-header-layer .editor-table-cell-focused') as HTMLElement | null;
             const container = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
             if (row === null || focusedCell === null || container === null) return null;

@@ -215,7 +215,7 @@ test.describe('BUG_0008: テーブルのヘッダーレイアウト', () => {
             const table = await openTableAsync(page, 'item');
 
             const firstDataRow = table
-                .locator('.editor-table-main-viewport .editor-table-row:not(.editor-table-empty-row)')
+                .locator('.editor-table-grid .editor-table-row:not(.editor-table-empty-row)')
                 .first();
             await expect(firstDataRow).toBeVisible();
             await expect(firstDataRow.locator('.editor-table-cell').nth(1)).toHaveText('1');

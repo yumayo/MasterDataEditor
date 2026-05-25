@@ -36,7 +36,7 @@ test.describe('バッファ空行からの上矢印スクロール', () => {
         await scrollContainer.evaluate((element) => { element.scrollTop = element.scrollHeight; });
         await page.waitForTimeout(100);
 
-        const emptyRowCell = table.locator('.editor-table-main-viewport .editor-table-empty-row .editor-table-cell[data-col="2"]');
+        const emptyRowCell = table.locator('.editor-table-grid .editor-table-empty-row .editor-table-cell[data-col="2"]');
         await expect(emptyRowCell).toBeVisible();
         await emptyRowCell.click();
         await page.waitForTimeout(50);
@@ -47,7 +47,7 @@ test.describe('バッファ空行からの上矢印スクロール', () => {
 
         const metrics = await page.evaluate(() => {
             const container = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
-            const focusedCell = document.querySelector('.editor-left-pane .editor-table-main-viewport .editor-table-cell-focused') as HTMLElement | null;
+            const focusedCell = document.querySelector('.editor-left-pane .editor-table-grid .editor-table-cell-focused') as HTMLElement | null;
             if (container === null || focusedCell === null) return null;
             const containerRect = container.getBoundingClientRect();
             const focusedRect = focusedCell.getBoundingClientRect();
