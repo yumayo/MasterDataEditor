@@ -167,7 +167,7 @@ export class Editor {
             return;
         }
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
-        const metrics = activeState.editorTable.getScrollMetrics();
+        const metrics = activeState.editorTable.getPhysicalScrollMetrics();
         const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
         const proxyHeight = maxScrollTop + this.leftPane.clientHeight;
         this.leftPaneScrollProxy.style.height = `${proxyHeight}px`;
@@ -189,11 +189,11 @@ export class Editor {
         const activeState = this.tab.getActiveTabState();
         if (activeState === false) return;
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
-        const metrics = activeState.editorTable.getScrollMetrics();
+        const metrics = activeState.editorTable.getPhysicalScrollMetrics();
         if (this.leftPane.scrollTop === metrics.scrollTop) return;
         this.isSyncingTableFromLeftPane = true;
         try {
-            activeState.editorTable.restoreScrollPosition(this.leftPane.scrollTop, metrics.scrollLeft);
+            activeState.editorTable.restorePhysicalScrollPosition(this.leftPane.scrollTop, metrics.scrollLeft);
         } finally {
             this.isSyncingTableFromLeftPane = false;
         }

@@ -11,11 +11,26 @@ export const ROW_HEADER_WIDTH_PX = 40;
 /** blame列の幅(px) */
 export const BLAME_COLUMN_WIDTH_PX = 200;
 
+/** content-box セルのレイアウト上の水平余白(px)。padding左右12px + border-right 1px */
+const CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX = 13;
+
+/** 行ヘッダーセルの実レイアウト幅(px) */
+export const ROW_HEADER_LAYOUT_WIDTH_PX = ROW_HEADER_WIDTH_PX + CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX;
+
 /** 行のCSSheightプロパティ値(px) */
 export const ROW_HEIGHT_PX = 20;
 
 /** border-bottom: 1px を含む行の実描画高さ(px)。バーチャルスクロールの位置計算に使用する */
 export const ROW_TOTAL_HEIGHT_PX = 21;
+
+/** ブラウザの巨大DOM座標誤差を避けつつ、スクロールバーつまみを小さく保つ物理コンテンツ高さ上限(px) */
+export const MAX_SCROLL_CONTENT_HEIGHT_PX = 262_144;
+
+/** EditorTable の自作縦スクロールバー幅(px) */
+export const CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX = 14;
+
+/** 自作縦スクロールバーのつまみ最小高さ(px) */
+export const CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX = 18;
 
 /** 行のCSSheightプロパティ値（文字列） */
 export const DEFAULT_ROW_HEIGHT = `${ROW_HEIGHT_PX}px`;
@@ -32,7 +47,7 @@ export const REFERENCE_HINT_FONT = '11.7px sans-serif';
 /** 参照ヒントの水平マージン(px)（CSSの .cell-reference-hint { margin-right: 4px } に対応） */
 export const REFERENCE_HINT_MARGIN_PX = 4;
 
-/** セル水平方向の余白（パディング左右12px + ボーダー右1px + セル内部余裕4px）。
+/** セル水平方向の自動幅計算用余白（パディング左右12px + ボーダー右1px + セル内部余裕4px）。
  *  リサイズハンドルは position: absolute のためテキスト幅計算に影響しない。 */
 export const CELL_HORIZONTAL_EXTRA = 17;
 

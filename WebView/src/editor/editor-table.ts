@@ -5,7 +5,18 @@ import {ContextMenu} from "../ui/context-menu";
 import {History} from "./history";
 import {Command, CellChange, CellChangeCommand, RenderAsHtmlToggleCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
-import {DEFAULT_ROW_HEIGHT, CELL_FONT, REFERENCE_HINT_FONT, REFERENCE_HINT_MARGIN_PX, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX, ROW_TOTAL_HEIGHT_PX, ROW_HEADER_WIDTH_PX} from "../core/constant";
+import {
+    DEFAULT_ROW_HEIGHT,
+    CELL_FONT,
+    REFERENCE_HINT_FONT,
+    REFERENCE_HINT_MARGIN_PX,
+    CELL_HORIZONTAL_EXTRA,
+    MIN_COLUMN_WIDTH_PX,
+    ROW_TOTAL_HEIGHT_PX,
+    ROW_HEADER_WIDTH_PX,
+    CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX,
+    CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX,
+} from "../core/constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
 import {RowDragController} from "./row-drag-controller";
@@ -76,6 +87,7 @@ export class EditorTable {
     private readonly store: InMemoryTableStore;
     /** 参照箇所を表示するサイドバー（コンテキストメニュー・ブックマーク操作で使用） */
     readonly sidebar: Sidebar;
+    private readonly scrollBinding: ScrollViewportController;
     private readonly scrollContainer: HTMLElement;
     private readonly usesInternalMainViewport: boolean;
     private readonly topLeftPane: HTMLElement;
@@ -88,6 +100,8 @@ export class EditorTable {
     private readonly topRightContent: HTMLElement;
     private readonly leftBottomContent: HTMLElement;
     private readonly mainContent: HTMLElement;
+    private readonly customVerticalScrollbar: HTMLElement;
+    private readonly customVerticalScrollbarThumb: HTMLElement;
     private readonly detachedColumnHeaderLayer: HTMLElement;
     private readonly detachedRowHeaderLayer: HTMLElement;
     private readonly detachedFrozenRowBackgroundLayer: HTMLElement;
@@ -174,6 +188,9 @@ export class EditorTable {
     cachedDomColToStoreCol: number[];
     /** バーチャルスクロールコントローラー */
     private readonly virtualScroll: VirtualScrollController;
+    private customVerticalScrollbarDragState: { startClientY: number; startScrollTop: number } | null;
+    private readonly handleCustomVerticalScrollbarPointerMoveBound: (event: PointerEvent) => void;
+    private readonly handleCustomVerticalScrollbarPointerUpBound: (event: PointerEvent) => void;
     /** 固定行列・detached layer 表示同期モジュール */
     private layout: EditorTableLayout;
     /** ソート・フィルター表示制御モジュール */
@@ -225,6 +242,7 @@ export class EditorTable {
         this.contextMenu = contextMenu;
         this.history = history;
         this.areaResizer = areaResizer;
+        this.scrollBinding = scrollBinding;
         this.sidebar = sidebar;
         this.scrollContainer = scrollContainer;
         this.usesInternalMainViewport = internalScrollLayout;
@@ -252,6 +270,11 @@ export class EditorTable {
         this.leftBottomContent.classList.add('editor-table-pane-content', 'editor-table-left-bottom-content');
         this.mainContent = document.createElement('div');
         this.mainContent.classList.add('editor-table-main-content');
+        this.customVerticalScrollbar = document.createElement('div');
+        this.customVerticalScrollbar.classList.add('editor-table-logical-vertical-scrollbar');
+        this.customVerticalScrollbarThumb = document.createElement('div');
+        this.customVerticalScrollbarThumb.classList.add('editor-table-logical-vertical-scrollbar-thumb');
+        this.customVerticalScrollbar.appendChild(this.customVerticalScrollbarThumb);
         this.detachedColumnHeaderLayer = document.createElement('div');
         this.detachedColumnHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-column-header-layer');
         this.detachedRowHeaderLayer = document.createElement('div');
@@ -266,6 +289,9 @@ export class EditorTable {
         this.detachedFrozenRowDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-row-layer');
         this.detachedFrozenCornerDataLayer = document.createElement('div');
         this.detachedFrozenCornerDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-corner-layer');
+        this.customVerticalScrollbarDragState = null;
+        this.handleCustomVerticalScrollbarPointerMoveBound = (event: PointerEvent) => this.handleCustomVerticalScrollbarPointerMove(event);
+        this.handleCustomVerticalScrollbarPointerUpBound = (event: PointerEvent) => this.handleCustomVerticalScrollbarPointerUp(event);
         if (this.usesInternalMainViewport) {
             this.topLeftPane.appendChild(this.topLeftContent);
             this.topLeftContent.appendChild(this.detachedCornerLayer);
@@ -280,8 +306,13 @@ export class EditorTable {
             this.leftBottomContent.appendChild(this.detachedRowHeaderLayer);
             this.bottomRightPane.appendChild(this.scrollContainer);
             this.scrollContainer.classList.add('editor-table-main-viewport');
+            this.scrollContainer.classList.add('editor-table-main-viewport--custom-vertical-scroll');
             this.scrollContainer.appendChild(this.mainContent);
             this.bottomRightPane.appendChild(this.gridElement);
+            this.bottomRightPane.appendChild(this.customVerticalScrollbar);
+            this.scrollContainer.addEventListener('wheel', (event) => this.handleCompressedScrollWheel(event), { passive: false });
+            this.customVerticalScrollbar.addEventListener('pointerdown', (event) => this.handleCustomVerticalScrollbarPointerDown(event));
+            this.customVerticalScrollbar.addEventListener('wheel', (event) => this.handleCustomVerticalScrollbarWheel(event), { passive: false });
             this.element.appendChild(this.topLeftPane);
             this.element.appendChild(this.topRightPane);
             this.element.appendChild(this.bottomLeftPane);
@@ -333,6 +364,13 @@ export class EditorTable {
         // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
         this.virtualScroll = new VirtualScrollController(
             this.gridElement, scrollContainer, emptyRowCount, enableVirtualScroll
+        );
+        this.scrollBinding.setVerticalScrollMapper(
+            () => this.virtualScroll.getLogicalScrollTop(),
+            (logicalScrollTop: number) => {
+                this.virtualScroll.setLogicalScrollTop(logicalScrollTop);
+                return this.virtualScroll.getPhysicalScrollTop(logicalScrollTop);
+            },
         );
         this.layout = new EditorTableLayout(this);
         this.sortFilter = new EditorTableSortFilter(this);
@@ -449,8 +487,14 @@ export class EditorTable {
     setInlineTransformIfChanged(element: HTMLElement, transform: string): void { this.layout.setInlineTransformIfChanged(element, transform); }
     setInlineZIndexIfChanged(element: HTMLElement, zIndex: string): void { this.layout.setInlineZIndexIfChanged(element, zIndex); }
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void { this.layout.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft); }
-    private syncScrollBoundVisuals(): void { this.layout.syncScrollBoundVisuals(); }
-    syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void { this.layout.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft); }
+    private syncScrollBoundVisuals(): void {
+        this.layout.syncScrollBoundVisuals();
+        this.updateCustomVerticalScrollbar();
+    }
+    syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
+        this.layout.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft);
+        this.updateCustomVerticalScrollbar();
+    }
     refreshDetachedHeaderLayout(): void { this.layout.refreshDetachedHeaderLayout(); }
     syncDetachedVisualState(): void { this.layout.syncDetachedVisualState(); }
     setDetachedHeaderTopOffset(offsetPx: number): void { this.layout.setDetachedHeaderTopOffset(offsetPx); }
@@ -837,10 +881,29 @@ export class EditorTable {
     }
 
     getScrollTop(): number {
-        return this.scrollContainer.scrollTop;
+        return this.virtualScroll.getLogicalScrollTop();
+    }
+
+    getCustomVerticalScrollbarWidthPx(): number {
+        return this.usesInternalMainViewport ? CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX : 0;
+    }
+
+    usesLogicalVerticalScroll(): boolean {
+        return this.usesInternalMainViewport && this.virtualScroll.handlesScrollEvents();
     }
 
     getScrollMetrics(): { scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientHeight: number; clientWidth: number } {
+        return {
+            scrollTop: this.getScrollTop(),
+            scrollLeft: this.scrollContainer.scrollLeft,
+            scrollHeight: this.virtualScroll.getLogicalScrollHeightPx(),
+            scrollWidth: this.scrollContainer.scrollWidth,
+            clientHeight: this.scrollContainer.clientHeight,
+            clientWidth: this.scrollContainer.clientWidth,
+        };
+    }
+
+    getPhysicalScrollMetrics(): { scrollTop: number; scrollLeft: number; scrollHeight: number; scrollWidth: number; clientHeight: number; clientWidth: number } {
         return {
             scrollTop: this.scrollContainer.scrollTop,
             scrollLeft: this.scrollContainer.scrollLeft,
@@ -874,16 +937,154 @@ export class EditorTable {
 
     scrollByInput(deltaTopPx: number, deltaLeftPx: number): void {
         if (deltaTopPx === 0 && deltaLeftPx === 0) return;
-        this.scrollContainer.scrollTop += deltaTopPx;
+        this.virtualScroll.setLogicalScrollTop(this.getScrollTop() + deltaTopPx);
         this.scrollContainer.scrollLeft += deltaLeftPx;
+        this.scrollContainer.dispatchEvent(new Event('scroll'));
         this.syncScrollBoundVisuals();
+        this.emitScrollMetricsChanged();
     }
 
     restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
-        this.scrollContainer.scrollTop = scrollTop;
+        this.virtualScroll.setLogicalScrollTop(scrollTop);
         this.scrollContainer.scrollLeft = scrollLeft;
+        this.scrollContainer.dispatchEvent(new Event('scroll'));
         this.syncScrollBoundVisuals();
         this.emitScrollMetricsChanged();
+    }
+
+    restorePhysicalScrollPosition(scrollTop: number, scrollLeft: number): void {
+        this.virtualScroll.setPhysicalScrollTop(scrollTop);
+        this.scrollContainer.scrollLeft = scrollLeft;
+        this.scrollContainer.dispatchEvent(new Event('scroll'));
+        this.syncScrollBoundVisuals();
+        this.emitScrollMetricsChanged();
+    }
+
+    private handleCompressedScrollWheel(event: WheelEvent): void {
+        if (!this.virtualScroll.usesCompressedVerticalScroll()) return;
+        if (event.ctrlKey) return;
+        let deltaX = event.deltaX;
+        let deltaY = event.deltaY;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            deltaX *= 16;
+            deltaY *= 16;
+        } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+            deltaX *= this.scrollContainer.clientWidth;
+            deltaY *= this.scrollContainer.clientHeight;
+        }
+        if (event.shiftKey && deltaX === 0 && deltaY !== 0) {
+            deltaX = deltaY;
+            deltaY = 0;
+        }
+        if (deltaX === 0 && deltaY === 0) return;
+        event.preventDefault();
+        this.scrollByInput(deltaY, deltaX);
+    }
+
+    private getCustomVerticalScrollbarTrackHeightPx(): number {
+        const horizontalScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
+        const bottom = `${horizontalScrollbarHeight}px`;
+        if (this.customVerticalScrollbar.style.bottom !== bottom) {
+            this.customVerticalScrollbar.style.bottom = bottom;
+        }
+        return this.customVerticalScrollbar.clientHeight;
+    }
+
+    updateCustomVerticalScrollbar(): void {
+        if (!this.usesInternalMainViewport) return;
+        const metrics = this.getScrollMetrics();
+        const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+        const trackHeight = this.getCustomVerticalScrollbarTrackHeightPx();
+        if (maxScrollTop <= 0 || trackHeight <= 0) {
+            this.customVerticalScrollbar.classList.add('editor-table-logical-vertical-scrollbar--disabled');
+            this.customVerticalScrollbarThumb.style.height = '0px';
+            this.customVerticalScrollbarThumb.style.transform = 'translateY(0px)';
+            return;
+        }
+
+        this.customVerticalScrollbar.classList.remove('editor-table-logical-vertical-scrollbar--disabled');
+        const proportionalThumbHeight = trackHeight * (metrics.clientHeight / metrics.scrollHeight);
+        const thumbHeight = Math.min(
+            trackHeight,
+            Math.max(CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX, Math.round(proportionalThumbHeight))
+        );
+        const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+        const thumbTop = maxThumbTop <= 0 ? 0 : Math.round((metrics.scrollTop / maxScrollTop) * maxThumbTop);
+        this.customVerticalScrollbarThumb.style.height = `${thumbHeight}px`;
+        this.customVerticalScrollbarThumb.style.transform = `translateY(${thumbTop}px)`;
+    }
+
+    private getLogicalScrollTopFromCustomScrollbarPointer(clientY: number): number {
+        const metrics = this.getScrollMetrics();
+        const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+        if (maxScrollTop <= 0) return 0;
+        const trackRect = this.customVerticalScrollbar.getBoundingClientRect();
+        const trackHeight = this.getCustomVerticalScrollbarTrackHeightPx();
+        const thumbHeight = this.customVerticalScrollbarThumb.offsetHeight;
+        const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+        if (maxThumbTop <= 0) return 0;
+        const thumbTop = Math.min(maxThumbTop, Math.max(0, clientY - trackRect.top - (thumbHeight / 2)));
+        return (thumbTop / maxThumbTop) * maxScrollTop;
+    }
+
+    private handleCustomVerticalScrollbarPointerDown(event: PointerEvent): void {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        this.focusTable();
+        if (event.target === this.customVerticalScrollbarThumb) {
+            this.customVerticalScrollbarDragState = {
+                startClientY: event.clientY,
+                startScrollTop: this.getScrollTop(),
+            };
+        } else {
+            this.restoreScrollPosition(
+                this.getLogicalScrollTopFromCustomScrollbarPointer(event.clientY),
+                this.getScrollLeft()
+            );
+            this.customVerticalScrollbarDragState = {
+                startClientY: event.clientY,
+                startScrollTop: this.getScrollTop(),
+            };
+        }
+        this.customVerticalScrollbar.classList.add('editor-table-logical-vertical-scrollbar--dragging');
+        this.customVerticalScrollbar.setPointerCapture(event.pointerId);
+        window.addEventListener('pointermove', this.handleCustomVerticalScrollbarPointerMoveBound);
+        window.addEventListener('pointerup', this.handleCustomVerticalScrollbarPointerUpBound, { once: true });
+    }
+
+    private handleCustomVerticalScrollbarPointerMove(event: PointerEvent): void {
+        const dragState = this.customVerticalScrollbarDragState;
+        if (dragState === null) return;
+        event.preventDefault();
+        const metrics = this.getScrollMetrics();
+        const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+        if (maxScrollTop <= 0) return;
+        const trackHeight = this.getCustomVerticalScrollbarTrackHeightPx();
+        const thumbHeight = this.customVerticalScrollbarThumb.offsetHeight;
+        const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+        if (maxThumbTop <= 0) return;
+        const deltaRatio = (event.clientY - dragState.startClientY) / maxThumbTop;
+        const nextScrollTop = dragState.startScrollTop + (deltaRatio * maxScrollTop);
+        this.restoreScrollPosition(nextScrollTop, this.getScrollLeft());
+    }
+
+    private handleCustomVerticalScrollbarPointerUp(_event: PointerEvent): void {
+        this.customVerticalScrollbarDragState = null;
+        this.customVerticalScrollbar.classList.remove('editor-table-logical-vertical-scrollbar--dragging');
+        window.removeEventListener('pointermove', this.handleCustomVerticalScrollbarPointerMoveBound);
+    }
+
+    private handleCustomVerticalScrollbarWheel(event: WheelEvent): void {
+        if (event.ctrlKey) return;
+        let deltaY = event.deltaY;
+        if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+            deltaY *= 16;
+        } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+            deltaY *= this.scrollContainer.clientHeight;
+        }
+        if (deltaY === 0) return;
+        event.preventDefault();
+        this.scrollByInput(deltaY, 0);
     }
 
     /**
@@ -1437,6 +1638,13 @@ export class EditorTable {
     ensureRowVisible(row: number): void {
         if (row < 1) return;
         this.virtualScroll.ensureRowVisible(row - 1);
+        this.updateCustomVerticalScrollbar();
+    }
+
+    centerRowVertically(row: number): void {
+        if (row < 1) return;
+        this.virtualScroll.centerRowVertically(row - 1);
+        this.updateCustomVerticalScrollbar();
     }
 
     getCellRectAt(row: number, column: number): DOMRect {

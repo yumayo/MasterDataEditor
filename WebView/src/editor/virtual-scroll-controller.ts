@@ -63,7 +63,7 @@ export class VirtualScrollController {
     /** recalculate の再帰呼び出しを防止するフラグ */
     private isRecalculating: boolean;
 
-    /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
+    /** データ行の配置ピッチ(px)。セル20px + border-bottom 1px の固定値を使う。 */
     private actualRowHeight: number;
     /** 実行時に測定したヘッダー行の実際の高さ(px)。コメント付き2行ヘッダーを含む */
     private actualHeaderHeight: number;
@@ -114,6 +114,11 @@ export class VirtualScrollController {
     private absoluteRowsOriginDataRowIndex: number;
     private absoluteRowsLayoutTopOffsetPx: number;
     private absoluteRowsViewportAnchored: boolean;
+    /** スクロールバー用DOM高さを圧縮する場合の論理/物理コンテンツ高さ */
+    private logicalScrollHeightPx: number;
+    private physicalScrollHeightPx: number;
+    /** 縦方向の正規スクロール位置。DOM scrollTop は互換用に同期するだけで、表示計算はこの値を使う。 */
+    private logicalScrollTopPx: number;
     private absoluteCellBorderBoxWidths: number[];
     private absoluteRowsLastCellWidthsKey: string;
 
@@ -145,6 +150,9 @@ export class VirtualScrollController {
         this.absoluteRowsOriginDataRowIndex = 0;
         this.absoluteRowsLayoutTopOffsetPx = 0;
         this.absoluteRowsViewportAnchored = false;
+        this.logicalScrollHeightPx = 0;
+        this.physicalScrollHeightPx = 0;
+        this.logicalScrollTopPx = 0;
         this.absoluteCellBorderBoxWidths = [];
         this.absoluteRowsLastCellWidthsKey = '';
 
@@ -227,7 +235,8 @@ export class VirtualScrollController {
     /** スクロールイベントハンドラ。同期的に再計算を実行する */
     onScroll(): void {
         if (!this.enabled) return;
-        this.currentScrollTop = this.scrollContainer.scrollTop;
+        this.syncLogicalScrollTopFromPhysicalIfNeeded();
+        this.currentScrollTop = this.getLogicalScrollTop();
         this.currentScrollLeft = this.scrollContainer.scrollLeft;
         this.isHandlingScrollEvent = true;
         try {
@@ -287,7 +296,77 @@ export class VirtualScrollController {
      */
     resetScrollTop(): void {
         if (!this.enabled) return;
-        this.scrollContainer.scrollTop = 0;
+        this.setLogicalScrollTop(0);
+    }
+
+    setScrollContentHeightPx(logicalHeightPx: number, physicalHeightPx: number): void {
+        const previousLogicalScrollTop = this.getLogicalScrollTop();
+        this.logicalScrollHeightPx = Math.max(0, logicalHeightPx);
+        this.physicalScrollHeightPx = Math.max(0, physicalHeightPx);
+        this.logicalScrollTopPx = this.clampLogicalScrollTop(previousLogicalScrollTop);
+        this.syncPhysicalScrollTopFromLogical();
+    }
+
+    getLogicalScrollTop(): number {
+        if (this.enabled) return this.clampLogicalScrollTop(this.logicalScrollTopPx);
+        return this.mapPhysicalScrollTopToLogical(this.scrollContainer.scrollTop);
+    }
+
+    mapPhysicalScrollTopToLogical(physicalScrollTop: number): number {
+        const { logicalMaxScrollTop, physicalMaxScrollTop } = this.getVerticalScrollMaxes();
+        if (logicalMaxScrollTop <= physicalMaxScrollTop || physicalMaxScrollTop <= 0) {
+            return Math.min(logicalMaxScrollTop, Math.max(0, physicalScrollTop));
+        }
+        const clampedPhysicalScrollTop = Math.min(physicalMaxScrollTop, Math.max(0, physicalScrollTop));
+        return clampedPhysicalScrollTop * (logicalMaxScrollTop / physicalMaxScrollTop);
+    }
+
+    getPhysicalScrollTop(logicalScrollTop: number): number {
+        const { logicalMaxScrollTop, physicalMaxScrollTop } = this.getVerticalScrollMaxes();
+        if (logicalMaxScrollTop <= 0) return 0;
+        if (physicalMaxScrollTop <= 0) return 0;
+        if (logicalMaxScrollTop <= physicalMaxScrollTop) {
+            return Math.min(physicalMaxScrollTop, Math.max(0, logicalScrollTop));
+        }
+        return Math.min(physicalMaxScrollTop, Math.max(0, logicalScrollTop) * (physicalMaxScrollTop / logicalMaxScrollTop));
+    }
+
+    setLogicalScrollTop(logicalScrollTop: number): boolean {
+        if (!this.enabled) {
+            const nextPhysicalScrollTop = Math.max(0, logicalScrollTop);
+            const changed = Math.abs(this.scrollContainer.scrollTop - nextPhysicalScrollTop) > 0.001;
+            if (changed) this.scrollContainer.scrollTop = nextPhysicalScrollTop;
+            return changed;
+        }
+        const nextLogicalScrollTop = this.clampLogicalScrollTop(logicalScrollTop);
+        const changed = Math.abs(this.logicalScrollTopPx - nextLogicalScrollTop) > 0.001;
+        this.logicalScrollTopPx = nextLogicalScrollTop;
+        this.syncPhysicalScrollTopFromLogical();
+        if (changed) this.recalculate();
+        return changed;
+    }
+
+    setPhysicalScrollTop(physicalScrollTop: number): boolean {
+        const nextLogicalScrollTop = this.mapPhysicalScrollTopToLogical(physicalScrollTop);
+        const changed = this.setLogicalScrollTop(nextLogicalScrollTop);
+        const nextPhysicalScrollTop = this.getPhysicalScrollTop(this.logicalScrollTopPx);
+        if (Math.abs(this.scrollContainer.scrollTop - nextPhysicalScrollTop) > 1) {
+            this.scrollContainer.scrollTop = nextPhysicalScrollTop;
+        }
+        return changed;
+    }
+
+    getLogicalScrollHeightPx(): number {
+        return this.logicalScrollHeightPx > 0 ? this.logicalScrollHeightPx : this.scrollContainer.scrollHeight;
+    }
+
+    getLogicalMaxScrollTop(): number {
+        return this.getVerticalScrollMaxes().logicalMaxScrollTop;
+    }
+
+    usesCompressedVerticalScroll(): boolean {
+        const { logicalMaxScrollTop, physicalMaxScrollTop } = this.getVerticalScrollMaxes();
+        return logicalMaxScrollTop > physicalMaxScrollTop;
     }
 
     setScrollTopCompensationPx(value: number): void {
@@ -421,7 +500,7 @@ export class VirtualScrollController {
 
     refreshMeasuredGeometry(): void {
         this.measureHeaderHeight();
-        this.measureActualRowHeight();
+        this.useFixedActualRowHeight();
         if (this.syncAbsoluteRowGeometry()) this.positionExistingRows();
     }
 
@@ -486,41 +565,28 @@ export class VirtualScrollController {
         if (!this.enabled) return;
         // 固定行は常に表示されているためスクロール不要
         if (dataRowIndex < this.frozenRowCount) return;
-        this.measureActualRowHeight();
+        const currentLogicalScrollTop = this.getLogicalScrollTop();
+        const targetLogicalScrollTop = this.getLogicalScrollTopForRowVisible(dataRowIndex, currentLogicalScrollTop);
+        if (Math.abs(targetLogicalScrollTop - currentLogicalScrollTop) > 0.5) {
+            this.setLogicalScrollTop(targetLogicalScrollTop);
+            this.syncScrollBoundVisuals(targetLogicalScrollTop, this.scrollContainer.scrollLeft);
+        } else {
+            this.recalculate();
+        }
+    }
+
+    centerRowVertically(dataRowIndex: number): void {
+        if (!this.enabled) return;
+        if (dataRowIndex < this.frozenRowCount) return;
+        this.useFixedActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
-        // 行の絶対位置を計算する。固定行は detached/transform によりヘッダー直下へ固定表示されるため、
-        // 非固定行の表示領域はヘッダー + 固定行の高さ分だけ下にオフセットされる。
-        // しかし仮想コンテンツ全体の高さは全行数 * rowHeight で計算するため、
-        // 非固定行の絶対位置は headerHeight + dataRowIndex * rowHeight のまま。
-        const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
-        const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
-        const viewTop = this.scrollContainer.scrollTop + this.scrollTopCompensationPx;
-        const viewBottom = viewTop + this.scrollContainer.clientHeight;
-        let targetScrollTop = this.scrollContainer.scrollTop + this.scrollTopCompensationPx;
-        if (rowAbsoluteTop < viewTop) {
-            const frozenHeight = this.frozenRowCount * rowHeight;
-            // 内部スクロールでは compensation 済みなので、ヘッダー高さを二重に引かない。
-            const topInset = this.scrollTopCompensationPx > 0 ? 0 : headerHeight + frozenHeight;
-            targetScrollTop = rowAbsoluteTop - topInset;
-        } else if (rowAbsoluteBottom > viewBottom) {
-            targetScrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
-        }
-        const rawTargetScrollTop = Math.max(0, targetScrollTop - this.scrollTopCompensationPx);
-        if (rawTargetScrollTop !== this.scrollContainer.scrollTop) {
-            this.scrollContainer.scrollTop = rawTargetScrollTop;
-            this.recalculate();
-            this.syncScrollBoundVisuals(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
-            // スペーサーがテーブル内（display:table-row）にあるため、recalculate のDOM操作後に
-            // ブラウザの非同期レイアウト再計算で scrollTop がリセットされることがある。
-            // rAF 後に scrollTop を再設定して非同期リセットに対応する。
-            const container = this.scrollContainer;
-            requestAnimationFrame(() => {
-                if (container.scrollTop !== rawTargetScrollTop) {
-                    container.scrollTop = rawTargetScrollTop;
-                    container.dispatchEvent(new Event('scroll'));
-                }
-            });
+        const rowCenter = headerHeight + (dataRowIndex * rowHeight) + (rowHeight / 2);
+        const targetLogicalScrollTop = this.clampLogicalScrollTop(
+            rowCenter - (this.scrollContainer.clientHeight / 2) - this.scrollTopCompensationPx
+        );
+        if (this.setLogicalScrollTop(targetLogicalScrollTop)) {
+            this.syncScrollBoundVisuals(targetLogicalScrollTop, this.scrollContainer.scrollLeft);
         } else {
             this.recalculate();
         }
@@ -547,6 +613,58 @@ export class VirtualScrollController {
     // 内部メソッド
     // =========================================================================
 
+    private clampLogicalScrollTop(logicalScrollTop: number): number {
+        return Math.min(this.getVerticalScrollMaxes().logicalMaxScrollTop, Math.max(0, logicalScrollTop));
+    }
+
+    private syncPhysicalScrollTopFromLogical(): void {
+        const nextPhysicalScrollTop = this.getPhysicalScrollTop(this.logicalScrollTopPx);
+        if (!this.isHandlingScrollEvent && Math.abs(this.scrollContainer.scrollTop - nextPhysicalScrollTop) > 1) {
+            this.scrollContainer.scrollTop = nextPhysicalScrollTop;
+        }
+    }
+
+    private syncLogicalScrollTopFromPhysicalIfNeeded(): void {
+        if (!this.enabled) return;
+        const physicalScrollTop = this.scrollContainer.scrollTop;
+        const expectedPhysicalScrollTop = this.getPhysicalScrollTop(this.logicalScrollTopPx);
+        if (Math.abs(physicalScrollTop - expectedPhysicalScrollTop) <= 1) return;
+        this.logicalScrollTopPx = this.clampLogicalScrollTop(this.mapPhysicalScrollTopToLogical(physicalScrollTop));
+    }
+
+    private getLogicalScrollTopForRowVisible(dataRowIndex: number, currentLogicalScrollTop: number): number {
+        this.useFixedActualRowHeight();
+        const rowHeight = this.actualRowHeight;
+        const headerHeight = this.getHeaderHeight();
+        // 行の絶対位置を計算する。固定行は detached/transform によりヘッダー直下へ固定表示されるため、
+        // 非固定行の表示領域はヘッダー + 固定行の高さ分だけ下にオフセットされる。
+        // しかし仮想コンテンツ全体の高さは全行数 * rowHeight で計算するため、
+        // 非固定行の絶対位置は headerHeight + dataRowIndex * rowHeight のまま。
+        const rowAbsoluteTop = dataRowIndex * rowHeight + headerHeight;
+        const rowAbsoluteBottom = rowAbsoluteTop + rowHeight;
+        const viewTop = currentLogicalScrollTop + this.scrollTopCompensationPx;
+        const viewBottom = viewTop + this.scrollContainer.clientHeight;
+        let targetScrollTop = currentLogicalScrollTop + this.scrollTopCompensationPx;
+        if (rowAbsoluteTop < viewTop) {
+            const frozenHeight = this.frozenRowCount * rowHeight;
+            // 内部スクロールでは compensation 済みなので、ヘッダー高さを二重に引かない。
+            const topInset = this.scrollTopCompensationPx > 0 ? 0 : headerHeight + frozenHeight;
+            targetScrollTop = rowAbsoluteTop - topInset;
+        } else if (rowAbsoluteBottom > viewBottom) {
+            targetScrollTop = rowAbsoluteBottom - this.scrollContainer.clientHeight;
+        }
+        return this.clampLogicalScrollTop(targetScrollTop - this.scrollTopCompensationPx);
+    }
+
+    private getVerticalScrollMaxes(): { logicalMaxScrollTop: number; physicalMaxScrollTop: number } {
+        const logicalHeight = this.logicalScrollHeightPx > 0 ? this.logicalScrollHeightPx : this.scrollContainer.scrollHeight;
+        const physicalHeight = this.physicalScrollHeightPx > 0 ? this.physicalScrollHeightPx : this.scrollContainer.scrollHeight;
+        return {
+            logicalMaxScrollTop: Math.max(0, logicalHeight - this.scrollContainer.clientHeight),
+            physicalMaxScrollTop: Math.max(0, physicalHeight - this.scrollContainer.clientHeight),
+        };
+    }
+
     private usesAbsoluteRowLayout(): boolean {
         return this.enabled;
     }
@@ -563,7 +681,7 @@ export class VirtualScrollController {
     private syncAbsoluteRowsContainerTop(rowHeight: number = this.actualRowHeight): void {
         if (!this.usesAbsoluteRowLayout()) return;
         const scrollTop = this.absoluteRowsViewportAnchored
-            ? (this.isHandlingScrollEvent ? this.currentScrollTop : this.scrollContainer.scrollTop)
+            ? (this.isHandlingScrollEvent ? this.currentScrollTop : this.getLogicalScrollTop())
             : 0;
         this.setInlineTopIfChanged(
             this.tableElement,
@@ -697,29 +815,16 @@ export class VirtualScrollController {
         const headerRow = this.tableElement.children[0] as HTMLElement | null;
         if (headerRow === null) return;
         const measured = getLayoutBorderBoxHeightPx(headerRow);
-        if (measured > 0) this.actualHeaderHeight = measured;
+        if (measured > 0) this.actualHeaderHeight = Math.round(measured);
     }
 
     /**
-     * DOMに存在するデータ行の実際の高さを測定して actualRowHeight を更新する。
-     * DPIスケーリングや将来的なCSS変更にも対応するため、定数ではなく実測値を使う。
-     * データ行がDOMに存在しない場合は前回の値（初期値はROW_TOTAL_HEIGHT_PX）を維持する。
+     * データ行の配置ピッチはCSSセル高20px + 罫線1px = 21pxで固定する。
+     * getBoundingClientRect().height の小数値を使うと、累積後の丸めで 41, 62, 82 のように
+     * 20px/21px間隔が混在するため、absolute top 計算には実測値を使わない。
      */
-    private measureActualRowHeight(): void {
-        // enabled=true: children[0]=header, [1]=topSpacer, [2]=最初のデータ行
-        // enabled=false: children[0]=header, [1]=最初のデータ行
-        const dataStart = this.enabled ? VirtualScrollController.DATA_ROW_START_INDEX : 1;
-        if (this.tableElement.children.length <= dataStart) return;
-        const firstDataRow = this.tableElement.children[dataStart] as HTMLElement;
-        if (!firstDataRow) return;
-        // スペーサー行を測定しないようにする
-        if (firstDataRow.classList.contains('virtual-scroll-bottom-spacer')) return;
-        // offsetHeight は整数に丸められるため、DPIスケーリング時に実際のレンダリング高さと乖離する。
-        // 例: 125%スケーリングでは border 1px が 0.8px にレンダリングされ、行高さが 20.8px になるが
-        // offsetHeight は 21 を返す。スペーサー高さ計算にこの誤差が蓄積すると scrollHeight が変動し
-        // スクロールバーのつまみ位置がずれる。getBoundingClientRect().height は小数精度を持つ。
-        const measured = getLayoutBorderBoxHeightPx(firstDataRow);
-        if (measured > 0) this.actualRowHeight = measured;
+    private useFixedActualRowHeight(): void {
+        this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
     }
 
     /**
@@ -739,13 +844,13 @@ export class VirtualScrollController {
     }
 
     private recalculateCore(): void {
-        // スクロール中は測定済みの値を使う。DOM差し替え後に layout read を挟むと強制レイアウトが連発する。
-        if (!this.isHandlingScrollEvent) this.measureActualRowHeight();
+        // スクロール中の行ピッチは固定値を使う。DOM実測値の小数を累積させない。
+        if (!this.isHandlingScrollEvent) this.useFixedActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const previousRenderedStart = this.renderedStart;
         const previousRenderedEnd = this.renderedEnd;
 
-        const scrollTopWithoutCompensation = this.isHandlingScrollEvent ? this.currentScrollTop : this.scrollContainer.scrollTop;
+        const scrollTopWithoutCompensation = this.isHandlingScrollEvent ? this.currentScrollTop : this.getLogicalScrollTop();
         const scrollTop = scrollTopWithoutCompensation + this.scrollTopCompensationPx;
         const viewportHeight = this.scrollContainer.clientHeight;
         const headerHeight = this.isHandlingScrollEvent ? this.actualHeaderHeight : this.getHeaderHeight();

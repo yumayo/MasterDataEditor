@@ -1,8 +1,11 @@
 import {EditorTable} from "./editor-table";
-import {BLAME_COLUMN_WIDTH_PX, ROW_HEADER_WIDTH_PX} from "../core/constant";
+import {
+    BLAME_COLUMN_WIDTH_PX,
+    MAX_SCROLL_CONTENT_HEIGHT_PX,
+    ROW_HEADER_LAYOUT_WIDTH_PX,
+} from "../core/constant";
 import {RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {
-    getLayoutBorderBoxHeightPx,
     getLayoutBorderBoxWidthPx,
     getLayoutLeftRelativeToPx,
     getLayoutRightRelativeToPx,
@@ -88,15 +91,8 @@ export class EditorTableLayout {
     }
 
     getDetachedPrefixWidthPx(): number {
-        const headerRow = this.getRowElement(0);
-        if (!headerRow) {
-            return ROW_HEADER_WIDTH_PX + (this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0);
-        }
-        const firstDataCell = headerRow.children[this.dataColumnOffset()] as HTMLElement | null;
-        if (!firstDataCell) {
-            return ROW_HEADER_WIDTH_PX + (this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0);
-        }
-        return getLayoutLeftRelativeToPx(firstDataCell, headerRow);
+        const blameBorderBoxWidth = this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0;
+        return ROW_HEADER_LAYOUT_WIDTH_PX + blameBorderBoxWidth;
     }
 
     getDataAreaWidthPx(): number {
@@ -391,14 +387,16 @@ export class EditorTableLayout {
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
         const actualFixedLeftWidth = this.getFixedLeftWidthPx();
         const availableWidth = this.element.clientWidth > 0 ? this.element.clientWidth : actualFixedLeftWidth;
-        const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - 1));
+        const customVerticalScrollbarWidth = this.getCustomVerticalScrollbarWidthPx();
+        const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - customVerticalScrollbarWidth - 1));
         const fixedTopHeight = this.getFixedTopHeightPx();
         const rowHeight = this.getDataRowHeightPx();
         this.virtualScroll.setScrollTopCompensationPx(fixedTopHeight);
         const frozenColumnWidth = this.getFrozenColumnAreaWidthPx();
         const dataAreaWidth = this.getDataAreaWidthPx();
         const mainContentWidth = Math.max(0, dataAreaWidth - frozenColumnWidth);
-        const mainContentHeight = Math.max(0, (this.getLogicalRowCount() - 1 - this.frozenRowCount) * rowHeight);
+        const logicalMainContentHeight = Math.max(0, (this.getLogicalRowCount() - 1 - this.frozenRowCount) * rowHeight);
+        const physicalMainContentHeight = Math.min(logicalMainContentHeight, MAX_SCROLL_CONTENT_HEIGHT_PX);
         const paneTop = this.detachedHeaderTopOffset;
 
         this.topLeftPane.style.top = `${paneTop}px`;
@@ -420,9 +418,10 @@ export class EditorTableLayout {
         this.topRightContent.style.width = `${mainContentWidth}px`;
         this.topRightContent.style.height = `${fixedTopHeight}px`;
         this.leftBottomContent.style.width = `${actualFixedLeftWidth}px`;
-        this.leftBottomContent.style.height = `${mainContentHeight}px`;
+        this.leftBottomContent.style.height = `${physicalMainContentHeight}px`;
         this.mainContent.style.width = `${mainContentWidth}px`;
-        this.mainContent.style.height = `${mainContentHeight}px`;
+        this.mainContent.style.height = `${physicalMainContentHeight}px`;
+        this.virtualScroll.setScrollContentHeightPx(logicalMainContentHeight, physicalMainContentHeight);
         this.gridElement.style.position = 'absolute';
         this.quadrantFixedLeftWidthPx = actualFixedLeftWidth;
         this.syncQuadrantMainGridHorizontalOffset(this.scrollContainer.scrollLeft);
@@ -431,10 +430,12 @@ export class EditorTableLayout {
 
         // 右下だけが実スクロール担当なので、そこで消費されるガター幅・高さを
         // 右上ヘッダー領域と左下行ヘッダー領域にも反映して見た目の列幅・行高を揃える。
-        const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth);
+        const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth)
+            + customVerticalScrollbarWidth;
         const mainViewportScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
         this.topRightPane.style.right = `${mainViewportScrollbarWidth}px`;
         this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
+        this.updateCustomVerticalScrollbar();
 
         const detachedCornerRow = document.createElement('div');
         detachedCornerRow.classList.add('editor-table-detached-row');
@@ -510,7 +511,7 @@ export class EditorTableLayout {
 
     refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void {
         if (!this.usesInternalMainViewport) return;
-        const scrollTop = update !== null ? update.scrollTop : this.scrollContainer.scrollTop;
+        const scrollTop = update !== null ? update.scrollTop : this.getScrollTop();
         const scrollLeft = update !== null ? update.scrollLeft : this.scrollContainer.scrollLeft;
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
         const rebuildAll = (): void => {
@@ -614,7 +615,7 @@ export class EditorTableLayout {
         this.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft);
     }
 
-    syncQuadrantViewportRowHeaderPositions(scrollTop: number = this.scrollContainer.scrollTop): void {
+    syncQuadrantViewportRowHeaderPositions(scrollTop: number = this.getScrollTop()): void {
         if (!this.usesInternalMainViewport) return;
         const detachedRows = this.detachedRowHeaderLayer.children;
         for (let rowIndex = 0; rowIndex < detachedRows.length; rowIndex++) {
@@ -680,7 +681,7 @@ export class EditorTableLayout {
     /** legacy detached-layer 用: 静的レイヤーを壊さず、表示中 row header のみ差分更新する */
     refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void {
         if (this.usesInternalMainViewport) return;
-        const scrollTop = update !== null ? update.scrollTop : this.scrollContainer.scrollTop;
+        const scrollTop = update !== null ? update.scrollTop : this.getScrollTop();
         const scrollLeft = update !== null ? update.scrollLeft : this.scrollContainer.scrollLeft;
         const rebuildAll = (): void => {
             const renderedRows = this.getRenderedRowElements();
@@ -877,7 +878,7 @@ export class EditorTableLayout {
     }
 
     syncDetachedHeaderScrollOffset(): void {
-        this.syncDetachedHeaderScrollOffsetWithPositions(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
+        this.syncDetachedHeaderScrollOffsetWithPositions(this.getScrollTop(), this.scrollContainer.scrollLeft);
     }
 
     setInlineTransformIfChanged(element: HTMLElement, transform: string): void {
@@ -905,7 +906,10 @@ export class EditorTableLayout {
     }
 
     private syncQuadrantMainGridHorizontalOffset(scrollLeft: number): void {
-        this.setInlineLeftIfChanged(this.gridElement, this.formatPx(-(this.quadrantFixedLeftWidthPx + scrollLeft)));
+        const fixedLeftWidth = this.quadrantFixedLeftWidthPx > 0
+            ? this.quadrantFixedLeftWidthPx
+            : this.getFixedLeftWidthPx();
+        this.setInlineLeftIfChanged(this.gridElement, this.formatPx(-(fixedLeftWidth + scrollLeft)));
     }
 
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void {
@@ -957,7 +961,7 @@ export class EditorTableLayout {
     }
 
     syncScrollBoundVisuals(): void {
-        this.syncScrollBoundVisualsWithPositions(this.scrollContainer.scrollTop, this.scrollContainer.scrollLeft);
+        this.syncScrollBoundVisualsWithPositions(this.getScrollTop(), this.scrollContainer.scrollLeft);
     }
 
     syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
@@ -1001,10 +1005,8 @@ export class EditorTableLayout {
         this.element.classList.toggle('editor-table--has-frozen-rows', this.frozenRowCount > 0);
     }
 
-    getRenderedRowHeightPx(rowElement: HTMLElement | null): number {
-        if (rowElement === null) return this.getDataRowHeightPx();
-        const measured = getLayoutBorderBoxHeightPx(rowElement);
-        return measured > 0 ? measured : this.getDataRowHeightPx();
+    getRenderedRowHeightPx(_rowElement: HTMLElement | null): number {
+        return this.getDataRowHeightPx();
     }
 
     getFrozenRowTopPx(logicalRowIndex: number): number {

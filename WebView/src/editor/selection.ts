@@ -562,6 +562,10 @@ export class Selection {
      */
     scrollFocusToCenterVertically(): void {
         if (this.focus.row <= this.editorTable.getFrozenRowCount()) return;
+        if (this.editorTable.usesLogicalVerticalScroll()) {
+            this.editorTable.centerRowVertically(this.focus.row);
+            return;
+        }
         // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
         this.editorTable.ensureRowVisible(this.focus.row);
         const targetRect = this.editorTable.getCellRectOrNull(this.focus.row, this.focus.column);
@@ -595,8 +599,9 @@ export class Selection {
     private scrollCellIntoView(row: number, column: number): void {
         // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
         this.editorTable.ensureRowVisible(row);
-        const targetRect = this.editorTable.getCellRectOrNull(row, column);
-        if (!targetRect) return;
+        const useLogicalVerticalScroll = this.editorTable.usesLogicalVerticalScroll();
+        const targetRect = useLogicalVerticalScroll ? null : this.editorTable.getCellRectOrNull(row, column);
+        if (!useLogicalVerticalScroll && !targetRect) return;
         const containerRect = this.scrollBinding.getBoundingClientRect();
         const viewportInsets = this.editorTable.getSelectionViewportInsets();
         const targetHorizontalBounds = this.editorTable.getCellHorizontalLayoutBounds(column);
@@ -608,7 +613,7 @@ export class Selection {
         let nextScrollTop = this.scrollBinding.getScrollTop();
         let nextScrollLeft = this.scrollBinding.getScrollLeft();
 
-        if (row > this.editorTable.getFrozenRowCount()) {
+        if (!useLogicalVerticalScroll && targetRect !== null && row > this.editorTable.getFrozenRowCount()) {
             if (targetRect.top < visibleTop) {
                 nextScrollTop += targetRect.top - visibleTop;
             } else if (targetRect.bottom > visibleBottom) {
@@ -628,12 +633,15 @@ export class Selection {
 
         if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
             this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
+            this.editorTable.syncScrollBoundVisualsWithPositions(nextScrollTop, nextScrollLeft);
 
             // ブラウザの慣性スクロール等により次フレームでスクロール位置が上書きされる場合があるため再適用
             const scrollBinding = this.scrollBinding;
+            const editorTable = this.editorTable;
             window.requestAnimationFrame(() => {
                 if (scrollBinding.getScrollTop() !== nextScrollTop || scrollBinding.getScrollLeft() !== nextScrollLeft) {
                     scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
+                    editorTable.syncScrollBoundVisualsWithPositions(nextScrollTop, nextScrollLeft);
                 }
             });
         }

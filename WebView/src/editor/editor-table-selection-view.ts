@@ -39,10 +39,12 @@ export class EditorTableSelectionView {
     markFocusedCell(row: number, col: number): void {
         // 前のフォーカスセルからクラスを除去する
         if (this.lastFocusedRow !== -1) {
-            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
-            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
+            const prevVisible = this.getVisibleCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            const prevSource = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            if (prevVisible !== null) prevVisible.classList.remove('editor-table-cell-focused');
+            if (prevSource !== null && prevSource !== prevVisible) prevSource.classList.remove('editor-table-cell-focused');
         }
-        const cell = this.getCellOrNull(row, col);
+        const cell = this.getVisibleCellOrNull(row, col) ?? this.getCellOrNull(row, col);
         if (cell !== null) {
             cell.classList.add('editor-table-cell-focused');
             this.lastFocusedRow = row;
@@ -53,8 +55,10 @@ export class EditorTableSelectionView {
     /** フォーカスクラスを除去する（タブ切り替えや初期化時に呼ぶ）。 */
     clearFocusedCell(): void {
         if (this.lastFocusedRow !== -1) {
-            const prev = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
-            if (prev !== null) prev.classList.remove('editor-table-cell-focused');
+            const prevVisible = this.getVisibleCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            const prevSource = this.getCellOrNull(this.lastFocusedRow, this.lastFocusedCol);
+            if (prevVisible !== null) prevVisible.classList.remove('editor-table-cell-focused');
+            if (prevSource !== null && prevSource !== prevVisible) prevSource.classList.remove('editor-table-cell-focused');
         }
         this.lastFocusedRow = -1;
         this.lastFocusedCol = -1;

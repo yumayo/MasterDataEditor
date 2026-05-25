@@ -1,8 +1,20 @@
 export class ScrollViewportController {
     private container: HTMLElement;
+    private logicalScrollTopFromPhysical: (physicalScrollTop: number) => number;
+    private physicalScrollTopFromLogical: (logicalScrollTop: number) => number;
 
     constructor(container: HTMLElement) {
         this.container = container;
+        this.logicalScrollTopFromPhysical = (physicalScrollTop: number) => physicalScrollTop;
+        this.physicalScrollTopFromLogical = (logicalScrollTop: number) => logicalScrollTop;
+    }
+
+    setVerticalScrollMapper(
+        logicalFromPhysical: (physicalScrollTop: number) => number,
+        physicalFromLogical: (logicalScrollTop: number) => number,
+    ): void {
+        this.logicalScrollTopFromPhysical = logicalFromPhysical;
+        this.physicalScrollTopFromLogical = physicalFromLogical;
     }
 
     getScrollLeft(): number {
@@ -10,11 +22,11 @@ export class ScrollViewportController {
     }
 
     getScrollTop(): number {
-        return this.container.scrollTop;
+        return this.logicalScrollTopFromPhysical(this.container.scrollTop);
     }
 
     setScrollPosition(scrollTop: number, scrollLeft: number): void {
-        this.container.scrollTop = scrollTop;
+        this.container.scrollTop = this.physicalScrollTopFromLogical(scrollTop);
         this.container.scrollLeft = scrollLeft;
         this.container.dispatchEvent(new Event('scroll'));
     }
