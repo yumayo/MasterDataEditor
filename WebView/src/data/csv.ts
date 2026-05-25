@@ -9,6 +9,23 @@ export class Csv {
     }
 
     load(csvFileContents: string) {
+        const hasQuotes = csvFileContents.includes('"');
+        if (!hasQuotes) {
+            if (csvFileContents.includes('\r')) csvFileContents = csvFileContents.replaceAll('\r', '');
+            const lines = csvFileContents.split('\n');
+            if (lines.length > 0 && lines[lines.length - 1] === '') {
+                lines.pop();
+            }
+
+            this.header = lines.length > 0 ? lines[0].split(',') : [];
+            const result: string[][] = [];
+            for (let i = 1; i < lines.length; ++i) {
+                result[i - 1] = lines[i].split(',');
+            }
+            this.body = result;
+            return;
+        }
+
         csvFileContents = csvFileContents.replaceAll('\r', '');
 
         const lines = csvFileContents.split('\n');

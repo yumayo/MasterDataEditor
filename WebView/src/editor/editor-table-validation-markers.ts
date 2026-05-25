@@ -3,6 +3,8 @@ import {ValidationPanel} from "../panels/validation-panel";
 import {ValidationError} from "../validation/validation-engine";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 
+const MAX_SCROLLBAR_MARKER_SCAN_ROWS = 100000;
+
 /**
  * バリデーション適用とスクロールバーマーカー更新を担当する。
  *
@@ -123,7 +125,14 @@ export class EditorTableValidationMarkers {
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         // フィルター適用時は getFilteredDataRowCount() でフィルター後の行数を使う
         const validationRowCount = this.getFilteredDataRowCount();
-        for (let rowIdx = 1; rowIdx <= validationRowCount; rowIdx++) {
+        let firstDomRow = 1;
+        let lastDomRow = validationRowCount;
+        if (this.virtualScroll.handlesScrollEvents()) {
+            const rendered = this.virtualScroll.getRenderedRange();
+            firstDomRow = rendered.start + 1;
+            lastDomRow = Math.min(validationRowCount, rendered.end);
+        }
+        for (let rowIdx = firstDomRow; rowIdx <= lastDomRow; rowIdx++) {
             const row = this.getRowElement(rowIdx);
             if (!row) continue;
             // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
@@ -195,6 +204,7 @@ export class EditorTableValidationMarkers {
         if (storeRows === false) return new Set<number>();
         const changedRows = new Set<number>();
         const visibleRowCount = this.getFilteredDataRowCount();
+        if (visibleRowCount > MAX_SCROLLBAR_MARKER_SCAN_ROWS) return changedRows;
         const columnMapping = this.tableData.columnMapping;
         for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
             const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
@@ -215,6 +225,7 @@ export class EditorTableValidationMarkers {
         const visibleRows = new Set<number>();
         if (storeRows.size === 0) return visibleRows;
         const visibleRowCount = this.getFilteredDataRowCount();
+        if (visibleRowCount > MAX_SCROLLBAR_MARKER_SCAN_ROWS) return visibleRows;
         for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
             const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
             if (storeRows.has(storeRowIndex)) visibleRows.add(dataRowIndex);

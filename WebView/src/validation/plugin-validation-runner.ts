@@ -43,6 +43,7 @@ type PluginTableData = Record<string, { header: string[]; rows: string[][] }>;
 type PluginTableDataDebugSnapshot = Record<string, { header: string[]; rowCount: number; rowsPreview: string[][] }>;
 
 const DEBUG_ROW_PREVIEW_LIMIT = 5;
+const MAX_PLUGIN_VALIDATION_ROWS = 100000;
 
 /**
  * PluginValidationError をストア参照で解決し、テーブル名・行・列・セル値を確定させる。
@@ -178,6 +179,7 @@ export class PluginValidationRunner {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             if (header !== false && rows !== false) {
+                if (rows.length > MAX_PLUGIN_VALIDATION_ROWS) continue;
                 tableData[tableName] = { header, rows };
             }
         }

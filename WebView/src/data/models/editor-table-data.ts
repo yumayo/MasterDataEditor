@@ -24,17 +24,22 @@ export class EditorTableData {
      */
     columnMapping: readonly number[];
 
+    /** CSV上のデータ行数。通常テーブルでは body を省略する場合があるため別に保持する。 */
+    rowCount: number;
+
     constructor(
         description: string | null, primaryKeyColumns: readonly string[],
         header: EditorTableDataColumn[],
         body: EditorTableDataRow[],
-        columnMapping: readonly number[]
+        columnMapping: readonly number[],
+        rowCount: number = body.length
     ) {
         this.description = description;
         this.primaryKeyColumns = primaryKeyColumns;
         this.header = header;
         this.body = body;
         this.columnMapping = columnMapping;
+        this.rowCount = rowCount;
     }
 
     /**
@@ -42,7 +47,7 @@ export class EditorTableData {
      * hasIcons が true の場合、フィルター・ソートアイコンの占有幅を列幅計算に含める。
      * ミニテーブル（アイコンなし）は false を渡すこと。
      */
-    static parse(json: Record<string, unknown>, csv: Csv, hasIcons: boolean) {
+    static parse(json: Record<string, unknown>, csv: Csv, hasIcons: boolean, options: { materializeBody?: boolean } = {}) {
 
         const description = json['description'] !== undefined ? json['description'] as string : null;
 
@@ -82,26 +87,29 @@ export class EditorTableData {
             columnMapping.push(csvIndex);
         }
 
+        const shouldMaterializeBody = options.materializeBody ?? true;
         const body = csv.body;
         const rows: EditorTableDataRow[] = [];
-        for (let i = 0; i < body.length; ++i) {
-            const csvRow = body[i];
-            // スキーマの列順に並べ替えた値を作成
-            const mappedValues: string[] = [];
-            for (const csvIndex of columnMapping) {
-                if (csvIndex !== -1 && csvIndex < csvRow.length) {
-                    mappedValues.push(csvRow[csvIndex]);
-                } else {
-                    mappedValues.push('');
+        if (shouldMaterializeBody) {
+            for (let i = 0; i < body.length; ++i) {
+                const csvRow = body[i];
+                // スキーマの列順に並べ替えた値を作成
+                const mappedValues: string[] = [];
+                for (const csvIndex of columnMapping) {
+                    if (csvIndex !== -1 && csvIndex < csvRow.length) {
+                        mappedValues.push(csvRow[csvIndex]);
+                    } else {
+                        mappedValues.push('');
+                    }
                 }
+                rows.push(
+                    new EditorTableDataRow(mappedValues)
+                );
             }
-            rows.push(
-                new EditorTableDataRow(mappedValues)
-            );
         }
 
         return new EditorTableData(
-            description, primaryKeyColumns, columns, rows, columnMapping
+            description, primaryKeyColumns, columns, rows, columnMapping, body.length
         );
     }
 

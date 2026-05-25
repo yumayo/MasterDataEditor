@@ -36,6 +36,8 @@ import {BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS} from "../config/masterdataeditor
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 import {ViewPluginHost} from "../plugins/view-plugin-host";
 
+const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
+
 (async () => {
     // ステータスバーは起動直後から予約領域を実体として描画する。
     // BottomPanel 操作用の action port は後段で Object.assign して実装する。
@@ -245,14 +247,24 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
         sidebar.highlightExplorerFile(activeTabName);
     }
 
-    // 起動時に全テーブルのバリデーションをバックグラウンドで実行する。
-    // 全CSVをストアにロード（refCount=1で常駐）し、スキーマを登録して一括検証する。
-    // refCountを維持することで、タブ未オープンのテーブルも継続的にバリデーション対象に含める。
+    // 起動時に小〜中規模テーブルのバリデーションをバックグラウンドで実行する。
+    // 巨大CSVは起動直後にWebViewへ転送せず、テーブルを開くまで読み込まない。
+    // 読み込んだテーブルは refCount=1 で常駐させ、タブ未オープンでも継続的にバリデーション対象に含める。
     (async () => {
+        const dataFiles = await findFilesAsync("data").catch(() => []);
+        const dataFileSizeByTableName = new Map<string, number>();
+        for (const file of dataFiles) {
+            if (file.type !== 'file') continue;
+            if (!file.name.endsWith('.csv')) continue;
+            if (typeof file.size !== 'number') continue;
+            dataFileSizeByTableName.set(file.name.slice(0, -4), file.size);
+        }
         for (const [tableName, validationSchema] of validationSchemas) {
             try {
-                await store.registerTableAsync(tableName);
                 validationPanel.registerSchema(tableName, validationSchema.primaryKeyColumns, validationSchema.columns);
+                const csvSize = dataFileSizeByTableName.get(tableName);
+                if (csvSize !== undefined && csvSize > MAX_EAGER_VALIDATION_CSV_BYTES) continue;
+                await store.registerTableAsync(tableName);
             } catch (e: unknown) {
                 console.error('[main] 起動時バリデーションスキャン: テーブル "' + tableName + '" のロードに失敗:', String(e));
             }

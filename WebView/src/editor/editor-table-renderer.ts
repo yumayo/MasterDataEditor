@@ -83,30 +83,36 @@ export class EditorTableRenderer {
         // forceRecalculate() が totalRowCount に基づいてDOM行を管理するため、
         // バッファ行を含めないと forceRecalculate 時にバッファ行がDOMから削除される。
         this.virtualScroll.updateTotalRowCount(Math.max(this.emptyRowCount, this.storeRowIndices.length));
-        for (let i = 0; i < initialDataRowCount; ++i) {
-            const cells: HTMLElement[] = [];
-            cells.push(this.structure.createRowHeaderCell(String(i + 1), i));
-            for (let j = 0; j < this.tableData.header.length; ++j) {
-                let value = '';
-                if (initialStoreRows !== false) {
-                    const storeRow = initialStoreRows[i];
-                    const storeColumnIndex = this.tableData.columnMapping[j];
-                    value = storeColumnIndex === -1 || storeColumnIndex >= storeRow.length ? '' : storeRow[storeColumnIndex];
-                } else {
-                    value = this.tableData.body[i].values[j];
+        if (this.virtualScroll.handlesScrollEvents()) {
+            // 仮想スクロール有効時は初期化時点で全行DOMを生成しない。
+            // 表示範囲だけを forceRecalculate() で動的生成する。
+            this.virtualScroll.forceRecalculate();
+        } else {
+            for (let i = 0; i < initialDataRowCount; ++i) {
+                const cells: HTMLElement[] = [];
+                cells.push(this.structure.createRowHeaderCell(String(i + 1), i));
+                for (let j = 0; j < this.tableData.header.length; ++j) {
+                    let value = '';
+                    if (initialStoreRows !== false) {
+                        const storeRow = initialStoreRows[i];
+                        const storeColumnIndex = this.tableData.columnMapping[j];
+                        value = storeColumnIndex === -1 || storeColumnIndex >= storeRow.length ? '' : storeRow[storeColumnIndex];
+                    } else {
+                        value = this.tableData.body[i].values[j];
+                    }
+                    cells.push(EditorTable.createCell(this.table, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
                 }
-                cells.push(EditorTable.createCell(this.table, value, j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));
+                const row = EditorTable.createRow(cells, i);
+                row.dataset.rowIndex = String(i);
+                row.dataset.storeIndex = String(i);
+                // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
+                this.virtualScroll.appendDataRow(row);
             }
-            const row = EditorTable.createRow(cells, i);
-            row.dataset.rowIndex = String(i);
-            row.dataset.storeIndex = String(i);
-            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
-            this.virtualScroll.appendDataRow(row);
-        }
-        for (let i = 0; i < this.emptyRowCount - initialDataRowCount; ++i) {
-            const row = this.renderBufferRow(initialDataRowCount + i);
-            // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
-            this.virtualScroll.appendDataRow(row);
+            for (let i = 0; i < this.emptyRowCount - initialDataRowCount; ++i) {
+                const row = this.renderBufferRow(initialDataRowCount + i);
+                // bottomSpacer がテーブル末尾に存在するため、その直前に挿入する
+                this.virtualScroll.appendDataRow(row);
+            }
         }
         // フィル中のマウス移動イベント
         this.element.addEventListener('mousemove', (e: MouseEvent) => {
@@ -120,9 +126,9 @@ export class EditorTableRenderer {
         });
         // 初期表示時にバリデーションを実行してセルにエラークラスを付与する
         this.runValidation();
-        // 全行生成後にバーチャルスクロールの初期表示範囲を確立する。
-        // ビューポートに収まる行のみ残し、残りは削除してスペーサーで高さを補完する。
-        this.virtualScroll.forceRecalculate();
+        // 非仮想テーブルでは全行生成後に表示範囲を確立する。
+        // 仮想テーブルは上で表示範囲だけを生成済み。
+        if (!this.virtualScroll.handlesScrollEvents()) this.virtualScroll.forceRecalculate();
         // forceRecalculate() が初期DOMを作り直すため、その後でブックマーク視覚マークを復元する
         this.restoreBookmarkMarks();
         this.refreshFreezeVisualState();

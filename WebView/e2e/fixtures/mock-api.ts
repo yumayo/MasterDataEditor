@@ -14,6 +14,7 @@ export interface MockFileSystem {
 interface MockFile {
     name: string;
     type: 'file' | 'directory';
+    size?: number;
 }
 
 /**
@@ -114,7 +115,7 @@ export async function installMockApiAsync(
                         // ファイル
                         if (!seen.has(rest)) {
                             seen.add(rest);
-                            results.push({ name: rest, type: "file" });
+                            results.push({ name: rest, type: "file", size: runtimeFs[key].length });
                         }
                     } else {
                         // サブディレクトリ

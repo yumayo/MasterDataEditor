@@ -20,6 +20,7 @@ export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
 // =========================================================================
 const fileCache = new Map<string, string>();
 const dirCache = new Map<string, File[]>();
+const MAX_EAGER_DATA_PRELOAD_BYTES = 1024 * 1024;
 
 export type FileScope = 'workspace' | 'user';
 
@@ -43,9 +44,10 @@ function createFileRequestData(filename: string, options: FileScopeOptions = {})
 }
 
 /**
- * 起動時に schema/ と data/ 以下の全ファイルを一括読み込みしてキャッシュに格納する。
+ * 起動時に schema/ と plugins/、および小さな data/ ファイルを一括読み込みしてキャッシュに格納する。
  * main.ts の初期化冒頭で呼び出すこと。
  * ディレクトリ列挙・ファイル読み込みを並列で実行し、起動時間を短縮する。
+ * 巨大CSVは起動と同時にWebViewへ転送すると初期表示を塞ぐため、テーブルを開くまで読み込まない。
  */
 export async function preloadAllFilesAsync(): Promise<void> {
     // schema/, data/, plugins/ のディレクトリ列挙を並列実行する
@@ -59,7 +61,12 @@ export async function preloadAllFilesAsync(): Promise<void> {
     ]);
     dirCache.set('schema', schemaFiles);
     dirCache.set('data', dataFiles);
-    if (pluginFilesResult.found) dirCache.set('plugins', pluginFilesResult.files);
+    if (pluginFilesResult.found) {
+        dirCache.set('plugins', pluginFilesResult.files);
+        if (!pluginFilesResult.files.some(file => file.type === 'directory' && file.name === 'views')) {
+            dirCache.set('plugins/views', []);
+        }
+    }
 
     // 全ディレクトリのファイル読み込みを並列実行する（C#側がバックグラウンドスレッドで処理する）
     const readTasks: Promise<void>[] = [];
@@ -70,6 +77,7 @@ export async function preloadAllFilesAsync(): Promise<void> {
     }
     for (const file of dataFiles) {
         if (file.type !== 'file') continue;
+        if (typeof file.size === 'number' && file.size > MAX_EAGER_DATA_PRELOAD_BYTES) continue;
         const path = `data/${file.name}`;
         readTasks.push(postMessageAsync<string>('read_file', { filename: path }).then((content) => { fileCache.set(path, content); }));
     }
@@ -190,6 +198,7 @@ export async function readFileAsync(filename: string, options: FileScopeOptions 
 interface File {
     name: string;
     type: 'file' | 'directory';
+    size?: number;
 }
 
 /**

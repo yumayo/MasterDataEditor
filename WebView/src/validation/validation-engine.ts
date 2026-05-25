@@ -10,6 +10,7 @@ import {
 } from "../references/reference-expression";
 import {isGlobalValidationTargetTable} from "./validation-table-scope";
 import {getApplicationDefaultValue, type ExportValidationSettings} from "../settings/settings-schema";
+const MAX_AUTOMATIC_VALIDATION_ROWS = 100000;
 
 type ExportWindowColumnIndices = { beginIndex: number; endIndex: number };
 
@@ -191,6 +192,7 @@ export class ValidationEngine {
     validatePkDuplicatesForTable(tableName: string): ValidationError[] {
         const resolved = this.resolveSchemaAndData(tableName);
         if (resolved === null) return [];
+        if (resolved.rows.length > MAX_AUTOMATIC_VALIDATION_ROWS) return [];
         const errors: ValidationError[] = [];
         this.validatePkDuplicates(tableName, resolved.schema, resolved.header, resolved.rows, errors);
         return errors;
@@ -205,6 +207,7 @@ export class ValidationEngine {
     validateForTable(tableName: string): ValidationError[] {
         const resolved = this.resolveSchemaAndData(tableName);
         if (resolved === null) return [];
+        if (resolved.rows.length > MAX_AUTOMATIC_VALIDATION_ROWS) return [];
         const errors: ValidationError[] = [];
         this.validatePkDuplicates(tableName, resolved.schema, resolved.header, resolved.rows, errors);
         this.validateTypeMatch(tableName, resolved.schema, resolved.header, resolved.rows, errors);
@@ -229,6 +232,7 @@ export class ValidationEngine {
             const rows = this.store.getRows(tableName);
             // ストアに存在しないテーブルはスキップ（タブ未オープン等）
             if (header === false || rows === false) continue;
+            if (rows.length > MAX_AUTOMATIC_VALIDATION_ROWS) continue;
             this.validatePkDuplicates(tableName, schema, header, rows, errors);
             this.validateFkReferences(tableName, schema, header, rows, errors, previousErrors, preservableErrors);
             this.validateTypeMatch(tableName, schema, header, rows, errors);

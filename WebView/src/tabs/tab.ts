@@ -3369,7 +3369,7 @@ export class Tab {
                 return;
             }
             // 通常テーブルはフィルター・ソートアイコンを持つため hasIcons: true
-            const tableData = EditorTableData.parse(json, csv, true);
+            const tableData = EditorTableData.parse(json, csv, true, { materializeBody: false });
 
             // ラッパー要素を作成（このタブのDOM全体を包む）
             // editor.appendChild は左ペインへのappendに変更された
@@ -3449,8 +3449,10 @@ export class Tab {
                 selection.move(1, 1);
             }
 
-            // git statusを取得してこのテーブルのGitDiffTrackerを構築・接続し、全セルのハイライトを適用する
-            await editorTable.refreshGitDiffAsync();
+            // git statusを取得してこのテーブルのGitDiffTrackerを構築・接続する。
+            // 巨大テーブルではHEAD版CSV取得や差分走査に時間がかかるため、初期表示はブロックしない。
+            editorTable.refreshGitDiffAsync()
+                .catch((e: unknown) => { console.error('[Tab] createTabState: refreshGitDiffAsync failed:', e); });
 
             if (!this.tabButtons.includes(tabButton)) {
                 this.discardCreatedTabState(name, wrapperElement, editorTable, editorTableHandler, history, areaResizer, fillController);
@@ -3611,7 +3613,7 @@ export class Tab {
         const areaResizer = new AreaResizer(wrapperElement, history, selection);
 
         // 本物の EditorTable インスタンスを作成（データ行+バッファ1行で通常の編集テーブルを生成）
-        const emptyRowCount = tableData.body.length + 1;
+        const emptyRowCount = tableData.rowCount + 1;
         const realEditorTable = new EditorTable(
             name, tableData, this.referenceDataCache, this.store, editorTableHandler,
             selection, this.contextMenu, history, areaResizer,

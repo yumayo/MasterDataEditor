@@ -65,7 +65,8 @@ namespace App.MasterDataEditor
 					files = fileInfos.Select(f => new
 					{
 						name = Path.GetFileName(f),
-						type = "file"
+						type = "file",
+						size = new FileInfo(f).Length
 					}).ToList<object>();
 
 					// ディレクトリを取得

@@ -3,6 +3,8 @@ import {DEFAULT_ROW_HEIGHT} from "../core/constant";
 import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult} from "../app/api";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 
+const MAX_GIT_DIFF_MARKER_ROWS = 100000;
+
 /**
  * blame 表示と git 差分ハイライトを担当する。
  *
@@ -190,18 +192,21 @@ export class EditorTableGit {
         // マーカー描画にはDOMに存在しない行のインデックスも必要なのでストア全行を走査する。
         const changedDataRows = new Set<number>();
         const dataRowCount = this.storeRowIndices.length;
-        for (let dataRowIndex = 0; dataRowIndex < dataRowCount; dataRowIndex++) {
-            const storeRowIndex = this.storeRowIndices[dataRowIndex];
-            let hasChanged = false;
-            for (let domColIndex = 0; domColIndex < columnMapping.length; domColIndex++) {
-                const storeColIndex = columnMapping[domColIndex];
-                if (storeColIndex === -1) continue;
-                if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) {
-                    if (!hasChanged) hasChanged = true;
+        if (dataRowCount <= MAX_GIT_DIFF_MARKER_ROWS) {
+            for (let dataRowIndex = 0; dataRowIndex < dataRowCount; dataRowIndex++) {
+                const storeRowIndex = this.storeRowIndices[dataRowIndex];
+                let hasChanged = false;
+                for (let domColIndex = 0; domColIndex < columnMapping.length; domColIndex++) {
+                    const storeColIndex = columnMapping[domColIndex];
+                    if (storeColIndex === -1) continue;
+                    if (this.gitDiffTracker.isCellChanged(storeRows, storeRowIndex, storeColIndex)) {
+                        if (!hasChanged) hasChanged = true;
+                    }
                 }
+                if (hasChanged) changedDataRows.add(dataRowIndex);
             }
-            if (hasChanged) changedDataRows.add(dataRowIndex);
         }
+        // 大量行ではマーカー用の全行走査を省く。表示中セルの差分ハイライトは下で通常どおり適用する。
         // DOMに存在する行にのみ cell-git-changed クラスを適用/除去する
         for (let row = 1; row < rowCount; row++) {
             const rowElement = this.getRowElement(row);
