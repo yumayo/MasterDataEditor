@@ -256,7 +256,8 @@
 }
 
 .settings-datetime-input,
-.settings-text-input {
+.settings-text-input,
+.settings-number-input {
     width: var(--settings-control-width);
     height: var(--settings-control-height);
     box-sizing: border-box;
@@ -269,12 +270,14 @@
 }
 
 .settings-datetime-input:hover,
-.settings-text-input:hover {
+.settings-text-input:hover,
+.settings-number-input:hover {
     border-color: rgba(128, 128, 128, 0.7);
 }
 
 .settings-datetime-input:focus,
-.settings-text-input:focus {
+.settings-text-input:focus,
+.settings-number-input:focus {
     border-color: var(--focus-border);
     outline: none;
 }

@@ -19,6 +19,7 @@ import {GridDropdownInput} from "../ui/grid-dropdown-input";
 import {NotificationToast} from "../ui/notification";
 import {ValidationPanel} from "../panels/validation-panel";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
+import type {LargeFileSettings} from "../settings/settings-schema";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -128,6 +129,7 @@ export class DiffTab {
         openEditorTables: Map<string, EditorTable>,
         notification: NotificationToast,
         validationPanel: ValidationPanel | false,
+        largeFileSettings: LargeFileSettings,
         leftLabel: string | null,
         rightLabel: string | null
     ) {
@@ -278,7 +280,7 @@ export class DiffTab {
         // 左ペイン（HEAD版）はドロップダウン不要のため dropdownContainer=null を渡す
         const leftResult = this.buildDiffEditorTable(
             leftTableKey, schemaJson, displayHeader, leftRows,
-            leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar, notification
+            leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar, notification, largeFileSettings
         );
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
@@ -295,7 +297,7 @@ export class DiffTab {
         // staged=trueの場合は makeReadOnly() が呼ばれるためドロップダウンDOMは不要（null を渡す）。
         const rightResult = this.buildDiffEditorTable(
             rightTableKey, schemaJson, displayHeader, rightRows,
-            rightPaneElement, isStaged ? null : wrapperElement, store, referenceDataCache, contextMenu, tabButton, sidebar, notification
+            rightPaneElement, isStaged ? null : wrapperElement, store, referenceDataCache, contextMenu, tabButton, sidebar, notification, largeFileSettings
         );
         this.rightEditorTable = rightResult.editorTable;
         this.rightEditorTableHandler = rightResult.editorTableHandler;
@@ -729,6 +731,11 @@ export class DiffTab {
         this.uiStateChangeListener = listener;
     }
 
+    setLargeFileSettings(settings: LargeFileSettings): void {
+        this.leftEditorTable.setLargeFileSettings(settings);
+        this.rightEditorTable.setLargeFileSettings(settings);
+    }
+
     getScrollPosition(): { scrollLeft: number; scrollTop: number } {
         if (this.wrapperElement.style.display === 'none') {
             return {
@@ -865,7 +872,8 @@ export class DiffTab {
         contextMenu: ContextMenu,
         tabButton: TabButton,
         sidebar: Sidebar,
-        notification: NotificationToast
+        notification: NotificationToast,
+        largeFileSettings: LargeFileSettings
     ): { editorTable: EditorTable; editorTableHandler: EditorTableHandler; history: History; areaResizer: AreaResizer; fillController: FillController; tableData: EditorTableData } {
         // スキーマをパースしてEditorTableDataを構築する
         const schemaObj = JSON.parse(schemaJson) as Record<string, unknown>;
@@ -913,6 +921,7 @@ export class DiffTab {
         Object.assign(editorTable, realEditorTable);
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
         editorTable.initializeModules(notification);
+        editorTable.setLargeFileSettings(largeFileSettings);
 
         editorTable.appendTo(innerWrapper);
         innerWrapper.appendChild(selection.selectionOverlayElement);

@@ -205,6 +205,30 @@ test.describe('設定画面', () => {
     );
 
     test(
+        '巨大ファイルしきい値を設定画面で変更して保存できること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            await expect(page.locator('.settings-section-header').filter({ hasText: '巨大ファイル' })).toBeVisible();
+            await expect(page.locator('.settings-large-file-eager-data-preload-bytes-input')).toHaveValue('1048576');
+
+            const validationRowsInput = page.locator('.settings-large-file-automatic-validation-rows-input');
+            const validationRowsLabel = page.locator('.settings-label[data-setting-key="largeFileAutomaticValidationRows"]');
+            await expect(validationRowsInput).toHaveAttribute('type', 'number');
+            await expect(validationRowsInput).toHaveValue('100000');
+            await expect(validationRowsLabel).toHaveAttribute('data-default-different', 'false');
+
+            await validationRowsInput.fill('12345');
+            await validationRowsInput.blur();
+
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                largeFileAutomaticValidationRows: 12345,
+            });
+            await expect(validationRowsLabel).toHaveAttribute('data-default-different', 'true');
+        },
+    );
+
+    test(
         '設定画面でUserとWorkspaceの設定スコープを切り替えられること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);

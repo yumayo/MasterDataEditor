@@ -24,7 +24,7 @@ import {RelationsPanel} from "../panels/relations-panel";
 import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
-import {SETTINGS_CHANGED_EVENT, type SettingsChangedEventDetail} from "../settings/settings-schema";
+import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail} from "../settings/settings-schema";
 import {DiffTab} from "./diff-tab";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
@@ -481,6 +481,15 @@ export class Tab {
      */
     getOpenEditorTables(): Map<string, EditorTable> {
         return this.openEditorTables;
+    }
+
+    applyLargeFileSettings(settings: LargeFileSettings): void {
+        for (const editorTable of this.openEditorTables.values()) {
+            editorTable.setLargeFileSettings(settings);
+        }
+        for (const diffTab of this.diffTabs.values()) {
+            diffTab.setLargeFileSettings(settings);
+        }
     }
 
     /**
@@ -2599,6 +2608,7 @@ export class Tab {
             tableName, schemaJson, leftCsv, rightCsv, true, '',
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference, this.openEditorTables, this.notification, false,
+            createLargeFileSettings(getAppliedSettings()),
             leftDisplay, rightDisplay
         );
         this.diffTabs.set(diffTabName, diffTab);
@@ -2975,6 +2985,7 @@ export class Tab {
             tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
             this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
             this.reference, this.openEditorTables, this.notification, this.validationPanel,
+            createLargeFileSettings(getAppliedSettings()),
             leftLabel, rightLabel
         );
         this.diffTabs.set(diffTabName, diffTab);
@@ -3626,6 +3637,7 @@ export class Tab {
 
         // 分割先モジュールを生成・注入（Object.assign後なのでeditorTableは完全に初期化済み）
         editorTable.initializeModules(this.notification);
+        editorTable.setLargeFileSettings(createLargeFileSettings(getAppliedSettings()));
         // Tab への参照を設定する（フォームビュー表示のための密結合）
         editorTable.tab = this;
 
@@ -3739,6 +3751,7 @@ export class Tab {
         Object.setPrototypeOf(editorTable, EditorTable.prototype);
 
         editorTable.initializeModules(this.notification);
+        editorTable.setLargeFileSettings(createLargeFileSettings(getAppliedSettings()));
 
         // 左ペインと同じ: 全要素を wrapperElement に配置する
         editorTable.appendTo(wrapperElement);

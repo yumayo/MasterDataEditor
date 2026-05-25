@@ -2,8 +2,7 @@ import {EditorTable} from "./editor-table";
 import {DEFAULT_ROW_HEIGHT} from "../core/constant";
 import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult} from "../app/api";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
-
-const MAX_GIT_DIFF_MARKER_ROWS = 100000;
+import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
 
 /**
  * blame 表示と git 差分ハイライトを担当する。
@@ -12,6 +11,7 @@ const MAX_GIT_DIFF_MARKER_ROWS = 100000;
  */
 export class EditorTableGit {
     [key: string]: any;
+    private gitDiffMarkerRows = getApplicationDefaultValue('largeFileGitDiffMarkerRows');
 
     constructor(table: EditorTable) {
         return new Proxy(this, {
@@ -139,6 +139,10 @@ export class EditorTableGit {
         this.gitDiffTracker = tracker;
     }
 
+    setLargeFileSettings(settings: LargeFileSettings): void {
+        this.gitDiffMarkerRows = settings.gitDiffMarkerRows;
+    }
+
     /**
      * 1セル分のgit差分ハイライトを更新する
      * gitDiffTracker が設定済み（false でない）であることを呼び出し側で保証すること
@@ -192,7 +196,7 @@ export class EditorTableGit {
         // マーカー描画にはDOMに存在しない行のインデックスも必要なのでストア全行を走査する。
         const changedDataRows = new Set<number>();
         const dataRowCount = this.storeRowIndices.length;
-        if (dataRowCount <= MAX_GIT_DIFF_MARKER_ROWS) {
+        if (dataRowCount <= this.gitDiffMarkerRows) {
             for (let dataRowIndex = 0; dataRowIndex < dataRowCount; dataRowIndex++) {
                 const storeRowIndex = this.storeRowIndices[dataRowIndex];
                 let hasChanged = false;

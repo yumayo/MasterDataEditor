@@ -1,6 +1,7 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {findFilesAsync, readFileAsync} from "../app/api";
 import {isGlobalValidationTargetTable} from "./validation-table-scope";
+import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
 import SandboxWorker from "./plugin-sandbox?worker&inline";
 
 /** プラグインバリデーションエラー */
@@ -43,7 +44,6 @@ type PluginTableData = Record<string, { header: string[]; rows: string[][] }>;
 type PluginTableDataDebugSnapshot = Record<string, { header: string[]; rowCount: number; rowsPreview: string[][] }>;
 
 const DEBUG_ROW_PREVIEW_LIMIT = 5;
-const MAX_PLUGIN_VALIDATION_ROWS = 100000;
 
 /**
  * PluginValidationError をストア参照で解決し、テーブル名・行・列・セル値を確定させる。
@@ -91,9 +91,14 @@ const WORKER_TIMEOUT_MS = 10000;
 export class PluginValidationRunner {
 
     private readonly store: InMemoryTableStore;
+    private pluginValidationRows = getApplicationDefaultValue('largeFilePluginValidationRows');
 
     constructor(store: InMemoryTableStore) {
         this.store = store;
+    }
+
+    setLargeFileSettings(settings: LargeFileSettings): void {
+        this.pluginValidationRows = settings.pluginValidationRows;
     }
 
     /**
@@ -179,7 +184,7 @@ export class PluginValidationRunner {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             if (header !== false && rows !== false) {
-                if (rows.length > MAX_PLUGIN_VALIDATION_ROWS) continue;
+                if (rows.length > this.pluginValidationRows) continue;
                 tableData[tableName] = { header, rows };
             }
         }

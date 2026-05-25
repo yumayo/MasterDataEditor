@@ -10,6 +10,7 @@ import {
     getSettingOptionLabel,
     getSettingOptions,
     isSettingKey,
+    normalizeNumberSettingValue,
     SETTING_DEFINITIONS,
     SETTING_KEYS,
     SETTING_SECTIONS,
@@ -114,7 +115,12 @@ function readSettingValueFromRecord<TKey extends SettingsKey>(
             definition.options as readonly SettingOption<SettingValue>[] | undefined,
         ) as SettingsValues[TKey];
     }
-    return SETTING_VALUE_READERS[definition.type](record, key) as SettingsValues[TKey];
+    const value = SETTING_VALUE_READERS[definition.type](record, key);
+    if (value === null) return null as SettingsValues[TKey];
+    if (definition.type === 'number') {
+        return normalizeNumberSettingValue(key, value as number) as SettingsValues[TKey];
+    }
+    return value as SettingsValues[TKey];
 }
 
 function setSettingValue<TKey extends SettingsKey>(
@@ -222,8 +228,12 @@ function normalizeSettingsValueForScopeDefault<TKey extends SettingsKey>(
     value: SettingsValues[TKey],
 ): SettingsValues[TKey] {
     if (value === null) return null;
+    const definition = SETTING_DEFINITIONS[key];
+    const normalizedValue = definition.type === 'number'
+        ? normalizeNumberSettingValue(key, value as number)
+        : value;
     const defaultValue = getApplicationDefaultValue(key);
-    return value === defaultValue ? null : value;
+    return normalizedValue === defaultValue ? null : normalizedValue as SettingsValues[TKey];
 }
 
 function normalizeSettingsValues(settings: SettingsValues): SettingsValues {
@@ -485,6 +495,8 @@ export class SettingsPanel {
                 return this.createDateTimeSettingControl(key, value);
             case 'text':
                 return this.createTextSettingControl(key, value);
+            case 'number':
+                return this.createNumberSettingControl(key, value);
         }
     }
 
@@ -620,6 +632,36 @@ export class SettingsPanel {
                 input.value = selectedValue;
             },
             shouldLetNativeTextHistoryHandle: (target: EventTarget) => target === input ? input.value !== selectedValue : null,
+        };
+    }
+
+    private createNumberSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
+        const definition = SETTING_DEFINITIONS[key];
+        const input = document.createElement('input');
+        input.classList.add('settings-number-input', ...(definition.inputClassNames ?? []));
+        input.type = 'number';
+        if (definition.min !== undefined) input.min = String(definition.min);
+        if (definition.max !== undefined) input.max = String(definition.max);
+        if (definition.step !== undefined) input.step = String(definition.step);
+
+        let selectedValue = normalizeNumberSettingValue(key, Number(value));
+        input.value = String(selectedValue);
+        const commit = (): void => {
+            const parsed = Number(input.value);
+            const nextValue = Number.isFinite(parsed)
+                ? normalizeNumberSettingValue(key, parsed)
+                : selectedValue;
+            this.commitSettingValue(key, nextValue, `save ${String(key)} failed`);
+        };
+        this.addTextInputCommitHandlers(input, commit);
+        return {
+            root: input,
+            getValue: () => selectedValue,
+            setValue: (nextValue: SettingValue) => {
+                selectedValue = normalizeNumberSettingValue(key, Number(nextValue));
+                input.value = String(selectedValue);
+            },
+            shouldLetNativeTextHistoryHandle: (target: EventTarget) => target === input ? input.value !== String(selectedValue) : null,
         };
     }
 

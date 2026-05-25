@@ -1,14 +1,15 @@
 export type ThemeValue = 'dark' | 'light';
 export type SettingValue = ThemeValue | boolean | string | number;
 export type SettingValueType = 'select' | 'boolean' | 'string' | 'number';
-export type SettingControlKind = 'select' | 'toggle' | 'dateTime' | 'text';
+export type SettingControlKind = 'select' | 'toggle' | 'dateTime' | 'text' | 'number';
 export type SettingRowElementName = 'div' | 'label';
-export type SettingsRuntimeGroup = 'exportValidation';
+export type SettingsRuntimeGroup = 'exportValidation' | 'largeFile';
 
 export const SETTINGS_CHANGED_EVENT = 'settings-changed';
 
 export const SETTING_SECTIONS = [
     {id: 'display', label: '表示'},
+    {id: 'largeFile', label: '巨大ファイル'},
     {id: 'exportValidation', label: '出力フィルター'},
 ] as const;
 
@@ -35,6 +36,9 @@ interface SettingDefinition<T extends SettingValue> {
     readonly inputClassNames?: readonly string[];
     readonly options?: readonly SettingOption<T>[];
     readonly runtime?: SettingRuntimeMapping;
+    readonly min?: number;
+    readonly max?: number;
+    readonly step?: number;
 }
 
 function defineSetting<T extends SettingValue>(definition: SettingDefinition<T>): SettingDefinition<T> {
@@ -71,6 +75,72 @@ export const SETTING_DEFINITIONS = {
         control: 'toggle',
         rootClassNames: ['settings-reference-jump-temporary-filter-toggle'],
         inputClassNames: ['settings-reference-jump-temporary-filter-checkbox'],
+    }),
+    largeFileEagerDataPreloadBytes: defineSetting<number>({
+        label: '起動時プリロード上限(bytes)',
+        type: 'number',
+        defaultValue: 1024 * 1024,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-eager-data-preload-bytes-input'],
+        runtime: {group: 'largeFile', property: 'eagerDataPreloadBytes'},
+        min: 0,
+        step: 1,
+    }),
+    largeFileEagerValidationCsvBytes: defineSetting<number>({
+        label: '起動時検証CSV上限(bytes)',
+        type: 'number',
+        defaultValue: 2 * 1024 * 1024,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-eager-validation-csv-bytes-input'],
+        runtime: {group: 'largeFile', property: 'eagerValidationCsvBytes'},
+        min: 0,
+        step: 1,
+    }),
+    largeFileAutomaticValidationRows: defineSetting<number>({
+        label: '自動バリデーション行数上限',
+        type: 'number',
+        defaultValue: 100000,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-automatic-validation-rows-input'],
+        runtime: {group: 'largeFile', property: 'automaticValidationRows'},
+        min: 0,
+        step: 1,
+    }),
+    largeFilePluginValidationRows: defineSetting<number>({
+        label: 'プラグイン検証行数上限',
+        type: 'number',
+        defaultValue: 100000,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-plugin-validation-rows-input'],
+        runtime: {group: 'largeFile', property: 'pluginValidationRows'},
+        min: 0,
+        step: 1,
+    }),
+    largeFileGitDiffMarkerRows: defineSetting<number>({
+        label: 'Git差分マーカー行数上限',
+        type: 'number',
+        defaultValue: 100000,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-git-diff-marker-rows-input'],
+        runtime: {group: 'largeFile', property: 'gitDiffMarkerRows'},
+        min: 0,
+        step: 1,
+    }),
+    largeFileScrollbarMarkerScanRows: defineSetting<number>({
+        label: 'スクロールバーマーカー行数上限',
+        type: 'number',
+        defaultValue: 100000,
+        section: 'largeFile',
+        control: 'number',
+        inputClassNames: ['settings-large-file-scrollbar-marker-scan-rows-input'],
+        runtime: {group: 'largeFile', property: 'scrollbarMarkerScanRows'},
+        min: 0,
+        step: 1,
     }),
     exportValidationDateTime: defineSetting<string>({
         label: '出力フィルター時刻',
@@ -132,6 +202,15 @@ export interface ExportValidationSettings {
     endColumnName: string;
 }
 
+export interface LargeFileSettings {
+    eagerDataPreloadBytes: number;
+    eagerValidationCsvBytes: number;
+    automaticValidationRows: number;
+    pluginValidationRows: number;
+    gitDiffMarkerRows: number;
+    scrollbarMarkerScanRows: number;
+}
+
 export const SETTING_KEYS = Object.keys(SETTING_DEFINITIONS) as SettingsKey[];
 
 export function getApplicationDefaultValue<TKey extends SettingsKey>(key: TKey): DefaultedSettingsValues[TKey] {
@@ -167,6 +246,15 @@ export function getDefaultedSettingValue<TKey extends SettingsKey>(
     return settings[key];
 }
 
+export function normalizeNumberSettingValue<TKey extends SettingsKey>(key: TKey, value: number): number {
+    const definition = SETTING_DEFINITIONS[key];
+    if (definition.type !== 'number') throw new Error(`[Settings] ${String(key)} is not a number setting`);
+    let normalized = Number.isFinite(value) ? Math.trunc(value) : Number(definition.defaultValue);
+    if (definition.min !== undefined) normalized = Math.max(definition.min, normalized);
+    if (definition.max !== undefined) normalized = Math.min(definition.max, normalized);
+    return normalized;
+}
+
 export function isSettingKey(value: string): value is SettingsKey {
     return SETTING_KEYS.includes(value as SettingsKey);
 }
@@ -194,5 +282,16 @@ export function createExportValidationSettings(settings: AppliedSettings): Expor
         dateTime: String(getRuntimeSettingsValue(settings, 'exportValidation', 'dateTime')),
         beginColumnName: String(getRuntimeSettingsValue(settings, 'exportValidation', 'beginColumnName')),
         endColumnName: String(getRuntimeSettingsValue(settings, 'exportValidation', 'endColumnName')),
+    };
+}
+
+export function createLargeFileSettings(settings: AppliedSettings): LargeFileSettings {
+    return {
+        eagerDataPreloadBytes: Number(getRuntimeSettingsValue(settings, 'largeFile', 'eagerDataPreloadBytes')),
+        eagerValidationCsvBytes: Number(getRuntimeSettingsValue(settings, 'largeFile', 'eagerValidationCsvBytes')),
+        automaticValidationRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'automaticValidationRows')),
+        pluginValidationRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'pluginValidationRows')),
+        gitDiffMarkerRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'gitDiffMarkerRows')),
+        scrollbarMarkerScanRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'scrollbarMarkerScanRows')),
     };
 }

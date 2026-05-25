@@ -15,6 +15,7 @@ import {
 } from "../panels/settings-panel";
 import {
     createExportValidationSettings,
+    createLargeFileSettings,
     hasRuntimeGroupSettingsChange,
     SETTINGS_CHANGED_EVENT,
     type SettingsChangedEventDetail,
@@ -36,8 +37,6 @@ import {BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS} from "../config/masterdataeditor
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
 import {ViewPluginHost} from "../plugins/view-plugin-host";
 
-const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
-
 (async () => {
     // ステータスバーは起動直後から予約領域を実体として描画する。
     // BottomPanel 操作用の action port は後段で Object.assign して実装する。
@@ -51,6 +50,7 @@ const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
 
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
+    const initialLargeFileSettings = createLargeFileSettings(getAppliedSettings());
     const storedUiState = await readStoredUiStateAsync();
     const uiStateStore = new UiStateStore(storedUiState);
 
@@ -62,7 +62,7 @@ const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
     // 起動時に schema/ と data/ 以下の全ファイルをキャッシュにバックグラウンドで読み込む。
     // awaitしない: UI初期化を先に進め、schema ループ開始前に完了を待つ。
     // readFileAsync / findFilesAsync はキャッシュミス時にC#へ個別問い合わせするため機能的に問題ない。
-    const preloading = preloadAllFilesAsync();
+    const preloading = preloadAllFilesAsync(initialLargeFileSettings);
 
     // DOM要素を先頭で一括取得する
     const explorerElement = document.getElementById('explorer')!;
@@ -93,7 +93,9 @@ const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
 
     const validationEngine = new ValidationEngine(store, referenceDataCache);
     validationEngine.setExportValidationSettings(createExportValidationSettings(getAppliedSettings()));
+    validationEngine.setLargeFileSettings(initialLargeFileSettings);
     const pluginValidationRunner = new PluginValidationRunner(store);
+    pluginValidationRunner.setLargeFileSettings(initialLargeFileSettings);
 
     // EditorAPI を構築して window.editorApi として公開する。
     // ViewプラグインにもこのAPIを渡すため、Sidebar構築前に用意する。
@@ -139,9 +141,17 @@ const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
 
     window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
         const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
-        if (!hasRuntimeGroupSettingsChange('exportValidation', detail.changedKeys)) return;
-        validationEngine.setExportValidationSettings(createExportValidationSettings(detail.settings));
-        validationPanel.runAndUpdate();
+        if (hasRuntimeGroupSettingsChange('exportValidation', detail.changedKeys)) {
+            validationEngine.setExportValidationSettings(createExportValidationSettings(detail.settings));
+            validationPanel.runAndUpdate();
+        }
+        if (hasRuntimeGroupSettingsChange('largeFile', detail.changedKeys)) {
+            const largeFileSettings = createLargeFileSettings(detail.settings);
+            validationEngine.setLargeFileSettings(largeFileSettings);
+            pluginValidationRunner.setLargeFileSettings(largeFileSettings);
+            tab.applyLargeFileSettings(largeFileSettings);
+            validationPanel.runAndUpdate();
+        }
     });
 
     tab.connectValidationPanel(validationPanel);
@@ -263,7 +273,7 @@ const MAX_EAGER_VALIDATION_CSV_BYTES = 2 * 1024 * 1024;
             try {
                 validationPanel.registerSchema(tableName, validationSchema.primaryKeyColumns, validationSchema.columns);
                 const csvSize = dataFileSizeByTableName.get(tableName);
-                if (csvSize !== undefined && csvSize > MAX_EAGER_VALIDATION_CSV_BYTES) continue;
+                if (csvSize !== undefined && csvSize > initialLargeFileSettings.eagerValidationCsvBytes) continue;
                 await store.registerTableAsync(tableName);
             } catch (e: unknown) {
                 console.error('[main] 起動時バリデーションスキャン: テーブル "' + tableName + '" のロードに失敗:', String(e));

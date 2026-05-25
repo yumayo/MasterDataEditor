@@ -2,8 +2,7 @@ import {EditorTable} from "./editor-table";
 import {ValidationPanel} from "../panels/validation-panel";
 import {ValidationError} from "../validation/validation-engine";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
-
-const MAX_SCROLLBAR_MARKER_SCAN_ROWS = 100000;
+import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
 
 /**
  * バリデーション適用とスクロールバーマーカー更新を担当する。
@@ -12,6 +11,7 @@ const MAX_SCROLLBAR_MARKER_SCAN_ROWS = 100000;
  */
 export class EditorTableValidationMarkers {
     [key: string]: any;
+    private scrollbarMarkerScanRows = getApplicationDefaultValue('largeFileScrollbarMarkerScanRows');
 
     constructor(table: EditorTable) {
         return new Proxy(this, {
@@ -33,6 +33,10 @@ export class EditorTableValidationMarkers {
      */
     connectValidationPanel(panel: ValidationPanel): void {
         this.validationPanel = panel;
+    }
+
+    setLargeFileSettings(settings: LargeFileSettings): void {
+        this.scrollbarMarkerScanRows = settings.scrollbarMarkerScanRows;
     }
 
     /**
@@ -204,7 +208,7 @@ export class EditorTableValidationMarkers {
         if (storeRows === false) return new Set<number>();
         const changedRows = new Set<number>();
         const visibleRowCount = this.getFilteredDataRowCount();
-        if (visibleRowCount > MAX_SCROLLBAR_MARKER_SCAN_ROWS) return changedRows;
+        if (visibleRowCount > this.scrollbarMarkerScanRows) return changedRows;
         const columnMapping = this.tableData.columnMapping;
         for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
             const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
@@ -225,7 +229,7 @@ export class EditorTableValidationMarkers {
         const visibleRows = new Set<number>();
         if (storeRows.size === 0) return visibleRows;
         const visibleRowCount = this.getFilteredDataRowCount();
-        if (visibleRowCount > MAX_SCROLLBAR_MARKER_SCAN_ROWS) return visibleRows;
+        if (visibleRowCount > this.scrollbarMarkerScanRows) return visibleRows;
         for (let dataRowIndex = 0; dataRowIndex < visibleRowCount; dataRowIndex++) {
             const storeRowIndex = this.resolveStoreRowIndex(dataRowIndex);
             if (storeRows.has(storeRowIndex)) visibleRows.add(dataRowIndex);

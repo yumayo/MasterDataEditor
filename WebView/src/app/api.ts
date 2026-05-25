@@ -1,6 +1,7 @@
 import type {BackgroundTaskTracker} from "./background-task-tracker";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 import {stringifyJsonForFile} from "../core/json-format";
+import type {LargeFileSettings} from "../settings/settings-schema";
 
 /** postMessageAsync に統合されるバックグラウンドタスクトラッカー（main.ts で設定される） */
 let tracker: BackgroundTaskTracker | false = false;
@@ -20,7 +21,6 @@ export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
 // =========================================================================
 const fileCache = new Map<string, string>();
 const dirCache = new Map<string, File[]>();
-const MAX_EAGER_DATA_PRELOAD_BYTES = 1024 * 1024;
 
 export type FileScope = 'workspace' | 'user';
 
@@ -49,7 +49,7 @@ function createFileRequestData(filename: string, options: FileScopeOptions = {})
  * ディレクトリ列挙・ファイル読み込みを並列で実行し、起動時間を短縮する。
  * 巨大CSVは起動と同時にWebViewへ転送すると初期表示を塞ぐため、テーブルを開くまで読み込まない。
  */
-export async function preloadAllFilesAsync(): Promise<void> {
+export async function preloadAllFilesAsync(settings: LargeFileSettings): Promise<void> {
     // schema/, data/, plugins/ のディレクトリ列挙を並列実行する
     const [schemaFiles, dataFiles, pluginFilesResult] = await Promise.all([
         postMessageAsync<File[]>('find_files', { directory: 'schema' }),
@@ -77,7 +77,7 @@ export async function preloadAllFilesAsync(): Promise<void> {
     }
     for (const file of dataFiles) {
         if (file.type !== 'file') continue;
-        if (typeof file.size === 'number' && file.size > MAX_EAGER_DATA_PRELOAD_BYTES) continue;
+        if (typeof file.size === 'number' && file.size > settings.eagerDataPreloadBytes) continue;
         const path = `data/${file.name}`;
         readTasks.push(postMessageAsync<string>('read_file', { filename: path }).then((content) => { fileCache.set(path, content); }));
     }
