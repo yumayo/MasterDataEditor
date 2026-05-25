@@ -202,6 +202,31 @@ test.describe('BUG_0008: テーブルのヘッダーレイアウト', () => {
             }
         },
     );
+
+    // ---------------------------------------------------------------------------
+    // テスト5: 行数が少ないテーブルでも初期表示でデータ行が描画されること
+    //
+    // 仮想スクロールの初期範囲が totalRowCount と一致していると、初回 recalculate が
+    // 「表示範囲変更なし」と判断して行生成をスキップし、ヘッダーだけが表示される。
+    // ---------------------------------------------------------------------------
+    test(
+        '小さいテーブルでも初期表示でデータ行と行ヘッダーが表示されること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'item');
+
+            const firstDataRow = table
+                .locator('.editor-table-main-viewport .editor-table-row:not(.editor-table-empty-row)')
+                .first();
+            await expect(firstDataRow).toBeVisible();
+            await expect(firstDataRow.locator('.editor-table-cell').nth(1)).toHaveText('1');
+
+            const firstDetachedRowHeader = table
+                .locator('.editor-table-detached-row-header-layer .editor-table-row-header')
+                .first();
+            await expect(firstDetachedRowHeader).toBeVisible();
+            await expect(firstDetachedRowHeader).toHaveText('1');
+        },
+    );
 });
 
 // =============================================================================

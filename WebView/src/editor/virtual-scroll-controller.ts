@@ -141,9 +141,10 @@ export class VirtualScrollController {
         this.absoluteCellBorderBoxWidths = [];
         this.absoluteRowsLastCellWidthsKey = '';
 
-        // enabled=false（ミニテーブル）では全行がDOMに存在する
+        // enabled=true では初期DOMにデータ行が存在しないため、初回 recalculate で必ず生成する。
+        // enabled=false（ミニテーブル）では全行がDOMに存在する。
         this.renderedStart = 0;
-        this.renderedEnd = totalRowCount;
+        this.renderedEnd = enabled ? 0 : totalRowCount;
 
         this.topSpacer = false;
         this.bottomSpacer = false;
