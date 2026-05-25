@@ -2,6 +2,29 @@ import {readFileAsync, writeFileAsync, type FileScope} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
 import {USER_SETTINGS_FILE, WORKSPACE_SETTINGS_FILE} from "../config/masterdataeditor-path";
 import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
+import {
+    createApplicationDefaultSettings,
+    getApplicationDefaultValue,
+    getDefaultedSettingValue,
+    getSettingLabel,
+    getSettingOptionLabel,
+    getSettingOptions,
+    isSettingKey,
+    SETTING_DEFINITIONS,
+    SETTING_KEYS,
+    SETTING_SECTIONS,
+    SETTINGS_CHANGED_EVENT,
+    type AppliedSettings,
+    type DefaultedSettingsValues,
+    type SettingOption,
+    type SettingRowElementName,
+    type SettingsChangedEventDetail,
+    type SettingsFile,
+    type SettingsKey,
+    type SettingsValues,
+    type SettingValue,
+    type SettingValueFor,
+} from "../settings/settings-schema";
 
 /**
  * 設定画面パネル
@@ -10,18 +33,9 @@ import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-p
  * - Ctrl+S による手動保存も引き続き動作する（冪等）
  */
 
-type ThemeValue = 'dark' | 'light';
 type SettingsScope = 'workspace' | 'user';
 
-const DEFAULT_THEME: ThemeValue = 'dark';
-const DEFAULT_TAB_WRAP_ENABLED = false;
-const DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED = false;
-const DEFAULT_EXPORT_VALIDATION_DATE_TIME = '';
-const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
-const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
 const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
-const TAB_WRAP_ENABLED_CHANGED_EVENT = 'tab-wrap-enabled-changed';
-export const EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT = 'export-validation-settings-changed';
 const SETTINGS_SCOPE_OPTIONS: Record<SettingsScope, { scope: FileScope }> = {
     workspace: {scope: 'workspace'},
     user: {scope: 'user'},
@@ -34,27 +48,29 @@ const SETTINGS_SCOPE_LABELS: Record<SettingsScope, string> = {
     user: 'User',
     workspace: 'Workspace',
 };
-const THEME_OPTIONS: Array<{ value: ThemeValue; text: string }> = [
-    { value: 'dark', text: 'ダーク' },
-    { value: 'light', text: 'ライト' },
-];
+const SETTING_RUNTIME_APPLIERS: Partial<Record<SettingsKey, (settings: AppliedSettings) => void>> = {
+    theme: (settings: AppliedSettings) => {
+        document.body.dataset.theme = settings.theme;
+    },
+    tabWrapEnabled: (settings: AppliedSettings) => {
+        document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, settings.tabWrapEnabled ? '1' : '0');
+    },
+};
+const SETTING_VALUE_READERS = {
+    boolean(record: Record<string, unknown> | null, key: string): boolean | null {
+        if (record === null) return null;
+        return typeof record[key] === 'boolean' ? record[key] : null;
+    },
+    string(record: Record<string, unknown> | null, key: string): string | null {
+        if (record === null) return null;
+        return typeof record[key] === 'string' ? record[key] : null;
+    },
+    number(record: Record<string, unknown> | null, key: string): number | null {
+        if (record === null) return null;
+        return typeof record[key] === 'number' && Number.isFinite(record[key]) ? record[key] : null;
+    },
+};
 
-export interface ExportValidationSettings {
-    dateTime: string;
-    beginColumnName: string;
-    endColumnName: string;
-}
-
-interface SettingsFile {
-    theme?: ThemeValue;
-    tabWrapEnabled?: boolean;
-    referenceJumpTemporaryFilterEnabled?: boolean;
-    exportValidationDateTime?: string;
-    exportBeginDateColumnName?: string;
-    exportEndDateColumnName?: string;
-}
-
-type SettingsKey = keyof SettingsValues;
 type SettingsPatch = Partial<SettingsValues>;
 
 interface SettingsHistoryEntry {
@@ -63,55 +79,74 @@ interface SettingsHistoryEntry {
     after: ScopedSettingsState;
 }
 
-interface SettingsValues {
-    theme: ThemeValue | null;
-    tabWrapEnabled: boolean | null;
-    referenceJumpTemporaryFilterEnabled: boolean | null;
-    exportValidationDateTime: string | null;
-    exportBeginDateColumnName: string | null;
-    exportEndDateColumnName: string | null;
-}
-
-interface DefaultedSettingsValues {
-    theme: ThemeValue;
-    tabWrapEnabled: boolean;
-    referenceJumpTemporaryFilterEnabled: boolean;
-    exportValidationDateTime: string;
-    exportBeginDateColumnName: string;
-    exportEndDateColumnName: string;
-}
-
 interface ScopedSettingsState {
     user: SettingsValues;
     workspace: SettingsValues;
-}
-
-const SETTING_KEYS: readonly SettingsKey[] = [
-    'theme',
-    'tabWrapEnabled',
-    'referenceJumpTemporaryFilterEnabled',
-    'exportValidationDateTime',
-    'exportBeginDateColumnName',
-    'exportEndDateColumnName',
-];
-
-function isThemeValue(value: unknown): value is ThemeValue {
-    return value === 'dark' || value === 'light';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
 
+function hasOwnSettingKey<T extends object>(value: T, key: SettingsKey): boolean {
+    return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function readSelectSettingValueFromRecord(
+    record: Record<string, unknown> | null,
+    key: string,
+    options: readonly SettingOption<SettingValue>[] | undefined,
+): SettingValue | null {
+    if (record === null || options === undefined) return null;
+    const value = record[key];
+    return options.find(option => option.value === value)?.value ?? null;
+}
+
+function readSettingValueFromRecord<TKey extends SettingsKey>(
+    record: Record<string, unknown> | null,
+    key: TKey,
+): SettingsValues[TKey] {
+    const definition = SETTING_DEFINITIONS[key];
+    if (definition.type === 'select') {
+        return readSelectSettingValueFromRecord(
+            record,
+            key,
+            definition.options as readonly SettingOption<SettingValue>[] | undefined,
+        ) as SettingsValues[TKey];
+    }
+    return SETTING_VALUE_READERS[definition.type](record, key) as SettingsValues[TKey];
+}
+
+function setSettingValue<TKey extends SettingsKey>(
+    settings: SettingsValues,
+    key: TKey,
+    value: SettingsValues[TKey],
+): void {
+    settings[key] = value;
+}
+
+function setDefaultedSettingValue<TKey extends SettingsKey>(
+    settings: DefaultedSettingsValues,
+    key: TKey,
+    value: DefaultedSettingsValues[TKey],
+): void {
+    settings[key] = value;
+}
+
+function setSettingsPatchValue<TKey extends SettingsKey>(
+    patch: SettingsPatch,
+    key: TKey,
+    value: SettingsPatch[TKey],
+): void {
+    patch[key] = value;
+}
+
 function createEmptySettingsValues(): SettingsValues {
-    return {
-        theme: null,
-        tabWrapEnabled: null,
-        referenceJumpTemporaryFilterEnabled: null,
-        exportValidationDateTime: null,
-        exportBeginDateColumnName: null,
-        exportEndDateColumnName: null,
-    };
+    const settings = {} as SettingsValues;
+    for (const key of SETTING_KEYS) {
+        setSettingValue(settings, key, null);
+    }
+    return settings;
 }
 
 function createEmptySettingsState(): ScopedSettingsState {
@@ -122,40 +157,15 @@ function createEmptySettingsState(): ScopedSettingsState {
 }
 
 function createDefaultedSettingsValues(settings: SettingsValues): DefaultedSettingsValues {
-    return {
-        theme: settings.theme ?? DEFAULT_THEME,
-        tabWrapEnabled: settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED,
-        referenceJumpTemporaryFilterEnabled: settings.referenceJumpTemporaryFilterEnabled ?? DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED,
-        exportValidationDateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
-        exportBeginDateColumnName: settings.exportBeginDateColumnName ?? DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
-        exportEndDateColumnName: settings.exportEndDateColumnName ?? DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
-    };
-}
-
-function createApplicationDefaultSettings(): DefaultedSettingsValues {
-    return {
-        theme: DEFAULT_THEME,
-        tabWrapEnabled: DEFAULT_TAB_WRAP_ENABLED,
-        referenceJumpTemporaryFilterEnabled: DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED,
-        exportValidationDateTime: DEFAULT_EXPORT_VALIDATION_DATE_TIME,
-        exportBeginDateColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
-        exportEndDateColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
-    };
-}
-
-function getDefaultedSettingValue(settings: DefaultedSettingsValues, key: SettingsKey): ThemeValue | boolean | string {
-    switch (key) {
-        case 'theme': return settings.theme;
-        case 'tabWrapEnabled': return settings.tabWrapEnabled;
-        case 'referenceJumpTemporaryFilterEnabled': return settings.referenceJumpTemporaryFilterEnabled;
-        case 'exportValidationDateTime': return settings.exportValidationDateTime;
-        case 'exportBeginDateColumnName': return settings.exportBeginDateColumnName;
-        case 'exportEndDateColumnName': return settings.exportEndDateColumnName;
+    const defaultedSettings = {} as DefaultedSettingsValues;
+    for (const key of SETTING_KEYS) {
+        setDefaultedSettingValue(
+            defaultedSettings,
+            key,
+            (settings[key] ?? getApplicationDefaultValue(key)) as DefaultedSettingsValues[typeof key],
+        );
     }
-}
-
-function isSettingKey(value: string): value is SettingsKey {
-    return SETTING_KEYS.includes(value as SettingsKey);
+    return defaultedSettings;
 }
 
 async function readSettingsRecordAsync(scope: SettingsScope): Promise<Record<string, unknown> | null> {
@@ -167,45 +177,12 @@ async function readSettingsRecordAsync(scope: SettingsScope): Promise<Record<str
     }
 }
 
-function readThemeFromRecord(record: Record<string, unknown> | null): ThemeValue | null {
-    if (record === null) return null;
-    return isThemeValue(record['theme']) ? record['theme'] : null;
-}
-
-function readTabWrapEnabledFromRecord(record: Record<string, unknown> | null): boolean | null {
-    if (record === null) return null;
-    if (typeof record['tabWrapEnabled'] === 'boolean') {
-        return record['tabWrapEnabled'];
-    }
-    return null;
-}
-
-function readBooleanSettingFromRecord(record: Record<string, unknown> | null, key: string): boolean | null {
-    if (record === null) return null;
-    return typeof record[key] === 'boolean' ? record[key] : null;
-}
-
-function readExportValidationDateTimeFromRecord(record: Record<string, unknown> | null): string | null {
-    if (record === null) return null;
-    return typeof record['exportValidationDateTime'] === 'string'
-        ? record['exportValidationDateTime']
-        : null;
-}
-
-function readStringSettingFromRecord(record: Record<string, unknown> | null, key: string): string | null {
-    if (record === null) return null;
-    return typeof record[key] === 'string' ? record[key] : null;
-}
-
 function readSettingsValuesFromRecord(settingsRecord: Record<string, unknown> | null): SettingsValues {
-    return {
-        theme: readThemeFromRecord(settingsRecord),
-        tabWrapEnabled: readTabWrapEnabledFromRecord(settingsRecord),
-        referenceJumpTemporaryFilterEnabled: readBooleanSettingFromRecord(settingsRecord, 'referenceJumpTemporaryFilterEnabled'),
-        exportValidationDateTime: readExportValidationDateTimeFromRecord(settingsRecord),
-        exportBeginDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportBeginDateColumnName'),
-        exportEndDateColumnName: readStringSettingFromRecord(settingsRecord, 'exportEndDateColumnName'),
-    };
+    const settings = {} as SettingsValues;
+    for (const key of SETTING_KEYS) {
+        setSettingValue(settings, key, readSettingValueFromRecord(settingsRecord, key));
+    }
+    return settings;
 }
 
 async function readScopedSettingsAsync(scope: SettingsScope): Promise<SettingsValues> {
@@ -221,14 +198,15 @@ async function readStoredSettingsAsync(): Promise<ScopedSettingsState> {
 }
 
 function resolveEffectiveSettings(settingsState: ScopedSettingsState): SettingsValues {
-    return {
-        theme: settingsState.user.theme ?? settingsState.workspace.theme,
-        tabWrapEnabled: settingsState.user.tabWrapEnabled ?? settingsState.workspace.tabWrapEnabled,
-        referenceJumpTemporaryFilterEnabled: settingsState.user.referenceJumpTemporaryFilterEnabled ?? settingsState.workspace.referenceJumpTemporaryFilterEnabled,
-        exportValidationDateTime: settingsState.user.exportValidationDateTime ?? settingsState.workspace.exportValidationDateTime,
-        exportBeginDateColumnName: settingsState.user.exportBeginDateColumnName ?? settingsState.workspace.exportBeginDateColumnName,
-        exportEndDateColumnName: settingsState.user.exportEndDateColumnName ?? settingsState.workspace.exportEndDateColumnName,
-    };
+    const effectiveSettings = {} as SettingsValues;
+    for (const key of SETTING_KEYS) {
+        setSettingValue(
+            effectiveSettings,
+            key,
+            (settingsState.user[key] ?? settingsState.workspace[key]) as SettingsValues[typeof key],
+        );
+    }
+    return effectiveSettings;
 }
 
 function resolveSettingsForScopeView(scope: SettingsScope, settingsState: ScopedSettingsState): SettingsValues {
@@ -239,24 +217,21 @@ function resolveDefaultedSettingsForScopeView(scope: SettingsScope, settingsStat
     return createDefaultedSettingsValues(resolveSettingsForScopeView(scope, settingsState));
 }
 
-function normalizeSettingsValueForScopeDefault<T extends ThemeValue | boolean | string>(
-    value: T | null,
-    defaultValue: T,
-): T | null {
+function normalizeSettingsValueForScopeDefault<TKey extends SettingsKey>(
+    key: TKey,
+    value: SettingsValues[TKey],
+): SettingsValues[TKey] {
     if (value === null) return null;
+    const defaultValue = getApplicationDefaultValue(key);
     return value === defaultValue ? null : value;
 }
 
 function normalizeSettingsValues(settings: SettingsValues): SettingsValues {
-    const defaultSettings = createApplicationDefaultSettings();
-    return {
-        theme: normalizeSettingsValueForScopeDefault(settings.theme, defaultSettings.theme),
-        tabWrapEnabled: normalizeSettingsValueForScopeDefault(settings.tabWrapEnabled, defaultSettings.tabWrapEnabled),
-        referenceJumpTemporaryFilterEnabled: normalizeSettingsValueForScopeDefault(settings.referenceJumpTemporaryFilterEnabled, defaultSettings.referenceJumpTemporaryFilterEnabled),
-        exportValidationDateTime: normalizeSettingsValueForScopeDefault(settings.exportValidationDateTime, defaultSettings.exportValidationDateTime),
-        exportBeginDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportBeginDateColumnName, defaultSettings.exportBeginDateColumnName),
-        exportEndDateColumnName: normalizeSettingsValueForScopeDefault(settings.exportEndDateColumnName, defaultSettings.exportEndDateColumnName),
-    };
+    const normalizedSettings = {} as SettingsValues;
+    for (const key of SETTING_KEYS) {
+        setSettingValue(normalizedSettings, key, normalizeSettingsValueForScopeDefault(key, settings[key]));
+    }
+    return normalizedSettings;
 }
 
 function normalizeSettingsState(settingsState: ScopedSettingsState): ScopedSettingsState {
@@ -278,12 +253,7 @@ function cloneSettingsState(settingsState: ScopedSettingsState): ScopedSettingsS
 }
 
 function areSettingsValuesEqual(left: SettingsValues, right: SettingsValues): boolean {
-    return left.theme === right.theme
-        && left.tabWrapEnabled === right.tabWrapEnabled
-        && left.referenceJumpTemporaryFilterEnabled === right.referenceJumpTemporaryFilterEnabled
-        && left.exportValidationDateTime === right.exportValidationDateTime
-        && left.exportBeginDateColumnName === right.exportBeginDateColumnName
-        && left.exportEndDateColumnName === right.exportEndDateColumnName;
+    return SETTING_KEYS.every(key => left[key] === right[key]);
 }
 
 function areSettingsStatesEqual(left: ScopedSettingsState, right: ScopedSettingsState): boolean {
@@ -292,79 +262,45 @@ function areSettingsStatesEqual(left: ScopedSettingsState, right: ScopedSettings
 }
 
 function hasAnySettingsValue(settings: SettingsValues): boolean {
-    return settings.theme !== null
-        || settings.tabWrapEnabled !== null
-        || settings.referenceJumpTemporaryFilterEnabled !== null
-        || settings.exportValidationDateTime !== null
-        || settings.exportBeginDateColumnName !== null
-        || settings.exportEndDateColumnName !== null;
-}
-
-function getThemeText(value: ThemeValue): string {
-    return THEME_OPTIONS.find(option => option.value === value)?.text ?? value;
-}
-
-function getDefaultedTheme(settings: SettingsValues): ThemeValue {
-    return settings.theme ?? DEFAULT_THEME;
-}
-
-function getDefaultedTabWrapEnabled(settings: SettingsValues): boolean {
-    return settings.tabWrapEnabled ?? DEFAULT_TAB_WRAP_ENABLED;
-}
-
-function getDefaultedReferenceJumpTemporaryFilterEnabled(settings: SettingsValues): boolean {
-    return settings.referenceJumpTemporaryFilterEnabled ?? DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED;
-}
-
-function getDefaultedExportValidationSettings(settings: SettingsValues): ExportValidationSettings {
-    return {
-        dateTime: settings.exportValidationDateTime ?? DEFAULT_EXPORT_VALIDATION_DATE_TIME,
-        beginColumnName: settings.exportBeginDateColumnName ?? DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
-        endColumnName: settings.exportEndDateColumnName ?? DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
-    };
+    return SETTING_KEYS.some(key => settings[key] !== null);
 }
 
 function createSettingsFileFromValues(settings: SettingsValues): SettingsFile {
     const file: SettingsFile = {};
-    if (settings.theme !== null) file.theme = settings.theme;
-    if (settings.tabWrapEnabled !== null) file.tabWrapEnabled = settings.tabWrapEnabled;
-    if (settings.referenceJumpTemporaryFilterEnabled !== null) file.referenceJumpTemporaryFilterEnabled = settings.referenceJumpTemporaryFilterEnabled;
-    if (settings.exportValidationDateTime !== null) file.exportValidationDateTime = settings.exportValidationDateTime;
-    if (settings.exportBeginDateColumnName !== null) file.exportBeginDateColumnName = settings.exportBeginDateColumnName;
-    if (settings.exportEndDateColumnName !== null) file.exportEndDateColumnName = settings.exportEndDateColumnName;
+    for (const key of SETTING_KEYS) {
+        if (settings[key] !== null) {
+            file[key] = settings[key] as SettingValue;
+        }
+    }
     return file;
 }
 
-function applySettingsStateToRuntime(settingsState: ScopedSettingsState): void {
-    const effectiveSettings = resolveEffectiveSettings(settingsState);
-    document.body.dataset.theme = getDefaultedTheme(effectiveSettings);
-    applyTabWrapEnabled(getDefaultedTabWrapEnabled(effectiveSettings));
-    applyReferenceJumpTemporaryFilterEnabled(getDefaultedReferenceJumpTemporaryFilterEnabled(effectiveSettings));
-    applyExportValidationSettings(getDefaultedExportValidationSettings(effectiveSettings));
+function getChangedEffectiveSettingsKeys(before: ScopedSettingsState, after: ScopedSettingsState): SettingsKey[] {
+    const beforeSettings = createDefaultedSettingsValues(resolveEffectiveSettings(before));
+    const afterSettings = createDefaultedSettingsValues(resolveEffectiveSettings(after));
+    return SETTING_KEYS.filter(key => beforeSettings[key] !== afterSettings[key]);
+}
+
+function applySettingsStateToRuntime(
+    settingsState: ScopedSettingsState,
+    changedKeys: readonly SettingsKey[] = SETTING_KEYS,
+): void {
+    appliedSettings = createDefaultedSettingsValues(resolveEffectiveSettings(settingsState));
+    for (const key of changedKeys) {
+        SETTING_RUNTIME_APPLIERS[key]?.(appliedSettings);
+    }
+    dispatchSettingsChangedEvent(changedKeys);
 }
 
 function normalizeSettingsPatch(patch: SettingsPatch): SettingsPatch {
-    const defaultSettings = createApplicationDefaultSettings();
     const normalizedPatch: SettingsPatch = {};
-    if (Object.prototype.hasOwnProperty.call(patch, 'theme')) {
-        normalizedPatch.theme = patch.theme === defaultSettings.theme ? null : patch.theme ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'tabWrapEnabled')) {
-        normalizedPatch.tabWrapEnabled = patch.tabWrapEnabled === defaultSettings.tabWrapEnabled ? null : patch.tabWrapEnabled ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'referenceJumpTemporaryFilterEnabled')) {
-        normalizedPatch.referenceJumpTemporaryFilterEnabled = patch.referenceJumpTemporaryFilterEnabled === defaultSettings.referenceJumpTemporaryFilterEnabled
-            ? null
-            : patch.referenceJumpTemporaryFilterEnabled ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'exportValidationDateTime')) {
-        normalizedPatch.exportValidationDateTime = patch.exportValidationDateTime === defaultSettings.exportValidationDateTime ? null : patch.exportValidationDateTime ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'exportBeginDateColumnName')) {
-        normalizedPatch.exportBeginDateColumnName = patch.exportBeginDateColumnName === defaultSettings.exportBeginDateColumnName ? null : patch.exportBeginDateColumnName ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'exportEndDateColumnName')) {
-        normalizedPatch.exportEndDateColumnName = patch.exportEndDateColumnName === defaultSettings.exportEndDateColumnName ? null : patch.exportEndDateColumnName ?? null;
+    for (const key of SETTING_KEYS) {
+        if (!hasOwnSettingKey(patch, key)) continue;
+        setSettingsPatchValue(
+            normalizedPatch,
+            key,
+            normalizeSettingsValueForScopeDefault(key, (patch[key] ?? null) as SettingsValues[typeof key]),
+        );
     }
     return normalizedPatch;
 }
@@ -372,14 +308,10 @@ function normalizeSettingsPatch(patch: SettingsPatch): SettingsPatch {
 function applySettingsPatchToState(settingsState: ScopedSettingsState, scope: SettingsScope, patch: SettingsPatch): ScopedSettingsState {
     const nextScopeSettings = {...settingsState[scope]};
     const normalizedPatch = normalizeSettingsPatch(patch);
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'theme')) nextScopeSettings.theme = normalizedPatch.theme ?? null;
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'tabWrapEnabled')) nextScopeSettings.tabWrapEnabled = normalizedPatch.tabWrapEnabled ?? null;
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'referenceJumpTemporaryFilterEnabled')) {
-        nextScopeSettings.referenceJumpTemporaryFilterEnabled = normalizedPatch.referenceJumpTemporaryFilterEnabled ?? null;
+    for (const key of SETTING_KEYS) {
+        if (!hasOwnSettingKey(normalizedPatch, key)) continue;
+        setSettingValue(nextScopeSettings, key, (normalizedPatch[key] ?? null) as SettingsValues[typeof key]);
     }
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportValidationDateTime')) nextScopeSettings.exportValidationDateTime = normalizedPatch.exportValidationDateTime ?? null;
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportBeginDateColumnName')) nextScopeSettings.exportBeginDateColumnName = normalizedPatch.exportBeginDateColumnName ?? null;
-    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'exportEndDateColumnName')) nextScopeSettings.exportEndDateColumnName = normalizedPatch.exportEndDateColumnName ?? null;
     return normalizeSettingsState({
         ...settingsState,
         [scope]: nextScopeSettings,
@@ -392,23 +324,17 @@ async function writeSettingsFileAsync(scope: SettingsScope, settings: SettingsVa
         delete data[key];
     }
     const settingsFile = createSettingsFileFromValues(settings);
-    if (settingsFile.theme !== undefined) data['theme'] = settingsFile.theme;
-    if (settingsFile.tabWrapEnabled !== undefined) data['tabWrapEnabled'] = settingsFile.tabWrapEnabled;
-    if (settingsFile.referenceJumpTemporaryFilterEnabled !== undefined) {
-        data['referenceJumpTemporaryFilterEnabled'] = settingsFile.referenceJumpTemporaryFilterEnabled;
-    }
-    if (settingsFile.exportValidationDateTime !== undefined) data['exportValidationDateTime'] = settingsFile.exportValidationDateTime;
-    if (settingsFile.exportBeginDateColumnName !== undefined) {
-        data['exportBeginDateColumnName'] = settingsFile.exportBeginDateColumnName;
-    }
-    if (settingsFile.exportEndDateColumnName !== undefined) {
-        data['exportEndDateColumnName'] = settingsFile.exportEndDateColumnName;
+    for (const key of SETTING_KEYS) {
+        if (settingsFile[key] !== undefined) {
+            data[key] = settingsFile[key];
+        }
     }
     await writeFileAsync(SETTINGS_FILES[scope], data, SETTINGS_SCOPE_OPTIONS[scope]);
 }
 
 let settingsWriteChain: Promise<void> = Promise.resolve();
 let loadedSettingsState: ScopedSettingsState = createEmptySettingsState();
+let appliedSettings: AppliedSettings = createApplicationDefaultSettings();
 
 function enqueueSettingsWriteAsync(scope: SettingsScope, settings: SettingsValues): Promise<void> {
     const writePromise = settingsWriteChain
@@ -418,65 +344,42 @@ function enqueueSettingsWriteAsync(scope: SettingsScope, settings: SettingsValue
     return writePromise;
 }
 
-let appliedExportValidationSettings: ExportValidationSettings = {
-    dateTime: DEFAULT_EXPORT_VALIDATION_DATE_TIME,
-    beginColumnName: DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME,
-    endColumnName: DEFAULT_EXPORT_END_DATE_COLUMN_NAME,
+function dispatchSettingsChangedEvent(changedKeys: readonly SettingsKey[]): void {
+    if (changedKeys.length === 0) return;
+    const detail: SettingsChangedEventDetail = {
+        settings: getAppliedSettings(),
+        changedKeys: [...changedKeys],
+    };
+    window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {detail}));
+}
+
+export function getAppliedSettings(): AppliedSettings {
+    return {...appliedSettings};
+}
+
+interface SettingControl {
+    root: HTMLElement;
+    getValue(): SettingValue;
+    setValue(value: SettingValue): void;
+    close?(): void;
+    destroy?(): void;
+    containsTarget?(target: Node): boolean;
+    shouldLetNativeTextHistoryHandle?(target: EventTarget): boolean | null;
+}
+
+type SettingControlMap = {
+    [TKey in SettingsKey]?: SettingControl;
 };
-let appliedReferenceJumpTemporaryFilterEnabled = DEFAULT_REFERENCE_JUMP_TEMPORARY_FILTER_ENABLED;
-
-export function applyTabWrapEnabled(value: boolean): void {
-    document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, value ? '1' : '0');
-    window.dispatchEvent(new CustomEvent(TAB_WRAP_ENABLED_CHANGED_EVENT));
-}
-
-export function applyReferenceJumpTemporaryFilterEnabled(value: boolean): void {
-    appliedReferenceJumpTemporaryFilterEnabled = value;
-}
-
-export function isReferenceJumpTemporaryFilterEnabled(): boolean {
-    return appliedReferenceJumpTemporaryFilterEnabled;
-}
-
-export function applyExportValidationSettings(value: ExportValidationSettings): void {
-    appliedExportValidationSettings = {...value};
-    window.dispatchEvent(new CustomEvent(EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, {
-        detail: {...appliedExportValidationSettings},
-    }));
-}
-
-export function applyExportValidationDateTime(value: string): void {
-    applyExportValidationSettings({...appliedExportValidationSettings, dateTime: value});
-}
-
-export function applyExportValidationColumnNames(beginColumnName: string, endColumnName: string): void {
-    applyExportValidationSettings({...appliedExportValidationSettings, beginColumnName, endColumnName});
-}
-
-export function getAppliedExportValidationSettings(): ExportValidationSettings {
-    return {...appliedExportValidationSettings};
-}
 
 export class SettingsPanel {
     private readonly element: HTMLElement;
     private activeScope: SettingsScope;
     private readonly scopeButtons: Record<SettingsScope, HTMLButtonElement>;
-    private selectedTheme: ThemeValue;
-    private readonly selectedLabel: HTMLElement;
-    private readonly dropdownList: HTMLElement;
-    private selectedTabWrapEnabled: boolean;
-    private readonly tabWrapToggle: HTMLInputElement;
-    private selectedReferenceJumpTemporaryFilterEnabled: boolean;
-    private readonly referenceJumpTemporaryFilterToggle: HTMLInputElement;
-    private selectedExportValidationDateTime: string;
-    private readonly exportValidationDateTimePicker: DateTimePicker;
-    private selectedExportBeginDateColumnName: string;
-    private readonly exportBeginDateColumnNameInput: HTMLInputElement;
-    private selectedExportEndDateColumnName: string;
-    private readonly exportEndDateColumnNameInput: HTMLInputElement;
+    private readonly settingControls: SettingControlMap;
     /** dirty マーク表示先の TabButton（Tab から inject される） */
     private readonly tabButton: TabButton;
     private readonly documentKeydownHandler: (event: KeyboardEvent) => void;
+    private readonly documentClickHandler: (event: MouseEvent) => void;
     private readonly collapsedSections = new Set<string>();
     private readonly undoStack: SettingsHistoryEntry[];
     private readonly redoStack: SettingsHistoryEntry[];
@@ -484,6 +387,7 @@ export class SettingsPanel {
 
     constructor(tabButton: TabButton) {
         this.tabButton = tabButton;
+        this.settingControls = {};
         this.undoStack = [];
         this.redoStack = [];
         this.documentKeydownHandler = (event: KeyboardEvent) => {
@@ -491,14 +395,20 @@ export class SettingsPanel {
             this.handleKeyDown(event);
         };
         document.addEventListener('keydown', this.documentKeydownHandler, true);
+        this.documentClickHandler = (event: MouseEvent) => {
+            const target = event.target;
+            if (!(target instanceof Node)) return;
+            for (const control of this.getSettingControls()) {
+                if (control.close === undefined) continue;
+                if (control.containsTarget?.(target) === true) continue;
+                control.close();
+            }
+        };
+        document.addEventListener('click', this.documentClickHandler);
 
         // 設定パネル全体のコンテナ
         this.element = document.createElement('div');
         this.element.classList.add('settings-panel');
-        this.element.tabIndex = 0;
-        this.element.addEventListener('keydown', (event: KeyboardEvent) => {
-            this.handleKeyDown(event);
-        });
 
         this.activeScope = hasAnySettingsValue(loadedSettingsState.user) ? 'user' : 'workspace';
         const userScopeButton = this.createScopeButton('user');
@@ -514,216 +424,226 @@ export class SettingsPanel {
         scopeTabs.appendChild(workspaceScopeButton);
         this.element.appendChild(scopeTabs);
 
-        const initialSettings = resolveSettingsForScopeView(this.activeScope, loadedSettingsState);
+        const initialSettings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
+        for (const settingSection of SETTING_SECTIONS) {
+            const section = this.createSection(settingSection.label);
+            const sectionItems = this.getSectionItemsElement(section);
+            for (const key of SETTING_KEYS.filter(settingKey => SETTING_DEFINITIONS[settingKey].section === settingSection.id)) {
+                const control = this.createSettingControl(key, initialSettings[key] as SettingValue);
+                this.settingControls[key] = control;
+                sectionItems.appendChild(this.createSettingRow(
+                    key,
+                    control.root,
+                    SETTING_DEFINITIONS[key].rowElement ?? 'div',
+                ));
+            }
+            this.element.appendChild(section);
+        }
+        this.updateScopeButtonStyles();
+        this.updateSettingDifferenceMarkers();
+    }
 
-        // 表示設定セクション
-        const displaySection = this.createSection('表示');
-        const displaySectionItems = this.getSectionItemsElement(displaySection);
+    private createSettingRow(
+        key: SettingsKey,
+        control: HTMLElement,
+        elementName: SettingRowElementName = 'div',
+    ): HTMLElement {
+        const row = document.createElement(elementName);
+        row.classList.add('settings-label');
+        row.dataset.settingKey = key;
 
-        const label = document.createElement('div');
-        label.classList.add('settings-label');
-        label.dataset.settingKey = 'theme';
         const labelText = document.createElement('span');
         labelText.classList.add('settings-label-text');
-        labelText.textContent = 'テーマ';
-        label.appendChild(labelText);
+        labelText.textContent = getSettingLabel(key);
 
-        // カスタムドロップダウン（ブラウザネイティブ<select>では選択色を制御できないため）
+        row.appendChild(labelText);
+        row.appendChild(control);
+        row.appendChild(this.createSettingResetButton(key));
+        return row;
+    }
+
+    private getSettingControls(): SettingControl[] {
+        return SETTING_KEYS
+            .map(key => this.settingControls[key])
+            .filter((control): control is SettingControl => control !== undefined);
+    }
+
+    private getSettingControl(key: SettingsKey): SettingControl {
+        const control = this.settingControls[key];
+        if (control === undefined) throw new Error(`[SettingsPanel] setting control is not initialized: ${key}`);
+        return control;
+    }
+
+    private createSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
+        const definition = SETTING_DEFINITIONS[key];
+        switch (definition.control) {
+            case 'select':
+                return this.createSelectSettingControl(key, value);
+            case 'toggle':
+                return this.createToggleSettingControl(key, value);
+            case 'dateTime':
+                return this.createDateTimeSettingControl(key, value);
+            case 'text':
+                return this.createTextSettingControl(key, value);
+        }
+    }
+
+    private createSelectSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
         const dropdown = document.createElement('div');
         dropdown.classList.add('settings-dropdown');
 
-        // 選択表示ボタン
         const trigger = document.createElement('button');
+        trigger.type = 'button';
         trigger.classList.add('settings-dropdown-trigger');
-        this.selectedLabel = document.createElement('span');
+
+        const selectedLabel = document.createElement('span');
         const chevron = document.createElement('span');
         chevron.classList.add('settings-dropdown-chevron');
         chevron.textContent = '\u25BC';
-        trigger.appendChild(this.selectedLabel);
+        trigger.appendChild(selectedLabel);
         trigger.appendChild(chevron);
 
-        // ドロップダウンリスト
-        this.dropdownList = document.createElement('div');
-        this.dropdownList.classList.add('settings-dropdown-list');
-
-        for (const opt of THEME_OPTIONS) {
+        const list = document.createElement('div');
+        list.classList.add('settings-dropdown-list');
+        for (const option of getSettingOptions(key)) {
             const item = document.createElement('div');
             item.classList.add('settings-dropdown-item');
-            item.dataset.value = opt.value;
-            item.textContent = opt.text;
+            item.dataset.value = String(option.value);
+            item.textContent = option.label;
             item.addEventListener('click', () => {
-                this.selectTheme(opt.value);
-                this.closeDropdown();
+                this.commitSettingValue(key, option.value, `save ${String(key)} failed`);
+                list.classList.remove('visible');
             });
-            this.dropdownList.appendChild(item);
+            list.appendChild(item);
         }
 
-        trigger.addEventListener('click', () => { this.toggleDropdown(); });
+        let selectedValue = value;
+        const setValue = (nextValue: SettingValue): void => {
+            selectedValue = nextValue;
+            selectedLabel.textContent = getSettingOptionLabel(key, nextValue as SettingValueFor<typeof key>);
+            this.updateSelectItemStyles(list, selectedValue);
+        };
 
-        // ドロップダウン外クリックで閉じる
-        document.addEventListener('click', (e: MouseEvent) => {
-            if (!dropdown.contains(e.target as Node)) {
-                this.closeDropdown();
-            }
-        });
-
+        trigger.addEventListener('click', () => { list.classList.toggle('visible'); });
         dropdown.appendChild(trigger);
-        dropdown.appendChild(this.dropdownList);
+        dropdown.appendChild(list);
+        setValue(value);
+        return {
+            root: dropdown,
+            getValue: () => selectedValue,
+            setValue,
+            close: () => { list.classList.remove('visible'); },
+            containsTarget: (target: Node) => dropdown.contains(target),
+        };
+    }
 
-        // アクティブな設定スコープの値を初期表示に反映する
-        this.selectedTheme = getDefaultedTheme(initialSettings);
-        this.selectedLabel.textContent = getThemeText(this.selectedTheme);
-        this.updateItemStyles();
+    private createToggleSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
+        const definition = SETTING_DEFINITIONS[key];
+        const root = document.createElement('label');
+        root.classList.add('settings-toggle', ...(definition.rootClassNames ?? []));
 
-        label.appendChild(dropdown);
-        label.appendChild(this.createSettingResetButton('theme'));
-        displaySectionItems.appendChild(label);
-
-        const tabWrapLabel = document.createElement('div');
-        tabWrapLabel.classList.add('settings-label');
-        tabWrapLabel.dataset.settingKey = 'tabWrapEnabled';
-        const tabWrapLabelText = document.createElement('span');
-        tabWrapLabelText.classList.add('settings-label-text');
-        tabWrapLabelText.textContent = 'タブを折り返す';
-        tabWrapLabel.appendChild(tabWrapLabelText);
-
-        const tabWrapControl = document.createElement('label');
-        tabWrapControl.classList.add('settings-toggle', 'settings-tab-wrap-toggle');
-
-        this.selectedTabWrapEnabled = getDefaultedTabWrapEnabled(initialSettings);
-        this.tabWrapToggle = document.createElement('input');
-        this.tabWrapToggle.classList.add('settings-toggle-input', 'settings-tab-wrap-checkbox');
-        this.tabWrapToggle.type = 'checkbox';
-        this.tabWrapToggle.checked = this.selectedTabWrapEnabled;
-        this.tabWrapToggle.addEventListener('change', () => {
-            this.selectTabWrapEnabled(this.tabWrapToggle.checked);
+        const input = document.createElement('input');
+        input.classList.add('settings-toggle-input', ...(definition.inputClassNames ?? []));
+        input.type = 'checkbox';
+        let selectedValue = value === true;
+        input.checked = selectedValue;
+        input.addEventListener('change', () => {
+            this.commitSettingValue(key, input.checked, `save ${String(key)} failed`);
         });
 
-        const tabWrapTrack = document.createElement('span');
-        tabWrapTrack.classList.add('settings-toggle-track');
-        const tabWrapThumb = document.createElement('span');
-        tabWrapThumb.classList.add('settings-toggle-thumb');
-        tabWrapTrack.appendChild(tabWrapThumb);
+        const track = document.createElement('span');
+        track.classList.add('settings-toggle-track');
+        const thumb = document.createElement('span');
+        thumb.classList.add('settings-toggle-thumb');
+        track.appendChild(thumb);
 
-        tabWrapControl.appendChild(this.tabWrapToggle);
-        tabWrapControl.appendChild(tabWrapTrack);
-        tabWrapLabel.appendChild(tabWrapControl);
-        tabWrapLabel.appendChild(this.createSettingResetButton('tabWrapEnabled'));
-        displaySectionItems.appendChild(tabWrapLabel);
+        root.appendChild(input);
+        root.appendChild(track);
+        return {
+            root,
+            getValue: () => selectedValue,
+            setValue: (nextValue: SettingValue) => {
+                selectedValue = nextValue === true;
+                input.checked = selectedValue;
+            },
+            shouldLetNativeTextHistoryHandle: (target: EventTarget) => target === input ? false : null,
+        };
+    }
 
-        const referenceJumpTemporaryFilterLabel = document.createElement('div');
-        referenceJumpTemporaryFilterLabel.classList.add('settings-label');
-        referenceJumpTemporaryFilterLabel.dataset.settingKey = 'referenceJumpTemporaryFilterEnabled';
-        const referenceJumpTemporaryFilterLabelText = document.createElement('span');
-        referenceJumpTemporaryFilterLabelText.classList.add('settings-label-text');
-        referenceJumpTemporaryFilterLabelText.textContent = 'ジャンプ時フィルター';
-        referenceJumpTemporaryFilterLabel.appendChild(referenceJumpTemporaryFilterLabelText);
-
-        const referenceJumpTemporaryFilterControl = document.createElement('label');
-        referenceJumpTemporaryFilterControl.classList.add('settings-toggle', 'settings-reference-jump-temporary-filter-toggle');
-
-        this.selectedReferenceJumpTemporaryFilterEnabled = getDefaultedReferenceJumpTemporaryFilterEnabled(initialSettings);
-        this.referenceJumpTemporaryFilterToggle = document.createElement('input');
-        this.referenceJumpTemporaryFilterToggle.classList.add('settings-toggle-input', 'settings-reference-jump-temporary-filter-checkbox');
-        this.referenceJumpTemporaryFilterToggle.type = 'checkbox';
-        this.referenceJumpTemporaryFilterToggle.checked = this.selectedReferenceJumpTemporaryFilterEnabled;
-        this.referenceJumpTemporaryFilterToggle.addEventListener('change', () => {
-            this.selectReferenceJumpTemporaryFilterEnabled(this.referenceJumpTemporaryFilterToggle.checked);
-        });
-
-        const referenceJumpTemporaryFilterTrack = document.createElement('span');
-        referenceJumpTemporaryFilterTrack.classList.add('settings-toggle-track');
-        const referenceJumpTemporaryFilterThumb = document.createElement('span');
-        referenceJumpTemporaryFilterThumb.classList.add('settings-toggle-thumb');
-        referenceJumpTemporaryFilterTrack.appendChild(referenceJumpTemporaryFilterThumb);
-
-        referenceJumpTemporaryFilterControl.appendChild(this.referenceJumpTemporaryFilterToggle);
-        referenceJumpTemporaryFilterControl.appendChild(referenceJumpTemporaryFilterTrack);
-        referenceJumpTemporaryFilterLabel.appendChild(referenceJumpTemporaryFilterControl);
-        referenceJumpTemporaryFilterLabel.appendChild(this.createSettingResetButton('referenceJumpTemporaryFilterEnabled'));
-        displaySectionItems.appendChild(referenceJumpTemporaryFilterLabel);
-        this.element.appendChild(displaySection);
-
-        // export_begin_date / export_end_date を使った出力フィルター時刻
-        const exportValidationSection = this.createSection('出力フィルター');
-        const exportValidationSectionItems = this.getSectionItemsElement(exportValidationSection);
-
-        const exportValidationLabel = document.createElement('label');
-        exportValidationLabel.classList.add('settings-label');
-        exportValidationLabel.dataset.settingKey = 'exportValidationDateTime';
-        const exportValidationLabelText = document.createElement('span');
-        exportValidationLabelText.classList.add('settings-label-text');
-        exportValidationLabelText.textContent = '出力フィルター時刻';
-        exportValidationLabel.appendChild(exportValidationLabelText);
-
-        const currentExportValidationSettings = getDefaultedExportValidationSettings(initialSettings);
-        this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(currentExportValidationSettings.dateTime) ?? currentExportValidationSettings.dateTime;
-        this.exportValidationDateTimePicker = new DateTimePicker({
-            value: this.selectedExportValidationDateTime,
-            rootClassNames: ['settings-date-time-picker', 'settings-export-validation-date-time-picker'],
-            inputClassNames: ['settings-datetime-input', 'settings-export-validation-datetime-input'],
-            onCommit: (value: string) => {
-                this.selectExportValidationDateTime(value);
+    private createDateTimeSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
+        const definition = SETTING_DEFINITIONS[key];
+        let selectedValue = normalizeDateTimeInputToSeconds(String(value)) ?? String(value);
+        const picker = new DateTimePicker({
+            value: selectedValue,
+            rootClassNames: ['settings-date-time-picker', ...(definition.rootClassNames ?? [])],
+            inputClassNames: ['settings-datetime-input', ...(definition.inputClassNames ?? [])],
+            onCommit: (nextValue: string) => {
+                this.commitSettingValue(
+                    key,
+                    normalizeDateTimeInputToSeconds(nextValue) ?? nextValue.trim(),
+                    `save ${String(key)} failed`,
+                );
             },
         });
+        return {
+            root: picker.getElement(),
+            getValue: () => selectedValue,
+            setValue: (nextValue: SettingValue) => {
+                selectedValue = normalizeDateTimeInputToSeconds(String(nextValue)) ?? String(nextValue);
+                picker.setValue(selectedValue);
+            },
+            close: () => { picker.close(); },
+            destroy: () => { picker.destroy(); },
+            containsTarget: (target: Node) => picker.getElement().contains(target),
+            shouldLetNativeTextHistoryHandle: (target: EventTarget) => {
+                const input = picker.getInput();
+                return target === input ? input.value !== selectedValue : null;
+            },
+        };
+    }
 
-        exportValidationLabel.appendChild(this.exportValidationDateTimePicker.getElement());
-        exportValidationLabel.appendChild(this.createSettingResetButton('exportValidationDateTime'));
-        exportValidationSectionItems.appendChild(exportValidationLabel);
-
-        const exportBeginDateColumnLabel = document.createElement('label');
-        exportBeginDateColumnLabel.classList.add('settings-label');
-        exportBeginDateColumnLabel.dataset.settingKey = 'exportBeginDateColumnName';
-        const exportBeginDateColumnLabelText = document.createElement('span');
-        exportBeginDateColumnLabelText.classList.add('settings-label-text');
-        exportBeginDateColumnLabelText.textContent = '開始日時列';
-        exportBeginDateColumnLabel.appendChild(exportBeginDateColumnLabelText);
-
-        this.selectedExportBeginDateColumnName = currentExportValidationSettings.beginColumnName;
-        this.exportBeginDateColumnNameInput = document.createElement('input');
-        this.exportBeginDateColumnNameInput.classList.add('settings-text-input', 'settings-export-begin-date-column-input');
-        this.exportBeginDateColumnNameInput.type = 'text';
-        this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
-        this.exportBeginDateColumnNameInput.addEventListener('change', () => {
-            this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
+    private createTextSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
+        const definition = SETTING_DEFINITIONS[key];
+        const input = document.createElement('input');
+        input.classList.add('settings-text-input', ...(definition.inputClassNames ?? []));
+        input.type = 'text';
+        let selectedValue = String(value);
+        input.value = selectedValue;
+        this.addTextInputCommitHandlers(input, () => {
+            this.commitSettingValue(key, input.value.trim(), `save ${String(key)} failed`);
         });
-        this.exportBeginDateColumnNameInput.addEventListener('blur', () => {
-            if (this.exportBeginDateColumnNameInput.value !== this.selectedExportBeginDateColumnName) {
-                this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
-            }
-        });
-        exportBeginDateColumnLabel.appendChild(this.exportBeginDateColumnNameInput);
-        exportBeginDateColumnLabel.appendChild(this.createSettingResetButton('exportBeginDateColumnName'));
-        exportValidationSectionItems.appendChild(exportBeginDateColumnLabel);
+        return {
+            root: input,
+            getValue: () => selectedValue,
+            setValue: (nextValue: SettingValue) => {
+                selectedValue = String(nextValue);
+                input.value = selectedValue;
+            },
+            shouldLetNativeTextHistoryHandle: (target: EventTarget) => target === input ? input.value !== selectedValue : null,
+        };
+    }
 
-        const exportEndDateColumnLabel = document.createElement('label');
-        exportEndDateColumnLabel.classList.add('settings-label');
-        exportEndDateColumnLabel.dataset.settingKey = 'exportEndDateColumnName';
-        const exportEndDateColumnLabelText = document.createElement('span');
-        exportEndDateColumnLabelText.classList.add('settings-label-text');
-        exportEndDateColumnLabelText.textContent = '終了日時列';
-        exportEndDateColumnLabel.appendChild(exportEndDateColumnLabelText);
+    private addTextInputCommitHandlers(input: HTMLInputElement, onCommit: () => void): void {
+        input.addEventListener('change', onCommit);
+        input.addEventListener('blur', onCommit);
+    }
 
-        this.selectedExportEndDateColumnName = currentExportValidationSettings.endColumnName;
-        this.exportEndDateColumnNameInput = document.createElement('input');
-        this.exportEndDateColumnNameInput.classList.add('settings-text-input', 'settings-export-end-date-column-input');
-        this.exportEndDateColumnNameInput.type = 'text';
-        this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
-        this.exportEndDateColumnNameInput.addEventListener('change', () => {
-            this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
-        });
-        this.exportEndDateColumnNameInput.addEventListener('blur', () => {
-            if (this.exportEndDateColumnNameInput.value !== this.selectedExportEndDateColumnName) {
-                this.selectExportValidationColumnNames(this.exportBeginDateColumnNameInput.value, this.exportEndDateColumnNameInput.value);
-            }
-        });
-        exportEndDateColumnLabel.appendChild(this.exportEndDateColumnNameInput);
-        exportEndDateColumnLabel.appendChild(this.createSettingResetButton('exportEndDateColumnName'));
-        exportValidationSectionItems.appendChild(exportEndDateColumnLabel);
+    private updateSelectItemStyles(list: HTMLElement, selectedValue: SettingValue): void {
+        for (const item of Array.from(list.children) as HTMLElement[]) {
+            item.classList.toggle('settings-dropdown-item-active', item.dataset.value === String(selectedValue));
+        }
+    }
 
-        this.element.appendChild(exportValidationSection);
-        this.updateScopeButtonStyles();
-        this.updateSettingDifferenceMarkers();
+    private commitSettingValue(key: SettingsKey, value: SettingValue, errorContext: string): void {
+        const control = this.getSettingControl(key);
+        if (control.getValue() === value) {
+            control.setValue(value);
+            return;
+        }
+        control.setValue(value);
+        const patch: SettingsPatch = {};
+        setSettingsPatchValue(patch, key, value as SettingsPatch[typeof key]);
+        this.applyAndSaveSettingsPatch(patch, errorContext);
     }
 
     private createScopeButton(scope: SettingsScope): HTMLButtonElement {
@@ -757,24 +677,10 @@ export class SettingsPanel {
     }
 
     private updateControlsFromActiveScope(): void {
-        const settings = resolveSettingsForScopeView(this.activeScope, loadedSettingsState);
-        this.selectedTheme = getDefaultedTheme(settings);
-        this.selectedLabel.textContent = getThemeText(this.selectedTheme);
-        this.updateItemStyles();
-
-        this.selectedTabWrapEnabled = getDefaultedTabWrapEnabled(settings);
-        this.tabWrapToggle.checked = this.selectedTabWrapEnabled;
-
-        this.selectedReferenceJumpTemporaryFilterEnabled = getDefaultedReferenceJumpTemporaryFilterEnabled(settings);
-        this.referenceJumpTemporaryFilterToggle.checked = this.selectedReferenceJumpTemporaryFilterEnabled;
-
-        const exportValidationSettings = getDefaultedExportValidationSettings(settings);
-        this.selectedExportValidationDateTime = normalizeDateTimeInputToSeconds(exportValidationSettings.dateTime) ?? exportValidationSettings.dateTime;
-        this.exportValidationDateTimePicker.setValue(this.selectedExportValidationDateTime);
-        this.selectedExportBeginDateColumnName = exportValidationSettings.beginColumnName;
-        this.selectedExportEndDateColumnName = exportValidationSettings.endColumnName;
-        this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
-        this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
+        const settings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
+        for (const key of SETTING_KEYS) {
+            this.getSettingControl(key).setValue(settings[key] as SettingValue);
+        }
         this.updateSettingDifferenceMarkers();
     }
 
@@ -853,52 +759,6 @@ export class SettingsPanel {
         return items;
     }
 
-    private selectTheme(value: ThemeValue): void {
-        if (this.selectedTheme === value) return;
-        this.selectedTheme = value;
-        this.selectedLabel.textContent = getThemeText(value);
-        this.updateItemStyles();
-        this.applyAndSaveSettingsPatch({theme: value}, 'save theme failed');
-    }
-
-    private selectTabWrapEnabled(value: boolean): void {
-        if (this.selectedTabWrapEnabled === value) return;
-        this.selectedTabWrapEnabled = value;
-        this.applyAndSaveSettingsPatch({tabWrapEnabled: value}, 'save tab layout failed');
-    }
-
-    private selectReferenceJumpTemporaryFilterEnabled(value: boolean): void {
-        if (this.selectedReferenceJumpTemporaryFilterEnabled === value) return;
-        this.selectedReferenceJumpTemporaryFilterEnabled = value;
-        this.applyAndSaveSettingsPatch({referenceJumpTemporaryFilterEnabled: value}, 'save reference jump temporary filter failed');
-    }
-
-    private selectExportValidationDateTime(value: string): void {
-        const nextValue = normalizeDateTimeInputToSeconds(value) ?? value.trim();
-        if (this.selectedExportValidationDateTime === nextValue) return;
-        this.selectedExportValidationDateTime = nextValue;
-        this.exportValidationDateTimePicker.setValue(this.selectedExportValidationDateTime);
-        this.applyAndSaveSettingsPatch({exportValidationDateTime: this.selectedExportValidationDateTime}, 'save export validation date time failed');
-    }
-
-    private selectExportValidationColumnNames(beginColumnName: string, endColumnName: string): void {
-        const nextBeginColumnName = beginColumnName.trim();
-        const nextEndColumnName = endColumnName.trim();
-        const patch: SettingsPatch = {};
-        if (this.selectedExportBeginDateColumnName !== nextBeginColumnName) {
-            patch.exportBeginDateColumnName = nextBeginColumnName;
-        }
-        if (this.selectedExportEndDateColumnName !== nextEndColumnName) {
-            patch.exportEndDateColumnName = nextEndColumnName;
-        }
-        if (Object.keys(patch).length === 0) return;
-        this.selectedExportBeginDateColumnName = nextBeginColumnName;
-        this.selectedExportEndDateColumnName = nextEndColumnName;
-        this.exportBeginDateColumnNameInput.value = this.selectedExportBeginDateColumnName;
-        this.exportEndDateColumnNameInput.value = this.selectedExportEndDateColumnName;
-        this.applyAndSaveSettingsPatch(patch, 'save export validation column names failed');
-    }
-
     private createSettingResetButton(key: SettingsKey): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
@@ -924,33 +784,15 @@ export class SettingsPanel {
 
     private createDefaultSettingPatch(key: SettingsKey): SettingsPatch {
         const defaults = createApplicationDefaultSettings();
-        switch (key) {
-            case 'theme': return { theme: defaults.theme };
-            case 'tabWrapEnabled': return { tabWrapEnabled: defaults.tabWrapEnabled };
-            case 'referenceJumpTemporaryFilterEnabled': return { referenceJumpTemporaryFilterEnabled: defaults.referenceJumpTemporaryFilterEnabled };
-            case 'exportValidationDateTime': return { exportValidationDateTime: defaults.exportValidationDateTime };
-            case 'exportBeginDateColumnName': return { exportBeginDateColumnName: defaults.exportBeginDateColumnName };
-            case 'exportEndDateColumnName': return { exportEndDateColumnName: defaults.exportEndDateColumnName };
-        }
-    }
-
-    /** 選択中アイテムにアクティブスタイルを付与する */
-    private updateItemStyles(): void {
-        for (const item of Array.from(this.dropdownList.children) as HTMLElement[]) {
-            if (item.dataset.value === this.selectedTheme) {
-                item.classList.add('settings-dropdown-item-active');
-            } else {
-                item.classList.remove('settings-dropdown-item-active');
-            }
-        }
-    }
-
-    private toggleDropdown(): void {
-        this.dropdownList.classList.toggle('visible');
+        const patch: SettingsPatch = {};
+        setSettingsPatchValue(patch, key, defaults[key]);
+        return patch;
     }
 
     private closeDropdown(): void {
-        this.dropdownList.classList.remove('visible');
+        for (const control of this.getSettingControls()) {
+            control.close?.();
+        }
     }
 
     /**
@@ -958,12 +800,14 @@ export class SettingsPanel {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
-        this.element.focus({preventScroll: true});
     }
 
     destroy(): void {
         document.removeEventListener('keydown', this.documentKeydownHandler, true);
-        this.exportValidationDateTimePicker.destroy();
+        document.removeEventListener('click', this.documentClickHandler);
+        for (const control of this.getSettingControls()) {
+            control.destroy?.();
+        }
         this.element.remove();
     }
 
@@ -986,7 +830,7 @@ export class SettingsPanel {
         if (areSettingsStatesEqual(before, after)) return;
         this.pushUndoEntry({scope: this.activeScope, before, after: cloneSettingsState(after)});
         loadedSettingsState = after;
-        applySettingsStateToRuntime(loadedSettingsState);
+        applySettingsStateToRuntime(loadedSettingsState, getChangedEffectiveSettingsKeys(before, after));
         this.updateSettingDifferenceMarkers();
         this.writeSettingsAsync(loadedSettingsState[this.activeScope])
             .then(() => { this.tabButton.setDirty(false); })
@@ -1025,16 +869,9 @@ export class SettingsPanel {
 
     private shouldLetNativeTextHistoryHandle(target: EventTarget | null): boolean {
         if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return false;
-        if (target === this.tabWrapToggle) return false;
-        if (target === this.referenceJumpTemporaryFilterToggle) return false;
-        if (target === this.exportBeginDateColumnNameInput) {
-            return target.value !== this.selectedExportBeginDateColumnName;
-        }
-        if (target === this.exportEndDateColumnNameInput) {
-            return target.value !== this.selectedExportEndDateColumnName;
-        }
-        if (target === this.exportValidationDateTimePicker.getInput()) {
-            return target.value !== this.selectedExportValidationDateTime;
+        for (const control of this.getSettingControls()) {
+            const result = control.shouldLetNativeTextHistoryHandle?.(target);
+            if (result !== undefined && result !== null) return result;
         }
         return true;
     }
@@ -1054,11 +891,11 @@ export class SettingsPanel {
     }
 
     private applyHistoryState(settingsState: ScopedSettingsState, scope: SettingsScope, errorContext: string): void {
+        const before = cloneSettingsState(loadedSettingsState);
         loadedSettingsState = cloneSettingsState(settingsState);
         this.activeScope = scope;
         this.closeDropdown();
-        this.exportValidationDateTimePicker.close();
-        applySettingsStateToRuntime(loadedSettingsState);
+        applySettingsStateToRuntime(loadedSettingsState, getChangedEffectiveSettingsKeys(before, loadedSettingsState));
         this.updateScopeButtonStyles();
         this.updateControlsFromActiveScope();
         this.writeSettingsAsync(loadedSettingsState[scope])
@@ -1072,14 +909,6 @@ export class SettingsPanel {
     private async writeSettingsAsync(settings: SettingsValues): Promise<void> {
         await enqueueSettingsWriteAsync(this.activeScope, settings);
     }
-}
-
-/**
- * アプリケーション起動時に User / Workspace の保存済みテーマを読み込んで適用する
- */
-export async function applyStoredThemeAsync(): Promise<void> {
-    loadedSettingsState = await readStoredSettingsAsync();
-    document.body.dataset.theme = getDefaultedTheme(resolveEffectiveSettings(loadedSettingsState));
 }
 
 /**

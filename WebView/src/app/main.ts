@@ -9,7 +9,16 @@ import {CommandPalette} from "../ui/command-palette";
 import {Toolbar} from "../ui/toolbar";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {ReferenceDataCache} from "../references/reference-data-cache";
-import {applyStoredSettingsAsync, EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, getAppliedExportValidationSettings, type ExportValidationSettings} from "../panels/settings-panel";
+import {
+    applyStoredSettingsAsync,
+    getAppliedSettings,
+} from "../panels/settings-panel";
+import {
+    createExportValidationSettings,
+    hasRuntimeGroupSettingsChange,
+    SETTINGS_CHANGED_EVENT,
+    type SettingsChangedEventDetail,
+} from "../settings/settings-schema";
 import {NotificationToast} from "../ui/notification";
 import {ValidationEngine, createValidationTableSchemaFromJson, type TableSchema} from "../validation/validation-engine";
 import {ValidationPanel} from "../panels/validation-panel";
@@ -81,7 +90,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     const validationSchemas = new Map<string, TableSchema>();
 
     const validationEngine = new ValidationEngine(store, referenceDataCache);
-    validationEngine.setExportValidationSettings(getAppliedExportValidationSettings());
+    validationEngine.setExportValidationSettings(createExportValidationSettings(getAppliedSettings()));
     const pluginValidationRunner = new PluginValidationRunner(store);
 
     // EditorAPI を構築して window.editorApi として公開する。
@@ -126,9 +135,10 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
 
-    window.addEventListener(EXPORT_VALIDATION_SETTINGS_CHANGED_EVENT, (event: Event) => {
-        const value = (event as CustomEvent<ExportValidationSettings>).detail;
-        validationEngine.setExportValidationSettings(value);
+    window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
+        const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
+        if (!hasRuntimeGroupSettingsChange('exportValidation', detail.changedKeys)) return;
+        validationEngine.setExportValidationSettings(createExportValidationSettings(detail.settings));
         validationPanel.runAndUpdate();
     });
 

@@ -23,7 +23,8 @@ import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {RelationsPanel} from "../panels/relations-panel";
 import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
-import {SettingsPanel, isReferenceJumpTemporaryFilterEnabled} from "../panels/settings-panel";
+import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
+import {SETTINGS_CHANGED_EVENT, type SettingsChangedEventDetail} from "../settings/settings-schema";
 import {DiffTab} from "./diff-tab";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
@@ -427,7 +428,12 @@ export class Tab {
             this.scheduleTabLayout(false, true);
             this.scheduleActiveEditorTableLayoutRefresh();
         });
-        window.addEventListener('tab-wrap-enabled-changed', () => { this.scheduleTabLayout(false, true); });
+        window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
+            const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
+            if (detail.changedKeys.includes('tabWrapEnabled')) {
+                this.scheduleTabLayout(false, true);
+            }
+        });
         this.installViewportScaleChangeListeners();
     }
 
@@ -1214,7 +1220,7 @@ export class Tab {
      */
     private navigateToCellByColumnValue(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
         const editorTable = state.editorTable;
-        if (isReferenceJumpTemporaryFilterEnabled()) {
+        if (getAppliedSettings().referenceJumpTemporaryFilterEnabled) {
             this.applyTemporaryNavigationFilter(state, columnName, value, filterColumnName, filterValues);
         }
         const rowCount = editorTable.getLogicalRowCount();

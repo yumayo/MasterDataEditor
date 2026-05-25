@@ -9,9 +9,7 @@ import {
     isDynamicReferenceSchema,
 } from "../references/reference-expression";
 import {isGlobalValidationTargetTable} from "./validation-table-scope";
-
-const DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME = 'export_begin_date';
-const DEFAULT_EXPORT_END_DATE_COLUMN_NAME = 'export_end_date';
+import {getApplicationDefaultValue, type ExportValidationSettings} from "../settings/settings-schema";
 
 type ExportWindowColumnIndices = { beginIndex: number; endIndex: number };
 
@@ -28,12 +26,6 @@ interface ReferenceValueSets {
 interface PrimaryKeyRowEntry {
     rowIndex: number;
     exportWindow: ExportRowWindow | null;
-}
-
-export interface ExportValidationSettings {
-    dateTime: string;
-    beginColumnName: string;
-    endColumnName: string;
 }
 
 /** バリデーションエラーの種別 */
@@ -109,8 +101,8 @@ export class ValidationEngine {
     private readonly schemas: Map<string, TableSchema>;
     private exportValidationDateTimeMs: number | null = null;
     private exportValidationDateTimeText = '';
-    private exportBeginDateColumnName = DEFAULT_EXPORT_BEGIN_DATE_COLUMN_NAME;
-    private exportEndDateColumnName = DEFAULT_EXPORT_END_DATE_COLUMN_NAME;
+    private exportBeginDateColumnName = getApplicationDefaultValue('exportBeginDateColumnName');
+    private exportEndDateColumnName = getApplicationDefaultValue('exportEndDateColumnName');
 
     constructor(store: InMemoryTableStore, referenceDataCache: ReferenceDataCache) {
         this.store = store;
