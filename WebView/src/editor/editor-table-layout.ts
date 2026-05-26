@@ -6,6 +6,7 @@ import {
 } from "../core/constant";
 import {RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {
+    getLayoutBorderBoxHeightPx,
     getLayoutBorderBoxWidthPx,
     getLayoutLeftRelativeToPx,
     getLayoutRightRelativeToPx,
@@ -902,7 +903,7 @@ export class EditorTableLayout {
     }
 
     private formatPx(value: number): string {
-        return `${Math.round(value)}px`;
+        return `${value}px`;
     }
 
     private syncQuadrantMainGridHorizontalOffset(scrollLeft: number): void {
@@ -1005,8 +1006,10 @@ export class EditorTableLayout {
         this.element.classList.toggle('editor-table--has-frozen-rows', this.frozenRowCount > 0);
     }
 
-    getRenderedRowHeightPx(_rowElement: HTMLElement | null): number {
-        return this.getDataRowHeightPx();
+    getRenderedRowHeightPx(rowElement: HTMLElement | null): number {
+        if (rowElement === null) return this.getDataRowHeightPx();
+        const measured = getLayoutBorderBoxHeightPx(rowElement);
+        return measured > 0 ? measured : this.getDataRowHeightPx();
     }
 
     getFrozenRowTopPx(logicalRowIndex: number): number {

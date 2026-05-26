@@ -63,7 +63,7 @@ export class VirtualScrollController {
     /** recalculate の再帰呼び出しを防止するフラグ */
     private isRecalculating: boolean;
 
-    /** データ行の配置ピッチ(px)。セル20px + border-bottom 1px の固定値を使う。 */
+    /** 実行時に測定した行の実際の高さ(px)。DPIスケーリングを含む正確な値。初回 recalculate 時に測定する */
     private actualRowHeight: number;
     /** 実行時に測定したヘッダー行の実際の高さ(px)。コメント付き2行ヘッダーを含む */
     private actualHeaderHeight: number;
@@ -500,7 +500,7 @@ export class VirtualScrollController {
 
     refreshMeasuredGeometry(): void {
         this.measureHeaderHeight();
-        this.useFixedActualRowHeight();
+        this.measureActualRowHeight();
         if (this.syncAbsoluteRowGeometry()) this.positionExistingRows();
     }
 
@@ -578,7 +578,7 @@ export class VirtualScrollController {
     centerRowVertically(dataRowIndex: number): void {
         if (!this.enabled) return;
         if (dataRowIndex < this.frozenRowCount) return;
-        this.useFixedActualRowHeight();
+        this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
         const rowCenter = headerHeight + (dataRowIndex * rowHeight) + (rowHeight / 2);
@@ -633,7 +633,7 @@ export class VirtualScrollController {
     }
 
     private getLogicalScrollTopForRowVisible(dataRowIndex: number, currentLogicalScrollTop: number): number {
-        this.useFixedActualRowHeight();
+        this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const headerHeight = this.getHeaderHeight();
         // 行の絶対位置を計算する。固定行は detached/transform によりヘッダー直下へ固定表示されるため、
@@ -675,7 +675,7 @@ export class VirtualScrollController {
     }
 
     private formatTopPx(value: number): string {
-        return `${Math.round(value)}px`;
+        return `${value}px`;
     }
 
     private syncAbsoluteRowsContainerTop(rowHeight: number = this.actualRowHeight): void {
@@ -815,16 +815,25 @@ export class VirtualScrollController {
         const headerRow = this.tableElement.children[0] as HTMLElement | null;
         if (headerRow === null) return;
         const measured = getLayoutBorderBoxHeightPx(headerRow);
-        if (measured > 0) this.actualHeaderHeight = Math.round(measured);
+        if (measured > 0) this.actualHeaderHeight = measured;
     }
 
     /**
-     * データ行の配置ピッチはCSSセル高20px + 罫線1px = 21pxで固定する。
-     * getBoundingClientRect().height の小数値を使うと、累積後の丸めで 41, 62, 82 のように
-     * 20px/21px間隔が混在するため、absolute top 計算には実測値を使わない。
+     * DOMに存在するデータ行の実際の高さを測定して actualRowHeight を更新する。
+     * DPIスケーリングや将来的なCSS変更にも対応するため、定数ではなく実測値を使う。
+     * データ行がDOMに存在しない場合は前回の値（初期値はROW_TOTAL_HEIGHT_PX）を維持する。
      */
-    private useFixedActualRowHeight(): void {
-        this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
+    private measureActualRowHeight(): void {
+        // enabled=true: children[0]=header, [1]=topSpacer, [2]=最初のデータ行
+        // enabled=false: children[0]=header, [1]=最初のデータ行
+        const dataStart = this.enabled ? VirtualScrollController.DATA_ROW_START_INDEX : 1;
+        if (this.tableElement.children.length <= dataStart) return;
+        const firstDataRow = this.tableElement.children[dataStart] as HTMLElement;
+        if (!firstDataRow) return;
+        // スペーサー行を測定しないようにする
+        if (firstDataRow.classList.contains('virtual-scroll-bottom-spacer')) return;
+        const measured = getLayoutBorderBoxHeightPx(firstDataRow);
+        if (measured > 0) this.actualRowHeight = measured;
     }
 
     /**
@@ -844,8 +853,8 @@ export class VirtualScrollController {
     }
 
     private recalculateCore(): void {
-        // スクロール中の行ピッチは固定値を使う。DOM実測値の小数を累積させない。
-        if (!this.isHandlingScrollEvent) this.useFixedActualRowHeight();
+        // スクロール中は測定済みの値を使う。DOM差し替え後に layout read を挟むと強制レイアウトが連発する。
+        if (!this.isHandlingScrollEvent) this.measureActualRowHeight();
         const rowHeight = this.actualRowHeight;
         const previousRenderedStart = this.renderedStart;
         const previousRenderedEnd = this.renderedEnd;

@@ -245,7 +245,7 @@ test.describe('バーチャルスクロール行順序', () => {
         expect(Math.abs(topMetrics.gridTop)).toBeLessThan(5000);
     });
 
-    test('実測高さが小数でもデータ行DOMのtopは21px刻みに固定される', async ({ page }) => {
+    test('実測高さが小数ならデータ行DOMのtopも実測ピッチになる', async ({ page }) => {
         await page.addInitScript(() => {
             const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
             HTMLElement.prototype.getBoundingClientRect = function(): DOMRect {
@@ -281,7 +281,7 @@ test.describe('バーチャルスクロール行順序', () => {
 
         const scrollContainer = page.locator('.editor-left-pane');
         await scrollContainer.evaluate((el) => {
-            el.scrollTop = 50 * 21;
+            el.scrollTop = 50 * 20.5;
             el.dispatchEvent(new Event('scroll'));
         });
         await page.waitForTimeout(100);
@@ -304,7 +304,7 @@ test.describe('バーチャルスクロール行順序', () => {
 
         expect(topMetrics.rowTops.length).toBeGreaterThan(4);
         for (const delta of topMetrics.deltas) {
-            expect(delta, JSON.stringify(topMetrics)).toBe(21);
+            expect(delta, JSON.stringify(topMetrics)).toBeCloseTo(20.5, 5);
         }
     });
 });
