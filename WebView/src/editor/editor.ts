@@ -190,10 +190,10 @@ export class Editor {
         if (activeState === false) return;
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
         const metrics = activeState.editorTable.getPhysicalScrollMetrics();
-        if (this.leftPane.scrollTop === metrics.scrollTop) return;
+        if (this.leftPane.scrollTop === metrics.scrollTop && this.leftPane.scrollLeft === metrics.scrollLeft) return;
         this.isSyncingTableFromLeftPane = true;
         try {
-            activeState.editorTable.restorePhysicalScrollPosition(this.leftPane.scrollTop, metrics.scrollLeft);
+            activeState.editorTable.restorePhysicalScrollPosition(this.leftPane.scrollTop, this.leftPane.scrollLeft);
         } finally {
             this.isSyncingTableFromLeftPane = false;
         }

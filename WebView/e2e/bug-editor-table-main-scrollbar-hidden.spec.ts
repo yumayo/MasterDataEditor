@@ -178,3 +178,44 @@ test('横スクロールバー領域のドラッグでセル選択ではなく�
     expect(after.scrollLeft).toBeGreaterThan(before.scrollLeft);
     expect(after.focusedText).toBe(before.focusedText);
 });
+
+test('外側スクロールプロキシの横スクロールが右下ビューポートへ転送されること', async ({ page }) => {
+    await page.setViewportSize({ width: 960, height: 540 });
+    await installMockApiAsync(page, createFileSystem());
+    await page.goto('/');
+
+    await page.locator('#explorer .explorer-file').getByText('chara', { exact: true }).click();
+
+    const mainViewport = page.locator('.editor-left-pane .editor-table-main-viewport').first();
+    await expect(mainViewport).toBeVisible();
+
+    const result = await page.evaluate(async () => {
+        const leftPane = document.querySelector('.editor-left-pane') as HTMLElement | null;
+        const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+        const editor = (window as unknown as {
+            editor?: {
+                activeEditorTable: {
+                    restoreScrollPosition(scrollTop: number, scrollLeft: number): void;
+                } | false;
+            };
+        }).editor;
+        if (leftPane === null) throw new Error('editor-left-pane が見つかりません');
+        if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+        if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable が見つかりません');
+
+        editor.activeEditorTable.restoreScrollPosition(0, 0);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+        leftPane.scrollLeft = 180;
+        leftPane.dispatchEvent(new Event('scroll'));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+        return {
+            leftPaneScrollLeft: leftPane.scrollLeft,
+            mainViewportScrollLeft: viewport.scrollLeft,
+        };
+    });
+
+    expect(result.leftPaneScrollLeft).toBeGreaterThanOrEqual(100);
+    expect(result.mainViewportScrollLeft).toBe(result.leftPaneScrollLeft);
+});

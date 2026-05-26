@@ -72,6 +72,8 @@ import type {LargeFileSettings} from "../settings/settings-schema";
  * - EditorTableRelations: RelationsPanel / EditorAPI 連携
  */
 export class EditorTable {
+    private static readonly eventOwnerByElement = new WeakMap<HTMLElement, EditorTable>();
+
     readonly tableName: string;
     private readonly tableData: EditorTableData;
     private readonly element: HTMLElement;
@@ -257,6 +259,7 @@ export class EditorTable {
         this.rootCssClass = rootCssClass;
         this.isMiniTable = isMiniTable;
         this.element = document.createElement('div');
+        EditorTable.eventOwnerByElement.set(this.element, this);
         this.topLeftPane = document.createElement('div');
         this.topLeftPane.classList.add('editor-table-pane', 'editor-table-pane-top-left');
         this.topRightPane = document.createElement('div');
@@ -303,10 +306,10 @@ export class EditorTable {
         this.detachedFrozenCornerDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-corner-layer');
         this.customVerticalScrollbarDragState = null;
         this.customHorizontalScrollbarDragState = null;
-        this.handleCustomVerticalScrollbarPointerMoveBound = (event: PointerEvent) => this.handleCustomVerticalScrollbarPointerMove(event);
-        this.handleCustomVerticalScrollbarPointerUpBound = (event: PointerEvent) => this.handleCustomVerticalScrollbarPointerUp(event);
-        this.handleCustomHorizontalScrollbarPointerMoveBound = (event: PointerEvent) => this.handleCustomHorizontalScrollbarPointerMove(event);
-        this.handleCustomHorizontalScrollbarPointerUpBound = (event: PointerEvent) => this.handleCustomHorizontalScrollbarPointerUp(event);
+        this.handleCustomVerticalScrollbarPointerMoveBound = (event: PointerEvent) => this.getEventHandlerOwner().handleCustomVerticalScrollbarPointerMove(event);
+        this.handleCustomVerticalScrollbarPointerUpBound = (event: PointerEvent) => this.getEventHandlerOwner().handleCustomVerticalScrollbarPointerUp(event);
+        this.handleCustomHorizontalScrollbarPointerMoveBound = (event: PointerEvent) => this.getEventHandlerOwner().handleCustomHorizontalScrollbarPointerMove(event);
+        this.handleCustomHorizontalScrollbarPointerUpBound = (event: PointerEvent) => this.getEventHandlerOwner().handleCustomHorizontalScrollbarPointerUp(event);
         if (this.usesInternalMainViewport) {
             this.topLeftPane.appendChild(this.topLeftContent);
             this.topLeftContent.appendChild(this.detachedCornerLayer);
@@ -326,11 +329,11 @@ export class EditorTable {
             this.bottomRightPane.appendChild(this.gridElement);
             this.bottomRightPane.appendChild(this.customVerticalScrollbar);
             this.bottomRightPane.appendChild(this.customHorizontalScrollbar);
-            this.scrollContainer.addEventListener('wheel', (event) => this.handleCompressedScrollWheel(event), { passive: false });
-            this.customVerticalScrollbar.addEventListener('pointerdown', (event) => this.handleCustomVerticalScrollbarPointerDown(event));
-            this.customVerticalScrollbar.addEventListener('wheel', (event) => this.handleCustomVerticalScrollbarWheel(event), { passive: false });
-            this.customHorizontalScrollbar.addEventListener('pointerdown', (event) => this.handleCustomHorizontalScrollbarPointerDown(event));
-            this.customHorizontalScrollbar.addEventListener('wheel', (event) => this.handleCustomHorizontalScrollbarWheel(event), { passive: false });
+            this.scrollContainer.addEventListener('wheel', (event) => this.getEventHandlerOwner().handleCompressedScrollWheel(event), { passive: false });
+            this.customVerticalScrollbar.addEventListener('pointerdown', (event) => this.getEventHandlerOwner().handleCustomVerticalScrollbarPointerDown(event));
+            this.customVerticalScrollbar.addEventListener('wheel', (event) => this.getEventHandlerOwner().handleCustomVerticalScrollbarWheel(event), { passive: false });
+            this.customHorizontalScrollbar.addEventListener('pointerdown', (event) => this.getEventHandlerOwner().handleCustomHorizontalScrollbarPointerDown(event));
+            this.customHorizontalScrollbar.addEventListener('wheel', (event) => this.getEventHandlerOwner().handleCustomHorizontalScrollbarWheel(event), { passive: false });
             this.element.appendChild(this.topLeftPane);
             this.element.appendChild(this.topRightPane);
             this.element.appendChild(this.bottomLeftPane);
@@ -414,6 +417,7 @@ export class EditorTable {
      * そのため initializeModules() で FilterDropdown を正しい this（editorTable）で再作成する。
      */
     initializeModules(notification: NotificationToast): void {
+        EditorTable.eventOwnerByElement.set(this.element, this);
         this.reference = new EditorTableReference(this, this.tableData, this.referenceDataCache, notification);
         this.contextMenuHandler = new EditorTableContextMenu(this, this.selection, this.contextMenu);
         this.structure = new EditorTableStructure(this, this.selection, this.history, this.areaResizer);
@@ -457,6 +461,10 @@ export class EditorTable {
         if (!this.virtualScroll.handlesScrollEvents()) {
             this.scrollContainer.addEventListener('scroll', () => { this.syncScrollBoundVisuals(); });
         }
+    }
+
+    private getEventHandlerOwner(): EditorTable {
+        return EditorTable.eventOwnerByElement.get(this.element) ?? this;
     }
 
     // =========================================================================
@@ -1122,7 +1130,7 @@ export class EditorTable {
         const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
         if (maxThumbLeft <= 0) return;
         const deltaRatio = (event.clientX - dragState.startClientX) / maxThumbLeft;
-        const nextScrollLeft = dragState.startScrollLeft + (deltaRatio * maxScrollLeft);
+        const nextScrollLeft = Math.min(maxScrollLeft, Math.max(0, dragState.startScrollLeft + (deltaRatio * maxScrollLeft)));
         this.restoreScrollPosition(this.getScrollTop(), nextScrollLeft);
     }
 
@@ -1130,6 +1138,7 @@ export class EditorTable {
         this.customHorizontalScrollbarDragState = null;
         this.customHorizontalScrollbar.classList.remove('editor-table-logical-horizontal-scrollbar--dragging');
         window.removeEventListener('pointermove', this.handleCustomHorizontalScrollbarPointerMoveBound);
+        this.syncScrollBoundVisuals();
     }
 
     private handleCustomHorizontalScrollbarWheel(event: WheelEvent): void {
@@ -1195,7 +1204,7 @@ export class EditorTable {
         const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
         if (maxThumbTop <= 0) return;
         const deltaRatio = (event.clientY - dragState.startClientY) / maxThumbTop;
-        const nextScrollTop = dragState.startScrollTop + (deltaRatio * maxScrollTop);
+        const nextScrollTop = Math.min(maxScrollTop, Math.max(0, dragState.startScrollTop + (deltaRatio * maxScrollTop)));
         this.restoreScrollPosition(nextScrollTop, this.getScrollLeft());
     }
 
@@ -1203,6 +1212,7 @@ export class EditorTable {
         this.customVerticalScrollbarDragState = null;
         this.customVerticalScrollbar.classList.remove('editor-table-logical-vertical-scrollbar--dragging');
         window.removeEventListener('pointermove', this.handleCustomVerticalScrollbarPointerMoveBound);
+        this.syncScrollBoundVisuals();
     }
 
     private handleCustomVerticalScrollbarWheel(event: WheelEvent): void {

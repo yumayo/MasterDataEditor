@@ -108,6 +108,56 @@ export class EditorTableLayout {
         return this.getDetachedPrefixWidthPx() + this.getFrozenColumnAreaWidthPx();
     }
 
+    private getFixedLeftLayoutMinimumWidthPx(): number {
+        let width = this.getDetachedPrefixWidthPx();
+        for (let dataColumnIndex = 0; dataColumnIndex < Math.min(this.frozenColumnCount, this.getColumnCount()); dataColumnIndex++) {
+            width += this.getColumnLayoutWidthPx(dataColumnIndex);
+        }
+        return width;
+    }
+
+    private parseInlinePx(value: string): number {
+        if (value.trim() === '') return 0;
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    private parseInlineInsetLeftPx(value: string): number {
+        const parts = value.trim().split(/\s+/).filter(part => part !== '');
+        if (parts.length === 0) return 0;
+        if (parts.length === 1) return this.parseInlinePx(parts[0]);
+        if (parts.length === 2) return this.parseInlinePx(parts[1]);
+        if (parts.length === 3) return this.parseInlinePx(parts[1]);
+        return this.parseInlinePx(parts[3]);
+    }
+
+    private resolveQuadrantFixedLeftWidthPx(measuredWidth: number = this.getFixedLeftWidthPx()): number {
+        const minimumWidth = this.getFixedLeftLayoutMinimumWidthPx();
+        const paneLeft = Math.max(
+            this.parseInlinePx(this.bottomRightPane.style.left),
+            this.parseInlinePx(this.topRightPane.style.left),
+            this.parseInlineInsetLeftPx(this.bottomRightPane.style.inset),
+            this.parseInlineInsetLeftPx(this.topRightPane.style.inset),
+            getLayoutLeftRelativeToPx(this.bottomRightPane, this.element),
+            getLayoutLeftRelativeToPx(this.topRightPane, this.element)
+        );
+        const minimumValidWidth = Math.max(1, minimumWidth, paneLeft) - 1;
+        if (Number.isFinite(measuredWidth) && measuredWidth >= minimumValidWidth) {
+            this.quadrantFixedLeftWidthPx = measuredWidth;
+            return measuredWidth;
+        }
+        if (this.quadrantFixedLeftWidthPx >= minimumValidWidth) {
+            return this.quadrantFixedLeftWidthPx;
+        }
+        if (paneLeft >= minimumValidWidth) {
+            this.quadrantFixedLeftWidthPx = paneLeft;
+            return paneLeft;
+        }
+        const fallbackWidth = Math.max(0, measuredWidth, minimumWidth, this.quadrantFixedLeftWidthPx, paneLeft);
+        if (fallbackWidth > 0) this.quadrantFixedLeftWidthPx = fallbackWidth;
+        return fallbackWidth;
+    }
+
     getFixedTopHeightPx(): number {
         let height = this.getHeaderRowHeightPx();
         for (let row = 1; row <= this.frozenRowCount; row++) {
@@ -386,7 +436,7 @@ export class EditorTableLayout {
         const headerRow = this.getRowElement(0);
         if (headerRow === null) return;
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
-        const actualFixedLeftWidth = this.getFixedLeftWidthPx();
+        const actualFixedLeftWidth = this.resolveQuadrantFixedLeftWidthPx(this.getFixedLeftWidthPx());
         const availableWidth = this.element.clientWidth > 0 ? this.element.clientWidth : actualFixedLeftWidth;
         const customVerticalScrollbarWidth = this.getCustomVerticalScrollbarWidthPx();
         const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - customVerticalScrollbarWidth - 1));
@@ -424,7 +474,6 @@ export class EditorTableLayout {
         this.mainContent.style.height = `${physicalMainContentHeight}px`;
         this.virtualScroll.setScrollContentHeightPx(logicalMainContentHeight, physicalMainContentHeight);
         this.gridElement.style.position = 'absolute';
-        this.quadrantFixedLeftWidthPx = actualFixedLeftWidth;
         this.syncQuadrantMainGridHorizontalOffset(this.scrollContainer.scrollLeft);
         this.virtualScroll.setAbsoluteRowsViewportAnchored(true);
         this.virtualScroll.setAbsoluteRowsLayoutTopOffsetPx(-fixedTopHeight);
@@ -908,9 +957,7 @@ export class EditorTableLayout {
     }
 
     private syncQuadrantMainGridHorizontalOffset(scrollLeft: number): void {
-        const fixedLeftWidth = this.quadrantFixedLeftWidthPx > 0
-            ? this.quadrantFixedLeftWidthPx
-            : this.getFixedLeftWidthPx();
+        const fixedLeftWidth = this.resolveQuadrantFixedLeftWidthPx();
         this.setInlineLeftIfChanged(this.gridElement, this.formatPx(-(fixedLeftWidth + scrollLeft)));
     }
 
