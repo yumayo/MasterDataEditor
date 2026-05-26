@@ -8,18 +8,17 @@
     /* セルのstacking context内で使用するため小さい値で十分 */
     --z-index-selection-border: 1;
     --z-index-copy-border: 2;
-    --z-index-selection-range-bg: 10;
     --z-index-freeze-column: 15;
-    --z-index-blame-cell: 20;
-    --z-index-editor-table-row-header: 20;
+    --z-index-blame-cell: 30;
     --z-index-freeze-row: 25;
-    --z-index-editor-table-column-header-row: 30;
-    --z-index-freeze-corner: 35;
+    --z-index-freeze-corner: 27;
+    --z-index-selection-range-bg: 28;
+    --z-index-editor-table-row-header: 30;
+    --z-index-editor-table-column-header-row: 32;
     --z-index-editor-table-corner: 40;
     --z-index-resize-handle: 45;
     /* fill-handle / fill-preview は通常セル上の操作補助UI。
-       行ヘッダー・列ヘッダー・固定行・固定列より前に出さず、
-       通常セルの選択装飾より前で止める。 */
+       行ヘッダー・列ヘッダー・固定行・固定列より前には出さない。 */
     --z-index-fill-handle: 14;
     --z-index-grid-textfield-active: 50;
     --z-index-column-header-badge-area: 1;

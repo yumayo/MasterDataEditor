@@ -29,6 +29,12 @@
     z-index: var(--z-index-freeze-column);
 }
 
+.editor-table--quadrant-layout .editor-table-pane-top-left,
+.editor-table--quadrant-layout .editor-table-pane-top-right,
+.editor-table--quadrant-layout .editor-table-pane-bottom-left {
+    z-index: auto;
+}
+
 .editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-left,
 .editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-left {
     overflow: visible;
@@ -194,7 +200,7 @@
 }
 
 .editor-table--quadrant-layout .editor-table-detached-row-header-layer {
-    z-index: var(--z-index-freeze-column);
+    z-index: auto;
 }
 
 .editor-table-detached-frozen-row-background-layer {
@@ -209,6 +215,10 @@
     z-index: var(--z-index-freeze-corner);
 }
 
+.editor-table--quadrant-layout .editor-table-detached-frozen-corner-layer {
+    z-index: auto;
+}
+
 .editor-table-detached-corner-layer {
     z-index: var(--z-index-editor-table-corner);
 }
@@ -221,6 +231,19 @@
 
 .editor-table-detached-layer .editor-table-cell {
     pointer-events: auto;
+}
+
+.editor-table--quadrant-layout .editor-table-detached-row-header-layer .freeze-cell {
+    z-index: var(--z-index-freeze-column);
+}
+
+.editor-table--quadrant-layout .editor-table-detached-frozen-corner-layer .freeze-cell {
+    z-index: var(--z-index-freeze-corner);
+}
+
+.editor-table--quadrant-layout .editor-table-detached-row-header-layer .editor-table-row-header,
+.editor-table--quadrant-layout .editor-table-detached-frozen-corner-layer .editor-table-row-header {
+    z-index: var(--z-index-editor-table-row-header);
 }
 
 /* detached 行ヘッダーは行ピッチ(21px)に対してセル高(20px)のため、余った1pxに

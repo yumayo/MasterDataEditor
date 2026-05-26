@@ -792,6 +792,62 @@ test.describe('フリーズペイン', () => {
         });
     });
 
+    test.describe('selection overlay の重なり順', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createFillHandleZIndexTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test('固定セルより前、行列ヘッダーより背面に配置される', async ({ page }) => {
+            await openTableAsync(page, 'fill_handle_z_index_test');
+
+            await page.evaluate(() => {
+                const editor = (window as unknown as {
+                    editor?: {
+                        activeEditorTable: {
+                            getSelection(): {
+                                setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void;
+                            };
+                        } | false;
+                    };
+                }).editor;
+                if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+                editor.activeEditorTable.getSelection().setRange(1, 1, 3, 3);
+            });
+            await expect(page.locator('.selection-overlay-border')).toHaveCount(1);
+
+            const zIndexes = await page.evaluate(() => {
+                const readZIndex = (selector: string): number => {
+                    const element = document.querySelector<HTMLElement>(selector);
+                    if (!(element instanceof HTMLElement)) throw new Error(`要素が見つかりません: ${selector}`);
+                    const value = window.getComputedStyle(element).zIndex;
+                    if (value === 'auto') throw new Error(`z-index が auto です: ${selector}`);
+                    return Number(value);
+                };
+
+                return {
+                    selection: readZIndex('.selection-overlay'),
+                    frozenColumn: readZIndex('.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="1"] .freeze-cell'),
+                    frozenRow: readZIndex('.editor-table-detached-frozen-row-layer'),
+                    frozenCorner: readZIndex('.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .freeze-cell'),
+                    rowHeader: readZIndex('.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="1"] .editor-table-row-header'),
+                    frozenRowHeader: readZIndex('.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="0"] .editor-table-row-header'),
+                    columnHeader: readZIndex('.editor-table-detached-column-header-layer'),
+                    cornerHeader: readZIndex('.editor-table-detached-corner-layer'),
+                };
+            });
+
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeGreaterThan(zIndexes.frozenColumn);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeGreaterThan(zIndexes.frozenRow);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeGreaterThan(zIndexes.frozenCorner);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.rowHeader);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.frozenRowHeader);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.columnHeader);
+            expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.cornerHeader);
+        });
+    });
+
     test.describe('行の固定', () => {
         test.beforeEach(async ({ page }) => {
             const fs = createFreezeTestFileSystem();
