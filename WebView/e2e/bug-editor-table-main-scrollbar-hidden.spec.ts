@@ -135,41 +135,62 @@ test('右下ビューポートの横スクロールバー領域をeditor-table�
         const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
         const grid = document.querySelector('.editor-left-pane .editor-table-pane-bottom-right > .editor-table-grid') as HTMLElement | null;
         const horizontalScrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const scrollbarCorner = document.querySelector('.editor-left-pane .editor-table-logical-scrollbar-corner') as HTMLElement | null;
         const editor = (window as unknown as {
             editor?: { activeEditorTable: { refreshDetachedHeaderLayout(): void } | false };
         }).editor;
         if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
         if (grid === null) throw new Error('editor-table-grid が見つかりません');
         if (horizontalScrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (scrollbarCorner === null) throw new Error('editor-table-logical-scrollbar-corner が見つかりません');
         if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable が見つかりません');
 
         editor.activeEditorTable.refreshDetachedHeaderLayout();
 
         const viewportRect = viewport.getBoundingClientRect();
         const gutterHeight = viewport.offsetHeight - viewport.clientHeight;
-        const reservedHeight = horizontalScrollbar.getBoundingClientRect().height;
+        const horizontalRect = horizontalScrollbar.getBoundingClientRect();
+        const cornerRect = scrollbarCorner.getBoundingClientRect();
+        const reservedHeight = horizontalRect.height;
         const hit = document.elementFromPoint(
             viewportRect.left + (viewportRect.width / 2),
+            viewportRect.bottom - (reservedHeight / 2)
+        ) as HTMLElement | null;
+        const cornerHit = document.elementFromPoint(
+            cornerRect.left + (cornerRect.width / 2),
             viewportRect.bottom - (reservedHeight / 2)
         ) as HTMLElement | null;
 
         return {
             gutterHeight,
             reservedHeight,
+            cornerWidth: cornerRect.width,
+            cornerHeight: cornerRect.height,
+            cornerDisabled: scrollbarCorner.classList.contains('editor-table-logical-scrollbar-corner--disabled'),
             gridText: grid.textContent ?? '',
             hitClassName: hit?.className ?? '',
             hitInsideHorizontalScrollbar: hit?.closest('.editor-table-logical-horizontal-scrollbar') !== null,
             hitInsideGrid: hit?.closest('.editor-table-grid') !== null,
             hitInsideCell: hit?.closest('.editor-table-cell') !== null,
+            cornerHitClassName: cornerHit?.className ?? '',
+            cornerHitInsideScrollbarCorner: cornerHit?.closest('.editor-table-logical-scrollbar-corner') !== null,
+            cornerHitInsideGrid: cornerHit?.closest('.editor-table-grid') !== null,
+            cornerHitInsideCell: cornerHit?.closest('.editor-table-cell') !== null,
         };
     });
 
     expect(metrics.gutterHeight).toBeGreaterThanOrEqual(0);
     expect(metrics.reservedHeight).toBe(12);
+    expect(metrics.cornerWidth).toBe(14);
+    expect(metrics.cornerHeight).toBe(12);
+    expect(metrics.cornerDisabled).toBeFalsy();
     expect(metrics.gridText).toContain('chara_1');
     expect(metrics.hitInsideHorizontalScrollbar, `hitClass=${metrics.hitClassName}`).toBeTruthy();
     expect(metrics.hitInsideGrid, `hitClass=${metrics.hitClassName}`).toBeFalsy();
     expect(metrics.hitInsideCell, `hitClass=${metrics.hitClassName}`).toBeFalsy();
+    expect(metrics.cornerHitInsideScrollbarCorner, `cornerHitClass=${metrics.cornerHitClassName}`).toBeTruthy();
+    expect(metrics.cornerHitInsideGrid, `cornerHitClass=${metrics.cornerHitClassName}`).toBeFalsy();
+    expect(metrics.cornerHitInsideCell, `cornerHitClass=${metrics.cornerHitClassName}`).toBeFalsy();
 });
 
 test('画面幅を縮めたとき通常テーブルの横カスタムスクロールバーが再表示されること', async ({ page }) => {

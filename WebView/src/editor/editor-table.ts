@@ -106,6 +106,7 @@ export class EditorTable {
     private readonly customVerticalScrollbarThumb: HTMLElement;
     private readonly customHorizontalScrollbar: HTMLElement;
     private readonly customHorizontalScrollbarThumb: HTMLElement;
+    private readonly customScrollbarCorner: HTMLElement;
     private readonly detachedColumnHeaderLayer: HTMLElement;
     private readonly detachedRowHeaderLayer: HTMLElement;
     private readonly detachedFrozenRowBackgroundLayer: HTMLElement;
@@ -284,6 +285,8 @@ export class EditorTable {
         this.customHorizontalScrollbarThumb = document.createElement('div');
         this.customHorizontalScrollbarThumb.classList.add('editor-table-logical-horizontal-scrollbar-thumb');
         this.customHorizontalScrollbar.appendChild(this.customHorizontalScrollbarThumb);
+        this.customScrollbarCorner = document.createElement('div');
+        this.customScrollbarCorner.classList.add('editor-table-logical-scrollbar-corner', 'editor-table-logical-scrollbar-corner--disabled');
         this.detachedColumnHeaderLayer = document.createElement('div');
         this.detachedColumnHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-column-header-layer');
         this.detachedRowHeaderLayer = document.createElement('div');
@@ -320,6 +323,7 @@ export class EditorTable {
             this.bottomRightPane.appendChild(this.gridElement);
             this.bottomRightPane.appendChild(this.customVerticalScrollbar);
             this.bottomRightPane.appendChild(this.customHorizontalScrollbar);
+            this.bottomRightPane.appendChild(this.customScrollbarCorner);
             this.element.appendChild(this.topLeftPane);
             this.element.appendChild(this.topRightPane);
             this.element.appendChild(this.bottomLeftPane);
@@ -1046,6 +1050,7 @@ export class EditorTable {
             ? CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX
             : 0;
         this.customHorizontalScrollbar.style.right = `${verticalScrollbarWidth}px`;
+        this.updateCustomScrollbarCorner(height, verticalScrollbarWidth);
         const scrollWidth = this.scrollContainer.scrollWidth;
         const clientWidth = this.scrollContainer.clientWidth;
         const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
@@ -1067,6 +1072,16 @@ export class EditorTable {
         const thumbLeft = maxThumbLeft <= 0 ? 0 : Math.round((this.scrollContainer.scrollLeft / maxScrollLeft) * maxThumbLeft);
         this.customHorizontalScrollbarThumb.style.width = `${thumbWidth}px`;
         this.customHorizontalScrollbarThumb.style.transform = `translateX(${thumbLeft}px)`;
+    }
+
+    private updateCustomScrollbarCorner(horizontalScrollbarHeight: number, verticalScrollbarWidth: number): void {
+        if (horizontalScrollbarHeight <= 0 || verticalScrollbarWidth <= 0) {
+            this.customScrollbarCorner.classList.add('editor-table-logical-scrollbar-corner--disabled');
+            return;
+        }
+        this.customScrollbarCorner.classList.remove('editor-table-logical-scrollbar-corner--disabled');
+        this.customScrollbarCorner.style.width = `${verticalScrollbarWidth}px`;
+        this.customScrollbarCorner.style.height = `${horizontalScrollbarHeight}px`;
     }
 
     private getScrollLeftFromCustomScrollbarPointer(clientX: number): number {

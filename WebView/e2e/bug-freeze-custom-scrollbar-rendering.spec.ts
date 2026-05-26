@@ -257,6 +257,21 @@ test('縦スクロールバーを押している間と離した後で固定列�
     await expect(verticalScrollbar).toBeVisible();
     await expect(verticalThumb).toBeVisible();
 
+    const scrollbarAlignment = await page.evaluate(() => {
+        const vertical = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-logical-vertical-scrollbar');
+        const horizontal = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-logical-horizontal-scrollbar');
+        if (vertical === null) throw new Error('縦スクロールバーが見つかりません');
+        if (horizontal === null) throw new Error('横スクロールバーが見つかりません');
+        const verticalRect = vertical.getBoundingClientRect();
+        const horizontalRect = horizontal.getBoundingClientRect();
+        return {
+            verticalBottom: verticalRect.bottom,
+            horizontalTop: horizontalRect.top,
+            gap: Math.abs(Math.round(horizontalRect.top - verticalRect.bottom)),
+        };
+    });
+    expect(scrollbarAlignment.gap, `verticalBottom=${scrollbarAlignment.verticalBottom}, horizontalTop=${scrollbarAlignment.horizontalTop}`).toBe(0);
+
     const trackBox = await verticalScrollbar.boundingBox();
     const thumbBox = await verticalThumb.boundingBox();
     if (trackBox === null || thumbBox === null) throw new Error('縦スクロールバーの座標が取得できません');
