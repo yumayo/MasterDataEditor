@@ -121,6 +121,41 @@
     pointer-events: none;
 }
 
+.editor-table-logical-horizontal-scrollbar {
+    position: absolute;
+    left: 0;
+    right: 14px;
+    bottom: 0;
+    height: 12px;
+    background-color: var(--background-color);
+    border-top: 1px solid var(--border-color);
+    box-sizing: border-box;
+    z-index: var(--z-index-resize-handle);
+    user-select: none;
+    touch-action: none;
+}
+
+.editor-table-logical-horizontal-scrollbar-thumb {
+    position: absolute;
+    left: 0;
+    top: 2px;
+    bottom: 2px;
+    width: 18px;
+    border-radius: 4px;
+    background-color: color-mix(in srgb, var(--font-color) 38%, transparent);
+    cursor: default;
+}
+
+.editor-table-logical-horizontal-scrollbar:hover .editor-table-logical-horizontal-scrollbar-thumb,
+.editor-table-logical-horizontal-scrollbar--dragging .editor-table-logical-horizontal-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--font-color) 56%, transparent);
+}
+
+.editor-table-logical-horizontal-scrollbar--disabled {
+    visibility: hidden;
+    pointer-events: none;
+}
+
 .editor-table-grid {
     display: table;
     position: relative;

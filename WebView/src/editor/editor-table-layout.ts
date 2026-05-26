@@ -433,10 +433,11 @@ export class EditorTableLayout {
         // 右上ヘッダー領域と左下行ヘッダー領域にも反映して見た目の列幅・行高を揃える。
         const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth)
             + customVerticalScrollbarWidth;
-        const mainViewportScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
+        const mainViewportScrollbarHeight = this.getMainViewportHorizontalScrollbarHeightPx();
         this.topRightPane.style.right = `${mainViewportScrollbarWidth}px`;
         this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
         this.updateCustomVerticalScrollbar();
+        this.updateCustomHorizontalScrollbar();
 
         const detachedCornerRow = document.createElement('div');
         detachedCornerRow.classList.add('editor-table-detached-row');

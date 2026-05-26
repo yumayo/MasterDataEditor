@@ -29,8 +29,14 @@ export const MAX_SCROLL_CONTENT_HEIGHT_PX = 262_144;
 /** EditorTable の自作縦スクロールバー幅(px) */
 export const CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX = 14;
 
+/** WebKit スクロールバーのCSS指定サイズ(px)。index.css の *::-webkit-scrollbar と同期する。 */
+export const WEBKIT_SCROLLBAR_SIZE_PX = 12;
+
 /** 自作縦スクロールバーのつまみ最小高さ(px) */
 export const CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX = 18;
+
+/** 自作横スクロールバーのつまみ最小幅(px) */
+export const CUSTOM_HORIZONTAL_SCROLLBAR_MIN_THUMB_WIDTH_PX = 18;
 
 /** 行のCSSheightプロパティ値（文字列） */
 export const DEFAULT_ROW_HEIGHT = `${ROW_HEIGHT_PX}px`;

@@ -36,7 +36,7 @@ function createFileSystem(): MockFileSystem {
     };
 }
 
-test('通常テーブルでは外側スクロールバーだけを隠し、右下ビューポートのスクロールバーは残すこと', async ({ page }) => {
+test('通常テーブルでは外側スクロールバーだけを隠し、右下ビューポートの横スクロールバーは残すこと', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await installMockApiAsync(page, createFileSystem());
     await page.goto('/');
@@ -80,8 +80,101 @@ test('通常テーブルでは外側スクロールバーだけを隠し、右�
     expect(metrics.hasHorizontalOverflow).toBeTruthy();
     expect(metrics.hasVerticalOverflow).toBeTruthy();
     expect(metrics.mainViewportOverflowX).toBe('auto');
-    expect(metrics.mainViewportOverflowY).toBe('auto');
+    expect(metrics.mainViewportOverflowY).toBe('hidden');
     expect(mainViewportMetrics.overflowX).toBe('auto');
-    expect(mainViewportMetrics.overflowY).toBe('auto');
+    expect(mainViewportMetrics.overflowY).toBe('hidden');
     expect(mainViewportMetrics.scrollbarWidth).toBe('auto');
+});
+
+test('右下ビューポートの横スクロールバー領域をeditor-tableが覆わないこと', async ({ page }) => {
+    await page.setViewportSize({ width: 960, height: 540 });
+    await installMockApiAsync(page, createFileSystem());
+    await page.goto('/');
+
+    await page.locator('#explorer .explorer-file').getByText('chara', { exact: true }).click();
+
+    const mainViewport = page.locator('.editor-left-pane .editor-table-main-viewport').first();
+    await expect(mainViewport).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+        const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+        const grid = document.querySelector('.editor-left-pane .editor-table-pane-bottom-right > .editor-table-grid') as HTMLElement | null;
+        const horizontalScrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const editor = (window as unknown as {
+            editor?: { activeEditorTable: { refreshDetachedHeaderLayout(): void } | false };
+        }).editor;
+        if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+        if (grid === null) throw new Error('editor-table-grid が見つかりません');
+        if (horizontalScrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable が見つかりません');
+
+        editor.activeEditorTable.refreshDetachedHeaderLayout();
+
+        const viewportRect = viewport.getBoundingClientRect();
+        const gutterHeight = viewport.offsetHeight - viewport.clientHeight;
+        const reservedHeight = horizontalScrollbar.getBoundingClientRect().height;
+        const hit = document.elementFromPoint(
+            viewportRect.left + (viewportRect.width / 2),
+            viewportRect.bottom - (reservedHeight / 2)
+        ) as HTMLElement | null;
+
+        return {
+            gutterHeight,
+            reservedHeight,
+            gridText: grid.textContent ?? '',
+            hitClassName: hit?.className ?? '',
+            hitInsideHorizontalScrollbar: hit?.closest('.editor-table-logical-horizontal-scrollbar') !== null,
+            hitInsideGrid: hit?.closest('.editor-table-grid') !== null,
+            hitInsideCell: hit?.closest('.editor-table-cell') !== null,
+        };
+    });
+
+    expect(metrics.gutterHeight).toBeGreaterThanOrEqual(0);
+    expect(metrics.reservedHeight).toBe(12);
+    expect(metrics.gridText).toContain('chara_1');
+    expect(metrics.hitInsideHorizontalScrollbar, `hitClass=${metrics.hitClassName}`).toBeTruthy();
+    expect(metrics.hitInsideGrid, `hitClass=${metrics.hitClassName}`).toBeFalsy();
+    expect(metrics.hitInsideCell, `hitClass=${metrics.hitClassName}`).toBeFalsy();
+});
+
+test('横スクロールバー領域のドラッグでセル選択ではなく横スクロールすること', async ({ page }) => {
+    await page.setViewportSize({ width: 960, height: 540 });
+    await installMockApiAsync(page, createFileSystem());
+    await page.goto('/');
+
+    await page.locator('#explorer .explorer-file').getByText('chara', { exact: true }).click();
+
+    const horizontalScrollbar = page.locator('.editor-left-pane .editor-table-logical-horizontal-scrollbar').first();
+    await expect(horizontalScrollbar).toBeVisible();
+
+    const before = await page.evaluate(() => {
+        const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+        const focused = document.querySelector('.editor-left-pane .editor-table-cell-focused') as HTMLElement | null;
+        if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+        return {
+            scrollLeft: viewport.scrollLeft,
+            focusedText: focused?.textContent?.trim() ?? '',
+        };
+    });
+
+    const box = await horizontalScrollbar.boundingBox();
+    if (box === null) throw new Error('横スクロールバーの位置が取得できません');
+    const y = box.y + (box.height / 2);
+    await page.mouse.move(box.x + 30, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 260, y, { steps: 6 });
+    await page.mouse.up();
+
+    const after = await page.evaluate(() => {
+        const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+        const focused = document.querySelector('.editor-left-pane .editor-table-cell-focused') as HTMLElement | null;
+        if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+        return {
+            scrollLeft: viewport.scrollLeft,
+            focusedText: focused?.textContent?.trim() ?? '',
+        };
+    });
+
+    expect(after.scrollLeft).toBeGreaterThan(before.scrollLeft);
+    expect(after.focusedText).toBe(before.focusedText);
 });
