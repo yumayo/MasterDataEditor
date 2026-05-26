@@ -57,6 +57,21 @@ function createCommentedFrozenPaneFileSystem(): MockFileSystem {
     };
 }
 
+function createFiveFrozenRowsFileSystem(): MockFileSystem {
+    return {
+        'schema/big_table.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int' },
+                { key: 1, name: 'name', type: 'string' },
+                { key: 2, name: 'value', type: 'int' },
+            ],
+            primary_key: ['id'],
+            frozenRowCount: 5,
+        }),
+        'data/big_table.csv': generateCsv(1000),
+    };
+}
+
 /** テーブルを開いてLocatorを返す */
 async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
     const explorer = page.locator('#explorer');
@@ -276,6 +291,69 @@ test.describe('仮想スクロール × 固定行', () => {
         const visibleCount = await allVisibleRows.count();
         // 固定行2行 + ビューポート内の通常行（少なくとも数行はある）
         expect(visibleCount).toBeGreaterThan(5);
+    });
+
+    test('固定5行の元行を右下グリッドで非表示にし通常行に被せない', async ({ page }) => {
+        const fs = createFiveFrozenRowsFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        const table = await openTableAsync(page, 'big_table');
+
+        const state = await table.evaluate((tableElement) => {
+            const getSourceRow = (dataRowIndex: number): HTMLElement => {
+                const row = tableElement.querySelector<HTMLElement>(
+                    `.editor-table-grid .editor-table-row[data-row-index="${dataRowIndex}"]`,
+                );
+                if (!(row instanceof HTMLElement)) throw new Error(`元行が見つかりません: dataRowIndex=${dataRowIndex}`);
+                return row;
+            };
+            const sourceRows = Array.from({ length: 10 }, (_unused, dataRowIndex) => {
+                const row = getSourceRow(dataRowIndex);
+                const firstCell = row.querySelector<HTMLElement>('.editor-table-cell:not(.editor-table-row-header)');
+                if (!(firstCell instanceof HTMLElement)) throw new Error(`本文セルが見つかりません: dataRowIndex=${dataRowIndex}`);
+                return {
+                    dataRowIndex,
+                    visibility: window.getComputedStyle(row).visibility,
+                    firstCellText: (firstCell.textContent ?? '').trim(),
+                };
+            });
+            const detachedFrozenRows = Array.from(
+                tableElement.querySelectorAll<HTMLElement>('.editor-table-detached-frozen-row-layer .editor-table-detached-row'),
+            ).map((row) => {
+                const firstCell = row.querySelector<HTMLElement>('.editor-table-cell');
+                if (!(firstCell instanceof HTMLElement)) throw new Error('固定行の分離本文セルが見つかりません');
+                return {
+                    rowIndex: row.dataset.rowIndex ?? '',
+                    visibility: window.getComputedStyle(row).visibility,
+                    firstCellText: (firstCell.textContent ?? '').trim(),
+                };
+            });
+            return { sourceRows, detachedFrozenRows };
+        });
+
+        expect(state.sourceRows.slice(0, 5).map(row => row.visibility)).toEqual([
+            'hidden',
+            'hidden',
+            'hidden',
+            'hidden',
+            'hidden',
+        ]);
+        expect(state.sourceRows.slice(5, 10).map(row => row.visibility)).toEqual([
+            'visible',
+            'visible',
+            'visible',
+            'visible',
+            'visible',
+        ]);
+        expect(state.sourceRows.slice(5, 10).map(row => row.firstCellText)).toEqual(['6', '7', '8', '9', '10']);
+        expect(state.detachedFrozenRows).toEqual([
+            { rowIndex: '0', visibility: 'visible', firstCellText: '1' },
+            { rowIndex: '1', visibility: 'visible', firstCellText: '2' },
+            { rowIndex: '2', visibility: 'visible', firstCellText: '3' },
+            { rowIndex: '3', visibility: 'visible', firstCellText: '4' },
+            { rowIndex: '4', visibility: 'visible', firstCellText: '5' },
+        ]);
     });
 
     test('固定行を選択してスクロールしてもフィルハンドルが固定行セルの右下に正しく位置する', async ({ page }) => {

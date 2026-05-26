@@ -678,6 +678,10 @@
     background-color: var(--background-sub-color);
 }
 
+.editor-table--quadrant-layout .editor-table-grid .editor-table-row.freeze-row {
+    visibility: hidden;
+}
+
 .freeze-row .editor-table-cell:not(.editor-table-row-header) {
     background-color: var(--background-sub-color);
 }
