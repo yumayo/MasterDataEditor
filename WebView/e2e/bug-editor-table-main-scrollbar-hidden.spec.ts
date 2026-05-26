@@ -36,6 +36,41 @@ function createFileSystem(): MockFileSystem {
     };
 }
 
+function createResizeScrollbarFileSystem(): MockFileSystem {
+    const rows: string[] = ['id,name,recover_stamina,recover_hp,attack,defence,speed,skill_id,selling_price'];
+    for (let i = 1; i <= 120; i++) {
+        rows.push([
+            `${i}`,
+            `chara_${i}`,
+            `${(i * 3) % 17 + 1}`,
+            `${(i * 7) % 19 + 1}`,
+            `${(i * 5) % 23 + 1}`,
+            `${(i * 11) % 29 + 1}`,
+            `${(i * 13) % 31 + 1}`,
+            `${(i * 17) % 101 + 1}`,
+            `${(i * 379) % 5000 + 50}`,
+        ].join(','));
+    }
+
+    return {
+        'schema/chara.json': JSON.stringify({
+            header: [
+                { key: 0, name: 'id', type: 'int', width: 120 },
+                { key: 1, name: 'name', type: 'string', width: 120 },
+                { key: 2, name: 'recover_stamina', type: 'int', width: 120 },
+                { key: 3, name: 'recover_hp', type: 'int', width: 120 },
+                { key: 4, name: 'attack', type: 'int', width: 120 },
+                { key: 5, name: 'defence', type: 'int', width: 120 },
+                { key: 6, name: 'speed', type: 'int', width: 120 },
+                { key: 7, name: 'skill_id', type: 'int', width: 120 },
+                { key: 8, name: 'selling_price', type: 'int', width: 120 },
+            ],
+            primary_key: ['id'],
+        }),
+        'data/chara.csv': rows.join('\n'),
+    };
+}
+
 test('通常テーブルでは外側スクロールバーだけを隠し、右下ビューポートの横スクロールバーは残すこと', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await installMockApiAsync(page, createFileSystem());
@@ -135,6 +170,71 @@ test('右下ビューポートの横スクロールバー領域をeditor-table�
     expect(metrics.hitInsideHorizontalScrollbar, `hitClass=${metrics.hitClassName}`).toBeTruthy();
     expect(metrics.hitInsideGrid, `hitClass=${metrics.hitClassName}`).toBeFalsy();
     expect(metrics.hitInsideCell, `hitClass=${metrics.hitClassName}`).toBeFalsy();
+});
+
+test('画面幅を縮めたとき通常テーブルの横カスタムスクロールバーが再表示されること', async ({ page }) => {
+    await page.setViewportSize({ width: 2600, height: 720 });
+    await installMockApiAsync(page, createResizeScrollbarFileSystem());
+    await page.goto('/');
+
+    await page.locator('#explorer .explorer-file').getByText('chara', { exact: true }).click();
+
+    const initial = await page.evaluate(async () => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+        const scrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const thumb = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+        if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+        if (scrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (thumb === null) throw new Error('editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+        return {
+            hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+            disabled: scrollbar.classList.contains('editor-table-logical-horizontal-scrollbar--disabled'),
+            thumbWidth: thumb.offsetWidth,
+        };
+    });
+
+    expect(initial.hasHorizontalOverflow).toBeFalsy();
+    expect(initial.disabled).toBeTruthy();
+    expect(initial.thumbWidth).toBe(0);
+
+    await page.setViewportSize({ width: 960, height: 540 });
+
+    await expect.poll(async () => {
+        return await page.evaluate(async () => {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+            const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            const scrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+            const thumb = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+            if (viewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            if (scrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
+            if (thumb === null) throw new Error('editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+            return {
+                hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+                disabled: scrollbar.classList.contains('editor-table-logical-horizontal-scrollbar--disabled'),
+                trackWidth: scrollbar.clientWidth,
+                thumbWidth: thumb.offsetWidth,
+            };
+        });
+    }).toMatchObject({
+        hasHorizontalOverflow: true,
+        disabled: false,
+    });
+
+    const resized = await page.evaluate(() => {
+        const scrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const thumb = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+        if (scrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (thumb === null) throw new Error('editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+        return {
+            trackWidth: scrollbar.clientWidth,
+            thumbWidth: thumb.offsetWidth,
+        };
+    });
+
+    expect(resized.trackWidth).toBeGreaterThan(0);
+    expect(resized.thumbWidth).toBeGreaterThan(0);
+    expect(resized.thumbWidth).toBeLessThan(resized.trackWidth);
 });
 
 test('横スクロールバー領域のドラッグでセル選択ではなく横スクロールすること', async ({ page }) => {

@@ -593,8 +593,11 @@ export class Tab {
         const activeState = this.tabStates.get(this.activeTabName);
         if (!activeState) return;
         const editorTable = activeState.editorTable;
-        if (editorTable.getFrozenColumnCount() === 0 && editorTable.getFrozenRowCount() === 0) return;
-        editorTable.refreshDetachedHeaderLayout();
+        const shouldRefreshLayout = editorTable.usesInternalScrollLayout()
+            || editorTable.getFrozenColumnCount() > 0
+            || editorTable.getFrozenRowCount() > 0;
+        if (!shouldRefreshLayout) return;
+        editorTable.forceVirtualScrollRecalculate();
         editorTable.refreshSelectionDisplay();
         this.editor.syncActiveTableScrollState();
     }
