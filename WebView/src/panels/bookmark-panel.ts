@@ -189,19 +189,19 @@ export class BookmarkPanel {
         const entryElements = this.contentElement.querySelectorAll<HTMLElement>('.bookmark-entry');
         for (let i = 0; i < entryElements.length; i++) {
             const el = entryElements[i];
-            // 修正8: getAttribute の null を throw で防御する（DOM構造が正しければ null にはならない）
-            const tName = el.getAttribute('data-table-name');
-            if (tName === null) throw new Error('[BookmarkPanel.serializeBookmarks] data-table-name 属性が null');
-            const rKey = el.getAttribute('data-pk-value');
-            if (rKey === null) throw new Error('[BookmarkPanel.serializeBookmarks] data-pk-value 属性が null');
-            const cName = el.getAttribute('data-column-name');
-            if (cName === null) throw new Error('[BookmarkPanel.serializeBookmarks] data-column-name 属性が null');
-            const cAt = el.getAttribute('data-created-at');
-            if (cAt === null) throw new Error('[BookmarkPanel.serializeBookmarks] data-created-at 属性が null');
-            // extractLabel をインライン展開（修正4: 1箇所のみ使用のため）
-            const displaySpan = el.querySelector('.bookmark-entry-display');
-            const label = displaySpan !== null && displaySpan.textContent !== null ? displaySpan.textContent : '';
-            entries.push({ tableName: tName, rowKey: rKey, columnName: cName, label, createdAt: cAt });
+            entries.push(this.readBookmarkEntryElement(el, 'serializeBookmarks'));
+        }
+        return entries;
+    }
+
+    /** 指定テーブルのブックマークだけをDOMから取得する。 */
+    getBookmarksForTable(tableName: string): BookmarkEntry[] {
+        const entries: BookmarkEntry[] = [];
+        const entryElements = this.contentElement.querySelectorAll<HTMLElement>('.bookmark-entry');
+        for (let i = 0; i < entryElements.length; i++) {
+            const el = entryElements[i];
+            if (el.getAttribute('data-table-name') !== tableName) continue;
+            entries.push(this.readBookmarkEntryElement(el, 'getBookmarksForTable'));
         }
         return entries;
     }
@@ -233,6 +233,20 @@ export class BookmarkPanel {
             if (el.getAttribute('data-table-name') === tableName && el.getAttribute('data-pk-value') === rowKey && el.getAttribute('data-column-name') === columnName) return el;
         }
         return null;
+    }
+
+    private readBookmarkEntryElement(el: HTMLElement, caller: string): BookmarkEntry {
+        const tableName = el.getAttribute('data-table-name');
+        if (tableName === null) throw new Error(`[BookmarkPanel.${caller}] data-table-name 属性が null`);
+        const rowKey = el.getAttribute('data-pk-value');
+        if (rowKey === null) throw new Error(`[BookmarkPanel.${caller}] data-pk-value 属性が null`);
+        const columnName = el.getAttribute('data-column-name');
+        if (columnName === null) throw new Error(`[BookmarkPanel.${caller}] data-column-name 属性が null`);
+        const createdAt = el.getAttribute('data-created-at');
+        if (createdAt === null) throw new Error(`[BookmarkPanel.${caller}] data-created-at 属性が null`);
+        const displaySpan = el.querySelector('.bookmark-entry-display');
+        const label = displaySpan !== null && displaySpan.textContent !== null ? displaySpan.textContent : '';
+        return { tableName, rowKey, columnName, label, createdAt };
     }
 
     /**

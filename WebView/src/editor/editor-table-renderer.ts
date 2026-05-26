@@ -332,18 +332,21 @@ export class EditorTableRenderer {
     }
 
     private reapplyReferenceAndBookmarkDecorations(update: RenderedRowsUpdate): void {
+        const applyRange = (range: { start: number; end: number }): void => {
+            if (range.start >= range.end) return;
+            const startDomRow = this.virtualScroll.dataRowToDomIndex(range.start);
+            const endDomRow = this.virtualScroll.dataRowToDomIndex(range.end - 1);
+            if (startDomRow === null || endDomRow === null) return;
+            this.reference.updateReferenceHintsForRows(startDomRow, endDomRow + 1);
+            this.restoreBookmarkMarksForDataRowRange(range.start, range.end, false);
+        };
         if (update.refreshAllRows) {
-            this.reference.updateReferenceHints();
-            this.restoreBookmarkMarks();
+            if (this.frozenRowCount > 0) applyRange({ start: 0, end: this.frozenRowCount });
+            for (const insertedRange of update.insertedRanges) applyRange(insertedRange);
             return;
         }
         for (const insertedRange of update.insertedRanges) {
-            if (insertedRange.start >= insertedRange.end) continue;
-            const startDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.start);
-            const endDomRow = this.virtualScroll.dataRowToDomIndex(insertedRange.end - 1);
-            if (startDomRow === null || endDomRow === null) continue;
-            this.reference.updateReferenceHintsForRows(startDomRow, endDomRow + 1);
-            this.restoreBookmarkMarksForDataRowRange(insertedRange.start, insertedRange.end);
+            applyRange(insertedRange);
         }
     }
 

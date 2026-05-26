@@ -331,7 +331,7 @@ export class VirtualScrollController {
         return Math.min(physicalMaxScrollTop, Math.max(0, logicalScrollTop) * (physicalMaxScrollTop / logicalMaxScrollTop));
     }
 
-    setLogicalScrollTop(logicalScrollTop: number): boolean {
+    setLogicalScrollTop(logicalScrollTop: number, triggeredByScrollInput: boolean = false): boolean {
         if (!this.enabled) {
             const nextPhysicalScrollTop = Math.max(0, logicalScrollTop);
             const changed = Math.abs(this.scrollContainer.scrollTop - nextPhysicalScrollTop) > 0.001;
@@ -342,13 +342,13 @@ export class VirtualScrollController {
         const changed = Math.abs(this.logicalScrollTopPx - nextLogicalScrollTop) > 0.001;
         this.logicalScrollTopPx = nextLogicalScrollTop;
         this.syncPhysicalScrollTopFromLogical();
-        if (changed) this.recalculate();
+        if (changed) this.recalculate(triggeredByScrollInput);
         return changed;
     }
 
-    setPhysicalScrollTop(physicalScrollTop: number): boolean {
+    setPhysicalScrollTop(physicalScrollTop: number, triggeredByScrollInput: boolean = false): boolean {
         const nextLogicalScrollTop = this.mapPhysicalScrollTopToLogical(physicalScrollTop);
-        const changed = this.setLogicalScrollTop(nextLogicalScrollTop);
+        const changed = this.setLogicalScrollTop(nextLogicalScrollTop, triggeredByScrollInput);
         const nextPhysicalScrollTop = this.getPhysicalScrollTop(this.logicalScrollTopPx);
         if (Math.abs(this.scrollContainer.scrollTop - nextPhysicalScrollTop) > 1) {
             this.scrollContainer.scrollTop = nextPhysicalScrollTop;
@@ -840,14 +840,26 @@ export class VirtualScrollController {
      * 表示範囲を再計算し、DOMの行を更新する。
      * scrollContainer の scrollTop を基に、ビューポートに収まるデータ行の範囲を決定する。
      */
-    private recalculate(): void {
+    private recalculate(triggeredByScrollInput: boolean = false): void {
         if (this.renderRow === false) return;
         if (this.isRecalculating) return;
         this.isRecalculating = true;
+        const previousIsHandlingScrollEvent = this.isHandlingScrollEvent;
+        const previousScrollTop = this.currentScrollTop;
+        const previousScrollLeft = this.currentScrollLeft;
+
+        if (triggeredByScrollInput && !this.isHandlingScrollEvent) {
+            this.currentScrollTop = this.getLogicalScrollTop();
+            this.currentScrollLeft = this.scrollContainer.scrollLeft;
+            this.isHandlingScrollEvent = true;
+        }
 
         try {
             this.recalculateCore();
         } finally {
+            this.isHandlingScrollEvent = previousIsHandlingScrollEvent;
+            this.currentScrollTop = previousScrollTop;
+            this.currentScrollLeft = previousScrollLeft;
             this.isRecalculating = false;
         }
     }

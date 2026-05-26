@@ -313,6 +313,13 @@ export class Sidebar {
     }
 
     /**
+     * 指定テーブルのブックマーク一覧を取得する（EditorTable の表示マーク復元用）
+     */
+    getBookmarksForTable(tableName: string): BookmarkEntry[] {
+        return this.bookmarkPanel.getBookmarksForTable(tableName);
+    }
+
+    /**
      * ブックマークを復元する（起動時読み込み用）
      */
     restoreBookmarks(entries: BookmarkEntry[]): void {

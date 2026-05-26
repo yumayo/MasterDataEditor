@@ -65,6 +65,8 @@ export class Editor {
 
     private isSyncingLeftPaneFromTable: boolean;
     private isSyncingTableFromLeftPane: boolean;
+    private lastLeftPaneSyncedScrollTop: number;
+    private lastLeftPaneSyncedScrollLeft: number;
 
     constructor(editorElement: HTMLElement) {
         this.element = editorElement;
@@ -77,6 +79,8 @@ export class Editor {
         this.relationsPanel = false;
         this.isSyncingLeftPaneFromTable = false;
         this.isSyncingTableFromLeftPane = false;
+        this.lastLeftPaneSyncedScrollTop = 0;
+        this.lastLeftPaneSyncedScrollLeft = 0;
 
         // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
         const navigationBar = document.createElement('div');
@@ -178,6 +182,8 @@ export class Editor {
         try {
             if (this.leftPane.scrollTop !== metrics.scrollTop) this.leftPane.scrollTop = metrics.scrollTop;
             if (this.leftPane.scrollLeft !== metrics.scrollLeft) this.leftPane.scrollLeft = metrics.scrollLeft;
+            this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
+            this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
         } finally {
             this.isSyncingLeftPaneFromTable = false;
         }
@@ -190,12 +196,23 @@ export class Editor {
         if (activeState === false) return;
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
         const metrics = activeState.editorTable.getPhysicalScrollMetrics();
-        if (this.leftPane.scrollTop === metrics.scrollTop && this.leftPane.scrollLeft === metrics.scrollLeft) return;
+        const nextScrollLeft = this.leftPane.scrollLeft === this.lastLeftPaneSyncedScrollLeft
+            ? metrics.scrollLeft
+            : this.leftPane.scrollLeft;
+        if (this.leftPane.scrollTop === metrics.scrollTop && nextScrollLeft === metrics.scrollLeft) return;
         this.isSyncingTableFromLeftPane = true;
         try {
-            activeState.editorTable.restorePhysicalScrollPosition(this.leftPane.scrollTop, this.leftPane.scrollLeft);
+            activeState.editorTable.restorePhysicalScrollPosition(this.leftPane.scrollTop, nextScrollLeft);
         } finally {
             this.isSyncingTableFromLeftPane = false;
+        }
+        this.isSyncingLeftPaneFromTable = true;
+        try {
+            if (this.leftPane.scrollLeft !== nextScrollLeft) this.leftPane.scrollLeft = nextScrollLeft;
+            this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
+            this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
+        } finally {
+            this.isSyncingLeftPaneFromTable = false;
         }
     }
 
@@ -264,6 +281,8 @@ export class Editor {
     restoreScrollPosition(state: { savedScrollLeft: number; savedScrollTop: number }): void {
         this.leftPane.scrollLeft = state.savedScrollLeft;
         this.leftPane.scrollTop = state.savedScrollTop;
+        this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
+        this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
     }
 
     /**

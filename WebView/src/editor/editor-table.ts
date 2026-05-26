@@ -958,27 +958,21 @@ export class EditorTable {
 
     scrollByInput(deltaTopPx: number, deltaLeftPx: number): void {
         if (deltaTopPx === 0 && deltaLeftPx === 0) return;
-        this.virtualScroll.setLogicalScrollTop(this.getScrollTop() + deltaTopPx);
+        this.virtualScroll.setLogicalScrollTop(this.getScrollTop() + deltaTopPx, true);
         this.scrollContainer.scrollLeft += deltaLeftPx;
-        this.scrollContainer.dispatchEvent(new Event('scroll'));
         this.syncScrollBoundVisuals();
-        this.emitScrollMetricsChanged();
     }
 
     restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
-        this.virtualScroll.setLogicalScrollTop(scrollTop);
+        this.virtualScroll.setLogicalScrollTop(scrollTop, true);
         this.scrollContainer.scrollLeft = scrollLeft;
-        this.scrollContainer.dispatchEvent(new Event('scroll'));
         this.syncScrollBoundVisuals();
-        this.emitScrollMetricsChanged();
     }
 
     restorePhysicalScrollPosition(scrollTop: number, scrollLeft: number): void {
-        this.virtualScroll.setPhysicalScrollTop(scrollTop);
+        this.virtualScroll.setPhysicalScrollTop(scrollTop, true);
         this.scrollContainer.scrollLeft = scrollLeft;
-        this.scrollContainer.dispatchEvent(new Event('scroll'));
         this.syncScrollBoundVisuals();
-        this.emitScrollMetricsChanged();
     }
 
     private handleCompressedScrollWheel(event: WheelEvent): void {
@@ -2202,8 +2196,8 @@ export class EditorTable {
         this.bookmarks.restoreBookmarkMarks();
     }
 
-    restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number): void {
-        this.bookmarks.restoreBookmarkMarksForDataRowRange(startDataRowIndex, endDataRowIndex);
+    restoreBookmarkMarksForDataRowRange(startDataRowIndex: number, endDataRowIndex: number, clearExisting: boolean = true): void {
+        this.bookmarks.restoreBookmarkMarksForDataRowRange(startDataRowIndex, endDataRowIndex, clearExisting);
     }
 
     // =========================================================================

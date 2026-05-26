@@ -133,15 +133,13 @@ export class EditorTableLayout {
 
     private resolveQuadrantFixedLeftWidthPx(measuredWidth: number = this.getFixedLeftWidthPx()): number {
         const minimumWidth = this.getFixedLeftLayoutMinimumWidthPx();
-        const paneLeft = Math.max(
+        const inlinePaneLeft = Math.max(
             this.parseInlinePx(this.bottomRightPane.style.left),
             this.parseInlinePx(this.topRightPane.style.left),
             this.parseInlineInsetLeftPx(this.bottomRightPane.style.inset),
-            this.parseInlineInsetLeftPx(this.topRightPane.style.inset),
-            getLayoutLeftRelativeToPx(this.bottomRightPane, this.element),
-            getLayoutLeftRelativeToPx(this.topRightPane, this.element)
+            this.parseInlineInsetLeftPx(this.topRightPane.style.inset)
         );
-        const minimumValidWidth = Math.max(1, minimumWidth, paneLeft) - 1;
+        const minimumValidWidth = Math.max(1, minimumWidth, inlinePaneLeft) - 1;
         if (Number.isFinite(measuredWidth) && measuredWidth >= minimumValidWidth) {
             this.quadrantFixedLeftWidthPx = measuredWidth;
             return measuredWidth;
@@ -149,7 +147,20 @@ export class EditorTableLayout {
         if (this.quadrantFixedLeftWidthPx >= minimumValidWidth) {
             return this.quadrantFixedLeftWidthPx;
         }
-        if (paneLeft >= minimumValidWidth) {
+        if (inlinePaneLeft >= minimumValidWidth) {
+            this.quadrantFixedLeftWidthPx = inlinePaneLeft;
+            return inlinePaneLeft;
+        }
+        const measuredPaneLeft = Math.max(
+            getLayoutLeftRelativeToPx(this.bottomRightPane, this.element),
+            getLayoutLeftRelativeToPx(this.topRightPane, this.element)
+        );
+        const paneLeft = Math.max(inlinePaneLeft, measuredPaneLeft);
+        const measuredMinimumValidWidth = Math.max(1, minimumWidth, paneLeft) - 1;
+        if (this.quadrantFixedLeftWidthPx >= measuredMinimumValidWidth) {
+            return this.quadrantFixedLeftWidthPx;
+        }
+        if (paneLeft >= measuredMinimumValidWidth) {
             this.quadrantFixedLeftWidthPx = paneLeft;
             return paneLeft;
         }
@@ -201,7 +212,17 @@ export class EditorTableLayout {
         const cloneCell = sourceCell.cloneNode(true) as HTMLElement;
         cloneCell.style.visibility = '';
         cloneCell.style.flex = '0 0 auto';
-        {
+        const sourceRow = sourceCell.parentElement;
+        const canReuseAbsoluteRowInlineWidth = sourceRow !== null
+            && sourceRow.classList.contains('editor-table-row')
+            && this.gridElement.classList.contains('editor-table-grid--absolute-rows')
+            && sourceCell.style.width !== '';
+        if (canReuseAbsoluteRowInlineWidth) {
+            cloneCell.style.boxSizing = 'border-box';
+            cloneCell.style.width = sourceCell.style.width;
+            cloneCell.style.minWidth = sourceCell.style.minWidth || sourceCell.style.width;
+            cloneCell.style.maxWidth = sourceCell.style.maxWidth || sourceCell.style.width;
+        } else {
             // detached layer は flex レイアウトなので、table レイアウトで確定した実幅をそのまま引き継ぐ。
             const computedStyle = window.getComputedStyle(sourceCell);
             const renderedWidth = getLayoutBorderBoxWidthPx(sourceCell);

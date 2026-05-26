@@ -678,11 +678,19 @@ export class Selection {
         } else {
             this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
         }
-        this.updateSelectionOverlay(selectionRange);
-        // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
-        this.updateFillHandlePosition();
-        if (this.hasCopyRange()) {
-            this.updateCopyRenderer();
+        if (triggeredByScroll) {
+            // スクロール入力ではこの直後の scroll-bound sync で overlay をまとめて更新する。
+            // 行差し替え直後に getBoundingClientRect() を読むと、大量の class/DOM 更新が同期レイアウト化する。
+            if (this.fillHandleHostCell !== null && !this.fillHandleHostCell.isConnected) {
+                this.updateFillHandlePosition();
+            }
+        } else {
+            this.updateSelectionOverlay(selectionRange);
+            // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
+            this.updateFillHandlePosition();
+            if (this.hasCopyRange()) {
+                this.updateCopyRenderer();
+            }
         }
     }
 
