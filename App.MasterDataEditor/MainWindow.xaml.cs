@@ -19,6 +19,8 @@ public partial class MainWindow : Window
 		InitializeComponent();
 
 		Title = $"マスターデータ入力支援ツール";
+		SourceInitialized += (_, _) => WindowPlacementManager.Restore(this);
+		Closing += (_, _) => WindowPlacementManager.Save(this);
 		Loaded += (_, _) => FocusWebView2();
 		Activated += (_, _) => FocusWebView2();
 		webView2.NavigationCompleted += OnWebView2NavigationCompleted;
