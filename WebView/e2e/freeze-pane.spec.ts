@@ -142,6 +142,32 @@ function createCombinedFreezeTestFileSystem(): MockFileSystem {
     };
 }
 
+function createFreezeSelectionClipTestFileSystem(): MockFileSystem {
+    const columnNames = ['id'];
+    for (let i = 1; i <= 30; i++) {
+        columnNames.push(`value_${i}`);
+    }
+
+    const rows: string[] = [columnNames.join(',')];
+    for (let row = 1; row <= 220; row++) {
+        rows.push(columnNames.map((name, column) => column === 0 ? `${row}` : `${name}_${row}`).join(','));
+    }
+
+    return {
+        "schema/freeze_selection_clip.json": JSON.stringify({
+            header: columnNames.map((name, key) => ({
+                key,
+                name,
+                type: key === 0 ? "int" : "string",
+            })),
+            primary_key: ["id"],
+            frozenRowCount: 5,
+            frozenColumnCount: 2,
+        }),
+        "data/freeze_selection_clip.csv": rows.join("\n"),
+    };
+}
+
 /**
  * fill-handle の重なり順検証用ファイルシステム。
  * 先頭1行・先頭1列を固定した状態で開き、選択セルに応じて
@@ -845,6 +871,135 @@ test.describe('フリーズペイン', () => {
             expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.frozenRowHeader);
             expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.columnHeader);
             expect(zIndexes.selection, JSON.stringify(zIndexes)).toBeLessThan(zIndexes.cornerHeader);
+        });
+    });
+
+    test.describe('selection overlay の固定領域クリップ', () => {
+        test.beforeEach(async ({ page }) => {
+            const fs = createFreezeSelectionClipTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+        });
+
+        test('固定行列を含む選択範囲を大きくスクロールしても画面外セルまで選択枠を広げない', async ({ page }) => {
+            await page.setViewportSize({ width: 640, height: 480 });
+            await openTableAsync(page, 'freeze_selection_clip');
+
+            await page.evaluate(() => {
+                type SelectionForTest = {
+                    start(row: number, column: number): void;
+                    extendSelection(row: number, column: number): void;
+                    end(): void;
+                };
+                type ActiveEditorTableForTest = {
+                    dataColumnOffset(): number;
+                    getSelection(): SelectionForTest;
+                    scrollByInput(deltaTopPx: number, deltaLeftPx: number): void;
+                };
+
+                const editor = (window as unknown as { editor?: { activeEditorTable: ActiveEditorTableForTest | false } }).editor;
+                if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+
+                const table = editor.activeEditorTable;
+                const dataColumnOffset = table.dataColumnOffset();
+                const selection = table.getSelection();
+                selection.start(3, dataColumnOffset + 1);
+                selection.extendSelection(90, dataColumnOffset + 6);
+                selection.end();
+                table.scrollByInput(2300, 1200);
+            });
+            await page.waitForTimeout(100);
+
+            const geometry = await page.evaluate(() => {
+                const wrapper = document.querySelector<HTMLElement>(
+                    '.editor-left-pane .tab-wrapper[data-tab-name="freeze_selection_clip"]',
+                );
+                if (!(wrapper instanceof HTMLElement)) throw new Error('wrapper not found');
+                const table = wrapper.querySelector<HTMLElement>('.editor-table');
+                if (!(table instanceof HTMLElement)) throw new Error('table not found');
+
+                const firstSelectedFixedCell = table.querySelector<HTMLElement>(
+                    '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="2"] .editor-table-cell[data-col="1"]',
+                );
+                const lastSelectedFixedCell = table.querySelector<HTMLElement>(
+                    '.editor-table-detached-frozen-corner-layer .editor-table-detached-row[data-row-index="4"] .editor-table-cell[data-col="1"]',
+                );
+                if (!(firstSelectedFixedCell instanceof HTMLElement) || !(lastSelectedFixedCell instanceof HTMLElement)) {
+                    throw new Error('fixed selection cells not found');
+                }
+
+                const firstRect = firstSelectedFixedCell.getBoundingClientRect();
+                const lastRect = lastSelectedFixedCell.getBoundingClientRect();
+                const borderRects = Array.from(wrapper.querySelectorAll<HTMLElement>('.selection-overlay-border'))
+                    .map((element) => {
+                        const rect = element.getBoundingClientRect();
+                        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+                    });
+                if (borderRects.length === 0) throw new Error('selection overlay border not found');
+
+                return {
+                    fixedLeft: firstRect.left,
+                    fixedTop: firstRect.top,
+                    fixedRight: firstRect.right,
+                    fixedBottom: lastRect.bottom,
+                    borderCount: borderRects.length,
+                    minBorderLeft: Math.min(...borderRects.map((rect) => rect.left)),
+                    minBorderTop: Math.min(...borderRects.map((rect) => rect.top)),
+                    maxBorderRight: Math.max(...borderRects.map((rect) => rect.right)),
+                    maxBorderBottom: Math.max(...borderRects.map((rect) => rect.bottom)),
+                    borderRects,
+                };
+            });
+
+            expect(geometry.minBorderLeft, JSON.stringify(geometry)).toBeGreaterThanOrEqual(geometry.fixedLeft - 2);
+            expect(geometry.minBorderTop, JSON.stringify(geometry)).toBeGreaterThanOrEqual(geometry.fixedTop - 2);
+            expect(geometry.maxBorderRight, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.fixedRight + 2);
+            expect(geometry.maxBorderBottom, JSON.stringify(geometry)).toBeLessThanOrEqual(geometry.fixedBottom + 2);
+        });
+
+        test('横スクロール中に固定行と本文行の選択範囲を上下で二分割しない', async ({ page }) => {
+            await page.setViewportSize({ width: 640, height: 480 });
+            await openTableAsync(page, 'freeze_selection_clip');
+
+            const geometry = await page.evaluate(async () => {
+                type SelectionForTest = {
+                    start(row: number, column: number): void;
+                    extendSelection(row: number, column: number): void;
+                    end(): void;
+                };
+                type ActiveEditorTableForTest = {
+                    dataColumnOffset(): number;
+                    getSelection(): SelectionForTest;
+                    scrollByInput(deltaTopPx: number, deltaLeftPx: number): void;
+                };
+
+                const editor = (window as unknown as { editor?: { activeEditorTable: ActiveEditorTableForTest | false } }).editor;
+                if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+
+                const table = editor.activeEditorTable;
+                const dataColumnOffset = table.dataColumnOffset();
+                const selection = table.getSelection();
+                selection.start(5, dataColumnOffset + 1);
+                selection.extendSelection(16, dataColumnOffset + 8);
+                selection.end();
+                table.scrollByInput(210, 160);
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+                const wrapper = document.querySelector<HTMLElement>(
+                    '.editor-left-pane .tab-wrapper[data-tab-name="freeze_selection_clip"]',
+                );
+                if (!(wrapper instanceof HTMLElement)) throw new Error('wrapper not found');
+                const borders = Array.from(wrapper.querySelectorAll<HTMLElement>('.selection-overlay-border'));
+                return {
+                    borderCount: borders.length,
+                    borderRects: borders.map((element) => {
+                        const rect = element.getBoundingClientRect();
+                        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+                    }),
+                };
+            });
+
+            expect(geometry.borderCount, JSON.stringify(geometry)).toBe(1);
         });
     });
 

@@ -15,6 +15,18 @@ export interface CellRange {
 
 export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
+interface OverlayBounds {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+}
+
+interface OverlayVisualGroup {
+    bounds: OverlayBounds;
+    focusBounds: OverlayBounds | null;
+}
+
 export class Selection {
 
     selectionOverlayElement: HTMLElement;
@@ -769,35 +781,158 @@ export class Selection {
     private updateSelectionOverlay(selectionRange: CellRange): void {
         this.clearSelectionOverlay();
 
+        for (const group of this.getVisibleOverlayGroups(selectionRange)) {
+            this.appendSelectionOverlayGroup(group);
+        }
+    }
+
+    private appendSelectionOverlayPart(classNames: string, left: number, top: number, width: number, height: number): void {
+        this.appendOverlayPart(this.selectionOverlayParts, classNames, left, top, width, height);
+    }
+
+    private updateCopyOverlay(copyRange: CellRange): void {
+        for (const group of this.getVisibleOverlayGroups(copyRange)) {
+            const bounds = group.bounds;
+            this.appendCopyOverlayPart(
+                'copy-overlay-border',
+                bounds.left, bounds.top,
+                bounds.right - bounds.left - 1, bounds.bottom - bounds.top - 1,
+            );
+        }
+    }
+
+    private getVisibleOverlayGroups(range: CellRange): OverlayVisualGroup[] {
         const hostRect = this.editorElement.getBoundingClientRect();
-        let selectionLeft = Number.POSITIVE_INFINITY;
-        let selectionTop = Number.POSITIVE_INFINITY;
-        let selectionRight = Number.NEGATIVE_INFINITY;
-        let selectionBottom = Number.NEGATIVE_INFINITY;
-        let focusRect: { left: number; top: number; right: number; bottom: number } | null = null;
+        const groups = new Map<string, OverlayVisualGroup>();
 
-        const hasVisibleCell = this.forEachVisibleRangeCell(selectionRange, (row, column, cell) => {
-            const rect = cell.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return;
-            const left = rect.left - hostRect.left;
-            const top = rect.top - hostRect.top;
-            const right = rect.right - hostRect.left;
-            const bottom = rect.bottom - hostRect.top;
-
-            selectionLeft = Math.min(selectionLeft, left);
-            selectionTop = Math.min(selectionTop, top);
-            selectionRight = Math.max(selectionRight, right);
-            selectionBottom = Math.max(selectionBottom, bottom);
-
+        this.forEachVisibleRangeCell(range, (row, column, cell) => {
+            const clippedRect = this.getClippedVisibleCellRect(cell);
+            if (clippedRect === null) return;
+            const localBounds = {
+                left: clippedRect.left - hostRect.left,
+                top: clippedRect.top - hostRect.top,
+                right: clippedRect.right - hostRect.left,
+                bottom: clippedRect.bottom - hostRect.top,
+            };
+            const groupKey = this.getOverlayVisualGroupKey(row, column, cell);
+            let group = groups.get(groupKey);
+            if (group === undefined) {
+                group = { bounds: { ...localBounds }, focusBounds: null };
+                groups.set(groupKey, group);
+            } else {
+                this.expandOverlayBounds(group.bounds, localBounds);
+            }
             if (row === this.focus.row && column === this.focus.column) {
-                focusRect = { left, top, right, bottom };
+                group.focusBounds = { ...localBounds };
             }
         });
-        if (!hasVisibleCell || selectionLeft === Number.POSITIVE_INFINITY) return;
 
-        const visualSelectionRight = selectionRight - 1;
-        const visualSelectionBottom = selectionBottom - 1;
+        return this.mergeAdjacentOverlayGroups(Array.from(groups.values()));
+    }
 
+    private getClippedVisibleCellRect(cell: HTMLElement): OverlayBounds | null {
+        const cellRect = cell.getBoundingClientRect();
+        if (cellRect.width <= 0 || cellRect.height <= 0) return null;
+
+        const clipRects = this.getOverlayClipRects(cell);
+        const clipped: OverlayBounds = {
+            left: cellRect.left,
+            top: cellRect.top,
+            right: cellRect.right,
+            bottom: cellRect.bottom,
+        };
+        for (const clipRect of clipRects) {
+            clipped.left = Math.max(clipped.left, clipRect.left);
+            clipped.top = Math.max(clipped.top, clipRect.top);
+            clipped.right = Math.min(clipped.right, clipRect.right);
+            clipped.bottom = Math.min(clipped.bottom, clipRect.bottom);
+            if (clipped.right <= clipped.left || clipped.bottom <= clipped.top) return null;
+        }
+        return clipped;
+    }
+
+    private getOverlayClipRects(cell: HTMLElement): DOMRect[] {
+        const clipRects: DOMRect[] = [this.editorTable.getTableBoundingClientRect()];
+        const quadrantPane = cell.closest('.editor-table-pane');
+        if (quadrantPane instanceof HTMLElement) {
+            clipRects.push(quadrantPane.getBoundingClientRect());
+        }
+        const quadrantViewport = cell.closest('.editor-table-top-viewport, .editor-table-left-viewport, .editor-table-main-viewport');
+        if (quadrantViewport instanceof HTMLElement) {
+            clipRects.push(quadrantViewport.getBoundingClientRect());
+        }
+        if (!(quadrantPane instanceof HTMLElement) && !(quadrantViewport instanceof HTMLElement)) {
+            clipRects.push(this.scrollBinding.getBoundingClientRect());
+        }
+        return clipRects;
+    }
+
+    private getOverlayVisualGroupKey(row: number, column: number, cell: HTMLElement): string {
+        const quadrantPane = cell.closest('.editor-table-pane-top-left, .editor-table-pane-top-right, .editor-table-pane-bottom-left, .editor-table-pane-bottom-right');
+        if (quadrantPane instanceof HTMLElement) {
+            if (quadrantPane.classList.contains('editor-table-pane-top-left')) return 'pane:top-left';
+            if (quadrantPane.classList.contains('editor-table-pane-top-right')) return 'pane:top-right';
+            if (quadrantPane.classList.contains('editor-table-pane-bottom-left')) return 'pane:bottom-left';
+            if (quadrantPane.classList.contains('editor-table-pane-bottom-right')) return 'pane:bottom-right';
+        }
+        const rowGroup = row <= this.editorTable.getFrozenRowCount() ? 'frozen-row' : 'body-row';
+        const columnGroup = this.editorTable.isFrozenDomColumn(column) ? 'frozen-column' : 'body-column';
+        return `${rowGroup}:${columnGroup}`;
+    }
+
+    private mergeAdjacentOverlayGroups(groups: OverlayVisualGroup[]): OverlayVisualGroup[] {
+        const merged: OverlayVisualGroup[] = [];
+        for (const group of groups) {
+            let pending: OverlayVisualGroup = {
+                bounds: { ...group.bounds },
+                focusBounds: group.focusBounds === null ? null : { ...group.focusBounds },
+            };
+            let mergedIntoExisting = true;
+            while (mergedIntoExisting) {
+                mergedIntoExisting = false;
+                for (let index = 0; index < merged.length; index++) {
+                    const existing = merged[index];
+                    if (!this.canMergeOverlayBounds(existing.bounds, pending.bounds)) continue;
+                    this.expandOverlayBounds(existing.bounds, pending.bounds);
+                    if (existing.focusBounds === null && pending.focusBounds !== null) {
+                        existing.focusBounds = pending.focusBounds;
+                    }
+                    pending = existing;
+                    merged.splice(index, 1);
+                    mergedIntoExisting = true;
+                    break;
+                }
+            }
+            merged.push(pending);
+        }
+        return merged;
+    }
+
+    private canMergeOverlayBounds(a: OverlayBounds, b: OverlayBounds): boolean {
+        const tolerance = 1.5;
+        const horizontalOverlap = Math.min(a.right, b.right) - Math.max(a.left, b.left) > tolerance;
+        const verticalOverlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > tolerance;
+        const horizontalTouch = Math.abs(a.right - b.left) <= tolerance || Math.abs(b.right - a.left) <= tolerance;
+        const verticalTouch = Math.abs(a.bottom - b.top) <= tolerance || Math.abs(b.bottom - a.top) <= tolerance;
+        return (horizontalOverlap && (verticalOverlap || verticalTouch))
+            || (verticalOverlap && horizontalTouch);
+    }
+
+    private expandOverlayBounds(target: OverlayBounds, source: OverlayBounds): void {
+        target.left = Math.min(target.left, source.left);
+        target.top = Math.min(target.top, source.top);
+        target.right = Math.max(target.right, source.right);
+        target.bottom = Math.max(target.bottom, source.bottom);
+    }
+
+    private appendSelectionOverlayGroup(group: OverlayVisualGroup): void {
+        const selectionLeft = group.bounds.left;
+        const selectionTop = group.bounds.top;
+        const visualSelectionRight = group.bounds.right - 1;
+        const visualSelectionBottom = group.bounds.bottom - 1;
+        if (visualSelectionRight <= selectionLeft || visualSelectionBottom <= selectionTop) return;
+
+        const focusRect = group.focusBounds;
         if (focusRect === null) {
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
@@ -833,41 +968,6 @@ export class Selection {
             selectionLeft, selectionTop,
             visualSelectionRight - selectionLeft, visualSelectionBottom - selectionTop,
         );
-    }
-
-    private appendSelectionOverlayPart(classNames: string, left: number, top: number, width: number, height: number): void {
-        this.appendOverlayPart(this.selectionOverlayParts, classNames, left, top, width, height);
-    }
-
-    private updateCopyOverlay(copyRange: CellRange): void {
-        const bounds = this.getVisibleRangeBounds(copyRange);
-        if (bounds === null) return;
-        this.appendCopyOverlayPart(
-            'copy-overlay-border',
-            bounds.left, bounds.top,
-            bounds.right - bounds.left - 1, bounds.bottom - bounds.top - 1,
-        );
-    }
-
-    private getVisibleRangeBounds(range: CellRange): { left: number; top: number; right: number; bottom: number } | null {
-        const hostRect = this.editorElement.getBoundingClientRect();
-        let left = Number.POSITIVE_INFINITY;
-        let top = Number.POSITIVE_INFINITY;
-        let right = Number.NEGATIVE_INFINITY;
-        let bottom = Number.NEGATIVE_INFINITY;
-        let hasVisibleCell = false;
-
-        this.forEachVisibleRangeCell(range, (_row, _column, cell) => {
-            const rect = cell.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) return;
-            left = Math.min(left, rect.left - hostRect.left);
-            top = Math.min(top, rect.top - hostRect.top);
-            right = Math.max(right, rect.right - hostRect.left);
-            bottom = Math.max(bottom, rect.bottom - hostRect.top);
-            hasVisibleCell = true;
-        });
-
-        return hasVisibleCell ? { left, top, right, bottom } : null;
     }
 
     private appendCopyOverlayPart(classNames: string, left: number, top: number, width: number, height: number): void {
