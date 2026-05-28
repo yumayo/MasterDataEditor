@@ -38,6 +38,9 @@ type SettingsScope = 'workspace' | 'user';
 
 const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
 const TAB_SEPARATE_PINNED_ROWS_ENABLED_CSS_VAR = '--tab-separate-pinned-rows-enabled';
+const TAB_ROW_HEIGHT_CSS_VAR = '--tab-row-height';
+const TAB_ROW_HEIGHT_NORMAL = '48px';
+const TAB_ROW_HEIGHT_COMPACT = '32px';
 const SETTINGS_SCOPE_OPTIONS: Record<SettingsScope, { scope: FileScope }> = {
     workspace: {scope: 'workspace'},
     user: {scope: 'user'},
@@ -59,6 +62,16 @@ const SETTING_RUNTIME_APPLIERS: Partial<Record<SettingsKey, (settings: AppliedSe
     },
     tabSeparatePinnedRowsEnabled: (settings: AppliedSettings) => {
         document.documentElement.style.setProperty(TAB_SEPARATE_PINNED_ROWS_ENABLED_CSS_VAR, settings.tabSeparatePinnedRowsEnabled ? '1' : '0');
+    },
+    explorerFileDescriptionHidden: (settings: AppliedSettings) => {
+        document.body.dataset.explorerFileDescriptionHidden = settings.explorerFileDescriptionHidden ? 'true' : 'false';
+    },
+    tabButtonDescriptionHidden: (settings: AppliedSettings) => {
+        document.body.dataset.tabButtonDescriptionHidden = settings.tabButtonDescriptionHidden ? 'true' : 'false';
+        document.documentElement.style.setProperty(
+            TAB_ROW_HEIGHT_CSS_VAR,
+            settings.tabButtonDescriptionHidden ? TAB_ROW_HEIGHT_COMPACT : TAB_ROW_HEIGHT_NORMAL,
+        );
     },
 };
 const SETTING_VALUE_READERS = {

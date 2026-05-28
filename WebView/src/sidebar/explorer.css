@@ -93,3 +93,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+body[data-explorer-file-description-hidden="true"] .explorer-file-description {
+    display: none;
+}

@@ -23,6 +23,14 @@ async function selectSettingsScopeAsync(page: Page, scope: 'user' | 'workspace')
     await expect(tab).toHaveAttribute('aria-selected', 'true');
 }
 
+function createDescribedTestFileSystem() {
+    const fs = createDefaultFileSystem();
+    const schema = JSON.parse(fs['schema/test.json']) as Record<string, unknown>;
+    schema.description = 'テスト説明\nsecond line';
+    fs['schema/test.json'] = JSON.stringify(schema);
+    return fs;
+}
+
 async function setExportValidationDateTimeAsync(page: Page, value: string): Promise<void> {
     const input = page.locator('.settings-export-validation-datetime-input');
     await input.fill(value);
@@ -384,6 +392,67 @@ test.describe('設定画面', () => {
             await expect.poll(async () => page.evaluate(() => (
                 getComputedStyle(document.documentElement).getPropertyValue('--tab-separate-pinned-rows-enabled').trim()
             ))).toBe('1');
+        },
+    );
+
+    test(
+        '説明非表示設定を保存してExplorerとタブのdescriptionを即時に隠し、タブ高さを小さくできること',
+        async ({ page }) => {
+            const fs = createDescribedTestFileSystem();
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+
+            const explorerFile = page.locator('.explorer-file').filter({
+                has: page.locator('.explorer-file-name', { hasText: 'test' }),
+            }).first();
+            const explorerDescription = explorerFile.locator('.explorer-file-description');
+            await expect(explorerDescription).toBeVisible();
+            await expect(explorerDescription).toHaveText('テスト説明');
+
+            await explorerFile.click();
+            const tabButton = page.locator('.tab-button').filter({
+                has: page.locator('.tab-button-name', { hasText: 'test' }),
+            }).first();
+            const tabDescription = tabButton.locator('.tab-button-description');
+            await expect(tabDescription).toBeVisible();
+            await expect(tabDescription).toHaveText('テスト説明');
+            const defaultTabMetrics = await page.evaluate(() => {
+                const tab = document.querySelector('.tab') as HTMLElement;
+                return {
+                    rowHeight: getComputedStyle(document.documentElement).getPropertyValue('--tab-row-height').trim(),
+                    tabHeight: tab.getBoundingClientRect().height,
+                };
+            });
+            expect(defaultTabMetrics.rowHeight).toBe('48px');
+            expect(defaultTabMetrics.tabHeight).toBeGreaterThanOrEqual(47);
+
+            await openSettingsTabAsync(page);
+            const explorerCheckbox = page.locator('.settings-explorer-file-description-hidden-checkbox');
+            const tabCheckbox = page.locator('.settings-tab-button-description-hidden-checkbox');
+            await expect(explorerCheckbox).not.toBeChecked();
+            await expect(tabCheckbox).not.toBeChecked();
+
+            await explorerCheckbox.click();
+            await tabCheckbox.click();
+
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                explorerFileDescriptionHidden: true,
+                tabButtonDescriptionHidden: true,
+            });
+            await expect(page.locator('body')).toHaveAttribute('data-explorer-file-description-hidden', 'true');
+            await expect(page.locator('body')).toHaveAttribute('data-tab-button-description-hidden', 'true');
+            await expect(explorerDescription).toBeHidden();
+            await expect(tabDescription).toBeHidden();
+            await expect.poll(async () => page.evaluate(() => {
+                const tab = document.querySelector('.tab') as HTMLElement;
+                return {
+                    rowHeight: getComputedStyle(document.documentElement).getPropertyValue('--tab-row-height').trim(),
+                    tabHeight: Math.round(tab.getBoundingClientRect().height),
+                };
+            })).toEqual({
+                rowHeight: '32px',
+                tabHeight: 32,
+            });
         },
     );
 

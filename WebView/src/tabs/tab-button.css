@@ -83,6 +83,10 @@
     text-overflow: ellipsis;
 }
 
+body[data-tab-button-description-hidden="true"] .tab-button-description {
+    display: none;
+}
+
 .tab-button:hover {
     background-color: rgba(0, 0, 0, 0.1);
 }

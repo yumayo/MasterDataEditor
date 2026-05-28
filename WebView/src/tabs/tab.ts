@@ -441,8 +441,13 @@ export class Tab {
         });
         window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
             const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
-            if (detail.changedKeys.includes('tabWrapEnabled') || detail.changedKeys.includes('tabSeparatePinnedRowsEnabled')) {
+            if (
+                detail.changedKeys.includes('tabWrapEnabled')
+                || detail.changedKeys.includes('tabSeparatePinnedRowsEnabled')
+                || detail.changedKeys.includes('tabButtonDescriptionHidden')
+            ) {
                 this.scheduleTabLayout(false, true);
+                this.scheduleActiveEditorTableLayoutRefresh();
             }
         });
         this.installViewportScaleChangeListeners();
