@@ -929,7 +929,8 @@ export class Selection {
         const selectionLeft = group.bounds.left;
         const selectionTop = group.bounds.top;
         const visualSelectionRight = group.bounds.right - 1;
-        const visualSelectionBottom = group.bounds.bottom - 1;
+        const visualSelectionHeight = Math.floor(group.bounds.bottom - selectionTop + 0.01);
+        const visualSelectionBottom = selectionTop + visualSelectionHeight;
         if (visualSelectionRight <= selectionLeft || visualSelectionBottom <= selectionTop) return;
 
         const focusRect = group.focusBounds;

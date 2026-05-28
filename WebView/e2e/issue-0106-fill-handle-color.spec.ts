@@ -77,7 +77,7 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(true);
 	});
 
-	test('フィルハンドルのホバー時も青色系であること', async ({ page }) => {
+	test('フィルハンドルのホバー時も通常時と同じ青色であること', async ({ page }) => {
 		// テーブルを開いてデータセルをクリックし、フィルハンドルを表示させる
 		const table = await openTableAsync(page, 'item');
 		const dataCell = table.locator(DATA_CELL_SELECTOR).first();
@@ -91,7 +91,7 @@ test.describe('ISSUE-0106: フィルハンドルの色', () => {
 		// フィルハンドルにホバーする
 		await fillHandle.hover();
 
-		// ホバー時は青色系の濃いめ（#005a9e = rgb(0, 90, 158)）であることを検証する
-		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 90, 158')).toBe(true);
+		// ホバー時も通常時と同じ青色（#0078d7 = rgb(0, 120, 215)）であることを検証する
+		await expect.poll(() => hasBackgroundColorAsync(fillHandle, '0, 120, 215')).toBe(true);
 	});
 });

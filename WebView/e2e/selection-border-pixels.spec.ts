@@ -189,6 +189,15 @@ async function copySelectionAsync(page: Page): Promise<void> {
 
 async function assertSelectionBorderPixelsAsync(page: Page, rect: Rect): Promise<void> {
     await page.addStyleTag({content: '.fill-handle { display: none !important; }'});
+    const overlayRect = await page.locator('.selection-overlay-border').evaluate((element) => {
+        const currentRect = element.getBoundingClientRect();
+        return {
+            height: currentRect.height,
+        };
+    });
+    const expectedOverlayHeight = Math.floor(rect.height + 0.01);
+    expect(Math.abs(overlayRect.height - expectedOverlayHeight), `overlay height: ${overlayRect.height}, expected height: ${expectedOverlayHeight}, cell height: ${rect.height}`).toBeLessThanOrEqual(0.01);
+
     const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
     const screenshot = await page.screenshot({fullPage: true, scale: 'device'});
     const image = readPng(screenshot);
@@ -196,7 +205,7 @@ async function assertSelectionBorderPixelsAsync(page: Page, rect: Rect): Promise
     const left = Math.round(rect.left * devicePixelRatio);
     const top = Math.round(rect.top * devicePixelRatio);
     const right = Math.round(rect.right * devicePixelRatio) - 1;
-    const bottom = Math.round(rect.bottom * devicePixelRatio) - 1;
+    const bottom = Math.round((rect.top + expectedOverlayHeight) * devicePixelRatio) - 1;
     const borderInset = Math.max(1, Math.round(devicePixelRatio));
 
     const points: Record<string, Rgb> = {
@@ -204,6 +213,7 @@ async function assertSelectionBorderPixelsAsync(page: Page, rect: Rect): Promise
         bottom: rgbAt(image, Math.round((left + right) / 2), bottom - borderInset),
         left: rgbAt(image, left + borderInset, Math.round((top + bottom) / 2)),
         right: rgbAt(image, right - borderInset, Math.round((top + bottom) / 2)),
+        bottomEdge: rgbAt(image, Math.round((left + right) / 2), bottom),
         topLeft: rgbAt(image, left + borderInset, top + borderInset),
         topRight: rgbAt(image, right - borderInset, top + borderInset),
         bottomLeft: rgbAt(image, left + borderInset, bottom - borderInset),
