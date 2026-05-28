@@ -1,4 +1,4 @@
-import {findFilesAsync, readFileAsync} from "../app/api";
+import {findFilesAsync, readFileAsync, invalidatePluginFileCaches} from "../app/api";
 import type {EditorAPI} from "../editor-api/editor-api-types";
 import type {NotificationStatus, NotificationToast} from "../ui/notification";
 
@@ -115,6 +115,15 @@ export class ViewPluginHost {
             await this.loadPluginFileAsync(file.name);
         }
         this.notifyChanged();
+    }
+
+    async reloadPluginsAsync(): Promise<void> {
+        this.disposeRegisteredPlugins();
+        this.registrations.clear();
+        this.loaded = false;
+        invalidatePluginFileCaches();
+        this.installGlobalRegistrationApi();
+        await this.loadPluginsAsync();
     }
 
     getPlugins(): ViewPluginDescriptor[] {
@@ -264,6 +273,17 @@ export class ViewPluginHost {
             id,
         });
         this.notifyChanged();
+    }
+
+    private disposeRegisteredPlugins(): void {
+        for (const plugin of this.registrations.values()) {
+            if (typeof plugin.dispose !== 'function') continue;
+            try {
+                plugin.dispose();
+            } catch (error: unknown) {
+                console.error('[ViewPluginHost] registration dispose failed:', error);
+            }
+        }
     }
 
     private async loadPluginFileAsync(fileName: string): Promise<void> {

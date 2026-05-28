@@ -190,6 +190,37 @@ test.describe('Viewプラグイン', () => {
         await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
     });
 
+    test('Viewプラグインを再読み込みして開いているViewタブを再マウントできる', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem());
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        await expect(viewRoot.locator('.summary-count')).toHaveText('3');
+
+        const reloadedPlugin = [
+            "window.masterDataEditor.registerViewPlugin({",
+            "  id: 'summary',",
+            "  title: 'Summary View',",
+            "  description: 'Reloaded plugin',",
+            "  render(container) {",
+            "    const marker = document.createElement('div');",
+            "    marker.className = 'summary-count';",
+            "    marker.textContent = 'reloaded';",
+            "    container.appendChild(marker);",
+            "  }",
+            "});",
+        ].join("\n");
+        await page.evaluate((code) => {
+            (window as unknown as {__mockFs: Record<string, string>}).__mockFs['plugins/views/summary.js'] = code;
+        }, reloadedPlugin);
+
+        await page.locator('.view-plugin-reload-button').click();
+        await expect(viewRoot.locator('.summary-count')).toHaveText('reloaded');
+        await expect(page.locator('.view-plugin-item[data-plugin-id="summary"] .view-plugin-item-description')).toHaveText('Reloaded plugin');
+    });
+
     test('ui-stateからViewタブを復元して起動時に表示する', async ({page}) => {
         await installMockApiAsync(page, createViewPluginFileSystem());
         await page.goto('/');

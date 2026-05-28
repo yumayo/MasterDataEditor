@@ -2228,6 +2228,30 @@ export class Tab {
         tabButton.click();
     }
 
+    reloadViewPluginTabs(): void {
+        if (this.viewPluginHost === false) return;
+        const openTabNames = [...this.viewPluginIdsByTabName.keys()];
+        let removedActiveTab = false;
+        for (const tabName of openTabNames) {
+            const pluginId = this.viewPluginIdsByTabName.get(tabName);
+            if (pluginId === undefined) continue;
+            if (this.viewPluginHost.getPlugin(pluginId) === null) {
+                if (this.activeTabName === tabName) removedActiveTab = true;
+                this.destroyViewPluginTab(tabName);
+                this.removeTabButton(tabName);
+                continue;
+            }
+            this.remountViewPluginTab(tabName);
+        }
+        if (removedActiveTab) {
+            this.activeTabName = false;
+            this.activateFirstAvailableRestoredTab();
+        } else if (this.activeTabName !== false && this.isViewPluginTabName(this.activeTabName)) {
+            this.enableTabButton(this.activeTabName);
+        }
+        this.persistTabs();
+    }
+
     /**
      * 既存テーブルの定義編集タブを開く。
      * エクスプローラー・タブ・列ヘッダーの各コンテキストメニューから呼ばれる。
@@ -2419,6 +2443,34 @@ export class Tab {
         this.viewPluginWrapperElements.forEach(wrapper => {
             wrapper.style.display = 'none';
         });
+    }
+
+    private remountViewPluginTab(tabName: string): void {
+        if (this.viewPluginHost === false) return;
+        const pluginId = this.viewPluginIdsByTabName.get(tabName);
+        if (pluginId === undefined) return;
+        const wrapper = this.viewPluginWrapperElements.get(tabName);
+        if (wrapper === undefined) return;
+
+        const mount = this.viewPluginMounts.get(tabName);
+        if (mount !== undefined) {
+            mount.dispose();
+            this.viewPluginMounts.delete(tabName);
+        }
+        wrapper.textContent = '';
+        const root = document.createElement('div');
+        root.classList.add('view-plugin-tab-root');
+        root.dataset.viewPluginId = pluginId;
+        wrapper.appendChild(root);
+        const tabButton = this.tabButtons.find(button => button.name === tabName);
+        const nextMount = this.viewPluginHost.mountView(pluginId, root, {
+            onDirtyChanged: (dirty: boolean) => {
+                tabButton?.setDirty(dirty);
+            },
+        });
+        if (nextMount !== null) {
+            this.viewPluginMounts.set(tabName, nextMount);
+        }
     }
 
     private destroyViewPluginTab(tabName: string): void {

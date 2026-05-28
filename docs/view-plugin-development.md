@@ -131,3 +131,5 @@ npx esbuild src/index.tsx --bundle --format=iife --outfile=../../plugins/views/q
 
 React を使う場合は、プラグインのバンドルに含めるか、ビルド時に external 指定して別途提供してください。
 型補完には `sample-workdir/plugins/views/master-data-editor-view-plugin.d.ts` をプラグインプロジェクトから参照できます。
+
+開発中に `plugins/views/*.js` を更新した場合は、`VIEW PLUGINS` パネル右上の再読み込みボタンで読み込み済みプラグインと開いているViewタブを更新できます。

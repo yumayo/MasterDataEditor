@@ -175,6 +175,17 @@ export function invalidateMasterDataFileCaches(): void {
     dirCache.delete('data');
 }
 
+/** plugins/ 以下のキャッシュを無効化する。Viewプラグイン再読み込み時に使用する。 */
+export function invalidatePluginFileCaches(): void {
+    for (const filename of Array.from(fileCache.keys())) {
+        if (filename.startsWith('plugins/')) {
+            fileCache.delete(filename);
+        }
+    }
+    dirCache.delete('plugins');
+    dirCache.delete('plugins/views');
+}
+
 /**
  * ファイルから文字列データを読み込む（汎用API）
  * キャッシュにヒットすればC#への問い合わせをスキップする。

@@ -96,6 +96,8 @@ export class Sidebar {
         // Viewプラグインパネル
         this.viewPluginPanel = new ViewPluginPanel(viewPluginHost, (pluginId: string) => {
             this.tab.openViewPluginTab(pluginId);
+        }, () => {
+            this.tab.reloadViewPluginTabs();
         });
         this.viewPluginPanel.appendTo(sidebarContent);
 
