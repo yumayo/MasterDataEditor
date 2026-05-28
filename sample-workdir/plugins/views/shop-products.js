@@ -250,7 +250,7 @@ window.masterDataEditor.registerViewPlugin({
         const products = toRecords(productData);
         const tableEntries = toRecords(tableData);
         const tableById = indexBy(tableEntries, 'id');
-        const nameMaps = await buildNameMaps(api, tableEntries);
+        const nameMaps = await buildNameMaps(api, products);
         const detailMaps = await buildDetailMaps(api, tableEntries);
         const productsByGroupId = groupBy(products, 'group_id');
 
@@ -480,14 +480,17 @@ function groupBy(records, key) {
     return map;
 }
 
-async function buildNameMaps(api, tableEntries) {
+async function buildNameMaps(api, products) {
     const result = new Map();
-    await Promise.all(tableEntries.map(async entry => {
-        if (!entry.master) return;
-        const nameData = await readOptionalTable(api, entry.master + '_name');
-        if (nameData === null) return;
-        const names = toRecords(nameData);
-        result.set(entry.master, indexBy(names, 'id'));
+    await Promise.all(products.map(async entry => {
+        const referenceText = await api.data.getReferenceDisplayTextAsync('shop_product', 'record_id', entry.table_id, entry.record_id);
+        if (referenceText === null) return;
+        let map = result.get(referenceText.tableName);
+        if (map === undefined) {
+            map = new Map();
+            result.set(referenceText.tableName, map);
+        }
+        map.set(referenceText.id, referenceText);
     }));
     return result;
 }
@@ -514,7 +517,7 @@ async function readOptionalTable(api, tableName) {
 function resolveProductName(masterName, recordId, nameMaps) {
     const map = nameMaps.get(masterName);
     const nameRecord = map ? map.get(recordId) : null;
-    if (nameRecord && nameRecord.ja) return nameRecord.ja;
+    if (nameRecord && nameRecord.displayText) return nameRecord.displayText;
     return masterName + '#' + recordId;
 }
 

@@ -33,6 +33,10 @@ window.masterDataEditor.registerViewPlugin({
 View上のUIから編集する場合は、タブを切り替えずに更新できる `api.edit.setCellValueAsync()` / `api.edit.setCellValuesAsync()` を使ってください。
 既存の `api.edit.setCellValue()` / `api.edit.setCellValues()` は、開いているテーブルを通常のエディター操作として更新し、そのテーブルをアクティブ化します。
 
+参照列の候補リストは `api.data.getReferenceItemsAsync(tableName, columnName, sourceValue)` で取得できます。
+動的参照（二段リスト）の列では、`sourceValue` に1段目の値を渡すと二段目の参照先テーブルを解決し、`{ tableName, columnName, displayColumnName, items }` を返します。
+特定の値の表示名だけが必要な場合は `api.data.getReferenceDisplayTextAsync(tableName, columnName, sourceValue, value)` を使います。
+
 `render()` が関数または `{ dispose() }` を返した場合、Viewタブを閉じた時に呼び出されます。
 `render()` が `{ save() }` を返した場合は、Viewタブの保存時に `api.view.onSave()` と同じタイミングで呼び出されます。
 イベント購読や React root の破棄は `dispose()` で行ってください。

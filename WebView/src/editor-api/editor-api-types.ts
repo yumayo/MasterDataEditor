@@ -1,3 +1,5 @@
+import {isDynamicReferenceSchema, type DynamicReferenceSchema} from "../references/reference-expression";
+
 /** EditorAPI 内部API統合インターフェース */
 export interface EditorAPI {
     data: EditorDataAPI;
@@ -23,6 +25,10 @@ export interface EditorDataAPI {
     getCellValue(tableName: string, row: number, column: number): string | null;
     /** テーブルデータを読み取る。ストアにあればストアから、なければCSVファイルから読む */
     readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null>;
+    /** 参照列の候補リストを取得する。動的参照では sourceValue から二段目の参照先を解決する */
+    getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<ReferenceListInfo | null>;
+    /** 参照列の値に対応する表示名を取得する。動的参照では sourceValue が1段目、value が2段目の値 */
+    getReferenceDisplayTextAsync(tableName: string, columnName: string, sourceValue: string, value: string): Promise<ReferenceDisplayTextInfo | null>;
     /** FK列の参照ヒントを取得する。columnName → { fkValue → displayText } のマップを返す */
     getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null>;
     /** 関連テーブル（N:1参照先 + 1:N逆参照元）のデータを取得する */
@@ -52,6 +58,28 @@ export interface SearchResultInfo {
     pkValue: string;
     value: string;
     referenceDisplayText: string;
+}
+
+/** 参照候補リストの1項目 */
+export interface ReferenceItemInfo {
+    id: string;
+    displayText: string;
+}
+
+/** 参照候補リスト情報 */
+export interface ReferenceListInfo {
+    tableName: string;
+    columnName: string;
+    displayColumnName: string;
+    items: ReferenceItemInfo[];
+}
+
+/** 参照値の表示名情報 */
+export interface ReferenceDisplayTextInfo {
+    tableName: string;
+    columnName: string;
+    id: string;
+    displayText: string;
 }
 
 /** 関連テーブル情報（MCP API用） */
@@ -84,6 +112,12 @@ export interface EditorSchemaReference {
     columnName: string;
     targetTable: string;
     targetColumn: string;
+}
+
+/** スキーマ上の参照列定義。動的参照の解決に使う */
+export interface EditorSchemaReferenceColumn {
+    columnName: string;
+    reference: string | DynamicReferenceSchema;
 }
 
 /** データ書き込みAPI */
@@ -130,6 +164,7 @@ export interface SchemaEntry {
     columns: EditorSchemaColumn[];
     primaryKeys: string[];
     references: EditorSchemaReference[];
+    referenceColumns: EditorSchemaReferenceColumn[];
 }
 
 /** スキーマJSONから SchemaEntry を構築する */
@@ -142,6 +177,7 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
     const headerArray = headerRaw as Array<Record<string, unknown>>;
     const columns: EditorSchemaColumn[] = [];
     const references: EditorSchemaReference[] = [];
+    const referenceColumns: EditorSchemaReferenceColumn[] = [];
     for (let i = 0; i < headerArray.length; ++i) {
         const col = headerArray[i];
         // 各カラムの name/type は文字列でなければスキーマとして不正
@@ -158,6 +194,7 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
         // 動的参照（DynamicReferenceSchema オブジェクト）はここでは EditorSchemaReference に変換できないためスキップ
         const refRaw = col['reference'];
         if (typeof refRaw === 'string' && refRaw.length > 0) {
+            referenceColumns.push({ columnName: name, reference: refRaw });
             const dotIndex = refRaw.indexOf('.');
             if (dotIndex !== -1) {
                 references.push({
@@ -166,6 +203,17 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
                     targetColumn: refRaw.substring(dotIndex + 1),
                 });
             }
+        } else if (isDynamicReferenceSchema(refRaw)) {
+            referenceColumns.push({
+                columnName: name,
+                reference: {
+                    sourceTable: refRaw.sourceTable,
+                    sourceMatchColumn: refRaw.sourceMatchColumn,
+                    sourceMatchValue: refRaw.sourceMatchValue,
+                    destTable: refRaw.destTable,
+                    destColumn: refRaw.destColumn,
+                },
+            });
         }
     }
     // primary_key フィールドのバリデーション: 配列でなければスキーマとして不正（フォールバック禁止）
@@ -174,5 +222,5 @@ export function createSchemaEntryFromJson(json: Record<string, unknown>): Schema
         throw new Error('[createSchemaEntryFromJson] スキーマJSONに "primary_key" 配列が存在しません');
     }
     const primaryKeys: string[] = primaryKeyRaw as string[];
-    return { columns, primaryKeys, references };
+    return { columns, primaryKeys, references, referenceColumns };
 }

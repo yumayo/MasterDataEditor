@@ -808,6 +808,131 @@ async function setupReferenceTestAsync(page: Page): Promise<void> {
     await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
 }
 
+function createDynamicReferenceFileSystem(): MockFileSystem {
+    return {
+        "schema/table.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "master", type: "string" },
+                { key: 2, name: "column", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/table.csv": "id,master,column\n1,chara,id\n2,item,id",
+        "schema/chara.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "attack", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/chara.csv": "id,attack\n1,10\n2,20",
+        "schema/chara_name.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int", reference: "chara.id" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/chara_name.csv": "id,ja\n1,アリス\n2,ボブ",
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "ja", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/item.csv": "id,ja\n10,ポーション\n11,エーテル",
+        "schema/shop_product.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "table_id", type: "int", reference: "table.id" },
+                {
+                    key: 2,
+                    name: "record_id",
+                    type: "int",
+                    reference: {
+                        sourceTable: "table",
+                        sourceMatchColumn: "id",
+                        sourceMatchValue: "table_id",
+                        destTable: "master",
+                        destColumn: "column",
+                    },
+                },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/shop_product.csv": "id,table_id,record_id\n1,1,1\n2,2,10",
+    };
+}
+
+// --- getReferenceItemsAsync テスト ---
+
+test.describe('Phase 5: getReferenceItemsAsync', () => {
+    test('動的参照の二段目リストを1段目の値ごとに解決して返す', async ({ page }) => {
+        await installMockApiAsync(page, createDynamicReferenceFileSystem());
+        await page.goto('/');
+        await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+
+        const charaItems = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<{ tableName: string; columnName: string; displayColumnName: string; items: Array<{ id: string; displayText: string }> } | null> } } })
+                .editorApi.data.getReferenceItemsAsync('shop_product', 'record_id', '1');
+        });
+        expect(charaItems).toEqual({
+            tableName: 'chara',
+            columnName: 'id',
+            displayColumnName: '',
+            items: [
+                { id: '1', displayText: 'アリス' },
+                { id: '2', displayText: 'ボブ' },
+            ],
+        });
+
+        const itemItems = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<{ tableName: string; columnName: string; displayColumnName: string; items: Array<{ id: string; displayText: string }> } | null> } } })
+                .editorApi.data.getReferenceItemsAsync('shop_product', 'record_id', '2');
+        });
+        expect(itemItems).toEqual({
+            tableName: 'item',
+            columnName: 'id',
+            displayColumnName: 'ja',
+            items: [
+                { id: '10', displayText: 'ポーション' },
+                { id: '11', displayText: 'エーテル' },
+            ],
+        });
+    });
+
+    test('動的参照の1段目と2段目の値から表示名を返す', async ({ page }) => {
+        await installMockApiAsync(page, createDynamicReferenceFileSystem());
+        await page.goto('/');
+        await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+
+        const displayText = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceDisplayTextAsync(tableName: string, columnName: string, sourceValue: string, value: string): Promise<{ tableName: string; columnName: string; id: string; displayText: string } | null> } } })
+                .editorApi.data.getReferenceDisplayTextAsync('shop_product', 'record_id', '1', '2');
+        });
+        expect(displayText).toEqual({
+            tableName: 'chara',
+            columnName: 'id',
+            id: '2',
+            displayText: 'ボブ',
+        });
+    });
+
+    test('参照列ではない列は null を返す', async ({ page }) => {
+        await installMockApiAsync(page, createDynamicReferenceFileSystem());
+        await page.goto('/');
+        await page.waitForFunction(() => (window as unknown as { editorApi: unknown }).editorApi !== undefined);
+
+        const items = await page.evaluate(() => {
+            return (window as unknown as { editorApi: { data: { getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<unknown> } } })
+                .editorApi.data.getReferenceItemsAsync('shop_product', 'id', '1');
+        });
+        expect(items).toBeNull();
+    });
+});
+
 // --- getReferenceHintsAsync テスト ---
 
 test.describe('Phase 5: getReferenceHintsAsync', () => {

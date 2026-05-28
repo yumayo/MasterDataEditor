@@ -53,6 +53,18 @@ declare global {
             getRowCount(tableName: string): number | null;
             getCellValue(tableName: string, row: number, column: number): string | null;
             readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null>;
+            getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<{
+                tableName: string;
+                columnName: string;
+                displayColumnName: string;
+                items: Array<{ id: string; displayText: string }>;
+            } | null>;
+            getReferenceDisplayTextAsync(tableName: string, columnName: string, sourceValue: string, value: string): Promise<{
+                tableName: string;
+                columnName: string;
+                id: string;
+                displayText: string;
+            } | null>;
         };
         schema: {
             getSchemaTableNames(): string[];

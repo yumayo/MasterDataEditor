@@ -9,7 +9,9 @@ import {ValidationEngine} from "../validation/validation-engine";
 import type {PluginValidationRunner} from "../validation/plugin-validation-runner";
 import {resolvePluginErrors} from "../validation/plugin-validation-runner";
 import {SearchEngine} from "../search/search-engine";
-import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, SearchResultInfo, ValidationErrorInfo} from "./editor-api-types";
+import {parseReferenceExpression, isDynamicReference} from "../references/reference-expression";
+import type {ReferenceDataCache} from "../references/reference-data-cache";
+import type {EditorAPI, EditorDataAPI, EditorSchemaAPI, EditorEditAPI, EditorEventsAPI, EditorDisposable, EditorCellChangeEvent, SchemaEntry, RelatedTableInfo, SearchResultInfo, ValidationErrorInfo, ReferenceListInfo, ReferenceItemInfo, ReferenceDisplayTextInfo} from "./editor-api-types";
 
 type EditorApiCellValueChange = { row: number; column: number; value: string };
 
@@ -33,7 +35,7 @@ export class EditorApiImpl implements EditorAPI {
     private readonly tableSavedHandlers: Array<(event: { tableName: string }) => void>;
     private readonly rowSelectedHandlers: Array<(event: { tableName: string; rowIndex: number }) => void>;
 
-    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>, validationEngine: ValidationEngine, pluginRunner: PluginValidationRunner) {
+    constructor(store: InMemoryTableStore, tab: Tab, schemaRegistry: Map<string, SchemaEntry>, referenceDataCache: ReferenceDataCache, validationEngine: ValidationEngine, pluginRunner: PluginValidationRunner) {
         this.cellChangedHandlers = [];
         this.tableOpenedHandlers = [];
         this.tableClosedHandlers = [];
@@ -55,6 +57,81 @@ export class EditorApiImpl implements EditorAPI {
             csv.load(content);
             return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
         }
+
+        async function buildReferenceListInfoAsync(targetTableName: string, targetColumnName: string): Promise<ReferenceListInfo | null> {
+            const fullData = await referenceDataCache.getFullDataAsync(targetTableName);
+            const targetColumnIndex = fullData.header.indexOf(targetColumnName);
+            if (targetColumnIndex === -1) return null;
+
+            if (targetColumnName === fullData.primaryKeyColumnName) {
+                const refData = await referenceDataCache.get(targetTableName);
+                return {
+                    tableName: targetTableName,
+                    columnName: targetColumnName,
+                    displayColumnName: refData.displayColumnName,
+                    items: refData.items.map(item => ({ id: item.id, displayText: item.displayText })),
+                };
+            }
+
+            const rows = fullData.allRows ?? [...fullData.rows.values()];
+            const items: ReferenceItemInfo[] = [];
+            const seen = new Set<string>();
+            for (let i = 0; i < rows.length; ++i) {
+                const row = rows[i];
+                const id = row[targetColumnIndex];
+                if (id === undefined || id === '' || seen.has(id)) continue;
+                seen.add(id);
+                const rawDisplayText = fullData.displayColumnIndex !== -1 ? row[fullData.displayColumnIndex] : id;
+                const displayText = rawDisplayText !== undefined && rawDisplayText !== '' ? rawDisplayText : id;
+                items.push({ id, displayText });
+            }
+            return {
+                tableName: targetTableName,
+                columnName: targetColumnName,
+                displayColumnName: fullData.displayColumnName,
+                items,
+            };
+        }
+
+        async function resolveReferenceListAsync(tableName: string, columnName: string, sourceValue: string): Promise<ReferenceListInfo | null> {
+            const entry = schemaRegistry.get(tableName);
+            if (!entry) return null;
+            const referenceColumn = entry.referenceColumns.find(ref => ref.columnName === columnName);
+            if (referenceColumn === undefined) return null;
+            const expr = parseReferenceExpression(referenceColumn.reference);
+            if (!isDynamicReference(expr)) {
+                return buildReferenceListInfoAsync(expr.tableName, expr.columnName);
+            }
+            if (sourceValue === '') return null;
+
+            const sourceData = await referenceDataCache.getFullDataAsync(expr.filter.tableName);
+            const lookupColumnIndex = sourceData.header.indexOf(expr.lookupColumn);
+            if (lookupColumnIndex === -1) return null;
+            const targetColumnIndex = sourceData.header.indexOf(expr.targetColumn);
+            if (targetColumnIndex === -1) return null;
+            const sourceRow = referenceDataCache.findRowByColumn(sourceData, expr.filter.filterColumn, sourceValue);
+            if (sourceRow === undefined) return null;
+            const targetTableName = sourceRow[lookupColumnIndex];
+            const targetColumnName = sourceRow[targetColumnIndex];
+            if (targetTableName === undefined || targetTableName === '') return null;
+            if (targetColumnName === undefined || targetColumnName === '') return null;
+            return buildReferenceListInfoAsync(targetTableName, targetColumnName);
+        }
+
+        async function resolveReferenceDisplayTextAsync(tableName: string, columnName: string, sourceValue: string, value: string): Promise<ReferenceDisplayTextInfo | null> {
+            if (value === '') return null;
+            const list = await resolveReferenceListAsync(tableName, columnName, sourceValue);
+            if (list === null) return null;
+            const item = list.items.find(candidate => candidate.id === value);
+            if (item === undefined) return null;
+            return {
+                tableName: list.tableName,
+                columnName: list.columnName,
+                id: item.id,
+                displayText: item.displayText,
+            };
+        }
+
         const searchEngine = new SearchEngine(tab.getOpenEditorTables());
 
         // data 名前空間: ストアからの読み取り（ディープコピーを返して内部データを保護する）
@@ -87,6 +164,12 @@ export class EditorApiImpl implements EditorAPI {
             },
             async readTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
                 return resolveTableDataAsync(tableName);
+            },
+            async getReferenceItemsAsync(tableName: string, columnName: string, sourceValue: string): Promise<ReferenceListInfo | null> {
+                return resolveReferenceListAsync(tableName, columnName, sourceValue);
+            },
+            async getReferenceDisplayTextAsync(tableName: string, columnName: string, sourceValue: string, value: string): Promise<ReferenceDisplayTextInfo | null> {
+                return resolveReferenceDisplayTextAsync(tableName, columnName, sourceValue, value);
             },
             async getReferenceHintsAsync(tableName: string): Promise<Record<string, Record<string, string>> | null> {
                 // スキーマが存在しないテーブルは null を返す
