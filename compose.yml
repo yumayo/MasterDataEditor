@@ -38,6 +38,9 @@ services:
       - ./WebView/e2e/:/app/WebView/e2e/
       # DOM確認用にマウントします。
       - ./.CONTEXT:/app/.CONTEXT
+      # .NETソース
+      - ./App.MasterDataEditor.sln:/app/App.MasterDataEditor.sln
+      - ./App.MasterDataEditor/:/app/App.MasterDataEditor/
     networks:
       - internal_net
     tty: true

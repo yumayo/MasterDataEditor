@@ -1,2 +1,2 @@
 #!/bin/sh
-docker compose exec -w /app playwright dotnet "$@"
+docker compose exec -w /app/App.MasterDataEditor playwright dotnet "$@"
