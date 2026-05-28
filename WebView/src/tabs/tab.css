@@ -13,10 +13,8 @@
     height: var(--tab-bar-height);
     width: calc(100vw - 300px);
     margin: 0;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    border-bottom: 1px solid var(--border-color);
 
-    /* タブリストとツールバーを横並びにする */
-    display: flex;
     overflow: hidden;
 
     user-select: none;
@@ -24,9 +22,8 @@
 
 /* タブボタンのスクロール領域 */
 .tab-scroll-area {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
+    position: absolute;
+    inset: 0;
     overflow-x: hidden;
     overflow-y: hidden;
 }
@@ -45,4 +42,19 @@
     white-space: normal;
     height: var(--tab-bar-height);
     min-width: 100%;
+}
+
+.tab-list-multi-row::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent calc(var(--tab-row-height) - 1px),
+        var(--border-color) calc(var(--tab-row-height) - 1px),
+        var(--border-color) var(--tab-row-height)
+    );
 }

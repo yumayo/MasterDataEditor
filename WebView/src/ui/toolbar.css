@@ -1,10 +1,15 @@
 .toolbar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
     display: flex;
     align-items: center;
-    flex-shrink: 0;
+    box-sizing: border-box;
+    height: var(--tab-row-height);
     padding: 0 4px;
     gap: 2px;
-    border-left: 1px solid rgba(128, 128, 128, 0.3);
+    background-color: var(--background-color);
 }
 
 .toolbar-button {

@@ -169,7 +169,7 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
         expect(metrics.hasHorizontalOverflow).toBe(false);
     });
 
-    test('単一タブでは右側ツールバー幅をスクロール幅に含めない', async ({ page }) => {
+    test('単一タブではタブ領域の右端にツールバーを重ねて表示する', async ({ page }) => {
         await installMockApiAsync(page, createManyTablesFileSystem());
         await page.goto('/');
 
@@ -185,6 +185,9 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
             return {
                 tabWidth: tab.getBoundingClientRect().width,
                 toolbarWidth: toolbar.getBoundingClientRect().width,
+                toolbarTop: toolbar.getBoundingClientRect().top,
+                toolbarRight: toolbar.getBoundingClientRect().right,
+                tabRight: tab.getBoundingClientRect().right,
                 scrollAreaWidth: scrollArea.getBoundingClientRect().width,
                 tabListWidth: tabList.getBoundingClientRect().width,
                 hasHorizontalOverflow: scrollArea.scrollWidth > scrollArea.clientWidth + 1,
@@ -192,8 +195,11 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
         });
 
         expect(metrics.toolbarWidth).toBeGreaterThan(0);
-        expect(metrics.scrollAreaWidth).toBeLessThanOrEqual(metrics.tabWidth - metrics.toolbarWidth + 1);
+        expect(metrics.scrollAreaWidth).toBeGreaterThanOrEqual(metrics.tabWidth - 1);
         expect(metrics.tabListWidth).toBeLessThanOrEqual(metrics.scrollAreaWidth + 1);
+        expect(metrics.toolbarRight).toBeGreaterThanOrEqual(metrics.tabRight - 1);
+        expect(metrics.toolbarRight).toBeLessThanOrEqual(metrics.tabRight + 1);
+        expect(metrics.toolbarTop).toBeLessThanOrEqual(1);
         expect(metrics.hasHorizontalOverflow).toBe(false);
     });
 
@@ -209,9 +215,21 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
             const tab = document.querySelector('.tab') as HTMLElement;
             const editor = document.querySelector('.editor') as HTMLElement;
             const scrollArea = document.querySelector('.tab-scroll-area') as HTMLElement;
+            const tabList = document.querySelector('.tab-list') as HTMLElement;
+            const toolbar = document.querySelector('.toolbar') as HTMLElement;
+            const toolbarRect = toolbar.getBoundingClientRect();
+            const tabRect = tab.getBoundingClientRect();
+            const tabListAfterStyle = getComputedStyle(tabList, '::after');
+            const buttonRects = Array.from(document.querySelectorAll('.tab-button'))
+                .map(button => (button as HTMLElement).getBoundingClientRect());
             const rowTops = new Set(
-                Array.from(document.querySelectorAll('.tab-button'))
-                    .map(button => Math.round(button.getBoundingClientRect().top)),
+                buttonRects.map(rect => Math.round(rect.top)),
+            );
+            const finalRowTop = Math.max(...rowTops);
+            const finalRowRight = Math.max(
+                ...buttonRects
+                    .filter(rect => Math.round(rect.top) === finalRowTop)
+                    .map(rect => rect.right),
             );
             return {
                 cssWrapEnabled: getComputedStyle(document.documentElement).getPropertyValue('--tab-wrap-enabled').trim(),
@@ -219,6 +237,18 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
                 tabHeight: tab.getBoundingClientRect().height,
                 editorTop: editor.getBoundingClientRect().top,
                 visibleRowCount: rowTops.size,
+                finalRowTop,
+                finalRowRight,
+                toolbarLeft: toolbarRect.left,
+                toolbarTop: toolbarRect.top,
+                toolbarRight: toolbarRect.right,
+                toolbarBottom: toolbarRect.bottom,
+                tabRight: tabRect.right,
+                tabBottom: tabRect.bottom,
+                hasHorizontalBorderClass: tabList.classList.contains('tab-list-multi-row'),
+                horizontalBorderBackgroundImage: tabListAfterStyle.backgroundImage,
+                horizontalBorderZIndex: Number(tabListAfterStyle.zIndex),
+                toolbarZIndex: Number(getComputedStyle(toolbar).zIndex),
                 hasHorizontalOverflow: scrollArea.scrollWidth > scrollArea.clientWidth + 1,
                 hasVerticalOverflow: scrollArea.scrollHeight > scrollArea.clientHeight + 1,
             };
@@ -231,6 +261,16 @@ test.describe('ISSUE_0145: タブの複数段表示', () => {
         expect(metrics.tabHeight).toBeLessThanOrEqual(metrics.visibleRowCount * 48 + 1);
         expect(metrics.editorTop).toBeGreaterThanOrEqual(metrics.tabHeight - 1);
         expect(metrics.editorTop).toBeLessThanOrEqual(metrics.tabHeight + 1);
+        expect(metrics.toolbarTop).toBeGreaterThanOrEqual(metrics.finalRowTop - 1);
+        expect(metrics.toolbarTop).toBeLessThanOrEqual(metrics.finalRowTop + 1);
+        expect(metrics.toolbarBottom).toBeGreaterThanOrEqual(metrics.tabBottom - 1);
+        expect(metrics.toolbarBottom).toBeLessThanOrEqual(metrics.tabBottom + 1);
+        expect(metrics.toolbarRight).toBeGreaterThanOrEqual(metrics.tabRight - 1);
+        expect(metrics.toolbarRight).toBeLessThanOrEqual(metrics.tabRight + 1);
+        expect(metrics.finalRowRight).toBeLessThanOrEqual(metrics.toolbarLeft + 1);
+        expect(metrics.hasHorizontalBorderClass).toBe(true);
+        expect(metrics.horizontalBorderBackgroundImage).toContain('repeating-linear-gradient');
+        expect(metrics.horizontalBorderZIndex).toBeGreaterThan(metrics.toolbarZIndex);
         expect(metrics.hasHorizontalOverflow).toBe(false);
         expect(metrics.hasVerticalOverflow).toBe(false);
     });

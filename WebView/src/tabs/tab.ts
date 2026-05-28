@@ -637,13 +637,16 @@ export class Tab {
         const rowHeight = this.getTabRowHeightPx();
         const tabWrapEnabled = this.isTabWrapEnabled();
         const viewportWidth = this.getTabViewportWidthPx(scrollArea);
+        const toolbarWidth = this.getToolbarWidthPx();
+        const lastRowTabWidth = Math.max(1, viewportWidth - toolbarWidth);
 
         if (this.tabButtons.length === 0) {
             scrollArea.style.overflowX = 'hidden';
             scrollArea.scrollLeft = 0;
             this.applyVisibleTabRowCount(1);
+            this.element.classList.remove('tab-list-multi-row');
             this.element.style.height = rowHeight + 'px';
-            this.element.style.width = '';
+            this.element.style.width = viewportWidth + 'px';
             this.updateTabScrollPositionPreference(scrollArea, true);
             return;
         }
@@ -655,10 +658,7 @@ export class Tab {
         // auto 幅の絶対配置要素は親幅で再計算されるため、測定中は親幅を固定する。
         this.element.style.width = viewportWidth + 'px';
 
-        const rowWidths = [0];
-        let currentRow = 0;
-        let visibleRowCount = 1;
-        let contentWidth = tabWrapEnabled ? viewportWidth : 0;
+        const measuredTabs: Array<{ element: HTMLElement; width: number }> = [];
 
         for (const tabButton of this.tabButtons) {
             const element = tabButton.element;
@@ -667,33 +667,70 @@ export class Tab {
             element.style.top = '0px';
 
             const measuredWidth = Math.ceil(element.getBoundingClientRect().width);
-            const width = Math.min(viewportWidth, Math.max(1, measuredWidth));
+            const maxWidth = tabWrapEnabled ? viewportWidth : lastRowTabWidth;
+            const width = Math.min(maxWidth, Math.max(1, measuredWidth));
+            measuredTabs.push({element, width});
+        }
 
-            if (tabWrapEnabled) {
-                const rowHasContent = rowWidths[currentRow] > 0;
-                const wouldOverflowRow = rowHasContent && rowWidths[currentRow] + width > viewportWidth;
+        let visibleRowCount = 1;
+        let contentWidth = 0;
+        if (tabWrapEnabled) {
+            const rows: Array<{ items: Array<{ element: HTMLElement; width: number }>; width: number }> = [{items: [], width: 0}];
+            for (const item of measuredTabs) {
+                let row = rows[rows.length - 1];
+                const rowHasContent = row.width > 0;
+                const wouldOverflowRow = rowHasContent && row.width + item.width > viewportWidth;
                 if (wouldOverflowRow) {
-                    currentRow++;
-                    rowWidths[currentRow] = 0;
-                    visibleRowCount = currentRow + 1;
+                    row = {items: [], width: 0};
+                    rows.push(row);
+                }
+                row.items.push(item);
+                row.width += item.width;
+            }
+
+            let lastRow = rows[rows.length - 1];
+            if (lastRow.items.length === 1 && lastRow.width > lastRowTabWidth) {
+                lastRow.items[0].width = lastRowTabWidth;
+                lastRow.width = lastRowTabWidth;
+            } else if (lastRow.items.length > 1 && lastRow.width > lastRowTabWidth) {
+                const movedItem = lastRow.items.pop();
+                if (movedItem !== undefined) {
+                    lastRow.width -= movedItem.width;
+                    movedItem.width = Math.min(movedItem.width, lastRowTabWidth);
+                    rows.push({items: [movedItem], width: movedItem.width});
                 }
             }
 
-            const left = rowWidths[currentRow];
-            const top = currentRow * rowHeight;
-            element.style.left = left + 'px';
-            element.style.top = top + 'px';
-            // 親のスクロール幅を広げた後も、測定時の幅から膨らまないように固定する。
-            element.style.width = width + 'px';
-
-            rowWidths[currentRow] = left + width;
-            contentWidth = Math.max(contentWidth, rowWidths[currentRow]);
+            rows.forEach((row, rowIndex) => {
+                let left = 0;
+                for (const item of row.items) {
+                    item.element.style.left = left + 'px';
+                    item.element.style.top = (rowIndex * rowHeight) + 'px';
+                    // 親のスクロール幅を広げた後も、測定時の幅から膨らまないように固定する。
+                    item.element.style.width = item.width + 'px';
+                    left += item.width;
+                }
+                contentWidth = Math.max(contentWidth, row.width);
+            });
+            visibleRowCount = rows.length;
+        } else {
+            let left = 0;
+            for (const item of measuredTabs) {
+                item.element.style.left = left + 'px';
+                item.element.style.top = '0px';
+                // 右端のツールバーに隠れないよう、1段表示ではタブ1枚の最大幅も実効幅に収める。
+                item.element.style.width = item.width + 'px';
+                left += item.width;
+            }
+            contentWidth = left;
         }
 
         const height = visibleRowCount * rowHeight;
         this.applyVisibleTabRowCount(visibleRowCount);
+        this.element.classList.toggle('tab-list-multi-row', visibleRowCount > 1);
         this.element.style.height = height + 'px';
-        this.element.style.width = Math.max(viewportWidth, contentWidth) + 'px';
+        const scrollWidth = tabWrapEnabled ? viewportWidth : contentWidth + toolbarWidth;
+        this.element.style.width = Math.max(viewportWidth, scrollWidth) + 'px';
 
         if (scrollActiveTabAfterLayout) {
             const activeTabButton = this.tabButtons.find(tabButton => tabButton.element.classList.contains('tab-button-active'));
@@ -764,7 +801,22 @@ export class Tab {
 
     scrollTabButtonIntoView(tabButton: TabButton, behavior: ScrollBehavior = 'smooth'): void {
         if (this.isTabWrapEnabled()) return;
-        tabButton.element.scrollIntoView({ behavior, block: 'nearest', inline: 'nearest' });
+        const scrollArea = this.element.parentElement;
+        if (!(scrollArea instanceof HTMLElement)) return;
+        const visibleWidth = Math.max(1, scrollArea.clientWidth - this.getToolbarWidthPx());
+        const visibleLeft = scrollArea.scrollLeft;
+        const visibleRight = visibleLeft + visibleWidth;
+        const tabLeft = tabButton.element.offsetLeft;
+        const tabRight = tabLeft + tabButton.element.getBoundingClientRect().width;
+        let targetScrollLeft = scrollArea.scrollLeft;
+        if (tabLeft < visibleLeft) {
+            targetScrollLeft = tabLeft;
+        } else if (tabRight > visibleRight) {
+            targetScrollLeft = tabRight - visibleWidth;
+        }
+        const clamped = Math.max(0, Math.min(this.getTabScrollRightEdge(scrollArea), Math.round(targetScrollLeft)));
+        if (Math.abs(scrollArea.scrollLeft - clamped) <= 1) return;
+        scrollArea.scrollTo({left: clamped, behavior});
     }
 
     private getTabRowHeightPx(): number {
@@ -774,11 +826,15 @@ export class Tab {
     }
 
     private getTabViewportWidthPx(scrollArea: HTMLElement): number {
-        const toolbar = this.tabElement.querySelector('.toolbar');
         const tabWidth = this.tabElement.getBoundingClientRect().width;
-        const toolbarWidth = toolbar instanceof HTMLElement ? toolbar.getBoundingClientRect().width : 0;
-        const availableWidth = Math.max(1, Math.floor(tabWidth - toolbarWidth));
-        return Math.max(1, Math.min(Math.floor(scrollArea.clientWidth), availableWidth));
+        const measuredWidth = Math.max(tabWidth, scrollArea.clientWidth);
+        return Math.max(1, Math.floor(measuredWidth));
+    }
+
+    private getToolbarWidthPx(): number {
+        const toolbar = this.tabElement.querySelector('.toolbar');
+        if (!(toolbar instanceof HTMLElement)) return 0;
+        return Math.max(0, Math.ceil(toolbar.getBoundingClientRect().width));
     }
 
     private isTabWrapEnabled(): boolean {

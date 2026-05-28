@@ -92,10 +92,7 @@
 
 /* タブボタンの境界に線を引きます。 */
 .tab-button {
-    border-right: 1px solid rgba(255, 255, 255, 0.3);
-}
-[data-theme="dark"] .tab-button {
-    border-right: 1px solid rgba(0, 0, 0, 0.3);
+    border-right: 1px solid var(--border-color);
 }
 
 /* 選択中のタブ: 上辺に青色のアウトラインで強調する */
