@@ -693,7 +693,7 @@ export class Selection {
         if (triggeredByScroll) {
             // スクロール入力ではこの直後の scroll-bound sync で overlay をまとめて更新する。
             // 行差し替え直後に getBoundingClientRect() を読むと、大量の class/DOM 更新が同期レイアウト化する。
-            if (this.fillHandleHostCell !== null && !this.fillHandleHostCell.isConnected) {
+            if (this.fillHandleHostCell === null || !this.fillHandleHostCell.isConnected) {
                 this.updateFillHandlePosition();
             }
         } else {

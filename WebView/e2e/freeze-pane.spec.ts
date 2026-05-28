@@ -1001,6 +1001,55 @@ test.describe('フリーズペイン', () => {
 
             expect(geometry.borderCount, JSON.stringify(geometry)).toBe(1);
         });
+
+        test('選択終端が画面外へ出て戻ってもフィルハンドルを再表示する', async ({ page }) => {
+            await page.setViewportSize({ width: 640, height: 480 });
+            await openTableAsync(page, 'freeze_selection_clip');
+
+            const state = await page.evaluate(async () => {
+                type SelectionForTest = {
+                    start(row: number, column: number): void;
+                    extendSelection(row: number, column: number): void;
+                    end(): void;
+                };
+                type ActiveEditorTableForTest = {
+                    dataColumnOffset(): number;
+                    getSelection(): SelectionForTest;
+                    scrollByInput(deltaTopPx: number, deltaLeftPx: number): void;
+                };
+
+                const editor = (window as unknown as { editor?: { activeEditorTable: ActiveEditorTableForTest | false } }).editor;
+                if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+
+                const table = editor.activeEditorTable;
+                const dataColumnOffset = table.dataColumnOffset();
+                const selection = table.getSelection();
+                selection.start(3, dataColumnOffset + 1);
+                selection.extendSelection(16, dataColumnOffset + 4);
+                selection.end();
+
+                table.scrollByInput(2300, 0);
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+                table.scrollByInput(-2300, 0);
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+                const handle = document.querySelector<HTMLElement>('.fill-handle');
+                const host = handle?.parentElement;
+                const hostRow = host?.closest<HTMLElement>('.editor-table-detached-row, .editor-table-row');
+                return {
+                    connected: handle?.isConnected ?? false,
+                    display: handle?.style.display ?? '',
+                    hostRowIndex: hostRow?.dataset.rowIndex ?? null,
+                    hostCol: host?.dataset.col ?? null,
+                };
+            });
+
+            expect(state.connected, JSON.stringify(state)).toBe(true);
+            expect(state.display, JSON.stringify(state)).toBe('block');
+            expect(state.hostRowIndex, JSON.stringify(state)).toBe('15');
+            expect(state.hostCol, JSON.stringify(state)).toBe('4');
+        });
     });
 
     test.describe('行の固定', () => {
