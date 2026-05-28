@@ -1,6 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
 
 namespace App.MasterDataEditor;
 
@@ -16,6 +19,9 @@ public partial class MainWindow : Window
 		InitializeComponent();
 
 		Title = $"マスターデータ入力支援ツール";
+		Loaded += (_, _) => FocusWebView2();
+		Activated += (_, _) => FocusWebView2();
+		webView2.NavigationCompleted += OnWebView2NavigationCompleted;
 
 		Logger.Info("Starting MainWindow service initialization");
 		Application.Current.Dispatcher.InvokeAsync(InitializeWebView2handler);
@@ -30,5 +36,27 @@ public partial class MainWindow : Window
 
 		// EditorApiBridgeをWebView2Handlerに接続し、MCPツールからのAPI呼び出しを有効にする
 		((App)Application.Current).ConnectEditorApiBridge(_webView2Handler);
+	}
+
+	private void OnWebView2NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+	{
+		if (e.IsSuccess)
+		{
+			FocusWebView2();
+		}
+	}
+
+	private void FocusWebView2()
+	{
+		if (!IsLoaded || !IsActive)
+		{
+			return;
+		}
+
+		Dispatcher.InvokeAsync(() =>
+		{
+			webView2.Focus();
+			Keyboard.Focus(webView2);
+		}, DispatcherPriority.ApplicationIdle);
 	}
 }
