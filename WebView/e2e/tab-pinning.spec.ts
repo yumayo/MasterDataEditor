@@ -3,6 +3,7 @@ import type {Page} from '@playwright/test';
 import {installMockApiAsync, readMockFileAsync, type MockFileSystem} from './fixtures/mock-api';
 
 const UI_STATE_FILE = 'user:ui-state.json';
+const SETTINGS_FILE = '.masterdataeditor/settings.json';
 
 function createSchema(): string {
     return JSON.stringify({
@@ -28,6 +29,29 @@ function createFileSystem(): MockFileSystem {
         'plugins/.gitkeep': '',
     };
     for (const tableName of ['item', 'enemy', 'quest']) {
+        fs[`schema/${tableName}.json`] = createSchema();
+        fs[`data/${tableName}.csv`] = createCsv(tableName);
+    }
+    return fs;
+}
+
+function createPinnedRowSeparationFileSystem(pinnedNames: string[], normalNames: string[]): MockFileSystem {
+    const fs: MockFileSystem = {
+        'user:bookmarks.json': '[]',
+        'plugins/.gitkeep': '',
+        [SETTINGS_FILE]: JSON.stringify({tabSeparatePinnedRowsEnabled: true}),
+        [UI_STATE_FILE]: JSON.stringify({
+            tabs: {
+                open: [
+                    ...pinnedNames.map(name => ({name, description: null, pinned: true, diff: null})),
+                    ...normalNames.map(name => ({name, description: null, pinned: false, diff: null})),
+                ],
+                active: normalNames[0],
+                scroll: {scrollLeft: 0, scrollTop: 0},
+            },
+        }),
+    };
+    for (const tableName of [...pinnedNames, ...normalNames]) {
         fs[`schema/${tableName}.json`] = createSchema();
         fs[`data/${tableName}.csv`] = createCsv(tableName);
     }
@@ -107,5 +131,42 @@ test.describe('tab pinning', () => {
         await page.locator('.tab-button[title="enemy"]').click({button: 'right'});
         await page.locator('.context-menu-item', {hasText: 'タブの固定を解除'}).click();
         await expect(page.locator('.tab-button[title="enemy"]')).not.toHaveClass(/tab-button-pinned/);
+    });
+
+    test('separate pinned row setting wraps pinned tabs before normal tabs', async ({page}) => {
+        await page.setViewportSize({width: 640, height: 900});
+        const pinnedNames = Array.from({length: 4}, (_, index) => `pinned_table_${index}_with_long_name_segment_segment`);
+        const normalNames = Array.from({length: 3}, (_, index) => `normal_table_${index}_with_long_name_segment_segment`);
+        await installMockApiAsync(page, createPinnedRowSeparationFileSystem(pinnedNames, normalNames));
+        await page.goto('/');
+
+        await expect(page.locator('.tab-button')).toHaveCount(pinnedNames.length + normalNames.length);
+
+        const metrics = await page.evaluate(({pinnedNames, normalNames}) => {
+            const buttons = Array.from(document.querySelectorAll<HTMLElement>('.tab-button')).map(element => ({
+                name: element.title,
+                top: Math.round(element.getBoundingClientRect().top),
+                left: Math.round(element.getBoundingClientRect().left),
+            }));
+            const pinnedButtons = buttons.filter(button => pinnedNames.includes(button.name));
+            const normalButtons = buttons.filter(button => normalNames.includes(button.name));
+            return {
+                cssSeparatePinnedRows: getComputedStyle(document.documentElement).getPropertyValue('--tab-separate-pinned-rows-enabled').trim(),
+                cssWrapEnabled: getComputedStyle(document.documentElement).getPropertyValue('--tab-wrap-enabled').trim(),
+                pinnedRowCount: new Set(pinnedButtons.map(button => button.top)).size,
+                maxPinnedTop: Math.max(...pinnedButtons.map(button => button.top)),
+                minNormalTop: Math.min(...normalButtons.map(button => button.top)),
+                orderedNames: buttons
+                    .sort((left, right) => left.top - right.top || left.left - right.left)
+                    .map(button => button.name),
+            };
+        }, {pinnedNames, normalNames});
+
+        expect(metrics.cssSeparatePinnedRows).toBe('1');
+        expect(metrics.cssWrapEnabled).toBe('0');
+        expect(metrics.pinnedRowCount).toBeGreaterThan(1);
+        expect(metrics.minNormalTop).toBeGreaterThan(metrics.maxPinnedTop);
+        expect(metrics.orderedNames.slice(0, pinnedNames.length)).toEqual(pinnedNames);
+        expect(metrics.orderedNames.slice(pinnedNames.length)).toEqual(normalNames);
     });
 });

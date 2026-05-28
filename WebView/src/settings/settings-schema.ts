@@ -67,6 +67,15 @@ export const SETTING_DEFINITIONS = {
         rootClassNames: ['settings-tab-wrap-toggle'],
         inputClassNames: ['settings-tab-wrap-checkbox'],
     }),
+    tabSeparatePinnedRowsEnabled: defineSetting<boolean>({
+        label: '固定タブの行を分ける',
+        type: 'boolean',
+        defaultValue: false,
+        section: 'display',
+        control: 'toggle',
+        rootClassNames: ['settings-tab-separate-pinned-rows-toggle'],
+        inputClassNames: ['settings-tab-separate-pinned-rows-checkbox'],
+    }),
     referenceJumpTemporaryFilterEnabled: defineSetting<boolean>({
         label: 'ジャンプ時フィルター',
         type: 'boolean',

@@ -37,6 +37,7 @@ import {
 type SettingsScope = 'workspace' | 'user';
 
 const TAB_WRAP_ENABLED_CSS_VAR = '--tab-wrap-enabled';
+const TAB_SEPARATE_PINNED_ROWS_ENABLED_CSS_VAR = '--tab-separate-pinned-rows-enabled';
 const SETTINGS_SCOPE_OPTIONS: Record<SettingsScope, { scope: FileScope }> = {
     workspace: {scope: 'workspace'},
     user: {scope: 'user'},
@@ -55,6 +56,9 @@ const SETTING_RUNTIME_APPLIERS: Partial<Record<SettingsKey, (settings: AppliedSe
     },
     tabWrapEnabled: (settings: AppliedSettings) => {
         document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, settings.tabWrapEnabled ? '1' : '0');
+    },
+    tabSeparatePinnedRowsEnabled: (settings: AppliedSettings) => {
+        document.documentElement.style.setProperty(TAB_SEPARATE_PINNED_ROWS_ENABLED_CSS_VAR, settings.tabSeparatePinnedRowsEnabled ? '1' : '0');
     },
 };
 const SETTING_VALUE_READERS = {

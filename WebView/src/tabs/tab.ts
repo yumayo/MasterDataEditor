@@ -109,6 +109,17 @@ export interface EditorTableFactoryResult {
     fillController: FillController;
 }
 
+interface MeasuredTabButton {
+    element: HTMLElement;
+    width: number;
+    pinned: boolean;
+}
+
+interface TabLayoutRow {
+    items: MeasuredTabButton[];
+    width: number;
+}
+
 /**
  * VSCodeやGoogleChromeのタブと同じものです。
  */
@@ -430,7 +441,7 @@ export class Tab {
         });
         window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
             const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
-            if (detail.changedKeys.includes('tabWrapEnabled')) {
+            if (detail.changedKeys.includes('tabWrapEnabled') || detail.changedKeys.includes('tabSeparatePinnedRowsEnabled')) {
                 this.scheduleTabLayout(false, true);
             }
         });
@@ -635,7 +646,8 @@ export class Tab {
         if (!(scrollArea instanceof HTMLElement)) return;
 
         const rowHeight = this.getTabRowHeightPx();
-        const tabWrapEnabled = this.isTabWrapEnabled();
+        const tabRowsEnabled = this.isTabRowsLayoutEnabled();
+        const separatePinnedRowsEnabled = this.shouldSeparatePinnedTabRows();
         const viewportWidth = this.getTabViewportWidthPx(scrollArea);
         const toolbarWidth = this.getToolbarWidthPx();
         const lastRowTabWidth = Math.max(1, viewportWidth - toolbarWidth);
@@ -651,14 +663,14 @@ export class Tab {
             return;
         }
 
-        scrollArea.style.overflowX = tabWrapEnabled ? 'hidden' : 'auto';
-        if (tabWrapEnabled && scrollArea.scrollLeft !== 0) {
+        scrollArea.style.overflowX = tabRowsEnabled ? 'hidden' : 'auto';
+        if (tabRowsEnabled && scrollArea.scrollLeft !== 0) {
             scrollArea.scrollLeft = 0;
         }
         // auto 幅の絶対配置要素は親幅で再計算されるため、測定中は親幅を固定する。
         this.element.style.width = viewportWidth + 'px';
 
-        const measuredTabs: Array<{ element: HTMLElement; width: number }> = [];
+        const measuredTabs: MeasuredTabButton[] = [];
 
         for (const tabButton of this.tabButtons) {
             const element = tabButton.element;
@@ -667,25 +679,20 @@ export class Tab {
             element.style.top = '0px';
 
             const measuredWidth = Math.ceil(element.getBoundingClientRect().width);
-            const maxWidth = tabWrapEnabled ? viewportWidth : lastRowTabWidth;
+            const maxWidth = tabRowsEnabled ? viewportWidth : lastRowTabWidth;
             const width = Math.min(maxWidth, Math.max(1, measuredWidth));
-            measuredTabs.push({element, width});
+            measuredTabs.push({element, width, pinned: tabButton.isPinned()});
         }
 
         let visibleRowCount = 1;
         let contentWidth = 0;
-        if (tabWrapEnabled) {
-            const rows: Array<{ items: Array<{ element: HTMLElement; width: number }>; width: number }> = [{items: [], width: 0}];
-            for (const item of measuredTabs) {
-                let row = rows[rows.length - 1];
-                const rowHasContent = row.width > 0;
-                const wouldOverflowRow = rowHasContent && row.width + item.width > viewportWidth;
-                if (wouldOverflowRow) {
-                    row = {items: [], width: 0};
-                    rows.push(row);
-                }
-                row.items.push(item);
-                row.width += item.width;
+        if (tabRowsEnabled) {
+            const rows: TabLayoutRow[] = [];
+            if (separatePinnedRowsEnabled) {
+                this.appendWrappedTabRows(rows, measuredTabs.filter(item => item.pinned), viewportWidth, false);
+                this.appendWrappedTabRows(rows, measuredTabs.filter(item => !item.pinned), viewportWidth, rows.length > 0);
+            } else {
+                this.appendWrappedTabRows(rows, measuredTabs, viewportWidth, false);
             }
 
             let lastRow = rows[rows.length - 1];
@@ -729,7 +736,7 @@ export class Tab {
         this.applyVisibleTabRowCount(visibleRowCount);
         this.element.classList.toggle('tab-list-multi-row', visibleRowCount > 1);
         this.element.style.height = height + 'px';
-        const scrollWidth = tabWrapEnabled ? viewportWidth : contentWidth + toolbarWidth;
+        const scrollWidth = tabRowsEnabled ? viewportWidth : contentWidth + toolbarWidth;
         this.element.style.width = Math.max(viewportWidth, scrollWidth) + 'px';
 
         if (scrollActiveTabAfterLayout) {
@@ -737,7 +744,7 @@ export class Tab {
             if (activeTabButton) {
                 activeTabButton.scrollIntoViewIfNeeded('auto');
             }
-        } else if (!tabWrapEnabled && preserveScrollEdgeAfterLayout) {
+        } else if (!tabRowsEnabled && preserveScrollEdgeAfterLayout) {
             this.applyTabScrollPositionPreference(scrollArea);
         }
         if (this.pendingTabBarScrollPosition !== null) {
@@ -745,6 +752,25 @@ export class Tab {
             this.pendingTabBarScrollPosition = null;
         }
         this.updateTabScrollPositionPreference(scrollArea, true);
+    }
+
+    private appendWrappedTabRows(rows: TabLayoutRow[], items: MeasuredTabButton[], viewportWidth: number, startNewRow: boolean): void {
+        if (items.length === 0) return;
+        let row = rows[rows.length - 1];
+        if (row === undefined || startNewRow || row.items.length === 0) {
+            row = {items: [], width: 0};
+            rows.push(row);
+        }
+        for (const item of items) {
+            const rowHasContent = row.width > 0;
+            const wouldOverflowRow = rowHasContent && row.width + item.width > viewportWidth;
+            if (wouldOverflowRow) {
+                row = {items: [], width: 0};
+                rows.push(row);
+            }
+            row.items.push(item);
+            row.width += item.width;
+        }
     }
 
     private getTabScrollRightEdge(scrollArea: HTMLElement): number {
@@ -800,7 +826,7 @@ export class Tab {
     }
 
     scrollTabButtonIntoView(tabButton: TabButton, behavior: ScrollBehavior = 'smooth'): void {
-        if (this.isTabWrapEnabled()) return;
+        if (this.isTabRowsLayoutEnabled()) return;
         const scrollArea = this.element.parentElement;
         if (!(scrollArea instanceof HTMLElement)) return;
         const visibleWidth = Math.max(1, scrollArea.clientWidth - this.getToolbarWidthPx());
@@ -840,6 +866,21 @@ export class Tab {
     private isTabWrapEnabled(): boolean {
         const raw = getComputedStyle(document.documentElement).getPropertyValue('--tab-wrap-enabled').trim();
         return raw === '1' || raw === 'true';
+    }
+
+    private isSeparatePinnedTabRowsEnabled(): boolean {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--tab-separate-pinned-rows-enabled').trim();
+        return raw === '1' || raw === 'true';
+    }
+
+    private shouldSeparatePinnedTabRows(): boolean {
+        if (!this.isSeparatePinnedTabRowsEnabled()) return false;
+        return this.tabButtons.some(tabButton => tabButton.isPinned())
+            && this.tabButtons.some(tabButton => !tabButton.isPinned());
+    }
+
+    private isTabRowsLayoutEnabled(): boolean {
+        return this.isTabWrapEnabled() || this.shouldSeparatePinnedTabRows();
     }
 
     private applyVisibleTabRowCount(value: number): void {

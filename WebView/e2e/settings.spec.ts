@@ -365,6 +365,29 @@ test.describe('設定画面', () => {
     );
 
     test(
+        '固定タブの行分け設定を保存して即時反映できること',
+        async ({ page, mockFileSystem }) => {
+            await openSettingsTabAsync(page);
+
+            const checkbox = page.locator('.settings-tab-separate-pinned-rows-checkbox');
+            const label = page.locator('.settings-label[data-setting-key="tabSeparatePinnedRowsEnabled"]');
+            await expect(checkbox).toBeVisible();
+            await expect(checkbox).not.toBeChecked();
+            await expect(label).toHaveAttribute('data-default-different', 'false');
+
+            await checkbox.click();
+
+            await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
+                tabSeparatePinnedRowsEnabled: true,
+            });
+            await expect(label).toHaveAttribute('data-default-different', 'true');
+            await expect.poll(async () => page.evaluate(() => (
+                getComputedStyle(document.documentElement).getPropertyValue('--tab-separate-pinned-rows-enabled').trim()
+            ))).toBe('1');
+        },
+    );
+
+    test(
         '各設定行のデフォルトボタンで個別に初期値へ戻せること',
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);

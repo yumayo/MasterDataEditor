@@ -57,6 +57,7 @@ body {
     /* レイアウト */
     --tab-row-height: 48px;
     --tab-wrap-enabled: 0;
+    --tab-separate-pinned-rows-enabled: 0;
     --tab-visible-row-count: 1;
     --tab-bar-height: calc(var(--tab-row-height) * var(--tab-visible-row-count));
     --status-bar-height: 22px;
