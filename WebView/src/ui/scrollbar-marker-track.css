@@ -5,5 +5,5 @@
     right: 0;
     width: 14px;
     pointer-events: none;
-    z-index: 5;
+    z-index: var(--z-index-scrollbar-marker);
 }

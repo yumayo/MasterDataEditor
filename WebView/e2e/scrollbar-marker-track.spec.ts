@@ -318,9 +318,13 @@ base.describe('ScrollbarMarkerTrack', () => {
             const placement = await page.evaluate(() => {
                 const canvasElement = document.querySelector('.editor-left-slot .scrollbar-marker-track') as HTMLCanvasElement | null;
                 const viewport = document.querySelector('.editor-left-slot .editor-table-main-viewport') as HTMLElement | null;
+                const verticalScrollbar = document.querySelector('.editor-left-slot .editor-table-logical-vertical-scrollbar') as HTMLElement | null;
                 if (canvasElement === null || viewport === null) throw new Error('スクロールマーカーまたは実スクロール領域が見つかりません');
+                if (verticalScrollbar === null) throw new Error('カスタム縦スクロールバーが見つかりません');
                 const canvasRect = canvasElement.getBoundingClientRect();
                 const viewportRect = viewport.getBoundingClientRect();
+                const canvasStyle = window.getComputedStyle(canvasElement);
+                const verticalScrollbarStyle = window.getComputedStyle(verticalScrollbar);
                 return {
                     parentIsViewportHost: canvasElement.parentElement === viewport.parentElement,
                     topDiff: Math.abs(canvasRect.top - viewportRect.top),
@@ -330,6 +334,9 @@ base.describe('ScrollbarMarkerTrack', () => {
                     viewportTop: viewportRect.top,
                     canvasBottom: canvasRect.bottom,
                     viewportBottom: viewportRect.bottom,
+                    canvasZIndex: Number.parseInt(canvasStyle.zIndex, 10),
+                    verticalScrollbarZIndex: Number.parseInt(verticalScrollbarStyle.zIndex, 10),
+                    canvasPointerEvents: canvasStyle.pointerEvents,
                 };
             });
             expect(placement.parentIsViewportHost).toBe(true);
@@ -338,6 +345,8 @@ base.describe('ScrollbarMarkerTrack', () => {
             expect(placement.heightDiff).toBeLessThanOrEqual(1);
             expect(placement.canvasTop).toBeGreaterThanOrEqual(placement.viewportTop - 1);
             expect(placement.canvasBottom).toBeLessThanOrEqual(placement.viewportBottom + 1);
+            expect(placement.canvasZIndex).toBeGreaterThan(placement.verticalScrollbarZIndex);
+            expect(placement.canvasPointerEvents).toBe('none');
         },
     );
 
