@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -24,6 +25,9 @@ public class WebView2Handler : IDisposable
 	private readonly IDisposable _fileWatcherHandle;
 	private readonly IDisposable _schemaWatcherHandle;
 	private readonly IDisposable _gitWatcherHandle;
+	// 書き込み・削除・git状態変更系はバックグラウンド上でも受信順を維持する。
+	private readonly SemaphoreSlim _orderedIoLock = new(1, 1);
+
 	/// <summary>
 	/// MCP ToolとWebView2間の非同期ブリッジ。
 	/// editor_api_response メッセージをブリッジに転送する。
@@ -282,89 +286,57 @@ public class WebView2Handler : IDisposable
 					var messageType = typeElement.GetString();
 
 					// リクエストIDを抽出する（並列リクエストのレスポンス照合に使用）
-				var requestId = root.TryGetProperty("requestId", out var ridElement) ? ridElement.GetString() ?? "" : "";
+					var requestId = root.TryGetProperty("requestId", out var ridElement) ? ridElement.GetString() ?? "" : "";
 
-				switch (messageType)
+					switch (messageType)
 					{
 						case "read_file_request":
-						{
-							// UIスレッドをブロックせずバックグラウンドでファイルI/Oを実行する。
-							// root は using スコープの JsonDocument に紐づくため Clone() で独立させる。
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerReadFileRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerReadFileRequest.Invoke);
 							break;
-						}
 
 						case "write_file_request":
-							SendMessageToWebView(WebView2HandlerWriteFileRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerWriteFileRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "find_files_request":
-						{
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerFindFilesRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerFindFilesRequest.Invoke);
 							break;
-						}
 
 						case "delete_file_request":
-							SendMessageToWebView(WebView2HandlerDeleteFileRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerDeleteFileRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "git_status_request":
-							SendMessageToWebView(WebView2HandlerGitStatusRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitStatusRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "git_show_request":
-						{
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerGitShowRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitShowRequest.Invoke);
 							break;
-						}
 
 						case "git_add_request":
-							SendMessageToWebView(WebView2HandlerGitAddRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitAddRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "git_reset_request":
-							SendMessageToWebView(WebView2HandlerGitResetRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitResetRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "git_discard_request":
-							SendMessageToWebView(WebView2HandlerGitDiscardRequest.Invoke(root, requestId));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitDiscardRequest.Invoke, preserveRequestOrder: true);
 							break;
 
 						case "git_blame_request":
-						{
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerGitBlameRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitBlameRequest.Invoke);
 							break;
-						}
 
 						case "git_log_request":
-						{
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerGitLogRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitLogRequest.Invoke);
 							break;
-						}
 
 						case "git_show_at_commit_request":
-						{
-							var clonedRoot = root.Clone();
-							var rid = requestId;
-							_ = Task.Run(() => WebView2HandlerGitShowAtCommitRequest.Invoke(clonedRoot, rid))
-								.ContinueWith(t => SendMessageToWebView(t.Result));
+							RunRequestInBackground(root, requestId, WebView2HandlerGitShowAtCommitRequest.Invoke);
 							break;
-						}
 
 						case "editor_api_response":
 							HandleEditorApiResponse(root);
@@ -380,6 +352,44 @@ public class WebView2Handler : IDisposable
 		catch (Exception ex)
 		{
 			Logger.Error(ex, "WebView2メッセージ処理時にエラーが発生しました。");
+		}
+	}
+
+	private void RunRequestInBackground(
+		JsonElement root,
+		string requestId,
+		Func<JsonElement, string, object> requestHandler,
+		bool preserveRequestOrder = false)
+	{
+		// root は using スコープの JsonDocument に紐づくため、バックグラウンド処理へ渡す前に独立させる。
+		var clonedRoot = root.Clone();
+		_ = RunRequestInBackgroundAsync(() => requestHandler(clonedRoot, requestId), preserveRequestOrder);
+	}
+
+	private async Task RunRequestInBackgroundAsync(Func<object> requestHandler, bool preserveRequestOrder)
+	{
+		var lockTaken = false;
+		try
+		{
+			if (preserveRequestOrder)
+			{
+				await _orderedIoLock.WaitAsync().ConfigureAwait(false);
+				lockTaken = true;
+			}
+
+			var response = await Task.Run(requestHandler).ConfigureAwait(false);
+			SendMessageToWebView(response);
+		}
+		catch (Exception ex)
+		{
+			Logger.Error(ex, "WebView2メッセージのバックグラウンド処理時にエラーが発生しました。");
+		}
+		finally
+		{
+			if (lockTaken)
+			{
+				_orderedIoLock.Release();
+			}
 		}
 	}
 
