@@ -568,6 +568,30 @@ test.describe('ブックマーク永続化', () => {
         await expect(entries.first()).toHaveText(/name:\s*Shield\s*\(id=2\)/);
     });
 
+    test('未オープンのテーブルでもブックマークした実セルにジャンプする', async ({page}) => {
+        const savedBookmarks = [{
+            tableName: 'item',
+            rowKey: '2',
+            columnName: 'value',
+            label: '200',
+            createdAt: '2026-01-01T00:00:00.000Z',
+        }];
+        const fs = createBookmarkTestFileSystemWithPersistence(savedBookmarks);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openBookmarkPanelAsync(page);
+        const entries = getBookmarkEntries(page);
+        await expect(entries).toHaveCount(1);
+
+        await entries.first().click();
+
+        const itemTable = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
+        await expect(itemTable).toBeVisible();
+        const focusedCell = itemTable.locator('.editor-table-cell-focused');
+        await expect(focusedCell).toHaveText('200');
+    });
+
     test('ブックマーク削除後にbookmarks.jsonから該当エントリが除去される', async ({page}) => {
         const fs = createBookmarkTestFileSystem();
         await installMockApiAsync(page, fs);

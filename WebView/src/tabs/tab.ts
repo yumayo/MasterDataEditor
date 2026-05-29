@@ -200,6 +200,9 @@ export class Tab {
     /** タブ読み込み完了後にナビゲーションするブックマーク行キー（空文字列は無効） */
     private pendingNavigationBookmarkKey: string;
 
+    /** タブ読み込み完了後にナビゲーションするブックマーク列名（空文字列は無効） */
+    private pendingNavigationBookmarkColumnName: string;
+
     /** タブ読み込み完了後にナビゲーションするストア行インデックス（-1は無効、ValidationPanelで使用） */
     private pendingNavigationStoreRowIndex: number;
 
@@ -369,6 +372,7 @@ export class Tab {
         this.reverseReferenceEngine = new ReverseReferenceEngine(this.store, this.notification);
         this.pendingNavigationPkValue = '';
         this.pendingNavigationBookmarkKey = '';
+        this.pendingNavigationBookmarkColumnName = '';
         this.pendingNavigationStoreRowIndex = -1;
         this.pendingNavigationColumnIndex = -1;
         this.pendingNavigationColumnName = '';
@@ -1353,10 +1357,15 @@ export class Tab {
      * ブックマーク行キーが一致する行のセルを選択状態にする。
      * 単一PKではPK値そのもの、複合PKでは全PK構成列をタブ区切りで連結したキーを使う。
      */
-    private navigateToBookmarkCell(state: TabState, rowKey: string, columnIndex: number): void {
+    private navigateToBookmarkCell(state: TabState, rowKey: string, columnName: string): void {
         const editorTable = state.editorTable;
+        const columnIndex = this.resolveColumnIndex(editorTable.tableName, columnName);
+        if (columnIndex === -1) {
+            console.warn(`[Tab.navigateToBookmarkCell] ブックマーク列が見つかりません tableName=${editorTable.tableName} columnName=${columnName}`);
+            return;
+        }
         const rowCount = editorTable.getLogicalRowCount();
-        const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
+        const col = columnIndex + editorTable.dataColumnOffset();
         for (let r = 1; r < rowCount; r++) {
             if (editorTable.getRowBookmarkKey(r) === rowKey) {
                 state.selection.setRange(r, col, r, col);
@@ -1455,24 +1464,18 @@ export class Tab {
 
     /**
      * ブックマーク先のテーブル・セルにジャンプする（BookmarkPanel / CommandPalette 共通ロジック）
-     * columnName からテーブルヘッダーの列インデックスを解決し、ブックマーク用行キーで対象行を探す。
-     * 列が見つからない場合は行単位でジャンプする（スキーマ変更でカラムが消えた場合のフォールバック）。
+     * columnName は未オープンテーブルではまだ解決できないため、読み込み後に解決する。
      */
     navigateToBookmark(tableName: string, rowKey: string, columnName: string): void {
-        const columnIndex = this.resolveColumnIndex(tableName, columnName);
-        if (columnIndex !== -1) {
-            this.navigationHistory.pushNavigateCell(tableName);
-        } else {
-            this.navigationHistory.pushNavigateRow(tableName);
-        }
+        this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState) {
             this.enableTabButtonForNavigationJump(tableName);
-            this.navigateToBookmarkCell(existingState, rowKey, columnIndex);
+            this.navigateToBookmarkCell(existingState, rowKey, columnName);
             return;
         }
         this.pendingNavigationBookmarkKey = rowKey;
-        this.pendingNavigationColumnIndex = columnIndex;
+        this.pendingNavigationBookmarkColumnName = columnName;
         const tabButton = this.append(tableName, null);
         tabButton.click();
     }
@@ -1489,9 +1492,9 @@ export class Tab {
             this.pendingNavigationStoreRowIndex = -1;
             this.pendingNavigationColumnIndex = -1;
         } else if (this.pendingNavigationBookmarkKey !== '') {
-            this.navigateToBookmarkCell(state, this.pendingNavigationBookmarkKey, this.pendingNavigationColumnIndex);
+            this.navigateToBookmarkCell(state, this.pendingNavigationBookmarkKey, this.pendingNavigationBookmarkColumnName);
             this.pendingNavigationBookmarkKey = '';
-            this.pendingNavigationColumnIndex = -1;
+            this.pendingNavigationBookmarkColumnName = '';
         } else if (this.pendingNavigationColumnName !== '') {
             this.navigateToCellByColumnValue(
                 state, this.pendingNavigationColumnName, this.pendingNavigationPkValue,
