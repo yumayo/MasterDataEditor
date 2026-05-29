@@ -56,7 +56,7 @@ function createStatusBarDom(notification: NotificationToast) {
 
     const spinnerSpan = document.createElement('span');
     spinnerSpan.classList.add('status-bar-background-spinner');
-    spinnerSpan.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke-dasharray="20 15" stroke-linecap="round"/></svg>`;
+    spinnerSpan.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><circle class="loading-spinner-track" cx="8" cy="8" r="5.5" pathLength="100"/><circle class="loading-spinner-arc" cx="8" cy="8" r="5.5" pathLength="100"/></svg>`;
     bgIndicator.appendChild(spinnerSpan);
 
     const bgCountSpan = document.createElement('span');

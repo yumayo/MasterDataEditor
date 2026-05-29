@@ -32,13 +32,33 @@
 }
 
 .editor-table-loading-spinner {
+    display: block;
     width: 14px;
     height: 14px;
-    box-sizing: border-box;
-    border: 2px solid color-mix(in srgb, var(--font-color) 28%, transparent);
-    border-top-color: var(--selection-color);
-    border-radius: 50%;
-    flex: 0 0 auto;
+    line-height: 0;
+    flex: 0 0 14px;
+}
+
+.editor-table-loading-spinner svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.editor-table-loading-spinner .loading-spinner-track,
+.editor-table-loading-spinner .loading-spinner-arc {
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.editor-table-loading-spinner .loading-spinner-track {
+    stroke: color-mix(in srgb, var(--font-color) 28%, transparent);
+}
+
+.editor-table-loading-spinner .loading-spinner-arc {
+    stroke: var(--selection-color);
+    stroke-linecap: round;
+    stroke-dasharray: 62 38;
     animation: editor-table-loading-spin 0.8s linear infinite;
 }
 
@@ -50,7 +70,7 @@
 }
 
 @keyframes editor-table-loading-spin {
-    to { transform: rotate(360deg); }
+    to { stroke-dashoffset: -100; }
 }
 
 .editor-table--quadrant-layout {

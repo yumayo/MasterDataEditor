@@ -73,21 +73,39 @@
 }
 
 /* スピナーアニメーション */
-/* display:block で inline baseline の揺れを防ぐ */
 .status-bar-background-spinner {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
+    display: block;
+    width: 14px;
+    height: 14px;
+    line-height: 0;
+    flex: 0 0 14px;
 }
 
 .status-bar-background-spinner svg {
     display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.status-bar-background-spinner .loading-spinner-track,
+.status-bar-background-spinner .loading-spinner-arc {
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.status-bar-background-spinner .loading-spinner-track {
+    stroke: color-mix(in srgb, var(--font-color) 28%, transparent);
+}
+
+.status-bar-background-spinner .loading-spinner-arc {
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-dasharray: 62 38;
     animation: status-bar-spin 1s linear infinite;
-    transform-origin: center;
 }
 
 @keyframes status-bar-spin {
-    to { transform: rotate(360deg); }
+    to { stroke-dashoffset: -100; }
 }
 
 /* タスク件数テキスト — 固定幅で数字が変わってもスピナーが動かない */
