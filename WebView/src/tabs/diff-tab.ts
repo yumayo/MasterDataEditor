@@ -13,13 +13,14 @@ import {ContextMenu} from "../ui/context-menu";
 import {TabButton} from "./tab-button";
 import {Editor} from "../editor/editor";
 import {Sidebar} from "../sidebar/sidebar";
-import {SchemaJson, buildDiffRows, buildMergedData} from "../diff/diff-rows";
 import {TabReference} from "./tab-reference";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
 import {NotificationToast} from "../ui/notification";
 import {ValidationPanel} from "../panels/validation-panel";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 import type {LargeFileSettings} from "../settings/settings-schema";
+import DiffBuildWorker from "../diff/diff-worker?worker&inline";
+import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -29,6 +30,38 @@ import type {LargeFileSettings} from "../settings/settings-schema";
  * changes状態では左ペインが読み取り専用、staged状態では両ペインが読み取り専用。
  */
 export class DiffTab {
+    private static nextDiffBuildRequestId = 1;
+
+    static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string): Promise<DiffBuildResult> {
+        const worker = new DiffBuildWorker();
+        const requestId = DiffTab.nextDiffBuildRequestId++;
+        const request: DiffBuildWorkerRequest = {requestId, schemaJson, headCsv, currentCsv};
+
+        return new Promise<DiffBuildResult>((resolve, reject) => {
+            const finish = (): void => {
+                worker.terminate();
+            };
+
+            worker.onmessage = (event: MessageEvent<DiffBuildWorkerResponse>) => {
+                const response = event.data;
+                if (response.requestId !== requestId) return;
+                finish();
+                if (response.success) {
+                    resolve(response.data);
+                } else {
+                    reject(new Error(response.error));
+                }
+            };
+
+            worker.onerror = (event: ErrorEvent) => {
+                finish();
+                reject(new Error(event.message));
+            };
+
+            worker.postMessage(request);
+        });
+    }
+
     private readonly wrapperElement: HTMLElement;
 
     /** destroy() 時のストア登録解除に必要なテーブルキー */
@@ -117,8 +150,8 @@ export class DiffTab {
     constructor(
         tableName: string,
         schemaJson: string,
-        headCsv: string,
-        currentCsv: string,
+        _headCsv: string,
+        _currentCsv: string,
         isStaged: boolean,
         gitPath: string,
         editor: Editor,
@@ -133,7 +166,8 @@ export class DiffTab {
         validationPanel: ValidationPanel | false,
         largeFileSettings: LargeFileSettings,
         leftLabel: string | null,
-        rightLabel: string | null
+        rightLabel: string | null,
+        diffBuildResult: DiffBuildResult
     ) {
         this.isSyncing = false;
         this.dragMouseMove = null;
@@ -150,35 +184,15 @@ export class DiffTab {
         this.rightPaddingStoreIndices = new Map();
         this.uiStateChangeListener = false;
 
-        // スキーマをパースしてPK列名（配列）を取得する
-        const schema = JSON.parse(schemaJson) as SchemaJson;
-        const primaryKeyNames: readonly string[] = schema.primary_key;
-
-        // 差分計算（ファイル行順）
-        const { diffRows, displayHeader, newColumnIndices } = buildDiffRows(headCsv, currentCsv, primaryKeyNames);
-        // columnCount はスキーマ列数ではなくCSV全列数（displayHeader.length）を使う。
-        // スキーマが非連番keyの場合、changedColumnIndices はCSV列インデックス（0〜N-1）を持つため、
-        // CSV全列数で切り詰めないと applyDiffClasses でインデックス範囲外になる。
-        const columnCount = displayHeader.length;
         const {
+            displayHeader,
+            headRowValuesPerDomRow,
             leftRows, rightRows,
             leftEmptyRowIndices, rightEmptyRowIndices,
             leftDeletedRowIndices, rightAddedRowIndices,
             leftModifiedCells, rightModifiedCells,
-        } = buildMergedData(diffRows, columnCount);
-
-        // DOM行インデックス → HEAD版のCSV値配列を構築する。
-        // buildMergedData のループと同じ順序で走査し、各DOM行のHEAD版値を保持する。
-        // 追加行（HEAD版に存在しない行）はnull、空行（パディング行）もnull。
-        const headRowValuesPerDomRow: Array<string[] | null> = [];
-        for (const diffRow of diffRows) {
-            if (diffRow.kind === 'deleted' || diffRow.kind === 'modified' || diffRow.kind === 'unchanged') {
-                headRowValuesPerDomRow.push(diffRow.headValues);
-            } else {
-                // added行: HEAD版に存在しないためnull
-                headRowValuesPerDomRow.push(null);
-            }
-        }
+        } = diffBuildResult;
+        const newColumnIndices = new Set(diffBuildResult.newColumnIndices);
         this.headRowValuesPerDomRow = headRowValuesPerDomRow;
 
         // ルートラッパー要素（初期は非表示にして activateDiffTab() で表示する）
@@ -907,7 +921,8 @@ export class DiffTab {
         csv.header = displayHeader;
         csv.body = dataRows;
         // 差分ビューはミニテーブルとして生成されるためフィルター・ソートアイコンは持たない。hasIcons: false
-        const tableData = EditorTableData.parse(schemaObj, csv, false);
+        // 実データ行はストアから仮想スクロール描画するため、巨大CSVで EditorTableDataRow を全行分複製しない。
+        const tableData = EditorTableData.parse(schemaObj, csv, false, {materializeBody: false});
 
         // ストアに登録する（History コンストラクタで registerHistory が呼ばれるためストア登録が先）
         store.registerTable(tableKey, csv.header, csv.body);
@@ -941,7 +956,7 @@ export class DiffTab {
         const realEditorTable = new EditorTable(
             tableKey, tableData, referenceDataCache, store, editorTableHandler,
             selection, contextMenu, history, areaResizer,
-            scrollController, sidebar, mainViewportElement, 0, 'editor-table', true, true, true
+            scrollController, sidebar, mainViewportElement, 0, 'editor-table', true, true, true, true
         );
 
         Object.assign(editorTable, realEditorTable);

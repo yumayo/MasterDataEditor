@@ -241,6 +241,11 @@ export class Tab {
     /** 復元済み差分タブの実体ロード中フラグ */
     private readonly loadingDiffTabNames: Set<string>;
 
+    /** 差分タブ読み込みインジケーターの競合防止トークン */
+    private readonly diffLoadingTokens: Map<string, number>;
+
+    private nextDiffLoadingToken: number;
+
     /** テーブル定義タブのラッパー要素（テーブル定義タブが開かれた後に生成される。未生成時は false） */
     private tableDefinitionWrapperElement: HTMLElement | false;
 
@@ -379,6 +384,8 @@ export class Tab {
         this.diffTabs = new Map();
         this.diffTabMetadata = new Map();
         this.loadingDiffTabNames = new Set();
+        this.diffLoadingTokens = new Map();
+        this.nextDiffLoadingToken = 0;
         this.tableDefinitionWrapperElement = false;
         this.tableDefinitionEditor = false;
         this.debugApiDetailWrapperElement = false;
@@ -1585,10 +1592,14 @@ export class Tab {
         if (metadata === undefined) return false;
         if (this.loadingDiffTabNames.has(diffTabName)) return true;
 
-        this.loadingDiffTabNames.add(diffTabName);
+        const loadingToken = this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${metadata.tableName}`, false);
+        if (loadingToken === false) return true;
         try {
             const restored = await this.resolveRestoredGitDiffEntryAsync(metadata);
-            if (restored === null) return false;
+            if (restored === null) {
+                this.finishDiffTabLoading(diffTabName, loadingToken, true);
+                return false;
+            }
 
             const {entry, isStaged} = restored;
             const tableName = entry.tableName;
@@ -1598,7 +1609,7 @@ export class Tab {
                     readFileAsync(`data/${tableName}.csv`),
                 ]);
                 const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
-                this.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path, null, null, entry.isNew);
+                await this.openDiffTabAsync(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path, null, null, entry.isNew, loadingToken);
                 return true;
             }
 
@@ -1607,14 +1618,13 @@ export class Tab {
                 readFileAsync(`data/${tableName}.csv`),
                 gitShowFreshAsync(entry.path),
             ]);
-            this.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path, null, null, entry.isNew);
+            await this.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path, null, null, entry.isNew, loadingToken);
             return true;
         } catch (error: unknown) {
+            this.finishDiffTabLoading(diffTabName, loadingToken, true);
             console.error('[Tab] openRestoredDiffTabAsync failed:', error);
             this.notification.show('Git差分タブの復元に失敗しました');
             return false;
-        } finally {
-            this.loadingDiffTabNames.delete(diffTabName);
         }
     }
 
@@ -1761,6 +1771,7 @@ export class Tab {
             }
             this.diffTabMetadata.delete(name);
             this.loadingDiffTabNames.delete(name);
+            this.diffLoadingTokens.delete(name);
         }
 
         if (!wasActive) return;
@@ -1887,6 +1898,7 @@ export class Tab {
         if (name.startsWith(DIFF_TAB_PREFIX)) {
             this.diffTabMetadata.delete(name);
             this.loadingDiffTabNames.delete(name);
+            this.diffLoadingTokens.delete(name);
         }
 
         // タブ状態のクリーンアップ
@@ -2019,6 +2031,10 @@ export class Tab {
 
         // 差分タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
         if (name.startsWith(DIFF_TAB_PREFIX)) {
+            if (this.loadingDiffTabNames.has(name)) {
+                this.activateDiffLoadingTab(name);
+                return null;
+            }
             if (!this.diffTabs.has(name)) {
                 this.openRestoredDiffTabAsync(name).then((opened) => {
                     if (!opened) this.removeTabButton(name);
@@ -2702,34 +2718,10 @@ export class Tab {
         const rightDisplay = this.formatCommitDisplay(rightCommit);
         const diffTabName = DIFF_TAB_PREFIX + tableName + ' (' + leftDisplay + ' \u2194 ' + rightDisplay + ')';
 
-        // 既存の同名差分タブがあれば破棄する
-        if (this.diffTabs.has(diffTabName)) {
-            if (this.activeTabName === diffTabName) {
-                this.editor.leaveSettingsMode();
-                this.activeTabName = false;
-            }
-            const existing = this.diffTabs.get(diffTabName)!;
-            existing.destroy(this.store);
-            this.diffTabs.delete(diffTabName);
-            this.removeTabButton(diffTabName);
-        }
-
-        // 差分タブボタンを追加する
-        const tabButton = this.append(diffTabName, null);
-
-        // DiffTab を生成する（バージョン比較は両ペインとも読み取り専用）
-        const diffTab = new DiffTab(
-            tableName, schemaJson, leftCsv, rightCsv, true, '',
-            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
-            this.reference, this.openEditorTables, this.notification, false,
-            createLargeFileSettings(getAppliedSettings()),
-            leftDisplay, rightDisplay
+        await this.createOrReplaceDiffTabAsync(
+            diffTabName, tableName, true, schemaJson, leftCsv, rightCsv, '',
+            leftDisplay, rightDisplay, false
         );
-        this.diffTabs.set(diffTabName, diffTab);
-        this.connectDiffTabUiState(diffTabName, diffTab);
-
-        // タブボタンをクリックしてアクティブ化する
-        tabButton.click();
     }
 
     /**
@@ -2962,6 +2954,69 @@ export class Tab {
         formPanel.markEditedTablesSaved(savedTableNames);
     }
 
+    private async createOrReplaceDiffTabAsync(
+        diffTabName: string,
+        tableName: string,
+        isStaged: boolean,
+        schemaJson: string,
+        headCsv: string,
+        currentCsv: string,
+        gitPath: string,
+        leftLabel: string | null,
+        rightLabel: string | null,
+        isNew: boolean,
+        loadingToken?: number
+    ): Promise<void> {
+        const token = loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
+        if (token === false) return;
+
+        const tabButton = this.tabButtons.find(btn => btn.name === diffTabName);
+        if (tabButton === undefined) {
+            this.finishDiffTabLoading(diffTabName, token, true);
+            return;
+        }
+
+        const hadExistingDiffTab = this.diffTabs.has(diffTabName);
+        try {
+            const diffBuildResult = await DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv);
+            if (this.diffLoadingTokens.get(diffTabName) !== token) return;
+            if (!this.tabButtons.includes(tabButton)) {
+                this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+                return;
+            }
+
+            const existingDiffTab = this.diffTabs.get(diffTabName);
+            if (existingDiffTab !== undefined) {
+                existingDiffTab.destroy(this.store);
+                this.diffTabs.delete(diffTabName);
+            }
+
+            const diffTab = new DiffTab(
+                tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
+                this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
+                this.reference, this.openEditorTables, this.notification, this.validationPanel,
+                createLargeFileSettings(getAppliedSettings()),
+                leftLabel, rightLabel, diffBuildResult
+            );
+            this.diffTabs.set(diffTabName, diffTab);
+            this.connectDiffTabUiState(diffTabName, diffTab);
+            if (leftLabel === null && rightLabel === null) {
+                this.diffTabMetadata.set(diffTabName, {tableName, gitPath, isStaged, isNew});
+            } else {
+                this.diffTabMetadata.delete(diffTabName);
+            }
+
+            this.finishDiffTabLoading(diffTabName, token, false);
+            tabButton.click();
+        } catch (error: unknown) {
+            this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+            if (hadExistingDiffTab && this.tabButtons.includes(tabButton)) {
+                tabButton.click();
+            }
+            throw error;
+        }
+    }
+
     /**
      * 差分タブをタブバーに開く。
      * 同一テーブルの差分タブが既に開かれている場合は破棄して再作成する（最新CSVデータを反映するため）。
@@ -2969,51 +3024,20 @@ export class Tab {
      * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
      *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
      */
-    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false): void {
+    async openDiffTabAsync(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false, loadingToken?: number): Promise<void> {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
-
-        // 既存の差分タブが開いている場合は破棄して再作成する（最新データで差分表示するため）
-        // performCloseTab のDiffTab破棄パスと closeAllDiffTabs を参考にしたクリーンアップ
-        if (this.diffTabs.has(diffTabName)) {
-            // Dirty状態（右ペインに未保存の編集がある）の場合は破棄せずアクティブ化する
-            const existingButton = this.tabButtons.find(btn => btn.name === diffTabName);
-            if (existingButton !== undefined && existingButton.isDirty()) {
-                this.enableTabButton(diffTabName);
-                return;
-            }
-            // アクティブな差分タブの場合は leaveSettingsMode で rightSlot を復元する
-            if (this.activeTabName === diffTabName) {
-                this.editor.leaveSettingsMode();
-                this.activeTabName = false;
-            }
-            const existingDiffTab = this.diffTabs.get(diffTabName)!;
-            existingDiffTab.destroy(this.store);
-            this.diffTabs.delete(diffTabName);
-            this.removeTabButton(diffTabName);
-        }
-
-        // 差分タブのタブボタンを追加する
-        // このタブボタンを DiffTab の History に渡すことで Dirty マークが画面に反映される
-        // 差分タブには description がないため null で生成する
-        const tabButton = this.append(diffTabName, null);
-
-        const diffTab = new DiffTab(
-            tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
-            this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
-            this.reference, this.openEditorTables, this.notification, this.validationPanel,
-            createLargeFileSettings(getAppliedSettings()),
-            leftLabel, rightLabel
+        await this.createOrReplaceDiffTabAsync(
+            diffTabName, tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath,
+            leftLabel, rightLabel, isNew, loadingToken
         );
-        this.diffTabs.set(diffTabName, diffTab);
-        this.connectDiffTabUiState(diffTabName, diffTab);
-        if (leftLabel === null && rightLabel === null) {
-            this.diffTabMetadata.set(diffTabName, {tableName, gitPath, isStaged, isNew});
-        } else {
-            this.diffTabMetadata.delete(diffTabName);
-        }
+    }
 
-        // タブボタンをクリックしてアクティブ化する
-        tabButton.click();
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false): void {
+        this.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath, leftLabel, rightLabel, isNew)
+            .catch((error: unknown) => {
+                console.error('[Tab] openDiffTabAsync failed:', error);
+                this.notification.show('Git差分タブの表示に失敗しました');
+            });
     }
 
     /**
@@ -3082,6 +3106,8 @@ export class Tab {
                 diffTab.destroy(this.store);
                 this.diffTabs.delete(name);
             }
+            this.diffLoadingTokens.delete(name);
+            this.loadingDiffTabNames.delete(name);
             this.removeTabButton(name);
         }
 
@@ -3374,7 +3400,7 @@ export class Tab {
         });
     }
 
-    private createLoadingWrapper(name: string): HTMLElement {
+    private createLoadingWrapper(name: string, labelText: string = `読み込み中: ${name}`): HTMLElement {
         const wrapperElement = document.createElement('div');
         wrapperElement.classList.add('tab-wrapper', 'tab-wrapper-loading');
         wrapperElement.dataset.tabName = name;
@@ -3396,7 +3422,7 @@ export class Tab {
 
         const label = document.createElement('span');
         label.classList.add('editor-table-loading-label');
-        label.textContent = `読み込み中: ${name}`;
+        label.textContent = labelText;
         indicator.appendChild(label);
 
         wrapperElement.appendChild(indicator);
@@ -3424,6 +3450,85 @@ export class Tab {
         wrapper.remove();
         this.loadingWrapperElements.delete(name);
         return true;
+    }
+
+    beginDiffTabLoading(tableName: string): number | false {
+        const diffTabName = DIFF_TAB_PREFIX + tableName;
+        return this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
+    }
+
+    cancelDiffTabLoading(tableName: string, token: number): void {
+        const diffTabName = DIFF_TAB_PREFIX + tableName;
+        const hadExistingDiffTab = this.diffTabs.has(diffTabName);
+        const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+        if (finished && hadExistingDiffTab) {
+            this.enableTabButton(diffTabName);
+        }
+    }
+
+    private beginDiffTabLoadingForName(diffTabName: string, labelText: string, respectDirtyState: boolean): number | false {
+        if (respectDirtyState && this.diffTabs.has(diffTabName)) {
+            const existingButton = this.tabButtons.find(btn => btn.name === diffTabName);
+            if (existingButton !== undefined && existingButton.isDirty()) {
+                this.enableTabButton(diffTabName);
+                return false;
+            }
+        }
+
+        const token = ++this.nextDiffLoadingToken;
+        this.diffLoadingTokens.set(diffTabName, token);
+        this.loadingDiffTabNames.add(diffTabName);
+
+        let wrapperElement = this.loadingWrapperElements.get(diffTabName);
+        if (wrapperElement === undefined) {
+            wrapperElement = this.createLoadingWrapper(diffTabName, labelText);
+            this.loadingWrapperElements.set(diffTabName, wrapperElement);
+            this.editor.appendChild(wrapperElement);
+        } else {
+            const label = wrapperElement.querySelector('.editor-table-loading-label');
+            if (label instanceof HTMLElement) label.textContent = labelText;
+        }
+
+        const tabButton = this.append(diffTabName, null);
+        tabButton.click();
+        return token;
+    }
+
+    private finishDiffTabLoading(diffTabName: string, token: number, removeTabIfEmpty: boolean): boolean {
+        if (this.diffLoadingTokens.get(diffTabName) !== token) return false;
+        this.diffLoadingTokens.delete(diffTabName);
+        this.loadingDiffTabNames.delete(diffTabName);
+        this.removeLoadingWrapper(diffTabName);
+
+        if (!removeTabIfEmpty || this.diffTabs.has(diffTabName)) return true;
+        if (this.activeTabName === diffTabName) {
+            this.editor.leaveSettingsMode();
+            this.activeTabName = false;
+        }
+        this.removeTabButton(diffTabName);
+        return true;
+    }
+
+    private activateDiffLoadingTab(diffTabName: string): void {
+        if (this.activeTabName && !this.isFullWidthSpecialTabName(this.activeTabName)) {
+            const previousState = this.tabStates.get(this.activeTabName);
+            if (previousState) {
+                this.deactivateTabState(previousState);
+            }
+        }
+
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && !this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            this.editor.leaveSettingsMode();
+        }
+
+        this.hidePersistentSpecialTabWrappers();
+        this.hideAllViewPluginTabs();
+        this.diffTabs.forEach(diffTab => diffTab.hide());
+        this.relationsPanel.disconnectEditorTable();
+        this.editor.enterSettingsMode();
+        this.activeTabName = diffTabName;
+        this.persistTabs(false);
+        this.showLoadingWrapper(diffTabName);
     }
 
     /**

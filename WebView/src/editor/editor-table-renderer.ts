@@ -72,8 +72,9 @@ export class EditorTableRenderer {
         // ヘッダー行追加直後に topSpacer をテーブル内に配置する（データ行追加前に必要）
         this.virtualScroll.attachSpacers();
         // 通常テーブルはストア、ミニテーブルは呼び出し元から渡された部分行データを初期描画のソースにする。
-        // ミニテーブルは initialize() 後に setStoreRowIndices() で実ストア行へ差し替えられる。
-        const initialStoreRows = this.isMiniTable ? false : this.store.getRows(this.tableName);
+        // 差分タブはミニテーブル扱いだが、巨大CSVで EditorTableDataRow を全行分複製しないようストアを直接使う。
+        // RelationsPanel の通常ミニテーブルは initialize() 後に setStoreRowIndices() で実ストア行へ差し替えられる。
+        const initialStoreRows = (!this.isMiniTable || this.useStoreRowsForInitialRender) ? this.store.getRows(this.tableName) : false;
         const initialDataRowCount = initialStoreRows === false ? this.tableData.body.length : initialStoreRows.length;
         this.storeRowIndices = Array.from({ length: initialDataRowCount }, (_, i) => i);
         this.refreshRowHeaderWidth();

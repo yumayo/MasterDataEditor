@@ -261,26 +261,39 @@ export class SourceControlPanel {
         const requestId = ++this.currentRequestId;
 
         const tableName = entry.tableName;
+        const loadingToken = this.tab.beginDiffTabLoading(tableName);
+        if (loadingToken === false) return;
 
-        if (entry.isNew) {
-            // 新規ファイル: HEAD版は存在しない。スキーマから列ヘッダーのみのCSVを生成する
-            const [schemaJson, currentCsv] = await Promise.all([
-                readFileAsync(`schema/${tableName}.json`),
-                readFileAsync(`data/${tableName}.csv`),
-            ]);
-            if (requestId !== this.currentRequestId) return;
-            // ヘッダー行のみのCSVをHEAD版として渡す（空のHEAD状態を明示的に表現する）
-            const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
-            this.tab.openDiffTab(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path, null, null, entry.isNew);
-        } else {
-            // 既存ファイル: スキーマ・現在版CSV・HEAD版CSVを並列取得する
-            const [schemaJson, currentCsv, headCsv] = await Promise.all([
-                readFileAsync(`schema/${tableName}.json`),
-                readFileAsync(`data/${tableName}.csv`),
-                gitShowFreshAsync(entry.path),
-            ]);
-            if (requestId !== this.currentRequestId) return;
-            this.tab.openDiffTab(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path, null, null, entry.isNew);
+        try {
+            if (entry.isNew) {
+                // 新規ファイル: HEAD版は存在しない。スキーマから列ヘッダーのみのCSVを生成する
+                const [schemaJson, currentCsv] = await Promise.all([
+                    readFileAsync(`schema/${tableName}.json`),
+                    readFileAsync(`data/${tableName}.csv`),
+                ]);
+                if (requestId !== this.currentRequestId) {
+                    this.tab.cancelDiffTabLoading(tableName, loadingToken);
+                    return;
+                }
+                // ヘッダー行のみのCSVをHEAD版として渡す（空のHEAD状態を明示的に表現する）
+                const headerOnlyCsv = this.buildHeaderOnlyCsv(schemaJson);
+                await this.tab.openDiffTabAsync(tableName, isStaged, schemaJson, headerOnlyCsv, currentCsv, entry.path, null, null, entry.isNew, loadingToken);
+            } else {
+                // 既存ファイル: スキーマ・現在版CSV・HEAD版CSVを並列取得する
+                const [schemaJson, currentCsv, headCsv] = await Promise.all([
+                    readFileAsync(`schema/${tableName}.json`),
+                    readFileAsync(`data/${tableName}.csv`),
+                    gitShowFreshAsync(entry.path),
+                ]);
+                if (requestId !== this.currentRequestId) {
+                    this.tab.cancelDiffTabLoading(tableName, loadingToken);
+                    return;
+                }
+                await this.tab.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, entry.path, null, null, entry.isNew, loadingToken);
+            }
+        } catch (error: unknown) {
+            this.tab.cancelDiffTabLoading(tableName, loadingToken);
+            throw error;
         }
     }
 

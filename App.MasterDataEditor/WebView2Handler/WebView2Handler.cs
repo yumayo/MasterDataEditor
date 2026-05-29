@@ -12,6 +12,12 @@ namespace App.MasterDataEditor;
 
 public class WebView2Handler : IDisposable
 {
+	private static readonly JsonSerializerOptions WebMessageJsonOptions = new()
+	{
+		PropertyNamingPolicy = null, // CamelCaseを削除
+		WriteIndented = false
+	};
+
 	private readonly Dispatcher _dispatcher;
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
@@ -216,18 +222,21 @@ public class WebView2Handler : IDisposable
 
 	public void SendMessageToWebView(object data)
 	{
+		string json;
+		try
+		{
+			json = JsonSerializer.Serialize(data, WebMessageJsonOptions);
+		}
+		catch (Exception e)
+		{
+			Logger.Error(e, "WebView2へのメッセージのシリアライズに失敗しました。");
+			return;
+		}
+
 		_dispatcher.InvokeAsync(() =>
 		{
 			try
 			{
-				var options = new JsonSerializerOptions
-				{
-					PropertyNamingPolicy = null, // CamelCaseを削除
-					WriteIndented = false
-				};
-
-				var json = JsonSerializer.Serialize(data, options);
-
 				_webView2.CoreWebView2.PostWebMessageAsString(json);
 			}
 			catch (Exception e)
@@ -310,8 +319,13 @@ public class WebView2Handler : IDisposable
 							break;
 
 						case "git_show_request":
-							SendMessageToWebView(WebView2HandlerGitShowRequest.Invoke(root, requestId));
+						{
+							var clonedRoot = root.Clone();
+							var rid = requestId;
+							_ = Task.Run(() => WebView2HandlerGitShowRequest.Invoke(clonedRoot, rid))
+								.ContinueWith(t => SendMessageToWebView(t.Result));
 							break;
+						}
 
 						case "git_add_request":
 							SendMessageToWebView(WebView2HandlerGitAddRequest.Invoke(root, requestId));

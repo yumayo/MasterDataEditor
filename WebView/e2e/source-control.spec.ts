@@ -369,6 +369,47 @@ test.describe('ソース管理パネル', () => {
     );
 
     test(
+        '差分タブの読み込み中はインジケーターが表示されること',
+        async ({ page, sourceControlPage: _sourceControlPage }) => {
+            await page.locator('[data-panel="sourceControl"]').click();
+
+            await page.evaluate(() => {
+                type WebviewApi = {
+                    postMessage(message: string | object): void;
+                };
+                type TestWindow = Window & {
+                    chrome: { webview: WebviewApi };
+                };
+
+                const testWindow = window as TestWindow;
+                const originalPostMessage = testWindow.chrome.webview.postMessage.bind(testWindow.chrome.webview);
+                testWindow.chrome.webview.postMessage = (message: string | object): void => {
+                    const raw = typeof message === 'string' ? message : JSON.stringify(message);
+                    let delayMs = 0;
+                    try {
+                        const request = JSON.parse(raw) as { type?: string; path?: string };
+                        if (request.type === 'git_show_request' && request.path === 'data/test.csv') {
+                            delayMs = 250;
+                        }
+                    } catch {
+                        // JSONでないメッセージはそのまま流す
+                    }
+                    window.setTimeout(() => { originalPostMessage(message); }, delayMs);
+                };
+            });
+
+            await page.locator('.source-control-changes-section').getByText('test').click();
+
+            const indicator = page.locator('.tab-wrapper-loading[data-tab-name="差分: test"] .editor-table-loading-indicator');
+            await expect(indicator).toBeVisible();
+            await expect(indicator).toContainText('差分読み込み中: test');
+
+            await expect(page.locator('.diff-tab')).toBeVisible();
+            await expect(indicator).toHaveCount(0);
+        },
+    );
+
+    test(
         'CHANGESセクションのテーブル名をクリックして差分タブを開くと右ペインにフィルハンドルが表示されること',
         async ({ page, sourceControlPage: _sourceControlPage }) => {
             await page.locator('[data-panel="sourceControl"]').click();

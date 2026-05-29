@@ -421,6 +421,11 @@ export async function gitShowAtCommitAsync(commit: string, path: string): Promis
  */
 let nextRequestId = 1;
 
+function getRequestTimeoutMs(apiName: string): number {
+    if (apiName === 'git_show' || apiName === 'git_show_at_commit' || apiName === 'read_file') return 60000;
+    return 10000;
+}
+
 function postMessageAsync<T>(
     apiName: string,
     requestData: Record<string, unknown>
@@ -461,7 +466,7 @@ function sendRequest<T>(
             detail.completedAt = new Date().toISOString();
             writeApiLog('response', apiName, requestId, response);
             reject(new Error(errorMessage));
-        }, 10000);
+        }, getRequestTimeoutMs(apiName));
 
         const responseHandler = (event: MessageEvent) => {
             try {

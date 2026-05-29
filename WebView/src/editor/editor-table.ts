@@ -166,6 +166,7 @@ export class EditorTable {
      * trueの場合、行選択変化をRelationsPanelに通知しない（自分自身の再描画による自己破棄を防止）。
      */
     private readonly isMiniTable: boolean;
+    private readonly useStoreRowsForInitialRender: boolean;
     /** 行追加時に自動埋め込みするFK列名と値のペア配列（1:Nミニテーブルで使用） */
     autoFillEntries: Array<{ columnName: string; value: string }>;
     /**
@@ -241,7 +242,8 @@ export class EditorTable {
         rootCssClass: string,
         isMiniTable: boolean,
         enableVirtualScroll: boolean,
-        internalScrollLayout: boolean
+        internalScrollLayout: boolean,
+        useStoreRowsForInitialRender: boolean = false
     ) {
         this.tableData = tableData;
         this.tableName = tableName;
@@ -259,6 +261,7 @@ export class EditorTable {
         this.emptyRowCount = emptyRowCount;
         this.rootCssClass = rootCssClass;
         this.isMiniTable = isMiniTable;
+        this.useStoreRowsForInitialRender = useStoreRowsForInitialRender;
         this.element = document.createElement('div');
         this.topLeftPane = document.createElement('div');
         this.topLeftPane.classList.add('editor-table-pane', 'editor-table-pane-top-left');
