@@ -321,6 +321,9 @@ export class Tab {
     /** TabState 構築中の通常テーブルタブ名 */
     private readonly loadingTabNames: Set<string>;
 
+    /** TabState 構築前に表示する読み込み中ラッパー（キー: テーブル名） */
+    private readonly loadingWrapperElements: Map<string, HTMLElement>;
+
     /** openTableAsync() で待機中の resolve 関数を保持するマップ（キー: テーブル名） */
     private readonly pendingTableOpens: Map<string, Array<(success: boolean) => void>>;
 
@@ -394,6 +397,7 @@ export class Tab {
         this.errorTooltip = false;
         this.editorApi = false;
         this.loadingTabNames = new Set();
+        this.loadingWrapperElements = new Map();
         this.pendingTableOpens = new Map();
         this.commitSelectorDialog = new CommitSelectorDialog();
         this.uiStateStore = uiStateStore;
@@ -1869,6 +1873,8 @@ export class Tab {
     removeTabButton(name: string) {
         this.restoredTabScrollPositions.delete(name);
         this.restoredEditorTableStates.delete(name);
+        this.loadingTabNames.delete(name);
+        this.removeLoadingWrapper(name);
         const index = this.tabButtons.findIndex(x => x.name === name);
         if (index !== -1) {
             // DOMからタブボタン要素を除去する（差分タブは tabStates に登録されないため
@@ -2006,6 +2012,7 @@ export class Tab {
         // タブを有効化し、タブボタンが可視領域外であればスクロールして表示する
         tabButton.enable();
         tabButton.scrollIntoViewIfNeeded();
+        this.hideLoadingWrappersExcept(name);
 
         // サイドバーの選択状態をアクティブタブに同期する
         this.syncSidebarSelectionForTab(name);
@@ -2122,6 +2129,7 @@ export class Tab {
 
         // 読み込み中の同名タブがある場合は、既存の非同期処理の完了を待つ。
         if (this.loadingTabNames.has(name)) {
+            this.showLoadingWrapper(name);
             this.persistTabs(name);
             return null;
         }
@@ -3366,15 +3374,74 @@ export class Tab {
         });
     }
 
+    private createLoadingWrapper(name: string): HTMLElement {
+        const wrapperElement = document.createElement('div');
+        wrapperElement.classList.add('tab-wrapper', 'tab-wrapper-loading');
+        wrapperElement.dataset.tabName = name;
+        wrapperElement.style.height = '100%';
+        wrapperElement.style.position = 'sticky';
+        wrapperElement.style.top = '0';
+        wrapperElement.style.left = '0';
+        wrapperElement.style.display = 'none';
+
+        const indicator = document.createElement('div');
+        indicator.classList.add('editor-table-loading-indicator');
+        indicator.setAttribute('role', 'status');
+        indicator.setAttribute('aria-live', 'polite');
+
+        const spinner = document.createElement('span');
+        spinner.classList.add('editor-table-loading-spinner');
+        spinner.setAttribute('aria-hidden', 'true');
+        indicator.appendChild(spinner);
+
+        const label = document.createElement('span');
+        label.classList.add('editor-table-loading-label');
+        label.textContent = `読み込み中: ${name}`;
+        indicator.appendChild(label);
+
+        wrapperElement.appendChild(indicator);
+        return wrapperElement;
+    }
+
+    private showLoadingWrapper(name: string): void {
+        const wrapper = this.loadingWrapperElements.get(name);
+        if (wrapper === undefined) return;
+        this.hideLoadingWrappersExcept(name);
+        wrapper.style.display = '';
+    }
+
+    private hideLoadingWrappersExcept(activeName: string): void {
+        for (const [name, wrapper] of this.loadingWrapperElements) {
+            if (name === activeName) continue;
+            wrapper.style.display = 'none';
+        }
+    }
+
+    private removeLoadingWrapper(name: string, expectedWrapper?: HTMLElement): boolean {
+        const wrapper = this.loadingWrapperElements.get(name);
+        if (wrapper === undefined) return false;
+        if (expectedWrapper !== undefined && wrapper !== expectedWrapper) return false;
+        wrapper.remove();
+        this.loadingWrapperElements.delete(name);
+        return true;
+    }
+
     /**
      * 新しいタブ状態を作成
      */
     private createTabState(name: string, tabButton: TabButton): void {
+        const wrapperElement = this.createLoadingWrapper(name);
+        this.loadingWrapperElements.set(name, wrapperElement);
+        this.editor.appendChild(wrapperElement);
+        if (tabButton.element.classList.contains('tab-button-active')) {
+            this.showLoadingWrapper(name);
+        }
+
         // タブの名前から同名のマスターデータを取り出してきます。
         readFileAsync("schema/" + name + ".json").then(async (text) => {
             const json = JSON.parse(text);
             if (!this.tabButtons.includes(tabButton)) {
-                this.loadingTabNames.delete(name);
+                if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
                 this.resolvePendingTableOpen(name, false);
                 return;
             }
@@ -3383,24 +3450,16 @@ export class Tab {
             const csv = await this.store.registerTableAsync(name);
             if (!this.tabButtons.includes(tabButton)) {
                 this.store.unregisterTable(name);
-                this.loadingTabNames.delete(name);
+                if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
                 this.resolvePendingTableOpen(name, false);
                 return;
             }
             // 通常テーブルはフィルター・ソートアイコンを持つため hasIcons: true
             const tableData = EditorTableData.parse(json, csv, true, { materializeBody: false });
 
-            // ラッパー要素を作成（このタブのDOM全体を包む）
-            // editor.appendChild は左ペインへのappendに変更された
-            const wrapperElement = document.createElement('div');
-            wrapperElement.classList.add('tab-wrapper');
-            wrapperElement.dataset.tabName = name;
-            wrapperElement.style.height = '100%';
-            wrapperElement.style.position = 'sticky';
-            wrapperElement.style.top = '0';
-            wrapperElement.style.left = '0';
-            wrapperElement.style.display = 'none';
-            this.editor.appendChild(wrapperElement);
+            wrapperElement.classList.remove('tab-wrapper-loading');
+            const loadingIndicator = wrapperElement.querySelector('.editor-table-loading-indicator');
+            loadingIndicator?.remove();
 
             // EditorTableと関連オブジェクトをファクトリ関数で生成（相互参照を解決）
             const editorTableFactoryResult = this.createEditorTable(
@@ -3475,7 +3534,10 @@ export class Tab {
 
             if (!this.tabButtons.includes(tabButton)) {
                 this.discardCreatedTabState(name, wrapperElement, editorTable, editorTableHandler, history, areaResizer, fillController);
-                this.loadingTabNames.delete(name);
+                if (this.loadingWrapperElements.get(name) === wrapperElement) {
+                    this.loadingWrapperElements.delete(name);
+                    this.loadingTabNames.delete(name);
+                }
                 this.resolvePendingTableOpen(name, false);
                 return;
             }
@@ -3506,6 +3568,7 @@ export class Tab {
                 formPanelState: restoredFormPanelState,
             };
             this.tabStates.set(name, state);
+            this.loadingWrapperElements.delete(name);
             this.bindEditorTableUiStatePersistence(wrapperElement);
 
             // タブ生成時点でストアがDirty状態のテーブルは、タブボタンにDirtyマークを設定する。
@@ -3562,8 +3625,8 @@ export class Tab {
             // openTableAsync() で待機中の呼び出し元には、TabState の構築完了後に通知する。
             this.resolvePendingTableOpen(name, true);
         }).catch(() => {
-            // スキーマ読み込み失敗時にpending解決を通知する
-            this.loadingTabNames.delete(name);
+            // テーブル読み込み失敗時にpending解決を通知する
+            if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
             this.resolvePendingTableOpen(name, false);
         });
     }
