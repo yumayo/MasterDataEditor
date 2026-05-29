@@ -334,6 +334,11 @@ export class Sidebar {
      */
     notifyActiveTableChanged(tableName: string): void {
         if (!this.timelinePanel.isVisible()) return;
+        this.loadTimelineForTable(tableName);
+    }
+
+    private loadTimelineForTable(tableName: string): void {
+        this.uiStateStore.setTimelineTableName(tableName);
         this.timelinePanel.loadLogAsync(tableName).catch(e => { console.error('タイムラインログ取得失敗', e); });
     }
 
@@ -388,10 +393,13 @@ export class Sidebar {
 
         if (item === 'history') {
             this.timelinePanel.show();
-            // アクティブテーブルの git log を読み込む
+            // アクティブな通常テーブルを優先し、差分タブ等では最後に表示していたテーブルの履歴を復元する
             const activeTabName = this.tab.getActiveTabName();
-            if (activeTabName !== false) {
-                this.notifyActiveTableChanged(activeTabName);
+            const tableName = activeTabName !== false && this.tab.getTabStateByName(activeTabName) !== null
+                ? activeTabName
+                : this.uiStateStore.getState().sidebar.timelineTableName;
+            if (tableName !== null) {
+                this.loadTimelineForTable(tableName);
             }
             return;
         }

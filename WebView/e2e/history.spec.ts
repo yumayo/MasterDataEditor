@@ -264,10 +264,13 @@ test.describe('タイムラインパネル', () => {
                 const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
                 if (typeof raw !== 'string') return false;
                 const parsed = JSON.parse(raw) as {
+                    sidebar?: {activePanel?: string; timelineTableName?: string | null};
                     tabs?: {open?: Array<{name?: string; diff?: Record<string, unknown> | null}>; active?: string | null};
                 };
                 const diffTab = parsed.tabs?.open?.find(tab => tab.name === '差分: test');
-                return parsed.tabs?.active === '差分: test'
+                return parsed.sidebar?.activePanel === 'history'
+                    && parsed.sidebar.timelineTableName === 'test'
+                    && parsed.tabs?.active === '差分: test'
                     && diffTab?.diff?.kind === 'commitCompare'
                     && diffTab.diff.tableName === 'test'
                     && diffTab.diff.gitPath === 'data/test.csv'
@@ -289,6 +292,11 @@ test.describe('タイムラインパネル', () => {
             await expect(secondPage.locator('.tab-button[title="差分: test"]')).toBeVisible();
             await expect(secondPage.locator('.diff-pane-left .editor-table')).toContainText('item_b');
             await expect(secondPage.locator('.diff-pane-right .editor-table')).toContainText('item_c');
+            const restoredTimelinePanel = secondPage.locator('.timeline-panel');
+            await expect(restoredTimelinePanel).toBeVisible();
+            const restoredEntries = restoredTimelinePanel.locator('.timeline-entry');
+            await expect(restoredEntries).toHaveCount(3);
+            await expect(restoredEntries.nth(0).locator('.timeline-entry-message')).toHaveText('add item_c');
             await secondPage.close();
         },
     );

@@ -8,6 +8,7 @@ export type UiBottomPanelTab = 'problems' | 'debug';
 export interface UiSidebarState {
     width: number;
     activePanel: UiActivityBarItem;
+    timelineTableName: string | null;
 }
 
 export interface UiBottomPanelState {
@@ -123,6 +124,7 @@ const DEFAULT_UI_STATE: UiState = {
     sidebar: {
         width: DEFAULT_SIDEBAR_WIDTH,
         activePanel: 'files',
+        timelineTableName: null,
     },
     activityBar: {
         order: [...DEFAULT_ACTIVITY_BAR_ORDER],
@@ -465,6 +467,7 @@ function normalizeUiState(value: unknown): UiState {
         sidebar: {
             width: clampNumber(sidebar?.['width'], MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, defaults.sidebar.width),
             activePanel: normalizeActivityBarItem(sidebar?.['activePanel'], defaults.sidebar.activePanel),
+            timelineTableName: normalizeTabName(sidebar?.['timelineTableName']),
         },
         activityBar: {
             order: normalizeActivityBarOrder(activityBar?.['order']),
@@ -511,6 +514,11 @@ export class UiStateStore {
 
     setActiveActivityBarItem(item: UiActivityBarItem): void {
         this.state.sidebar.activePanel = item;
+        this.schedulePersist();
+    }
+
+    setTimelineTableName(tableName: string | null): void {
+        this.state.sidebar.timelineTableName = tableName === null ? null : normalizeTabName(tableName);
         this.schedulePersist();
     }
 
