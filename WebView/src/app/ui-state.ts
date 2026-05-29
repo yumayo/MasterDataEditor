@@ -67,10 +67,15 @@ export interface UiStoredTab {
 }
 
 export interface UiStoredDiffTab {
+    kind: 'gitStatus' | 'commitCompare';
     tableName: string;
     gitPath: string;
     isStaged: boolean;
     isNew: boolean;
+    leftCommit: string | null;
+    rightCommit: string | null;
+    leftLabel: string | null;
+    rightLabel: string | null;
 }
 
 export interface UiStoredViewPluginTab {
@@ -98,6 +103,8 @@ const DEFAULT_BOTTOM_PANEL_HEIGHT = 300;
 const MIN_BOTTOM_PANEL_HEIGHT = 80;
 const MAX_TAB_NAME_LENGTH = 256;
 const MAX_TAB_DESCRIPTION_LENGTH = 512;
+const MAX_DIFF_LABEL_LENGTH = 1024;
+const MAX_COMMIT_REF_LENGTH = 128;
 const MAX_STORED_TABS = 100;
 const MAX_FORM_PANEL_NAV_STACK = 20;
 const MAX_FORM_PANEL_LABEL_LENGTH = 512;
@@ -270,6 +277,10 @@ function normalizeLimitedString(value: unknown, maxLength: number): string | nul
     return value;
 }
 
+function normalizeCommitRef(value: unknown): string | null {
+    return normalizeLimitedString(value, MAX_COMMIT_REF_LENGTH);
+}
+
 function normalizeScrollPosition(value: unknown, fallback: UiScrollPosition = DEFAULT_SCROLL_POSITION): UiScrollPosition {
     const record = asRecord(value);
     if (record === null) return cloneScrollPosition(fallback);
@@ -358,11 +369,36 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
     const tableName = normalizeTabName(record['tableName']);
     const gitPath = normalizeTabName(record['gitPath']);
     if (tableName === null || gitPath === null) return null;
+    if (record['kind'] === 'commitCompare') {
+        const leftCommitRaw = record['leftCommit'];
+        const leftCommit = leftCommitRaw === null ? null : normalizeCommitRef(leftCommitRaw);
+        const rightCommit = normalizeCommitRef(record['rightCommit']);
+        const leftLabel = normalizeLimitedString(record['leftLabel'], MAX_DIFF_LABEL_LENGTH);
+        const rightLabel = normalizeLimitedString(record['rightLabel'], MAX_DIFF_LABEL_LENGTH);
+        if (leftCommitRaw !== null && leftCommit === null) return null;
+        if (rightCommit === null || leftLabel === null || rightLabel === null) return null;
+        return {
+            kind: 'commitCompare',
+            tableName,
+            gitPath,
+            isStaged: true,
+            isNew: record['isNew'] === true,
+            leftCommit,
+            rightCommit,
+            leftLabel,
+            rightLabel,
+        };
+    }
     return {
+        kind: 'gitStatus',
         tableName,
         gitPath,
         isStaged: record['isStaged'] === true,
         isNew: record['isNew'] === true,
+        leftCommit: null,
+        rightCommit: null,
+        leftLabel: null,
+        rightLabel: null,
     };
 }
 

@@ -14,7 +14,7 @@ import {Editor} from "../editor/editor";
 import {MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
 import {consumeSuppressedSelfSaveGitRefresh, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
-import type {UiStateStore} from "../app/ui-state";
+import type {UiStateStore, UiStoredDiffTab} from "../app/ui-state";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -355,7 +355,18 @@ export class Sidebar {
             ? tableName + ' (' + prevEntry.commitHash.substring(0, 7) + ' ' + prevEntry.message + ')'
             : tableName + ' (初回コミット)';
         const rightLabel = tableName + ' (' + shortHash + ' ' + entry.message + ')';
-        this.tab.openDiffTab(tableName, true, schemaJson, prevCsv, commitCsv, path, leftLabel, rightLabel);
+        const metadata: UiStoredDiffTab = {
+            kind: 'commitCompare',
+            tableName,
+            gitPath: path,
+            isStaged: true,
+            isNew: prevEntry === null,
+            leftCommit: prevEntry?.commitHash ?? null,
+            rightCommit: entry.commitHash,
+            leftLabel,
+            rightLabel,
+        };
+        this.tab.openDiffTab(tableName, true, schemaJson, prevCsv, commitCsv, path, leftLabel, rightLabel, prevEntry === null, metadata);
     }
 
     private switchPanel(item: ActivityBarItem): void {

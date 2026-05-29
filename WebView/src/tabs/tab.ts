@@ -1650,6 +1650,29 @@ export class Tab {
         const loadingToken = this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${metadata.tableName}`, false);
         if (loadingToken === false) return true;
         try {
+            if (metadata.kind === 'commitCompare') {
+                const rightCommit = metadata.rightCommit;
+                const leftLabel = metadata.leftLabel;
+                const rightLabel = metadata.rightLabel;
+                if (rightCommit === null || leftLabel === null || rightLabel === null) {
+                    this.finishDiffTabLoading(diffTabName, loadingToken, true);
+                    return false;
+                }
+                const [schemaJson, leftCsv, rightCsv] = await Promise.all([
+                    readFileAsync(`schema/${metadata.tableName}.json`),
+                    metadata.leftCommit === null
+                        ? Promise.resolve('')
+                        : this.fetchCsvAtCommitAsync(metadata.leftCommit, metadata.gitPath),
+                    this.fetchCsvAtCommitAsync(rightCommit, metadata.gitPath),
+                ]);
+                await this.createOrReplaceDiffTabAsync(
+                    diffTabName, metadata.tableName, true, schemaJson, leftCsv, rightCsv,
+                    metadata.gitPath, leftLabel, rightLabel, metadata.isNew,
+                    { loadingToken, metadata: {...metadata} }
+                );
+                return true;
+            }
+
             const restored = await this.resolveRestoredGitDiffEntryAsync(metadata);
             if (restored === null) {
                 this.finishDiffTabLoading(diffTabName, loadingToken, true);
@@ -2773,10 +2796,21 @@ export class Tab {
         const leftDisplay = this.formatCommitDisplay(leftCommit);
         const rightDisplay = this.formatCommitDisplay(rightCommit);
         const diffTabName = DIFF_TAB_PREFIX + tableName + ' (' + leftDisplay + ' \u2194 ' + rightDisplay + ')';
+        const metadata: UiStoredDiffTab = {
+            kind: 'commitCompare',
+            tableName,
+            gitPath: path,
+            isStaged: true,
+            isNew: false,
+            leftCommit,
+            rightCommit,
+            leftLabel: leftDisplay,
+            rightLabel: rightDisplay,
+        };
 
         await this.createOrReplaceDiffTabAsync(
-            diffTabName, tableName, true, schemaJson, leftCsv, rightCsv, '',
-            leftDisplay, rightDisplay, false
+            diffTabName, tableName, true, schemaJson, leftCsv, rightCsv, path,
+            leftDisplay, rightDisplay, false, { metadata }
         );
     }
 
@@ -3021,9 +3055,9 @@ export class Tab {
         leftLabel: string | null,
         rightLabel: string | null,
         isNew: boolean,
-        loadingToken?: number
+        options: { loadingToken?: number; metadata?: UiStoredDiffTab | null } = {}
     ): Promise<void> {
-        const token = loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
+        const token = options.loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
         if (token === false) return;
 
         const tabButton = this.tabButtons.find(btn => btn.name === diffTabName);
@@ -3056,8 +3090,24 @@ export class Tab {
             );
             this.diffTabs.set(diffTabName, diffTab);
             this.connectDiffTabUiState(diffTabName, diffTab);
-            if (leftLabel === null && rightLabel === null) {
-                this.diffTabMetadata.set(diffTabName, {tableName, gitPath, isStaged, isNew});
+            if (options.metadata !== undefined) {
+                if (options.metadata === null) {
+                    this.diffTabMetadata.delete(diffTabName);
+                } else {
+                    this.diffTabMetadata.set(diffTabName, {...options.metadata});
+                }
+            } else if (leftLabel === null && rightLabel === null) {
+                this.diffTabMetadata.set(diffTabName, {
+                    kind: 'gitStatus',
+                    tableName,
+                    gitPath,
+                    isStaged,
+                    isNew,
+                    leftCommit: null,
+                    rightCommit: null,
+                    leftLabel: null,
+                    rightLabel: null,
+                });
             } else {
                 this.diffTabMetadata.delete(diffTabName);
             }
@@ -3080,16 +3130,16 @@ export class Tab {
      * gitPath: gitルート相対のファイルパス（例: "subdir/data/quest_reward.csv"）。
      *          保存後の refreshGitDiffForDiffTabAsync で HEAD版CSV取得に使用する。
      */
-    async openDiffTabAsync(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false, loadingToken?: number): Promise<void> {
+    async openDiffTabAsync(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false, loadingToken?: number, metadata?: UiStoredDiffTab | null): Promise<void> {
         const diffTabName = DIFF_TAB_PREFIX + tableName;
         await this.createOrReplaceDiffTabAsync(
             diffTabName, tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath,
-            leftLabel, rightLabel, isNew, loadingToken
+            leftLabel, rightLabel, isNew, { loadingToken, metadata }
         );
     }
 
-    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false): void {
-        this.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath, leftLabel, rightLabel, isNew)
+    openDiffTab(tableName: string, isStaged: boolean, schemaJson: string, headCsv: string, currentCsv: string, gitPath: string, leftLabel: string | null, rightLabel: string | null, isNew: boolean = false, metadata?: UiStoredDiffTab | null): void {
+        this.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath, leftLabel, rightLabel, isNew, undefined, metadata)
             .catch((error: unknown) => {
                 console.error('[Tab] openDiffTabAsync failed:', error);
                 this.notification.show('Git差分タブの表示に失敗しました');

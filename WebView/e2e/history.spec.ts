@@ -3,6 +3,7 @@ import type { Page, Locator } from '@playwright/test';
 import {
     createDefaultFileSystem,
     installMockApiAsync,
+    readMockFileAsync,
 } from './fixtures/mock-api';
 
 // =============================================================================
@@ -63,11 +64,37 @@ const LOG_DATA: Record<string, LogEntry[]> = {
     ],
 };
 
+const COMMIT_FILES: Record<string, Record<string, string>> = {
+    "aaa1111": {
+        "data/test.csv": "id,name,value\n1,item_a,100",
+    },
+    "bbb2222": {
+        "data/test.csv": "id,name,value\n1,item_a,100\n2,item_b,250",
+    },
+    "ccc3333": {
+        "data/test.csv": "id,name,value\n1,item_a,100\n2,item_b,250\n3,item_c,300",
+    },
+};
+
+const UI_STATE_FILE = 'user:ui-state.json';
+
 // カスタムフィクスチャ -----------------------------------------------------------
 
 interface HistoryFixtures {
     /** git blame/log モックデータ注入済みでテーブル「test」を開いた状態 */
     historyTest: void;
+}
+
+async function installHistoryGitMocksAsync(page: Page): Promise<void> {
+    await page.addInitScript((args: {
+        blameData: Record<string, BlameEntry[]>;
+        logData: Record<string, LogEntry[]>;
+        commitFiles: Record<string, Record<string, string>>;
+    }) => {
+        (window as unknown as { __mockGitBlame: Record<string, BlameEntry[]> }).__mockGitBlame = args.blameData;
+        (window as unknown as { __mockGitLog: Record<string, LogEntry[]> }).__mockGitLog = args.logData;
+        (window as unknown as { __mockGitCommitFiles: Record<string, Record<string, string>> }).__mockGitCommitFiles = args.commitFiles;
+    }, { blameData: BLAME_DATA, logData: LOG_DATA, commitFiles: COMMIT_FILES });
 }
 
 /**
@@ -93,14 +120,8 @@ const test = base.extend<HistoryFixtures>({
             "20,other_b,800",
         ].join("\n");
 
-        // git blame/log モックデータをブラウザコンテキストに注入する
-        await page.addInitScript((args: {
-            blameData: Record<string, BlameEntry[]>;
-            logData: Record<string, LogEntry[]>;
-        }) => {
-            (window as unknown as { __mockGitBlame: Record<string, BlameEntry[]> }).__mockGitBlame = args.blameData;
-            (window as unknown as { __mockGitLog: Record<string, LogEntry[]> }).__mockGitLog = args.logData;
-        }, { blameData: BLAME_DATA, logData: LOG_DATA });
+        // git blame/log/commit files モックデータをブラウザコンテキストに注入する
+        await installHistoryGitMocksAsync(page);
 
         await installMockApiAsync(page, fs);
         await page.goto('/');
@@ -223,6 +244,52 @@ test.describe('タイムラインパネル', () => {
             await expect(entries).toHaveCount(3);
             await expect(entries.nth(0).locator('.timeline-entry-message')).toHaveText('add item_c');
             await expect(entries.nth(0).locator('.timeline-entry-author')).toHaveText('Charlie');
+        },
+    );
+
+    test(
+        'timelineで開いた過去コミット差分がui-stateに保存され起動時に復元されること',
+        async ({ page, historyTest: _historyTest }) => {
+            const historyButton = page.locator('.activity-bar-item[data-panel="history"]');
+            await historyButton.click();
+
+            const timelinePanel = page.locator('.timeline-panel');
+            await expect(timelinePanel).toBeVisible();
+            await timelinePanel.locator('.timeline-entry').nth(0).click();
+
+            await expect(page.locator('.diff-pane-left')).toBeVisible();
+            await expect(page.locator('.diff-pane-right')).toBeVisible();
+
+            await page.waitForFunction((path) => {
+                const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
+                if (typeof raw !== 'string') return false;
+                const parsed = JSON.parse(raw) as {
+                    tabs?: {open?: Array<{name?: string; diff?: Record<string, unknown> | null}>; active?: string | null};
+                };
+                const diffTab = parsed.tabs?.open?.find(tab => tab.name === '差分: test');
+                return parsed.tabs?.active === '差分: test'
+                    && diffTab?.diff?.kind === 'commitCompare'
+                    && diffTab.diff.tableName === 'test'
+                    && diffTab.diff.gitPath === 'data/test.csv'
+                    && diffTab.diff.leftCommit === 'bbb2222'
+                    && diffTab.diff.rightCommit === 'ccc3333'
+                    && diffTab.diff.leftLabel === 'test (bbb2222 update item_b)'
+                    && diffTab.diff.rightLabel === 'test (ccc3333 add item_c)';
+            }, UI_STATE_FILE, {timeout: 5000});
+
+            const savedUiState = await readMockFileAsync(page, UI_STATE_FILE);
+            const restoredFs = createDefaultFileSystem();
+            restoredFs[UI_STATE_FILE] = savedUiState;
+
+            const secondPage = await page.context().newPage();
+            await installHistoryGitMocksAsync(secondPage);
+            await installMockApiAsync(secondPage, restoredFs);
+            await secondPage.goto('/');
+
+            await expect(secondPage.locator('.tab-button[title="差分: test"]')).toBeVisible();
+            await expect(secondPage.locator('.diff-pane-left .editor-table')).toContainText('item_b');
+            await expect(secondPage.locator('.diff-pane-right .editor-table')).toContainText('item_c');
+            await secondPage.close();
         },
     );
 });
