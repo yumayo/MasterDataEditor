@@ -165,7 +165,7 @@ export class EditorTableRenderer {
             // columnMapping でDOM列→ストア（CSV）列に変換してセル値を取得する
             const csvColIndex = columnMapping[j];
             let value: string = '';
-            if (storeRows !== false && csvColIndex !== -1) {
+            if (storeRows !== false && csvColIndex !== -1 && storeRowIndex >= 0 && storeRowIndex < storeRows.length) {
                 const storeRow = storeRows[storeRowIndex];
                 if (csvColIndex < storeRow.length) {
                     value = storeRow[csvColIndex];

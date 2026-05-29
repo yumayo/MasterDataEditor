@@ -192,10 +192,26 @@ export class EditorTableStructure {
         let storeRowIndex: number;
         if (indices.length === 0) {
             storeRowIndex = 0;
-        } else if (domDataRowIndex < indices.length) {
-            storeRowIndex = indices[domDataRowIndex];
         } else {
-            storeRowIndex = indices[domDataRowIndex - 1] + 1;
+            const findNextValidIndex = (): number => {
+                for (let i = Math.max(0, domDataRowIndex); i < indices.length; i++) {
+                    if (indices[i] >= 0) return indices[i];
+                }
+                return -1;
+            };
+            const findPreviousValidIndex = (): number => {
+                for (let i = Math.min(domDataRowIndex - 1, indices.length - 1); i >= 0; i--) {
+                    if (indices[i] >= 0) return indices[i];
+                }
+                return -1;
+            };
+            const nextValidIndex = findNextValidIndex();
+            if (nextValidIndex >= 0) {
+                storeRowIndex = nextValidIndex;
+            } else {
+                const previousValidIndex = findPreviousValidIndex();
+                storeRowIndex = previousValidIndex >= 0 ? previousValidIndex + 1 : 0;
+            }
         }
         this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
         // ソート時のstoreRowIndex逆引きのために新しい行にdata-store-indexを付与する
@@ -362,18 +378,20 @@ export class EditorTableStructure {
         const indices = this.table.getStoreRowIndices();
         if (domDataRowIndex >= 0 && domDataRowIndex < indices.length) {
             const removedStoreIndex = indices[domDataRowIndex];
-            this.table.getStore().removeRow(this.table.tableName, removedStoreIndex);
             indices.splice(domDataRowIndex, 1);
-            for (let i = domDataRowIndex; i < indices.length; i++) {
-                if (indices[i] > removedStoreIndex) {
-                    indices[i] -= 1;
-                    // data-store-index DOM属性もストアインデックスに合わせて更新する
-                    const domRow = this.table.getRowElementForInsert(i + 1);
-                    if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+            if (removedStoreIndex >= 0) {
+                this.table.getStore().removeRow(this.table.tableName, removedStoreIndex);
+                for (let i = domDataRowIndex; i < indices.length; i++) {
+                    if (indices[i] > removedStoreIndex) {
+                        indices[i] -= 1;
+                        // data-store-index DOM属性もストアインデックスに合わせて更新する
+                        const domRow = this.table.getRowElementForInsert(i + 1);
+                        if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                    }
                 }
+                // ソート中の場合、originalIndices も同期する（行削除でストアインデックスがずれるため）
+                this.table.notifySortRowDeleted(removedStoreIndex);
             }
-            // ソート中の場合、originalIndices も同期する（行削除でストアインデックスがずれるため）
-            this.table.notifySortRowDeleted(removedStoreIndex);
         }
         // 差分ビューの右ペインでは DOM 行の削除を DiffTab に委譲する。
         // DiffTab.notifyRightPaneRowDeleted は以下の2つのケースを DOM 状態で判断する:

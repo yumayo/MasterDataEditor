@@ -1527,8 +1527,10 @@ export class EditorTable {
      * Selection の列全選択・行全選択など、全行を対象とする操作で使用する。
      */
     getLogicalRowCount(): number {
-        // getFilteredDataRowCount() = フィルター後のデータ行数, +1 = バッファ行, +1 = 列ヘッダー行
-        return this.getFilteredDataRowCount() + 1 + 1;
+        // getFilteredDataRowCount() = フィルター後のデータ行数, +1 = 列ヘッダー行
+        // 通常テーブルのみ末尾バッファ行を含める。差分テーブルは実データ行のみを持つ。
+        const bufferRowCount = this.diffTab === false ? 1 : 0;
+        return this.getFilteredDataRowCount() + bufferRowCount + 1;
     }
 
     /**
