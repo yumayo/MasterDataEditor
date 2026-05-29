@@ -2567,34 +2567,40 @@ export class EditorTable {
         movedStoreRowIndices.splice(toDomDataRowIndex, 0, movedStoreRowIndex);
         if (!isCompleteStoreRowPermutation(movedStoreRowIndices, storeRows.length)) return;
         this.store.replaceAllRows(this.tableName, movedStoreRowIndices.map(storeRowIndex => storeRows[storeRowIndex]));
-        // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
-        const fromDomIndex = fromDomDataRowIndex + 1;
-        const toDomIndex = toDomDataRowIndex + 1;
-        const rowElement = this.getRowElement(fromDomIndex);
-        if (!rowElement) throw new Error(`[EditorTable.moveRowInternal] 移動元のDOM行が存在しません: fromDomIndex=${fromDomIndex}`);
-        rowElement.remove();
-        // 挿入位置のDOM要素（fromを抜いた後のインデックス）
-        const insertBefore = this.getRowElement(toDomIndex);
-        if (insertBefore) {
-            this.gridElement.insertBefore(rowElement, insertBefore);
-        } else {
-            // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
-            this.virtualScroll.appendDataRow(rowElement);
-        }
         // storeRowIndices を再構築する
         // 通常テーブル: 移動後は storeRowIndices[i] = i となる
         // ミニテーブルでは使わない前提（ドラッグ移動はミニテーブル非対応）
         for (let i = 0; i < this.storeRowIndices.length; i++) {
             this.storeRowIndices[i] = i;
         }
-        // data-store-index DOM属性も更新する
-        for (let i = 0; i < this.storeRowIndices.length; i++) {
-            const domRow = this.getRowElement(i + 1);
-            if (domRow) domRow.dataset.storeIndex = String(i);
+        if (this.virtualScroll.handlesScrollEvents()) {
+            // 仮想スクロールの行は absolute 配置の top で描画されるため、DOM順だけを入れ替えても
+            // 見た目の行位置は変わらない。ストア順更新後に表示行を作り直して top と内容を同期する。
+            this.forceVirtualScrollFullRerender();
+        } else {
+            // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
+            const fromDomIndex = fromDomDataRowIndex + 1;
+            const toDomIndex = toDomDataRowIndex + 1;
+            const rowElement = this.getRowElement(fromDomIndex);
+            if (!rowElement) throw new Error(`[EditorTable.moveRowInternal] 移動元のDOM行が存在しません: fromDomIndex=${fromDomIndex}`);
+            rowElement.remove();
+            // 挿入位置のDOM要素（fromを抜いた後のインデックス）
+            const insertBefore = this.getRowElement(toDomIndex);
+            if (insertBefore) {
+                this.gridElement.insertBefore(rowElement, insertBefore);
+            } else {
+                // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
+                this.virtualScroll.appendDataRow(rowElement);
+            }
+            // data-store-index DOM属性も更新する
+            for (let i = 0; i < this.storeRowIndices.length; i++) {
+                const domRow = this.getRowElement(i + 1);
+                if (domRow) domRow.dataset.storeIndex = String(i);
+            }
+            // 行番号を再ナンバリングする
+            const startIndex = Math.min(fromDomIndex, toDomIndex);
+            this.structure.renumberRowsFrom(startIndex);
         }
-        // 行番号を再ナンバリングする
-        const startIndex = Math.min(fromDomIndex, toDomIndex);
-        this.structure.renumberRowsFrom(startIndex);
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
         // 選択範囲を移動先に更新する

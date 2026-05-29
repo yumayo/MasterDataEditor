@@ -41,6 +41,26 @@ async function getRowIdValuesAsync(table: Locator, count: number): Promise<strin
 }
 
 /**
+ * ID列セルの画面上のtop座標を取得する。
+ * 仮想スクロールの行はabsolute配置のため、DOM順だけでは実際の表示順を検証できない。
+ */
+async function getIdCellViewportTopsAsync(table: Locator): Promise<Record<string, number>> {
+    return table.evaluate((tableElement) => {
+        const result: Record<string, number> = {};
+        const cells = Array.from(
+            tableElement.querySelectorAll<HTMLElement>(
+                '.editor-table-row:not(.editor-table-empty-row) .editor-table-cell[data-col="0"]'
+            )
+        );
+        for (const cell of cells) {
+            const value = cell.textContent?.trim() ?? '';
+            if (value !== '') result[value] = cell.getBoundingClientRect().top;
+        }
+        return result;
+    });
+}
+
+/**
  * 行ヘッダーをドラッグして行を移動する
  * fromRowIndex, toRowIndex: 0始まり（ヘッダー行を除くデータ行のインデックス）
  * toRowIndex の行の上端にドロップする（その位置に挿入される）
@@ -149,6 +169,18 @@ test.describe('行ドラッグ移動', () => {
         expect(afterRow1).toEqual(['1', 'item_a', '100']);
         const afterRow2 = await getRowCellTextsAsync(table, 2);
         expect(afterRow2).toEqual(['2', 'item_b', '200']);
+    });
+
+    test('行移動直後に画面上の行位置も入れ替わる', async ({ page, mockFileSystem }) => {
+        const table = await openTableAsync(page);
+
+        await selectRowAsync(table, 2);
+        await dragRowAsync(table, 2, 0);
+
+        await expect.poll(async () => {
+            const tops = await getIdCellViewportTopsAsync(table);
+            return tops['3'] < tops['1'] && tops['1'] < tops['2'];
+        }).toBe(true);
     });
 
     test('行移動後にCtrl+Zでundo可能', async ({ page, mockFileSystem }) => {
