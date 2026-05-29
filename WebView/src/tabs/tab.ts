@@ -61,6 +61,7 @@ type TabScrollPositionPreference =
     | { kind: 'middle'; ratio: number };
 
 type FormPanelVisibilityListener = (visible: boolean) => void;
+type ActiveTabChangeListener = () => void;
 
 export interface FormPanelState {
     navStack: FormPanelNavEntry[];
@@ -295,6 +296,9 @@ export class Tab {
     /** FormPanel 表示/非表示変更時のリスナー（Toolbar のアクティブ状態連動用） */
     private formPanelVisibilityListener: FormPanelVisibilityListener | false;
 
+    /** アクティブタブ変更時のリスナー（Toolbar の利用可否更新用） */
+    private activeTabChangeListener: ActiveTabChangeListener | false;
+
     /**
      * バリデーションパネル（main.tsのconnectValidationPanelで設定される。未設定はfalse）
      * テーブルを開く際にスキーマを登録し、EditorTable に接続するために使用する。
@@ -400,6 +404,7 @@ export class Tab {
         this.currentFormPanel = false;
         this.defaultRelationsPanelVisible = false;
         this.formPanelVisibilityListener = false;
+        this.activeTabChangeListener = false;
         this.validationPanel = false;
         this.errorTooltip = false;
         this.editorApi = false;
@@ -546,6 +551,12 @@ export class Tab {
     /** FormPanel 表示/非表示変更時のリスナーを設定する（Toolbar から呼ばれる） */
     connectFormPanelVisibilityListener(listener: FormPanelVisibilityListener): void {
         this.formPanelVisibilityListener = listener;
+    }
+
+    /** アクティブタブ変更時のリスナーを設定する（Toolbar から呼ばれる） */
+    connectActiveTabChangeListener(listener: ActiveTabChangeListener): void {
+        this.activeTabChangeListener = listener;
+        this.notifyActiveTabChangeListener();
     }
 
     /**
@@ -918,6 +929,50 @@ export class Tab {
         return this.activeTabName;
     }
 
+    /**
+     * Toolbar の各ボタンを現在のアクティブタブで使えるかどうかを返す。
+     * 通常の EditorTable タブだけ true。差分・View・設定・テーブル定義・読み込み中タブでは false。
+     */
+    isToolbarAvailableForActiveTab(): boolean {
+        const activeButtonName = this.getActiveTabButtonName();
+        return activeButtonName !== false
+            && this.activeTabName === activeButtonName
+            && this.tabStates.has(activeButtonName);
+    }
+
+    /**
+     * RelationsPanel ボタンは、通常 EditorTable タブに加えてタブ未選択時にも使える。
+     * タブ未選択時のクリックは、次に開くテーブルのデフォルト表示状態を切り替える。
+     */
+    isRelationsToolbarAvailable(): boolean {
+        return this.isToolbarAvailableForActiveTab()
+            || (this.activeTabName === false && this.getActiveTabButtonName() === false);
+    }
+
+    /** 現在のアクティブタブでフォームビューが表示されているかどうかを返す。 */
+    isFormPanelVisibleForActiveTab(): boolean {
+        return this.isToolbarAvailableForActiveTab() && this.currentFormPanel !== false;
+    }
+
+    private getActiveTabButtonName(): string | false {
+        const activeButton = this.tabButtons.find(button => button.element.classList.contains('tab-button-active'));
+        return activeButton === undefined ? false : activeButton.name;
+    }
+
+    private setActiveTabName(name: string | false): void {
+        const changed = this.activeTabName !== name;
+        this.activeTabName = name;
+        if (changed) {
+            this.notifyActiveTabChangeListener();
+        }
+    }
+
+    private notifyActiveTabChangeListener(): void {
+        if (this.activeTabChangeListener !== false) {
+            this.activeTabChangeListener();
+        }
+    }
+
     private cloneUiScrollPosition(position: UiScrollPosition): UiScrollPosition {
         return {scrollLeft: position.scrollLeft, scrollTop: position.scrollTop};
     }
@@ -1166,7 +1221,7 @@ export class Tab {
      * アクティブタブ名を設定する（サブモジュール用）
      */
     setActiveTabNameInternal(name: string): void {
-        this.activeTabName = name;
+        this.setActiveTabName(name);
         this.persistTabs();
     }
 
@@ -1753,7 +1808,7 @@ export class Tab {
         if (this.isViewPluginTabName(name)) {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
-                this.activeTabName = false;
+                this.setActiveTabName(false);
             }
             this.destroyViewPluginTab(name);
         }
@@ -1762,7 +1817,7 @@ export class Tab {
         if (name.startsWith(DIFF_TAB_PREFIX)) {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
-                this.activeTabName = false;
+                this.setActiveTabName(false);
             }
             const diffTabToDestroy = this.diffTabs.get(name);
             if (diffTabToDestroy !== undefined) {
@@ -1969,7 +2024,7 @@ export class Tab {
             // （deactivateTabState() が呼ばれていないため state.paneStack には保存されていない）
             this.destroyExtraRelationsPanels(this.paneStack);
             this.paneStack = [];
-            this.activeTabName = false;
+            this.setActiveTabName(false);
         } else if (state) {
             // 非アクティブタブ閉じ時は state.paneStack に保存された追加RP（[2]以降）を破棄する
             // （deactivateTabState() で suspend() のみで保持されているため、ここで完全破棄する）
@@ -2024,6 +2079,7 @@ export class Tab {
         // タブを有効化し、タブボタンが可視領域外であればスクロールして表示する
         tabButton.enable();
         tabButton.scrollIntoViewIfNeeded();
+        this.notifyActiveTabChangeListener();
         this.hideLoadingWrappersExcept(name);
 
         // サイドバーの選択状態をアクティブタブに同期する
@@ -2115,7 +2171,7 @@ export class Tab {
         // 既存のタブ状態があればそれを表示
         const existingState = this.tabStates.get(name);
         if (existingState) {
-            this.activeTabName = name;
+            this.setActiveTabName(name);
             this.persistTabs();
             this.activateTabState(existingState);
             this.sidebar.notifyActiveTableChanged(name);
@@ -2234,7 +2290,7 @@ export class Tab {
             this.remountViewPluginTab(tabName);
         }
         if (removedActiveTab) {
-            this.activeTabName = false;
+            this.setActiveTabName(false);
             this.activateFirstAvailableRestoredTab();
         } else if (this.activeTabName !== false && this.isViewPluginTabName(this.activeTabName)) {
             this.enableTabButton(this.activeTabName);
@@ -2298,7 +2354,7 @@ export class Tab {
         }
         this.hideAllViewPluginTabs();
 
-        this.activeTabName = DEBUG_API_DETAIL_TAB_NAME;
+        this.setActiveTabName(DEBUG_API_DETAIL_TAB_NAME);
         this.persistTabs();
 
         const detail = this.pendingDebugApiDetail;
@@ -2355,7 +2411,7 @@ export class Tab {
         this.hidePersistentSpecialTabWrappers();
         this.hideAllViewPluginTabs();
 
-        this.activeTabName = tabName;
+        this.setActiveTabName(tabName);
         this.persistTabs();
 
         const pluginId = this.viewPluginIdsByTabName.get(tabName);
@@ -2520,7 +2576,7 @@ export class Tab {
         }
         this.hideAllViewPluginTabs();
 
-        this.activeTabName = TABLE_DEFINITION_TAB_NAME;
+        this.setActiveTabName(TABLE_DEFINITION_TAB_NAME);
         this.persistTabs();
 
         // 既存テーブル編集時はタブボタンの表示テキストをテーブル名に更新する（新規作成時は「新しいテーブル」のまま）
@@ -2825,7 +2881,7 @@ export class Tab {
             }
         }
         // アクティブ名を設定タブ名に更新する（getActiveTabName() で '設定' が返るようにする）
-        this.activeTabName = SETTINGS_TAB_NAME;
+        this.setActiveTabName(SETTINGS_TAB_NAME);
         this.persistTabs();
 
         // SettingsPanel の TabButton を取得する
@@ -3063,7 +3119,7 @@ export class Tab {
         this.hidePersistentSpecialTabWrappers();
         this.hideAllViewPluginTabs();
 
-        this.activeTabName = diffTabName;
+        this.setActiveTabName(diffTabName);
         this.persistTabs();
 
         // RelationsPanel を非表示にする（差分ビューに不要）
@@ -3097,7 +3153,7 @@ export class Tab {
         // アクティブタブが差分タブの場合は leaveSettingsMode を一度だけ呼んで状態を復元する
         if (this.activeTabName !== false && this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             this.editor.leaveSettingsMode();
-            this.activeTabName = false;
+            this.setActiveTabName(false);
         }
         // 全差分タブを直接破棄する（closeTab経由だと enterSettingsMode/leaveSettingsMode が中間的に呼ばれるため）
         for (const name of diffTabNames) {
@@ -3504,7 +3560,7 @@ export class Tab {
         if (!removeTabIfEmpty || this.diffTabs.has(diffTabName)) return true;
         if (this.activeTabName === diffTabName) {
             this.editor.leaveSettingsMode();
-            this.activeTabName = false;
+            this.setActiveTabName(false);
         }
         this.removeTabButton(diffTabName);
         return true;
@@ -3527,7 +3583,7 @@ export class Tab {
         this.diffTabs.forEach(diffTab => diffTab.hide());
         this.relationsPanel.disconnectEditorTable();
         this.editor.enterSettingsMode();
-        this.activeTabName = diffTabName;
+        this.setActiveTabName(diffTabName);
         this.persistTabs(false);
         this.showLoadingWrapper(diffTabName);
     }
@@ -3705,7 +3761,7 @@ export class Tab {
                 }
 
                 // アクティブ化（state.paneStack / state.viewIndex を this フィールドに復元する）
-                this.activeTabName = name;
+                this.setActiveTabName(name);
                 this.persistTabs();
                 this.activateTabState(state);
                 this.sidebar.notifyActiveTableChanged(name);

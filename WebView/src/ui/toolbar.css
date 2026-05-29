@@ -12,6 +12,10 @@
     background-color: var(--background-color);
 }
 
+.toolbar[hidden] {
+    display: none;
+}
+
 .toolbar-button {
     display: flex;
     align-items: center;
@@ -26,12 +30,26 @@
     color: var(--font-color);
 }
 
+.toolbar-button[hidden] {
+    display: none;
+}
+
 .toolbar-button:hover {
     background-color: rgba(128, 128, 128, 0.2);
 }
 
 .toolbar-button:active {
     background-color: rgba(128, 128, 128, 0.3);
+}
+
+.toolbar-button:disabled {
+    cursor: default;
+    opacity: 0.35;
+}
+
+.toolbar-button:disabled:hover,
+.toolbar-button:disabled:active {
+    background: none;
 }
 
 .toolbar-icon {

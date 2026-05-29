@@ -8,24 +8,33 @@ import {EditorTable} from "../editor/editor-table";
  * 責務: アクティブなテーブルに対するツール操作のUIを提供する
  */
 export class Toolbar {
+    private readonly containerElement: HTMLElement;
     private readonly tab: Tab;
     private readonly editor: Editor;
+    private readonly csvExportButton: HTMLButtonElement;
     private readonly formToggleButton: HTMLButtonElement;
     private readonly relationsToggleButton: HTMLButtonElement;
+    private readonly buttons: HTMLButtonElement[];
 
     constructor(containerElement: HTMLElement, tab: Tab, editor: Editor) {
+        this.containerElement = containerElement;
         this.tab = tab;
         this.editor = editor;
 
         // CSV エクスポートボタン
         const csvExportButton = this.createButton('CSVをクリップボードにコピー', createCopyIcon());
+        csvExportButton.classList.add('toolbar-button-csv-export');
         csvExportButton.addEventListener('click', () => this.exportCsvToClipboard(csvExportButton));
         containerElement.appendChild(csvExportButton);
+        this.csvExportButton = csvExportButton;
 
         // FormPanel トグルボタン
         const formToggle = this.createButton('フォームビューを開く/閉じる', createFormIcon());
         formToggle.classList.add('toolbar-button-form-toggle');
-        formToggle.addEventListener('click', () => { this.tab.toggleFormPanelForActiveRow(); });
+        formToggle.addEventListener('click', () => {
+            if (!this.tab.isToolbarAvailableForActiveTab()) return;
+            this.tab.toggleFormPanelForActiveRow();
+        });
         containerElement.appendChild(formToggle);
         this.formToggleButton = formToggle;
 
@@ -33,26 +42,28 @@ export class Toolbar {
         const relationsToggle = this.createButton('RelationsPanel を開く/閉じる', createRelationsIcon());
         relationsToggle.classList.add('toolbar-button-relations-toggle');
         // 初期状態: RelationsPanel は非表示なのでアクティブクラスは付与しない
-        relationsToggle.addEventListener('click', () => { this.tab.toggleRelationsPanelForActiveTab(); });
+        relationsToggle.addEventListener('click', () => {
+            if (!this.tab.isRelationsToolbarAvailable()) return;
+            this.tab.toggleRelationsPanelForActiveTab();
+        });
         containerElement.appendChild(relationsToggle);
         this.relationsToggleButton = relationsToggle;
+        this.buttons = [this.csvExportButton, this.formToggleButton, this.relationsToggleButton];
 
         // Editor から表示/非表示変更の通知を受け取り、ボタンのアクティブ状態を連動させる
-        this.editor.connectVisibilityListener((visible: boolean) => {
-            if (visible) {
-                this.relationsToggleButton.classList.add('toolbar-button-relations-active');
-            } else {
-                this.relationsToggleButton.classList.remove('toolbar-button-relations-active');
-            }
+        this.editor.connectVisibilityListener(() => {
+            this.refreshButtonStates();
         });
 
-        this.tab.connectFormPanelVisibilityListener((visible: boolean) => {
-            if (visible) {
-                this.formToggleButton.classList.add('toolbar-button-form-active');
-            } else {
-                this.formToggleButton.classList.remove('toolbar-button-form-active');
-            }
+        this.tab.connectFormPanelVisibilityListener(() => {
+            this.refreshButtonStates();
         });
+
+        this.tab.connectActiveTabChangeListener(() => {
+            this.refreshButtonStates();
+        });
+
+        this.refreshButtonStates();
     }
 
     private createButton(title: string, icon: SVGSVGElement): HTMLButtonElement {
@@ -64,6 +75,7 @@ export class Toolbar {
     }
 
     private exportCsvToClipboard(button: HTMLButtonElement): void {
+        if (!this.tab.isToolbarAvailableForActiveTab()) return;
         const state = this.tab.getActiveTabState();
         if (!state) return;
         const csv = buildCsvWithHints(state.editorTable);
@@ -75,6 +87,29 @@ export class Toolbar {
         }).catch(err => {
             console.error('クリップボードへの書き込みに失敗しました:', err);
         });
+    }
+
+    private refreshButtonStates(): void {
+        const tableButtonsEnabled = this.tab.isToolbarAvailableForActiveTab();
+        const relationsButtonEnabled = this.tab.isRelationsToolbarAvailable();
+        this.updateButtonVisibility(this.csvExportButton, tableButtonsEnabled);
+        this.updateButtonVisibility(this.formToggleButton, tableButtonsEnabled);
+        this.updateButtonVisibility(this.relationsToggleButton, relationsButtonEnabled);
+        this.containerElement.hidden = !this.buttons.some(button => !button.hidden);
+        this.formToggleButton.classList.toggle(
+            'toolbar-button-form-active',
+            tableButtonsEnabled && this.tab.isFormPanelVisibleForActiveTab()
+        );
+        this.relationsToggleButton.classList.toggle(
+            'toolbar-button-relations-active',
+            relationsButtonEnabled && this.editor.isRelationsPanelVisible()
+        );
+    }
+
+    private updateButtonVisibility(button: HTMLButtonElement, enabled: boolean): void {
+        button.hidden = !enabled;
+        button.disabled = !enabled;
+        button.setAttribute('aria-disabled', enabled ? 'false' : 'true');
     }
 }
 
