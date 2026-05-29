@@ -71,6 +71,21 @@ function createResizeScrollbarFileSystem(): MockFileSystem {
     };
 }
 
+function createResizeScrollbarHeadCsv(): string {
+    const rows = createResizeScrollbarFileSystem()['data/chara.csv'].split('\n');
+    rows[1] = rows[1].replace('chara_1', 'chara_1_head');
+    return rows.join('\n');
+}
+
+const RESIZE_SCROLLBAR_GIT_STATUS = {
+    changes: [{ path: 'data/chara.csv', tableName: 'chara', isNew: false }],
+    staged: [] as { path: string; tableName: string; isNew: boolean }[],
+};
+
+const RESIZE_SCROLLBAR_HEAD_FILES: Record<string, string> = {
+    'data/chara.csv': createResizeScrollbarHeadCsv(),
+};
+
 test('通常テーブルでは外側スクロールバーだけを隠し、右下ビューポートの横スクロールバーは残すこと', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await installMockApiAsync(page, createFileSystem());
@@ -247,6 +262,83 @@ test('画面幅を縮めたとき通常テーブルの横カスタムスクロ�
         const thumb = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
         if (scrollbar === null) throw new Error('editor-table-logical-horizontal-scrollbar が見つかりません');
         if (thumb === null) throw new Error('editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+        return {
+            trackWidth: scrollbar.clientWidth,
+            thumbWidth: thumb.offsetWidth,
+        };
+    });
+
+    expect(resized.trackWidth).toBeGreaterThan(0);
+    expect(resized.thumbWidth).toBeGreaterThan(0);
+    expect(resized.thumbWidth).toBeLessThan(resized.trackWidth);
+});
+
+test('画面幅を縮めたとき差分タブの横カスタムスクロールバーが再表示されること', async ({ page }) => {
+    await page.setViewportSize({ width: 4000, height: 720 });
+    await page.addInitScript((args: {
+        status: typeof RESIZE_SCROLLBAR_GIT_STATUS;
+        headFiles: Record<string, string>;
+    }) => {
+        (window as unknown as { __mockGitStatus: object }).__mockGitStatus = args.status;
+        (window as unknown as { __mockGitHeadFiles: Record<string, string> }).__mockGitHeadFiles = args.headFiles;
+    }, { status: RESIZE_SCROLLBAR_GIT_STATUS, headFiles: RESIZE_SCROLLBAR_HEAD_FILES });
+    await installMockApiAsync(page, createResizeScrollbarFileSystem());
+    await page.goto('/');
+
+    await page.locator('[data-panel="sourceControl"]').click();
+    await page.locator('.source-control-changes-section').getByText('chara').click();
+    await expect(page.locator('.diff-tab')).toBeVisible();
+
+    const initial = await page.evaluate(async () => {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const pane = document.querySelector('.diff-tab-wrapper:not([style*="display: none"]) .diff-pane-left') as HTMLElement | null;
+        const viewport = pane?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+        const scrollbar = pane?.querySelector('.editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const thumb = pane?.querySelector('.editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+        if (viewport === null) throw new Error('差分タブ左ペインの editor-table-main-viewport が見つかりません');
+        if (scrollbar === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (thumb === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+        return {
+            hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+            disabled: scrollbar.classList.contains('editor-table-logical-horizontal-scrollbar--disabled'),
+            thumbWidth: thumb.offsetWidth,
+        };
+    });
+
+    expect(initial.hasHorizontalOverflow).toBeFalsy();
+    expect(initial.disabled).toBeTruthy();
+    expect(initial.thumbWidth).toBe(0);
+
+    await page.setViewportSize({ width: 960, height: 540 });
+
+    await expect.poll(async () => {
+        return await page.evaluate(async () => {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+            const pane = document.querySelector('.diff-tab-wrapper:not([style*="display: none"]) .diff-pane-left') as HTMLElement | null;
+            const viewport = pane?.querySelector('.editor-table-main-viewport') as HTMLElement | null;
+            const scrollbar = pane?.querySelector('.editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+            const thumb = pane?.querySelector('.editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+            if (viewport === null) throw new Error('差分タブ左ペインの editor-table-main-viewport が見つかりません');
+            if (scrollbar === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar が見つかりません');
+            if (thumb === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
+            return {
+                hasHorizontalOverflow: viewport.scrollWidth > viewport.clientWidth,
+                disabled: scrollbar.classList.contains('editor-table-logical-horizontal-scrollbar--disabled'),
+                trackWidth: scrollbar.clientWidth,
+                thumbWidth: thumb.offsetWidth,
+            };
+        });
+    }).toMatchObject({
+        hasHorizontalOverflow: true,
+        disabled: false,
+    });
+
+    const resized = await page.evaluate(() => {
+        const pane = document.querySelector('.diff-tab-wrapper:not([style*="display: none"]) .diff-pane-left') as HTMLElement | null;
+        const scrollbar = pane?.querySelector('.editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
+        const thumb = pane?.querySelector('.editor-table-logical-horizontal-scrollbar-thumb') as HTMLElement | null;
+        if (scrollbar === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar が見つかりません');
+        if (thumb === null) throw new Error('差分タブ左ペインの editor-table-logical-horizontal-scrollbar-thumb が見つかりません');
         return {
             trackWidth: scrollbar.clientWidth,
             thumbWidth: thumb.offsetWidth,

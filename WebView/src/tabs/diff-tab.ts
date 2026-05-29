@@ -64,6 +64,8 @@ export class DiffTab {
     /** ドラッグ操作中のリスナー参照（destroy() 時に強制解除するため保持） */
     private dragMouseMove: ((e: MouseEvent) => void) | null;
     private dragMouseUp: (() => void) | null;
+    /** ペイン幅変更後のレイアウト再計算をまとめる requestAnimationFrame ID */
+    private layoutRefreshFrame: number | false;
 
     /** hide() 時に保存するスクロール位置（show() で復元して行ヘッダーずれを防止） */
     private savedScrollLeft: number;
@@ -136,6 +138,7 @@ export class DiffTab {
         this.isSyncing = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
+        this.layoutRefreshFrame = false;
         this.savedScrollLeft = 0;
         this.savedScrollTop = 0;
         // diffクラスデータモデルを初期化する（applyDiffClassesで構築される）
@@ -231,6 +234,7 @@ export class DiffTab {
                 // 20%〜80%にクランプし、小数点1桁に丸める
                 const percentage = Math.round(Math.max(20, Math.min(80, (newWidth / rect.width) * 100)) * 10) / 10;
                 leftPaneSlot.style.flexBasis = `${percentage}%`;
+                this.scheduleLayoutRefresh();
             };
 
             const onMouseUp = () => {
@@ -241,6 +245,7 @@ export class DiffTab {
                 // ドラッグ終了時に参照をクリアする
                 this.dragMouseMove = null;
                 this.dragMouseUp = null;
+                this.scheduleLayoutRefresh();
             };
 
             // ドラッグ中のリスナー参照を保持する（destroy() 時の強制解除のため）
@@ -776,15 +781,28 @@ export class DiffTab {
         // display:none 中にブラウザがリセットしたスクロール位置を左右両ペインに復元する
         this.leftEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
         this.rightEditorTable.restoreScrollPosition(this.savedScrollTop, this.savedScrollLeft);
+        this.refreshLayoutAfterResize();
+    }
+
+    scheduleLayoutRefresh(): void {
+        if (this.layoutRefreshFrame !== false) return;
+        this.layoutRefreshFrame = requestAnimationFrame(() => {
+            this.layoutRefreshFrame = false;
+            this.refreshLayoutAfterResize();
+        });
+    }
+
+    refreshLayoutAfterResize(): void {
+        if (this.wrapperElement.style.display === 'none') return;
         // ラベルはテーブルホストの外側に置くため、列ヘッダー行の追加オフセットは不要。
         this.applyLabelOffsetToColumnHeaders();
-        // 仮想スクロールの再計算（display:none → display:'' でビューポートサイズが変わるため）
+        // ビューポートサイズ変更後に仮想スクロール範囲と独自スクロールバーを再計算する。
         this.leftEditorTable.forceVirtualScrollRecalculate();
         this.rightEditorTable.forceVirtualScrollRecalculate();
-        // display:none 解除後にSelectionの視覚位置をレイアウトに基づいて更新する
+        // Selectionの視覚位置をレイアウトに基づいて更新する
         this.leftEditorTable.refreshSelectionDisplay();
         this.rightEditorTable.refreshSelectionDisplay();
-        // display:none 解除後にDOMレイアウトが確定するため、差分マーカーを計算・描画する
+        // DOMレイアウトが確定した状態で差分マーカーを再描画する
         this.refreshDiffMarkers();
     }
 
@@ -828,6 +846,10 @@ export class DiffTab {
         if (this.dragMouseUp !== null) {
             document.removeEventListener('mouseup', this.dragMouseUp);
             this.dragMouseUp = null;
+        }
+        if (this.layoutRefreshFrame !== false) {
+            cancelAnimationFrame(this.layoutRefreshFrame);
+            this.layoutRefreshFrame = false;
         }
         // ドラッグ操作中に destroy() が呼ばれた場合のカーソル・ユーザー選択スタイルをリセットする
         document.body.style.cursor = '';

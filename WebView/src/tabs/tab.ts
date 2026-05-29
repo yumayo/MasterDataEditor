@@ -594,6 +594,11 @@ export class Tab {
 
     private refreshActiveEditorTableLayout(): void {
         if (this.activeTabName === false) return;
+        if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
+            const diffTab = this.diffTabs.get(this.activeTabName);
+            if (diffTab !== undefined) diffTab.refreshLayoutAfterResize();
+            return;
+        }
         const activeState = this.tabStates.get(this.activeTabName);
         if (!activeState) return;
         const editorTable = activeState.editorTable;
