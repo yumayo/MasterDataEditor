@@ -42,7 +42,7 @@ import {ValidationError} from "../validation/validation-engine";
 import {DiffTab} from "../tabs/diff-tab";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 import {ColumnSorter, SerializedSortKey} from "./column-sorter";
-import {ColumnFilter, SerializedFilters} from "./column-filter";
+import {ColumnFilter, type SerializedFilters, type TemporaryFilterMode} from "./column-filter";
 import {FilterDropdown} from "../ui/filter-dropdown";
 import {Utility} from "../core/utility";
 import {Tab} from "../tabs/tab";
@@ -2096,7 +2096,7 @@ export class EditorTable {
     refreshFilterDisplayIfActive(): void { this.sortFilter.refreshFilterDisplayIfActive(); }
     restoreSortState(serializedSortKeys: SerializedSortKey[]): void { this.sortFilter.restoreSortState(serializedSortKeys); }
     restoreFilterState(serializedFilters: SerializedFilters): void { this.sortFilter.restoreFilterState(serializedFilters); }
-    applyTemporaryFilterState(filters: SerializedFilters): void { this.sortFilter.applyTemporaryFilterState(filters); }
+    applyTemporaryFilterState(filters: SerializedFilters, mode: TemporaryFilterMode = 'and'): void { this.sortFilter.applyTemporaryFilterState(filters, mode); }
     applySortForColumn(columnIndex: number): void { this.sortFilter.applySortForColumn(columnIndex); }
     applySortState(sortKeys: SerializedSortKey[]): void { this.sortFilter.applySortState(sortKeys); }
     applyFilterState(filters: SerializedFilters): void { this.sortFilter.applyFilterState(filters); }

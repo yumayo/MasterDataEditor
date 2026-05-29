@@ -111,6 +111,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
         tab,
         editor,
         tab.getOpenEditorTables(),
+        store,
         uiStateStore,
         viewPluginHost,
     );

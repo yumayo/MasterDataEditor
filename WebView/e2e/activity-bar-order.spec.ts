@@ -3,7 +3,7 @@ import type {Page} from '@playwright/test';
 import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync} from './fixtures/mock-api';
 
 const UI_STATE_FILE = 'user:ui-state.json';
-const DEFAULT_ORDER = ['files', 'references', 'search', 'bookmarks', 'views', 'sourceControl', 'history'];
+const DEFAULT_ORDER = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
 
 async function getActivityBarOrderAsync(page: Page): Promise<string[]> {
     return page.locator('.activity-bar .activity-bar-item:not(.activity-bar-settings)').evaluateAll((nodes) => {
@@ -53,7 +53,7 @@ test.describe('アクティビティバー並び替え', () => {
 
         expect(await getActivityBarOrderAsync(page)).toEqual(DEFAULT_ORDER);
 
-        const expected = ['search', 'files', 'references', 'bookmarks', 'views', 'sourceControl', 'history'];
+        const expected = ['search', 'files', 'references', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
         await dragActivityBarItemBeforeAsync(page, 'search', 'files');
         await waitForActivityBarOrderAsync(page, expected);
         await waitForActivityBarOrderSavedAsync(page, expected);
@@ -67,7 +67,7 @@ test.describe('アクティビティバー並び替え', () => {
 
     test('ui-stateに保存された順序で起動時に復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
-        const savedOrder = ['history', 'sourceControl', 'views', 'bookmarks', 'search', 'references', 'files'];
+        const savedOrder = ['history', 'sourceControl', 'views', 'bookmarks', 'calendar', 'search', 'references', 'files'];
         fs[UI_STATE_FILE] = JSON.stringify({activityBar: {order: savedOrder}});
         await installMockApiAsync(page, fs);
         await page.goto('/');
@@ -78,7 +78,7 @@ test.describe('アクティビティバー並び替え', () => {
     test('古いui-stateに残ったerDiagramは起動時に無視される', async ({page}) => {
         const fs = createDefaultFileSystem();
         const savedOrder = ['history', 'sourceControl', 'erDiagram', 'views', 'bookmarks', 'search', 'references', 'files'];
-        const expected = ['history', 'sourceControl', 'views', 'bookmarks', 'search', 'references', 'files'];
+        const expected = ['history', 'sourceControl', 'views', 'bookmarks', 'search', 'references', 'files', 'calendar'];
         fs[UI_STATE_FILE] = JSON.stringify({
             sidebar: {activePanel: 'erDiagram'},
             activityBar: {order: savedOrder},

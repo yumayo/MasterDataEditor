@@ -44,6 +44,15 @@ const BOOKMARKS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill
 </svg>`;
 
 /**
+ * カレンダーアイコン（SVG）
+ */
+const CALENDAR_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3.5" y="4.5" width="17" height="16" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M7.5 2.5V6.5M16.5 2.5V6.5M4 9H20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M7 12H9V14H7V12ZM11 12H13V14H11V12ZM15 12H17V14H15V12ZM7 16H9V18H7V16ZM11 16H13V18H11V16Z" fill="currentColor"/>
+</svg>`;
+
+/**
  * Viewプラグインアイコン（SVG — ウィンドウ形状）
  */
 const VIEWS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -118,6 +127,7 @@ export class ActivityBar {
             ['references', this.createButton(REFERENCES_ICON_SVG, 'references')],
             ['search', this.createButton(SEARCH_ICON_SVG, 'search')],
             ['bookmarks', this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks')],
+            ['calendar', this.createButton(CALENDAR_ICON_SVG, 'calendar')],
             ['views', this.createButton(VIEWS_ICON_SVG, 'views')],
             ['sourceControl', this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl')],
             ['history', this.createButton(HISTORY_ICON_SVG, 'history')],

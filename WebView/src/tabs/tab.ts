@@ -31,7 +31,7 @@ import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
 import type {SerializedSortKey} from "../editor/column-sorter";
-import type {SerializedFilters} from "../editor/column-filter";
+import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
 import type {EditorAPI} from "../editor-api/editor-api-types";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
@@ -1316,6 +1316,26 @@ export class Tab {
     }
 
     /**
+     * サイドバーの予定日タイムライン用: 指定テーブルを開き、一時フィルターを設定に関係なく適用する。
+     * 通常のジャンプ時フィルター設定は参照ジャンプ向けのON/OFFとして維持し、この経路だけ強制適用する。
+     */
+    async navigateToTableWithTemporaryFilterAsync(tableName: string, filters: SerializedFilters, mode: TemporaryFilterMode = 'and'): Promise<void> {
+        this.navigationHistory.pushNavigateCell(tableName);
+        const existingState = this.tabStates.get(tableName);
+        if (existingState !== undefined) {
+            this.enableTabButtonForNavigationJump(tableName);
+            this.applyTemporaryFilterAndSelectFirstMatch(existingState, filters, mode);
+            return;
+        }
+
+        const opened = await this.openTableAsync(tableName);
+        if (!opened) return;
+        const state = this.tabStates.get(tableName);
+        if (state === undefined) return;
+        this.applyTemporaryFilterAndSelectFirstMatch(state, filters, mode);
+    }
+
+    /**
      * EditorTableの全行を走査し、PK値が一致する行を選択状態にする
      */
     private navigateToRow(state: TabState, pkValue: string): void {
@@ -1430,6 +1450,52 @@ export class Tab {
             filters[filterColumnName] = Array.from(filterValues);
         }
         state.editorTable.applyTemporaryFilterState(filters);
+    }
+
+    private applyTemporaryFilterAndSelectFirstMatch(state: TabState, filters: SerializedFilters, mode: TemporaryFilterMode): void {
+        state.editorTable.applyTemporaryFilterState(filters, mode);
+        const entries = this.createTemporaryFilterEntries(filters);
+        if (entries.length === 0) return;
+
+        const editorTable = state.editorTable;
+        const rowCount = editorTable.getLogicalRowCount();
+        for (let r = 1; r < rowCount; r++) {
+            const matchedColumnName = this.findTemporaryFilterMatchedColumn(editorTable, r, entries, mode);
+            if (matchedColumnName === null) continue;
+            const columnIndex = this.resolveColumnIndex(editorTable.tableName, matchedColumnName);
+            const col = columnIndex !== -1 ? columnIndex + editorTable.dataColumnOffset() : 1;
+            state.selection.setRange(r, col, r, col);
+            state.selection.move(r, col);
+            state.selection.scrollFocusToCenterVertically();
+            state.editorTableHandler.activate();
+            return;
+        }
+    }
+
+    private createTemporaryFilterEntries(filters: SerializedFilters): Array<{ columnName: string; values: Set<string> }> {
+        const entries: Array<{ columnName: string; values: Set<string> }> = [];
+        for (const columnName of Object.keys(filters)) {
+            const values = new Set(filters[columnName].filter(value => value !== ''));
+            if (values.size === 0) continue;
+            entries.push({columnName, values});
+        }
+        return entries;
+    }
+
+    private findTemporaryFilterMatchedColumn(
+        editorTable: EditorTable,
+        rowIndex: number,
+        entries: Array<{ columnName: string; values: Set<string> }>,
+        mode: TemporaryFilterMode,
+    ): string | null {
+        let firstMatchedColumnName: string | null = null;
+        for (const entry of entries) {
+            const matched = entry.values.has(editorTable.getCellValueByColumnName(rowIndex, entry.columnName));
+            if (matched && firstMatchedColumnName === null) firstMatchedColumnName = entry.columnName;
+            if (mode === 'or' && matched) return entry.columnName;
+            if (mode === 'and' && !matched) return null;
+        }
+        return firstMatchedColumnName;
     }
 
     /**

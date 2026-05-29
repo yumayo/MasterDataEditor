@@ -1,7 +1,7 @@
 import {EditorTable} from "./editor-table";
 import {FilterCommand, SortCommand} from "./command";
 import {SerializedSortKey} from "./column-sorter";
-import {SerializedFilters} from "./column-filter";
+import type {SerializedFilters, TemporaryFilterMode} from "./column-filter";
 import {saveSchemaDataAsync} from "./editor-actions";
 
 /**
@@ -113,10 +113,10 @@ export class EditorTableSortFilter {
      * ジャンプ操作用の一時フィルターを適用する。
      * スキーマ永続化や Undo/Redo 履歴には含めない。
      */
-    applyTemporaryFilterState(filters: SerializedFilters): void {
+    applyTemporaryFilterState(filters: SerializedFilters, mode: TemporaryFilterMode = 'and'): void {
         const storeColumnNames = this.store.getHeader(this.tableName);
         if (storeColumnNames === false) return;
-        this.columnFilter.applyTemporaryFilters(filters, storeColumnNames);
+        this.columnFilter.applyTemporaryFilters(filters, storeColumnNames, mode);
         this.applyFilterDisplay();
     }
 

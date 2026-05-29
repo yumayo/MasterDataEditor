@@ -5,6 +5,8 @@ export interface SerializedFilters {
     [columnName: string]: string[];
 }
 
+export type TemporaryFilterMode = 'and' | 'or';
+
 /**
  * 列フィルター管理クラス
  *
@@ -28,10 +30,12 @@ export class ColumnFilter {
      * スキーマ永続化対象の filterMap とは分離し、serializeFilters() には含めない。
      */
     private readonly temporaryFilterMap: Map<number, Set<string>>;
+    private temporaryFilterMode: TemporaryFilterMode;
 
     constructor() {
         this.filterMap = new Map();
         this.temporaryFilterMap = new Map();
+        this.temporaryFilterMode = 'and';
     }
 
     /**
@@ -43,6 +47,7 @@ export class ColumnFilter {
      */
     applyFilter(storeColumnIndex: number, selectedValues: Set<string>): void {
         this.temporaryFilterMap.clear();
+        this.temporaryFilterMode = 'and';
         this.filterMap.set(storeColumnIndex, new Set(selectedValues));
     }
 
@@ -50,8 +55,9 @@ export class ColumnFilter {
      * 一時フィルターを列名ベースの表現から復元して適用する。
      * 既存の永続フィルターは保持するが、一時フィルター適用中の表示判定では一時側を優先する。
      */
-    applyTemporaryFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {
+    applyTemporaryFilters(serialized: SerializedFilters, storeColumnNames: readonly string[], mode: TemporaryFilterMode = 'and'): void {
         this.temporaryFilterMap.clear();
+        this.temporaryFilterMode = mode;
         const nameToStoreIndex = new Map<string, number>();
         for (let i = 0; i < storeColumnNames.length; i++) {
             nameToStoreIndex.set(storeColumnNames[i], i);
@@ -71,6 +77,7 @@ export class ColumnFilter {
      */
     clearFilter(storeColumnIndex: number): void {
         this.temporaryFilterMap.clear();
+        this.temporaryFilterMode = 'and';
         this.filterMap.delete(storeColumnIndex);
     }
 
@@ -80,6 +87,7 @@ export class ColumnFilter {
     clearAllFilters(): void {
         this.filterMap.clear();
         this.temporaryFilterMap.clear();
+        this.temporaryFilterMode = 'and';
     }
 
     /**
@@ -114,6 +122,15 @@ export class ColumnFilter {
         effectiveFilterMap.forEach((selectedValues, storeColumnIndex) => {
             filterEntries.push({ storeColumnIndex, selectedValues });
         });
+        if (this.temporaryFilterMap.size > 0 && this.temporaryFilterMode === 'or') {
+            return sortedIndices.filter(storeRowIndex => {
+                const row = storeRows[storeRowIndex];
+                for (const { storeColumnIndex, selectedValues } of filterEntries) {
+                    if (storeColumnIndex < row.length && row[storeColumnIndex] !== '' && selectedValues.has(row[storeColumnIndex])) return true;
+                }
+                return false;
+            });
+        }
         return sortedIndices.filter(storeRowIndex => {
             const row = storeRows[storeRowIndex];
             // 全フィルター列で AND 条件を評価する
@@ -188,6 +205,7 @@ export class ColumnFilter {
     restoreFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {
         this.filterMap.clear();
         this.temporaryFilterMap.clear();
+        this.temporaryFilterMode = 'and';
         // 列名 → ストア列インデックスのマップを構築
         const nameToStoreIndex = new Map<string, number>();
         for (let i = 0; i < storeColumnNames.length; i++) {

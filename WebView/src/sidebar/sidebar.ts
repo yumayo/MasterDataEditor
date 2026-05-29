@@ -4,6 +4,7 @@ import {ActivityBar, ActivityBarItem} from "./activity-bar";
 import {ReferencesPanel} from "../panels/references-panel";
 import {SearchPanel} from "../panels/search-panel";
 import {BookmarkPanel, BookmarkEntry} from "../panels/bookmark-panel";
+import {ScheduleTimelinePanel} from "../panels/schedule-timeline-panel";
 import {SourceControlPanel} from "../panels/source-control-panel";
 import {TimelinePanel} from "../panels/timeline-panel";
 import {ViewPluginPanel} from "../panels/view-plugin-panel";
@@ -11,6 +12,7 @@ import type {ViewPluginHost} from "../plugins/view-plugin-host";
 import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
 import {EditorTable} from "../editor/editor-table";
 import {Editor} from "../editor/editor";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
 import {MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
 import {consumeSuppressedSelfSaveGitRefresh, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
@@ -32,6 +34,7 @@ export class Sidebar {
     private readonly referencesPanel: ReferencesPanel;
     private readonly searchPanel: SearchPanel;
     private readonly bookmarkPanel: BookmarkPanel;
+    private readonly scheduleTimelinePanel: ScheduleTimelinePanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly timelinePanel: TimelinePanel;
     private readonly viewPluginPanel: ViewPluginPanel;
@@ -42,6 +45,7 @@ export class Sidebar {
         tab: Tab,
         editor: Editor,
         openEditorTables: Map<string, EditorTable>,
+        store: InMemoryTableStore,
         uiStateStore: UiStateStore,
         viewPluginHost: ViewPluginHost,
     ) {
@@ -92,6 +96,17 @@ export class Sidebar {
         // ブックマークパネル
         this.bookmarkPanel = new BookmarkPanel(tab);
         this.bookmarkPanel.appendTo(sidebarContent);
+
+        // 出力予定日・削除予定日タイムラインパネル
+        this.scheduleTimelinePanel = new ScheduleTimelinePanel(
+            store,
+            openEditorTables,
+            (tableName, filters, mode) => {
+                this.tab.navigateToTableWithTemporaryFilterAsync(tableName, filters, mode)
+                    .catch(e => { console.error('予定日タイムラインジャンプ失敗', e); });
+            },
+        );
+        this.scheduleTimelinePanel.appendTo(sidebarContent);
 
         // Viewプラグインパネル
         this.viewPluginPanel = new ViewPluginPanel(viewPluginHost, (pluginId: string) => {
@@ -163,6 +178,9 @@ export class Sidebar {
             // git操作によりHEADやステージが変わるため、通常テーブルのgit差分ハイライトを再計算する
             if (data.type === 'git_changed') {
                 this.refreshAllGitDiffAsync().catch(e => { console.error('git差分ハイライト更新失敗', e); });
+            }
+            if (this.scheduleTimelinePanel.isVisible()) {
+                this.scheduleTimelinePanel.refreshAsync().catch(e => { console.error('予定日タイムライン更新失敗', e); });
             }
         });
 
@@ -381,6 +399,7 @@ export class Sidebar {
         this.referencesPanel.hide();
         this.searchPanel.hide();
         this.bookmarkPanel.hide();
+        this.scheduleTimelinePanel.hide();
         this.viewPluginPanel.hide();
         this.sourceControlPanel.hide();
         this.timelinePanel.hide();
@@ -415,6 +434,8 @@ export class Sidebar {
             this.searchPanel.show();
         } else if (item === 'bookmarks') {
             this.bookmarkPanel.show();
+        } else if (item === 'calendar') {
+            this.scheduleTimelinePanel.show();
         } else if (item === 'views') {
             this.viewPluginPanel.show();
         }
