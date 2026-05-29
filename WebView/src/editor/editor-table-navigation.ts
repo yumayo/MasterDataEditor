@@ -3,6 +3,11 @@ import type {ReverseReferenceEntry} from "../references/reverse-reference-resolv
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, type DynamicReference} from "../references/reference-expression";
 import {ReverseReferenceJumpDialog} from "../ui/reverse-reference-jump-dialog";
 
+interface ReverseReferenceNavigationTarget {
+    entry: ReverseReferenceEntry;
+    value: string;
+}
+
 /**
  * EditorTable の定義ジャンプ、FK参照ジャンプ、逆参照ジャンプを担当する。
  */
@@ -94,7 +99,8 @@ export class EditorTableNavigation {
     }
 
     /**
-     * メインテーブル専用: Ctrl+クリックまたはF12でPK列の逆参照先テーブルをタブで開く。
+     * メインテーブル専用: Ctrl+クリックまたはF12で逆参照先テーブルをタブで開く。
+     * PK列では行内の全逆参照候補を対象にし、非PK列ではクリック列を参照している候補だけを対象にする。
      * 逆参照が1つなら直接ジャンプ、複数ならモーダルで選択させる。
      */
     navigateToReverseReferenceTable(row: number, column: number): boolean {
@@ -103,31 +109,41 @@ export class EditorTableNavigation {
         const dataColumnIndex = column - this.dataColumnOffset();
         if (dataColumnIndex < 0 || dataColumnIndex >= this.tableData.header.length) return false;
         const colName = this.tableData.header[dataColumnIndex].name;
-        if (!this.tableData.primaryKeyColumns.includes(colName)) return false;
         if (!this.hasReverseReferences()) return false;
-        const pkValue = this.getRowPkValue(row);
-        if (pkValue === '') return false;
-        // PK値に対する逆参照エントリを収集する（parentColumnName でフィルタリング）
-        const allEntries: ReverseReferenceEntry[] = [];
-        for (const parentColName of this.getAllParentColumnNames()) {
+        const clickedColumnIsPk = this.tableData.primaryKeyColumns.includes(colName);
+        const parentColumnNames = clickedColumnIsPk
+            ? this.getAllParentColumnNames()
+            : new Set<string>([colName]);
+        const targets: ReverseReferenceNavigationTarget[] = [];
+        for (const parentColName of parentColumnNames) {
             const colValue = this.getCellValueByColumnName(row, parentColName);
             if (colValue === '') continue;
             const entries = this.getReverseReferenceEntries(colValue);
             for (const entry of entries) {
-                if (entry.parentColumnName === parentColName) allEntries.push(entry);
+                if (entry.parentColumnName === parentColName) {
+                    targets.push({ entry, value: colValue });
+                }
             }
         }
-        if (allEntries.length === 0) return false;
-        if (allEntries.length === 1) {
-            const entry = allEntries[0];
+        if (targets.length === 0) return false;
+        if (targets.length === 1) {
+            const {entry, value} = targets[0];
             // 逆参照ジャンプ: 動的参照の場合は1段目フィルタ情報を渡して正しい行に着地させる
-            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, pkValue, entry.filterColumnName, entry.filterValues);
+            this.tab.navigateToTableColumnValue(entry.childTableName, entry.childColumnName, value, entry.filterColumnName, entry.filterValues);
             return true;
         }
         // 複数の逆参照: モーダルで選択させる
         const tab = this.tab;
-        ReverseReferenceJumpDialog.open(allEntries, (selected) => {
-            tab.navigateToTableColumnValue(selected.childTableName, selected.childColumnName, pkValue, selected.filterColumnName, selected.filterValues);
+        ReverseReferenceJumpDialog.open(targets.map(target => target.entry), (selected) => {
+            const selectedTarget = targets.find(target => target.entry === selected);
+            if (selectedTarget === undefined) return;
+            tab.navigateToTableColumnValue(
+                selected.childTableName,
+                selected.childColumnName,
+                selectedTarget.value,
+                selected.filterColumnName,
+                selected.filterValues
+            );
         });
         return true;
     }

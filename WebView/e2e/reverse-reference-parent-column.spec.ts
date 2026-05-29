@@ -117,6 +117,27 @@ function createTestFileSystem(): MockFileSystem {
     };
 }
 
+function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
+    const row = table.locator('.editor-table-row').nth(rowIndex);
+    return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
+}
+
+function getActiveTable(page: Page): Locator {
+    return page.locator('.editor-left-pane .tab-wrapper:not([style*="display: none"]) .editor-table');
+}
+
+async function getVisibleColumnValuesAsync(table: Locator, colIndex: number): Promise<string[]> {
+    const rows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
+    const count = await rows.count();
+    const values: string[] = [];
+    for (let i = 0; i < count; i++) {
+        const row = rows.nth(i);
+        if (!await row.isVisible()) continue;
+        values.push(await row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex).innerText());
+    }
+    return values;
+}
+
 // =============================================================================
 // テスト1: ReverseReferenceResolver が parentColumnName を返すことを確認
 //
@@ -224,6 +245,34 @@ test.describe('テスト1: ReverseReferenceEntry に parentColumnName が含ま�
             // バグ修正前: "shop_product_group_id=3"（PK値"3"） → REDになる
             // バグ修正後: "shop_product_group_id=2"（group_idの値"2"） → GREEN
             await expect(contextEl).toHaveText('shop_product_group_id=2');
+        },
+    );
+});
+
+test.describe('テスト1.5: 非PK参照列のCtrl+クリック逆参照ジャンプ', () => {
+    test.beforeEach(async ({ page }) => {
+        const fs = createTestFileSystem();
+        fs[".masterdataeditor/settings.json"] = JSON.stringify({
+            referenceJumpTemporaryFilterEnabled: true,
+        });
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test(
+        'shop_product.group_idセルをCtrl+クリックすると、shop.shop_product_group_idへ' +
+        'group_idの値でジャンプすること',
+        async ({ page }) => {
+            const table = await openTableAsync(page, 'shop_product');
+
+            // 行2は id=2, group_id=1。逆参照ジャンプではPK値"2"ではなく
+            // クリック列 group_id の値"1"を使って shop.shop_product_group_id を検索する。
+            await getDataCell(table, 1, 1).click({ modifiers: ['Control'] });
+
+            await expect(page.locator('.tab-button-active')).toContainText('shop');
+            const shopTable = getActiveTable(page);
+            await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('1 / 2 行');
+            await expect.poll(() => getVisibleColumnValuesAsync(shopTable, 2)).toEqual(['1']);
         },
     );
 });
