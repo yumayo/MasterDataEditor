@@ -133,9 +133,7 @@ export class Sidebar {
         resizeHandle.appendTo(explorerElement);
 
         this.activityBar.activateItem(storedSidebarState.activePanel);
-        if (storedSidebarState.activePanel !== 'erDiagram') {
-            this.switchPanel(storedSidebarState.activePanel);
-        }
+        this.switchPanel(storedSidebarState.activePanel);
 
         // C# FileSystemWatcher / GitWatcher からのプッシュ通知を受信してバッジとパネルを更新する
         window.chrome.webview.addEventListener('message', (event: MessageEvent) => {
@@ -362,12 +360,6 @@ export class Sidebar {
 
     private switchPanel(item: ActivityBarItem): void {
         this.uiStateStore.setActiveActivityBarItem(item);
-        // ER図はサイドバーパネルではなく専用タブを開く特別扱い
-        // アクティビティバーの active 状態は変更しない（前のパネルのまま維持する）
-        if (item === 'erDiagram') {
-            this.tab.openErDiagramTab();
-            return;
-        }
 
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.referencesPanel.hide();

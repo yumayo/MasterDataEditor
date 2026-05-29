@@ -111,6 +111,6 @@ test.describe('ドラッグ挿入境界', () => {
         const order = await page.locator('.activity-bar .activity-bar-item:not(.activity-bar-settings)').evaluateAll(nodes => {
             return nodes.map(node => (node as HTMLElement).dataset.panel ?? '');
         });
-        expect(order).toEqual(['files', 'search', 'references', 'bookmarks', 'views', 'erDiagram', 'sourceControl', 'history']);
+        expect(order).toEqual(['files', 'search', 'references', 'bookmarks', 'views', 'sourceControl', 'history']);
     });
 });

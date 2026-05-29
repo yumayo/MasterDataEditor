@@ -10,7 +10,7 @@
  * - 列定義行のドラッグ並び替え（Undo対応）
  *
  * Tab から呼ばれて専用タブとしてエディター領域にマウントされる。
- * 設定タブ（SettingsPanel）・ER図タブ（ErDiagramTab）と同じパターン。
+ * 設定タブ（SettingsPanel）と同じパターン。
  */
 import {readFileAsync, writeFileAsync} from "../app/api";
 import {Csv} from "../data/csv";

@@ -2,7 +2,7 @@ import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 
-export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'views' | 'erDiagram' | 'sourceControl' | 'history';
+export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'views' | 'sourceControl' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
 
 export interface UiSidebarState {
@@ -103,7 +103,8 @@ const MAX_FORM_PANEL_NAV_STACK = 20;
 const MAX_FORM_PANEL_LABEL_LENGTH = 512;
 const MAX_SCROLL_POSITION = 1_000_000_000;
 const MAX_CELL_INDEX = 1_000_000;
-export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'views', 'erDiagram', 'sourceControl', 'history'];
+export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'views', 'sourceControl', 'history'];
+const REMOVED_SPECIAL_TAB_NAMES = new Set(['ER Diagram']);
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
 const DEFAULT_SCROLL_POSITION: UiScrollPosition = {scrollLeft: 0, scrollTop: 0};
 const DEFAULT_SELECTION_STATE: UiStoredSelectionState = {
@@ -378,6 +379,7 @@ function normalizeStoredTab(value: unknown): UiStoredTab | null {
     if (record === null) return null;
     const name = normalizeTabName(record['name']);
     if (name === null) return null;
+    if (REMOVED_SPECIAL_TAB_NAMES.has(name)) return null;
     const editorTable = normalizeStoredEditorTableState(record['editorTable']);
     const scroll = normalizeOptionalScrollPosition(record['scroll']) ?? (editorTable === null ? null : cloneScrollPosition(editorTable.scroll));
     return {
@@ -405,7 +407,8 @@ function normalizeTabs(value: unknown): UiTabsState {
         }
     }
 
-    const active = normalizeTabName(record['active']);
+    const activeName = normalizeTabName(record['active']);
+    const active = activeName !== null && !REMOVED_SPECIAL_TAB_NAMES.has(activeName) ? activeName : null;
     return {
         open,
         active,

@@ -10,10 +10,7 @@ interface ActivityBarDropPosition {
     readonly insertAfter: boolean;
 }
 
-/**
- * アクティビティバーの項目種別
- * erDiagram はサイドバーパネルではなく専用タブを開く特別なアイテム
- */
+/** アクティビティバーの項目種別 */
 export type ActivityBarItem = UiActivityBarItem;
 
 /**
@@ -55,16 +52,6 @@ const VIEWS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="no
   <path d="M7 12H11V16H7V12Z" fill="currentColor"/>
   <path d="M13 12H18V13.5H13V12Z" fill="currentColor"/>
   <path d="M13 15H18V16.5H13V15Z" fill="currentColor"/>
-</svg>`;
-
-/**
- * ER図アイコン（SVG — ノード＋エッジ形状）
- * 2つの矩形ノードを線で結んだER図を表現する
- */
-const ER_DIAGRAM_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="3" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
-  <rect x="14" y="15" width="8" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
-  <path d="M6 9V12H18V15" stroke="currentColor" stroke-width="1.5"/>
 </svg>`;
 
 /**
@@ -132,7 +119,6 @@ export class ActivityBar {
             ['search', this.createButton(SEARCH_ICON_SVG, 'search')],
             ['bookmarks', this.createButton(BOOKMARKS_ICON_SVG, 'bookmarks')],
             ['views', this.createButton(VIEWS_ICON_SVG, 'views')],
-            ['erDiagram', this.createButton(ER_DIAGRAM_ICON_SVG, 'erDiagram')],
             ['sourceControl', this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl')],
             ['history', this.createButton(HISTORY_ICON_SVG, 'history')],
         ]);
