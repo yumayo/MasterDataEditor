@@ -679,7 +679,7 @@ test.describe('既存テーブルの定義編集', () => {
 // ============================================================
 
 /**
- * comment/width/reference/default/renderAsHtml/reverseReferencePriority を持つ
+ * comment/width/reference/default/reverseReferencePriority を持つ
  * スキーマをモックファイルシステムに登録するためのカスタムフィクスチャ。
  * 既存テーブル編集テスト（テスト6, 7）で使用する。
  */
@@ -863,7 +863,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         });
     });
 
-    test('新規作成モードでdefault・renderAsHtmlを設定して保存できる', async ({ page, mockFileSystem }) => {
+    test('新規作成モードでdefaultを設定して保存できる', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
         await getAddButton(page).click();
         await expect(getEditor(page)).toBeVisible();
@@ -877,29 +877,28 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         await row0.locator('.column-type-select').selectOption('int');
         await row0.locator('.column-pk-checkbox').check();
 
-        // 2列目: desc (string, default: "未設定", renderAsHtml: true)
+        // 2列目: desc (string, default: "未設定")
         await getAddColumnButton(page).click();
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('desc');
         await row1.locator('.column-type-select').selectOption('string');
-        // 展開パネルを開いて default と renderAsHtml を設定
+        // 展開パネルを開いて default を設定
         await row1.locator('.column-detail-toggle').click();
         const panel1 = row1.locator('.column-detail-panel');
         await expect(panel1).toBeVisible();
         await panel1.locator('.column-default-input').fill('未設定');
-        await panel1.locator('.column-render-html-checkbox').check();
 
         // 保存
         await getSaveButton(page).click();
         const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
         await expect(defTabButton).toHaveCount(0);
 
-        // スキーマJSONを検証: default と renderAsHtml が含まれていること
+        // スキーマJSONを検証: default が含まれていること
         const schemaJson = await readMockFileAsync(page, 'schema/with_options.json');
         const schema = JSON.parse(schemaJson);
         expect(schema.header).toEqual([
             { key: 0, name: 'id', type: 'int' },
-            { key: 1, name: 'desc', type: 'string', default: '未設定', renderAsHtml: true },
+            { key: 1, name: 'desc', type: 'string', default: '未設定' },
         ]);
     });
 

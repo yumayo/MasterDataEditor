@@ -63,7 +63,7 @@ export class EditorTableData {
             throw new Error('[EditorTableData.parse] primary_key が空です');
         }
 
-        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string | DynamicReferenceSchema; default?: number | string | boolean | null; width?: number; renderAsHtml?: boolean}>;
+        const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string | DynamicReferenceSchema; default?: number | string | boolean | null; width?: number}>;
         const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
@@ -74,8 +74,7 @@ export class EditorTableData {
                 column.comment !== undefined ? column.comment : null,
                 column.reference !== undefined ? column.reference : null,
                 defaultValue,
-                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name, hasIcons),
-                column.renderAsHtml === true
+                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name, hasIcons)
             ));
         }
 

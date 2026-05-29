@@ -193,12 +193,9 @@ export class EditorTableCellFactory {
             }
             tableAny.contextMenu.show(e.clientX, e.clientY, menuItems);
         });
-        // renderAsHtml を考慮してセル値を設定する（初期レンダリング時にHTML描画を正しく適用）
         // value の実際の型は string のみ（body.values は string[]、バッファ行は '' を渡す）
         const strValue = value as string;
-        // バッファ空行挿入時等で columnIndex がヘッダー範囲外になる場合は false（テキスト描画）でフォールバック
-        const cellCol = table.getTableData().header[columnIndex];
-        table.reference.applyTextOrHtml(cell, strValue, cellCol ? cellCol.renderAsHtml : false);
+        table.reference.applyText(cell, strValue);
         // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
         table.reference.applyTypedCellStyle(cell, strValue, columnIndex);
         return cell;
@@ -256,11 +253,11 @@ export class EditorTableCellFactory {
 
     /**
      * セルの値を取得する（参照ヒントを除外）
-     * renderAsHtml モードのセルや bool型セル（SVG表示）は innerHTML/textContent から直接値を取れないため、
+     * bool型セル（SVG表示）は textContent から直接値を取れないため、
      * data-raw-value に保存した生テキストを返す。
      */
     static getCellValue(cell: HTMLElement): string {
-        // renderAsHtml モードおよび bool型セルは data-raw-value に生テキストが保存されている
+        // bool型セルは data-raw-value に生テキストが保存されている
         if (cell.dataset.rawValue !== undefined) return cell.dataset.rawValue;
         // .cell-value 要素があればそこから取得
         const valueElement = cell.querySelector('.cell-value');

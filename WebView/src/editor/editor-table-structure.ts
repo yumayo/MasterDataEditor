@@ -57,7 +57,7 @@ export class EditorTableStructure {
         const tableData = this.table.getTableData();
         const nextKey = tableData.header.reduce((maxKey, column) => Math.max(maxKey, column.key), -1) + 1;
         const newWidth = Utility.calculateColumnWidth('', !this.table.isMiniTableInstance());
-        tableData.header.splice(columnIndex, 0, new EditorTableDataColumn(nextKey, '', 'string', comment, null, null, newWidth, false));
+        tableData.header.splice(columnIndex, 0, new EditorTableDataColumn(nextKey, '', 'string', comment, null, null, newWidth));
         const columnMapping = tableData.columnMapping as number[];
         columnMapping.splice(columnIndex, 0, columnIndex);
         for (let i = columnIndex + 1; i < columnMapping.length; i++) {

@@ -1,6 +1,5 @@
 import { CellRange } from "./selection";
 import { EditorTable } from "./editor-table";
-import { EditorTableDataColumn } from "../data/models/editor-table-data-column";
 import { SerializedSortKey } from "./column-sorter";
 import { SerializedFilters } from "./column-filter";
 
@@ -712,44 +711,6 @@ export class MoveRowCommand implements Command {
 
     getDescription(): string {
         return `MoveRow: ${this.fromDomDataRowIndex} -> ${this.toDomDataRowIndex}`;
-    }
-}
-
-/**
- * 列の renderAsHtml フラグをトグルするコマンド
- * do/undo が対称なためトグル実装で共通化する
- */
-export class RenderAsHtmlToggleCommand implements Command {
-    private readonly column: EditorTableDataColumn;
-    private readonly table: EditorTable;
-    private readonly columnIndex: number;
-
-    constructor(column: EditorTableDataColumn, table: EditorTable, columnIndex: number) {
-        this.column = column;
-        this.table = table;
-        this.columnIndex = columnIndex;
-    }
-
-    execute(): void {
-        this.toggle();
-    }
-
-    undo(): void {
-        this.toggle();
-    }
-
-    redo(): void {
-        this.toggle();
-    }
-
-    private toggle(): void {
-        this.column.toggleRenderAsHtml();
-        // 全セルの表示を再描画する（EditorTable 経由で呼び出すことでデメテルの法則を守る）
-        this.table.updateColumnReferenceHints(this.columnIndex);
-    }
-
-    getDescription(): string {
-        return `RenderAsHtmlToggle at column=${this.columnIndex}`;
     }
 }
 

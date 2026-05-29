@@ -4,7 +4,6 @@ import {ReferenceDataCache} from "../references/reference-data-cache";
 import {parseReferenceExpression, isDynamicReference, isSimpleReference, DynamicReferenceSchema} from "../references/reference-expression";
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "../references/reverse-reference-resolver";
 import {isDisplayColumn} from "../config/config";
-import {sanitizeHtml} from "../core/html-sanitizer";
 import {NotificationToast} from "../ui/notification";
 
 
@@ -74,15 +73,14 @@ export class EditorTableReference {
         const column = this.tableData.header[dataColumnIndex];
         if (!column || !column.reference) {
             // 参照列でなければ通常のテキストコンテンツを設定
-            this.applyTextOrHtml(cell, value, column ? column.renderAsHtml : false);
+            this.applyText(cell, value);
             // データ型に基づいたスタイル適用（bool型チェックマーク、数値型右寄せ）
             this.applyTypedCellStyle(cell, value, dataColumnIndex);
             // PK列の場合は逆参照ヒントを再適用する
             if (column && this.tableData.primaryKeyColumns.includes(column.name)) this.applyReverseReferenceHintFromEntries(cell, this.collectReverseReferenceEntries(rowIndex));
             return;
         }
-        // 値を設定（参照列でも renderAsHtml を考慮）
-        this.applyTextOrHtml(cell, value, column.renderAsHtml);
+        this.applyText(cell, value);
         // 参照式をパース
         const expr = parseReferenceExpression(column.reference);
         if (isDynamicReference(expr)) {
@@ -415,31 +413,16 @@ export class EditorTableReference {
     }
 
     /**
-     * renderAsHtml フラグに応じてセルにテキストまたはHTMLを設定する。
-     * renderAsHtml が true の場合は `data-raw-value` に生テキストを保存し `innerHTML` で描画する。
-     * getCellValue が生テキストを正しく返せるよう `data-raw-value` を使う。
-     * renderAsHtml が false の場合は通常の `textContent` 設定。
+     * セルに通常テキストを設定する。
+     * bool型セルは後続の applyTypedCellStyle が data-raw-value を管理する。
      */
-    applyTextOrHtml(cell: HTMLElement, value: string, renderAsHtml: boolean): void {
+    applyText(cell: HTMLElement, value: string): void {
         this.withPreservedFillHandle(cell, () => {
-            if (renderAsHtml) {
-                cell.dataset.rawValue = value;
-                cell.innerHTML = sanitizeHtml(value);
-                // HTML改行（<br>）が描画されるようにwhiteSpaceをnormalにする
-                cell.style.whiteSpace = 'normal';
-                // 行高さを自然なフォント行高にする（固定px指定を解除）
-                cell.style.lineHeight = 'normal';
-                // はみ出しはクリップのまま維持
-                cell.style.overflow = 'hidden';
-            } else {
-                // data-raw-value が残っている場合はクリアする（モード切替時の残留防止）
-                delete cell.dataset.rawValue;
-                cell.textContent = value;
-                // renderAsHtml モードからテキストモードに戻した場合はスタイルを元に戻す
-                cell.style.whiteSpace = '';
-                cell.style.lineHeight = '';
-                cell.style.overflow = '';
-            }
+            delete cell.dataset.rawValue;
+            cell.textContent = value;
+            cell.style.whiteSpace = '';
+            cell.style.lineHeight = '';
+            cell.style.overflow = '';
         });
     }
 
@@ -514,8 +497,7 @@ export class EditorTableReference {
 
     /**
      * セルからbool表示要素（SVG）と aria-checked 属性を除去する。
-     * data-raw-valueのクリーンアップは不要: applyTextOrHtml が先に実行されて
-     * テキストモードでは rawValue を削除済み、HTMLモードでは独自に rawValue を管理しているため。
+     * data-raw-valueのクリーンアップは不要: applyText が先に実行されて rawValue を削除済みのため。
      */
     private removeBoolDisplay(cell: HTMLElement): void {
         const check = cell.querySelector('.cell-bool-check');

@@ -18,10 +18,7 @@ export class EditorTableDataColumn {
 
     width: string;
 
-    /** セル内の `<br>` をHTML改行として描画するかどうか */
-    renderAsHtml: boolean;
-
-    constructor(key: number, name: string, type: string, comment: string | null, reference: string | DynamicReferenceSchema | null, defaultValue: string | null, width: string, renderAsHtml: boolean) {
+    constructor(key: number, name: string, type: string, comment: string | null, reference: string | DynamicReferenceSchema | null, defaultValue: string | null, width: string) {
         this.key = key;
         this.name = name;
         this.type = type;
@@ -29,14 +26,6 @@ export class EditorTableDataColumn {
         this.reference = reference;
         this.defaultValue = defaultValue;
         this.width = width;
-        this.renderAsHtml = renderAsHtml;
-    }
-
-    /**
-     * renderAsHtml フラグを反転する（Undo/Redo対応）
-     */
-    toggleRenderAsHtml(): void {
-        this.renderAsHtml = !this.renderAsHtml;
     }
 
     serialize() {

@@ -72,7 +72,7 @@ export interface EditTargetColumn {
     readonly type: string;
     /**
      * 元スキーマJSONの列定義オブジェクト全体を保持する。
-     * 保存時に reference, comment, default, width, renderAsHtml 等のフィールドを引き継ぐために使用する。
+     * 保存時に reference, comment, default, width 等のフィールドを引き継ぐために使用する。
      * key/name/type は UI 側の値で上書きされるため、それ以外のフィールドを復元する目的。
      */
     readonly originalSchema: Record<string, unknown>;
@@ -277,7 +277,7 @@ export class TableDefinitionEditor {
                 if (editTarget.primaryKeys.indexOf(col.name) !== -1) {
                     (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked = true;
                 }
-                // 元スキーマから comment/width/reference/default/renderAsHtml を反映する
+                // 元スキーマから comment/width/reference/default を反映する
                 this.applyOriginalSchemaToRow(row, col.originalSchema);
                 // 元の列名をdata属性に保持する（保存時のCSV列マッピングに使用）
                 // リネームされた場合、inputのvalueは新しい名前だがこの属性は元の名前を保持するため
@@ -488,18 +488,6 @@ export class TableDefinitionEditor {
         defaultInput.classList.add('column-default-input', 'table-definition-text-input');
         defaultInput.placeholder = 'デフォルト値';
         detailPanel.appendChild(defaultInput);
-
-        // renderAsHtmlチェックボックス（label でラップしてラベルクリックでも選択可能にする）
-        const renderHtmlWrapper = document.createElement('div');
-        renderHtmlWrapper.classList.add('column-render-html-wrapper');
-        const renderHtmlLabel = document.createElement('label');
-        const renderHtmlCheckbox = document.createElement('input');
-        renderHtmlCheckbox.type = 'checkbox';
-        renderHtmlCheckbox.classList.add('column-render-html-checkbox');
-        renderHtmlLabel.appendChild(renderHtmlCheckbox);
-        renderHtmlLabel.appendChild(document.createTextNode('HTMLとして描画'));
-        renderHtmlWrapper.appendChild(renderHtmlLabel);
-        detailPanel.appendChild(renderHtmlWrapper);
 
         row.appendChild(detailPanel);
 
@@ -813,7 +801,7 @@ export class TableDefinitionEditor {
     /**
      * 編集モードの保存処理。
      * 既存CSVを Csv クラス（RFC4180準拠）で読み込み、元スキーマとの列差分に基づいてCSV列構造を同期する。
-     * スキーマJSONは元列定義の reference, comment, default, width, renderAsHtml 等のメタデータを引き継ぐ。
+     * スキーマJSONは元列定義の reference, comment, default, width 等のメタデータを引き継ぐ。
      *
      * 列マッピングの戦略:
      * - 各列行DOMの data-original-column-name 属性で元CSVの列名を特定する
@@ -919,7 +907,7 @@ export class TableDefinitionEditor {
     }
 
     /**
-     * 列行のDOMからcomment/width/reference/default/renderAsHtmlを読み取り、
+     * 列行のDOMからcomment/width/reference/defaultを読み取り、
      * header配列のエントリに設定する。空値のプロパティはdelete演算子で除去しスキーマを汚染しない。
      * 新規モード・編集モードの両方で共通利用する。
      */
@@ -954,9 +942,7 @@ export class TableDefinitionEditor {
         const defaultVal = (row.querySelector('.column-default-input') as HTMLInputElement).value.trim();
         if (defaultVal !== '') { entry['default'] = defaultVal; } else { delete entry['default']; }
 
-        // renderAsHtml
-        const renderHtml = (row.querySelector('.column-render-html-checkbox') as HTMLInputElement).checked;
-        if (renderHtml) { entry['renderAsHtml'] = true; } else { delete entry['renderAsHtml']; }
+        delete entry['renderAsHtml'];
     }
 
     /**
@@ -970,7 +956,7 @@ export class TableDefinitionEditor {
 
     /**
      * 既存テーブル編集モードで、originalSchemaの値を列行のUI要素に反映する。
-     * comment, width, reference, default, renderAsHtml を対応するinputに設定する。
+     * comment, width, reference, default を対応するinputに設定する。
      */
     private applyOriginalSchemaToRow(row: HTMLElement, schema: Record<string, unknown>): void {
         // comment
@@ -1004,10 +990,6 @@ export class TableDefinitionEditor {
         // default
         if (typeof schema['default'] === 'string') {
             (row.querySelector('.column-default-input') as HTMLInputElement).value = schema['default'];
-        }
-        // renderAsHtml
-        if (schema['renderAsHtml'] === true) {
-            (row.querySelector('.column-render-html-checkbox') as HTMLInputElement).checked = true;
         }
     }
 }

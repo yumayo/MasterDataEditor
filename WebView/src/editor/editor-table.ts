@@ -3,7 +3,7 @@ import {Selection, CellPosition, CellRange} from "./selection";
 import {EditorTableHandler} from "./editor-table-handler";
 import {ContextMenu} from "../ui/context-menu";
 import {History} from "./history";
-import {Command, CellChange, CellChangeCommand, RenderAsHtmlToggleCommand} from "./command";
+import {Command, CellChange, CellChangeCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {
     DEFAULT_ROW_HEIGHT,
@@ -1642,21 +1642,6 @@ export class EditorTable {
 
     getColumnHeaderValues(): string[] {
         return this.tableData.header.map(column => column.name);
-    }
-
-    /**
-     * 指定列の renderAsHtml トグルをコマンドとして実行する（Undo/Redo対応）。
-     * コンテキストメニューからの呼び出し専用。列が存在しない場合は例外を投げる。
-     * @param columnIndex 列インデックス（0始まり、行ヘッダーを除く）
-     */
-    executeRenderAsHtmlToggle(columnIndex: number): void {
-        const col = this.tableData.header[columnIndex];
-        if (!col) throw new Error(`[EditorTable] 列が見つかりません: columnIndex=${columnIndex}`);
-        const cmd = new RenderAsHtmlToggleCommand(col, this, columnIndex);
-        const anchor = this.selection.getAnchor();
-        const copyRange = this.selection.getCopyRange();
-        const range = {startRow: anchor.row, startColumn: anchor.column, endRow: anchor.row, endColumn: anchor.column};
-        this.history.executeCommand(cmd, range, copyRange);
     }
 
     /**
