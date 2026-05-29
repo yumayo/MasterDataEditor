@@ -14,6 +14,9 @@ import {
     MIN_COLUMN_WIDTH_PX,
     ROW_TOTAL_HEIGHT_PX,
     ROW_HEADER_WIDTH_PX,
+    ROW_HEADER_DIGIT_WIDTH_PX,
+    ROW_HEADER_NUMBER_EXTRA_WIDTH_PX,
+    CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX,
     CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX,
     CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX,
     CUSTOM_HORIZONTAL_SCROLLBAR_MIN_THUMB_WIDTH_PX,
@@ -151,6 +154,8 @@ export class EditorTable {
     private frozenRowCount: number;
     /** blame情報の表示状態（false: 非表示、true: 表示中） */
     private isBlameVisible: boolean;
+    /** 行番号の最大桁数に合わせた行ヘッダーcontent-box幅(px) */
+    private rowHeaderWidthPx: number;
 
     /** 空行数（データ行+バッファ1行） */
     readonly emptyRowCount: number;
@@ -347,6 +352,7 @@ export class EditorTable {
         this.frozenColumnCount = 0;
         this.frozenRowCount = 0;
         this.isBlameVisible = false;
+        this.rowHeaderWidthPx = ROW_HEADER_WIDTH_PX;
         // initialize() で初期化される
         this.storeRowIndices = [];
         this.filteredRowIndices = [];
@@ -576,6 +582,7 @@ export class EditorTable {
      * 通常テーブルは末尾バッファ行を含め、差分テーブルは実データ行のみを使う。 */
     syncVirtualScrollTotalRowCount(): void {
         const bufferRowCount = this.diffTab === false ? 1 : 0;
+        this.refreshRowHeaderWidth();
         this.virtualScroll.updateTotalRowCount(this.getFilteredDataRowCount() + bufferRowCount);
     }
 
@@ -1914,7 +1921,31 @@ export class EditorTable {
      * 行ヘッダー（コーナーセル）の幅を取得する
      */
     getRowHeaderWidth(): number {
-        return ROW_HEADER_WIDTH_PX;
+        return this.rowHeaderWidthPx;
+    }
+
+    getRowHeaderLayoutWidthPx(): number {
+        return this.rowHeaderWidthPx + CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX;
+    }
+
+    refreshRowHeaderWidth(): boolean {
+        const nextWidth = this.calculateRowHeaderWidthPx();
+        if (nextWidth === this.rowHeaderWidthPx) return false;
+        this.rowHeaderWidthPx = nextWidth;
+        this.element.style.setProperty('--editor-table-row-header-width', `${nextWidth}px`);
+        return true;
+    }
+
+    private calculateRowHeaderWidthPx(): number {
+        const maxRowNumber = this.getMaxRowHeaderNumber();
+        const digitCount = Math.max(1, String(maxRowNumber).length);
+        const digitWidth = (digitCount * ROW_HEADER_DIGIT_WIDTH_PX) + ROW_HEADER_NUMBER_EXTRA_WIDTH_PX;
+        return Math.max(ROW_HEADER_WIDTH_PX, digitWidth);
+    }
+
+    private getMaxRowHeaderNumber(): number {
+        const bufferRowCount = this.diffTab === false ? 1 : 0;
+        return Math.max(1, this.getFilteredDataRowCount() + bufferRowCount);
     }
 
     /**

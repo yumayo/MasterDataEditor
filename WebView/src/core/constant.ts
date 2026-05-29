@@ -8,14 +8,17 @@ export const DEFAULT_COLUMN_WIDTH = '100px';
 /** 行ヘッダー列の幅(px) */
 export const ROW_HEADER_WIDTH_PX = 40;
 
+/** 行ヘッダーの桁あたりの表示幅(px)。太字13pxの数字が収まる値。 */
+export const ROW_HEADER_DIGIT_WIDTH_PX = 8;
+
+/** 行ヘッダーの数字左右に残すcontent-box内の余白(px) */
+export const ROW_HEADER_NUMBER_EXTRA_WIDTH_PX = 8;
+
 /** blame列の幅(px) */
 export const BLAME_COLUMN_WIDTH_PX = 200;
 
 /** content-box セルのレイアウト上の水平余白(px)。padding左右12px + border-right 1px */
-const CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX = 13;
-
-/** 行ヘッダーセルの実レイアウト幅(px) */
-export const ROW_HEADER_LAYOUT_WIDTH_PX = ROW_HEADER_WIDTH_PX + CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX;
+export const CELL_CONTENT_BOX_LAYOUT_HORIZONTAL_EXTRA_PX = 13;
 
 /** 行のCSSheightプロパティ値(px) */
 export const ROW_HEIGHT_PX = 20;

@@ -580,6 +580,7 @@ export class EditorTableStructure {
             }
             header.dataset.rowIndex = String(logicalRowNumber - 1);
         }
+        this.table.refreshRowHeaderWidth();
         this.table.refreshDetachedHeaderLayout();
     }
 

@@ -2,6 +2,7 @@
     display: block;
     position: relative;
     width: max-content;
+    --editor-table-row-header-width: 40px;
 
     user-select: none;
 }
@@ -452,17 +453,17 @@
     background-color: var(--background-color);
     text-align: center;
     font-weight: bold;
-    min-width: 40px;
-    max-width: 40px;
-    width: 40px;
+    min-width: var(--editor-table-row-header-width);
+    max-width: var(--editor-table-row-header-width);
+    width: var(--editor-table-row-header-width);
 }
 
 /* 左上隅のセルのスタイル */
 .editor-table-corner-cell {
     background-color: var(--background-color);
-    min-width: 40px;
-    max-width: 40px;
-    width: 40px;
+    min-width: var(--editor-table-row-header-width);
+    max-width: var(--editor-table-row-header-width);
+    width: var(--editor-table-row-header-width);
 }
 
 /* 列リサイズハンドル（列境界の中央にまたがる: 内側4px + 外側4px）

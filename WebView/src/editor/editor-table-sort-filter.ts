@@ -294,6 +294,7 @@ export class EditorTableSortFilter {
         if (!this.columnFilter.hasActiveFilter()) {
             // filteredRowIndices を空配列にリセットする（フィルター未適用状態）
             this.filteredRowIndices = [];
+            this.refreshRowHeaderWidth();
             if (isVirtualScrollActive) {
                 // 仮想スクロール: totalRowCount を全行数+バッファ行に戻して再描画
                 this.virtualScroll.updateTotalRowCount(this.storeRowIndices.length + 1);
@@ -326,6 +327,7 @@ export class EditorTableSortFilter {
             }
         }
         const visibleCount = this.filteredRowIndices.length;
+        this.refreshRowHeaderWidth();
 
         if (isVirtualScrollActive) {
             // 仮想スクロール: totalRowCount をフィルター後の行数+バッファ1行に更新して全行再描画

@@ -76,6 +76,7 @@ export class EditorTableRenderer {
         const initialStoreRows = this.isMiniTable ? false : this.store.getRows(this.tableName);
         const initialDataRowCount = initialStoreRows === false ? this.tableData.body.length : initialStoreRows.length;
         this.storeRowIndices = Array.from({ length: initialDataRowCount }, (_, i) => i);
+        this.refreshRowHeaderWidth();
         // filteredRowIndices はフィルター未適用時は空配列のまま（applyFilterDisplay で設定される）
         // totalRowCount はバッファ行を含むDOM上の総データ行数。
         // 通常テーブル: emptyRowCount = body.length + 1（データ行 + バッファ行1行）

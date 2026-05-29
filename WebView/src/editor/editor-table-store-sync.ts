@@ -334,6 +334,8 @@ export class EditorTableStoreSync {
     /** DOMデータ行インデックスからストア行インデックスへのマッピングを設定する */
     setStoreRowIndices(indices: number[]): void {
         this.storeRowIndices = indices;
+        this.refreshRowHeaderWidth();
+        this.refreshDetachedHeaderLayout();
     }
 
     /** storeRowIndices を内部モジュールから取得するためのアクセサ */

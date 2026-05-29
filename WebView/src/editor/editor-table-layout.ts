@@ -2,7 +2,6 @@ import {EditorTable} from "./editor-table";
 import {
     BLAME_COLUMN_WIDTH_PX,
     MAX_SCROLL_CONTENT_HEIGHT_PX,
-    ROW_HEADER_LAYOUT_WIDTH_PX,
 } from "../core/constant";
 import {RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {
@@ -93,7 +92,7 @@ export class EditorTableLayout {
 
     getDetachedPrefixWidthPx(): number {
         const blameBorderBoxWidth = this.isBlameVisible ? BLAME_COLUMN_WIDTH_PX : 0;
-        return ROW_HEADER_LAYOUT_WIDTH_PX + blameBorderBoxWidth;
+        return this.getRowHeaderLayoutWidthPx() + blameBorderBoxWidth;
     }
 
     getDataAreaWidthPx(): number {

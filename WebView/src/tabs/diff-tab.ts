@@ -328,6 +328,10 @@ export class DiffTab {
         // RelationsPanel.connectEditorTable() と対称的なパターン
         this.leftEditorTable.diffTab = this;
         this.rightEditorTable.diffTab = this;
+        this.leftEditorTable.refreshRowHeaderWidth();
+        this.rightEditorTable.refreshRowHeaderWidth();
+        this.leftEditorTable.refreshDetachedHeaderLayout();
+        this.rightEditorTable.refreshDetachedHeaderLayout();
 
         // CSV列インデックス ↔ DOM列インデックスの双方向マップを構築する。
         // columnMapping[domIndex] = csvIndex なので、逆引きは Map<csvIndex, domIndex> となる。
