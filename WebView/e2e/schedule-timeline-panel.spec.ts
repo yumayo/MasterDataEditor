@@ -50,6 +50,11 @@ function activeTable(page: Page): Locator {
     return page.locator('.editor-left-pane .tab-wrapper:not([style*="display: none"]) .editor-table');
 }
 
+function dataCell(table: Locator, rowIndex: number, colIndex: number): Locator {
+    const row = table.locator('.editor-table-row:not(.editor-table-empty-row)').nth(rowIndex);
+    return row.locator('.editor-table-cell:not(.editor-table-row-header)').nth(colIndex);
+}
+
 async function visibleColumnValuesAsync(table: Locator, colIndex: number): Promise<string[]> {
     const rows = table.locator('.editor-table-row:not(.editor-table-empty-row)');
     const count = await rows.count();
@@ -77,6 +82,7 @@ test.describe('予定日タイムラインパネル', () => {
         await expect(dates).toHaveText(['2026-01-03', '2026-01-05', '2026-01-20', '2026-02-01']);
 
         const jan5Group = panel.locator('.schedule-timeline-group[data-date="2026-01-05"]');
+        await expect(jan5Group.locator('.schedule-timeline-group-count')).toHaveText('3 件');
         await expect(jan5Group.locator('.schedule-timeline-table-name')).toHaveText(['campaign', 'event']);
     });
 
@@ -91,5 +97,28 @@ test.describe('予定日タイムラインパネル', () => {
         const table = activeTable(page);
         await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('2 / 3 行');
         await expect.poll(() => visibleColumnValuesAsync(table, 0)).toEqual(['1', '2']);
+    });
+
+    test('表示中に予定日列を編集すると日付別リストが更新される', async ({page}) => {
+        await installScheduleTimelineFixtureAsync(page);
+
+        await page.locator('#explorer').getByText('event', {exact: true}).click();
+        const table = activeTable(page);
+        await expect(table).toBeVisible();
+
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+        const panel = page.locator('.schedule-timeline-panel');
+        await expect(panel.locator('.schedule-timeline-group[data-date="2026-02-01"]')).toBeVisible();
+
+        const beginDateCell = dataCell(table, 2, 2);
+        await beginDateCell.dblclick();
+        const input = page.locator('.grid-textfield-active');
+        await expect(input).toBeVisible();
+        await page.keyboard.press('Control+a');
+        await page.keyboard.insertText('2026-01-10 00:00:00');
+        await page.keyboard.press('Enter');
+
+        await expect(panel.locator('.schedule-timeline-group[data-date="2026-01-10"]')).toBeVisible();
+        await expect(panel.locator('.schedule-timeline-group[data-date="2026-02-01"]')).toHaveCount(0);
     });
 });

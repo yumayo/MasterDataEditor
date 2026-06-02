@@ -1,12 +1,17 @@
 import {findFilesAsync, readFileAsync} from "../app/api";
 import {Csv} from "../data/csv";
-import type {InMemoryTableStore} from "../data/in-memory-table-store";
+import type {InMemoryTableStore, TableDataChangeEvent} from "../data/in-memory-table-store";
 import type {EditorTable} from "../editor/editor-table";
 import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
 import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
 
 type ScheduleKind = 'begin' | 'end';
+
+interface ScheduleTimelineColumns {
+    beginIndex: number;
+    endIndex: number;
+}
 
 interface ScheduleTimelineTableData {
     header: string[];
@@ -17,6 +22,8 @@ interface ScheduleTimelineTableEntry {
     tableName: string;
     beginValues: Set<string>;
     endValues: Set<string>;
+    beginValueCounts: Map<string, number>;
+    endValueCounts: Map<string, number>;
     beginCount: number;
     endCount: number;
 }
@@ -39,7 +46,12 @@ export class ScheduleTimelinePanel {
     private readonly openEditorTables: Map<string, EditorTable>;
     private readonly onNavigate: ScheduleTimelineNavigate;
     private readonly collapsedDates = new Set<string>();
+    private readonly dateGroups = new Map<string, ScheduleTimelineDateGroup>();
+    private readonly tableDateKeys = new Map<string, Set<string>>();
+    private readonly tableScheduleColumns = new Map<string, ScheduleTimelineColumns>();
+    private readonly knownTableNames = new Set<string>();
     private requestId = 0;
+    private renderScheduled = false;
 
     constructor(store: InMemoryTableStore, openEditorTables: Map<string, EditorTable>, onNavigate: ScheduleTimelineNavigate) {
         this.store = store;
@@ -66,6 +78,10 @@ export class ScheduleTimelinePanel {
                 console.error('[ScheduleTimelinePanel] refresh after settings change failed:', e);
             });
         });
+
+        this.store.subscribeDataChange(event => {
+            this.handleStoreDataChanged(event);
+        });
     }
 
     appendTo(parent: HTMLElement): void {
@@ -91,29 +107,31 @@ export class ScheduleTimelinePanel {
     async refreshAsync(): Promise<void> {
         const currentRequestId = ++this.requestId;
         this.renderMessage('読み込み中...');
-        const groups = await this.collectGroupsAsync();
+        await this.rebuildScheduleIndexAsync();
         if (currentRequestId !== this.requestId) return;
-        this.renderGroups(groups);
+        this.renderGroups(this.getSortedGroups());
     }
 
-    private async collectGroupsAsync(): Promise<ScheduleTimelineDateGroup[]> {
+    private async rebuildScheduleIndexAsync(): Promise<void> {
+        this.dateGroups.clear();
+        this.tableDateKeys.clear();
+        this.tableScheduleColumns.clear();
+        this.knownTableNames.clear();
+
         const settings = getAppliedSettings();
         const beginColumnName = settings.exportBeginDateColumnName.trim();
         const endColumnName = settings.exportEndDateColumnName.trim();
-        if (beginColumnName === '' && endColumnName === '') return [];
+        if (beginColumnName === '' && endColumnName === '') return;
 
         const tableNames = await this.loadTableNamesAsync();
-        const groups = new Map<string, ScheduleTimelineDateGroup>();
+        for (const tableName of tableNames) this.knownTableNames.add(tableName);
         await Promise.all(tableNames.map(async tableName => {
             const tableData = await this.loadTableDataAsync(tableName);
             if (tableData === null) return;
-            this.collectTableDates(groups, tableName, tableData, beginColumnName, endColumnName);
+            const columns = this.createScheduleColumns(tableData.header, beginColumnName, endColumnName);
+            this.tableScheduleColumns.set(tableName, columns);
+            this.addTableDataToIndex(tableName, tableData, columns);
         }));
-
-        return Array.from(groups.values()).sort((left, right) => {
-            if (left.sortTime !== right.sortTime) return left.sortTime - right.sortTime;
-            return left.date.localeCompare(right.date);
-        });
     }
 
     private async loadTableNamesAsync(): Promise<string[]> {
@@ -127,7 +145,7 @@ export class ScheduleTimelinePanel {
     }
 
     private async loadTableDataAsync(tableName: string): Promise<ScheduleTimelineTableData | null> {
-        if (this.openEditorTables.has(tableName)) {
+        if (this.openEditorTables.has(tableName) || this.store.hasTable(tableName)) {
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             if (header === false || rows === false) return null;
@@ -144,31 +162,205 @@ export class ScheduleTimelinePanel {
         }
     }
 
-    private collectTableDates(
-        groups: Map<string, ScheduleTimelineDateGroup>,
-        tableName: string,
-        tableData: ScheduleTimelineTableData,
-        beginColumnName: string,
-        endColumnName: string,
-    ): void {
-        const beginIndex = beginColumnName === '' ? -1 : tableData.header.indexOf(beginColumnName);
-        const endIndex = endColumnName === '' ? -1 : tableData.header.indexOf(endColumnName);
-        if (beginIndex === -1 && endIndex === -1) return;
-
-        for (const row of tableData.rows) {
-            if (this.isEmptyRow(row)) continue;
-            if (beginIndex !== -1) this.addDateValue(groups, tableName, 'begin', row[beginIndex] ?? '');
-            if (endIndex !== -1) this.addDateValue(groups, tableName, 'end', row[endIndex] ?? '');
-        }
+    private createScheduleColumns(header: readonly string[], beginColumnName: string, endColumnName: string): ScheduleTimelineColumns {
+        return {
+            beginIndex: beginColumnName === '' ? -1 : header.indexOf(beginColumnName),
+            endIndex: endColumnName === '' ? -1 : header.indexOf(endColumnName),
+        };
     }
 
-    private addDateValue(groups: Map<string, ScheduleTimelineDateGroup>, tableName: string, kind: ScheduleKind, value: string): void {
+    private addTableDataToIndex(
+        tableName: string,
+        tableData: ScheduleTimelineTableData,
+        columns: ScheduleTimelineColumns,
+    ): boolean {
+        if (columns.beginIndex === -1 && columns.endIndex === -1) return false;
+
+        let changed = false;
+        for (const row of tableData.rows) {
+            changed = this.applyRowDeltaToIndex(tableName, columns, row, 1) || changed;
+        }
+        return changed;
+    }
+
+    private async refreshTableIndexAsync(tableName: string): Promise<void> {
+        if (!this.isVisible()) return;
+        if (this.knownTableNames.size > 0 && !this.knownTableNames.has(tableName)) return;
+
+        const currentRequestId = this.requestId;
+        const tableData = await this.loadTableDataAsync(tableName);
+        if (!this.isVisible() || currentRequestId !== this.requestId) return;
+
+        const previousSignature = this.getTableIndexSignature(tableName);
+        this.removeTableFromDateIndex(tableName);
+        if (tableData === null) {
+            this.tableScheduleColumns.delete(tableName);
+            if (previousSignature !== '') this.scheduleRender();
+            return;
+        }
+
+        const settings = getAppliedSettings();
+        const columns = this.createScheduleColumns(
+            tableData.header,
+            settings.exportBeginDateColumnName.trim(),
+            settings.exportEndDateColumnName.trim(),
+        );
+        this.tableScheduleColumns.set(tableName, columns);
+        this.addTableDataToIndex(tableName, tableData, columns);
+        if (previousSignature !== this.getTableIndexSignature(tableName)) this.scheduleRender();
+    }
+
+    private handleStoreDataChanged(event: TableDataChangeEvent): void {
+        if (!this.isVisible()) return;
+        if (event.reason === 'stale' || event.reason === 'rowMoved') return;
+        if (this.knownTableNames.size > 0 && !this.knownTableNames.has(event.tableName)) return;
+
+        if (this.requiresTableReindex(event)) {
+            this.refreshTableIndexAsync(event.tableName).catch((e: unknown) => {
+                console.error('[ScheduleTimelinePanel] table index refresh failed:', e);
+            });
+            return;
+        }
+
+        const columns = this.getCurrentScheduleColumns(event.tableName);
+        if (columns.beginIndex === -1 && columns.endIndex === -1) return;
+
+        let changed = false;
+        if (event.reason === 'cell') {
+            if (event.columnIndex === undefined || event.oldValue === undefined || event.newValue === undefined) {
+                this.refreshTableIndexAsync(event.tableName).catch((e: unknown) => {
+                    console.error('[ScheduleTimelinePanel] table index refresh failed:', e);
+                });
+                return;
+            }
+            const kinds = this.getScheduleKindsForColumn(columns, event.columnIndex);
+            if (kinds.length === 0) return;
+            for (const kind of kinds) {
+                changed = this.applyScheduleValueDelta(event.tableName, kind, event.oldValue, -1) || changed;
+                changed = this.applyScheduleValueDelta(event.tableName, kind, event.newValue, 1) || changed;
+            }
+        } else if (event.reason === 'rowInserted') {
+            if (event.rowValues === undefined) return;
+            changed = this.applyRowDeltaToIndex(event.tableName, columns, event.rowValues, 1);
+        } else if (event.reason === 'rowRemoved') {
+            if (event.rowValues === undefined) return;
+            changed = this.applyRowDeltaToIndex(event.tableName, columns, event.rowValues, -1);
+        }
+
+        if (changed) this.scheduleRender();
+    }
+
+    private requiresTableReindex(event: TableDataChangeEvent): boolean {
+        return event.reason === 'reload'
+            || event.reason === 'rowsReplaced'
+            || event.reason === 'columnInserted'
+            || event.reason === 'columnRemoved'
+            || event.reason === 'columnRenamed'
+            || event.reason === 'unknown';
+    }
+
+    private getCurrentScheduleColumns(tableName: string): ScheduleTimelineColumns {
+        const settings = getAppliedSettings();
+        const header = this.store.getHeader(tableName);
+        if (header !== false) {
+            const columns = this.createScheduleColumns(
+                header,
+                settings.exportBeginDateColumnName.trim(),
+                settings.exportEndDateColumnName.trim(),
+            );
+            this.tableScheduleColumns.set(tableName, columns);
+            return columns;
+        }
+        return this.tableScheduleColumns.get(tableName) ?? {beginIndex: -1, endIndex: -1};
+    }
+
+    private getScheduleKindsForColumn(columns: ScheduleTimelineColumns, columnIndex: number): ScheduleKind[] {
+        const kinds: ScheduleKind[] = [];
+        if (columns.beginIndex === columnIndex) kinds.push('begin');
+        if (columns.endIndex === columnIndex) kinds.push('end');
+        return kinds;
+    }
+
+    private applyRowDeltaToIndex(
+        tableName: string,
+        columns: ScheduleTimelineColumns,
+        row: readonly string[],
+        delta: 1 | -1,
+    ): boolean {
+        if (this.isEmptyRow(row)) return false;
+
+        let changed = false;
+        if (columns.beginIndex !== -1) {
+            changed = this.applyScheduleValueDelta(tableName, 'begin', row[columns.beginIndex] ?? '', delta) || changed;
+        }
+        if (columns.endIndex !== -1) {
+            changed = this.applyScheduleValueDelta(tableName, 'end', row[columns.endIndex] ?? '', delta) || changed;
+        }
+        return changed;
+    }
+
+    private applyScheduleValueDelta(tableName: string, kind: ScheduleKind, value: string, delta: 1 | -1): boolean {
+        return delta === 1
+            ? this.addScheduleValueToIndex(tableName, kind, value)
+            : this.removeScheduleValueFromIndex(tableName, kind, value);
+    }
+
+    private addScheduleValueToIndex(tableName: string, kind: ScheduleKind, value: string): boolean {
         const normalized = normalizeScheduleDate(value);
-        if (normalized === null) return;
-        let group = groups.get(normalized.date);
+        if (normalized === null) return false;
+
+        const tableEntry = this.getOrCreateTableEntry(normalized, tableName);
+        const rawValue = value.trim();
+        if (kind === 'begin') {
+            tableEntry.beginCount++;
+            tableEntry.beginValueCounts.set(rawValue, (tableEntry.beginValueCounts.get(rawValue) ?? 0) + 1);
+            tableEntry.beginValues.add(rawValue);
+        } else {
+            tableEntry.endCount++;
+            tableEntry.endValueCounts.set(rawValue, (tableEntry.endValueCounts.get(rawValue) ?? 0) + 1);
+            tableEntry.endValues.add(rawValue);
+        }
+        return true;
+    }
+
+    private removeScheduleValueFromIndex(tableName: string, kind: ScheduleKind, value: string): boolean {
+        const normalized = normalizeScheduleDate(value);
+        if (normalized === null) return false;
+
+        const group = this.dateGroups.get(normalized.date);
+        const tableEntry = group?.tables.get(tableName);
+        if (group === undefined || tableEntry === undefined) return false;
+
+        const rawValue = value.trim();
+        if (kind === 'begin') {
+            if (!this.decrementValueCount(tableEntry.beginValueCounts, tableEntry.beginValues, rawValue)) return false;
+            tableEntry.beginCount = Math.max(0, tableEntry.beginCount - 1);
+        } else {
+            if (!this.decrementValueCount(tableEntry.endValueCounts, tableEntry.endValues, rawValue)) return false;
+            tableEntry.endCount = Math.max(0, tableEntry.endCount - 1);
+        }
+
+        this.removeEmptyTableEntry(group, normalized.date, tableName, tableEntry);
+        return true;
+    }
+
+    private decrementValueCount(counts: Map<string, number>, values: Set<string>, value: string): boolean {
+        const count = counts.get(value);
+        if (count === undefined) return false;
+        if (count <= 1) {
+            counts.delete(value);
+            values.delete(value);
+        } else {
+            counts.set(value, count - 1);
+        }
+        return true;
+    }
+
+    private getOrCreateTableEntry(normalized: { date: string; sortTime: number }, tableName: string): ScheduleTimelineTableEntry {
+        let group = this.dateGroups.get(normalized.date);
         if (group === undefined) {
             group = {date: normalized.date, sortTime: normalized.sortTime, tables: new Map()};
-            groups.set(normalized.date, group);
+            this.dateGroups.set(normalized.date, group);
         }
         let tableEntry = group.tables.get(tableName);
         if (tableEntry === undefined) {
@@ -176,18 +368,94 @@ export class ScheduleTimelinePanel {
                 tableName,
                 beginValues: new Set(),
                 endValues: new Set(),
+                beginValueCounts: new Map(),
+                endValueCounts: new Map(),
                 beginCount: 0,
                 endCount: 0,
             };
             group.tables.set(tableName, tableEntry);
         }
-        if (kind === 'begin') {
-            tableEntry.beginValues.add(value.trim());
-            tableEntry.beginCount++;
-        } else {
-            tableEntry.endValues.add(value.trim());
-            tableEntry.endCount++;
+        let dateKeys = this.tableDateKeys.get(tableName);
+        if (dateKeys === undefined) {
+            dateKeys = new Set<string>();
+            this.tableDateKeys.set(tableName, dateKeys);
         }
+        dateKeys.add(normalized.date);
+        return tableEntry;
+    }
+
+    private removeEmptyTableEntry(
+        group: ScheduleTimelineDateGroup,
+        date: string,
+        tableName: string,
+        tableEntry: ScheduleTimelineTableEntry,
+    ): void {
+        if (tableEntry.beginCount > 0 || tableEntry.endCount > 0) return;
+
+        group.tables.delete(tableName);
+        const dateKeys = this.tableDateKeys.get(tableName);
+        if (dateKeys !== undefined) {
+            dateKeys.delete(date);
+            if (dateKeys.size === 0) this.tableDateKeys.delete(tableName);
+        }
+        if (group.tables.size === 0) this.dateGroups.delete(date);
+    }
+
+    private removeTableFromDateIndex(tableName: string): boolean {
+        const dateKeys = this.tableDateKeys.get(tableName);
+        if (dateKeys === undefined || dateKeys.size === 0) return false;
+
+        for (const date of dateKeys) {
+            const group = this.dateGroups.get(date);
+            if (group === undefined) continue;
+            group.tables.delete(tableName);
+            if (group.tables.size === 0) this.dateGroups.delete(date);
+        }
+        this.tableDateKeys.delete(tableName);
+        return true;
+    }
+
+    private getSortedGroups(): ScheduleTimelineDateGroup[] {
+        return Array.from(this.dateGroups.values()).sort((left, right) => {
+            if (left.sortTime !== right.sortTime) return left.sortTime - right.sortTime;
+            return left.date.localeCompare(right.date);
+        });
+    }
+
+    private getTableIndexSignature(tableName: string): string {
+        const dateKeys = this.tableDateKeys.get(tableName);
+        if (dateKeys === undefined || dateKeys.size === 0) return '';
+
+        const parts: string[] = [];
+        for (const date of Array.from(dateKeys).sort((left, right) => left.localeCompare(right))) {
+            const tableEntry = this.dateGroups.get(date)?.tables.get(tableName);
+            if (tableEntry === undefined) continue;
+            parts.push([
+                date,
+                tableEntry.beginCount,
+                this.valueCountsSignature(tableEntry.beginValueCounts),
+                tableEntry.endCount,
+                this.valueCountsSignature(tableEntry.endValueCounts),
+            ].join('\t'));
+        }
+        return parts.join('\n');
+    }
+
+    private valueCountsSignature(counts: Map<string, number>): string {
+        return Array.from(counts.entries())
+            .sort((left, right) => left[0].localeCompare(right[0]))
+            .map(([value, count]) => `${value}:${count}`)
+            .join('|');
+    }
+
+    private scheduleRender(): void {
+        if (this.renderScheduled) return;
+        this.renderScheduled = true;
+        window.requestAnimationFrame(() => {
+            this.renderScheduled = false;
+            if (!this.isVisible()) return;
+            this.renderGroups(this.getSortedGroups());
+        });
     }
 
     private renderGroups(groups: ScheduleTimelineDateGroup[]): void {
@@ -226,7 +494,7 @@ export class ScheduleTimelinePanel {
 
         const count = document.createElement('span');
         count.classList.add('schedule-timeline-group-count');
-        count.textContent = `${group.tables.size} 件`;
+        count.textContent = `${this.getGroupTotalCount(group)} 件`;
 
         header.appendChild(chevron);
         header.appendChild(date);
@@ -248,6 +516,14 @@ export class ScheduleTimelinePanel {
         groupElement.appendChild(header);
         groupElement.appendChild(items);
         return groupElement;
+    }
+
+    private getGroupTotalCount(group: ScheduleTimelineDateGroup): number {
+        let total = 0;
+        for (const tableEntry of group.tables.values()) {
+            total += tableEntry.beginCount + tableEntry.endCount;
+        }
+        return total;
     }
 
     private createTableElement(tableEntry: ScheduleTimelineTableEntry): HTMLElement {
