@@ -24,7 +24,10 @@ export class EditorTableFindBar {
     private readonly caseSensitiveButton: HTMLButtonElement;
     private readonly wholeWordButton: HTMLButtonElement;
     private readonly regexButton: HTMLButtonElement;
+    private readonly handleTableViewportChanged: () => void;
     private currentState: TabState | null;
+    private observedState: TabState | null;
+    private tableRowsObserver: MutationObserver | null;
     private matches: FindMatch[];
     private currentIndex: number;
     private highlightedCells: HTMLElement[];
@@ -36,9 +39,12 @@ export class EditorTableFindBar {
     private searchRequestId: number;
     private searching: boolean;
     private searchProgressPercent: number;
+    private highlightRefreshFrameId: number | null;
 
     constructor() {
         this.currentState = null;
+        this.observedState = null;
+        this.tableRowsObserver = null;
         this.matches = [];
         this.currentIndex = -1;
         this.highlightedCells = [];
@@ -50,6 +56,10 @@ export class EditorTableFindBar {
         this.searchRequestId = 0;
         this.searching = false;
         this.searchProgressPercent = 0;
+        this.highlightRefreshFrameId = null;
+        this.handleTableViewportChanged = () => {
+            this.scheduleHighlightRefresh();
+        };
 
         this.element = document.createElement('div');
         this.element.classList.add('editor-table-find-bar');
@@ -133,6 +143,7 @@ export class EditorTableFindBar {
 
     show(state: TabState): void {
         if (this.currentState !== state) {
+            this.unobserveState();
             this.cancelSearch();
             this.clearHighlights();
             this.currentState = state;
@@ -143,6 +154,7 @@ export class EditorTableFindBar {
             state.wrapperElement.appendChild(this.element);
         }
         this.element.classList.add('editor-table-find-bar-visible');
+        this.observeState(state);
         this.scheduleSearch(0);
         this.inputElement.focus();
         this.inputElement.select();
@@ -155,6 +167,7 @@ export class EditorTableFindBar {
 
     private hide(focusTable: boolean): void {
         this.element.classList.remove('editor-table-find-bar-visible');
+        this.unobserveState();
         this.cancelSearch();
         this.clearHighlights();
         if (focusTable && this.currentState !== null) {
@@ -338,6 +351,42 @@ export class EditorTableFindBar {
         this.updateCount();
     }
 
+    private observeState(state: TabState): void {
+        if (this.observedState === state) return;
+        this.unobserveState();
+        this.observedState = state;
+        state.wrapperElement.addEventListener('editor-table-scroll-metrics-changed', this.handleTableViewportChanged);
+        this.tableRowsObserver = new MutationObserver(this.handleTableViewportChanged);
+        this.tableRowsObserver.observe(state.editorTable.getTableElement(), {childList: true});
+    }
+
+    private unobserveState(): void {
+        if (this.observedState !== null) {
+            this.observedState.wrapperElement.removeEventListener('editor-table-scroll-metrics-changed', this.handleTableViewportChanged);
+            this.observedState = null;
+        }
+        if (this.tableRowsObserver !== null) {
+            this.tableRowsObserver.disconnect();
+            this.tableRowsObserver = null;
+        }
+        if (this.highlightRefreshFrameId !== null) {
+            window.cancelAnimationFrame(this.highlightRefreshFrameId);
+            this.highlightRefreshFrameId = null;
+        }
+    }
+
+    private scheduleHighlightRefresh(): void {
+        if (this.highlightRefreshFrameId !== null) return;
+        if (!this.element.classList.contains('editor-table-find-bar-visible')) return;
+        if (this.searching || this.currentIndex < 0 || this.matches.length === 0) return;
+        this.highlightRefreshFrameId = window.requestAnimationFrame(() => {
+            this.highlightRefreshFrameId = null;
+            if (!this.element.classList.contains('editor-table-find-bar-visible')) return;
+            if (this.searching || this.currentIndex < 0 || this.matches.length === 0) return;
+            this.applyHighlights();
+        });
+    }
+
     private moveToNext(): void {
         if (this.matches.length === 0) return;
         const nextIndex = this.currentIndex === -1 ? 0 : (this.currentIndex + 1) % this.matches.length;
@@ -386,14 +435,25 @@ export class EditorTableFindBar {
         this.clearHighlights();
         const state = this.currentState;
         if (state === null) return;
-        if (this.currentIndex < 0 || this.currentIndex >= this.matches.length) return;
+        if (this.matches.length === 0) return;
         const editorTable = state.editorTable;
-        const match = this.matches[this.currentIndex];
-        const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
-        const sourceCell = editorTable.getCellOrNull(match.row, match.column);
-        this.addHighlightCell(visibleCell, true);
-        if (sourceCell !== visibleCell) {
-            this.addHighlightCell(sourceCell, true);
+        const renderedStart = editorTable.getVirtualScrollRenderedStart();
+        const renderedEnd = editorTable.getVirtualScrollRenderedEnd();
+        const frozenRowCount = editorTable.getFrozenRowCount();
+        for (let i = 0; i < this.matches.length; i++) {
+            const match = this.matches[i];
+            const dataRowIndex = match.row - 1;
+            if (dataRowIndex >= frozenRowCount
+                && (dataRowIndex < renderedStart || dataRowIndex >= renderedEnd)) {
+                continue;
+            }
+            const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
+            const sourceCell = editorTable.getCellOrNull(match.row, match.column);
+            const current = i === this.currentIndex;
+            this.addHighlightCell(visibleCell, current);
+            if (sourceCell !== visibleCell) {
+                this.addHighlightCell(sourceCell, current);
+            }
         }
     }
 

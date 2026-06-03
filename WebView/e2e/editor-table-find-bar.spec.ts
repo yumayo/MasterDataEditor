@@ -3,6 +3,10 @@ import {Page, Locator} from '@playwright/test';
 import {installMockApiAsync, MockFileSystem} from './fixtures/mock-api';
 
 function createFindBarFileSystem(): MockFileSystem {
+    const largeRows = ["id,name,category"];
+    for (let i = 1; i <= 400; i++) {
+        largeRows.push(`${i},${i >= 5 && i <= 7 ? 'Needle' : `Row ${i}`},Group`);
+    }
     return {
         "schema/item.json": JSON.stringify({
             header: [
@@ -29,6 +33,15 @@ function createFindBarFileSystem(): MockFileSystem {
             "1,Slime",
             "2,Dragon",
         ].join("\n"),
+        "schema/large.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "category", type: "string"},
+            ],
+            primary_key: ["id"],
+        }),
+        "data/large.csv": largeRows.join("\n"),
     };
 }
 
@@ -46,6 +59,15 @@ function getDataCell(table: Locator, rowIndex: number, colIndex: number): Locato
 
 function getFindInput(page: Page): Locator {
     return page.locator('.editor-table-find-input');
+}
+
+async function setTableScrollTopAsync(page: Page, tableName: string, scrollTop: number): Promise<void> {
+    const viewport = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table-main-viewport`);
+    await expect(viewport).toBeVisible();
+    await viewport.evaluate((element, nextScrollTop) => {
+        element.scrollTop = nextScrollTop;
+        element.dispatchEvent(new Event('scroll', {bubbles: true}));
+    }, scrollTop);
 }
 
 test.describe('EditorTable検索バー', () => {
@@ -128,6 +150,25 @@ test.describe('EditorTable検索バー', () => {
         await findInput.fill('Dragon');
         await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Dragon');
+    });
+
+    test('手動スクロールで検索結果セルが再描画されても背景色を復元する', async ({page}) => {
+        const table = await openTableAsync(page, 'large');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('Needle');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/3');
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
+
+        await setTableScrollTopAsync(page, 'large', 10000);
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveCount(0);
+
+        await setTableScrollTopAsync(page, 'large', 0);
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
     });
 
     test('ExplorerでCtrl+Fを押すと既存のテーブル検索入力にフォーカスする', async ({page}) => {
