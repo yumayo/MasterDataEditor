@@ -9,6 +9,7 @@ export interface UiSidebarState {
     width: number;
     activePanel: UiActivityBarItem;
     timelineTableName: string | null;
+    scheduleTimeline: UiScheduleTimelineState;
 }
 
 export interface UiBottomPanelState {
@@ -93,6 +94,11 @@ export interface UiActivityBarState {
     order: UiActivityBarItem[];
 }
 
+export interface UiScheduleTimelineState {
+    collapsedDates: string[];
+    scroll: UiScrollPosition;
+}
+
 export interface UiState {
     sidebar: UiSidebarState;
     activityBar: UiActivityBarState;
@@ -111,10 +117,15 @@ const MAX_FORM_PANEL_NAV_STACK = 20;
 const MAX_FORM_PANEL_LABEL_LENGTH = 512;
 const MAX_SCROLL_POSITION = 1_000_000_000;
 const MAX_CELL_INDEX = 1_000_000;
+const MAX_SCHEDULE_TIMELINE_COLLAPSED_DATES = 2_000;
 export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
 const REMOVED_SPECIAL_TAB_NAMES = new Set(['ER Diagram']);
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
 const DEFAULT_SCROLL_POSITION: UiScrollPosition = {scrollLeft: 0, scrollTop: 0};
+const DEFAULT_SCHEDULE_TIMELINE_STATE: UiScheduleTimelineState = {
+    collapsedDates: [],
+    scroll: {...DEFAULT_SCROLL_POSITION},
+};
 const DEFAULT_SELECTION_STATE: UiStoredSelectionState = {
     focus: {row: 1, column: 1},
     range: {startRow: 1, startColumn: 1, endRow: 1, endColumn: 1},
@@ -125,6 +136,7 @@ const DEFAULT_UI_STATE: UiState = {
         width: DEFAULT_SIDEBAR_WIDTH,
         activePanel: 'files',
         timelineTableName: null,
+        scheduleTimeline: DEFAULT_SCHEDULE_TIMELINE_STATE,
     },
     activityBar: {
         order: [...DEFAULT_ACTIVITY_BAR_ORDER],
@@ -145,6 +157,22 @@ function cloneScrollPosition(position: UiScrollPosition): UiScrollPosition {
     return {
         scrollLeft: position.scrollLeft,
         scrollTop: position.scrollTop,
+    };
+}
+
+function cloneScheduleTimelineState(state: UiScheduleTimelineState): UiScheduleTimelineState {
+    return {
+        collapsedDates: [...state.collapsedDates],
+        scroll: cloneScrollPosition(state.scroll),
+    };
+}
+
+function cloneSidebarState(state: UiSidebarState): UiSidebarState {
+    return {
+        width: state.width,
+        activePanel: state.activePanel,
+        timelineTableName: state.timelineTableName,
+        scheduleTimeline: cloneScheduleTimelineState(state.scheduleTimeline),
     };
 }
 
@@ -208,7 +236,7 @@ function cloneStoredTab(tab: UiStoredTab): UiStoredTab {
 
 function cloneState(state: UiState): UiState {
     return {
-        sidebar: {...state.sidebar},
+        sidebar: cloneSidebarState(state.sidebar),
         activityBar: {
             order: [...state.activityBar.order],
         },
@@ -296,6 +324,33 @@ function normalizeOptionalScrollPosition(value: unknown): UiScrollPosition | nul
     const record = asRecord(value);
     if (record === null) return null;
     return normalizeScrollPosition(record);
+}
+
+function normalizeScheduleTimelineDate(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function normalizeScheduleTimelineCollapsedDates(value: unknown): string[] {
+    const result: string[] = [];
+    if (Array.isArray(value)) {
+        for (const rawDate of value) {
+            const date = normalizeScheduleTimelineDate(rawDate);
+            if (date === null || result.includes(date)) continue;
+            result.push(date);
+            if (result.length >= MAX_SCHEDULE_TIMELINE_COLLAPSED_DATES) break;
+        }
+    }
+    return result.sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeScheduleTimelineState(value: unknown): UiScheduleTimelineState {
+    const record = asRecord(value);
+    if (record === null) return cloneScheduleTimelineState(DEFAULT_SCHEDULE_TIMELINE_STATE);
+    return {
+        collapsedDates: normalizeScheduleTimelineCollapsedDates(record['collapsedDates']),
+        scroll: normalizeScrollPosition(record['scroll'], DEFAULT_SCHEDULE_TIMELINE_STATE.scroll),
+    };
 }
 
 function normalizeCellPosition(value: unknown, fallback: UiCellPosition): UiCellPosition {
@@ -468,6 +523,7 @@ function normalizeUiState(value: unknown): UiState {
             width: clampNumber(sidebar?.['width'], MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, defaults.sidebar.width),
             activePanel: normalizeActivityBarItem(sidebar?.['activePanel'], defaults.sidebar.activePanel),
             timelineTableName: normalizeTabName(sidebar?.['timelineTableName']),
+            scheduleTimeline: normalizeScheduleTimelineState(sidebar?.['scheduleTimeline'] ?? record['scheduleTimeline']),
         },
         activityBar: {
             order: normalizeActivityBarOrder(activityBar?.['order']),
@@ -519,6 +575,16 @@ export class UiStateStore {
 
     setTimelineTableName(tableName: string | null): void {
         this.state.sidebar.timelineTableName = tableName === null ? null : normalizeTabName(tableName);
+        this.schedulePersist();
+    }
+
+    setScheduleTimelineState(state: Partial<UiScheduleTimelineState>): void {
+        if (state.collapsedDates !== undefined) {
+            this.state.sidebar.scheduleTimeline.collapsedDates = normalizeScheduleTimelineCollapsedDates(state.collapsedDates);
+        }
+        if (state.scroll !== undefined) {
+            this.state.sidebar.scheduleTimeline.scroll = normalizeScrollPosition(state.scroll, this.state.sidebar.scheduleTimeline.scroll);
+        }
         this.schedulePersist();
     }
 

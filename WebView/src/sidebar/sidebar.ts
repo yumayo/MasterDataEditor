@@ -107,6 +107,7 @@ export class Sidebar {
                 this.tab.navigateToTableWithTemporaryFilterAsync(tableName, filters, mode)
                     .catch(e => { console.error('予定日タイムラインジャンプ失敗', e); });
             },
+            this.uiStateStore,
         );
         this.scheduleTimelinePanel.appendTo(sidebarContent);
 

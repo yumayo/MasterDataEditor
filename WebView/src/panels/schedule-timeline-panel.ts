@@ -5,6 +5,7 @@ import type {EditorTable} from "../editor/editor-table";
 import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
 import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
+import type {UiScrollPosition, UiStateStore} from "../app/ui-state";
 
 type ScheduleKind = 'begin' | 'end';
 
@@ -45,18 +46,29 @@ export class ScheduleTimelinePanel {
     private readonly store: InMemoryTableStore;
     private readonly openEditorTables: Map<string, EditorTable>;
     private readonly onNavigate: ScheduleTimelineNavigate;
-    private readonly collapsedDates = new Set<string>();
+    private readonly uiStateStore: UiStateStore;
+    private readonly collapsedDates: Set<string>;
     private readonly dateGroups = new Map<string, ScheduleTimelineDateGroup>();
     private readonly tableDateKeys = new Map<string, Set<string>>();
     private readonly tableScheduleColumns = new Map<string, ScheduleTimelineColumns>();
     private readonly knownTableNames = new Set<string>();
+    private scrollPosition: UiScrollPosition;
     private requestId = 0;
     private renderScheduled = false;
 
-    constructor(store: InMemoryTableStore, openEditorTables: Map<string, EditorTable>, onNavigate: ScheduleTimelineNavigate) {
+    constructor(
+        store: InMemoryTableStore,
+        openEditorTables: Map<string, EditorTable>,
+        onNavigate: ScheduleTimelineNavigate,
+        uiStateStore: UiStateStore,
+    ) {
         this.store = store;
         this.openEditorTables = openEditorTables;
         this.onNavigate = onNavigate;
+        this.uiStateStore = uiStateStore;
+        const storedState = this.uiStateStore.getState().sidebar.scheduleTimeline;
+        this.collapsedDates = new Set(storedState.collapsedDates);
+        this.scrollPosition = storedState.scroll;
 
         this.element = document.createElement('div');
         this.element.classList.add('sidebar-panel', 'schedule-timeline-panel');
@@ -71,6 +83,10 @@ export class ScheduleTimelinePanel {
         this.contentElement.setAttribute('role', 'list');
         this.element.appendChild(this.contentElement);
         this.renderMessage('予定日はありません');
+
+        this.element.addEventListener('scroll', () => {
+            this.saveScrollPosition();
+        }, {passive: true});
 
         window.addEventListener(SETTINGS_CHANGED_EVENT, () => {
             if (!this.isVisible()) return;
@@ -106,10 +122,11 @@ export class ScheduleTimelinePanel {
 
     async refreshAsync(): Promise<void> {
         const currentRequestId = ++this.requestId;
+        const scrollToRestore = this.scrollPosition;
         this.renderMessage('読み込み中...');
         await this.rebuildScheduleIndexAsync();
         if (currentRequestId !== this.requestId) return;
-        this.renderGroups(this.getSortedGroups());
+        this.renderGroups(this.getSortedGroups(), scrollToRestore);
     }
 
     private async rebuildScheduleIndexAsync(): Promise<void> {
@@ -454,19 +471,21 @@ export class ScheduleTimelinePanel {
         window.requestAnimationFrame(() => {
             this.renderScheduled = false;
             if (!this.isVisible()) return;
-            this.renderGroups(this.getSortedGroups());
+            this.renderGroups(this.getSortedGroups(), this.getCurrentScrollPosition());
         });
     }
 
-    private renderGroups(groups: ScheduleTimelineDateGroup[]): void {
+    private renderGroups(groups: ScheduleTimelineDateGroup[], scrollToRestore: UiScrollPosition = this.getCurrentScrollPosition()): void {
         this.contentElement.replaceChildren();
         if (groups.length === 0) {
             this.renderMessage('予定日はありません');
+            this.restoreScrollPosition(scrollToRestore);
             return;
         }
         for (const group of groups) {
             this.contentElement.appendChild(this.createGroupElement(group));
         }
+        this.restoreScrollPosition(scrollToRestore);
     }
 
     private createGroupElement(group: ScheduleTimelineDateGroup): HTMLElement {
@@ -586,6 +605,40 @@ export class ScheduleTimelinePanel {
         } else {
             this.collapsedDates.delete(date);
         }
+        this.saveCollapsedDates();
+    }
+
+    private getCurrentScrollPosition(): UiScrollPosition {
+        return {
+            scrollLeft: this.element.scrollLeft,
+            scrollTop: this.element.scrollTop,
+        };
+    }
+
+    private restoreScrollPosition(position: UiScrollPosition): void {
+        window.requestAnimationFrame(() => {
+            this.element.scrollLeft = position.scrollLeft;
+            this.element.scrollTop = position.scrollTop;
+        });
+    }
+
+    private saveScrollPosition(): void {
+        if (!this.isVisible()) return;
+        const nextScrollPosition = this.getCurrentScrollPosition();
+        if (
+            nextScrollPosition.scrollLeft === this.scrollPosition.scrollLeft
+            && nextScrollPosition.scrollTop === this.scrollPosition.scrollTop
+        ) {
+            return;
+        }
+        this.scrollPosition = nextScrollPosition;
+        this.uiStateStore.setScheduleTimelineState({scroll: nextScrollPosition});
+    }
+
+    private saveCollapsedDates(): void {
+        this.uiStateStore.setScheduleTimelineState({
+            collapsedDates: Array.from(this.collapsedDates).sort((left, right) => left.localeCompare(right)),
+        });
     }
 
     private selectTableElement(button: HTMLElement): void {
