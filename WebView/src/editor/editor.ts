@@ -65,7 +65,6 @@ export class Editor {
 
     private isSyncingLeftPaneFromTable: boolean;
     private isSyncingTableFromLeftPane: boolean;
-    private lastLeftPaneSyncedScrollTop: number;
     private lastLeftPaneSyncedScrollLeft: number;
 
     constructor(editorElement: HTMLElement) {
@@ -79,7 +78,6 @@ export class Editor {
         this.relationsPanel = false;
         this.isSyncingLeftPaneFromTable = false;
         this.isSyncingTableFromLeftPane = false;
-        this.lastLeftPaneSyncedScrollTop = 0;
         this.lastLeftPaneSyncedScrollLeft = 0;
 
         // ナビゲーションバーを editor の先頭に配置する（editor-content の上）
@@ -182,7 +180,6 @@ export class Editor {
         try {
             if (this.leftPane.scrollTop !== metrics.scrollTop) this.leftPane.scrollTop = metrics.scrollTop;
             if (this.leftPane.scrollLeft !== metrics.scrollLeft) this.leftPane.scrollLeft = metrics.scrollLeft;
-            this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
             this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
         } finally {
             this.isSyncingLeftPaneFromTable = false;
@@ -209,7 +206,6 @@ export class Editor {
         this.isSyncingLeftPaneFromTable = true;
         try {
             if (this.leftPane.scrollLeft !== nextScrollLeft) this.leftPane.scrollLeft = nextScrollLeft;
-            this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
             this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
         } finally {
             this.isSyncingLeftPaneFromTable = false;
@@ -282,7 +278,6 @@ export class Editor {
         this.leftPane.scrollLeft = state.savedScrollLeft;
         this.leftPane.scrollTop = state.savedScrollTop;
         this.lastLeftPaneSyncedScrollLeft = this.leftPane.scrollLeft;
-        this.lastLeftPaneSyncedScrollTop = this.leftPane.scrollTop;
     }
 
     /**

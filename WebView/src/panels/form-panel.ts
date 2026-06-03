@@ -1122,7 +1122,6 @@ export class FormPanel {
                     column.name,
                     fkValue,
                     expr.tableName,
-                    expr.columnName,
                     targetData.header,
                     matchedRows,
                     targetSchema,
@@ -1170,14 +1169,13 @@ export class FormPanel {
         if (requestId !== this.currentRequestId) return null;
 
         const matchedRows = this.filterRowsByColumnWithIndex(targetData.rows, targetData.header, targetColumnName, fkValue);
-        return this.buildOutgoingSectionAsync(columnName, fkValue, targetTableName, targetColumnName, targetData.header, matchedRows, targetSchema, requestId);
+        return this.buildOutgoingSectionAsync(columnName, fkValue, targetTableName, targetData.header, matchedRows, targetSchema, requestId);
     }
 
     private async buildOutgoingSectionAsync(
         sourceColumnName: string,
         fkValue: string,
         targetTableName: string,
-        targetColumnName: string,
         targetHeader: string[],
         matchedRows: IndexedRow[],
         targetSchema: SchemaJson,

@@ -509,7 +509,7 @@ export class EditorTable {
     refreshDetachedHeaderLayers(): void { this.layout.refreshDetachedHeaderLayers(); }
     refreshQuadrantPaneLayers(): void { this.layout.refreshQuadrantPaneLayers(); }
     refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshQuadrantViewportRowHeaders(update); }
-    getDetachedViewportRowTopPx(sourceRow: HTMLElement, logicalRowIndex: number): string { return this.layout.getDetachedViewportRowTopPx(sourceRow, logicalRowIndex); }
+    getDetachedViewportRowTopPx(logicalRowIndex: number): string { return this.layout.getDetachedViewportRowTopPx(logicalRowIndex); }
     createDetachedViewportRowClone(sourceRow: HTMLElement): HTMLElement | null { return this.layout.createDetachedViewportRowClone(sourceRow); }
     syncDetachedViewportRowHeaderStates(): void { this.layout.syncDetachedViewportRowHeaderStates(); }
     refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshDetachedViewportRowHeaders(update); }
@@ -779,6 +779,10 @@ export class EditorTable {
         return this.renderer.isMiniTableInstance();
     }
 
+    shouldUseStoreRowsForInitialRender(): boolean {
+        return this.useStoreRowsForInitialRender;
+    }
+
     // =========================================================================
     // blame（変更履歴）表示
     // =========================================================================
@@ -950,7 +954,7 @@ export class EditorTable {
         };
     }
 
-    private emitScrollMetricsChanged(): void {
+    emitScrollMetricsChanged(): void {
         this.element.dispatchEvent(new CustomEvent('editor-table-scroll-metrics-changed', {
             bubbles: true,
             detail: this.getScrollMetrics(),

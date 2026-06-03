@@ -186,7 +186,7 @@ self.onmessage = (event: MessageEvent<DiffBuildWorkerRequest>) => {
         const transfers: Transferable[] = [];
         if (data.leftRowSourceIndices !== undefined) transfers.push(data.leftRowSourceIndices.buffer as Transferable);
         if (data.rightRowSourceIndices !== undefined) transfers.push(data.rightRowSourceIndices.buffer as Transferable);
-        self.postMessage(response, transfers);
+        self.postMessage(response, {transfer: transfers});
     } catch (error: unknown) {
         const response: DiffBuildWorkerResponse = {
             requestId: request.requestId,
