@@ -26,6 +26,7 @@ export class EditorTableFindBar {
     private readonly wholeWordButton: HTMLButtonElement;
     private readonly regexButton: HTMLButtonElement;
     private readonly handleTableViewportChanged: () => void;
+    private readonly handleTableClick: (event: MouseEvent) => void;
     private currentState: TabState | null;
     private observedState: TabState | null;
     private tableRowsObserver: MutationObserver | null;
@@ -60,6 +61,9 @@ export class EditorTableFindBar {
         this.highlightRefreshFrameId = null;
         this.handleTableViewportChanged = () => {
             this.scheduleHighlightRefresh();
+        };
+        this.handleTableClick = (event: MouseEvent) => {
+            this.handleTableCellClick(event);
         };
 
         this.element = document.createElement('div');
@@ -361,6 +365,7 @@ export class EditorTableFindBar {
         this.unobserveState();
         this.observedState = state;
         state.wrapperElement.addEventListener('editor-table-scroll-metrics-changed', this.handleTableViewportChanged);
+        state.wrapperElement.addEventListener('click', this.handleTableClick);
         this.tableRowsObserver = new MutationObserver(this.handleTableViewportChanged);
         this.tableRowsObserver.observe(state.editorTable.getTableElement(), {childList: true});
     }
@@ -368,6 +373,7 @@ export class EditorTableFindBar {
     private unobserveState(): void {
         if (this.observedState !== null) {
             this.observedState.wrapperElement.removeEventListener('editor-table-scroll-metrics-changed', this.handleTableViewportChanged);
+            this.observedState.wrapperElement.removeEventListener('click', this.handleTableClick);
             this.observedState = null;
         }
         if (this.tableRowsObserver !== null) {
@@ -427,6 +433,23 @@ export class EditorTableFindBar {
         }
         markers.push({start: rangeStart / totalDataRowCount, size: (rangeEnd - rangeStart + 1) * rowSize});
         return markers;
+    }
+
+    private handleTableCellClick(event: MouseEvent): void {
+        const state = this.currentState;
+        if (state === null || this.matches.length === 0) return;
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (target === null) return;
+        const cell = target.closest('.editor-table-cell-find-match');
+        if (!(cell instanceof HTMLElement)) return;
+        if (!state.wrapperElement.contains(cell)) return;
+        const position = state.editorTable.getCellPositionFromElement(cell);
+        if (position === null) return;
+        const matchIndex = this.matches.findIndex((match) => {
+            return match.row === position.row && match.column === position.column;
+        });
+        if (matchIndex === -1 || matchIndex === this.currentIndex) return;
+        this.setCurrentIndex(matchIndex, false);
     }
 
     private moveToNext(): void {

@@ -185,10 +185,16 @@ test.describe('EditorTable検索バー', () => {
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
         await expect.poll(() => hasSearchScrollbarMarkerAsync(page)).toBe(true);
 
+        const thirdMatch = page.locator('.editor-left-pane .editor-table-cell-find-match').nth(2);
+        await thirdMatch.click();
+        await expect(page.locator('.editor-table-find-count')).toHaveText('3/3');
+        await expect(thirdMatch).toHaveClass(/editor-table-cell-find-current/);
+
         await setTableScrollTopAsync(page, 'large', 10000);
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveCount(0);
 
         await setTableScrollTopAsync(page, 'large', 0);
+        await expect(page.locator('.editor-table-find-count')).toHaveText('3/3');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
     });
