@@ -7,6 +7,7 @@ export class ExplorerDirectory {
 
     private readonly element: HTMLElement;
     private readonly depth: number;
+    private readonly filterInput: HTMLInputElement;
 
     /** テーブル名 → ExplorerFile のマップ（ハイライト制御に使用） */
     private readonly files: Map<string, ExplorerFile>;
@@ -28,6 +29,7 @@ export class ExplorerDirectory {
         filterInput.type = 'text';
         filterInput.classList.add('explorer-filter-input');
         filterInput.placeholder = 'テーブルを検索...';
+        this.filterInput = filterInput;
         // クリアボタン（✕）
         const clearButton = document.createElement('button');
         clearButton.classList.add('explorer-filter-clear');
@@ -57,6 +59,11 @@ export class ExplorerDirectory {
         filterContainer.appendChild(filterInput);
         filterContainer.appendChild(clearButton);
         this.element.appendChild(filterContainer);
+    }
+
+    focusFilter(): void {
+        this.filterInput.focus();
+        this.filterInput.select();
     }
 
     appendFile(name: string, description: string | null): void {

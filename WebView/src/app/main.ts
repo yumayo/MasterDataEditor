@@ -180,6 +180,12 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
             e.preventDefault();
             sidebar.activateSearchPanel();
         }
+        if (primaryModifier && !e.shiftKey && key === 'f') {
+            e.preventDefault();
+            if (sidebar.focusSearchControlForActivePanel(e.target)) return;
+            tab.openFindBarForActiveEditorTable(e.target);
+            return;
+        }
         if (primaryModifier && !e.shiftKey && key === 'h') {
             e.preventDefault();
             sidebar.activateSearchPanelWithReplace();

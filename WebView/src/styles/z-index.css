@@ -27,6 +27,7 @@
     --z-index-sort-indicator: 1;
     --z-index-grid-dropdown: 100;
     --z-index-grid-dropdown-list: 101;
+    --z-index-editor-table-find-bar: 900;
 
     /* ─── パネル・オーバーレイ ─── */
     --z-index-form-panel: 200;

@@ -40,6 +40,7 @@ export class Sidebar {
     private readonly viewPluginPanel: ViewPluginPanel;
     private readonly directory: ExplorerDirectory;
     private readonly uiStateStore: UiStateStore;
+    private activePanel: ActivityBarItem;
     constructor(
         explorerElement: HTMLElement,
         tab: Tab,
@@ -54,6 +55,7 @@ export class Sidebar {
         this.editor = editor;
         this.uiStateStore = uiStateStore;
         const storedUiState = this.uiStateStore.getState();
+        this.activePanel = storedUiState.sidebar.activePanel;
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
@@ -282,6 +284,20 @@ export class Sidebar {
         this.searchPanel.focus();
     }
 
+    focusSearchControlForActivePanel(target: EventTarget | null): boolean {
+        const targetElement = target instanceof HTMLElement ? target : null;
+        if (targetElement === null || !this.explorerElement.contains(targetElement)) return false;
+        if (this.activePanel === 'files') {
+            this.directory.focusFilter();
+            return true;
+        }
+        if (this.activePanel === 'search') {
+            this.searchPanel.focus();
+            return true;
+        }
+        return false;
+    }
+
     // =========================================================================
     // ブックマーク操作（EditorTable のコンテキストメニューから呼ばれる）
     // =========================================================================
@@ -393,6 +409,7 @@ export class Sidebar {
     }
 
     private switchPanel(item: ActivityBarItem): void {
+        this.activePanel = item;
         this.uiStateStore.setActiveActivityBarItem(item);
 
         this.filesPanel.classList.remove('sidebar-panel-active');

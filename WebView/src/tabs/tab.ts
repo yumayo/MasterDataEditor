@@ -40,6 +40,7 @@ import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab, UiScrollPo
 import {DebugApiDetailTab} from "./debug-api-detail-tab";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 import {ViewPluginHost, type ViewPluginMount} from "../plugins/view-plugin-host";
+import {EditorTableFindBar} from "../editor/editor-table-find-bar";
 
 /** 設定タブの固定名 */
 const SETTINGS_TAB_NAME = '設定';
@@ -342,6 +343,9 @@ export class Tab {
     /** コミット選択ダイアログ（バージョン比較用） */
     private readonly commitSelectorDialog: CommitSelectorDialog;
 
+    /** アクティブな通常 EditorTable タブ内を検索するバー */
+    private readonly editorTableFindBar: EditorTableFindBar;
+
     /** User スコープの ui-state.json へのUI状態保存 */
     private readonly uiStateStore: UiStateStore;
 
@@ -416,6 +420,7 @@ export class Tab {
         this.loadingWrapperElements = new Map();
         this.pendingTableOpens = new Map();
         this.commitSelectorDialog = new CommitSelectorDialog();
+        this.editorTableFindBar = new EditorTableFindBar();
         this.uiStateStore = uiStateStore;
 
         // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
@@ -3050,6 +3055,15 @@ export class Tab {
         state.editorTableHandler.activate();
     }
 
+    openFindBarForActiveEditorTable(target: EventTarget | null): boolean {
+        const state = this.getActiveTabState();
+        if (state === false) return false;
+        const targetElement = target instanceof HTMLElement ? target : null;
+        if (targetElement !== null && !state.wrapperElement.contains(targetElement)) return false;
+        this.editorTableFindBar.show(state);
+        return true;
+    }
+
     /**
      * アクティブなテーブルを保存する。
      * グローバル Ctrl+S ハンドラ（main.ts キャプチャフェーズ）から呼ばれる。
@@ -3318,6 +3332,7 @@ export class Tab {
      * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
+        this.editorTableFindBar.hideForState(state);
         // FormPanel 退避で右スロットが閉じると左ペイン幅が変わり、scrollLeft がクランプされる。
         // その前に、ユーザーが見ていたレイアウトでのスクロール位置を保存する。
         // NavigationHistory 経由では deactivateTabState より先に FormPanel だけ退避されるため、

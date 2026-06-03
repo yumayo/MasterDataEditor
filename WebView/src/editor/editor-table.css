@@ -7,6 +7,139 @@
     user-select: none;
 }
 
+.editor-table-find-bar {
+    position: absolute;
+    top: 8px;
+    right: 22px;
+    z-index: var(--z-index-editor-table-find-bar);
+    display: none;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    max-width: min(520px, calc(100% - 44px));
+    min-height: 30px;
+    padding: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background-color: var(--background-color);
+    color: var(--font-color);
+    user-select: none;
+}
+
+.editor-table-find-bar-visible {
+    display: flex;
+}
+
+.editor-table-find-input {
+    box-sizing: border-box;
+    width: 180px;
+    min-width: 80px;
+    height: 22px;
+    padding: 2px 6px;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    background-color: var(--background-sub-color);
+    color: var(--font-color);
+    font-size: var(--input-font-size);
+    outline: none;
+}
+
+.editor-table-find-input:focus {
+    border-color: var(--focus-border);
+}
+
+.editor-table-find-count {
+    min-width: 42px;
+    color: var(--secondary-font-color);
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.editor-table-find-status {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    color: var(--secondary-font-color);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.editor-table-find-bar-searching .editor-table-find-status {
+    display: inline-flex;
+}
+
+.editor-table-find-spinner {
+    display: block;
+    width: 14px;
+    height: 14px;
+    line-height: 0;
+    flex: 0 0 14px;
+}
+
+.editor-table-find-spinner svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.editor-table-find-spinner .loading-spinner-track,
+.editor-table-find-spinner .loading-spinner-arc {
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.editor-table-find-spinner .loading-spinner-track {
+    stroke: color-mix(in srgb, var(--font-color) 28%, transparent);
+}
+
+.editor-table-find-spinner .loading-spinner-arc {
+    stroke: var(--selection-color);
+    stroke-linecap: round;
+    stroke-dasharray: 62 38;
+    animation: editor-table-loading-spin 0.8s linear infinite;
+}
+
+.editor-table-find-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--font-color);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.editor-table-find-button:hover:not(:disabled),
+.editor-table-find-option-active {
+    background-color: var(--icon-button-hover-bg);
+}
+
+.editor-table-find-button:disabled {
+    cursor: default;
+    opacity: 0.35;
+}
+
+.editor-table-find-option-button {
+    width: 28px;
+    font-weight: 600;
+}
+
+.editor-table-cell-find-match {
+    background-color: rgba(255, 193, 7, 0.28);
+}
+
+.editor-table-cell-find-current {
+    background-color: rgba(255, 193, 7, 0.38);
+}
+
 .tab-wrapper-loading {
     width: 100%;
     background-color: var(--background-sub-color);
