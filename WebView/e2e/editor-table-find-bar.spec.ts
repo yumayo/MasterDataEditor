@@ -70,6 +70,27 @@ async function setTableScrollTopAsync(page: Page, tableName: string, scrollTop: 
     }, scrollTop);
 }
 
+async function hasSearchScrollbarMarkerAsync(page: Page): Promise<boolean> {
+    return await page.evaluate(() => {
+        const canvas = document.querySelector('.editor-left-slot .scrollbar-marker-track') as HTMLCanvasElement | null;
+        if (canvas === null) return false;
+        const context = canvas.getContext('2d');
+        if (context === null || canvas.width <= 0 || canvas.height <= 0) return false;
+        const laneWidth = Math.floor(canvas.width / 3);
+        const searchLaneX = laneWidth;
+        const searchLaneWidth = Math.max(1, laneWidth);
+        const imageData = context.getImageData(searchLaneX, 0, searchLaneWidth, canvas.height);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+            const r = imageData.data[i];
+            const g = imageData.data[i + 1];
+            const b = imageData.data[i + 2];
+            const a = imageData.data[i + 3];
+            if (a > 0 && r > 220 && g > 150 && b < 80) return true;
+        }
+        return false;
+    });
+}
+
 test.describe('EditorTable検索バー', () => {
     test.beforeEach(async ({page}) => {
         await installMockApiAsync(page, createFindBarFileSystem());
@@ -162,6 +183,7 @@ test.describe('EditorTable検索バー', () => {
         await expect(page.locator('.editor-table-find-count')).toHaveText('1/3');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
+        await expect.poll(() => hasSearchScrollbarMarkerAsync(page)).toBe(true);
 
         await setTableScrollTopAsync(page, 'large', 10000);
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveCount(0);

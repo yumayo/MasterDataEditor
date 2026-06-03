@@ -6,6 +6,7 @@
  *
  * 描画レーン（幅を3分割）:
  *   第1レーン: git変更（緑）、差分追加（緑）、差分削除（赤）
+ *   第2レーン: テーブル内検索（黄）
  *   第3レーン: バリデーションエラー（赤）
  */
 
@@ -21,6 +22,8 @@ export interface MarkerEntry {
 export const MARKER_COLOR_GIT_CHANGED = 'rgba(81, 184, 81, 0.8)';
 /** マーカー描画色: エラー・差分削除（赤） */
 export const MARKER_COLOR_ERROR = 'rgba(255, 60, 60, 0.8)';
+/** マーカー描画色: テーブル内検索（黄） */
+export const MARKER_COLOR_SEARCH = 'rgba(255, 193, 7, 0.85)';
 
 /** トラックの太さ（主軸に直交する方向のCSSピクセル数） */
 const TRACK_THICKNESS = 14;
@@ -32,6 +35,7 @@ export class ScrollbarMarkerTrack {
     private scrollContainer: HTMLElement;
     private errorMarkers: ReadonlyArray<MarkerEntry>;
     private gitChangedMarkers: ReadonlyArray<MarkerEntry>;
+    private searchMarkers: ReadonlyArray<MarkerEntry>;
     /** 差分ビュー専用: 削除行マーカー（赤、第1レーン） */
     private diffDeletedMarkers: ReadonlyArray<MarkerEntry>;
     /** 差分ビュー専用: 追加・変更行マーカー（緑、第1レーン） */
@@ -40,6 +44,7 @@ export class ScrollbarMarkerTrack {
     constructor(parentElement: HTMLElement, scrollContainer: HTMLElement, cssClass: string) {
         this.errorMarkers = [];
         this.gitChangedMarkers = [];
+        this.searchMarkers = [];
         this.diffDeletedMarkers = [];
         this.diffAddedMarkers = [];
         this.scrollContainer = scrollContainer;
@@ -69,12 +74,22 @@ export class ScrollbarMarkerTrack {
     }
 
     /**
+     * 通常テーブル用: テーブル内検索のマーカーを更新して再描画する。
+     * エラー・git変更マーカーは保持する。
+     */
+    updateSearch(searchMarkers: ReadonlyArray<MarkerEntry>): void {
+        this.searchMarkers = searchMarkers;
+        this.redraw();
+    }
+
+    /**
      * 差分ビュー用: 削除行と追加・変更行のマーカーを更新して再描画する。
      * 削除マーカーは赤、追加・変更マーカーは緑で、いずれも第1レーンに描画する。
      */
     updateDiff(diffDeletedMarkers: ReadonlyArray<MarkerEntry>, diffAddedMarkers: ReadonlyArray<MarkerEntry>): void {
         this.errorMarkers = [];
         this.gitChangedMarkers = [];
+        this.searchMarkers = [];
         this.diffDeletedMarkers = diffDeletedMarkers;
         this.diffAddedMarkers = diffAddedMarkers;
         this.redraw();
@@ -84,6 +99,7 @@ export class ScrollbarMarkerTrack {
     clear(): void {
         this.errorMarkers = [];
         this.gitChangedMarkers = [];
+        this.searchMarkers = [];
         this.diffDeletedMarkers = [];
         this.diffAddedMarkers = [];
         this.redraw();
@@ -119,7 +135,7 @@ export class ScrollbarMarkerTrack {
 
     /**
      * canvas にマーカーを描画する。
-     * 幅を3分割し、第1レーンにgit変更/差分、第3レーンにエラーを描画する。
+     * 幅を3分割し、第1レーンにgit変更/差分、第2レーンに検索、第3レーンにエラーを描画する。
      */
     private redraw(): void {
         const ctx = this.canvas.getContext('2d');
@@ -131,6 +147,7 @@ export class ScrollbarMarkerTrack {
         this.drawVerticalMarkers(ctx, 0, laneSize, h, this.gitChangedMarkers, MARKER_COLOR_GIT_CHANGED);
         this.drawVerticalMarkers(ctx, 0, laneSize, h, this.diffAddedMarkers, MARKER_COLOR_GIT_CHANGED);
         this.drawVerticalMarkers(ctx, 0, laneSize, h, this.diffDeletedMarkers, MARKER_COLOR_ERROR);
+        this.drawVerticalMarkers(ctx, laneSize, laneSize, h, this.searchMarkers, MARKER_COLOR_SEARCH);
         this.drawVerticalMarkers(ctx, w - laneSize, laneSize, h, this.errorMarkers, MARKER_COLOR_ERROR);
     }
 

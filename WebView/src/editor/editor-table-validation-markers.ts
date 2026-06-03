@@ -62,6 +62,13 @@ export class EditorTableValidationMarkers {
         this.scrollbarMarkerTrack.reattach(target.parentElement, target.scrollContainer);
     }
 
+    updateSearchScrollbarMarkers(markers: ReadonlyArray<MarkerEntry>): void {
+        if (this.scrollbarMarkerTrack === false) return;
+        if (this.isMiniTable) return;
+        if (!this.isActive) return;
+        this.scrollbarMarkerTrack.updateSearch(markers);
+    }
+
     resolveScrollbarMarkerTarget(): { parentElement: HTMLElement; scrollContainer: HTMLElement } {
         if (this.usesInternalMainViewport) return {parentElement: this.bottomRightPane, scrollContainer: this.scrollContainer};
         const parentElement = this.scrollContainer.parentElement;

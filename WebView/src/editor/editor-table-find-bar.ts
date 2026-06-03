@@ -1,5 +1,6 @@
 import type {TabState} from "../tabs/tab";
 import {matchesQuery, shouldAutoEnableWholeWord, type SearchOptions} from "../search/search-query";
+import type {MarkerEntry} from "../ui/scrollbar-marker-track";
 
 interface FindMatch {
     row: number;
@@ -144,6 +145,7 @@ export class EditorTableFindBar {
     show(state: TabState): void {
         if (this.currentState !== state) {
             this.unobserveState();
+            this.clearSearchScrollbarMarkers();
             this.cancelSearch();
             this.clearHighlights();
             this.currentState = state;
@@ -168,6 +170,7 @@ export class EditorTableFindBar {
     private hide(focusTable: boolean): void {
         this.element.classList.remove('editor-table-find-bar-visible');
         this.unobserveState();
+        this.clearSearchScrollbarMarkers();
         this.cancelSearch();
         this.clearHighlights();
         if (focusTable && this.currentState !== null) {
@@ -244,6 +247,7 @@ export class EditorTableFindBar {
         }
         const requestId = ++this.searchRequestId;
         this.clearHighlights();
+        this.clearSearchScrollbarMarkers();
         this.matches = [];
         this.currentIndex = -1;
         this.searchProgressPercent = 0;
@@ -313,6 +317,7 @@ export class EditorTableFindBar {
         }
         if (requestId !== this.searchRequestId) return;
         this.setSearching(false);
+        this.updateSearchScrollbarMarkers();
         if (this.matches.length > 0) {
             this.setCurrentIndex(0, true);
         } else {
@@ -385,6 +390,43 @@ export class EditorTableFindBar {
             if (this.searching || this.currentIndex < 0 || this.matches.length === 0) return;
             this.applyHighlights();
         });
+    }
+
+    private clearSearchScrollbarMarkers(): void {
+        if (this.currentState === null) return;
+        this.currentState.editorTable.updateSearchScrollbarMarkers([]);
+    }
+
+    private updateSearchScrollbarMarkers(): void {
+        const state = this.currentState;
+        if (state === null) return;
+        const totalDataRowCount = Math.max(1, state.editorTable.getLogicalRowCount() - 1);
+        const dataRows = new Set<number>();
+        for (const match of this.matches) {
+            const dataRowIndex = match.row - 1;
+            if (dataRowIndex >= 0 && dataRowIndex < totalDataRowCount) dataRows.add(dataRowIndex);
+        }
+        state.editorTable.updateSearchScrollbarMarkers(this.buildSearchMarkerEntries(dataRows, totalDataRowCount));
+    }
+
+    private buildSearchMarkerEntries(dataRows: Set<number>, totalDataRowCount: number): MarkerEntry[] {
+        if (dataRows.size === 0) return [];
+        const markers: MarkerEntry[] = [];
+        const sorted = Array.from(dataRows).sort((a, b) => a - b);
+        const rowSize = 1 / totalDataRowCount;
+        let rangeStart = sorted[0];
+        let rangeEnd = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+            if (sorted[i] === rangeEnd + 1) {
+                rangeEnd = sorted[i];
+                continue;
+            }
+            markers.push({start: rangeStart / totalDataRowCount, size: (rangeEnd - rangeStart + 1) * rowSize});
+            rangeStart = sorted[i];
+            rangeEnd = sorted[i];
+        }
+        markers.push({start: rangeStart / totalDataRowCount, size: (rangeEnd - rangeStart + 1) * rowSize});
+        return markers;
     }
 
     private moveToNext(): void {
