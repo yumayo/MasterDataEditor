@@ -267,6 +267,8 @@ test.describe('フォームビュー（FEAT_0043）', () => {
     });
 
     test('右上ツールバーにフォームビューのトグルアイコンが表示されること', async ({ page }) => {
+        await openTableAsync(page, 'quest');
+
         const toggleButton = page.locator('#toolbar .toolbar-button-form-toggle');
         await expect(toggleButton).toBeVisible();
     });

@@ -44,9 +44,11 @@ export class EditorTableSelectionView {
             if (prevVisible !== null) prevVisible.classList.remove('editor-table-cell-focused');
             if (prevSource !== null && prevSource !== prevVisible) prevSource.classList.remove('editor-table-cell-focused');
         }
-        const cell = this.getVisibleCellOrNull(row, col) ?? this.getCellOrNull(row, col);
-        if (cell !== null) {
-            cell.classList.add('editor-table-cell-focused');
+        const visible = this.getVisibleCellOrNull(row, col);
+        const source = this.getCellOrNull(row, col);
+        if (visible !== null) visible.classList.add('editor-table-cell-focused');
+        if (source !== null && source !== visible) source.classList.add('editor-table-cell-focused');
+        if (visible !== null || source !== null) {
             this.lastFocusedRow = row;
             this.lastFocusedCol = col;
         }

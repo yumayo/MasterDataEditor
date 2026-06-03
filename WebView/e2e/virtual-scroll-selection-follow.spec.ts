@@ -24,7 +24,7 @@ function createFileSystem(): MockFileSystem {
 }
 
 test.describe('バーチャルスクロール selection 追従', () => {
-    test('selection overlayの外枠はセルのborder-boxより右下1px小さい', async ({ page }) => {
+    test('selection overlayの外枠はセルのborder-boxと一致する', async ({ page }) => {
         const fs = createFileSystem();
         await installMockApiAsync(page, fs);
         await page.goto('/');
@@ -54,8 +54,8 @@ test.describe('バーチャルスクロール selection 追従', () => {
             };
         });
 
-        expect(Math.abs(geometry.borderWidth - (geometry.cellWidth - 1)), JSON.stringify(geometry)).toBeLessThanOrEqual(0.01);
-        expect(Math.abs(geometry.borderHeight - (geometry.cellHeight - 1)), JSON.stringify(geometry)).toBeLessThanOrEqual(0.01);
+        expect(Math.abs(geometry.borderWidth - geometry.cellWidth), JSON.stringify(geometry)).toBeLessThanOrEqual(0.01);
+        expect(Math.abs(geometry.borderHeight - geometry.cellHeight), JSON.stringify(geometry)).toBeLessThanOrEqual(0.01);
     });
 
     test('selection overlayの背景は外枠より右下にはみ出さない', async ({ page }) => {

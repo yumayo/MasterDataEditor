@@ -136,29 +136,36 @@ export class EditorTableValidationMarkers {
         // storeRowIndices に記録されたデータ行のみ走査する（バッファ空行はスキップ）
         // フィルター適用時は getFilteredDataRowCount() でフィルター後の行数を使う
         const validationRowCount = this.getFilteredDataRowCount();
-        let firstDomRow = 1;
-        let lastDomRow = validationRowCount;
+        const rowRanges: { start: number; end: number }[] = [];
         if (this.virtualScroll.handlesScrollEvents()) {
             const rendered = this.virtualScroll.getRenderedRange();
-            firstDomRow = rendered.start + 1;
-            lastDomRow = Math.min(validationRowCount, rendered.end);
+            const frozenRowCount = Math.min(this.getFrozenRowCount(), validationRowCount);
+            if (frozenRowCount > 0) rowRanges.push({start: 1, end: frozenRowCount});
+            rowRanges.push({start: rendered.start + 1, end: Math.min(validationRowCount, rendered.end)});
+        } else {
+            rowRanges.push({start: 1, end: validationRowCount});
         }
-        for (let rowIdx = firstDomRow; rowIdx <= lastDomRow; rowIdx++) {
-            const row = this.getRowElement(rowIdx);
-            if (!row) continue;
-            // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
-            const storeRowIdx = this.resolveStoreRowIndex(rowIdx - 1);
-            if (storeRowIdx < 0) continue;
-            for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
-                const cell = row.children[dataColIdx + offset] as HTMLElement | null;
-                if (!cell) continue;
-                const storeColIdx = domColToStoreCol[dataColIdx];
-                if (storeColIdx === -1) continue;
-                const key = `${storeRowIdx},${storeColIdx}`;
-                const isPkError = pkErrorCells.has(key);
-                const isOtherError = otherErrorCells.has(key);
-                // cell-error: PK重複・FK参照切れ・型不一致
-                if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
+        const processedRows = new Set<number>();
+        for (const range of rowRanges) {
+            for (let rowIdx = range.start; rowIdx <= range.end; rowIdx++) {
+                if (processedRows.has(rowIdx)) continue;
+                processedRows.add(rowIdx);
+                const row = this.getRowElement(rowIdx);
+                if (!row) continue;
+                // フィルター適用時は論理行インデックスのため resolveStoreRowIndex で変換する
+                const storeRowIdx = this.resolveStoreRowIndex(rowIdx - 1);
+                if (storeRowIdx < 0) continue;
+                for (let dataColIdx = 0; dataColIdx < colCount; dataColIdx++) {
+                    const cell = row.children[dataColIdx + offset] as HTMLElement | null;
+                    if (!cell) continue;
+                    const storeColIdx = domColToStoreCol[dataColIdx];
+                    if (storeColIdx === -1) continue;
+                    const key = `${storeRowIdx},${storeColIdx}`;
+                    const isPkError = pkErrorCells.has(key);
+                    const isOtherError = otherErrorCells.has(key);
+                    // cell-error: PK重複・FK参照切れ・型不一致
+                    if (isPkError || isOtherError) { cell.classList.add('cell-error'); } else { cell.classList.remove('cell-error'); }
+                }
             }
         }
         this.refreshScrollbarMarkers();

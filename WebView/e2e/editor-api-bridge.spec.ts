@@ -16,6 +16,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
 
 /** ブリッジの dispose() を呼び出してリスナーを解除する */
 async function disposeBridgeAsync(page: Page): Promise<void> {
+    await page.waitForFunction(() => Boolean((window as unknown as { __editorApiBridge?: unknown }).__editorApiBridge));
     await page.evaluate(() => {
         (window as unknown as { __editorApiBridge: { dispose(): void } }).__editorApiBridge.dispose();
     });

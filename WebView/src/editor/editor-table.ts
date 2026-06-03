@@ -790,6 +790,8 @@ export class EditorTable {
     isBlameShown(): boolean { return this.git.isBlameShown(); }
     async showBlameAsync(): Promise<void> { return this.git.showBlameAsync(); }
     hideBlame(): void { this.git.hideBlame(); }
+    createBlameCellForDataRow(dataRowIndex: number, isEmptyRow: boolean): HTMLElement { return this.git.createBlameCellForDataRow(dataRowIndex, isEmptyRow); }
+    moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void { this.git.moveBlameEntry(fromDomDataRowIndex, toDomDataRowIndex); }
     private hideBlameIfVisible(): void { this.git.hideBlameIfVisible(); }
 
     // =========================================================================
@@ -2562,6 +2564,12 @@ export class EditorTable {
         // blame-cell は各行要素の children[0] に配置されており、行要素ごとDOM移動するため陳腐化しない
         // フィルター適用中は表示行が storeRowIndices の部分列になるため、手動行移動は扱わない。
         if (this.columnFilter.hasActiveFilter()) return;
+        const selectionRangeBeforeMove = this.selection.getSelectionRange();
+        const shouldSelectMovedRow =
+            selectionRangeBeforeMove.startRow === fromDomDataRowIndex + 1 &&
+            selectionRangeBeforeMove.endRow === fromDomDataRowIndex + 1 &&
+            selectionRangeBeforeMove.startColumn === 1 &&
+            selectionRangeBeforeMove.endColumn === this.getTotalColumnCount() - 1;
         // ストアの行順を、移動後の表示順そのものに並び替える。
         // 下方向移動では toDomDataRowIndex が「fromを抜いた後」の位置なので、
         // store.moveRow の挿入先をストアインデックスから逆算すると1行ずれるケースがある。
@@ -2572,6 +2580,7 @@ export class EditorTable {
         movedStoreRowIndices.splice(toDomDataRowIndex, 0, movedStoreRowIndex);
         if (!isCompleteStoreRowPermutation(movedStoreRowIndices, storeRows.length)) return;
         this.store.replaceAllRows(this.tableName, movedStoreRowIndices.map(storeRowIndex => storeRows[storeRowIndex]));
+        if (this.isBlameVisible) this.moveBlameEntry(fromDomDataRowIndex, toDomDataRowIndex);
         // storeRowIndices を再構築する
         // 通常テーブル: 移動後は storeRowIndices[i] = i となる
         // ミニテーブルでは使わない前提（ドラッグ移動はミニテーブル非対応）
@@ -2606,10 +2615,16 @@ export class EditorTable {
             const startIndex = Math.min(fromDomIndex, toDomIndex);
             this.structure.renumberRowsFrom(startIndex);
         }
+        this.refreshDetachedHeaderLayout();
         // コピー範囲をクリア（行構造が変わったため）
         this.selection.clearCopyRange();
-        // 選択範囲を移動先に更新する
-        this.selection.updateRendererAfterResize();
+        // 行選択中のドラッグでは、移動元ではなく移動後の行を選択状態にする。
+        if (shouldSelectMovedRow) {
+            this.selection.selectRow(toDomDataRowIndex + 1);
+            this.selection.end();
+        } else {
+            this.selection.updateRendererAfterResize();
+        }
         // ソート状態をリセットする（行順が手動変更されたため）
         this.clearSortState();
         // git差分ハイライトを再評価する

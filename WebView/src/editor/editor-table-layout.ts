@@ -339,6 +339,7 @@ export class EditorTableLayout {
         this.detachedFrozenRowBackgroundLayer.replaceChildren();
         this.detachedCornerLayer.replaceChildren();
         this.detachedFrozenRowDataLayer.replaceChildren();
+        this.detachedFrozenCornerDataLayer.replaceChildren();
 
         const headerRow = this.getRowElement(0);
         if (headerRow === null) return;
@@ -696,6 +697,12 @@ export class EditorTableLayout {
             const logicalRowIndex = Number(rowIndexText) + 1;
             const sourceRow = this.getRowElement(logicalRowIndex);
             if (sourceRow === null) continue;
+            this.syncDetachedRowVisualState(sourceRow, detachedRow);
+            const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+            const syncCount = Math.min(fixedLeftColumnCount, sourceRow.children.length, detachedRow.children.length);
+            for (let col = 0; col < syncCount; col++) {
+                this.syncDetachedCellVisualState(sourceRow.children[col] as HTMLElement, detachedRow.children[col] as HTMLElement);
+            }
             this.setInlineTopIfChanged(detachedRow, this.formatPx(this.getQuadrantViewportRowTopPx(logicalRowIndex) - scrollTop));
         }
     }

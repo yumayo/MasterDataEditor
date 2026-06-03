@@ -159,6 +159,7 @@ export class EditorTableRenderer {
         const storeRows = this.store.getRows(this.tableName);
         const columnMapping = this.tableData.columnMapping;
         const cells: HTMLElement[] = [];
+        if (this.isBlameVisible) cells.push(this.table.createBlameCellForDataRow(dataRowIndex, false));
         // 行ヘッダー（表示上は1始まり）
         cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
         for (let j = 0; j < this.tableData.header.length; ++j) {
@@ -186,6 +187,7 @@ export class EditorTableRenderer {
      */
     renderBufferRow(dataRowIndex: number): HTMLElement {
         const cells: HTMLElement[] = [];
+        if (this.isBlameVisible) cells.push(this.table.createBlameCellForDataRow(dataRowIndex, true));
         cells.push(this.structure.createRowHeaderCell(String(dataRowIndex + 1), dataRowIndex));
         for (let j = 0; j < this.tableData.header.length; ++j) {
             cells.push(EditorTable.createCell(this.table, '', j, this.tableData.header[j].width, DEFAULT_ROW_HEIGHT));

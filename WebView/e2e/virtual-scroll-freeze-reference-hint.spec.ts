@@ -103,6 +103,10 @@ function getFrozenRowLocator(page: Page, table: Locator, dataRowIndex: number): 
     }).first();
 }
 
+function getVisibleFrozenRowLocator(table: Locator, dataRowIndex: number): Locator {
+    return table.locator(`.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="${dataRowIndex}"]`);
+}
+
 async function getRowInfoByIndexAsync(table: Locator, dataRowIndex: number): Promise<{ idText: string; hintText: string | null; }> {
     return table.evaluate((tableElement, targetRowIndex) => {
         const rowElement =
@@ -201,8 +205,8 @@ test.describe('virtual scroll freeze reference hint', () => {
         await page.goto('/');
 
         const table = await openTableAsync(page, 'chara');
-        const frozenRow0 = getFrozenRowLocator(page, table, 0);
-        const frozenRow1 = getFrozenRowLocator(page, table, 1);
+        const frozenRow0 = getVisibleFrozenRowLocator(table, 0);
+        const frozenRow1 = getVisibleFrozenRowLocator(table, 1);
         const hint0 = frozenRow0.locator('.cell-reverse-reference-hint');
         const hint1 = frozenRow1.locator('.cell-reverse-reference-hint');
 
@@ -217,8 +221,8 @@ test.describe('virtual scroll freeze reference hint', () => {
         });
         await expect.poll(async () => getMaxVisibleRowIndexAsync(table)).toBeGreaterThan(80);
 
-        await expect(getFrozenRowLocator(page, table, 0).locator('.cell-reverse-reference-hint')).toHaveText('name_1');
-        await expect(getFrozenRowLocator(page, table, 1).locator('.cell-reverse-reference-hint')).toHaveText('name_2');
+        await expect(getVisibleFrozenRowLocator(table, 0).locator('.cell-reverse-reference-hint')).toHaveText('name_1');
+        await expect(getVisibleFrozenRowLocator(table, 1).locator('.cell-reverse-reference-hint')).toHaveText('name_2');
     });
 
     test('表示レンジ更新時も不変の固定行セルは参照ヒントDOMを書き換えない', async ({ page }) => {

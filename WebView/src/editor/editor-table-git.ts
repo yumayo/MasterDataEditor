@@ -12,6 +12,7 @@ import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/se
 export class EditorTableGit {
     [key: string]: any;
     private gitDiffMarkerRows = getApplicationDefaultValue('largeFileGitDiffMarkerRows');
+    private blameEntriesByDataRowIndex: Array<BlameEntry | undefined> = [];
 
     constructor(table: EditorTable) {
         return new Proxy(this, {
@@ -41,6 +42,11 @@ export class EditorTableGit {
         const filename = 'data/' + this.tableName + '.csv';
         const entries = await gitBlameAsync(filename);
         this.isBlameVisible = true;
+        this.blameEntriesByDataRowIndex = [];
+        for (const entry of entries) {
+            const dataRowIndex = entry.lineNumber - 2;
+            if (dataRowIndex >= 0) this.blameEntriesByDataRowIndex[dataRowIndex] = entry;
+        }
         // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
         this.element.classList.add('editor-table--blame-visible');
         // 列ヘッダー行（element.children[0]）の先頭に blame-column-header を prepend する
@@ -50,11 +56,6 @@ export class EditorTableGit {
         blameHeaderCell.textContent = 'BLAME';
         EditorTable.applyCellHeight(blameHeaderCell, DEFAULT_ROW_HEIGHT);
         headerRow.prepend(blameHeaderCell);
-        // 行番号→BlameEntryの高速ルックアップマップを構築する
-        const blameMap = new Map<number, BlameEntry>();
-        for (let i = 0; i < entries.length; i++) {
-            blameMap.set(entries[i].lineNumber, entries[i]);
-        }
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
         const rowCount = this.getRowCount();
         for (let row = 1; row < rowCount; row++) {
@@ -63,30 +64,8 @@ export class EditorTableGit {
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
             const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
             const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : null;
-            // blame-cell は全行（バッファ空行含む）に追加してレイアウトを統一する
-            const blameCell = document.createElement('div');
-            blameCell.classList.add('blame-cell', 'editor-table-cell');
-            EditorTable.applyCellHeight(blameCell, DEFAULT_ROW_HEIGHT);
-            if (!isEmptyRow && rowIndexStr) {
-                // data-rowIndex はCSVヘッダー行を除いたデータ行の0始まりインデックス。
-                // git blame の lineNumber はCSVファイルの1始まり行番号で、行1がCSVヘッダー。
-                // データ行0 → CSVファイル行2（ヘッダー行1行 + 0始まり→1始まり）
-                const lineNumber = parseInt(rowIndexStr) + 2;
-                const entry = blameMap.get(lineNumber);
-                if (entry) {
-                    blameCell.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
-                    blameCell.setAttribute('role', 'note');
-                    blameCell.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
-                    const authorSpan = document.createElement('span');
-                    authorSpan.classList.add('blame-author');
-                    authorSpan.textContent = entry.author;
-                    blameCell.appendChild(authorSpan);
-                    const dateSpan = document.createElement('span');
-                    dateSpan.classList.add('blame-date');
-                    dateSpan.textContent = entry.date;
-                    blameCell.appendChild(dateSpan);
-                }
-            }
+            const dataRowIndex = rowIndexStr !== null ? parseInt(rowIndexStr) : row - 1;
+            const blameCell = this.createBlameCellForDataRow(dataRowIndex, isEmptyRow);
             rowElement.prepend(blameCell);
         }
         // blame列挿入でDOMインデックスが1つずれるため、フォーカス位置とSelection範囲を補正する
@@ -102,6 +81,7 @@ export class EditorTableGit {
      */
     hideBlame(): void {
         this.isBlameVisible = false;
+        this.blameEntriesByDataRowIndex = [];
         this.element.classList.remove('editor-table--blame-visible');
         // 各行の children[0]（blame-cell または blame-column-header）を除去する
         const rowCount = this.getRowCount();
@@ -119,6 +99,33 @@ export class EditorTableGit {
         // blame列除去でデータセルの絶対座標が戻るため、選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
         this.refreshFreezeVisualState();
+    }
+
+    createBlameCellForDataRow(dataRowIndex: number, isEmptyRow: boolean): HTMLElement {
+        const blameCell = document.createElement('div');
+        blameCell.classList.add('blame-cell', 'editor-table-cell');
+        EditorTable.applyCellHeight(blameCell, DEFAULT_ROW_HEIGHT);
+        if (isEmptyRow) return blameCell;
+        const entry = this.blameEntriesByDataRowIndex[dataRowIndex];
+        if (entry === undefined) return blameCell;
+        blameCell.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
+        blameCell.setAttribute('role', 'note');
+        blameCell.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
+        const authorSpan = document.createElement('span');
+        authorSpan.classList.add('blame-author');
+        authorSpan.textContent = entry.author;
+        blameCell.appendChild(authorSpan);
+        const dateSpan = document.createElement('span');
+        dateSpan.classList.add('blame-date');
+        dateSpan.textContent = entry.date;
+        blameCell.appendChild(dateSpan);
+        return blameCell;
+    }
+
+    moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
+        if (this.blameEntriesByDataRowIndex.length === 0) return;
+        const [entry] = this.blameEntriesByDataRowIndex.splice(fromDomDataRowIndex, 1);
+        this.blameEntriesByDataRowIndex.splice(toDomDataRowIndex, 0, entry);
     }
 
     /**

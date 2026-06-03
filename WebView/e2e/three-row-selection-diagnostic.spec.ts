@@ -222,6 +222,17 @@ async function getDetachedColumnHeaderRectsAsync(page: Page, startColumnIndex: n
     }, {startColumnIndex, endColumnIndex});
 }
 
+async function getDetachedColumnHeaderClipRectAsync(page: Page): Promise<HeaderRect> {
+    return page.evaluate(() => {
+        const viewport = document.querySelector<HTMLElement>(
+            '.editor-left-pane .editor-table-top-viewport',
+        );
+        if (viewport === null) throw new Error('column header viewport not found');
+        const rect = viewport.getBoundingClientRect();
+        return {left: rect.left, top: rect.top, width: rect.width, height: rect.height};
+    });
+}
+
 async function assertRowHeaderPixelsAsync(
     page: Page,
     screenshotPath: string,
@@ -266,13 +277,17 @@ async function assertColumnHeaderPixelsAsync(
     endColumnIndex: number,
 ): Promise<void> {
     const rects = await getDetachedColumnHeaderRectsAsync(page, startColumnIndex, endColumnIndex);
+    const clipRect = await getDetachedColumnHeaderClipRectAsync(page);
     const devicePixelRatio = await page.evaluate(() => window.devicePixelRatio);
     const screenshot = await page.screenshot({path: screenshotPath, fullPage: true, scale: 'device'});
     const image = readPng(screenshot);
     const sampleY = Math.floor((rects[0].top + rects[0].height * 0.75) * devicePixelRatio);
+    const clipRight = clipRect.left + clipRect.width;
 
     for (let i = 0; i < rects.length - 1; i++) {
         const boundaryX = Math.round((rects[i].left + rects[i].width) * devicePixelRatio);
+        const boundaryCssX = rects[i].left + rects[i].width;
+        if (boundaryCssX < clipRect.left || boundaryCssX > clipRight) continue;
         const runs = getHorizontalRuns(
             image,
             sampleY,
@@ -284,14 +299,20 @@ async function assertColumnHeaderPixelsAsync(
     }
 
     for (const rect of rects) {
+        const visibleLeft = Math.max(rect.left, clipRect.left);
+        const visibleRight = Math.min(rect.left + rect.width, clipRight);
+        expect(visibleRight).toBeGreaterThan(visibleLeft);
         const bottomY = Math.ceil((rect.top + rect.height) * devicePixelRatio) - 1;
-        const bottomX = Math.floor((rect.left + rect.width * 0.85) * devicePixelRatio);
+        const bottomX = Math.floor((visibleLeft + (visibleRight - visibleLeft) * 0.85) * devicePixelRatio);
         expect(classifyColor(rgbAt(image, bottomX, bottomY))).toBe('background');
     }
 
     const lastRect = rects[rects.length - 1];
-    const rightX = Math.ceil((lastRect.left + lastRect.width) * devicePixelRatio) - 1;
-    expect(classifyColor(rgbAt(image, rightX, sampleY))).toBe('background');
+    const lastRight = lastRect.left + lastRect.width;
+    if (lastRight <= clipRight) {
+        const rightX = Math.ceil(lastRight * devicePixelRatio) - 1;
+        expect(classifyColor(rgbAt(image, rightX, sampleY))).toBe('background');
+    }
 }
 
 test.describe('one-row selection screenshot at 200%', () => {

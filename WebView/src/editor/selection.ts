@@ -928,29 +928,30 @@ export class Selection {
     private appendSelectionOverlayGroup(group: OverlayVisualGroup): void {
         const selectionLeft = group.bounds.left;
         const selectionTop = group.bounds.top;
-        const visualSelectionRight = group.bounds.right - 1;
-        const visualSelectionHeight = Math.floor(group.bounds.bottom - selectionTop + 0.01);
-        const visualSelectionBottom = selectionTop + visualSelectionHeight;
-        if (visualSelectionRight <= selectionLeft || visualSelectionBottom <= selectionTop) return;
+        const selectionRight = group.bounds.right;
+        const selectionBottom = group.bounds.bottom;
+        const backgroundRight = selectionRight - 1;
+        const backgroundBottom = selectionBottom - 1;
+        if (selectionRight <= selectionLeft || selectionBottom <= selectionTop) return;
 
         const focusRect = group.focusBounds;
         if (focusRect === null) {
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
                 selectionLeft, selectionTop,
-                visualSelectionRight - selectionLeft, visualSelectionBottom - selectionTop,
+                backgroundRight - selectionLeft, backgroundBottom - selectionTop,
             );
         } else {
-            const visualFocusBottom = Math.min(focusRect.bottom, visualSelectionBottom);
+            const visualFocusBottom = Math.min(focusRect.bottom, backgroundBottom);
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
                 selectionLeft, selectionTop,
-                visualSelectionRight - selectionLeft, focusRect.top - selectionTop,
+                backgroundRight - selectionLeft, focusRect.top - selectionTop,
             );
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
                 selectionLeft, focusRect.bottom,
-                visualSelectionRight - selectionLeft, visualSelectionBottom - focusRect.bottom,
+                backgroundRight - selectionLeft, backgroundBottom - focusRect.bottom,
             );
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
@@ -960,14 +961,14 @@ export class Selection {
             this.appendSelectionOverlayPart(
                 'selection-overlay-bg',
                 focusRect.right, focusRect.top,
-                visualSelectionRight - focusRect.right, visualFocusBottom - focusRect.top,
+                backgroundRight - focusRect.right, visualFocusBottom - focusRect.top,
             );
         }
 
         this.appendSelectionOverlayPart(
             'selection-overlay-border',
             selectionLeft, selectionTop,
-            visualSelectionRight - selectionLeft, visualSelectionBottom - selectionTop,
+            selectionRight - selectionLeft, selectionBottom - selectionTop,
         );
     }
 
