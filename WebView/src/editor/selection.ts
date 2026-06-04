@@ -1031,13 +1031,6 @@ export class Selection {
         const endColumn = selectionRange.endColumn;
         const isBottomLogicalRow = selectionRange.endRow >= this.editorTable.getLogicalRowCount() - 1;
 
-        // バーチャルスクロールでendRowがDOM外の場合、表示範囲の最後の行にクランプする
-        // renderedEnd は排他なので -1 し、ヘッダー行分の +1 でDOM行インデックスに変換する
-        const renderedEnd = this.editorTable.getVirtualScrollRenderedEnd();
-        if (endRow > renderedEnd) {
-            endRow = renderedEnd;
-        }
-
         const cell = this.editorTable.getVisibleCellOrNull(endRow, endColumn);
         if (!cell) {
             this.hideFillHandle();

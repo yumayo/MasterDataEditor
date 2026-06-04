@@ -217,4 +217,108 @@ test.describe('バーチャルスクロール selection 追従', () => {
         expect(Math.abs(movement.borderDelta - movement.cellDelta), `selectionの移動量がセルと一致すること: ${JSON.stringify(movement)}`).toBeLessThanOrEqual(1);
         expect(Math.abs(movement.borderCellGap), `selectionとセルのtop座標が揃っていること: ${JSON.stringify(movement)}`).toBeLessThanOrEqual(1);
     });
+
+    test('選択終端セルが仮想表示範囲外に出たらfillHandleを別の表示セルへクランプしない', async ({ page }) => {
+        const fs = createFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await page.locator('#explorer .explorer-file').getByText('item', { exact: true }).click();
+        const table = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
+        await expect(table).toBeVisible();
+
+        await page.evaluate(() => {
+            const editor = (window as unknown as {
+                editor?: { activeEditorTable: {
+                    getSelection(): {
+                        start(row: number, column: number): void;
+                        end(): void;
+                    };
+                } | false };
+            }).editor;
+            if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+            editor.activeEditorTable.getSelection().start(1, 2);
+            editor.activeEditorTable.getSelection().end();
+        });
+
+        await expect(page.locator('.fill-handle')).toBeVisible();
+        const initialHost = await page.evaluate(() => {
+            const handle = document.querySelector<HTMLElement>('.fill-handle');
+            const hostCell = handle?.parentElement;
+            const hostRow = hostCell?.closest<HTMLElement>('.editor-table-row');
+            return {
+                rowIndex: hostRow?.dataset.rowIndex ?? null,
+                col: hostCell?.dataset.col ?? null,
+            };
+        });
+        expect(initialHost).toEqual({ rowIndex: '0', col: '1' });
+
+        await page.evaluate(async () => {
+            const viewport = document.querySelector<HTMLElement>(
+                '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-main-viewport',
+            );
+            if (viewport === null) throw new Error('viewport not found');
+            viewport.scrollTop = 6000;
+            viewport.dispatchEvent(new Event('scroll'));
+            await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        });
+
+        await expect.poll(async () => page.evaluate(() => {
+            const editor = (window as unknown as {
+                editor?: { activeEditorTable: {
+                    getVirtualScrollRenderedStart(): number;
+                } | false };
+            }).editor;
+            if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+            return editor.activeEditorTable.getVirtualScrollRenderedStart();
+        })).toBeGreaterThan(0);
+
+        const offscreenState = await page.evaluate(() => {
+            const handle = document.querySelector<HTMLElement>('.fill-handle');
+            const hosts = Array.from(document.querySelectorAll<HTMLElement>('.fill-handle-host'));
+            const firstHost = hosts[0] ?? null;
+            const firstHostRow = firstHost?.closest<HTMLElement>('.editor-table-row') ?? null;
+            return {
+                handleConnected: handle !== null,
+                handleDisplay: handle === null ? 'missing' : getComputedStyle(handle).display,
+                hostCount: hosts.length,
+                hostRowIndex: firstHostRow?.dataset.rowIndex ?? null,
+            };
+        });
+
+        expect(offscreenState.hostCount, JSON.stringify(offscreenState)).toBe(0);
+        expect(
+            offscreenState.handleConnected === false || offscreenState.handleDisplay === 'none',
+            JSON.stringify(offscreenState),
+        ).toBe(true);
+
+        await page.evaluate(async () => {
+            const viewport = document.querySelector<HTMLElement>(
+                '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-main-viewport',
+            );
+            if (viewport === null) throw new Error('viewport not found');
+            viewport.scrollTop = 0;
+            viewport.dispatchEvent(new Event('scroll'));
+            await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        });
+
+        await expect.poll(async () => page.evaluate(() => {
+            const row = document.querySelector<HTMLElement>(
+                '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-grid .editor-table-row[data-row-index="0"]',
+            );
+            return row !== null;
+        })).toBe(true);
+        await expect(page.locator('.fill-handle')).toBeVisible();
+
+        const restoredHost = await page.evaluate(() => {
+            const handle = document.querySelector<HTMLElement>('.fill-handle');
+            const hostCell = handle?.parentElement;
+            const hostRow = hostCell?.closest<HTMLElement>('.editor-table-row');
+            return {
+                rowIndex: hostRow?.dataset.rowIndex ?? null,
+                col: hostCell?.dataset.col ?? null,
+            };
+        });
+        expect(restoredHost).toEqual({ rowIndex: '0', col: '1' });
+    });
 });
