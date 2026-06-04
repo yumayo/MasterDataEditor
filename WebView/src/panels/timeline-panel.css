@@ -48,8 +48,7 @@
 
 /* =========================================================================
    blame列: 各行の children[0] に独立した table-cell として挿入する。
-   行ヘッダーやcorner-cellの内部ではなく、行の直接の子要素として配置し、
-   position:sticky で左端に固定する。
+   行ヘッダーやcorner-cellの内部ではなく、行の直接の子要素として配置する。
    ========================================================================= */
 
 /* blame列ヘッダー: 行の children[0] に独立した table-cell として配置 */
@@ -62,10 +61,6 @@
     font-size: 10px;
     font-weight: normal;
     color: color-mix(in srgb, var(--font-color) 60%, transparent);
-    border-right: 1px solid var(--border-color);
-    position: sticky;
-    left: 0;
-    z-index: var(--z-index-blame-cell);
     background-color: var(--background-color);
     box-sizing: border-box;
     pointer-events: none;
@@ -84,11 +79,7 @@
     white-space: nowrap;
     overflow: hidden;
     padding: 0 6px;
-    border-right: 1px solid var(--border-color);
     box-sizing: border-box;
-    position: sticky;
-    left: 0;
-    z-index: var(--z-index-blame-cell);
     background-color: var(--background-color);
     pointer-events: none;
 }

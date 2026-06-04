@@ -157,6 +157,61 @@ async function clickContextMenuItemAsync(page: Page, label: string): Promise<voi
     await menu.locator('.context-menu-item', { hasText: label }).click();
 }
 
+async function showBlameAsync(page: Page, table: Locator, rowIndex: number = 0): Promise<void> {
+    await rightClickRowHeaderAsync(table, rowIndex);
+    await clickContextMenuItemAsync(page, '変更履歴を表示');
+    await expect(table.locator('.editor-table-detached-row-header-layer .blame-cell').first()).toBeVisible();
+}
+
+async function getBlameLayoutMetricsAsync(page: Page): Promise<{
+    sourceBlameCount: number;
+    detachedBlameCount: number;
+    sourceBlameMainPaneIntersections: number;
+    bottomRightLeft: number;
+    topRightLeft: number;
+    rowHeaderRight: number;
+    cornerRight: number;
+}> {
+    return await page.evaluate(() => {
+        const table = document.querySelector<HTMLElement>('.editor-left-pane .editor-table');
+        const bottomRightPane = table?.querySelector<HTMLElement>('.editor-table-pane-bottom-right') ?? null;
+        const topRightPane = table?.querySelector<HTMLElement>('.editor-table-pane-top-right') ?? null;
+        const rowHeader = table?.querySelector<HTMLElement>('.editor-table-pane-bottom-left .editor-table-row-header') ?? null;
+        const cornerCell = table?.querySelector<HTMLElement>('.editor-table-detached-corner-layer .editor-table-corner-cell') ?? null;
+        if (table === null || bottomRightPane === null || topRightPane === null || rowHeader === null || cornerCell === null) {
+            throw new Error('blame layout target elements not found');
+        }
+        const tableRect = table.getBoundingClientRect();
+        const bottomRightRect = bottomRightPane.getBoundingClientRect();
+        const topRightRect = topRightPane.getBoundingClientRect();
+        const rowHeaderRect = rowHeader.getBoundingClientRect();
+        const cornerRect = cornerCell.getBoundingClientRect();
+        const intersects = (a: DOMRect, b: DOMRect): boolean =>
+            a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5;
+        const sourceBlameCells = Array.from(table.querySelectorAll<HTMLElement>('.editor-table-grid .blame-cell'));
+        const detachedBlameCells = Array.from(table.querySelectorAll<HTMLElement>(
+            '.editor-table-detached-row-header-layer .blame-cell, .editor-table-detached-frozen-corner-layer .blame-cell',
+        ));
+        return {
+            sourceBlameCount: sourceBlameCells.length,
+            detachedBlameCount: detachedBlameCells.length,
+            sourceBlameMainPaneIntersections: sourceBlameCells.filter(cell => intersects(cell.getBoundingClientRect(), bottomRightRect)).length,
+            bottomRightLeft: bottomRightRect.left - tableRect.left,
+            topRightLeft: topRightRect.left - tableRect.left,
+            rowHeaderRight: rowHeaderRect.right - tableRect.left,
+            cornerRight: cornerRect.right - tableRect.left,
+        };
+    });
+}
+
+async function expectNoBlameBlankAreaAsync(page: Page): Promise<void> {
+    const metrics = await getBlameLayoutMetricsAsync(page);
+    expect(metrics.sourceBlameCount).toBe(0);
+    expect(metrics.detachedBlameCount).toBe(0);
+    expect(Math.abs(metrics.bottomRightLeft - metrics.rowHeaderRight), JSON.stringify(metrics)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.topRightLeft - metrics.cornerRight), JSON.stringify(metrics)).toBeLessThanOrEqual(1);
+}
+
 // テスト本体 -------------------------------------------------------------------
 
 test.describe('タイムラインパネル', () => {
@@ -359,6 +414,50 @@ test.describe('blameビュー', () => {
 
             // .blame-cell が非表示になることを確認する
             await expect(dataRow.locator('.blame-cell')).toHaveCount(0);
+        },
+    );
+
+    test(
+        'blame表示時に元DOM側のblame-cellがメイン領域へ重なって二重表示されないこと',
+        async ({ page, historyTest: _historyTest }) => {
+            const table = page.locator('.editor-left-pane .editor-table');
+
+            await showBlameAsync(page, table);
+
+            const metrics = await getBlameLayoutMetricsAsync(page);
+            expect(metrics.sourceBlameCount).toBeGreaterThan(0);
+            expect(metrics.detachedBlameCount).toBeGreaterThan(0);
+            expect(metrics.sourceBlameMainPaneIntersections, JSON.stringify(metrics)).toBe(0);
+        },
+    );
+
+    test(
+        'blame非表示後にblame列幅の空白が残らないこと',
+        async ({ page, historyTest: _historyTest }) => {
+            const table = page.locator('.editor-left-pane .editor-table');
+
+            await showBlameAsync(page, table);
+            await rightClickRowHeaderAsync(table, 1);
+            await clickContextMenuItemAsync(page, '変更履歴を非表示');
+
+            await expectNoBlameBlankAreaAsync(page);
+        },
+    );
+
+    test(
+        'blame表示後に別タブへ移動して戻ってもblame列幅の空白が残らないこと',
+        async ({ page, historyTest: _historyTest }) => {
+            const table = page.locator('.editor-left-pane .editor-table');
+
+            await showBlameAsync(page, table);
+
+            await page.locator('#explorer').getByText('other', { exact: true }).click();
+            await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="other"] .editor-table')).toBeVisible();
+
+            await page.locator('.tab-button').filter({ hasText: 'test' }).first().click();
+            await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
+
+            await expectNoBlameBlankAreaAsync(page);
         },
     );
 });

@@ -138,7 +138,7 @@ export class EditorTableLayout {
             this.parseInlineInsetLeftPx(this.bottomRightPane.style.inset),
             this.parseInlineInsetLeftPx(this.topRightPane.style.inset)
         );
-        const minimumValidWidth = Math.max(1, minimumWidth, inlinePaneLeft) - 1;
+        const minimumValidWidth = Math.max(1, minimumWidth) - 1;
         if (Number.isFinite(measuredWidth) && measuredWidth >= minimumValidWidth) {
             this.quadrantFixedLeftWidthPx = measuredWidth;
             return measuredWidth;

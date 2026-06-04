@@ -1,5 +1,5 @@
 import {EditorTable} from "./editor-table";
-import {DEFAULT_ROW_HEIGHT} from "../core/constant";
+import {BLAME_COLUMN_WIDTH_PX, DEFAULT_ROW_HEIGHT} from "../core/constant";
 import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult} from "../app/api";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
@@ -13,6 +13,8 @@ export class EditorTableGit {
     [key: string]: any;
     private gitDiffMarkerRows = getApplicationDefaultValue('largeFileGitDiffMarkerRows');
     private blameEntriesByDataRowIndex: Array<BlameEntry | undefined> = [];
+    private isBlameLoading = false;
+    private blameRequestId = 0;
 
     constructor(table: EditorTable) {
         return new Proxy(this, {
@@ -39,8 +41,20 @@ export class EditorTableGit {
      * git blame を実行して各行の先頭（children[0]）に独立した blame-cell を挿入する
      */
     async showBlameAsync(): Promise<void> {
+        if (this.isBlameVisible || this.isBlameLoading) return;
+        const requestId = ++this.blameRequestId;
+        this.isBlameLoading = true;
         const filename = 'data/' + this.tableName + '.csv';
-        const entries = await gitBlameAsync(filename);
+        let entries: BlameEntry[];
+        try {
+            entries = await gitBlameAsync(filename);
+        } catch (error) {
+            if (this.blameRequestId === requestId) this.isBlameLoading = false;
+            throw error;
+        }
+        if (this.blameRequestId !== requestId) return;
+        this.isBlameLoading = false;
+        this.removeBlameCellsFromRenderedRows();
         this.isBlameVisible = true;
         this.blameEntriesByDataRowIndex = [];
         for (const entry of entries) {
@@ -54,6 +68,7 @@ export class EditorTableGit {
         const blameHeaderCell = document.createElement('div');
         blameHeaderCell.classList.add('blame-column-header', 'editor-table-cell');
         blameHeaderCell.textContent = 'BLAME';
+        EditorTable.applyCellWidth(blameHeaderCell, `${BLAME_COLUMN_WIDTH_PX}px`);
         EditorTable.applyCellHeight(blameHeaderCell, DEFAULT_ROW_HEIGHT);
         headerRow.prepend(blameHeaderCell);
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
@@ -80,22 +95,16 @@ export class EditorTableGit {
      * 各行の children[0] に挿入された blame-cell / blame-column-header を除去して非表示にする
      */
     hideBlame(): void {
+        const wasBlameVisible = this.isBlameVisible;
+        ++this.blameRequestId;
+        this.isBlameLoading = false;
         this.isBlameVisible = false;
         this.blameEntriesByDataRowIndex = [];
         this.element.classList.remove('editor-table--blame-visible');
-        // 各行の children[0]（blame-cell または blame-column-header）を除去する
-        const rowCount = this.getRowCount();
-        for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
-            const firstChild = rowElement.children[0] as HTMLElement;
-            if (firstChild && (firstChild.classList.contains('blame-cell') || firstChild.classList.contains('blame-column-header'))) {
-                firstChild.remove();
-            }
-        }
+        this.removeBlameCellsFromRenderedRows();
         // blame列除去でDOMインデックスが1つ戻るため、フォーカス位置とSelection範囲を補正する
-        if (this.lastFocusedCol >= 0) this.lastFocusedCol -= 1;
-        this.selection.shiftColumnsBy(-1);
+        if (wasBlameVisible && this.lastFocusedCol >= 0) this.lastFocusedCol -= 1;
+        if (wasBlameVisible) this.selection.shiftColumnsBy(-1);
         // blame列除去でデータセルの絶対座標が戻るため、選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
         this.refreshFreezeVisualState();
@@ -104,6 +113,7 @@ export class EditorTableGit {
     createBlameCellForDataRow(dataRowIndex: number, isEmptyRow: boolean): HTMLElement {
         const blameCell = document.createElement('div');
         blameCell.classList.add('blame-cell', 'editor-table-cell');
+        EditorTable.applyCellWidth(blameCell, `${BLAME_COLUMN_WIDTH_PX}px`);
         EditorTable.applyCellHeight(blameCell, DEFAULT_ROW_HEIGHT);
         if (isEmptyRow) return blameCell;
         const entry = this.blameEntriesByDataRowIndex[dataRowIndex];
@@ -134,7 +144,19 @@ export class EditorTableGit {
      * blameはgit committed dataのため、テーブル内容が変更された時点で陳腐化する。
      */
     hideBlameIfVisible(): void {
-        if (this.isBlameVisible) this.hideBlame();
+        if (this.isBlameVisible || this.isBlameLoading) this.hideBlame();
+    }
+
+    private removeBlameCellsFromRenderedRows(): void {
+        const rowCount = this.getRowCount();
+        for (let row = 0; row < rowCount; row++) {
+            const rowElement = this.getRowElement(row);
+            if (!rowElement) continue;
+            for (const child of Array.from(rowElement.children)) {
+                if (!(child instanceof HTMLElement)) continue;
+                if (child.classList.contains('blame-cell') || child.classList.contains('blame-column-header')) child.remove();
+            }
+        }
     }
 
 
