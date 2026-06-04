@@ -404,7 +404,8 @@
     width: max-content;
 }
 
-.editor-table-grid--absolute-rows .editor-table-row .editor-table-cell {
+.editor-table-grid--absolute-rows .editor-table-row .editor-table-cell,
+.editor-table-grid--absolute-rows .editor-table-source-column-header-row .editor-table-column-header {
     box-sizing: border-box;
 }
 

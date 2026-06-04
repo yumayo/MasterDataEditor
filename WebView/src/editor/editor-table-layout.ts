@@ -8,7 +8,6 @@ import {
     getLayoutBorderBoxHeightPx,
     getLayoutBorderBoxWidthPx,
     getLayoutLeftRelativeToPx,
-    getLayoutRightRelativeToPx,
 } from "../core/layout-metrics";
 
 /**
@@ -37,7 +36,7 @@ export class EditorTableLayout {
     }
 
     getHeaderRowHeightPx(): number {
-        return this.virtualScroll.getActualHeaderHeightPx();
+        return this.getHeaderLayoutHeightPx();
     }
 
     getDataRowHeightPx(): number {
@@ -51,38 +50,15 @@ export class EditorTableLayout {
     }
 
     getRenderedDataColumnWidthPx(columnIndex: number): number {
-        const start = this.getRenderedDataBoundaryOffsetPx(columnIndex);
-        const end = this.getRenderedDataBoundaryOffsetPx(columnIndex + 1);
-        const width = end - start;
-        return width > 0 ? width : this.getColumnLayoutWidthPx(columnIndex);
+        return this.getColumnLayoutWidthPx(columnIndex);
     }
 
     /**
-     * 列ヘッダーの実レイアウトから、データ列先頭を基準にした境界位置を返す。
-     * コメント付きヘッダーでは padding / badge / icon により schema.width より実幅が広がるため、
-     * 4領域分割の境界は render 後の offset 位置をSSOTにする。
+     * データ列先頭を基準にした境界位置を返す。
+     * 列幅はスキーマ/ビュー定義に保存された tableData.header[].width をSSOTにする。
      */
     getRenderedDataBoundaryOffsetPx(dataColumnExclusiveEnd: number): number {
         if (dataColumnExclusiveEnd <= 0) return 0;
-        const headerRow = this.getRowElement(0);
-        if (headerRow !== null) {
-            const firstDataCell = headerRow.children[this.dataColumnOffset()];
-            if (firstDataCell instanceof HTMLElement) {
-                if (dataColumnExclusiveEnd < this.getColumnCount()) {
-                    const boundaryCell = headerRow.children[this.dataColumnOffset() + dataColumnExclusiveEnd];
-                    if (boundaryCell instanceof HTMLElement) {
-                        const renderedWidth = getLayoutLeftRelativeToPx(boundaryCell, firstDataCell);
-                        if (renderedWidth > 0) return renderedWidth;
-                    }
-                } else {
-                    const lastDataCell = headerRow.children[headerRow.children.length - 1];
-                    if (lastDataCell instanceof HTMLElement) {
-                        const renderedWidth = getLayoutRightRelativeToPx(lastDataCell, firstDataCell);
-                        if (renderedWidth > 0) return renderedWidth;
-                    }
-                }
-            }
-        }
         let width = 0;
         for (let dataColumnIndex = 0; dataColumnIndex < Math.min(dataColumnExclusiveEnd, this.getColumnCount()); dataColumnIndex++) {
             width += this.getColumnLayoutWidthPx(dataColumnIndex);
@@ -211,16 +187,12 @@ export class EditorTableLayout {
         const cloneCell = sourceCell.cloneNode(true) as HTMLElement;
         cloneCell.style.visibility = '';
         cloneCell.style.flex = '0 0 auto';
-        const sourceRow = sourceCell.parentElement;
-        const canReuseAbsoluteRowInlineWidth = sourceRow !== null
-            && sourceRow.classList.contains('editor-table-row')
-            && this.gridElement.classList.contains('editor-table-grid--absolute-rows')
-            && sourceCell.style.width !== '';
-        if (canReuseAbsoluteRowInlineWidth) {
+        const inlineWidth = sourceCell.style.width;
+        if (inlineWidth !== '') {
             cloneCell.style.boxSizing = 'border-box';
-            cloneCell.style.width = sourceCell.style.width;
-            cloneCell.style.minWidth = sourceCell.style.minWidth || sourceCell.style.width;
-            cloneCell.style.maxWidth = sourceCell.style.maxWidth || sourceCell.style.width;
+            cloneCell.style.width = inlineWidth;
+            cloneCell.style.minWidth = sourceCell.style.minWidth || inlineWidth;
+            cloneCell.style.maxWidth = sourceCell.style.maxWidth || inlineWidth;
         } else {
             // detached layer は flex レイアウトなので、table レイアウトで確定した実幅をそのまま引き継ぐ。
             const computedStyle = window.getComputedStyle(sourceCell);

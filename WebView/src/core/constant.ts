@@ -26,6 +26,12 @@ export const ROW_HEIGHT_PX = 20;
 /** 行の実描画高さ(px)。バーチャルスクロールの位置計算に使用する */
 export const ROW_TOTAL_HEIGHT_PX = 20;
 
+/** 単行列ヘッダーの固定高さ(px) */
+export const COLUMN_HEADER_SINGLE_ROW_HEIGHT_PX = ROW_TOTAL_HEIGHT_PX;
+
+/** comment表示あり列ヘッダーの固定高さ(px) */
+export const COLUMN_HEADER_WITH_COMMENT_HEIGHT_PX = ROW_TOTAL_HEIGHT_PX * 2;
+
 /** ブラウザの巨大DOM座標誤差を避けつつ、スクロールバーつまみを小さく保つ物理コンテンツ高さ上限(px) */
 export const MAX_SCROLL_CONTENT_HEIGHT_PX = 262_144;
 

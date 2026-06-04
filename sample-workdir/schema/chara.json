@@ -76,5 +76,6 @@
     "id"
   ],
   "description": "キャラマスター",
-  "frozenColumnCount": 2
+  "frozenColumnCount": 2,
+  "frozenRowCount": 5
 }

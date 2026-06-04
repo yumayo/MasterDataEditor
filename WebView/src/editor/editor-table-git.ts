@@ -69,7 +69,7 @@ export class EditorTableGit {
         blameHeaderCell.classList.add('blame-column-header', 'editor-table-cell');
         blameHeaderCell.textContent = 'BLAME';
         EditorTable.applyCellWidth(blameHeaderCell, `${BLAME_COLUMN_WIDTH_PX}px`);
-        EditorTable.applyCellHeight(blameHeaderCell, DEFAULT_ROW_HEIGHT);
+        EditorTable.applyCellHeight(blameHeaderCell, `${this.getHeaderLayoutHeightPx()}px`);
         headerRow.prepend(blameHeaderCell);
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
         const rowCount = this.getRowCount();

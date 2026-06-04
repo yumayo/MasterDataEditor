@@ -44,6 +44,7 @@ export class VirtualScrollController {
     private readonly tableElement: HTMLElement;
     private readonly scrollContainer: HTMLElement;
     private readonly enabled: boolean;
+    private readonly getHeaderLayoutHeightPx: () => number;
 
     /** 総データ行数（バッファ行含む） */
     private totalRowCount: number;
@@ -126,15 +127,17 @@ export class VirtualScrollController {
         tableElement: HTMLElement,
         scrollContainer: HTMLElement,
         totalRowCount: number,
-        enabled: boolean
+        enabled: boolean,
+        getHeaderLayoutHeightPx: () => number = () => ROW_TOTAL_HEIGHT_PX
     ) {
         this.tableElement = tableElement;
         this.scrollContainer = scrollContainer;
         this.enabled = enabled;
+        this.getHeaderLayoutHeightPx = getHeaderLayoutHeightPx;
         this.totalRowCount = totalRowCount;
         this.frozenRowCount = 0;
         this.actualRowHeight = ROW_TOTAL_HEIGHT_PX;
-        this.actualHeaderHeight = ROW_TOTAL_HEIGHT_PX;
+        this.actualHeaderHeight = this.resolveHeaderLayoutHeightPx();
         this.scrollTopCompensationPx = 0;
         this.isRecalculating = false;
         this.renderRow = false;
@@ -777,7 +780,7 @@ export class VirtualScrollController {
         const widths: number[] = [];
         for (let index = 0; index < headerRow.children.length; index++) {
             const cell = headerRow.children[index] as HTMLElement | null;
-            widths.push(cell === null ? 0 : getLayoutBorderBoxWidthPx(cell));
+            widths.push(cell === null ? 0 : this.getConfiguredCellWidthPx(cell));
         }
         const key = widths.map(width => width.toFixed(3)).join(',');
         if (key === this.absoluteRowsLastCellWidthsKey) return false;
@@ -811,11 +814,27 @@ export class VirtualScrollController {
         return this.actualHeaderHeight;
     }
 
+    private getConfiguredCellWidthPx(cell: HTMLElement): number {
+        const inlineWidth = this.parsePx(cell.style.width);
+        if (inlineWidth > 0) return inlineWidth;
+        const inlineMinWidth = this.parsePx(cell.style.minWidth);
+        if (inlineMinWidth > 0) return inlineMinWidth;
+        return getLayoutBorderBoxWidthPx(cell);
+    }
+
+    private parsePx(value: string): number {
+        if (value.trim() === '') return 0;
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    private resolveHeaderLayoutHeightPx(): number {
+        const height = this.getHeaderLayoutHeightPx();
+        return Number.isFinite(height) && height > 0 ? height : ROW_TOTAL_HEIGHT_PX;
+    }
+
     private measureHeaderHeight(): void {
-        const headerRow = this.tableElement.children[0] as HTMLElement | null;
-        if (headerRow === null) return;
-        const measured = getLayoutBorderBoxHeightPx(headerRow);
-        if (measured > 0) this.actualHeaderHeight = measured;
+        this.actualHeaderHeight = this.resolveHeaderLayoutHeightPx();
     }
 
     /**

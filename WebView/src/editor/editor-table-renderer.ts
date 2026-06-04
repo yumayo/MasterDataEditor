@@ -39,15 +39,7 @@ export class EditorTableRenderer {
             // 左上隅の空セル
             const cornerCell = document.createElement('div');
             cornerCell.classList.add('editor-table-cell', 'editor-table-corner-cell');
-            // comment 付き列が1つでもある場合、ヘッダー行は2行分の高さになるためコーナーセルも合わせる
-            const hasComment = this.tableData.header.some((col: any) => col.comment !== null);
-            if (hasComment) {
-                cornerCell.style.height = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-                cornerCell.style.minHeight = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-                cornerCell.style.maxHeight = 'none';
-            } else {
-                EditorTable.applyCellHeight(cornerCell, DEFAULT_ROW_HEIGHT);
-            }
+            EditorTable.applyCellHeight(cornerCell, `${this.getHeaderLayoutHeightPx()}px`);
             // コーナーセルクリックで全選択
             cornerCell.addEventListener('mousedown', (e) => {
                 // マウスサイドボタン（戻る/進む）はブラウザ履歴ナビゲーション専用のため無視する

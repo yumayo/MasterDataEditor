@@ -7,6 +7,7 @@ import {
     getLayoutTopRelativeToPx,
 } from "../core/layout-metrics";
 import {EditorTable} from "./editor-table";
+import {BLAME_COLUMN_WIDTH_PX} from "../core/constant";
 
 interface GridLinePixelMetrics {
     devicePixelRatio: number;
@@ -149,6 +150,9 @@ export class EditorTableGridLines {
     }
 
     private getColumnBoundaries(row: HTMLElement, lineContainer: HTMLElement): number[] {
+        const configuredBoundaries = this.getConfiguredColumnBoundaries(row, lineContainer);
+        if (configuredBoundaries !== null) return configuredBoundaries;
+
         const firstCell = Array.from(row.children).find(child => child instanceof HTMLElement) as HTMLElement | undefined;
         if (firstCell === undefined) return [];
         const boundaries: number[] = [getLayoutLeftRelativeToPx(firstCell, lineContainer)];
@@ -157,6 +161,20 @@ export class EditorTableGridLines {
             const cellWidth = this.getCellWidth(child);
             if (cellWidth <= 0) continue;
             boundaries.push(getLayoutRightRelativeToPx(child, lineContainer));
+        }
+        return boundaries;
+    }
+
+    private getConfiguredColumnBoundaries(row: HTMLElement, lineContainer: HTMLElement): number[] | null {
+        const cells = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
+        if (cells.length === 0) return null;
+        if (cells.some(cell => cell.style.transform.trim() !== '')) return null;
+        const firstCell = cells[0];
+        const boundaries: number[] = [getLayoutLeftRelativeToPx(firstCell, lineContainer)];
+        for (const cell of cells) {
+            const cellWidth = this.getConfiguredCellWidthPx(cell);
+            if (cellWidth <= 0) return null;
+            boundaries.push(boundaries[boundaries.length - 1] + cellWidth);
         }
         return boundaries;
     }
@@ -242,6 +260,8 @@ export class EditorTableGridLines {
     }
 
     private getCellWidth(cell: HTMLElement): number {
+        const configuredWidth = this.getConfiguredCellWidthPx(cell);
+        if (configuredWidth > 0) return configuredWidth;
         const inlineWidth = this.parsePx(cell.style.width);
         if (inlineWidth > 0) return inlineWidth;
         const inlineMinWidth = this.parsePx(cell.style.minWidth);
@@ -250,7 +270,22 @@ export class EditorTableGridLines {
         return measured > 0 ? measured : 0;
     }
 
+    private getConfiguredCellWidthPx(cell: HTMLElement): number {
+        if (cell.classList.contains('blame-cell') || cell.classList.contains('blame-column-header')) {
+            return BLAME_COLUMN_WIDTH_PX;
+        }
+        if (cell.classList.contains('editor-table-row-header') || cell.classList.contains('editor-table-corner-cell')) {
+            return this.getRowHeaderLayoutWidthPx();
+        }
+        const dataColumnIndex = Number(cell.dataset.col);
+        if (Number.isInteger(dataColumnIndex) && dataColumnIndex >= 0 && dataColumnIndex < this.getColumnCount()) {
+            return this.getColumnLayoutWidthPx(dataColumnIndex);
+        }
+        return 0;
+    }
+
     private getRowHeight(row: HTMLElement): number {
+        if (this.isHeaderGridRow(row)) return this.getHeaderLayoutHeightPx();
         let height = this.parsePx(row.style.height);
         if (height > 0) return height;
         for (const child of Array.from(row.children)) {
@@ -260,6 +295,12 @@ export class EditorTableGridLines {
         if (height > 0) return height;
         const measured = getLayoutBorderBoxHeightPx(row);
         return measured > 0 ? measured : 0;
+    }
+
+    private isHeaderGridRow(row: HTMLElement): boolean {
+        if (row.classList.contains('editor-table-column-header-row')) return true;
+        if (row.classList.contains('editor-table-source-column-header-row')) return true;
+        return row.parentElement === this.detachedCornerLayer && row.classList.contains('editor-table-detached-row');
     }
 
     private parsePx(value: string): number {

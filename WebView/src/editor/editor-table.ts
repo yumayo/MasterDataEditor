@@ -13,6 +13,8 @@ import {
     CELL_HORIZONTAL_EXTRA,
     MIN_COLUMN_WIDTH_PX,
     ROW_TOTAL_HEIGHT_PX,
+    COLUMN_HEADER_SINGLE_ROW_HEIGHT_PX,
+    COLUMN_HEADER_WITH_COMMENT_HEIGHT_PX,
     ROW_HEADER_WIDTH_PX,
     ROW_HEADER_DIGIT_WIDTH_PX,
     ROW_HEADER_NUMBER_EXTRA_WIDTH_PX,
@@ -391,7 +393,7 @@ export class EditorTable {
         // 通常テーブル: true、ミニテーブル: false、差分テーブル: true（isMiniTable=true だが仮想スクロール有効）
         // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
         this.virtualScroll = new VirtualScrollController(
-            this.gridElement, scrollContainer, emptyRowCount, enableVirtualScroll
+            this.gridElement, scrollContainer, emptyRowCount, enableVirtualScroll, () => this.getHeaderLayoutHeightPx()
         );
         this.scrollBinding.setVerticalScrollMapper(
             () => this.virtualScroll.getLogicalScrollTop(),
@@ -507,6 +509,10 @@ export class EditorTable {
     getColumnLayoutWidthPx(columnIndex: number): number { return this.layout.getColumnLayoutWidthPx(columnIndex); }
     getRenderedDataColumnWidthPx(columnIndex: number): number { return this.layout.getRenderedDataColumnWidthPx(columnIndex); }
     getRenderedDataBoundaryOffsetPx(dataColumnExclusiveEnd: number): number { return this.layout.getRenderedDataBoundaryOffsetPx(dataColumnExclusiveEnd); }
+    getHeaderLayoutHeightPx(): number {
+        const hasComment = this.tableData.header.some(column => column.comment !== null);
+        return hasComment ? COLUMN_HEADER_WITH_COMMENT_HEIGHT_PX : COLUMN_HEADER_SINGLE_ROW_HEIGHT_PX;
+    }
     private getDetachedPrefixWidthPx(): number { return this.layout.getDetachedPrefixWidthPx(); }
     getDataAreaWidthPx(): number { return this.layout.getDataAreaWidthPx(); }
     private getFrozenColumnAreaWidthPx(): number { return this.layout.getFrozenColumnAreaWidthPx(); }

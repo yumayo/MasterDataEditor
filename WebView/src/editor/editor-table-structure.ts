@@ -469,15 +469,14 @@ export class EditorTableStructure {
         columnHeaderCell.dataset.columnIndex = String(columnIndex);
         columnHeaderCell.dataset.col = String(columnIndex);
         EditorTable.applyCellWidth(columnHeaderCell, width);
+        const headerHeight = `${this.table.getHeaderLayoutHeightPx()}px`;
         if (comment !== null) {
-            // comment あり: 2行分のコンテンツを持つため、maxHeight/lineHeight による単行クリップを解除する。
-            // minHeight のみ設定してコンテンツに合わせて自然に伸長させる。
-            columnHeaderCell.style.height = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-            columnHeaderCell.style.minHeight = `calc(${DEFAULT_ROW_HEIGHT} * 2)`;
-            columnHeaderCell.style.maxHeight = 'none';
+            columnHeaderCell.style.height = headerHeight;
+            columnHeaderCell.style.minHeight = headerHeight;
+            columnHeaderCell.style.maxHeight = headerHeight;
             columnHeaderCell.style.lineHeight = 'normal';
         } else {
-            EditorTable.applyCellHeight(columnHeaderCell, DEFAULT_ROW_HEIGHT);
+            EditorTable.applyCellHeight(columnHeaderCell, headerHeight);
         }
         // 列ヘッダークリックで列全体を選択
         columnHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createColumnHeaderClickHandler(columnHeaderCell));
