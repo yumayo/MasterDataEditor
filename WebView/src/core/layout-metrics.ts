@@ -1,4 +1,4 @@
-function getEffectiveCssZoom(element: HTMLElement | null): number {
+export function getEffectiveCssZoom(element: HTMLElement | null): number {
     let zoom = 1;
     for (let current = element; current !== null; current = current.parentElement) {
         const rawZoom = window.getComputedStyle(current).getPropertyValue('zoom');

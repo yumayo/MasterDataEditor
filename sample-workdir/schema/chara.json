@@ -75,5 +75,6 @@
   "primary_key": [
     "id"
   ],
-  "description": "キャラマスター"
+  "description": "キャラマスター",
+  "frozenColumnCount": 2
 }

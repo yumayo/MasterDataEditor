@@ -8,6 +8,8 @@
     /* セルのstacking context内で使用するため小さい値で十分 */
     --z-index-selection-border: 1;
     --z-index-copy-border: 2;
+    --z-index-editor-table-grid-lines: 13;
+    --z-index-editor-table-detached-grid-lines: 27;
     --z-index-freeze-column: 15;
     --z-index-blame-cell: 30;
     --z-index-freeze-row: 25;

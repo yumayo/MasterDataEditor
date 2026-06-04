@@ -58,6 +58,7 @@ import {EditorTableStoreSync} from "./editor-table-store-sync";
 import {EditorTableNavigation} from "./editor-table-navigation";
 import {EditorTableBookmarks} from "./editor-table-bookmarks";
 import {EditorTableRelations} from "./editor-table-relations";
+import {EditorTableGridLines} from "./editor-table-grid-lines";
 import type {GitStatusResult} from "../app/api";
 import type {LargeFileSettings} from "../settings/settings-schema";
 
@@ -110,6 +111,7 @@ export class EditorTable {
     private readonly customHorizontalScrollbar: HTMLElement;
     private readonly customHorizontalScrollbarThumb: HTMLElement;
     private readonly customScrollbarCorner: HTMLElement;
+    private readonly gridLineMainLayer: HTMLElement;
     private readonly detachedColumnHeaderLayer: HTMLElement;
     private readonly detachedRowHeaderLayer: HTMLElement;
     private readonly detachedFrozenRowBackgroundLayer: HTMLElement;
@@ -222,6 +224,8 @@ export class EditorTable {
     private bookmarks: EditorTableBookmarks;
     /** RelationsPanel / EditorAPI 連携モジュール */
     private relations: EditorTableRelations;
+    /** CSS border を使わないセル境界線描画モジュール */
+    private gridLines: EditorTableGridLines;
     /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
     skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
@@ -295,6 +299,8 @@ export class EditorTable {
         this.customHorizontalScrollbar.appendChild(this.customHorizontalScrollbarThumb);
         this.customScrollbarCorner = document.createElement('div');
         this.customScrollbarCorner.classList.add('editor-table-logical-scrollbar-corner', 'editor-table-logical-scrollbar-corner--disabled');
+        this.gridLineMainLayer = document.createElement('div');
+        this.gridLineMainLayer.classList.add('editor-table-grid-line-layer');
         this.detachedColumnHeaderLayer = document.createElement('div');
         this.detachedColumnHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-column-header-layer');
         this.detachedRowHeaderLayer = document.createElement('div');
@@ -329,6 +335,7 @@ export class EditorTable {
             this.scrollContainer.classList.add('editor-table-main-viewport--custom-vertical-scroll');
             this.scrollContainer.appendChild(this.mainContent);
             this.bottomRightPane.appendChild(this.gridElement);
+            this.bottomRightPane.appendChild(this.gridLineMainLayer);
             this.bottomRightPane.appendChild(this.customVerticalScrollbar);
             this.bottomRightPane.appendChild(this.customHorizontalScrollbar);
             this.bottomRightPane.appendChild(this.customScrollbarCorner);
@@ -342,6 +349,7 @@ export class EditorTable {
             this.element.appendChild(this.detachedFrozenRowBackgroundLayer);
             this.element.appendChild(this.detachedCornerLayer);
             this.element.appendChild(this.gridElement);
+            this.element.appendChild(this.gridLineMainLayer);
             this.element.appendChild(this.detachedFrozenRowDataLayer);
         }
         this.detachedHeaderTopOffset = 0;
@@ -402,6 +410,7 @@ export class EditorTable {
         this.navigation = new EditorTableNavigation(this);
         this.bookmarks = new EditorTableBookmarks(this);
         this.relations = new EditorTableRelations(this);
+        this.gridLines = new EditorTableGridLines(this);
     }
 
     /**
@@ -439,6 +448,8 @@ export class EditorTable {
         this.bookmarks = new EditorTableBookmarks(this);
         // RelationsPanel / EditorAPI 連携の委譲先も正しい this で再作成する。
         this.relations = new EditorTableRelations(this);
+        // セル境界線描画の委譲先も正しい this で再作成する。
+        this.gridLines = new EditorTableGridLines(this);
         // コンストラクタで生成した旧 FilterDropdown を破棄してから正しい this（プロキシオブジェクト）で再作成する。
         // 旧インスタンスは realEditorTable（storeRowIndices=[]）を参照しているため破棄が必要。
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
@@ -506,37 +517,67 @@ export class EditorTable {
     cloneDetachedCell(sourceCell: HTMLElement): HTMLElement { return this.layout.cloneDetachedCell(sourceCell); }
     syncDetachedCellVisualState(sourceCell: HTMLElement, detachedCell: HTMLElement): void { this.layout.syncDetachedCellVisualState(sourceCell, detachedCell); }
     syncDetachedRowVisualState(sourceRow: HTMLElement, detachedRow: HTMLElement): void { this.layout.syncDetachedRowVisualState(sourceRow, detachedRow); }
-    refreshDetachedHeaderLayers(): void { this.layout.refreshDetachedHeaderLayers(); }
-    refreshQuadrantPaneLayers(): void { this.layout.refreshQuadrantPaneLayers(); }
-    refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshQuadrantViewportRowHeaders(update); }
+    refreshDetachedHeaderLayers(): void {
+        this.layout.refreshDetachedHeaderLayers();
+        this.refreshGridLines();
+    }
+    refreshQuadrantPaneLayers(): void {
+        this.layout.refreshQuadrantPaneLayers();
+        this.refreshGridLines();
+    }
+    refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void {
+        this.layout.refreshQuadrantViewportRowHeaders(update);
+        this.refreshGridLines();
+    }
     getDetachedViewportRowTopPx(logicalRowIndex: number): string { return this.layout.getDetachedViewportRowTopPx(logicalRowIndex); }
     createDetachedViewportRowClone(sourceRow: HTMLElement): HTMLElement | null { return this.layout.createDetachedViewportRowClone(sourceRow); }
     syncDetachedViewportRowHeaderStates(): void { this.layout.syncDetachedViewportRowHeaderStates(); }
-    refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void { this.layout.refreshDetachedViewportRowHeaders(update); }
+    refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void {
+        this.layout.refreshDetachedViewportRowHeaders(update);
+        this.refreshGridLines();
+    }
     syncDetachedLegacyStaticCellStates(): void { this.layout.syncDetachedLegacyStaticCellStates(); }
-    private syncQuadrantStaticCellStates(): void { this.layout.syncQuadrantStaticCellStates(); }
+    private syncQuadrantStaticCellStates(): void {
+        this.layout.syncQuadrantStaticCellStates();
+        this.refreshGridLines();
+    }
     syncDetachedHeaderScrollOffset(): void { this.layout.syncDetachedHeaderScrollOffset(); }
     setInlineTransformIfChanged(element: HTMLElement, transform: string): void { this.layout.setInlineTransformIfChanged(element, transform); }
     setInlineZIndexIfChanged(element: HTMLElement, zIndex: string): void { this.layout.setInlineZIndexIfChanged(element, zIndex); }
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void { this.layout.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft); }
     private syncScrollBoundVisuals(): void {
         this.layout.syncScrollBoundVisuals();
+        this.refreshGridLines();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
     syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
         this.layout.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft);
+        this.refreshGridLines();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
-    refreshDetachedHeaderLayout(): void { this.layout.refreshDetachedHeaderLayout(); }
-    syncDetachedVisualState(): void { this.layout.syncDetachedVisualState(); }
-    setDetachedHeaderTopOffset(offsetPx: number): void { this.layout.setDetachedHeaderTopOffset(offsetPx); }
-    private refreshFreezeVisualState(): void { this.layout.refreshFreezeVisualState(); }
+    refreshDetachedHeaderLayout(): void {
+        this.layout.refreshDetachedHeaderLayout();
+        this.refreshGridLines();
+    }
+    syncDetachedVisualState(): void {
+        this.layout.syncDetachedVisualState();
+        this.refreshGridLines();
+    }
+    setDetachedHeaderTopOffset(offsetPx: number): void {
+        this.layout.setDetachedHeaderTopOffset(offsetPx);
+        this.refreshGridLines();
+    }
+    private refreshFreezeVisualState(): void {
+        this.layout.refreshFreezeVisualState();
+        this.refreshGridLines();
+    }
     syncFreezeStateCssClasses(): void { this.layout.syncFreezeStateCssClasses(); }
     getQuadrantViewportRowTopPx(logicalRowIndex: number): number { return this.layout.getQuadrantViewportRowTopPx(logicalRowIndex); }
     applyFreezeVisualStateToRenderedRows(): void { this.layout.applyFreezeVisualStateToRenderedRows(); }
     syncFreezeTransforms(scrollTop: number, scrollLeft: number): void { this.layout.syncFreezeTransforms(scrollTop, scrollLeft); }
+    refreshGridLines(): void { this.gridLines.refresh(); }
 
     getStoreColumnIndex(domColumnIndex: number): number {
         const mapping = this.tableData.columnMapping;

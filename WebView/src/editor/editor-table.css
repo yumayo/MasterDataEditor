@@ -408,6 +408,33 @@
     box-sizing: border-box;
 }
 
+.editor-table-grid-line-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: var(--z-index-editor-table-grid-lines);
+}
+
+.editor-table-grid-line-group {
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: var(--z-index-editor-table-grid-lines);
+}
+
+.editor-table-detached-layer .editor-table-grid-line-group {
+    z-index: var(--z-index-editor-table-detached-grid-lines);
+}
+
+.editor-table-grid-line {
+    position: absolute;
+    background-color: var(--border-color);
+    pointer-events: none;
+}
+
 .editor-table-detached-layer {
     position: absolute;
     left: 0;
