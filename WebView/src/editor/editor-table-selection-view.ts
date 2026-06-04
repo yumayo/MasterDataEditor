@@ -85,21 +85,24 @@ export class EditorTableSelectionView {
 
         const { startRow, startColumn, endRow, endColumn } = range;
 
-        // 選択範囲内のセルにクラスを付与する
-        for (let row = startRow; row <= endRow; row++) {
-            for (let col = startColumn; col <= endColumn; col++) {
-                const cell = this.getCellOrNull(row, col);
-                if (cell === null) continue;
-                const classes: string[] = [];
-                // フォーカスセル以外の選択状態をクラスとして保持する
-                if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
-                if (row === startRow) classes.push('sel-top');
-                if (row === endRow) classes.push('sel-bottom');
-                if (col === startColumn) classes.push('sel-left');
-                if (col === endColumn) classes.push('sel-right');
-                if (classes.length > 0) {
-                    cell.classList.add(...classes);
-                    this.lastSelectionCells.push({ row, col, classes });
+        // 仮想スクロール時に論理上の全選択行を走査すると、列選択のスクロールが総行数に比例して重くなる。
+        // DOM に存在する固定行・表示中行だけへクラスを付ける。
+        for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
+            for (let row = rowStart; row <= rowEnd; row++) {
+                for (let col = startColumn; col <= endColumn; col++) {
+                    const cell = this.getCellOrNull(row, col);
+                    if (cell === null) continue;
+                    const classes: string[] = [];
+                    // フォーカスセル以外の選択状態をクラスとして保持する
+                    if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
+                    if (row === startRow) classes.push('sel-top');
+                    if (row === endRow) classes.push('sel-bottom');
+                    if (col === startColumn) classes.push('sel-left');
+                    if (col === endColumn) classes.push('sel-right');
+                    if (classes.length > 0) {
+                        cell.classList.add(...classes);
+                        this.lastSelectionCells.push({ row, col, classes });
+                    }
                 }
             }
         }
@@ -152,14 +155,17 @@ export class EditorTableSelectionView {
                 if (col === endColumn) headerCell.classList.add('selected-column-end');
             }
         }
-        // 選択範囲に含まれる行ヘッダーに選択状態を追加
-        for (let row = startRow; row <= endRow; row++) {
-            const rowElement = this.getRowElement(row);
-            if (rowElement) {
-                const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-                if (rowHeader) {
-                    rowHeader.classList.add('selected');
-                    if (row === endRow) rowHeader.classList.add('selected-row-end');
+        // 選択範囲に含まれる行ヘッダーに選択状態を追加する。
+        // ここも表示中行だけを対象にし、全行列選択時の O(totalRows) 走査を避ける。
+        for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
+            for (let row = rowStart; row <= rowEnd; row++) {
+                const rowElement = this.getRowElement(row);
+                if (rowElement) {
+                    const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+                    if (rowHeader) {
+                        rowHeader.classList.add('selected');
+                        if (row === endRow) rowHeader.classList.add('selected-row-end');
+                    }
                 }
             }
         }
@@ -170,5 +176,36 @@ export class EditorTableSelectionView {
         }
         this.syncDetachedLegacyStaticCellStates();
         this.syncDetachedViewportRowHeaderStates();
+    }
+
+    private getVisibleSelectedRowRanges(startRow: number, endRow: number): Array<[number, number]> {
+        const ranges: Array<[number, number]> = [];
+        const appendIntersection = (rangeStart: number, rangeEnd: number): void => {
+            const intersectStart = Math.max(startRow, rangeStart);
+            const intersectEnd = Math.min(endRow, rangeEnd);
+            if (intersectStart <= intersectEnd) ranges.push([intersectStart, intersectEnd]);
+        };
+
+        if (startRow <= 0 && endRow >= 0) appendIntersection(0, 0);
+
+        const frozenRowCount = this.getFrozenRowCount();
+        if (frozenRowCount > 0) appendIntersection(1, frozenRowCount);
+
+        const renderedStartRow = this.getVirtualScrollRenderedStart() + 1;
+        const renderedEndRow = this.getVirtualScrollRenderedEnd();
+        appendIntersection(renderedStartRow, renderedEndRow);
+
+        if (ranges.length <= 1) return ranges;
+        ranges.sort((a, b) => a[0] - b[0]);
+        const merged: Array<[number, number]> = [];
+        for (const [rangeStart, rangeEnd] of ranges) {
+            const previous = merged[merged.length - 1];
+            if (previous !== undefined && rangeStart <= previous[1] + 1) {
+                previous[1] = Math.max(previous[1], rangeEnd);
+                continue;
+            }
+            merged.push([rangeStart, rangeEnd]);
+        }
+        return merged;
     }
 }

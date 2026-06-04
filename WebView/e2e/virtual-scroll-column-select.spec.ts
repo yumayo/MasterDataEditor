@@ -17,7 +17,7 @@ function generateCsv(rowCount: number): string {
     return rows.join('\n');
 }
 
-function createFileSystem(): MockFileSystem {
+function createFileSystem(rowCount: number = 100): MockFileSystem {
     return {
         'schema/item.json': JSON.stringify({
             header: [
@@ -27,7 +27,7 @@ function createFileSystem(): MockFileSystem {
             ],
             primary_key: ['id'],
         }),
-        'data/item.csv': generateCsv(100),
+        'data/item.csv': generateCsv(rowCount),
     };
 }
 
@@ -147,5 +147,60 @@ test.describe('バーチャルスクロール列選択', () => {
         for (let i = 0; i < values.length; i++) {
             expect(values[i], `行${i}のvalue列が空でない: "${values[i]}"`).toBe('');
         }
+    });
+
+    test('巨大テーブルの列選択スクロールで選択再適用が総行数に比例しない', async ({ page }) => {
+        await page.setViewportSize({ width: 960, height: 640 });
+        const fs = createFileSystem(5000);
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await page.locator('#explorer .explorer-file').getByText('item', { exact: true }).click();
+        const table = page.locator('.editor-left-pane .editor-table').first();
+        await expect(table).toBeVisible();
+
+        const valueHeader = table.locator('.editor-table-column-header-row .editor-table-column-header').nth(2);
+        await valueHeader.click();
+
+        const counters = await page.evaluate(async () => {
+            const editor = (window as unknown as {
+                editor?: {
+                    activeEditorTable: {
+                        getSelection(): { end(): void };
+                        getCellOrNull(row: number, column: number): HTMLElement | null;
+                        getRowElement(row: number): HTMLElement | null;
+                    } | false;
+                };
+            }).editor;
+            if (!editor || editor.activeEditorTable === false) throw new Error('activeEditorTable not found');
+
+            const table = editor.activeEditorTable;
+            table.getSelection().end();
+
+            const counts = { cell: 0, row: 0 };
+            const originalGetCellOrNull = table.getCellOrNull;
+            const originalGetRowElement = table.getRowElement;
+            table.getCellOrNull = function (this: unknown, row: number, column: number): HTMLElement | null {
+                counts.cell++;
+                return originalGetCellOrNull.call(this, row, column);
+            };
+            table.getRowElement = function (this: unknown, row: number): HTMLElement | null {
+                counts.row++;
+                return originalGetRowElement.call(this, row);
+            };
+
+            const viewport = document.querySelector<HTMLElement>('.editor-left-pane .editor-table-main-viewport');
+            if (viewport === null) throw new Error('main viewport not found');
+            viewport.scrollTop = 3200;
+            viewport.dispatchEvent(new Event('scroll'));
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+            table.getCellOrNull = originalGetCellOrNull;
+            table.getRowElement = originalGetRowElement;
+            return counts;
+        });
+
+        expect(counters.cell, JSON.stringify(counters)).toBeLessThan(1000);
+        expect(counters.row, JSON.stringify(counters)).toBeLessThan(3000);
     });
 });
