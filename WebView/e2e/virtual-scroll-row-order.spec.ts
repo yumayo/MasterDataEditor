@@ -94,7 +94,7 @@ test.describe('バーチャルスクロール行順序', () => {
         const scrollContainer = page.locator('.editor-left-pane');
 
         // 中間付近までスクロール
-        await scrollContainer.evaluate((el) => { el.scrollTop = 50 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 50 * 20; });
         await page.waitForTimeout(300);
 
         const midIds = await getVisibleColumnValues(table, 0);
@@ -135,7 +135,7 @@ test.describe('バーチャルスクロール行順序', () => {
         const scrollContainer = page.locator('.editor-left-pane');
 
         // 中間付近までスクロール
-        await scrollContainer.evaluate((el) => { el.scrollTop = 50 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 50 * 20; });
         await page.waitForTimeout(300);
 
         const midValues = await getVisibleColumnValues(table, 2);
@@ -153,7 +153,7 @@ test.describe('バーチャルスクロール行順序', () => {
         }
 
         // 末尾付近までスクロール
-        await scrollContainer.evaluate((el) => { el.scrollTop = 85 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 85 * 20; });
         await page.waitForTimeout(300);
 
         const tailValues = await getVisibleColumnValues(table, 2);
@@ -180,7 +180,7 @@ test.describe('バーチャルスクロール行順序', () => {
 
         // 5行ずつ段階的にスクロールダウン→アップの往復で確認
         for (let scrollRow = 0; scrollRow <= 80; scrollRow += 5) {
-            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 21; }, scrollRow);
+            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 20; }, scrollRow);
             await page.waitForTimeout(100);
 
             const ids = await getVisibleColumnValues(table, 0);
@@ -192,7 +192,7 @@ test.describe('バーチャルスクロール行順序', () => {
 
         // スクロールアップ
         for (let scrollRow = 80; scrollRow >= 0; scrollRow -= 5) {
-            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 21; }, scrollRow);
+            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 20; }, scrollRow);
             await page.waitForTimeout(100);
 
             const ids = await getVisibleColumnValues(table, 0);
@@ -222,7 +222,7 @@ test.describe('バーチャルスクロール行順序', () => {
         await expect(table).toBeVisible();
 
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 4000 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 4000 * 20; });
         await page.waitForTimeout(300);
 
         const topMetrics = await table.evaluate((tableElement) => {

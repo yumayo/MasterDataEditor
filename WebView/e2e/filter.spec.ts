@@ -1362,8 +1362,8 @@ test.describe('BUG: 検索絞り込み後の適用で非表示項目がチェッ
  *
  * 100行: category は "boss"(5行), "normal"(95行) の2種。
  * boss は id=1,21,41,61,81 に分散配置（スクロール範囲全体に散らばる）。
- * ビューポート高さ600px / 行高21px ≒ 28行表示 + OVERSCAN=10 = 約48行がDOMに存在。
- * → 100行中 52行はDOM外であり、display=none ベースのフィルターが効かない。
+ * ビューポート高さ600px / 行高20px = 約30行表示 + OVERSCAN=10 = 約50行がDOMに存在。
+ * → 100行中 約50行はDOM外であり、display=none ベースのフィルターが効かない。
  */
 function createVirtualScrollFilterTestFileSystem(): MockFileSystem {
     const rows = ['id,category,level'];
@@ -1507,7 +1507,7 @@ test.describe('BUG: 仮想スクロール有効テーブルでのフィルター
             await expect(rowCount).not.toBeVisible();
 
             // スクロールコンテナの scrollHeight が100行分に復帰すること
-            // 100行 × 21px = 2100px + ヘッダー + バッファ行
+            // 100行 × 20px = 2000px + ヘッダー + バッファ行
             const scrollContainer = page.locator('.editor-left-pane');
             const scrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
             expect(scrollHeight).toBeGreaterThan(2000);

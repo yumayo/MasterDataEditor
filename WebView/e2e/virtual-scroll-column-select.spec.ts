@@ -80,7 +80,7 @@ test.describe('バーチャルスクロール列選択', () => {
 
         // スクロールして末尾付近を表示した後も、行ヘッダーが選択状態であること
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 80 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 80 * 20; });
         await page.waitForTimeout(300);
 
         const afterScrollSelection = await page.evaluate(() => {
@@ -126,7 +126,7 @@ test.describe('バーチャルスクロール列選択', () => {
 
         // スクロールして末尾付近の値も空になっていることを確認
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 85 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 85 * 20; });
         await page.waitForTimeout(300);
 
         // 表示中のvalue列の値を取得

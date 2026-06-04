@@ -470,18 +470,10 @@
     z-index: var(--z-index-editor-table-row-header);
 }
 
-/* detached 行ヘッダーは行ピッチ(21px)に対してセル高(20px)のため、余った1pxに
-   background-sub-color が見える。行ヘッダーだけ背景を行ピッチまで伸ばして隙間を作らない。 */
-.editor-table-detached-row-header-layer .editor-table-row-header {
-    height: 21px !important;
-    min-height: 21px !important;
-    max-height: 21px !important;
-}
-
 .editor-table-detached-frozen-row-background {
     position: absolute;
     left: 0;
-    height: 21px;
+    height: 20px;
     background-color: var(--background-sub-color);
 }
 
@@ -538,8 +530,6 @@
 .editor-table-cell {
     display: table-cell;
     position: relative;
-    --editor-table-grid-right-color: var(--background-color);
-    --editor-table-grid-bottom-color: transparent;
 
     padding-left: 6px;
     padding-right: 6px;
@@ -547,17 +537,6 @@
     overflow: hidden;
 
     white-space: nowrap;
-
-    border-right: 1px solid var(--editor-table-grid-right-color);
-    border-bottom: 1px solid var(--editor-table-grid-bottom-color);
-}
-
-/* テーブルのセルの下線のレイアウト幅。
-   固定行/列の分離レイヤーは .editor-table-row ではなく .editor-table-detached-row なので同じ罫線を当てる。 */
-.editor-table-row .editor-table-cell,
-.editor-table-source-column-header-row .editor-table-cell,
-.editor-table-detached-row .editor-table-cell {
-    --editor-table-grid-bottom-color: var(--background-color);
 }
 
 /* 列ヘッダー行のスタイル */
@@ -941,16 +920,6 @@
 .freeze-row .editor-table-cell.cell-git-changed:not(.editor-table-row-header),
 .freeze-cell.cell-git-changed {
     background-color: var(--git-changed-frozen-bg);
-}
-
-/* 固定列の最後のセル（ヘッダー含む）に境界線を表示する。
-   clip-path はセルごとの compositor layer 化を誘発しやすいため使わない。 */
-.freeze-column-border {
-    --editor-table-grid-right-color: var(--background-color);
-}
-
-.freeze-row-border .editor-table-cell {
-    --editor-table-grid-bottom-color: var(--background-color);
 }
 
 /* ==========================================================================

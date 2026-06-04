@@ -14,14 +14,13 @@ async function prepareTableAsync(page: Page): Promise<void> {
 async function getRowHeaderGridLineStyleAsync(page: Page): Promise<{
     devicePixelRatio: number;
     borderRightWidth: string;
-    borderRightColor: string;
     borderBottomWidth: string;
-    borderBottomColor: string;
     boxShadow: string;
     beforeContent: string;
     afterContent: string;
     backgroundSize: string;
     className: string;
+    maxHeight: string;
     rectHeight: number;
 }> {
     return page.evaluate(() => {
@@ -34,57 +33,54 @@ async function getRowHeaderGridLineStyleAsync(page: Page): Promise<{
         return {
             devicePixelRatio: window.devicePixelRatio,
             borderRightWidth: style.borderRightWidth,
-            borderRightColor: style.borderRightColor,
             borderBottomWidth: style.borderBottomWidth,
-            borderBottomColor: style.borderBottomColor,
             boxShadow: style.boxShadow,
             beforeContent: getComputedStyle(rowHeader, '::before').content,
             afterContent: getComputedStyle(rowHeader, '::after').content,
             backgroundSize: style.backgroundSize,
             className: rowHeader.className,
+            maxHeight: style.maxHeight,
             rectHeight: rowHeader.getBoundingClientRect().height,
         };
     });
 }
 
-test.describe('Chrome zoom 200% row header grid line', () => {
+test.describe('Chrome zoom 200% row header border', () => {
     test.use({viewport: {width: 640, height: 360}, deviceScaleFactor: 2});
 
-    test('行ヘッダー罫線はborderで描画しshadowや疑似要素を使わない', async ({page, mockFileSystem}) => {
+    test('行ヘッダーセルはborderを持たずshadowや疑似要素を使わない', async ({page, mockFileSystem}) => {
         await prepareTableAsync(page);
 
         const style = await getRowHeaderGridLineStyleAsync(page);
         expect(style.devicePixelRatio).toBe(2);
-        expect(style.borderRightWidth).toBe('1px');
-        expect(style.borderBottomWidth).toBe('1px');
-        expect(style.borderRightColor).not.toBe('rgba(0, 0, 0, 0)');
-        expect(style.borderBottomColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(style.borderRightWidth).toBe('0px');
+        expect(style.borderBottomWidth).toBe('0px');
         expect(style.boxShadow).toBe('none');
         expect(style.beforeContent).toBe('none');
         expect(style.afterContent).toBe('none');
         expect(style.backgroundSize).toBe('100% 100%');
         expect(style.className).toContain('selected-row-end');
-        expect(style.rectHeight).toBe(21);
+        expect(style.maxHeight).toBe('20px');
+        expect(style.rectHeight).toBe(20);
     });
 });
 
-test.describe('Chrome zoom 300% row header grid line', () => {
+test.describe('Chrome zoom 300% row header border', () => {
     test.use({viewport: {width: 427, height: 240}, deviceScaleFactor: 3});
 
-    test('行ヘッダー罫線はborderで描画しshadowや疑似要素を使わない', async ({page, mockFileSystem}) => {
+    test('行ヘッダーセルはborderを持たずshadowや疑似要素を使わない', async ({page, mockFileSystem}) => {
         await prepareTableAsync(page);
 
         const style = await getRowHeaderGridLineStyleAsync(page);
         expect(style.devicePixelRatio).toBe(3);
-        expect(style.borderRightWidth).toBe('1px');
-        expect(style.borderBottomWidth).toBe('1px');
-        expect(style.borderRightColor).not.toBe('rgba(0, 0, 0, 0)');
-        expect(style.borderBottomColor).not.toBe('rgba(0, 0, 0, 0)');
+        expect(style.borderRightWidth).toBe('0px');
+        expect(style.borderBottomWidth).toBe('0px');
         expect(style.boxShadow).toBe('none');
         expect(style.beforeContent).toBe('none');
         expect(style.afterContent).toBe('none');
         expect(style.backgroundSize).toBe('100% 100%');
         expect(style.className).toContain('selected-row-end');
-        expect(style.rectHeight).toBe(21);
+        expect(style.maxHeight).toBe('20px');
+        expect(style.rectHeight).toBe(20);
     });
 });

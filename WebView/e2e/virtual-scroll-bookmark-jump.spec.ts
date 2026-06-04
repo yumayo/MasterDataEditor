@@ -65,7 +65,7 @@ test.describe('バーチャルスクロール ブックマークジャンプ', (
         const scrollContainer = page.locator('.editor-left-pane');
         const scrollTop = await scrollContainer.evaluate((el) => el.scrollTop);
         console.log(`ジャンプ後scrollTop: ${scrollTop}`);
-        // 800行目 × 21px ≈ 16800付近にスクロールされているはず（ビューポート中央表示のため多少ずれる）
+        // 800行目 × 20px ≈ 16000付近にスクロールされているはず（ビューポート中央表示のため多少ずれる）
         expect(scrollTop, '800行目付近にスクロールされていること').toBeGreaterThan(10000);
 
         // フォーカスセルが800行目であること（選択クラスで確認）

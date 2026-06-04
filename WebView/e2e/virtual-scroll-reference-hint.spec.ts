@@ -95,7 +95,7 @@ test.describe('バーチャルスクロール参照ヒント', () => {
         const scrollContainer = page.locator('.editor-left-pane');
 
         // 下方向に大きくスクロール（行70付近を表示）
-        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 20; });
         await page.waitForTimeout(300);
 
         // スクロール後も参照ヒントが表示されるべき
@@ -130,7 +130,7 @@ test.describe('バーチャルスクロール参照ヒント', () => {
         // 段階的にスクロールして各地点で参照ヒントを確認
         const scrollPositions = [0, 30, 60, 90, 60, 30, 0];
         for (const scrollRow of scrollPositions) {
-            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 21; }, scrollRow);
+            await scrollContainer.evaluate((el, row) => { el.scrollTop = row * 20; }, scrollRow);
             await page.waitForTimeout(200);
 
             const hintCount = await countVisibleHints(table);

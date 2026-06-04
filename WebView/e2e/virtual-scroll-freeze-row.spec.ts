@@ -265,7 +265,7 @@ test.describe('仮想スクロール × 固定行', () => {
 
         // 500行目付近までスクロールする（OVERSCAN=10 をはるかに超える位置）
         const scrollContainer = await getTableScrollContainerAsync(page);
-        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 20; });
         await page.waitForTimeout(300);
 
         // スクロール後も固定行（データ行0, 1）のID値を持つ行がDOMに存在することを検証する
@@ -425,7 +425,7 @@ test.describe('仮想スクロール × 固定行', () => {
 
         await installFrozenCellRectCounterAsync(page, 0, 2);
 
-        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 20; });
         await page.waitForTimeout(100);
 
         await expect.poll(async () => getFrozenCellRectCountAsync(page)).toBeLessThanOrEqual(2);
@@ -444,7 +444,7 @@ test.describe('仮想スクロール × 固定行', () => {
 
         await installMainGridRowOffsetTopCounterAsync(page);
 
-        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 70 * 20; });
         await page.waitForTimeout(100);
 
         await expect.poll(async () => getMainGridRowOffsetTopCountAsync(page)).toBe(0);

@@ -321,7 +321,7 @@ test.describe('バーチャルスクロール スクロールバー安定性', (
         expect(after.cellTop!).toBeGreaterThanOrEqual(after.viewportTop - 1);
     });
 
-    test('下矢印キーで画面外へ移動すると論理scrollTopが21px刻みで安定して進む', async ({ page }) => {
+    test('下矢印キーで画面外へ移動すると論理scrollTopが20px刻みで安定して進む', async ({ page }) => {
         const rowCount = 60000;
         const fs: MockFileSystem = {
             'schema/big_table.json': JSON.stringify({
@@ -396,7 +396,7 @@ test.describe('バーチャルスクロール スクロールバー安定性', (
             .slice(2)
             .map((sample, index) => sample.scrollTop - samples[index + 1].scrollTop);
         for (const delta of steadyDeltas) {
-            expect(delta).toBeCloseTo(21, 5);
+            expect(delta).toBeCloseTo(20, 5);
         }
         for (const sample of samples.slice(1)) {
             expect(sample.cellBottom).toBeLessThanOrEqual(sample.viewportBottom + 1);

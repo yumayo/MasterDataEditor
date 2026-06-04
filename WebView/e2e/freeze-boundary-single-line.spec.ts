@@ -1,7 +1,7 @@
 import {test, expect} from './fixtures/test';
 
 test(
-    '固定列境界は通常borderで描画しshadowを使わない',
+    '固定列境界はセルborderやshadowを使わない',
     async ({page, mockFileSystem}) => {
         await page.locator('#explorer').getByText('test', {exact: true}).click();
         const table = page.locator('.editor-left-pane .editor-table');
@@ -20,8 +20,8 @@ test(
         ).first();
         await expect(boundaryCell).toBeVisible();
         await expect.poll(
-            () => boundaryCell.evaluate((element) => getComputedStyle(element).borderRightColor)
-        ).not.toBe('rgba(0, 0, 0, 0)');
+            () => boundaryCell.evaluate((element) => getComputedStyle(element).borderRightWidth)
+        ).toBe('0px');
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).boxShadow)
         ).toBe('none');
@@ -29,7 +29,7 @@ test(
 );
 
 test(
-    '固定行境界は通常borderで描画しshadowを使わない',
+    '固定行境界はセルborderやshadowを使わない',
     async ({page, mockFileSystem}) => {
         await page.locator('#explorer').getByText('test', {exact: true}).click();
         const table = page.locator('.editor-left-pane .editor-table');
@@ -48,8 +48,8 @@ test(
         ).first();
         await expect(boundaryCell).toBeVisible();
         await expect.poll(
-            () => boundaryCell.evaluate((element) => getComputedStyle(element).borderBottomColor)
-        ).not.toBe('rgba(0, 0, 0, 0)');
+            () => boundaryCell.evaluate((element) => getComputedStyle(element).borderBottomWidth)
+        ).toBe('0px');
         await expect.poll(
             () => boundaryCell.evaluate((element) => getComputedStyle(element).boxShadow)
         ).toBe('none');

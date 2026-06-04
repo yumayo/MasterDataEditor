@@ -207,9 +207,9 @@ test.describe('バーチャルスクロール タブ切替', () => {
         const initialBookmarked = await weaponTable.locator('[data-bookmarked]').count();
         expect(initialBookmarked, '初期表示ではDOM外のブックマークは表示されない').toBe(0);
 
-        // 80行目付近までスクロールする（行の高さは21px）
+        // 80行目付近までスクロールする（行の高さは20px）
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 79 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 79 * 20; });
         await page.waitForTimeout(300);
 
         // スクロール後、80行目のブックマーク属性が復元されていること
@@ -235,7 +235,7 @@ test.describe('バーチャルスクロール タブ切替', () => {
         const initialScrollHeight = await scrollContainer.evaluate((el) => el.scrollHeight);
         const clientHeight = await scrollContainer.evaluate((el) => el.clientHeight);
         console.log(`初期表示: scrollHeight=${initialScrollHeight}, clientHeight=${clientHeight}`);
-        // 1000行 × 21px = 21000px以上のコンテンツ高さが必要
+        // 1000行 × 20px = 20000px以上のコンテンツ高さが必要
         expect(initialScrollHeight, '初期表示のスクロール高さが1000行分の大半をカバーすること').toBeGreaterThan(15000);
 
         // 2つ目のテーブル（1000行）を開く
@@ -258,7 +258,7 @@ test.describe('バーチャルスクロール タブ切替', () => {
 
         // 900行目付近（末尾付近）まで大きくスクロールできること
         // バグ発生時: totalRowCount が縮小し、scrollTop をこの値に設定しても到達できない
-        await scrollContainer.evaluate((el) => { el.scrollTop = 900 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 900 * 20; });
         await page.waitForTimeout(300);
 
         // スクロール後も scrollHeight が維持されていること
@@ -297,7 +297,7 @@ test.describe('バーチャルスクロール タブ切替', () => {
 
         // テーブルAを500行目付近までスクロールする
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 20; });
         await page.waitForTimeout(300);
 
         const scrollTopA = await scrollContainer.evaluate((el) => el.scrollTop);

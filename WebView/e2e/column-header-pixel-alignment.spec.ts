@@ -1,6 +1,6 @@
 import {test, expect} from './fixtures/test';
 import {installMockApiAsync, type MockFileSystem} from './fixtures/mock-api';
-import type {Locator, Page} from '@playwright/test';
+import type {Page} from '@playwright/test';
 
 function createCharaFs(rowCount: number = 90): MockFileSystem {
     const charaRows = ['id,recover_stamina,recover_hp,attack,defence,speed'];
@@ -41,87 +41,6 @@ function createCharaFs(rowCount: number = 90): MockFileSystem {
         'user:bookmarks.json': '[]',
         'plugins/.gitkeep': '',
     };
-}
-
-async function getBottomRightBrightnessAsync(page: Page, target: Locator): Promise<{
-    width: number;
-    height: number;
-    rgba: number[];
-    brightness: number;
-}> {
-    const pngBase64 = (await target.screenshot()).toString('base64');
-    return page.evaluate(async (src) => {
-        const image = new Image();
-        image.src = src;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.naturalWidth;
-        canvas.height = image.naturalHeight;
-        const context = canvas.getContext('2d');
-        if (context === null) throw new Error('2d context not available');
-        context.drawImage(image, 0, 0);
-        const data = Array.from(context.getImageData(canvas.width - 1, canvas.height - 1, 1, 1).data);
-        return {
-            width: canvas.width,
-            height: canvas.height,
-            rgba: data,
-            brightness: data[0] + data[1] + data[2],
-        };
-    }, `data:image/png;base64,${pngBase64}`);
-}
-
-async function getRowHeaderBoundaryPixelsAsync(page: Page, rowIndex: number): Promise<{
-    dpr: number;
-    imageWidth: number;
-    imageHeight: number;
-    boundaryDeviceX: number;
-    centerDeviceX: number;
-    centerDeviceY: number;
-    bottomDeviceY: number;
-    right: Array<{offset: number; rgba: number[]; brightness: number}>;
-    bottom: Array<{offset: number; rgba: number[]; brightness: number}>;
-}> {
-    const metrics = await page.evaluate((index) => {
-        const rowHeader = document.querySelector<HTMLElement>(
-            `.editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="${index}"] .editor-table-row-header`,
-        );
-        if (rowHeader === null) throw new Error('row header not found');
-        const rect = rowHeader.getBoundingClientRect();
-        return {
-            dpr: window.devicePixelRatio,
-            boundaryDeviceX: Math.round(rect.right * window.devicePixelRatio),
-            centerDeviceX: Math.round((rect.left + rect.width / 2) * window.devicePixelRatio),
-            centerDeviceY: Math.round((rect.top + rect.height / 2) * window.devicePixelRatio),
-            bottomDeviceY: Math.round(rect.bottom * window.devicePixelRatio),
-        };
-    }, rowIndex);
-    const pngBase64 = (await page.screenshot({scale: 'device'})).toString('base64');
-    return page.evaluate(async ({src, metrics}) => {
-        const image = new Image();
-        image.src = src;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.naturalWidth;
-        canvas.height = image.naturalHeight;
-        const context = canvas.getContext('2d');
-        if (context === null) throw new Error('2d context not available');
-        context.drawImage(image, 0, 0);
-        const read = (x: number, y: number, offset: number): {offset: number; rgba: number[]; brightness: number} => {
-            const rgba = Array.from(context.getImageData(x, y, 1, 1).data);
-            return {offset, rgba, brightness: rgba[0] + rgba[1] + rgba[2]};
-        };
-        return {
-            ...metrics,
-            imageWidth: canvas.width,
-            imageHeight: canvas.height,
-            right: [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map((offset) =>
-                read(metrics.boundaryDeviceX + offset, metrics.centerDeviceY, offset),
-            ),
-            bottom: [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3].map((offset) =>
-                read(metrics.centerDeviceX, metrics.bottomDeviceY + offset, offset),
-            ),
-        };
-    }, {src: `data:image/png;base64,${pngBase64}`, metrics});
 }
 
 async function getBodyCellJunctionPixelsAsync(page: Page): Promise<{
@@ -264,11 +183,6 @@ function getVisualGridLineOffset(junction: BodyCellJunctionPixels): number {
     return -Math.round(junction.dpr);
 }
 
-function expectNormalGridPixel(junction: BodyCellJunctionPixels, xOffset: number, yOffset: number): void {
-    const pixel = getJunctionPixel(junction, xOffset, yOffset);
-    expect(pixel.brightness, `junction ${xOffset},${yOffset} rgba=${pixel.rgba.join(',')}`).toBeLessThan(125);
-}
-
 test.describe('column header pixel alignment', () => {
     test.use({viewport: {width: 470, height: 260}, deviceScaleFactor: 3});
 
@@ -309,6 +223,10 @@ test.describe('column header pixel alignment', () => {
                 headerRightDevice: Math.round((headerRect.right - tableRect.left) * window.devicePixelRatio),
                 bodyRightDevice: Math.round((bodyRect.right - tableRect.left) * window.devicePixelRatio),
                 nextBodyLeftDevice: Math.round((nextBodyRect.left - tableRect.left) * window.devicePixelRatio),
+                headerBorderRightWidth: getComputedStyle(header).borderRightWidth,
+                headerBorderBottomWidth: getComputedStyle(header).borderBottomWidth,
+                bodyBorderRightWidth: getComputedStyle(body).borderRightWidth,
+                bodyBorderBottomWidth: getComputedStyle(body).borderBottomWidth,
             };
         });
 
@@ -317,17 +235,13 @@ test.describe('column header pixel alignment', () => {
         expect(metrics.nextBodyLeftDevice).toBe(metrics.bodyRightDevice);
         expect(Math.abs(metrics.headerRightCss - metrics.bodyRightCss)).toBeLessThan(0.01);
         expect(Math.abs(metrics.nextBodyLeftCss - metrics.bodyRightCss)).toBeLessThan(0.01);
-
-        const headerCell = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="0"]');
-        const bodyCell = table.locator('.editor-table-grid .editor-table-row[data-row-index] .editor-table-cell[data-col="0"]').first();
-        const headerCorner = await getBottomRightBrightnessAsync(page, headerCell);
-        const bodyCorner = await getBottomRightBrightnessAsync(page, bodyCell);
-
-        expect(headerCorner.brightness, `header bottom-right rgba=${headerCorner.rgba.join(',')}`).toBeLessThan(140);
-        expect(bodyCorner.brightness, `body bottom-right rgba=${bodyCorner.rgba.join(',')}`).toBeLessThan(140);
+        expect(metrics.headerBorderRightWidth).toBe('0px');
+        expect(metrics.headerBorderBottomWidth).toBe('0px');
+        expect(metrics.bodyBorderRightWidth).toBe('0px');
+        expect(metrics.bodyBorderBottomWidth).toBe('0px');
     });
 
-    test('300%表示でも行範囲選択のoverlayが1デバイスpxの境界まで塗られる', async ({page}) => {
+    test('300%表示でも行範囲選択のoverlayがセル境界に揃う', async ({page}) => {
         await installMockApiAsync(page, createCharaFs());
         await page.goto('/');
         await page.locator('#explorer').getByText('chara', {exact: true}).click();
@@ -376,7 +290,8 @@ test.describe('column header pixel alignment', () => {
                 dataLeftDevice: Math.round(dr.left * window.devicePixelRatio),
                 backgroundSize: rowStyle.backgroundSize,
                 backgroundClip: rowStyle.backgroundClip,
-                borderRightColor: rowStyle.borderRightColor,
+                borderRightWidth: rowStyle.borderRightWidth,
+                borderBottomWidth: rowStyle.borderBottomWidth,
             };
         });
 
@@ -384,56 +299,43 @@ test.describe('column header pixel alignment', () => {
         expect(metrics.rowRightDevice).toBe(metrics.dataLeftDevice);
         expect(metrics.backgroundSize).toBe('100% 100%');
         expect(metrics.backgroundClip).toBe('border-box');
-        expect(metrics.borderRightColor).not.toBe('rgba(0, 0, 0, 0)');
-
-        const rightBoundary = await getRowHeaderBoundaryPixelsAsync(page, 69);
-        expect(rightBoundary.imageWidth).toBeGreaterThan(rightBoundary.boundaryDeviceX + 6);
-        expect(rightBoundary.imageHeight).toBeGreaterThan(rightBoundary.centerDeviceY);
-        for (const offset of [-3, -2, -1]) {
-            const pixel = rightBoundary.right.find((item) => item.offset === offset);
-            expect(pixel?.brightness, `right grid border ${offset} rgba=${pixel?.rgba.join(',')}`).toBeLessThan(150);
-        }
-        const outsideRight = rightBoundary.right.find((item) => item.offset === 0);
-        expect(outsideRight?.brightness, `overlay right border rgba=${outsideRight?.rgba.join(',')}`).toBeGreaterThan(150);
-
-        const bottomBoundary = await getRowHeaderBoundaryPixelsAsync(page, 72);
-        for (const offset of [-3, -2, -1]) {
-            const pixel = bottomBoundary.bottom.find((item) => item.offset === offset);
-            expect(pixel?.brightness, `bottom grid border ${offset} rgba=${pixel?.rgba.join(',')}`).toBeLessThan(150);
-        }
-        const outsideBottom = bottomBoundary.bottom.find((item) => item.offset === 0);
-        expect(outsideBottom?.brightness, `bottom gridline rgba=${outsideBottom?.rgba.join(',')}`).toBeLessThan(150);
+        expect(metrics.borderRightWidth).toBe('0px');
+        expect(metrics.borderBottomWidth).toBe('0px');
     });
 });
 
 test.describe('body cell junction pixel alignment', () => {
     test.use({viewport: {width: 720, height: 320}, deviceScaleFactor: 3});
 
-    test('300%表示でも通常グリッドの交点をborderで埋める', async ({page}) => {
+    test('300%表示でも通常グリッドの交点にセルborderを描画しない', async ({page}) => {
         await openCharaWithNarrowExplorerAsync(page);
         await setTableSelectionAsync(page, 5, 2, 5, 2, 5, 2);
 
         const junction = await getBodyCellJunctionPixelsAsync(page);
 
         expectJunctionGeometry(junction);
-        const visualLineOffset = getVisualGridLineOffset(junction);
-        for (let xOffset = visualLineOffset; xOffset <= -1; xOffset++) {
-            expectNormalGridPixel(junction, xOffset, visualLineOffset);
-        }
-        for (let yOffset = visualLineOffset; yOffset <= -1; yOffset++) {
-            expectNormalGridPixel(junction, visualLineOffset, yOffset);
-        }
+        const borderWidths = await page.evaluate(() => {
+            const selectors = [
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="0"]',
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+                '.editor-table-grid .editor-table-row[data-row-index="1"] .editor-table-cell[data-col="0"]',
+            ];
+            return selectors.map((selector) => {
+                const cell = document.querySelector<HTMLElement>(selector);
+                if (cell === null) throw new Error(`target body cell not found: ${selector}`);
+                const style = getComputedStyle(cell);
+                return {
+                    right: style.borderRightWidth,
+                    bottom: style.borderBottomWidth,
+                };
+            });
+        });
 
-        const sampleOffset = visualLineOffset - 2;
-        const verticalGridPixels = junction.pixels
-            .filter((item) => item.yOffset === sampleOffset && item.xOffset >= sampleOffset && item.xOffset <= -1 && item.brightness < 125)
-            .map((item) => item.xOffset);
-        const horizontalGridPixels = junction.pixels
-            .filter((item) => item.xOffset === sampleOffset && item.yOffset >= sampleOffset && item.yOffset <= -1 && item.brightness < 125)
-            .map((item) => item.yOffset);
-
-        expect(verticalGridPixels, `vertical scanline=${JSON.stringify(verticalGridPixels)}`).toEqual([-3, -2, -1]);
-        expect(horizontalGridPixels, `horizontal scanline=${JSON.stringify(horizontalGridPixels)}`).toEqual([-3, -2, -1]);
+        expect(borderWidths).toEqual([
+            {right: '0px', bottom: '0px'},
+            {right: '0px', bottom: '0px'},
+            {right: '0px', bottom: '0px'},
+        ]);
     });
 
     test('300%表示でも範囲選択の1列目と2列目、1行目と2行目の交点に1px隙間がない', async ({page}) => {

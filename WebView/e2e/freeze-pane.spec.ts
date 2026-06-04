@@ -1140,7 +1140,7 @@ test.describe('フリーズペイン', () => {
 
                 const table = await openTableAsync(page, 'freeze_visual_regression');
                 const scrollContainer = await getTableScrollContainerAsync(page);
-                await scrollContainer.evaluate((element) => { element.scrollTop = 40 * 21; });
+                await scrollContainer.evaluate((element) => { element.scrollTop = 40 * 20; });
                 await page.waitForTimeout(100);
 
                 await expect(table.locator('.editor-table-row.freeze-row')).toHaveCount(12);
@@ -1399,7 +1399,7 @@ test.describe('フリーズペイン', () => {
                 // 仮想スクロールで通常行が再描画される位置までスクロールする
                 const scrollContainer = await getTableScrollContainerAsync(page);
                 await scrollContainer.evaluate((el) => {
-                    el.scrollTop = 500 * 21;
+                    el.scrollTop = 500 * 20;
                     el.scrollLeft = 600;
                 });
                 await page.waitForTimeout(150);
@@ -1536,7 +1536,7 @@ test.describe('フリーズペイン', () => {
                 expect(Math.abs(wheelScrolled.topLeftLeft - initial.topLeftLeft)).toBeLessThanOrEqual(1);
 
                 await mainViewport.evaluate((element) => {
-                    element.scrollTop = 500 * 21;
+                    element.scrollTop = 500 * 20;
                     element.scrollLeft = 600;
                 });
                 await page.waitForTimeout(150);
@@ -1648,7 +1648,7 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
-            '固定行/固定列の罫線が未選択状態でも分離レイヤーに描画される',
+            '固定行/固定列の分離レイヤーでもセルborderを使わない',
             async ({ page }) => {
                 await page.setViewportSize({ width: 640, height: 480 });
                 const table = await openTableAsync(page, 'freeze_combo');
@@ -1723,15 +1723,11 @@ test.describe('フリーズペイン', () => {
                     };
                 });
 
-                expect(styles.frozenRowCell.borderBottomStyle).toBe('solid');
-                expect(styles.frozenRowCell.borderBottomWidth).toBe('1px');
-                expect(styles.frozenColumnCell.borderBottomStyle).toBe('solid');
-                expect(styles.frozenColumnCell.borderBottomWidth).toBe('1px');
-                expect(styles.lastFrozenColumn.borderRightStyle).toBe('solid');
-                expect(styles.lastFrozenColumn.borderRightWidth).toBe('1px');
+                expect(styles.frozenRowCell.borderBottomWidth).toBe('0px');
+                expect(styles.frozenColumnCell.borderBottomWidth).toBe('0px');
+                expect(styles.lastFrozenColumn.borderRightWidth).toBe('0px');
                 expect(styles.lastFrozenColumn.boxShadow).toBe('none');
-                expect(styles.lastFrozenRowCell.borderBottomStyle).toBe('solid');
-                expect(styles.lastFrozenRowCell.borderBottomWidth).toBe('1px');
+                expect(styles.lastFrozenRowCell.borderBottomWidth).toBe('0px');
                 expect(styles.lastFrozenRowCell.boxShadow).toBe('none');
                 expect(['0px', 'auto']).toContain(styles.columnPaneShadow.width);
                 expect(styles.columnPaneShadow.backgroundImage).toBe('none');
@@ -1968,7 +1964,7 @@ test.describe('フリーズペイン', () => {
 
                 const scrollContainer = await getTableScrollContainerAsync(page);
                 await scrollContainer.evaluate((element) => {
-                    element.scrollTop = 500 * 21;
+                    element.scrollTop = 500 * 20;
                     element.scrollLeft = 320;
                 });
 
@@ -2218,7 +2214,7 @@ test.describe('フリーズペイン', () => {
                 const initialFrozenRowStyle = await getRowStyleAsync(reopenedTable, 0);
                 const scrollContainer = await getTableScrollContainerAsync(page);
                 await scrollContainer.evaluate((el) => {
-                    el.scrollTop = 500 * 21;
+                    el.scrollTop = 500 * 20;
                     el.scrollLeft = 600;
                 });
                 await page.waitForTimeout(150);

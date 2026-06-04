@@ -44,7 +44,7 @@ test.describe('バーチャルスクロール セルクリック', () => {
 
         // 500行目付近までスクロールする
         const scrollContainer = page.locator('.editor-left-pane');
-        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 21; });
+        await scrollContainer.evaluate((el) => { el.scrollTop = 500 * 20; });
         await page.waitForTimeout(300);
 
         const scrollTopBefore = await scrollContainer.evaluate((el) => el.scrollTop);

@@ -448,9 +448,9 @@ test(
         await firstCell.click();
 
         // ターゲット行（rowIndex=30）の下端が画面下端からはみ出るようスクロールする
-        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
+        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(20px)から直接計算する
         const targetRowIndex = 30;
-        const ROW_HEIGHT = 21;
+        const ROW_HEIGHT = 20;
 
         // スクロール位置を設定し、バーチャルスクロールの recalculate でDOM行を更新する。
         // topSpacer がテーブル内（display:table-row）にあるため、scrollTop の JS 設定後に
@@ -527,9 +527,9 @@ test(
         await anchorCell.click();
 
         // Shift+クリックのターゲット行（rowIndex=30）の下端が画面外にはみ出るようスクロールする
-        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(21px)から直接計算する
+        // バーチャルスクロールではDOM要素のoffsetTopが使えないため、行高さ(20px)から直接計算する
         const targetRowIndex = 30;
-        const ROW_HEIGHT = 21;
+        const ROW_HEIGHT = 20;
 
         // スクロール位置を設定し、バーチャルスクロールの recalculate でDOM行を更新する。
         // topSpacer がテーブル内にあるため、scrollTop の JS 設定後にブラウザの非同期レイアウトで
