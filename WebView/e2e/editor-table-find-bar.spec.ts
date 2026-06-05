@@ -54,6 +54,22 @@ function createFindBarFileSystem(): MockFileSystem {
             primary_key: ["id"],
         }),
         "data/large.csv": largeRows.join("\n"),
+        "schema/fixed_find.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "category", type: "string"},
+            ],
+            primary_key: ["id"],
+            frozenRowCount: 1,
+            frozenColumnCount: 2,
+        }),
+        "data/fixed_find.csv": [
+            "id,name,category",
+            "1,Alpha,FrozenRowNeedle",
+            "2,FrozenColumnNeedle,Body",
+            "3,Other,Body",
+        ].join("\n"),
     };
 }
 
@@ -101,6 +117,27 @@ async function hasSearchScrollbarMarkerAsync(page: Page): Promise<boolean> {
         }
         return false;
     });
+}
+
+async function getBackgroundColorChannelsAsync(cell: Locator): Promise<{color: string; r: number; g: number; b: number; a: number}> {
+    return await cell.evaluate((element) => {
+        const color = getComputedStyle(element).backgroundColor;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext('2d');
+        if (context === null) throw new Error('Canvas contextを取得できません');
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+        return {color, r, g, b, a};
+    });
+}
+
+function expectYellowSearchHighlight(color: {color: string; r: number; g: number; b: number; a: number}): void {
+    expect(color.a, color.color).toBeGreaterThan(0);
+    expect(color.r, color.color).toBeGreaterThan(color.b + 20);
+    expect(color.g, color.color).toBeGreaterThan(color.b + 20);
 }
 
 test.describe('EditorTable検索バー', () => {
@@ -225,6 +262,31 @@ test.describe('EditorTable検索バー', () => {
         await expect(page.locator('.editor-table-find-count')).toHaveText('3/3');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
+    });
+
+    test('固定行・固定列の検索結果セルにも黄色い背景色を表示する', async ({page}) => {
+        const table = await openTableAsync(page, 'fixed_find');
+        const fixedRowCell = page.locator(
+            '.editor-left-pane .tab-wrapper[data-tab-name="fixed_find"] .editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="2"]',
+        );
+        const fixedColumnCell = page.locator(
+            '.editor-left-pane .tab-wrapper[data-tab-name="fixed_find"] .editor-table-detached-row-header-layer .editor-table-detached-row[data-row-index="1"] .editor-table-cell[data-col="1"]',
+        );
+
+        await expect(fixedRowCell).toBeVisible();
+        await fixedRowCell.click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('Needle');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/2');
+
+        await expect(fixedRowCell).toHaveClass(/editor-table-cell-find-current/);
+        await expect(fixedColumnCell).toBeVisible();
+        await expect(fixedColumnCell).toHaveClass(/editor-table-cell-find-match/);
+
+        expectYellowSearchHighlight(await getBackgroundColorChannelsAsync(fixedRowCell));
+        expectYellowSearchHighlight(await getBackgroundColorChannelsAsync(fixedColumnCell));
     });
 
     test('多数ヒット時もEnter連続入力で次の検索結果へ移動できる', async ({page}) => {

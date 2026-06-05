@@ -6,6 +6,10 @@
     --editor-table-freeze-shadow-size: 6px;
     --editor-table-freeze-shadow-color: rgba(0, 0, 0, 0.22);
     --editor-table-freeze-shadow-fade: rgba(0, 0, 0, 0.04);
+    --editor-table-find-match-bg: rgba(255, 193, 7, 0.28);
+    --editor-table-find-current-bg: rgba(255, 193, 7, 0.38);
+    --editor-table-find-match-frozen-bg: color-mix(in srgb, #ffc107 28%, var(--background-sub-color));
+    --editor-table-find-current-frozen-bg: color-mix(in srgb, #ffc107 38%, var(--background-sub-color));
 
     user-select: none;
 }
@@ -136,11 +140,11 @@
 }
 
 .editor-table-cell-find-match {
-    background-color: rgba(255, 193, 7, 0.28);
+    background-color: var(--editor-table-find-match-bg);
 }
 
 .editor-table-cell-find-current {
-    background-color: rgba(255, 193, 7, 0.38);
+    background-color: var(--editor-table-find-current-bg);
 }
 
 .tab-wrapper-loading {
@@ -981,6 +985,17 @@
 
 .freeze-cell {
     background-color: var(--background-sub-color);
+}
+
+/* 固定セルは透過防止の不透明背景を持つため、検索ハイライトも不透明色で上書きする。 */
+.freeze-row .editor-table-cell.editor-table-cell-find-match:not(.editor-table-row-header),
+.freeze-cell.editor-table-cell-find-match {
+    background-color: var(--editor-table-find-match-frozen-bg);
+}
+
+.freeze-row .editor-table-cell.editor-table-cell-find-current:not(.editor-table-row-header),
+.freeze-cell.editor-table-cell-find-current {
+    background-color: var(--editor-table-find-current-frozen-bg);
 }
 
 .editor-table:not(.editor-table--quadrant-layout).editor-table--has-frozen-columns .freeze-column-border:not(.editor-table-row-header)::after {
