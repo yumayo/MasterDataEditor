@@ -24,14 +24,26 @@ function createFindBarFileSystem(): MockFileSystem {
         "schema/enemy.json": JSON.stringify({
             header: [
                 {key: 0, name: "id", type: "int"},
-                {key: 1, name: "name", type: "string"},
+                {key: 1, name: "ja", type: "string"},
             ],
             primary_key: ["id"],
         }),
         "data/enemy.csv": [
-            "id,name",
+            "id,ja",
             "1,Slime",
             "2,Dragon",
+        ].join("\n"),
+        "schema/quest.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "enemy_id", type: "int", reference: "enemy.ja"},
+            ],
+            primary_key: ["id"],
+        }),
+        "data/quest.csv": [
+            "id,enemy_id",
+            "1,1",
+            "2,2",
         ].join("\n"),
         "schema/large.json": JSON.stringify({
             header: [
@@ -173,6 +185,22 @@ test.describe('EditorTable検索バー', () => {
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Dragon');
     });
 
+    test('参照ヒント句もCtrl+Fの検索結果に含める', async ({page}) => {
+        const table = await openTableAsync(page, 'quest');
+        const enemyCell = getDataCell(table, 0, 1);
+        await expect(enemyCell.locator('.cell-reference-hint')).toHaveText('Slime');
+        await enemyCell.click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('Slime');
+
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        const currentMatch = page.locator('.editor-left-pane .editor-table-cell-find-current');
+        await expect(currentMatch).toHaveText(/Slime/);
+        await expect(currentMatch).toHaveText(/1/);
+    });
+
     test('手動スクロールで検索結果セルが再描画されても背景色を復元する', async ({page}) => {
         const table = await openTableAsync(page, 'large');
         await getDataCell(table, 0, 1).click();
@@ -197,6 +225,47 @@ test.describe('EditorTable検索バー', () => {
         await expect(page.locator('.editor-table-find-count')).toHaveText('3/3');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Needle');
         await expect(page.locator('.editor-left-pane .editor-table-cell-find-match')).toHaveCount(3);
+    });
+
+    test('多数ヒット時もEnter連続入力で次の検索結果へ移動できる', async ({page}) => {
+        const table = await openTableAsync(page, 'large');
+        await getDataCell(table, 0, 2).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('Group');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/400');
+
+        for (let i = 0; i < 24; i++) {
+            await page.keyboard.press('Enter');
+        }
+
+        await expect(page.locator('.editor-table-find-count')).toHaveText('25/400');
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Group');
+    });
+
+    test('Enter押しっぱなしのrepeatイベントはフレーム単位でまとめて処理する', async ({page}) => {
+        const table = await openTableAsync(page, 'large');
+        await getDataCell(table, 0, 2).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('Group');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/400');
+
+        await findInput.evaluate((input) => {
+            for (let i = 0; i < 50; i++) {
+                input.dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    repeat: true,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+            }
+        });
+
+        await expect(page.locator('.editor-table-find-count')).toHaveText('51/400');
+        await expect(page.locator('.editor-left-pane .editor-table-cell-find-current')).toHaveText('Group');
     });
 
     test('ExplorerでCtrl+Fを押すと既存のテーブル検索入力にフォーカスする', async ({page}) => {

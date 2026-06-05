@@ -1623,11 +1623,11 @@ export class EditorTable {
     }
 
     /**
-     * 座標で参照ヒントのテキストを取得する。
+     * 論理行とデータ列インデックスで参照ヒントのテキストを取得する。
      * ストア/参照キャッシュから解決するため、DOM外の行でも取得できる。
      */
-    getReferenceHintText(row: number, column: number): string | null {
-        return this.reference.getHintText(row, column);
+    getReferenceHintText(row: number, dataColumnIndex: number): string | null {
+        return this.reference.getHintText(row, dataColumnIndex);
     }
 
     /**

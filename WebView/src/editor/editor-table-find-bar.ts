@@ -1,6 +1,7 @@
 import type {TabState} from "../tabs/tab";
 import {matchesQuery, shouldAutoEnableWholeWord, type SearchOptions} from "../search/search-query";
 import type {MarkerEntry} from "../ui/scrollbar-marker-track";
+import type {EditorTable} from "./editor-table";
 
 interface FindMatch {
     row: number;
@@ -31,6 +32,7 @@ export class EditorTableFindBar {
     private observedState: TabState | null;
     private tableRowsObserver: MutationObserver | null;
     private matches: FindMatch[];
+    private matchIndicesByRow: Map<number, number[]>;
     private currentIndex: number;
     private highlightedCells: HTMLElement[];
     private caseSensitive: boolean;
@@ -42,12 +44,15 @@ export class EditorTableFindBar {
     private searching: boolean;
     private searchProgressPercent: number;
     private highlightRefreshFrameId: number | null;
+    private pendingNavigationDelta: number;
+    private navigationFrameId: number | null;
 
     constructor() {
         this.currentState = null;
         this.observedState = null;
         this.tableRowsObserver = null;
         this.matches = [];
+        this.matchIndicesByRow = new Map();
         this.currentIndex = -1;
         this.highlightedCells = [];
         this.caseSensitive = false;
@@ -59,6 +64,8 @@ export class EditorTableFindBar {
         this.searching = false;
         this.searchProgressPercent = 0;
         this.highlightRefreshFrameId = null;
+        this.pendingNavigationDelta = 0;
+        this.navigationFrameId = null;
         this.handleTableViewportChanged = () => {
             this.scheduleHighlightRefresh();
         };
@@ -154,6 +161,7 @@ export class EditorTableFindBar {
             this.clearHighlights();
             this.currentState = state;
             this.matches = [];
+            this.matchIndicesByRow.clear();
             this.currentIndex = -1;
         }
         if (this.element.parentElement !== state.wrapperElement) {
@@ -211,10 +219,12 @@ export class EditorTableFindBar {
     private handleInputKeydown(event: KeyboardEvent): void {
         if (event.key === 'Enter') {
             event.preventDefault();
-            if (event.shiftKey) {
-                this.moveToPrevious();
+            const delta = event.shiftKey ? -1 : 1;
+            if (event.repeat) {
+                this.queueNavigation(delta);
             } else {
-                this.moveToNext();
+                this.cancelQueuedNavigation();
+                this.moveBy(delta);
             }
             return;
         }
@@ -249,10 +259,12 @@ export class EditorTableFindBar {
             window.clearTimeout(this.searchTimerId);
             this.searchTimerId = null;
         }
+        this.cancelQueuedNavigation();
         const requestId = ++this.searchRequestId;
         this.clearHighlights();
         this.clearSearchScrollbarMarkers();
         this.matches = [];
+        this.matchIndicesByRow.clear();
         this.currentIndex = -1;
         this.searchProgressPercent = 0;
         this.updateCount();
@@ -304,8 +316,13 @@ export class EditorTableFindBar {
             for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
                 const column = dataColumn + offset;
                 const value = editorTable.getCellValueAt(row, column);
-                if (matchesQuery(value, query, options)) {
-                    this.matches.push({row, column});
+                const valueMatches = matchesQuery(value, query, options);
+                const hintText = valueMatches ? null : editorTable.getReferenceHintText(row, dataColumn);
+                if (
+                    valueMatches
+                    || (hintText !== null && matchesQuery(hintText, query, options))
+                ) {
+                    this.addMatch(row, column);
                 }
                 scannedCells++;
                 cellsSinceYield++;
@@ -336,13 +353,33 @@ export class EditorTableFindBar {
         });
     }
 
+    private addMatch(row: number, column: number): void {
+        const matchIndex = this.matches.length;
+        this.matches.push({row, column});
+        let rowIndices = this.matchIndicesByRow.get(row);
+        if (rowIndices === undefined) {
+            rowIndices = [];
+            this.matchIndicesByRow.set(row, rowIndices);
+        }
+        rowIndices.push(matchIndex);
+    }
+
     private cancelSearch(): void {
         if (this.searchTimerId !== null) {
             window.clearTimeout(this.searchTimerId);
             this.searchTimerId = null;
         }
+        this.cancelQueuedNavigation();
         this.searchRequestId++;
         this.setSearching(false);
+    }
+
+    private cancelQueuedNavigation(): void {
+        this.pendingNavigationDelta = 0;
+        if (this.navigationFrameId !== null) {
+            window.cancelAnimationFrame(this.navigationFrameId);
+            this.navigationFrameId = null;
+        }
     }
 
     private setSearching(searching: boolean): void {
@@ -384,6 +421,7 @@ export class EditorTableFindBar {
             window.cancelAnimationFrame(this.highlightRefreshFrameId);
             this.highlightRefreshFrameId = null;
         }
+        this.cancelQueuedNavigation();
     }
 
     private scheduleHighlightRefresh(): void {
@@ -453,17 +491,36 @@ export class EditorTableFindBar {
     }
 
     private moveToNext(): void {
-        if (this.matches.length === 0) return;
-        const nextIndex = this.currentIndex === -1 ? 0 : (this.currentIndex + 1) % this.matches.length;
-        this.setCurrentIndex(nextIndex, true);
+        this.moveBy(1);
     }
 
     private moveToPrevious(): void {
+        this.moveBy(-1);
+    }
+
+    private queueNavigation(delta: number): void {
         if (this.matches.length === 0) return;
-        const nextIndex = this.currentIndex === -1
-            ? this.matches.length - 1
-            : (this.currentIndex - 1 + this.matches.length) % this.matches.length;
+        this.pendingNavigationDelta += delta;
+        if (this.navigationFrameId !== null) return;
+        this.navigationFrameId = window.requestAnimationFrame(() => {
+            this.navigationFrameId = null;
+            const queuedDelta = this.pendingNavigationDelta;
+            this.pendingNavigationDelta = 0;
+            this.moveBy(queuedDelta);
+        });
+    }
+
+    private moveBy(delta: number): void {
+        if (this.matches.length === 0 || delta === 0) return;
+        const baseIndex = this.currentIndex === -1
+            ? (delta > 0 ? -1 : 0)
+            : this.currentIndex;
+        const nextIndex = this.modulo(baseIndex + delta, this.matches.length);
         this.setCurrentIndex(nextIndex, true);
+    }
+
+    private modulo(value: number, divisor: number): number {
+        return ((value % divisor) + divisor) % divisor;
     }
 
     private setCurrentIndex(index: number, scrollToMatch: boolean): void {
@@ -478,7 +535,11 @@ export class EditorTableFindBar {
         }
         this.updateCount();
         this.updateNavigationButtons();
-        this.applyHighlights();
+        if (scrollToMatch) {
+            this.scheduleHighlightRefresh();
+        } else {
+            this.applyHighlights();
+        }
     }
 
     private updateCount(): void {
@@ -505,20 +566,32 @@ export class EditorTableFindBar {
         const renderedStart = editorTable.getVirtualScrollRenderedStart();
         const renderedEnd = editorTable.getVirtualScrollRenderedEnd();
         const frozenRowCount = editorTable.getFrozenRowCount();
-        for (let i = 0; i < this.matches.length; i++) {
-            const match = this.matches[i];
-            const dataRowIndex = match.row - 1;
-            if (dataRowIndex >= frozenRowCount
-                && (dataRowIndex < renderedStart || dataRowIndex >= renderedEnd)) {
-                continue;
+        const totalDataRows = Math.max(0, editorTable.getLogicalRowCount() - 1);
+        const frozenEnd = Math.min(frozenRowCount, totalDataRows);
+        this.addHighlightsForDataRows(editorTable, 0, frozenEnd);
+        const renderedVisibleStart = Math.max(renderedStart, frozenEnd);
+        const renderedVisibleEnd = Math.min(renderedEnd, totalDataRows);
+        this.addHighlightsForDataRows(editorTable, renderedVisibleStart, renderedVisibleEnd);
+    }
+
+    private addHighlightsForDataRows(editorTable: EditorTable, startDataRowIndex: number, endDataRowIndex: number): void {
+        for (let dataRowIndex = startDataRowIndex; dataRowIndex < endDataRowIndex; dataRowIndex++) {
+            const matchIndices = this.matchIndicesByRow.get(dataRowIndex + 1);
+            if (matchIndices === undefined) continue;
+            for (const matchIndex of matchIndices) {
+                this.addHighlightForMatch(editorTable, matchIndex);
             }
-            const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
-            const sourceCell = editorTable.getCellOrNull(match.row, match.column);
-            const current = i === this.currentIndex;
-            this.addHighlightCell(visibleCell, current);
-            if (sourceCell !== visibleCell) {
-                this.addHighlightCell(sourceCell, current);
-            }
+        }
+    }
+
+    private addHighlightForMatch(editorTable: EditorTable, matchIndex: number): void {
+        const match = this.matches[matchIndex];
+        const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
+        const sourceCell = editorTable.getCellOrNull(match.row, match.column);
+        const current = matchIndex === this.currentIndex;
+        this.addHighlightCell(visibleCell, current);
+        if (sourceCell !== visibleCell) {
+            this.addHighlightCell(sourceCell, current);
         }
     }
 
