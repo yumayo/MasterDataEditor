@@ -750,6 +750,20 @@ test.describe('フリーズペイン', () => {
                 // 非固定列（hp）にも freeze-column-border が付与されない
                 const hpHeader = getVisibleColumnHeaderLocator(table, 2);
                 await expect(hpHeader).not.toHaveClass(/freeze-column-border/);
+
+                const shadowStyle = await table.evaluate((tableElement) => {
+                    const pane = tableElement.querySelector('.editor-table-pane-bottom-right');
+                    if (!(pane instanceof HTMLElement)) throw new Error('右下ペインが見つかりません');
+                    const style = window.getComputedStyle(pane, '::after');
+                    return {
+                        content: style.content,
+                        width: style.width,
+                        backgroundImage: style.backgroundImage,
+                    };
+                });
+                expect(shadowStyle.content).not.toBe('none');
+                expect(shadowStyle.width).toBe('6px');
+                expect(shadowStyle.backgroundImage).not.toBe('none');
             },
         );
 
@@ -1100,6 +1114,20 @@ test.describe('フリーズペイン', () => {
                     '.editor-table-grid .editor-table-row:not(.editor-table-empty-row):has(.editor-table-row-header[data-row-index="0"])',
                 );
                 await expect(frozenRow).toHaveClass(/freeze-row-border/);
+
+                const shadowStyle = await table.evaluate((tableElement) => {
+                    const pane = tableElement.querySelector('.editor-table-pane-bottom-right');
+                    if (!(pane instanceof HTMLElement)) throw new Error('右下ペインが見つかりません');
+                    const style = window.getComputedStyle(pane, '::before');
+                    return {
+                        content: style.content,
+                        height: style.height,
+                        backgroundImage: style.backgroundImage,
+                    };
+                });
+                expect(shadowStyle.content).not.toBe('none');
+                expect(shadowStyle.height).toBe('6px');
+                expect(shadowStyle.backgroundImage).not.toBe('none');
             },
         );
 
@@ -1674,15 +1702,13 @@ test.describe('フリーズペイン', () => {
                     const lastFrozenRow = root.querySelector(
                         '.editor-table-detached-frozen-row-layer .editor-table-detached-row.freeze-row-border',
                     );
-                    const topLeftPane = root.querySelector('.editor-table-pane-top-left');
-                    const topRightPane = root.querySelector('.editor-table-pane-top-right');
+                    const bottomRightPane = root.querySelector('.editor-table-pane-bottom-right');
 
                     if (!(frozenRowCell instanceof HTMLElement)) throw new Error('固定行セルが見つかりません');
                     if (!(frozenColumnCell instanceof HTMLElement)) throw new Error('固定列セルが見つかりません');
                     if (!(lastFrozenColumn instanceof HTMLElement)) throw new Error('固定列境界が見つかりません');
                     if (!(lastFrozenRow instanceof HTMLElement)) throw new Error('固定行境界が見つかりません');
-                    if (!(topLeftPane instanceof HTMLElement)) throw new Error('左上ペインが見つかりません');
-                    if (!(topRightPane instanceof HTMLElement)) throw new Error('右上ペインが見つかりません');
+                    if (!(bottomRightPane instanceof HTMLElement)) throw new Error('右下ペインが見つかりません');
 
                     const frozenRowCellStyle = window.getComputedStyle(frozenRowCell);
                     const frozenColumnCellStyle = window.getComputedStyle(frozenColumnCell);
@@ -1690,8 +1716,8 @@ test.describe('フリーズペイン', () => {
                     const lastFrozenRowCell = lastFrozenRow.querySelector('.editor-table-cell');
                     if (!(lastFrozenRowCell instanceof HTMLElement)) throw new Error('固定行境界セルが見つかりません');
                     const lastFrozenRowCellStyle = window.getComputedStyle(lastFrozenRowCell);
-                    const columnShadowStyle = window.getComputedStyle(topLeftPane, '::after');
-                    const rowShadowStyle = window.getComputedStyle(topRightPane, '::before');
+                    const columnShadowStyle = window.getComputedStyle(bottomRightPane, '::after');
+                    const rowShadowStyle = window.getComputedStyle(bottomRightPane, '::before');
 
                     return {
                         frozenRowCell: {
@@ -1713,10 +1739,12 @@ test.describe('フリーズペイン', () => {
                             boxShadow: lastFrozenRowCellStyle.boxShadow,
                         },
                         columnPaneShadow: {
+                            content: columnShadowStyle.content,
                             width: columnShadowStyle.width,
                             backgroundImage: columnShadowStyle.backgroundImage,
                         },
                         rowPaneShadow: {
+                            content: rowShadowStyle.content,
                             height: rowShadowStyle.height,
                             backgroundImage: rowShadowStyle.backgroundImage,
                         },
@@ -1729,10 +1757,12 @@ test.describe('フリーズペイン', () => {
                 expect(styles.lastFrozenColumn.boxShadow).toBe('none');
                 expect(styles.lastFrozenRowCell.borderBottomWidth).toBe('0px');
                 expect(styles.lastFrozenRowCell.boxShadow).toBe('none');
-                expect(['0px', 'auto']).toContain(styles.columnPaneShadow.width);
-                expect(styles.columnPaneShadow.backgroundImage).toBe('none');
-                expect(['0px', 'auto']).toContain(styles.rowPaneShadow.height);
-                expect(styles.rowPaneShadow.backgroundImage).toBe('none');
+                expect(styles.columnPaneShadow.content).not.toBe('none');
+                expect(styles.columnPaneShadow.width).toBe('6px');
+                expect(styles.columnPaneShadow.backgroundImage).not.toBe('none');
+                expect(styles.rowPaneShadow.content).not.toBe('none');
+                expect(styles.rowPaneShadow.height).toBe('6px');
+                expect(styles.rowPaneShadow.backgroundImage).not.toBe('none');
             },
         );
 

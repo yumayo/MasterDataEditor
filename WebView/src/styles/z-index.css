@@ -14,6 +14,7 @@
     --z-index-blame-cell: 30;
     --z-index-freeze-row: 25;
     --z-index-freeze-corner: 27;
+    --z-index-freeze-shadow: 27;
     --z-index-selection-range-bg: 28;
     --z-index-editor-table-row-header: 30;
     --z-index-editor-table-column-header-row: 32;

@@ -3,6 +3,9 @@
     position: relative;
     width: max-content;
     --editor-table-row-header-width: 40px;
+    --editor-table-freeze-shadow-size: 6px;
+    --editor-table-freeze-shadow-color: rgba(0, 0, 0, 0.22);
+    --editor-table-freeze-shadow-fade: rgba(0, 0, 0, 0.04);
 
     user-select: none;
 }
@@ -243,6 +246,42 @@
 .editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-left,
 .editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-top-right {
     overflow: visible;
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-top-right::after,
+.editor-table--quadrant-layout.editor-table--has-frozen-columns .editor-table-pane-bottom-right::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--editor-table-freeze-shadow-size);
+    background-image: linear-gradient(
+        to right,
+        var(--editor-table-freeze-shadow-color),
+        var(--editor-table-freeze-shadow-fade) 65%,
+        transparent
+    );
+    pointer-events: none;
+    z-index: var(--z-index-freeze-shadow);
+}
+
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-bottom-left::before,
+.editor-table--quadrant-layout.editor-table--has-frozen-rows .editor-table-pane-bottom-right::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--editor-table-freeze-shadow-size);
+    background-image: linear-gradient(
+        to bottom,
+        var(--editor-table-freeze-shadow-color),
+        var(--editor-table-freeze-shadow-fade) 65%,
+        transparent
+    );
+    pointer-events: none;
+    z-index: var(--z-index-freeze-shadow);
 }
 
 .editor-table-pane-content,
@@ -942,6 +981,40 @@
 
 .freeze-cell {
     background-color: var(--background-sub-color);
+}
+
+.editor-table:not(.editor-table--quadrant-layout).editor-table--has-frozen-columns .freeze-column-border:not(.editor-table-row-header)::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--editor-table-freeze-shadow-size);
+    background-image: linear-gradient(
+        to right,
+        transparent,
+        var(--editor-table-freeze-shadow-fade) 35%,
+        var(--editor-table-freeze-shadow-color)
+    );
+    pointer-events: none;
+    z-index: var(--z-index-freeze-shadow);
+}
+
+.editor-table:not(.editor-table--quadrant-layout).editor-table--has-frozen-rows .freeze-row-border .editor-table-cell:not(.editor-table-row-header)::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: var(--editor-table-freeze-shadow-size);
+    background-image: linear-gradient(
+        to bottom,
+        transparent,
+        var(--editor-table-freeze-shadow-fade) 35%,
+        var(--editor-table-freeze-shadow-color)
+    );
+    pointer-events: none;
+    z-index: var(--z-index-freeze-shadow);
 }
 
 /* 固定行・固定列は透過防止の不透明背景を持つため、git差分色も不透明色で上書きする。 */
