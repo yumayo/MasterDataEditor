@@ -10,6 +10,8 @@
     --editor-table-find-current-bg: rgba(255, 193, 7, 0.38);
     --editor-table-find-match-frozen-bg: color-mix(in srgb, #ffc107 28%, var(--background-sub-color));
     --editor-table-find-current-frozen-bg: color-mix(in srgb, #ffc107 38%, var(--background-sub-color));
+    --editor-table-scrollbar-thumb-color: color-mix(in srgb, var(--font-color) 38%, var(--background-sub-color));
+    --editor-table-scrollbar-thumb-hover-color: color-mix(in srgb, var(--font-color) 56%, var(--background-sub-color));
 
     user-select: none;
 }
@@ -345,8 +347,7 @@
     right: 0;
     bottom: 0;
     width: 14px;
-    background-color: var(--background-color);
-    border-left: 1px solid var(--border-color);
+    background-color: var(--background-sub-color);
     box-sizing: border-box;
     z-index: var(--z-index-resize-handle);
     user-select: none;
@@ -360,13 +361,13 @@
     top: 0;
     height: 18px;
     border-radius: 0;
-    background-color: color-mix(in srgb, var(--font-color) 38%, transparent);
+    background-color: var(--editor-table-scrollbar-thumb-color);
     cursor: default;
 }
 
 .editor-table-logical-vertical-scrollbar:hover .editor-table-logical-vertical-scrollbar-thumb,
 .editor-table-logical-vertical-scrollbar--dragging .editor-table-logical-vertical-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--font-color) 56%, transparent);
+    background-color: var(--editor-table-scrollbar-thumb-hover-color);
 }
 
 .editor-table-logical-vertical-scrollbar--disabled {
@@ -380,8 +381,7 @@
     right: 14px;
     bottom: 0;
     height: 12px;
-    background-color: var(--background-color);
-    border-top: 1px solid var(--border-color);
+    background-color: var(--background-sub-color);
     box-sizing: border-box;
     z-index: var(--z-index-resize-handle);
     user-select: none;
@@ -394,9 +394,7 @@
     bottom: 0;
     width: 14px;
     height: 12px;
-    background-color: var(--background-color);
-    border-top: 1px solid var(--border-color);
-    border-left: 1px solid var(--border-color);
+    background-color: var(--background-sub-color);
     box-sizing: border-box;
     z-index: var(--z-index-resize-handle);
     user-select: none;
@@ -415,13 +413,13 @@
     bottom: 0;
     width: 18px;
     border-radius: 0;
-    background-color: color-mix(in srgb, var(--font-color) 38%, transparent);
+    background-color: var(--editor-table-scrollbar-thumb-color);
     cursor: default;
 }
 
 .editor-table-logical-horizontal-scrollbar:hover .editor-table-logical-horizontal-scrollbar-thumb,
 .editor-table-logical-horizontal-scrollbar--dragging .editor-table-logical-horizontal-scrollbar-thumb {
-    background-color: color-mix(in srgb, var(--font-color) 56%, transparent);
+    background-color: var(--editor-table-scrollbar-thumb-hover-color);
 }
 
 .editor-table-logical-horizontal-scrollbar--disabled {
