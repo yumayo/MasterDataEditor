@@ -11,7 +11,6 @@ import {
     REFERENCE_HINT_FONT,
     REFERENCE_HINT_MARGIN_PX,
     CELL_HORIZONTAL_EXTRA,
-    MIN_COLUMN_WIDTH_PX,
     ROW_TOTAL_HEIGHT_PX,
     COLUMN_HEADER_SINGLE_ROW_HEIGHT_PX,
     COLUMN_HEADER_WITH_COMMENT_HEIGHT_PX,
@@ -1692,6 +1691,20 @@ export class EditorTable {
         return column.width;
     }
 
+    getColumnMinimumWidthPx(columnIndex: number): number {
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        const hasBadge = this.tableData.primaryKeyColumns.includes(column.name) || column.reference !== null;
+        return Utility.calculateColumnHeaderMinWidthPx(column.name, !this.isMiniTable, hasBadge);
+    }
+
+    clampColumnWidth(columnIndex: number, width: string): string {
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        const hasBadge = this.tableData.primaryKeyColumns.includes(column.name) || column.reference !== null;
+        return Utility.clampColumnWidth(width, column.name, !this.isMiniTable, hasBadge);
+    }
+
     /**
      * 全列の幅を配列で取得する
      */
@@ -1756,9 +1769,7 @@ export class EditorTable {
         if (ctx === null) throw new Error('Canvas 2D コンテキストの取得に失敗しました');
 
         // ヘッダー幅を基底値として取得（ミニテーブルはアイコンなし）
-        const columnName = this.getColumnHeaderValue(columnIndex);
-        const headerWidthStr = Utility.calculateColumnWidth(columnName, !this.isMiniTable);
-        let maxWidth = parseFloat(headerWidthStr);
+        let maxWidth = this.getColumnMinimumWidthPx(columnIndex);
 
         // 全データ行（バッファ空行を除く）のセル幅を計測
         const dataRowCount = this.getFilteredDataRowCount();
@@ -1780,7 +1791,7 @@ export class EditorTable {
             if (cellTotalWidth > maxWidth) maxWidth = cellTotalWidth;
         }
 
-        return `${Math.max(maxWidth, MIN_COLUMN_WIDTH_PX)}px`;
+        return this.clampColumnWidth(columnIndex, `${maxWidth}px`);
     }
 
     /**
@@ -1819,13 +1830,14 @@ export class EditorTable {
     setColumnWidth(columnIndex: number, width: string): void {
         const column = this.tableData.header[columnIndex];
         if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
-        column.width = width;
+        const clampedWidth = this.clampColumnWidth(columnIndex, width);
+        column.width = clampedWidth;
         for (let i = 0; i < this.getRowCount(); ++i) {
             const rowElement = this.getRowElement(i);
             if (!rowElement) continue;
             const cell = rowElement.children[columnIndex + this.dataColumnOffset()] as HTMLElement;
             if (cell) {
-                EditorTable.applyCellWidth(cell, width);
+                EditorTable.applyCellWidth(cell, clampedWidth);
             }
         }
         this.refreshFreezeVisualState();

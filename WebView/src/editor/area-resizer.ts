@@ -2,7 +2,6 @@ import type { History } from "./history";
 import type { Selection } from "./selection";
 import type { EditorTable } from "./editor-table";
 import { ColumnWidthCommand, CompositeCommand } from "./command";
-import { MIN_COLUMN_WIDTH_PX } from "../core/constant";
 
 /** D&D開始と判定する最小移動距離(px) */
 const DRAG_MIN_DISTANCE_PX = 3;
@@ -68,8 +67,7 @@ export class AreaResizer {
                 // D&D確定している場合のみリサイズを実行（dblclickによるmousedownは除外）
                 if (this.columnDragConfirmed) {
                     const deltaX = e.clientX - this.resizeStartX;
-                    const newWidth = Math.max(MIN_COLUMN_WIDTH_PX, this.resizeStartWidth + deltaX);
-                    const newWidthStr = newWidth + 'px';
+                    const newWidthStr = (this.resizeStartWidth + deltaX) + 'px';
                     this.applyColumnsWidthWithUndo(this.resizingColumnIndex, () => newWidthStr);
                 }
 
@@ -112,7 +110,7 @@ export class AreaResizer {
         if (!isColumnSelection || !isInSelection) {
             // 単列変更: 列全体選択でないか選択範囲外の列を操作した場合
             const oldWidth = this.editorTable.getColumnWidth(targetColumnIndex);
-            const newWidth = widthFactory(targetColumnIndex);
+            const newWidth = this.editorTable.clampColumnWidth(targetColumnIndex, widthFactory(targetColumnIndex));
             if (oldWidth === newWidth) return;
             const command = new ColumnWidthCommand(this.editorTable, targetColumnIndex, oldWidth, newWidth);
             this.editorTable.setColumnWidth(targetColumnIndex, newWidth);
@@ -133,7 +131,7 @@ export class AreaResizer {
             // EditorTableのcolumnIndexは0始まり（行ヘッダーを除く）
             const colIndex = col - this.editorTable.dataColumnOffset();
             const oldWidth = this.editorTable.getColumnWidth(colIndex);
-            const newWidth = widthFactory(colIndex);
+            const newWidth = this.editorTable.clampColumnWidth(colIndex, widthFactory(colIndex));
             if (oldWidth === newWidth) continue;
             commands.push(new ColumnWidthCommand(this.editorTable, colIndex, oldWidth, newWidth));
             this.editorTable.setColumnWidth(colIndex, newWidth);

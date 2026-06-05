@@ -66,10 +66,18 @@ export const REFERENCE_HINT_MARGIN_PX = 4;
  *  リサイズハンドルは position: absolute のためテキスト幅計算に影響しない。 */
 export const CELL_HORIZONTAL_EXTRA = 16;
 
+/** 列ヘッダー左右の通常padding(px)。CSSの .editor-table-cell { padding-left/right: 6px } と同期する。 */
+export const HEADER_SIDE_PADDING_PX = 6;
+
+/** 列ヘッダーの列名と左右の固定領域の間に残す余裕(px)。 */
+export const HEADER_LABEL_SAFE_GAP_PX = 4;
+
+/** PK/FKバッジ占有幅(px)。CSSの .editor-table-column-header.has-badge { padding-left: 32px } と同期する。 */
+export const HEADER_BADGE_AREA_PX = 32;
+
 /** 通常テーブルのヘッダーアイコン占有幅(px)。
- *  filter-icon(right:30px, width:14px) の左端が cell.right-44px にあるため、
- *  テキスト右端が cell.right-44px を超えないよう padding-right 相当の余白として確保する。
- *  44px + 余裕4px = 48px。 */
+ *  filter-icon(right:30px, width:14px) と sort-indicator(right:8px) が右側に並ぶため、
+ *  filter-icon の左端(cell.right-44px)に余裕4pxを足して48pxを確保する。 */
 export const HEADER_ICON_AREA_PX = 48;
 
 /** 最小列幅(px) */

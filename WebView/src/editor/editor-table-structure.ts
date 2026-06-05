@@ -56,7 +56,7 @@ export class EditorTableStructure {
     insertColumnInternal(columnIndex: number, comment: string | null): void {
         const tableData = this.table.getTableData();
         const nextKey = tableData.header.reduce((maxKey, column) => Math.max(maxKey, column.key), -1) + 1;
-        const newWidth = Utility.calculateColumnWidth('', !this.table.isMiniTableInstance());
+        const newWidth = Utility.calculateColumnWidth('', !this.table.isMiniTableInstance(), false);
         tableData.header.splice(columnIndex, 0, new EditorTableDataColumn(nextKey, '', 'string', comment, null, null, newWidth));
         const columnMapping = tableData.columnMapping as number[];
         columnMapping.splice(columnIndex, 0, columnIndex);

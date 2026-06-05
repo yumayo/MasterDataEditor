@@ -69,12 +69,17 @@ export class EditorTableData {
             const column = header[i];
             // スキーマの default フィールドを文字列化して保持する（未指定・null の場合は null → 型デフォルトが使われる）
             const defaultValue = (column.default !== undefined && column.default !== null) ? String(column.default) : null;
+            const reference = column.reference !== undefined ? column.reference : null;
+            const hasBadge = primaryKeyColumns.includes(column.name) || reference !== null;
+            const width = typeof column.width === 'number'
+                ? `${Utility.clampColumnWidthPx(column.width, column.name, hasIcons, hasBadge)}px`
+                : Utility.calculateColumnWidth(column.name, hasIcons, hasBadge);
             columns.push(new EditorTableDataColumn(
                 column.key, column.name, column.type,
                 column.comment !== undefined ? column.comment : null,
-                column.reference !== undefined ? column.reference : null,
+                reference,
                 defaultValue,
-                column.width ? `${column.width}px` : Utility.calculateColumnWidth(column.name, hasIcons)
+                width
             ));
         }
 

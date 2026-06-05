@@ -154,9 +154,10 @@ test.describe(
                 const idWidth = await getColumnWidthPxAsync(table, 0);
                 expect(idWidth).toBeLessThan(100);
 
-                // name列はid列以上の幅を持つこと（nameの方が文字数が多い）
+                // PK列はバッジ領域を持つため、列名長の比較は非バッジ列同士で行う
                 const nameWidth = await getColumnWidthPxAsync(table, 1);
-                expect(nameWidth).toBeGreaterThanOrEqual(idWidth);
+                const valueWidth = await getColumnWidthPxAsync(table, 2);
+                expect(valueWidth).toBeGreaterThanOrEqual(nameWidth);
             },
         );
 

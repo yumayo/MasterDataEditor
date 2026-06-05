@@ -1,4 +1,11 @@
-import {COLUMN_HEADER_FONT, CELL_HORIZONTAL_EXTRA, MIN_COLUMN_WIDTH_PX, HEADER_ICON_AREA_PX} from "./constant";
+import {
+    COLUMN_HEADER_FONT,
+    HEADER_BADGE_AREA_PX,
+    HEADER_ICON_AREA_PX,
+    HEADER_LABEL_SAFE_GAP_PX,
+    HEADER_SIDE_PADDING_PX,
+    MIN_COLUMN_WIDTH_PX,
+} from "./constant";
 
 export class Utility {
 
@@ -27,17 +34,35 @@ export class Utility {
     }
 
     /**
-     * カラム名に応じた列幅を計算する。
-     * hasIcons が true の場合、絶対配置アイコン（フィルター・ソートインジケーター）の
-     * 占有幅（HEADER_ICON_AREA_PX）を列幅に加算してテキストとアイコンが重ならないようにする。
-     * ミニテーブル（アイコンなし）の場合は false を渡す。
+     * 列ヘッダーの最小幅を計算する。
+     *
+     * ヘッダーは左から PK/FK バッジ領域、列名領域、フィルター/ソート領域に分かれる。
+     * hasBadge / hasIcons が false の場合は通常padding分だけを確保する。
      */
-    static calculateColumnWidth(columnName: string, hasIcons: boolean): string {
-        const textWidth = Utility.getTextWidth(columnName, COLUMN_HEADER_FONT);
-        const iconExtra = hasIcons ? HEADER_ICON_AREA_PX : 0;
-        const totalWidth = Math.ceil(textWidth) + CELL_HORIZONTAL_EXTRA + iconExtra;
-        const width = Math.max(totalWidth, MIN_COLUMN_WIDTH_PX);
-        return `${width}px`;
+    static calculateColumnHeaderMinWidthPx(columnName: string, hasIcons: boolean, hasBadge: boolean): number {
+        const labelWidth = Math.ceil(Utility.getTextWidth(columnName, COLUMN_HEADER_FONT));
+        const leftArea = hasBadge ? HEADER_BADGE_AREA_PX : HEADER_SIDE_PADDING_PX;
+        const rightArea = hasIcons ? HEADER_ICON_AREA_PX : HEADER_SIDE_PADDING_PX;
+        const totalWidth = labelWidth + leftArea + rightArea + HEADER_LABEL_SAFE_GAP_PX;
+        return Math.max(totalWidth, MIN_COLUMN_WIDTH_PX);
+    }
+
+    static clampColumnWidthPx(widthPx: number, columnName: string, hasIcons: boolean, hasBadge: boolean): number {
+        const minimumWidth = Utility.calculateColumnHeaderMinWidthPx(columnName, hasIcons, hasBadge);
+        if (!Number.isFinite(widthPx)) return minimumWidth;
+        return Math.max(Math.ceil(widthPx), minimumWidth);
+    }
+
+    /**
+     * カラム名に応じた列幅を計算する。
+     * 保存済み幅がない列の初期幅、および自動フィット時のヘッダー幅として使用する。
+     */
+    static calculateColumnWidth(columnName: string, hasIcons: boolean, hasBadge: boolean = false): string {
+        return `${Utility.calculateColumnHeaderMinWidthPx(columnName, hasIcons, hasBadge)}px`;
+    }
+
+    static clampColumnWidth(width: string, columnName: string, hasIcons: boolean, hasBadge: boolean): string {
+        return `${Utility.clampColumnWidthPx(parseFloat(width), columnName, hasIcons, hasBadge)}px`;
     }
 
     static getCssStyle(element: HTMLElement, prop: string) {

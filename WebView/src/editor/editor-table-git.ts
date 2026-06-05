@@ -78,8 +78,8 @@ export class EditorTableGit {
             if (!rowElement) continue;
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
             const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-            const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : null;
-            const dataRowIndex = rowIndexStr !== null ? parseInt(rowIndexStr) : row - 1;
+            const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : undefined;
+            const dataRowIndex = rowIndexStr !== undefined ? parseInt(rowIndexStr) : row - 1;
             const blameCell = this.createBlameCellForDataRow(dataRowIndex, isEmptyRow);
             rowElement.prepend(blameCell);
         }
