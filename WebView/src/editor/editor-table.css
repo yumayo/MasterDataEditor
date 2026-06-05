@@ -3,9 +3,9 @@
     position: relative;
     width: max-content;
     --editor-table-row-header-width: 40px;
-    --editor-table-freeze-shadow-size: 6px;
-    --editor-table-freeze-shadow-color: rgba(0, 0, 0, 0.22);
-    --editor-table-freeze-shadow-fade: rgba(0, 0, 0, 0.04);
+    --editor-table-freeze-shadow-size: 8px;
+    --editor-table-freeze-shadow-color: rgba(0, 0, 0, 0.36);
+    --editor-table-freeze-shadow-fade: rgba(0, 0, 0, 0.10);
     --editor-table-find-match-bg: rgba(255, 193, 7, 0.28);
     --editor-table-find-current-bg: rgba(255, 193, 7, 0.38);
     --editor-table-find-match-frozen-bg: color-mix(in srgb, #ffc107 28%, var(--background-sub-color));
