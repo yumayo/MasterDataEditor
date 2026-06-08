@@ -424,9 +424,7 @@ test.describe('ソース管理パネル', () => {
             await expect.poll(() => fillHandle.evaluate((handle) => {
                 const host = handle.parentElement;
                 if (!(host instanceof HTMLElement)) return false;
-                return host.classList.contains('editor-table-cell')
-                    && !host.classList.contains('editor-table-row-header')
-                    && !host.classList.contains('editor-table-column-header');
+                return host.classList.contains('fill-handle-layer');
             })).toBe(true);
         },
     );

@@ -272,21 +272,10 @@ export class EditorTableRenderer {
 
     /**
      * スクロールイベント時に行入れ替えの有無にかかわらず呼ばれる。
-     * 固定行・固定列のセルが選択されている場合、fillHandle の位置を更新する。
+     * 互換用の入口。fillHandle は絶対座標レイヤーとして
+     * Selection.refreshScrollBoundOverlays() でスクロール追従する。
      */
-    onScrollForFrozenFillHandle(): void {
-        if (this.skipFrozenFillHandleRefreshOnNextScrollSync) {
-            this.skipFrozenFillHandleRefreshOnNextScrollSync = false;
-            return;
-        }
-        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
-        const range = this.selection.getSelectionRange();
-        const isFrozenRow = this.frozenRowCount > 0 && range.endRow <= this.frozenRowCount;
-        const endDataColumn = range.endColumn - this.dataColumnOffset();
-        const isFrozenColumn = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
-        if (!isFrozenRow && !isFrozenColumn) return;
-        this.selection.refreshFillHandlePosition();
-    }
+    onScrollForFrozenFillHandle(): void {}
 
     /**
      * バーチャルスクロールで行の入れ替えが完了した後に、表示中の行に装飾を再適用する。
@@ -309,11 +298,6 @@ export class EditorTableRenderer {
         }
         this.applyFreezeVisualStateToRenderedRows();
         this.selection.reapplySelectionClassesOnly(update.triggeredByScroll);
-        const selectionRange = this.selection.getSelectionRange();
-        const isFrozenRowSelection = this.frozenRowCount > 0 && selectionRange.endRow <= this.frozenRowCount;
-        const endDataColumn = selectionRange.endColumn - this.dataColumnOffset();
-        const isFrozenColumnSelection = this.frozenColumnCount > 0 && endDataColumn < this.frozenColumnCount;
-        this.skipFrozenFillHandleRefreshOnNextScrollSync = update.triggeredByScroll && (isFrozenRowSelection || isFrozenColumnSelection);
         this.reapplyReferenceAndBookmarkDecorations(update);
         if (this.usesInternalMainViewport) {
             this.refreshQuadrantViewportRowHeaders(update);

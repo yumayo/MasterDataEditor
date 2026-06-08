@@ -809,26 +809,29 @@ test.describe('フリーズペイン', () => {
             await page.goto('/');
         });
 
-        test('選択セルの固定状態に応じて fill-handle の z-index が切り替わる', async ({ page }) => {
+        test('fill-handle は固定シャドウより前、ヘッダーより後ろに描画される', async ({ page }) => {
             const table = await openTableAsync(page, 'fill_handle_z_index_test');
-            const freezeColumnZIndex = await getRootCssZIndexVarAsync(page, '--z-index-freeze-column');
-            const freezeRowZIndex = await getRootCssZIndexVarAsync(page, '--z-index-freeze-row');
+            const freezeShadowZIndex = await getRootCssZIndexVarAsync(page, '--z-index-freeze-shadow');
+            const rowHeaderZIndex = await getRootCssZIndexVarAsync(page, '--z-index-editor-table-row-header');
+            const columnHeaderZIndex = await getRootCssZIndexVarAsync(page, '--z-index-editor-table-column-header-row');
 
-            // 通常セル選択時は固定行・固定列より下に留まり、背後に隠れる必要がある。
             await clickDataCellAsync(table, 1, 1);
             const normalCellHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
-            expect(normalCellHandleZIndex).toBeLessThan(freezeColumnZIndex);
-            expect(normalCellHandleZIndex).toBeLessThan(freezeRowZIndex);
+            expect(normalCellHandleZIndex).toBeGreaterThan(freezeShadowZIndex);
+            expect(normalCellHandleZIndex).toBeLessThan(rowHeaderZIndex);
+            expect(normalCellHandleZIndex).toBeLessThan(columnHeaderZIndex);
 
-            // 固定列セル選択時は固定列セルの 1 つ上に出す。
             await clickDataCellAsync(table, 1, 0);
             const frozenColumnHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
-            expect(frozenColumnHandleZIndex).toBe(freezeColumnZIndex + 1);
+            expect(frozenColumnHandleZIndex).toBeGreaterThan(freezeShadowZIndex);
+            expect(frozenColumnHandleZIndex).toBeLessThan(rowHeaderZIndex);
+            expect(frozenColumnHandleZIndex).toBeLessThan(columnHeaderZIndex);
 
-            // 固定行セル選択時は固定行セルの 1 つ上に出す。
             await clickDataCellAsync(table, 0, 1);
             const frozenRowHandleZIndex = await getComputedZIndexAsync(page, '.fill-handle');
-            expect(frozenRowHandleZIndex).toBe(freezeRowZIndex + 1);
+            expect(frozenRowHandleZIndex).toBeGreaterThan(freezeShadowZIndex);
+            expect(frozenRowHandleZIndex).toBeLessThan(rowHeaderZIndex);
+            expect(frozenRowHandleZIndex).toBeLessThan(columnHeaderZIndex);
         });
     });
 
@@ -1020,7 +1023,7 @@ test.describe('フリーズペイン', () => {
             await page.setViewportSize({ width: 640, height: 480 });
             await openTableAsync(page, 'freeze_selection_clip');
 
-            const state = await page.evaluate(async () => {
+            await page.evaluate(async () => {
                 type SelectionForTest = {
                     start(row: number, column: number): void;
                     extendSelection(row: number, column: number): void;
@@ -1039,7 +1042,7 @@ test.describe('フリーズペイン', () => {
                 const dataColumnOffset = table.dataColumnOffset();
                 const selection = table.getSelection();
                 selection.start(3, dataColumnOffset + 1);
-                selection.extendSelection(16, dataColumnOffset + 4);
+                selection.extendSelection(16, dataColumnOffset + 2);
                 selection.end();
 
                 table.scrollByInput(2300, 0);
@@ -1047,22 +1050,42 @@ test.describe('フリーズペイン', () => {
 
                 table.scrollByInput(-2300, 0);
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            });
 
+            await expect.poll(async () => page.evaluate(() => {
                 const handle = document.querySelector<HTMLElement>('.fill-handle');
-                const host = handle?.parentElement;
-                const hostRow = host?.closest<HTMLElement>('.editor-table-detached-row, .editor-table-row');
+                const cell = document.querySelector<HTMLElement>(
+                    '.editor-table-grid .editor-table-row[data-row-index="15"] .editor-table-cell[data-col="2"]',
+                );
+                const pane = cell?.closest<HTMLElement>('.editor-table-pane');
+                const table = document.querySelector<HTMLElement>('.editor-table');
+                const handleRect = handle?.getBoundingClientRect();
+                const cellRect = cell?.getBoundingClientRect();
+                const paneRect = pane?.getBoundingClientRect();
+                const tableRect = table?.getBoundingClientRect();
+                const clippedRight = cellRect && paneRect && tableRect
+                    ? Math.min(cellRect.right, paneRect.right, tableRect.right)
+                    : Number.NEGATIVE_INFINITY;
+                const expectedRight = cellRect && clippedRight < cellRect.right - 0.5 ? clippedRight - 1 : (cellRect?.right ?? 0) + 3;
+                const expectedBottom = (cellRect?.bottom ?? 0) + 3;
+                const rightDelta = handleRect ? handleRect.right - expectedRight : Number.POSITIVE_INFINITY;
+                const bottomDelta = handleRect ? handleRect.bottom - expectedBottom : Number.POSITIVE_INFINITY;
                 return {
                     connected: handle?.isConnected ?? false,
                     display: handle?.style.display ?? '',
-                    hostRowIndex: hostRow?.dataset.rowIndex ?? null,
-                    hostCol: host?.dataset.col ?? null,
+                    parentOk: handle?.parentElement?.classList.contains('fill-handle-layer') ?? false,
+                    cellFound: cell instanceof HTMLElement,
+                    rightDelta,
+                    bottomDelta,
+                    aligned: Math.abs(rightDelta) <= 1 && Math.abs(bottomDelta) <= 1,
                 };
+            })).toMatchObject({
+                connected: true,
+                display: 'block',
+                parentOk: true,
+                cellFound: true,
+                aligned: true,
             });
-
-            expect(state.connected, JSON.stringify(state)).toBe(true);
-            expect(state.display, JSON.stringify(state)).toBe('block');
-            expect(state.hostRowIndex, JSON.stringify(state)).toBe('15');
-            expect(state.hostCol, JSON.stringify(state)).toBe('4');
         });
     });
 

@@ -21,9 +21,8 @@
     --z-index-editor-table-corner: 40;
     --z-index-resize-handle: 45;
     --z-index-scrollbar-marker: 46;
-    /* fill-handle / fill-preview は通常セル上の操作補助UI。
-       行ヘッダー・列ヘッダー・固定行・固定列より前には出さない。 */
-    --z-index-fill-handle: 14;
+    /* fill-handle / fill-preview は固定シャドウより前、行ヘッダー・列ヘッダーより後ろに出す。 */
+    --z-index-fill-handle: 29;
     --z-index-grid-textfield-active: 50;
     --z-index-column-header-badge-area: 1;
     --z-index-resize-guideline: 100;

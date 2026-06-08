@@ -376,16 +376,19 @@ test.describe('仮想スクロール × 固定行', () => {
         await scrollContainer.evaluate((el) => { el.scrollTop = 1; });
         await page.waitForTimeout(50);
 
-        // 安定後の fillHandle とホストセル右下の相対位置を記録する
+        // 安定後の fillHandle と選択セル右下の相対位置を記録する
         const initialOffset = await page.evaluate(() => {
             const handle = document.querySelector('.fill-handle') as HTMLElement;
-            const host = handle.parentElement as HTMLElement | null;
-            if (!(host instanceof HTMLElement)) throw new Error('fillHandle のホストセルが見つかりません');
+            const cell = document.querySelector<HTMLElement>(
+                '.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="2"], ' +
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="2"]',
+            );
+            if (!(cell instanceof HTMLElement)) throw new Error('fillHandle の対象セルが見つかりません');
             const handleRect = handle.getBoundingClientRect();
-            const hostRect = host.getBoundingClientRect();
+            const cellRect = cell.getBoundingClientRect();
             return {
-                right: handleRect.right - hostRect.right,
-                bottom: handleRect.bottom - hostRect.bottom,
+                right: handleRect.right - cellRect.right,
+                bottom: handleRect.bottom - cellRect.bottom,
             };
         });
 
@@ -397,13 +400,16 @@ test.describe('仮想スクロール × 固定行', () => {
         // スクロール後もセル右下に対する相対位置が維持されることを確認する
         const afterScrollOffset = await page.evaluate(() => {
             const handle = document.querySelector('.fill-handle') as HTMLElement;
-            const host = handle.parentElement as HTMLElement | null;
-            if (!(host instanceof HTMLElement)) throw new Error('fillHandle のホストセルが見つかりません');
+            const cell = document.querySelector<HTMLElement>(
+                '.editor-table-detached-frozen-row-layer .editor-table-detached-row[data-row-index="0"] .editor-table-cell[data-col="2"], ' +
+                '.editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="2"]',
+            );
+            if (!(cell instanceof HTMLElement)) throw new Error('fillHandle の対象セルが見つかりません');
             const handleRect = handle.getBoundingClientRect();
-            const hostRect = host.getBoundingClientRect();
+            const cellRect = cell.getBoundingClientRect();
             return {
-                right: handleRect.right - hostRect.right,
-                bottom: handleRect.bottom - hostRect.bottom,
+                right: handleRect.right - cellRect.right,
+                bottom: handleRect.bottom - cellRect.bottom,
             };
         });
 

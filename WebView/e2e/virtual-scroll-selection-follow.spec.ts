@@ -242,16 +242,23 @@ test.describe('バーチャルスクロール selection 追従', () => {
         });
 
         await expect(page.locator('.fill-handle')).toBeVisible();
-        const initialHost = await page.evaluate(() => {
+        const initialHandleState = await page.evaluate(() => {
             const handle = document.querySelector<HTMLElement>('.fill-handle');
-            const hostCell = handle?.parentElement;
-            const hostRow = hostCell?.closest<HTMLElement>('.editor-table-row');
+            const cell = document.querySelector<HTMLElement>(
+                '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+            );
+            if (!(handle instanceof HTMLElement) || !(cell instanceof HTMLElement)) throw new Error('fillHandle or target cell not found');
+            const handleRect = handle.getBoundingClientRect();
+            const cellRect = cell.getBoundingClientRect();
             return {
-                rowIndex: hostRow?.dataset.rowIndex ?? null,
-                col: hostCell?.dataset.col ?? null,
+                parentClass: handle.parentElement?.className ?? '',
+                rightDelta: handleRect.right - (cellRect.right + 3),
+                bottomDelta: handleRect.bottom - (cellRect.bottom + 3),
             };
         });
-        expect(initialHost).toEqual({ rowIndex: '0', col: '1' });
+        expect(initialHandleState.parentClass).toContain('fill-handle-layer');
+        expect(Math.abs(initialHandleState.rightDelta), JSON.stringify(initialHandleState)).toBeLessThanOrEqual(1);
+        expect(Math.abs(initialHandleState.bottomDelta), JSON.stringify(initialHandleState)).toBeLessThanOrEqual(1);
 
         await page.evaluate(async () => {
             const viewport = document.querySelector<HTMLElement>(
@@ -275,18 +282,12 @@ test.describe('バーチャルスクロール selection 追従', () => {
 
         const offscreenState = await page.evaluate(() => {
             const handle = document.querySelector<HTMLElement>('.fill-handle');
-            const hosts = Array.from(document.querySelectorAll<HTMLElement>('.fill-handle-host'));
-            const firstHost = hosts[0] ?? null;
-            const firstHostRow = firstHost?.closest<HTMLElement>('.editor-table-row') ?? null;
             return {
                 handleConnected: handle !== null,
                 handleDisplay: handle === null ? 'missing' : getComputedStyle(handle).display,
-                hostCount: hosts.length,
-                hostRowIndex: firstHostRow?.dataset.rowIndex ?? null,
             };
         });
 
-        expect(offscreenState.hostCount, JSON.stringify(offscreenState)).toBe(0);
         expect(
             offscreenState.handleConnected === false || offscreenState.handleDisplay === 'none',
             JSON.stringify(offscreenState),
@@ -310,15 +311,22 @@ test.describe('バーチャルスクロール selection 追従', () => {
         })).toBe(true);
         await expect(page.locator('.fill-handle')).toBeVisible();
 
-        const restoredHost = await page.evaluate(() => {
+        const restoredHandleState = await page.evaluate(() => {
             const handle = document.querySelector<HTMLElement>('.fill-handle');
-            const hostCell = handle?.parentElement;
-            const hostRow = hostCell?.closest<HTMLElement>('.editor-table-row');
+            const cell = document.querySelector<HTMLElement>(
+                '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-grid .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]',
+            );
+            if (!(handle instanceof HTMLElement) || !(cell instanceof HTMLElement)) throw new Error('fillHandle or target cell not found');
+            const handleRect = handle.getBoundingClientRect();
+            const cellRect = cell.getBoundingClientRect();
             return {
-                rowIndex: hostRow?.dataset.rowIndex ?? null,
-                col: hostCell?.dataset.col ?? null,
+                parentClass: handle.parentElement?.className ?? '',
+                rightDelta: handleRect.right - (cellRect.right + 3),
+                bottomDelta: handleRect.bottom - (cellRect.bottom + 3),
             };
         });
-        expect(restoredHost).toEqual({ rowIndex: '0', col: '1' });
+        expect(restoredHandleState.parentClass).toContain('fill-handle-layer');
+        expect(Math.abs(restoredHandleState.rightDelta), JSON.stringify(restoredHandleState)).toBeLessThanOrEqual(1);
+        expect(Math.abs(restoredHandleState.bottomDelta), JSON.stringify(restoredHandleState)).toBeLessThanOrEqual(1);
     });
 });

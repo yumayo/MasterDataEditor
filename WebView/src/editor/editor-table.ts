@@ -227,8 +227,6 @@ export class EditorTable {
     private relations: EditorTableRelations;
     /** CSS border を使わないセル境界線描画モジュール */
     private gridLines: EditorTableGridLines;
-    /** 同一スクロール内で fillHandle 再配置を二重実行しないための抑止フラグ */
-    skipFrozenFillHandleRefreshOnNextScrollSync: boolean;
 
     constructor(
         tableName: string,
@@ -375,7 +373,6 @@ export class EditorTable {
         this.cachedPkErrorCells = new Set();
         this.cachedOtherErrorCells = new Set();
         this.cachedDomColToStoreCol = [];
-        this.skipFrozenFillHandleRefreshOnNextScrollSync = false;
         this.columnSorter = new ColumnSorter(this, store);
         this.columnFilter = new ColumnFilter();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
@@ -749,11 +746,8 @@ export class EditorTable {
 
     /**
      * スクロールイベント時に行入れ替えの有無にかかわらず呼ばれる。
-     * 固定行・固定列のセルが選択されている場合、fillHandle の位置を更新する。
-     * fillHandle は選択終端セルの子要素として配置されるため、通常スクロールには自然に追従する。
-     * 固定行/列ではスクロールに応じて可視セルが変わる場合があるため、ホストセルを再同期する。
-     * 行入れ替え発生時は reapplyRowDecorations → updateFillHandlePosition が呼ばれるので
-     * 重複更新になるが、軽量な処理のためパフォーマンス影響は無視できる。
+     * 互換用の入口。fillHandle は絶対座標レイヤーへ移動したため、
+     * 現在は Selection.refreshScrollBoundOverlays() の一括更新で位置を同期する。
      */
     onScrollForFrozenFillHandle(): void {
         this.renderer.onScrollForFrozenFillHandle();

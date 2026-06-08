@@ -4015,7 +4015,7 @@ export class Tab {
         editorTable.appendTo(wrapperElement);
         wrapperElement.appendChild(selection.selectionOverlayElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
-        wrapperElement.appendChild(selection.fillHandle);
+        wrapperElement.appendChild(selection.fillHandleLayerElement);
         editorTableHandler.appendTo(wrapperElement);
 
         // AreaResizer に EditorTable を設定
@@ -4124,7 +4124,7 @@ export class Tab {
         editorTable.appendTo(wrapperElement);
         wrapperElement.appendChild(selection.selectionOverlayElement);
         wrapperElement.appendChild(selection.fillPreviewElement);
-        wrapperElement.appendChild(selection.fillHandle);
+        wrapperElement.appendChild(selection.fillHandleLayerElement);
         editorTableHandler.appendTo(wrapperElement);
 
         areaResizer.setEditorTable(editorTable);

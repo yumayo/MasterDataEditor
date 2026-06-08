@@ -33,31 +33,28 @@
 }
 
 /* ===== フィルハンドル（選択範囲右下の小さな丸） ===== */
-.fill-handle-host {
+.fill-handle-layer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
     overflow: visible;
-    clip-path: inset(0 -8px -8px 0);
-}
-
-.fill-handle-host-bottom-edge {
-    clip-path: inset(0 -8px 0 0);
+    pointer-events: none;
+    z-index: var(--z-index-fill-handle);
 }
 
 .fill-handle {
     position: absolute;
-    right: -3px;
-    bottom: -3px;
     width: 8px;
     height: 8px;
     background-color: #0078d7;
     border: none;
     border-radius: 50%;
     cursor: crosshair;
+    pointer-events: auto;
     z-index: var(--z-index-fill-handle);
     display: none;
-}
-
-.fill-handle-host-bottom-edge .fill-handle {
-    bottom: 1px;
 }
 
 .fill-handle:hover {
@@ -87,12 +84,12 @@
     border-color: #808080;
 }
 
-.editor-table--inactive .fill-handle,
+.editor-table--inactive ~ .fill-handle-layer .fill-handle,
 .editor-table--inactive ~ .fill-handle {
     background-color: #808080;
 }
 
-.editor-table--inactive .fill-handle:hover,
+.editor-table--inactive ~ .fill-handle-layer .fill-handle:hover,
 .editor-table--inactive ~ .fill-handle:hover {
     background-color: #808080;
 }

@@ -1050,7 +1050,7 @@ export class DiffTab {
         editorTable.appendTo(innerWrapper);
         innerWrapper.appendChild(selection.selectionOverlayElement);
         innerWrapper.appendChild(selection.fillPreviewElement);
-        innerWrapper.appendChild(selection.fillHandle);
+        innerWrapper.appendChild(selection.fillHandleLayerElement);
         editorTableHandler.appendTo(innerWrapper);
 
         areaResizer.setEditorTable(editorTable);

@@ -31,6 +31,8 @@ export class Selection {
 
     selectionOverlayElement: HTMLElement;
 
+    fillHandleLayerElement: HTMLElement;
+
     fillPreviewElement: HTMLElement;
 
     private range: CellRange;
@@ -61,8 +63,7 @@ export class Selection {
 
     private scrollBinding: ScrollViewportController;
 
-    private fillHandleHostCell: HTMLElement | null;
-    private fillHandleHostPreviousZIndex: string | null;
+    private fillHandleHitBounds: OverlayBounds | null;
     private selectionOverlayParts: HTMLElement[];
     private copyOverlayParts: HTMLElement[];
 
@@ -81,8 +82,7 @@ export class Selection {
         this.fillTarget = { row: 0, column: 0 };
         this.fillStartMousePosition = { x: 0, y: 0 };
         this.fillCurrentMousePosition = { x: 0, y: 0 };
-        this.fillHandleHostCell = null;
-        this.fillHandleHostPreviousZIndex = null;
+        this.fillHandleHitBounds = null;
         this.selectionOverlayParts = [];
         this.copyOverlayParts = [];
 
@@ -90,14 +90,19 @@ export class Selection {
         selectionOverlayElement.classList.add('selection-overlay');
         this.selectionOverlayElement = selectionOverlayElement;
 
+        const fillHandleLayerElement = document.createElement('div');
+        fillHandleLayerElement.classList.add('fill-handle-layer');
+        this.fillHandleLayerElement = fillHandleLayerElement;
+
         // フィルプレビュー範囲表示用の要素を作成（オーバーレイのまま維持）
         const fillPreviewElement = document.createElement('div');
         fillPreviewElement.classList.add('fill-preview');
         this.fillPreviewElement = fillPreviewElement;
 
-        // フィルハンドル要素を作成（表示時に選択終端セルへ付け替える）
+        // フィルハンドル要素を作成（セルの子要素にはせず、専用レイヤー上に絶対座標で配置する）
         this.fillHandle = document.createElement('div');
         this.fillHandle.classList.add('fill-handle');
+        this.fillHandleLayerElement.appendChild(this.fillHandle);
     }
 
     /**
@@ -693,16 +698,18 @@ export class Selection {
         if (triggeredByScroll) {
             // スクロール入力ではこの直後の scroll-bound sync で overlay をまとめて更新する。
             // 行差し替え直後に getBoundingClientRect() を読むと、大量の class/DOM 更新が同期レイアウト化する。
-            if (this.fillHandleHostCell === null || !this.fillHandleHostCell.isConnected) {
+            // ただし終端セルが画面外へ出てハンドルを非表示にした後は、行再描画直後に復帰させる必要がある。
+            if (this.fillHandle.style.display === 'none') {
                 this.updateFillHandlePosition();
             }
-        } else {
-            this.updateSelectionOverlay(selectionRange);
-            // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
-            this.updateFillHandlePosition();
-            if (this.hasCopyRange()) {
-                this.updateCopyRenderer();
-            }
+            return;
+        }
+
+        this.updateSelectionOverlay(selectionRange);
+        // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
+        this.updateFillHandlePosition();
+        if (this.hasCopyRange()) {
+            this.updateCopyRenderer();
         }
     }
 
@@ -716,6 +723,7 @@ export class Selection {
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }
+        this.updateFillHandlePosition();
         if (this.filling) {
             this.updateFillPreview();
         }
@@ -830,8 +838,8 @@ export class Selection {
         return this.mergeAdjacentOverlayGroups(Array.from(groups.values()));
     }
 
-    private getClippedVisibleCellRect(cell: HTMLElement): OverlayBounds | null {
-        const cellRect = cell.getBoundingClientRect();
+    private getClippedVisibleCellRect(cell: HTMLElement, sourceCellRect?: DOMRect): OverlayBounds | null {
+        const cellRect = sourceCellRect ?? cell.getBoundingClientRect();
         if (cellRect.width <= 0 || cellRect.height <= 0) return null;
 
         const clipRects = this.getOverlayClipRects(cell);
@@ -1014,20 +1022,19 @@ export class Selection {
     }
 
     isPointInsideFillHandleHitArea(clientX: number, clientY: number): boolean {
-        if (!this.fillHandleHostCell || !this.fillHandle.isConnected || this.fillHandle.style.display === 'none') {
+        if (!this.fillHandle.isConnected || this.fillHandle.style.display === 'none' || this.fillHandleHitBounds === null) {
             return false;
         }
 
-        const hostRect = this.fillHandleHostCell.getBoundingClientRect();
-        return clientX >= hostRect.right - 8
-            && clientX <= hostRect.right + 4
-            && clientY >= hostRect.bottom - 8
-            && clientY <= hostRect.bottom + 4;
+        return clientX >= this.fillHandleHitBounds.left
+            && clientX <= this.fillHandleHitBounds.right
+            && clientY >= this.fillHandleHitBounds.top
+            && clientY <= this.fillHandleHitBounds.bottom;
     }
 
     private updateFillHandlePosition(): void {
         const selectionRange = this.getSelectionRange();
-        let endRow = selectionRange.endRow;
+        const endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;
         const isBottomLogicalRow = selectionRange.endRow >= this.editorTable.getLogicalRowCount() - 1;
 
@@ -1037,17 +1044,49 @@ export class Selection {
             return;
         }
 
-        // セルの子要素として右下に配置する。スクロール座標への変換は不要。
-        // ただしテーブルセル同士の描画順には親セルのスタッキング順が効くため、
-        // 既存の inline z-index に戻した状態で基準値を計算する。
-        if (this.fillHandleHostCell === cell && this.fillHandleHostPreviousZIndex !== null) {
-            cell.style.zIndex = this.fillHandleHostPreviousZIndex;
+        const cellRect = cell.getBoundingClientRect();
+        const clippedRect = this.getClippedVisibleCellRect(cell, cellRect);
+        if (clippedRect === null) {
+            this.hideFillHandle();
+            return;
         }
+
+        const hostRect = this.editorElement.getBoundingClientRect();
+        const handleSize = 8;
+        const outsideOffset = 3;
+        const insideOffset = 1;
+        const isRightClipped = clippedRect.right < cellRect.right - 0.5;
+        const isBottomClipped = clippedRect.bottom < cellRect.bottom - 0.5 || isBottomLogicalRow;
+        const handleLeft = clippedRect.right - hostRect.left - handleSize + (isRightClipped ? -insideOffset : outsideOffset);
+        const handleTop = clippedRect.bottom - hostRect.top - handleSize + (isBottomClipped ? -insideOffset : outsideOffset);
+        const fillOverlayZIndex = this.resolveFillHandleZIndex(cell);
+
+        this.fillHandleLayerElement.style.zIndex = fillOverlayZIndex.toString();
+        this.fillHandle.style.left = `${handleLeft}px`;
+        this.fillHandle.style.top = `${handleTop}px`;
+        this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
+        this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
+        this.fillHandle.style.display = 'block';
+        this.fillHandleHitBounds = {
+            left: clippedRect.right - 8,
+            top: clippedRect.bottom - 8,
+            right: clippedRect.right + 4,
+            bottom: clippedRect.bottom + 4,
+        };
+    }
+
+    private hideFillHandle(): void {
+        this.fillHandle.style.display = 'none';
+        this.fillHandleHitBounds = null;
+    }
+
+    private resolveFillHandleZIndex(cell: HTMLElement): number {
         const baseZIndexText = window.getComputedStyle(document.documentElement).getPropertyValue('--z-index-fill-handle').trim();
         const baseZIndex = parseInt(baseZIndexText, 10);
         if (Number.isNaN(baseZIndex)) {
             throw new Error(`CSS変数 --z-index-fill-handle の値が不正です: ${baseZIndexText}`);
         }
+
         let effectiveCellZIndex = 0;
         let currentElement: HTMLElement | null = cell;
         while (currentElement && currentElement !== this.editorElement) {
@@ -1061,37 +1100,7 @@ export class Selection {
             }
             currentElement = currentElement.parentElement;
         }
-        const fillOverlayZIndex = Math.max(baseZIndex, effectiveCellZIndex + 1);
-
-        if (this.fillHandleHostCell !== cell) {
-            this.restoreFillHandleHostCell();
-            this.fillHandleHostCell = cell;
-            this.fillHandleHostPreviousZIndex = cell.style.zIndex;
-            cell.classList.add('fill-handle-host');
-            cell.appendChild(this.fillHandle);
-        }
-        // 最下行では外側へ出たハンドルが scrollHeight を増やすため内側へ寄せる。
-        cell.classList.toggle('fill-handle-host-bottom-edge', isBottomLogicalRow);
-        cell.style.zIndex = fillOverlayZIndex.toString();
-        this.fillHandle.style.zIndex = fillOverlayZIndex.toString();
-        this.fillPreviewElement.style.zIndex = fillOverlayZIndex.toString();
-        this.fillHandle.style.display = 'block';
-    }
-
-    private hideFillHandle(): void {
-        this.restoreFillHandleHostCell();
-        this.fillHandleHostCell = null;
-        this.fillHandle.style.display = 'none';
-    }
-
-    private restoreFillHandleHostCell(): void {
-        if (!this.fillHandleHostCell) return;
-        this.fillHandleHostCell.classList.remove('fill-handle-host');
-        this.fillHandleHostCell.classList.remove('fill-handle-host-bottom-edge');
-        if (this.fillHandleHostPreviousZIndex !== null) {
-            this.fillHandleHostCell.style.zIndex = this.fillHandleHostPreviousZIndex;
-        }
-        this.fillHandleHostPreviousZIndex = null;
+        return Math.max(baseZIndex, effectiveCellZIndex + 1);
     }
 
     private hideCopyBorder(): void {
