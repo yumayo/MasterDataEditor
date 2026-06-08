@@ -527,6 +527,8 @@ function createFkAlignmentFileSystem(): MockFileSystem {
  * long_name_master の ja 列が表示列として使われ、非常に長い文字列がヒント句になる。
  */
 function createFkLongHintFileSystem(): MockFileSystem {
+	const longId = "1234567890";
+	const longName = "あ".repeat(40);
 	return {
 		"schema/long_name_master.json": JSON.stringify({
 			primary_key: ["id"],
@@ -537,7 +539,7 @@ function createFkLongHintFileSystem(): MockFileSystem {
 		}),
 		"data/long_name_master.csv": [
 			"id,ja",
-			"1,これは非常に長い名前のマスターデータエントリでありセル幅を大きく超過する想定です",
+			`${longId},${longName}`,
 		].join("\n"),
 		"schema/long_ref.json": JSON.stringify({
 			primary_key: ["id"],
@@ -548,7 +550,7 @@ function createFkLongHintFileSystem(): MockFileSystem {
 		}),
 		"data/long_ref.csv": [
 			"id,master_id",
-			"1,1",
+			`1,${longId}`,
 		].join("\n"),
 	};
 }
@@ -642,7 +644,7 @@ test.describe('ISSUE_0127: FK列の右揃えとヒント句配置', () => {
 		test('長いヒント句がellipsisで省略されFK値の表示領域が侵食されない', async ({ page }) => {
 			const table = await openTableAsync(page, 'long_ref');
 
-			// master_id列(colIndex=1): FK値 "1" に対して長い参照ヒントが表示される
+			// master_id列(colIndex=1): 10桁のFK値に対して長い参照ヒントが表示される
 			const fkCell = getDataCell(table, 0, 1);
 			await expect(fkCell).toBeVisible();
 			const hint = fkCell.locator('.cell-reference-hint');
@@ -676,6 +678,45 @@ test.describe('ISSUE_0127: FK列の右揃えとヒント句配置', () => {
 			expect(overflows).not.toBeNull();
 			// ヒント句の右端がセルの右端を超えていない
 			expect(overflows!.hintRight).toBeLessThanOrEqual(overflows!.cellRight + 1); // 1pxの誤差許容
+		});
+
+		test('10桁のFK値は長い参照ヒントより優先して表示される', async ({ page }) => {
+			const table = await openTableAsync(page, 'long_ref');
+
+			const fkCell = getDataCell(table, 0, 1);
+			await expect(fkCell).toBeVisible();
+			await expect(fkCell.locator('.cell-reference-hint')).toBeVisible();
+
+			const layout = await fkCell.evaluate((el) => {
+				const hintEl = el.querySelector('.cell-reference-hint') as HTMLElement | null;
+				if (!hintEl) return null;
+				const valueNode = Array.from(el.childNodes).find(
+					node => node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim() !== '',
+				);
+				if (!valueNode) return null;
+				const range = document.createRange();
+				range.selectNodeContents(valueNode);
+				const textRect = range.getBoundingClientRect();
+				const hintRect = hintEl.getBoundingClientRect();
+				const cellRect = el.getBoundingClientRect();
+				const computed = window.getComputedStyle(el);
+				return {
+					value: (valueNode.textContent ?? '').trim(),
+					cellLeft: cellRect.left,
+					cellRight: cellRect.right,
+					hintRight: hintRect.right,
+					textLeft: textRect.left,
+					textRight: textRect.right,
+					reservedWidth: computed.getPropertyValue('--cell-value-reserved-width').trim(),
+				};
+			});
+
+			expect(layout).not.toBeNull();
+			expect(layout!.value).toBe('1234567890');
+			expect(layout!.reservedWidth).not.toBe('');
+			expect(layout!.hintRight).toBeLessThanOrEqual(layout!.textLeft + 1);
+			expect(layout!.textLeft).toBeGreaterThanOrEqual(layout!.cellLeft);
+			expect(layout!.textRight).toBeLessThanOrEqual(layout!.cellRight);
 		});
 	});
 });

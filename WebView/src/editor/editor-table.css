@@ -795,45 +795,46 @@
 }
 
 /* 参照列のヒント表示（FK値の左側に配置される）
-   string型FK列: 通常フローでヒント→FK値の順に左揃え表示
-   数値型FK列: float:left + text-align:right により ヒント左・FK値右 のレイアウトを実現 */
+   --cell-value-reserved-width でFK値の実測幅を残し、長いヒント側を省略する。 */
 .cell-reference-hint {
+    display: inline-block;
     color: var(--reference-hint-color);
     font-size: 0.9em;
     margin-left: 0;
     margin-right: 4px;
+    max-width: max(0px, calc(100% - var(--cell-value-reserved-width, 0px)));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
 }
 
 /* 数値型FK列のヒント: float:left で左配置し、ellipsis で省略対応する。
    セル自体は text-align:right (.cell-numeric) のため FK値は右寄せ、
-   ヒントは float で左に固定される。
-   3em = FK値3桁（999）まで余裕を持たせるための確保幅。 */
+   ヒントは float で左に固定される。 */
 .cell-numeric .cell-reference-hint {
     float: left;
-    max-width: calc(100% - 3em);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* 逆参照列のヒント表示 */
 .cell-reverse-reference-hint {
+    display: inline-block;
     color: var(--reference-hint-color);
     margin-right: 4px;
     font-size: 0.9em;
+    max-width: max(0px, calc(100% - var(--cell-value-reserved-width, 0px)));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
 }
 
 /* 数値型PK列の逆参照ヒント: float:left で左配置し、ellipsis で省略対応する。
    セル自体は text-align:right (.cell-numeric) のため PK値は右寄せ、
-   ヒントは float で左に固定される。
-   3em = PK値3桁（999）まで余裕を持たせるための確保幅。 */
+   ヒントは float で左に固定される。 */
 .cell-numeric .cell-reverse-reference-hint {
     float: left;
     margin-left: 0;
-    max-width: calc(100% - 3em);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* 結合列ヘッダーのスタイル（視覚的に区別） */

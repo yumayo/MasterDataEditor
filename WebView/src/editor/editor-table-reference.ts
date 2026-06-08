@@ -5,6 +5,8 @@ import {parseReferenceExpression, isDynamicReference, isSimpleReference, Dynamic
 import {ReverseReferenceEntry, ReverseReferenceMap, formatReverseReferenceHint} from "../references/reverse-reference-resolver";
 import {isDisplayColumn} from "../config/config";
 import {NotificationToast} from "../ui/notification";
+import {Utility} from "../core/utility";
+import {CELL_FONT, REFERENCE_HINT_MARGIN_PX} from "../core/constant";
 
 
 /**
@@ -388,6 +390,7 @@ export class EditorTableReference {
     private appendReferenceHint(cell: HTMLElement, displayText: string): void {
         const existingHint = cell.querySelector('.cell-reference-hint');
         if (existingHint) existingHint.remove();
+        this.reserveCellValueWidth(cell);
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reference-hint');
         hintSpan.textContent = displayText;
@@ -405,6 +408,7 @@ export class EditorTableReference {
         if (entries.length === 0) return;
         const hintText = formatReverseReferenceHint(entries);
         if (hintText === '') return;
+        this.reserveCellValueWidth(cell);
         const hintSpan = document.createElement('span');
         hintSpan.classList.add('cell-reverse-reference-hint');
         hintSpan.textContent = hintText;
@@ -423,7 +427,29 @@ export class EditorTableReference {
             cell.style.whiteSpace = '';
             cell.style.lineHeight = '';
             cell.style.overflow = '';
+            cell.style.removeProperty('--cell-value-reserved-width');
         });
+    }
+
+    private reserveCellValueWidth(cell: HTMLElement): void {
+        const value = this.getCellValueText(cell);
+        if (value === '') {
+            cell.style.removeProperty('--cell-value-reserved-width');
+            return;
+        }
+        const valueWidth = Math.ceil(Utility.getTextWidth(value, CELL_FONT));
+        cell.style.setProperty('--cell-value-reserved-width', `${valueWidth + REFERENCE_HINT_MARGIN_PX}px`);
+    }
+
+    private getCellValueText(cell: HTMLElement): string {
+        if (cell.dataset.rawValue !== undefined) return cell.dataset.rawValue;
+        const valueElement = cell.querySelector('.cell-value');
+        if (valueElement !== null) return valueElement.textContent ?? '';
+        let text = '';
+        for (const node of Array.from(cell.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? '';
+        }
+        return text;
     }
 
     /**
