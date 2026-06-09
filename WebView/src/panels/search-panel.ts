@@ -5,7 +5,7 @@ import {appendHighlightedSegments} from "../search/fuzzy-search";
 import {CellChange, CellChangeCommand, CompositeCommand} from "../editor/command";
 import {CellRange} from "../editor/selection";
 import {replaceWithQuery, shouldAutoEnableWholeWord, type SearchOptions} from "../search/search-query";
-import {SearchEngine} from "../search/search-engine";
+import {SearchEngine, type SearchProgressInfo} from "../search/search-engine";
 import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
@@ -17,6 +17,9 @@ export class SearchPanel {
     private readonly element: HTMLElement;
     private readonly inputElement: HTMLInputElement;
     private readonly resultsElement: HTMLElement;
+    private readonly statusElement: HTMLElement;
+    private readonly statusTextElement: HTMLElement;
+    private readonly statusTableNameElement: HTMLElement;
     private readonly tab: Tab;
     private readonly searchEngine: SearchEngine;
     private readonly openEditorTables: Map<string, EditorTable>;
@@ -47,6 +50,8 @@ export class SearchPanel {
     private focusedResultIndex: number;
     /** 最新の検索結果（置換実行時に参照する） */
     private currentResults: SearchResultInfo[];
+    /** 検索中に表示する進捗率 */
+    private searchProgressPercent: number;
 
     // SVGアイコン定数（16x16 viewBox、VSCode Codicons準拠のパスデータ）
     /** chevron-right: 折りたたみ状態（置換非表示） */
@@ -71,6 +76,7 @@ export class SearchPanel {
         this.replaceMode = false;
         this.focusedResultIndex = -1;
         this.currentResults = [];
+        this.searchProgressPercent = 0;
 
         // パネルルート
         this.element = document.createElement('div');
@@ -170,6 +176,25 @@ export class SearchPanel {
             this.replaceAllMatches();
         });
         this.replaceRowElement.appendChild(this.replaceAllButton);
+
+        // 検索中ステータス（テーブル内検索と同じスピナー + パーセンテージ）
+        this.statusElement = document.createElement('div');
+        this.statusElement.classList.add('search-panel-status');
+        this.statusElement.setAttribute('aria-hidden', 'true');
+        this.statusElement.setAttribute('aria-live', 'polite');
+        const spinnerElement = document.createElement('span');
+        spinnerElement.classList.add('search-panel-spinner');
+        spinnerElement.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><circle class="loading-spinner-track" cx="8" cy="8" r="5.5" pathLength="100"/><circle class="loading-spinner-arc" cx="8" cy="8" r="5.5" pathLength="100"/></svg>';
+        this.statusTextElement = document.createElement('span');
+        this.statusTextElement.classList.add('search-panel-status-text');
+        this.statusTextElement.textContent = '検索中 0%';
+        this.statusTableNameElement = document.createElement('span');
+        this.statusTableNameElement.classList.add('search-panel-status-table');
+        this.statusTableNameElement.title = '';
+        this.statusElement.appendChild(spinnerElement);
+        this.statusElement.appendChild(this.statusTextElement);
+        this.statusElement.appendChild(this.statusTableNameElement);
+        this.element.appendChild(this.statusElement);
 
         // 検索結果
         this.resultsElement = document.createElement('div');
@@ -314,28 +339,60 @@ export class SearchPanel {
             this.resultsElement.replaceChildren();
             this.currentResults = [];
             this.focusedResultIndex = -1;
+            this.setSearching(false);
             return;
         }
-        // 空文字でないことが確定してからローディング表示を開始する
-        this.resultsElement.classList.add('searching');
+        this.resultsElement.replaceChildren();
+        this.currentResults = [];
+        this.focusedResultIndex = -1;
+        this.searchProgressPercent = 0;
+        this.updateSearchProgress(0, '');
+        this.setSearching(true);
         try {
+            const handleProgress = (progress: SearchProgressInfo): void => {
+                if (requestId !== this.searchRequestId) return;
+                this.updateSearchProgress(progress.percent, progress.tableName);
+                if (progress.tableResults.length > 0) {
+                    this.appendResults(progress.tableResults, inputText);
+                }
+            };
             const results = await this.searchEngine.searchAsync(
                 inputText,
                 this.getCurrentSearchOptions(),
                 () => requestId !== this.searchRequestId,
+                handleProgress,
             );
             // await の間に新しい検索が始まっていた場合は結果を破棄する
             if (requestId !== this.searchRequestId) return;
             this.currentResults = results;
-            // 検索結果再描画時にフォーカスをリセットする
-            this.focusedResultIndex = -1;
-            this.renderResults(results, inputText);
         } finally {
             // 自分が最新リクエストの場合のみ除去する（新しいリクエストが既に付与している場合は触らない）
             if (requestId === this.searchRequestId) {
-                this.resultsElement.classList.remove('searching');
+                this.setSearching(false);
             }
         }
+    }
+
+    private setSearching(searching: boolean): void {
+        this.element.classList.toggle('search-panel-searching', searching);
+        this.resultsElement.classList.toggle('searching', searching);
+        this.statusElement.setAttribute('aria-hidden', searching ? 'false' : 'true');
+    }
+
+    private updateSearchProgress(percent: number, tableName: string): void {
+        const clampedPercent = Math.max(0, Math.min(100, Math.floor(percent)));
+        const progressText = `検索中 ${clampedPercent}%`;
+        if (
+            clampedPercent === this.searchProgressPercent
+            && this.statusTextElement.textContent === progressText
+            && this.statusTableNameElement.textContent === tableName
+        ) {
+            return;
+        }
+        this.searchProgressPercent = clampedPercent;
+        this.statusTextElement.textContent = progressText;
+        this.statusTableNameElement.textContent = tableName;
+        this.statusTableNameElement.title = tableName;
     }
 
     // =========================================================================
@@ -503,45 +560,58 @@ export class SearchPanel {
     private renderResults(results: SearchResultInfo[], searchText: string): void {
         this.resultsElement.replaceChildren();
         for (let i = 0; i < results.length; i++) {
-            const result = results[i];
-            const resultIndex = i;
-            const item = document.createElement('div');
-            item.classList.add('search-result-item');
-            // 場所表示
-            const location = document.createElement('div');
-            location.classList.add('search-result-location');
-            location.textContent = `${result.tableName}.${result.columnName}`;
-            item.appendChild(location);
-            // PK値表示
-            const pkElement = document.createElement('span');
-            pkElement.classList.add('search-result-pk');
-            pkElement.textContent = result.pkValue;
-            pkElement.title = '主キー値';
-            item.appendChild(pkElement);
-            // 値表示（ハイライト付き）
-            const valueElement = document.createElement('div');
-            valueElement.classList.add('search-result-value');
-            appendHighlightedSegments(valueElement, result.value, searchText);
-            item.appendChild(valueElement);
-            // 参照表示テキスト（参照列の場合のみ）
-            if (result.referenceDisplayText !== '') {
-                const hint = document.createElement('div');
-                hint.classList.add('search-result-reference-hint');
-                hint.textContent = `(${result.referenceDisplayText})`;
-                item.appendChild(hint);
-            }
-            // クリックで該当セルにジャンプ + カレントマッチ設定
-            item.addEventListener('click', () => {
-                this.focusedResultIndex = resultIndex;
-                this.applyFocusToResultItem(resultIndex);
-                this.tab.navigateToTableCell(result.tableName, result.pkValue, result.columnIndex);
-            });
-            this.resultsElement.appendChild(item);
+            this.resultsElement.appendChild(this.createResultItem(results[i], i, searchText));
         }
         // 置換モード時はプレビューを表示する
         if (this.replaceMode && this.replaceInputElement.value !== '') {
             this.updateReplacePreviews();
         }
+    }
+
+    private appendResults(results: SearchResultInfo[], searchText: string): void {
+        const startIndex = this.currentResults.length;
+        this.currentResults.push(...results);
+        for (let i = 0; i < results.length; i++) {
+            this.resultsElement.appendChild(this.createResultItem(results[i], startIndex + i, searchText));
+        }
+        if (this.replaceMode && this.replaceInputElement.value !== '') {
+            this.updateReplacePreviews();
+        }
+    }
+
+    private createResultItem(result: SearchResultInfo, resultIndex: number, searchText: string): HTMLElement {
+        const item = document.createElement('div');
+        item.classList.add('search-result-item');
+        // 場所表示
+        const location = document.createElement('div');
+        location.classList.add('search-result-location');
+        location.textContent = `${result.tableName}.${result.columnName}`;
+        item.appendChild(location);
+        // PK値表示
+        const pkElement = document.createElement('span');
+        pkElement.classList.add('search-result-pk');
+        pkElement.textContent = result.pkValue;
+        pkElement.title = '主キー値';
+        item.appendChild(pkElement);
+        // 値表示（ハイライト付き）
+        const valueElement = document.createElement('div');
+        valueElement.classList.add('search-result-value');
+        appendHighlightedSegments(valueElement, result.value, searchText);
+        item.appendChild(valueElement);
+        // 参照表示テキスト（参照列の場合のみ）
+        if (result.referenceDisplayText !== '') {
+            const hint = document.createElement('div');
+            hint.classList.add('search-result-reference-hint');
+            hint.textContent = `(${result.referenceDisplayText})`;
+            item.appendChild(hint);
+        }
+        // クリックで該当セルにジャンプ + カレントマッチ設定
+        item.addEventListener('click', () => {
+            this.focusedResultIndex = resultIndex;
+            this.applyFocusToResultItem(resultIndex);
+            this.tab.navigateToTableCell(result.tableName, result.pkValue, result.columnIndex);
+        });
+        return item;
     }
 
 }

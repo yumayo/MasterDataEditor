@@ -5,6 +5,21 @@ import {matchesQuery, parseSearchQuery, type SearchOptions, type SearchQuery, sh
 import {SearchDataProvider, type TableSearchData} from "./search-data-provider";
 import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
+const SEARCH_CHUNK_BUDGET_MS = 8;
+const SEARCH_CHUNK_MIN_CELLS = 500;
+
+export interface SearchProgressInfo {
+    completedTables: number;
+    totalTables: number;
+    percent: number;
+    tableName: string;
+    tableResults: SearchResultInfo[];
+}
+
+type LoadedTableSearchData =
+    | {data: TableSearchData; error: null}
+    | {data: null; error: unknown};
+
 /**
  * SEARCHパネルとMCP公開APIで共有する検索エンジン。
  * 開いているテーブルは編集中の最新値を優先し、未オープンのテーブルはInMemoryTableStoreから読む。
@@ -18,7 +33,7 @@ export class SearchEngine {
         this.dataProvider = new SearchDataProvider(openEditorTables, store);
     }
 
-    async searchAsync(inputText: string, options: SearchOptions, shouldAbort: () => boolean): Promise<SearchResultInfo[]> {
+    async searchAsync(inputText: string, options: SearchOptions, shouldAbort: () => boolean, onProgress?: (progress: SearchProgressInfo) => void): Promise<SearchResultInfo[]> {
         const trimmedText = inputText.trim();
         if (trimmedText === '') return [];
         const effectiveOptions: SearchOptions = {
@@ -27,30 +42,75 @@ export class SearchEngine {
             useRegex: options.useRegex,
         };
         const query = parseSearchQuery(trimmedText, effectiveOptions);
-        return this.searchQueryAsync(query, shouldAbort);
+        return this.searchQueryAsync(query, shouldAbort, onProgress);
     }
 
     /**
      * 全テーブルを横断して検索する。
-     * テーブルデータ取得は Promise.all で並列化し、検索処理はテーブルごとに
-     * setTimeout(0) でメインスレッドに制御を返してキー入力のカクつきを防ぐ。
+     * テーブルデータ取得は並列に開始し、検索処理はテーブルごとに
+     * ブラウザへ制御を返しながら進める。
      */
-    private async searchQueryAsync(query: SearchQuery, shouldAbort: () => boolean): Promise<SearchResultInfo[]> {
+    private async searchQueryAsync(query: SearchQuery, shouldAbort: () => boolean, onProgress?: (progress: SearchProgressInfo) => void): Promise<SearchResultInfo[]> {
         const tableNames = await this.dataProvider.loadAllTableNamesAsync();
         if (shouldAbort()) return [];
         const targetTables = query.kind === 'filter'
             ? tableNames.filter(name => name === query.tableName)
             : tableNames;
-        const tableDataResults = await Promise.all(targetTables.map(tableName => this.dataProvider.getTableDataAsync(tableName)));
+        const totalTables = targetTables.length;
+        if (totalTables === 0) return [];
+        const tableDataLoads: Array<Promise<LoadedTableSearchData>> = targetTables.map(tableName => {
+            return this.dataProvider.getTableDataAsync(tableName).then(
+                data => ({data, error: null}),
+                error => ({data: null, error}),
+            );
+        });
+        const loadedTables = await Promise.all(tableDataLoads);
         if (shouldAbort()) return [];
+        const tableDataResults: TableSearchData[] = [];
+        for (const loadedTable of loadedTables) {
+            if (loadedTable.error !== null) throw loadedTable.error;
+            tableDataResults.push(loadedTable.data);
+        }
+        const totalCells = Math.max(1, tableDataResults.reduce((sum, tableData) => {
+            return sum + this.countSearchCells(tableData);
+        }, 0));
         const results: SearchResultInfo[] = [];
+        let scannedCells = 0;
+        let lastProgressPercent = -1;
+        const emitProgress = (progress: SearchProgressInfo): void => {
+            if (shouldAbort()) return;
+            if (progress.tableResults.length === 0 && progress.percent === lastProgressPercent) return;
+            lastProgressPercent = progress.percent;
+            onProgress?.(progress);
+        };
         for (let i = 0; i < tableDataResults.length; i++) {
             if (shouldAbort()) return [];
             if (i > 0) {
-                await new Promise<void>(resolve => setTimeout(resolve, 0));
+                await this.yieldToBrowser();
             }
             if (shouldAbort()) return [];
-            this.searchInTable(query, tableDataResults[i], results);
+            const tableData = tableDataResults[i];
+            const tableResults: SearchResultInfo[] = [];
+            const tableScannedCells = await this.searchInTableAsync(query, tableData, tableResults, shouldAbort, (scannedCellsInTable) => {
+                const percent = Math.min(99, Math.floor(((scannedCells + scannedCellsInTable) / totalCells) * 100));
+                emitProgress({
+                    completedTables: i,
+                    totalTables,
+                    percent,
+                    tableName: tableData.tableName,
+                    tableResults: [],
+                });
+            });
+            if (shouldAbort()) return [];
+            scannedCells += tableScannedCells;
+            results.push(...tableResults);
+            emitProgress({
+                completedTables: i + 1,
+                totalTables,
+                percent: Math.floor((scannedCells / totalCells) * 100),
+                tableName: tableData.tableName,
+                tableResults,
+            });
         }
         return results;
     }
@@ -58,36 +118,67 @@ export class SearchEngine {
     /**
      * テーブル内でクエリに一致するセルを検索する。
      */
-    private searchInTable(query: SearchQuery, tableData: TableSearchData, results: SearchResultInfo[]): void {
+    private async searchInTableAsync(query: SearchQuery, tableData: TableSearchData, results: SearchResultInfo[], shouldAbort: () => boolean, onProgress: (scannedCells: number) => void): Promise<number> {
         const pkColumnIndex = tableData.csvHeader.indexOf(tableData.primaryKeyColumnName);
         const options: SearchOptions = {
             caseSensitive: query.caseSensitive,
             wholeWord: query.wholeWord,
             useRegex: query.useRegex,
         };
+        let scannedCells = 0;
+        let cellsSinceYield = 0;
+        let chunkStartTime = performance.now();
         for (let rowIndex = 0; rowIndex < tableData.csvBody.length; rowIndex++) {
+            if (shouldAbort()) return scannedCells;
             const row = tableData.csvBody[rowIndex];
             const pkValue = pkColumnIndex !== -1 ? row[pkColumnIndex] : String(rowIndex);
             for (let colIndex = 0; colIndex < row.length; colIndex++) {
+                let matches = false;
                 if (query.kind === 'filter') {
                     const colName = tableData.csvHeader[colIndex];
-                    if (colName !== query.columnName) continue;
-                    if (!matchesQuery(row[colIndex], query.value, options)) continue;
+                    matches = colName === query.columnName && matchesQuery(row[colIndex], query.value, options);
                 } else {
-                    if (!matchesQuery(row[colIndex], query.text, options)) continue;
+                    matches = matchesQuery(row[colIndex], query.text, options);
                 }
-                const columnName = colIndex < tableData.csvHeader.length ? tableData.csvHeader[colIndex] : '';
-                results.push({
-                    tableName: tableData.tableName,
-                    rowIndex,
-                    columnName,
-                    columnIndex: colIndex,
-                    pkValue,
-                    value: row[colIndex],
-                    referenceDisplayText: this.resolveReferenceDisplay(tableData, colIndex, row[colIndex]),
-                });
+                if (matches) {
+                    const columnName = colIndex < tableData.csvHeader.length ? tableData.csvHeader[colIndex] : '';
+                    results.push({
+                        tableName: tableData.tableName,
+                        rowIndex,
+                        columnName,
+                        columnIndex: colIndex,
+                        pkValue,
+                        value: row[colIndex],
+                        referenceDisplayText: this.resolveReferenceDisplay(tableData, colIndex, row[colIndex]),
+                    });
+                }
+                scannedCells++;
+                cellsSinceYield++;
+                if (
+                    cellsSinceYield >= SEARCH_CHUNK_MIN_CELLS
+                    && performance.now() - chunkStartTime >= SEARCH_CHUNK_BUDGET_MS
+                ) {
+                    onProgress(scannedCells);
+                    await this.yieldToBrowser();
+                    if (shouldAbort()) return scannedCells;
+                    cellsSinceYield = 0;
+                    chunkStartTime = performance.now();
+                }
             }
         }
+        return scannedCells;
+    }
+
+    private yieldToBrowser(): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    private countSearchCells(tableData: TableSearchData): number {
+        let cellCount = 0;
+        for (const row of tableData.csvBody) {
+            cellCount += row.length;
+        }
+        return cellCount;
     }
 
     /**

@@ -108,9 +108,9 @@
     transition: opacity 0.1s ease;
 }
 
-/* 検索中は半透明にして処理中であることをユーザーに伝える */
+/* 検索中も逐次追加された結果は通常の濃さで表示する */
 .search-panel-results.searching {
-    opacity: 0.5;
+    opacity: 1;
 }
 
 .search-result-item {
@@ -195,6 +195,71 @@
 .search-replace-button:hover,
 .search-replace-all-button:hover {
     background-color: rgba(0, 122, 204, 0.2);
+}
+
+/* 検索中ステータス */
+.search-panel-status {
+    display: flex;
+    visibility: hidden;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    min-height: 22px;
+    padding: 0 12px 6px 18px;
+    color: var(--secondary-font-color);
+    font-size: 11px;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.search-panel-searching .search-panel-status {
+    visibility: visible;
+}
+
+.search-panel-spinner {
+    display: block;
+    width: 14px;
+    height: 14px;
+    line-height: 0;
+    flex: 0 0 14px;
+}
+
+.search-panel-status-text {
+    flex: 0 0 auto;
+}
+
+.search-panel-status-table {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-panel-spinner svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.search-panel-spinner .loading-spinner-track,
+.search-panel-spinner .loading-spinner-arc {
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.search-panel-spinner .loading-spinner-track {
+    stroke: color-mix(in srgb, var(--font-color) 28%, transparent);
+}
+
+.search-panel-spinner .loading-spinner-arc {
+    stroke: var(--selection-color);
+    stroke-linecap: round;
+    stroke-dasharray: 62 38;
+    animation: search-panel-loading-spin 0.8s linear infinite;
+}
+
+@keyframes search-panel-loading-spin {
+    to { stroke-dashoffset: -100; }
 }
 
 /* カレントマッチのフォーカス表示 */

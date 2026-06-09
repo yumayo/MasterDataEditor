@@ -39,6 +39,34 @@ function createSearchTestFileSystem(): MockFileSystem {
     };
 }
 
+function createStreamingSearchTestFileSystem(): MockFileSystem {
+    const laterRows = ["id,name"];
+    for (let i = 1; i <= 5000; i++) {
+        laterRows.push(`${i},later_${i}`);
+    }
+    return {
+        "schema/first_match.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+            ],
+            primary_key: ["id"],
+        }),
+        "data/first_match.csv": [
+            "id,name",
+            "1,needle_first",
+        ].join("\n"),
+        "schema/later_scan.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+            ],
+            primary_key: ["id"],
+        }),
+        "data/later_scan.csv": laterRows.join("\n"),
+    };
+}
+
 /**
  * テーブルを開いてエディターテーブルが表示されるまで待機する
  */
@@ -325,5 +353,81 @@ test.describe('検索パネル', () => {
         // 検索完了後に searching クラスが除去されていること
         const searchResultsContainer = page.locator('.search-panel-results');
         await expect(searchResultsContainer).not.toHaveClass(/searching/, {timeout: 5000});
+    });
+});
+
+test.describe('検索パネルの進捗表示', () => {
+    test.beforeEach(async ({page}) => {
+        await installMockApiAsync(page, createStreamingSearchTestFileSystem());
+        await page.goto('/');
+    });
+
+    test('検索中もパーセンテージインジケーターを表示したままテーブルごとに結果を追加すること', async ({page}) => {
+        await openSearchPanelAsync(page);
+        const searchInput = getSearchInput(page);
+
+        await page.evaluate(() => {
+            const resultsElement = document.querySelector('.search-panel-results');
+            const statusElement = document.querySelector('.search-panel-status');
+            if (resultsElement === null || statusElement === null) {
+                throw new Error('Search panel elements were not found.');
+            }
+            (window as Record<string, unknown>)['__streamingSearchDetected'] = false;
+            (window as Record<string, unknown>)['__streamingSearchPercent'] = -1;
+            (window as Record<string, unknown>)['__streamingSearchTableName'] = '';
+            (window as Record<string, unknown>)['__streamingSearchTableStyle'] = null;
+            let observer: MutationObserver | null = null;
+            const detectStreamingResult = (): void => {
+                const hasResult = resultsElement.querySelector('.search-result-item') !== null;
+                const isSearching = resultsElement.classList.contains('searching');
+                const statusVisible = window.getComputedStyle(statusElement).display !== 'none';
+                const percentMatch = /検索中\s+(\d+)%/.exec(statusElement.textContent ?? '');
+                const tableNameElement = statusElement.querySelector('.search-panel-status-table');
+                if (hasResult && isSearching && statusVisible && percentMatch !== null && tableNameElement !== null) {
+                    const tableNameStyle = window.getComputedStyle(tableNameElement);
+                    (window as Record<string, unknown>)['__streamingSearchDetected'] = true;
+                    (window as Record<string, unknown>)['__streamingSearchPercent'] = Number(percentMatch[1]);
+                    (window as Record<string, unknown>)['__streamingSearchTableName'] = tableNameElement.textContent ?? '';
+                    (window as Record<string, unknown>)['__streamingSearchTableStyle'] = {
+                        overflow: tableNameStyle.overflow,
+                        textOverflow: tableNameStyle.textOverflow,
+                        whiteSpace: tableNameStyle.whiteSpace,
+                    };
+                    observer?.disconnect();
+                }
+            };
+            observer = new MutationObserver(detectStreamingResult);
+            observer.observe(resultsElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['class']});
+            observer.observe(statusElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'aria-hidden']});
+            detectStreamingResult();
+        });
+
+        await searchInput.fill('needle');
+        const results = getSearchResults(page);
+        await expect(results.first()).toBeVisible({timeout: 10000});
+        await expect(results.first().locator('.search-result-value')).toHaveText('needle_first');
+        await expect.poll(() => page.evaluate(() => {
+            return (window as Record<string, unknown>)['__streamingSearchDetected'] === true;
+        })).toBe(true);
+        const firstResultProgress = await page.evaluate(() => {
+            return (window as Record<string, unknown>)['__streamingSearchPercent'];
+        });
+        expect(firstResultProgress).toBeLessThan(50);
+        const firstResultTableName = await page.evaluate(() => {
+            return (window as Record<string, unknown>)['__streamingSearchTableName'];
+        });
+        expect(firstResultTableName).toBe('first_match');
+        const tableNameStyle = await page.evaluate(() => {
+            return (window as Record<string, unknown>)['__streamingSearchTableStyle'];
+        });
+        expect(tableNameStyle).toEqual({
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+        });
+        await expect(page.locator('.search-panel-results')).not.toHaveClass(/searching/, {timeout: 10000});
+        await expect(page.locator('.search-panel-status')).toHaveAttribute('aria-hidden', 'true');
+        await expect(page.locator('.search-panel-status')).toHaveCSS('display', 'flex');
+        await expect(page.locator('.search-panel-status')).toHaveCSS('visibility', 'hidden');
     });
 });
