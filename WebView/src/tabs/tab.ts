@@ -183,6 +183,9 @@ export class Tab {
     /** 表示倍率・viewport変化後のEditorTable再レイアウトをrequestAnimationFrameでまとめるためのID */
     private editorTableLayoutRefreshFrame: number | false;
 
+    /** スクロール・選択イベント由来の ui-state 更新を requestAnimationFrame でまとめるためのID */
+    private uiStatePersistFrame: number | false;
+
     /** タブで開かれているEditorTableの参照マップ（テーブル名→EditorTable） */
     private readonly openEditorTables: Map<string, EditorTable>;
 
@@ -369,6 +372,7 @@ export class Tab {
         this.tabScrollHadStableOverflow = false;
         this.preserveTabScrollEdgeAfterLayout = false;
         this.editorTableLayoutRefreshFrame = false;
+        this.uiStatePersistFrame = false;
         this.openEditorTables = new Map();
         this.store = store;
         this.referenceDataCache = referenceDataCache;
@@ -1038,7 +1042,7 @@ export class Tab {
     }
 
     private connectDiffTabUiState(diffTabName: string, diffTab: DiffTab): void {
-        diffTab.connectUiStateChangeListener(() => { this.persistTabs(); });
+        diffTab.connectUiStateChangeListener(() => { this.schedulePersistTabs(); });
         const restoredScroll = this.restoredTabScrollPositions.get(diffTabName);
         if (restoredScroll !== undefined) {
             diffTab.restoreScrollPosition(restoredScroll.scrollTop, restoredScroll.scrollLeft);
@@ -1086,9 +1090,17 @@ export class Tab {
     }
 
     private bindEditorTableUiStatePersistence(wrapperElement: HTMLElement): void {
-        const persist = () => { this.persistTabs(); };
+        const persist = () => { this.schedulePersistTabs(); };
         wrapperElement.addEventListener('editor-table-scroll-metrics-changed', persist);
         wrapperElement.addEventListener('editor-table-selection-changed', persist);
+    }
+
+    private schedulePersistTabs(): void {
+        if (this.uiStatePersistFrame !== false) return;
+        this.uiStatePersistFrame = requestAnimationFrame(() => {
+            this.uiStatePersistFrame = false;
+            this.persistTabs();
+        });
     }
 
     private cloneStoredFormPanelStateAsRuntime(state: UiStoredFormPanelState | null): FormPanelState | null {

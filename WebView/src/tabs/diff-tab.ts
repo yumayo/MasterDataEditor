@@ -113,8 +113,8 @@ export class DiffTab {
     private isSyncing: boolean;
 
     /** destroy() 時にスクロールリスナーを解除するためのバインド済み関数 */
-    private readonly boundLeftScroll: () => void;
-    private readonly boundRightScroll: () => void;
+    private readonly boundLeftScroll: (event: Event) => void;
+    private readonly boundRightScroll: (event: Event) => void;
     private readonly boundLeftWheel: (e: WheelEvent) => void;
     private readonly boundRightWheel: (e: WheelEvent) => void;
 
@@ -126,6 +126,10 @@ export class DiffTab {
     private dragMouseUp: (() => void) | null;
     /** ペイン幅変更後のレイアウト再計算をまとめる requestAnimationFrame ID */
     private layoutRefreshFrame: number | false;
+    /** 左右スクロール同期をフレーム単位でまとめる requestAnimationFrame ID */
+    private scrollSyncFrame: number | false;
+    private pendingScrollSyncSource: 'left' | 'right' | false;
+    private pendingScrollSyncMetrics: { scrollTop: number; scrollLeft: number } | null;
 
     /** hide() 時に保存するスクロール位置（show() で復元して行ヘッダーずれを防止） */
     private savedScrollLeft: number;
@@ -202,6 +206,9 @@ export class DiffTab {
         this.dragMouseMove = null;
         this.dragMouseUp = null;
         this.layoutRefreshFrame = false;
+        this.scrollSyncFrame = false;
+        this.pendingScrollSyncSource = false;
+        this.pendingScrollSyncMetrics = null;
         this.savedScrollLeft = 0;
         this.savedScrollTop = 0;
         // diffクラスデータモデルを初期化する（applyDiffClassesで構築される）
@@ -462,32 +469,8 @@ export class DiffTab {
         // スクロール同期（左→右、右→左の双方向）—— destroy() で解除するためバインド済み関数をフィールドに保持する
         // 差分タブも通常テーブルと同じ内部スクロールレイアウトを使うため、
         // 外側ペインではなく EditorTable から bubbled する scroll metrics イベントで同期する。
-        this.boundLeftScroll = () => {
-            if (this.isSyncing) return;
-            this.isSyncing = true;
-            try {
-                const metrics = this.leftEditorTable.getScrollMetrics();
-                this.rightEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
-                this.savedScrollTop = metrics.scrollTop;
-                this.savedScrollLeft = metrics.scrollLeft;
-                this.notifyUiStateChange();
-            } finally {
-                this.isSyncing = false;
-            }
-        };
-        this.boundRightScroll = () => {
-            if (this.isSyncing) return;
-            this.isSyncing = true;
-            try {
-                const metrics = this.rightEditorTable.getScrollMetrics();
-                this.leftEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
-                this.savedScrollTop = metrics.scrollTop;
-                this.savedScrollLeft = metrics.scrollLeft;
-                this.notifyUiStateChange();
-            } finally {
-                this.isSyncing = false;
-            }
-        };
+        this.boundLeftScroll = (event: Event) => { this.queuePaneScrollSync('left', event); };
+        this.boundRightScroll = (event: Event) => { this.queuePaneScrollSync('right', event); };
         leftPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
         rightPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
 
@@ -863,6 +846,46 @@ export class DiffTab {
         if (this.uiStateChangeListener !== false) this.uiStateChangeListener();
     }
 
+    private queuePaneScrollSync(source: 'left' | 'right', event: Event): void {
+        if (this.isSyncing) return;
+        const detail = event instanceof CustomEvent ? event.detail as { scrollTop?: unknown; scrollLeft?: unknown } : null;
+        let scrollTop = typeof detail?.scrollTop === 'number' ? detail.scrollTop : null;
+        let scrollLeft = typeof detail?.scrollLeft === 'number' ? detail.scrollLeft : null;
+        if (scrollTop === null || scrollLeft === null) {
+            const fallbackMetrics = source === 'left' ? this.leftEditorTable.getScrollMetrics() : this.rightEditorTable.getScrollMetrics();
+            scrollTop = scrollTop ?? fallbackMetrics.scrollTop;
+            scrollLeft = scrollLeft ?? fallbackMetrics.scrollLeft;
+        }
+        this.pendingScrollSyncSource = source;
+        this.pendingScrollSyncMetrics = { scrollTop, scrollLeft };
+        this.savedScrollTop = scrollTop;
+        this.savedScrollLeft = scrollLeft;
+        if (this.scrollSyncFrame !== false) return;
+        this.scrollSyncFrame = requestAnimationFrame(() => {
+            this.scrollSyncFrame = false;
+            this.flushPaneScrollSync();
+        });
+    }
+
+    private flushPaneScrollSync(): void {
+        const source = this.pendingScrollSyncSource;
+        const metrics = this.pendingScrollSyncMetrics;
+        this.pendingScrollSyncSource = false;
+        this.pendingScrollSyncMetrics = null;
+        if (source === false || metrics === null) return;
+        this.isSyncing = true;
+        try {
+            if (source === 'left') {
+                this.rightEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+            } else {
+                this.leftEditorTable.restoreScrollPosition(metrics.scrollTop, metrics.scrollLeft);
+            }
+            this.notifyUiStateChange();
+        } finally {
+            this.isSyncing = false;
+        }
+    }
+
     private createCsvFromRows(displayHeader: readonly string[], rows: string[][]): Csv {
         const csv = new Csv();
         csv.header = [...displayHeader];
@@ -951,6 +974,12 @@ export class DiffTab {
             cancelAnimationFrame(this.layoutRefreshFrame);
             this.layoutRefreshFrame = false;
         }
+        if (this.scrollSyncFrame !== false) {
+            cancelAnimationFrame(this.scrollSyncFrame);
+            this.scrollSyncFrame = false;
+        }
+        this.pendingScrollSyncSource = false;
+        this.pendingScrollSyncMetrics = null;
         // ドラッグ操作中に destroy() が呼ばれた場合のカーソル・ユーザー選択スタイルをリセットする
         document.body.style.cursor = '';
         document.body.style.userSelect = '';

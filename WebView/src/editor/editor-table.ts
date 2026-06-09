@@ -204,6 +204,11 @@ export class EditorTable {
     private readonly virtualScroll: VirtualScrollController;
     private customVerticalScrollbarDragState: { startClientY: number; startScrollTop: number; abortController: AbortController } | null;
     private customHorizontalScrollbarDragState: { startClientX: number; startScrollLeft: number; abortController: AbortController } | null;
+    private pendingCustomVerticalScrollbarClientY: number;
+    private pendingCustomHorizontalScrollbarClientX: number;
+    private customVerticalScrollbarDragFrame: number | false;
+    private customHorizontalScrollbarDragFrame: number | false;
+    private gridLinesRefreshFrame: number | false;
     private internalScrollEventListenersRegistered: boolean;
     /** 固定行列・detached layer 表示同期モジュール */
     private layout: EditorTableLayout;
@@ -316,6 +321,11 @@ export class EditorTable {
         this.detachedFrozenCornerDataLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-corner-layer');
         this.customVerticalScrollbarDragState = null;
         this.customHorizontalScrollbarDragState = null;
+        this.pendingCustomVerticalScrollbarClientY = 0;
+        this.pendingCustomHorizontalScrollbarClientX = 0;
+        this.customVerticalScrollbarDragFrame = false;
+        this.customHorizontalScrollbarDragFrame = false;
+        this.gridLinesRefreshFrame = false;
         this.internalScrollEventListenersRegistered = false;
         if (this.usesInternalMainViewport) {
             this.topLeftPane.appendChild(this.topLeftContent);
@@ -549,13 +559,13 @@ export class EditorTable {
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void { this.layout.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft); }
     private syncScrollBoundVisuals(): void {
         this.layout.syncScrollBoundVisuals();
-        this.refreshGridLines();
+        this.scheduleGridLinesRefresh();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
     syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
         this.layout.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft);
-        this.refreshGridLines();
+        this.scheduleGridLinesRefresh();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
@@ -580,6 +590,13 @@ export class EditorTable {
     applyFreezeVisualStateToRenderedRows(): void { this.layout.applyFreezeVisualStateToRenderedRows(); }
     syncFreezeTransforms(scrollTop: number, scrollLeft: number): void { this.layout.syncFreezeTransforms(scrollTop, scrollLeft); }
     refreshGridLines(): void { this.gridLines.refresh(); }
+    private scheduleGridLinesRefresh(): void {
+        if (this.gridLinesRefreshFrame !== false) return;
+        this.gridLinesRefreshFrame = requestAnimationFrame(() => {
+            this.gridLinesRefreshFrame = false;
+            this.refreshGridLines();
+        });
+    }
 
     getStoreColumnIndex(domColumnIndex: number): number {
         const mapping = this.tableData.columnMapping;
@@ -1157,6 +1174,11 @@ export class EditorTable {
         if (event.button !== 0) return;
         event.preventDefault();
         this.focusTable();
+        if (this.customHorizontalScrollbarDragFrame !== false) {
+            cancelAnimationFrame(this.customHorizontalScrollbarDragFrame);
+            this.customHorizontalScrollbarDragFrame = false;
+        }
+        this.pendingCustomHorizontalScrollbarClientX = event.clientX;
         this.customHorizontalScrollbarDragState?.abortController.abort();
         const abortController = new AbortController();
         if (event.target === this.customHorizontalScrollbarThumb) {
@@ -1186,19 +1208,35 @@ export class EditorTable {
         const dragState = this.customHorizontalScrollbarDragState;
         if (dragState === null) return;
         event.preventDefault();
+        this.pendingCustomHorizontalScrollbarClientX = event.clientX;
+        if (this.customHorizontalScrollbarDragFrame !== false) return;
+        this.customHorizontalScrollbarDragFrame = requestAnimationFrame(() => {
+            this.customHorizontalScrollbarDragFrame = false;
+            this.applyPendingCustomHorizontalScrollbarDrag();
+        });
+    }
+
+    private applyPendingCustomHorizontalScrollbarDrag(): void {
+        const dragState = this.customHorizontalScrollbarDragState;
+        if (dragState === null) return;
         const maxScrollLeft = Math.max(0, this.scrollContainer.scrollWidth - this.scrollContainer.clientWidth);
         if (maxScrollLeft <= 0) return;
         const trackWidth = this.customHorizontalScrollbar.clientWidth;
         const thumbWidth = this.customHorizontalScrollbarThumb.offsetWidth;
         const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
         if (maxThumbLeft <= 0) return;
-        const deltaRatio = (event.clientX - dragState.startClientX) / maxThumbLeft;
+        const deltaRatio = (this.pendingCustomHorizontalScrollbarClientX - dragState.startClientX) / maxThumbLeft;
         const nextScrollLeft = Math.min(maxScrollLeft, Math.max(0, dragState.startScrollLeft + (deltaRatio * maxScrollLeft)));
         this.restoreScrollPosition(this.getScrollTop(), nextScrollLeft);
     }
 
     private handleCustomHorizontalScrollbarPointerUp(_event: PointerEvent): void {
         const dragState = this.customHorizontalScrollbarDragState;
+        if (this.customHorizontalScrollbarDragFrame !== false) {
+            cancelAnimationFrame(this.customHorizontalScrollbarDragFrame);
+            this.customHorizontalScrollbarDragFrame = false;
+            this.applyPendingCustomHorizontalScrollbarDrag();
+        }
         this.customHorizontalScrollbarDragState = null;
         dragState?.abortController.abort();
         this.customHorizontalScrollbar.classList.remove('editor-table-logical-horizontal-scrollbar--dragging');
@@ -1235,6 +1273,11 @@ export class EditorTable {
         if (event.button !== 0) return;
         event.preventDefault();
         this.focusTable();
+        if (this.customVerticalScrollbarDragFrame !== false) {
+            cancelAnimationFrame(this.customVerticalScrollbarDragFrame);
+            this.customVerticalScrollbarDragFrame = false;
+        }
+        this.pendingCustomVerticalScrollbarClientY = event.clientY;
         this.customVerticalScrollbarDragState?.abortController.abort();
         const abortController = new AbortController();
         if (event.target === this.customVerticalScrollbarThumb) {
@@ -1264,6 +1307,17 @@ export class EditorTable {
         const dragState = this.customVerticalScrollbarDragState;
         if (dragState === null) return;
         event.preventDefault();
+        this.pendingCustomVerticalScrollbarClientY = event.clientY;
+        if (this.customVerticalScrollbarDragFrame !== false) return;
+        this.customVerticalScrollbarDragFrame = requestAnimationFrame(() => {
+            this.customVerticalScrollbarDragFrame = false;
+            this.applyPendingCustomVerticalScrollbarDrag();
+        });
+    }
+
+    private applyPendingCustomVerticalScrollbarDrag(): void {
+        const dragState = this.customVerticalScrollbarDragState;
+        if (dragState === null) return;
         const metrics = this.getScrollMetrics();
         const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
         if (maxScrollTop <= 0) return;
@@ -1271,13 +1325,18 @@ export class EditorTable {
         const thumbHeight = this.customVerticalScrollbarThumb.offsetHeight;
         const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
         if (maxThumbTop <= 0) return;
-        const deltaRatio = (event.clientY - dragState.startClientY) / maxThumbTop;
+        const deltaRatio = (this.pendingCustomVerticalScrollbarClientY - dragState.startClientY) / maxThumbTop;
         const nextScrollTop = Math.min(maxScrollTop, Math.max(0, dragState.startScrollTop + (deltaRatio * maxScrollTop)));
         this.restoreScrollPosition(nextScrollTop, this.getScrollLeft());
     }
 
     private handleCustomVerticalScrollbarPointerUp(_event: PointerEvent): void {
         const dragState = this.customVerticalScrollbarDragState;
+        if (this.customVerticalScrollbarDragFrame !== false) {
+            cancelAnimationFrame(this.customVerticalScrollbarDragFrame);
+            this.customVerticalScrollbarDragFrame = false;
+            this.applyPendingCustomVerticalScrollbarDrag();
+        }
         this.customVerticalScrollbarDragState = null;
         dragState?.abortController.abort();
         this.customVerticalScrollbar.classList.remove('editor-table-logical-vertical-scrollbar--dragging');

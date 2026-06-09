@@ -80,6 +80,8 @@ export class VirtualScrollController {
 
     /** スクロールイベントリスナー（destroy時の解除用に保持） */
     private readonly scrollListener: (() => void) | false;
+    /** scroll イベント由来の DOM 更新を requestAnimationFrame でまとめるためのID */
+    private scrollFrame: number | false;
 
     /**
      * 行生成コールバック。データ行インデックスを受け取り、DOM行要素を返す。
@@ -158,6 +160,7 @@ export class VirtualScrollController {
         this.logicalScrollTopPx = 0;
         this.absoluteCellBorderBoxWidths = [];
         this.absoluteRowsLastCellWidthsKey = '';
+        this.scrollFrame = false;
 
         // enabled=true では初期DOMにデータ行が存在しないため、初回 recalculate で必ず生成する。
         // enabled=false（ミニテーブル）では全行がDOMに存在する。
@@ -235,19 +238,31 @@ export class VirtualScrollController {
         this.syncAbsoluteRowGeometry();
     }
 
-    /** スクロールイベントハンドラ。同期的に再計算を実行する */
+    /** スクロールイベントハンドラ。連続イベントの DOM 更新は次の描画フレームにまとめる */
     onScroll(): void {
         if (!this.enabled) return;
         this.syncLogicalScrollTopFromPhysicalIfNeeded();
-        this.currentScrollTop = this.getLogicalScrollTop();
-        this.currentScrollLeft = this.scrollContainer.scrollLeft;
+        if (this.scrollFrame !== false) return;
+        this.scrollFrame = requestAnimationFrame(() => {
+            this.scrollFrame = false;
+            this.flushScrollFrame();
+        });
+    }
+
+    private flushScrollFrame(): void {
+        if (!this.enabled) return;
+        this.syncLogicalScrollTopFromPhysicalIfNeeded();
+        const scrollTop = this.getLogicalScrollTop();
+        const scrollLeft = this.scrollContainer.scrollLeft;
+        this.currentScrollTop = scrollTop;
+        this.currentScrollLeft = scrollLeft;
         this.isHandlingScrollEvent = true;
         try {
             this.recalculate();
         } finally {
             this.isHandlingScrollEvent = false;
         }
-        this.syncScrollBoundVisuals(this.currentScrollTop, this.currentScrollLeft);
+        this.syncScrollBoundVisuals(scrollTop, scrollLeft);
     }
 
     handlesScrollEvents(): boolean {
@@ -345,7 +360,10 @@ export class VirtualScrollController {
         const changed = Math.abs(this.logicalScrollTopPx - nextLogicalScrollTop) > 0.001;
         this.logicalScrollTopPx = nextLogicalScrollTop;
         this.syncPhysicalScrollTopFromLogical();
-        if (changed) this.recalculate(triggeredByScrollInput);
+        if (changed) {
+            this.cancelScrollFrame();
+            this.recalculate(triggeredByScrollInput);
+        }
         return changed;
     }
 
@@ -600,6 +618,7 @@ export class VirtualScrollController {
         if (this.scrollListener !== false) {
             this.scrollContainer.removeEventListener('scroll', this.scrollListener);
         }
+        this.cancelScrollFrame();
         if (this.topSpacer !== false) {
             // topSpacer はセル要素（.virtual-scroll-top-spacer-cell）を指すため、
             // 親の行要素（.virtual-scroll-top-spacer）ごと削除する
@@ -633,6 +652,12 @@ export class VirtualScrollController {
         const expectedPhysicalScrollTop = this.getPhysicalScrollTop(this.logicalScrollTopPx);
         if (Math.abs(physicalScrollTop - expectedPhysicalScrollTop) <= 1) return;
         this.logicalScrollTopPx = this.clampLogicalScrollTop(this.mapPhysicalScrollTopToLogical(physicalScrollTop));
+    }
+
+    private cancelScrollFrame(): void {
+        if (this.scrollFrame === false) return;
+        cancelAnimationFrame(this.scrollFrame);
+        this.scrollFrame = false;
     }
 
     private getLogicalScrollTopForRowVisible(dataRowIndex: number, currentLogicalScrollTop: number): number {
