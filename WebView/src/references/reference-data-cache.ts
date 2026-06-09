@@ -1,6 +1,5 @@
 import {readFileAsync, findFilesAsync} from "../app/api";
 import {determineDisplayColumnName} from "../config/config";
-import {Csv} from "../data/csv";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "../core/schema-utils";
 import {parseReferenceExpression, isSimpleReference, DynamicReferenceSchema} from "./reference-expression";
@@ -231,26 +230,15 @@ export class ReferenceDataCache {
             };
         }
 
-        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
-        const inMemoryCsv = this.store.getCsv(tableName);
-        let csv: Csv;
-        if (inMemoryCsv !== false) {
-            csv = inMemoryCsv;
-        } else {
-            const csvText = await readFileAsync(`data/${tableName}.csv`);
-
-            if (!csvText || csvText.trim() === '') {
-                console.warn(`Reference table CSV is empty: ${tableName}`);
-                return {
-                    tableName,
-                    items: [],
-                    displayColumnName: '',
-                    displayTextById: new Map<string, string>()
-                };
-            }
-
-            csv = new Csv();
-            csv.load(csvText);
+        const csv = await this.store.ensureTableLoadedAsync(tableName);
+        if (csv.header.length === 0) {
+            console.warn(`Reference table CSV is empty: ${tableName}`);
+            return {
+                tableName,
+                items: [],
+                displayColumnName: '',
+                displayTextById: new Map<string, string>()
+            };
         }
 
         // 表示列を決定する
@@ -604,28 +592,17 @@ export class ReferenceDataCache {
             };
         }
 
-        // タブで開かれていればインメモリデータを優先、なければCSVファイルから読み込む
-        const inMemoryCsv = this.store.getCsv(tableName);
-        let csv: Csv;
-        if (inMemoryCsv !== false) {
-            csv = inMemoryCsv;
-        } else {
-            const csvText = await readFileAsync(`data/${tableName}.csv`);
-
-            if (!csvText || csvText.trim() === '') {
-                console.warn(`Reference table CSV is empty: ${tableName}`);
-                return {
-                    tableName,
-                    header: [],
-                    rows: new Map(),
-                    displayColumnName: '',
-                    displayColumnIndex: -1,
-                    primaryKeyColumnName: '',
-                };
-            }
-
-            csv = new Csv();
-            csv.load(csvText);
+        const csv = await this.store.ensureTableLoadedAsync(tableName);
+        if (csv.header.length === 0) {
+            console.warn(`Reference table CSV is empty: ${tableName}`);
+            return {
+                tableName,
+                header: [],
+                rows: new Map(),
+                displayColumnName: '',
+                displayColumnIndex: -1,
+                primaryKeyColumnName: '',
+            };
         }
 
         // 表示列を決定する

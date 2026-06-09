@@ -68,6 +68,31 @@ function createScrollableScheduleTimelineFileSystem(): MockFileSystem {
     };
 }
 
+function createScheduleTimelineValidationFileSystem(): MockFileSystem {
+    return {
+        "schema/event.json": JSON.stringify({
+            header: [
+                {key: 0, name: "id", type: "int"},
+                {key: 1, name: "name", type: "string"},
+                {key: 2, name: "export_begin_date", type: "datetime", comment: "出力予定日"},
+                {key: 3, name: "export_end_date", type: "datetime", comment: "削除予定日"},
+            ],
+            primary_key: ["id"],
+        }),
+        "data/event.csv": [
+            "id,name,export_begin_date,export_end_date",
+            "1,start_a,2026-01-05 09:00:00,",
+            "1,start_b,2026-01-05 10:00:00,",
+        ].join("\n"),
+        ".masterdataeditor/settings.json": JSON.stringify({
+            largeFileEagerDataPreloadBytes: 0,
+            referenceJumpTemporaryFilterEnabled: false,
+        }),
+        "user:bookmarks.json": "[]",
+        "plugins/.gitkeep": "",
+    };
+}
+
 async function installScheduleTimelineFixtureAsync(page: Page): Promise<void> {
     await installMockApiAsync(page, createScheduleTimelineFileSystem());
     await page.goto('/');
@@ -165,6 +190,23 @@ test.describe('予定日タイムラインパネル', () => {
         const table = activeTable(page);
         await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('2 / 3 行');
         await expect.poll(() => visibleColumnValuesAsync(table, 0)).toEqual(['1', '2']);
+    });
+
+    test('スケジュールパネルから未オープン表を開いてもバリデーション件数は増えない', async ({page}) => {
+        await installMockApiAsync(page, createScheduleTimelineValidationFileSystem());
+        await page.goto('/');
+
+        const badgeCount = page.locator('.status-bar-badge-count');
+        await expect(badgeCount).toHaveText('2', {timeout: 10000});
+
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+        const scheduleTable = page.locator('.schedule-timeline-table[data-table-name="event"]');
+        await expect(scheduleTable).toBeVisible();
+        await expect(badgeCount).toHaveText('2');
+
+        await scheduleTable.click();
+        await expect(page.locator('.tab-button-active')).toContainText('event');
+        await expect(badgeCount).toHaveText('2');
     });
 
     test('表示中に予定日列を編集すると日付別リストが更新される', async ({page}) => {

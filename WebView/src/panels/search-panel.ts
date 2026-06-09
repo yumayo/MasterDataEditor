@@ -6,6 +6,7 @@ import {CellChange, CellChangeCommand, CompositeCommand} from "../editor/command
 import {CellRange} from "../editor/selection";
 import {replaceWithQuery, shouldAutoEnableWholeWord, type SearchOptions} from "../search/search-query";
 import {SearchEngine} from "../search/search-engine";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
  * SEARCHパネル
@@ -57,10 +58,10 @@ export class SearchPanel {
     /** replace-all: 全置換アイコン（VSCode Codicons準拠） */
     private static readonly REPLACE_ALL_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.6 2.7c.3-.3.3-.8 0-1.1-.3-.3-.8-.3-1.1 0L7.4 4.7l1.1 1.1 3.1-3.1zM3 7h5.2l1.8-1.8-.3-.3-1.3 1.3H3c-.6 0-1 .4-1 1v2c0 .6.4 1 1 1h3v2l3-2.5L6 7.2V8H3V7zm10 2c0-.6-.4-1-1-1h-1v1h1v2H8.6l-1.3 1H12c.6 0 1-.4 1-1V9z"/><path d="M14.6 4.7c.3-.3.3-.8 0-1.1-.3-.3-.8-.3-1.1 0l-1.1 1.1 1.1 1.1 1.1-1.1z" opacity="0.6"/></svg>';
 
-    constructor(tab: Tab, openEditorTables: Map<string, EditorTable>) {
+    constructor(tab: Tab, openEditorTables: Map<string, EditorTable>, store: InMemoryTableStore) {
         this.tab = tab;
         this.openEditorTables = openEditorTables;
-        this.searchEngine = new SearchEngine(openEditorTables);
+        this.searchEngine = new SearchEngine(openEditorTables, store);
         this.caseSensitive = false;
         this.wholeWordManual = false;
         this.wholeWordAuto = false;

@@ -150,6 +150,33 @@ export class InMemoryTableStore {
         return csv;
     }
 
+    /**
+     * 読み取り用途でテーブルをストアへ常駐させる。
+     *
+     * registerTableAsync() はタブやミニテーブルのライフサイクル管理用に
+     * 参照カウントを増やす。一方、検索・参照・スケジュール・起動時検証のような
+     * 共有読み取り用途では、既にロード済みのテーブルの参照カウントを増やしたくない。
+     */
+    async ensureTableLoadedAsync(tableName: string): Promise<Csv> {
+        if (this.headers.has(tableName) && this.staleTableNames.has(tableName) && !this.isTableDirty(tableName)) {
+            const csv = await this.loadCsvFromFileAsync(tableName);
+            this.headers.set(tableName, csv.header);
+            this.rows.set(tableName, csv.body);
+            if (!this.refCounts.has(tableName)) this.refCounts.set(tableName, 1);
+            this.dirtyTableNames.delete(tableName);
+            this.staleTableNames.delete(tableName);
+            this.bumpDataRevision(tableName, { reason: 'reload' });
+            return this.getCsv(tableName) as Csv;
+        }
+        if (this.headers.has(tableName)) {
+            if (!this.refCounts.has(tableName)) this.refCounts.set(tableName, 1);
+            return this.getCsv(tableName) as Csv;
+        }
+        const csv = await this.loadCsvFromFileAsync(tableName);
+        this.registerTable(tableName, csv.header, csv.body);
+        return csv;
+    }
+
     private async loadCsvFromFileAsync(tableName: string): Promise<Csv> {
         const csvText = await readFileAsync('data/' + tableName + '.csv');
         const csv = new Csv();

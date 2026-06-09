@@ -3,18 +3,19 @@ import type {SearchResultInfo} from "../editor-api/editor-api-types";
 import {EditorTable} from "../editor/editor-table";
 import {matchesQuery, parseSearchQuery, type SearchOptions, type SearchQuery, shouldAutoEnableWholeWord} from "./search-query";
 import {SearchDataProvider, type TableSearchData} from "./search-data-provider";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
  * SEARCHパネルとMCP公開APIで共有する検索エンジン。
- * 開いているテーブルは編集中の最新値を優先し、未オープンのテーブルはCSVから読む。
+ * 開いているテーブルは編集中の最新値を優先し、未オープンのテーブルはInMemoryTableStoreから読む。
  */
 export class SearchEngine {
     private readonly openEditorTables: Map<string, EditorTable>;
     private readonly dataProvider: SearchDataProvider;
 
-    constructor(openEditorTables: Map<string, EditorTable>) {
+    constructor(openEditorTables: Map<string, EditorTable>, store: InMemoryTableStore) {
         this.openEditorTables = openEditorTables;
-        this.dataProvider = new SearchDataProvider(openEditorTables);
+        this.dataProvider = new SearchDataProvider(openEditorTables, store);
     }
 
     async searchAsync(inputText: string, options: SearchOptions, shouldAbort: () => boolean): Promise<SearchResultInfo[]> {

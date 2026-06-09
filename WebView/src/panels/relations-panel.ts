@@ -3,7 +3,6 @@ import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "../core/schema-utils";
 import {parseReferenceExpression, isSimpleReference, isDynamicReference, DynamicReference} from "../references/reference-expression";
 import {readFileAsync} from "../app/api";
-import {Csv} from "../data/csv";
 import {Tab} from "../tabs/tab";
 import {FillController} from "../editor/fill-controller";
 import {AreaResizer} from "../editor/area-resizer";
@@ -373,33 +372,17 @@ export class RelationsPanel {
     }
 
     /**
-     * 指定テーブルのヘッダーと全行をストア優先・CSV直読みで取得する
-     *
-     * ストアに登録済みの場合は常に最新データを優先使用する。
-     * タブ未オープンのテーブルはストアに存在しないため、その場合のみCSVファイルから直接読み込む。
-     *
-     * CSVパスが返す行データとストアの行順序は一致する。
-     * ストア未登録テーブルはCSVのbodyをそのまま行配列として返すが、
-     * 後続の buildMiniEditorTableAsync 内で registerTableAsync が呼ばれる際も同じCSVを読み込むため
-     * storeRowIndices（filterRowsByReverseEntry が計算したインデックス）とストアの行順序は整合する。
-     *
-     * ファイルが存在しない場合は異常系（スキーマと実データの不整合）として例外を伝播させる。
+     * 指定テーブルのヘッダーと全行をInMemoryTableStoreから取得する。
+     * 未ロードまたはstaleの場合はストア側でCSVから常駐ロードする。
      */
     private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] }> {
-        // ストアに登録済みの場合はストアから取得する。
-        // ストアの rows は string[][] でPK重複行を含む全行を保持しているため正確。
+        await this.store.ensureTableLoadedAsync(tableName);
         const storeHeader = this.store.getHeader(tableName);
         const storeRows = this.store.getRows(tableName);
         if (storeHeader !== false && storeRows !== false) {
             return { header: storeHeader, rows: storeRows };
         }
-        // ストア未登録の場合はCSVファイルから直接読み込む。
-        // referenceDataCache.rows は Map<pkValue, row> 形式のためPK重複行が上書きされて消える。
-        // 1:Nフィルタリングには全行が必要なため、CSVのbodyをそのまま使う。
-        const csvText = await readFileAsync(`data/${tableName}.csv`);
-        const csv = new Csv();
-        csv.load(csvText);
-        return { header: csv.header, rows: csv.body };
+        throw new Error(`[RelationsPanel] テーブル "${tableName}" をInMemoryTableStoreから取得できません`);
     }
 
     /**
@@ -529,7 +512,7 @@ export class RelationsPanel {
                 const fkValue = editorTable.getCellValueAt(rowIndex, colIdx + editorTable.dataColumnOffset());
                 if (fkValue === '') continue;
 
-                // ストア優先・CSV直読みでテーブルデータを取得する
+                // InMemoryTableStoreからテーブルデータを取得する
                 const refTableData = await this.resolveTableDataAsync(expr.tableName);
                 if (requestId !== this.currentRequestId) return entries;
                 const { header, rows: allRows } = refTableData;
@@ -575,7 +558,7 @@ export class RelationsPanel {
                 // （同一値でキーが衝突している別 parentColumnName のエントリを誤って取り込まない）
                 if (reverseEntry.parentColumnName !== parentColumnName) continue;
 
-                // ストア優先・CSV直読みでテーブルデータを取得する
+                // InMemoryTableStoreからテーブルデータを取得する
                 const childTableData = await this.resolveTableDataAsync(reverseEntry.childTableName);
                 if (requestId !== this.currentRequestId) return entries;
                 const { header, rows: allRows } = childTableData;

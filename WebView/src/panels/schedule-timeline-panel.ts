@@ -1,7 +1,5 @@
-import {findFilesAsync, readFileAsync} from "../app/api";
-import {Csv} from "../data/csv";
+import {findFilesAsync} from "../app/api";
 import type {InMemoryTableStore, TableDataChangeEvent} from "../data/in-memory-table-store";
-import type {EditorTable} from "../editor/editor-table";
 import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
 import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
@@ -44,7 +42,6 @@ export class ScheduleTimelinePanel {
     private readonly element: HTMLElement;
     private readonly contentElement: HTMLElement;
     private readonly store: InMemoryTableStore;
-    private readonly openEditorTables: Map<string, EditorTable>;
     private readonly onNavigate: ScheduleTimelineNavigate;
     private readonly uiStateStore: UiStateStore;
     private readonly collapsedDates: Set<string>;
@@ -58,12 +55,10 @@ export class ScheduleTimelinePanel {
 
     constructor(
         store: InMemoryTableStore,
-        openEditorTables: Map<string, EditorTable>,
         onNavigate: ScheduleTimelineNavigate,
         uiStateStore: UiStateStore,
     ) {
         this.store = store;
-        this.openEditorTables = openEditorTables;
         this.onNavigate = onNavigate;
         this.uiStateStore = uiStateStore;
         const storedState = this.uiStateStore.getState().sidebar.scheduleTimeline;
@@ -162,18 +157,12 @@ export class ScheduleTimelinePanel {
     }
 
     private async loadTableDataAsync(tableName: string): Promise<ScheduleTimelineTableData | null> {
-        if (this.openEditorTables.has(tableName) || this.store.hasTable(tableName)) {
+        try {
+            await this.store.ensureTableLoadedAsync(tableName);
             const header = this.store.getHeader(tableName);
             const rows = this.store.getRows(tableName);
             if (header === false || rows === false) return null;
             return {header, rows};
-        }
-
-        try {
-            const csvText = await readFileAsync(`data/${tableName}.csv`);
-            const csv = new Csv();
-            csv.load(csvText);
-            return {header: csv.header, rows: csv.body};
         } catch {
             return null;
         }

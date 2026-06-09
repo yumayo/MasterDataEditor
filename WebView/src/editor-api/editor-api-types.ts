@@ -124,9 +124,9 @@ export interface EditorSchemaReferenceColumn {
 export interface EditorEditAPI {
     setCellValue(tableName: string, row: number, column: number, value: string): boolean;
     setCellValues(tableName: string, changes: Array<{ row: number; column: number; value: string }>): boolean;
-    /** テーブルをアクティブ化せずにセルを更新する。未オープンのテーブルもCSVから読み込んで編集対象にする */
+    /** テーブルをアクティブ化せずにセルを更新する。未オープンのテーブルもInMemoryTableStoreへロードして編集対象にする */
     setCellValueAsync(tableName: string, row: number, column: number, value: string): Promise<boolean>;
-    /** テーブルをアクティブ化せずに複数セルを更新する。未オープンのテーブルもCSVから読み込んで編集対象にする */
+    /** テーブルをアクティブ化せずに複数セルを更新する。未オープンのテーブルもInMemoryTableStoreへロードして編集対象にする */
     setCellValuesAsync(tableName: string, changes: Array<{ row: number; column: number; value: string }>): Promise<boolean>;
     insertRow(tableName: string, rowIndex: number): boolean;
     deleteRow(tableName: string, rowIndex: number): boolean;

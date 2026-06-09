@@ -44,10 +44,10 @@ function createFileRequestData(filename: string, options: FileScopeOptions = {})
 }
 
 /**
- * 起動時に schema/ と plugins/、および小さな data/ ファイルを一括読み込みしてキャッシュに格納する。
+ * 起動時に schema/ と plugins/、および小さな data/ ファイルを一括読み込みしてファイルキャッシュに格納する。
  * main.ts の初期化冒頭で呼び出すこと。
  * ディレクトリ列挙・ファイル読み込みを並列で実行し、起動時間を短縮する。
- * 巨大CSVは起動と同時にWebViewへ転送すると初期表示を塞ぐため、テーブルを開くまで読み込まない。
+ * 全CSVのInMemory常駐ロードは main.ts の起動時バックグラウンド処理で行う。
  */
 export async function preloadAllFilesAsync(settings: LargeFileSettings): Promise<void> {
     // schema/, data/, plugins/ のディレクトリ列挙を並列実行する

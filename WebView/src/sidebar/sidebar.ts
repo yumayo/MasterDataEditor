@@ -92,7 +92,7 @@ export class Sidebar {
         this.referencesPanel.appendTo(sidebarContent);
 
         // SEARCHパネル
-        this.searchPanel = new SearchPanel(tab, openEditorTables);
+        this.searchPanel = new SearchPanel(tab, openEditorTables, store);
         this.searchPanel.appendTo(sidebarContent);
 
         // ブックマークパネル
@@ -102,7 +102,6 @@ export class Sidebar {
         // 出力予定日・削除予定日タイムラインパネル
         this.scheduleTimelinePanel = new ScheduleTimelinePanel(
             store,
-            openEditorTables,
             (tableName, filters, mode) => {
                 this.tab.navigateToTableWithTemporaryFilterAsync(tableName, filters, mode)
                     .catch(e => { console.error('予定日タイムラインジャンプ失敗', e); });

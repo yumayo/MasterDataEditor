@@ -3,7 +3,6 @@ import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
 import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {determineDisplayColumnName} from "../config/config";
 import {readFileAsync} from "../app/api";
-import {Csv} from "../data/csv";
 import {extractFirstPrimaryKeyColumn} from "../core/schema-utils";
 import {
     parseReferenceExpression,
@@ -1858,15 +1857,13 @@ export class FormPanel {
     }
 
     private async resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] }> {
+        await this.store.ensureTableLoadedAsync(tableName);
         const storeHeader = this.store.getHeader(tableName);
         const storeRows = this.store.getRows(tableName);
         if (storeHeader !== false && storeRows !== false) {
             return { header: storeHeader, rows: storeRows };
         }
-        const csvText = await readFileAsync(`data/${tableName}.csv`);
-        const csv = new Csv();
-        csv.load(csvText);
-        return { header: csv.header, rows: csv.body };
+        throw new Error(`[FormPanel] テーブル "${tableName}" をInMemoryTableStoreから取得できません`);
     }
 
     private async loadSchemaJsonAsync(tableName: string): Promise<SchemaJson> {

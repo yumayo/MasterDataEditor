@@ -2,6 +2,7 @@ import {Tab} from "../tabs/tab";
 import {fuzzyMatch, appendHighlightedSegments} from "../search/fuzzy-search";
 import {SearchDataProvider} from "../search/search-data-provider";
 import {EditorTable} from "../editor/editor-table";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
  * コマンドパレットの候補アイテム（テーブル名ファジー検索用）
@@ -73,9 +74,9 @@ export class CommandPalette {
     /** 非同期クエリ式検索のレースコンディション防止用リクエストID */
     private queryRequestId: number;
 
-    constructor(tab: Tab, parentElement: HTMLElement, openEditorTables: Map<string, EditorTable>) {
+    constructor(tab: Tab, parentElement: HTMLElement, openEditorTables: Map<string, EditorTable>, store: InMemoryTableStore) {
         this.tab = tab;
-        this.dataProvider = new SearchDataProvider(openEditorTables);
+        this.dataProvider = new SearchDataProvider(openEditorTables, store);
         this.tableItems = [];
         this.selectedIndex = -1;
         this.filteredItems = [];

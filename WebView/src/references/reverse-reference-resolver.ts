@@ -1,6 +1,5 @@
-import {readFileAsync} from "../app/api";
 import {determineDisplayColumnName} from "../config/config";
-import {Csv} from "../data/csv";
+import type {Csv} from "../data/csv";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {extractFirstPrimaryKeyColumn} from "../core/schema-utils";
 import {
@@ -127,23 +126,14 @@ export class ReverseReferenceResolver {
     }
 
     /**
-     * テーブル名からCsvを読み込む
-     * タブで開かれていればインメモリデータを優先、
-     * なければCSVファイルから読み込む
+     * テーブル名からInMemory上のCsvを読み込む。
+     * 未ロードまたはstaleの場合はストア側でCSVから常駐ロードする。
      */
     private async loadCsvAsync(
         tableName: string
     ): Promise<Csv | false> {
-        const inMemoryCsv =
-            this.store.getCsv(tableName);
-        if (inMemoryCsv !== false) return inMemoryCsv;
         try {
-            const csvText = await readFileAsync(
-                `data/${tableName}.csv`
-            );
-            const csv = new Csv();
-            csv.load(csvText);
-            return csv;
+            return await this.store.ensureTableLoadedAsync(tableName);
         } catch {
             return false;
         }

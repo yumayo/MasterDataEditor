@@ -1,9 +1,7 @@
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {Tab, type TabState} from "../tabs/tab";
 import {CellChangeCommand, CellChange, InsertRowCommand, DeleteRowCommand} from "../editor/command";
-import {readFileAsync} from "../app/api";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
-import {Csv} from "../data/csv";
 import {determineDisplayColumnName} from "../config/config";
 import {ValidationEngine} from "../validation/validation-engine";
 import type {PluginValidationRunner} from "../validation/plugin-validation-runner";
@@ -42,20 +40,18 @@ export class EditorApiImpl implements EditorAPI {
         this.tableSavedHandlers = [];
         this.rowSelectedHandlers = [];
 
-        // テーブルデータ読み取りの共通ヘルパー（ストア優先→CSV フォールバック）
+        // テーブルデータ読み取りの共通ヘルパー（InMemoryTableStoreに常駐させてから読む）
         // data 名前空間の readTableDataAsync と新メソッドの両方から使う
         async function resolveTableDataAsync(tableName: string): Promise<{ header: string[]; rows: string[][] } | null> {
-            const storeHeader = store.getHeader(tableName);
-            if (storeHeader !== false) {
+            try {
+                await store.ensureTableLoadedAsync(tableName);
+                const storeHeader = store.getHeader(tableName);
                 const storeRows = store.getRows(tableName);
-                if (storeRows === false) throw new Error('[resolveTableDataAsync] ストアの不変条件違反: header は存在するが rows が取得できません');
+                if (storeHeader === false || storeRows === false) return null;
                 return { header: [...storeHeader], rows: storeRows.map(r => [...r]) };
+            } catch {
+                return null;
             }
-            const content = await readFileAsync('data/' + tableName + '.csv');
-            if (content === '') return null;
-            const csv = new Csv();
-            csv.load(content);
-            return { header: [...csv.header], rows: csv.body.map(r => [...r]) };
         }
 
         async function buildReferenceListInfoAsync(targetTableName: string, targetColumnName: string): Promise<ReferenceListInfo | null> {
@@ -132,7 +128,7 @@ export class EditorApiImpl implements EditorAPI {
             };
         }
 
-        const searchEngine = new SearchEngine(tab.getOpenEditorTables());
+        const searchEngine = new SearchEngine(tab.getOpenEditorTables(), store);
 
         // data 名前空間: ストアからの読み取り（ディープコピーを返して内部データを保護する）
         this.data = {
@@ -338,7 +334,6 @@ export class EditorApiImpl implements EditorAPI {
         // edit 名前空間のクロージャからイベントハンドラーにアクセスするためのキャプチャ
         const cellChangedHandlers = this.cellChangedHandlers;
         const tableSavedHandlers = this.tableSavedHandlers;
-        const apiRegisteredTableNames = new Set<string>();
 
         const emitCellChanged = (events: EditorCellChangeEvent[]): void => {
             if (events.length === 0) return;
@@ -395,14 +390,13 @@ export class EditorApiImpl implements EditorAPI {
             return true;
         };
 
-        const ensureTableRegisteredForApiEditAsync = async (tableName: string): Promise<boolean> => {
+        const ensureTableLoadedForApiEditAsync = async (tableName: string): Promise<boolean> => {
             if (store.getHeader(tableName) !== false) return true;
             try {
-                await store.registerTableAsync(tableName);
-                apiRegisteredTableNames.add(tableName);
+                await store.ensureTableLoadedAsync(tableName);
                 return true;
             } catch (error: unknown) {
-                console.error('[EditorAPI] registerTableAsync failed:', error);
+                console.error('[EditorAPI] ensureTableLoadedAsync failed:', error);
                 return false;
             }
         };
@@ -413,7 +407,7 @@ export class EditorApiImpl implements EditorAPI {
                 return applyCellChangesToTab(tableName, tabState, changes, false);
             }
             if (changes.length === 0) return true;
-            if (!await ensureTableRegisteredForApiEditAsync(tableName)) return false;
+            if (!await ensureTableLoadedForApiEditAsync(tableName)) return false;
             const rows = store.getRows(tableName);
             if (rows === false) return false;
             const events: EditorCellChangeEvent[] = [];
@@ -503,10 +497,6 @@ export class EditorApiImpl implements EditorAPI {
                     // 保存完了後にgit差分を再取得してセルのハイライトを更新する
                     tabState.editorTable.refreshGitDiffAsync()
                         .catch((e: unknown) => { console.error('[EditorAPI] refreshGitDiffAsync failed:', e); });
-                }
-                if (apiRegisteredTableNames.has(tableName)) {
-                    store.unregisterTable(tableName);
-                    apiRegisteredTableNames.delete(tableName);
                 }
                 // テーブル保存イベントを発火する
                 const snapshot = [...tableSavedHandlers];

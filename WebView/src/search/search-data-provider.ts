@@ -1,7 +1,7 @@
 import {readFileAsync, findFilesAsync} from "../app/api";
-import {Csv} from "../data/csv";
 import {EditorTable} from "../editor/editor-table";
 import {extractFirstPrimaryKeyColumn} from "../core/schema-utils";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
  * テーブル1つ分のスキーマ+データ
@@ -15,18 +15,18 @@ export interface TableSearchData {
 }
 
 /**
- * 全テーブルのデータを非同期でロードし、キャッシュする
- * オープン中のテーブルはインメモリデータ（DOM）から最新値を取得する
+ * 全テーブルのデータを非同期でロードする。
+ * オープン中のテーブルはDOMから、それ以外はInMemoryTableStoreから最新値を取得する。
  */
 export class SearchDataProvider {
     private readonly openEditorTables: Map<string, EditorTable>;
+    private readonly store: InMemoryTableStore;
     private tableNamesCache: string[];
-    private dataCache: Map<string, TableSearchData>;
 
-    constructor(openEditorTables: Map<string, EditorTable>) {
+    constructor(openEditorTables: Map<string, EditorTable>, store: InMemoryTableStore) {
         this.openEditorTables = openEditorTables;
+        this.store = store;
         this.tableNamesCache = [];
-        this.dataCache = new Map();
     }
 
     /**
@@ -57,22 +57,7 @@ export class SearchDataProvider {
         if (editorTable) {
             return this.buildFromEditorTable(tableName, editorTable);
         }
-        // キャッシュがあればそれを返す
-        const cached = this.dataCache.get(tableName);
-        if (cached) {
-            return cached;
-        }
-        // ファイルから読み込む
-        const data = await this.loadFromFileAsync(tableName);
-        this.dataCache.set(tableName, data);
-        return data;
-    }
-
-    /**
-     * キャッシュを無効化する
-     */
-    invalidateCache(tableName: string): void {
-        this.dataCache.delete(tableName);
+        return this.loadFromStoreAsync(tableName);
     }
 
     /**
@@ -120,16 +105,15 @@ export class SearchDataProvider {
     }
 
     /**
-     * ファイルからTableSearchDataを読み込む
+     * ストアからTableSearchDataを読み込む。
+     * 未ロードの場合はストアへ常駐ロードしてから読み取る。
      */
-    private async loadFromFileAsync(tableName: string): Promise<TableSearchData> {
-        const [schemaText, csvText] = await Promise.all([
+    private async loadFromStoreAsync(tableName: string): Promise<TableSearchData> {
+        const [schemaText, csv] = await Promise.all([
             readFileAsync(`schema/${tableName}.json`),
-            readFileAsync(`data/${tableName}.csv`),
+            this.store.ensureTableLoadedAsync(tableName),
         ]);
         const schema = JSON.parse(schemaText);
-        const csv = new Csv();
-        csv.load(csvText);
         const header: Array<{name: string; type: string; reference: string; comment: string}> = [];
         for (const col of schema.header) {
             header.push({
@@ -145,8 +129,8 @@ export class SearchDataProvider {
         return {
             tableName,
             header,
-            csvHeader: csv.header,
-            csvBody: csv.body,
+            csvHeader: [...csv.header],
+            csvBody: csv.body.map(row => [...row]),
             primaryKeyColumnName,
         };
     }

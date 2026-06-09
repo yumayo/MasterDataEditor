@@ -114,17 +114,6 @@ export const SETTING_DEFINITIONS = {
         min: 0,
         step: 1,
     }),
-    largeFileEagerValidationCsvBytes: defineSetting<number>({
-        label: '起動時検証CSV上限(bytes)',
-        type: 'number',
-        defaultValue: 2 * 1024 * 1024,
-        section: 'largeFile',
-        control: 'number',
-        inputClassNames: ['settings-large-file-eager-validation-csv-bytes-input'],
-        runtime: {group: 'largeFile', property: 'eagerValidationCsvBytes'},
-        min: 0,
-        step: 1,
-    }),
     largeFileAutomaticValidationRows: defineSetting<number>({
         label: '自動バリデーション行数上限',
         type: 'number',
@@ -231,7 +220,6 @@ export interface ExportValidationSettings {
 
 export interface LargeFileSettings {
     eagerDataPreloadBytes: number;
-    eagerValidationCsvBytes: number;
     automaticValidationRows: number;
     pluginValidationRows: number;
     gitDiffMarkerRows: number;
@@ -315,7 +303,6 @@ export function createExportValidationSettings(settings: AppliedSettings): Expor
 export function createLargeFileSettings(settings: AppliedSettings): LargeFileSettings {
     return {
         eagerDataPreloadBytes: Number(getRuntimeSettingsValue(settings, 'largeFile', 'eagerDataPreloadBytes')),
-        eagerValidationCsvBytes: Number(getRuntimeSettingsValue(settings, 'largeFile', 'eagerValidationCsvBytes')),
         automaticValidationRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'automaticValidationRows')),
         pluginValidationRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'pluginValidationRows')),
         gitDiffMarkerRows: Number(getRuntimeSettingsValue(settings, 'largeFile', 'gitDiffMarkerRows')),
