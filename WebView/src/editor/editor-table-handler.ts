@@ -146,10 +146,19 @@ export class EditorTableHandler {
         this.pendingScrollRestoreId = 0;
 
         // contenteditable element を作成
+        // パーキング（非表示待機）は position:fixed で行う。
+        // fixed の containing block はビューポートのため、フォーカス要素やキャレットを
+        // 可視化しようとするブラウザの祖先スクロール（reveal）の対象にならない。
+        // 旧方式（position:absolute + top:-99999px）では WebView2 が reveal の際に
+        // 祖先スクロール要素（editor-left-pane）を(0,0)へスクロールさせ、
+        // 横スクロールバーが1フレーム0座標で描画される不具合の原因になっていた。
+        // opacity:0 はパーキング位置（ビューポート左上）でのキャレット点滅を隠すため。
         const element = document.createElement('div');
         element.style.width = '0px';
-        element.style.top = '-99999px';
-        element.style.left = '-99999px';
+        element.style.position = 'fixed';
+        element.style.top = '0px';
+        element.style.left = '0px';
+        element.style.opacity = '0';
         element.classList.add('grid-textfield');
         element.setAttribute('contenteditable', 'true');
         element.appendChild(document.createElement('br'));
@@ -196,12 +205,12 @@ export class EditorTableHandler {
      * スクロール位置を維持しながら contenteditable element にフォーカスを移す。
      *
      * WebView2/Chromium では `focus({ preventScroll: true })` が機能しない場合があり、
-     * top:-99999px に位置する要素へのフォーカス時にブラウザが自動スクロールして
-     * スクロール位置が(0,0)にリセットされる。
+     * フォーカス要素の reveal によってブラウザが自動スクロールして
+     * スクロール位置がリセットされる場合がある。
      * focus 直後にスクロール位置を強制復元することでこの問題を回避する。
      *
      * scrollTop/scrollLeft は呼び出し元が「DOM スタイル変更前」に取得して渡すこと。
-     * style.top 変更後にこのメソッドを呼ぶと、ブラウザが既にスクロールをリセット済みの
+     * style 変更後にこのメソッドを呼ぶと、ブラウザが既にスクロールをリセット済みの
      * 状態でスクロール位置を読んでしまい、0 を「正しい位置」として保護してしまう。
      */
     private focusWithoutScrolling(scrollTop: number, scrollLeft: number): void {
@@ -874,7 +883,7 @@ export class EditorTableHandler {
         if (keyboardEvent.key === 'Delete' || keyboardEvent.key === 'Backspace') {
             if (this.readOnly) return;
             // DOM変更前にスクロール位置を保存する（applyCellChanges によるDOM書き換えで
-            // ブラウザが top:-99999px のフォーカス要素に自動スクロールし、位置がリセットされる場合がある）
+            // ブラウザがフォーカス要素に自動スクロールし、位置がリセットされる場合がある）
             const scrollTop = this.scrollController.getScrollTop();
             const scrollLeft = this.scrollController.getScrollLeft();
             const deleteRange = this.selection.getSelectionRange();
@@ -1123,16 +1132,17 @@ export class EditorTableHandler {
     }
 
     /**
-     * テキスト入力フィールドを非表示にする。
-     * top:-99999px にした後もフォーカスがこの要素に残るため、
-     * ブラウザが自動スクロールでビューポートをリセットする場合がある。
+     * テキスト入力フィールドを非表示（パーキング状態）にする。
+     * パーキングは position:fixed で行う（コンストラクタのコメント参照）。
+     * fixed 要素はブラウザの reveal（フォーカス要素の可視化スクロール）の対象に
+     * ならないため、祖先スクロール要素の位置がリセットされない。
      *
-     * 重要: style.top の変更によってブラウザが同期的にスクロールをリセットするため、
+     * 重要: style 変更によってブラウザが同期的にスクロールをリセットする場合があるため、
      * スクロール位置は style 変更「前」に取得しなければならない。
      * 変更後に getScrollTop() を呼ぶと既に 0 になっており、0 で「保護」してしまう。
      */
     private hide(): void {
-        // style.top 変更前にスクロール位置を保存する（変更後はブラウザが 0 にリセットする場合がある）
+        // style 変更前にスクロール位置を保存する（変更後はブラウザが 0 にリセットする場合がある）
         const scrollTop = this.scrollController.getScrollTop();
         const scrollLeft = this.scrollController.getScrollLeft();
         if (this.dropdownActive && this.dropdownInput) {
@@ -1144,11 +1154,13 @@ export class EditorTableHandler {
         this.element.style.width = '0px';
         this.element.style.height = '';
         this.element.style.lineHeight = '';
-        this.element.style.top = '-99999px';
-        this.element.style.left = '-99999px';
+        this.element.style.position = 'fixed';
+        this.element.style.top = '0px';
+        this.element.style.left = '0px';
+        this.element.style.opacity = '0';
         this.element.appendChild(document.createElement('br'));
         this.element.classList.remove('grid-textfield-active');
-        // 事前保存したスクロール位置を渡して保護する（style.top 変更後のブラウザ自動スクロールを防ぐ）
+        // 事前保存したスクロール位置を渡して保護する（style 変更後のブラウザ自動スクロールを防ぐ）
         this.focusWithoutScrolling(scrollTop, scrollLeft);
     }
 

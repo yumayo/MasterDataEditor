@@ -173,7 +173,13 @@ export class Editor {
         const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
         const proxyHeight = maxScrollTop + this.leftPane.clientHeight;
         this.leftPaneScrollProxy.style.height = `${proxyHeight}px`;
-        this.leftPaneScrollProxy.style.width = `${Math.max(metrics.scrollWidth, 1)}px`;
+        // 横も縦と同じ式で「leftPane の最大スクロール量 == テーブルの最大スクロール量」になるよう
+        // プロキシ幅を決める。metrics.scrollWidth をそのまま使うと、leftPane の clientWidth が
+        // テーブルの clientWidth より広い分だけ leftPane の横スクロール可能量が不足し、
+        // 同期で書き込んだ scrollLeft がクランプされてテーブルと恒常的に不整合になる。
+        const maxScrollLeft = Math.max(0, metrics.scrollWidth - metrics.clientWidth);
+        const proxyWidth = maxScrollLeft + this.leftPane.clientWidth;
+        this.leftPaneScrollProxy.style.width = `${Math.max(proxyWidth, 1)}px`;
 
         if (this.isSyncingTableFromLeftPane) return;
         this.isSyncingLeftPaneFromTable = true;

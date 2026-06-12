@@ -38,6 +38,11 @@ export class GridTextField {
     show(rect: DOMRect, cellText: string, preserveContent: boolean): void {
         this.element.classList.add('grid-textfield-active');
 
+        // パーキング（position:fixed + opacity:0、EditorTableHandler.hide() 参照）を解除して
+        // CSS の position:absolute に戻す
+        this.element.style.position = '';
+        this.element.style.opacity = '';
+
         // container（position:relative の含有ブロック）基準の相対座標を計算する
         const containerRect = this.container.getBoundingClientRect();
         this.element.style.left = (rect.left - containerRect.left) + 'px';

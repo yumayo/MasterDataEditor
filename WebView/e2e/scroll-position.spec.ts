@@ -704,3 +704,104 @@ test(
         ).toBeGreaterThan(100);
     },
 );
+
+// =============================================================================
+// リグレッションテスト: セル選択移動時に横スクロールバーが一瞬カクつくバグ
+//
+// 根本原因（2つの欠陥の組み合わせ）:
+//   1. contenteditable のパーキングが position:absolute + top:-99999px だったため、
+//      WebView2 のフォーカス要素 reveal が祖先スクロール要素（editor-left-pane）を
+//      (0,0)にリセットし、leftPane→テーブル同期（forwardLeftPaneScrollToActiveTable）
+//      経由でテーブル本体の横スクロール位置が一瞬0になっていた。
+//      → パーキングを position:fixed に変更して reveal 自体を根絶した。
+//   2. leftPane のスクロールプロキシ幅が metrics.scrollWidth 直指定だったため、
+//      leftPane の横スクロール可能量がテーブルより小さく、同期書き込みがクランプされて
+//      恒常的に不整合になっていた。→ プロキシ幅を「maxScrollLeft + clientWidth」に修正した。
+//
+// 期待動作:
+//   万一ブラウザ起因で外側ペインが(0,0)にリセットされても、
+//   leftPane⇔テーブル同期と focusWithoutScrolling() の復元によって
+//   外側ペインとテーブル本体の横スクロール位置が維持されること。
+// =============================================================================
+
+test(
+    'セルクリック後にブラウザの focus 自動スクロールで外側ペインがリセットされても横スクロール位置が維持されること',
+    async ({ page }) => {
+        await page.setViewportSize({ width: 1024, height: 500 });
+
+        const fs = createWideFileSystem();
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openTableAsync(page, 'chara_wide');
+
+        // 外側ペインのスクロールバー操作を模倣して中間位置まで横スクロールする
+        // （forward 同期で main-viewport にも伝播し lastLeftPaneSyncedScrollLeft が更新される）
+        // 右端まで送ると外側ペインと main-viewport の最大スクロール量の差が露出するため中間位置にする
+        const before = await page.evaluate(async () => {
+            const outerPane = document.querySelector('.editor-left-pane') as HTMLElement | null;
+            const mainViewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            if (outerPane === null) throw new Error('editor-left-pane が見つかりません');
+            if (mainViewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            if (mainViewport.scrollWidth <= mainViewport.clientWidth) {
+                throw new Error('横スクロールが発生していません');
+            }
+            outerPane.scrollLeft = 800;
+            for (let i = 0; i < 3; i++) {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+            return {
+                outerScrollLeft: outerPane.scrollLeft,
+                viewportScrollLeft: mainViewport.scrollLeft,
+            };
+        });
+        expect(before.outerScrollLeft).toBeGreaterThan(0);
+        expect(before.viewportScrollLeft).toBeGreaterThan(0);
+
+        // 画面内に完全に見えているセルを mousedown して選択し、直後にブラウザの
+        // focus 自動スクロールを模倣して外側ペインを(0,0)にリセットする（WebView2 の挙動の再現）
+        const after = await page.evaluate(async () => {
+            const outerPane = document.querySelector('.editor-left-pane') as HTMLElement | null;
+            const mainViewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
+            if (outerPane === null) throw new Error('editor-left-pane が見つかりません');
+            if (mainViewport === null) throw new Error('editor-table-main-viewport が見つかりません');
+            // 画面内に完全に見えている行・列のセルを取得する
+            // （完全に見えているセルなら scrollCellIntoView は no-op になる）
+            const viewportRect = mainViewport.getBoundingClientRect();
+            const rows = Array.from(document.querySelectorAll('.editor-left-pane .editor-table-row[data-store-index]')) as HTMLElement[];
+            const visibleRow = rows.find(row => {
+                const rect = row.getBoundingClientRect();
+                return rect.top >= viewportRect.top + 60 && rect.bottom <= viewportRect.bottom - 60;
+            });
+            if (visibleRow === undefined) throw new Error('画面内の行が見つかりません');
+            const cells = Array.from(visibleRow.querySelectorAll('.editor-table-cell:not(.editor-table-row-header)')) as HTMLElement[];
+            const cell = cells.find(candidate => {
+                const rect = candidate.getBoundingClientRect();
+                return rect.left >= viewportRect.left + 60 && rect.right <= viewportRect.right - 60;
+            });
+            if (cell === undefined) throw new Error('画面内のセルが見つかりません');
+            cell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+            // mousedown ハンドラ内の focusWithoutScrolling() が復元用 rAF を発行済み。
+            // ブラウザの非同期自動スクロールを模倣して外側ペインを(0,0)へリセットする。
+            outerPane.scrollTop = 0;
+            outerPane.scrollLeft = 0;
+            // scroll イベント → rAF 復元 → leftPane⇔テーブル同期が収まるまで数フレーム待つ
+            for (let i = 0; i < 4; i++) {
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
+            return {
+                outerScrollLeft: outerPane.scrollLeft,
+                viewportScrollLeft: mainViewport.scrollLeft,
+            };
+        });
+
+        expect(
+            after.viewportScrollLeft,
+            `focus 自動スクロールのリセット後にテーブル本体の横スクロール位置が失われた。リセット前: ${before.viewportScrollLeft}, 復元後: ${after.viewportScrollLeft}`,
+        ).toBe(before.viewportScrollLeft);
+        expect(
+            after.outerScrollLeft,
+            `focus 自動スクロールのリセット後に外側ペインの横スクロール位置が失われた。リセット前: ${before.outerScrollLeft}, 復元後: ${after.outerScrollLeft}`,
+        ).toBe(before.outerScrollLeft);
+    },
+);
