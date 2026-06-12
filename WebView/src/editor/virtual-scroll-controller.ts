@@ -718,9 +718,18 @@ export class VirtualScrollController {
     }
 
     private setAbsoluteRowsOriginDataRowIndex(dataRowIndex: number, rowHeight: number = this.actualRowHeight): boolean {
-        const nextOrigin = Math.max(this.frozenRowCount, dataRowIndex);
-        const changed = this.absoluteRowsOriginDataRowIndex !== nextOrigin;
-        this.absoluteRowsOriginDataRowIndex = nextOrigin;
+        // 表示範囲が1行進むたびにリベースすると表示中全行の top / セル幅の書き直しが発生し、
+        // 矢印キー押しっぱなしのスクロールでイベント処理が追いつかなくなる。
+        // origin の目的は top 座標を小さく保つことなので、OVERSCAN 行ぶん離れるまでは現在の origin を維持する。
+        const minOrigin = this.frozenRowCount;
+        const desiredOrigin = Math.max(minOrigin, dataRowIndex);
+        const currentOrigin = this.absoluteRowsOriginDataRowIndex;
+        if (currentOrigin >= minOrigin && Math.abs(desiredOrigin - currentOrigin) <= VirtualScrollController.OVERSCAN) {
+            this.syncAbsoluteRowsContainerTop(rowHeight);
+            return false;
+        }
+        const changed = currentOrigin !== desiredOrigin;
+        this.absoluteRowsOriginDataRowIndex = desiredOrigin;
         this.syncAbsoluteRowsContainerTop(rowHeight);
         return changed;
     }

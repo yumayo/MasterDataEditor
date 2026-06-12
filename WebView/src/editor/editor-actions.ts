@@ -30,8 +30,6 @@ export function getTarget(table: EditorTable, selection: Selection) {
  * @param y
  */
 export function moveCell(table: EditorTable, selection: Selection, x: number, y: number) {
-    console.trace(`${x}, ${y}`);
-
     const rowLength = table.getLogicalRowCount();
     if (rowLength === 0) return;
 
@@ -43,9 +41,8 @@ export function moveCell(table: EditorTable, selection: Selection, x: number, y:
     const column = Math.max(Math.min(focus.column + x, columnLength - 1), 1);
     const row = Math.max(Math.min(focus.row + y, rowLength - 1), 1);
 
-    // 始点と終点を一致させることで
-    selection.setRange(row, column, row, column);
-    selection.move(row, column);
+    // 始点と終点を一致させて範囲選択を解除し、1回の描画でフォーカスを移動する
+    selection.moveAndClearRange(row, column);
 }
 
 export function extendSelectionCell(table: EditorTable, selection: Selection, x: number, y: number) {

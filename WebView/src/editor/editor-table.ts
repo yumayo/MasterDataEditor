@@ -539,19 +539,23 @@ export class EditorTable {
     }
     refreshQuadrantViewportRowHeaders(update: RenderedRowsUpdate | null): void {
         this.layout.refreshQuadrantViewportRowHeaders(update);
-        this.refreshGridLines();
+        // スクロールの行入れ替えごとに呼ばれるため rAF 合流にする（矢印キー押しっぱなし時のイベント滞留防止）
+        this.scheduleGridLinesRefresh();
     }
     getDetachedViewportRowTopPx(logicalRowIndex: number): string { return this.layout.getDetachedViewportRowTopPx(logicalRowIndex); }
     createDetachedViewportRowClone(sourceRow: HTMLElement): HTMLElement | null { return this.layout.createDetachedViewportRowClone(sourceRow); }
     syncDetachedViewportRowHeaderStates(): void { this.layout.syncDetachedViewportRowHeaderStates(); }
     refreshDetachedViewportRowHeaders(update: RenderedRowsUpdate | null): void {
         this.layout.refreshDetachedViewportRowHeaders(update);
-        this.refreshGridLines();
+        // スクロールの行入れ替えごとに呼ばれるため rAF 合流にする
+        this.scheduleGridLinesRefresh();
     }
     syncDetachedLegacyStaticCellStates(): void { this.layout.syncDetachedLegacyStaticCellStates(); }
     private syncQuadrantStaticCellStates(): void {
         this.layout.syncQuadrantStaticCellStates();
-        this.refreshGridLines();
+        // 選択移動のたびに呼ばれるため、罫線の同期再構築はレイアウトスラッシングを起こす。
+        // 罫線は選択状態に依存しないため rAF 合流で十分（キー押しっぱなし時のイベント滞留防止）。
+        this.scheduleGridLinesRefresh();
     }
     syncDetachedHeaderScrollOffset(): void { this.layout.syncDetachedHeaderScrollOffset(); }
     setInlineTransformIfChanged(element: HTMLElement, transform: string): void { this.layout.setInlineTransformIfChanged(element, transform); }
@@ -575,7 +579,8 @@ export class EditorTable {
     }
     syncDetachedVisualState(): void {
         this.layout.syncDetachedVisualState();
-        this.refreshGridLines();
+        // 選択移動のたびに呼ばれるため、syncQuadrantStaticCellStates() と同様に rAF 合流にする。
+        this.scheduleGridLinesRefresh();
     }
     setDetachedHeaderTopOffset(offsetPx: number): void {
         this.layout.setDetachedHeaderTopOffset(offsetPx);

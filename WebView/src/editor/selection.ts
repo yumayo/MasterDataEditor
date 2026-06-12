@@ -120,6 +120,21 @@ export class Selection {
     }
 
     /**
+     * 範囲選択を解除してフォーカスを指定セルへ移動します（矢印キー移動用）。
+     * setRange() と move() を続けて呼ぶと updateRenderer() が2回走り、
+     * キー押しっぱなし時にイベント処理が追いつかなくなるため、1回の描画にまとめる。
+     */
+    moveAndClearRange(row: number, column: number): void {
+        row = Math.max(1, row);
+        column = Math.max(this.editorTable.dataColumnOffset(), column);
+
+        this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
+        this.focus = { row, column };
+        this.scrollFocusIntoView();
+        this.updateRenderer();
+    }
+
+    /**
      * 選択範囲を設定します。フォーカスは移動しません。
      * @param startRow
      * @param startColumn
