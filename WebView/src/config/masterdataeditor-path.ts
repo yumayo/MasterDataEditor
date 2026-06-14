@@ -8,8 +8,10 @@ export const WORKSPACE_SETTINGS_FILE = `${MASTER_DATA_EDITOR_DIRECTORY}/settings
 export const USER_SETTINGS_FILE = 'settings.json';
 export const BOOKMARKS_FILE = 'bookmarks.json';
 export const UI_STATE_FILE = 'ui-state.json';
+export const COLUMN_WIDTHS_FILE = 'column-widths.json';
 
 const USER_FILE_OPTIONS = {scope: 'user' as const};
 
 export const BOOKMARKS_FILE_OPTIONS = USER_FILE_OPTIONS;
 export const UI_STATE_FILE_OPTIONS = USER_FILE_OPTIONS;
+export const COLUMN_WIDTHS_FILE_OPTIONS = USER_FILE_OPTIONS;

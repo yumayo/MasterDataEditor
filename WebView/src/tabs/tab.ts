@@ -1,6 +1,7 @@
 import {EditorTableData} from "../data/models/editor-table-data";
 import {TabButton} from "./tab-button";
 import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitStatusEntry, type GitStatusResult} from "../app/api";
+import {applyStoredColumnWidthsToSchemaAsync} from "../app/column-widths";
 import {CommitSelectorDialog} from "../ui/commit-selector-dialog";
 import {Editor} from "../editor/editor";
 import {EditorTable} from "../editor/editor-table";
@@ -3760,7 +3761,8 @@ export class Tab {
 
         // タブの名前から同名のマスターデータを取り出してきます。
         readFileAsync("schema/" + name + ".json").then(async (text) => {
-            const json = JSON.parse(text);
+            const rawJson = JSON.parse(text) as Record<string, unknown>;
+            const json = await applyStoredColumnWidthsToSchemaAsync(name, rawJson);
             if (!this.tabButtons.includes(tabButton)) {
                 if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
                 this.resolvePendingTableOpen(name, false);

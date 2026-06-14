@@ -49,7 +49,7 @@ import {Utility} from "../core/utility";
 import {Tab} from "../tabs/tab";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
-import {saveSchemaDataAsync} from "./editor-actions";
+import {saveColumnWidthsDataAsync, saveSchemaDataAsync} from "./editor-actions";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 import {VirtualScrollController, RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {EditorTableCellFactory} from "./editor-table-cell-factory";
@@ -2762,10 +2762,13 @@ export class EditorTable {
 
     /**
      * 列幅が変更されたことを通知する（AreaResizer / ColumnWidthCommand から呼ばれる）。
-     * 通常テーブルではスキーマJSONへ即時保存する。
+     * 通常テーブルではユーザーデータへ即時保存する。
      */
     notifyColumnWidthChanged(): void {
-        if (!this.isMiniTable) saveSchemaDataAsync(this);
+        if (!this.isMiniTable) {
+            saveColumnWidthsDataAsync(this)
+                .catch((e: unknown) => { console.error('[EditorTable] save column widths failed:', e); });
+        }
     }
 
 }

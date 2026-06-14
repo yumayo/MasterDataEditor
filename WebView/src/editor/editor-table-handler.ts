@@ -26,6 +26,7 @@ import {
     moveCellUpWithinSelection,
     moveCellRightWithinSelection,
     moveCellLeftWithinSelection,
+    saveColumnWidthsDataAsync,
     saveSchemaDataAsync,
     saveTableDataFromStoreAsync,
     saveDiffTableDataFromStoreAsync,
@@ -1059,7 +1060,8 @@ export class EditorTableHandler {
         // 行挿入・削除を含む全変更を正確にCSVに反映できる。
         await Promise.all([
             saveTableDataFromStoreAsync(this.table.tableName, store, saveWriteOptions),
-            saveSchemaDataAsync(this.table, saveWriteOptions)
+            saveSchemaDataAsync(this.table, saveWriteOptions),
+            saveColumnWidthsDataAsync(this.table)
         ]);
         await this.markSavedAndUpdatePanelAsync();
         if (this.table.tab !== false) {

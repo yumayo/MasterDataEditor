@@ -8,6 +8,7 @@ import {
 
 /** カラム名自動計算で使用される最小列幅(px) */
 const MIN_COLUMN_WIDTH_PX = 50;
+const COLUMN_WIDTHS_FILE = 'user:column-widths.json';
 
 /**
  * Explorerでテーブルを開き、
@@ -61,6 +62,42 @@ async function getColumnWidthPxAsync(
 }
 
 /**
+ * 列ヘッダー内のリサイズハンドルを返す
+ */
+function getResizeHandle(
+    table: Locator,
+    colIndex: number,
+): Locator {
+    return getColumnHeader(table, colIndex)
+        .locator('.column-resize-handle')
+        .first();
+}
+
+async function waitForColumnWidthsAsync(
+    page: Page,
+    tableName: string,
+): Promise<Record<string, number>> {
+    await page.waitForFunction(
+        ({ path, table }) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            try {
+                const parsed = JSON.parse(raw) as { tables?: Record<string, Record<string, number>> };
+                return parsed.tables?.[table] !== undefined;
+            } catch {
+                return false;
+            }
+        },
+        { path: COLUMN_WIDTHS_FILE, table: tableName },
+        { timeout: 5000 },
+    );
+
+    const json = await readMockFileAsync(page, COLUMN_WIDTHS_FILE);
+    const parsed = JSON.parse(json) as { tables: Record<string, Record<string, number>> };
+    return parsed.tables[tableName];
+}
+
+/**
  * テストデータ: widthフィールドなし（後方互換性テスト用）
  */
 function createFileSystemWithoutWidth(): MockFileSystem {
@@ -103,6 +140,23 @@ function createFileSystemWithWidth(): MockFileSystem {
 }
 
 /**
+ * テストデータ: ユーザーデータの列幅あり
+ */
+function createFileSystemWithUserWidths(): MockFileSystem {
+    const fs = createFileSystemWithWidth();
+    fs[COLUMN_WIDTHS_FILE] = JSON.stringify({
+        tables: {
+            item: {
+                id: 180,
+                name: 220,
+                value: 120,
+            },
+        },
+    });
+    return fs;
+}
+
+/**
  * テストデータ: 長いカラム名を含む（自動幅計算テスト用）
  */
 function createFileSystemWithLongColumnName(): MockFileSystem {
@@ -123,10 +177,10 @@ function createFileSystemWithLongColumnName(): MockFileSystem {
 }
 
 // -------------------------------------------------------
-// 列幅スキーマJSON永続化テスト
+// 列幅ユーザーデータ永続化テスト
 // -------------------------------------------------------
 test.describe(
-    '列幅のスキーマJSON永続化',
+    '列幅のユーザーデータ永続化',
     () => {
         test(
             'widthフィールドがないスキーマでは'
@@ -163,7 +217,7 @@ test.describe(
 
         test(
             'widthフィールドがあるスキーマで'
-            + '保存済み幅が適用されること',
+            + '初期幅が適用されること',
             async ({ page }) => {
                 await installMockApiAsync(
                     page,
@@ -175,12 +229,12 @@ test.describe(
                     page, 'item'
                 );
 
-                // id列: 150px（スキーマ指定値が優先される）
+                // id列: 150px（ユーザーデータがない場合はスキーマ指定値を使う）
                 await expect(
                     getColumnHeader(table, 0)
                 ).toHaveCSS('width', '150px');
 
-                // name列: 250px（スキーマ指定値が優先される）
+                // name列: 250px（ユーザーデータがない場合はスキーマ指定値を使う）
                 await expect(
                     getColumnHeader(table, 1)
                 ).toHaveCSS('width', '250px');
@@ -194,7 +248,31 @@ test.describe(
         );
 
         test(
-            'Ctrl+Sでスキーマに列幅が保存されること',
+            'ユーザーデータの列幅がスキーマ幅より優先されること',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page,
+                    createFileSystemWithUserWidths()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'item');
+
+                await expect(
+                    getColumnHeader(table, 0)
+                ).toHaveCSS('width', '180px');
+                await expect(
+                    getColumnHeader(table, 1)
+                ).toHaveCSS('width', '220px');
+                await expect(
+                    getColumnHeader(table, 2)
+                ).toHaveCSS('width', '120px');
+            },
+        );
+
+        test(
+            'Ctrl+Sで列幅がユーザーデータに保存され、'
+            + 'スキーマへ新規widthを書かないこと',
             async ({ page }) => {
                 await installMockApiAsync(
                     page,
@@ -207,20 +285,53 @@ test.describe(
                 // Ctrl+Sで保存
                 await table.click();
                 await page.keyboard.press('Control+s');
-                await page.waitForTimeout(500);
+                const columnWidths = await waitForColumnWidthsAsync(page, 'item');
 
-                // スキーマJSONの内容を検証
+                // ユーザーデータの内容を検証
+                expect(columnWidths.id).toBe(150);
+                expect(columnWidths.name).toBe(250);
+                expect(columnWidths.value).toBeGreaterThanOrEqual(MIN_COLUMN_WIDTH_PX);
+                expect(columnWidths.value).toBeLessThan(100);
+
+                // スキーマJSONには既存のwidthだけが残り、widthなし列へ新規追加されない
                 const schemaJson = await readMockFileAsync(
                     page, 'schema/item.json'
                 );
                 const schema = JSON.parse(schemaJson);
 
-                // 保存された幅が整数で含まれること
                 expect(schema.header[0].width).toBe(150);
                 expect(schema.header[1].width).toBe(250);
-                // widthなし列はカラム名に応じた計算値が保存される（100ではない）
-                expect(schema.header[2].width).toBeGreaterThanOrEqual(MIN_COLUMN_WIDTH_PX);
-                expect(schema.header[2].width).toBeLessThan(100);
+                expect(schema.header[2].width).toBeUndefined();
+            },
+        );
+
+        test(
+            '列幅を調整するとユーザーデータに即時保存され、'
+            + 'スキーマのwidthは変更されないこと',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page,
+                    createFileSystemWithWidth()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'item');
+
+                const handle = getResizeHandle(table, 1);
+                await expect(handle).toBeAttached();
+                await handle.dblclick();
+
+                const widthAfter = Math.round(
+                    await getColumnWidthPxAsync(table, 1)
+                );
+                const columnWidths = await waitForColumnWidthsAsync(page, 'item');
+                expect(columnWidths.name).toBe(widthAfter);
+
+                const schemaJson = await readMockFileAsync(
+                    page, 'schema/item.json'
+                );
+                const schema = JSON.parse(schemaJson);
+                expect(schema.header[1].width).toBe(250);
             },
         );
 
