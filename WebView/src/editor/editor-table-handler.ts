@@ -1451,7 +1451,7 @@ export class EditorTableHandler {
      */
     private pasteNormal(sourceData: string[][], copyRange: CellRange): void {
         const anchor = this.selection.getAnchor();
-        const tableRowCount = this.table.getRowCount();
+        const tableRowCount = this.table.getLogicalRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
         const rowCount = sourceData.length;
         const columnCount = sourceData[0].length;
@@ -1477,7 +1477,7 @@ export class EditorTableHandler {
     private pasteWithFill(sourceData: string[][], selectionRange: CellRange, copyRange: CellRange): void {
         const copyRowCount = sourceData.length;
         const copyColumnCount = sourceData[0].length;
-        const tableRowCount = this.table.getRowCount();
+        const tableRowCount = this.table.getLogicalRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
         const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;

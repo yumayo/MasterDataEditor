@@ -183,6 +183,9 @@ export class Tab {
     /** 表示倍率・viewport変化後のEditorTable再レイアウトをrequestAnimationFrameでまとめるためのID */
     private editorTableLayoutRefreshFrame: number | false;
 
+    /** editor 内部レイアウト変更（BottomPanel開閉など）を監視する ResizeObserver */
+    private editorLayoutResizeObserver: ResizeObserver | false;
+
     /** スクロール・選択イベント由来の ui-state 更新を requestAnimationFrame でまとめるためのID */
     private uiStatePersistFrame: number | false;
 
@@ -372,6 +375,7 @@ export class Tab {
         this.tabScrollHadStableOverflow = false;
         this.preserveTabScrollEdgeAfterLayout = false;
         this.editorTableLayoutRefreshFrame = false;
+        this.editorLayoutResizeObserver = false;
         this.uiStatePersistFrame = false;
         this.openEditorTables = new Map();
         this.store = store;
@@ -468,6 +472,7 @@ export class Tab {
             }
         });
         this.installViewportScaleChangeListeners();
+        this.installEditorLayoutResizeObserver();
     }
 
     /**
@@ -672,6 +677,14 @@ export class Tab {
             scheduleRefresh();
         };
         bindResolutionQuery();
+    }
+
+    private installEditorLayoutResizeObserver(): void {
+        if (typeof ResizeObserver === 'undefined') return;
+        this.editorLayoutResizeObserver = new ResizeObserver(() => {
+            this.scheduleActiveEditorTableLayoutRefresh();
+        });
+        this.editorLayoutResizeObserver.observe(this.editor.getLayoutResizeTarget());
     }
 
     private layoutTabButtons(scrollActiveTabAfterLayout: boolean, preserveScrollEdgeAfterLayout: boolean): void {

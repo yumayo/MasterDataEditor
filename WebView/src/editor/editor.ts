@@ -293,6 +293,15 @@ export class Editor {
         return this.leftPane;
     }
 
+    /**
+     * エディター内レイアウトのリサイズ監視対象を返す。
+     * BottomPanel の開閉・リサイズでは window.resize が発火しないため、
+     * Tab 側でこの要素を ResizeObserver 監視して EditorTable の表示領域を再計算する。
+     */
+    getLayoutResizeTarget(): HTMLElement {
+        return this.leftSlot;
+    }
+
     private redirectOuterWheelToMainViewport(event: WheelEvent): void {
         if (event.ctrlKey) return;
         if (!(event.target instanceof Element)) return;
