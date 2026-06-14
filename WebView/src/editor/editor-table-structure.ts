@@ -145,6 +145,7 @@ export class EditorTableStructure {
      */
     insertRowInternal(rowIndex: number): void {
         const tableElement = this.table.getTableElement();
+        const rebuildVirtualRows = this.table.usesVirtualScrollRows() && this.table.diffTab === false;
         // DOM操作前にストアヘッダーを検証する。
         // これより後にDOM操作を行うため、ここで例外が発生してもDOMにゴミ行が残らない。
         // ミニテーブルはDOMの列数がストアのサブセット（スキーマの header 配列から決定）のため、DOMの列数では誤りになる場合がある。
@@ -155,28 +156,6 @@ export class EditorTableStructure {
         // DOM上の列数（行ヘッダーを除く）。DOM列数はスキーマの header 配列から決定され、ストア列数はCSVヘッダーから決定される。
         // ミニテーブルではFK列を除いた表示列のみDOMに存在するため、DOM列数とストア列数は一致しない場合がある。
         const domColumnCount = this.table.getColumnCount();
-        // 新しい行を作成
-        const cells: HTMLElement[] = [];
-        // 行ヘッダーを作成
-        const rowHeaderCell = this.createRowHeaderCell(String(rowIndex), rowIndex - 1);
-        cells.push(rowHeaderCell);
-        // データセルを作成（列幅は列ヘッダーから取得）
-        for (let j = 0; j < domColumnCount; ++j) {
-            const cell = EditorTable.createCell(this.table, '', j, this.table.getColumnWidth(j), DEFAULT_ROW_HEIGHT);
-            cells.push(cell);
-        }
-        const newRow = EditorTable.createRow(cells, rowIndex);
-        // getRowElement を使ってスペーサー行のオフセットを考慮した位置に挿入する
-        const insertBeforeRow = this.table.getRowElementForInsert(rowIndex);
-        if (insertBeforeRow) {
-            tableElement.insertBefore(newRow, insertBeforeRow);
-        } else {
-            // rowIndex がDOMの末尾を超えた場合はbottomSpacerの手前に追加する
-            this.table.appendDataRowToTable(newRow);
-        }
-        // 新しい行がDOMに追加されたため renderedEnd を同期する（バーチャルスクロールのインデックス変換に必要）
-        this.table.notifyVirtualScrollRowAppended();
-        // ソート時のstoreRowIndex逆引きのためのインデックスは後で設定する（storeRowIndex確定後）
         // ストアにも空行を挿入する。
         // rowIndex はヘッダー行を含む DOM インデックスのため、データ行インデックスは rowIndex - 1。
         // ミニテーブルでは storeRowIndices がフィルタされたサブセット（例: [1, 2]）のため、
@@ -213,9 +192,33 @@ export class EditorTableStructure {
                 storeRowIndex = previousValidIndex >= 0 ? previousValidIndex + 1 : 0;
             }
         }
+        let newRow: HTMLElement | null = null;
+        if (!rebuildVirtualRows) {
+            // 新しい行を作成
+            const cells: HTMLElement[] = [];
+            // 行ヘッダーを作成
+            const rowHeaderCell = this.createRowHeaderCell(String(rowIndex), rowIndex - 1);
+            cells.push(rowHeaderCell);
+            // データセルを作成（列幅は列ヘッダーから取得）
+            for (let j = 0; j < domColumnCount; ++j) {
+                const cell = EditorTable.createCell(this.table, '', j, this.table.getColumnWidth(j), DEFAULT_ROW_HEIGHT);
+                cells.push(cell);
+            }
+            newRow = EditorTable.createRow(cells, rowIndex);
+            // getRowElement を使ってスペーサー行のオフセットを考慮した位置に挿入する
+            const insertBeforeRow = this.table.getRowElementForInsert(rowIndex);
+            if (insertBeforeRow) {
+                tableElement.insertBefore(newRow, insertBeforeRow);
+            } else {
+                // rowIndex がDOMの末尾を超えた場合はbottomSpacerの手前に追加する
+                this.table.appendDataRowToTable(newRow);
+            }
+            // 新しい行がDOMに追加されたため renderedEnd を同期する（バーチャルスクロールのインデックス変換に必要）
+            this.table.notifyVirtualScrollRowAppended();
+        }
         this.table.getStore().insertRowAt(this.table.tableName, storeRowIndex, Array(storeColumnCount).fill(''));
         // ソート時のstoreRowIndex逆引きのために新しい行にdata-store-indexを付与する
-        newRow.dataset.storeIndex = String(storeRowIndex);
+        if (newRow !== null) newRow.dataset.storeIndex = String(storeRowIndex);
         // storeRowIndices にも挿入インデックスを追加し、ストア上で後ろにずれた全エントリを+1する。
         // domDataRowIndex の位置に storeRowIndex を挿入し、それより大きいストアインデックス値を持つ全エントリを+1。
         indices.splice(domDataRowIndex, 0, storeRowIndex);
@@ -223,12 +226,18 @@ export class EditorTableStructure {
             if (indices[i] >= storeRowIndex) {
                 indices[i] += 1;
                 // data-store-index DOM属性もストアインデックスに合わせて更新する
-                const domRow = this.table.getRowElementForInsert(i + 1);
-                if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                if (!rebuildVirtualRows) {
+                    const domRow = this.table.getRowElementForInsert(i + 1);
+                    if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                }
             }
         }
         // ソート中の場合、originalIndices も同期する（行挿入でストアインデックスがずれるため）
         this.table.notifySortRowInserted(storeRowIndex);
+        if (rebuildVirtualRows) {
+            this.table.syncVirtualScrollTotalRowCount();
+            this.table.forceVirtualScrollFullRerender();
+        }
         // 挿入行を含む以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);
         // コピー範囲をクリア（行構造が変わったため）
@@ -370,6 +379,7 @@ export class EditorTableStructure {
      * 行を削除する（Undo用）
      */
     deleteRow(rowIndex: number): void {
+        const rebuildVirtualRows = this.table.usesVirtualScrollRows() && this.table.diffTab === false;
         // storeRowIndices から対応エントリを削除し、ストアからも行を削除する。
         // insertRowInternal と対称な処理: 挿入時に storeRowIndices と store を両方更新したように、
         // 削除時も storeRowIndices と store を両方更新してデータ整合性を保つ。
@@ -385,8 +395,10 @@ export class EditorTableStructure {
                     if (indices[i] > removedStoreIndex) {
                         indices[i] -= 1;
                         // data-store-index DOM属性もストアインデックスに合わせて更新する
-                        const domRow = this.table.getRowElementForInsert(i + 1);
-                        if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                        if (!rebuildVirtualRows) {
+                            const domRow = this.table.getRowElementForInsert(i + 1);
+                            if (domRow) domRow.dataset.storeIndex = String(indices[i]);
+                        }
                     }
                 }
                 // ソート中の場合、originalIndices も同期する（行削除でストアインデックスがずれるため）
@@ -402,13 +414,19 @@ export class EditorTableStructure {
             if (!rowElement) throw new Error(`[EditorTableStructure.deleteRow] 削除対象のDOM行が存在しません: rowIndex=${rowIndex}`);
             this.table.diffTab.notifyRightPaneRowDeleted(rowIndex, rowElement);
         } else {
-            // 通常テーブルの場合は DOM 行をそのまま削除する
-            const rowToDelete = this.table.getRowElementForInsert(rowIndex);
-            if (rowToDelete) {
-                rowToDelete.remove();
-                // DOM行が削除されたため renderedEnd を同期する
-                this.table.notifyVirtualScrollRowRemoved();
+            if (!rebuildVirtualRows) {
+                // 通常テーブルの場合は DOM 行をそのまま削除する
+                const rowToDelete = this.table.getRowElementForInsert(rowIndex);
+                if (rowToDelete) {
+                    rowToDelete.remove();
+                    // DOM行が削除されたため renderedEnd を同期する
+                    this.table.notifyVirtualScrollRowRemoved();
+                }
             }
+        }
+        if (rebuildVirtualRows) {
+            this.table.syncVirtualScrollTotalRowCount();
+            this.table.forceVirtualScrollFullRerender();
         }
         // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
         this.renumberRowsFrom(rowIndex);
@@ -431,7 +449,7 @@ export class EditorTableStructure {
         // ただし差分ビューのEditorTable（diffTab !== false）はパディング行管理を DiffTab 側で行うため
         // バッファ行の自動補充は不要。deleteRow の呼び出し元（DeleteRowCommand.execute/undo）は
         // この区別を知らないため、ここで一元的に判定する。
-        if (this.table.diffTab === false) this.table.ensureTrailingBufferRow();
+        if (this.table.diffTab === false && !rebuildVirtualRows) this.table.ensureTrailingBufferRow();
         // 行削除後にバーチャルスクロールの総行数を同期する
         this.table.syncVirtualScrollTotalRowCount();
     }

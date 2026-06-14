@@ -103,6 +103,24 @@ async function clickFirstCellAsync(
         .click();
 }
 
+async function expectVisibleRowsHaveStableTopsAsync(
+    table: Locator,
+): Promise<void> {
+    const tops = await table
+        .locator('.editor-table-grid--absolute-rows > .editor-table-row')
+        .evaluateAll((rows) => rows.map((row) => {
+            const top = (row as HTMLElement).style.top;
+            return top === '' ? NaN : Number.parseFloat(top);
+        }));
+    expect(tops.length).toBeGreaterThan(0);
+    for (let i = 0; i < tops.length; i++) {
+        expect(Number.isFinite(tops[i]), `row ${i} has a top style`).toBeTruthy();
+        if (i > 0) {
+            expect(tops[i], `row ${i} is below previous row`).toBeGreaterThan(tops[i - 1]);
+        }
+    }
+}
+
 test(
     '行ヘッダーを右クリックして上に行を挿入できること',
     async ({ page, mockFileSystem }) => {
@@ -125,6 +143,8 @@ test(
         expect(after).toEqual(
             ['1', '', '2', '3']
         );
+
+        await expectVisibleRowsHaveStableTopsAsync(table);
     },
 );
 
@@ -145,6 +165,8 @@ test(
         expect(after).toEqual(
             ['1', '2', '', '3']
         );
+
+        await expectVisibleRowsHaveStableTopsAsync(table);
     },
 );
 

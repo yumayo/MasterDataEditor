@@ -742,6 +742,11 @@ export class EditorTable {
         this.renderer.forceVirtualScrollFullRerender();
     }
 
+    /** 行DOMが仮想スクロールで管理されているかを返す */
+    usesVirtualScrollRows(): boolean {
+        return this.virtualScroll.handlesScrollEvents();
+    }
+
     /**
      * 指定データ行インデックスのDOM行要素を生成して返す。
      * storeRowIndices 経由でストアからセル値を取得してセルを生成する。
