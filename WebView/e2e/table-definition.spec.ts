@@ -76,11 +76,25 @@ test.describe('テーブル定義エディタ', () => {
         await expect(getEditor(page)).toBeVisible();
 
         await expect(page.locator('.table-definition-advanced-toggle')).toHaveCount(0);
-        await expect(page.locator('.table-definition-advanced-section')).toBeVisible();
+        const advancedSection = page.locator('.table-definition-advanced-section');
+        await expect(advancedSection).toBeVisible();
+        await expect(getDescInput(page)).toHaveJSProperty('tagName', 'TEXTAREA');
+        const advancedLabelBox = await advancedSection.locator('.table-definition-label', { hasText: '逆参照優先度' }).boundingBox();
+        const advancedInputBox = await advancedSection.locator('.table-definition-reverse-ref-priority-input').boundingBox();
+        if (advancedLabelBox === null || advancedInputBox === null) throw new Error('逆参照優先度のレイアウトを取得できません');
+        expect(advancedInputBox.y).toBeGreaterThan(advancedLabelBox.y + advancedLabelBox.height - 1);
 
         const firstRow = page.locator('.table-definition-column-row').first();
         await expect(firstRow.locator('.column-detail-toggle')).toHaveCount(0);
-        await expect(firstRow.locator('.column-detail-panel')).toBeVisible();
+        await expect(firstRow.locator('.column-comment-input')).toHaveJSProperty('tagName', 'TEXTAREA');
+        const referencePanel = firstRow.locator('.column-reference-panel');
+        const defaultPanel = firstRow.locator('.column-default-panel');
+        await expect(referencePanel).toBeVisible();
+        await expect(defaultPanel).toBeVisible();
+        const referenceBox = await referencePanel.boundingBox();
+        const defaultBox = await defaultPanel.boundingBox();
+        if (referenceBox === null || defaultBox === null) throw new Error('参照/デフォルト値列のレイアウトを取得できません');
+        expect(defaultBox.x).toBeGreaterThan(referenceBox.x + referenceBox.width - 1);
     });
 
     test('列を追加してスキーマを保存できる', async ({ page, mockFileSystem }) => {
@@ -812,7 +826,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('monster_id');
         await row1.locator('.column-type-select').selectOption('int');
-        const panel1 = row1.locator('.column-detail-panel');
+        const panel1 = row1.locator('.column-reference-panel');
         await expect(panel1).toBeVisible();
         // 単純参照ラジオを選択
         await panel1.locator('.column-ref-type-simple').check();
@@ -852,7 +866,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('table_id');
         await row1.locator('.column-type-select').selectOption('int');
-        const panel1 = row1.locator('.column-detail-panel');
+        const panel1 = row1.locator('.column-reference-panel');
         await expect(panel1).toBeVisible();
         await panel1.locator('.column-ref-type-simple').check();
         await panel1.locator('.column-ref-simple-input').fill('table.id');
@@ -862,7 +876,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row2 = page.locator('.table-definition-column-row').nth(2);
         await row2.locator('.column-name-input').fill('record_id');
         await row2.locator('.column-type-select').selectOption('int');
-        const panel2 = row2.locator('.column-detail-panel');
+        const panel2 = row2.locator('.column-reference-panel');
         await expect(panel2).toBeVisible();
         // 動的参照ラジオを選択
         await panel2.locator('.column-ref-type-dynamic').check();
@@ -915,7 +929,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         await row1.locator('.column-name-input').fill('desc');
         await row1.locator('.column-type-select').selectOption('string');
         // 常時表示の詳細パネルで default を設定
-        const panel1 = row1.locator('.column-detail-panel');
+        const panel1 = row1.locator('.column-default-panel');
         await expect(panel1).toBeVisible();
         await panel1.locator('.column-default-input').fill('未設定');
 
@@ -1011,7 +1025,7 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         await expect(row1.locator('.column-comment-input')).toHaveValue('敵ID');
         await expect(row1.locator('.column-width-input')).toHaveValue('120');
         // 常時表示の詳細パネルでreference値を確認
-        const panel1 = row1.locator('.column-detail-panel');
+        const panel1 = row1.locator('.column-reference-panel');
         await expect(panel1).toBeVisible();
         await expect(panel1.locator('.column-ref-type-simple')).toBeChecked();
         await expect(panel1.locator('.column-ref-simple-input')).toHaveValue('enemy.id');
@@ -1022,7 +1036,7 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         await expect(row2.locator('.column-type-select')).toHaveValue('string');
         await expect(row2.locator('.column-comment-input')).toHaveValue('表示名');
         await expect(row2.locator('.column-width-input')).toHaveValue('200');
-        const panel2 = row2.locator('.column-detail-panel');
+        const panel2 = row2.locator('.column-reference-panel');
         await expect(panel2).toBeVisible();
         await expect(panel2.locator('.column-ref-type-none')).toBeChecked();
     });

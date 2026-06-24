@@ -85,7 +85,7 @@ export class TableDefinitionEditor {
     private readonly container: HTMLElement;
     private readonly nameInput: HTMLInputElement;
     private readonly nameError: HTMLSpanElement;
-    private readonly descInput: HTMLInputElement;
+    private readonly descInput: HTMLTextAreaElement;
     private readonly columnsContainer: HTMLElement;
     private readonly saveError: HTMLSpanElement;
     private readonly tab: Tab;
@@ -184,8 +184,7 @@ export class TableDefinitionEditor {
         descLabel.classList.add('table-definition-label');
         header.appendChild(descLabel);
 
-        this.descInput = document.createElement('input');
-        this.descInput.type = 'text';
+        this.descInput = document.createElement('textarea');
         this.descInput.classList.add('table-definition-desc-input', 'table-definition-text-input');
         this.descInput.placeholder = '例: 武器マスター';
         header.appendChild(this.descInput);
@@ -225,17 +224,20 @@ export class TableDefinitionEditor {
         colCommentHeader.textContent = 'コメント';
         const colWidthHeader = document.createElement('span');
         colWidthHeader.textContent = '幅';
+        const colReferenceHeader = document.createElement('span');
+        colReferenceHeader.textContent = '参照';
+        const colDefaultHeader = document.createElement('span');
+        colDefaultHeader.textContent = 'デフォルト値';
         const colDeleteHeader = document.createElement('span');
         colDeleteHeader.textContent = '';
-        const colDetailHeader = document.createElement('span');
-        colDetailHeader.textContent = '参照 / デフォルト';
         columnHeader.appendChild(colDragHeader);
         columnHeader.appendChild(colNameHeader);
         columnHeader.appendChild(colTypeHeader);
         columnHeader.appendChild(colPkHeader);
         columnHeader.appendChild(colCommentHeader);
         columnHeader.appendChild(colWidthHeader);
-        columnHeader.appendChild(colDetailHeader);
+        columnHeader.appendChild(colReferenceHeader);
+        columnHeader.appendChild(colDefaultHeader);
         columnHeader.appendChild(colDeleteHeader);
         columnsSection.appendChild(columnHeader);
 
@@ -364,8 +366,7 @@ export class TableDefinitionEditor {
         row.appendChild(pkCheckbox);
 
         // コメント入力
-        const commentInput = document.createElement('input');
-        commentInput.type = 'text';
+        const commentInput = document.createElement('textarea');
         commentInput.classList.add('column-comment-input', 'table-definition-text-input');
         commentInput.placeholder = 'コメント';
         row.appendChild(commentInput);
@@ -377,9 +378,9 @@ export class TableDefinitionEditor {
         widthInput.placeholder = '100';
         row.appendChild(widthInput);
 
-        // 詳細パネル（列行の右側に常時表示）
-        const detailPanel = document.createElement('div');
-        detailPanel.classList.add('column-detail-panel');
+        // 参照パネル（列行の右側に常時表示）
+        const referencePanel = document.createElement('div');
+        referencePanel.classList.add('column-reference-panel');
 
         // 参照タイプラジオグループ（インクリメンタルカウンタで一意なname属性を生成する）
         const refTypeGroup = document.createElement('div');
@@ -419,7 +420,7 @@ export class TableDefinitionEditor {
         refDynamicLabel.appendChild(refDynamicRadio);
         refDynamicLabel.appendChild(document.createTextNode('動的参照'));
         refTypeGroup.appendChild(refDynamicLabel);
-        detailPanel.appendChild(refTypeGroup);
+        referencePanel.appendChild(refTypeGroup);
 
         // 単純参照入力（初期非表示）
         const refSimpleInput = document.createElement('input');
@@ -427,7 +428,7 @@ export class TableDefinitionEditor {
         refSimpleInput.classList.add('column-ref-simple-input', 'table-definition-text-input');
         refSimpleInput.placeholder = '例: table.column';
         refSimpleInput.style.display = 'none';
-        detailPanel.appendChild(refSimpleInput);
+        referencePanel.appendChild(refSimpleInput);
 
         // 動的参照フィールド群（初期非表示）
         const refDynamicFields = document.createElement('div');
@@ -441,7 +442,7 @@ export class TableDefinitionEditor {
             input.placeholder = def.ph;
             refDynamicFields.appendChild(input);
         }
-        detailPanel.appendChild(refDynamicFields);
+        referencePanel.appendChild(refDynamicFields);
 
         // ラジオボタンの変更で単純参照/動的参照フィールドの表示を切り替える
         const updateRefVisibility = () => {
@@ -457,9 +458,12 @@ export class TableDefinitionEditor {
         defaultInput.type = 'text';
         defaultInput.classList.add('column-default-input', 'table-definition-text-input');
         defaultInput.placeholder = 'デフォルト値';
-        detailPanel.appendChild(defaultInput);
+        const defaultPanel = document.createElement('div');
+        defaultPanel.classList.add('column-default-panel');
+        defaultPanel.appendChild(defaultInput);
 
-        row.appendChild(detailPanel);
+        row.appendChild(referencePanel);
+        row.appendChild(defaultPanel);
 
         // 削除ボタン
         const deleteButton = document.createElement('button');
@@ -883,7 +887,7 @@ export class TableDefinitionEditor {
      */
     private applyColumnExtrasToEntry(row: HTMLElement, entry: Record<string, unknown>): void {
         // comment
-        const commentVal = (row.querySelector('.column-comment-input') as HTMLInputElement).value.trim();
+        const commentVal = (row.querySelector('.column-comment-input') as HTMLTextAreaElement).value.trim();
         if (commentVal !== '') { entry['comment'] = commentVal; } else { delete entry['comment']; }
 
         // width
@@ -931,7 +935,7 @@ export class TableDefinitionEditor {
     private applyOriginalSchemaToRow(row: HTMLElement, schema: Record<string, unknown>): void {
         // comment
         if (typeof schema['comment'] === 'string') {
-            (row.querySelector('.column-comment-input') as HTMLInputElement).value = schema['comment'];
+            (row.querySelector('.column-comment-input') as HTMLTextAreaElement).value = schema['comment'];
         }
         // width
         if (typeof schema['width'] === 'number') {

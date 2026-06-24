@@ -8,7 +8,7 @@
 /* テーブル定義エディタ全体 */
 .table-definition-editor {
     padding: 24px;
-    min-width: 1120px;
+    min-width: 1320px;
     max-width: none;
     color: var(--font-color);
     box-sizing: border-box;
@@ -53,6 +53,22 @@
     padding: 6px 8px;
 }
 
+.table-definition-name-input {
+    width: 640px;
+}
+
+.table-definition-desc-input {
+    width: 640px;
+}
+
+.table-definition-desc-input,
+.column-comment-input {
+    min-height: 64px;
+    line-height: 1.4;
+    resize: vertical;
+    font-family: inherit;
+}
+
 /* バリデーションエラー */
 .table-definition-name-error,
 .table-definition-save-error {
@@ -66,10 +82,10 @@
     margin-bottom: 24px;
 }
 
-/* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
+/* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 参照 | デフォルト値 | 削除） */
 .table-definition-column-header {
     display: grid;
-    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(140px, 1fr) 70px minmax(360px, 1.8fr) 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) 70px minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
@@ -80,10 +96,10 @@
     margin-bottom: 4px;
 }
 
-/* 列行（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
+/* 列行（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 参照 | デフォルト値 | 削除） */
 .table-definition-column-row {
     display: grid;
-    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(140px, 1fr) 70px minmax(360px, 1.8fr) 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) 70px minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
     gap: 8px;
     padding: 6px 0;
     align-items: start;
@@ -218,18 +234,21 @@
     opacity: 1;
 }
 
-/* コメント入力・幅入力（共通クラスで全プロパティを提供、追加差分なし） */
+/* 幅入力（共通クラスで全プロパティを提供、追加差分なし） */
 
-/* 詳細パネル（列行右側に常時表示） */
-.column-detail-panel {
+/* 参照・デフォルト値パネル（列行右側に常時表示） */
+.column-reference-panel,
+.column-default-panel {
     min-width: 0;
     padding: 6px;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
-    background-color: rgba(128, 128, 128, 0.05);
-    border-radius: 3px;
     box-sizing: border-box;
+}
+
+.column-default-panel {
+    align-content: start;
 }
 
 /* 参照タイプラジオグループ */
@@ -252,9 +271,8 @@
 
 /* 詳細セクション */
 .table-definition-advanced-section {
-    display: grid;
-    grid-template-columns: 140px minmax(160px, 260px);
-    align-items: center;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     padding: 8px 0;
 }
@@ -262,4 +280,5 @@
 /* reverseReferencePriority入力（共通クラスに追加してpaddingのみ差分） */
 .table-definition-reverse-ref-priority-input {
     padding: 6px 8px;
+    width: 640px;
 }
