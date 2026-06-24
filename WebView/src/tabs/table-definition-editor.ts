@@ -72,7 +72,7 @@ export interface EditTargetColumn {
     readonly type: string;
     /**
      * 元スキーマJSONの列定義オブジェクト全体を保持する。
-     * 保存時に reference, comment, default, width 等のフィールドを引き継ぐために使用する。
+     * 保存時に reference, comment, default 等のフィールドを引き継ぐために使用する。
      * key/name/type は UI 側の値で上書きされるため、それ以外のフィールドを復元する目的。
      */
     readonly originalSchema: Record<string, unknown>;
@@ -222,8 +222,6 @@ export class TableDefinitionEditor {
         colPkHeader.textContent = 'PK';
         const colCommentHeader = document.createElement('span');
         colCommentHeader.textContent = 'コメント';
-        const colWidthHeader = document.createElement('span');
-        colWidthHeader.textContent = '幅';
         const colReferenceHeader = document.createElement('span');
         colReferenceHeader.textContent = '参照';
         const colDefaultHeader = document.createElement('span');
@@ -235,7 +233,6 @@ export class TableDefinitionEditor {
         columnHeader.appendChild(colTypeHeader);
         columnHeader.appendChild(colPkHeader);
         columnHeader.appendChild(colCommentHeader);
-        columnHeader.appendChild(colWidthHeader);
         columnHeader.appendChild(colReferenceHeader);
         columnHeader.appendChild(colDefaultHeader);
         columnHeader.appendChild(colDeleteHeader);
@@ -263,7 +260,7 @@ export class TableDefinitionEditor {
                 if (editTarget.primaryKeys.indexOf(col.name) !== -1) {
                     (row.querySelector('.column-pk-checkbox') as HTMLInputElement).checked = true;
                 }
-                // 元スキーマから comment/width/reference/default を反映する
+                // 元スキーマから comment/reference/default を反映する
                 this.applyOriginalSchemaToRow(row, col.originalSchema);
                 // 元の列名をdata属性に保持する（保存時のCSV列マッピングに使用）
                 // リネームされた場合、inputのvalueは新しい名前だがこの属性は元の名前を保持するため
@@ -370,13 +367,6 @@ export class TableDefinitionEditor {
         commentInput.classList.add('column-comment-input', 'table-definition-text-input');
         commentInput.placeholder = 'コメント';
         row.appendChild(commentInput);
-
-        // 幅入力
-        const widthInput = document.createElement('input');
-        widthInput.type = 'number';
-        widthInput.classList.add('column-width-input', 'table-definition-text-input');
-        widthInput.placeholder = '100';
-        row.appendChild(widthInput);
 
         // 参照パネル（列行の右側に常時表示）
         const referencePanel = document.createElement('div');
@@ -691,15 +681,6 @@ export class TableDefinitionEditor {
                 }
             }
 
-            // width バリデーション（入力されている場合のみ）
-            const widthStr = (row.querySelector('.column-width-input') as HTMLInputElement).value.trim();
-            if (widthStr !== '') {
-                const widthNum = Number(widthStr);
-                if (!Number.isInteger(widthNum) || widthNum <= 0) {
-                    this.saveError.textContent = `${i + 1}列目の幅は正の整数で入力してください`;
-                    return false;
-                }
-            }
         }
 
         // PK: 最低1列チェックされていること
@@ -775,7 +756,7 @@ export class TableDefinitionEditor {
     /**
      * 編集モードの保存処理。
      * 既存CSVを Csv クラス（RFC4180準拠）で読み込み、元スキーマとの列差分に基づいてCSV列構造を同期する。
-     * スキーマJSONは元列定義の reference, comment, default, width 等のメタデータを引き継ぐ。
+     * スキーマJSONは元列定義の reference, comment, default 等のメタデータを引き継ぐ。
      *
      * 列マッピングの戦略:
      * - 各列行DOMの data-original-column-name 属性で元CSVの列名を特定する
@@ -881,7 +862,7 @@ export class TableDefinitionEditor {
     }
 
     /**
-     * 列行のDOMからcomment/width/reference/defaultを読み取り、
+     * 列行のDOMからcomment/reference/defaultを読み取り、
      * header配列のエントリに設定する。空値のプロパティはdelete演算子で除去しスキーマを汚染しない。
      * 新規モード・編集モードの両方で共通利用する。
      */
@@ -890,9 +871,7 @@ export class TableDefinitionEditor {
         const commentVal = (row.querySelector('.column-comment-input') as HTMLTextAreaElement).value.trim();
         if (commentVal !== '') { entry['comment'] = commentVal; } else { delete entry['comment']; }
 
-        // width
-        const widthStr = (row.querySelector('.column-width-input') as HTMLInputElement).value.trim();
-        if (widthStr !== '') { entry['width'] = Number(widthStr); } else { delete entry['width']; }
+        delete entry['width'];
 
         // reference（詳細パネル内のラジオボタンで参照タイプを判定する）
         const refSimpleRadio = row.querySelector('.column-ref-type-simple') as HTMLInputElement;
@@ -930,16 +909,12 @@ export class TableDefinitionEditor {
 
     /**
      * 既存テーブル編集モードで、originalSchemaの値を列行のUI要素に反映する。
-     * comment, width, reference, default を対応するinputに設定する。
+     * comment, reference, default を対応するinputに設定する。
      */
     private applyOriginalSchemaToRow(row: HTMLElement, schema: Record<string, unknown>): void {
         // comment
         if (typeof schema['comment'] === 'string') {
             (row.querySelector('.column-comment-input') as HTMLTextAreaElement).value = schema['comment'];
-        }
-        // width
-        if (typeof schema['width'] === 'number') {
-            (row.querySelector('.column-width-input') as HTMLInputElement).value = String(schema['width']);
         }
         // reference
         const ref = schema['reference'];

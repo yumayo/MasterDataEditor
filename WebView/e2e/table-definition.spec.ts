@@ -729,7 +729,7 @@ test.describe('既存テーブルの定義編集', () => {
 // ============================================================
 
 /**
- * comment/width/reference/default/reverseReferencePriority を持つ
+ * comment/reference/reverseReferencePriority を持つ
  * スキーマをモックファイルシステムに登録するためのカスタムフィクスチャ。
  * 既存テーブル編集テスト（テスト6, 7）で使用する。
  */
@@ -766,7 +766,7 @@ const richSchemaTest = base.extend<RichSchemaFixtures>({
 
 test.describe('テーブル定義エディタ - 全スキーマプロパティ', () => {
 
-    test('新規作成モードでcomment・widthを設定して保存できる', async ({ page, mockFileSystem }) => {
+    test('新規作成モードでcommentを設定して保存できる', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
         await getAddButton(page).click();
         await expect(getEditor(page)).toBeVisible();
@@ -774,21 +774,19 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         // テーブル名を入力
         await getNameInput(page).fill('monster');
 
-        // 1列目: id (int, PK, comment: "ID", width: 100)
+        // 1列目: id (int, PK, comment: "ID")
         const row0 = page.locator('.table-definition-column-row').nth(0);
         await row0.locator('.column-name-input').fill('id');
         await row0.locator('.column-type-select').selectOption('int');
         await row0.locator('.column-pk-checkbox').check();
         await row0.locator('.column-comment-input').fill('ID');
-        await row0.locator('.column-width-input').fill('100');
 
-        // 2列目: name (string, comment: "名前", width: 200)
+        // 2列目: name (string, comment: "名前")
         await getAddColumnButton(page).click();
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('name');
         await row1.locator('.column-type-select').selectOption('string');
         await row1.locator('.column-comment-input').fill('名前');
-        await row1.locator('.column-width-input').fill('200');
 
         // 保存
         await getSaveButton(page).click();
@@ -797,12 +795,12 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const defTabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
         await expect(defTabButton).toHaveCount(0);
 
-        // スキーマJSONを検証: comment と width が含まれていること
+        // スキーマJSONを検証: comment が含まれていること
         const schemaJson = await readMockFileAsync(page, 'schema/monster.json');
         const schema = JSON.parse(schemaJson);
         expect(schema.header).toEqual([
-            { key: 0, name: 'id', type: 'int', comment: 'ID', width: 100 },
-            { key: 1, name: 'name', type: 'string', comment: '名前', width: 200 },
+            { key: 0, name: 'id', type: 'int', comment: 'ID' },
+            { key: 1, name: 'name', type: 'string', comment: '名前' },
         ]);
         expect(schema.primary_key).toEqual(['id']);
     });
@@ -983,12 +981,12 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
 });
 
 /**
- * 既存テーブル編集テスト — comment/width/reference が読み込まれることを検証する。
- * カスタムフィクスチャで comment/width/reference を持つスキーマを事前登録する。
+ * 既存テーブル編集テスト — comment/reference が読み込まれることを検証する。
+ * カスタムフィクスチャで comment/reference と旧widthを持つスキーマを事前登録する。
  */
 richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロパティ（既存テーブル編集）', () => {
 
-    richSchemaTest('既存テーブル編集でcomment・width・reference・reverseReferencePriorityが読み込まれる', async ({ page, richSchemaPage }) => {
+    richSchemaTest('既存テーブル編集でcomment・reference・reverseReferencePriorityが読み込まれる', async ({ page, richSchemaPage }) => {
         void richSchemaPage;
         const explorer = page.locator('#explorer');
         await expect(explorer.locator('.explorer-file', { hasText: 'drop_item' })).toBeVisible();
@@ -1010,38 +1008,38 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         const columnRows = page.locator('.table-definition-column-row');
         await expect(columnRows).toHaveCount(3);
 
-        // 1列目: id, int, PK=checked, comment="識別子", width=80
+        // 1列目: id, int, PK=checked, comment="識別子"
         const row0 = columnRows.nth(0);
         await expect(row0.locator('.column-name-input')).toHaveValue('id');
         await expect(row0.locator('.column-type-select')).toHaveValue('int');
         await expect(row0.locator('.column-pk-checkbox')).toBeChecked();
         await expect(row0.locator('.column-comment-input')).toHaveValue('識別子');
-        await expect(row0.locator('.column-width-input')).toHaveValue('80');
+        await expect(row0.locator('.column-width-input')).toHaveCount(0);
 
-        // 2列目: enemy_id, int, comment="敵ID", width=120, reference="enemy.id"
+        // 2列目: enemy_id, int, comment="敵ID", reference="enemy.id"
         const row1 = columnRows.nth(1);
         await expect(row1.locator('.column-name-input')).toHaveValue('enemy_id');
         await expect(row1.locator('.column-type-select')).toHaveValue('int');
         await expect(row1.locator('.column-comment-input')).toHaveValue('敵ID');
-        await expect(row1.locator('.column-width-input')).toHaveValue('120');
+        await expect(row1.locator('.column-width-input')).toHaveCount(0);
         // 常時表示の詳細パネルでreference値を確認
         const panel1 = row1.locator('.column-reference-panel');
         await expect(panel1).toBeVisible();
         await expect(panel1.locator('.column-ref-type-simple')).toBeChecked();
         await expect(panel1.locator('.column-ref-simple-input')).toHaveValue('enemy.id');
 
-        // 3列目: label, string, comment="表示名", width=200, 参照なし
+        // 3列目: label, string, comment="表示名", 参照なし
         const row2 = columnRows.nth(2);
         await expect(row2.locator('.column-name-input')).toHaveValue('label');
         await expect(row2.locator('.column-type-select')).toHaveValue('string');
         await expect(row2.locator('.column-comment-input')).toHaveValue('表示名');
-        await expect(row2.locator('.column-width-input')).toHaveValue('200');
+        await expect(row2.locator('.column-width-input')).toHaveCount(0);
         const panel2 = row2.locator('.column-reference-panel');
         await expect(panel2).toBeVisible();
         await expect(panel2.locator('.column-ref-type-none')).toBeChecked();
     });
 
-    richSchemaTest('既存テーブル編集でcomment・widthを変更して保存できる（reverseReferencePriorityも維持される）', async ({ page, richSchemaPage }) => {
+    richSchemaTest('既存テーブル編集でcommentを変更して保存できる（widthは削除されreverseReferencePriorityは維持される）', async ({ page, richSchemaPage }) => {
         void richSchemaPage;
         const explorer = page.locator('#explorer');
         await expect(explorer.locator('.explorer-file', { hasText: 'drop_item' })).toBeVisible();
@@ -1054,8 +1052,6 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         const columnRows = page.locator('.table-definition-column-row');
         const row0 = columnRows.nth(0);
         await row0.locator('.column-comment-input').fill('主キー');
-        // 1列目のwidthを変更: 80 → 150
-        await row0.locator('.column-width-input').fill('150');
 
         // 3列目のcommentを変更: "表示名" → "ラベル"
         const row2 = columnRows.nth(2);
@@ -1065,19 +1061,19 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         await getSaveButton(page).click();
         await expect(getEditor(page)).toHaveCount(0);
 
-        // スキーマJSONを検証: comment と width の変更が反映されていること
+        // スキーマJSONを検証: comment の変更が反映され、旧widthは削除されていること
         const schemaJson = await readMockFileAsync(page, 'schema/drop_item.json');
         const schema = JSON.parse(schemaJson);
-        // 1列目: comment="主キー", width=150
+        // 1列目: comment="主キー"
         expect(schema.header[0].comment).toBe('主キー');
-        expect(schema.header[0].width).toBe(150);
+        expect(schema.header[0].width).toBeUndefined();
         // 2列目: comment は変更なし "敵ID", reference は維持 "enemy.id"
         expect(schema.header[1].comment).toBe('敵ID');
-        expect(schema.header[1].width).toBe(120);
+        expect(schema.header[1].width).toBeUndefined();
         expect(schema.header[1].reference).toBe('enemy.id');
-        // 3列目: comment="ラベル", width は変更なし 200
+        // 3列目: comment="ラベル"
         expect(schema.header[2].comment).toBe('ラベル');
-        expect(schema.header[2].width).toBe(200);
+        expect(schema.header[2].width).toBeUndefined();
         // reverseReferencePriority がスキーマルートに維持されていること
         expect(schema.reverseReferencePriority).toBe(3);
     });

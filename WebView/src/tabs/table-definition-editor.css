@@ -8,7 +8,7 @@
 /* テーブル定義エディタ全体 */
 .table-definition-editor {
     padding: 24px;
-    min-width: 1320px;
+    min-width: 1240px;
     max-width: none;
     color: var(--font-color);
     box-sizing: border-box;
@@ -82,10 +82,10 @@
     margin-bottom: 24px;
 }
 
-/* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 参照 | デフォルト値 | 削除） */
+/* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 参照 | デフォルト値 | 削除） */
 .table-definition-column-header {
     display: grid;
-    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) 70px minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
@@ -96,10 +96,10 @@
     margin-bottom: 4px;
 }
 
-/* 列行（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 参照 | デフォルト値 | 削除） */
+/* 列行（ドラッグ | 列名 | 型 | PK | コメント | 参照 | デフォルト値 | 削除） */
 .table-definition-column-row {
     display: grid;
-    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) 70px minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(160px, 1fr) minmax(360px, 1.7fr) minmax(160px, 0.8fr) 40px;
     gap: 8px;
     padding: 6px 0;
     align-items: start;
@@ -233,8 +233,6 @@
 .explorer-add-table-button:hover {
     opacity: 1;
 }
-
-/* 幅入力（共通クラスで全プロパティを提供、追加差分なし） */
 
 /* 参照・デフォルト値パネル（列行右側に常時表示） */
 .column-reference-panel,
