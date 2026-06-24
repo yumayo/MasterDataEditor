@@ -644,6 +644,14 @@
     line-height: 1.2;
 }
 
+.editor-table-column-header.editor-table-cell-find-match {
+    background-color: var(--editor-table-find-match-bg);
+}
+
+.editor-table-column-header.editor-table-cell-find-current {
+    background-color: var(--editor-table-find-current-bg);
+}
+
 /* バッジエリア: ヘッダーセルの左側に絶対配置するコンテナ */
 .column-header-badge-area {
     position: absolute;

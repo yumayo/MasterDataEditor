@@ -11,7 +11,7 @@ function createFindBarFileSystem(): MockFileSystem {
         "schema/item.json": JSON.stringify({
             header: [
                 {key: 0, name: "id", type: "int"},
-                {key: 1, name: "name", type: "string"},
+                {key: 1, name: "name", type: "string", comment: "アイテム名"},
                 {key: 2, name: "category", type: "string"},
             ],
             primary_key: ["id"],
@@ -89,11 +89,30 @@ function getFindInput(page: Page): Locator {
     return page.locator('.editor-table-find-input');
 }
 
+function getFindColumnOptionButton(page: Page): Locator {
+    return page.locator('.editor-table-find-option-button[title="列名と列の説明を検索対象に含める"]');
+}
+
 async function setTableScrollTopAsync(page: Page, tableName: string, scrollTop: number): Promise<void> {
     const viewport = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="${tableName}"] .editor-table-main-viewport`);
     await expect(viewport).toBeVisible();
     await viewport.evaluate((element, nextScrollTop) => {
-        element.scrollTop = nextScrollTop;
+        const editor = (window as Window & {
+            editor?: {
+                activeEditorTable?: {
+                    getScrollMetrics(): {scrollTop: number; scrollLeft: number; scrollHeight: number; clientHeight: number};
+                    restoreScrollPosition(scrollTop: number, scrollLeft: number): void;
+                } | false;
+            };
+        }).editor;
+        const activeTable = editor?.activeEditorTable;
+        if (activeTable !== undefined && activeTable !== false) {
+            const metrics = activeTable.getScrollMetrics();
+            const clampedScrollTop = Math.max(0, Math.min(nextScrollTop, metrics.scrollHeight - metrics.clientHeight));
+            activeTable.restoreScrollPosition(clampedScrollTop, metrics.scrollLeft);
+            return;
+        }
+        element.scrollTop = Math.max(0, Math.min(nextScrollTop, element.scrollHeight - element.clientHeight));
         element.dispatchEvent(new Event('scroll', {bubbles: true}));
     }, scrollTop);
 }
@@ -236,6 +255,32 @@ test.describe('EditorTable検索バー', () => {
         const currentMatch = page.locator('.editor-left-pane .editor-table-cell-find-current');
         await expect(currentMatch).toHaveText(/Slime/);
         await expect(currentMatch).toHaveText(/1/);
+    });
+
+    test('列名と列の説明をデフォルトで検索対象に含め、ボタンで除外できる', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        const columnOptionButton = getFindColumnOptionButton(page);
+        await expect(columnOptionButton).toHaveClass(/editor-table-find-option-active/);
+
+        await findInput.fill('category');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        let currentHeader = table.locator('.editor-table-column-header.editor-table-cell-find-current').first();
+        await expect(currentHeader).toHaveText('category');
+
+        await findInput.fill('アイテム名');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        currentHeader = table.locator('.editor-table-column-header.editor-table-cell-find-current').first();
+        await expect(currentHeader).toHaveText(/name/);
+        await expect(currentHeader).toHaveText(/アイテム名/);
+
+        await columnOptionButton.click();
+        await expect(columnOptionButton).not.toHaveClass(/editor-table-find-option-active/);
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+        await expect(table.locator('.editor-table-column-header.editor-table-cell-find-match')).toHaveCount(0);
     });
 
     test('手動スクロールで検索結果セルが再描画されても背景色を復元する', async ({page}) => {

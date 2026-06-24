@@ -26,6 +26,7 @@ export class EditorTableFindBar {
     private readonly caseSensitiveButton: HTMLButtonElement;
     private readonly wholeWordButton: HTMLButtonElement;
     private readonly regexButton: HTMLButtonElement;
+    private readonly includeColumnsButton: HTMLButtonElement;
     private readonly handleTableViewportChanged: () => void;
     private readonly handleTableClick: (event: MouseEvent) => void;
     private currentState: TabState | null;
@@ -39,6 +40,7 @@ export class EditorTableFindBar {
     private wholeWordManual: boolean;
     private wholeWordAuto: boolean;
     private useRegex: boolean;
+    private includeColumns: boolean;
     private searchTimerId: number | null;
     private searchRequestId: number;
     private searching: boolean;
@@ -59,6 +61,7 @@ export class EditorTableFindBar {
         this.wholeWordManual = false;
         this.wholeWordAuto = false;
         this.useRegex = false;
+        this.includeColumns = true;
         this.searchTimerId = null;
         this.searchRequestId = 0;
         this.searching = false;
@@ -143,6 +146,17 @@ export class EditorTableFindBar {
             this.scheduleSearch(0);
         });
         this.element.appendChild(this.regexButton);
+
+        this.includeColumnsButton = this.createOptionButton('列', '列名と列の説明を検索対象に含める');
+        this.includeColumnsButton.classList.add('editor-table-find-option-active');
+        this.includeColumnsButton.setAttribute('aria-pressed', 'true');
+        this.includeColumnsButton.addEventListener('click', () => {
+            this.includeColumns = !this.includeColumns;
+            this.includeColumnsButton.classList.toggle('editor-table-find-option-active', this.includeColumns);
+            this.includeColumnsButton.setAttribute('aria-pressed', String(this.includeColumns));
+            this.scheduleSearch(0);
+        });
+        this.element.appendChild(this.includeColumnsButton);
 
         this.closeButton = this.createIconButton('検索バーを閉じる', '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3.4 2.7L2.7 3.4 7.3 8l-4.6 4.6.7.7L8 8.7l4.6 4.6.7-.7L8.7 8l4.6-4.6-.7-.7L8 7.3 3.4 2.7z"/></svg>');
         this.closeButton.addEventListener('click', () => {
@@ -285,7 +299,7 @@ export class EditorTableFindBar {
         this.setSearching(true);
         this.searchTimerId = window.setTimeout(() => {
             this.searchTimerId = null;
-            void this.searchAsync(requestId, query, options).catch((error: unknown) => {
+            void this.searchAsync(requestId, query, options, this.includeColumns).catch((error: unknown) => {
                 if (requestId !== this.searchRequestId) return;
                 console.error('EditorTable tab search failed.', error);
                 this.setSearching(false);
@@ -294,7 +308,7 @@ export class EditorTableFindBar {
         }, delayMs);
     }
 
-    private async searchAsync(requestId: number, query: string, options: SearchOptions): Promise<void> {
+    private async searchAsync(requestId: number, query: string, options: SearchOptions, includeColumns: boolean): Promise<void> {
         const state = this.currentState;
         if (state === null) {
             if (requestId === this.searchRequestId) {
@@ -307,10 +321,19 @@ export class EditorTableFindBar {
         const rowCount = editorTable.getLogicalRowCount();
         const offset = editorTable.dataColumnOffset();
         const columnCount = editorTable.getColumnCount();
-        const totalCells = Math.max(1, (rowCount - 1) * columnCount);
+        const totalCells = Math.max(1, ((rowCount - 1) * columnCount) + (includeColumns ? columnCount : 0));
         let scannedCells = 0;
         let cellsSinceYield = 0;
         let chunkStartTime = performance.now();
+        if (includeColumns) {
+            for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
+                if (requestId !== this.searchRequestId) return;
+                if (this.columnMatchesQuery(editorTable, dataColumn, query, options)) {
+                    this.addMatch(0, dataColumn + offset);
+                }
+                scannedCells++;
+            }
+        }
         for (let row = 1; row < rowCount; row++) {
             if (requestId !== this.searchRequestId) return;
             for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
@@ -345,6 +368,13 @@ export class EditorTableFindBar {
             this.updateCount();
             this.updateNavigationButtons();
         }
+    }
+
+    private columnMatchesQuery(editorTable: EditorTable, dataColumn: number, query: string, options: SearchOptions): boolean {
+        const column = editorTable.getTableData().header[dataColumn];
+        if (column === undefined) return false;
+        return matchesQuery(column.name, query, options)
+            || (column.comment !== null && matchesQuery(column.comment, query, options));
     }
 
     private yieldToBrowser(): Promise<void> {
@@ -529,8 +559,9 @@ export class EditorTableFindBar {
         this.currentIndex = index;
         const match = this.matches[index];
         if (scrollToMatch) {
-            state.selection.setRange(match.row, match.column, match.row, match.column);
-            state.selection.move(match.row, match.column);
+            const selectionRow = Math.max(1, match.row);
+            state.selection.setRange(selectionRow, match.column, selectionRow, match.column);
+            state.selection.move(selectionRow, match.column);
             state.selection.scrollFocusToCenterVertically();
         }
         this.updateCount();
@@ -567,11 +598,20 @@ export class EditorTableFindBar {
         const renderedEnd = editorTable.getVirtualScrollRenderedEnd();
         const frozenRowCount = editorTable.getFrozenRowCount();
         const totalDataRows = Math.max(0, editorTable.getLogicalRowCount() - 1);
+        this.addHighlightsForHeaderRow(editorTable);
         const frozenEnd = Math.min(frozenRowCount, totalDataRows);
         this.addHighlightsForDataRows(editorTable, 0, frozenEnd);
         const renderedVisibleStart = Math.max(renderedStart, frozenEnd);
         const renderedVisibleEnd = Math.min(renderedEnd, totalDataRows);
         this.addHighlightsForDataRows(editorTable, renderedVisibleStart, renderedVisibleEnd);
+    }
+
+    private addHighlightsForHeaderRow(editorTable: EditorTable): void {
+        const matchIndices = this.matchIndicesByRow.get(0);
+        if (matchIndices === undefined) return;
+        for (const matchIndex of matchIndices) {
+            this.addHighlightForMatch(editorTable, matchIndex);
+        }
     }
 
     private addHighlightsForDataRows(editorTable: EditorTable, startDataRowIndex: number, endDataRowIndex: number): void {
