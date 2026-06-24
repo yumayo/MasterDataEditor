@@ -1210,11 +1210,11 @@ export class Tab {
     }
 
     private isTemporaryTabName(name: string): boolean {
-        return name === DEBUG_API_DETAIL_TAB_NAME || this.isTableDefinitionEditTabName(name);
+        return name === DEBUG_API_DETAIL_TAB_NAME;
     }
 
     private isPersistentSpecialTabName(name: string): boolean {
-        return name === SETTINGS_TAB_NAME || name === TABLE_DEFINITION_TAB_NAME;
+        return name === SETTINGS_TAB_NAME || this.isTableDefinitionTabName(name);
     }
 
     private isViewPluginTabName(name: string): boolean {
@@ -1222,7 +1222,8 @@ export class Tab {
     }
 
     private isTableDefinitionEditTabName(name: string): boolean {
-        return this.tableDefinitionEditTabNames.has(name);
+        return this.tableDefinitionEditTabNames.has(name)
+            || this.getTableNameFromDefinitionEditTabName(name) !== null;
     }
 
     private isTableDefinitionTabName(name: string): boolean {
@@ -1231,6 +1232,12 @@ export class Tab {
 
     private createTableDefinitionEditTabName(tableName: string): string {
         return tableName + TABLE_DEFINITION_EDIT_TAB_SUFFIX;
+    }
+
+    private getTableNameFromDefinitionEditTabName(tabName: string): string | null {
+        if (!tabName.endsWith(TABLE_DEFINITION_EDIT_TAB_SUFFIX)) return null;
+        const tableName = tabName.substring(0, tabName.length - TABLE_DEFINITION_EDIT_TAB_SUFFIX.length);
+        return tableName === '' ? null : tableName;
     }
 
     private isFullWidthSpecialTabName(name: string): boolean {
@@ -1693,6 +1700,17 @@ export class Tab {
             for (const tab of restoredTabs) {
                 const name = tab.name;
                 if (this.isTemporaryTabName(name)) continue;
+                if (this.getTableNameFromDefinitionEditTabName(name) !== null) {
+                    if (tab.diff !== null || tab.view !== null) continue;
+                    const prepared = await this.prepareRestoredTableDefinitionEditTabAsync(name);
+                    if (!prepared) continue;
+                    if (tab.scroll !== null) {
+                        this.restoredTabScrollPositions.set(name, this.cloneUiScrollPosition(tab.scroll));
+                    }
+                    this.append(name, tab.description, tab.pinned);
+                    restoredNames.add(name);
+                    continue;
+                }
                 if (tab.view !== null) {
                     if (!this.isViewPluginTabName(name) || tab.diff !== null) continue;
                     if (this.viewPluginTabNamesById.has(tab.view.pluginId)) continue;
@@ -2964,19 +2982,7 @@ export class Tab {
         return commit.length > 7 ? commit.substring(0, 7) : commit;
     }
 
-    /**
-     * 既存テーブルのスキーマを読み込み、テーブル定義編集タブを開く。
-     * showExplorerContextMenu から呼ばれる。
-     */
-    private async openEditTableDefinitionTabAsync(tableName: string): Promise<void> {
-        const tabName = this.createTableDefinitionEditTabName(tableName);
-        const existingTabButton = this.tabButtons.find(button => button.name === tabName);
-        if (existingTabButton !== undefined && this.tableDefinitionEditors.has(tabName)) {
-            this.tableDefinitionEditTabNames.add(tabName);
-            existingTabButton.click();
-            return;
-        }
-
+    private async loadTableDefinitionEditTargetAsync(tableName: string): Promise<EditTarget> {
         // スキーマJSONを読み込んでパースする
         const schemaJson = await readFileAsync('schema/' + tableName + '.json');
         const schema = JSON.parse(schemaJson) as {
@@ -3003,15 +3009,45 @@ export class Tab {
             ? schemaObj['reverseReferencePriority'] as number
             : null;
 
-        // EditTarget を構築して pendingTableDefinitionEditTargets にセットする
-        this.tableDefinitionEditTabNames.add(tabName);
-        this.pendingTableDefinitionEditTargets.set(tabName, {
+        return {
             tableName,
             description: 'description' in schema ? schema.description as string : '',
             columns,
             primaryKeys,
             reverseReferencePriority: rrpValue,
-        });
+        };
+    }
+
+    private async prepareRestoredTableDefinitionEditTabAsync(tabName: string): Promise<boolean> {
+        const tableName = this.getTableNameFromDefinitionEditTabName(tabName);
+        if (tableName === null) return false;
+        try {
+            const editTarget = await this.loadTableDefinitionEditTargetAsync(tableName);
+            this.tableDefinitionEditTabNames.add(tabName);
+            this.pendingTableDefinitionEditTargets.set(tabName, editTarget);
+            return true;
+        } catch (error: unknown) {
+            console.warn('[Tab] テーブル定義編集タブの復元に失敗しました:', tabName, error);
+            return false;
+        }
+    }
+
+    /**
+     * 既存テーブルのスキーマを読み込み、テーブル定義編集タブを開く。
+     * showExplorerContextMenu から呼ばれる。
+     */
+    private async openEditTableDefinitionTabAsync(tableName: string): Promise<void> {
+        const tabName = this.createTableDefinitionEditTabName(tableName);
+        const existingTabButton = this.tabButtons.find(button => button.name === tabName);
+        if (existingTabButton !== undefined && this.tableDefinitionEditors.has(tabName)) {
+            this.tableDefinitionEditTabNames.add(tabName);
+            existingTabButton.click();
+            return;
+        }
+
+        // EditTarget を構築して pendingTableDefinitionEditTargets にセットする
+        this.tableDefinitionEditTabNames.add(tabName);
+        this.pendingTableDefinitionEditTargets.set(tabName, await this.loadTableDefinitionEditTargetAsync(tableName));
 
         // テーブル定義編集タブを開く（activateTableDefinitionTab 内で pendingTableDefinitionEditTargets が消費される）
         const tabButton = this.append(tabName, null);

@@ -168,6 +168,30 @@ test.describe('UI状態のUserスコープ永続化', () => {
         await expect(page.locator('.editor-table')).toBeVisible();
     });
 
+    test('テーブル定義タブと定義編集タブがUserスコープから復元される', async ({page}) => {
+        const fs = createDefaultFileSystem();
+        fs[UI_STATE_FILE] = JSON.stringify({
+            tabs: {
+                open: [
+                    {name: '新しいテーブル', description: null, diff: null, scroll: null, editorTable: null},
+                    {name: 'test - 定義編集', description: null, diff: null, scroll: null, editorTable: null},
+                ],
+                active: 'test - 定義編集',
+                scroll: {scrollLeft: 0, scrollTop: 0},
+            },
+        });
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await expect(page.locator('.tab-button[title="新しいテーブル"]')).toBeVisible();
+        await expect(page.locator('.tab-button[title="test - 定義編集"]')).toBeVisible();
+        await expect(page.locator('.tab-button-active')).toHaveText(/test - 定義編集/);
+        await expect(page.locator('.table-definition-tab-wrapper:visible .table-definition-name-input')).toHaveValue('test');
+
+        await page.locator('.tab-button[title="新しいテーブル"]').click();
+        await expect(page.locator('.table-definition-tab-wrapper:visible .table-definition-name-input')).toHaveValue('');
+    });
+
     test('ui-stateのEditorTable状態から参照パネルと選択セルが復元される', async ({page}) => {
         const fs = createDefaultFileSystem();
         fs[UI_STATE_FILE] = JSON.stringify({
