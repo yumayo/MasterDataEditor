@@ -17,37 +17,37 @@ function getAddButton(page: Page): Locator {
 
 /** テーブル定義エディタのルート要素を取得する */
 function getEditor(page: Page): Locator {
-    return page.locator('.table-definition-editor');
+    return page.locator('.table-definition-tab-wrapper:visible .table-definition-editor');
 }
 
 /** テーブル名入力欄を取得する */
 function getNameInput(page: Page): Locator {
-    return page.locator('.table-definition-name-input');
+    return getEditor(page).locator('.table-definition-name-input');
 }
 
 /** 説明入力欄を取得する */
 function getDescInput(page: Page): Locator {
-    return page.locator('.table-definition-desc-input');
+    return getEditor(page).locator('.table-definition-desc-input');
 }
 
 /** 列追加ボタンを取得する */
 function getAddColumnButton(page: Page): Locator {
-    return page.locator('.table-definition-add-column-button');
+    return getEditor(page).locator('.table-definition-add-column-button');
 }
 
 /** 保存ボタンを取得する */
 function getSaveButton(page: Page): Locator {
-    return page.locator('.table-definition-save-button');
+    return getEditor(page).locator('.table-definition-save-button');
 }
 
 /** テーブル名エラーメッセージを取得する */
 function getNameError(page: Page): Locator {
-    return page.locator('.table-definition-name-error');
+    return getEditor(page).locator('.table-definition-name-error');
 }
 
 /** 保存エラーメッセージを取得する */
 function getSaveError(page: Page): Locator {
-    return page.locator('.table-definition-save-error');
+    return getEditor(page).locator('.table-definition-save-error');
 }
 
 test.describe('テーブル定義エディタ', () => {
@@ -68,6 +68,19 @@ test.describe('テーブル定義エディタ', () => {
         // タブバーに「新しいテーブル」タブが表示される
         const tabButton = page.locator('.tab-button', { hasText: '新しいテーブル' });
         await expect(tabButton).toBeVisible();
+    });
+
+    test('詳細セクションと列詳細パネルは折りたたまず常時表示される', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+
+        await expect(page.locator('.table-definition-advanced-toggle')).toHaveCount(0);
+        await expect(page.locator('.table-definition-advanced-section')).toBeVisible();
+
+        const firstRow = page.locator('.table-definition-column-row').first();
+        await expect(firstRow.locator('.column-detail-toggle')).toHaveCount(0);
+        await expect(firstRow.locator('.column-detail-panel')).toBeVisible();
     });
 
     test('列を追加してスキーマを保存できる', async ({ page, mockFileSystem }) => {
@@ -416,6 +429,29 @@ async function openEditDefinitionAsync(page: Page, tableName: string): Promise<v
 }
 
 test.describe('既存テーブルの定義編集', () => {
+
+    test('新規テーブル作成タブとは別の定義編集タブとして開く', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        await getAddButton(page).click();
+        await expect(getEditor(page)).toBeVisible();
+        await getNameInput(page).fill('draft_table');
+
+        await openEditDefinitionAsync(page, 'test');
+        await expect(getEditor(page)).toBeVisible();
+        await expect(getNameInput(page)).toHaveValue('test');
+
+        const newTableTab = page.locator('.tab-button').filter({
+            has: page.locator('.tab-button-name', { hasText: /^新しいテーブル$/ }),
+        });
+        const editTab = page.locator('.tab-button').filter({
+            has: page.locator('.tab-button-name', { hasText: /^test - 定義編集$/ }),
+        });
+        await expect(newTableTab).toBeVisible();
+        await expect(editTab).toBeVisible();
+
+        await newTableTab.click();
+        await expect(getNameInput(page)).toHaveValue('draft_table');
+    });
 
     test('エクスプローラーの右クリックメニューに「テーブル定義を編集」が表示される', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
@@ -776,8 +812,6 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('monster_id');
         await row1.locator('.column-type-select').selectOption('int');
-        // 展開パネルを開く
-        await row1.locator('.column-detail-toggle').click();
         const panel1 = row1.locator('.column-detail-panel');
         await expect(panel1).toBeVisible();
         // 単純参照ラジオを選択
@@ -818,7 +852,6 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('table_id');
         await row1.locator('.column-type-select').selectOption('int');
-        await row1.locator('.column-detail-toggle').click();
         const panel1 = row1.locator('.column-detail-panel');
         await expect(panel1).toBeVisible();
         await panel1.locator('.column-ref-type-simple').check();
@@ -829,7 +862,6 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row2 = page.locator('.table-definition-column-row').nth(2);
         await row2.locator('.column-name-input').fill('record_id');
         await row2.locator('.column-type-select').selectOption('int');
-        await row2.locator('.column-detail-toggle').click();
         const panel2 = row2.locator('.column-detail-panel');
         await expect(panel2).toBeVisible();
         // 動的参照ラジオを選択
@@ -882,8 +914,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         const row1 = page.locator('.table-definition-column-row').nth(1);
         await row1.locator('.column-name-input').fill('desc');
         await row1.locator('.column-type-select').selectOption('string');
-        // 展開パネルを開いて default を設定
-        await row1.locator('.column-detail-toggle').click();
+        // 常時表示の詳細パネルで default を設定
         const panel1 = row1.locator('.column-detail-panel');
         await expect(panel1).toBeVisible();
         await panel1.locator('.column-default-input').fill('未設定');
@@ -910,8 +941,7 @@ test.describe('テーブル定義エディタ - 全スキーマプロパティ',
         // テーブル名を入力
         await getNameInput(page).fill('priority_test');
 
-        // 詳細オプションを展開してreverseReferencePriorityを設定
-        await page.locator('.table-definition-advanced-toggle').click();
+        // 常時表示の詳細セクションでreverseReferencePriorityを設定
         const advancedSection = page.locator('.table-definition-advanced-section');
         await expect(advancedSection).toBeVisible();
         await advancedSection.locator('.table-definition-reverse-ref-priority-input').fill('2');
@@ -980,8 +1010,7 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         await expect(row1.locator('.column-type-select')).toHaveValue('int');
         await expect(row1.locator('.column-comment-input')).toHaveValue('敵ID');
         await expect(row1.locator('.column-width-input')).toHaveValue('120');
-        // 展開パネルを開いてreference値を確認
-        await row1.locator('.column-detail-toggle').click();
+        // 常時表示の詳細パネルでreference値を確認
         const panel1 = row1.locator('.column-detail-panel');
         await expect(panel1).toBeVisible();
         await expect(panel1.locator('.column-ref-type-simple')).toBeChecked();
@@ -993,7 +1022,6 @@ richSchemaTest.describe('テーブル定義エディタ - 全スキーマプロ�
         await expect(row2.locator('.column-type-select')).toHaveValue('string');
         await expect(row2.locator('.column-comment-input')).toHaveValue('表示名');
         await expect(row2.locator('.column-width-input')).toHaveValue('200');
-        await row2.locator('.column-detail-toggle').click();
         const panel2 = row2.locator('.column-detail-panel');
         await expect(panel2).toBeVisible();
         await expect(panel2.locator('.column-ref-type-none')).toBeChecked();

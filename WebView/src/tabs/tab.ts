@@ -52,6 +52,9 @@ const DIFF_TAB_PREFIX = '差分: ';
 /** テーブル定義タブの固定名 */
 export const TABLE_DEFINITION_TAB_NAME = '新しいテーブル';
 
+/** 既存テーブル定義編集タブ名の接尾辞 */
+const TABLE_DEFINITION_EDIT_TAB_SUFFIX = ' - 定義編集';
+
 /** DEBUG CONSOLE のAPI詳細を表示する一時タブ名 */
 const DEBUG_API_DETAIL_TAB_NAME = 'API 詳細';
 
@@ -258,11 +261,14 @@ export class Tab {
 
     private nextDiffLoadingToken: number;
 
-    /** テーブル定義タブのラッパー要素（テーブル定義タブが開かれた後に生成される。未生成時は false） */
-    private tableDefinitionWrapperElement: HTMLElement | false;
+    /** テーブル定義タブ名 -> ラッパー要素 */
+    private readonly tableDefinitionWrapperElements: Map<string, HTMLElement>;
 
-    /** テーブル定義タブのインスタンス（未生成時は false） */
-    private tableDefinitionEditor: TableDefinitionEditor | false;
+    /** テーブル定義タブ名 -> エディタインスタンス */
+    private readonly tableDefinitionEditors: Map<string, TableDefinitionEditor>;
+
+    /** 現在開いている既存テーブル定義編集タブ名 */
+    private readonly tableDefinitionEditTabNames: Set<string>;
 
     /** DEBUG CONSOLE のAPI詳細タブのラッパー要素（一時タブ。未生成時は false） */
     private debugApiDetailWrapperElement: HTMLElement | false;
@@ -293,7 +299,7 @@ export class Tab {
      * openEditTableDefinitionTabAsync で設定し、activateTableDefinitionTab で消費される。
      * 新規作成モードの場合は false。
      */
-    private pendingEditTarget: EditTarget | false;
+    private readonly pendingTableDefinitionEditTargets: Map<string, EditTarget | false>;
 
     /**
      * 現在表示中のフォームパネル（PKセル右クリック→「フォームビューを表示」で生成）
@@ -407,8 +413,9 @@ export class Tab {
         this.loadingDiffTabNames = new Set();
         this.diffLoadingTokens = new Map();
         this.nextDiffLoadingToken = 0;
-        this.tableDefinitionWrapperElement = false;
-        this.tableDefinitionEditor = false;
+        this.tableDefinitionWrapperElements = new Map();
+        this.tableDefinitionEditors = new Map();
+        this.tableDefinitionEditTabNames = new Set();
         this.debugApiDetailWrapperElement = false;
         this.debugApiDetailTab = false;
         this.pendingDebugApiDetail = null;
@@ -417,7 +424,7 @@ export class Tab {
         this.viewPluginIdsByTabName = new Map();
         this.viewPluginWrapperElements = new Map();
         this.viewPluginMounts = new Map();
-        this.pendingEditTarget = false;
+        this.pendingTableDefinitionEditTargets = new Map();
         this.currentFormPanel = false;
         this.defaultRelationsPanelVisible = false;
         this.formPanelVisibilityListener = false;
@@ -1203,7 +1210,7 @@ export class Tab {
     }
 
     private isTemporaryTabName(name: string): boolean {
-        return name === DEBUG_API_DETAIL_TAB_NAME;
+        return name === DEBUG_API_DETAIL_TAB_NAME || this.isTableDefinitionEditTabName(name);
     }
 
     private isPersistentSpecialTabName(name: string): boolean {
@@ -1214,9 +1221,21 @@ export class Tab {
         return name.startsWith(VIEW_PLUGIN_TAB_PREFIX);
     }
 
+    private isTableDefinitionEditTabName(name: string): boolean {
+        return this.tableDefinitionEditTabNames.has(name);
+    }
+
+    private isTableDefinitionTabName(name: string): boolean {
+        return name === TABLE_DEFINITION_TAB_NAME || this.isTableDefinitionEditTabName(name);
+    }
+
+    private createTableDefinitionEditTabName(tableName: string): string {
+        return tableName + TABLE_DEFINITION_EDIT_TAB_SUFFIX;
+    }
+
     private isFullWidthSpecialTabName(name: string): boolean {
         return name === SETTINGS_TAB_NAME
-            || name === TABLE_DEFINITION_TAB_NAME
+            || this.isTableDefinitionTabName(name)
             || name === DEBUG_API_DETAIL_TAB_NAME
             || this.isViewPluginTabName(name)
             || name.startsWith(DIFF_TAB_PREFIX);
@@ -1897,18 +1916,22 @@ export class Tab {
         }
 
         // テーブル定義タブが閉じられた場合: document リスナー・インジケーター要素を解放し DOM からラッパー要素を除去してフィールドをリセットする
-        if (name === TABLE_DEFINITION_TAB_NAME) {
+        if (this.isTableDefinitionTabName(name)) {
             if (wasActive) {
                 this.editor.leaveSettingsMode();
             }
-            if (this.tableDefinitionEditor !== false) {
-                this.tableDefinitionEditor.destroy();
+            const tableDefinitionEditor = this.tableDefinitionEditors.get(name);
+            if (tableDefinitionEditor !== undefined) {
+                tableDefinitionEditor.destroy();
             }
-            if (this.tableDefinitionWrapperElement !== false) {
-                this.tableDefinitionWrapperElement.remove();
+            const tableDefinitionWrapperElement = this.tableDefinitionWrapperElements.get(name);
+            if (tableDefinitionWrapperElement !== undefined) {
+                tableDefinitionWrapperElement.remove();
             }
-            this.tableDefinitionEditor = false;
-            this.tableDefinitionWrapperElement = false;
+            this.tableDefinitionEditors.delete(name);
+            this.tableDefinitionWrapperElements.delete(name);
+            this.pendingTableDefinitionEditTargets.delete(name);
+            this.tableDefinitionEditTabNames.delete(name);
         }
 
         // API詳細タブが閉じられた場合: DOM からラッパー要素を除去してフィールドをリセットする
@@ -2234,8 +2257,8 @@ export class Tab {
         }
 
         // テーブル定義タブは EditorTable を持たない特殊タブのため専用の有効化処理を行う
-        if (name === TABLE_DEFINITION_TAB_NAME) {
-            this.activateTableDefinitionTab();
+        if (this.isTableDefinitionTabName(name)) {
+            this.activateTableDefinitionTab(name);
             return null;
         }
 
@@ -2472,9 +2495,7 @@ export class Tab {
         if (this.settingsWrapperElement !== false) {
             this.settingsWrapperElement.style.display = 'none';
         }
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.style.display = 'none';
-        }
+        this.hideAllTableDefinitionTabs();
         this.hideAllViewPluginTabs();
 
         this.setActiveTabName(DEBUG_API_DETAIL_TAB_NAME);
@@ -2594,12 +2615,16 @@ export class Tab {
         if (this.settingsWrapperElement !== false) {
             this.settingsWrapperElement.style.display = 'none';
         }
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.style.display = 'none';
-        }
+        this.hideAllTableDefinitionTabs();
         if (this.debugApiDetailWrapperElement !== false) {
             this.debugApiDetailWrapperElement.style.display = 'none';
         }
+    }
+
+    private hideAllTableDefinitionTabs(exceptName: string | null = null): void {
+        this.tableDefinitionWrapperElements.forEach((wrapper, name) => {
+            if (name !== exceptName) wrapper.style.display = 'none';
+        });
     }
 
     private hideAllViewPluginTabs(): void {
@@ -2665,13 +2690,13 @@ export class Tab {
 
     /**
      * テーブル定義タブをアクティブ化する。
-     * enableTabButton(TABLE_DEFINITION_TAB_NAME) から呼ばれる。
+     * enableTabButton() から呼ばれる。
      * TableDefinitionEditor の初回生成・再表示を担う。
      * 設定タブと同様に全幅表示する。
      */
-    private activateTableDefinitionTab(): void {
+    private activateTableDefinitionTab(tabName: string): void {
         // 設定タブ・差分タブ・API詳細タブ・Viewプラグインタブがアクティブだった場合: leaveSettingsMode() で rightSlot を復元する
-        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== TABLE_DEFINITION_TAB_NAME) {
+        if (this.activeTabName !== false && this.isFullWidthSpecialTabName(this.activeTabName) && this.activeTabName !== tabName) {
             this.editor.leaveSettingsMode();
         }
 
@@ -2681,7 +2706,7 @@ export class Tab {
         }
 
         // 通常テーブルタブがアクティブなら非アクティブ化する
-        if (this.activeTabName && this.activeTabName !== TABLE_DEFINITION_TAB_NAME) {
+        if (this.activeTabName && this.activeTabName !== tabName) {
             const previousState = this.tabStates.get(this.activeTabName);
             if (previousState) {
                 this.deactivateTabState(previousState);
@@ -2697,36 +2722,33 @@ export class Tab {
         if (this.debugApiDetailWrapperElement !== false) {
             this.debugApiDetailWrapperElement.style.display = 'none';
         }
+        this.hideAllTableDefinitionTabs(tabName);
         this.hideAllViewPluginTabs();
 
-        this.setActiveTabName(TABLE_DEFINITION_TAB_NAME);
+        this.setActiveTabName(tabName);
         this.persistTabs();
 
-        // 既存テーブル編集時はタブボタンの表示テキストをテーブル名に更新する（新規作成時は「新しいテーブル」のまま）
-        if (this.pendingEditTarget !== false) {
-            const tabButton = this.tabButtons.find(x => x.name === TABLE_DEFINITION_TAB_NAME);
-            if (tabButton) {
-                const nameSpan = tabButton.element.querySelector('.tab-button-name');
-                if (nameSpan) nameSpan.textContent = this.pendingEditTarget.tableName + ' - 定義編集';
+        // 既存タブへ新しい編集対象が指定された場合は、内容を再生成する。
+        if (this.pendingTableDefinitionEditTargets.has(tabName) && this.tableDefinitionWrapperElements.has(tabName)) {
+            const existingEditor = this.tableDefinitionEditors.get(tabName);
+            if (existingEditor !== undefined) {
+                existingEditor.destroy();
             }
+            const existingWrapper = this.tableDefinitionWrapperElements.get(tabName);
+            if (existingWrapper !== undefined) existingWrapper.remove();
+            this.tableDefinitionEditors.delete(tabName);
+            this.tableDefinitionWrapperElements.delete(tabName);
         }
 
-        // 編集モードで開き直す場合（pendingEditTarget が設定されている場合）、既存のエディタを破棄して再生成する
-        if (this.pendingEditTarget !== false && this.tableDefinitionWrapperElement !== false) {
-            if (this.tableDefinitionEditor !== false) {
-                this.tableDefinitionEditor.destroy();
-            }
-            this.tableDefinitionWrapperElement.remove();
-            this.tableDefinitionWrapperElement = false;
-            this.tableDefinitionEditor = false;
-        }
-
-        // 初回または編集モードでの再生成: TableDefinitionEditor とラッパーを生成する
-        if (this.tableDefinitionWrapperElement === false) {
-            const wrapper = document.createElement('div');
-            wrapper.classList.add('tab-wrapper', 'table-definition-tab-wrapper');
-            this.editor.appendChild(wrapper);
-            this.tableDefinitionWrapperElement = wrapper;
+        // 初回または編集対象差し替え時: TableDefinitionEditor とラッパーを生成する
+        let wrapper = this.tableDefinitionWrapperElements.get(tabName);
+        if (wrapper === undefined) {
+            const newWrapper = document.createElement('div');
+            newWrapper.classList.add('tab-wrapper', 'table-definition-tab-wrapper');
+            newWrapper.dataset.tabName = tabName;
+            this.editor.appendChild(newWrapper);
+            this.tableDefinitionWrapperElements.set(tabName, newWrapper);
+            wrapper = newWrapper;
 
             // 既存テーブル名一覧を収集する（重複チェック用）
             const existingNames: string[] = [];
@@ -2736,11 +2758,12 @@ export class Tab {
                 if (existingNames.indexOf(name) === -1) existingNames.push(name);
             });
 
-            // pendingEditTarget を消費してエディタを生成する（新規の場合は false のまま）
-            const editTarget = this.pendingEditTarget;
-            this.pendingEditTarget = false;
-            this.tableDefinitionEditor = new TableDefinitionEditor(this, existingNames, editTarget);
-            this.tableDefinitionEditor.appendTo(wrapper);
+            // pendingTableDefinitionEditTargets を消費してエディタを生成する（新規の場合は false のまま）
+            const editTarget = this.pendingTableDefinitionEditTargets.get(tabName) ?? false;
+            this.pendingTableDefinitionEditTargets.delete(tabName);
+            const tableDefinitionEditor = new TableDefinitionEditor(this, existingNames, editTarget);
+            this.tableDefinitionEditors.set(tabName, tableDefinitionEditor);
+            tableDefinitionEditor.appendTo(wrapper);
         }
 
         // RelationsPanel を非表示にする（テーブル定義画面に不要）
@@ -2750,7 +2773,7 @@ export class Tab {
         this.editor.enterSettingsMode();
 
         // テーブル定義パネルを表示する
-        this.tableDefinitionWrapperElement.style.display = '';
+        wrapper.style.display = '';
     }
 
     /**
@@ -2761,7 +2784,7 @@ export class Tab {
         this.referenceDataCache.invalidateSchemaIndex();
         this.reverseReferenceEngine.invalidateAll();
         // テーブル定義タブを閉じる（performCloseTab 内で destroy() + DOM除去 + フィールドリセットが行われる）
-        this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
+        this.closeActiveTableDefinitionTab(TABLE_DEFINITION_TAB_NAME);
 
         // エクスプローラーに新テーブルを追加する
         this.sidebar.appendFile(tableName, description);
@@ -2796,11 +2819,18 @@ export class Tab {
         }
 
         // テーブル定義タブを閉じる
-        this.performCloseTab(TABLE_DEFINITION_TAB_NAME);
+        this.closeActiveTableDefinitionTab(this.createTableDefinitionEditTabName(tableName));
 
         // テーブルを通常タブで開く（既にエクスプローラーに存在するため appendFile は呼ばない）
         const tabButton = this.append(tableName, description);
         tabButton.click();
+    }
+
+    private closeActiveTableDefinitionTab(fallbackTabName: string): void {
+        const tabName = this.activeTabName !== false && this.isTableDefinitionTabName(this.activeTabName)
+            ? this.activeTabName
+            : fallbackTabName;
+        this.performCloseTab(tabName);
     }
 
     /**
@@ -2824,7 +2854,7 @@ export class Tab {
 
         // 差分タブ・設定タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブは通常テーブル操作の対象外
         if (tabName !== SETTINGS_TAB_NAME
-            && tabName !== TABLE_DEFINITION_TAB_NAME
+            && !this.isTableDefinitionTabName(tabName)
             && !tabName.startsWith(DIFF_TAB_PREFIX)
             && !this.isViewPluginTabName(tabName)) {
             items.push(
@@ -2939,6 +2969,14 @@ export class Tab {
      * showExplorerContextMenu から呼ばれる。
      */
     private async openEditTableDefinitionTabAsync(tableName: string): Promise<void> {
+        const tabName = this.createTableDefinitionEditTabName(tableName);
+        const existingTabButton = this.tabButtons.find(button => button.name === tabName);
+        if (existingTabButton !== undefined && this.tableDefinitionEditors.has(tabName)) {
+            this.tableDefinitionEditTabNames.add(tabName);
+            existingTabButton.click();
+            return;
+        }
+
         // スキーマJSONを読み込んでパースする
         const schemaJson = await readFileAsync('schema/' + tableName + '.json');
         const schema = JSON.parse(schemaJson) as {
@@ -2965,17 +3003,18 @@ export class Tab {
             ? schemaObj['reverseReferencePriority'] as number
             : null;
 
-        // EditTarget を構築して pendingEditTarget にセットする
-        this.pendingEditTarget = {
+        // EditTarget を構築して pendingTableDefinitionEditTargets にセットする
+        this.tableDefinitionEditTabNames.add(tabName);
+        this.pendingTableDefinitionEditTargets.set(tabName, {
             tableName,
             description: 'description' in schema ? schema.description as string : '',
             columns,
             primaryKeys,
             reverseReferencePriority: rrpValue,
-        };
+        });
 
-        // テーブル定義タブを開く（activateTableDefinitionTab 内で pendingEditTarget が消費される）
-        const tabButton = this.append(TABLE_DEFINITION_TAB_NAME, null);
+        // テーブル定義編集タブを開く（activateTableDefinitionTab 内で pendingTableDefinitionEditTargets が消費される）
+        const tabButton = this.append(tabName, null);
         tabButton.click();
     }
 
@@ -2997,9 +3036,7 @@ export class Tab {
         }
 
         // テーブル定義タブが表示中であれば非表示にする
-        if (this.tableDefinitionWrapperElement !== false) {
-            this.tableDefinitionWrapperElement.style.display = 'none';
-        }
+        this.hideAllTableDefinitionTabs();
 
         // API詳細タブが表示中であれば非表示にする
         if (this.debugApiDetailWrapperElement !== false) {
@@ -3072,7 +3109,7 @@ export class Tab {
     focusActiveEditorTable(): void {
         if (this.activeTabName === false) return;
         if (this.activeTabName === SETTINGS_TAB_NAME) return;
-        if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
+        if (this.isTableDefinitionTabName(this.activeTabName)) return;
         if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
         if (this.isViewPluginTabName(this.activeTabName)) return;
         if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) return;
@@ -3105,7 +3142,7 @@ export class Tab {
     private async saveActiveTableAsync(): Promise<void> {
         if (this.activeTabName === false) return;
         if (this.activeTabName === SETTINGS_TAB_NAME) return;
-        if (this.activeTabName === TABLE_DEFINITION_TAB_NAME) return;
+        if (this.isTableDefinitionTabName(this.activeTabName)) return;
         if (this.activeTabName === DEBUG_API_DETAIL_TAB_NAME) return;
         if (this.isViewPluginTabName(this.activeTabName)) {
             await this.saveViewPluginTabAsync(this.activeTabName);

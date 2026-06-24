@@ -114,12 +114,10 @@ export class TableDefinitionEditor {
     private readonly onDragMouseUp: () => void;
     /** ドラッグ中に updateIndicatorPosition で計算された挿入先インデックス（mouseup 時に参照する） */
     private currentInsertIndex: number;
-    /** reverseReferencePriority入力欄（詳細オプションセクション内） */
+    /** reverseReferencePriority入力欄 */
     private readonly reverseRefPriorityInput: HTMLInputElement;
-    /** 詳細オプションセクション要素（reverseReferencePriority の初期値展開に使用） */
+    /** 詳細オプションセクション要素 */
     private readonly advancedSection: HTMLElement;
-    /** 詳細オプショントグルボタン要素（セクション展開状態と連動） */
-    private readonly advancedToggle: HTMLButtonElement;
     /** 保存ボタンの多重クリックによる二重保存を防ぐ。 */
     private saveInFlight: boolean;
 
@@ -192,15 +190,9 @@ export class TableDefinitionEditor {
         this.descInput.placeholder = '例: 武器マスター';
         header.appendChild(this.descInput);
 
-        // 詳細オプショントグル + 詳細セクション（reverseReferencePriority）
-        this.advancedToggle = document.createElement('button');
-        this.advancedToggle.classList.add('table-definition-advanced-toggle');
-        this.advancedToggle.textContent = '▶ 詳細オプション';
-        header.appendChild(this.advancedToggle);
-
+        // 詳細セクション（reverseReferencePriority）
         this.advancedSection = document.createElement('div');
         this.advancedSection.classList.add('table-definition-advanced-section');
-        this.advancedSection.style.display = 'none';
         const rrpLabel = document.createElement('label');
         rrpLabel.textContent = '逆参照優先度';
         rrpLabel.classList.add('table-definition-label');
@@ -211,12 +203,6 @@ export class TableDefinitionEditor {
         this.reverseRefPriorityInput.placeholder = '例: 1';
         this.advancedSection.appendChild(this.reverseRefPriorityInput);
         header.appendChild(this.advancedSection);
-
-        this.advancedToggle.addEventListener('click', () => {
-            const isHidden = this.advancedSection.style.display === 'none';
-            this.advancedSection.style.display = isHidden ? '' : 'none';
-            this.advancedToggle.textContent = isHidden ? '▼ 詳細オプション' : '▶ 詳細オプション';
-        });
 
         this.container.appendChild(header);
 
@@ -239,10 +225,10 @@ export class TableDefinitionEditor {
         colCommentHeader.textContent = 'コメント';
         const colWidthHeader = document.createElement('span');
         colWidthHeader.textContent = '幅';
-        const colDetailHeader = document.createElement('span');
-        colDetailHeader.textContent = '';
         const colDeleteHeader = document.createElement('span');
         colDeleteHeader.textContent = '';
+        const colDetailHeader = document.createElement('span');
+        colDetailHeader.textContent = '参照 / デフォルト';
         columnHeader.appendChild(colDragHeader);
         columnHeader.appendChild(colNameHeader);
         columnHeader.appendChild(colTypeHeader);
@@ -262,11 +248,9 @@ export class TableDefinitionEditor {
         if (editTarget !== false) {
             this.nameInput.value = editTarget.tableName;
             this.descInput.value = editTarget.description;
-            // reverseReferencePriority の初期値を反映する（値がある場合は詳細セクションも展開する）
+            // reverseReferencePriority の初期値を反映する
             if (editTarget.reverseReferencePriority !== null) {
                 this.reverseRefPriorityInput.value = String(editTarget.reverseReferencePriority);
-                this.advancedSection.style.display = '';
-                this.advancedToggle.textContent = '▼ 詳細オプション';
             }
             for (let i = 0; i < editTarget.columns.length; i++) {
                 const col = editTarget.columns[i];
@@ -393,23 +377,9 @@ export class TableDefinitionEditor {
         widthInput.placeholder = '100';
         row.appendChild(widthInput);
 
-        // 詳細トグルボタン
-        const detailToggle = document.createElement('button');
-        detailToggle.classList.add('column-detail-toggle');
-        detailToggle.textContent = '▼';
-        row.appendChild(detailToggle);
-
-        // 削除ボタン
-        const deleteButton = document.createElement('button');
-        deleteButton.classList.add('column-delete-button');
-        deleteButton.textContent = '\u00d7'; // ×
-        deleteButton.addEventListener('click', () => { row.remove(); });
-        row.appendChild(deleteButton);
-
-        // 詳細展開パネル（列行のgridの外にフルスパンで配置）
+        // 詳細パネル（列行の右側に常時表示）
         const detailPanel = document.createElement('div');
         detailPanel.classList.add('column-detail-panel');
-        detailPanel.style.display = 'none';
 
         // 参照タイプラジオグループ（インクリメンタルカウンタで一意なname属性を生成する）
         const refTypeGroup = document.createElement('div');
@@ -491,12 +461,12 @@ export class TableDefinitionEditor {
 
         row.appendChild(detailPanel);
 
-        // 詳細トグルのクリックでパネルを開閉する
-        detailToggle.addEventListener('click', () => {
-            const isHidden = detailPanel.style.display === 'none';
-            detailPanel.style.display = isHidden ? '' : 'none';
-            detailToggle.textContent = isHidden ? '▲' : '▼';
-        });
+        // 削除ボタン
+        const deleteButton = document.createElement('button');
+        deleteButton.classList.add('column-delete-button');
+        deleteButton.textContent = '\u00d7'; // ×
+        deleteButton.addEventListener('click', () => { row.remove(); });
+        row.appendChild(deleteButton);
 
         this.columnsContainer.appendChild(row);
         return row;

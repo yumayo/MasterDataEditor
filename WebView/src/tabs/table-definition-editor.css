@@ -8,8 +8,10 @@
 /* テーブル定義エディタ全体 */
 .table-definition-editor {
     padding: 24px;
-    max-width: 700px;
+    min-width: 1120px;
+    max-width: none;
     color: var(--font-color);
+    box-sizing: border-box;
 }
 
 /* ヘッダーセクション（テーブル名・説明） */
@@ -67,7 +69,7 @@
 /* 列ヘッダー（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
 .table-definition-column-header {
     display: grid;
-    grid-template-columns: 24px 1fr 120px 40px 120px 60px 32px 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(140px, 1fr) 70px minmax(360px, 1.8fr) 40px;
     gap: 8px;
     padding: 4px 0;
     font-size: 12px;
@@ -81,10 +83,10 @@
 /* 列行（ドラッグ | 列名 | 型 | PK | コメント | 幅 | 詳細 | 削除） */
 .table-definition-column-row {
     display: grid;
-    grid-template-columns: 24px 1fr 120px 40px 120px 60px 32px 40px;
+    grid-template-columns: 24px minmax(140px, 1fr) 120px 40px minmax(140px, 1fr) 70px minmax(360px, 1.8fr) 40px;
     gap: 8px;
-    padding: 4px 0;
-    align-items: center;
+    padding: 6px 0;
+    align-items: start;
 }
 
 /* ドラッグハンドル */
@@ -218,40 +220,23 @@
 
 /* コメント入力・幅入力（共通クラスで全プロパティを提供、追加差分なし） */
 
-/* 詳細トグルボタン */
-.column-detail-toggle {
-    padding: 2px 4px;
-    font-size: 12px;
-    color: var(--font-color);
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    cursor: pointer;
-    opacity: 0.6;
-    justify-self: center;
-}
-
-.column-detail-toggle:hover {
-    opacity: 1;
-    border-color: rgba(128, 128, 128, 0.4);
-}
-
-/* 詳細展開パネル（列行のgrid全幅にスパン） */
+/* 詳細パネル（列行右側に常時表示） */
 .column-detail-panel {
-    grid-column: 1 / -1;
-    padding: 8px 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    min-width: 0;
+    padding: 6px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
     background-color: rgba(128, 128, 128, 0.05);
     border-radius: 3px;
-    margin: 4px 0;
+    box-sizing: border-box;
 }
 
 /* 参照タイプラジオグループ */
 .column-ref-type-group {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     font-size: 13px;
 }
@@ -260,31 +245,16 @@
 
 /* 動的参照フィールド群 */
 .column-ref-dynamic-fields {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
-}
-
-/* 詳細オプショントグル */
-.table-definition-advanced-toggle {
-    padding: 6px 0;
-    font-size: 13px;
-    color: var(--font-color);
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    opacity: 0.7;
-}
-
-.table-definition-advanced-toggle:hover {
-    opacity: 1;
 }
 
 /* 詳細セクション */
 .table-definition-advanced-section {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 140px minmax(160px, 260px);
+    align-items: center;
     gap: 8px;
     padding: 8px 0;
 }
