@@ -13,7 +13,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //
 // 現状の未実装:
 //   - AreaResizer に dblclick イベントハンドラが存在しない
-//   - Utility.calculateColumnWidth() はヘッダー名のみ計測（セル内容・参照ヒント未考慮）
+//   - 初期列幅計算はセル内容・参照ヒント未考慮のため、自動フィットで追加計測する必要がある
 //   - D&Dリサイズが複数列選択状態を考慮しない（1列のみ変更）
 // =============================================================================
 

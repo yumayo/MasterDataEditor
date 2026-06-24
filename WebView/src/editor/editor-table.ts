@@ -1758,14 +1758,14 @@ export class EditorTable {
         const column = this.tableData.header[columnIndex];
         if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
         const hasBadge = this.tableData.primaryKeyColumns.includes(column.name) || column.reference !== null;
-        return Utility.calculateColumnHeaderMinWidthPx(column.name, !this.isMiniTable, hasBadge);
+        return Utility.calculateColumnMinimumWidthPx(column.name, column.type, !this.isMiniTable, hasBadge);
     }
 
     clampColumnWidth(columnIndex: number, width: string): string {
         const column = this.tableData.header[columnIndex];
         if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
         const hasBadge = this.tableData.primaryKeyColumns.includes(column.name) || column.reference !== null;
-        return Utility.clampColumnWidth(width, column.name, !this.isMiniTable, hasBadge);
+        return Utility.clampColumnWidth(width, column.name, column.type, !this.isMiniTable, hasBadge);
     }
 
     /**

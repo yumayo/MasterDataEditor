@@ -73,6 +73,19 @@ function getResizeHandle(
         .first();
 }
 
+async function measureCharacterCountMinimumWidthPxAsync(
+    page: Page,
+    characterCount: number,
+): Promise<number> {
+    return page.evaluate((count) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (ctx === null) return 0;
+        ctx.font = '13px sans-serif';
+        return Math.ceil(ctx.measureText('0'.repeat(count)).width) + 16;
+    }, characterCount);
+}
+
 async function waitForColumnWidthsAsync(
     page: Page,
     tableName: string,
@@ -172,6 +185,26 @@ function createFileSystemWithLongColumnName(): MockFileSystem {
             "id,description_text_long_name",
             "1,hello",
             "2,world",
+        ].join("\n"),
+    };
+}
+
+function createFileSystemWithTypeMinimumWidths(): MockFileSystem {
+    return {
+        "schema/item.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "string" },
+                { key: 1, name: "i", type: "int" },
+                { key: 2, name: "f", type: "float" },
+                { key: 3, name: "n", type: "double" },
+                { key: 4, name: "d", type: "datetime" },
+                { key: 5, name: "s", type: "string" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/item.csv": [
+            "id,i,f,n,d,s",
+            "row1,1,1.5,2.5,,x",
         ].join("\n"),
     };
 }
@@ -391,6 +424,49 @@ test.describe(
                 expect(longNameWidth).toBeGreaterThan(idWidth);
                 // 長いカラム名の列はMIN_COLUMN_WIDTH_PXより十分大きいこと
                 expect(longNameWidth).toBeGreaterThan(MIN_COLUMN_WIDTH_PX);
+            },
+        );
+
+        test(
+            '短いカラム名でも型の最大文字数が収まる幅になること',
+            async ({ page }) => {
+                await installMockApiAsync(
+                    page,
+                    createFileSystemWithTypeMinimumWidths()
+                );
+                await page.goto('/');
+
+                const table = await openTableAsync(page, 'item');
+
+                const intWidth = await getColumnWidthPxAsync(table, 1);
+                const floatWidth = await getColumnWidthPxAsync(table, 2);
+                const doubleWidth = await getColumnWidthPxAsync(table, 3);
+                const datetimeWidth = await getColumnWidthPxAsync(table, 4);
+                const stringWidth = await getColumnWidthPxAsync(table, 5);
+
+                const elevenCharacterMinimumWidth = await measureCharacterCountMinimumWidthPxAsync(
+                    page,
+                    11,
+                );
+                const nineteenCharacterMinimumWidth = await measureCharacterCountMinimumWidthPxAsync(
+                    page,
+                    19,
+                );
+
+                expect(Math.ceil(intWidth)).toBeGreaterThanOrEqual(
+                    elevenCharacterMinimumWidth
+                );
+                expect(Math.ceil(floatWidth)).toBeGreaterThanOrEqual(
+                    elevenCharacterMinimumWidth
+                );
+                expect(Math.ceil(doubleWidth)).toBeGreaterThanOrEqual(
+                    elevenCharacterMinimumWidth
+                );
+                expect(Math.ceil(datetimeWidth)).toBeGreaterThanOrEqual(
+                    nineteenCharacterMinimumWidth
+                );
+                expect(stringWidth).toBeLessThan(intWidth);
+                expect(datetimeWidth).toBeGreaterThan(stringWidth);
             },
         );
     },

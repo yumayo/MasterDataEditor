@@ -1,4 +1,6 @@
 import {
+    CELL_FONT,
+    CELL_HORIZONTAL_EXTRA,
     COLUMN_HEADER_FONT,
     HEADER_BADGE_AREA_PX,
     HEADER_ICON_AREA_PX,
@@ -6,6 +8,15 @@ import {
     HEADER_SIDE_PADDING_PX,
     MIN_COLUMN_WIDTH_PX,
 } from "./constant";
+
+const TYPE_CHARACTER_COUNT_BY_TYPE: Record<string, number> = {
+    int: 11,
+    long: 20,
+    float: 11,
+    double: 11,
+    bool: 1,
+    datetime: 19,
+};
 
 export class Utility {
 
@@ -47,22 +58,35 @@ export class Utility {
         return Math.max(totalWidth, MIN_COLUMN_WIDTH_PX);
     }
 
-    static clampColumnWidthPx(widthPx: number, columnName: string, hasIcons: boolean, hasBadge: boolean): number {
-        const minimumWidth = Utility.calculateColumnHeaderMinWidthPx(columnName, hasIcons, hasBadge);
+    static calculateColumnTypeMinWidthPx(columnType: string): number {
+        const characterCount = TYPE_CHARACTER_COUNT_BY_TYPE[columnType.trim().toLowerCase()];
+        if (characterCount === undefined) return 0;
+        const sampleText = '0'.repeat(characterCount);
+        return Math.ceil(Utility.getTextWidth(sampleText, CELL_FONT)) + CELL_HORIZONTAL_EXTRA;
+    }
+
+    static calculateColumnMinimumWidthPx(columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean): number {
+        const headerWidth = Utility.calculateColumnHeaderMinWidthPx(columnName, hasIcons, hasBadge);
+        const typeWidth = Utility.calculateColumnTypeMinWidthPx(columnType);
+        return Math.max(headerWidth, typeWidth, MIN_COLUMN_WIDTH_PX);
+    }
+
+    static clampColumnWidthPx(widthPx: number, columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean): number {
+        const minimumWidth = Utility.calculateColumnMinimumWidthPx(columnName, columnType, hasIcons, hasBadge);
         if (!Number.isFinite(widthPx)) return minimumWidth;
         return Math.max(Math.ceil(widthPx), minimumWidth);
     }
 
     /**
-     * カラム名に応じた列幅を計算する。
+     * カラム名と型に応じた列幅を計算する。
      * 保存済み幅がない列の初期幅、および自動フィット時のヘッダー幅として使用する。
      */
-    static calculateColumnWidth(columnName: string, hasIcons: boolean, hasBadge: boolean = false): string {
-        return `${Utility.calculateColumnHeaderMinWidthPx(columnName, hasIcons, hasBadge)}px`;
+    static calculateColumnWidth(columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean = false): string {
+        return `${Utility.calculateColumnMinimumWidthPx(columnName, columnType, hasIcons, hasBadge)}px`;
     }
 
-    static clampColumnWidth(width: string, columnName: string, hasIcons: boolean, hasBadge: boolean): string {
-        return `${Utility.clampColumnWidthPx(parseFloat(width), columnName, hasIcons, hasBadge)}px`;
+    static clampColumnWidth(width: string, columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean): string {
+        return `${Utility.clampColumnWidthPx(parseFloat(width), columnName, columnType, hasIcons, hasBadge)}px`;
     }
 
     static getCssStyle(element: HTMLElement, prop: string) {

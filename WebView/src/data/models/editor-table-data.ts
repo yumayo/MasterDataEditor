@@ -72,8 +72,8 @@ export class EditorTableData {
             const reference = column.reference !== undefined ? column.reference : null;
             const hasBadge = primaryKeyColumns.includes(column.name) || reference !== null;
             const width = typeof column.width === 'number'
-                ? `${Utility.clampColumnWidthPx(column.width, column.name, hasIcons, hasBadge)}px`
-                : Utility.calculateColumnWidth(column.name, hasIcons, hasBadge);
+                ? `${Utility.clampColumnWidthPx(column.width, column.name, column.type, hasIcons, hasBadge)}px`
+                : Utility.calculateColumnWidth(column.name, column.type, hasIcons, hasBadge);
             columns.push(new EditorTableDataColumn(
                 column.key, column.name, column.type,
                 column.comment !== undefined ? column.comment : null,
