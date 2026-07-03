@@ -445,6 +445,12 @@
     width: max-content;
 }
 
+/* Quadrant layout paints column headers through detached panes; this source row is only a geometry anchor. */
+.editor-table--quadrant-layout .editor-table-grid > .editor-table-source-column-header-row {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .editor-table-grid--absolute-rows .editor-table-row .editor-table-cell,
 .editor-table-grid--absolute-rows .editor-table-source-column-header-row .editor-table-column-header {
     box-sizing: border-box;
