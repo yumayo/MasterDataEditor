@@ -456,6 +456,13 @@
     box-sizing: border-box;
 }
 
+/* RelationsPanel の非仮想ミニテーブルも、列幅を padding 込みの border-box として扱う。
+   detached header とグリッド線はスキーマの列幅を border-box 幅として描画するため、
+   source セルだけ content-box のままだと PK/FK バッジの padding 分だけ実幅が広がる。 */
+.editor-table-grid:not(.editor-table-grid--absolute-rows) .editor-table-cell:not(.editor-table-row-header):not(.editor-table-corner-cell) {
+    box-sizing: border-box;
+}
+
 .editor-table-grid-line-layer {
     position: absolute;
     inset: 0;

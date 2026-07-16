@@ -48,7 +48,7 @@ test.describe('RelationsPanel mini table header alignment', () => {
         await enableRelationsPanelAsync(page);
     });
 
-    test('列ヘッダーとデータセルの左端が行ヘッダー幅分ずれずに揃うこと', async ({ page }) => {
+    test('列ヘッダーとデータセルの左右端が揃うこと', async ({ page }) => {
         const mainTable = await openTableAsync(page, 'quest');
         await mainTable.locator('.editor-table-row-header').first().click();
         await expect(page.locator('.relations-panel-content')).toBeVisible();
@@ -56,21 +56,30 @@ test.describe('RelationsPanel mini table header alignment', () => {
         const miniTable = page.locator('.relations-panel .editor-table').first();
         await expect(miniTable).toBeVisible();
 
-        const headerBox = await miniTable
-            .locator('.editor-table-detached-column-header-layer .editor-table-column-header')
-            .first()
-            .boundingBox();
-        const dataCellBox = await miniTable
+        const headerBoxes = await miniTable
+            .locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col]')
+            .evaluateAll((elements) => elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                return { column: element.getAttribute('data-col'), left: rect.left, right: rect.right };
+            }));
+        const dataCellBoxes = await miniTable
             .locator('.editor-table-row:not(.editor-table-source-column-header-row):not(.editor-table-empty-row)')
             .first()
-            .locator('.editor-table-cell:not(.editor-table-row-header)')
-            .first()
-            .boundingBox();
+            .locator('.editor-table-cell[data-col]')
+            .evaluateAll((elements) => elements.map((element) => {
+                const rect = element.getBoundingClientRect();
+                return { column: element.getAttribute('data-col'), left: rect.left, right: rect.right };
+            }));
 
-        if (headerBox === null || dataCellBox === null) {
-            throw new Error('ミニテーブルの列ヘッダーまたはデータセルの位置を取得できません');
+        expect(headerBoxes.length).toBeGreaterThanOrEqual(2);
+        expect(dataCellBoxes).toHaveLength(headerBoxes.length);
+        for (const headerBox of headerBoxes) {
+            const dataCellBox = dataCellBoxes.find((box) => box.column === headerBox.column);
+            if (dataCellBox === undefined) {
+                throw new Error(`列 ${headerBox.column} のデータセル位置を取得できません`);
+            }
+            expect(Math.abs(headerBox.left - dataCellBox.left)).toBeLessThan(1);
+            expect(Math.abs(headerBox.right - dataCellBox.right)).toBeLessThan(1);
         }
-
-        expect(Math.abs(headerBox.x - dataCellBox.x)).toBeLessThan(1);
     });
 });
