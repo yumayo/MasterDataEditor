@@ -40,7 +40,6 @@ export class Sidebar {
     private readonly viewPluginPanel: ViewPluginPanel;
     private readonly directory: ExplorerDirectory;
     private readonly uiStateStore: UiStateStore;
-    private activePanel: ActivityBarItem;
     constructor(
         explorerElement: HTMLElement,
         tab: Tab,
@@ -55,7 +54,6 @@ export class Sidebar {
         this.editor = editor;
         this.uiStateStore = uiStateStore;
         const storedUiState = this.uiStateStore.getState();
-        this.activePanel = storedUiState.sidebar.activePanel;
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
@@ -287,12 +285,18 @@ export class Sidebar {
     focusSearchControlForActivePanel(target: EventTarget | null): boolean {
         const targetElement = target instanceof HTMLElement ? target : null;
         if (targetElement === null || !this.explorerElement.contains(targetElement)) return false;
-        if (this.activePanel === 'files') {
+        // ActivityBar のクリックコールバックと Tab が保持する Sidebar 参照は初期化時の循環依存を
+        // 解消するため別オブジェクトを経由するので、表示中のパネルDOMで判定する。
+        if (this.filesPanel.classList.contains('sidebar-panel-active')) {
             this.directory.focusFilter();
             return true;
         }
-        if (this.activePanel === 'search') {
+        if (this.explorerElement.querySelector('.search-panel.sidebar-panel-active') !== null) {
             this.searchPanel.focus();
+            return true;
+        }
+        if (this.scheduleTimelinePanel.isVisible()) {
+            this.scheduleTimelinePanel.focusFilter();
             return true;
         }
         return false;
@@ -409,7 +413,6 @@ export class Sidebar {
     }
 
     private switchPanel(item: ActivityBarItem): void {
-        this.activePanel = item;
         this.uiStateStore.setActiveActivityBarItem(item);
 
         this.filesPanel.classList.remove('sidebar-panel-active');

@@ -4,6 +4,7 @@ import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filt
 import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
 import type {UiScrollPosition, UiStateStore} from "../app/ui-state";
+import {appendHighlightedSegments, fuzzyMatch} from "../search/fuzzy-search";
 
 type ScheduleKind = 'begin' | 'end';
 
@@ -41,6 +42,8 @@ type ScheduleTimelineNavigate = (tableName: string, filters: SerializedFilters, 
 export class ScheduleTimelinePanel {
     private readonly element: HTMLElement;
     private readonly contentElement: HTMLElement;
+    private readonly filterInput: HTMLInputElement;
+    private readonly filterClearButton: HTMLButtonElement;
     private readonly store: InMemoryTableStore;
     private readonly onNavigate: ScheduleTimelineNavigate;
     private readonly uiStateStore: UiStateStore;
@@ -72,6 +75,36 @@ export class ScheduleTimelinePanel {
         headerElement.classList.add('sidebar-panel-header');
         headerElement.textContent = 'SCHEDULE';
         this.element.appendChild(headerElement);
+
+        const filterContainer = document.createElement('div');
+        filterContainer.classList.add('schedule-timeline-filter-container');
+
+        this.filterInput = document.createElement('input');
+        this.filterInput.type = 'text';
+        this.filterInput.classList.add('schedule-timeline-filter-input');
+        this.filterInput.placeholder = 'テーブルを検索...';
+        this.filterInput.setAttribute('aria-label', 'スケジュールのテーブルを検索');
+        this.filterInput.addEventListener('input', () => {
+            this.updateFilterClearButton();
+            this.applyFilter();
+        });
+
+        this.filterClearButton = document.createElement('button');
+        this.filterClearButton.type = 'button';
+        this.filterClearButton.classList.add('schedule-timeline-filter-clear');
+        this.filterClearButton.setAttribute('aria-label', '検索をクリア');
+        this.filterClearButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M9.35 3.35L6.71 6l2.64 2.65-.71.7L6 6.71 3.35 9.35l-.7-.7L5.29 6 2.65 3.35l.7-.7L6 5.29l2.65-2.64.7.7z" fill="currentColor"/></svg>';
+        this.filterClearButton.style.display = 'none';
+        this.filterClearButton.addEventListener('click', () => {
+            this.filterInput.value = '';
+            this.updateFilterClearButton();
+            this.applyFilter();
+            this.filterInput.focus();
+        });
+
+        filterContainer.appendChild(this.filterInput);
+        filterContainer.appendChild(this.filterClearButton);
+        this.element.appendChild(filterContainer);
 
         this.contentElement = document.createElement('div');
         this.contentElement.classList.add('schedule-timeline-content');
@@ -113,6 +146,11 @@ export class ScheduleTimelinePanel {
 
     isVisible(): boolean {
         return this.element.classList.contains('sidebar-panel-active');
+    }
+
+    focusFilter(): void {
+        this.filterInput.focus();
+        this.filterInput.select();
     }
 
     async refreshAsync(): Promise<void> {
@@ -474,6 +512,7 @@ export class ScheduleTimelinePanel {
         for (const group of groups) {
             this.contentElement.appendChild(this.createGroupElement(group));
         }
+        this.applyFilter();
         this.restoreScrollPosition(scrollToRestore);
     }
 
@@ -539,6 +578,7 @@ export class ScheduleTimelinePanel {
         button.type = 'button';
         button.classList.add('schedule-timeline-table');
         button.setAttribute('data-table-name', tableEntry.tableName);
+        button.setAttribute('data-schedule-count', String(tableEntry.beginCount + tableEntry.endCount));
         button.setAttribute('role', 'listitem');
 
         const name = document.createElement('span');
@@ -589,12 +629,70 @@ export class ScheduleTimelinePanel {
         const expanded = header.getAttribute('aria-expanded') === 'true';
         header.setAttribute('aria-expanded', expanded ? 'false' : 'true');
         items.setAttribute('aria-hidden', expanded ? 'true' : 'false');
-        if (expanded) {
-            this.collapsedDates.add(date);
-        } else {
-            this.collapsedDates.delete(date);
+        // 検索中の開閉は一時的な表示操作とし、検索解除後の保存状態は変更しない。
+        if (this.filterInput.value === '') {
+            if (expanded) {
+                this.collapsedDates.add(date);
+            } else {
+                this.collapsedDates.delete(date);
+            }
+            this.saveCollapsedDates();
         }
-        this.saveCollapsedDates();
+    }
+
+    /**
+     * Explorer と同じファジー検索でテーブル名を絞り込み、一致箇所を強調する。
+     * 一致するテーブルがない日付グループは非表示にする。
+     */
+    private applyFilter(): void {
+        const query = this.filterInput.value;
+        const filtering = query !== '';
+        const groups = this.contentElement.querySelectorAll<HTMLElement>('.schedule-timeline-group');
+
+        for (const group of groups) {
+            let visibleScheduleCount = 0;
+            let hasVisibleTable = false;
+            const tableElements = group.querySelectorAll<HTMLElement>('.schedule-timeline-table');
+
+            for (const tableElement of tableElements) {
+                const tableName = tableElement.dataset.tableName ?? '';
+                const matched = !filtering || fuzzyMatch(tableName, query);
+                const nameElement = tableElement.querySelector<HTMLElement>('.schedule-timeline-table-name');
+                if (nameElement !== null) {
+                    nameElement.replaceChildren();
+                    if (matched) {
+                        appendHighlightedSegments(nameElement, tableName, query);
+                    } else {
+                        nameElement.textContent = tableName;
+                    }
+                }
+                tableElement.style.display = matched ? '' : 'none';
+                if (!matched) continue;
+
+                hasVisibleTable = true;
+                visibleScheduleCount += Number(tableElement.dataset.scheduleCount ?? '0');
+            }
+
+            group.style.display = hasVisibleTable ? '' : 'none';
+            const countElement = group.querySelector<HTMLElement>('.schedule-timeline-group-count');
+            if (countElement !== null) countElement.textContent = `${visibleScheduleCount} 件`;
+
+            // 検索結果は必ず見えるよう一時展開し、解除時は保存済みの開閉状態へ戻す。
+            const date = group.dataset.date ?? '';
+            this.setGroupCollapsed(group, filtering ? false : this.collapsedDates.has(date));
+        }
+    }
+
+    private setGroupCollapsed(groupElement: HTMLElement, collapsed: boolean): void {
+        const header = groupElement.querySelector<HTMLElement>('.schedule-timeline-group-header');
+        const items = groupElement.querySelector<HTMLElement>('.schedule-timeline-items');
+        if (header === null || items === null) return;
+        header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        items.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    }
+
+    private updateFilterClearButton(): void {
+        this.filterClearButton.style.display = this.filterInput.value === '' ? 'none' : '';
     }
 
     private getCurrentScrollPosition(): UiScrollPosition {

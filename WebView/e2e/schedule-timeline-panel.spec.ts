@@ -179,6 +179,74 @@ test.describe('予定日タイムラインパネル', () => {
         await expect(jan5Group.locator('.schedule-timeline-table-name')).toHaveText(['campaign', 'event']);
     });
 
+    test('テーブル名で予定日を絞り込み、クリアすると全件表示へ戻る', async ({page}) => {
+        await installScheduleTimelineFixtureAsync(page);
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+
+        const panel = page.locator('.schedule-timeline-panel');
+        const input = panel.locator('.schedule-timeline-filter-input');
+        const clearButton = panel.locator('.schedule-timeline-filter-clear');
+        await expect(input).toHaveAttribute('placeholder', 'テーブルを検索...');
+        await expect(clearButton).not.toBeVisible();
+
+        const jan5Header = panel.locator('.schedule-timeline-group[data-date="2026-01-05"] .schedule-timeline-group-header');
+        await jan5Header.click();
+        await expect(jan5Header).toHaveAttribute('aria-expanded', 'false');
+
+        await input.fill('EVENT');
+        await expect(jan5Header).toHaveAttribute('aria-expanded', 'true');
+        await expect(panel.locator('.schedule-timeline-table[data-table-name="event"]:visible')).toHaveCount(2);
+        await expect(panel.locator('.schedule-timeline-table-name .search-highlight')).toHaveText(['event', 'event']);
+
+        await input.fill('CAM');
+
+        await expect(clearButton).toBeVisible();
+        await expect(panel.locator('.schedule-timeline-table[data-table-name="campaign"]:visible')).toHaveCount(3);
+        await expect(panel.locator('.schedule-timeline-table[data-table-name="event"]:visible')).toHaveCount(0);
+        await expect(panel.locator('.schedule-timeline-group-date:visible')).toHaveText([
+            '2026-01-03',
+            '2026-01-05',
+            '2026-01-20',
+        ]);
+        await expect(panel.locator('.schedule-timeline-table-name .search-highlight')).toHaveText(['cam', 'cam', 'cam']);
+        await expect(panel.locator('.schedule-timeline-group[data-date="2026-01-05"] .schedule-timeline-group-count')).toHaveText('1 件');
+
+        // パネル再表示で予定日一覧が再構築されても、入力値と絞り込みを維持する。
+        await page.locator('.activity-bar-item[data-panel="files"]').click();
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+        await expect(input).toHaveValue('CAM');
+        await expect(panel.locator('.schedule-timeline-table[data-table-name="event"]:visible')).toHaveCount(0);
+        await expect(panel.locator('.schedule-timeline-table-name .search-highlight')).toHaveText(['cam', 'cam', 'cam']);
+
+        await clearButton.click();
+
+        await expect(input).toHaveValue('');
+        await expect(input).toBeFocused();
+        await expect(clearButton).not.toBeVisible();
+        await expect(panel.locator('.schedule-timeline-group-date:visible')).toHaveText([
+            '2026-01-03',
+            '2026-01-05',
+            '2026-01-20',
+            '2026-02-01',
+        ]);
+        await expect(panel.locator('.schedule-timeline-table-name .search-highlight')).toHaveCount(0);
+        await expect(panel.locator('.schedule-timeline-group[data-date="2026-01-05"] .schedule-timeline-group-count')).toHaveText('3 件');
+        await expect(jan5Header).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    test('カレンダーパネル内のCtrl+Fで予定日検索欄へフォーカスする', async ({page}) => {
+        await installScheduleTimelineFixtureAsync(page);
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+
+        const groupHeader = page.locator('.schedule-timeline-group-header').first();
+        await groupHeader.focus();
+        await expect(groupHeader).toBeFocused();
+        await page.keyboard.press('Control+f');
+
+        await expect(page.locator('.schedule-timeline-filter-input')).toBeFocused();
+        await expect(page.locator('.editor-table-find-bar')).not.toBeVisible();
+    });
+
     test('テーブルクリック時は設定OFFでも予定日で一時フィルターする', async ({page}) => {
         await installScheduleTimelineFixtureAsync(page);
         await page.locator('.activity-bar-item[data-panel="calendar"]').click();
