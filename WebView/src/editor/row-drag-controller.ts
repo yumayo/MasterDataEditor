@@ -96,8 +96,13 @@ export class RowDragController {
      */
     onRowHeaderMouseDown(domDataRowIndex: number, startY: number, rowHeaderElement: HTMLElement, event: MouseEvent): void {
         const isSelected = rowHeaderElement.classList.contains('selected');
-        this.mode = isSelected ? 'move' : 'select';
+        // 末尾の入力待機用バッファ行はストアに存在しないため、移動対象にしない。
+        const isMovableRow = domDataRowIndex >= 0 && domDataRowIndex < this.table.getStoreRowIndices().length;
+        this.mode = isSelected && isMovableRow ? 'move' : 'select';
         this.fromDomDataRowIndex = domDataRowIndex;
+        // 前回のドラッグ位置を引き継がない。挿入位置を計算できない場合も
+        // mouseup で別の位置へ移動しないよう、移動元で初期化する。
+        this.currentInsertIndex = domDataRowIndex;
         this.startY = startY;
         this.isPending = true;
         this.isDragging = false;
@@ -163,8 +168,13 @@ export class RowDragController {
                 this.isDragging = false;
                 const from = this.fromDomDataRowIndex;
                 const to = this.currentInsertIndex;
-                // from と to が等しい場合は移動なし（同じ位置への移動）
-                if (from !== to) {
+                const storeRowCount = this.table.getStoreRowIndices().length;
+                const isValidMove =
+                    from >= 0 && from < storeRowCount &&
+                    to >= 0 && to < storeRowCount &&
+                    from !== to;
+                // 同じ位置への移動や、バッファ行などストア範囲外の移動は履歴に積まない。
+                if (isValidMove) {
                     const command = new MoveRowCommand(this.table, from, to);
                     const copyRange = this.selection.getCopyRange();
                     const anchor = this.selection.getAnchor();
@@ -193,21 +203,53 @@ export class RowDragController {
      * storeRowCount === 0 の場合は行ヘッダーが存在しないためドラッグ自体が発生し得ない。
      */
     private getRowIndexFromClientY(clientY: number): number {
-        const tableElement = this.table.getTableElement();
         const storeRowCount = this.table.getStoreRowIndices().length;
         if (storeRowCount === 0) throw new Error('行が存在しないテーブルではドラッグ操作は発生し得ない');
-        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
-        const offset = this.table.getDataRowChildOffset();
-        // 各行の矩形を走査して、マウス位置を含む行を特定する
-        for (let i = 0; i < storeRowCount; i++) {
-            const rowElement = tableElement.children[i + offset] as HTMLElement;
-            const rect = rowElement.getBoundingClientRect();
-            if (clientY >= rect.top && clientY < rect.bottom) return i;
+        const renderedRows = this.getRenderedStoreRows(storeRowCount);
+        if (renderedRows.length === 0) throw new Error('ドラッグ対象の描画済み行が存在しません');
+
+        // 各行の矩形を走査し、マウス位置を含む行を返す。
+        // 行間やテーブル範囲外では、画面上で最も近い描画済み行を選ぶ。
+        let nearestRowIndex = renderedRows[0].rowIndex;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (const renderedRow of renderedRows) {
+            const rect = renderedRow.element.getBoundingClientRect();
+            if (clientY >= rect.top && clientY < rect.bottom) return renderedRow.rowIndex;
+            const distance = clientY < rect.top ? rect.top - clientY : clientY - rect.bottom;
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestRowIndex = renderedRow.rowIndex;
+            }
         }
-        // テーブル範囲外の場合: 上側なら先頭行、下側なら末尾行
-        const firstRow = tableElement.children[offset] as HTMLElement;
-        if (clientY < firstRow.getBoundingClientRect().top) return 0;
-        return storeRowCount - 1;
+        return nearestRowIndex;
+    }
+
+    /**
+     * 現在DOMに描画されている実データ行と、その論理行インデックスを返す。
+     *
+     * 仮想スクロール中は全ストア行の一部しかDOMに存在しないため、
+     * childrenの相対位置ではなく data-row-index を正準の行番号として使う。
+     * 末尾のバッファ行は storeRowCount と同じインデックスを持つため除外する。
+     */
+    private getRenderedStoreRows(storeRowCount: number): Array<{element: HTMLElement; rowIndex: number}> {
+        const tableElement = this.table.getTableElement();
+        const startChildIndex = this.table.getDataRowChildOffset();
+        const endChildIndex = this.table.getDataRowEndChildIndex();
+        const rowHeaderColumn = this.table.dataColumnOffset() - 1;
+        const renderedRows: Array<{element: HTMLElement; rowIndex: number}> = [];
+        for (let childIndex = startChildIndex; childIndex < endChildIndex; childIndex++) {
+            const rowElement = tableElement.children[childIndex];
+            if (!(rowElement instanceof HTMLElement)) continue;
+            const rowIndexText = rowElement.dataset.rowIndex;
+            if (rowIndexText === undefined) continue;
+            const rowIndex = Number(rowIndexText);
+            if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= storeRowCount) continue;
+            // 固定行の行ヘッダーは元グリッドとは別のレイヤーに表示される。
+            // マウスと同じ座標系で計算するため、画面上の行ヘッダーを優先する。
+            const visibleRowHeader = this.table.getVisibleCellOrNull(rowIndex + 1, rowHeaderColumn);
+            renderedRows.push({element: visibleRowHeader ?? rowElement, rowIndex});
+        }
+        return renderedRows;
     }
 
     /**
@@ -219,23 +261,25 @@ export class RowDragController {
     private updateIndicatorPosition(clientY: number): void {
         const tableElement = this.table.getTableElement();
         const storeRowCount = this.table.getStoreRowIndices().length;
-        // データ行の children 開始オフセット（ヘッダー行 + topSpacer 分）
-        const offset = this.table.getDataRowChildOffset();
+        const renderedRows = this.getRenderedStoreRows(storeRowCount);
+        if (renderedRows.length === 0) return;
         // absolute row layout の gridElement は内容幅を持たない場合があるため、
         // インジケーターの水平範囲は可視テーブルルートから取得する。
         const tableRoot = tableElement.closest('.editor-table') as HTMLElement | null;
         const tableRect = (tableRoot ?? tableElement).getBoundingClientRect();
         this.indicator.style.left = tableRect.left + 'px';
         this.indicator.style.width = tableRect.width + 'px';
-        // 各行の矩形を走査して、マウス位置に最も近い行間を特定する
-        let insertIndex = 0;
-        for (let i = 0; i < storeRowCount; i++) {
-            const rowElement = tableElement.children[i + offset] as HTMLElement;
-            const rect = rowElement.getBoundingClientRect();
+        // 現在描画されている行の矩形を走査して、マウス位置に最も近い行間を特定する。
+        // insertIndex は移動元を抜く前の論理挿入位置。
+        let insertIndex = renderedRows[renderedRows.length - 1].rowIndex + 1;
+        let indicatorTop = renderedRows[renderedRows.length - 1].element.getBoundingClientRect().bottom;
+        for (const renderedRow of renderedRows) {
+            const rect = renderedRow.element.getBoundingClientRect();
             const rowMidY = rect.top + rect.height / 2;
-            if (clientY > rowMidY) {
-                insertIndex = i + 1;
-            }
+            if (clientY > rowMidY) continue;
+            insertIndex = renderedRow.rowIndex;
+            indicatorTop = rect.top;
+            break;
         }
         // fromを抜いた後のインデックスに変換する
         if (insertIndex > this.fromDomDataRowIndex) {
@@ -243,18 +287,9 @@ export class RowDragController {
         } else {
             this.currentInsertIndex = insertIndex;
         }
+        // 移動元を抜いた後の有効な挿入範囲に制限する。
+        this.currentInsertIndex = Math.max(0, Math.min(storeRowCount - 1, this.currentInsertIndex));
         // インジケーターの top 位置をビューポート座標で設定する
-        let indicatorTop: number;
-        if (insertIndex < storeRowCount) {
-            const targetRow = tableElement.children[insertIndex + offset] as HTMLElement;
-            const targetRect = targetRow.getBoundingClientRect();
-            indicatorTop = targetRect.top;
-        } else {
-            // 最終行の下端
-            const lastRow = tableElement.children[storeRowCount + offset - 1] as HTMLElement;
-            const lastRect = lastRow.getBoundingClientRect();
-            indicatorTop = lastRect.bottom;
-        }
         this.indicator.style.top = indicatorTop + 'px';
     }
 }

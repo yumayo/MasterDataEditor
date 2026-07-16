@@ -13,6 +13,24 @@ async function openTableAsync(page: Page): Promise<Locator> {
 }
 
 /**
+ * 仮想スクロールが有効になる行数へテストデータを差し替え、テーブルを開く。
+ */
+async function openLargeTableAsync(page: Page, rowCount: number, frozenRowCount: number = 0): Promise<Locator> {
+    const csv = ['id,name,value'];
+    for (let i = 1; i <= rowCount; i++) csv.push(`${i},item_${i},${i * 100}`);
+    await page.evaluate(({nextCsv, nextFrozenRowCount}) => {
+        const mockWindow = window as unknown as { __mockFs: Record<string, string> };
+        mockWindow.__mockFs['data/test.csv'] = nextCsv;
+        const schema = JSON.parse(mockWindow.__mockFs['schema/test.json']) as Record<string, unknown>;
+        schema.frozenRowCount = nextFrozenRowCount;
+        mockWindow.__mockFs['schema/test.json'] = JSON.stringify(schema);
+        sessionStorage.setItem('__mockFs', JSON.stringify(mockWindow.__mockFs));
+    }, {nextCsv: csv.join('\n'), nextFrozenRowCount: frozenRowCount});
+    await page.reload();
+    return openTableAsync(page);
+}
+
+/**
  * 先頭N行のデータセル値を取得する（行ヘッダーを除く全列）
  * rowIndex: 0始まり（ヘッダー行を除く）
  */
@@ -112,6 +130,40 @@ async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
     await header.click();
 }
 
+/** 描画済みの論理行を data-row-index で特定してドラッグする。 */
+async function dragLogicalRowAsync(table: Locator, fromRowIndex: number, toRowIndex: number): Promise<void> {
+    const rowHeaderSelector = (rowIndex: number): string =>
+        [
+            `.editor-table-pane-top-left .editor-table-row-header[data-row-index="${rowIndex}"]`,
+            `.editor-table-pane-bottom-left .editor-table-row-header[data-row-index="${rowIndex}"]`,
+        ].join(',');
+    const fromHeader = table.locator(rowHeaderSelector(fromRowIndex));
+    const toHeader = table.locator(rowHeaderSelector(toRowIndex));
+    await fromHeader.click();
+    const fromBox = await fromHeader.boundingBox();
+    const toBox = await toHeader.boundingBox();
+    if (!fromBox || !toBox) throw new Error('論理行ヘッダーの bounding box が null');
+
+    const page = table.page();
+    const startX = fromBox.x + fromBox.width / 2;
+    const startY = fromBox.y + fromBox.height / 2;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX, startY - 6);
+    await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + 2);
+    await page.mouse.up();
+}
+
+/** 論理行インデックスで指定した行のID値を取得する。 */
+async function getLogicalRowIdValuesAsync(table: Locator, rowIndices: number[]): Promise<string[]> {
+    const values: string[] = [];
+    for (const rowIndex of rowIndices) {
+        const row = table.locator(`.editor-table-grid .editor-table-row[data-row-index="${rowIndex}"]`);
+        values.push((await row.locator('.editor-table-cell[data-col="0"]').textContent()) ?? '');
+    }
+    return values;
+}
+
 /**
  * 指定した行ヘッダーが選択状態かどうかを返す
  * rowIndex: 0始まり（ヘッダー行を除くデータ行のインデックス）
@@ -151,6 +203,62 @@ async function dragRowHeaderWithoutSelectAsync(page: Page, table: Locator, fromR
 }
 
 test.describe('行ドラッグ移動', () => {
+    test('仮想スクロール対象のテーブルでも狙った行間に挿入できる', async ({ page, mockFileSystem }) => {
+        const table = await openLargeTableAsync(page, 120);
+        await selectRowAsync(table, 1);
+        // 2行目を4行目の上端へドロップする。移動元を抜いた後は3行目に挿入される。
+        await dragRowAsync(table, 1, 3);
+
+        expect(await getRowIdValuesAsync(table, 5)).toEqual(['1', '3', '2', '4', '5']);
+    });
+
+    test('スクロール後も描画範囲の論理行間に挿入できる', async ({ page, mockFileSystem }) => {
+        const table = await openLargeTableAsync(page, 120, 2);
+        const scrollContainer = table.locator('.editor-table-main-viewport');
+        await scrollContainer.evaluate((element) => {
+            element.scrollTop = 80 * 20;
+            element.dispatchEvent(new Event('scroll'));
+        });
+        const targetHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header[data-row-index="83"]');
+        await expect(targetHeader).toBeVisible();
+
+        // index=80 (ID=81) を index=83 (ID=84) の上へ移動する。
+        await dragLogicalRowAsync(table, 80, 83);
+
+        await expect.poll(() => getLogicalRowIdValuesAsync(table, [79, 80, 81, 82, 83]))
+            .toEqual(['80', '82', '83', '81', '84']);
+    });
+
+    test('固定行をドラッグしても狙った行間に挿入できる', async ({ page, mockFileSystem }) => {
+        const table = await openLargeTableAsync(page, 120, 2);
+
+        // 固定表示された index=0 (ID=1) を index=3 (ID=4) の上へ移動する。
+        await dragLogicalRowAsync(table, 0, 3);
+
+        expect(await getLogicalRowIdValuesAsync(table, [0, 1, 2, 3, 4]))
+            .toEqual(['2', '3', '1', '4', '5']);
+    });
+
+    test('末尾バッファ行は移動元にせず、実データ行の末尾移動先にできる', async ({ page, mockFileSystem }) => {
+        const table = await openTableAsync(page);
+
+        // ストアに存在しない末尾バッファ行 (index=3) は移動履歴に積まれない。
+        await dragLogicalRowAsync(table, 3, 0);
+        expect(await getRowIdValuesAsync(table, 3)).toEqual(['1', '2', '3']);
+        await expect(page.locator('.tab-button', {hasText: 'test'}).locator('.tab-button-dirty'))
+            .not.toHaveClass(/tab-button-dirty-visible/);
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+z');
+        expect(await getRowIdValuesAsync(table, 3)).toEqual(['1', '2', '3']);
+
+        // 実データ行をバッファ行の上へドロップすると、末尾へ移動する。
+        await dragLogicalRowAsync(table, 0, 3);
+        expect(await getRowIdValuesAsync(table, 3)).toEqual(['2', '3', '1']);
+        await clickFirstCellAsync(table);
+        await page.keyboard.press('Control+z');
+        expect(await getRowIdValuesAsync(table, 3)).toEqual(['1', '2', '3']);
+    });
+
     test('行ヘッダーをドラッグして行を移動できる', async ({ page, mockFileSystem }) => {
         const table = await openTableAsync(page);
 
