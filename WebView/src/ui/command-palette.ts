@@ -575,7 +575,9 @@ export class CommandPalette {
 
     /** マウス操作で選択状態と内部indexを同期してから項目アクションを実行する */
     private bindItemSelection(itemElement: HTMLElement, index: number, action: () => void): void {
-        itemElement.addEventListener('mouseenter', () => {
+        // 表示時に静止中のマウスカーソルの下へ項目が現れても選択を移さない。
+        // 実際にマウスが動いたときだけ、その位置の項目を選択する。
+        itemElement.addEventListener('mousemove', () => {
             this.selectIndex(index, false);
         });
         itemElement.addEventListener('mousedown', (e: MouseEvent) => {

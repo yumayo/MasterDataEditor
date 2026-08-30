@@ -201,6 +201,30 @@ test.describe('CommandPalette', () => {
         await expect(items.nth(1)).not.toHaveCSS('background-color', selectedBackground);
     });
 
+    test('静止中のマウス位置に再表示しても先頭を選択し、動かすとhover項目を選択する', async ({page}) => {
+        await setupTestPageAsync(page);
+
+        await page.keyboard.press('Control+p');
+        const items = page.locator('.command-palette-item');
+        const secondItem = items.nth(1);
+
+        // 2番目の項目上へマウスを移動してからパレットを閉じる。
+        await secondItem.hover();
+        await expect(secondItem).toHaveClass(/selected/);
+        await page.keyboard.press('Escape');
+
+        // マウスを動かさず同じ位置へ再表示しても、選択は先頭のままにする。
+        await page.keyboard.press('Control+p');
+        await expect(items.nth(0)).toHaveClass(/selected/);
+        await expect(secondItem).not.toHaveClass(/selected/);
+
+        // 再表示後にマウスを動かしたら、カーソル下の項目へ選択を移す。
+        const box = await secondItem.boundingBox();
+        if (box === null) throw new Error('2番目のコマンドパレット項目の位置を取得できません');
+        await page.mouse.move(box.x + box.width / 2 + 1, box.y + box.height / 2);
+        await expect(secondItem).toHaveClass(/selected/);
+    });
+
     test('Enterキーで選択中のテーブルタブが開く', async ({page}) => {
         await setupTestPageAsync(page);
 
