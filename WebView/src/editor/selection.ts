@@ -1051,7 +1051,6 @@ export class Selection {
         const selectionRange = this.getSelectionRange();
         const endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;
-        const isBottomLogicalRow = selectionRange.endRow >= this.editorTable.getLogicalRowCount() - 1;
 
         const cell = this.editorTable.getVisibleCellOrNull(endRow, endColumn);
         if (!cell) {
@@ -1071,7 +1070,7 @@ export class Selection {
         const outsideOffset = 3;
         const insideOffset = 1;
         const isRightClipped = clippedRect.right < cellRect.right - 0.5;
-        const isBottomClipped = clippedRect.bottom < cellRect.bottom - 0.5 || isBottomLogicalRow;
+        const isBottomClipped = clippedRect.bottom < cellRect.bottom - 0.5;
         const handleLeft = clippedRect.right - hostRect.left - handleSize + (isRightClipped ? -insideOffset : outsideOffset);
         const handleTop = clippedRect.bottom - hostRect.top - handleSize + (isBottomClipped ? -insideOffset : outsideOffset);
         const fillOverlayZIndex = this.resolveFillHandleZIndex(cell);
