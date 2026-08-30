@@ -52,6 +52,7 @@ public partial class App : Application
 	{
 		ConsoleManager.Setup();
 		Logger.Setup();
+		WindowTitleBarTheme.Initialize(this);
 
 		Logger.Info("Application startup beginning");
 
