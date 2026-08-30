@@ -11,7 +11,7 @@ function createFindBarFileSystem(): MockFileSystem {
         "schema/item.json": JSON.stringify({
             header: [
                 {key: 0, name: "id", type: "int"},
-                {key: 1, name: "name", type: "string", comment: "アイテム名"},
+                {key: 1, name: "name", type: "string", comment: "アイテム名\n二行目の説明"},
                 {key: 2, name: "category", type: "string"},
             ],
             primary_key: ["id"],
@@ -70,6 +70,17 @@ function createFindBarFileSystem(): MockFileSystem {
             "2,FrozenColumnNeedle,Body",
             "3,Other,Body",
         ].join("\n"),
+        "schema/header_matches.json": JSON.stringify({
+            header: [
+                {key: 0, name: "category_one", type: "string"},
+                {key: 1, name: "category_two", type: "string"},
+            ],
+            primary_key: ["category_one"],
+        }),
+        "data/header_matches.csv": [
+            "category_one,category_two",
+            "Alpha,Beta",
+        ].join("\n"),
     };
 }
 
@@ -91,6 +102,10 @@ function getFindInput(page: Page): Locator {
 
 function getFindColumnOptionButton(page: Page): Locator {
     return page.locator('.editor-table-find-option-button[title="列名と列の説明を検索対象に含める"]');
+}
+
+function getVisibleColumnHeader(table: Locator, colIndex: number): Locator {
+    return table.locator(`.editor-table-column-header[data-col="${colIndex}"]:visible`).first();
 }
 
 async function setTableScrollTopAsync(page: Page, tableName: string, scrollTop: number): Promise<void> {
@@ -173,6 +188,8 @@ test.describe('EditorTable検索バー', () => {
         const findInput = getFindInput(page);
         await expect(findInput).toBeVisible();
         await expect(findInput).toBeFocused();
+        await expect(page.locator('.editor-table-find-count')).toHaveAttribute('aria-live', 'polite');
+        await expect(page.locator('.editor-table-find-count')).toHaveAttribute('aria-atomic', 'true');
 
         await findInput.fill('Potion');
         await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
@@ -268,19 +285,308 @@ test.describe('EditorTable検索バー', () => {
 
         await findInput.fill('category');
         await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
-        let currentHeader = table.locator('.editor-table-column-header.editor-table-cell-find-current').first();
-        await expect(currentHeader).toHaveText('category');
+        const categoryHeader = getVisibleColumnHeader(table, 2);
+        await expect(categoryHeader.locator('.search-highlight')).toHaveText('category');
 
         await findInput.fill('アイテム名');
         await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
-        currentHeader = table.locator('.editor-table-column-header.editor-table-cell-find-current').first();
-        await expect(currentHeader).toHaveText(/name/);
-        await expect(currentHeader).toHaveText(/アイテム名/);
+        const nameHeader = getVisibleColumnHeader(table, 1);
+        await expect(nameHeader.locator('.column-header-name .search-highlight')).toHaveCount(0);
+        await expect(nameHeader.locator('.column-header-comment .search-highlight')).toHaveText('アイテム名');
 
         await columnOptionButton.click();
         await expect(columnOptionButton).not.toHaveClass(/editor-table-find-option-active/);
         await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
-        await expect(table.locator('.editor-table-column-header.editor-table-cell-find-match')).toHaveCount(0);
+        await expect(table.locator('.editor-table-column-header .search-highlight')).toHaveCount(0);
+    });
+
+    test('commentなし列名は検索に一致した文字列断片だけをオレンジ背景の黒字で表示する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('ateg');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+
+        const categoryHeader = getVisibleColumnHeader(table, 2);
+        const highlights = categoryHeader.locator('.search-highlight');
+        await expect(highlights).toHaveCount(1);
+        await expect(highlights).toHaveText('ateg');
+        await expect(highlights).toHaveCSS('background-color', 'rgb(245, 158, 11)');
+        await expect(highlights).toHaveCSS('color', 'rgb(0, 0, 0)');
+        await expect(categoryHeader).toContainText('category');
+        await expect(categoryHeader).not.toHaveClass(/editor-table-cell-find-(?:match|current)/);
+        await expect(categoryHeader).toHaveClass(/selected/);
+        expect(await categoryHeader.evaluate((element) => getComputedStyle(element).backgroundImage)).not.toBe('none');
+    });
+
+    test('comment一致時は列名ではなく表示中の列説明の一致断片だけをハイライトする', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        await getFindInput(page).fill('テム');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+
+        const nameHeader = getVisibleColumnHeader(table, 1);
+        await expect(nameHeader.locator('.column-header-name .search-highlight')).toHaveCount(0);
+        const commentHighlights = nameHeader.locator('.column-header-comment .search-highlight');
+        await expect(commentHighlights).toHaveCount(1);
+        await expect(commentHighlights).toHaveText('テム');
+        await expect(commentHighlights).toHaveCSS('background-color', 'rgb(245, 158, 11)');
+        await expect(commentHighlights).toHaveCSS('color', 'rgb(0, 0, 0)');
+        await expect(nameHeader).not.toHaveClass(/editor-table-cell-find-(?:match|current)/);
+        const selectedCommentColors = await nameHeader.locator('.column-header-comment').evaluate((element) => ({
+            actual: getComputedStyle(element).color,
+            themeForeground: getComputedStyle(document.body).color,
+        }));
+        expect(selectedCommentColors.actual).toBe(selectedCommentColors.themeForeground);
+    });
+
+    test('検索クエリ消去と列検索OFFで列名ハイライトを除去しヘッダー部品を保持する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        const columnOptionButton = getFindColumnOptionButton(page);
+        const nameHeader = getVisibleColumnHeader(table, 1);
+        const expectHeaderPartsToBeIntactAsync = async (): Promise<void> => {
+            await expect(nameHeader.locator('.column-header-name')).toHaveText('name');
+            await expect(nameHeader.locator('.column-header-comment')).toHaveText('アイテム名');
+            await expect(nameHeader.locator('.filter-icon')).toHaveCount(1);
+            await expect(nameHeader.locator('.sort-indicator')).toHaveCount(1);
+            await expect(nameHeader.locator('.column-resize-handle')).toHaveCount(1);
+        };
+
+        await findInput.fill('テム');
+        await expect(nameHeader.locator('.search-highlight')).toHaveText('テム');
+        await findInput.fill('');
+        await expect(nameHeader.locator('.search-highlight')).toHaveCount(0);
+        await expectHeaderPartsToBeIntactAsync();
+
+        await findInput.fill('テム');
+        await expect(nameHeader.locator('.search-highlight')).toHaveText('テム');
+        await columnOptionButton.click();
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+        await expect(nameHeader.locator('.search-highlight')).toHaveCount(0);
+        await expectHeaderPartsToBeIntactAsync();
+    });
+
+    test('複数行commentの2行目一致を検索結果に含め解除後は先頭行表示に戻す', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('二行目');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+
+        const nameHeader = getVisibleColumnHeader(table, 1);
+        await expect(nameHeader.locator('.column-header-comment')).toHaveText('二行目の説明');
+        await expect(nameHeader.locator('.column-header-comment .search-highlight')).toHaveText('二行目');
+
+        await findInput.fill('');
+        await expect(nameHeader.locator('.search-highlight')).toHaveCount(0);
+        await expect(nameHeader.locator('.column-header-comment')).toHaveText('アイテム名');
+    });
+
+    test('commentなし列のsourceとdetachedヘッダーをEscape時に一時ラッパーなしで復元する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        const columnOptionButton = getFindColumnOptionButton(page);
+        await findInput.fill('ateg');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+
+        const sourceHeader = table.locator('.editor-table-source-column-header-row .editor-table-column-header[data-col="2"]');
+        const detachedHeader = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="2"]');
+        await expect(sourceHeader.locator('.search-highlight')).toHaveText('ateg');
+        await expect(detachedHeader.locator('.search-highlight')).toHaveText('ateg');
+
+        await findInput.fill('');
+        await expect(table.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(sourceHeader).toContainText('category');
+        await expect(detachedHeader).toContainText('category');
+
+        await findInput.fill('ateg');
+        await expect(detachedHeader.locator('.search-highlight')).toHaveText('ateg');
+        await columnOptionButton.click();
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+        await expect(table.locator('.editor-table-find-header-label')).toHaveCount(0);
+
+        await columnOptionButton.click();
+        await expect(detachedHeader.locator('.search-highlight')).toHaveText('ateg');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.editor-table-find-bar')).not.toBeVisible();
+        await expect(sourceHeader.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(detachedHeader.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(sourceHeader).toContainText('category');
+        await expect(detachedHeader).toContainText('category');
+        await expect(detachedHeader.locator('.filter-icon')).toHaveCount(1);
+        await expect(detachedHeader.locator('.sort-indicator')).toHaveCount(1);
+        await expect(detachedHeader.locator('.column-resize-handle')).toHaveCount(1);
+    });
+
+    test('検索中にcommentなし列名が更新されても解除時に古い列名へ巻き戻さない', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('ateg');
+        await expect(getVisibleColumnHeader(table, 2).locator('.search-highlight')).toHaveText('ateg');
+
+        await page.evaluate(() => {
+            const editor = (window as Window & {
+                editor: {activeEditorTable: {setColumnHeaderValue(columnIndex: number, value: string): void} | false};
+            }).editor;
+            const activeTable = editor.activeEditorTable;
+            if (activeTable === false) throw new Error('アクティブテーブルが見つかりません');
+            activeTable.setColumnHeaderValue(2, 'category_renamed');
+        });
+        await findInput.fill('');
+
+        const sourceHeader = table.locator('.editor-table-source-column-header-row .editor-table-column-header[data-col="2"]');
+        const detachedHeader = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="2"]');
+        await expect(sourceHeader).toContainText('category_renamed');
+        await expect(detachedHeader).toContainText('category_renamed');
+        await expect(table.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(sourceHeader).not.toContainText('categorycategory_renamed');
+    });
+
+    test('comment付き列名が検索中に非一致名へ変更されたらキャッシュを破棄し再検索する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('name');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        await expect(getVisibleColumnHeader(table, 1).locator('.column-header-name .search-highlight')).toHaveText('name');
+
+        await page.evaluate(() => {
+            const editor = (window as Window & {
+                editor: {activeEditorTable: {setColumnHeaderValue(columnIndex: number, value: string): void} | false};
+            }).editor;
+            const activeTable = editor.activeEditorTable;
+            if (activeTable === false) throw new Error('アクティブテーブルが見つかりません');
+            activeTable.setColumnHeaderValue(1, 'title');
+        });
+
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+        const sourceHeader = table.locator('.editor-table-source-column-header-row .editor-table-column-header[data-col="1"]');
+        const detachedHeader = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="1"]');
+        await expect(sourceHeader.locator('.search-highlight')).toHaveCount(0);
+        await expect(detachedHeader.locator('.search-highlight')).toHaveCount(0);
+        await expect(sourceHeader.locator('.column-header-name')).toHaveText('title');
+        await expect(detachedHeader.locator('.column-header-name')).toHaveText('title');
+        await expect(findInput).toHaveValue('name');
+    });
+
+    test('0件検索中にcomment付き列名が一致名へ変更されたら自動再検索する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        await findInput.fill('title');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+
+        await page.evaluate(() => {
+            const editor = (window as Window & {
+                editor: {activeEditorTable: {setColumnHeaderValue(columnIndex: number, value: string): void} | false};
+            }).editor;
+            const activeTable = editor.activeEditorTable;
+            if (activeTable === false) throw new Error('アクティブテーブルが見つかりません');
+            activeTable.setColumnHeaderValue(1, 'title');
+        });
+
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        const sourceHeader = table.locator('.editor-table-source-column-header-row .editor-table-column-header[data-col="1"]');
+        const detachedHeader = table.locator('.editor-table-detached-column-header-layer .editor-table-column-header[data-col="1"]');
+        await expect(sourceHeader.locator('.column-header-name .search-highlight')).toHaveText('title');
+        await expect(detachedHeader.locator('.column-header-name .search-highlight')).toHaveText('title');
+    });
+
+    test('wholeWordとregexは複数行comment全体に対する従来の一致意味を維持する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+
+        await page.keyboard.press('Control+F');
+        const findInput = getFindInput(page);
+        const wholeWordButton = page.locator('.editor-table-find-option-button[title="単語単位で検索"]');
+        const regexButton = page.locator('.editor-table-find-option-button[title="正規表現"]');
+
+        await findInput.fill('アイテム名');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        await wholeWordButton.click();
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+
+        await wholeWordButton.click();
+        await findInput.fill('^二行目');
+        await regexButton.click();
+        await expect(page.locator('.editor-table-find-count')).toHaveText('0/0');
+        await expect(table.locator('.column-header-comment .search-highlight')).toHaveCount(0);
+    });
+
+    test('検索中に別の通常タブへ切り替えると旧装飾を破棄し新タブだけを検索できる', async ({page}) => {
+        const itemTable = await openTableAsync(page, 'item');
+        await getDataCell(itemTable, 0, 1).click();
+        await page.keyboard.press('Control+F');
+        await getFindInput(page).fill('ateg');
+        await expect(getVisibleColumnHeader(itemTable, 2).locator('.search-highlight')).toHaveText('ateg');
+
+        const enemyTable = await openTableAsync(page, 'enemy');
+        await expect(page.locator('.editor-table-find-bar')).toHaveCount(0);
+        await expect(itemTable.locator('.search-highlight')).toHaveCount(0);
+        await expect(itemTable.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(itemTable.locator('.editor-table-column-header-find-match')).toHaveCount(0);
+
+        await getDataCell(enemyTable, 0, 1).click();
+        await page.keyboard.press('Control+F');
+        await getFindInput(page).fill('Dragon');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/1');
+        await expect(enemyTable.locator('.editor-table-cell-find-current')).toHaveText('Dragon');
+        await expect(itemTable.locator('.editor-table-cell-find-match')).toHaveCount(0);
+    });
+
+    test('複数ヘッダー一致時はsemantic classを付け断片外のクリックでcurrent移動できる', async ({page}) => {
+        const table = await openTableAsync(page, 'header_matches');
+        await getDataCell(table, 0, 0).click();
+
+        await page.keyboard.press('Control+F');
+        await getFindInput(page).fill('category');
+        await expect(page.locator('.editor-table-find-count')).toHaveText('1/2');
+
+        const firstHeader = getVisibleColumnHeader(table, 0);
+        const secondHeader = getVisibleColumnHeader(table, 1);
+        await expect(firstHeader).toHaveClass(/editor-table-column-header-find-match/);
+        await expect(secondHeader).toHaveClass(/editor-table-column-header-find-match/);
+        await expect(firstHeader).not.toHaveClass(/editor-table-cell-find-(?:match|current)/);
+        await expect(secondHeader).not.toHaveClass(/editor-table-cell-find-(?:match|current)/);
+
+        await secondHeader.click({position: {x: 5, y: 5}});
+        await expect(page.locator('.editor-table-find-count')).toHaveText('2/2');
+    });
+
+    test('検索ハイライト中のアクティブタブを閉じると検索DOM装飾も破棄する', async ({page}) => {
+        const table = await openTableAsync(page, 'item');
+        await getDataCell(table, 0, 1).click();
+        await page.keyboard.press('Control+F');
+        await getFindInput(page).fill('ateg');
+        await expect(getVisibleColumnHeader(table, 2).locator('.search-highlight')).toHaveText('ateg');
+
+        const tabButton = page.locator('.tab-button').filter({hasText: 'item'}).first();
+        await tabButton.locator('.tab-button-close').click();
+
+        await expect(page.locator('.tab-wrapper[data-tab-name="item"]')).toHaveCount(0);
+        await expect(page.locator('.editor-table-find-bar')).toHaveCount(0);
+        await expect(page.locator('.editor-table-find-header-label')).toHaveCount(0);
+        await expect(page.locator('.editor-table-column-header-find-match')).toHaveCount(0);
     });
 
     test('手動スクロールで検索結果セルが再描画されても背景色を復元する', async ({page}) => {

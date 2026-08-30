@@ -1,5 +1,5 @@
 import {test, expect} from './fixtures/test';
-import {matchesQuery, SearchOptions} from '../src/search/search-query';
+import {getQueryHighlightSegments, matchesQuery, SearchOptions} from '../src/search/search-query';
 
 /**
  * matchesQuery のユニットテスト（ローマ字・全角半角対応）
@@ -94,5 +94,68 @@ test.describe('matchesQuery: 既存動作の回帰テスト', () => {
     test('useRegex:true のとき正規表現でマッチする', () => {
         const regexOptions: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: true};
         expect(matchesQuery('quest_a', 'quest_[ab]', regexOptions)).toBe(true);
+    });
+});
+
+test.describe('getQueryHighlightSegments: SearchOptionsと一致範囲', () => {
+    test('case-sensitiveで大文字小文字を区別した断片を返す', () => {
+        const options: SearchOptions = {caseSensitive: true, wholeWord: false, useRegex: false};
+        expect(getQueryHighlightSegments('Category', 'teg', options)).toEqual([
+            {text: 'Ca', highlight: false},
+            {text: 'teg', highlight: true},
+            {text: 'ory', highlight: false},
+        ]);
+        expect(getQueryHighlightSegments('Category', 'TEG', options)).toBeNull();
+    });
+
+    test('whole-wordは完全一致時に全体をハイライトする', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: true, useRegex: false};
+        expect(getQueryHighlightSegments('Category', 'category', options)).toEqual([
+            {text: 'Category', highlight: true},
+        ]);
+        expect(getQueryHighlightSegments('CategoryName', 'category', options)).toBeNull();
+    });
+
+    test('regexの最初の一致範囲を返す', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: true};
+        expect(getQueryHighlightSegments('item_42_name', 'item_\\d+', options)).toEqual([
+            {text: 'item_42', highlight: true},
+            {text: '_name', highlight: false},
+        ]);
+    });
+
+    test('不正regexはnullを返す', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: true};
+        expect(getQueryHighlightSegments('item', '[', options)).toBeNull();
+    });
+
+    test('zero-width regexは一致を保ちつつ空のハイライト断片を返さない', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: true};
+        const segments = getQueryHighlightSegments('item', '(?=item)', options);
+        expect(segments).toEqual([{text: 'item', highlight: false}]);
+        if (segments === null) throw new Error('zero-width regexの一致情報がありません');
+        expect(segments.some((segment) => segment.highlight && segment.text === '')).toBe(false);
+    });
+
+    test('ローマ字検索は対応する日本語断片を返す', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: false};
+        expect(getQueryHighlightSegments('アイテム名', 'temu', options)).toEqual([
+            {text: 'アイ', highlight: false},
+            {text: 'テム', highlight: true},
+            {text: '名', highlight: false},
+        ]);
+    });
+
+    test('全角半角を正規化して元文字列の範囲を返す', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: false};
+        expect(getQueryHighlightSegments('ＡＢＣ', 'bc', options)).toEqual([
+            {text: 'Ａ', highlight: false},
+            {text: 'ＢＣ', highlight: true},
+        ]);
+    });
+
+    test('不一致はnullを返す', () => {
+        const options: SearchOptions = {caseSensitive: false, wholeWord: false, useRegex: false};
+        expect(getQueryHighlightSegments('category', 'weapon', options)).toBeNull();
     });
 });

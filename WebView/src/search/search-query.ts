@@ -1,4 +1,11 @@
-import {fuzzyMatch, normalizeForSearch, normalizeForSearchCaseSensitive, romajiToHiragana} from './fuzzy-search';
+import {
+    fuzzyMatch,
+    fuzzyMatchHighlight,
+    normalizeForSearch,
+    normalizeForSearchCaseSensitive,
+    romajiToHiragana,
+    type HighlightSegment,
+} from './fuzzy-search';
 
 /**
  * 全文検索クエリ
@@ -155,4 +162,48 @@ export function matchesQuery(cellValue: string, searchText: string, options: Sea
         return haystack === needle;
     }
     return haystack.includes(needle);
+}
+
+/**
+ * matchesQuery と同じ検索条件で、最初の一致箇所を表示用セグメントとして返す。
+ * 一致しない場合は null を返す。
+ */
+export function getQueryHighlightSegments(
+    value: string,
+    searchText: string,
+    options: SearchOptions,
+): Array<HighlightSegment> | null {
+    if (!matchesQuery(value, searchText, options)) return null;
+
+    if (options.useRegex) {
+        const flags = options.caseSensitive ? '' : 'i';
+        const pattern = options.wholeWord ? `^(?:${searchText})$` : searchText;
+        const match = new RegExp(pattern, flags).exec(value);
+        if (match === null) return null;
+        if (match[0].length === 0) return [{text: value, highlight: false}];
+        return buildHighlightSegments(value, match.index, match.index + match[0].length);
+    }
+
+    if (options.wholeWord) {
+        return [{text: value, highlight: true}];
+    }
+
+    if (!options.caseSensitive) {
+        const segments = fuzzyMatchHighlight(value, searchText);
+        return segments.some((segment) => segment.highlight) ? segments : null;
+    }
+
+    const normalizedValue = normalizeForSearchCaseSensitive(value);
+    const normalizedSearchText = normalizeForSearchCaseSensitive(searchText);
+    const matchIndex = normalizedValue.indexOf(normalizedSearchText);
+    if (matchIndex === -1) return null;
+    return buildHighlightSegments(value, matchIndex, matchIndex + normalizedSearchText.length);
+}
+
+function buildHighlightSegments(value: string, start: number, end: number): Array<HighlightSegment> {
+    const segments: Array<HighlightSegment> = [];
+    if (start > 0) segments.push({text: value.substring(0, start), highlight: false});
+    segments.push({text: value.substring(start, end), highlight: true});
+    if (end < value.length) segments.push({text: value.substring(end), highlight: false});
+    return segments;
 }

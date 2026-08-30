@@ -1,16 +1,47 @@
 import type {TabState} from "../tabs/tab";
-import {matchesQuery, shouldAutoEnableWholeWord, type SearchOptions} from "../search/search-query";
+import {
+    getQueryHighlightSegments,
+    matchesQuery,
+    shouldAutoEnableWholeWord,
+    type SearchOptions,
+} from "../search/search-query";
+import type {HighlightSegment} from "../search/fuzzy-search";
 import type {MarkerEntry} from "../ui/scrollbar-marker-track";
 import type {EditorTable} from "./editor-table";
 
-interface FindMatch {
+interface ColumnHeaderNameHighlight {
+    kind: 'name';
+    segments: Array<HighlightSegment>;
+}
+
+interface ColumnHeaderCommentHighlight {
+    kind: 'comment';
+    segments: Array<HighlightSegment>;
+}
+
+type ColumnHeaderLabelHighlight = ColumnHeaderNameHighlight | ColumnHeaderCommentHighlight;
+
+interface DataFindMatch {
+    kind: 'data';
     row: number;
     column: number;
 }
 
+interface HeaderFindMatch {
+    kind: 'header';
+    row: 0;
+    column: number;
+    labelHighlights: Array<ColumnHeaderLabelHighlight>;
+}
+
+type FindMatch = DataFindMatch | HeaderFindMatch;
+
 const SEARCH_INPUT_DEBOUNCE_MS = 120;
 const SEARCH_CHUNK_BUDGET_MS = 6;
 const SEARCH_CHUNK_MIN_CELLS = 250;
+const HEADER_HIGHLIGHT_LABEL_CLASS = 'editor-table-find-header-label';
+const HEADER_HIGHLIGHTED_LABEL_CLASS = 'editor-table-find-highlighted-label';
+const HEADER_MATCH_CLASS = 'editor-table-column-header-find-match';
 
 /**
  * アクティブな通常 EditorTable タブだけを対象にする検索バー。
@@ -48,6 +79,7 @@ export class EditorTableFindBar {
     private highlightRefreshFrameId: number | null;
     private pendingNavigationDelta: number;
     private navigationFrameId: number | null;
+    private headerSchemaFingerprint: string;
 
     constructor() {
         this.currentState = null;
@@ -69,6 +101,7 @@ export class EditorTableFindBar {
         this.highlightRefreshFrameId = null;
         this.pendingNavigationDelta = 0;
         this.navigationFrameId = null;
+        this.headerSchemaFingerprint = '';
         this.handleTableViewportChanged = () => {
             this.scheduleHighlightRefresh();
         };
@@ -79,6 +112,11 @@ export class EditorTableFindBar {
         this.element = document.createElement('div');
         this.element.classList.add('editor-table-find-bar');
         this.element.setAttribute('role', 'search');
+        this.element.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            event.preventDefault();
+            this.hide(true);
+        });
 
         this.inputElement = document.createElement('input');
         this.inputElement.classList.add('editor-table-find-input');
@@ -96,6 +134,8 @@ export class EditorTableFindBar {
         this.countElement = document.createElement('span');
         this.countElement.classList.add('editor-table-find-count');
         this.countElement.textContent = '0/0';
+        this.countElement.setAttribute('aria-live', 'polite');
+        this.countElement.setAttribute('aria-atomic', 'true');
         this.element.appendChild(this.countElement);
 
         this.statusElement = document.createElement('span');
@@ -177,6 +217,7 @@ export class EditorTableFindBar {
             this.matches = [];
             this.matchIndicesByRow.clear();
             this.currentIndex = -1;
+            this.headerSchemaFingerprint = '';
         }
         if (this.element.parentElement !== state.wrapperElement) {
             state.wrapperElement.appendChild(this.element);
@@ -191,6 +232,12 @@ export class EditorTableFindBar {
     hideForState(state: TabState): void {
         if (this.currentState !== state) return;
         this.hide(false);
+        this.element.remove();
+        this.currentState = null;
+        this.matches = [];
+        this.matchIndicesByRow.clear();
+        this.currentIndex = -1;
+        this.headerSchemaFingerprint = '';
     }
 
     private hide(focusTable: boolean): void {
@@ -199,6 +246,9 @@ export class EditorTableFindBar {
         this.clearSearchScrollbarMarkers();
         this.cancelSearch();
         this.clearHighlights();
+        this.headerSchemaFingerprint = this.currentState === null
+            ? ''
+            : this.buildHeaderSchemaFingerprint(this.currentState.editorTable);
         if (focusTable && this.currentState !== null) {
             this.currentState.editorTableHandler.activate();
         }
@@ -242,10 +292,6 @@ export class EditorTableFindBar {
             }
             return;
         }
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            this.hide(true);
-        }
     }
 
     private updateWholeWordButtonState(): void {
@@ -268,6 +314,20 @@ export class EditorTableFindBar {
         };
     }
 
+    private buildHeaderSchemaFingerprint(editorTable: EditorTable): string {
+        const columnCount = editorTable.getColumnCount();
+        let fingerprint = `${editorTable.dataColumnOffset()}|${columnCount}|`;
+        for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
+            const columnName = editorTable.getColumnHeaderValue(dataColumn);
+            const fullComment = editorTable.getColumnHeaderComment(dataColumn);
+            fingerprint += `${columnName.length}:${columnName}|`;
+            fingerprint += fullComment === null
+                ? 'null|'
+                : `${fullComment.length}:${fullComment}|`;
+        }
+        return fingerprint;
+    }
+
     private scheduleSearch(delayMs: number): void {
         if (this.searchTimerId !== null) {
             window.clearTimeout(this.searchTimerId);
@@ -284,10 +344,12 @@ export class EditorTableFindBar {
         this.updateCount();
         const state = this.currentState;
         if (state === null) {
+            this.headerSchemaFingerprint = '';
             this.setSearching(false);
             this.updateNavigationButtons();
             return;
         }
+        this.headerSchemaFingerprint = this.buildHeaderSchemaFingerprint(state.editorTable);
         const query = this.inputElement.value.trim();
         if (query === '') {
             this.setSearching(false);
@@ -318,6 +380,7 @@ export class EditorTableFindBar {
             return;
         }
         const editorTable = state.editorTable;
+        const searchedHeaderSchemaFingerprint = this.buildHeaderSchemaFingerprint(editorTable);
         const rowCount = editorTable.getLogicalRowCount();
         const offset = editorTable.dataColumnOffset();
         const columnCount = editorTable.getColumnCount();
@@ -328,8 +391,32 @@ export class EditorTableFindBar {
         if (includeColumns) {
             for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
                 if (requestId !== this.searchRequestId) return;
-                if (this.columnMatchesQuery(editorTable, dataColumn, query, options)) {
-                    this.addMatch(0, dataColumn + offset);
+                const labelHighlights: Array<ColumnHeaderLabelHighlight> = [];
+                const columnName = editorTable.getColumnHeaderValue(dataColumn);
+                const nameSegments = getQueryHighlightSegments(columnName, query, options);
+                if (nameSegments !== null) {
+                    labelHighlights.push({kind: 'name', segments: nameSegments});
+                }
+                const fullComment = editorTable.getColumnHeaderComment(dataColumn);
+                if (fullComment !== null) {
+                    const fullCommentSegments = getQueryHighlightSegments(fullComment, query, options);
+                    if (fullCommentSegments !== null) {
+                        const commentLines = fullComment.split('\n');
+                        let displayedCommentSegments: Array<HighlightSegment> | null = null;
+                        for (const commentLine of commentLines) {
+                            const lineSegments = getQueryHighlightSegments(commentLine, query, options);
+                            if (lineSegments === null) continue;
+                            displayedCommentSegments = lineSegments;
+                            break;
+                        }
+                        labelHighlights.push({
+                            kind: 'comment',
+                            segments: displayedCommentSegments ?? fullCommentSegments,
+                        });
+                    }
+                }
+                if (labelHighlights.length > 0) {
+                    this.addMatch({kind: 'header', row: 0, column: dataColumn + offset, labelHighlights});
                 }
                 scannedCells++;
             }
@@ -345,7 +432,7 @@ export class EditorTableFindBar {
                     valueMatches
                     || (hintText !== null && matchesQuery(hintText, query, options))
                 ) {
-                    this.addMatch(row, column);
+                    this.addMatch({kind: 'data', row, column});
                 }
                 scannedCells++;
                 cellsSinceYield++;
@@ -360,6 +447,11 @@ export class EditorTableFindBar {
             }
         }
         if (requestId !== this.searchRequestId) return;
+        if (this.buildHeaderSchemaFingerprint(editorTable) !== searchedHeaderSchemaFingerprint) {
+            this.scheduleSearch(0);
+            return;
+        }
+        this.headerSchemaFingerprint = searchedHeaderSchemaFingerprint;
         this.setSearching(false);
         this.updateSearchScrollbarMarkers();
         if (this.matches.length > 0) {
@@ -370,26 +462,19 @@ export class EditorTableFindBar {
         }
     }
 
-    private columnMatchesQuery(editorTable: EditorTable, dataColumn: number, query: string, options: SearchOptions): boolean {
-        const column = editorTable.getTableData().header[dataColumn];
-        if (column === undefined) return false;
-        return matchesQuery(column.name, query, options)
-            || (column.comment !== null && matchesQuery(column.comment, query, options));
-    }
-
     private yieldToBrowser(): Promise<void> {
         return new Promise((resolve) => {
             window.setTimeout(resolve, 0);
         });
     }
 
-    private addMatch(row: number, column: number): void {
+    private addMatch(match: FindMatch): void {
         const matchIndex = this.matches.length;
-        this.matches.push({row, column});
-        let rowIndices = this.matchIndicesByRow.get(row);
-        if (rowIndices === undefined) {
+        this.matches.push(match);
+        let rowIndices = this.matchIndicesByRow.get(match.row) ?? null;
+        if (rowIndices === null) {
             rowIndices = [];
-            this.matchIndicesByRow.set(row, rowIndices);
+            this.matchIndicesByRow.set(match.row, rowIndices);
         }
         rowIndices.push(matchIndex);
     }
@@ -455,8 +540,14 @@ export class EditorTableFindBar {
     }
 
     private scheduleHighlightRefresh(): void {
-        if (this.highlightRefreshFrameId !== null) return;
         if (!this.element.classList.contains('editor-table-find-bar-visible')) return;
+        const state = this.currentState;
+        if (state === null) return;
+        if (this.buildHeaderSchemaFingerprint(state.editorTable) !== this.headerSchemaFingerprint) {
+            this.scheduleSearch(0);
+            return;
+        }
+        if (this.highlightRefreshFrameId !== null) return;
         if (this.searching || this.currentIndex < 0 || this.matches.length === 0) return;
         this.highlightRefreshFrameId = window.requestAnimationFrame(() => {
             this.highlightRefreshFrameId = null;
@@ -508,7 +599,7 @@ export class EditorTableFindBar {
         if (state === null || this.matches.length === 0) return;
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (target === null) return;
-        const cell = target.closest('.editor-table-cell-find-match');
+        const cell = target.closest(`.${HEADER_MATCH_CLASS}, .editor-table-cell-find-match`);
         if (!(cell instanceof HTMLElement)) return;
         if (!state.wrapperElement.contains(cell)) return;
         const position = state.editorTable.getCellPositionFromElement(cell);
@@ -589,16 +680,36 @@ export class EditorTableFindBar {
     }
 
     private applyHighlights(): void {
-        this.clearHighlights();
         const state = this.currentState;
-        if (state === null) return;
+        if (state === null) {
+            this.clearHighlights();
+            return;
+        }
+        const currentHeaderSchemaFingerprint = this.buildHeaderSchemaFingerprint(state.editorTable);
+        if (currentHeaderSchemaFingerprint !== this.headerSchemaFingerprint) {
+            this.scheduleSearch(0);
+            return;
+        }
+        this.clearHighlights();
         if (this.matches.length === 0) return;
         const editorTable = state.editorTable;
         const renderedStart = editorTable.getVirtualScrollRenderedStart();
         const renderedEnd = editorTable.getVirtualScrollRenderedEnd();
         const frozenRowCount = editorTable.getFrozenRowCount();
         const totalDataRows = Math.max(0, editorTable.getLogicalRowCount() - 1);
-        this.addHighlightsForHeaderRow(editorTable);
+        const headerMatchIndices = this.matchIndicesByRow.get(0) ?? null;
+        if (headerMatchIndices !== null) {
+            for (const matchIndex of headerMatchIndices) {
+                const match = this.matches[matchIndex];
+                if (match.kind !== 'header') continue;
+                const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
+                const sourceCell = editorTable.getCellOrNull(match.row, match.column);
+                this.addHeaderHighlightCell(visibleCell, match.labelHighlights);
+                if (sourceCell !== visibleCell) {
+                    this.addHeaderHighlightCell(sourceCell, match.labelHighlights);
+                }
+            }
+        }
         const frozenEnd = Math.min(frozenRowCount, totalDataRows);
         this.addHighlightsForDataRows(editorTable, 0, frozenEnd);
         const renderedVisibleStart = Math.max(renderedStart, frozenEnd);
@@ -606,32 +717,66 @@ export class EditorTableFindBar {
         this.addHighlightsForDataRows(editorTable, renderedVisibleStart, renderedVisibleEnd);
     }
 
-    private addHighlightsForHeaderRow(editorTable: EditorTable): void {
-        const matchIndices = this.matchIndicesByRow.get(0);
-        if (matchIndices === undefined) return;
-        for (const matchIndex of matchIndices) {
-            this.addHighlightForMatch(editorTable, matchIndex);
+    private addHeaderHighlightCell(
+        cell: HTMLElement | null,
+        labelHighlights: Array<ColumnHeaderLabelHighlight>,
+    ): void {
+        if (cell === null) return;
+        cell.classList.add(HEADER_MATCH_CLASS);
+        const dataColumnText = cell.getAttribute('data-column-index');
+        if (dataColumnText === null) throw new Error('列ヘッダーにcolumnIndexがありません');
+        for (const labelHighlight of labelHighlights) {
+            const labelSelector = labelHighlight.kind === 'name'
+                ? '.column-header-name'
+                : '.column-header-comment';
+            let label = cell.querySelector<HTMLElement>(labelSelector);
+            if (label === null && labelHighlight.kind === 'name') {
+                let textNode: ChildNode | null = null;
+                for (const node of Array.from(cell.childNodes)) {
+                    if (node.nodeType !== Node.TEXT_NODE) continue;
+                    textNode = node;
+                    break;
+                }
+                if (textNode === null) {
+                    throw new Error(`列${dataColumnText}のnameラベルが見つかりません`);
+                }
+                label = document.createElement('span');
+                label.classList.add(HEADER_HIGHLIGHT_LABEL_CLASS, 'column-header-name');
+                textNode.replaceWith(label);
+            }
+            if (label === null) {
+                throw new Error(`列${dataColumnText}の${labelHighlight.kind}ラベルが見つかりません`);
+            }
+            label.classList.add(HEADER_HIGHLIGHTED_LABEL_CLASS);
+            label.textContent = '';
+            for (const segment of labelHighlight.segments) {
+                if (segment.highlight && segment.text !== '') {
+                    const highlightSpan = document.createElement('span');
+                    highlightSpan.classList.add('search-highlight');
+                    highlightSpan.textContent = segment.text;
+                    label.appendChild(highlightSpan);
+                } else {
+                    label.appendChild(document.createTextNode(segment.text));
+                }
+            }
         }
     }
 
     private addHighlightsForDataRows(editorTable: EditorTable, startDataRowIndex: number, endDataRowIndex: number): void {
         for (let dataRowIndex = startDataRowIndex; dataRowIndex < endDataRowIndex; dataRowIndex++) {
-            const matchIndices = this.matchIndicesByRow.get(dataRowIndex + 1);
-            if (matchIndices === undefined) continue;
+            const matchIndices = this.matchIndicesByRow.get(dataRowIndex + 1) ?? null;
+            if (matchIndices === null) continue;
             for (const matchIndex of matchIndices) {
-                this.addHighlightForMatch(editorTable, matchIndex);
+                const match = this.matches[matchIndex];
+                if (match.kind !== 'data') continue;
+                const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
+                const sourceCell = editorTable.getCellOrNull(match.row, match.column);
+                const current = matchIndex === this.currentIndex;
+                this.addHighlightCell(visibleCell, current);
+                if (sourceCell !== visibleCell) {
+                    this.addHighlightCell(sourceCell, current);
+                }
             }
-        }
-    }
-
-    private addHighlightForMatch(editorTable: EditorTable, matchIndex: number): void {
-        const match = this.matches[matchIndex];
-        const visibleCell = editorTable.getVisibleCellOrNull(match.row, match.column);
-        const sourceCell = editorTable.getCellOrNull(match.row, match.column);
-        const current = matchIndex === this.currentIndex;
-        this.addHighlightCell(visibleCell, current);
-        if (sourceCell !== visibleCell) {
-            this.addHighlightCell(sourceCell, current);
         }
     }
 
@@ -647,5 +792,33 @@ export class EditorTableFindBar {
             cell.classList.remove('editor-table-cell-find-match', 'editor-table-cell-find-current');
         }
         this.highlightedCells = [];
+        const state = this.currentState;
+        if (state === null) return;
+        const labels = state.wrapperElement.querySelectorAll<HTMLElement>(`.${HEADER_HIGHLIGHTED_LABEL_CLASS}`);
+        for (const label of Array.from(labels)) {
+            const headerCell = label.closest<HTMLElement>('.editor-table-column-header');
+            if (headerCell === null) throw new Error('検索ラベルの親ヘッダーが見つかりません');
+            const dataColumnText = headerCell.getAttribute('data-column-index');
+            if (dataColumnText === null) throw new Error('列ヘッダーにcolumnIndexがありません');
+            const dataColumn = Number(dataColumnText);
+            if (label.classList.contains('column-header-comment')) {
+                const fullComment = state.editorTable.getColumnHeaderComment(dataColumn);
+                label.textContent = fullComment === null ? '' : fullComment.split('\n')[0];
+            } else if (label.classList.contains('column-header-name')) {
+                const currentColumnName = state.editorTable.getColumnHeaderValue(dataColumn);
+                if (label.classList.contains(HEADER_HIGHLIGHT_LABEL_CLASS)) {
+                    label.replaceWith(document.createTextNode(currentColumnName));
+                    continue;
+                }
+                label.textContent = currentColumnName;
+            } else {
+                throw new Error(`列${dataColumnText}の検索ラベル種別を判定できません`);
+            }
+            label.classList.remove(HEADER_HIGHLIGHTED_LABEL_CLASS);
+        }
+        const headerMatches = state.wrapperElement.querySelectorAll<HTMLElement>(`.${HEADER_MATCH_CLASS}`);
+        for (const headerMatch of Array.from(headerMatches)) {
+            headerMatch.classList.remove(HEADER_MATCH_CLASS);
+        }
     }
 }

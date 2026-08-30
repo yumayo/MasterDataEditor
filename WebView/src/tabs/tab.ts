@@ -2123,6 +2123,7 @@ export class Tab {
         // タブ状態のクリーンアップ
         const state = this.tabStates.get(name);
         if (state) {
+            this.editorTableFindBar.hideForState(state);
             if (this.activeTabName === name) {
                 state.formPanelState = null;
                 this.removeCurrentFormPanel();

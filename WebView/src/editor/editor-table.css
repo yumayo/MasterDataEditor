@@ -653,16 +653,20 @@
 .column-header-comment {
     display: block;
     font-size: 0.78em;
-    opacity: 0.6;
+    color: color-mix(in srgb, var(--font-color) 60%, transparent);
     line-height: 1.2;
 }
 
-.editor-table-column-header.editor-table-cell-find-match {
-    background-color: var(--editor-table-find-match-bg);
+/* 選択背景上ではテーマの前景色を使い、ダークテーマでも4.5:1以上のコントラストを保つ。 */
+.editor-table-column-header.selected .column-header-comment {
+    color: var(--font-color);
 }
 
-.editor-table-column-header.editor-table-cell-find-current {
-    background-color: var(--editor-table-find-current-bg);
+/* commentなし列を検索中だけspan化しても、通常時のサイズと1行レイアウトを維持する。 */
+.editor-table-find-header-label.column-header-name {
+    display: inline;
+    font-size: inherit;
+    line-height: inherit;
 }
 
 /* バッジエリア: ヘッダーセルの左側に絶対配置するコンテナ */
