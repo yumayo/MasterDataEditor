@@ -648,6 +648,51 @@ test.describe('既存テーブルの定義編集', () => {
         `);
     });
 
+    test('固定済みのテーブルは定義編集の保存後も固定状態を維持する', async ({ page, mockFileSystem }) => {
+        void mockFileSystem;
+        const explorer = page.locator('#explorer');
+        const fileItem = explorer.locator('.explorer-file', { hasText: 'test' });
+        await expect(fileItem).toBeVisible();
+        await fileItem.click();
+
+        const tableTab = page.locator('.tab-button[title="test"]');
+        await expect(tableTab).toBeVisible();
+        await tableTab.click({ button: 'right' });
+        await page.locator('.context-menu.visible .context-menu-item', { hasText: 'タブを固定' }).click();
+        await expect(tableTab).toHaveClass(/tab-button-pinned/);
+        await expect(tableTab.locator('.tab-button-pin-indicator')).toBeVisible();
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const state = JSON.parse(raw) as {
+                tabs: { open: Array<{ name: string; pinned: boolean }> };
+            };
+            return state.tabs.open.some(tab => tab.name === 'test' && tab.pinned);
+        }, 'user:ui-state.json', { timeout: 5000 });
+
+        await tableTab.click({ button: 'right' });
+        await page.locator('.context-menu.visible .context-menu-item', { hasText: 'テーブル定義を編集' }).click();
+        await expect(getEditor(page)).toBeVisible();
+        await getDescInput(page).fill('固定状態維持の回帰テスト');
+        await getSaveButton(page).click();
+        await expect(getEditor(page)).toHaveCount(0);
+
+        const reopenedTableTab = page.locator('.tab-button[title="test"]');
+        await expect(reopenedTableTab).toHaveCount(1);
+        await expect(reopenedTableTab).toHaveClass(/tab-button-pinned/);
+        await expect(reopenedTableTab.locator('.tab-button-pin-indicator')).toBeVisible();
+        await page.waitForFunction((path) => {
+            const raw = (window as unknown as { __mockFs: Record<string, string> }).__mockFs[path];
+            if (typeof raw !== 'string') return false;
+            const state = JSON.parse(raw) as {
+                tabs: { open: Array<{ name: string; description: string | null; pinned: boolean }> };
+            };
+            return state.tabs.open.some(tab => tab.name === 'test'
+                && tab.description === '固定状態維持の回帰テスト'
+                && tab.pinned);
+        }, 'user:ui-state.json', { timeout: 5000 });
+    });
+
     test('列を削除して保存するとCSVから該当列が除去される', async ({ page, mockFileSystem }) => {
         void mockFileSystem;
         const explorer = page.locator('#explorer');

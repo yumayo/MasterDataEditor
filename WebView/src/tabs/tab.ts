@@ -2822,6 +2822,7 @@ export class Tab {
     async closeTableDefinitionAndReopenTable(tableName: string, description: string | null): Promise<void> {
         this.referenceDataCache.invalidateSchemaIndex();
         this.reverseReferenceEngine.invalidateAll();
+        const wasTableTabPinned = this.isTabPinned(tableName);
         // 既にテーブルタブが開かれている場合は先に閉じる。
         // 定義タブを先に閉じると前の通常タブが一瞬アクティブ化され、古いストアヘッダーが再利用されるため。
         const existingState = this.tabStates.get(tableName);
@@ -2841,7 +2842,7 @@ export class Tab {
         this.closeActiveTableDefinitionTab(this.createTableDefinitionEditTabName(tableName));
 
         // テーブルを通常タブで開く（既にエクスプローラーに存在するため appendFile は呼ばない）
-        const tabButton = this.append(tableName, description);
+        const tabButton = this.append(tableName, description, wasTableTabPinned);
         tabButton.click();
     }
 
