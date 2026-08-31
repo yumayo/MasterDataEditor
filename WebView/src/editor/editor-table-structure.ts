@@ -473,6 +473,8 @@ export class EditorTableStructure {
             commentSpan.classList.add('column-header-comment');
             // \n が含まれる場合は最初の行のみ表示する（表示用の切り捨て）
             commentSpan.textContent = comment.split('\n')[0];
+            // 省略表示された場合も説明全体を確認できるようにする
+            commentSpan.title = comment;
             columnHeaderCell.appendChild(nameSpan);
             columnHeaderCell.appendChild(commentSpan);
             // 完全なcomment（\n を含む場合でも全体）を data-full-comment に保存し、

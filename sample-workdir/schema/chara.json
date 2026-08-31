@@ -4,78 +4,66 @@
       "key": 0,
       "name": "id",
       "type": "int",
-      "comment": "ID",
-      "width": 173
+      "comment": "ID"
     },
     {
       "key": 1,
       "name": "recover_stamina",
       "type": "int",
-      "comment": "スタミナ回復量",
-      "width": 219
+      "comment": "スタミナ回復量"
     },
     {
       "key": 2,
       "name": "recover_hp",
       "type": "int",
-      "comment": "HP回復量",
-      "width": 443
+      "comment": "HP回復量"
     },
     {
       "key": 3,
       "name": "attack",
       "type": "int",
-      "comment": "攻撃力",
-      "width": 100
+      "comment": "攻撃力"
     },
     {
       "key": 4,
       "name": "defence",
       "type": "int",
-      "comment": "防御力",
-      "width": 100
+      "comment": "防御力"
     },
     {
       "key": 5,
       "name": "speed",
       "type": "int",
-      "comment": "速度",
-      "width": 100
+      "comment": "速度"
     },
     {
       "key": 6,
       "name": "skill_id",
       "type": "int",
       "comment": "スキルID",
-      "reference": "skill.id",
-      "width": 100
+      "reference": "skill.id"
     },
     {
       "key": 7,
       "name": "selling_price",
       "type": "int",
-      "comment": "売却価格",
-      "width": 100
+      "comment": "売却価格"
     },
     {
       "key": 8,
       "name": "export_begin_date",
       "type": "datetime",
-      "comment": "出力予定日",
-      "width": 187
+      "comment": "出力予定日"
     },
     {
       "key": 9,
       "name": "export_end_date",
       "type": "datetime",
-      "comment": "削除予定日",
-      "width": 175
+      "comment": "削除予定日"
     }
   ],
   "primary_key": [
     "id"
   ],
-  "description": "キャラマスター",
-  "frozenColumnCount": 2,
-  "frozenRowCount": 5
+  "description": "キャラマスター"
 }

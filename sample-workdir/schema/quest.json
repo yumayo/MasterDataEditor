@@ -1,59 +1,53 @@
 {
-    "description": "クエストマスター",
-    "header": [
-        {
-            "key": 0,
-            "name": "id",
-            "type": "int",
-            "comment": "ID",
-            "width": 106
-        },
-        {
-            "key": 1,
-            "name": "first_clear_reward_table_id",
-            "type": "int",
-            "comment": "初回報酬テーブルID",
-            "reference": "table.id",
-            "width": 183
-        },
-        {
-            "key": 2,
-            "name": "first_clear_reward_record_id",
-            "type": "int",
-            "comment": "初回報酬レコードID",
-            "reference": {
-                "sourceTable": "table",
-                "sourceMatchColumn": "id",
-                "sourceMatchValue": "first_clear_reward_table_id",
-                "destTable": "master",
-                "destColumn": "column"
-            },
-            "width": 224
-        },
-        {
-            "key": 3,
-            "name": "quest_reward_group_id",
-            "type": "int",
-            "comment": "クエスト報酬グループID",
-            "reference": "quest_reward.group_id",
-            "width": 185
-        },
-        {
-            "key": 4,
-            "name": "export_begin_date",
-            "type": "datetime",
-            "comment": "出力予定日",
-            "width": 187
-        },
-        {
-            "key": 5,
-            "name": "export_end_date",
-            "type": "datetime",
-            "comment": "削除予定日",
-            "width": 175
-        }
-    ],
-    "primary_key": [
-        "id"
-    ]
+  "header": [
+    {
+      "key": 0,
+      "name": "id",
+      "type": "int",
+      "comment": "ID"
+    },
+    {
+      "key": 1,
+      "name": "first_clear_reward_table_id",
+      "type": "int",
+      "comment": "初回報酬テーブルID",
+      "reference": "table.id"
+    },
+    {
+      "key": 2,
+      "name": "first_clear_reward_record_id",
+      "type": "int",
+      "comment": "初回報酬レコードID",
+      "reference": {
+        "sourceTable": "table",
+        "sourceMatchColumn": "id",
+        "sourceMatchValue": "first_clear_reward_table_id",
+        "destTable": "master",
+        "destColumn": "column"
+      }
+    },
+    {
+      "key": 3,
+      "name": "quest_reward_group_id",
+      "type": "int",
+      "comment": "クエスト報酬グループID",
+      "reference": "quest_reward.group_id"
+    },
+    {
+      "key": 4,
+      "name": "export_begin_date",
+      "type": "datetime",
+      "comment": "出力予定日"
+    },
+    {
+      "key": 5,
+      "name": "export_end_date",
+      "type": "datetime",
+      "comment": "削除予定日"
+    }
+  ],
+  "primary_key": [
+    "id"
+  ],
+  "description": "クエストマスター"
 }

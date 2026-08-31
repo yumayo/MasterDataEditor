@@ -229,6 +229,63 @@ test.describe('FEAT_0049: 列ヘッダーの順序 — name上段・comment下�
 });
 
 // =============================================================================
+// 長い列説明の省略表示
+// =============================================================================
+test.describe('長い列説明の省略表示', () => {
+    const fullComment = '削除予定日 結構長めの定義があります。';
+
+    test.beforeEach(async ({ page }) => {
+        const fs: MockFileSystem = {
+            "schema/export_schedule.json": JSON.stringify({
+                primary_key: ["id"],
+                header: [
+                    { key: 0, name: "id", type: "int" },
+                    { key: 1, name: "export_end_date", type: "datetime", comment: fullComment, width: 210 },
+                ],
+            }),
+            "data/export_schedule.csv": [
+                "id,export_end_date",
+                "1,2026-08-31 00:00:00",
+            ].join("\n"),
+        };
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+    });
+
+    test('列説明を省略し、フィルタ・ソートアイコンの手前に収めること', async ({ page }) => {
+        const table = await openTableAsync(page, 'export_schedule');
+        const header = getColumnHeaderCell(table, 1);
+        const comment = header.locator('.column-header-comment');
+
+        await expect(comment).toHaveAttribute('title', fullComment);
+
+        const geometry = await header.evaluate((element: Element) => {
+            const commentElement = element.querySelector<HTMLElement>('.column-header-comment');
+            const filterIcon = element.querySelector<HTMLElement>('.filter-icon');
+            const sortIndicator = element.querySelector<HTMLElement>('.sort-indicator');
+            if (commentElement === null || filterIcon === null || sortIndicator === null) return null;
+
+            const commentRect = commentElement.getBoundingClientRect();
+            return {
+                commentRight: commentRect.right,
+                filterLeft: filterIcon.getBoundingClientRect().left,
+                sortLeft: sortIndicator.getBoundingClientRect().left,
+                isTruncated: commentElement.scrollWidth > commentElement.clientWidth,
+                overflow: getComputedStyle(commentElement).overflow,
+                textOverflow: getComputedStyle(commentElement).textOverflow,
+            };
+        });
+
+        expect(geometry).not.toBeNull();
+        expect(geometry!.isTruncated).toBe(true);
+        expect(geometry!.overflow).toBe('hidden');
+        expect(geometry!.textOverflow).toBe('ellipsis');
+        expect(geometry!.commentRight).toBeLessThanOrEqual(geometry!.filterLeft);
+        expect(geometry!.commentRight).toBeLessThanOrEqual(geometry!.sortLeft);
+    });
+});
+
+// =============================================================================
 // テスト3: タブボタンに description が表示される
 // =============================================================================
 test.describe('タブへのdescription表示', () => {

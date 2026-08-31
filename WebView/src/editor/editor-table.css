@@ -652,6 +652,9 @@
 /* comment あり列ヘッダー: 下段（日本語説明）は補佐的に薄く小さく表示する。display: block で縦並びを保証する。 */
 .column-header-comment {
     display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.78em;
     color: color-mix(in srgb, var(--font-color) 60%, transparent);
     line-height: 1.2;
