@@ -1129,10 +1129,9 @@ export class DiffTab {
     }
 
     private redirectPaneWheelToEditorTable(event: WheelEvent, editorTable: EditorTable): void {
-        if (event.ctrlKey) return;
+        // カスタムスクロールバーや圧縮スクロール側で処理済みのイベントは二重適用しない。
+        if (event.defaultPrevented || event.ctrlKey) return;
         if (!(event.target instanceof Element)) return;
-        const mainViewport = (event.currentTarget as HTMLElement).querySelector('.editor-table-main-viewport');
-        if (mainViewport instanceof HTMLElement && mainViewport.contains(event.target)) return;
 
         let deltaX = event.deltaX;
         let deltaY = event.deltaY;

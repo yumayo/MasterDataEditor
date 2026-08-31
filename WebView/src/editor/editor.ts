@@ -303,16 +303,14 @@ export class Editor {
     }
 
     private redirectOuterWheelToMainViewport(event: WheelEvent): void {
-        if (event.ctrlKey) return;
+        // カスタムスクロールバーや圧縮スクロール側で処理済みのイベントは二重適用しない。
+        if (event.defaultPrevented || event.ctrlKey) return;
         if (!(event.target instanceof Element)) return;
         if (this.tab === false) return;
         const activeState = this.tab.getActiveTabState();
         if (activeState === false) return;
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
         if (!activeState.wrapperElement.contains(event.target)) return;
-        const mainViewport = activeState.wrapperElement.querySelector('.editor-table-main-viewport');
-        if (!(mainViewport instanceof HTMLElement)) return;
-        if (mainViewport.contains(event.target)) return;
 
         let deltaX = event.deltaX;
         let deltaY = event.deltaY;
