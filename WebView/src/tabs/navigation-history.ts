@@ -153,6 +153,20 @@ export class NavigationHistory {
         }, '');
     }
 
+    /**
+     * ユーザー操作でフォームパネルを閉じたとき、フォームを開く前の履歴へ戻る。
+     *
+     * パネルをDOMから閉じるだけでは form-panel-open エントリが現在位置に残り、
+     * その後に定義ジャンプして戻ると、閉じたはずのフォームが再表示されてしまう。
+     * popstate 復元中や、別種の履歴エントリから復元されたフォームでは何もしない。
+     */
+    backFromFormPanelOpen(): void {
+        if (this.restoring) return;
+        const currentState = history.state as Record<string, unknown> | null;
+        if (currentState === null || currentState['type'] !== 'form-panel-open') return;
+        history.back();
+    }
+
     private closeOrSuspendFormPanelForDestination(destinationTabName: string): void {
         const activeTabName = this.tab.getActiveTabName();
         if (activeTabName !== false && activeTabName !== destinationTabName) {

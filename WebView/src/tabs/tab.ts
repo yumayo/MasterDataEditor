@@ -4464,6 +4464,9 @@ export class Tab {
     toggleFormPanelForActiveRow(): void {
         if (this.currentFormPanel !== false) {
             this.closeFormPanel();
+            // form-panel-open を履歴に残したまま次の画面へ進むと、戻る操作で
+            // 閉じたフォームが復元されるため、ユーザーによる閉操作では履歴も戻す。
+            this.navigationHistory.backFromFormPanelOpen();
             return;
         }
         const target = this.resolveActiveFormPanelTarget();

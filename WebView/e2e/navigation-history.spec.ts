@@ -745,6 +745,32 @@ test.describe('フォームパネル開閉の履歴記録', () => {
 		await page.goBack();
 		await expect(page.locator('.form-panel')).toBeHidden();
 	});
+
+	test('フォームパネルを閉じて参照先へ移動した後にgoBackしてもフォームパネルは再表示されない', async ({ page }) => {
+		await openTableAsync(page, 'quest');
+		const questTable = page.locator(`.editor-left-pane .tab-wrapper[data-tab-name="quest"] .editor-table`);
+		await expect(questTable).toBeVisible();
+
+		const formToggle = page.locator('#toolbar .toolbar-button-form-toggle');
+		await formToggle.click();
+		await expect(page.locator('.form-panel')).toBeVisible();
+
+		await formToggle.click();
+		await expect(page.locator('.form-panel')).toBeHidden();
+		await expect.poll(() => page.evaluate(() => history.state?.type)).toBe('tab-switch');
+
+		// enemy_id の参照先へ Ctrl+クリックで移動する。
+		const enemyIdCell = questTable.locator('.editor-table-row').nth(0)
+			.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
+		await enemyIdCell.click({ modifiers: ['Control'] });
+		await expect(page.locator('.tab-button-active')).toContainText('enemy');
+		expect(await page.evaluate(() => history.state)).toMatchObject({ type: 'navigate-cell' });
+
+		await page.goBack();
+		await expect(page.locator('.tab-button-active')).toContainText('quest');
+		expect(await page.evaluate(() => history.state)).toMatchObject({ type: 'tab-switch' });
+		await expect(page.locator('.form-panel')).toBeHidden();
+	});
 });
 
 // =============================================================================
