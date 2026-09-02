@@ -66,6 +66,12 @@ export const REFERENCE_HINT_MARGIN_PX = 4;
  *  リサイズハンドルは position: absolute のためテキスト幅計算に影響しない。 */
 export const CELL_HORIZONTAL_EXTRA = 16;
 
+/** 列幅の自動フィットで走査する先頭データ行数。 */
+export const COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT = 100;
+
+/** 列幅の自動フィットで計測する、セル値と参照ヒントを合わせた最大文字数。 */
+export const COLUMN_AUTO_FIT_MAX_CHARACTER_COUNT = 128;
+
 /** 列ヘッダー左右の通常padding(px)。CSSの .editor-table-cell { padding-left/right: 6px } と同期する。 */
 export const HEADER_SIDE_PADDING_PX = 6;
 

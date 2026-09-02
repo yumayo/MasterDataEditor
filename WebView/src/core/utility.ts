@@ -1,12 +1,15 @@
 import {
     CELL_FONT,
     CELL_HORIZONTAL_EXTRA,
+    COLUMN_AUTO_FIT_MAX_CHARACTER_COUNT,
     COLUMN_HEADER_FONT,
     HEADER_BADGE_AREA_PX,
     HEADER_ICON_AREA_PX,
     HEADER_LABEL_SAFE_GAP_PX,
     HEADER_SIDE_PADDING_PX,
     MIN_COLUMN_WIDTH_PX,
+    REFERENCE_HINT_FONT,
+    REFERENCE_HINT_MARGIN_PX,
 } from "./constant";
 
 const TYPE_CHARACTER_COUNT_BY_TYPE: Record<string, number> = {
@@ -83,6 +86,28 @@ export class Utility {
      */
     static calculateColumnWidth(columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean = false): string {
         return `${Utility.calculateColumnMinimumWidthPx(columnName, columnType, hasIcons, hasBadge)}px`;
+    }
+
+    /**
+     * セル値と参照ヒントを合わせた自動フィット幅を計算する。
+     * 極端に長い値で列が過度に拡大しないよう、表示順（参照ヒント→セル値）で
+     * 最大文字数までを計測対象とする。文字数はサロゲートペアを分割しないコードポイント単位。
+     */
+    static calculateAutoFitCellWidthPx(cellValue: string, referenceHint: string | null = null): number {
+        let remainingCharacters = COLUMN_AUTO_FIT_MAX_CHARACTER_COUNT;
+
+        let hintWidth = 0;
+        if (referenceHint !== null && remainingCharacters > 0) {
+            const hintCharacters = Array.from(referenceHint).slice(0, remainingCharacters);
+            remainingCharacters -= hintCharacters.length;
+            if (hintCharacters.length > 0) {
+                hintWidth = Utility.getTextWidth(hintCharacters.join(''), REFERENCE_HINT_FONT) + REFERENCE_HINT_MARGIN_PX;
+            }
+        }
+
+        const valueCharacters = Array.from(cellValue).slice(0, remainingCharacters);
+        const valueWidth = Utility.getTextWidth(valueCharacters.join(''), CELL_FONT);
+        return Math.ceil(valueWidth + hintWidth) + CELL_HORIZONTAL_EXTRA;
     }
 
     static clampColumnWidth(width: string, columnName: string, columnType: string, hasIcons: boolean, hasBadge: boolean): string {

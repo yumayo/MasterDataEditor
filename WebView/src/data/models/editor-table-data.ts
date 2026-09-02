@@ -3,6 +3,7 @@ import {EditorTableDataColumn} from "./editor-table-data-column";
 import {Csv} from "../csv";
 import {Utility} from "../../core/utility";
 import {DynamicReferenceSchema} from "../../references/reference-expression";
+import {COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT} from "../../core/constant";
 
 export class EditorTableData {
 
@@ -64,6 +65,7 @@ export class EditorTableData {
         }
 
         const header = json['header'] as Array<{key: number; name: string; type: string; comment?: string; reference?: string | DynamicReferenceSchema; default?: number | string | boolean | null; width?: number}>;
+        const body = csv.body;
         const columns: EditorTableDataColumn[] = [];
         for (let i = 0; i < header.length; ++i) {
             const column = header[i];
@@ -91,8 +93,31 @@ export class EditorTableData {
             columnMapping.push(csvIndex);
         }
 
+        // 幅が明示されていない列は、先頭の一定行数を使って初期表示からセル内容に合わせる。
+        // 保存済み幅は呼び出し元で schema の width として適用されるため、ここでは上書きしない。
+        const autoFitRowCount = Math.min(body.length, COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT);
+        for (let columnIndex = 0; columnIndex < columns.length; columnIndex++) {
+            if (typeof header[columnIndex].width === 'number') continue;
+            const csvIndex = columnMapping[columnIndex];
+            if (csvIndex === -1) continue;
+
+            const column = columns[columnIndex];
+            let maxWidth = Number.parseFloat(column.width);
+            for (let rowIndex = 0; rowIndex < autoFitRowCount; rowIndex++) {
+                const row = body[rowIndex];
+                const cellValue = csvIndex < row.length ? row[csvIndex] : '';
+                maxWidth = Math.max(maxWidth, Utility.calculateAutoFitCellWidthPx(cellValue));
+            }
+            column.width = Utility.clampColumnWidth(
+                `${maxWidth}px`,
+                column.name,
+                column.type,
+                hasIcons,
+                primaryKeyColumns.includes(column.name) || column.reference !== null,
+            );
+        }
+
         const shouldMaterializeBody = options.materializeBody ?? true;
-        const body = csv.body;
         const rows: EditorTableDataRow[] = [];
         if (shouldMaterializeBody) {
             for (let i = 0; i < body.length; ++i) {

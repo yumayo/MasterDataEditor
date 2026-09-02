@@ -3,18 +3,14 @@ import { Page, Locator } from '@playwright/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 
 // =============================================================================
-// 列幅自動調整機能のE2Eテスト（RED状態）
+// 列幅自動調整機能のE2Eテスト
 //
 // 対象機能:
-//   1. リサイズハンドルのダブルクリックでセル内容に合わせた幅を自動計算して適用
-//   2. 複数列選択時のD&Dリサイズで選択中の全列に同一幅を一括適用
-//   3. 複数列選択時のダブルクリックで各列それぞれのセル内容に合わせた幅を適用
-//   4. 上記操作すべてでUndo/Redo対応
-//
-// 現状の未実装:
-//   - AreaResizer に dblclick イベントハンドラが存在しない
-//   - 初期列幅計算はセル内容・参照ヒント未考慮のため、自動フィットで追加計測する必要がある
-//   - D&Dリサイズが複数列選択状態を考慮しない（1列のみ変更）
+//   1. 初期表示で先頭100行のセル内容に合わせた幅を適用（最大128文字）
+//   2. リサイズハンドルのダブルクリックでセル内容に合わせた幅を自動計算して適用
+//   3. 複数列選択時のD&Dリサイズで選択中の全列に同一幅を一括適用
+//   4. 複数列選択時のダブルクリックで各列それぞれのセル内容に合わせた幅を適用
+//   5. 上記操作すべてでUndo/Redo対応
 // =============================================================================
 
 /** テーブルを開いてEditorTable Locatorを返す */
@@ -80,7 +76,8 @@ function createSimpleFileSystem(): MockFileSystem {
         "schema/item.json": JSON.stringify({
             header: [
                 { key: 0, name: "id", type: "int" },
-                { key: 1, name: "name", type: "string" },
+                // ダブルクリックによる変更を検証するため、初期自動フィット対象外の明示幅を設定する
+                { key: 1, name: "name", type: "string", width: 100 },
                 { key: 2, name: "value", type: "int" },
             ],
             primary_key: ["id"],
@@ -112,14 +109,14 @@ function createFkReferenceFileSystem(): MockFileSystem {
         "data/enemy.csv": [
             "id,ja",
             "1,スライム",
-            "2,超強力なレッドドラゴン（エリート）",
+            "2,超強力なレッドドラゴン（エリート）の非常に長い正式名称と追加説明テキスト",
             "3,ゴブリン",
         ].join("\n"),
         "schema/quest.json": JSON.stringify({
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
-                { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja" },
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja", width: 100 },
             ],
             primary_key: ["id"],
         }),
@@ -132,11 +129,73 @@ function createFkReferenceFileSystem(): MockFileSystem {
     };
 }
 
+/**
+ * 初期自動フィットの100行サンプリング・128文字上限・明示幅維持を検証するテーブル
+ */
+function createInitialAutoFitFileSystem(): MockFileSystem {
+    const rows: string[] = ['id,name,tail,huge,manual'];
+    for (let index = 0; index <= 100; index++) {
+        const name = index === 0 ? 'initial_auto_fit_uses_this_long_cell_value' : 'x';
+        const tail = index === 100 ? 'W'.repeat(200) : 'x';
+        const huge = index === 0 ? 'W'.repeat(200) : 'x';
+        rows.push(`${index + 1},${name},${tail},${huge},${'W'.repeat(200)}`);
+    }
+    return {
+        "schema/initial.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "name", type: "string" },
+                { key: 2, name: "tail", type: "string" },
+                { key: 3, name: "huge", type: "string" },
+                { key: 4, name: "manual", type: "string", width: 180 },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/initial.csv": rows.join('\n'),
+    };
+}
+
 // =============================================================================
 // テスト本体
 // =============================================================================
 
 test.describe('列幅自動調整機能', () => {
+    test.describe('初期表示時の自動幅調整', () => {
+        test.beforeEach(async ({ page }) => {
+            await installMockApiAsync(page, createInitialAutoFitFileSystem());
+            await page.goto('/');
+        });
+
+        test('先頭100行のセル内容に合わせ、101行目以降は幅計算から除外すること', async ({ page }) => {
+            const table = await openTableAsync(page, 'initial');
+
+            const nameWidth = await getColumnWidthPxAsync(table, 1);
+            const tailWidth = await getColumnWidthPxAsync(table, 2);
+
+            expect(nameWidth).toBeGreaterThan(200);
+            expect(tailWidth).toBeLessThan(200);
+        });
+
+        test('128文字を超えるセル内容は先頭128文字分の幅で打ち切ること', async ({ page }) => {
+            const table = await openTableAsync(page, 'initial');
+            const hugeWidth = await getColumnWidthPxAsync(table, 3);
+            const expectedWidth = await page.evaluate(() => {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                if (context === null) throw new Error('Canvas 2D context is unavailable');
+                context.font = '13px sans-serif';
+                return Math.ceil(context.measureText('W'.repeat(128)).width) + 16;
+            });
+
+            expect(hugeWidth).toBe(expectedWidth);
+        });
+
+        test('スキーマで明示された列幅は初期自動フィットで上書きしないこと', async ({ page }) => {
+            const table = await openTableAsync(page, 'initial');
+            expect(await getColumnWidthPxAsync(table, 4)).toBe(180);
+        });
+    });
+
     // -------------------------------------------------------------------------
     // テスト1: 単列ダブルクリック自動幅調整
     // -------------------------------------------------------------------------

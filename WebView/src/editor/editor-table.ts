@@ -7,10 +7,6 @@ import {Command, CellChange, CellChangeCommand} from "./command";
 import {AreaResizer} from "./area-resizer";
 import {
     DEFAULT_ROW_HEIGHT,
-    CELL_FONT,
-    REFERENCE_HINT_FONT,
-    REFERENCE_HINT_MARGIN_PX,
-    CELL_HORIZONTAL_EXTRA,
     ROW_TOTAL_HEIGHT_PX,
     COLUMN_HEADER_SINGLE_ROW_HEIGHT_PX,
     COLUMN_HEADER_WITH_COMMENT_HEIGHT_PX,
@@ -22,6 +18,7 @@ import {
     CUSTOM_VERTICAL_SCROLLBAR_MIN_THUMB_HEIGHT_PX,
     CUSTOM_HORIZONTAL_SCROLLBAR_MIN_THUMB_WIDTH_PX,
     WEBKIT_SCROLLBAR_SIZE_PX,
+    COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT,
 } from "../core/constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
@@ -1822,35 +1819,23 @@ export class EditorTable {
 
     /**
      * 指定列の自動フィット幅を計算する。
-     * 全データ行のセルテキスト幅と参照ヒント幅を Canvas API で計測し、
+     * 先頭100データ行のセルテキスト幅と参照ヒント幅を Canvas API で計測し、
      * ヘッダー幅との最大値を返す。バッファ空行（editor-table-empty-row）は計算対象外。
+     * 極端に長い内容はセル値と参照ヒントを合わせて先頭128文字まで計測する。
      * ミニテーブルかどうかは this.isMiniTable で自動判定する。
      * @param columnIndex 列インデックス（0始まり、行ヘッダーを除く）
      */
     calculateAutoColumnWidth(columnIndex: number): string {
-        const ctx = Utility.canvas.getContext('2d');
-        if (ctx === null) throw new Error('Canvas 2D コンテキストの取得に失敗しました');
-
         // ヘッダー幅を基底値として取得（ミニテーブルはアイコンなし）
         let maxWidth = this.getColumnMinimumWidthPx(columnIndex);
 
-        // 全データ行（バッファ空行を除く）のセル幅を計測
-        const dataRowCount = this.getFilteredDataRowCount();
+        // 先頭データ行（バッファ空行を除く）のセル幅を計測
+        const dataRowCount = Math.min(this.getFilteredDataRowCount(), COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT);
         for (let rowIdx = 1; rowIdx <= dataRowCount; rowIdx++) {
             const cellValue = this.getCellValueAt(rowIdx, columnIndex + this.dataColumnOffset());
-            ctx.font = CELL_FONT;
-            const textWidth = ctx.measureText(cellValue).width;
-
             // 参照ヒント幅を計測（通常参照ヒント・逆参照ヒントのどちらも対象）
             const hintText = this.getReferenceHintText(rowIdx, columnIndex);
-            let hintWidth = 0;
-            if (hintText !== null) {
-                ctx.font = REFERENCE_HINT_FONT;
-                hintWidth = ctx.measureText(hintText).width + REFERENCE_HINT_MARGIN_PX;
-            }
-
-            // セル全体の占有幅 = テキスト幅 + ヒント幅 + パディング
-            const cellTotalWidth = Math.ceil(textWidth + hintWidth) + CELL_HORIZONTAL_EXTRA;
+            const cellTotalWidth = Utility.calculateAutoFitCellWidthPx(cellValue, hintText);
             if (cellTotalWidth > maxWidth) maxWidth = cellTotalWidth;
         }
 
