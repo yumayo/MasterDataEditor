@@ -13,6 +13,18 @@ interface ActivityBarDropPosition {
 /** アクティビティバーの項目種別 */
 export type ActivityBarItem = UiActivityBarItem;
 
+const ACTIVITY_BAR_LABELS: Record<ActivityBarItem, string> = {
+    files: 'エクスプローラー',
+    references: '参照',
+    search: '検索',
+    bookmarks: 'ブックマーク',
+    calendar: 'スケジュール',
+    views: 'ビュープラグイン',
+    sourceControl: 'ソース管理',
+    branchCompare: 'ブランチ比較',
+    history: 'タイムライン',
+};
+
 /**
  * ファイルアイコン（SVG）
  */
@@ -74,6 +86,16 @@ const SOURCE_CONTROL_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24"
   <path d="M12 6.5V11M12 11C12 15 6 15 6 17.5M12 11C12 15 18 15 18 17.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
 </svg>`;
 
+/** 2ブランチ比較アイコン（左右のブランチと差分矢印） */
+const BRANCH_COMPARE_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="6" cy="5" r="2" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="6" cy="19" r="2" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M6 7V17" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="18" cy="5" r="2" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="18" cy="19" r="2" stroke="currentColor" stroke-width="1.5"/>
+  <path d="M18 7V17M9 9H15M13 7L15 9L13 11M15 15H9M11 13L9 15L11 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
 /**
  * 履歴アイコン（SVG — 時計形状）
  * タイムラインパネルを開くボタンに使用する
@@ -130,6 +152,7 @@ export class ActivityBar {
             ['calendar', this.createButton(CALENDAR_ICON_SVG, 'calendar')],
             ['views', this.createButton(VIEWS_ICON_SVG, 'views')],
             ['sourceControl', this.createButton(SOURCE_CONTROL_ICON_SVG, 'sourceControl')],
+            ['branchCompare', this.createButton(BRANCH_COMPARE_ICON_SVG, 'branchCompare')],
             ['history', this.createButton(HISTORY_ICON_SVG, 'history')],
         ]);
 
@@ -138,6 +161,7 @@ export class ActivityBar {
         this.settingsButton.classList.add('activity-bar-item', 'activity-bar-settings');
         this.settingsButton.innerHTML = SETTINGS_ICON_SVG;
         this.settingsButton.setAttribute('data-panel', 'settings');
+        this.configureButtonAccessibility(this.settingsButton, '設定');
         this.settingsButton.addEventListener('click', () => { this.onSettingsClick(); });
 
         this.renderButtons();
@@ -167,6 +191,7 @@ export class ActivityBar {
         button.classList.add('activity-bar-item');
         button.innerHTML = svgHtml;
         button.setAttribute('data-panel', item);
+        this.configureButtonAccessibility(button, ACTIVITY_BAR_LABELS[item]);
         button.addEventListener('mousedown', (event: MouseEvent) => { this.onMouseDown(event, item); });
         button.addEventListener('click', () => {
             if (this.suppressNextClick) {
@@ -177,6 +202,19 @@ export class ActivityBar {
             this.onItemClick(item);
         });
         return button;
+    }
+
+    private configureButtonAccessibility(button: HTMLElement, label: string): void {
+        button.setAttribute('role', 'button');
+        button.setAttribute('tabindex', '0');
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+        button.setAttribute('aria-pressed', 'false');
+        button.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            if (!event.repeat) button.click();
+        });
     }
 
     /**
@@ -337,7 +375,9 @@ export class ActivityBar {
      */
     private updateActiveState(): void {
         for (const [item, button] of this.buttons) {
-            button.classList.toggle('activity-bar-item-active', this.activeItem === item);
+            const isActive = this.activeItem === item;
+            button.classList.toggle('activity-bar-item-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         }
     }
 }

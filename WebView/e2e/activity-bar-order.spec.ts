@@ -3,7 +3,7 @@ import type {Page} from '@playwright/test';
 import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync} from './fixtures/mock-api';
 
 const UI_STATE_FILE = 'user:ui-state.json';
-const DEFAULT_ORDER = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
+const DEFAULT_ORDER = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'branchCompare', 'history'];
 
 async function getActivityBarOrderAsync(page: Page): Promise<string[]> {
     return page.locator('.activity-bar .activity-bar-item:not(.activity-bar-settings)').evaluateAll((nodes) => {
@@ -53,7 +53,7 @@ test.describe('アクティビティバー並び替え', () => {
 
         expect(await getActivityBarOrderAsync(page)).toEqual(DEFAULT_ORDER);
 
-        const expected = ['search', 'files', 'references', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
+        const expected = ['search', 'files', 'references', 'bookmarks', 'calendar', 'views', 'sourceControl', 'branchCompare', 'history'];
         await dragActivityBarItemBeforeAsync(page, 'search', 'files');
         await waitForActivityBarOrderAsync(page, expected);
         await waitForActivityBarOrderSavedAsync(page, expected);
@@ -72,13 +72,13 @@ test.describe('アクティビティバー並び替え', () => {
         await installMockApiAsync(page, fs);
         await page.goto('/');
 
-        await waitForActivityBarOrderAsync(page, savedOrder);
+        await waitForActivityBarOrderAsync(page, [...savedOrder, 'branchCompare']);
     });
 
     test('古いui-stateに残ったerDiagramは起動時に無視される', async ({page}) => {
         const fs = createDefaultFileSystem();
         const savedOrder = ['history', 'sourceControl', 'erDiagram', 'views', 'bookmarks', 'search', 'references', 'files'];
-        const expected = ['history', 'sourceControl', 'views', 'bookmarks', 'search', 'references', 'files', 'calendar'];
+        const expected = ['history', 'sourceControl', 'views', 'bookmarks', 'search', 'references', 'files', 'calendar', 'branchCompare'];
         fs[UI_STATE_FILE] = JSON.stringify({
             sidebar: {activePanel: 'erDiagram'},
             activityBar: {order: savedOrder},

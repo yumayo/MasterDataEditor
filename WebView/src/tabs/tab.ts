@@ -1,6 +1,6 @@
 import {EditorTableData} from "../data/models/editor-table-data";
 import {TabButton} from "./tab-button";
-import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitStatusEntry, type GitStatusResult} from "../app/api";
+import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitBranchCompareFile, type GitStatusEntry, type GitStatusResult} from "../app/api";
 import {applyStoredColumnWidthsToSchemaAsync} from "../app/column-widths";
 import {CommitSelectorDialog} from "../ui/commit-selector-dialog";
 import {Editor} from "../editor/editor";
@@ -70,6 +70,17 @@ type ActiveTabChangeListener = () => void;
 
 export interface FormPanelState {
     navStack: FormPanelNavEntry[];
+}
+
+interface BranchCompareDiffVersions {
+    schemaJson: string;
+    leftCsv: string;
+    rightCsv: string;
+}
+
+interface NormalizedBranchCompareSchema {
+    schemaJson: string;
+    primaryKey: string[];
 }
 
 /**
@@ -1787,6 +1798,29 @@ export class Tab {
         const loadingToken = this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${metadata.tableName}`, false);
         if (loadingToken === false) return true;
         try {
+            if (metadata.kind === 'branchCompare') {
+                const leftCommit = metadata.leftCommit;
+                const rightCommit = metadata.rightCommit;
+                const leftLabel = metadata.leftLabel;
+                const rightLabel = metadata.rightLabel;
+                const fileStatus = metadata.fileStatus;
+                if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null || fileStatus === null) {
+                    this.finishDiffTabLoading(diffTabName, loadingToken, true);
+                    return false;
+                }
+                const file: GitBranchCompareFile = {path: metadata.gitPath, tableName: metadata.tableName, status: fileStatus};
+                const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, null);
+                if (versions === null) {
+                    this.finishDiffTabLoading(diffTabName, loadingToken, true);
+                    return false;
+                }
+                await this.createOrReplaceDiffTabAsync(
+                    diffTabName, metadata.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv,
+                    metadata.gitPath, leftLabel, rightLabel, metadata.isNew,
+                    {loadingToken, metadata: {...metadata}}
+                );
+                return true;
+            }
             if (metadata.kind === 'commitCompare') {
                 const rightCommit = metadata.rightCommit;
                 const leftLabel = metadata.leftLabel;
@@ -2956,12 +2990,95 @@ export class Tab {
             rightCommit,
             leftLabel: leftDisplay,
             rightLabel: rightDisplay,
+            fileStatus: null,
         };
 
         await this.createOrReplaceDiffTabAsync(
             diffTabName, tableName, true, schemaJson, leftCsv, rightCsv, path,
             leftDisplay, rightDisplay, false, { metadata }
         );
+    }
+
+    /**
+     * ブランチ比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
+     * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
+     */
+    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal): Promise<void> {
+        const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, abortSignal);
+        if (versions === null) return;
+
+        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
+        const metadata: UiStoredDiffTab = {
+            kind: 'branchCompare',
+            tableName: file.tableName,
+            gitPath: file.path,
+            isStaged: true,
+            isNew: file.status === 'A',
+            leftCommit,
+            rightCommit,
+            leftLabel,
+            rightLabel,
+            fileStatus: file.status,
+        };
+        await this.createOrReplaceDiffTabAsync(
+            diffTabName, file.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv, file.path,
+            leftLabel, rightLabel, file.status === 'A', {metadata, abortSignal}
+        );
+    }
+
+    private async loadBranchCompareDiffVersionsAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, abortSignal: AbortSignal | null): Promise<BranchCompareDiffVersions | null> {
+        const schemaPath = 'schema/' + file.tableName + '.json';
+        if (file.status === 'M') {
+            const versions = await Promise.all([
+                gitShowAtCommitAsync(leftCommit, schemaPath),
+                gitShowAtCommitAsync(rightCommit, schemaPath),
+                gitShowAtCommitAsync(leftCommit, file.path),
+                gitShowAtCommitAsync(rightCommit, file.path),
+            ]);
+            if (abortSignal !== null && abortSignal.aborted) return null;
+            const leftSchema = this.normalizeBranchCompareSchema(versions[0], '比較元ブランチ');
+            const rightSchema = this.normalizeBranchCompareSchema(versions[1], '比較先ブランチ');
+            if (JSON.stringify(leftSchema.primaryKey) !== JSON.stringify(rightSchema.primaryKey)) throw new Error('左右ブランチでprimary_keyが異なるため比較できません');
+            return {schemaJson: rightSchema.schemaJson, leftCsv: versions[2], rightCsv: versions[3]};
+        }
+        if (file.status === 'A') {
+            const versions = await Promise.all([
+                gitShowAtCommitAsync(rightCommit, schemaPath),
+                gitShowAtCommitAsync(rightCommit, file.path),
+            ]);
+            if (abortSignal !== null && abortSignal.aborted) return null;
+            const schema = this.normalizeBranchCompareSchema(versions[0], '比較先ブランチ');
+            return {schemaJson: schema.schemaJson, leftCsv: this.buildHeaderOnlyCsv(schema.schemaJson), rightCsv: versions[1]};
+        }
+        const versions = await Promise.all([
+            gitShowAtCommitAsync(leftCommit, schemaPath),
+            gitShowAtCommitAsync(leftCommit, file.path),
+        ]);
+        if (abortSignal !== null && abortSignal.aborted) return null;
+        const schema = this.normalizeBranchCompareSchema(versions[0], '比較元ブランチ');
+        return {schemaJson: schema.schemaJson, leftCsv: versions[1], rightCsv: this.buildHeaderOnlyCsv(schema.schemaJson)};
+    }
+
+    private normalizeBranchCompareSchema(schemaJson: string, sideLabel: string): NormalizedBranchCompareSchema {
+        const parsed = JSON.parse(schemaJson) as unknown;
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            throw new Error(sideLabel + 'のスキーマが不正です');
+        }
+        const schema = parsed as Record<string, unknown>;
+        if (!Array.isArray(schema['header'])) throw new Error(sideLabel + 'のスキーマが不正です');
+        const rawPrimaryKey = schema['primary_key'];
+        const primaryKey = typeof rawPrimaryKey === 'string'
+            ? [rawPrimaryKey]
+            : Array.isArray(rawPrimaryKey) && rawPrimaryKey.every(value => typeof value === 'string')
+                ? [...rawPrimaryKey] as string[]
+                : [];
+        if (primaryKey.length === 0 || primaryKey.some(value => value.length === 0)) {
+            throw new Error(sideLabel + 'のスキーマが不正です');
+        }
+        return {
+            schemaJson: JSON.stringify({...schema, primary_key: primaryKey}),
+            primaryKey,
+        };
     }
 
     /**
@@ -3239,8 +3356,9 @@ export class Tab {
         leftLabel: string | null,
         rightLabel: string | null,
         isNew: boolean,
-        options: { loadingToken?: number; metadata?: UiStoredDiffTab | null } = {}
+        options: { loadingToken?: number; metadata?: UiStoredDiffTab | null; abortSignal?: AbortSignal } = {}
     ): Promise<void> {
+        if (options.abortSignal?.aborted === true) return;
         const token = options.loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
         if (token === false) return;
 
@@ -3253,6 +3371,12 @@ export class Tab {
         const hadExistingDiffTab = this.diffTabs.has(diffTabName);
         try {
             const diffBuildResult = await DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv);
+            if (options.abortSignal?.aborted === true) {
+                const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
+                const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+                if (finished && shouldRestoreExistingTab && this.tabButtons.includes(tabButton)) tabButton.click();
+                return;
+            }
             if (this.diffLoadingTokens.get(diffTabName) !== token) return;
             if (!this.tabButtons.includes(tabButton)) {
                 this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
@@ -3266,7 +3390,7 @@ export class Tab {
             }
 
             const diffTab = new DiffTab(
-                tableName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
+                tableName, diffTabName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
                 this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
                 this.reference, this.openEditorTables, this.notification, this.validationPanel,
                 createLargeFileSettings(getAppliedSettings()),
@@ -3291,6 +3415,7 @@ export class Tab {
                     rightCommit: null,
                     leftLabel: null,
                     rightLabel: null,
+                    fileStatus: null,
                 });
             } else {
                 this.diffTabMetadata.delete(diffTabName);
@@ -3299,7 +3424,12 @@ export class Tab {
             this.finishDiffTabLoading(diffTabName, token, false);
             tabButton.click();
         } catch (error: unknown) {
-            this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+            const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
+            const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
+            if (options.abortSignal?.aborted === true) {
+                if (finished && shouldRestoreExistingTab && this.tabButtons.includes(tabButton)) tabButton.click();
+                return;
+            }
             if (hadExistingDiffTab && this.tabButtons.includes(tabButton)) {
                 tabButton.click();
             }

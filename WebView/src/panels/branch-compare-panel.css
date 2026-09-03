@@ -1,0 +1,161 @@
+.branch-compare-panel {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.branch-compare-controls {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+}
+
+.branch-compare-input-label {
+    color: var(--secondary-font-color);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.branch-compare-base-input + .branch-compare-input-label {
+    margin-top: 4px;
+}
+
+.branch-compare-base-input,
+.branch-compare-target-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--input-padding);
+    font-size: var(--input-font-size);
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    outline: none;
+    color: var(--font-color);
+    background-color: var(--background-color);
+}
+
+.branch-compare-base-input:focus,
+.branch-compare-target-input:focus {
+    border-color: var(--focus-border);
+}
+
+.branch-compare-suggestions {
+    position: absolute;
+    z-index: 1;
+    display: none;
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background-color: var(--background-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.branch-compare-suggestions.visible {
+    display: block;
+}
+
+.branch-compare-suggestion-group-label {
+    padding: 4px 8px;
+    color: var(--secondary-font-color);
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.branch-compare-suggestion {
+    padding: 4px 8px 4px 16px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.branch-compare-suggestion:hover,
+.branch-compare-suggestion.selected {
+    color: var(--selection-font-color);
+    background-color: var(--selection-color);
+}
+
+.branch-compare-suggestion-empty,
+.branch-compare-empty-message,
+.branch-compare-status,
+.branch-compare-error {
+    padding: 6px 8px;
+    color: var(--secondary-font-color);
+    font-size: 11px;
+}
+
+.branch-compare-status {
+    box-sizing: border-box;
+    block-size: calc(1.4em + 12px);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.branch-compare-error {
+    color: var(--error-color);
+}
+
+.branch-compare-button {
+    align-self: flex-end;
+    padding: 4px 14px;
+    border: var(--input-border);
+    border-radius: var(--border-radius);
+    color: var(--font-color);
+    background-color: var(--background-sub-color);
+    cursor: pointer;
+}
+
+.branch-compare-button:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.branch-compare-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 5px 16px;
+    cursor: pointer;
+}
+
+.branch-compare-file-item[data-status="A"] {
+    background-color: var(--diff-added-bg);
+}
+
+.branch-compare-file-item[data-status="D"] {
+    background-color: var(--diff-deleted-bg);
+}
+
+.branch-compare-file-item:hover {
+    background-image: linear-gradient(var(--panel-item-hover-bg), var(--panel-item-hover-bg));
+}
+
+.branch-compare-file-item-active {
+    outline: 1px solid var(--panel-item-selected-outline);
+    outline-offset: -1px;
+    box-shadow: inset 3px 0 0 var(--focus-border);
+}
+
+.branch-compare-file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.branch-compare-file-status {
+    flex-shrink: 0;
+    width: 16px;
+    font-family: monospace;
+    font-weight: bold;
+    text-align: center;
+}
+
+.branch-compare-busy .branch-compare-file-item {
+    pointer-events: none;
+    opacity: 0.7;
+}

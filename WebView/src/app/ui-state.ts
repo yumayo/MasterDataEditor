@@ -2,7 +2,7 @@ import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 
-export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'history';
+export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'branchCompare' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
 
 export interface UiSidebarState {
@@ -68,17 +68,41 @@ export interface UiStoredTab {
     editorTable: UiStoredEditorTableState | null;
 }
 
-export interface UiStoredDiffTab {
-    kind: 'gitStatus' | 'commitCompare';
+interface UiStoredDiffTabBase {
     tableName: string;
     gitPath: string;
     isStaged: boolean;
     isNew: boolean;
-    leftCommit: string | null;
-    rightCommit: string | null;
-    leftLabel: string | null;
-    rightLabel: string | null;
 }
+
+export interface UiStoredGitStatusDiffTab extends UiStoredDiffTabBase {
+    kind: 'gitStatus';
+    leftCommit: null;
+    rightCommit: null;
+    leftLabel: null;
+    rightLabel: null;
+    fileStatus: null;
+}
+
+export interface UiStoredCommitCompareDiffTab extends UiStoredDiffTabBase {
+    kind: 'commitCompare';
+    leftCommit: string | null;
+    rightCommit: string;
+    leftLabel: string;
+    rightLabel: string;
+    fileStatus: null;
+}
+
+export interface UiStoredBranchCompareDiffTab extends UiStoredDiffTabBase {
+    kind: 'branchCompare';
+    leftCommit: string;
+    rightCommit: string;
+    leftLabel: string;
+    rightLabel: string;
+    fileStatus: 'A' | 'M' | 'D';
+}
+
+export type UiStoredDiffTab = UiStoredGitStatusDiffTab | UiStoredCommitCompareDiffTab | UiStoredBranchCompareDiffTab;
 
 export interface UiStoredViewPluginTab {
     pluginId: string;
@@ -118,7 +142,7 @@ const MAX_FORM_PANEL_LABEL_LENGTH = 512;
 const MAX_SCROLL_POSITION = 1_000_000_000;
 const MAX_CELL_INDEX = 1_000_000;
 const MAX_SCHEDULE_TIMELINE_COLLAPSED_DATES = 2_000;
-export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'history'];
+export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'branchCompare', 'history'];
 const REMOVED_SPECIAL_TAB_NAMES = new Set(['ER Diagram']);
 const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
 const DEFAULT_SCROLL_POSITION: UiScrollPosition = {scrollLeft: 0, scrollTop: 0};
@@ -311,6 +335,12 @@ function normalizeCommitRef(value: unknown): string | null {
     return normalizeLimitedString(value, MAX_COMMIT_REF_LENGTH);
 }
 
+function normalizeCommitOid(value: unknown): string | null {
+    const commit = normalizeCommitRef(value);
+    if (commit === null || !/^(?:[0-9a-fA-F]{7,40}|[0-9a-fA-F]{64})$/.test(commit)) return null;
+    return commit;
+}
+
 function normalizeScrollPosition(value: unknown, fallback: UiScrollPosition = DEFAULT_SCROLL_POSITION): UiScrollPosition {
     const record = asRecord(value);
     if (record === null) return cloneScrollPosition(fallback);
@@ -426,6 +456,28 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
     const tableName = normalizeTabName(record['tableName']);
     const gitPath = normalizeTabName(record['gitPath']);
     if (tableName === null || gitPath === null) return null;
+    if (record['kind'] === 'branchCompare') {
+        const leftCommit = normalizeCommitOid(record['leftCommit']);
+        const rightCommit = normalizeCommitOid(record['rightCommit']);
+        const leftLabel = normalizeLimitedString(record['leftLabel'], MAX_DIFF_LABEL_LENGTH);
+        const rightLabel = normalizeLimitedString(record['rightLabel'], MAX_DIFF_LABEL_LENGTH);
+        const fileStatus = record['fileStatus'] === 'A' || record['fileStatus'] === 'M' || record['fileStatus'] === 'D'
+            ? record['fileStatus']
+            : null;
+        if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null || fileStatus === null) return null;
+        return {
+            kind: 'branchCompare',
+            tableName,
+            gitPath,
+            isStaged: true,
+            isNew: fileStatus === 'A',
+            leftCommit,
+            rightCommit,
+            leftLabel,
+            rightLabel,
+            fileStatus,
+        };
+    }
     if (record['kind'] === 'commitCompare') {
         const leftCommitRaw = record['leftCommit'];
         const leftCommit = leftCommitRaw === null ? null : normalizeCommitRef(leftCommitRaw);
@@ -444,6 +496,7 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
             rightCommit,
             leftLabel,
             rightLabel,
+            fileStatus: null,
         };
     }
     return {
@@ -456,6 +509,7 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
         rightCommit: null,
         leftLabel: null,
         rightLabel: null,
+        fileStatus: null,
     };
 }
 

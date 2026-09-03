@@ -7,6 +7,7 @@ import {BookmarkPanel, BookmarkEntry} from "../panels/bookmark-panel";
 import {ScheduleTimelinePanel} from "../panels/schedule-timeline-panel";
 import {SourceControlPanel} from "../panels/source-control-panel";
 import {TimelinePanel} from "../panels/timeline-panel";
+import {BranchComparePanel} from "../panels/branch-compare-panel";
 import {ViewPluginPanel} from "../panels/view-plugin-panel";
 import type {ViewPluginHost} from "../plugins/view-plugin-host";
 import {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
@@ -37,6 +38,7 @@ export class Sidebar {
     private readonly scheduleTimelinePanel: ScheduleTimelinePanel;
     private readonly sourceControlPanel: SourceControlPanel;
     private readonly timelinePanel: TimelinePanel;
+    private readonly branchComparePanel: BranchComparePanel;
     private readonly viewPluginPanel: ViewPluginPanel;
     private readonly directory: ExplorerDirectory;
     private readonly uiStateStore: UiStateStore;
@@ -119,6 +121,10 @@ export class Sidebar {
         // ソース管理パネル（差分タブを開くために Tab への参照が必要）
         this.sourceControlPanel = new SourceControlPanel(tab, this.activityBar);
         this.sourceControlPanel.appendTo(sidebarContent);
+
+        // ブランチ比較パネル（比較時点のSHA同士で読み取り専用差分を開く）
+        this.branchComparePanel = new BranchComparePanel(tab);
+        this.branchComparePanel.appendTo(sidebarContent);
 
         // タイムラインパネル（git logベースのコミット履歴を表示する）
         // エントリクリック時にそのコミット1つ分の差分をDiffTabで表示する
@@ -408,6 +414,7 @@ export class Sidebar {
             rightCommit: entry.commitHash,
             leftLabel,
             rightLabel,
+            fileStatus: null,
         };
         this.tab.openDiffTab(tableName, true, schemaJson, prevCsv, commitCsv, path, leftLabel, rightLabel, prevEntry === null, metadata);
     }
@@ -422,11 +429,17 @@ export class Sidebar {
         this.scheduleTimelinePanel.hide();
         this.viewPluginPanel.hide();
         this.sourceControlPanel.hide();
+        this.branchComparePanel.hide();
         this.timelinePanel.hide();
 
-        // history はソース管理と同様に差分タブを閉じない（closeAllDiffTabs の除外対象）
+        // ソース管理・ブランチ比較・history は差分タブを閉じない（closeAllDiffTabs の除外対象）
         if (item === 'sourceControl') {
             this.sourceControlPanel.show();
+            return;
+        }
+
+        if (item === 'branchCompare') {
+            this.branchComparePanel.show();
             return;
         }
 
@@ -443,7 +456,7 @@ export class Sidebar {
             return;
         }
 
-        // ソース管理・履歴以外に切り替えた場合は全差分タブを閉じる
+        // ソース管理・ブランチ比較・履歴以外に切り替えた場合は全差分タブを閉じる
         this.tab.closeAllDiffTabs();
 
         if (item === 'files') {

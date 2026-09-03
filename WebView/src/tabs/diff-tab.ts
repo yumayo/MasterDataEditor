@@ -182,6 +182,7 @@ export class DiffTab {
 
     constructor(
         tableName: string,
+        diffIdentity: string,
         schemaJson: string,
         headCsv: string,
         currentCsv: string,
@@ -334,9 +335,9 @@ export class DiffTab {
             rightPaneElement.appendChild(rightLabelElement);
         }
 
-        // 左右ペイン用のストアキー（差分タブ専用の名前空間を使用して通常テーブルと衝突しない）
-        const leftTableKey = tableName + ':diff:head';
-        const rightTableKey = tableName + ':diff:current';
+        // 同一tableの異なる差分タブ同士でもストア・Historyを共有しない一意キーを使用する。
+        const leftTableKey = tableName + ':diff:' + diffIdentity + ':head';
+        const rightTableKey = tableName + ':diff:' + diffIdentity + ':current';
         this.leftTableKey = leftTableKey;
         this.rightTableKey = rightTableKey;
 
@@ -446,7 +447,7 @@ export class DiffTab {
         // makeReadOnly() により Ctrl+S も禁止される（不正パスへの書き込み防止）
         this.leftEditorTable.makeReadOnly();
 
-        // 右ペイン（現在版）のストアキーは "tableName:diff:current" のような不正パスだが、
+        // 右ペイン（現在版）のストアキーは差分タブ固有の内部キーでファイルパスではないため、
         // 元の tableName を保存先としてオーバーライドすることでファイル破壊なく保存できる。
         // staged状態では右ペインも読み取り専用にする（makeReadOnly が Ctrl+S を禁止する）。
         if (isStaged) {

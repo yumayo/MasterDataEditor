@@ -12,9 +12,9 @@ namespace App.MasterDataEditor
 	{
 		/// <summary>
 		/// コミットハッシュの書式を検証する正規表現。
-		/// 短縮ハッシュ（7文字以上）またはフルハッシュ（40文字）を許可する。
+		/// 短縮ハッシュ（7文字以上）とSHA-1/SHA-256の完全OIDを許可する。
 		/// </summary>
-		private static readonly Regex CommitHashPattern = new Regex(@"^[0-9a-fA-F]{7,40}$", RegexOptions.Compiled);
+		private static readonly Regex CommitHashPattern = new Regex(@"^(?:[0-9a-fA-F]{7,40}|[0-9a-fA-F]{64})$", RegexOptions.Compiled);
 
 		public static object Invoke(JsonElement root, string requestId)
 		{
@@ -38,13 +38,18 @@ namespace App.MasterDataEditor
 				{
 					return new { type = "git_show_at_commit_response", requestId, success = false, error = "invalid commit hash format" };
 				}
+				if (string.IsNullOrEmpty(path))
+				{
+					return new { type = "git_show_at_commit_response", requestId, success = false, error = "path is empty" };
+				}
 
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
-				// フロントエンドから受け取った "data/xxx.csv" をgitルート相対パスに変換する
-				path = GitCommandHelper.ToGitRootRelativePath(path, dataPrefix);
-				var validationError = GitCommandHelper.ValidateDataPath(path, dataPrefix);
+				var schemaPrefix = GitCommandHelper.GetSchemaPrefix(gitRoot, workDir);
+				// フロントエンドから受け取ったパスをgitルート相対パスに変換する
+				path = GitCommandHelper.ToGitRootRelativeVersionedPath(path, dataPrefix, schemaPrefix);
+				var validationError = GitCommandHelper.ValidateVersionedFilePath(path, dataPrefix, schemaPrefix);
 				if (validationError != null)
 				{
 					return new { type = "git_show_at_commit_response", requestId, success = false, error = validationError };

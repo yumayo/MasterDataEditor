@@ -258,6 +258,27 @@ export interface GitStatusResult {
     staged: GitStatusEntry[];
 }
 
+/** ブランチ候補。ref はGitへ渡す完全ref、name はUI表示名。 */
+export interface GitBranchInfo {
+    name: string;
+    ref: string;
+    kind: 'local' | 'remote';
+}
+
+/** ブランチ間で変更されたCSVファイル。 */
+export interface GitBranchCompareFile {
+    path: string;
+    tableName: string;
+    status: 'A' | 'M' | 'D';
+}
+
+/** 比較時点のrefを固定したSHAと変更ファイル一覧。 */
+export interface GitBranchCompareResult {
+    leftCommit: string;
+    rightCommit: string;
+    files: GitBranchCompareFile[];
+}
+
 // =========================================================================
 // git status キャッシュ
 // ファイル書き込み・git操作で無効化し、それ以外はキャッシュを返す。
@@ -296,6 +317,16 @@ export async function gitStatusAsync(): Promise<GitStatusResult> {
             if (revision === gitStatusRevision) gitStatusInFlight = false;
         });
     return gitStatusInFlight;
+}
+
+/** ローカルブランチとremote-tracking branchを取得する。 */
+export async function gitBranchListAsync(): Promise<GitBranchInfo[]> {
+    return postMessageAsync<GitBranchInfo[]>('git_branch_list', {});
+}
+
+/** 2つの完全refを比較し、比較時点のSHAとA/M/Dファイル一覧を取得する。 */
+export async function gitBranchCompareAsync(leftRef: string, rightRef: string): Promise<GitBranchCompareResult> {
+    return postMessageAsync<GitBranchCompareResult>('git_branch_compare', {leftRef, rightRef});
 }
 
 // =========================================================================
@@ -422,7 +453,7 @@ export async function gitShowAtCommitAsync(commit: string, path: string): Promis
 let nextRequestId = 1;
 
 function getRequestTimeoutMs(apiName: string): number {
-    if (apiName === 'git_show' || apiName === 'git_show_at_commit' || apiName === 'read_file') return 60000;
+    if (apiName === 'git_show' || apiName === 'git_show_at_commit' || apiName === 'git_branch_compare' || apiName === 'read_file') return 60000;
     return 10000;
 }
 

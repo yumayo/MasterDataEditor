@@ -63,8 +63,23 @@ export async function installMockApiAsync(
             type MockApiWindow = {
                 __mockFs: MockFileSystem;
                 __mockApiRequests: string[];
-                __mockApiRequestDetails: Array<{ type: string; filename?: string; scope?: string }>;
+                __mockApiRequestDetails: Array<{
+                    type: string;
+                    filename: string | null;
+                    scope: string | null;
+                    path: string | null;
+                    commit: string | null;
+                    leftRef: string | null;
+                    rightRef: string | null;
+                }>;
                 __onAfterWriteFile?: AfterWriteHook;
+                __mockGitBranches: unknown;
+                __mockGitBranchListError: string | null;
+                __mockGitBranchListDelayMs: number;
+                __mockGitBranchCompare: unknown;
+                __mockGitBranchCompareError: string | null;
+                __mockGitBranchCompareDelayMs: number;
+                __mockGitShowAtCommitDelays: Record<string, number>;
             };
             const MOCK_FS_STORAGE_KEY = '__mockFs';
             const MOCK_FS_INSTANCE_KEY = '__mockFsInstanceId';
@@ -167,8 +182,12 @@ export async function installMockApiAsync(
                 (window as unknown as MockApiWindow).__mockApiRequests.push(type);
                 (window as unknown as MockApiWindow).__mockApiRequestDetails.push({
                     type,
-                    filename: typeof request.filename === "string" ? request.filename as string : undefined,
-                    scope: typeof request.scope === "string" ? request.scope as string : undefined,
+                    filename: typeof request.filename === "string" ? request.filename as string : null,
+                    scope: typeof request.scope === "string" ? request.scope as string : null,
+                    path: typeof request.path === "string" ? request.path as string : null,
+                    commit: typeof request.commit === "string" ? request.commit as string : null,
+                    leftRef: typeof request.leftRef === "string" ? request.leftRef as string : null,
+                    rightRef: typeof request.rightRef === "string" ? request.rightRef as string : null,
                 });
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
@@ -286,6 +305,46 @@ export async function installMockApiAsync(
                         success: true,
                         data: mockStatus,
                     });
+                    return;
+                }
+
+                // ブランチ比較機能: ローカル/remote-tracking branch 候補を返す
+                if (type === "git_branch_list_request") {
+                    const mockWindow = window as unknown as MockApiWindow;
+                    if (!("__mockGitBranches" in mockWindow)
+                        || !("__mockGitBranchListError" in mockWindow)
+                        || !("__mockGitBranchListDelayMs" in mockWindow)) {
+                        dispatch({ type: "git_branch_list_response", requestId, success: false, error: "git branch list not available" });
+                        return;
+                    }
+                    const response = mockWindow.__mockGitBranchListError === null
+                        ? {type: "git_branch_list_response", requestId, success: true, data: mockWindow.__mockGitBranches}
+                        : {type: "git_branch_list_response", requestId, success: false, error: mockWindow.__mockGitBranchListError};
+                    if (mockWindow.__mockGitBranchListDelayMs === 0) {
+                        dispatch(response);
+                    } else {
+                        window.setTimeout(() => { dispatch(response); }, mockWindow.__mockGitBranchListDelayMs);
+                    }
+                    return;
+                }
+
+                // ブランチ比較機能: 選択refを固定SHAへ解決した変更ファイル一覧を返す
+                if (type === "git_branch_compare_request") {
+                    const mockWindow = window as unknown as MockApiWindow;
+                    if (!("__mockGitBranchCompare" in mockWindow)
+                        || !("__mockGitBranchCompareError" in mockWindow)
+                        || !("__mockGitBranchCompareDelayMs" in mockWindow)) {
+                        dispatch({ type: "git_branch_compare_response", requestId, success: false, error: "git branch compare not available" });
+                        return;
+                    }
+                    const response = mockWindow.__mockGitBranchCompareError === null
+                        ? {type: "git_branch_compare_response", requestId, success: true, data: mockWindow.__mockGitBranchCompare}
+                        : {type: "git_branch_compare_response", requestId, success: false, error: mockWindow.__mockGitBranchCompareError};
+                    if (mockWindow.__mockGitBranchCompareDelayMs === 0) {
+                        dispatch(response);
+                    } else {
+                        window.setTimeout(() => { dispatch(response); }, mockWindow.__mockGitBranchCompareDelayMs);
+                    }
                     return;
                 }
 
@@ -424,10 +483,18 @@ export async function installMockApiAsync(
                         return;
                     }
                     const filesAtCommit = commitFiles[commit];
-                    if (filesAtCommit && path in filesAtCommit) {
-                        dispatch({ type: "git_show_at_commit_response", requestId, success: true, data: filesAtCommit[path] });
+                    const response = filesAtCommit && path in filesAtCommit
+                        ? {type: "git_show_at_commit_response", requestId, success: true, data: filesAtCommit[path]}
+                        : {type: "git_show_at_commit_response", requestId, success: false, error: "fatal: path '" + path + "' does not exist in '" + commit + "'"};
+                    const mockWindow = window as unknown as MockApiWindow;
+                    const delayKey = commit + ':' + path;
+                    const delayMs = "__mockGitShowAtCommitDelays" in mockWindow && delayKey in mockWindow.__mockGitShowAtCommitDelays
+                        ? mockWindow.__mockGitShowAtCommitDelays[delayKey]
+                        : 0;
+                    if (delayMs === 0) {
+                        dispatch(response);
                     } else {
-                        dispatch({ type: "git_show_at_commit_response", requestId, success: false, error: "fatal: path '" + path + "' does not exist in '" + commit + "'" });
+                        window.setTimeout(() => { dispatch(response); }, delayMs);
                     }
                     return;
                 }

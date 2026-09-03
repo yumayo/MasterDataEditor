@@ -1,0 +1,482 @@
+import {gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
+import {Tab} from '../tabs/tab';
+
+type BranchInput = HTMLInputElement;
+
+/**
+ * 2ブランチ間のCSV差分を選択・表示するサイドバーパネル。
+ * 選択済みrefは各inputのdata-selected-refへ保持し、DOMを選択状態のSSOTとする。
+ */
+export class BranchComparePanel {
+    private readonly element: HTMLElement;
+    private readonly baseInput: BranchInput;
+    private readonly targetInput: BranchInput;
+    private readonly suggestionsElement: HTMLElement;
+    private readonly compareButton: HTMLButtonElement;
+    private readonly statusElement: HTMLElement;
+    private readonly errorElement: HTMLElement;
+    private readonly resultsElement: HTMLElement;
+    private readonly tab: Tab;
+    private branches: GitBranchInfo[];
+    private filteredBranches: GitBranchInfo[];
+    private activeInput: BranchInput | false;
+    private selectedSuggestionIndex: number;
+    private branchListLoaded: boolean;
+    private branchListFailed: boolean;
+    private branchListRequestId: number;
+    private compareRequestId: number;
+    private compareBusy: boolean;
+    private fileOpenController: AbortController | false;
+
+    constructor(tab: Tab) {
+        this.tab = tab;
+        this.branches = [];
+        this.filteredBranches = [];
+        this.activeInput = false;
+        this.selectedSuggestionIndex = -1;
+        this.branchListLoaded = false;
+        this.branchListFailed = false;
+        this.branchListRequestId = 0;
+        this.compareRequestId = 0;
+        this.compareBusy = false;
+        this.fileOpenController = false;
+
+        this.element = document.createElement('div');
+        this.element.classList.add('sidebar-panel', 'branch-compare-panel');
+
+        const header = document.createElement('div');
+        header.classList.add('sidebar-panel-header');
+        header.textContent = 'BRANCH COMPARE';
+        this.element.appendChild(header);
+
+        const controls = document.createElement('div');
+        controls.classList.add('branch-compare-controls');
+        this.element.appendChild(controls);
+
+        this.suggestionsElement = document.createElement('div');
+        this.suggestionsElement.id = 'branch-compare-suggestions';
+        this.suggestionsElement.classList.add('branch-compare-suggestions');
+        this.suggestionsElement.setAttribute('role', 'listbox');
+
+        this.baseInput = this.createBranchInput('branch-compare-base-input', 'branch-compare-base-input', '比較元ブランチ', '比較元ブランチ');
+        this.targetInput = this.createBranchInput('branch-compare-target-input', 'branch-compare-target-input', '比較先ブランチ', '比較先ブランチ');
+        controls.appendChild(this.createInputLabel('branch-compare-base-input', '比較元'));
+        controls.appendChild(this.baseInput);
+        controls.appendChild(this.createInputLabel('branch-compare-target-input', '比較先'));
+        controls.appendChild(this.targetInput);
+        controls.appendChild(this.suggestionsElement);
+
+        this.compareButton = document.createElement('button');
+        this.compareButton.classList.add('branch-compare-button');
+        this.compareButton.textContent = '比較';
+        this.compareButton.disabled = true;
+        this.compareButton.addEventListener('click', () => {
+            this.compareAsync().catch((error: unknown) => { this.handleUnexpectedCompareError(error); });
+        });
+        controls.appendChild(this.compareButton);
+
+        this.statusElement = document.createElement('div');
+        this.statusElement.classList.add('branch-compare-status');
+        this.statusElement.setAttribute('aria-live', 'polite');
+        controls.appendChild(this.statusElement);
+
+        this.errorElement = document.createElement('div');
+        this.errorElement.classList.add('branch-compare-error');
+        this.errorElement.setAttribute('role', 'alert');
+        this.errorElement.hidden = true;
+        controls.appendChild(this.errorElement);
+
+        this.resultsElement = document.createElement('div');
+        this.resultsElement.classList.add('branch-compare-results');
+        this.resultsElement.setAttribute('role', 'list');
+        this.element.appendChild(this.resultsElement);
+
+        document.addEventListener('mousedown', (event: MouseEvent) => {
+            if (event.target instanceof Node && !this.element.contains(event.target)) this.dismissSuggestions();
+        });
+    }
+
+    appendTo(parent: HTMLElement): void {
+        parent.appendChild(this.element);
+    }
+
+    show(): void {
+        this.element.classList.add('sidebar-panel-active');
+        const requestId = ++this.branchListRequestId;
+        this.loadBranchesAsync(requestId).catch(() => {});
+    }
+
+    hide(): void {
+        this.element.classList.remove('sidebar-panel-active');
+        this.branchListRequestId++;
+        this.dismissSuggestions();
+        this.cancelFileOpen(true);
+    }
+
+    private createInputLabel(inputId: string, text: string): HTMLLabelElement {
+        const label = document.createElement('label');
+        label.classList.add('branch-compare-input-label');
+        label.htmlFor = inputId;
+        label.textContent = text;
+        return label;
+    }
+
+    private createBranchInput(id: string, className: string, placeholder: string, ariaLabel: string): BranchInput {
+        const input = document.createElement('input');
+        input.id = id;
+        input.type = 'text';
+        input.classList.add(className);
+        input.placeholder = placeholder;
+        input.title = ariaLabel;
+        input.setAttribute('aria-label', ariaLabel);
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-haspopup', 'listbox');
+        input.setAttribute('aria-controls', 'branch-compare-suggestions');
+        input.setAttribute('aria-expanded', 'false');
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.addEventListener('focus', () => {
+            this.activeInput = input;
+            this.selectedSuggestionIndex = -1;
+            this.renderSuggestions();
+        });
+        input.addEventListener('blur', () => { this.dismissSuggestions(); });
+        input.addEventListener('input', () => {
+            input.removeAttribute('data-selected-ref');
+            input.title = input.value === '' ? ariaLabel : input.value;
+            this.invalidateResults(true);
+            this.activeInput = input;
+            this.selectedSuggestionIndex = -1;
+            this.updateCompareButton();
+            this.renderSuggestions();
+        });
+        input.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this.dismissSuggestions();
+                return;
+            }
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                this.activeInput = input;
+                if (this.filteredBranches.length === 0) return;
+                if (this.selectedSuggestionIndex === -1) {
+                    this.selectedSuggestionIndex = event.key === 'ArrowDown' ? 0 : this.filteredBranches.length - 1;
+                } else {
+                    const delta = event.key === 'ArrowDown' ? 1 : -1;
+                    this.selectedSuggestionIndex = (this.selectedSuggestionIndex + delta + this.filteredBranches.length) % this.filteredBranches.length;
+                }
+                this.renderSuggestions();
+                return;
+            }
+            if (event.key === 'Enter' && this.suggestionsElement.classList.contains('visible')) {
+                event.preventDefault();
+                if (this.selectedSuggestionIndex < 0 || this.selectedSuggestionIndex >= this.filteredBranches.length) return;
+                this.confirmBranch(input, this.filteredBranches[this.selectedSuggestionIndex]);
+            }
+        });
+        return input;
+    }
+
+    private async loadBranchesAsync(requestId: number): Promise<void> {
+        this.branchListLoaded = false;
+        this.branchListFailed = false;
+        try {
+            const branches = await gitBranchListAsync();
+            if (requestId !== this.branchListRequestId || !this.isVisible()) return;
+            this.branches = branches;
+            this.branchListLoaded = true;
+            let selectionRemoved = false;
+            for (const input of [this.baseInput, this.targetInput]) {
+                const selectedRef = input.getAttribute('data-selected-ref');
+                if (selectedRef === null || this.branches.some(branch => branch.ref === selectedRef)) continue;
+                input.removeAttribute('data-selected-ref');
+                selectionRemoved = true;
+            }
+            if (selectionRemoved) this.invalidateResults(true);
+            this.updateCompareButton();
+            if (this.canRenderSuggestions()) this.renderSuggestions();
+        } catch (error: unknown) {
+            if (requestId !== this.branchListRequestId || !this.isVisible()) return;
+            this.branchListFailed = true;
+            this.branchListLoaded = false;
+            if (this.canRenderSuggestions()) this.renderSuggestions();
+            throw error;
+        }
+    }
+
+    private renderSuggestions(): void {
+        if (!this.canRenderSuggestions()) {
+            this.dismissSuggestions();
+            return;
+        }
+        const input = this.activeInput;
+        if (input === false) return;
+        this.suggestionsElement.replaceChildren();
+        this.suggestionsElement.classList.add('visible');
+        this.baseInput.setAttribute('aria-expanded', 'false');
+        this.targetInput.setAttribute('aria-expanded', 'false');
+        this.baseInput.removeAttribute('aria-activedescendant');
+        this.targetInput.removeAttribute('aria-activedescendant');
+        input.setAttribute('aria-expanded', 'true');
+        this.suggestionsElement.style.left = input.offsetLeft + 'px';
+        this.suggestionsElement.style.top = input.offsetTop + input.offsetHeight + 'px';
+        this.suggestionsElement.style.width = input.offsetWidth + 'px';
+        const query = input.value.toLocaleLowerCase();
+        const matches = this.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query));
+        this.filteredBranches = [
+            ...matches.filter(branch => branch.kind === 'local'),
+            ...matches.filter(branch => branch.kind === 'remote'),
+        ];
+        if (this.selectedSuggestionIndex >= this.filteredBranches.length) this.selectedSuggestionIndex = -1;
+
+        if (this.branchListFailed) {
+            this.appendSuggestionStatus('ブランチ候補を取得できませんでした');
+            return;
+        }
+        if (!this.branchListLoaded) {
+            this.appendSuggestionStatus('読み込み中…');
+            return;
+        }
+        if (this.filteredBranches.length === 0) {
+            this.appendSuggestionStatus('該当するブランチがありません');
+            return;
+        }
+
+        let renderedIndex = 0;
+        for (const kind of ['local', 'remote'] as const) {
+            const branches = this.filteredBranches.filter(branch => branch.kind === kind);
+            if (branches.length === 0) continue;
+            const group = document.createElement('div');
+            group.classList.add('branch-compare-suggestion-group');
+            group.setAttribute('data-kind', kind);
+            group.setAttribute('role', 'group');
+            group.setAttribute('aria-label', kind === 'local' ? 'LOCAL' : 'REMOTE');
+            const groupLabel = document.createElement('div');
+            groupLabel.classList.add('branch-compare-suggestion-group-label');
+            groupLabel.textContent = kind === 'local' ? 'LOCAL' : 'REMOTE';
+            group.appendChild(groupLabel);
+            for (const branch of branches) {
+                const option = document.createElement('div');
+                option.id = 'branch-compare-suggestion-' + String(renderedIndex);
+                option.classList.add('branch-compare-suggestion');
+                option.setAttribute('data-ref', branch.ref);
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', renderedIndex === this.selectedSuggestionIndex ? 'true' : 'false');
+                option.setAttribute('aria-label', branch.name + (kind === 'local' ? ' (LOCAL)' : ' (REMOTE)'));
+                option.title = branch.name;
+                option.textContent = branch.name;
+                if (renderedIndex === this.selectedSuggestionIndex) option.classList.add('selected');
+                option.addEventListener('mousedown', (event: MouseEvent) => { event.preventDefault(); });
+                option.addEventListener('click', () => { this.confirmBranch(input, branch); });
+                group.appendChild(option);
+                renderedIndex++;
+            }
+            this.suggestionsElement.appendChild(group);
+        }
+        const activeOption = this.suggestionsElement.querySelector('.branch-compare-suggestion.selected');
+        if (activeOption !== null) {
+            input.setAttribute('aria-activedescendant', activeOption.id);
+            activeOption.scrollIntoView({block: 'nearest'});
+        }
+    }
+
+    private appendSuggestionStatus(text: string): void {
+        const status = document.createElement('div');
+        status.classList.add('branch-compare-suggestion-empty');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        status.textContent = text;
+        this.suggestionsElement.appendChild(status);
+    }
+
+    private confirmBranch(input: BranchInput, branch: GitBranchInfo): void {
+        this.invalidateResults(true);
+        input.value = branch.name;
+        input.title = branch.name;
+        input.setAttribute('data-selected-ref', branch.ref);
+        this.dismissSuggestions();
+        this.updateCompareButton();
+    }
+
+    private canRenderSuggestions(): boolean {
+        return this.activeInput !== false
+            && this.isVisible()
+            && document.activeElement === this.activeInput;
+    }
+
+    private isVisible(): boolean {
+        return this.element.classList.contains('sidebar-panel-active');
+    }
+
+    private dismissSuggestions(): void {
+        this.activeInput = false;
+        this.selectedSuggestionIndex = -1;
+        this.hideSuggestions();
+    }
+
+    private hideSuggestions(): void {
+        this.suggestionsElement.classList.remove('visible');
+        this.baseInput.setAttribute('aria-expanded', 'false');
+        this.targetInput.setAttribute('aria-expanded', 'false');
+        this.baseInput.removeAttribute('aria-activedescendant');
+        this.targetInput.removeAttribute('aria-activedescendant');
+    }
+
+    private updateCompareButton(): void {
+        const leftRef = this.baseInput.getAttribute('data-selected-ref');
+        const rightRef = this.targetInput.getAttribute('data-selected-ref');
+        this.compareButton.disabled = this.compareBusy || leftRef === null || rightRef === null || leftRef === rightRef;
+    }
+
+    private async compareAsync(): Promise<void> {
+        const leftRef = this.baseInput.getAttribute('data-selected-ref');
+        const rightRef = this.targetInput.getAttribute('data-selected-ref');
+        if (leftRef === null || rightRef === null || leftRef === rightRef) return;
+        const requestId = ++this.compareRequestId;
+        const leftLabel = this.baseInput.value;
+        const rightLabel = this.targetInput.value;
+        this.invalidateResults(false);
+        this.compareBusy = true;
+        this.compareButton.disabled = true;
+        this.baseInput.disabled = true;
+        this.targetInput.disabled = true;
+        this.element.classList.add('branch-compare-busy');
+        this.resultsElement.setAttribute('aria-busy', 'true');
+        this.statusElement.textContent = '比較中…';
+        this.errorElement.hidden = true;
+        try {
+            const result = await gitBranchCompareAsync(leftRef, rightRef);
+            if (requestId !== this.compareRequestId) return;
+            this.resultsElement.replaceChildren();
+            this.errorElement.hidden = true;
+            if (result.files.length === 0) {
+                const empty = document.createElement('div');
+                empty.classList.add('branch-compare-empty-message');
+                empty.textContent = '変更されたファイルはありません';
+                this.resultsElement.appendChild(empty);
+            } else {
+                for (const file of result.files) this.resultsElement.appendChild(this.createFileItem(file, result.leftCommit, result.rightCommit, leftLabel, rightLabel));
+            }
+            this.statusElement.textContent = '';
+        } catch (error: unknown) {
+            if (requestId !== this.compareRequestId) return;
+            this.resultsElement.replaceChildren();
+            this.setOperationError(error);
+        }
+        if (requestId !== this.compareRequestId) return;
+        this.compareBusy = false;
+        this.element.classList.remove('branch-compare-busy');
+        this.resultsElement.setAttribute('aria-busy', 'false');
+        this.statusElement.textContent = '';
+        this.baseInput.disabled = false;
+        this.targetInput.disabled = false;
+        this.updateCompareButton();
+    }
+
+    private createFileItem(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string): HTMLElement {
+        const item = document.createElement('div');
+        item.classList.add('branch-compare-file-item');
+        item.setAttribute('data-status', file.status);
+        item.setAttribute('role', 'listitem');
+        item.setAttribute('tabindex', '0');
+        item.setAttribute('aria-current', 'false');
+        item.title = file.path;
+        const statusLabel = file.status === 'A' ? '追加' : file.status === 'D' ? '削除' : '変更';
+        item.setAttribute('aria-label', file.tableName + '、' + statusLabel + '、' + file.path);
+
+        const name = document.createElement('span');
+        name.classList.add('branch-compare-file-name');
+        name.textContent = file.tableName;
+        name.title = file.path;
+        item.appendChild(name);
+
+        const status = document.createElement('span');
+        status.classList.add('branch-compare-file-status');
+        status.textContent = file.status;
+        item.appendChild(status);
+
+        const openDiff = (): void => {
+            this.element.querySelectorAll('.branch-compare-file-item-active').forEach(element => {
+                element.classList.remove('branch-compare-file-item-active');
+                element.setAttribute('aria-current', 'false');
+            });
+            item.classList.add('branch-compare-file-item-active');
+            item.setAttribute('aria-current', 'true');
+            if (this.fileOpenController !== false) this.fileOpenController.abort();
+            const controller = new AbortController();
+            this.fileOpenController = controller;
+            this.resultsElement.setAttribute('aria-busy', 'true');
+            this.statusElement.textContent = '差分を読み込み中…';
+            this.errorElement.hidden = true;
+            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal)
+                .then(() => {
+                    if (this.fileOpenController !== controller || controller.signal.aborted) return;
+                    this.fileOpenController = false;
+                    this.resultsElement.setAttribute('aria-busy', 'false');
+                    this.statusElement.textContent = '';
+                })
+                .catch((error: unknown) => {
+                    if (this.fileOpenController !== controller || controller.signal.aborted) return;
+                    this.fileOpenController = false;
+                    this.resultsElement.setAttribute('aria-busy', 'false');
+                    this.statusElement.textContent = '';
+                    this.setOperationError(error);
+                });
+        };
+        item.addEventListener('click', openDiff);
+        item.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            openDiff();
+        });
+        return item;
+    }
+
+    private invalidateResults(invalidateCompare: boolean): void {
+        if (invalidateCompare) {
+            this.compareRequestId++;
+            this.compareBusy = false;
+            this.element.classList.remove('branch-compare-busy');
+            this.baseInput.disabled = false;
+            this.targetInput.disabled = false;
+        }
+        this.cancelFileOpen(false);
+        this.resultsElement.replaceChildren();
+        this.resultsElement.setAttribute('aria-busy', 'false');
+        this.statusElement.textContent = '';
+        this.errorElement.hidden = true;
+    }
+
+    private cancelFileOpen(clearSelection: boolean): void {
+        if (this.fileOpenController !== false) this.fileOpenController.abort();
+        this.fileOpenController = false;
+        if (!this.compareBusy) {
+            this.resultsElement.setAttribute('aria-busy', 'false');
+            this.statusElement.textContent = '';
+        }
+        if (clearSelection) {
+            this.element.querySelectorAll('.branch-compare-file-item-active').forEach(element => {
+                element.classList.remove('branch-compare-file-item-active');
+                element.setAttribute('aria-current', 'false');
+            });
+        }
+    }
+
+    private setOperationError(error: unknown): void {
+        this.errorElement.textContent = error instanceof Error ? error.message : String(error);
+        this.errorElement.hidden = false;
+    }
+
+    private handleUnexpectedCompareError(error: unknown): void {
+        this.compareBusy = false;
+        this.element.classList.remove('branch-compare-busy');
+        this.resultsElement.setAttribute('aria-busy', 'false');
+        this.baseInput.disabled = false;
+        this.targetInput.disabled = false;
+        this.statusElement.textContent = '';
+        this.setOperationError(error);
+        this.updateCompareButton();
+    }
+}

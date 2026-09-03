@@ -338,6 +338,14 @@ public class WebView2Handler : IDisposable
 							RunRequestInBackground(root, requestId, WebView2HandlerGitShowAtCommitRequest.Invoke);
 							break;
 
+						case "git_branch_list_request":
+							RunRequestInBackground(root, requestId, WebView2HandlerGitBranchListRequest.Invoke);
+							break;
+
+						case "git_branch_compare_request":
+							RunRequestInBackground(root, requestId, WebView2HandlerGitBranchCompareRequest.Invoke);
+							break;
+
 						case "editor_api_response":
 							HandleEditorApiResponse(root);
 							break;
