@@ -170,8 +170,10 @@ export class BranchComparePanel {
                 this.renderSuggestions();
                 return;
             }
-            if (event.key === 'Enter' && this.suggestionsElement.classList.contains('visible')) {
-                event.preventDefault();
+            const confirmsActiveSuggestion = event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey);
+            if (confirmsActiveSuggestion && this.suggestionsElement.classList.contains('visible')) {
+                if (event.key === 'Enter') event.preventDefault();
+                if (this.suggestionsElement.querySelector('.branch-compare-suggestion.selected') === null) return;
                 if (this.selectedSuggestionIndex < 0 || this.selectedSuggestionIndex >= this.filteredBranches.length) return;
                 this.confirmBranch(input, this.filteredBranches[this.selectedSuggestionIndex]);
             }
@@ -243,6 +245,7 @@ export class BranchComparePanel {
             this.appendSuggestionStatus('該当するブランチがありません');
             return;
         }
+        if (this.selectedSuggestionIndex === -1) this.selectedSuggestionIndex = 0;
 
         let renderedIndex = 0;
         for (const kind of ['local', 'remote'] as const) {
@@ -408,7 +411,6 @@ export class BranchComparePanel {
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
-            this.statusElement.textContent = '差分を読み込み中…';
             this.errorElement.hidden = true;
             this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal)
                 .then(() => {

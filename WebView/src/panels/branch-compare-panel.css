@@ -85,13 +85,12 @@
     font-size: 11px;
 }
 
-.branch-compare-status {
-    box-sizing: border-box;
-    block-size: calc(1.4em + 12px);
-    line-height: 1.4;
-    white-space: nowrap;
+.branch-compare-status:empty {
+    position: absolute;
+    inline-size: 0;
+    block-size: 0;
+    padding: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .branch-compare-error {

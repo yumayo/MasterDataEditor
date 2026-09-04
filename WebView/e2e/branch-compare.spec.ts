@@ -366,7 +366,7 @@ test.describe('ブランチ比較パネル', () => {
         expect(activeAccent).toContain('inset');
     });
 
-    test('各入力のフォーカスでLOCAL・REMOTE候補を表示し、入力文字列で候補を絞り込める', async ({page}) => {
+    test('各入力のフォーカスと絞り込みで先頭候補をactiveにする', async ({page}) => {
         await openBranchComparePanelAsync(page);
 
         const baseInput = page.locator('.branch-compare-base-input');
@@ -377,32 +377,103 @@ test.describe('ブランチ比較パネル', () => {
         await expect(suggestions.locator('.branch-compare-suggestion-group[data-kind="local"]')).toContainText('feature/orders');
         await expect(suggestions.locator('.branch-compare-suggestion-group[data-kind="remote"]')).toContainText('origin/main');
         await expect(suggestions.locator('.branch-compare-suggestion-group[data-kind="remote"]')).toContainText('origin/release');
+        let firstOption = suggestions.locator('.branch-compare-suggestion').first();
+        await expect(firstOption).toHaveText('main');
+        await expect(firstOption).toHaveClass(/selected/);
+        await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+        await expect(baseInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
 
         await baseInput.fill('feature');
         await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(1);
-        await expect(suggestions.locator('.branch-compare-suggestion')).toHaveText('feature/orders');
+        firstOption = suggestions.locator('.branch-compare-suggestion').first();
+        await expect(firstOption).toHaveText('feature/orders');
+        await expect(firstOption).toHaveClass(/selected/);
+        await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+        await expect(baseInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
 
         const targetInput = page.locator('.branch-compare-target-input');
         await targetInput.focus();
         await expect(suggestions).toBeVisible();
+        firstOption = suggestions.locator('.branch-compare-suggestion').first();
+        await expect(firstOption).toHaveText('main');
+        await expect(firstOption).toHaveClass(/selected/);
+        await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+        await expect(targetInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
         await targetInput.fill('release');
         await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(1);
-        await expect(suggestions.locator('.branch-compare-suggestion')).toHaveText('origin/release');
+        firstOption = suggestions.locator('.branch-compare-suggestion').first();
+        await expect(firstOption).toHaveText('origin/release');
+        await expect(firstOption).toHaveClass(/selected/);
+        await expect(firstOption).toHaveAttribute('aria-selected', 'true');
+        await expect(targetInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
     });
 
-    test('候補をマウスまたは上下キーとEnterで選択できる', async ({page}) => {
+    test('Tabでactive候補を確定して比較元から比較先、比較ボタンへフォーカスを進める', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const compareButton = page.locator('.branch-compare-button');
+        const suggestions = page.locator('.branch-compare-suggestions');
+
+        await baseInput.focus();
+        await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
+        await baseInput.press('Tab');
+        await expect(baseInput).toHaveValue('main');
+        await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(targetInput).toBeFocused();
+
+        await targetInput.fill('feature');
+        await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
+        await targetInput.press('Tab');
+        await expect(targetInput).toHaveValue('feature/orders');
+        await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
+        await expect(compareButton).toBeEnabled();
+        await expect(compareButton).toBeFocused();
+        await expect(suggestions).toBeHidden();
+    });
+
+    test('Shift+Tabと候補0件のTabは未確定のまま通常のフォーカス移動をする', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const suggestions = page.locator('.branch-compare-suggestions');
+
+        await targetInput.fill('feature');
+        await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
+        await targetInput.press('Shift+Tab');
+        await expect(baseInput).toBeFocused();
+        await expect(targetInput).toHaveValue('feature');
+        await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);
+
+        await baseInput.fill('該当しないブランチ');
+        await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(0);
+        await expect(baseInput).not.toHaveAttribute('aria-activedescendant', /.+/);
+        await baseInput.press('Tab');
+        await expect(targetInput).toBeFocused();
+        await expect(baseInput).toHaveValue('該当しないブランチ');
+        await expect(baseInput).not.toHaveAttribute('data-selected-ref', /.+/);
+    });
+
+    test('候補をマウスまたは先頭active候補から下キーとEnterで選択できる', async ({page}) => {
         await openBranchComparePanelAsync(page);
 
         await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
         await expect(page.locator('.branch-compare-base-input')).toHaveValue('main');
 
         const targetInput = page.locator('.branch-compare-target-input');
-        await targetInput.fill('feature/orders');
-        await expect(page.locator('.branch-compare-suggestions')).toBeVisible();
+        await targetInput.focus();
+        const suggestions = page.locator('.branch-compare-suggestions');
+        await expect(suggestions).toBeVisible();
+        await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveText('main');
+        await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
         await targetInput.press('ArrowDown');
+        await expect(suggestions.locator('.branch-compare-suggestion.selected')).toHaveText('feature/orders');
         await targetInput.press('Enter');
         await expect(targetInput).toHaveValue('feature/orders');
-        await expect(page.locator('.branch-compare-suggestions')).not.toBeVisible();
+        await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
+        await expect(suggestions).not.toBeVisible();
         await expect(page.locator('.branch-compare-button')).toBeEnabled();
     });
 
@@ -489,78 +560,43 @@ test.describe('ブランチ比較パネル', () => {
         expect(showCommits).not.toContain(RIGHT_REF);
     });
 
-    test('ファイル差分の読み込み表示と連続クリック中も変更ファイル一覧の位置とスクロールを維持する', async ({page}) => {
-        await page.setViewportSize({width: 1280, height: 240});
+    test('ファイル差分の読み込み中はステータスと予約空白を表示せずaria-busyだけを更新する', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.evaluate(() => {
             const mockWindow = window as unknown as {__mockGitShowAtCommitDelays: Record<string, number>};
             mockWindow.__mockGitShowAtCommitDelays = {
-                '1111111:schema/modified.json': 180,
-                '2222222:schema/modified.json': 180,
-                '1111111:data/modified.csv': 180,
-                '2222222:data/modified.csv': 180,
-                '1111111:schema/added.json': 180,
-                '2222222:schema/added.json': 180,
-                '1111111:data/added.csv': 180,
-                '2222222:data/added.csv': 180,
+                '1111111:schema/modified.json': 1000,
+                '2222222:schema/modified.json': 1000,
+                '1111111:data/modified.csv': 1000,
+                '2222222:data/modified.csv': 1000,
             };
         });
 
-        const panel = page.locator('.branch-compare-panel');
         const results = page.locator('.branch-compare-results');
-        const readLayoutAsync = async (): Promise<{
-            resultsTop: number;
-            firstFileTop: number;
-            resultsScrollTop: number;
-            panelScrollTop: number;
-            panelScrollHeight: number;
-            panelClientHeight: number;
-        }> => {
-            return page.evaluate(() => {
-                const panelElement = document.querySelector('.branch-compare-panel');
-                const resultsElement = document.querySelector('.branch-compare-results');
-                const firstFileElement = document.querySelector('.branch-compare-file-item');
-                if (!(panelElement instanceof HTMLElement)) throw new Error('branch compare panel not found');
-                if (!(resultsElement instanceof HTMLElement)) throw new Error('branch compare results not found');
-                if (!(firstFileElement instanceof HTMLElement)) throw new Error('branch compare file item not found');
-                return {
-                    resultsTop: resultsElement.getBoundingClientRect().top,
-                    firstFileTop: firstFileElement.getBoundingClientRect().top,
-                    resultsScrollTop: resultsElement.scrollTop,
-                    panelScrollTop: panelElement.scrollTop,
-                    panelScrollHeight: panelElement.scrollHeight,
-                    panelClientHeight: panelElement.clientHeight,
-                };
-            });
-        };
-
-        await panel.evaluate(element => { element.scrollTop = 100; });
-        const before = await readLayoutAsync();
-        expect(before.panelScrollHeight).toBeGreaterThan(before.panelClientHeight);
-        expect(before.panelScrollTop).toBeGreaterThan(0);
+        const status = page.locator('.branch-compare-status');
 
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        await expect(page.locator('.branch-compare-status')).toHaveText('差分を読み込み中…');
         await expect(results).toHaveAttribute('aria-busy', 'true');
-        const loading = await readLayoutAsync();
+        const [loadingText, loadingHidden, loadingOffsetHeight, loadingDisplay, loadingTextCount] = await Promise.all([
+            status.textContent(),
+            status.isHidden(),
+            status.evaluate(element => element.offsetHeight),
+            status.evaluate(element => getComputedStyle(element).display),
+            page.getByText('差分を読み込み中…', {exact: true}).count(),
+        ]);
+        expect(loadingText).toBe('');
+        expect(loadingHidden).toBe(true);
+        expect(loadingOffsetHeight).toBe(0);
+        expect(loadingDisplay).not.toBe('none');
+        expect(loadingTextCount).toBe(0);
 
-        await page.locator('.branch-compare-file-item[data-status="A"]').click();
-        await expect(page.locator('.branch-compare-file-item[data-status="A"]')).toHaveAttribute('aria-current', 'true');
-        await expect(page.locator('.branch-compare-status')).toHaveText('差分を読み込み中…');
-        const superseding = await readLayoutAsync();
-
-        await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('added-only');
-        await expect(page.locator('.branch-compare-status')).toHaveText('');
+        await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
         await expect(results).toHaveAttribute('aria-busy', 'false');
-        const completed = await readLayoutAsync();
-
-        for (const layout of [loading, superseding, completed]) {
-            expect(Math.abs(layout.resultsTop - before.resultsTop)).toBeLessThanOrEqual(1);
-            expect(Math.abs(layout.firstFileTop - before.firstFileTop)).toBeLessThanOrEqual(1);
-            expect(layout.resultsScrollTop).toBe(before.resultsScrollTop);
-            expect(layout.panelScrollTop).toBe(before.panelScrollTop);
-        }
+        await expect(status).toHaveText('');
+        await expect(status).toBeHidden();
+        expect(await status.evaluate(element => element.offsetHeight)).toBe(0);
+        expect(await status.evaluate(element => getComputedStyle(element).display)).not.toBe('none');
     });
 
     test('比較後に入力または候補を変更すると旧一覧を破棄して古いSHAを開けない', async ({page}) => {
