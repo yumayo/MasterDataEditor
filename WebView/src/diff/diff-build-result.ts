@@ -6,6 +6,9 @@ export interface DiffBuildResult {
     rightRows?: string[][];
     leftRowSourceIndices?: Int32Array;
     rightRowSourceIndices?: Int32Array;
+    /** 差分表示行から元CSVのデータ行への対応（パディングは -1）。 */
+    leftOriginalRowIndices?: Int32Array;
+    rightOriginalRowIndices?: Int32Array;
     leftEmptyRowIndices: number[];
     rightEmptyRowIndices: number[];
     leftDeletedRowIndices: number[];

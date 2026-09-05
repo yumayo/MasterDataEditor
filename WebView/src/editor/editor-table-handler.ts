@@ -405,8 +405,8 @@ export class EditorTableHandler {
             this.dropdownInput.cancel();
         }
 
-        // フォーカス先がHTMLInputElement/HTMLTextAreaElementの場合は
-        // 意図的な移動なのでフォーカスを奪わない（検索パネル等の入力フィールド用）
+        // 入力欄やボタンへの意図的な移動は尊重する。
+        // 差分の変更行ボタンも、セル選択後にキーボードで操作できるようにする。
         const focusTarget = event.relatedTarget;
         if (this.dateTimePickerActive
             && this.dateTimePicker !== undefined
@@ -414,7 +414,7 @@ export class EditorTableHandler {
             && this.dateTimePicker.getElement().contains(focusTarget)) {
             return;
         }
-        if (focusTarget instanceof HTMLInputElement || focusTarget instanceof HTMLTextAreaElement) {
+        if (focusTarget instanceof HTMLInputElement || focusTarget instanceof HTMLTextAreaElement || focusTarget instanceof HTMLButtonElement) {
             if (this.visible) {
                 if (this.dateTimePickerActive) {
                     this.submitDateTimePickerAndHide();

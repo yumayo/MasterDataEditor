@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace App.MasterDataEditor
 {
@@ -29,7 +30,18 @@ namespace App.MasterDataEditor
 					return new { type = "git_blame_response", requestId, success = false, error = validationError };
 				}
 
-				var output = GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", filename);
+				string? commit = null;
+				if (root.TryGetProperty("commit", out var commitElement))
+				{
+					commit = commitElement.GetString();
+					if (string.IsNullOrEmpty(commit) || !Regex.IsMatch(commit, @"\A(?:[0-9a-fA-F]{7,40}|[0-9a-fA-F]{64})\z"))
+					{
+						return new { type = "git_blame_response", requestId, success = false, error = "invalid commit hash format" };
+					}
+				}
+				var output = commit == null
+					? GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", "--", filename)
+					: GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", commit, "--", filename);
 				var entries = ParsePorcelainBlame(output);
 
 				return new

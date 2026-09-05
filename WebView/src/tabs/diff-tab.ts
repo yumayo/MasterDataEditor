@@ -24,6 +24,22 @@ import DiffBuildWorker from "../diff/diff-worker?worker&inline";
 import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
 
+export interface DiffChangedRow {
+    /** 表示グリッドと同じ1始まりの行番号・列番号。 */
+    row: number;
+    columns: number[];
+    side: 'left' | 'right';
+    status: 'A' | 'M' | 'D';
+    /** ヘッダーを含む元CSVの行番号（git blameとの照合用）。 */
+    lineNumber: number;
+}
+
+interface DiffCellSelection {
+    row: number;
+    column: number;
+    side: 'left' | 'right';
+}
+
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
  *
@@ -182,6 +198,11 @@ export class DiffTab {
     private readonly indexedDiffMode: boolean;
     /** ui-state 永続化を呼び出すためのリスナー */
     private uiStateChangeListener: (() => void) | false;
+    private selectionChangeListener: (() => void) | null = null;
+    private selectedCell: DiffCellSelection | null = null;
+    private selectionSide: 'left' | 'right' | null = null;
+    private readonly leftOriginalRowIndices: Int32Array;
+    private readonly rightOriginalRowIndices: Int32Array;
 
     constructor(
         tableName: string,
@@ -207,6 +228,8 @@ export class DiffTab {
         diffBuildResult: DiffBuildResult
     ) {
         this.tableName = tableName;
+        this.leftOriginalRowIndices = diffBuildResult.leftOriginalRowIndices ?? diffBuildResult.leftRowSourceIndices ?? new Int32Array();
+        this.rightOriginalRowIndices = diffBuildResult.rightOriginalRowIndices ?? diffBuildResult.rightRowSourceIndices ?? new Int32Array();
         this.isSyncing = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
@@ -426,6 +449,17 @@ export class DiffTab {
             }
         }
         this.newColumnDomIndices = newColumnDomIndices;
+
+        for (const [side, pane, table] of [
+            ['left', leftPaneElement, this.leftEditorTable],
+            ['right', rightPaneElement, this.rightEditorTable],
+        ] as const) {
+            pane.addEventListener('editor-table-selection-changed', () => {
+                if (this.wrapperElement.style.display === 'none' || this.selectionSide !== side) return;
+                this.selectedCell = {...table.getSelection().getFocus(), side};
+                this.selectionChangeListener?.();
+            });
+        }
 
         // 差分クラスのデータモデルを構築する（仮想スクロールの renderRow フックで適用される）
         this.buildDiffClassData(
@@ -815,11 +849,13 @@ export class DiffTab {
      */
     activateHandler(targetEditorTable: EditorTable): void {
         if (targetEditorTable === this.leftEditorTable) {
+            this.selectionSide = 'left';
             this.leftEditorTable.getHandler().activate();
             this.leftEditorTable.setInactiveAppearance(false);
             this.rightEditorTable.getHandler().deactivate();
             this.rightEditorTable.setInactiveAppearance(true);
         } else if (targetEditorTable === this.rightEditorTable) {
+            this.selectionSide = 'right';
             this.rightEditorTable.getHandler().activate();
             this.rightEditorTable.setInactiveAppearance(false);
             this.leftEditorTable.getHandler().deactivate();
@@ -838,6 +874,50 @@ export class DiffTab {
 
     connectUiStateChangeListener(listener: () => void): void {
         this.uiStateChangeListener = listener;
+    }
+
+    connectSelectionChangeListener(listener: () => void): void {
+        this.selectionChangeListener = listener;
+    }
+
+    getSelectedCell(): Readonly<DiffCellSelection> | null {
+        return this.selectedCell;
+    }
+
+    /** DOM外の仮想行も含め、表示できる変更セルを行単位で収集する。 */
+    getChangedRows(): DiffChangedRow[] {
+        const leftRows = this.leftEditorTable.getStore().getRows(this.leftTableKey);
+        const rightRows = this.rightEditorTable.getStore().getRows(this.rightTableKey);
+        if (leftRows === false || rightRows === false) return [];
+        const result: DiffChangedRow[] = [];
+        for (let index = 0; index < this.leftEditorTable.getLogicalRowCount() - 1; index++) {
+            const deleted = this.leftRowClasses.get(index)?.includes('diff-row-deleted') === true;
+            const added = this.rightAddedRows.has(index);
+            const left = leftRows[this.leftEditorTable.resolveStoreRowIndex(index)];
+            const right = rightRows[this.rightEditorTable.resolveStoreRowIndex(index)];
+            const columns: number[] = [];
+            for (const [domColumn, csvColumn] of this.domIndexToCsvIndex) {
+                if (deleted || added || (left?.[csvColumn] ?? '') !== (right?.[csvColumn] ?? '')) columns.push(domColumn + 1);
+            }
+            if (columns.length === 0) continue;
+            const sourceIndex = (deleted ? this.leftOriginalRowIndices : this.rightOriginalRowIndices)[index];
+            result.push({row: index + 1, columns, side: deleted ? 'left' : 'right', status: deleted ? 'D' : added ? 'A' : 'M', lineNumber: sourceIndex + 2});
+        }
+        return result;
+    }
+
+    /** 同じ行では現在の選択列の次へ進み、末尾から先頭へ戻る。 */
+    jumpToChangedRow(row: DiffChangedRow): void {
+        const current = this.selectedCell;
+        const column = current?.row === row.row
+            ? row.columns.find(column => column > current.column) ?? row.columns[0]
+            : row.columns[0];
+        if (column === undefined) return;
+        const side = current?.row === row.row && row.status === 'M' ? current.side : row.side;
+        const table = side === 'left' ? this.leftEditorTable : this.rightEditorTable;
+        this.activateHandler(table);
+        table.getSelection().moveAndClearRange(row.row, column);
+        table.getSelection().scrollFocusToCenterVertically();
     }
 
     setLargeFileSettings(settings: LargeFileSettings): void {

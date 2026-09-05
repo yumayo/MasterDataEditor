@@ -439,8 +439,14 @@ export async function installMockApiAsync(
                 // git blame: __mockGitBlame[filename] のモックデータを返す
                 if (type === "git_blame_request") {
                     const filename = request.filename as string;
-                    type BlameWindow = { __mockGitBlame: Record<string, object[]> | undefined };
-                    const mockBlame = (window as unknown as BlameWindow).__mockGitBlame;
+                    type BlameWindow = {
+                        __mockGitBlame?: Record<string, object[]>;
+                        __mockGitBlameAtCommit?: Record<string, Record<string, object[]>>;
+                    };
+                    const blameWindow = window as unknown as BlameWindow;
+                    const mockBlame = typeof request.commit === 'string'
+                        ? blameWindow.__mockGitBlameAtCommit?.[request.commit]
+                        : blameWindow.__mockGitBlame;
                     if (mockBlame === undefined) {
                         dispatch({ type: "git_blame_response", requestId, success: false, error: "git blame not available" });
                         return;

@@ -421,8 +421,8 @@ export interface LogEntry {
 /**
  * git blame でファイルの各行の著者・日付・コミット情報を取得する
  */
-export async function gitBlameAsync(filename: string): Promise<BlameEntry[]> {
-    return postMessageAsync<BlameEntry[]>('git_blame', { filename });
+export async function gitBlameAsync(filename: string, commit?: string): Promise<BlameEntry[]> {
+    return postMessageAsync<BlameEntry[]>('git_blame', commit === undefined ? {filename} : {filename, commit});
 }
 
 /**

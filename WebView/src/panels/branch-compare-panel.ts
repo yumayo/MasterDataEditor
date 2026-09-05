@@ -1,9 +1,21 @@
-import {gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
+import {gitBlameAsync, gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
-import type {UiStateStore} from '../app/ui-state';
+import type {UiStateStore, UiStoredBranchCompareDiffTab} from '../app/ui-state';
+import type {DiffTab, DiffChangedRow} from '../tabs/diff-tab';
 import type {NotificationToast} from '../ui/notification';
 
 type BranchInput = HTMLInputElement;
+
+interface BranchCompareFileView {
+    file: GitBranchCompareFile;
+    leftCommit: string;
+    rightCommit: string;
+    item: HTMLElement;
+    rowsElement: HTMLElement;
+    diffTab: DiffTab | null;
+    rows: DiffChangedRow[];
+    openDiff: (row?: DiffChangedRow) => void;
+}
 
 /**
  * 2ブランチ間のCSV差分を選択・表示するサイドバーパネル。
@@ -31,6 +43,7 @@ export class BranchComparePanel {
     private compareRequestId: number;
     private compareBusy: boolean;
     private fileOpenController: AbortController | false;
+    private readonly fileViews: BranchCompareFileView[] = [];
 
     constructor(tab: Tab, uiStateStore: UiStateStore, notification: NotificationToast) {
         this.tab = tab;
@@ -98,6 +111,7 @@ export class BranchComparePanel {
         document.addEventListener('mousedown', (event: MouseEvent) => {
             if (event.target instanceof Node && !this.element.contains(event.target)) this.dismissSuggestions();
         });
+        this.tab.connectBranchCompareListener((metadata, diffTab) => { this.syncDiffSelection(metadata, diffTab); });
     }
 
     appendTo(parent: HTMLElement): void {
@@ -114,6 +128,7 @@ export class BranchComparePanel {
 
     show(): void {
         this.element.classList.add('sidebar-panel-active');
+        this.tab.notifyBranchCompareSelection();
         const requestId = ++this.branchListRequestId;
         this.loadBranchesAsync(requestId).catch(() => {});
     }
@@ -412,6 +427,7 @@ export class BranchComparePanel {
             }
             this.statusElement.textContent = '';
             this.persistState(true);
+            this.tab.notifyBranchCompareSelection();
         } catch (error: unknown) {
             if (requestId !== this.compareRequestId) return;
             this.resultsElement.replaceChildren();
@@ -428,6 +444,8 @@ export class BranchComparePanel {
     }
 
     private createFileItem(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string): HTMLElement {
+        const group = document.createElement('div');
+        group.classList.add('branch-compare-file-group');
         const item = document.createElement('div');
         item.classList.add('branch-compare-file-item');
         item.setAttribute('data-status', file.status);
@@ -470,7 +488,7 @@ export class BranchComparePanel {
         status.textContent = file.status;
         title.appendChild(status);
 
-        const openDiff = (): void => {
+        const openDiff = (row?: DiffChangedRow): void => {
             this.element.querySelectorAll('.branch-compare-file-item-active').forEach(element => {
                 element.classList.remove('branch-compare-file-item-active');
                 element.setAttribute('aria-current', 'false');
@@ -481,7 +499,7 @@ export class BranchComparePanel {
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
-            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal)
+            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal, row)
                 .then(() => {
                     if (this.fileOpenController !== controller || controller.signal.aborted) return;
                     this.fileOpenController = false;
@@ -496,14 +514,105 @@ export class BranchComparePanel {
                     this.showOperationError(error);
                 });
         };
-        item.addEventListener('click', openDiff);
+        item.addEventListener('click', () => { openDiff(); });
         item.addEventListener('keydown', (event: KeyboardEvent) => {
             if (event.target !== item) return;
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
             openDiff();
         });
-        return item;
+        group.appendChild(item);
+        const rowsElement = document.createElement('div');
+        rowsElement.classList.add('branch-compare-rows');
+        rowsElement.setAttribute('role', 'group');
+        rowsElement.setAttribute('aria-label', file.tableName + 'の変更行');
+        group.appendChild(rowsElement);
+        this.fileViews.push({file, leftCommit, rightCommit, item, rowsElement, diffTab: null, rows: [], openDiff});
+        return group;
+    }
+
+    private syncDiffSelection(metadata: UiStoredBranchCompareDiffTab | null, diffTab: DiffTab | null): void {
+        const selected = diffTab?.getSelectedCell();
+        for (const view of this.fileViews) {
+            const active = metadata !== null && diffTab !== null && metadata.gitPath === view.file.path
+                && metadata.leftCommit === view.leftCommit && metadata.rightCommit === view.rightCommit;
+            view.item.classList.toggle('branch-compare-file-item-active', active);
+            view.item.setAttribute('aria-current', String(active));
+            if (active && view.diffTab !== diffTab) {
+                view.diffTab = diffTab;
+                view.rows = diffTab.getChangedRows();
+                this.renderChangedRows(view);
+            }
+            for (const button of view.rowsElement.querySelectorAll<HTMLButtonElement>('.branch-compare-row-item')) {
+                const row = view.rows[Number(button.dataset.index)];
+                const isSelected = active && selected != null && selected.row === row.row;
+                const wasSelected = button.classList.contains('branch-compare-row-item-active');
+                button.classList.toggle('branch-compare-row-item-active', isSelected);
+                button.setAttribute('aria-current', String(isSelected));
+                const position = button.querySelector<HTMLElement>('.branch-compare-row-position');
+                const columnIndex = isSelected ? row.columns.indexOf(selected.column) : -1;
+                if (position !== null) position.textContent = columnIndex >= 0 ? `${columnIndex + 1}/${row.columns.length}` : `${row.columns.length}箇所`;
+                if (isSelected && !wasSelected && this.isVisible()) button.scrollIntoView({block: 'nearest'});
+            }
+        }
+    }
+
+    private renderChangedRows(view: BranchCompareFileView): void {
+        view.rowsElement.replaceChildren();
+        const fragment = document.createDocumentFragment();
+        for (const [index, row] of view.rows.entries()) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.classList.add('branch-compare-row-item');
+            button.dataset.index = String(index);
+            button.dataset.row = String(row.row);
+            button.dataset.status = row.status;
+            button.setAttribute('aria-current', 'false');
+            const number = document.createElement('span');
+            number.classList.add('branch-compare-row-number');
+            number.textContent = `${row.row}行`;
+            button.appendChild(number);
+            const author = document.createElement('span');
+            author.classList.add('branch-compare-row-author');
+            author.textContent = '変更者を取得中…';
+            button.appendChild(author);
+            const position = document.createElement('span');
+            position.classList.add('branch-compare-row-position');
+            position.textContent = `${row.columns.length}箇所`;
+            button.appendChild(position);
+            button.addEventListener('click', () => { view.openDiff(row); });
+            button.addEventListener('keydown', (event: KeyboardEvent) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                event.stopPropagation();
+                view.openDiff(row);
+            });
+            fragment.appendChild(button);
+        }
+        view.rowsElement.appendChild(fragment);
+        void this.loadRowAuthorsAsync(view);
+    }
+
+    private async loadRowAuthorsAsync(view: BranchCompareFileView): Promise<void> {
+        const renderedDiff = view.diffTab;
+        const sides = [...new Set(view.rows.map(row => row.side))];
+        const results = await Promise.allSettled(sides.map(side => gitBlameAsync(view.file.path, side === 'left' ? view.leftCommit : view.rightCommit)));
+        if (!view.rowsElement.isConnected || view.diffTab !== renderedDiff) return;
+        for (const [sideIndex, side] of sides.entries()) {
+            const result = results[sideIndex];
+            const entries = new Map(result.status === 'fulfilled' ? result.value.map(entry => [entry.lineNumber, entry]) : []);
+            for (const button of view.rowsElement.querySelectorAll<HTMLButtonElement>('.branch-compare-row-item')) {
+                const row = view.rows[Number(button.dataset.index)];
+                if (row.side !== side) continue;
+                const entry = entries.get(row.lineNumber);
+                const author = button.querySelector<HTMLElement>('.branch-compare-row-author');
+                if (author !== null) author.textContent = entry?.author || '変更者不明';
+                const sourceLabel = side === 'left' ? '比較元の最終変更者' : '比較先の最終変更者';
+                button.title = `${row.row}行（元CSV ${row.lineNumber}行）\n${sourceLabel}: ${entry?.author || '取得できませんでした'}`
+                    + (entry === undefined ? '' : `\n${entry.date}\n${entry.commitMessage}`)
+                    + '\nクリックするたびに次の変更セルへ移動';
+            }
+        }
     }
 
     private invalidateResults(invalidateCompare: boolean): void {
@@ -516,6 +625,7 @@ export class BranchComparePanel {
             this.targetInput.disabled = false;
         }
         this.cancelFileOpen(false);
+        this.fileViews.length = 0;
         this.resultsElement.replaceChildren();
         this.resultsElement.setAttribute('aria-busy', 'false');
         this.statusElement.textContent = '';

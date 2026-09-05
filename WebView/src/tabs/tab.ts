@@ -26,7 +26,7 @@ import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
 import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail} from "../settings/settings-schema";
-import {DiffTab} from "./diff-tab";
+import {DiffTab, type DiffChangedRow} from "./diff-tab";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "../ui/notification";
@@ -37,7 +37,7 @@ import type {EditorAPI} from "../editor-api/editor-api-types";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
 import {saveTableDataFromStoreAsync} from "../editor/editor-actions";
-import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab, UiScrollPosition, UiStoredEditorTableState, UiStoredSelectionState, UiStoredFormPanelState} from "../app/ui-state";
+import type {UiStateStore, UiTabsState, UiStoredTab, UiStoredDiffTab, UiStoredBranchCompareDiffTab, UiScrollPosition, UiStoredEditorTableState, UiStoredSelectionState, UiStoredFormPanelState} from "../app/ui-state";
 import {DebugApiDetailTab} from "./debug-api-detail-tab";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 import {ViewPluginHost, type ViewPluginMount} from "../plugins/view-plugin-host";
@@ -326,6 +326,7 @@ export class Tab {
 
     /** アクティブタブ変更時のリスナー（Toolbar の利用可否更新用） */
     private activeTabChangeListener: ActiveTabChangeListener | false;
+    private branchCompareListener: ((metadata: UiStoredBranchCompareDiffTab | null, diffTab: DiffTab | null) => void) | null = null;
 
     /**
      * バリデーションパネル（main.tsのconnectValidationPanelで設定される。未設定はfalse）
@@ -1009,7 +1010,18 @@ export class Tab {
         this.activeTabName = name;
         if (changed) {
             this.notifyActiveTabChangeListener();
+            this.notifyBranchCompareSelection();
         }
+    }
+
+    connectBranchCompareListener(listener: (metadata: UiStoredBranchCompareDiffTab | null, diffTab: DiffTab | null) => void): void {
+        this.branchCompareListener = listener;
+    }
+
+    notifyBranchCompareSelection(): void {
+        const metadata = this.activeTabName === false ? undefined : this.diffTabMetadata.get(this.activeTabName);
+        const diffTab = this.activeTabName === false ? undefined : this.diffTabs.get(this.activeTabName);
+        this.branchCompareListener?.(metadata?.kind === 'branchCompare' ? metadata : null, diffTab ?? null);
     }
 
     private notifyActiveTabChangeListener(): void {
@@ -3003,11 +3015,20 @@ export class Tab {
      * ブランチ比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
      * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
      */
-    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal): Promise<void> {
+    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, targetRow?: DiffChangedRow): Promise<void> {
+        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
+        const existing = this.diffTabs.get(diffTabName);
+        const existingMetadata = this.diffTabMetadata.get(diffTabName);
+        if (targetRow !== undefined && existing !== undefined && existingMetadata?.kind === 'branchCompare'
+            && existingMetadata.leftCommit === leftCommit && existingMetadata.rightCommit === rightCommit
+            && existingMetadata.gitPath === file.path && !this.diffLoadingTokens.has(diffTabName) && !abortSignal.aborted) {
+            this.tabButtons.find(button => button.name === diffTabName)?.click();
+            existing.jumpToChangedRow(targetRow);
+            return;
+        }
         const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, abortSignal);
         if (versions === null) return;
 
-        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
         const metadata: UiStoredDiffTab = {
             kind: 'branchCompare',
             tableName: file.tableName,
@@ -3024,6 +3045,9 @@ export class Tab {
             diffTabName, file.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv, file.path,
             leftLabel, rightLabel, file.status === 'A', {metadata, abortSignal}
         );
+        if (targetRow !== undefined && !abortSignal.aborted && this.activeTabName === diffTabName) {
+            this.diffTabs.get(diffTabName)?.jumpToChangedRow(targetRow);
+        }
     }
 
     private async loadBranchCompareDiffVersionsAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, abortSignal: AbortSignal | null): Promise<BranchCompareDiffVersions | null> {
@@ -3404,6 +3428,9 @@ export class Tab {
                 leftLabel, rightLabel, diffBuildResult
             );
             this.diffTabs.set(diffTabName, diffTab);
+            diffTab.connectSelectionChangeListener(() => {
+                if (this.activeTabName === diffTabName) this.notifyBranchCompareSelection();
+            });
             this.connectDiffTabUiState(diffTabName, diffTab);
             if (options.metadata !== undefined) {
                 if (options.metadata === null) {
@@ -3507,6 +3534,7 @@ export class Tab {
                 diffTab.hide();
             }
         });
+        this.notifyBranchCompareSelection();
     }
 
     /**

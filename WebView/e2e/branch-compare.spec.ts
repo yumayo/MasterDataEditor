@@ -125,6 +125,7 @@ async function installBranchComparePageAsync(
             __mockGitShowAtCommitDelays: Record<string, number>;
             __mockGitStatus: {changes: Array<{path: string; tableName: string; isNew: boolean}>; staged: Array<{path: string; tableName: string; isNew: boolean}>};
             __mockGitHeadFiles: Record<string, string>;
+            __mockGitBlameAtCommit: Record<string, Record<string, object[]>>;
         };
         const branchesOverride = sessionStorage.getItem('__branchCompareBranchesOverride');
         mockWindow.__mockGitBranches = branchesOverride === null ? args.branches : JSON.parse(branchesOverride) as MockBranch[];
@@ -143,6 +144,11 @@ async function installBranchComparePageAsync(
             }
         }
         mockWindow.__mockGitCommitFiles = args.commitFiles;
+        mockWindow.__mockGitBlameAtCommit = Object.fromEntries(Object.entries(args.commitFiles).map(([commit, files]) => [commit,
+            Object.fromEntries(Object.entries(files).filter(([path]) => path.endsWith('.csv')).map(([path, csv]) => [path,
+                csv.split('\n').map((_, index) => ({lineNumber: index + 1, author: commit === '1111111' ? '比較元担当' : '比較先担当', date: '2026-09-05', commitHash: commit, commitMessage: 'テーブル更新'})),
+            ])),
+        ]));
         mockWindow.__mockGitShowAtCommitDelays = {};
         mockWindow.__mockGitStatus = {changes: [{path: 'data/modified.csv', tableName: 'modified', isNew: false}], staged: []};
         mockWindow.__mockGitHeadFiles = {'data/modified.csv': args.commitFiles['1111111']['data/modified.csv']};
@@ -211,6 +217,126 @@ async function expectSavedBranchCompareAsync(page: Page, expected: StoredBranchC
 test.describe('ブランチ比較パネル', () => {
     test.beforeEach(async ({page}) => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
+    });
+
+    test('変更行に行番号と変更者を表示し、クリックとEnterで変更セルを循環する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const row = page.locator('.branch-compare-row-item');
+        await expect(row).toHaveCount(1);
+        await expect(row.locator('.branch-compare-row-number')).toHaveText('1行');
+        await expect(row.locator('.branch-compare-row-author')).toHaveText('比較先担当');
+        const focused = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused');
+        await row.click();
+        await expect(focused).toHaveText('after');
+        await expect(row.locator('.branch-compare-row-position')).toHaveText('1/2');
+        await row.click();
+        await expect(focused).toHaveText('150');
+        await expect(row.locator('.branch-compare-row-position')).toHaveText('2/2');
+        await row.focus();
+        await expect(row).toBeFocused();
+        await row.press('Enter');
+        await expect(focused).toHaveText('after');
+        await expect(page.locator('.diff-tab')).toHaveCount(1);
+    });
+
+    test('左右のセル選択から一覧が追従し、選択した変更セルの次へジャンプする', async ({page}) => {
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            files['1111111']['data/modified.csv'] += '\n2,unchanged,200\n3,old,300';
+            files['2222222']['data/modified.csv'] += '\n2,unchanged,200\n3,new,350';
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const rows = page.locator('.branch-compare-row-item');
+        await expect(rows).toHaveCount(2);
+        const left = page.locator('.diff-tab:visible .diff-pane-left');
+        const right = page.locator('.diff-tab:visible .diff-pane-right');
+        await left.locator('.editor-table-cell').filter({hasText: /^old$/}).click();
+        const thirdRow = page.locator('.branch-compare-row-item[data-row="3"]');
+        await expect(thirdRow).toHaveAttribute('aria-current', 'true');
+        await expect(thirdRow.locator('.branch-compare-row-position')).toHaveText('1/2');
+        await thirdRow.click();
+        await expect(left.locator('.editor-table-cell-focused')).toHaveText('300');
+        await right.locator('.editor-table-cell').filter({hasText: /^after$/}).click();
+        await expect(rows.first()).toHaveAttribute('aria-current', 'true');
+        await expect(thirdRow).toHaveAttribute('aria-current', 'false');
+        await rows.first().click();
+        await expect(right.locator('.editor-table-cell-focused')).toHaveText('150');
+        await right.locator('.editor-table-cell').filter({hasText: /^unchanged$/}).click();
+        await expect(page.locator('.branch-compare-row-item-active')).toHaveCount(0);
+    });
+
+    test('追加・削除で表示行がずれても元CSVの変更者を表示し、存在する側へジャンプする', async ({page}) => {
+        await page.evaluate(() => {
+            const mock = window as unknown as {
+                __mockGitCommitFiles: Record<string, Record<string, string>>;
+                __mockGitBlameAtCommit: Record<string, Record<string, object[]>>;
+            };
+            mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,name,value\n1,removed,10\n3,before,30';
+            mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,name,value\n3,after,35\n2,inserted,20';
+            mock.__mockGitBlameAtCommit['1111111']['data/modified.csv'] = [{lineNumber: 2, author: '削除行の担当', date: '', commitHash: '1111111', commitMessage: ''}];
+            mock.__mockGitBlameAtCommit['2222222']['data/modified.csv'] = [
+                {lineNumber: 2, author: '更新行の担当', date: '', commitHash: '2222222', commitMessage: ''},
+                {lineNumber: 3, author: '追加行の担当', date: '', commitHash: '2222222', commitMessage: ''},
+            ];
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const rows = page.locator('.branch-compare-row-item');
+        await expect(rows.locator('.branch-compare-row-number')).toHaveText(['1行', '2行', '3行']);
+        await expect(rows.locator('.branch-compare-row-author')).toHaveText(['削除行の担当', '追加行の担当', '更新行の担当']);
+        await rows.nth(0).click();
+        await expect(page.locator('.diff-tab:visible .diff-pane-left .editor-table-cell-focused')).toHaveText('1');
+        await rows.nth(1).click();
+        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('2');
+        await rows.nth(2).click();
+        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('after');
+    });
+
+    test('別ファイルの一覧から差分を再利用してジャンプし、タブ切替でも選択が追従する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const modifiedRow = page.locator('.branch-compare-row-item[data-status="M"]');
+        await modifiedRow.click();
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await page.locator('.branch-compare-row-item[data-status="A"]').click();
+        await modifiedRow.click();
+        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('150');
+        await expect(page.locator('.diff-tab')).toHaveCount(2);
+        await page.locator('.tab-button', {hasText: '差分: added ('}).click();
+        await expect(page.locator('.branch-compare-row-item[data-status="A"]')).toHaveAttribute('aria-current', 'true');
+        await expect(modifiedRow).toHaveAttribute('aria-current', 'false');
+    });
+
+    test('変更者の取得に失敗しても一覧から巨大差分の仮想スクロール外の行へジャンプできる', async ({page}) => {
+        await page.evaluate(() => {
+            const mock = window as unknown as {
+                __mockGitCommitFiles: Record<string, Record<string, string>>;
+                __mockGitBlameAtCommit?: unknown;
+            };
+            delete mock.__mockGitBlameAtCommit;
+            const rows = Array.from({length: 50001}, (_, index) => `${index + 1},row-${index + 1},100`);
+            mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            rows[50000] = '50001,last-changed,999';
+            mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const row = page.locator('.branch-compare-row-item');
+        await expect(row.locator('.branch-compare-row-number')).toHaveText('50001行');
+        await expect(row.locator('.branch-compare-row-author')).toHaveText('変更者不明');
+        await row.click();
+        const focused = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused');
+        await expect(focused).toHaveText('last-changed');
+        await expect(focused).toBeVisible();
+        await row.click();
+        await expect(focused).toHaveText('999');
     });
 
     test('アクティビティーバーの新アイコンから比較元・比較先の2入力を持つパネルを開ける', async ({page}) => {

@@ -57,6 +57,8 @@ interface KeyedRow {
 interface DiffRowWithSortKey {
     diffRow: DiffRow;
     rawPk: string;
+    leftOriginalRowIndex: number;
+    rightOriginalRowIndex: number;
 }
 
 /**
@@ -142,7 +144,7 @@ function insertAddedRowByPrimaryKey(diffRows: DiffRowWithSortKey[], addedRow: Di
  * 2. Current版の order 順にループし、HEAD版に存在しない行を added として主キー順の位置に挿入する
  * これにより、削除行は HEAD版の元の位置に配置しつつ、追加行は主キー順の位置に表示される。
  */
-export function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[]; newColumnIndices: ReadonlySet<number> } {
+export function buildDiffRows(headCsvText: string, currentCsvText: string, primaryKeyNames: readonly string[]): { diffRows: DiffRow[]; displayHeader: string[]; newColumnIndices: ReadonlySet<number>; leftOriginalRowIndices: Int32Array; rightOriginalRowIndices: Int32Array } {
     const head = parseCsv(headCsvText);
     const current = parseCsv(currentCsvText);
 
@@ -185,13 +187,13 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
                 if (remappedHead[i] !== remappedCurrent[i]) changedIndices.add(i);
             }
             if (changedIndices.size > 0) {
-                rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'modified', headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices } });
+                rowsWithSortKey.push({ rawPk: headEntry.rawPk, leftOriginalRowIndex: headEntry.rowIndex, rightOriginalRowIndex: currentEntry.rowIndex, diffRow: { kind: 'modified', headValues: remappedHead, currentValues: remappedCurrent, changedColumnIndices: changedIndices } });
             } else {
-                rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'unchanged', headValues: remappedHead, currentValues: remappedCurrent } });
+                rowsWithSortKey.push({ rawPk: headEntry.rawPk, leftOriginalRowIndex: headEntry.rowIndex, rightOriginalRowIndex: currentEntry.rowIndex, diffRow: { kind: 'unchanged', headValues: remappedHead, currentValues: remappedCurrent } });
             }
         } else {
             // Current版に存在しない → HEAD版の元の位置に削除行を配置する（表示ヘッダー順に並べ替える）
-            rowsWithSortKey.push({ rawPk: headEntry.rawPk, diffRow: { kind: 'deleted', headValues: GitDiffTracker.remapRow(headRow, headHeaderMap, displayHeader) } });
+            rowsWithSortKey.push({ rawPk: headEntry.rawPk, leftOriginalRowIndex: headEntry.rowIndex, rightOriginalRowIndex: -1, diffRow: { kind: 'deleted', headValues: GitDiffTracker.remapRow(headRow, headHeaderMap, displayHeader) } });
         }
     }
 
@@ -201,13 +203,19 @@ export function buildDiffRows(headCsvText: string, currentCsvText: string, prima
         if (!headMap.has(currentEntry.key)) {
             insertAddedRowByPrimaryKey(rowsWithSortKey, {
                 rawPk: currentEntry.rawPk,
+                leftOriginalRowIndex: -1,
+                rightOriginalRowIndex: currentEntry.rowIndex,
                 diffRow: { kind: 'added', currentValues: GitDiffTracker.remapRow(currentEntry.row, currentHeaderMap, displayHeader) },
             });
         }
     }
 
     const diffRows = rowsWithSortKey.map(row => row.diffRow);
-    return { diffRows, displayHeader, newColumnIndices };
+    return {
+        diffRows, displayHeader, newColumnIndices,
+        leftOriginalRowIndices: Int32Array.from(rowsWithSortKey.map(row => row.leftOriginalRowIndex)),
+        rightOriginalRowIndices: Int32Array.from(rowsWithSortKey.map(row => row.rightOriginalRowIndex)),
+    };
 }
 
 /**

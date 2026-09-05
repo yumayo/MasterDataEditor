@@ -77,13 +77,15 @@ function buildHeadRowValuesPerDomRow(diffRows: DiffRow[]): Array<string[] | null
 function buildFullDiffData(request: DiffBuildWorkerRequest): DiffBuildResult {
     const schema = JSON.parse(request.schemaJson) as SchemaJson;
     const primaryKeyNames: readonly string[] = schema.primary_key;
-    const {diffRows, displayHeader, newColumnIndices} = buildDiffRows(request.headCsv, request.currentCsv, primaryKeyNames);
+    const {diffRows, displayHeader, newColumnIndices, leftOriginalRowIndices, rightOriginalRowIndices} = buildDiffRows(request.headCsv, request.currentCsv, primaryKeyNames);
     const columnCount = displayHeader.length;
     const merged = buildMergedData(diffRows, columnCount);
     return {
         mode: 'full',
         displayHeader,
         newColumnIndices: Array.from(newColumnIndices),
+        leftOriginalRowIndices,
+        rightOriginalRowIndices,
         headRowValuesPerDomRow: buildHeadRowValuesPerDomRow(diffRows),
         ...merged,
     };
@@ -186,6 +188,8 @@ self.onmessage = (event: MessageEvent<DiffBuildWorkerRequest>) => {
         const transfers: Transferable[] = [];
         if (data.leftRowSourceIndices !== undefined) transfers.push(data.leftRowSourceIndices.buffer as Transferable);
         if (data.rightRowSourceIndices !== undefined) transfers.push(data.rightRowSourceIndices.buffer as Transferable);
+        if (data.leftOriginalRowIndices !== undefined) transfers.push(data.leftOriginalRowIndices.buffer as Transferable);
+        if (data.rightOriginalRowIndices !== undefined) transfers.push(data.rightOriginalRowIndices.buffer as Transferable);
         self.postMessage(response, {transfer: transfers});
     } catch (error: unknown) {
         const response: DiffBuildWorkerResponse = {
