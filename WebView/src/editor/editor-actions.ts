@@ -374,12 +374,11 @@ export async function saveSchemaDataAsync(table: EditorTable, writeOptions?: Wri
  * 列幅をユーザーデータとして保存する。
  * スキーマ定義ではなく個人の表示状態として扱うため user scope に書き込む。
  */
-export async function saveColumnWidthsDataAsync(table: EditorTable): Promise<void> {
-    const columnNames = table.getColumnHeaderValues();
-    const columnWidths = table.getColumnWidths();
-    const entries = columnNames.map((name, index) => ({
-        name,
-        width: columnWidths[index],
+export async function saveColumnWidthsDataAsync(table: EditorTable, columnIndices?: readonly number[]): Promise<void> {
+    const indices = columnIndices ?? table.getColumnHeaderValues().map((_, index) => index);
+    const entries = indices.map(index => ({
+        name: table.getColumnHeaderValue(index),
+        width: table.getColumnWidth(index),
     }));
     await saveColumnWidthsForTableAsync(table.tableName, entries);
 }

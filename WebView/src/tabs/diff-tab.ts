@@ -22,6 +22,7 @@ import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 import type {LargeFileSettings} from "../settings/settings-schema";
 import DiffBuildWorker from "../diff/diff-worker?worker&inline";
 import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
+import {saveColumnWidthsForTableAsync} from "../app/column-widths";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -90,6 +91,8 @@ export class DiffTab {
     }
 
     private readonly wrapperElement: HTMLElement;
+    /** ユーザー列幅の保存先となる元テーブル名（差分ストアの一時キーとは異なる）。 */
+    private readonly tableName: string;
 
     /** destroy() 時のストア登録解除に必要なテーブルキー */
     private readonly leftTableKey: string;
@@ -203,6 +206,7 @@ export class DiffTab {
         rightLabel: string | null,
         diffBuildResult: DiffBuildResult
     ) {
+        this.tableName = tableName;
         this.isSyncing = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
@@ -477,6 +481,25 @@ export class DiffTab {
 
         // 初期状態: 左ペイン（HEAD版）を非アクティブ表示にする（右ペインが操作対象）
         this.leftEditorTable.setInactiveAppearance(true);
+    }
+
+    /** 操作された列名だけを反対ペインとユーザーデータへ反映する。 */
+    notifyColumnWidthsChanged(sourceTable: EditorTable, columnIndices: readonly number[]): void {
+        const otherTable = sourceTable === this.leftEditorTable ? this.rightEditorTable : this.leftEditorTable;
+        const entries = columnIndices.map(index => ({
+            name: sourceTable.getColumnHeaderValue(index),
+            width: sourceTable.getColumnWidth(index),
+        }));
+        const otherColumnNames = otherTable.getColumnHeaderValues();
+        for (const entry of entries) {
+            const otherColumnIndex = otherColumnNames.indexOf(entry.name);
+            if (otherColumnIndex === -1) continue;
+            // 通知は再発行せず、相手側の履歴にも積まない。
+            otherTable.setColumnWidth(otherColumnIndex, entry.width);
+        }
+        otherTable.getSelection().updateRendererAfterResize();
+        saveColumnWidthsForTableAsync(this.tableName, entries)
+            .catch((e: unknown) => { console.error('[DiffTab] save column widths failed:', e); });
     }
 
     /**

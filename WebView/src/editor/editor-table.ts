@@ -2772,11 +2772,15 @@ export class EditorTable {
 
     /**
      * 列幅が変更されたことを通知する（AreaResizer / ColumnWidthCommand から呼ばれる）。
-     * 通常テーブルではユーザーデータへ即時保存する。
+     * 変更した列だけをユーザーデータへ即時保存し、差分ビューでは反対ペインにも反映する。
      */
-    notifyColumnWidthChanged(): void {
+    notifyColumnWidthChanged(columnIndices: readonly number[]): void {
+        if (this.diffTab !== false) {
+            this.diffTab.notifyColumnWidthsChanged(this, columnIndices);
+            return;
+        }
         if (!this.isMiniTable) {
-            saveColumnWidthsDataAsync(this)
+            saveColumnWidthsDataAsync(this, columnIndices)
                 .catch((e: unknown) => { console.error('[EditorTable] save column widths failed:', e); });
         }
     }

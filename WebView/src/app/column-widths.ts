@@ -14,6 +14,7 @@ const MAX_NAME_LENGTH = 512;
 const MAX_COLUMN_WIDTH_PX = 100_000;
 
 let cachedStatePromise: Promise<ColumnWidthsState> | null = null;
+let pendingWrite: Promise<void> = Promise.resolve();
 
 function asRecord(value: unknown): Record<string, unknown> | null {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -111,6 +112,7 @@ export async function applyStoredColumnWidthsToSchemaAsync(tableName: string, sc
     return changed ? {...schema, header: nextHeader} : schema;
 }
 
+/** 指定された列名だけを更新し、過去・現在の他の列の保存幅は残す。 */
 export async function saveColumnWidthsForTableAsync(tableName: string, entries: readonly ColumnWidthEntry[]): Promise<void> {
     const normalizedTableName = normalizeName(tableName);
     if (normalizedTableName === null) return;
@@ -125,6 +127,10 @@ export async function saveColumnWidthsForTableAsync(tableName: string, entries: 
     if (Object.keys(columns).length === 0) return;
 
     const state = await readColumnWidthsStateAsync();
-    state.tables[normalizedTableName] = columns;
-    await writeFileAsync(COLUMN_WIDTHS_FILE, createSerializableState(state), COLUMN_WIDTHS_FILE_OPTIONS);
+    state.tables[normalizedTableName] = {...state.tables[normalizedTableName], ...columns};
+    const snapshot = createSerializableState(state);
+    // 複数列のUndo/Redoや連続リサイズでも、古い保存が後から完了して幅を巻き戻さない。
+    const write = pendingWrite.catch(() => {}).then(() => writeFileAsync(COLUMN_WIDTHS_FILE, snapshot, COLUMN_WIDTHS_FILE_OPTIONS));
+    pendingWrite = write;
+    await write;
 }

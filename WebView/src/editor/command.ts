@@ -473,13 +473,13 @@ export class ColumnWidthCommand implements Command {
     execute(): void {
         this.editorTable.setColumnWidth(this.columnIndex, this.newWidth);
         // 列幅変更後の保存通知を行う
-        this.editorTable.notifyColumnWidthChanged();
+        this.editorTable.notifyColumnWidthChanged([this.columnIndex]);
     }
 
     undo(): void {
         this.editorTable.setColumnWidth(this.columnIndex, this.oldWidth);
         // 列幅変更後の保存通知を行う
-        this.editorTable.notifyColumnWidthChanged();
+        this.editorTable.notifyColumnWidthChanged([this.columnIndex]);
     }
 
     redo(): void {

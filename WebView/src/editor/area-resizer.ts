@@ -116,7 +116,7 @@ export class AreaResizer {
             this.editorTable.setColumnWidth(targetColumnIndex, newWidth);
             this.history.pushCommand(command, historyRange, copyRange);
             this.selection.updateRendererAfterResize();
-            this.editorTable.notifyColumnWidthChanged();
+            this.editorTable.notifyColumnWidthChanged([targetColumnIndex]);
             return;
         }
 
@@ -126,6 +126,7 @@ export class AreaResizer {
 
         // 幅が変わる列のみコマンドを生成（変化なし列はスキップ）
         const commands: ColumnWidthCommand[] = [];
+        const changedColumnIndices: number[] = [];
         for (let col = startCol; col <= endCol; col++) {
             // 列インデックスへの変換: selectionのcolumnはDOMのcolumn（行ヘッダーを含むため1始まり）
             // EditorTableのcolumnIndexは0始まり（行ヘッダーを除く）
@@ -134,6 +135,7 @@ export class AreaResizer {
             const newWidth = this.editorTable.clampColumnWidth(colIndex, widthFactory(colIndex));
             if (oldWidth === newWidth) continue;
             commands.push(new ColumnWidthCommand(this.editorTable, colIndex, oldWidth, newWidth));
+            changedColumnIndices.push(colIndex);
             this.editorTable.setColumnWidth(colIndex, newWidth);
         }
 
@@ -143,7 +145,7 @@ export class AreaResizer {
         const command = commands.length === 1 ? commands[0] : new CompositeCommand(commands);
         this.history.pushCommand(command, historyRange, copyRange);
         this.selection.updateRendererAfterResize();
-        this.editorTable.notifyColumnWidthChanged();
+        this.editorTable.notifyColumnWidthChanged(changedColumnIndices);
     }
 
     /**
@@ -169,6 +171,8 @@ export class AreaResizer {
         resizeHandle.addEventListener('mousedown', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // リサイズ直後のUndo/Redoを、操作した差分ペインの履歴へ送る。
+            if (this.editorTable.diffTab !== false) this.editorTable.diffTab.activateHandler(this.editorTable);
             this.isResizingColumn = true;
             this.columnDragConfirmed = false;
             this.resizingColumnIndex = columnIndex;
