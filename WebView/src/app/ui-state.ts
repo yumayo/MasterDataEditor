@@ -10,6 +10,13 @@ export interface UiSidebarState {
     activePanel: UiActivityBarItem;
     timelineTableName: string | null;
     scheduleTimeline: UiScheduleTimelineState;
+    branchCompare: UiBranchCompareState;
+}
+
+export interface UiBranchCompareState {
+    baseRef: string | null;
+    targetRef: string | null;
+    compared: boolean;
 }
 
 export interface UiBottomPanelState {
@@ -161,6 +168,7 @@ const DEFAULT_UI_STATE: UiState = {
         activePanel: 'files',
         timelineTableName: null,
         scheduleTimeline: DEFAULT_SCHEDULE_TIMELINE_STATE,
+        branchCompare: {baseRef: null, targetRef: null, compared: false},
     },
     activityBar: {
         order: [...DEFAULT_ACTIVITY_BAR_ORDER],
@@ -197,6 +205,7 @@ function cloneSidebarState(state: UiSidebarState): UiSidebarState {
         activePanel: state.activePanel,
         timelineTableName: state.timelineTableName,
         scheduleTimeline: cloneScheduleTimelineState(state.scheduleTimeline),
+        branchCompare: {...state.branchCompare},
     };
 }
 
@@ -333,6 +342,21 @@ function normalizeLimitedString(value: unknown, maxLength: number): string | nul
 
 function normalizeCommitRef(value: unknown): string | null {
     return normalizeLimitedString(value, MAX_COMMIT_REF_LENGTH);
+}
+
+function normalizeBranchCompareState(value: unknown): UiBranchCompareState {
+    const record = asRecord(value);
+    const normalizeBranchRef = (ref: unknown): string | null => {
+        if (typeof ref !== 'string' || !/^refs\/(heads|remotes)\/.+/.test(ref)) return null;
+        return ref;
+    };
+    const baseRef = normalizeBranchRef(record?.['baseRef']);
+    const targetRef = normalizeBranchRef(record?.['targetRef']);
+    return {
+        baseRef,
+        targetRef,
+        compared: record?.['compared'] === true && baseRef !== null && targetRef !== null && baseRef !== targetRef,
+    };
 }
 
 function normalizeCommitOid(value: unknown): string | null {
@@ -578,6 +602,7 @@ function normalizeUiState(value: unknown): UiState {
             activePanel: normalizeActivityBarItem(sidebar?.['activePanel'], defaults.sidebar.activePanel),
             timelineTableName: normalizeTabName(sidebar?.['timelineTableName']),
             scheduleTimeline: normalizeScheduleTimelineState(sidebar?.['scheduleTimeline'] ?? record['scheduleTimeline']),
+            branchCompare: normalizeBranchCompareState(sidebar?.['branchCompare']),
         },
         activityBar: {
             order: normalizeActivityBarOrder(activityBar?.['order']),
@@ -644,6 +669,11 @@ export class UiStateStore {
 
     setActivityBarOrder(order: UiActivityBarItem[]): void {
         this.state.activityBar.order = normalizeActivityBarOrder(order);
+        this.schedulePersist();
+    }
+
+    setBranchCompareState(state: UiBranchCompareState): void {
+        this.state.sidebar.branchCompare = normalizeBranchCompareState(state);
         this.schedulePersist();
     }
 

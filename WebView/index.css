@@ -41,6 +41,8 @@ body {
     /* 差分ビュー */
     --diff-deleted-bg: rgba(240, 50, 50, 0.2);
     --diff-added-bg: rgba(81, 184, 81, 0.2);
+    --diff-deleted-color: #c62828;
+    --diff-added-color: #22863a;
     --diff-empty-bg: rgba(128, 128, 128, 0.1);
     --diff-empty-opacity: 0.4;
     --git-changed-bg: rgba(81, 184, 81, 0.2);
@@ -86,6 +88,8 @@ body {
     /* 差分ビュー */
     --diff-deleted-bg: rgba(240, 50, 50, 0.2);
     --diff-added-bg: rgba(81, 184, 81, 0.2);
+    --diff-deleted-color: #ff7878;
+    --diff-added-color: #81b88b;
     --diff-empty-bg: rgba(128, 128, 128, 0.1);
     --diff-empty-opacity: 0.4;
     --git-changed-bg: rgba(81, 184, 81, 0.2);

@@ -123,7 +123,7 @@ export class Sidebar {
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // ブランチ比較パネル（比較時点のSHA同士で読み取り専用差分を開く）
-        this.branchComparePanel = new BranchComparePanel(tab);
+        this.branchComparePanel = new BranchComparePanel(tab, uiStateStore);
         this.branchComparePanel.appendTo(sidebarContent);
 
         // タイムラインパネル（git logベースのコミット履歴を表示する）
@@ -155,6 +155,7 @@ export class Sidebar {
 
         this.activityBar.activateItem(storedSidebarState.activePanel);
         this.switchPanel(storedSidebarState.activePanel);
+        this.branchComparePanel.restore();
 
         // C# FileSystemWatcher / GitWatcher からのプッシュ通知を受信してバッジとパネルを更新する
         window.chrome.webview.addEventListener('message', (event: MessageEvent) => {

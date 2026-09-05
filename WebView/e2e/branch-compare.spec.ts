@@ -1,6 +1,6 @@
 import {test, expect} from './fixtures/test';
 import type {Page} from '@playwright/test';
-import {createDefaultFileSystem, installMockApiAsync, type MockFileSystem} from './fixtures/mock-api';
+import {createDefaultFileSystem, installMockApiAsync, readMockFileAsync, type MockFileSystem} from './fixtures/mock-api';
 
 type BranchKind = 'local' | 'remote';
 
@@ -22,6 +22,12 @@ interface MockBranchCompareResult {
     leftCommit: string;
     rightCommit: string;
     files: MockBranchCompareFile[];
+}
+
+interface StoredBranchCompareState {
+    baseRef: string | null;
+    targetRef: string | null;
+    compared: boolean;
 }
 
 const LEFT_SHA = '1111111';
@@ -120,10 +126,12 @@ async function installBranchComparePageAsync(
             __mockGitStatus: {changes: Array<{path: string; tableName: string; isNew: boolean}>; staged: Array<{path: string; tableName: string; isNew: boolean}>};
             __mockGitHeadFiles: Record<string, string>;
         };
-        mockWindow.__mockGitBranches = args.branches;
+        const branchesOverride = sessionStorage.getItem('__branchCompareBranchesOverride');
+        mockWindow.__mockGitBranches = branchesOverride === null ? args.branches : JSON.parse(branchesOverride) as MockBranch[];
         mockWindow.__mockGitBranchListError = null;
         mockWindow.__mockGitBranchListDelayMs = 0;
-        mockWindow.__mockGitBranchCompare = args.compareResult;
+        const compareOverride = sessionStorage.getItem('__branchCompareResultOverride');
+        mockWindow.__mockGitBranchCompare = compareOverride === null ? args.compareResult : JSON.parse(compareOverride) as MockBranchCompareResult;
         mockWindow.__mockGitBranchCompareError = args.compareError;
         mockWindow.__mockGitBranchCompareDelayMs = 0;
         const schemaOverride = sessionStorage.getItem('__branchCompareSchemaOverride');
@@ -189,6 +197,15 @@ async function selectDefaultBranchesAndCompareAsync(page: Page): Promise<void> {
     await expect(compareButton).toBeEnabled();
     await compareButton.click();
     await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+}
+
+async function expectSavedBranchCompareAsync(page: Page, expected: StoredBranchCompareState): Promise<void> {
+    await expect.poll(async () => {
+        const raw = await readMockFileAsync(page, UI_STATE_FILE);
+        if (typeof raw !== 'string') return null;
+        const state = JSON.parse(raw) as {sidebar: {branchCompare?: StoredBranchCompareState}};
+        return state.sidebar.branchCompare;
+    }).toEqual(expected);
 }
 
 test.describe('ブランチ比較パネル', () => {
@@ -361,9 +378,8 @@ test.describe('ブランチ比較パネル', () => {
         expect(await fileItem.locator('.branch-compare-file-name').evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
         await fileItem.click();
         await expect(fileItem).toHaveAttribute('aria-current', 'true');
-        const activeAccent = await fileItem.evaluate(element => getComputedStyle(element).boxShadow);
-        expect(activeAccent).toContain('rgb(0, 122, 204)');
-        expect(activeAccent).toContain('inset');
+        await expect(fileItem).toHaveCSS('outline-style', 'solid');
+        await expect(fileItem).toHaveCSS('box-shadow', 'none');
     });
 
     test('各入力のフォーカスと絞り込みで先頭候補をactiveにする', async ({page}) => {
@@ -492,7 +508,56 @@ test.describe('ブランチ比較パネル', () => {
         await expect(compareButton).toBeDisabled();
     });
 
-    test('比較後にA・M・D一覧を表示し、追加は緑背景、削除は赤背景になる', async ({page}) => {
+    test('ブランチ名が完全一致すれば候補のクリックやTabなしで比較できる', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const compareButton = page.locator('.branch-compare-button');
+        await baseInput.fill('main');
+        await targetInput.fill('feature/orders');
+        await expect(targetInput).toBeFocused();
+        await expect(compareButton).toBeEnabled();
+        await compareButton.click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+
+        await targetInput.fill('main');
+        await expect(compareButton).toBeDisabled();
+        await targetInput.fill('feature');
+        await expect(compareButton).toBeDisabled();
+        await targetInput.fill('Feature/orders');
+        await expect(compareButton).toBeDisabled();
+        await targetInput.fill('origin/main');
+        await expect(targetInput).toHaveAttribute('data-selected-ref', 'refs/remotes/origin/main');
+        await expect(compareButton).toBeEnabled();
+    });
+
+    test('候補取得前に入力した完全一致のブランチ名も取得完了時に確定する', async ({page}) => {
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchListDelayMs: number}).__mockGitBranchListDelayMs = 1000;
+        });
+        await openBranchComparePanelAsync(page);
+        await page.locator('.branch-compare-base-input').fill('main');
+        await page.locator('.branch-compare-target-input').fill('feature/orders');
+        await expect(page.locator('.branch-compare-button')).toBeDisabled();
+        await expect(page.locator('.branch-compare-button')).toBeEnabled();
+        await expect(page.locator('.branch-compare-target-input')).toBeFocused();
+    });
+
+    test('localとremoteの表示名が重複する場合は完全一致しても明示選択が必要', async ({page}) => {
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranches: MockBranch[]}).__mockGitBranches.push({
+                name: 'origin/main', ref: 'refs/heads/origin/main', kind: 'local',
+            });
+        });
+        await openBranchComparePanelAsync(page);
+        await page.locator('.branch-compare-base-input').fill('main');
+        await page.locator('.branch-compare-target-input').fill('origin/main');
+        await expect(page.locator('.branch-compare-button')).toBeDisabled();
+        await selectBranchByMouseAsync(page, '.branch-compare-target-input', 'refs/remotes/origin/main');
+        await expect(page.locator('.branch-compare-button')).toBeEnabled();
+    });
+
+    test('比較後にA・M・D一覧を表示し追加は緑文字・削除は赤文字になる', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
 
@@ -504,14 +569,132 @@ test.describe('ブランチ比較パネル', () => {
         await expect(deleted).toContainText('deleted');
         await expect(added.locator('.branch-compare-file-status')).toHaveText('A');
         await expect(deleted.locator('.branch-compare-file-status')).toHaveText('D');
-        await expect(added).toHaveCSS('background-color', 'rgba(81, 184, 81, 0.2)');
-        await expect(deleted).toHaveCSS('background-color', 'rgba(240, 50, 50, 0.2)');
+        for (const selector of ['.branch-compare-file-name', '.branch-compare-file-status']) {
+            await expect(added.locator(selector)).toHaveCSS('color', 'rgb(129, 184, 139)');
+            await expect(deleted.locator(selector)).toHaveCSS('color', 'rgb(255, 120, 120)');
+        }
+        await page.evaluate(() => { document.body.setAttribute('data-theme', 'light'); });
+        for (const selector of ['.branch-compare-file-name', '.branch-compare-file-status']) {
+            await expect(added.locator(selector)).toHaveCSS('color', 'rgb(34, 134, 58)');
+            await expect(deleted.locator(selector)).toHaveCSS('color', 'rgb(198, 40, 40)');
+        }
+        await page.evaluate(() => { document.body.setAttribute('data-theme', 'dark'); });
 
         const compareRequest = await page.evaluate(() => {
             const details = (window as unknown as {__mockApiRequestDetails: Array<Record<string, string | null>>}).__mockApiRequestDetails;
             return details.find(detail => detail.type === 'git_branch_compare_request');
         });
         expect(compareRequest).toMatchObject({leftRef: LEFT_REF, rightRef: RIGHT_REF});
+    });
+
+    test('ファイル行の余白・文字サイズ・背景色・hover・選択表示がEXPLORERと一致する', async ({page}) => {
+        const explorerFile = page.locator('.explorer-file').filter({has: page.getByText('modified', {exact: true})});
+        const rowProperties = ['display', 'flex-direction', 'padding', 'height', 'background-color', 'background-image', 'outline', 'outline-offset', 'box-shadow'];
+        const textProperties = ['font-size', 'font-weight', 'line-height'];
+        const styles = (element: Element, properties: string[]) => {
+            const computed = getComputedStyle(element);
+            return properties.map(property => computed.getPropertyValue(property));
+        };
+        const normalStyle = await explorerFile.evaluate(styles, rowProperties);
+        const textStyle = await explorerFile.locator('.explorer-file-name').evaluate(styles, textProperties);
+        await explorerFile.hover();
+        const hoverStyle = await explorerFile.evaluate(styles, rowProperties);
+        await explorerFile.click();
+        await expect(explorerFile).toHaveClass(/explorer-file-active/);
+        const activeStyle = await explorerFile.evaluate(styles, rowProperties);
+
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        for (const status of ['M', 'A', 'D']) {
+            const item = page.locator(`.branch-compare-file-item[data-status="${status}"]`);
+            expect(await item.evaluate(styles, rowProperties)).toEqual(normalStyle);
+            expect(await item.locator('.branch-compare-file-name').evaluate(styles, textProperties)).toEqual(textStyle);
+            const textColor = await item.locator('.branch-compare-file-name').evaluate(element => getComputedStyle(element).color);
+            await item.hover();
+            expect(await item.evaluate(styles, rowProperties)).toEqual(hoverStyle);
+            await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
+            await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);
+            await item.click();
+            expect(await item.evaluate(styles, rowProperties)).toEqual(activeStyle);
+            await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
+            await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);
+        }
+    });
+
+    test('比較状態をファイルへ保存し再起動時はブランチの最新差分を自動で復元する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_REF, targetRef: RIGHT_REF, compared: true});
+        await page.evaluate(() => {
+            sessionStorage.setItem('__branchCompareResultOverride', JSON.stringify({
+                leftCommit: '1111111', rightCommit: '3333333',
+                files: [{path: 'data/modified.csv', tableName: 'modified', status: 'M'}],
+            }));
+        });
+        await page.reload();
+        await expect(page.locator('.branch-compare-panel')).toBeVisible();
+        await expect(page.locator('.branch-compare-base-input')).toHaveValue('main');
+        await expect(page.locator('.branch-compare-target-input')).toHaveValue('feature/orders');
+        const file = page.locator('.branch-compare-file-item');
+        await expect(file).toHaveCount(1);
+        await file.click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('release');
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_REF, targetRef: RIGHT_REF, compared: true});
+    });
+
+    test('別パネルで終了した場合も起動時に比較を復元する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('[data-panel="files"]').click();
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_REF, targetRef: RIGHT_REF, compared: true});
+        await expect.poll(async () => JSON.parse(await readMockFileAsync(page, UI_STATE_FILE)).sidebar.activePanel).toBe('files');
+        await page.reload();
+        await expect(page.locator('.branch-compare-panel')).toBeHidden();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await openBranchComparePanelAsync(page);
+        await expect(page.locator('.branch-compare-base-input')).toHaveValue('main');
+        await expect(page.locator('.branch-compare-target-input')).toHaveValue('feature/orders');
+    });
+
+    for (const missingRef of [LEFT_REF, RIGHT_REF]) {
+        test(`起動時に削除済みのブランチを復元せず比較もしない: ${missingRef}`, async ({page}) => {
+            await openBranchComparePanelAsync(page);
+            await selectDefaultBranchesAndCompareAsync(page);
+            await expectSavedBranchCompareAsync(page, {baseRef: LEFT_REF, targetRef: RIGHT_REF, compared: true});
+            await page.evaluate((ref: string) => {
+                const mockWindow = window as unknown as {__mockGitBranches: MockBranch[]};
+                sessionStorage.setItem('__branchCompareBranchesOverride', JSON.stringify(mockWindow.__mockGitBranches.filter(branch => branch.ref !== ref)));
+            }, missingRef);
+            await page.reload();
+            const missingInput = page.locator(missingRef === LEFT_REF ? '.branch-compare-base-input' : '.branch-compare-target-input');
+            const remainingInput = page.locator(missingRef === LEFT_REF ? '.branch-compare-target-input' : '.branch-compare-base-input');
+            await expect(missingInput).toHaveValue('');
+            await expect(missingInput).not.toHaveAttribute('data-selected-ref', /.+/);
+            await expect(remainingInput).toHaveValue(missingRef === LEFT_REF ? 'feature/orders' : 'main');
+            await expect(page.locator('.branch-compare-button')).toBeDisabled();
+            await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
+            await expectSavedBranchCompareAsync(page, {
+                baseRef: missingRef === LEFT_REF ? null : LEFT_REF,
+                targetRef: missingRef === RIGHT_REF ? null : RIGHT_REF,
+                compared: false,
+            });
+            const requests = await page.evaluate(() => (window as unknown as {__mockApiRequests: string[]}).__mockApiRequests);
+            expect(requests).not.toContain('git_branch_compare_request');
+        });
+    }
+
+    test('比較前の選択は復元し、入力変更で破棄した比較結果は復元しない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-target-input').fill('origin/release');
+        const state = {baseRef: LEFT_REF, targetRef: 'refs/remotes/origin/release', compared: false};
+        await expectSavedBranchCompareAsync(page, state);
+        await page.reload();
+        await expect(page.locator('.branch-compare-base-input')).toHaveValue('main');
+        await expect(page.locator('.branch-compare-target-input')).toHaveValue('origin/release');
+        await expect(page.locator('.branch-compare-button')).toBeEnabled();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
+        await expectSavedBranchCompareAsync(page, state);
     });
 
     test('M・A・Dクリックで固定SHAの読み取り専用差分を開く', async ({page}) => {

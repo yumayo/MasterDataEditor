@@ -10,19 +10,23 @@
     user-select: none;
 }
 
-.explorer-file {
+/* ファイルリストの基本表示はEXPLORERとBRANCH COMPAREで共有する。 */
+.explorer-file,
+.branch-compare-file-item {
     display: flex;
     flex-direction: column;
     padding: 4px 16px;
     cursor: pointer;
 }
 
-.explorer-file:not(.explorer-file-active):hover {
+.explorer-file:not(.explorer-file-active):hover,
+.branch-compare-file-item:not(.branch-compare-file-item-active):hover {
     background-color: var(--panel-item-hover-bg);
 }
 
 /* アクティブなファイルノードのハイライト */
-.explorer-file-active {
+.explorer-file-active,
+.branch-compare-file-item-active {
     background-color: var(--panel-item-selected-bg);
     outline: 1px solid var(--panel-item-selected-outline);
 }
@@ -78,7 +82,8 @@
 }
 
 /* テーブル名: 主情報として通常フォントサイズで太字 */
-.explorer-file-name {
+.explorer-file-name,
+.branch-compare-file-title {
     font-size: 12px;
     font-weight: 500;
     line-height: 1.3;

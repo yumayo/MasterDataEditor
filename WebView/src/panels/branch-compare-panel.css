@@ -112,30 +112,18 @@
     opacity: 0.5;
 }
 
-.branch-compare-file-item {
+.branch-compare-file-title {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 12px 5px 16px;
-    cursor: pointer;
 }
 
-.branch-compare-file-item[data-status="A"] {
-    background-color: var(--diff-added-bg);
+.branch-compare-file-item[data-status="A"] .branch-compare-file-title {
+    color: var(--diff-added-color);
 }
 
-.branch-compare-file-item[data-status="D"] {
-    background-color: var(--diff-deleted-bg);
-}
-
-.branch-compare-file-item:hover {
-    background-image: linear-gradient(var(--panel-item-hover-bg), var(--panel-item-hover-bg));
-}
-
-.branch-compare-file-item-active {
-    outline: 1px solid var(--panel-item-selected-outline);
-    outline-offset: -1px;
-    box-shadow: inset 3px 0 0 var(--focus-border);
+.branch-compare-file-item[data-status="D"] .branch-compare-file-title {
+    color: var(--diff-deleted-color);
 }
 
 .branch-compare-file-name {
