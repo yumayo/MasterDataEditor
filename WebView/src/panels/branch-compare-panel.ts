@@ -605,6 +605,7 @@ export class BranchComparePanel {
             side === 'left' ? view.leftCommit : view.rightCommit,
             renderedDiff.getPrimaryKeyColumns(),
             view.cells.filter(cell => cell.side === side).map(cell => ({lineNumber: cell.lineNumber, columnName: cell.columnName})),
+            side === 'left' ? view.rightCommit : undefined,
         )));
         if (!view.cellsElement.isConnected || view.diffTab !== renderedDiff) return;
         for (const [sideIndex, side] of sides.entries()) {
@@ -617,7 +618,7 @@ export class BranchComparePanel {
                 const entry = entries.get(JSON.stringify([cell.lineNumber, cell.columnName]));
                 const author = button.querySelector<HTMLElement>('.branch-compare-cell-author');
                 if (author !== null) author.textContent = entry?.author || '変更者不明';
-                const sourceLabel = side === 'left' ? '比較元の最終変更者' : '比較先の最終変更者';
+                const sourceLabel = side === 'left' ? '削除した人' : '比較先の最終変更者';
                 button.title = `${cell.row}L:${cell.columnName}（元CSV ${cell.lineNumber}行）\n${sourceLabel}: ${entry?.author || '履歴から特定できませんでした'}`
                     + (entry === undefined ? '' : `\n${entry.date}\n${entry.commitHash}\n${entry.commitMessage}`);
             }

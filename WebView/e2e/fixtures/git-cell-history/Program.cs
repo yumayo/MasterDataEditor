@@ -119,10 +119,111 @@ Run("shallow boundaries remain unknown", repo =>
     }
     finally { if (Directory.Exists(clone)) Directory.Delete(clone, true); }
 });
+Run("deleted rows use the deleting commit and original CSV lines", repo =>
+{
+    var before = repo.Save("Alice", "id,kind,name\n1,\"a,b\",one\n2,x,two\n3,y,three\n");
+    repo.Save("Editor", "name,kind,id\nupdated,y,3\none,\"a,b\",1\ntwo,x,2\n");
+    var deleted = repo.Save("Deleter", "name,kind,id\nupdated,y,3\n");
+    var latest = repo.Save("LaterEditor", "name,kind,id\nlater,y,3\n");
+    File.WriteAllText(repo.CsvPath, "id,kind,name\n1,\"a,b\",working-tree\n");
+    var entries = repo.FindDeleted(before, latest, ["id", "kind"], [(2, "id"), (2, "name"), (3, "name"), (4, "name")]);
+    Equal(3, entries.Length);
+    Author(entries, 2, "id", "Deleter", deleted);
+    Author(entries, 2, "name", "Deleter", deleted);
+    Author(entries, 3, "name", "Deleter", deleted);
+});
+Run("deleting a file attributes every removed row to its deleter", repo =>
+{
+    var before = repo.Save("Alice", "id,name\n1,one\n2,two\n");
+    File.Delete(repo.CsvPath);
+    var deleted = repo.Commit("FileDeleter");
+    File.WriteAllText(Path.Combine(repo.Root, "unrelated.txt"), "later change");
+    var latest = repo.Commit("LaterEditor");
+    var entries = repo.FindDeleted(before, latest, ["id"], [(2, "name"), (3, "name")]);
+    Author(entries, 2, "name", "FileDeleter", deleted);
+    Author(entries, 3, "name", "FileDeleter", deleted);
+});
+Run("the latest deletion wins after a row is restored", repo =>
+{
+    var before = repo.Save("Alice", "id,name\n1,one\n");
+    repo.Save("FirstDeleter", "id,name\n");
+    var restored = repo.Save("Restorer", "id,name\n1,restored\n");
+    Equal(0, repo.FindDeleted(before, restored, ["id"], [(2, "name")]).Length);
+    var deleted = repo.Save("LastDeleter", "id,name\n");
+    Author(repo.FindDeleted(before, deleted, ["id"], [(2, "name")]), 2, "name", "LastDeleter", deleted);
+});
+foreach (var deleteOnIncoming in new[] {false, true})
+{
+    Run("merges inherit the deletion from " + (deleteOnIncoming ? "second" : "first") + " parent", repo =>
+    {
+        var before = repo.Save("Alice", "id,name\n1,one\n2,two\n");
+        var main = repo.Git("branch", "--show-current").Trim();
+        repo.Git("checkout", "-b", "incoming");
+        var incoming = repo.Save(deleteOnIncoming ? "Deleter" : "Editor", deleteOnIncoming ? "id,name\n2,two\n" : "id,name\n1,edited\n2,two\n");
+        repo.Git("checkout", main);
+        var first = repo.Save(deleteOnIncoming ? "Editor" : "Deleter", deleteOnIncoming ? "id,name\n1,edited\n2,two\n" : "id,name\n2,two\n");
+        try { repo.Git("-c", "user.name=Merger", "-c", "user.email=test@example.com", "merge", "--no-commit", "--no-ff", "incoming"); }
+        catch (InvalidOperationException) { /* 編集と削除の競合は削除を採用する。 */ }
+        var merged = repo.Save("Merger", "id,name\n2,two\n");
+        Author(repo.FindDeleted(before, merged, ["id"], [(2, "name")]), 2, "name", "Deleter", deleteOnIncoming ? incoming : first);
+    });
+}
+Run("merge resolution discarding an incoming addition belongs to the merger", repo =>
+{
+    repo.Save("Alice", "id,name\n2,two\n");
+    var main = repo.Git("branch", "--show-current").Trim();
+    repo.Git("checkout", "-b", "incoming");
+    var before = repo.Save("Adder", "id,name\n1,one\n2,two\n");
+    repo.Git("checkout", main);
+    repo.Git("-c", "user.name=Merger", "-c", "user.email=test@example.com", "merge", "--no-commit", "--no-ff", "incoming");
+    var merged = repo.Save("Merger", "id,name\n2,two\n");
+    Author(repo.FindDeleted(before, merged, ["id"], [(2, "name")]), 2, "name", "Merger", merged);
+});
+Run("rows only added on the comparison base have no deletion author", repo =>
+{
+    var after = repo.Save("Alice", "id,name\n2,two\n");
+    var before = repo.Save("Adder", "id,name\n1,one\n2,two\n");
+    Equal(0, repo.FindDeleted(before, after, ["id"], [(2, "name")]).Length);
+});
+Run("ambiguous row identity is not mistaken for deletion", repo =>
+{
+    var before = repo.Save("Alice", "id,name\n1,one\n1,duplicate\n");
+    var deleted = repo.Save("Deleter", "id,name\n");
+    Equal(0, repo.FindDeleted(before, deleted, ["id"], [(2, "name")]).Length);
+    var unique = repo.Save("Adder", "id,name\n1,one\n");
+    var missingKey = repo.Save("SchemaEditor", "other,name\n1,one\n");
+    Equal(0, repo.FindDeleted(unique, missingKey, ["id"], [(2, "name")]).Length);
+    var later = repo.Save("SchemaRestorer", "id,name\n");
+    Equal(0, repo.FindDeleted(unique, later, ["id"], [(2, "name")]).Length);
+});
+Run("deletion across a shallow boundary remains unknown", repo =>
+{
+    var before = repo.Save("Alice", "id,name\n1,one\n2,two\n");
+    repo.Save("Deleter", "id,name\n2,two\n");
+    var latest = repo.Save("Editor", "id,name\n2,edited\n");
+    var clone = Path.Combine(Path.GetTempPath(), "cell-deletion-shallow-" + Guid.NewGuid());
+    try
+    {
+        repo.Git("clone", "--depth", "1", new Uri(repo.Root).AbsoluteUri, clone);
+        GitCommandHelper.RunGitCommand(clone, "fetch", "--depth", "1", "origin", before);
+        AppEnvironment.WorkDir = Path.Combine(clone, "nested");
+        var response = Repo.Invoke("data/table.csv", before, ["id"], [(2, "name")], latest);
+        Equal(true, response.GetProperty("success").GetBoolean());
+        Equal(0, response.GetProperty("data").GetArrayLength());
+    }
+    finally { if (Directory.Exists(clone)) Directory.Delete(clone, true); }
+});
+Run("primary key changes also identify the removed row's author", repo =>
+{
+    var before = repo.Save("Alice", "id,name\n1,one\n");
+    var changed = repo.Save("KeyEditor", "id,name\n9,one\n");
+    Author(repo.FindDeleted(before, changed, ["id"], [(2, "name")]), 2, "name", "KeyEditor", changed);
+});
 Run("invalid request arguments are rejected", repo =>
 {
     var sha = repo.Save("Alice", "id,name\n1,before\n");
     foreach (var invalid in new[] {"--help", "HEAD", "1111111\n"}) Equal(false, Repo.Invoke("data/table.csv", invalid, ["id"], [(2, "name")]).GetProperty("success").GetBoolean());
+    foreach (var invalid in new[] {"--help", "HEAD", "1111111\n", ""}) Equal(false, Repo.Invoke("data/table.csv", sha, ["id"], [(2, "name")], invalid).GetProperty("success").GetBoolean());
     Equal(false, Repo.Invoke("../data/table.csv", sha, ["id"], [(2, "name")]).GetProperty("success").GetBoolean());
     Equal(false, Repo.Invoke("data/table.csv", sha, [], [(2, "name")]).GetProperty("success").GetBoolean());
     Equal(false, Repo.Invoke("data/table.csv", sha, ["id"], [(1, "name")]).GetProperty("success").GetBoolean());
@@ -173,9 +274,15 @@ sealed class Repo : IDisposable
         if (!response.GetProperty("success").GetBoolean()) throw new Exception(response.ToString());
         return response.GetProperty("data").EnumerateArray().ToArray();
     }
-    public static JsonElement Invoke(string path, string sha, string[] keys, (int Line, string Column)[] cells)
+    public JsonElement[] FindDeleted(string before, string after, string[] keys, (int Line, string Column)[] cells)
     {
-        var request = JsonSerializer.SerializeToElement(new {filename = path, commit = sha, primaryKey = keys, cells = cells.Select(cell => new {lineNumber = cell.Line, columnName = cell.Column}).ToArray()});
+        var response = Invoke(RelativePath, before, keys, cells, after);
+        if (!response.GetProperty("success").GetBoolean()) throw new Exception(response.ToString());
+        return response.GetProperty("data").EnumerateArray().ToArray();
+    }
+    public static JsonElement Invoke(string path, string sha, string[] keys, (int Line, string Column)[] cells, string? deletionTargetCommit = null)
+    {
+        var request = JsonSerializer.SerializeToElement(new {filename = path, commit = sha, deletionTargetCommit, primaryKey = keys, cells = cells.Select(cell => new {lineNumber = cell.Line, columnName = cell.Column}).ToArray()});
         return JsonSerializer.SerializeToElement(WebView2HandlerGitCellBlameRequest.Invoke(request, "test"));
     }
     public void Dispose() => Directory.Delete(Root, true);

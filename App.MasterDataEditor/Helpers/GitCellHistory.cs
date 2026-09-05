@@ -21,12 +21,15 @@ namespace App.MasterDataEditor
 		private sealed record TrackedCell(CellHistoryTarget Target, string Key, string Value);
 		private sealed record Work(string Revision, string Path, List<TrackedCell> Cells);
 		private sealed record Commit(string Hash, string[] Parents, string Author, string Date, string Message);
+		private sealed record DeletionResult(Commit? Commit, bool Complete);
+		private sealed record DeletionWork(string Revision, string Path, List<(string Revision, string Path)>? Parents = null, Commit? Candidate = null, bool Ambiguous = false);
 		private enum CellState { Missing, Present, Ambiguous }
 
 		private readonly string gitRoot;
 		private readonly string[] primaryKey;
 		private readonly Dictionary<(string Revision, string Path), string?> blobs = new();
-		private readonly Dictionary<(string Revision, string Path), string> latestCommits = new();
+		private readonly Dictionary<(string Revision, string Path, bool FirstParent), string> latestCommits = new();
+		private readonly Dictionary<string, Commit> commits = new();
 		private readonly Dictionary<string, Snapshot> snapshots = new();
 		private readonly HashSet<string> trackedKeys = new(StringComparer.Ordinal);
 		private readonly HashSet<string> shallowCommits;
@@ -98,21 +101,103 @@ namespace App.MasterDataEditor
 			return result;
 		}
 
-		private string FindLatestFileCommit(string revision, string path)
+		/// <summary>比較元の行を主キーで特定し、比較先でその行を削除したコミットを返す。</summary>
+		public List<CellHistoryEntry> FindDeleted(string beforeRevision, string afterRevision, string path, IReadOnlyList<CellHistoryTarget> targets)
 		{
-			if (latestCommits.TryGetValue((revision, path), out var hash)) return hash;
-			// まず第一親上でファイルが変わる地点まで飛ばす。そこで全親を比較して値を引き継ぐ親を選ぶ。
-			// 全親のツリーが同じマージが省略されても、第一親を優先する規則を維持できる。
-			hash = GitCommandHelper.RunGitCommand(gitRoot, "log", "-1", "--format=%H", "--first-parent", "--full-history", "-m", revision, "--", ":(literal)" + path).Trim();
-			latestCommits[(revision, path)] = hash;
+			var result = new List<CellHistoryEntry>();
+			if (targets.Count == 0) return result;
+			var blob = GetBlob(beforeRevision, path);
+			if (blob == null) throw new InvalidOperationException("指定コミットにCSVがありません。");
+			var initial = new Snapshot(GitCommandHelper.RunGitCommand(gitRoot, "cat-file", "blob", blob), primaryKey, null);
+			var rows = new Dictionary<string, List<CellHistoryTarget>>(StringComparer.Ordinal);
+			foreach (var target in targets.Distinct())
+			{
+				if (!initial.KeysByLine.TryGetValue(target.LineNumber, out var key) || initial.GetRowState(key) != CellState.Present) continue;
+				trackedKeys.Add(key);
+				if (!rows.TryGetValue(key, out var cells)) rows[key] = cells = new();
+				cells.Add(target);
+			}
+			var after = ReadSnapshot(afterRevision, path);
+			foreach (var (key, cells) in rows)
+			{
+				if (elapsed.Elapsed > TimeSpan.FromSeconds(100)) break;
+				if (after != null && after.GetRowState(key) != CellState.Missing) continue;
+				var deletion = FindDeletion(afterRevision, path, key);
+				if (deletion.Commit is not { } commit) continue;
+				foreach (var cell in cells)
+					result.Add(new CellHistoryEntry(cell.LineNumber, cell.ColumnName, commit.Author, commit.Date, commit.Hash, commit.Message));
+			}
+			return result;
+		}
+
+		private DeletionResult FindDeletion(string revision, string path, string key)
+		{
+			var results = new Dictionary<(string Revision, string Path), DeletionResult>();
+			var stack = new Stack<DeletionWork>();
+			stack.Push(new DeletionWork(revision, path));
+			while (stack.Count > 0)
+			{
+				if (elapsed.Elapsed > TimeSpan.FromSeconds(100)) return new(null, false);
+				var work = stack.Pop();
+				var location = (work.Revision, work.Path);
+				if (results.ContainsKey(location)) continue;
+				if (work.Parents != null)
+				{
+					// 親で既に削除されていた場合は、その削除を引き継ぐ。親でも未解決なら推測しない。
+					var inherited = work.Parents.Select(parent => results[parent]).FirstOrDefault(result => result.Commit != null || !result.Complete);
+					results[location] = inherited ?? (work.Ambiguous ? new(null, false) : new(work.Candidate, true));
+					continue;
+				}
+				// 第一親と同じ内容でも、別の親の追加行を捨てたマージは削除の候補になる。
+				var hash = FindLatestFileCommit(work.Revision, work.Path, firstParent: false);
+				if (hash.Length == 0)
+				{
+					// 行が一度も存在しなかった履歴と、浅いクローンで確認できない履歴を区別する。
+					var complete = shallowCommits.Count == 0 || !GitCommandHelper.RunGitCommand(gitRoot, "rev-list", "--first-parent", work.Revision).Split('\n', StringSplitOptions.RemoveEmptyEntries).Any(hash => shallowCommits.Contains(hash.Trim()));
+					results[location] = new(null, complete);
+					continue;
+				}
+				var commit = ReadCommit(hash);
+				if (shallowCommits.Contains(commit.Hash)) { results[location] = new(null, false); continue; }
+				var absentParents = new List<(string Revision, string Path)>();
+				Commit? candidate = null;
+				var ambiguous = false;
+				foreach (var parent in commit.Parents)
+				{
+					// ファイル全体が削除されていても、存在しない状態を親へ辿れるようにする。
+					var parentPath = ResolveParentPath(parent, commit.Hash, work.Path) ?? work.Path;
+					var state = ReadSnapshot(parent, parentPath)?.GetRowState(key) ?? CellState.Missing;
+					if (state == CellState.Present) candidate = commit;
+					else if (state == CellState.Ambiguous) ambiguous = true;
+					else absentParents.Add((parent, parentPath));
+				}
+				stack.Push(new DeletionWork(work.Revision, work.Path, absentParents, candidate, ambiguous));
+				for (var i = absentParents.Count - 1; i >= 0; i--)
+					stack.Push(new DeletionWork(absentParents[i].Revision, absentParents[i].Path));
+			}
+			return results[(revision, path)];
+		}
+
+		private string FindLatestFileCommit(string revision, string path, bool firstParent = true)
+		{
+			if (latestCommits.TryGetValue((revision, path, firstParent), out var hash)) return hash;
+			// セルの値は第一親上の変更点、削除は全親との変更点まで飛ばす。その地点で親の内容を比較する。
+			var args = new List<string> {"log", "-1", "--format=%H", "--full-history", "-m"};
+			if (firstParent) args.Add("--first-parent");
+			args.AddRange(new[] {revision, "--", ":(literal)" + path});
+			hash = GitCommandHelper.RunGitCommand(gitRoot, args.ToArray()).Trim();
+			latestCommits[(revision, path, firstParent)] = hash;
 			return hash;
 		}
 
 		private Commit ReadCommit(string hash)
 		{
+			if (commits.TryGetValue(hash, out var commit)) return commit;
 			var fields = GitCommandHelper.RunGitCommand(gitRoot, "show", "-s", "--format=%H%x00%P%x00%an%x00%ai%x00%s", hash).TrimEnd('\r', '\n').Split('\0');
 			if (fields.Length != 5) throw new InvalidOperationException("コミット情報を読み取れませんでした。");
-			return new Commit(fields[0], fields[1].Split(' ', StringSplitOptions.RemoveEmptyEntries), fields[2], fields[3], fields[4]);
+			commit = new Commit(fields[0], fields[1].Split(' ', StringSplitOptions.RemoveEmptyEntries), fields[2], fields[3], fields[4]);
+			commits[hash] = commit;
+			return commit;
 		}
 
 		private string? GetBlob(string revision, string path)
@@ -163,6 +248,7 @@ namespace App.MasterDataEditor
 		{
 			private readonly Dictionary<string, int> columns = new(StringComparer.Ordinal);
 			private readonly Dictionary<string, string[]?> rows = new(StringComparer.Ordinal);
+			private readonly bool hasPrimaryKey;
 			public Dictionary<int, string> KeysByLine { get; } = new();
 
 			public Snapshot(string csv, string[] primaryKey, HashSet<string>? retainedKeys)
@@ -175,6 +261,7 @@ namespace App.MasterDataEditor
 					if (!columns.TryAdd(header[i], i)) columns[header[i]] = -1;
 				}
 				if (primaryKey.Any(key => !columns.TryGetValue(key, out var index) || index < 0)) return;
+				hasPrimaryKey = true;
 				var keyIndices = primaryKey.Select(key => columns[key]).ToArray();
 				while (records.MoveNext())
 				{
@@ -184,6 +271,13 @@ namespace App.MasterDataEditor
 					if (!rows.TryAdd(key, fields)) rows[key] = null;
 					if (retainedKeys == null) KeysByLine[line] = key;
 				}
+			}
+
+			public CellState GetRowState(string key)
+			{
+				if (!hasPrimaryKey) return CellState.Ambiguous;
+				if (!rows.TryGetValue(key, out var row)) return CellState.Missing;
+				return row == null ? CellState.Ambiguous : CellState.Present;
 			}
 
 			public CellState GetCell(string key, string column, out string value)

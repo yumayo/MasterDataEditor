@@ -13,8 +13,10 @@ namespace App.MasterDataEditor
 			{
 				var filename = root.GetProperty("filename").GetString();
 				var commit = root.GetProperty("commit").GetString();
+				var deletionTargetCommit = root.TryGetProperty("deletionTargetCommit", out var deletionTarget) ? deletionTarget.GetString() : null;
 				if (string.IsNullOrEmpty(filename)) throw new ArgumentException("filename is required");
 				if (commit == null || !Regex.IsMatch(commit, @"\A(?:[0-9a-fA-F]{7,40}|[0-9a-fA-F]{64})\z")) throw new ArgumentException("invalid commit hash format");
+				if (deletionTargetCommit != null && !Regex.IsMatch(deletionTargetCommit, @"\A(?:[0-9a-fA-F]{7,40}|[0-9a-fA-F]{64})\z")) throw new ArgumentException("invalid deletion target commit hash format");
 				var primaryKey = root.GetProperty("primaryKey").EnumerateArray().Select(key => key.GetString() ?? "").ToArray();
 				if (primaryKey.Length == 0 || primaryKey.Any(string.IsNullOrEmpty) || primaryKey.Distinct().Count() != primaryKey.Length) throw new ArgumentException("primaryKey is invalid");
 				var cells = root.GetProperty("cells").EnumerateArray().Select(cell => new CellHistoryTarget(cell.GetProperty("lineNumber").GetInt32(), cell.GetProperty("columnName").GetString() ?? "")).ToArray();
@@ -25,7 +27,8 @@ namespace App.MasterDataEditor
 				filename = GitCommandHelper.ToGitRootRelativePath(filename, dataPrefix);
 				var validationError = GitCommandHelper.ValidateDataPath(filename, dataPrefix);
 				if (validationError != null) throw new ArgumentException(validationError);
-				var entries = new GitCellHistory(gitRoot, primaryKey).Find(commit, filename, cells);
+				var history = new GitCellHistory(gitRoot, primaryKey);
+				var entries = deletionTargetCommit == null ? history.Find(commit, filename, cells) : history.FindDeleted(commit, deletionTargetCommit, filename, cells);
 				return new
 				{
 					type = "git_cell_blame_response", requestId, success = true,

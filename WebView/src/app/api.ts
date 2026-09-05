@@ -419,9 +419,15 @@ export interface CellBlameEntry extends BlameEntry {
     columnName: string;
 }
 
-/** 固定コミットのCSVセルを主キー＋列名で遡り、各セルの最終変更コミットを返す。 */
-export async function gitCellBlameAsync(filename: string, commit: string, primaryKey: readonly string[], cells: CellBlameTarget[]): Promise<CellBlameEntry[]> {
-    return postMessageAsync<CellBlameEntry[]>('git_cell_blame', {filename, commit, primaryKey, cells});
+/**
+ * 固定コミットのCSVセルを主キー＋列名で遡り、各セルの最終変更コミットを返す。
+ * deletionTargetCommit指定時は、commitの行が比較先の履歴で削除されたコミットを返す。
+ */
+export async function gitCellBlameAsync(filename: string, commit: string, primaryKey: readonly string[], cells: CellBlameTarget[], deletionTargetCommit?: string): Promise<CellBlameEntry[]> {
+    return postMessageAsync<CellBlameEntry[]>('git_cell_blame', {
+        filename, commit, primaryKey, cells,
+        ...(deletionTargetCommit === undefined ? {} : {deletionTargetCommit}),
+    });
 }
 
 /** git log の1コミット分のエントリ */

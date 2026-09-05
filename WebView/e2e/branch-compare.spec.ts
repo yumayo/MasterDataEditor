@@ -126,6 +126,7 @@ async function installBranchComparePageAsync(
             __mockGitStatus: {changes: Array<{path: string; tableName: string; isNew: boolean}>; staged: Array<{path: string; tableName: string; isNew: boolean}>};
             __mockGitHeadFiles: Record<string, string>;
             __mockGitCellBlame: Record<string, Record<string, object[]>>;
+            __mockGitCellDeletions: Record<string, Record<string, object[]>>;
         };
         const branchesOverride = sessionStorage.getItem('__branchCompareBranchesOverride');
         mockWindow.__mockGitBranches = branchesOverride === null ? args.branches : JSON.parse(branchesOverride) as MockBranch[];
@@ -149,6 +150,9 @@ async function installBranchComparePageAsync(
                 csv.split('\n').slice(1).flatMap((_, index) => csv.split('\n')[0].split(',').map(columnName => ({lineNumber: index + 2, columnName, author: commit === '1111111' ? '比較元担当' : columnName === 'name' ? '名前担当' : '数値担当', date: '2026-09-05', commitHash: commit, commitMessage: 'テーブル更新'}))),
             ])),
         ]));
+        mockWindow.__mockGitCellDeletions = {'1111111:2222222': {
+            'data/deleted.csv': ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName, author: '削除担当', date: '2026-09-05', commitHash: '2222222', commitMessage: 'ファイルを削除'})),
+        }};
         mockWindow.__mockGitShowAtCommitDelays = {};
         mockWindow.__mockGitStatus = {changes: [{path: 'data/modified.csv', tableName: 'modified', isNew: false}], staged: []};
         mockWindow.__mockGitHeadFiles = {'data/modified.csv': args.commitFiles['1111111']['data/modified.csv']};
@@ -275,10 +279,12 @@ test.describe('ブランチ比較パネル', () => {
             const mock = window as unknown as {
                 __mockGitCommitFiles: Record<string, Record<string, string>>;
                 __mockGitCellBlame: Record<string, Record<string, object[]>>;
+                __mockGitCellDeletions: Record<string, Record<string, object[]>>;
             };
             mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,name,value\n1,removed,10\n3,before,30';
             mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,name,value\n3,after,35\n2,inserted,20';
-            mock.__mockGitCellBlame['1111111']['data/modified.csv'] = ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName, author: '削除行の担当', date: '', commitHash: '1111111', commitMessage: ''}));
+            mock.__mockGitCellBlame['1111111']['data/modified.csv'] = ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName, author: '削除前の編集者', date: '', commitHash: '1111111', commitMessage: ''}));
+            mock.__mockGitCellDeletions['1111111:2222222']['data/modified.csv'] = ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName, author: '削除行の担当', date: '2026-09-05', commitHash: 'ddddddd', commitMessage: '不要行を削除'}));
             mock.__mockGitCellBlame['2222222']['data/modified.csv'] = [2, 3].flatMap(lineNumber => ['id', 'name', 'value'].map(columnName => ({lineNumber, columnName, author: lineNumber === 2 ? '更新行の担当' : '追加行の担当', date: '', commitHash: '2222222', commitMessage: ''})));
         });
         await openBranchComparePanelAsync(page);
@@ -287,12 +293,29 @@ test.describe('ブランチ比較パネル', () => {
         const cells = page.locator('.branch-compare-cell-item');
         await expect(cells.locator('.branch-compare-cell-location')).toHaveText(['1L:id', '1L:name', '1L:value', '2L:id', '2L:name', '2L:value', '3L:name', '3L:value']);
         await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['削除行の担当', '削除行の担当', '削除行の担当', '追加行の担当', '追加行の担当', '追加行の担当', '更新行の担当', '更新行の担当']);
+        await expect(cells.nth(1)).toHaveAttribute('title', '1L:name（元CSV 2行）\n削除した人: 削除行の担当\n2026-09-05\nddddddd\n不要行を削除');
+        const requests = await page.evaluate(() => (window as unknown as {__mockGitCellBlameRequests: unknown[]}).__mockGitCellBlameRequests);
+        expect(requests).toContainEqual(expect.objectContaining({filename: 'data/modified.csv', commit: LEFT_SHA, deletionTargetCommit: RIGHT_SHA, primaryKey: ['id'], cells: ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName}))}));
         await cells.nth(1).click();
         await expect(page.locator('.diff-tab:visible .diff-pane-left .editor-table-cell-focused')).toHaveText('removed');
         await cells.nth(4).click();
         await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('inserted');
         await cells.nth(7).click();
         await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('35');
+    });
+
+    test('ファイル全体を削除した人を各セルに表示し、削除セルと一覧の選択を連動する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        const cells = page.locator('.branch-compare-cell-item');
+        await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['削除担当', '削除担当', '削除担当']);
+        await cells.nth(1).click();
+        const left = page.locator('.diff-tab:visible .diff-pane-left');
+        await expect(left.locator('.editor-table-cell-focused')).toHaveText('deleted-only');
+        await left.locator('.editor-table-cell').filter({hasText: /^900$/}).click();
+        await expect(cells.nth(2)).toHaveAttribute('aria-current', 'true');
+        await expect(cells.nth(1)).toHaveAttribute('aria-current', 'false');
     });
 
     test('別ファイルの一覧から指定セルに戻り、タブ切替でもセルの選択が追従する', async ({page}) => {

@@ -463,11 +463,14 @@ export async function installMockApiAsync(
                 if (type === "git_cell_blame_request") {
                     const cellWindow = window as unknown as {
                         __mockGitCellBlame?: Record<string, Record<string, Array<{lineNumber: number; columnName: string}>>>;
+                        __mockGitCellDeletions?: Record<string, Record<string, Array<{lineNumber: number; columnName: string}>>>;
                         __mockGitCellBlameRequests?: unknown[];
                         __mockGitCellBlameDelayMs?: number;
                     };
                     (cellWindow.__mockGitCellBlameRequests ??= []).push(request);
-                    const entries = cellWindow.__mockGitCellBlame?.[request.commit as string]?.[request.filename as string];
+                    const entries = typeof request.deletionTargetCommit === 'string'
+                        ? cellWindow.__mockGitCellDeletions?.[`${request.commit}:${request.deletionTargetCommit}`]?.[request.filename as string]
+                        : cellWindow.__mockGitCellBlame?.[request.commit as string]?.[request.filename as string];
                     const cells = request.cells as Array<{lineNumber: number; columnName: string}>;
                     const response = entries === undefined
                         ? {type: "git_cell_blame_response", requestId, success: false, error: "cell history not available"}
