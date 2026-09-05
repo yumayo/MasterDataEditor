@@ -457,6 +457,24 @@ export class BranchComparePanel {
         name.title = file.path;
         title.appendChild(name);
 
+        const openFileButton = document.createElement('button');
+        openFileButton.type = 'button';
+        openFileButton.classList.add('branch-compare-open-file');
+        openFileButton.title = '実テーブルを開く';
+        openFileButton.setAttribute('aria-label', file.tableName + 'の実テーブルを開く');
+        openFileButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5.5l2.5 2.5v8.5H4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9.5 2.5V5H12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+        openFileButton.addEventListener('click', (event: MouseEvent) => {
+            event.stopPropagation();
+            this.cancelFileOpen(true);
+            this.errorElement.hidden = true;
+            this.tab.openTableAsync(file.tableName)
+                .then(opened => {
+                    if (!opened) this.setOperationError(new Error('実テーブル「' + file.tableName + '」を開けませんでした。'));
+                })
+                .catch((error: unknown) => { this.setOperationError(error); });
+        });
+        title.appendChild(openFileButton);
+
         const status = document.createElement('span');
         status.classList.add('branch-compare-file-status');
         status.textContent = file.status;
@@ -491,6 +509,7 @@ export class BranchComparePanel {
         };
         item.addEventListener('click', openDiff);
         item.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.target !== item) return;
             if (event.key !== 'Enter' && event.key !== ' ') return;
             event.preventDefault();
             openDiff();

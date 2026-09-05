@@ -607,10 +607,16 @@ test.describe('ブランチ比較パネル', () => {
         await selectDefaultBranchesAndCompareAsync(page);
         for (const status of ['M', 'A', 'D']) {
             const item = page.locator(`.branch-compare-file-item[data-status="${status}"]`);
+            const openFileButton = item.getByRole('button', {name: /の実テーブルを開く/, includeHidden: true});
+            await expect(openFileButton).toBeHidden();
             expect(await item.evaluate(styles, rowProperties)).toEqual(normalStyle);
             expect(await item.locator('.branch-compare-file-name').evaluate(styles, textProperties)).toEqual(textStyle);
             const textColor = await item.locator('.branch-compare-file-name').evaluate(element => getComputedStyle(element).color);
             await item.hover();
+            await expect(openFileButton).toBeVisible();
+            const buttonBox = await openFileButton.boundingBox();
+            const statusBox = await item.locator('.branch-compare-file-status').boundingBox();
+            expect(buttonBox!.x + buttonBox!.width).toBeLessThan(statusBox!.x);
             expect(await item.evaluate(styles, rowProperties)).toEqual(hoverStyle);
             await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
             await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);
@@ -619,6 +625,44 @@ test.describe('ブランチ比較パネル', () => {
             await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
             await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);
         }
+        await page.locator('.branch-compare-button').hover();
+        await expect(page.locator('.branch-compare-open-file:visible')).toHaveCount(0);
+    });
+
+    for (const file of COMPARE_RESULT.files) {
+        test(`${file.status}行のファイルアイコンで比較コミットではなく実テーブルを開く`, async ({page}) => {
+            await openBranchComparePanelAsync(page);
+            await selectDefaultBranchesAndCompareAsync(page);
+            const item = page.locator(`.branch-compare-file-item[data-status="${file.status}"]`);
+            await item.hover();
+            const button = item.getByRole('button', {name: file.tableName + 'の実テーブルを開く'});
+            // 子ボタンのEnterが親の差分表示へ伝播しないことも確認する。
+            if (file.status === 'A') await button.press('Enter');
+            else await button.click();
+            await expect(page.locator(`.tab-wrapper[data-tab-name="${file.tableName}"] .editor-table`)).toBeVisible();
+            await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText(file.tableName);
+            await expect(page.locator('.diff-tab')).toHaveCount(0);
+            const commitReads = await page.evaluate(() => {
+                const requests = (window as unknown as {__mockApiRequests: string[]}).__mockApiRequests;
+                return requests.filter(type => type === 'git_show_at_commit_request');
+            });
+            expect(commitReads).toEqual([]);
+        });
+    }
+
+    test('差分読み込み中でもファイルアイコンで実テーブルを開き、後から差分へ戻らない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await delayDiffWorkerMessagesAsync(page, 500);
+        const item = page.locator('.branch-compare-file-item[data-status="M"]');
+        await item.click();
+        await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'true');
+        await item.getByRole('button', {name: 'modifiedの実テーブルを開く'}).click();
+        await expect(page.locator('.tab-wrapper[data-tab-name="modified"] .editor-table')).toBeVisible();
+        await page.waitForTimeout(600);
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('modified');
+        await expect(page.locator('.diff-tab')).toHaveCount(0);
+        await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
     });
 
     test('比較状態をファイルへ保存し再起動時はブランチの最新差分を自動で復元する', async ({page}) => {
