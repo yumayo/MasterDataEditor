@@ -168,7 +168,7 @@ export class ScheduleTimelinePanel {
             if (currentRequestId !== this.requestId) return;
             this.contentElement.replaceChildren();
             console.error('[ScheduleTimelinePanel] refresh failed:', error);
-            this.notification.show('予定日の読み込みに失敗しました', 'error');
+            this.notification.showError(error, '予定日の読み込みに失敗しました');
         }
     }
 

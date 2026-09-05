@@ -10,7 +10,7 @@
  * NotificationToast とする。
  */
 import type {DebugConsole} from "../panels/debug-console";
-import {parseCallerInfo} from "../core/caller-info";
+import {parseCallerInfoFromStack} from "../core/caller-info";
 
 export type NotificationStatus = 'success' | 'error';
 
@@ -67,11 +67,25 @@ export class NotificationToast {
      * 最大3件を超える場合は最も古いトーストを即時削除する（タイマーもキャンセル）。
      */
     show(message: string, status: NotificationStatus = 'error'): void {
-        // スタックトレースは show() の呼び出し元を特定するため、最初に取得する
-        const caller = parseCallerInfo(NotificationToast.SKIP_PATTERNS);
+        const stackTrace = new Error(message).stack ?? '';
+        const caller = parseCallerInfoFromStack(stackTrace, NotificationToast.SKIP_PATTERNS);
+        this.appendNotification(message, status, caller, status === 'error' ? stackTrace : '');
+    }
 
+    /**
+     * 捕捉した例外を通知し、元のスタック全文と発生位置をDEBUG CONSOLEに記録する。
+     * 表示文言を指定しても発生位置は保持する。位置不明の場合は空欄とする。
+     */
+    showError(error: unknown, message?: string): void {
+        const stackTrace = error instanceof Error ? error.stack ?? '' : '';
+        const caller = parseCallerInfoFromStack(stackTrace, []);
+        const displayMessage = message ?? (error instanceof Error ? error.message : String(error));
+        this.appendNotification(displayMessage, 'error', caller, stackTrace);
+    }
+
+    private appendNotification(message: string, status: NotificationStatus, caller: string, stackTrace: string): void {
         // DebugConsole にエントリを追記する（通知は瞬時の操作なので duration=0）
-        this.debugConsole.appendEntry(message, 0, status, caller);
+        this.debugConsole.appendNotification(message, status, caller, stackTrace);
 
         // 最大件数を超える場合は最古のトーストを強制削除する
         if (this.activeToasts.size >= NotificationToast.MAX_TOASTS) {

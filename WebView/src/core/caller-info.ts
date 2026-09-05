@@ -12,8 +12,11 @@
  * 例: "editor-table.ts:123"
  */
 export function parseCallerInfo(skipPatterns: ReadonlyArray<string>): string {
-    const stack = new Error().stack;
-    if (!stack) return '';
+    return parseCallerInfoFromStack(new Error().stack ?? '', skipPatterns);
+}
+
+/** 指定されたスタックから位置情報を取得する。例外の発生位置には元のError.stackを渡す。 */
+export function parseCallerInfoFromStack(stack: string, skipPatterns: ReadonlyArray<string>): string {
     for (const line of stack.split('\n')) {
         if (!line.trim().startsWith('at ')) continue;
         if (skipPatterns.some(p => line.includes(p))) continue;

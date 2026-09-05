@@ -1872,7 +1872,7 @@ export class Tab {
         } catch (error: unknown) {
             this.finishDiffTabLoading(diffTabName, loadingToken, true);
             console.error('[Tab] openRestoredDiffTabAsync failed:', error);
-            this.notification.show('Git差分タブの復元に失敗しました');
+            this.notification.showError(error, 'Git差分タブの復元に失敗しました');
             return false;
         }
     }
@@ -2923,7 +2923,7 @@ export class Tab {
                     label: 'バージョン比較...',
                     action: () => {
                         this.openVersionCompareFlowAsync(tabName)
-                            .catch(e => { this.notification.show('バージョン比較に失敗しました: ' + String(e)); });
+                            .catch(e => { this.notification.showError(e, 'バージョン比較に失敗しました: ' + String(e)); });
                     },
                 },
             );
@@ -3290,7 +3290,7 @@ export class Tab {
     saveActiveTable(): void {
         this.saveActiveTableAsync().catch((err: unknown) => {
             console.error('[Tab] saveActiveTableAsync failed:', err);
-            this.notification.show('保存に失敗しました');
+            this.notification.showError(err, '保存に失敗しました');
         });
     }
 
@@ -3463,7 +3463,7 @@ export class Tab {
         this.openDiffTabAsync(tableName, isStaged, schemaJson, headCsv, currentCsv, gitPath, leftLabel, rightLabel, isNew, undefined, metadata)
             .catch((error: unknown) => {
                 console.error('[Tab] openDiffTabAsync failed:', error);
-                this.notification.show('Git差分タブの表示に失敗しました');
+                this.notification.showError(error, 'Git差分タブの表示に失敗しました');
             });
     }
 
@@ -3792,7 +3792,7 @@ export class Tab {
         // 新 RP にテーブルの参照データを表示させる
         rp.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
             console.error('[Tab] pushRelationsPanel: showForTableRowAsync failed:', String(err));
-            this.notification.show('関連テーブルの表示に失敗しました');
+            this.notification.showError(err, '関連テーブルの表示に失敗しました');
         });
     }
 
@@ -3824,7 +3824,7 @@ export class Tab {
         // 右隣RPをtableName/pkValueで更新する（非同期レースコンディションはshowForTableRowAsyncのcurrentRequestIdでガード済み）
         nextEntry.panel.showForTableRowAsync(tableName, pkValue).catch((err: unknown) => {
             console.error('[Tab] updateNextPaneForMiniTableRow: showForTableRowAsync failed:', String(err));
-            this.notification.show('関連テーブルの更新に失敗しました');
+            this.notification.showError(err, '関連テーブルの更新に失敗しました');
         });
     }
 

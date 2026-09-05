@@ -50,7 +50,7 @@ export class TabReference {
             editorTable.updateReverseReferenceHints(reverseMap);
         }).catch(error => {
             console.warn('Failed to resolve reverse references:', error);
-            this.notification.show('逆参照ヒントの読み込みに失敗しました');
+            this.notification.showError(error, '逆参照ヒントの読み込みに失敗しました');
         });
     }
 

@@ -9,8 +9,11 @@ export class DebugApiDetailTab {
     private readonly element: HTMLElement;
     private readonly titleElement: HTMLElement;
     private readonly metaElement: HTMLElement;
+    private readonly bodyElement: HTMLElement;
     private readonly requestView: PayloadView;
     private readonly responseView: PayloadView;
+    private readonly stackTraceSection: HTMLElement;
+    private readonly stackTraceView: PayloadView;
 
     constructor(detail: DebugConsoleEntryDetail) {
         const element = document.createElement('div');
@@ -34,6 +37,7 @@ export class DebugApiDetailTab {
         const body = document.createElement('div');
         body.classList.add('debug-api-detail-body');
         element.appendChild(body);
+        this.bodyElement = body;
 
         const requestSection = this.createSection('Request');
         body.appendChild(requestSection.section);
@@ -42,6 +46,11 @@ export class DebugApiDetailTab {
         const responseSection = this.createSection('Response');
         body.appendChild(responseSection.section);
         this.responseView = responseSection.view;
+
+        const stackTraceSection = this.createSection('Stack Trace');
+        stackTraceSection.section.classList.add('debug-api-detail-stack-trace');
+        this.stackTraceSection = stackTraceSection.section;
+        this.stackTraceView = stackTraceSection.view;
 
         this.update(detail);
     }
@@ -68,6 +77,10 @@ export class DebugApiDetailTab {
         this.renderMeta(detail);
         this.renderPayload(this.requestView, this.formatPayload(detail.request));
         this.renderPayload(this.responseView, this.formatPayload(detail.response ?? { success: false, error: detail.error ?? 'No response' }));
+        const stackTrace = detail.status === 'error' ? detail.stackTrace ?? '' : '';
+        this.renderPayload(this.stackTraceView, stackTrace);
+        if (stackTrace === '') this.stackTraceSection.remove();
+        else this.bodyElement.appendChild(this.stackTraceSection);
     }
 
     private createSection(title: string): { section: HTMLElement; view: PayloadView } {

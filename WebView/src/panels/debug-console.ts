@@ -18,6 +18,7 @@ export interface DebugConsoleEntryDetail {
     request: unknown;
     response?: unknown;
     error?: string;
+    stackTrace?: string;
     status?: 'success' | 'error';
     caller?: string;
     durationUs?: number;
@@ -107,6 +108,13 @@ export class DebugConsole {
         if (isAtBottom) {
             this.list.scrollTop = this.list.scrollHeight;
         }
+    }
+
+    /** 通知の詳細情報を作成し、エラー時には元のスタックトレースも保持する。 */
+    appendNotification(message: string, status: 'success' | 'error', caller: string, stackTrace: string): void {
+        const detail = this.createFallbackDetail(message, 0, status, caller);
+        if (status === 'error' && stackTrace !== '') detail.stackTrace = stackTrace;
+        this.appendEntry(message, 0, status, caller, detail);
     }
 
     /**

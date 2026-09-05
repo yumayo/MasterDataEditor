@@ -284,7 +284,7 @@ export class FormPanel {
             nextContent.replaceChildren();
             this.replaceContentIfCurrent(content, nextContent, requestId);
             console.error('[FormPanel] renderCurrentPageAsync failed:', err);
-            this.notification.show('フォームの表示に失敗しました');
+            this.notification.showError(err, 'フォームの表示に失敗しました');
         }
     }
 
@@ -381,7 +381,7 @@ export class FormPanel {
             if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
             node.replaceChildren();
             console.error('[FormPanel] renderNodeIntoAsync failed:', err);
-            this.notification.show('フォームの表示に失敗しました');
+            this.notification.showError(err, 'フォームの表示に失敗しました');
         }
     }
 
@@ -492,7 +492,7 @@ export class FormPanel {
                     this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, true)
                         .catch(err => {
                             console.error('[FormPanel] reference dropdown input failed:', err);
-                            this.notification.show('参照候補の表示に失敗しました');
+                            this.notification.showError(err, '参照候補の表示に失敗しました');
                         });
                 }
             }
@@ -502,13 +502,13 @@ export class FormPanel {
             input.addEventListener('change', () => {
                 this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
                     console.error('[FormPanel] field change failed:', err);
-                    this.notification.show('フォーム入力の反映に失敗しました');
+                    this.notification.showError(err, 'フォーム入力の反映に失敗しました');
                 });
             });
             input.addEventListener('blur', () => {
                 this.commitFieldValueAsync(nodeId, columnName, input.value).catch(err => {
                     console.error('[FormPanel] field blur commit failed:', err);
-                    this.notification.show('フォーム入力の反映に失敗しました');
+                    this.notification.showError(err, 'フォーム入力の反映に失敗しました');
                 });
                 if (this.isActiveReferenceInput(input)) {
                     this.hideReferenceDropdown();
@@ -528,7 +528,7 @@ export class FormPanel {
                     this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
                         .catch(err => {
                             console.error('[FormPanel] reference dropdown focus failed:', err);
-                            this.notification.show('参照候補の表示に失敗しました');
+                            this.notification.showError(err, '参照候補の表示に失敗しました');
                         });
                 });
             }
@@ -647,7 +647,7 @@ export class FormPanel {
             this.commitTimers.delete(key);
             this.commitFieldValueAsync(nodeId, columnName, value).catch(err => {
                 console.error('[FormPanel] field input commit failed:', err);
-                this.notification.show('フォーム入力の反映に失敗しました');
+                this.notification.showError(err, 'フォーム入力の反映に失敗しました');
             });
         }, 180);
         this.commitTimers.set(key, timer);
@@ -708,7 +708,7 @@ export class FormPanel {
                 this.showReferenceDropdownForInputAsync(nodeId, columnName, input, mirror, valueWrapper, false)
                     .catch(err => {
                         console.error('[FormPanel] reference dropdown keydown failed:', err);
-                        this.notification.show('参照候補の表示に失敗しました');
+                        this.notification.showError(err, '参照候補の表示に失敗しました');
                     });
                 return true;
             }
@@ -751,7 +751,7 @@ export class FormPanel {
         this.activeReferenceField = null;
         this.commitFieldValueAsync(active.nodeId, active.columnName, id).catch(err => {
             console.error('[FormPanel] reference dropdown selection failed:', err);
-            this.notification.show('参照候補の反映に失敗しました');
+            this.notification.showError(err, '参照候補の反映に失敗しました');
         });
     }
 
@@ -1098,7 +1098,7 @@ export class FormPanel {
             referencesContainer?.classList.remove('form-panel-references--empty');
             body.replaceChildren();
             console.error('[FormPanel] renderReferencesAsync failed:', err);
-            this.notification.show('参照一覧の取得に失敗しました', 'error');
+            this.notification.showError(err, '参照一覧の取得に失敗しました');
         }
     }
 
@@ -1339,7 +1339,7 @@ export class FormPanel {
                 };
                 this.toggleReferenceExpansionAsync(wrapper, element as HTMLButtonElement, parentNodeId, currentItem).catch(err => {
                     console.error('[FormPanel] toggleReferenceExpansionAsync failed:', err);
-                    this.notification.show('参照先の展開に失敗しました');
+                    this.notification.showError(err, '参照先の展開に失敗しました');
                 });
             });
         } else if (alreadyInPath) {
@@ -1368,7 +1368,7 @@ export class FormPanel {
             event.stopPropagation();
             this.jumpToReferenceItemAsync(trigger, item).catch(err => {
                 console.error('[FormPanel] jumpToReferenceItemAsync failed:', err);
-                this.notification.show('EditorTableへのジャンプに失敗しました');
+                this.notification.showError(err, 'EditorTableへのジャンプに失敗しました');
             });
         });
         return button;

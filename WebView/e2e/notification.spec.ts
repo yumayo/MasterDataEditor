@@ -135,6 +135,81 @@ test.describe('Notification', () => {
         await expect(logEntry.locator('.debug-console-col-status')).toHaveText('✓');
     });
 
+    for (const displayMessage of [null, '読み込みに失敗しました']) {
+        test(`非同期例外の発生位置を記録する（${displayMessage === null ? '元のメッセージ' : '表示文言を指定'}）`, async ({page, mockFileSystem}) => {
+            const originalStack = await page.evaluate(async message => {
+                const notification = (window as unknown as {
+                    notification: {showError(error: unknown, message?: string): void};
+                }).notification;
+                // 通知するコードと異なるファイル名から実際に例外を発生させる。
+                const failAsync = new Function('return Promise.resolve().then(() => { throw new Error("発生位置の確認"); });\n//# sourceURL=notification-origin.ts');
+                try {
+                    await failAsync();
+                } catch (error: unknown) {
+                    if (message === null) notification.showError(error);
+                    else notification.showError(error, message);
+                    return error instanceof Error ? error.stack ?? '' : '';
+                }
+                throw new Error('例外が発生しませんでした');
+            }, displayMessage);
+            const message = displayMessage ?? '発生位置の確認';
+            await expect(page.locator('.notification-toast-error')).toHaveText(message);
+            const logEntry = page.locator('.debug-console-row-error', {hasText: message});
+            await expect(logEntry).toHaveCount(1);
+            await expect(logEntry.locator('.debug-console-col-caller')).toHaveText('notification-origin.ts:3');
+            await page.locator('.status-bar-badge').click();
+            await page.locator('.bottom-panel-tab', {hasText: 'DEBUG CONSOLE'}).click();
+            await logEntry.click();
+            const stackSection = page.locator('.debug-api-detail-stack-trace');
+            await expect(stackSection).toBeVisible();
+            await expect(stackSection.locator('.debug-api-detail-section-title')).toHaveText('Stack Trace');
+            expect(await stackSection.locator('.debug-api-detail-code').textContent()).toBe(originalStack);
+            await expect(stackSection.locator('.debug-api-detail-pre')).toHaveCSS('overflow-y', 'scroll');
+
+            // 詳細タブを再利用して成功通知を開いた際に、直前のスタックを残さない。
+            await showNotificationAsync(page, '成功通知へ切り替え', 'success');
+            await page.locator('.debug-console-row-success', {hasText: '成功通知へ切り替え'}).click();
+            await expect(stackSection).toHaveCount(0);
+            await expect(page.locator('.debug-api-detail-code')).toHaveCount(2);
+        });
+    }
+
+    for (const kind of ['文字列', 'スタックなしのError']) {
+        test(`発生位置を取得できない例外に通知位置を表示しない（${kind}）`, async ({page, mockFileSystem}) => {
+            await page.evaluate(errorKind => {
+                const notification = (window as unknown as {
+                    notification: {showError(error: unknown): void};
+                }).notification;
+                const error = new Error('発生位置が不明なエラー');
+                delete error.stack;
+                notification.showError(errorKind === '文字列' ? error.message : error);
+            }, kind);
+            await expect(page.locator('.notification-toast-error')).toHaveText('発生位置が不明なエラー');
+            const logEntry = page.locator('.debug-console-row-error', {hasText: '発生位置が不明なエラー'});
+            await expect(logEntry).toHaveCount(1);
+            await expect(logEntry.locator('.debug-console-col-caller')).toHaveText('');
+            await page.locator('.status-bar-badge').click();
+            await page.locator('.bottom-panel-tab', {hasText: 'DEBUG CONSOLE'}).click();
+            await logEntry.click();
+            await expect(page.locator('.debug-api-detail-stack-trace')).toHaveCount(0);
+        });
+    }
+
+    test('その場で検出したエラー通知も検出時のスタックを詳細表示できる', async ({page, mockFileSystem}) => {
+        await page.evaluate(() => {
+            const notification = (window as unknown as {
+                notification: {show(message: string, status: 'error'): void};
+            }).notification;
+            new Function('notification', 'notification.show("直接通知のスタック確認", "error");\n//# sourceURL=notification-detection.ts')(notification);
+        });
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', {hasText: 'DEBUG CONSOLE'}).click();
+        await page.locator('.debug-console-row-error', {hasText: '直接通知のスタック確認'}).click();
+        const stackCode = page.locator('.debug-api-detail-stack-trace .debug-api-detail-code');
+        await expect(stackCode).toContainText('直接通知のスタック確認');
+        await expect(stackCode).toContainText('notification-detection.ts:3');
+    });
+
     // -------------------------------------------------------------------------
     // 廃止済み要素の非存在確認
     // -------------------------------------------------------------------------

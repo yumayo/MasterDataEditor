@@ -1085,6 +1085,12 @@ test.describe('ブランチ比較パネル', () => {
             await expect(page.locator('.debug-console-row-error', {hasText: message})).toBeAttached();
             await expect(page.locator('.branch-compare-panel')).not.toContainText(message);
             await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
+            await page.locator('.status-bar-badge').click();
+            await page.locator('.bottom-panel-tab', {hasText: 'DEBUG CONSOLE'}).click();
+            await page.locator('.debug-console-row-error', {hasText: message}).click();
+            const stackCode = page.locator('.debug-api-detail-stack-trace .debug-api-detail-code');
+            await expect(stackCode).toContainText(message);
+            await expect(stackCode).toContainText('normalizeBranchCompareSchema');
         });
     }
 

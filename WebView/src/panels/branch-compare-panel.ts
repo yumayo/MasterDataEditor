@@ -537,7 +537,7 @@ export class BranchComparePanel {
     }
 
     private showOperationError(error: unknown): void {
-        this.notification.show(error instanceof Error ? error.message : String(error), 'error');
+        this.notification.showError(error);
     }
 
     private handleUnexpectedCompareError(error: unknown): void {

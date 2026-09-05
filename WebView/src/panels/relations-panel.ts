@@ -348,7 +348,7 @@ export class RelationsPanel {
         if (this.currentEditorTable === false) return;
         this.updateForRowAsync(rowIndex, this.currentEditorTable).catch(err => {
             console.error('[RelationsPanel] refreshCurrentRow 失敗:', err);
-            this.notification.show('関連パネルの更新に失敗しました');
+            this.notification.showError(err, '関連パネルの更新に失敗しました');
         });
     }
 

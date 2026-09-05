@@ -995,7 +995,7 @@ export class EditorTableHandler {
         this.saveInFlight = this.saveAsync()
             .catch((e: unknown) => {
                 console.error('[EditorTableHandler] save failed:', e);
-                this.notification.show('保存に失敗しました');
+                this.notification.showError(e, '保存に失敗しました');
             })
             .finally(() => {
                 this.saveInFlight = false;
@@ -1761,7 +1761,7 @@ export class EditorTableHandler {
             return true;
         } catch (e) {
             console.warn(`Failed to load reference data for ${resolvedReference.tableName}`, e);
-            this.notification.show('参照データの読み込みに失敗しました');
+            this.notification.showError(e, '参照データの読み込みに失敗しました');
             return false;
         }
     }

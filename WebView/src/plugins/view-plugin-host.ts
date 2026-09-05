@@ -171,7 +171,7 @@ export class ViewPluginHost {
                 }
             } catch (error: unknown) {
                 console.error('[ViewPluginHost] save failed:', error);
-                this.notification.show('Viewプラグインの保存に失敗しました: ' + this.getPluginTitle(plugin));
+                this.notification.showError(error, 'Viewプラグインの保存に失敗しました: ' + this.getPluginTitle(plugin));
                 return false;
             }
             if (success) setDirty(false);
@@ -215,14 +215,14 @@ export class ViewPluginHost {
                     mountResult = value;
                 }).catch((error: unknown) => {
                     console.error('[ViewPluginHost] render failed:', error);
-                    this.notification.show('Viewプラグインの描画に失敗しました: ' + this.getPluginTitle(plugin));
+                    this.notification.showError(error, 'Viewプラグインの描画に失敗しました: ' + this.getPluginTitle(plugin));
                 });
             } else {
                 mountResult = result;
             }
         } catch (error: unknown) {
             console.error('[ViewPluginHost] render failed:', error);
-            this.notification.show('Viewプラグインの描画に失敗しました: ' + this.getPluginTitle(plugin));
+            this.notification.showError(error, 'Viewプラグインの描画に失敗しました: ' + this.getPluginTitle(plugin));
         }
 
         return {
@@ -294,7 +294,7 @@ export class ViewPluginHost {
             execute();
         } catch (error: unknown) {
             console.error('[ViewPluginHost] load failed:', error);
-            this.notification.show('Viewプラグインの読み込みに失敗しました: ' + fileName);
+            this.notification.showError(error, 'Viewプラグインの読み込みに失敗しました: ' + fileName);
         }
     }
 

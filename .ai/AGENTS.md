@@ -92,7 +92,9 @@ TDDは品質保証ではなく設計手法であり、テストを先に書く�
 
 ## エラー通知
 
-- 読み込み・保存・比較・候補取得などの操作エラーは、既存の汎用通知 `NotificationToast`（`WebView/src/ui/notification.ts`）を使い、`notification.show(message, 'error')` で画面右下に表示すること。
+- 読み込み・保存・比較・候補取得などの操作エラーは、既存の汎用通知 `NotificationToast`（`WebView/src/ui/notification.ts`）を使い、画面右下に表示すること。
+- 捕捉した例外は `notification.showError(error)` に元の例外を渡し、`Error.stack` の発生位置とスタックトレース全文を記録すること。DEBUG CONSOLE のエラー行から開く詳細タブの「Stack Trace」欄で確認できるようにする。表示文言を指定する場合は `notification.showError(error, message)` を使う。文字列への変換や新しい `Error` の作成で、元の発生位置・スタックトレースを失わないこと。
+- 例外を伴わずその場で検出した操作エラーには `notification.show(message, 'error')` を使い、その検出位置を記録すること。
 - パネル本文や候補リスト内に操作エラー用のメッセージを描画しないこと。`console.error` の出力だけでユーザーへの通知を済ませないこと。
 - `main.ts` で生成した共通の `NotificationToast` インスタンスをコンストラクタ引数で受け渡して使用すること。通知は自動で DEBUG CONSOLE にも記録されるため、同じエラーの通知・記録を重複させないこと。
 - セル・フォームの入力検証や PROBLEMS のデータ検証結果は、問題のある項目を示すための表示として維持し、操作エラーの通知と区別すること。
