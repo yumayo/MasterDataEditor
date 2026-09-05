@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "src/plugins",
+    "outDir": "../sample-workdir/plugins/types/v2"
+  },
+  "files": ["src/plugins/master-data-editor-view-plugin.ts"]
+}

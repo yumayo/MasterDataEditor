@@ -62,6 +62,8 @@ export type TableDataChangeListener = (event: TableDataChangeEvent) => void;
 export class InMemoryTableStore {
     private readonly headers: Map<string, string[]>;
     private readonly rows: Map<string, string[][]>;
+    /** 行の挿入・削除・並び替え後も同じ行を指せる、プロセス内だけの安定ID。 */
+    private readonly rowIds: Map<string, string[]>;
     private readonly refCounts: Map<string, number>;
     /** テーブル名ごとのHistory登録簿（Dirty管理の唯一の情報源） */
     private readonly historyRegistry: Map<string, Set<IHistory>>;
@@ -77,16 +79,19 @@ export class InMemoryTableStore {
     private dataRevision: number;
     /** テーブルデータ変更の購読者。参照系キャッシュのリアルタイム更新に使用する。 */
     private readonly dataChangeListeners: Set<TableDataChangeListener>;
+    private nextRowId: number;
 
     constructor() {
         this.headers = new Map();
         this.rows = new Map();
+        this.rowIds = new Map();
         this.refCounts = new Map();
         this.historyRegistry = new Map();
         this.dirtyTableNames = new Set();
         this.staleTableNames = new Set();
         this.dataRevision = 0;
         this.dataChangeListeners = new Set();
+        this.nextRowId = 0;
     }
 
     /** テーブルデータ内容の更新世代を返す */
@@ -118,6 +123,7 @@ export class InMemoryTableStore {
         }
         this.headers.set(tableName, header);
         this.rows.set(tableName, body);
+        this.rowIds.set(tableName, body.map(() => this.createRowId()));
         this.refCounts.set(tableName, 1);
         this.staleTableNames.delete(tableName);
     }
@@ -128,6 +134,7 @@ export class InMemoryTableStore {
             const csv = await this.loadCsvFromFileAsync(tableName);
             this.headers.set(tableName, csv.header);
             this.rows.set(tableName, csv.body);
+            this.rowIds.set(tableName, csv.body.map(() => this.createRowId()));
             this.refCounts.set(tableName, (this.refCounts.get(tableName) ?? 0) + 1);
             this.dirtyTableNames.delete(tableName);
             this.staleTableNames.delete(tableName);
@@ -162,6 +169,7 @@ export class InMemoryTableStore {
             const csv = await this.loadCsvFromFileAsync(tableName);
             this.headers.set(tableName, csv.header);
             this.rows.set(tableName, csv.body);
+            this.rowIds.set(tableName, csv.body.map(() => this.createRowId()));
             if (!this.refCounts.has(tableName)) this.refCounts.set(tableName, 1);
             this.dirtyTableNames.delete(tableName);
             this.staleTableNames.delete(tableName);
@@ -199,6 +207,7 @@ export class InMemoryTableStore {
         const csv = await this.loadCsvFromFileAsync(tableName);
         this.headers.set(tableName, csv.header);
         this.rows.set(tableName, csv.body);
+        this.rowIds.set(tableName, csv.body.map(() => this.createRowId()));
         this.bumpDataRevision(tableName, { reason: 'reload' });
         // CSV巻き戻し後は補完Dirty状態をクリアする
         this.dirtyTableNames.delete(tableName);
@@ -228,6 +237,7 @@ export class InMemoryTableStore {
             } else {
                 this.headers.delete(tableName);
                 this.rows.delete(tableName);
+                this.rowIds.delete(tableName);
                 this.refCounts.delete(tableName);
             }
             return;
@@ -281,6 +291,21 @@ export class InMemoryTableStore {
         return this.rows.get(tableName)!;
     }
 
+    /** 指定行の安定IDを返す。テーブル再読み込み後は以前のIDを無効にする。 */
+    getRowId(tableName: string, rowIndex: number): string | null {
+        const ids = this.rowIds.get(tableName);
+        if (ids === undefined || rowIndex < 0 || rowIndex >= ids.length) return null;
+        return ids[rowIndex];
+    }
+
+    /** 安定IDが現在指しているストア行インデックスを返す。削除・再読み込み済みなら null。 */
+    findRowIndexById(tableName: string, rowId: string): number | null {
+        const ids = this.rowIds.get(tableName);
+        if (ids === undefined) return null;
+        const rowIndex = ids.indexOf(rowId);
+        return rowIndex === -1 ? null : rowIndex;
+    }
+
     /** セル更新（行インデックス＋列インデックスで対象セルを直接特定する）。行が見つかり更新した場合true、範囲外の場合false */
     updateCellValueByRowIndex(tableName: string, rowIndex: number, columnIndex: number, value: string): boolean {
         if (!this.rows.has(tableName)) return false;
@@ -298,7 +323,15 @@ export class InMemoryTableStore {
     /** 全行置換 */
     replaceAllRows(tableName: string, newRows: string[][]): void {
         if (!this.rows.has(tableName)) return;
+        const currentRows = this.rows.get(tableName)!;
+        const currentIds = this.rowIds.get(tableName) ?? [];
+        const idsByRow = new Map<string[], string>();
+        for (let i = 0; i < currentRows.length; ++i) {
+            const id = currentIds[i];
+            if (id !== undefined) idsByRow.set(currentRows[i], id);
+        }
         this.rows.set(tableName, newRows);
+        this.rowIds.set(tableName, newRows.map(row => idsByRow.get(row) ?? this.createRowId()));
         this.bumpDataRevision(tableName, { reason: 'rowsReplaced' });
     }
 
@@ -308,6 +341,7 @@ export class InMemoryTableStore {
         const tableRows = this.rows.get(tableName)!;
         const rowIndex = tableRows.length;
         tableRows.push(values);
+        this.rowIds.get(tableName)!.push(this.createRowId());
         this.bumpDataRevision(tableName, { reason: 'rowInserted', rowIndex, rowValues: [...values] });
     }
 
@@ -354,6 +388,7 @@ export class InMemoryTableStore {
         const tableRows = this.rows.get(tableName)!;
         if (rowIndex < 0 || rowIndex >= tableRows.length) return;
         const [removedRow] = tableRows.splice(rowIndex, 1);
+        this.rowIds.get(tableName)!.splice(rowIndex, 1);
         this.bumpDataRevision(tableName, { reason: 'rowRemoved', rowIndex, rowValues: [...removedRow] });
     }
 
@@ -362,6 +397,7 @@ export class InMemoryTableStore {
         if (!this.rows.has(tableName)) return;
         const tableRows = this.rows.get(tableName)!;
         tableRows.splice(rowIndex, 0, values);
+        this.rowIds.get(tableName)!.splice(rowIndex, 0, this.createRowId());
         this.bumpDataRevision(tableName, { reason: 'rowInserted', rowIndex, rowValues: [...values] });
     }
 
@@ -372,11 +408,19 @@ export class InMemoryTableStore {
         if (fromIndex < 0 || fromIndex >= tableRows.length) return;
         // splice で取り出して挿入先に再挿入する
         const [row] = tableRows.splice(fromIndex, 1);
+        const ids = this.rowIds.get(tableName)!;
+        const [rowId] = ids.splice(fromIndex, 1);
         // fromIndex の行を抜いた後のインデックスに挿入する
         // toIndex が fromIndex より大きい場合、splice で1行減っているため toIndex はそのまま正しい
         // （呼び出し元が「移動後の挿入位置」を渡す前提）
         tableRows.splice(toIndex, 0, row);
+        ids.splice(toIndex, 0, rowId);
         this.bumpDataRevision(tableName, { reason: 'rowMoved', rowIndex: fromIndex });
+    }
+
+    private createRowId(): string {
+        this.nextRowId++;
+        return 'row-' + this.nextRowId;
     }
 
     /** 指定キー列の値で行をグループ化したMapを構築する */

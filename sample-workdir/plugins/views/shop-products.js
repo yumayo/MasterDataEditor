@@ -1,5 +1,6 @@
 window.masterDataEditor.registerViewPlugin({
     id: 'shop-products',
+    apiVersion: 2,
     title: 'ショップ商品ビュー',
     description: 'ショップごとの販売商品を一覧で確認します',
     async render(container, api) {
@@ -215,40 +216,29 @@ window.masterDataEditor.registerViewPlugin({
         root.className = 'shop-products-view';
         container.append(style, root);
 
-        const [shopData, productData, tableData] = await Promise.all([
-            api.data.readTableDataAsync('shop'),
-            api.data.readTableDataAsync('shop_product'),
-            api.data.readTableDataAsync('table'),
+        const [shopRecords, productRecords, tableRecords] = await Promise.all([
+            api.tables.get('shop').readRecordsAsync(),
+            api.tables.get('shop_product').readRecordsAsync(),
+            api.tables.get('table').readRecordsAsync(),
         ]);
 
-        if (shopData === null || productData === null || tableData === null) {
+        if (shopRecords === null || productRecords === null || tableRecords === null) {
             root.appendChild(createMessage('shop / shop_product / table のいずれかが見つかりません'));
             return;
         }
 
-        const priceColumnIndex = productData.header.indexOf('price');
-        const sortOrderColumnIndex = productData.header.indexOf('sort_order');
-        if (priceColumnIndex === -1 || sortOrderColumnIndex === -1) {
+        const productColumns = api.schema.getColumns('shop_product');
+        if (productColumns === null
+            || !productColumns.some(column => column.name === 'price')
+            || !productColumns.some(column => column.name === 'sort_order')) {
             root.appendChild(createMessage('shop_product に price または sort_order 列がありません'));
             return;
         }
 
-        const dirtyTables = new Set();
-        const pendingEdits = new Set();
-        api.view.onSave(async () => {
-            if (pendingEdits.size > 0) {
-                await Promise.all([...pendingEdits]);
-            }
-            if (dirtyTables.size === 0) return true;
-            const results = await Promise.all([...dirtyTables].map(tableName => api.edit.saveTableAsync(tableName)));
-            const saved = results.every(result => result);
-            if (saved) dirtyTables.clear();
-            return saved;
-        });
-
-        const shops = toRecords(shopData);
-        const products = toRecords(productData);
-        const tableEntries = toRecords(tableData);
+        const editSession = api.view.createEditSession();
+        const shops = toPluginRecords(shopRecords);
+        const products = toPluginRecords(productRecords);
+        const tableEntries = toPluginRecords(tableRecords);
         const tableById = indexBy(tableEntries, 'id');
         const nameMaps = await buildNameMaps(api, products);
         const detailMaps = await buildDetailMaps(api, tableEntries);
@@ -397,10 +387,10 @@ window.masterDataEditor.registerViewPlugin({
 
                 const tr = document.createElement('tr');
                 tr.append(
-                    createEditableNumberCell(entry, 'sort_order', sortOrderColumnIndex, 'shop-products-order'),
+                    createEditableNumberCell(entry, 'sort_order', 'shop-products-order'),
                     createTypeCell(typeLabel),
                     createProductCell(resolvedName, masterName, entry.record_id),
-                    createEditableNumberCell(entry, 'price', priceColumnIndex, 'shop-products-price'),
+                    createEditableNumberCell(entry, 'price', 'shop-products-price'),
                     createTextCell(detail.sellingPrice === null ? '-' : formatPrice(detail.sellingPrice), 'shop-products-price'),
                 );
                 tbody.appendChild(tr);
@@ -414,7 +404,7 @@ window.masterDataEditor.registerViewPlugin({
             return productsByGroupId.get(shop.shop_product_group_id) || [];
         }
 
-        function createEditableNumberCell(entry, fieldName, columnIndex, className) {
+        function createEditableNumberCell(entry, fieldName, className) {
             const td = document.createElement('td');
             td.className = className;
             const input = document.createElement('input');
@@ -424,13 +414,7 @@ window.masterDataEditor.registerViewPlugin({
             input.value = entry[fieldName];
             input.addEventListener('change', async () => {
                 entry[fieldName] = input.value;
-                dirtyTables.add('shop_product');
-                api.view.setDirty(true);
-                const editPromise = api.edit.setCellValueAsync('shop_product', entry.__rowIndex, columnIndex, input.value);
-                pendingEdits.add(editPromise);
-                const updated = await editPromise.finally(() => {
-                    pendingEdits.delete(editPromise);
-                });
+                const updated = await editSession.updateRecordAsync(entry.__ref, {[fieldName]: input.value});
                 if (updated) {
                     return;
                 } else {
@@ -447,8 +431,13 @@ window.masterDataEditor.registerViewPlugin({
         }
 
         render();
+        return {dispose: () => editSession.dispose()};
     },
 });
+
+function toPluginRecords(records) {
+    return records.map(record => ({...record.values, __ref: record.ref}));
+}
 
 function toRecords(tableData) {
     return tableData.rows.map((row, rowIndex) => {

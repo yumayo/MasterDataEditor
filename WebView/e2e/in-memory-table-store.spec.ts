@@ -270,6 +270,27 @@ test.describe('行操作', () => {
         expect(rows).toEqual(newRows);
     });
 
+    test('行IDは挿入と並び替え後も同じ行を指し、削除後は無効になる', () => {
+        const store = new InMemoryTableStore();
+        const { header, body } = createTestTable();
+        store.registerTable('enemies', header, body);
+        const itemBId = store.getRowId('enemies', 1);
+        expect(itemBId).not.toBeNull();
+        if (itemBId === null) return;
+
+        store.insertRowAt('enemies', 0, ['0', 'item_first', '0']);
+        expect(store.findRowIndexById('enemies', itemBId)).toBe(2);
+
+        const rows = store.getRows('enemies');
+        expect(rows).not.toBe(false);
+        if (rows === false) return;
+        store.replaceAllRows('enemies', [rows[2], rows[0], rows[1], rows[3]]);
+        expect(store.findRowIndexById('enemies', itemBId)).toBe(0);
+
+        store.removeRow('enemies', 0);
+        expect(store.findRowIndexById('enemies', itemBId)).toBeNull();
+    });
+
     test('存在しない行インデックスへのremoveRowがエラーを起こさない', () => {
         const store = new InMemoryTableStore();
         const { header, body } = createTestTable();

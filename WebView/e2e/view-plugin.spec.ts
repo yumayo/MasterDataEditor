@@ -20,22 +20,34 @@ function createViewPluginFileSystem(): MockFileSystem {
             "2,item_b,200",
             "3,item_c,300",
         ].join("\n"),
+        "schema/other.json": JSON.stringify({
+            header: [
+                { key: 0, name: "id", type: "int" },
+                { key: 1, name: "value", type: "int" },
+            ],
+            primary_key: ["id"],
+        }),
+        "data/other.csv": [
+            "id,value",
+            "1,10",
+        ].join("\n"),
         "plugins/views/summary.js": [
             "window.masterDataEditor.registerViewPlugin({",
             "  id: 'summary',",
+            "  apiVersion: 2,",
             "  title: 'Summary View',",
             "  description: 'Counts rows and edits test data',",
             "  async render(container, api) {",
-            "    let tableTouched = false;",
-            "    api.view.onSave(async () => {",
+            "    container.dataset.internalEmitType = typeof api.editor.emitTableOpened;",
+            "    const editSession = api.view.createEditSession();",
+            "    api.view.onSave(() => {",
             "      container.dataset.saved = 'yes';",
-            "      if (!tableTouched) return true;",
-            "      return api.edit.saveTableAsync('test');",
             "    });",
-            "    const data = await api.data.readTableDataAsync('test');",
+            "    const records = await api.tables.get('test').readRecordsAsync();",
+            "    const otherRecords = await api.tables.get('other').readRecordsAsync();",
             "    const count = document.createElement('div');",
             "    count.className = 'summary-count';",
-            "    count.textContent = String(data ? data.rows.length : 0);",
+            "    count.textContent = String(records ? records.length : 0);",
             "    const dirtyButton = document.createElement('button');",
             "    dirtyButton.className = 'summary-dirty';",
             "    dirtyButton.textContent = 'dirty';",
@@ -47,12 +59,27 @@ function createViewPluginFileSystem(): MockFileSystem {
             "    button.className = 'summary-edit';",
             "    button.textContent = 'edit';",
             "    button.addEventListener('click', async () => {",
-            "      const updated = await api.edit.setCellValueAsync('test', 0, 2, '999');",
+            "      const updated = records ? await editSession.updateRecordAsync(records[0].ref, {value: '999'}) : false;",
             "      if (updated) {",
-            "        tableTouched = true;",
             "        container.dataset.saved = 'no';",
-            "        api.view.setDirty(true);",
             "      }",
+            "    });",
+            "    const stableRefButton = document.createElement('button');",
+            "    stableRefButton.className = 'summary-edit-stable-ref';",
+            "    stableRefButton.textContent = 'edit stable ref';",
+            "    stableRefButton.addEventListener('click', async () => {",
+            "      const updated = records ? await editSession.updateRecordAsync(records[1].ref, {value: '777'}) : false;",
+            "      container.dataset.stableRefUpdated = updated ? 'yes' : 'no';",
+            "    });",
+            "    const multipleButton = document.createElement('button');",
+            "    multipleButton.className = 'summary-edit-multiple';",
+            "    multipleButton.textContent = 'edit multiple tables';",
+            "    multipleButton.addEventListener('click', async () => {",
+            "      const updated = records && otherRecords ? await Promise.all([",
+            "        editSession.updateRecordAsync(records[0].ref, {value: '555'}),",
+            "        editSession.updateRecordAsync(otherRecords[0].ref, {value: '888'}),",
+            "      ]) : [false];",
+            "      container.dataset.multipleUpdated = updated.every(Boolean) ? 'yes' : 'no';",
             "    });",
             "    const notifyButton = document.createElement('button');",
             "    notifyButton.className = 'summary-notify';",
@@ -67,7 +94,22 @@ function createViewPluginFileSystem(): MockFileSystem {
             "      const opened = await api.edit.openTableAsync('test');",
             "      container.dataset.opened = opened ? 'yes' : 'no';",
             "    });",
-            "    container.append(count, dirtyButton, button, notifyButton, openButton);",
+            "    container.append(count, dirtyButton, button, stableRefButton, multipleButton, notifyButton, openButton);",
+            "    return {dispose: () => editSession.dispose()};",
+            "  }",
+            "});",
+        ].join("\n"),
+        "plugins/views/legacy.js": [
+            "window.masterDataEditor.registerViewPlugin({",
+            "  id: 'legacy',",
+            "  title: 'Legacy View',",
+            "  async render(container, api) {",
+            "    container.dataset.internalEmitType = typeof api.editor.emitTableOpened;",
+            "    const data = await api.data.readTableDataAsync('test');",
+            "    const marker = document.createElement('div');",
+            "    marker.className = 'legacy-count';",
+            "    marker.textContent = String(data ? data.rows.length : 0);",
+            "    container.appendChild(marker);",
             "  }",
             "});",
         ].join("\n"),
@@ -108,6 +150,19 @@ async function waitForSavedViewTabAsync(page: Page): Promise<void> {
 }
 
 test.describe('Viewプラグイン', () => {
+    test('apiVersionを省略したバージョン1プラグインを引き続き実行できる', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem());
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="legacy"]').click();
+
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Legacy View');
+        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="legacy"]');
+        await expect(viewRoot.locator('.legacy-count')).toHaveText('3');
+        await expect(viewRoot).toHaveAttribute('data-internal-emit-type', 'function');
+    });
+
     test('一覧からViewタブを開き、内部APIでテーブルを読み書きできる', async ({page}) => {
         await installMockApiAsync(page, createViewPluginFileSystem());
         await page.goto('/');
@@ -116,6 +171,9 @@ test.describe('Viewプラグイン', () => {
         const item = page.locator('.view-plugin-item[data-plugin-id="summary"]');
         await expect(item).toBeVisible();
         await expect(item.locator('.view-plugin-item-title')).toHaveText('Summary View');
+        await expect.poll(() => page.evaluate(() => {
+            return (window as unknown as {masterDataEditor: {apiVersion: number}}).masterDataEditor.apiVersion;
+        })).toBe(2);
 
         await item.click();
         await expect(item).toHaveClass(/view-plugin-item-active/);
@@ -131,6 +189,7 @@ test.describe('Viewプラグイン', () => {
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
         const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
         await expect(viewRoot.locator('.summary-count')).toHaveText('3');
+        await expect(viewRoot).toHaveAttribute('data-internal-emit-type', 'undefined');
 
         await page.locator('.tab-button-active').click({button: 'right'});
         const contextMenu = page.locator('.context-menu.visible');
@@ -165,6 +224,70 @@ test.describe('Viewプラグイン', () => {
         await page.keyboard.press('Control+S');
         await expect(viewRoot).toHaveAttribute('data-saved', 'yes');
         await expect(page.locator('.tab-button-active .tab-button-dirty-visible')).toHaveCount(0);
+    });
+
+    test('行の挿入後もレコードの行参照から同じ行を更新できる', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem());
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        await expect(viewRoot.locator('.summary-count')).toHaveText('3');
+
+        await viewRoot.locator('.summary-open-table').click();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('test');
+        await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
+        const inserted = await page.evaluate(() => {
+            return (window as unknown as {editorApi: {edit: {insertRow: (tableName: string, rowIndex: number) => boolean}}})
+                .editorApi.edit.insertRow('test', 0);
+        });
+        expect(inserted).toBe(true);
+        await page.evaluate(() => { history.back(); });
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
+
+        await viewRoot.locator('.summary-edit-stable-ref').click();
+        await expect(viewRoot).toHaveAttribute('data-stable-ref-updated', 'yes');
+        await expect.poll(() => page.evaluate(() => {
+            return (window as unknown as {editorApi: {data: {getCellValue: (tableName: string, row: number, column: number) => string | null}}})
+                .editorApi.data.getCellValue('test', 2, 2);
+        })).toBe('777');
+    });
+
+    test('編集セッションが複数テーブルのdirty状態と保存を管理する', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem());
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        await expect(viewRoot.locator('.summary-count')).toHaveText('3');
+
+        await viewRoot.locator('.summary-edit-multiple').click();
+        await expect(viewRoot).toHaveAttribute('data-multiple-updated', 'yes');
+        await expect(page.locator('.tab-button-active .tab-button-dirty-visible')).toHaveCount(1);
+        await page.keyboard.press('Control+S');
+        await expect(page.locator('.tab-button-active .tab-button-dirty-visible')).toHaveCount(0);
+
+        await expect.poll(async () => readMockFileAsync(page, 'data/test.csv')).toContain('1,item_a,555');
+        await expect.poll(async () => readMockFileAsync(page, 'data/other.csv')).toContain('1,888');
+    });
+
+    test('未対応のAPIバージョンを要求するプラグインは登録しない', async ({page}) => {
+        const fs = createViewPluginFileSystem();
+        fs['plugins/views/future.js'] = [
+            "window.masterDataEditor.registerViewPlugin({",
+            "  id: 'future',",
+            "  apiVersion: 3,",
+            "  render() {},",
+            "});",
+        ].join('\n');
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+
+        await openViewPluginPanelAsync(page);
+        await expect(page.locator('.view-plugin-item[data-plugin-id="future"]')).toHaveCount(0);
+        await expect(page.locator('.debug-console-list')).toContainText('APIバージョン 3 には対応していません');
     });
 
     test('Viewタブから開いた既存テーブルを戻る後にもう一度開ける', async ({page}) => {

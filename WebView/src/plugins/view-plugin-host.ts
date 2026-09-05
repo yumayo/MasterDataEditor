@@ -1,39 +1,20 @@
 import {findFilesAsync, readFileAsync, invalidatePluginFileCaches} from "../app/api";
-import type {EditorAPI} from "../editor-api/editor-api-types";
+import type {InMemoryTableStore} from "../data/in-memory-table-store";
+import type {EditorAPI as InternalEditorAPI} from "../editor-api/editor-api-types";
 import type {NotificationStatus, NotificationToast} from "../ui/notification";
+import {
+    VIEW_PLUGIN_API_VERSION,
+    type EditorAPI as PublicEditorAPI,
+    type MasterDataEditorPluginGlobal,
+    type ViewPluginAPI,
+    type ViewPluginMountResult,
+    type ViewPluginRegistration,
+    type ViewPluginRuntimeAPI,
+    type ViewPluginSaveHandler,
+} from "./master-data-editor-view-plugin";
+import {ViewPluginEditSessionImpl, ViewPluginTablesApiImpl} from "./view-plugin-table-api";
 
-export interface ViewPluginNotificationAPI {
-    show(message: string, status?: NotificationStatus): void;
-}
-
-export interface ViewPluginAPI {
-    editor: EditorAPI;
-    data: EditorAPI["data"];
-    schema: EditorAPI["schema"];
-    edit: EditorAPI["edit"];
-    events: EditorAPI["events"];
-    view: ViewPluginRuntimeAPI;
-    notification: ViewPluginNotificationAPI;
-}
-
-export type ViewPluginSaveHandler = () => void | boolean | Promise<void | boolean>;
-
-export interface ViewPluginRuntimeAPI {
-    setDirty(dirty: boolean): void;
-    isDirty(): boolean;
-    onSave(handler: ViewPluginSaveHandler): { dispose(): void };
-    saveAsync(): Promise<boolean>;
-}
-
-export interface ViewPluginRegistration {
-    id: string;
-    title?: string;
-    description?: string;
-    render(container: HTMLElement, api: ViewPluginAPI): void | ViewPluginMountResult | Promise<void | ViewPluginMountResult>;
-    dispose?(): void;
-}
-
-export type ViewPluginMountResult = (() => void) | { dispose?(): void; save?(): void | boolean | Promise<void | boolean> };
+export type {ViewPluginAPI, ViewPluginMountResult, ViewPluginRegistration} from "./master-data-editor-view-plugin";
 
 export interface ViewPluginDescriptor {
     id: string;
@@ -53,13 +34,9 @@ export interface ViewPluginMountOptions {
 }
 
 type ViewPluginChangeListener = () => void;
-
-interface MasterDataEditorPluginGlobal {
-    registerViewPlugin?(registration: ViewPluginRegistration): void;
-    registerView?(registration: ViewPluginRegistration): void;
-    editorApi?: EditorAPI;
-    api?: ViewPluginAPI;
-}
+type SupportedViewPluginApiVersion = 1 | typeof VIEW_PLUGIN_API_VERSION;
+type ViewPluginRegistrationInput = Omit<ViewPluginRegistration, 'apiVersion'> & {apiVersion?: number};
+type RegisteredViewPlugin = Omit<ViewPluginRegistration, 'apiVersion'> & {apiVersion: SupportedViewPluginApiVersion};
 
 interface PluginFileEntry {
     name: string;
@@ -69,25 +46,32 @@ interface PluginFileEntry {
 const VIEW_PLUGIN_DIRECTORY = 'plugins/views';
 
 export class ViewPluginHost {
-    private readonly editorApi: EditorAPI;
+    private readonly internalEditorApi: InternalEditorAPI;
     private readonly notification: NotificationToast;
-    private readonly registrations: Map<string, ViewPluginRegistration>;
+    private readonly registrations: Map<string, RegisteredViewPlugin>;
     private readonly listeners: ViewPluginChangeListener[];
     private readonly baseApi: Omit<ViewPluginAPI, 'view'>;
     private loaded: boolean;
 
-    constructor(editorApi: EditorAPI, notification: NotificationToast) {
-        this.editorApi = editorApi;
+    constructor(editorApi: InternalEditorAPI, store: InMemoryTableStore, notification: NotificationToast) {
+        this.internalEditorApi = editorApi;
         this.notification = notification;
         this.registrations = new Map();
         this.listeners = [];
         this.loaded = false;
-        this.baseApi = {
-            editor: editorApi,
+        const publicEditorApi: PublicEditorAPI = {
             data: editorApi.data,
             schema: editorApi.schema,
             edit: editorApi.edit,
             events: editorApi.events,
+        };
+        this.baseApi = {
+            editor: publicEditorApi,
+            data: editorApi.data,
+            schema: editorApi.schema,
+            edit: editorApi.edit,
+            events: editorApi.events,
+            tables: new ViewPluginTablesApiImpl(store, editorApi),
             notification: {
                 show: (message: string, status?: NotificationStatus) => {
                     this.notification.show(message, status);
@@ -145,15 +129,36 @@ export class ViewPluginHost {
         container.textContent = '';
         let disposed = false;
         let dirty = false;
+        let manualDirty = false;
         let mountResult: void | ViewPluginMountResult;
         const saveHandlers: ViewPluginSaveHandler[] = [];
+        const editSessions = new Set<ViewPluginEditSessionImpl>();
 
-        const setDirty = (nextDirty: boolean): void => {
+        const applyDirty = (nextDirty: boolean): void => {
             if (dirty === nextDirty) return;
             dirty = nextDirty;
             if (options.onDirtyChanged !== undefined) {
                 options.onDirtyChanged(dirty);
             }
+        };
+
+        const refreshDirty = (): void => {
+            applyDirty(manualDirty || [...editSessions].some(session => session.isDirty()));
+        };
+
+        const setDirty = (nextDirty: boolean): void => {
+            manualDirty = nextDirty;
+            refreshDirty();
+        };
+
+        const registerSaveHandler = (handler: ViewPluginSaveHandler): {dispose(): void} => {
+            saveHandlers.push(handler);
+            return {
+                dispose: () => {
+                    const index = saveHandlers.indexOf(handler);
+                    if (index !== -1) saveHandlers.splice(index, 1);
+                },
+            };
         };
 
         const saveAsync = async (): Promise<boolean> => {
@@ -174,23 +179,30 @@ export class ViewPluginHost {
                 this.notification.showError(error, 'Viewプラグインの保存に失敗しました: ' + this.getPluginTitle(plugin));
                 return false;
             }
-            if (success) setDirty(false);
+            if (success) {
+                manualDirty = false;
+                refreshDirty();
+            }
             return success;
         };
 
         const viewApi: ViewPluginRuntimeAPI = {
             setDirty,
             isDirty: () => dirty,
-            onSave: (handler: ViewPluginSaveHandler) => {
-                saveHandlers.push(handler);
-                return {
-                    dispose: () => {
-                        const index = saveHandlers.indexOf(handler);
-                        if (index !== -1) saveHandlers.splice(index, 1);
-                    },
-                };
-            },
+            onSave: registerSaveHandler,
             saveAsync,
+            createEditSession: () => {
+                const session = new ViewPluginEditSessionImpl({
+                    tables: this.baseApi.tables,
+                    registerSaveHandler: handler => registerSaveHandler(handler),
+                    onDirtyChanged: () => refreshDirty(),
+                    onDisposed: disposedSession => {
+                        editSessions.delete(disposedSession);
+                    },
+                });
+                editSessions.add(session);
+                return session;
+            },
         };
 
         const disposeMountResult = (): void => {
@@ -204,7 +216,11 @@ export class ViewPluginHost {
         };
 
         try {
-            const api: ViewPluginAPI = {...this.baseApi, view: viewApi};
+            const api: ViewPluginAPI = {
+                ...this.baseApi,
+                editor: plugin.apiVersion === 1 ? this.internalEditorApi : this.baseApi.editor,
+                view: viewApi,
+            };
             const result = plugin.render(container, api);
             if (result instanceof Promise) {
                 result.then(value => {
@@ -234,8 +250,10 @@ export class ViewPluginHost {
                 } catch (error: unknown) {
                     console.error('[ViewPluginHost] dispose failed:', error);
                 }
+                for (const session of [...editSessions]) session.dispose();
                 saveHandlers.splice(0);
-                setDirty(false);
+                manualDirty = false;
+                refreshDirty();
                 container.textContent = '';
             },
             saveAsync,
@@ -254,10 +272,15 @@ export class ViewPluginHost {
         };
     }
 
-    registerViewPlugin(registration: ViewPluginRegistration): void {
+    registerViewPlugin(registration: ViewPluginRegistrationInput): void {
         const id = typeof registration.id === 'string' ? registration.id.trim() : '';
         if (id === '') {
             this.notification.show('Viewプラグインの登録に失敗しました: id が空です');
+            return;
+        }
+        const apiVersion = registration.apiVersion ?? 1;
+        if (apiVersion !== 1 && apiVersion !== VIEW_PLUGIN_API_VERSION) {
+            this.notification.show('Viewプラグイン "' + id + '" のAPIバージョン ' + String(apiVersion) + ' には対応していません（対応バージョン: 1, ' + VIEW_PLUGIN_API_VERSION + '）');
             return;
         }
         if (typeof registration.render !== 'function') {
@@ -271,6 +294,7 @@ export class ViewPluginHost {
         this.registrations.set(id, {
             ...registration,
             id,
+            apiVersion,
         });
         this.notifyChanged();
     }
@@ -300,18 +324,19 @@ export class ViewPluginHost {
 
     private installGlobalRegistrationApi(): void {
         const win = window as unknown as {
-            __mde?: MasterDataEditorPluginGlobal;
-            masterDataEditor?: MasterDataEditorPluginGlobal;
+            __mde?: Partial<MasterDataEditorPluginGlobal>;
+            masterDataEditor?: Partial<MasterDataEditorPluginGlobal>;
         };
         const globalApi: MasterDataEditorPluginGlobal = {
             ...(win.__mde ?? {}),
+            apiVersion: VIEW_PLUGIN_API_VERSION,
             registerViewPlugin: (registration: ViewPluginRegistration) => {
                 this.registerViewPlugin(registration);
             },
             registerView: (registration: ViewPluginRegistration) => {
                 this.registerViewPlugin(registration);
             },
-            editorApi: this.editorApi,
+            editorApi: this.internalEditorApi,
             api: {...this.baseApi, view: this.createGlobalViewApi()},
         };
         win.__mde = globalApi;
@@ -338,10 +363,16 @@ export class ViewPluginHost {
             isDirty: () => false,
             onSave: () => ({ dispose: () => {} }),
             saveAsync: async () => true,
+            createEditSession: () => ({
+                updateRecordAsync: async () => false,
+                saveAsync: async () => true,
+                isDirty: () => false,
+                dispose: () => {},
+            }),
         };
     }
 
-    private toDescriptor(plugin: ViewPluginRegistration): ViewPluginDescriptor {
+    private toDescriptor(plugin: RegisteredViewPlugin): ViewPluginDescriptor {
         return {
             id: plugin.id,
             title: this.getPluginTitle(plugin),
@@ -349,7 +380,7 @@ export class ViewPluginHost {
         };
     }
 
-    private getPluginTitle(plugin: ViewPluginRegistration): string {
+    private getPluginTitle(plugin: Pick<ViewPluginRegistration, 'id' | 'title'>): string {
         return typeof plugin.title === 'string' && plugin.title.trim() !== '' ? plugin.title.trim() : plugin.id;
     }
 

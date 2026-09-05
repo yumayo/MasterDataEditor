@@ -103,7 +103,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     tab.connectEditorApi(editorApi);
     (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
 
-    const viewPluginHost = new ViewPluginHost(editorApi, notification);
+    const viewPluginHost = new ViewPluginHost(editorApi, store, notification);
     tab.connectViewPluginHost(viewPluginHost);
 
     const realSidebar = new Sidebar(
