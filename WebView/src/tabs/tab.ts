@@ -3358,7 +3358,9 @@ export class Tab {
         isNew: boolean,
         options: { loadingToken?: number; metadata?: UiStoredDiffTab | null; abortSignal?: AbortSignal } = {}
     ): Promise<void> {
-        if (options.abortSignal?.aborted === true) return;
+        // await中にも変化する中断状態を、確認のたびに読み直す。
+        const isAborted = (): boolean => options.abortSignal?.aborted === true;
+        if (isAborted()) return;
         const token = options.loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
         if (token === false) return;
 
@@ -3376,7 +3378,7 @@ export class Tab {
                 DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv),
                 applyStoredColumnWidthsToSchemaAsync(tableName, JSON.parse(schemaJson) as Record<string, unknown>),
             ]);
-            if (options.abortSignal?.aborted === true) {
+            if (isAborted()) {
                 const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
                 const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
                 if (finished && shouldRestoreExistingTab && this.tabButtons.includes(tabButton)) tabButton.click();
@@ -3431,7 +3433,7 @@ export class Tab {
         } catch (error: unknown) {
             const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
             const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
-            if (options.abortSignal?.aborted === true) {
+            if (isAborted()) {
                 if (finished && shouldRestoreExistingTab && this.tabButtons.includes(tabButton)) tabButton.click();
                 return;
             }

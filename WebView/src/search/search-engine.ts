@@ -68,7 +68,7 @@ export class SearchEngine {
         if (shouldAbort()) return [];
         const tableDataResults: TableSearchData[] = [];
         for (const loadedTable of loadedTables) {
-            if (loadedTable.error !== null) throw loadedTable.error;
+            if (loadedTable.data === null) throw loadedTable.error;
             tableDataResults.push(loadedTable.data);
         }
         const totalCells = Math.max(1, tableDataResults.reduce((sum, tableData) => {
