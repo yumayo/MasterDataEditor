@@ -28,6 +28,7 @@ export class BranchComparePanel {
     private readonly targetInput: BranchInput;
     private readonly suggestionsElement: HTMLElement;
     private readonly compareButton: HTMLButtonElement;
+    private readonly swapButton: HTMLButtonElement;
     private readonly statusElement: HTMLElement;
     private readonly notification: NotificationToast;
     private readonly resultsElement: HTMLElement;
@@ -92,6 +93,7 @@ export class BranchComparePanel {
         controls.appendChild(this.suggestionsElement);
 
         this.compareButton = document.createElement('button');
+        this.compareButton.type = 'button';
         this.compareButton.classList.add('branch-compare-button');
         this.compareButton.textContent = '比較';
         this.compareButton.disabled = true;
@@ -99,6 +101,36 @@ export class BranchComparePanel {
             this.compareAsync().catch((error: unknown) => { this.handleUnexpectedCompareError(error); });
         });
         controls.appendChild(this.compareButton);
+
+        this.swapButton = document.createElement('button');
+        this.swapButton.type = 'button';
+        this.swapButton.classList.add('branch-compare-swap-button');
+        this.swapButton.setAttribute('aria-label', '入れ替え');
+        this.swapButton.title = '比較元と比較先を入れ替える';
+        this.swapButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 13V3m-3 3 3-3 3 3M11 3v10m-3-3 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        this.swapButton.addEventListener('click', () => {
+            const baseValue = this.baseInput.value;
+            const baseRef = this.baseInput.getAttribute('data-selected-ref');
+            const targetRef = this.targetInput.getAttribute('data-selected-ref');
+            this.baseInput.value = this.targetInput.value;
+            this.targetInput.value = baseValue;
+            for (const [input, ref] of [[this.baseInput, targetRef], [this.targetInput, baseRef]] as const) {
+                input.title = input.value === '' ? input.placeholder : input.value;
+                if (ref === null) input.removeAttribute('data-selected-ref');
+                else input.setAttribute('data-selected-ref', ref);
+            }
+            this.invalidateResults(true);
+            this.persistState(false);
+            this.dismissSuggestions();
+            this.updateCompareButton();
+        });
+        this.baseInput.after(this.swapButton);
+        for (const button of [this.compareButton, this.swapButton]) {
+            // 候補を畳むのはclick時とし、mousedownのblurでボタンが動くことを防ぐ。
+            button.addEventListener('mousedown', (event: MouseEvent) => {
+                if (this.suggestionsElement.classList.contains('visible')) event.preventDefault();
+            });
+        }
 
         this.statusElement = document.createElement('div');
         this.statusElement.classList.add('branch-compare-status');
@@ -147,6 +179,8 @@ export class BranchComparePanel {
         label.classList.add('branch-compare-input-label');
         label.htmlFor = inputId;
         label.textContent = text;
+        // 関連付けは保持し、フォーカス開始は入力枠の操作だけに限定する。
+        label.addEventListener('click', (event: MouseEvent) => { event.preventDefault(); });
         return label;
     }
 
@@ -172,15 +206,14 @@ export class BranchComparePanel {
         });
         input.addEventListener('blur', () => { this.dismissSuggestions(); });
         input.addEventListener('input', () => {
-            const matched = this.resolveExactBranch(input);
+            this.resolveExactBranch(input);
             input.title = input.value === '' ? ariaLabel : input.value;
             this.invalidateResults(true);
             this.persistState(false);
             this.activeInput = input;
             this.selectedSuggestionIndex = -1;
             this.updateCompareButton();
-            if (matched) this.dismissSuggestions();
-            else this.renderSuggestions();
+            this.renderSuggestions();
         });
         input.addEventListener('keydown', (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
@@ -225,7 +258,7 @@ export class BranchComparePanel {
             for (const input of [this.baseInput, this.targetInput]) {
                 const selectedRef = input.getAttribute('data-selected-ref');
                 if (selectedRef === null) {
-                    if (this.resolveExactBranch(input) && this.activeInput === input) this.dismissSuggestions();
+                    this.resolveExactBranch(input);
                     continue;
                 }
                 const branch = this.branches.find(branch => branch.ref === selectedRef);
@@ -258,14 +291,13 @@ export class BranchComparePanel {
         }
     }
 
-    private resolveExactBranch(input: BranchInput): boolean {
+    private resolveExactBranch(input: BranchInput): void {
         input.removeAttribute('data-selected-ref');
-        if (!this.branchListLoaded) return false;
+        if (!this.branchListLoaded) return;
         const matches = this.branches.filter(branch => branch.name === input.value || branch.ref === input.value);
         // 同名のlocal/remoteブランチがある場合は候補からの明示選択を必要とする。
-        if (matches.length !== 1) return false;
+        if (matches.length !== 1) return;
         input.setAttribute('data-selected-ref', matches[0].ref);
-        return true;
     }
 
     private persistState(compared: boolean): void {
@@ -290,11 +322,9 @@ export class BranchComparePanel {
         this.baseInput.removeAttribute('aria-activedescendant');
         this.targetInput.removeAttribute('aria-activedescendant');
         input.setAttribute('aria-expanded', 'true');
-        this.suggestionsElement.style.left = input.offsetLeft + 'px';
-        this.suggestionsElement.style.top = input.offsetTop + input.offsetHeight + 'px';
-        this.suggestionsElement.style.width = input.offsetWidth + 'px';
+        input.after(this.suggestionsElement);
         const query = input.value.toLocaleLowerCase();
-        const matches = this.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query));
+        const matches = this.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query) || branch.ref.toLocaleLowerCase().includes(query));
         this.filteredBranches = [
             ...matches.filter(branch => branch.kind === 'local'),
             ...matches.filter(branch => branch.kind === 'remote'),
@@ -309,7 +339,12 @@ export class BranchComparePanel {
             this.appendSuggestionStatus('該当するブランチがありません');
             return;
         }
-        if (this.selectedSuggestionIndex === -1) this.selectedSuggestionIndex = 0;
+        if (this.selectedSuggestionIndex === -1) {
+            // 完全一致したrefを優先し、TabやEnterで別ブランチへ変わることを防ぐ。
+            const selectedRef = input.getAttribute('data-selected-ref');
+            const matchedIndex = this.filteredBranches.findIndex(branch => branch.ref === selectedRef);
+            this.selectedSuggestionIndex = matchedIndex === -1 ? 0 : matchedIndex;
+        }
 
         let renderedIndex = 0;
         for (const kind of ['local', 'remote'] as const) {
@@ -396,6 +431,7 @@ export class BranchComparePanel {
         const leftRef = this.baseInput.getAttribute('data-selected-ref');
         const rightRef = this.targetInput.getAttribute('data-selected-ref');
         this.compareButton.disabled = this.compareBusy || !this.branchListLoaded || leftRef === null || rightRef === null || leftRef === rightRef;
+        this.swapButton.disabled = this.compareBusy;
     }
 
     private async compareAsync(): Promise<void> {
@@ -409,7 +445,7 @@ export class BranchComparePanel {
         this.persistState(false);
         this.dismissSuggestions();
         this.compareBusy = true;
-        this.compareButton.disabled = true;
+        this.updateCompareButton();
         this.baseInput.disabled = true;
         this.targetInput.disabled = true;
         this.element.classList.add('branch-compare-busy');

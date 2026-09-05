@@ -467,6 +467,26 @@ test.describe('ブランチ比較パネル', () => {
         await expect(baseInput).toHaveAttribute('aria-expanded', 'false');
     });
 
+    test('比較元と比較先のラベルでは入力が反応せず入力枠のクリックで候補を開く', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        const inputs = page.locator('.branch-compare-controls input');
+        const suggestions = page.locator('.branch-compare-suggestions');
+        for (const inputId of ['branch-compare-base-input', 'branch-compare-target-input']) {
+            await page.locator(`label[for="${inputId}"]`).click();
+            for (const input of await inputs.all()) {
+                await expect(input).not.toBeFocused();
+                await expect(input).toHaveAttribute('aria-expanded', 'false');
+            }
+            await expect(suggestions).toBeHidden();
+            const input = page.locator(`#${inputId}`);
+            await input.click();
+            await expect(input).toBeFocused();
+            await expect(input).toHaveAttribute('aria-expanded', 'true');
+            await expect(suggestions).toBeVisible();
+            await page.locator('.branch-compare-panel .sidebar-panel-header').click();
+        }
+    });
+
     test('最小幅でも長いブランチ名とファイルpathの完全値を確認でき選択を明示する', async ({page}) => {
         const longBaseName = 'feature/very-long-common-prefix/source-branch';
         const longTargetName = 'origin/feature/very-long-common-prefix/target-branch';
@@ -595,11 +615,12 @@ test.describe('ブランチ比較パネル', () => {
         await expect(targetInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
     });
 
-    test('Tabでactive候補を確定して比較元から比較先、比較ボタンへフォーカスを進める', async ({page}) => {
+    test('Tabでactive候補を確定して比較元から入れ替え、比較先、比較ボタンへフォーカスを進める', async ({page}) => {
         await openBranchComparePanelAsync(page);
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
+        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const compareButton = page.locator('.branch-compare-button');
         const suggestions = page.locator('.branch-compare-suggestions');
 
@@ -608,6 +629,9 @@ test.describe('ブランチ比較パネル', () => {
         await baseInput.press('Tab');
         await expect(baseInput).toHaveValue('main');
         await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(swapButton).toBeFocused();
+        await expect(suggestions).toBeHidden();
+        await swapButton.press('Tab');
         await expect(targetInput).toBeFocused();
 
         await targetInput.fill('feature');
@@ -625,11 +649,15 @@ test.describe('ブランチ比較パネル', () => {
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
+        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const suggestions = page.locator('.branch-compare-suggestions');
 
         await targetInput.fill('feature');
         await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
         await targetInput.press('Shift+Tab');
+        await expect(swapButton).toBeFocused();
+        await expect(suggestions).toBeHidden();
+        await swapButton.press('Shift+Tab');
         await expect(baseInput).toBeFocused();
         await expect(targetInput).toHaveValue('feature');
         await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);
@@ -638,6 +666,9 @@ test.describe('ブランチ比較パネル', () => {
         await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(0);
         await expect(baseInput).not.toHaveAttribute('aria-activedescendant', /.+/);
         await baseInput.press('Tab');
+        await expect(swapButton).toBeFocused();
+        await expect(suggestions).toBeHidden();
+        await swapButton.press('Tab');
         await expect(targetInput).toBeFocused();
         await expect(baseInput).toHaveValue('該当しないブランチ');
         await expect(baseInput).not.toHaveAttribute('data-selected-ref', /.+/);
@@ -679,14 +710,31 @@ test.describe('ブランチ比較パネル', () => {
         await expect(compareButton).toBeDisabled();
     });
 
-    test('ブランチ名が完全一致すれば候補のクリックやTabなしで比較できる', async ({page}) => {
+    test('ブランチ名やrefが完全一致しても候補を開いたまま確定しTabで別候補に変えず比較できる', async ({page}) => {
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranches: MockBranch[]}).__mockGitBranches.unshift({name: 'main-backup', ref: 'refs/heads/main-backup', kind: 'local'});
+        });
         await openBranchComparePanelAsync(page);
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
+        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const compareButton = page.locator('.branch-compare-button');
+        const suggestions = page.locator('.branch-compare-suggestions');
         await baseInput.fill('main');
+        await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(baseInput).toHaveAttribute('aria-expanded', 'true');
+        await expect(suggestions.locator(`.branch-compare-suggestion[data-ref="${LEFT_REF}"]`)).toBeVisible();
+        await expect(suggestions.locator('.branch-compare-suggestion.selected')).toHaveAttribute('data-ref', LEFT_REF);
+        await baseInput.press('Tab');
+        await expect(baseInput).toHaveValue('main');
+        await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(swapButton).toBeFocused();
+        await swapButton.press('Tab');
+        await expect(targetInput).toBeFocused();
         await targetInput.fill('feature/orders');
         await expect(targetInput).toBeFocused();
+        await expect(targetInput).toHaveAttribute('aria-expanded', 'true');
+        await expect(suggestions.locator(`.branch-compare-suggestion[data-ref="${RIGHT_REF}"]`)).toBeVisible();
         await expect(compareButton).toBeEnabled();
         await compareButton.click();
         await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
@@ -699,10 +747,16 @@ test.describe('ブランチ比較パネル', () => {
         await expect(compareButton).toBeDisabled();
         await targetInput.fill('origin/main');
         await expect(targetInput).toHaveAttribute('data-selected-ref', 'refs/remotes/origin/main');
+        await expect(suggestions.locator('.branch-compare-suggestion[data-ref="refs/remotes/origin/main"]')).toBeVisible();
+        await expect(compareButton).toBeEnabled();
+        await targetInput.fill(RIGHT_REF);
+        await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
+        await expect(targetInput).toHaveAttribute('aria-expanded', 'true');
+        await expect(suggestions.locator(`.branch-compare-suggestion[data-ref="${RIGHT_REF}"]`)).toBeVisible();
         await expect(compareButton).toBeEnabled();
     });
 
-    test('候補取得前に入力した完全一致のブランチ名も取得完了時に確定する', async ({page}) => {
+    test('候補取得前に入力した完全一致のブランチ名も取得完了時に候補を開いたまま確定する', async ({page}) => {
         await page.evaluate(() => {
             (window as unknown as {__mockGitBranchListDelayMs: number}).__mockGitBranchListDelayMs = 1000;
         });
@@ -712,6 +766,73 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.branch-compare-button')).toBeDisabled();
         await expect(page.locator('.branch-compare-button')).toBeEnabled();
         await expect(page.locator('.branch-compare-target-input')).toBeFocused();
+        await expect(page.locator('.branch-compare-target-input')).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.locator(`.branch-compare-suggestion[data-ref="${RIGHT_REF}"]`)).toBeVisible();
+    });
+
+    test('入れ替えで旧結果を破棄して選択を保存し反転したrefで比較でき比較中は入れ替えを無効にする', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const compareButton = page.locator('.branch-compare-button');
+        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
+        await swapButton.click();
+        await expect(baseInput).toHaveValue('feature/orders');
+        await expect(baseInput).toHaveAttribute('title', 'feature/orders');
+        await expect(baseInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
+        await expect(targetInput).toHaveValue('main');
+        await expect(targetInput).toHaveAttribute('title', 'main');
+        await expect(targetInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
+        await expect(page.locator('.branch-compare-suggestions')).toBeHidden();
+        await expect(compareButton).toBeEnabled();
+        await expectSavedBranchCompareAsync(page, {baseRef: RIGHT_REF, targetRef: LEFT_REF, compared: false});
+        expect(await page.evaluate(() => (window as unknown as {__mockApiRequests: string[]}).__mockApiRequests.filter(type => type === 'git_branch_compare_request'))).toHaveLength(1);
+
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchCompareDelayMs: number}).__mockGitBranchCompareDelayMs = 1000;
+        });
+        await compareButton.click();
+        await expect(swapButton).toBeDisabled();
+        await expect(baseInput).toBeDisabled();
+        await expect(targetInput).toBeDisabled();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await expect(swapButton).toBeEnabled();
+        await expectSavedBranchCompareAsync(page, {baseRef: RIGHT_REF, targetRef: LEFT_REF, compared: true});
+        const compareRequests = await page.evaluate(() => {
+            const details = (window as unknown as {__mockApiRequestDetails: Array<Record<string, string | null>>}).__mockApiRequestDetails;
+            return details.filter(detail => detail.type === 'git_branch_compare_request');
+        });
+        expect(compareRequests).toMatchObject([{leftRef: LEFT_REF, rightRef: RIGHT_REF}, {leftRef: RIGHT_REF, rightRef: LEFT_REF}]);
+    });
+
+    test('未確定の入力や片側が空でも入れ替えて確定refを対応する入力へ移す', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const compareButton = page.locator('.branch-compare-button');
+        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
+        await targetInput.fill('feature');
+        await swapButton.click();
+        await expect(baseInput).toHaveValue('feature');
+        await expect(baseInput).toHaveAttribute('title', 'feature');
+        await expect(baseInput).not.toHaveAttribute('data-selected-ref', /.+/);
+        await expect(targetInput).toHaveValue('main');
+        await expect(targetInput).toHaveAttribute('title', 'main');
+        await expect(targetInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(compareButton).toBeDisabled();
+        await expectSavedBranchCompareAsync(page, {baseRef: null, targetRef: LEFT_REF, compared: false});
+
+        await baseInput.fill('');
+        await swapButton.click();
+        await expect(baseInput).toHaveValue('main');
+        await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
+        await expect(targetInput).toHaveValue('');
+        await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);
+        await expect(compareButton).toBeDisabled();
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_REF, targetRef: null, compared: false});
     });
 
     test('localとremoteの表示名が重複する場合は完全一致しても明示選択が必要', async ({page}) => {
