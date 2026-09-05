@@ -460,6 +460,23 @@ export async function installMockApiAsync(
                     return;
                 }
 
+                if (type === "git_cell_blame_request") {
+                    const cellWindow = window as unknown as {
+                        __mockGitCellBlame?: Record<string, Record<string, Array<{lineNumber: number; columnName: string}>>>;
+                        __mockGitCellBlameRequests?: unknown[];
+                        __mockGitCellBlameDelayMs?: number;
+                    };
+                    (cellWindow.__mockGitCellBlameRequests ??= []).push(request);
+                    const entries = cellWindow.__mockGitCellBlame?.[request.commit as string]?.[request.filename as string];
+                    const cells = request.cells as Array<{lineNumber: number; columnName: string}>;
+                    const response = entries === undefined
+                        ? {type: "git_cell_blame_response", requestId, success: false, error: "cell history not available"}
+                        : {type: "git_cell_blame_response", requestId, success: true, data: entries.filter(entry => cells.some(cell => cell.lineNumber === entry.lineNumber && cell.columnName === entry.columnName))};
+                    if (cellWindow.__mockGitCellBlameDelayMs) window.setTimeout(() => dispatch(response), cellWindow.__mockGitCellBlameDelayMs);
+                    else dispatch(response);
+                    return;
+                }
+
                 // git log: __mockGitLog[filename] のモックデータを返す
                 if (type === "git_log_request") {
                     const filename = request.filename as string;

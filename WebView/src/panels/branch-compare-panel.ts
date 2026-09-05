@@ -1,7 +1,7 @@
-import {gitBlameAsync, gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
+import {gitCellBlameAsync, gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
 import type {UiStateStore, UiStoredBranchCompareDiffTab} from '../app/ui-state';
-import type {DiffTab, DiffChangedRow} from '../tabs/diff-tab';
+import type {DiffTab, DiffChangedCell} from '../tabs/diff-tab';
 import type {NotificationToast} from '../ui/notification';
 
 type BranchInput = HTMLInputElement;
@@ -11,10 +11,11 @@ interface BranchCompareFileView {
     leftCommit: string;
     rightCommit: string;
     item: HTMLElement;
-    rowsElement: HTMLElement;
+    cellsElement: HTMLElement;
     diffTab: DiffTab | null;
-    rows: DiffChangedRow[];
-    openDiff: (row?: DiffChangedRow) => void;
+    cells: DiffChangedCell[];
+    buttons: Map<string, HTMLButtonElement>;
+    openDiff: (cell?: DiffChangedCell) => void;
 }
 
 /**
@@ -44,6 +45,7 @@ export class BranchComparePanel {
     private compareBusy: boolean;
     private fileOpenController: AbortController | false;
     private readonly fileViews: BranchCompareFileView[] = [];
+    private activeCellButton: HTMLButtonElement | null = null;
 
     constructor(tab: Tab, uiStateStore: UiStateStore, notification: NotificationToast) {
         this.tab = tab;
@@ -488,7 +490,7 @@ export class BranchComparePanel {
         status.textContent = file.status;
         title.appendChild(status);
 
-        const openDiff = (row?: DiffChangedRow): void => {
+        const openDiff = (cell?: DiffChangedCell): void => {
             this.element.querySelectorAll('.branch-compare-file-item-active').forEach(element => {
                 element.classList.remove('branch-compare-file-item-active');
                 element.setAttribute('aria-current', 'false');
@@ -499,7 +501,7 @@ export class BranchComparePanel {
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
-            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal, row)
+            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal, cell)
                 .then(() => {
                     if (this.fileOpenController !== controller || controller.signal.aborted) return;
                     this.fileOpenController = false;
@@ -522,17 +524,18 @@ export class BranchComparePanel {
             openDiff();
         });
         group.appendChild(item);
-        const rowsElement = document.createElement('div');
-        rowsElement.classList.add('branch-compare-rows');
-        rowsElement.setAttribute('role', 'group');
-        rowsElement.setAttribute('aria-label', file.tableName + 'の変更行');
-        group.appendChild(rowsElement);
-        this.fileViews.push({file, leftCommit, rightCommit, item, rowsElement, diffTab: null, rows: [], openDiff});
+        const cellsElement = document.createElement('div');
+        cellsElement.classList.add('branch-compare-cells');
+        cellsElement.setAttribute('role', 'group');
+        cellsElement.setAttribute('aria-label', file.tableName + 'の変更セル');
+        group.appendChild(cellsElement);
+        this.fileViews.push({file, leftCommit, rightCommit, item, cellsElement, diffTab: null, cells: [], buttons: new Map(), openDiff});
         return group;
     }
 
     private syncDiffSelection(metadata: UiStoredBranchCompareDiffTab | null, diffTab: DiffTab | null): void {
         const selected = diffTab?.getSelectedCell();
+        let selectedButton: HTMLButtonElement | null = null;
         for (const view of this.fileViews) {
             const active = metadata !== null && diffTab !== null && metadata.gitPath === view.file.path
                 && metadata.leftCommit === view.leftCommit && metadata.rightCommit === view.rightCommit;
@@ -540,77 +543,83 @@ export class BranchComparePanel {
             view.item.setAttribute('aria-current', String(active));
             if (active && view.diffTab !== diffTab) {
                 view.diffTab = diffTab;
-                view.rows = diffTab.getChangedRows();
-                this.renderChangedRows(view);
+                view.cells = diffTab.getChangedCells();
+                this.renderChangedCells(view);
             }
-            for (const button of view.rowsElement.querySelectorAll<HTMLButtonElement>('.branch-compare-row-item')) {
-                const row = view.rows[Number(button.dataset.index)];
-                const isSelected = active && selected != null && selected.row === row.row;
-                const wasSelected = button.classList.contains('branch-compare-row-item-active');
-                button.classList.toggle('branch-compare-row-item-active', isSelected);
-                button.setAttribute('aria-current', String(isSelected));
-                const position = button.querySelector<HTMLElement>('.branch-compare-row-position');
-                const columnIndex = isSelected ? row.columns.indexOf(selected.column) : -1;
-                if (position !== null) position.textContent = columnIndex >= 0 ? `${columnIndex + 1}/${row.columns.length}` : `${row.columns.length}箇所`;
-                if (isSelected && !wasSelected && this.isVisible()) button.scrollIntoView({block: 'nearest'});
-            }
+            if (active && selected != null) selectedButton = view.buttons.get(`${selected.row}:${selected.column}`) ?? null;
         }
+        this.selectCellButton(selectedButton);
     }
 
-    private renderChangedRows(view: BranchCompareFileView): void {
-        view.rowsElement.replaceChildren();
+    private selectCellButton(button: HTMLButtonElement | null): void {
+        if (this.activeCellButton === button) return;
+        this.activeCellButton?.classList.remove('branch-compare-cell-item-active');
+        this.activeCellButton?.setAttribute('aria-current', 'false');
+        this.activeCellButton = button;
+        button?.classList.add('branch-compare-cell-item-active');
+        button?.setAttribute('aria-current', 'true');
+        if (button !== null && this.isVisible()) button.scrollIntoView({block: 'nearest'});
+    }
+
+    private renderChangedCells(view: BranchCompareFileView): void {
+        view.cellsElement.replaceChildren();
+        view.buttons.clear();
         const fragment = document.createDocumentFragment();
-        for (const [index, row] of view.rows.entries()) {
+        for (const cell of view.cells) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.classList.add('branch-compare-row-item');
-            button.dataset.index = String(index);
-            button.dataset.row = String(row.row);
-            button.dataset.status = row.status;
+            button.classList.add('branch-compare-cell-item');
+            button.dataset.row = String(cell.row);
+            button.dataset.column = cell.columnName;
+            button.dataset.status = cell.status;
             button.setAttribute('aria-current', 'false');
-            const number = document.createElement('span');
-            number.classList.add('branch-compare-row-number');
-            number.textContent = `${row.row}行`;
-            button.appendChild(number);
+            const location = document.createElement('span');
+            location.classList.add('branch-compare-cell-location');
+            location.textContent = `${cell.row}L:${cell.columnName}`;
+            button.title = location.textContent;
+            button.appendChild(location);
             const author = document.createElement('span');
-            author.classList.add('branch-compare-row-author');
+            author.classList.add('branch-compare-cell-author');
             author.textContent = '変更者を取得中…';
             button.appendChild(author);
-            const position = document.createElement('span');
-            position.classList.add('branch-compare-row-position');
-            position.textContent = `${row.columns.length}箇所`;
-            button.appendChild(position);
-            button.addEventListener('click', () => { view.openDiff(row); });
+            button.addEventListener('click', () => { view.openDiff(cell); });
             button.addEventListener('keydown', (event: KeyboardEvent) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
                 event.preventDefault();
                 event.stopPropagation();
-                view.openDiff(row);
+                view.openDiff(cell);
             });
+            view.buttons.set(`${cell.row}:${cell.column}`, button);
             fragment.appendChild(button);
         }
-        view.rowsElement.appendChild(fragment);
-        void this.loadRowAuthorsAsync(view);
+        view.cellsElement.appendChild(fragment);
+        void this.loadCellAuthorsAsync(view);
     }
 
-    private async loadRowAuthorsAsync(view: BranchCompareFileView): Promise<void> {
+    private async loadCellAuthorsAsync(view: BranchCompareFileView): Promise<void> {
         const renderedDiff = view.diffTab;
-        const sides = [...new Set(view.rows.map(row => row.side))];
-        const results = await Promise.allSettled(sides.map(side => gitBlameAsync(view.file.path, side === 'left' ? view.leftCommit : view.rightCommit)));
-        if (!view.rowsElement.isConnected || view.diffTab !== renderedDiff) return;
+        if (renderedDiff === null) return;
+        const sides = [...new Set(view.cells.map(cell => cell.side))];
+        const results = await Promise.allSettled(sides.map(side => gitCellBlameAsync(
+            view.file.path,
+            side === 'left' ? view.leftCommit : view.rightCommit,
+            renderedDiff.getPrimaryKeyColumns(),
+            view.cells.filter(cell => cell.side === side).map(cell => ({lineNumber: cell.lineNumber, columnName: cell.columnName})),
+        )));
+        if (!view.cellsElement.isConnected || view.diffTab !== renderedDiff) return;
         for (const [sideIndex, side] of sides.entries()) {
             const result = results[sideIndex];
-            const entries = new Map(result.status === 'fulfilled' ? result.value.map(entry => [entry.lineNumber, entry]) : []);
-            for (const button of view.rowsElement.querySelectorAll<HTMLButtonElement>('.branch-compare-row-item')) {
-                const row = view.rows[Number(button.dataset.index)];
-                if (row.side !== side) continue;
-                const entry = entries.get(row.lineNumber);
-                const author = button.querySelector<HTMLElement>('.branch-compare-row-author');
+            const entries = new Map(result.status === 'fulfilled' ? result.value.map(entry => [JSON.stringify([entry.lineNumber, entry.columnName]), entry]) : []);
+            for (const cell of view.cells) {
+                if (cell.side !== side) continue;
+                const button = view.buttons.get(`${cell.row}:${cell.column}`);
+                if (button === undefined) continue;
+                const entry = entries.get(JSON.stringify([cell.lineNumber, cell.columnName]));
+                const author = button.querySelector<HTMLElement>('.branch-compare-cell-author');
                 if (author !== null) author.textContent = entry?.author || '変更者不明';
                 const sourceLabel = side === 'left' ? '比較元の最終変更者' : '比較先の最終変更者';
-                button.title = `${row.row}行（元CSV ${row.lineNumber}行）\n${sourceLabel}: ${entry?.author || '取得できませんでした'}`
-                    + (entry === undefined ? '' : `\n${entry.date}\n${entry.commitMessage}`)
-                    + '\nクリックするたびに次の変更セルへ移動';
+                button.title = `${cell.row}L:${cell.columnName}（元CSV ${cell.lineNumber}行）\n${sourceLabel}: ${entry?.author || '履歴から特定できませんでした'}`
+                    + (entry === undefined ? '' : `\n${entry.date}\n${entry.commitHash}\n${entry.commitMessage}`);
             }
         }
     }
@@ -625,6 +634,7 @@ export class BranchComparePanel {
             this.targetInput.disabled = false;
         }
         this.cancelFileOpen(false);
+        this.selectCellButton(null);
         this.fileViews.length = 0;
         this.resultsElement.replaceChildren();
         this.resultsElement.setAttribute('aria-busy', 'false');
@@ -639,6 +649,7 @@ export class BranchComparePanel {
             this.statusElement.textContent = '';
         }
         if (clearSelection) {
+            this.selectCellButton(null);
             this.element.querySelectorAll('.branch-compare-file-item-active').forEach(element => {
                 element.classList.remove('branch-compare-file-item-active');
                 element.setAttribute('aria-current', 'false');

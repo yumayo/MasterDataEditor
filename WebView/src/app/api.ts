@@ -410,6 +410,20 @@ export interface BlameEntry {
     commitMessage: string;
 }
 
+export interface CellBlameTarget {
+    lineNumber: number;
+    columnName: string;
+}
+
+export interface CellBlameEntry extends BlameEntry {
+    columnName: string;
+}
+
+/** 固定コミットのCSVセルを主キー＋列名で遡り、各セルの最終変更コミットを返す。 */
+export async function gitCellBlameAsync(filename: string, commit: string, primaryKey: readonly string[], cells: CellBlameTarget[]): Promise<CellBlameEntry[]> {
+    return postMessageAsync<CellBlameEntry[]>('git_cell_blame', {filename, commit, primaryKey, cells});
+}
+
 /** git log の1コミット分のエントリ */
 export interface LogEntry {
     commitHash: string;
@@ -453,6 +467,7 @@ export async function gitShowAtCommitAsync(commit: string, path: string): Promis
 let nextRequestId = 1;
 
 function getRequestTimeoutMs(apiName: string): number {
+    if (apiName === 'git_cell_blame') return 120000;
     if (apiName === 'git_show' || apiName === 'git_show_at_commit' || apiName === 'git_branch_compare' || apiName === 'read_file') return 60000;
     return 10000;
 }

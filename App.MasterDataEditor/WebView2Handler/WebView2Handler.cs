@@ -330,6 +330,10 @@ public class WebView2Handler : IDisposable
 							RunRequestInBackground(root, requestId, WebView2HandlerGitBlameRequest.Invoke);
 							break;
 
+						case "git_cell_blame_request":
+							RunRequestInBackground(root, requestId, WebView2HandlerGitCellBlameRequest.Invoke);
+							break;
+
 						case "git_log_request":
 							RunRequestInBackground(root, requestId, WebView2HandlerGitLogRequest.Invoke);
 							break;

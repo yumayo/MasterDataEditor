@@ -26,7 +26,7 @@ import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
 import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail} from "../settings/settings-schema";
-import {DiffTab, type DiffChangedRow} from "./diff-tab";
+import {DiffTab, type DiffChangedCell} from "./diff-tab";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "../ui/notification";
@@ -3015,15 +3015,15 @@ export class Tab {
      * ブランチ比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
      * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
      */
-    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, targetRow?: DiffChangedRow): Promise<void> {
+    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, targetCell?: DiffChangedCell): Promise<void> {
         const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
         const existing = this.diffTabs.get(diffTabName);
         const existingMetadata = this.diffTabMetadata.get(diffTabName);
-        if (targetRow !== undefined && existing !== undefined && existingMetadata?.kind === 'branchCompare'
+        if (targetCell !== undefined && existing !== undefined && existingMetadata?.kind === 'branchCompare'
             && existingMetadata.leftCommit === leftCommit && existingMetadata.rightCommit === rightCommit
             && existingMetadata.gitPath === file.path && !this.diffLoadingTokens.has(diffTabName) && !abortSignal.aborted) {
             this.tabButtons.find(button => button.name === diffTabName)?.click();
-            existing.jumpToChangedRow(targetRow);
+            existing.jumpToChangedCell(targetCell);
             return;
         }
         const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, abortSignal);
@@ -3045,8 +3045,8 @@ export class Tab {
             diffTabName, file.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv, file.path,
             leftLabel, rightLabel, file.status === 'A', {metadata, abortSignal}
         );
-        if (targetRow !== undefined && !abortSignal.aborted && this.activeTabName === diffTabName) {
-            this.diffTabs.get(diffTabName)?.jumpToChangedRow(targetRow);
+        if (targetCell !== undefined && !abortSignal.aborted && this.activeTabName === diffTabName) {
+            this.diffTabs.get(diffTabName)?.jumpToChangedCell(targetCell);
         }
     }
 

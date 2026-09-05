@@ -24,10 +24,11 @@ import DiffBuildWorker from "../diff/diff-worker?worker&inline";
 import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
 
-export interface DiffChangedRow {
+export interface DiffChangedCell {
     /** 表示グリッドと同じ1始まりの行番号・列番号。 */
     row: number;
-    columns: number[];
+    column: number;
+    columnName: string;
     side: 'left' | 'right';
     status: 'A' | 'M' | 'D';
     /** ヘッダーを含む元CSVの行番号（git blameとの照合用）。 */
@@ -201,6 +202,7 @@ export class DiffTab {
     private selectionChangeListener: (() => void) | null = null;
     private selectedCell: DiffCellSelection | null = null;
     private selectionSide: 'left' | 'right' | null = null;
+    private readonly primaryKeyColumns: readonly string[];
     private readonly leftOriginalRowIndices: Int32Array;
     private readonly rightOriginalRowIndices: Int32Array;
 
@@ -373,6 +375,7 @@ export class DiffTab {
             leftTableKey, schemaJson, leftCsv, leftRowSourceIndices,
             leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar, notification, largeFileSettings
         );
+        this.primaryKeyColumns = leftResult.tableData.primaryKeyColumns;
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
         this.leftHistory = leftResult.history;
@@ -884,39 +887,43 @@ export class DiffTab {
         return this.selectedCell;
     }
 
-    /** DOM外の仮想行も含め、表示できる変更セルを行単位で収集する。 */
-    getChangedRows(): DiffChangedRow[] {
+    getPrimaryKeyColumns(): readonly string[] {
+        return this.primaryKeyColumns;
+    }
+
+    /** DOM外の仮想行も含め、表示列順で変更セルを収集する。 */
+    getChangedCells(): DiffChangedCell[] {
         const leftRows = this.leftEditorTable.getStore().getRows(this.leftTableKey);
         const rightRows = this.rightEditorTable.getStore().getRows(this.rightTableKey);
         if (leftRows === false || rightRows === false) return [];
-        const result: DiffChangedRow[] = [];
+        const result: DiffChangedCell[] = [];
         for (let index = 0; index < this.leftEditorTable.getLogicalRowCount() - 1; index++) {
             const deleted = this.leftRowClasses.get(index)?.includes('diff-row-deleted') === true;
             const added = this.rightAddedRows.has(index);
             const left = leftRows[this.leftEditorTable.resolveStoreRowIndex(index)];
             const right = rightRows[this.rightEditorTable.resolveStoreRowIndex(index)];
-            const columns: number[] = [];
-            for (const [domColumn, csvColumn] of this.domIndexToCsvIndex) {
-                if (deleted || added || (left?.[csvColumn] ?? '') !== (right?.[csvColumn] ?? '')) columns.push(domColumn + 1);
-            }
-            if (columns.length === 0) continue;
             const sourceIndex = (deleted ? this.leftOriginalRowIndices : this.rightOriginalRowIndices)[index];
-            result.push({row: index + 1, columns, side: deleted ? 'left' : 'right', status: deleted ? 'D' : added ? 'A' : 'M', lineNumber: sourceIndex + 2});
+            for (const [domColumn, csvColumn] of this.domIndexToCsvIndex) {
+                if (!deleted && !added && (left?.[csvColumn] ?? '') === (right?.[csvColumn] ?? '')) continue;
+                result.push({
+                    row: index + 1,
+                    column: domColumn + 1,
+                    columnName: this.leftEditorTable.getColumnHeaderValue(domColumn),
+                    side: deleted ? 'left' : 'right',
+                    status: deleted ? 'D' : added ? 'A' : 'M',
+                    lineNumber: sourceIndex + 2,
+                });
+            }
         }
         return result;
     }
 
-    /** 同じ行では現在の選択列の次へ進み、末尾から先頭へ戻る。 */
-    jumpToChangedRow(row: DiffChangedRow): void {
-        const current = this.selectedCell;
-        const column = current?.row === row.row
-            ? row.columns.find(column => column > current.column) ?? row.columns[0]
-            : row.columns[0];
-        if (column === undefined) return;
-        const side = current?.row === row.row && row.status === 'M' ? current.side : row.side;
+    /** 一覧の項目が表すセルを直接選択する。変更セルでは操作中のペインを維持する。 */
+    jumpToChangedCell(cell: DiffChangedCell): void {
+        const side = cell.status === 'M' ? this.selectedCell?.side ?? cell.side : cell.side;
         const table = side === 'left' ? this.leftEditorTable : this.rightEditorTable;
         this.activateHandler(table);
-        table.getSelection().moveAndClearRange(row.row, column);
+        table.getSelection().moveAndClearRange(cell.row, cell.column);
         table.getSelection().scrollFocusToCenterVertically();
     }
 
