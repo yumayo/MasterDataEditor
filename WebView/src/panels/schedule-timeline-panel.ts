@@ -5,6 +5,7 @@ import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
 import type {UiScrollPosition, UiStateStore} from "../app/ui-state";
 import {appendHighlightedSegments, fuzzyMatch} from "../search/fuzzy-search";
+import type {NotificationToast} from "../ui/notification";
 
 type ScheduleKind = 'begin' | 'end';
 
@@ -47,6 +48,7 @@ export class ScheduleTimelinePanel {
     private readonly store: InMemoryTableStore;
     private readonly onNavigate: ScheduleTimelineNavigate;
     private readonly uiStateStore: UiStateStore;
+    private readonly notification: NotificationToast;
     private readonly collapsedDates: Set<string>;
     private readonly dateGroups = new Map<string, ScheduleTimelineDateGroup>();
     private readonly tableDateKeys = new Map<string, Set<string>>();
@@ -60,10 +62,12 @@ export class ScheduleTimelinePanel {
         store: InMemoryTableStore,
         onNavigate: ScheduleTimelineNavigate,
         uiStateStore: UiStateStore,
+        notification: NotificationToast,
     ) {
         this.store = store;
         this.onNavigate = onNavigate;
         this.uiStateStore = uiStateStore;
+        this.notification = notification;
         const storedState = this.uiStateStore.getState().sidebar.scheduleTimeline;
         this.collapsedDates = new Set(storedState.collapsedDates);
         this.scrollPosition = storedState.scroll;
@@ -136,7 +140,6 @@ export class ScheduleTimelinePanel {
         this.element.classList.add('sidebar-panel-active');
         this.refreshAsync().catch((e: unknown) => {
             console.error('[ScheduleTimelinePanel] refresh failed:', e);
-            this.renderMessage('予定日の読み込みに失敗しました');
         });
     }
 
@@ -157,9 +160,16 @@ export class ScheduleTimelinePanel {
         const currentRequestId = ++this.requestId;
         const scrollToRestore = this.scrollPosition;
         this.renderMessage('読み込み中...');
-        await this.rebuildScheduleIndexAsync();
-        if (currentRequestId !== this.requestId) return;
-        this.renderGroups(this.getSortedGroups(), scrollToRestore);
+        try {
+            await this.rebuildScheduleIndexAsync();
+            if (currentRequestId !== this.requestId) return;
+            this.renderGroups(this.getSortedGroups(), scrollToRestore);
+        } catch (error: unknown) {
+            if (currentRequestId !== this.requestId) return;
+            this.contentElement.replaceChildren();
+            console.error('[ScheduleTimelinePanel] refresh failed:', error);
+            this.notification.show('予定日の読み込みに失敗しました', 'error');
+        }
     }
 
     private async rebuildScheduleIndexAsync(): Promise<void> {

@@ -1,6 +1,7 @@
 import {gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
 import type {UiStateStore} from '../app/ui-state';
+import type {NotificationToast} from '../ui/notification';
 
 type BranchInput = HTMLInputElement;
 
@@ -15,7 +16,7 @@ export class BranchComparePanel {
     private readonly suggestionsElement: HTMLElement;
     private readonly compareButton: HTMLButtonElement;
     private readonly statusElement: HTMLElement;
-    private readonly errorElement: HTMLElement;
+    private readonly notification: NotificationToast;
     private readonly resultsElement: HTMLElement;
     private readonly tab: Tab;
     private readonly uiStateStore: UiStateStore;
@@ -31,9 +32,10 @@ export class BranchComparePanel {
     private compareBusy: boolean;
     private fileOpenController: AbortController | false;
 
-    constructor(tab: Tab, uiStateStore: UiStateStore) {
+    constructor(tab: Tab, uiStateStore: UiStateStore, notification: NotificationToast) {
         this.tab = tab;
         this.uiStateStore = uiStateStore;
+        this.notification = notification;
         const storedState = uiStateStore.getState().sidebar.branchCompare;
         this.restoreComparisonPending = storedState.compared;
         this.branches = [];
@@ -87,12 +89,6 @@ export class BranchComparePanel {
         this.statusElement.classList.add('branch-compare-status');
         this.statusElement.setAttribute('aria-live', 'polite');
         controls.appendChild(this.statusElement);
-
-        this.errorElement = document.createElement('div');
-        this.errorElement.classList.add('branch-compare-error');
-        this.errorElement.setAttribute('role', 'alert');
-        this.errorElement.hidden = true;
-        controls.appendChild(this.errorElement);
 
         this.resultsElement = document.createElement('div');
         this.resultsElement.classList.add('branch-compare-results');
@@ -235,8 +231,9 @@ export class BranchComparePanel {
             this.branchListFailed = true;
             this.branchListLoaded = false;
             this.updateCompareButton();
-            if (this.canRenderSuggestions()) this.renderSuggestions();
-            throw error;
+            this.dismissSuggestions();
+            this.showOperationError(error);
+            return;
         }
         if (this.restoreComparisonPending) {
             this.restoreComparisonPending = false;
@@ -263,7 +260,7 @@ export class BranchComparePanel {
     }
 
     private renderSuggestions(): void {
-        if (!this.canRenderSuggestions()) {
+        if (!this.canRenderSuggestions() || this.branchListFailed) {
             this.dismissSuggestions();
             return;
         }
@@ -287,10 +284,6 @@ export class BranchComparePanel {
         ];
         if (this.selectedSuggestionIndex >= this.filteredBranches.length) this.selectedSuggestionIndex = -1;
 
-        if (this.branchListFailed) {
-            this.appendSuggestionStatus('ブランチ候補を取得できませんでした');
-            return;
-        }
         if (!this.branchListLoaded) {
             this.appendSuggestionStatus('読み込み中…');
             return;
@@ -405,12 +398,10 @@ export class BranchComparePanel {
         this.element.classList.add('branch-compare-busy');
         this.resultsElement.setAttribute('aria-busy', 'true');
         this.statusElement.textContent = '比較中…';
-        this.errorElement.hidden = true;
         try {
             const result = await gitBranchCompareAsync(leftRef, rightRef);
             if (requestId !== this.compareRequestId) return;
             this.resultsElement.replaceChildren();
-            this.errorElement.hidden = true;
             if (result.files.length === 0) {
                 const empty = document.createElement('div');
                 empty.classList.add('branch-compare-empty-message');
@@ -424,7 +415,7 @@ export class BranchComparePanel {
         } catch (error: unknown) {
             if (requestId !== this.compareRequestId) return;
             this.resultsElement.replaceChildren();
-            this.setOperationError(error);
+            this.showOperationError(error);
         }
         if (requestId !== this.compareRequestId) return;
         this.compareBusy = false;
@@ -466,12 +457,11 @@ export class BranchComparePanel {
         openFileButton.addEventListener('click', (event: MouseEvent) => {
             event.stopPropagation();
             this.cancelFileOpen(true);
-            this.errorElement.hidden = true;
             this.tab.openTableAsync(file.tableName)
                 .then(opened => {
-                    if (!opened) this.setOperationError(new Error('実テーブル「' + file.tableName + '」を開けませんでした。'));
+                    if (!opened) this.showOperationError(new Error('実テーブル「' + file.tableName + '」を開けませんでした。'));
                 })
-                .catch((error: unknown) => { this.setOperationError(error); });
+                .catch((error: unknown) => { this.showOperationError(error); });
         });
         title.appendChild(openFileButton);
 
@@ -491,7 +481,6 @@ export class BranchComparePanel {
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
-            this.errorElement.hidden = true;
             this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal)
                 .then(() => {
                     if (this.fileOpenController !== controller || controller.signal.aborted) return;
@@ -504,7 +493,7 @@ export class BranchComparePanel {
                     this.fileOpenController = false;
                     this.resultsElement.setAttribute('aria-busy', 'false');
                     this.statusElement.textContent = '';
-                    this.setOperationError(error);
+                    this.showOperationError(error);
                 });
         };
         item.addEventListener('click', openDiff);
@@ -530,7 +519,6 @@ export class BranchComparePanel {
         this.resultsElement.replaceChildren();
         this.resultsElement.setAttribute('aria-busy', 'false');
         this.statusElement.textContent = '';
-        this.errorElement.hidden = true;
     }
 
     private cancelFileOpen(clearSelection: boolean): void {
@@ -548,9 +536,8 @@ export class BranchComparePanel {
         }
     }
 
-    private setOperationError(error: unknown): void {
-        this.errorElement.textContent = error instanceof Error ? error.message : String(error);
-        this.errorElement.hidden = false;
+    private showOperationError(error: unknown): void {
+        this.notification.show(error instanceof Error ? error.message : String(error), 'error');
     }
 
     private handleUnexpectedCompareError(error: unknown): void {
@@ -560,7 +547,7 @@ export class BranchComparePanel {
         this.baseInput.disabled = false;
         this.targetInput.disabled = false;
         this.statusElement.textContent = '';
-        this.setOperationError(error);
+        this.showOperationError(error);
         this.updateCompareButton();
     }
 }

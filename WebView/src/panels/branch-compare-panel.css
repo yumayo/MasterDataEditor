@@ -78,8 +78,7 @@
 
 .branch-compare-suggestion-empty,
 .branch-compare-empty-message,
-.branch-compare-status,
-.branch-compare-error {
+.branch-compare-status {
     padding: 6px 8px;
     color: var(--secondary-font-color);
     font-size: 11px;
@@ -91,10 +90,6 @@
     block-size: 0;
     padding: 0;
     overflow: hidden;
-}
-
-.branch-compare-error {
-    color: var(--error-color);
 }
 
 .branch-compare-button {

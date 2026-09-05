@@ -281,7 +281,7 @@ export class FormPanel {
             this.nodeElementsById.clear();
             this.nodeMetaById.clear();
             this.nodeRenderRequestIds.clear();
-            nextContent.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
+            nextContent.replaceChildren();
             this.replaceContentIfCurrent(content, nextContent, requestId);
             console.error('[FormPanel] renderCurrentPageAsync failed:', err);
             this.notification.show('フォームの表示に失敗しました');
@@ -379,7 +379,7 @@ export class FormPanel {
             }
         } catch (err) {
             if (!this.isNodeRenderCurrent(nodeId, nodeRequestId, requestId)) return;
-            node.replaceChildren(this.buildMessage('エラーが発生しました', 'form-panel-error'));
+            node.replaceChildren();
             console.error('[FormPanel] renderNodeIntoAsync failed:', err);
             this.notification.show('フォームの表示に失敗しました');
         }
@@ -1096,8 +1096,9 @@ export class FormPanel {
         } catch (err) {
             if (requestId !== this.currentRequestId) return;
             referencesContainer?.classList.remove('form-panel-references--empty');
-            body.replaceChildren(this.buildMessage('参照一覧の取得に失敗しました', 'form-panel-section-empty'));
+            body.replaceChildren();
             console.error('[FormPanel] renderReferencesAsync failed:', err);
+            this.notification.show('参照一覧の取得に失敗しました', 'error');
         }
     }
 

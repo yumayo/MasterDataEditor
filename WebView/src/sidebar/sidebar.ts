@@ -18,6 +18,7 @@ import {MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH} from "../core/constant";
 import {ResizeHandle} from "../ui/resize-handle";
 import {consumeSuppressedSelfSaveGitRefresh, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
 import type {UiStateStore, UiStoredDiffTab} from "../app/ui-state";
+import type {NotificationToast} from "../ui/notification";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -50,6 +51,7 @@ export class Sidebar {
         store: InMemoryTableStore,
         uiStateStore: UiStateStore,
         viewPluginHost: ViewPluginHost,
+        notification: NotificationToast,
     ) {
         this.explorerElement = explorerElement;
         this.tab = tab;
@@ -107,6 +109,7 @@ export class Sidebar {
                     .catch(e => { console.error('予定日タイムラインジャンプ失敗', e); });
             },
             this.uiStateStore,
+            notification,
         );
         this.scheduleTimelinePanel.appendTo(sidebarContent);
 
@@ -123,7 +126,7 @@ export class Sidebar {
         this.sourceControlPanel.appendTo(sidebarContent);
 
         // ブランチ比較パネル（比較時点のSHA同士で読み取り専用差分を開く）
-        this.branchComparePanel = new BranchComparePanel(tab, uiStateStore);
+        this.branchComparePanel = new BranchComparePanel(tab, uiStateStore, notification);
         this.branchComparePanel.appendTo(sidebarContent);
 
         // タイムラインパネル（git logベースのコミット履歴を表示する）

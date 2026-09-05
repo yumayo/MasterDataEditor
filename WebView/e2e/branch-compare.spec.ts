@@ -291,9 +291,9 @@ test.describe('ブランチ比較パネル', () => {
         });
         await openBranchComparePanelAsync(page);
         await baseInput.focus();
-        await expect(candidateStatus).toHaveAttribute('role', 'status');
-        await expect(candidateStatus).toHaveAttribute('aria-live', 'polite');
-        await expect(candidateStatus).toHaveText('ブランチ候補を取得できませんでした');
+        await expect(page.locator('.notification-toast-error')).toHaveText('branch list failed');
+        await expect(page.locator('.branch-compare-suggestions')).toBeHidden();
+        await expect(baseInput).toHaveAttribute('aria-expanded', 'false');
     });
 
     test('最小幅でも長いブランチ名とファイルpathの完全値を確認でき選択を明示する', async ({page}) => {
@@ -861,7 +861,7 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('added-only');
         await page.waitForTimeout(250);
         await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('added-only');
-        await expect(page.locator('.branch-compare-error')).toBeHidden();
+        await expect(page.locator('.notification-toast-error')).toHaveCount(0);
         await expect(page.locator('.tab-button', {hasText: 'modified (main ↔ feature/orders)'})).toHaveCount(0);
     });
 
@@ -980,7 +980,7 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
     });
 
-    test('比較中の候補取得失敗は比較busyを解除せず比較成功後に古いerrorを残さない', async ({page}) => {
+    test('比較中の候補取得失敗はトーストで通知し比較busyを維持する', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
         await selectBranchByMouseAsync(page, '.branch-compare-target-input', RIGHT_REF);
@@ -1002,7 +1002,8 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'true');
         await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
         await expect(page.locator('.branch-compare-panel')).not.toHaveClass(/branch-compare-busy/);
-        await expect(page.locator('.branch-compare-error')).toBeHidden();
+        await expect(page.locator('.notification-toast-error')).toHaveText('branch list failed');
+        await expect(page.locator('.branch-compare-panel [role="alert"]')).toHaveCount(0);
     });
 
     test('source controlと異なるブランチ比較の同一table差分が内部状態を共有せず共存する', async ({page}) => {
@@ -1065,9 +1066,27 @@ test.describe('ブランチ比較パネル', () => {
         });
 
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        await expect(page.locator('.branch-compare-error')).toContainText('primary_keyが異なるため比較できません');
+        await expect(page.locator('.notification-toast-error')).toContainText('primary_keyが異なるため比較できません');
+        await expect(page.locator('.branch-compare-panel [role="alert"]')).toHaveCount(0);
         await expect(page.locator('.tab-button', {hasText: 'modified (main ↔ feature/orders)'})).toHaveCount(0);
     });
+
+    for (const [commit, side] of [[LEFT_SHA, '比較元'], [RIGHT_SHA, '比較先']]) {
+        test(`${side}ブランチの不正スキーマはパネル内に表示せず共通通知とログへ記録する`, async ({page}) => {
+            await openBranchComparePanelAsync(page);
+            await selectDefaultBranchesAndCompareAsync(page);
+            await page.evaluate(sha => {
+                const mockWindow = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>};
+                mockWindow.__mockGitCommitFiles[sha]['schema/modified.json'] = '{}';
+            }, commit);
+            await page.locator('.branch-compare-file-item[data-status="M"]').click();
+            const message = side + 'ブランチのスキーマが不正です';
+            await expect(page.locator('.notification-toast-error')).toHaveText(message);
+            await expect(page.locator('.debug-console-row-error', {hasText: message})).toBeAttached();
+            await expect(page.locator('.branch-compare-panel')).not.toContainText(message);
+            await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
+        });
+    }
 
     test('primary_keyが文字列形式でもM・A・D差分を開いて固定SHAから復元できる', async ({page}) => {
         await page.evaluate((schemaJson: string) => {
@@ -1254,14 +1273,15 @@ test.describe('ブランチ比較の空状態・エラー状態', () => {
         await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
     });
 
-    test('比較APIが失敗したらパネル内にエラーを表示する', async ({page}) => {
+    test('比較APIが失敗したら右下の共通エラー通知を表示する', async ({page}) => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, 'fatal: unknown revision');
         await openBranchComparePanelAsync(page);
         await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
         await selectBranchByMouseAsync(page, '.branch-compare-target-input', RIGHT_REF);
         await page.locator('.branch-compare-button').click();
 
-        await expect(page.locator('.branch-compare-error')).toContainText('fatal: unknown revision');
+        await expect(page.locator('.notification-toast-error')).toContainText('fatal: unknown revision');
+        await expect(page.locator('.branch-compare-panel [role="alert"]')).toHaveCount(0);
         await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
     });
 });

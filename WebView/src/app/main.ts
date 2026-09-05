@@ -114,6 +114,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
         store,
         uiStateStore,
         viewPluginHost,
+        notification,
     );
     Object.assign(sidebar, realSidebar);
     Object.setPrototypeOf(sidebar, Sidebar.prototype);
