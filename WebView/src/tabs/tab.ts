@@ -3370,7 +3370,12 @@ export class Tab {
 
         const hadExistingDiffTab = this.diffTabs.has(diffTabName);
         try {
-            const diffBuildResult = await DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv);
+            // 差分の左右ペインにも通常テーブルと同じユーザー列幅を適用する。
+            // diffIdentityやストアの一時キーではなく、元のテーブル名で取得する。
+            const [diffBuildResult, displaySchema] = await Promise.all([
+                DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv),
+                applyStoredColumnWidthsToSchemaAsync(tableName, JSON.parse(schemaJson) as Record<string, unknown>),
+            ]);
             if (options.abortSignal?.aborted === true) {
                 const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
                 const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
@@ -3390,7 +3395,7 @@ export class Tab {
             }
 
             const diffTab = new DiffTab(
-                tableName, diffTabName, schemaJson, headCsv, currentCsv, isStaged, gitPath,
+                tableName, diffTabName, JSON.stringify(displaySchema), headCsv, currentCsv, isStaged, gitPath,
                 this.editor, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, tabButton,
                 this.reference, this.openEditorTables, this.notification, this.validationPanel,
                 createLargeFileSettings(getAppliedSettings()),

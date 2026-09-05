@@ -76,13 +76,15 @@ export class EditorTableData {
             const width = typeof column.width === 'number'
                 ? `${Utility.clampColumnWidthPx(column.width, column.name, column.type, hasIcons, hasBadge)}px`
                 : Utility.calculateColumnWidth(column.name, column.type, hasIcons, hasBadge);
-            columns.push(new EditorTableDataColumn(
+            const dataColumn = new EditorTableDataColumn(
                 column.key, column.name, column.type,
                 column.comment !== undefined ? column.comment : null,
                 reference,
                 defaultValue,
                 width
-            ));
+            );
+            dataColumn.isAutoWidth = typeof column.width !== 'number';
+            columns.push(dataColumn);
         }
 
         // スキーマの各列がCSVの何番目の列に対応するかのマッピングを構築する
@@ -97,7 +99,7 @@ export class EditorTableData {
         // 保存済み幅は呼び出し元で schema の width として適用されるため、ここでは上書きしない。
         const autoFitRowCount = Math.min(body.length, COLUMN_AUTO_FIT_SAMPLE_ROW_COUNT);
         for (let columnIndex = 0; columnIndex < columns.length; columnIndex++) {
-            if (typeof header[columnIndex].width === 'number') continue;
+            if (!columns[columnIndex].isAutoWidth) continue;
             const csvIndex = columnMapping[columnIndex];
             if (csvIndex === -1) continue;
 

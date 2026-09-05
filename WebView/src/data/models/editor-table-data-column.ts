@@ -18,6 +18,9 @@ export class EditorTableDataColumn {
 
     width: string;
 
+    /** 保存済み・手動指定の幅がなく、参照ヒント読み込み後の幅補正を行う列か。 */
+    isAutoWidth = false;
+
     constructor(key: number, name: string, type: string, comment: string | null, reference: string | DynamicReferenceSchema | null, defaultValue: string | null, width: string) {
         this.key = key;
         this.name = name;

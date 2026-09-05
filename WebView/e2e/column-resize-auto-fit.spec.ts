@@ -97,7 +97,7 @@ function createSimpleFileSystem(): MockFileSystem {
  * quest の enemy_id が enemy.ja を参照する
  * enemy.ja に長い表示名を入れてヒント幅が考慮されることを検証する
  */
-function createFkReferenceFileSystem(): MockFileSystem {
+function createFkReferenceFileSystem(autoWidth = false): MockFileSystem {
     return {
         "schema/enemy.json": JSON.stringify({
             header: [
@@ -116,7 +116,7 @@ function createFkReferenceFileSystem(): MockFileSystem {
             header: [
                 { key: 0, name: "id", type: "int" },
                 { key: 1, name: "name", type: "string" },
-                { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja", width: 100 },
+                { key: 2, name: "enemy_id", type: "int", reference: "enemy.ja", ...(autoWidth ? {} : { width: 100 }) },
             ],
             primary_key: ["id"],
         }),
@@ -160,6 +160,95 @@ function createInitialAutoFitFileSystem(): MockFileSystem {
 // =============================================================================
 
 test.describe('列幅自動調整機能', () => {
+    test.describe('参照ヒント読み込み後の初期幅補正', () => {
+        test('FK参照ヒントとセル値が初期表示から省略されずに収まること', async ({ page }) => {
+            await installMockApiAsync(page, createFkReferenceFileSystem(true));
+            await page.goto('/');
+            const table = await openTableAsync(page, 'quest');
+            const hint = table.locator('.cell-reference-hint').filter({ hasText: '超強力' }).first();
+            await expect(hint).toBeVisible();
+            expect(await getColumnWidthPxAsync(table, 2)).toBeGreaterThan(300);
+            expect(await hint.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        });
+
+        test('画面外の100行目の参照ヒントを含め、101行目は除外すること', async ({ page }) => {
+            const fs = createFkReferenceFileSystem(true);
+            fs['data/enemy.csv'] += `\n4,${'W'.repeat(200)}`;
+            fs['data/quest.csv'] = [
+                'id,name,enemy_id',
+                ...Array.from({ length: 101 }, (_, index) => `${index + 1},q,${index === 99 ? 2 : index === 100 ? 4 : 1}`),
+            ].join('\n');
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+            const table = await openTableAsync(page, 'quest');
+            await expect(table.locator('.cell-reference-hint').first()).toHaveText('スライム');
+            // 最長ヒントの行がDOMに存在しなくても、ストアから幅を計測する。
+            await expect(table.locator('.cell-reference-hint').filter({ hasText: '超強力' })).toHaveCount(0);
+            const width = await getColumnWidthPxAsync(table, 2);
+            expect(width).toBeGreaterThan(300);
+            expect(width).toBeLessThan(600);
+        });
+
+        test('逆参照ヒントも初期表示から省略されずに収まること', async ({ page }) => {
+            const fs: MockFileSystem = {
+                'schema/parent.json': JSON.stringify({
+                    header: [{ key: 0, name: 'id', type: 'int' }],
+                    primary_key: ['id'],
+                }),
+                'data/parent.csv': 'id\n1',
+                'schema/child.json': JSON.stringify({
+                    header: [
+                        { key: 0, name: 'id', type: 'int' },
+                        { key: 1, name: 'parent_id', type: 'int', reference: 'parent.id' },
+                        { key: 2, name: 'ja', type: 'string' },
+                    ],
+                    primary_key: ['id'],
+                }),
+                'data/child.csv': 'id,parent_id,ja\n1,1,逆参照ヒントの長い表示名が初期列幅に収まることを確認するテキスト',
+            };
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+            const table = await openTableAsync(page, 'parent');
+            const hint = table.locator('.cell-reverse-reference-hint').first();
+            await expect(hint).toBeVisible();
+            expect(await getColumnWidthPxAsync(table, 0)).toBeGreaterThan(300);
+            expect(await hint.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        });
+
+        test('ユーザーデータの列幅は参照ヒント読み込み後も維持すること', async ({ page }) => {
+            const fs = createFkReferenceFileSystem(true);
+            fs['user:column-widths.json'] = JSON.stringify({ tables: { quest: { enemy_id: 180 } } });
+            await installMockApiAsync(page, fs);
+            await page.goto('/');
+            const table = await openTableAsync(page, 'quest');
+            await expect(table.locator('.cell-reference-hint').first()).toBeVisible();
+            expect(await getColumnWidthPxAsync(table, 2)).toBe(180);
+        });
+
+        test('手動リサイズ後は参照ヒントを再読み込みしても列幅を維持すること', async ({ page }) => {
+            await installMockApiAsync(page, createFkReferenceFileSystem(true));
+            await page.goto('/');
+            const table = await openTableAsync(page, 'quest');
+            await expect(table.locator('.cell-reference-hint').first()).toBeVisible();
+            const header = getColumnHeader(table, 2);
+            const box = await header.boundingBox();
+            if (box === null) throw new Error('列ヘッダーが見つかりません');
+            const startX = box.x + box.width - 2;
+            const startY = box.y + box.height / 2;
+            await page.mouse.move(startX, startY);
+            await page.mouse.down();
+            await page.mouse.move(startX - 150, startY);
+            await page.mouse.up();
+            const resizedWidth = await getColumnWidthPxAsync(table, 2);
+            expect(resizedWidth).toBeLessThan(box.width);
+
+            await openTableAsync(page, 'enemy');
+            await openTableAsync(page, 'quest');
+            await expect(table.locator('.cell-reference-hint').first()).toBeVisible();
+            expect(await getColumnWidthPxAsync(table, 2)).toBe(resizedWidth);
+        });
+    });
+
     test.describe('初期表示時の自動幅調整', () => {
         test.beforeEach(async ({ page }) => {
             await installMockApiAsync(page, createInitialAutoFitFileSystem());

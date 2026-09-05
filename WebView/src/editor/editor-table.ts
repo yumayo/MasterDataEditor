@@ -1842,6 +1842,21 @@ export class EditorTable {
         return this.clampColumnWidth(columnIndex, `${maxWidth}px`);
     }
 
+    /** 非同期で読み込まれた参照ヒントを、自動計算した列幅にも反映する。 */
+    private expandAutoColumnWidthsForReferenceHints(): void {
+        let changed = false;
+        for (let columnIndex = 0; columnIndex < this.tableData.header.length; columnIndex++) {
+            const column = this.tableData.header[columnIndex];
+            if (!column.isAutoWidth) continue;
+            if (column.reference === null && !this.tableData.primaryKeyColumns.includes(column.name)) continue;
+            const width = this.calculateAutoColumnWidth(columnIndex);
+            if (parseFloat(width) <= parseFloat(column.width)) continue;
+            this.applyColumnWidth(columnIndex, width);
+            changed = true;
+        }
+        if (changed) this.selection.updateRendererAfterResize();
+    }
+
     /**
      * 差分ビュー用パディング行を生成して返す。
      * 左ペインの行数を右ペインに合わせるために挿入する「穴埋め専用の空行」として使用する。
@@ -1876,6 +1891,14 @@ export class EditorTable {
      * 指定列の幅を設定し、その列の全セルのスタイルを更新
      */
     setColumnWidth(columnIndex: number, width: string): void {
+        const column = this.tableData.header[columnIndex];
+        if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
+        // 読み込み待ちの参照ヒントで手動リサイズやUndo/Redoの結果を上書きしない。
+        column.isAutoWidth = false;
+        this.applyColumnWidth(columnIndex, width);
+    }
+
+    private applyColumnWidth(columnIndex: number, width: string): void {
         const column = this.tableData.header[columnIndex];
         if (!column) throw new Error(`列定義が見つかりません: columnIndex=${columnIndex}`);
         const clampedWidth = this.clampColumnWidth(columnIndex, width);
@@ -2484,6 +2507,7 @@ export class EditorTable {
     /** 参照データのpreload完了後にセルの参照ヒントを更新する */
     updateReferenceHints(): void {
         this.reference.updateReferenceHints();
+        this.expandAutoColumnWidthsForReferenceHints();
         this.syncDetachedFrozenClonesAfterVisualContentChange();
     }
 
@@ -2507,6 +2531,7 @@ export class EditorTable {
      */
     updateReverseReferenceHints(map: ReverseReferenceMap, refreshRelationsPanel = true): void {
         this.reference.updateReverseReferenceHints(map);
+        this.expandAutoColumnWidthsForReferenceHints();
         this.syncDetachedFrozenClonesAfterVisualContentChange();
         if (refreshRelationsPanel && !this.isMiniTable) {
             this.forceRefreshRelationsPanel();
