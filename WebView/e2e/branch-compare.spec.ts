@@ -35,7 +35,6 @@ const RIGHT_SHA = '2222222';
 const LEFT_REF = 'refs/heads/main';
 const RIGHT_REF = 'refs/heads/feature/orders';
 const UI_STATE_FILE = 'user:ui-state.json';
-
 const BRANCHES: MockBranch[] = [
     {name: 'main', ref: LEFT_REF, kind: 'local'},
     {name: 'feature/orders', ref: RIGHT_REF, kind: 'local'},
@@ -218,63 +217,179 @@ async function expectSavedBranchCompareAsync(page: Page, expected: StoredBranchC
     }).toEqual(expected);
 }
 
+async function getHoverTextBoundsAsync(page: Page, text: string): Promise<{x: number; y: number; width: number; height: number}> {
+    return page.locator('.branch-compare-cell-tooltip:visible').evaluate((element, selectedText) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+            const start = (node.textContent ?? '').indexOf(selectedText);
+            if (start < 0) continue;
+            const range = document.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, start + selectedText.length);
+            const rect = range.getBoundingClientRect();
+            return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+        }
+        throw new Error('ホバー内の対象テキストがありません: ' + selectedText);
+    }, text);
+}
+
 test.describe('ブランチ比較パネル', () => {
     test.beforeEach(async ({page}) => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
     });
 
-    test('変更セルごとに行番号・列名と異なる変更者を表示し、クリックとEnterで直接ジャンプする', async ({page}) => {
+    test('左側はファイル一覧だけを表示し、変更者を左右の差分セルホバーで確認できる', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        const cells = page.locator('.branch-compare-cell-item');
-        await expect(cells).toHaveCount(2);
-        await expect(cells.locator('.branch-compare-cell-location')).toHaveText(['1L:name', '1L:value']);
-        await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['名前担当', '数値担当']);
-        const focused = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused');
-        await cells.nth(0).click();
-        await expect(focused).toHaveText('after');
-        await cells.nth(0).click();
-        await expect(focused).toHaveText('after');
-        await cells.nth(1).press('Enter');
-        await expect(focused).toHaveText('150');
-        await expect(cells.nth(1)).toHaveAttribute('aria-current', 'true');
-        await expect(cells.nth(0)).toHaveAttribute('aria-current', 'false');
-        await expect(page.locator('.diff-tab')).toHaveCount(1);
+        await expect(page.locator('.diff-tab:visible')).toBeVisible();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await expect(page.locator('.branch-compare-cell-item, .branch-compare-cells')).toHaveCount(0);
+        for (const [side, value] of [['left', 'before'], ['right', 'after']]) {
+            const gridCell = page.locator(`.diff-tab:visible .diff-pane-${side} .editor-table-cell`).filter({hasText: new RegExp(`^${value}$`)});
+            await gridCell.hover();
+            await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveAttribute('role', 'tooltip');
+            await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/比較先の最終変更者: 名前担当/);
+            await expect(gridCell).not.toHaveAttribute('title', /変更者|担当/);
+        }
+        await expect(page.locator('.branch-compare-panel')).not.toContainText('名前担当');
+        await expect(page.getByRole('button', {name: /変更者リスト/})).toHaveCount(0);
+        await expect(page.locator('.branch-compare-author-list')).toHaveCount(0);
+        await expect(page.locator('.tab-button', {hasText: '変更者リスト'})).toHaveCount(0);
         const requests = await page.evaluate(() => (window as unknown as {__mockGitCellBlameRequests: unknown[]}).__mockGitCellBlameRequests);
         expect(requests).toEqual([expect.objectContaining({filename: 'data/modified.csv', commit: RIGHT_SHA, primaryKey: ['id'], cells: [{lineNumber: 2, columnName: 'name'}, {lineNumber: 2, columnName: 'value'}]})]);
     });
 
-    test('左右のセル選択に合わせて一覧の同じセルだけを選択し、未変更セルでは選択を解除する', async ({page}) => {
+    test('変更者ホバーへマウスを移して保持し、選択した文字をコピーして離れると閉じる', async ({page}) => {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const right = page.locator('.diff-tab:visible .diff-pane-right');
+        const nameCell = right.locator('.editor-table-cell').filter({hasText: /^after$/});
+        // グリッドの選択状態を作り、コピーの横取りも検出する。
+        await nameCell.click();
+        await nameCell.hover();
+        const popup = page.locator('.branch-compare-cell-tooltip:visible');
+        await expect(popup).toContainText('名前担当');
+        const popupBounds = await popup.boundingBox();
+        if (popupBounds === null) throw new Error('変更者ホバーが表示されていません');
+        await page.mouse.move(popupBounds.x + 10, popupBounds.y + 10, {steps: 12});
+        await page.waitForTimeout(700);
+        await expect(popup).toBeVisible();
+        const textBounds = await getHoverTextBoundsAsync(page, '名前担当');
+        await page.mouse.move(textBounds.x + 0.5, textBounds.y + textBounds.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(textBounds.x + textBounds.width - 0.5, textBounds.y + textBounds.height / 2, {steps: 8});
+        await page.mouse.up();
+        await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('名前担当');
+        await page.evaluate(() => navigator.clipboard.writeText('before-copy'));
+        await page.keyboard.press('Control+c');
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('名前担当');
+        await expect(popup).toBeVisible();
+        await page.locator('.branch-compare-panel .sidebar-panel-header').hover();
+        await expect(popup).toHaveCount(0);
+        const valueCell = right.locator('.editor-table-cell').filter({hasText: /^150$/});
+        await valueCell.hover();
+        await expect(popup).toContainText('数値担当');
+        await expect(popup).not.toContainText('名前担当');
+        await page.locator('.branch-compare-panel .sidebar-panel-header').hover();
+        await expect(popup).toHaveCount(0);
+        await valueCell.click();
+        await page.keyboard.press('Control+c');
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('150');
+    });
+
+    for (const action of ['タブ切替', 'タブを閉じる', '差分スクロール'] as const) {
+        test(`変更者ホバー上にカーソルがあっても${action}で表示を片付ける`, async ({page}) => {
+            await page.evaluate(() => {
+                const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>; __mockGitCellBlameDelayMs: number};
+                const rows = Array.from({length: 200}, (_, index) => `${index + 2},unchanged,100`).join('\n');
+                mock.__mockGitCommitFiles['1111111']['data/modified.csv'] += '\n' + rows;
+                mock.__mockGitCommitFiles['2222222']['data/modified.csv'] += '\n' + rows;
+                mock.__mockGitCellBlameDelayMs = 1000;
+            });
+            await openBranchComparePanelAsync(page);
+            await selectDefaultBranchesAndCompareAsync(page);
+            await page.locator('.branch-compare-file-item[data-status="A"]').click();
+            const otherTab = page.locator('.tab-button', {hasText: '差分: added (main ↔ feature/orders)'});
+            await expect(otherTab).toBeVisible();
+            await page.locator('.branch-compare-file-item[data-status="M"]').click();
+            const right = page.locator('.diff-tab:visible .diff-pane-right');
+            await right.locator('.editor-table-cell').filter({hasText: /^after$/}).hover();
+            const popup = page.locator('.branch-compare-cell-tooltip:visible');
+            await expect(popup).toContainText('変更者を取得中');
+            await popup.hover();
+            // マウスを外さず操作し、単なるmouseleaveで閉じていないことを確かめる。
+            if (action === 'タブ切替') await otherTab.evaluate(element => (element as HTMLElement).click());
+            else if (action === 'タブを閉じる') await page.locator('.tab-button-active .tab-button-close').evaluate(element => (element as HTMLElement).click());
+            else await right.evaluate(element => { element.scrollTop = 240; });
+            await expect(popup).toHaveCount(0);
+            await page.waitForTimeout(1300);
+            await expect(popup).toHaveCount(0);
+        });
+    }
+
+    test('長い変更履歴も画面内で折り返し、ホバー内をスクロールして最後まで読める', async ({page}) => {
+        await page.setViewportSize({width: 1000, height: 500});
         await page.evaluate(() => {
-            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
-            files['1111111']['data/modified.csv'] += '\n2,unchanged,200\n3,old,300';
-            files['2222222']['data/modified.csv'] += '\n2,unchanged,200\n3,new,350';
+            const entries = (window as unknown as {__mockGitCellBlame: Record<string, Record<string, Array<{commitMessage: string}>>>}).__mockGitCellBlame['2222222']['data/modified.csv'];
+            for (const entry of entries) entry.commitMessage = '長い履歴' + 'x'.repeat(600) + '\n' + Array.from({length: 40}, (_, index) => `変更理由 ${index + 1}`).join('\n') + '\n最終行の説明';
         });
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        await expect(page.locator('.branch-compare-cell-item')).toHaveCount(4);
-        const left = page.locator('.diff-tab:visible .diff-pane-left');
-        const right = page.locator('.diff-tab:visible .diff-pane-right');
-        const selected = page.locator('.branch-compare-cell-item-active .branch-compare-cell-location');
-        await left.locator('.editor-table-cell').filter({hasText: /^old$/}).click();
-        await expect(selected).toHaveText('3L:name');
-        await page.locator('.branch-compare-cell-item[data-row="3"][data-column="value"]').click();
-        await expect(left.locator('.editor-table-cell-focused')).toHaveText('300');
-        await expect(selected).toHaveText('3L:value');
-        await right.locator('.editor-table-cell').filter({hasText: /^after$/}).click();
-        await expect(selected).toHaveText('1L:name');
-        await right.locator('.editor-table-cell').filter({hasText: /^150$/}).click();
-        await expect(selected).toHaveText('1L:value');
-        await right.locator('.editor-table-cell').filter({hasText: /^unchanged$/}).click();
-        await expect(selected).toHaveCount(0);
-        await right.locator('.editor-table-cell').filter({hasText: /^after$/}).click();
-        await right.locator('.editor-table-cell[data-col="0"]').filter({hasText: /^1$/}).click();
-        await expect(selected).toHaveCount(0);
+        await page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell').filter({hasText: /^after$/}).hover();
+        const popup = page.locator('.branch-compare-cell-tooltip:visible');
+        await expect(popup).toContainText('最終行の説明');
+        const bounds = await popup.boundingBox();
+        if (bounds === null) throw new Error('変更者ホバーが表示されていません');
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.y).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(1000);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(500);
+        expect(await popup.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+        expect(await popup.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+        await popup.hover();
+        await page.mouse.wheel(0, 10000);
+        await expect.poll(() => popup.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+        const lastLine = await getHoverTextBoundsAsync(page, '最終行の説明');
+        expect(lastLine.y).toBeGreaterThanOrEqual(bounds.y);
+        expect(lastLine.y + lastLine.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+        await expect(popup).toBeVisible();
     });
 
-    test('追加・削除で表示行がずれても元CSVのセルを指定し、存在する側へジャンプする', async ({page}) => {
+    for (const delayed of [false, true]) {
+        test(delayed ? 'bool変更セル内のSVGへ移動しても遅れて届いた変更者を表示する' : 'bool変更セルのSVGを直接ホバーして変更者を確認できる', async ({page}) => {
+            await page.evaluate(delayMs => {
+                const mock = window as unknown as {
+                    __mockGitCommitFiles: Record<string, Record<string, string>>;
+                    __mockGitCellBlameDelayMs: number;
+                };
+                const schema = JSON.stringify({header: [{key: 0, name: 'id', type: 'int'}, {key: 1, name: 'name', type: 'string'}, {key: 2, name: 'value', type: 'bool'}], primary_key: ['id']});
+                for (const commit of ['1111111', '2222222']) mock.__mockGitCommitFiles[commit]['schema/modified.json'] = schema;
+                mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,name,value\n1,same,0';
+                mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,name,value\n1,same,1';
+                mock.__mockGitCellBlameDelayMs = delayMs;
+            }, delayed ? 2000 : 0);
+            await openBranchComparePanelAsync(page);
+            await selectDefaultBranchesAndCompareAsync(page);
+            await page.locator('.branch-compare-file-item[data-status="M"]').click();
+            const gridCell = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell[data-col="2"][data-raw-value="1"]');
+            const checkPath = gridCell.locator('.cell-bool-check path');
+            await expect(checkPath).toBeVisible();
+            if (delayed) {
+                // セルの余白からSVGへ移動し、セル内のmouseout後も履歴到着を待てることを確認する。
+                await gridCell.hover({position: {x: 2, y: 2}});
+                await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/変更者を取得中/);
+            }
+            await checkPath.hover();
+            if (delayed) await page.locator('.branch-compare-cell-tooltip:visible').hover();
+            await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/比較先の最終変更者: 数値担当/);
+        });
+    }
+
+    test('追加・削除で表示行がずれても元CSVに対応する変更者をセルホバーで確認できる', async ({page}) => {
         await page.evaluate(() => {
             const mock = window as unknown as {
                 __mockGitCommitFiles: Record<string, Record<string, string>>;
@@ -290,52 +405,33 @@ test.describe('ブランチ比較パネル', () => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        const cells = page.locator('.branch-compare-cell-item');
-        await expect(cells.locator('.branch-compare-cell-location')).toHaveText(['1L:id', '1L:name', '1L:value', '2L:id', '2L:name', '2L:value', '3L:name', '3L:value']);
-        await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['削除行の担当', '削除行の担当', '削除行の担当', '追加行の担当', '追加行の担当', '追加行の担当', '更新行の担当', '更新行の担当']);
-        await expect(cells.nth(1)).toHaveAttribute('title', '1L:name（元CSV 2行）\n削除した人: 削除行の担当\n2026-09-05\nddddddd\n不要行を削除');
+        const removed = page.locator('.diff-tab:visible .diff-pane-left .editor-table-cell').filter({hasText: /^removed$/});
+        await removed.hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText('1L:name（元CSV 2行）\n削除した人: 削除行の担当\n2026-09-05\nddddddd\n不要行を削除');
+        const inserted = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell').filter({hasText: /^inserted$/});
+        await inserted.hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/2L:name（元CSV 3行）[\s\S]*追加行の担当/);
+        // ホバーが覆う隣接セルへ移るときは、いったん外側へ出て表示を閉じる。
+        await page.locator('.branch-compare-panel .sidebar-panel-header').hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveCount(0);
+        const modified = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell').filter({hasText: /^after$/});
+        await modified.hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/3L:name（元CSV 2行）[\s\S]*更新行の担当/);
         const requests = await page.evaluate(() => (window as unknown as {__mockGitCellBlameRequests: unknown[]}).__mockGitCellBlameRequests);
         expect(requests).toContainEqual(expect.objectContaining({filename: 'data/modified.csv', commit: LEFT_SHA, deletionTargetCommit: RIGHT_SHA, primaryKey: ['id'], cells: ['id', 'name', 'value'].map(columnName => ({lineNumber: 2, columnName}))}));
-        await cells.nth(1).click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-left .editor-table-cell-focused')).toHaveText('removed');
-        await cells.nth(4).click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('inserted');
-        await cells.nth(7).click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('35');
     });
 
-    test('ファイル全体を削除した人を各セルに表示し、削除セルと一覧の選択を連動する', async ({page}) => {
+    test('ファイル全体を削除した人を削除セルのホバーで確認できる', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="D"]').click();
-        const cells = page.locator('.branch-compare-cell-item');
-        await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['削除担当', '削除担当', '削除担当']);
-        await cells.nth(1).click();
-        const left = page.locator('.diff-tab:visible .diff-pane-left');
-        await expect(left.locator('.editor-table-cell-focused')).toHaveText('deleted-only');
-        await left.locator('.editor-table-cell').filter({hasText: /^900$/}).click();
-        await expect(cells.nth(2)).toHaveAttribute('aria-current', 'true');
-        await expect(cells.nth(1)).toHaveAttribute('aria-current', 'false');
+        const cell = page.locator('.diff-tab:visible .diff-pane-left .editor-table-cell').filter({hasText: /^deleted-only$/});
+        await cell.hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/削除した人: 削除担当/);
+        await expect(page.locator('.branch-compare-cell-item')).toHaveCount(0);
     });
 
-    test('別ファイルの一覧から指定セルに戻り、タブ切替でもセルの選択が追従する', async ({page}) => {
-        await openBranchComparePanelAsync(page);
-        await selectDefaultBranchesAndCompareAsync(page);
-        await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        const modifiedCell = page.locator('.branch-compare-cell-item[data-status="M"][data-column="name"]');
-        await modifiedCell.click();
-        await page.locator('.branch-compare-file-item[data-status="A"]').click();
-        const addedCell = page.locator('.branch-compare-cell-item[data-status="A"][data-column="value"]');
-        await addedCell.click();
-        await modifiedCell.click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('after');
-        await expect(page.locator('.diff-tab')).toHaveCount(2);
-        await page.locator('.tab-button', {hasText: '差分: added ('}).click();
-        await expect(addedCell).toHaveAttribute('aria-current', 'true');
-        await expect(modifiedCell).toHaveAttribute('aria-current', 'false');
-    });
-
-    test('変更者の取得に失敗しても一覧から巨大差分の仮想スクロール外のセルへジャンプできる', async ({page}) => {
+    test('巨大差分の仮想スクロール外のセルでも履歴を特定できないことをホバーで確認できる', async ({page}) => {
         await page.evaluate(() => {
             const mock = window as unknown as {
                 __mockGitCommitFiles: Record<string, Record<string, string>>;
@@ -350,38 +446,44 @@ test.describe('ブランチ比較パネル', () => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        const cells = page.locator('.branch-compare-cell-item');
-        await expect(cells.locator('.branch-compare-cell-location')).toHaveText(['50001L:name', '50001L:value']);
-        await expect(cells.locator('.branch-compare-cell-author')).toHaveText(['変更者不明', '変更者不明']);
-        await cells.nth(0).click();
-        const focused = page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused');
-        await expect(focused).toHaveText('last-changed');
-        await expect(focused).toBeVisible();
-        await cells.nth(1).click();
-        await expect(focused).toHaveText('999');
+        const right = page.locator('.diff-tab:visible .diff-pane-right');
+        await expect(right).toBeVisible();
+        await right.evaluate(pane => { pane.scrollTop = Number.MAX_SAFE_INTEGER; });
+        const cell = right.locator('.editor-table-cell').filter({hasText: /^last-changed$/});
+        await expect(cell).toBeVisible();
+        await cell.hover();
+        await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(/50001L:name[\s\S]*履歴から特定できませんでした/);
     });
 
-    test('18L:recover_stamina形式で表示し、遅い履歴取得中もセルへジャンプできる', async ({page}) => {
+    test('10万行超の差分でも末尾の変更セルを元CSV行付きでホバー表示する', async ({page}) => {
         await page.evaluate(() => {
-            const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>; __mockGitCellBlameDelayMs: number};
-            const schema = JSON.stringify({header: [{key: 0, name: 'id', type: 'int'}, {key: 1, name: 'recover_stamina', type: 'int'}], primary_key: ['id']});
-            const rows = Array.from({length: 18}, (_, index) => `${index + 1},100`);
-            for (const sha of ['1111111', '2222222']) mock.__mockGitCommitFiles[sha]['schema/modified.json'] = schema;
-            mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,recover_stamina\n' + rows.join('\n');
-            rows[17] = '18,200';
-            mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,recover_stamina\n' + rows.join('\n');
-            mock.__mockGitCellBlameDelayMs = 500;
+            const mock = window as unknown as {
+                __mockGitBranchCompare: MockBranchCompareResult;
+                __mockGitCommitFiles: Record<string, Record<string, string>>;
+                __mockGitCellBlame: Record<string, Record<string, object[]>>;
+            };
+            mock.__mockGitBranchCompare.files = [mock.__mockGitBranchCompare.files[0]];
+            const rows = Array.from({length: 100001}, (_, index) => `${index + 1},row-${index + 1},100`);
+            mock.__mockGitCommitFiles['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            rows[100000] = '100001,last-changed,999';
+            mock.__mockGitCommitFiles['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            mock.__mockGitCellBlame['2222222']['data/modified.csv'] = ['name', 'value'].map(columnName => ({lineNumber: 100002, columnName, author: '末尾担当', date: '2026-09-05', commitHash: '2222222', commitMessage: '末尾更新'}));
         });
         await openBranchComparePanelAsync(page);
-        await selectDefaultBranchesAndCompareAsync(page);
+        await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
+        await selectBranchByMouseAsync(page, '.branch-compare-target-input', RIGHT_REF);
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(1);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        const cell = page.locator('.branch-compare-cell-item');
-        await expect(cell.locator('.branch-compare-cell-location')).toHaveText('18L:recover_stamina');
-        await cell.click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-right .editor-table-cell-focused')).toHaveText('200');
-        await page.locator('.branch-compare-target-input').fill('changed');
-        await page.waitForTimeout(600);
-        await expect(page.locator('.branch-compare-cell-item')).toHaveCount(0);
+        const right = page.locator('.diff-tab:visible .diff-pane-right');
+        await expect(right).toBeVisible();
+        await right.evaluate(pane => { pane.scrollTop = Number.MAX_SAFE_INTEGER; });
+        for (const [column, value] of [['name', 'last-changed'], ['value', '999']]) {
+            const cell = right.locator('.editor-table-cell').filter({hasText: new RegExp(`^${value}$`)});
+            await expect(cell).toBeVisible();
+            await cell.hover();
+            await expect(page.locator('.branch-compare-cell-tooltip:visible')).toHaveText(`100001L:${column}（元CSV 100002行）\n比較先の最終変更者: 末尾担当\n2026-09-05\n2222222\n末尾更新`);
+        }
     });
 
     test('アクティビティーバーの新アイコンから比較元・比較先の2入力を持つパネルを開ける', async ({page}) => {

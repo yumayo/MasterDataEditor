@@ -441,8 +441,8 @@ export class EditorTableHandler {
             return;
         }
 
-        // フォーカス先がデバッグコンソール内の場合はフォーカスを奪わない（テキスト選択を許可する）
-        if (focusTarget instanceof HTMLElement && focusTarget.closest('.debug-console')) {
+        // デバッグコンソールや変更者ホバー内では、文字選択とコピーのためのフォーカス移動を尊重する。
+        if (focusTarget instanceof HTMLElement && focusTarget.closest('.debug-console, .branch-compare-cell-tooltip')) {
             if (this.visible) {
                 if (this.dateTimePickerActive) {
                     this.submitDateTimePickerAndHide();

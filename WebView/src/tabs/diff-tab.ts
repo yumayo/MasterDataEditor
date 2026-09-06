@@ -23,23 +23,8 @@ import type {LargeFileSettings} from "../settings/settings-schema";
 import DiffBuildWorker from "../diff/diff-worker?worker&inline";
 import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
-
-export interface DiffChangedCell {
-    /** 表示グリッドと同じ1始まりの行番号・列番号。 */
-    row: number;
-    column: number;
-    columnName: string;
-    side: 'left' | 'right';
-    status: 'A' | 'M' | 'D';
-    /** ヘッダーを含む元CSVの行番号（git blameとの照合用）。 */
-    lineNumber: number;
-}
-
-interface DiffCellSelection {
-    row: number;
-    column: number;
-    side: 'left' | 'right';
-}
+import type {BranchCompareChanges} from "../diff/branch-compare-changes";
+import {BranchCompareCellTooltip} from "../diff/branch-compare-cell-tooltip";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -199,12 +184,7 @@ export class DiffTab {
     private readonly indexedDiffMode: boolean;
     /** ui-state 永続化を呼び出すためのリスナー */
     private uiStateChangeListener: (() => void) | false;
-    private selectionChangeListener: (() => void) | null = null;
-    private selectedCell: DiffCellSelection | null = null;
-    private selectionSide: 'left' | 'right' | null = null;
-    private readonly primaryKeyColumns: readonly string[];
-    private readonly leftOriginalRowIndices: Int32Array;
-    private readonly rightOriginalRowIndices: Int32Array;
+    private readonly branchCompareTooltip: BranchCompareCellTooltip | false;
 
     constructor(
         tableName: string,
@@ -227,11 +207,10 @@ export class DiffTab {
         largeFileSettings: LargeFileSettings,
         leftLabel: string | null,
         rightLabel: string | null,
-        diffBuildResult: DiffBuildResult
+        diffBuildResult: DiffBuildResult,
+        branchCompareChanges: BranchCompareChanges | false
     ) {
         this.tableName = tableName;
-        this.leftOriginalRowIndices = diffBuildResult.leftOriginalRowIndices ?? diffBuildResult.leftRowSourceIndices ?? new Int32Array();
-        this.rightOriginalRowIndices = diffBuildResult.rightOriginalRowIndices ?? diffBuildResult.rightRowSourceIndices ?? new Int32Array();
         this.isSyncing = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
@@ -375,7 +354,6 @@ export class DiffTab {
             leftTableKey, schemaJson, leftCsv, leftRowSourceIndices,
             leftPaneElement, null, store, referenceDataCache, contextMenu, tabButton, sidebar, notification, largeFileSettings
         );
-        this.primaryKeyColumns = leftResult.tableData.primaryKeyColumns;
         this.leftEditorTable = leftResult.editorTable;
         this.leftEditorTableHandler = leftResult.editorTableHandler;
         this.leftHistory = leftResult.history;
@@ -453,16 +431,10 @@ export class DiffTab {
         }
         this.newColumnDomIndices = newColumnDomIndices;
 
-        for (const [side, pane, table] of [
-            ['left', leftPaneElement, this.leftEditorTable],
-            ['right', rightPaneElement, this.rightEditorTable],
-        ] as const) {
-            pane.addEventListener('editor-table-selection-changed', () => {
-                if (this.wrapperElement.style.display === 'none' || this.selectionSide !== side) return;
-                this.selectedCell = {...table.getSelection().getFocus(), side};
-                this.selectionChangeListener?.();
-            });
-        }
+        this.branchCompareTooltip = branchCompareChanges === false ? false : new BranchCompareCellTooltip(document.body, branchCompareChanges, [
+            {side: 'left', element: leftPaneElement, table: this.leftEditorTable},
+            {side: 'right', element: rightPaneElement, table: this.rightEditorTable},
+        ], notification);
 
         // 差分クラスのデータモデルを構築する（仮想スクロールの renderRow フックで適用される）
         this.buildDiffClassData(
@@ -852,13 +824,11 @@ export class DiffTab {
      */
     activateHandler(targetEditorTable: EditorTable): void {
         if (targetEditorTable === this.leftEditorTable) {
-            this.selectionSide = 'left';
             this.leftEditorTable.getHandler().activate();
             this.leftEditorTable.setInactiveAppearance(false);
             this.rightEditorTable.getHandler().deactivate();
             this.rightEditorTable.setInactiveAppearance(true);
         } else if (targetEditorTable === this.rightEditorTable) {
-            this.selectionSide = 'right';
             this.rightEditorTable.getHandler().activate();
             this.rightEditorTable.setInactiveAppearance(false);
             this.leftEditorTable.getHandler().deactivate();
@@ -877,54 +847,6 @@ export class DiffTab {
 
     connectUiStateChangeListener(listener: () => void): void {
         this.uiStateChangeListener = listener;
-    }
-
-    connectSelectionChangeListener(listener: () => void): void {
-        this.selectionChangeListener = listener;
-    }
-
-    getSelectedCell(): Readonly<DiffCellSelection> | null {
-        return this.selectedCell;
-    }
-
-    getPrimaryKeyColumns(): readonly string[] {
-        return this.primaryKeyColumns;
-    }
-
-    /** DOM外の仮想行も含め、表示列順で変更セルを収集する。 */
-    getChangedCells(): DiffChangedCell[] {
-        const leftRows = this.leftEditorTable.getStore().getRows(this.leftTableKey);
-        const rightRows = this.rightEditorTable.getStore().getRows(this.rightTableKey);
-        if (leftRows === false || rightRows === false) return [];
-        const result: DiffChangedCell[] = [];
-        for (let index = 0; index < this.leftEditorTable.getLogicalRowCount() - 1; index++) {
-            const deleted = this.leftRowClasses.get(index)?.includes('diff-row-deleted') === true;
-            const added = this.rightAddedRows.has(index);
-            const left = leftRows[this.leftEditorTable.resolveStoreRowIndex(index)];
-            const right = rightRows[this.rightEditorTable.resolveStoreRowIndex(index)];
-            const sourceIndex = (deleted ? this.leftOriginalRowIndices : this.rightOriginalRowIndices)[index];
-            for (const [domColumn, csvColumn] of this.domIndexToCsvIndex) {
-                if (!deleted && !added && (left?.[csvColumn] ?? '') === (right?.[csvColumn] ?? '')) continue;
-                result.push({
-                    row: index + 1,
-                    column: domColumn + 1,
-                    columnName: this.leftEditorTable.getColumnHeaderValue(domColumn),
-                    side: deleted ? 'left' : 'right',
-                    status: deleted ? 'D' : added ? 'A' : 'M',
-                    lineNumber: sourceIndex + 2,
-                });
-            }
-        }
-        return result;
-    }
-
-    /** 一覧の項目が表すセルを直接選択する。変更セルでは操作中のペインを維持する。 */
-    jumpToChangedCell(cell: DiffChangedCell): void {
-        const side = cell.status === 'M' ? this.selectedCell?.side ?? cell.side : cell.side;
-        const table = side === 'left' ? this.leftEditorTable : this.rightEditorTable;
-        this.activateHandler(table);
-        table.getSelection().moveAndClearRange(cell.row, cell.column);
-        table.getSelection().scrollFocusToCenterVertically();
     }
 
     setLargeFileSettings(settings: LargeFileSettings): void {
@@ -1053,6 +975,7 @@ export class DiffTab {
      * （display:none 後は scrollLeft が 0 にリセット済みのため、保存値を上書きしてはならない）
      */
     hide(): void {
+        if (this.branchCompareTooltip !== false) this.branchCompareTooltip.hide();
         if (this.wrapperElement.style.display === 'none') return;
         // display:none にするとブラウザがscrollLeftを0にリセットするため、事前に保存する
         this.savedScrollLeft = this.leftEditorTable.getScrollLeft();
@@ -1065,6 +988,7 @@ export class DiffTab {
      * ストアのテーブルデータとHistoryを解除してからDOMを削除する
      */
     destroy(store: InMemoryTableStore): void {
+        if (this.branchCompareTooltip !== false) this.branchCompareTooltip.destroy();
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
         this.leftPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
         this.rightPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
