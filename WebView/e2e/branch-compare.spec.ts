@@ -272,6 +272,7 @@ test.describe('ブランチ比較パネル', () => {
         await nameCell.hover();
         const popup = page.locator('.branch-compare-cell-tooltip:visible');
         await expect(popup).toContainText('名前担当');
+        const borderColor = await popup.evaluate(element => getComputedStyle(element).borderColor);
         const popupBounds = await popup.boundingBox();
         if (popupBounds === null) throw new Error('変更者ホバーが表示されていません');
         await page.mouse.move(popupBounds.x + 10, popupBounds.y + 10, {steps: 12});
@@ -283,6 +284,9 @@ test.describe('ブランチ比較パネル', () => {
         await page.mouse.move(textBounds.x + textBounds.width - 0.5, textBounds.y + textBounds.height / 2, {steps: 8});
         await page.mouse.up();
         await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('名前担当');
+        await expect(popup).toBeFocused();
+        await expect(popup).toHaveCSS('outline-style', 'none');
+        await expect(popup).toHaveCSS('border-color', borderColor);
         await page.evaluate(() => navigator.clipboard.writeText('before-copy'));
         await page.keyboard.press('Control+c');
         await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('名前担当');
@@ -298,6 +302,48 @@ test.describe('ブランチ比較パネル', () => {
         await valueCell.click();
         await page.keyboard.press('Control+c');
         await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('150');
+    });
+
+    test('短いホバーでは表示せず、隣の変更セルを横切って本文に入っても内容と位置を維持する', async ({page}) => {
+        await page.evaluate(() => {
+            const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>};
+            mock.__mockGitCommitFiles['1111111']['data/modified.csv'] += '\n2,next-before,200';
+            mock.__mockGitCommitFiles['2222222']['data/modified.csv'] += '\n2,next-after,250';
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const right = page.locator('.diff-tab:visible .diff-pane-right');
+        const nameCell = right.locator('.editor-table-cell').filter({hasText: /^after$/});
+        const popup = page.locator('.branch-compare-cell-tooltip:visible');
+        await nameCell.hover();
+        await page.waitForTimeout(100);
+        expect(await popup.count()).toBe(0);
+        await page.locator('.branch-compare-panel .sidebar-panel-header').hover();
+        await page.waitForTimeout(600);
+        await expect(popup).toHaveCount(0);
+
+        await nameCell.hover();
+        await expect(popup).toContainText('名前担当');
+        const beforeText = await popup.textContent();
+        const beforeBounds = await popup.boundingBox();
+        const cellBounds = await nameCell.boundingBox();
+        if (beforeBounds === null || cellBounds === null) throw new Error('セルまたはホバーが表示されていません');
+        // セルとホバーの6pxの余白には、次の行の変更セルがある。
+        const gap = {x: cellBounds.x + 10, y: cellBounds.y + cellBounds.height + 3};
+        expect(await page.evaluate(point => document.elementFromPoint(point.x, point.y)?.closest('.editor-table-cell')?.textContent, gap)).toBe('next-after');
+        await page.mouse.move(gap.x, gap.y);
+        await page.mouse.move(beforeBounds.x + 10, beforeBounds.y + 10);
+        await page.waitForTimeout(700);
+        await expect(popup).toHaveText(beforeText!);
+        expect(await popup.boundingBox()).toEqual(beforeBounds);
+        await expect(nameCell).toHaveAttribute('aria-describedby', await popup.getAttribute('id') as string);
+
+        // 次のセルに留まる場合は待ち時間の後にそのセルの履歴へ切り替わる。
+        const valueCell = right.locator('.editor-table-cell').filter({hasText: /^150$/});
+        await valueCell.hover();
+        expect(await popup.textContent()).toBe(beforeText);
+        await expect(popup).toContainText('数値担当');
     });
 
     for (const action of ['タブ切替', 'タブを閉じる', '差分スクロール'] as const) {

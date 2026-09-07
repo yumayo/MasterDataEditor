@@ -1,0 +1,26 @@
+/* セルの補足情報はグリッドのクリッピング外に固定配置し、本文の選択・コピーを許可する。 */
+.cell-tooltip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: var(--z-index-cell-tooltip);
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(440px, calc(100vw - 16px));
+    max-height: min(360px, calc(100vh - 16px));
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background-color);
+    color: var(--font-color);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow: auto;
+    overscroll-behavior: contain;
+    user-select: text;
+    cursor: text;
+    outline: none;
+}

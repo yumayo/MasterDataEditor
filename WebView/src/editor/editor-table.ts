@@ -1389,17 +1389,14 @@ export class EditorTable {
             const domDataColIndex = position.column - this.dataColumnOffset();
             const storeColIndex = this.getStoreColumnIndex(domDataColIndex);
             if (storeColIndex === -1) return;
-            tooltip.showAfterDelay(cell, this.tableName, storeRowIndex, storeColIndex);
+            tooltip.showAfterDelay(cell, this, this.tableName, storeRowIndex, storeColIndex);
         });
 
         this.element.addEventListener('mouseout', (e) => {
             const target = e.target as HTMLElement;
             const cell = target.classList.contains('editor-table-cell') ? target : target.closest('.editor-table-cell') as HTMLElement | null;
             if (!cell) return;
-            // relatedTarget（移動先要素）が同一セル内の子要素であればツールチップを消さない
-            const related = e.relatedTarget as HTMLElement | null;
-            if (related && cell.contains(related)) return;
-            tooltip.hide();
+            tooltip.leaveCell(cell, e.relatedTarget);
         });
 
         // セルクリック時にツールチップを非表示にする（編集モードに入るため邪魔になる）
@@ -1407,14 +1404,7 @@ export class EditorTable {
             tooltip.hide();
         });
 
-        // スクロール時にツールチップを非表示にする（位置がずれるため）
-        // EditorTable の親（スクロールコンテナ）にリスナーを追加する
-        const scrollParent = this.element.parentElement;
-        if (scrollParent) {
-            scrollParent.addEventListener('scroll', () => {
-                tooltip.hide();
-            });
-        }
+        // スクロールによる位置ずれは共通ツールチップ側で監視する。
     }
 
     // =========================================================================

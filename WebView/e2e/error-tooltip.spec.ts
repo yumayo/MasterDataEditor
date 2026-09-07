@@ -9,7 +9,8 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   .cell-error クラスを持つセルにマウスホバー 500ms でツールチップを表示する。
 //   ValidationPanel からセル位置でエラーを照合し、エラーメッセージを表示する。
 //   複数エラーは改行区切りで全表示する。
-//   セル離脱・クリック・スクロールで非表示にする。
+//   セルと本文からの離脱・セルクリック・スクロールで非表示にする。
+//   本文へマウスを移動して保持し、エラーメッセージを選択・コピーできる。
 //
 // テストケース一覧:
 //   1. PK重複エラーがあるセルにホバー 500ms でツールチップが表示される
@@ -17,6 +18,7 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 //   3. セルから離れるとツールチップが非表示になる
 //   4. 500ms 以内にセルから離れるとツールチップが表示されない
 //   5. セルをクリックするとツールチップが非表示になる
+//   6. ツールチップ上で選択・コピーでき、Escapeでグリッドへ戻れる
 // =============================================================================
 
 // =============================================================================
@@ -75,6 +77,49 @@ function getPkCell(table: Locator, rowIndex: number): Locator {
 function getTooltip(page: Page): Locator {
     return page.locator('.error-tooltip');
 }
+
+test('エラー本文へ移動して選択・コピーでき、Escapeでグリッドへ戻れる', async ({page}) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await installMockApiAsync(page, createDuplicateFileSystem());
+    await page.goto('/');
+    const table = await openTableAsync(page, 'item');
+    const pkCell = getPkCell(table, 0);
+    const tooltip = getTooltip(page);
+    // グリッドがフォーカスを持っていても、本文のコピーを横取りしない。
+    await pkCell.click();
+    await page.locator('#explorer').hover({position: {x: 10, y: 10}});
+    await pkCell.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toHaveAttribute('role', 'tooltip');
+    await expect(pkCell).toHaveAttribute('aria-describedby', await tooltip.getAttribute('id') as string);
+    await tooltip.hover();
+    await page.waitForTimeout(700);
+    await expect(tooltip).toBeVisible();
+    const text = await tooltip.textContent();
+    const bounds = await tooltip.evaluate(element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const rect = range.getBoundingClientRect();
+        return {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
+    });
+    await page.mouse.move(bounds.x + 0.5, bounds.y + bounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width - 0.5, bounds.y + bounds.height / 2, {steps: 8});
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe(text);
+    await expect(tooltip).toBeFocused();
+    await expect(tooltip).toHaveCSS('outline-style', 'none');
+    await expect(tooltip).toHaveCSS('border-color', 'rgb(231, 76, 60)');
+    await page.evaluate(() => navigator.clipboard.writeText('before-copy'));
+    await page.keyboard.press('Control+c');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text);
+    await expect(tooltip).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tooltip).toBeHidden();
+    await expect(pkCell).not.toHaveAttribute('aria-describedby');
+    await page.keyboard.press('Control+c');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('1');
+});
 
 // =============================================================================
 // テストケース1: PK重複エラーがあるセルにホバー 500ms でツールチップが表示される
