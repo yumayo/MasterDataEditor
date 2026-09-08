@@ -15,7 +15,8 @@ export class BranchCompareCellTooltip {
         let titles: ReadonlyMap<string, string> = new Map();
         for (const {side, element: pane, table} of panes) {
             // ペインで受け、仮想スクロールや固定列でセルが再生成されても対応する。
-            pane.addEventListener('mouseover', (event: MouseEvent) => {
+            // 表示待ちの間は、セル内を移動したマウスの位置も反映する。
+            pane.addEventListener('mousemove', (event: MouseEvent) => {
                 if (!(event.target instanceof Element)) return;
                 const element = event.target.closest<HTMLElement>('.editor-table-cell');
                 if (element === null) return;
@@ -28,7 +29,7 @@ export class BranchCompareCellTooltip {
                     const current = EditorTable.getCellPosition(element, table.getTableElement());
                     if (current?.row !== cell.row || current.column !== cell.column) return '';
                     return titles.get(key) ?? `${cell.row}L:${cell.columnName}\n変更者を取得中…`;
-                });
+                }, {x: event.clientX, y: event.clientY});
             }, {signal});
             pane.addEventListener('mouseout', (event: MouseEvent) => {
                 if (!(event.target instanceof Element)) return;

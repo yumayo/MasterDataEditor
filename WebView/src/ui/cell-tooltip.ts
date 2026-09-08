@@ -8,6 +8,7 @@ interface TooltipAnchor {
     scrollLeft: number;
     top: number;
     left: number;
+    pointerPosition: {x: number; y: number} | false;
     below: boolean;
 }
 
@@ -71,21 +72,26 @@ export class CellTooltip {
         window.addEventListener('blur', () => { this.hide(); }, {signal});
     }
 
-    showAfterDelay(element: HTMLElement, table: EditorTable, getText: () => string): void {
+    /** マウス位置を指定した場合は、その上側に表示する。表示後は文字選択のため位置を固定する。 */
+    showAfterDelay(element: HTMLElement, table: EditorTable, getText: () => string, pointerPosition: {x: number; y: number} | false = false): void {
         if (this.selecting) return;
         if (this.activeAnchor !== false && this.activeAnchor.element === element) {
             this.cancelShow();
             this.cancelHide();
             return;
         }
-        if (this.pendingAnchor !== false && this.pendingAnchor.element === element) return;
+        if (this.pendingAnchor !== false && this.pendingAnchor.element === element) {
+            this.pendingAnchor.pointerPosition = pointerPosition;
+            return;
+        }
         this.cancelShow();
         const rect = element.getBoundingClientRect();
         const anchor: TooltipAnchor = {
             element, table, getText,
             scrollTop: table.getScrollTop(), scrollLeft: table.getScrollLeft(),
             top: rect.top, left: rect.left,
-            below: window.innerHeight - rect.bottom - 14 >= Math.min(360, rect.top - 14),
+            pointerPosition,
+            below: pointerPosition === false && window.innerHeight - rect.bottom - 14 >= Math.min(360, rect.top - 14),
         };
         this.pendingAnchor = anchor;
         this.showTimerId = window.setTimeout(() => {
@@ -142,14 +148,17 @@ export class CellTooltip {
     private render(text: string): void {
         if (this.activeAnchor === false) return;
         const rect = this.activeAnchor.element.getBoundingClientRect();
-        const availableHeight = this.activeAnchor.below ? window.innerHeight - rect.bottom - 14 : rect.top - 14;
+        const pointerPosition = this.activeAnchor.pointerPosition;
+        const top = pointerPosition === false ? rect.top : pointerPosition.y;
+        const left = pointerPosition === false ? rect.left : pointerPosition.x;
+        const availableHeight = this.activeAnchor.below ? window.innerHeight - rect.bottom - 14 : top - 14;
         this.element.style.maxHeight = Math.max(0, Math.min(360, availableHeight)) + 'px';
         this.element.textContent = text;
         this.element.hidden = false;
         this.element.classList.add('visible');
         const popup = this.element.getBoundingClientRect();
-        this.element.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - popup.width - 8)) + 'px';
-        this.element.style.top = (this.activeAnchor.below ? rect.bottom + 6 : rect.top - popup.height - 6) + 'px';
+        this.element.style.left = Math.max(8, Math.min(left, window.innerWidth - popup.width - 8)) + 'px';
+        this.element.style.top = (this.activeAnchor.below ? rect.bottom + 6 : top - popup.height - 6) + 'px';
     }
 
     private closeActive(): void {
