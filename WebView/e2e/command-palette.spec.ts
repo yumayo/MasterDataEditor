@@ -15,8 +15,8 @@ import {Page} from '@playwright/test';
  * Round 8: マウスクリック選択
  * Round 9: 再表示リセット
  *
- * コマンドパレットは `.command-palette-overlay` 要素で構成され、
- * `.visible` クラスの付与/削除で表示・非表示を切り替える。
+ * コマンドパレットは `.command-palette-overlay` モーダルダイアログで構成され、
+ * `.visible` クラスで表示時のレイアウトを設定する。
  */
 
 /**
@@ -50,6 +50,120 @@ async function setupTestPageAsync(page: Page): Promise<void> {
 }
 
 test.describe('CommandPalette', () => {
+    test('起動時のテーブル復元が完了してもパレットへの入力がセルに流れない', async ({page}) => {
+        const fs = createTestFileSystem();
+        fs['user:ui-state.json'] = JSON.stringify({
+            tabs: {open: [{name: 'enemy', description: null, diff: null}], active: 'enemy'},
+        });
+        await installMockApiAsync(page, fs);
+        await page.addInitScript(() => {
+            type WebView = {postMessage(message: string | object): void};
+            type StartupWindow = Window & {
+                chrome?: {webview: WebView};
+                __releaseStartupRead?: () => void;
+            };
+            const startupWindow = window as StartupWindow;
+            let wrapped = false;
+            function wrapPostMessage(): void {
+                const webview = startupWindow.chrome?.webview;
+                if (wrapped || webview === undefined) return;
+                wrapped = true;
+                const originalPostMessage = webview.postMessage.bind(webview);
+                webview.postMessage = (message: string | object): void => {
+                    const request = JSON.parse(typeof message === 'string' ? message : JSON.stringify(message)) as {type: string; filename?: string};
+                    // ファイル数や時間待ちに依存せず、起動時プリロードを入力途中で再開する。
+                    if (request.type === 'read_file_request' && request.filename === 'data/enemy.csv') {
+                        startupWindow.__releaseStartupRead = () => originalPostMessage(message);
+                        return;
+                    }
+                    originalPostMessage(message);
+                };
+            }
+            wrapPostMessage();
+            if (!wrapped) {
+                let chromeValue = startupWindow.chrome;
+                Object.defineProperty(window, 'chrome', {
+                    configurable: true,
+                    get: () => chromeValue,
+                    set: (value: StartupWindow['chrome']) => {
+                        chromeValue = value;
+                        wrapPostMessage();
+                    },
+                });
+            }
+        });
+        await page.goto('/');
+        const overlay = page.locator('.command-palette-overlay');
+        const input = page.locator('.command-palette-input');
+        await expect(overlay).toBeAttached();
+        await page.waitForFunction(() => typeof (window as Window & {__releaseStartupRead?: () => void}).__releaseStartupRead === 'function');
+        await expect(page.locator('.editor-table')).toHaveCount(0);
+        await page.keyboard.press('Control+p');
+        await page.keyboard.type('ene');
+        await expect(input).toHaveValue('ene');
+
+        await page.evaluate(() => (window as Window & {__releaseStartupRead: () => void}).__releaseStartupRead());
+        await expect(page.locator('.editor-table')).toBeVisible();
+        await expect(input).toBeFocused();
+        // fill() は対象へフォーカスし直すため、実際のキーボード入力で入力先を検証する。
+        await page.keyboard.type('my');
+        await expect(input).toHaveValue('enemy');
+        await expect(page.locator('.grid-textfield-active')).toHaveCount(0);
+        await expect(page.locator('.tab-button-dirty-visible')).toHaveCount(0);
+        const rows = await page.evaluate(() => (window as Window & {
+            editorApi: {data: {getRows(tableName: string): string[][] | null}};
+        }).editorApi.data.getRows('enemy'));
+        expect(rows).toEqual([['1', 'Goblin']]);
+
+        await page.keyboard.press('Escape');
+        await expect(overlay).toBeHidden();
+        const nameCell = page.locator('.editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]');
+        await nameCell.click();
+        await page.keyboard.type('Orc');
+        await page.keyboard.press('Enter');
+        await expect(nameCell).toHaveText('Orc');
+    });
+
+    test('パレットから既存の別テーブルを選ぶとそのテーブルで入力できる', async ({page}) => {
+        await setupTestPageAsync(page);
+        await page.locator('#explorer .explorer-file').getByText('enemy', {exact: true}).click();
+        await expect(page.locator('.tab-wrapper[data-tab-name="enemy"] .editor-table')).toBeVisible();
+        await page.locator('#explorer .explorer-file').getByText('item', {exact: true}).click();
+        await expect(page.locator('.tab-wrapper[data-tab-name="item"] .editor-table')).toBeVisible();
+
+        await page.keyboard.press('Control+p');
+        await page.keyboard.type('enemy');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.command-palette-overlay')).toBeHidden();
+        await expect(page.locator('.tab-wrapper[data-tab-name="enemy"] .grid-textfield')).toBeFocused();
+        await page.keyboard.press('ArrowRight');
+        await page.keyboard.type('Orc');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.tab-wrapper[data-tab-name="enemy"] .editor-table-row[data-row-index="0"] .editor-table-cell[data-col="1"]')).toHaveText('Orc');
+    });
+
+    test('テーブル名と列名の補完中はパレットにフォーカスを維持する', async ({page}) => {
+        await setupTestPageAsync(page);
+        await page.keyboard.press('Control+p');
+        const input = page.locator('.command-palette-input');
+        await page.keyboard.type('enemy');
+        await page.keyboard.press('Tab');
+        await expect(input).toHaveValue('enemy.');
+        await expect(input).toBeFocused();
+        await expect(page.locator('.command-palette-item')).toHaveCount(2);
+
+        await page.keyboard.press('ArrowDown');
+        await page.keyboard.press('Enter');
+        await expect(input).toHaveValue('enemy.name=');
+        await expect(input).toBeFocused();
+        await page.keyboard.type('Goblin');
+        await expect(page.locator('.command-palette-item')).toHaveCount(1);
+        await expect(page.locator('.command-palette-item')).toContainText('Goblin');
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.command-palette-overlay')).toBeHidden();
+        await expect(page.locator('.tab-wrapper[data-tab-name="enemy"] .grid-textfield')).toBeFocused();
+    });
+
     test('Ctrl+Pでコマンドパレットが表示される', async ({page, mockFileSystem}) => {
         // コマンドパレットのオーバーレイを取得
         const overlay = page.locator('.command-palette-overlay');

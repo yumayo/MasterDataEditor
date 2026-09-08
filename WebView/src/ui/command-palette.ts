@@ -65,7 +65,7 @@ export class CommandPalette {
     private readonly tab: Tab;
     private readonly dataProvider: SearchDataProvider;
     private readonly tableItems: TableItem[];
-    private readonly overlayElement: HTMLElement;
+    private readonly overlayElement: HTMLDialogElement;
     private readonly inputElement: HTMLInputElement;
     private readonly listElement: HTMLElement;
     private selectedIndex: number;
@@ -82,9 +82,10 @@ export class CommandPalette {
         this.filteredItems = [];
         this.queryRequestId = 0;
 
-        // オーバーレイ要素を構築
-        this.overlayElement = document.createElement('div');
+        // モーダルで背景へのフォーカス移動を防ぎ、非同期のタブ復元中も検索欄への入力を維持する。
+        this.overlayElement = document.createElement('dialog');
         this.overlayElement.classList.add('command-palette-overlay');
+        this.overlayElement.setAttribute('aria-label', 'コマンドパレット');
 
         // パレット本体
         const paletteElement = document.createElement('div');
@@ -107,6 +108,10 @@ export class CommandPalette {
         parentElement.appendChild(this.overlayElement);
 
         // イベントハンドラを登録
+        this.overlayElement.addEventListener('cancel', (e: Event) => {
+            e.preventDefault();
+            this.hide();
+        });
         const hideOnOverlayBackground = (eventTarget: EventTarget | null) => {
             if (!(eventTarget instanceof Node)) return;
             // オーバーレイ背景部分のクリックでのみ閉じる（パレット本体のクリックは無視）
@@ -123,6 +128,7 @@ export class CommandPalette {
 
         this.inputElement.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
+                e.preventDefault();
                 this.hide();
                 return;
             }
@@ -176,6 +182,7 @@ export class CommandPalette {
         this.overlayElement.classList.add('visible');
         this.inputElement.value = '';
         this.renderList('');
+        this.overlayElement.showModal();
         this.inputElement.focus();
     }
 
@@ -184,6 +191,7 @@ export class CommandPalette {
      */
     hide(): void {
         this.overlayElement.classList.remove('visible');
+        this.overlayElement.close();
     }
 
     /**
@@ -195,6 +203,14 @@ export class CommandPalette {
         if (this.filteredItems.length === 0) return;
         if (index < 0 || index >= this.filteredItems.length) return;
         const item = this.filteredItems[index];
+        if (item.kind === 'column') {
+            // 列名補完はモーダルを維持したまま検索を続行する。
+            this.inputElement.value = item.tableName + '.' + item.columnName + '=';
+            this.renderList(this.inputElement.value);
+            return;
+        }
+        // 既存タブへの遷移は同期的にフォーカスするため、先に背景の操作制限を解除する。
+        this.hide();
         if (item.kind === 'table') {
             // テーブル名モード: タブを開く
             const tabButton = this.tab.append(item.tabName, null);
@@ -205,13 +221,7 @@ export class CommandPalette {
         } else if (item.kind === 'bookmark') {
             // ブックマークモード: Tab の共通ジャンプメソッドに委譲する
             this.tab.navigateToBookmark(item.tableName, item.rowKey, item.columnName);
-        } else if (item.kind === 'column') {
-            // 列名補完モード: 入力欄に「テーブル名.列名=」をセットして検索続行
-            this.inputElement.value = item.tableName + '.' + item.columnName + '=';
-            this.renderList(this.inputElement.value);
-            return; // hide() しない
         }
-        this.hide();
     }
 
     /**
