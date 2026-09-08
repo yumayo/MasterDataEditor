@@ -70,6 +70,8 @@ export interface UiStoredTab {
     name: string;
     description: string | null;
     pinned: boolean;
+    /** リビジョン比較の一時タブ。省略時は通常タブとして復元する。 */
+    preview?: boolean;
     diff: UiStoredDiffTab | null;
     view: UiStoredViewPluginTab | null;
     scroll: UiScrollPosition | null;
@@ -261,6 +263,7 @@ function cloneStoredTab(tab: UiStoredTab): UiStoredTab {
         name: tab.name,
         description: tab.description,
         pinned: tab.pinned,
+        ...(tab.preview === true ? {preview: true} : {}),
         diff: tab.diff === null ? null : cloneStoredDiffTab(tab.diff),
         view: tab.view === null ? null : cloneStoredViewPluginTab(tab.view),
         scroll: tab.scroll === null ? null : cloneScrollPosition(tab.scroll),
@@ -555,11 +558,13 @@ function normalizeStoredTab(value: unknown): UiStoredTab | null {
     if (REMOVED_SPECIAL_TAB_NAMES.has(name)) return null;
     const editorTable = normalizeStoredEditorTableState(record['editorTable']);
     const scroll = normalizeOptionalScrollPosition(record['scroll']) ?? (editorTable === null ? null : cloneScrollPosition(editorTable.scroll));
+    const diff = normalizeStoredDiffTab(record['diff']);
     return {
         name,
         description: normalizeTabDescription(record['description']),
         pinned: record['pinned'] === true,
-        diff: normalizeStoredDiffTab(record['diff']),
+        ...(record['preview'] === true && record['pinned'] !== true && diff?.kind === 'branchCompare' ? {preview: true} : {}),
+        diff,
         view: normalizeStoredViewPluginTab(record['view']),
         scroll,
         editorTable,

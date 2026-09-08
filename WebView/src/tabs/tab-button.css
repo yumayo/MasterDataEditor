@@ -73,6 +73,11 @@
     text-overflow: ellipsis;
 }
 
+/* 一時タブはダブルクリックで通常タブに切り替わる。 */
+.tab-button-preview .tab-button-name {
+    font-style: italic;
+}
+
 /* description（説明文）: 補助情報として控えめな小さめフォント */
 .tab-button-description {
     font-size: 11px;

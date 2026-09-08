@@ -1190,6 +1190,7 @@ export class Tab {
                     name: tabButton.name,
                     description: null,
                     pinned: tabButton.isPinned(),
+                    ...(tabButton.isPreview() ? {preview: true} : {}),
                     diff: {...diff},
                     view: null,
                     scroll: this.getStoredTabScrollPosition(tabButton.name),
@@ -1664,7 +1665,7 @@ export class Tab {
      * すでに追加されている名前だった場合は何もせず、その要素を返却します。
      * description は TabButton の2行表示に使用します（null の場合は1行表示）。
      */
-    append(name: string, description: string | null, pinned: boolean = false) {
+    append(name: string, description: string | null, pinned: boolean = false, preview: boolean = false) {
 
         // すでに同じ名前のオブジェクトが追加されていたら何もしないです。
         let tabButton = this.tabButtons.find(x => x.name === name);
@@ -1672,7 +1673,7 @@ export class Tab {
             return tabButton;
         }
 
-        tabButton = new TabButton(this.editor, this, name, description, pinned);
+        tabButton = new TabButton(this.editor, this, name, description, pinned, preview);
         const insertIndex = this.getTabButtonInsertIndexForPinnedState(pinned);
         this.insertTabButtonAt(tabButton, insertIndex);
         this.scheduleTabLayout(true);
@@ -1710,6 +1711,7 @@ export class Tab {
                 name: tab.name,
                 description: tab.description,
                 pinned: tab.pinned,
+                preview: tab.preview,
                 diff: tab.diff === null ? null : {...tab.diff},
                 view: tab.view === null ? null : {...tab.view},
                 scroll: tab.scroll === null ? null : this.cloneUiScrollPosition(tab.scroll),
@@ -1759,7 +1761,7 @@ export class Tab {
                 if (tab.diff !== null) {
                     this.diffTabMetadata.set(name, {...tab.diff});
                 }
-                this.append(name, tab.description, tab.pinned);
+                this.append(name, tab.description, tab.pinned, tab.preview === true);
                 restoredNames.add(name);
             }
 
@@ -2955,6 +2957,15 @@ export class Tab {
         this.persistTabs();
     }
 
+    /** ダブルクリックした一時タブを通常タブにする。 */
+    keepTabOpen(tabName: string): void {
+        const tabButton = this.tabButtons.find(button => button.name === tabName);
+        if (tabButton === undefined || !tabButton.isPreview()) return;
+        tabButton.setPreview(false);
+        this.scheduleTabLayout();
+        this.persistTabs();
+    }
+
     isTabPinned(tabName: string): boolean {
         return this.tabButtons.find(button => button.name === tabName)?.isPinned() === true;
     }
@@ -3017,6 +3028,9 @@ export class Tab {
      */
     async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal): Promise<void> {
         const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
+        // 通常タブを経由した場合も、既存の一時タブを再利用する。
+        const previewTab = this.tabButtons.find(button => button.name === this.activeTabName && button.isPreview())
+            ?? this.tabButtons.find(button => button.isPreview());
         const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, abortSignal);
         if (versions === null) return;
 
@@ -3034,7 +3048,12 @@ export class Tab {
         };
         await this.createOrReplaceDiffTabAsync(
             diffTabName, file.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv, file.path,
-            leftLabel, rightLabel, file.status === 'A', {metadata, abortSignal}
+            leftLabel, rightLabel, file.status === 'A', {
+                metadata, abortSignal, preview: true,
+                // 既に開いている比較はそのタブを使い、他の一時タブを閉じない。
+                replacePreview: previewTab?.isPreview() && this.tabButtons.includes(previewTab)
+                    && !this.tabButtons.some(button => button.name === diffTabName) ? previewTab : undefined,
+            }
         );
     }
 
@@ -3370,12 +3389,23 @@ export class Tab {
         leftLabel: string | null,
         rightLabel: string | null,
         isNew: boolean,
-        options: { loadingToken?: number; metadata?: UiStoredDiffTab | null; abortSignal?: AbortSignal } = {}
+        options: { loadingToken?: number; metadata?: UiStoredDiffTab | null; abortSignal?: AbortSignal; preview?: boolean; replacePreview?: TabButton } = {}
     ): Promise<void> {
         // await中にも変化する中断状態を、確認のたびに読み直す。
         const isAborted = (): boolean => options.abortSignal?.aborted === true;
         if (isAborted()) return;
-        const token = options.loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true);
+        // 入れ替え時は旧タブを表示したまま準備し、失敗・キャンセル時にも旧差分を残す。
+        const buildDiff = () => Promise.all([
+            DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv),
+            applyStoredColumnWidthsToSchemaAsync(tableName, JSON.parse(schemaJson) as Record<string, unknown>),
+        ] as const);
+        const replacePreview = options.replacePreview;
+        const activeTabBeforeBuild = this.activeTabName;
+        const preparedDiff = replacePreview === undefined ? undefined : await buildDiff();
+        if (isAborted()) return;
+        // 非アクティブな一時タブも入れ替えるが、準備中にユーザーが移動した場合は表示を奪わない。
+        if (replacePreview !== undefined && (!this.tabButtons.includes(replacePreview) || this.activeTabName !== activeTabBeforeBuild)) return;
+        const token = options.loadingToken ?? this.beginDiffTabLoadingForName(diffTabName, `差分読み込み中: ${tableName}`, true, options.preview);
         if (token === false) return;
 
         const tabButton = this.tabButtons.find(btn => btn.name === diffTabName);
@@ -3388,10 +3418,7 @@ export class Tab {
         try {
             // 差分の左右ペインにも通常テーブルと同じユーザー列幅を適用する。
             // diffIdentityやストアの一時キーではなく、元のテーブル名で取得する。
-            const [diffBuildResult, displaySchema] = await Promise.all([
-                DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv),
-                applyStoredColumnWidthsToSchemaAsync(tableName, JSON.parse(schemaJson) as Record<string, unknown>),
-            ]);
+            const [diffBuildResult, displaySchema] = preparedDiff ?? await buildDiff();
             if (isAborted()) {
                 const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
                 const finished = this.finishDiffTabLoading(diffTabName, token, !hadExistingDiffTab);
@@ -3447,6 +3474,13 @@ export class Tab {
             }
 
             this.finishDiffTabLoading(diffTabName, token, false);
+            if (replacePreview !== undefined && replacePreview.isPreview() && !replacePreview.isDirty() && this.tabButtons.includes(replacePreview)) {
+                const replaceIndex = this.tabButtons.indexOf(replacePreview);
+                this.performCloseTab(replacePreview.name);
+                this.tabButtons.splice(this.tabButtons.indexOf(tabButton), 1);
+                this.insertTabButtonAt(tabButton, replaceIndex);
+                this.scheduleTabLayout(true);
+            }
             tabButton.click();
         } catch (error: unknown) {
             const shouldRestoreExistingTab = hadExistingDiffTab && this.activeTabName === diffTabName;
@@ -3914,7 +3948,7 @@ export class Tab {
         }
     }
 
-    private beginDiffTabLoadingForName(diffTabName: string, labelText: string, respectDirtyState: boolean): number | false {
+    private beginDiffTabLoadingForName(diffTabName: string, labelText: string, respectDirtyState: boolean, preview: boolean = false): number | false {
         if (respectDirtyState && this.diffTabs.has(diffTabName)) {
             const existingButton = this.tabButtons.find(btn => btn.name === diffTabName);
             if (existingButton !== undefined && existingButton.isDirty()) {
@@ -3937,7 +3971,7 @@ export class Tab {
             if (label instanceof HTMLElement) label.textContent = labelText;
         }
 
-        const tabButton = this.append(diffTabName, null);
+        const tabButton = this.append(diffTabName, null, false, preview);
         tabButton.click();
         return token;
     }

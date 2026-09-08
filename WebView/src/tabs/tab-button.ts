@@ -14,12 +14,14 @@ export class TabButton {
     private dirtyIndicator: HTMLElement;
     private closeButton: HTMLButtonElement;
     private pinned: boolean;
+    private preview: boolean;
 
-    constructor(editor: Editor, tab: Tab, name: string, description: string | null, pinned: boolean = false) {
+    constructor(editor: Editor, tab: Tab, name: string, description: string | null, pinned: boolean = false, preview: boolean = false) {
         this.editor = editor;
         this.name = name;
         this.tab = tab;
         this.pinned = false;
+        this.preview = false;
 
         this.element = document.createElement('li');
         this.element.classList.add('tab-button');
@@ -27,6 +29,7 @@ export class TabButton {
         this.element.title = name;
 
         this.element.addEventListener('click', this.onClick.bind(this));
+        this.element.addEventListener('dblclick', () => this.tab.keepTabOpen(this.name));
         this.element.addEventListener('auxclick', this.onAuxClick.bind(this));
         this.element.addEventListener('mousedown', this.onMouseDown.bind(this));
         this.element.addEventListener('contextmenu', this.onContextMenu.bind(this));
@@ -75,15 +78,26 @@ export class TabButton {
 
         this.element.appendChild(buttonContainer);
         this.setPinned(pinned);
+        this.setPreview(preview);
     }
 
     setPinned(pinned: boolean): void {
         this.pinned = pinned;
         this.element.classList.toggle('tab-button-pinned', pinned);
+        if (pinned) this.setPreview(false);
     }
 
     isPinned(): boolean {
         return this.pinned;
+    }
+
+    setPreview(preview: boolean): void {
+        this.preview = preview && !this.pinned;
+        this.element.classList.toggle('tab-button-preview', this.preview);
+    }
+
+    isPreview(): boolean {
+        return this.preview;
     }
 
     /**

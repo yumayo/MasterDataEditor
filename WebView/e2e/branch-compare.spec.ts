@@ -168,6 +168,8 @@ async function openBranchComparePanelAsync(page: Page): Promise<void> {
 async function delayDiffWorkerMessagesAsync(page: Page, delayMs: number): Promise<void> {
     await page.evaluate((workerDelayMs: number) => {
         type WorkerMessageHandler = (this: Worker, event: MessageEvent<unknown>) => unknown;
+        const mockWindow = window as unknown as {__delayedDiffWorkerMessageCount: number};
+        mockWindow.__delayedDiffWorkerMessageCount = 0;
         const NativeWorker = window.Worker;
         window.Worker = new Proxy(NativeWorker, {
             construct(Target, args) {
@@ -183,6 +185,7 @@ async function delayDiffWorkerMessagesAsync(page: Page, delayMs: number): Promis
                 worker.addEventListener('message', (event: MessageEvent<unknown>) => {
                     const handler = messageHandler;
                     if (handler === null) return;
+                    mockWindow.__delayedDiffWorkerMessageCount++;
                     window.setTimeout(() => { handler.call(worker, event); }, workerDelayMs);
                 });
                 return worker;
@@ -236,6 +239,216 @@ async function getHoverTextBoundsAsync(page: Page, text: string): Promise<{x: nu
 test.describe('リビジョン比較パネル', () => {
     test.beforeEach(async ({page}) => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
+    });
+
+    test('アクティブな一時差分タブを同じ位置で再利用し古い差分を破棄する', async ({page}) => {
+        await page.locator('[data-panel="sourceControl"]').click();
+        await page.locator('.source-control-changes-section .source-control-file-item').first().click();
+        const sourceTab = page.locator('.tab-button[title="差分: modified"]');
+        await expect(sourceTab).toHaveClass(/tab-button-active/);
+        await expect(sourceTab).not.toHaveClass(/tab-button-preview/);
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const modifiedTab = page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]');
+        await expect(modifiedTab).toHaveClass(/tab-button-preview/);
+        await expect(modifiedTab.locator('.tab-button-name')).toHaveCSS('font-style', 'italic');
+        await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
+
+        // 一時タブの右側に実テーブルを置き、入れ替え後もタブ順が変わらないことを確認する。
+        await page.locator('.branch-compare-file-item[data-status="A"]').hover();
+        await page.locator('.branch-compare-file-item[data-status="A"] .branch-compare-open-file').click();
+        await expect(page.locator('.tab-button[title="added"]')).toHaveClass(/tab-button-active/);
+        await modifiedTab.click();
+        for (const [status, tableName, value, pane] of [['A', 'added', 'added-only', 'right'], ['D', 'deleted', 'deleted-only', 'left']] as const) {
+            await page.locator(`.branch-compare-file-item[data-status="${status}"]`).click();
+            await expect(page.locator(`.diff-tab:visible .diff-pane-${pane}`)).toContainText(value);
+            await expect(page.locator('.tab-button .tab-button-name')).toHaveText([
+                '差分: modified', `差分: ${tableName} (main ↔ feature/orders)`, 'added',
+            ]);
+            await expect(page.locator('.tab-button-preview')).toHaveCount(1);
+            await expect(page.locator('.diff-tab')).toHaveCount(2);
+        }
+        await expect(modifiedTab).toHaveCount(0);
+    });
+
+    test('通常タブを経由して比較を開いても既存の一時タブを再利用する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        const modifiedFile = page.locator('.branch-compare-file-item[data-status="M"]');
+        await modifiedFile.click();
+        const modifiedTab = page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]');
+        await expect(page.locator('.diff-tab:visible')).toBeVisible();
+        await modifiedTab.locator('.tab-button-name').dblclick();
+        await expect(modifiedTab).not.toHaveClass(/tab-button-preview/);
+        await expect(modifiedTab.locator('.tab-button-name')).toHaveCSS('font-style', 'normal');
+        await expect(modifiedTab).not.toHaveClass(/tab-button-pinned/);
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+
+        // 開いている通常タブへの再選択では重複も一時タブへの降格も起きない。
+        await modifiedFile.click();
+        await expect(modifiedTab).toHaveClass(/tab-button-active/);
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        await expect(modifiedTab).not.toHaveClass(/tab-button-preview/);
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('deleted-only');
+        await expect(page.locator('.tab-button .tab-button-name')).toHaveText([
+            '差分: modified (main ↔ feature/orders)', '差分: deleted (main ↔ feature/orders)',
+        ]);
+        await expect(page.locator('.tab-button-preview')).toHaveCount(1);
+        await expect(page.locator('.diff-tab')).toHaveCount(2);
+
+        await page.locator('.tab-button-active .tab-button-close').click();
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+    });
+
+    test('一時差分から実テーブルを経由して別の比較を開くと元の一時タブの位置を再利用する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        const addedFile = page.locator('.branch-compare-file-item[data-status="A"]');
+        await addedFile.hover();
+        await addedFile.locator('.branch-compare-open-file').click();
+        await expect(page.locator('.tab-wrapper[data-tab-name="added"] .editor-table')).toBeVisible();
+        await expect(page.locator('.tab-button[title="added"]')).toHaveClass(/tab-button-active/);
+
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('deleted-only');
+        await expect(page.locator('.tab-button .tab-button-name')).toHaveText([
+            '差分: deleted (main ↔ feature/orders)', 'added',
+        ]);
+        await expect(page.locator('.tab-button-preview')).toHaveCount(1);
+        await expect(page.locator('.diff-tab')).toHaveCount(1);
+
+        await page.locator('.tab-button[title="added"]').click();
+        await expect(page.locator('.tab-wrapper[data-tab-name="added"] .editor-table')).toBeVisible();
+    });
+
+    test('非アクティブな一時タブの入れ替え準備中にタブを移動すると表示を奪わない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        const modifiedTab = page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]');
+        await modifiedTab.locator('.tab-button-name').dblclick();
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await modifiedTab.click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+
+        await delayDiffWorkerMessagesAsync(page, 500);
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await page.waitForFunction(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount > 0);
+        await page.locator('.tab-button[title="差分: added (main ↔ feature/orders)"]').click();
+        await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await expect(page.locator('.tab-button .tab-button-name')).toHaveText([
+            '差分: modified (main ↔ feature/orders)', '差分: added (main ↔ feature/orders)',
+        ]);
+        await expect(page.locator('.tab-button-preview')).toHaveCount(1);
+    });
+
+    test('通常化した差分と一時差分を復元して一時タブだけを再利用する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toBeVisible();
+        await page.locator('.tab-button-active .tab-button-name').dblclick();
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await expect.poll(async () => {
+            const raw = await readMockFileAsync(page, UI_STATE_FILE);
+            if (typeof raw !== 'string') return [];
+            const state = JSON.parse(raw);
+            return state.tabs.open.map((tab: {preview?: boolean}) => tab.preview === true);
+        }).toEqual([false, true]);
+
+        await page.reload();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await expect(page.locator('.tab-button-active')).toHaveClass(/tab-button-preview/);
+        await expect(page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]')).not.toHaveClass(/tab-button-preview/);
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('deleted-only');
+        await expect(page.locator('.tab-button .tab-button-name')).toHaveText([
+            '差分: modified (main ↔ feature/orders)', '差分: deleted (main ↔ feature/orders)',
+        ]);
+    });
+
+    test('一時差分タブをピン留めすると通常化し別テーブルで上書きしない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toBeVisible();
+        const modifiedTab = page.locator('.tab-button-active');
+        await modifiedTab.click({button: 'right'});
+        await page.locator('.context-menu-item', {hasText: 'タブを固定'}).click();
+        await expect(modifiedTab).toHaveClass(/tab-button-pinned/);
+        await expect(modifiedTab).not.toHaveClass(/tab-button-preview/);
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await expect(page.locator('.tab-button-pinned')).toContainText('差分: modified');
+    });
+
+    test('別テーブルの読み込み失敗時は元の一時差分タブを残す', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            files['2222222']['schema/added.json'] = '{}';
+        });
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await expect(page.locator('.notification-toast-error')).toContainText('スキーマが不正です');
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect(page.locator('.tab-button-active')).toHaveClass(/tab-button-preview/);
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+    });
+
+    test('一時タブ入れ替えのworkerをキャンセルすると元の差分を残し連続選択では最後の差分だけ開く', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        await delayDiffWorkerMessagesAsync(page, 500);
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await page.waitForFunction(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount > 0);
+        await page.locator('.branch-compare-target-input').fill('changed');
+        await page.waitForTimeout(600);
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+
+        await page.locator('.branch-compare-target-input').fill('');
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await page.waitForFunction(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount > 1);
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('deleted-only');
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect(page.locator('.diff-tab')).toHaveCount(1);
+    });
+
+    test('入れ替え準備中にダブルクリックした一時タブは破棄しない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        await delayDiffWorkerMessagesAsync(page, 500);
+        await page.locator('.branch-compare-file-item[data-status="A"]').click();
+        await page.waitForFunction(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount > 0);
+        await page.locator('.tab-button-active .tab-button-name').dblclick();
+        await expect(page.locator('.diff-tab:visible')).toContainText('added-only');
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await expect(page.locator('.tab-button-preview')).toHaveCount(1);
+        await expect(page.locator('.tab-button[title="差分: modified (main ↔ feature/orders)"]')).not.toHaveClass(/tab-button-preview/);
     });
 
     test('テーブル内検索は左右の固定リビジョンを検索し現在ファイルのキャッシュと混同しない', async ({page}) => {
@@ -482,6 +695,7 @@ test.describe('リビジョン比較パネル', () => {
             await page.locator('.branch-compare-file-item[data-status="A"]').click();
             const otherTab = page.locator('.tab-button', {hasText: '差分: added (main ↔ feature/orders)'});
             await expect(otherTab).toBeVisible();
+            await otherTab.locator('.tab-button-name').dblclick();
             await page.locator('.branch-compare-file-item[data-status="M"]').click();
             const right = page.locator('.diff-tab:visible .diff-pane-right');
             await right.locator('.editor-table-cell').filter({hasText: /^after$/}).hover();
@@ -1699,6 +1913,7 @@ test.describe('リビジョン比較パネル', () => {
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
         await expect(page.locator('.tab-button.tab-button-active', {hasText: '差分: modified (main ↔ feature/orders)'})).toBeVisible();
         await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
+        await page.locator('.tab-button-active .tab-button-name').dblclick();
 
         await page.evaluate(() => {
             const mockWindow = window as unknown as {__mockGitBranchCompare: MockBranchCompareResult};
