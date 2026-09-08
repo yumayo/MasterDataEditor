@@ -13,6 +13,7 @@ services:
       - ./WebView/index.css:/app/WebView/index.css:ro
       - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
       - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
+      - ./WebView/tsconfig.view-plugin-api.json:/app/WebView/tsconfig.view-plugin-api.json:ro
       - ./dist:/app/dist
     environment:
       - NODE_ENV=production
@@ -31,6 +32,7 @@ services:
       - ./WebView/index.css:/app/WebView/index.css:ro
       - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
       - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
+      - ./WebView/tsconfig.view-plugin-api.json:/app/WebView/tsconfig.view-plugin-api.json:ro
       # テスト用config.json（src/config/config.jsonはgitignoreされているため）
       - ./WebView/e2e/fixtures/config.json:/app/WebView/src/config/config.json:ro
       # Playwright設定・テストファイル
