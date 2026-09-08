@@ -238,6 +238,128 @@ test.describe('リビジョン比較パネル', () => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
     });
 
+    test('テーブル内検索は左右の固定リビジョンを検索し現在ファイルのキャッシュと混同しない', async ({page}) => {
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            files['2222222']['data/modified.csv'] = 'id,name,value\n1,revision-only,150';
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const diff = page.locator('.diff-tab:visible');
+        const left = diff.locator('.diff-pane-left');
+        const right = diff.locator('.diff-pane-right');
+        const input = diff.locator('.editor-table-find-input');
+        const count = diff.locator('.editor-table-find-count');
+        for (const [pane, ownValue, otherValue] of [[left, 'before', 'revision-only'], [right, 'revision-only', 'before']] as const) {
+            await pane.locator('.editor-table-cell').filter({hasText: new RegExp(`^${ownValue}$`)}).click();
+            await page.keyboard.press('Control+f');
+            await expect(pane.locator('.editor-table-find-input')).toBeFocused();
+            await input.fill(ownValue);
+            await expect(count).toHaveText('1/1');
+            const match = pane.locator('.editor-table-cell-find-current');
+            await expect(match).toHaveText(ownValue);
+            await expect(match).toHaveCSS('background-color', 'rgba(255, 193, 7, 0.38)');
+            await expect(diff.locator('.editor-table-cell-find-match')).toHaveCount(1);
+            await expect.poll(() => pane.locator('canvas.scrollbar-marker-track').evaluate((canvas: HTMLCanvasElement) => {
+                const context = canvas.getContext('2d')!;
+                const pixels = context.getImageData(Math.floor(canvas.width / 2), 0, 1, canvas.height).data;
+                for (let i = 0; i < pixels.length; i += 4) {
+                    if (pixels[i] > 240 && pixels[i + 1] > 180 && pixels[i + 1] < 205 && pixels[i + 2] < 20) return true;
+                }
+                return false;
+            })).toBe(true);
+            await input.fill(otherValue);
+            await expect(count).toHaveText('0/0');
+            await input.fill('after');
+            await expect(count).toHaveText('0/0');
+            await input.fill(ownValue);
+            await expect(count).toHaveText('1/1');
+        }
+        await page.keyboard.press('Escape');
+        await expect(diff.locator('.editor-table-find-bar')).not.toBeVisible();
+        await expect(diff.locator('.editor-table-cell-find-match')).toHaveCount(0);
+        await page.keyboard.press('Delete');
+        await page.keyboard.press('Control+s');
+        await expect(right.locator('.editor-table-cell').filter({hasText: /^revision-only$/})).toBeVisible();
+        expect(await readMockFileAsync(page, 'data/modified.csv')).toBe(COMMIT_FILES[RIGHT_SHA]['data/modified.csv']);
+    });
+
+    test('テーブル内検索で画面外の結果へ前後移動し位置合わせ用の空行を除外する', async ({page}) => {
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            const rows = Array.from({length: 400}, (_, i) => `${i + 1},${i === 299 || i === 389 ? 'Needle' : 'row'},100`);
+            files['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            files['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.filter((_, i) => i !== 0).join('\n') + '\n401,,200';
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const diff = page.locator('.diff-tab:visible');
+        const left = diff.locator('.diff-pane-left');
+        const right = diff.locator('.diff-pane-right');
+        await expect(left.locator('.editor-table-cell').filter({hasText: /^Needle$/})).toHaveCount(0);
+        await left.locator('.editor-table-cell').filter({hasText: /^row$/}).first().click();
+        await page.keyboard.press('Control+f');
+        const input = diff.locator('.editor-table-find-input');
+        const count = diff.locator('.editor-table-find-count');
+        await input.fill('Needle');
+        await expect(count).toHaveText('1/2');
+        await expect(left.locator('.editor-table-cell-find-current')).toBeInViewport();
+        await expect(left.locator('.editor-table-cell-find-current').locator('..')).toHaveAttribute('data-row-index', '299');
+        await input.press('Enter');
+        await expect(count).toHaveText('2/2');
+        await expect(left.locator('.editor-table-cell-find-current')).toBeInViewport();
+        await expect(left.locator('.editor-table-cell-find-current').locator('..')).toHaveAttribute('data-row-index', '389');
+        await input.press('Shift+Enter');
+        await expect(count).toHaveText('1/2');
+        await expect(left.locator('.editor-table-cell-find-current').locator('..')).toHaveAttribute('data-row-index', '299');
+        // 左の追加行用空白と、右の削除行用空白は除外し、実データの空セルだけに一致する。
+        await diff.getByTitle('正規表現', {exact: true}).click();
+        await input.fill('^$');
+        await expect(count).toHaveText('0/0');
+        await right.locator('.editor-table-cell').filter({hasText: /^Needle$/}).first().click();
+        await expect(diff.locator('.editor-table-find-bar')).toHaveCount(0);
+        await page.keyboard.press('Control+f');
+        await expect(count).toHaveText('1/1');
+        await expect(right.locator('.editor-table-cell-find-current')).toBeInViewport();
+        await expect(right.locator('.editor-table-cell-find-current').locator('..')).not.toHaveClass(/diff-row-empty/);
+    });
+
+    test('テーブル内検索の列名オプションと差分切替・終了時の後片付けが機能する', async ({page}) => {
+        const errors: string[] = [];
+        page.on('pageerror', error => errors.push(error.message));
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const diff = page.locator('.diff-tab:visible');
+        await diff.locator('.diff-pane-left .editor-table-cell').filter({hasText: /^before$/}).click();
+        await page.keyboard.press('Control+f');
+        const input = diff.locator('.editor-table-find-input');
+        await input.fill('name');
+        await expect(diff.locator('.editor-table-find-count')).toHaveText('1/1');
+        await expect(diff.locator('.diff-pane-left .editor-table-column-header-find-match:visible').first()).toContainText('name');
+        await expect(diff.locator('.diff-pane-right .editor-table-column-header-find-match')).toHaveCount(0);
+        await diff.getByTitle('列名と列の説明を検索対象に含める').click();
+        await expect(diff.locator('.editor-table-find-count')).toHaveText('0/0');
+        await input.fill('before');
+        await expect(diff.locator('.editor-table-find-count')).toHaveText('1/1');
+        await page.locator('.branch-compare-file-item[data-status="D"]').click();
+        await expect(page.locator('.editor-table-find-bar-visible')).toHaveCount(0);
+        await expect(page.locator('.editor-table-cell-find-match')).toHaveCount(0);
+        await diff.locator('.diff-pane-left .editor-table-cell').filter({hasText: /^deleted-only$/}).click();
+        await page.keyboard.press('Control+f');
+        await input.fill('deleted-only');
+        await expect(diff.locator('.editor-table-find-count')).toHaveText('1/1');
+        await expect(diff.locator('.editor-table-cell-find-current')).toHaveCSS('background-color', 'rgba(255, 193, 7, 0.38)');
+        // 検索待機中にタブを閉じても、解除済みのストアやDOMを参照しない。
+        await input.fill('another');
+        await page.locator('.tab-button-active .tab-button-close').click();
+        await expect(page.locator('.editor-table-find-bar')).toHaveCount(0);
+        await expect(page.locator('.editor-table-cell-find-match')).toHaveCount(0);
+        expect(errors).toEqual([]);
+    });
+
     test('左側はファイル一覧だけを表示し、変更者を左右の差分セルホバーで確認できる', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);

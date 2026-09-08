@@ -980,7 +980,13 @@ export class EditorTable {
     connectScrollbarMarkerTrack(track: ScrollbarMarkerTrack): void { this.validationMarkers.connectScrollbarMarkerTrack(track); }
     createScrollbarMarkerTrack(cssClass: string): ScrollbarMarkerTrack { return this.validationMarkers.createScrollbarMarkerTrack(cssClass); }
     reattachScrollbarMarkerTrack(): void { this.validationMarkers.reattachScrollbarMarkerTrack(); }
-    updateSearchScrollbarMarkers(markers: ReadonlyArray<MarkerEntry>): void { this.validationMarkers.updateSearchScrollbarMarkers(markers); }
+    updateSearchScrollbarMarkers(markers: ReadonlyArray<MarkerEntry>): void {
+        if (this.diffTab !== false) {
+            this.diffTab.updateSearchScrollbarMarkers(this, markers);
+            return;
+        }
+        this.validationMarkers.updateSearchScrollbarMarkers(markers);
+    }
 
     getScrollLeft(): number {
         return this.scrollContainer.scrollLeft;

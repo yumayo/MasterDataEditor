@@ -1,4 +1,5 @@
-import type {TabState} from "../tabs/tab";
+import type {Selection} from "./selection";
+import type {EditorTableHandler} from "./editor-table-handler";
 import {
     getQueryHighlightSegments,
     matchesQuery,
@@ -8,6 +9,14 @@ import {
 import type {HighlightSegment} from "../search/fuzzy-search";
 import type {MarkerEntry} from "../ui/scrollbar-marker-track";
 import type {EditorTable} from "./editor-table";
+
+/** 通常タブと差分ペインに共通する検索対象。 */
+export interface EditorTableFindState {
+    editorTable: EditorTable;
+    selection: Selection;
+    editorTableHandler: EditorTableHandler;
+    wrapperElement: HTMLElement;
+}
 
 interface ColumnHeaderNameHighlight {
     kind: 'name';
@@ -44,7 +53,7 @@ const HEADER_HIGHLIGHTED_LABEL_CLASS = 'editor-table-find-highlighted-label';
 const HEADER_MATCH_CLASS = 'editor-table-column-header-find-match';
 
 /**
- * アクティブな通常 EditorTable タブだけを対象にする検索バー。
+ * 指定された EditorTable の表示データを対象にする検索バー。
  */
 export class EditorTableFindBar {
     private readonly element: HTMLElement;
@@ -60,8 +69,8 @@ export class EditorTableFindBar {
     private readonly includeColumnsButton: HTMLButtonElement;
     private readonly handleTableViewportChanged: () => void;
     private readonly handleTableClick: (event: MouseEvent) => void;
-    private currentState: TabState | null;
-    private observedState: TabState | null;
+    private currentState: EditorTableFindState | null;
+    private observedState: EditorTableFindState | null;
     private tableRowsObserver: MutationObserver | null;
     private matches: FindMatch[];
     private matchIndicesByRow: Map<number, number[]>;
@@ -207,7 +216,7 @@ export class EditorTableFindBar {
         this.updateNavigationButtons();
     }
 
-    show(state: TabState): void {
+    show(state: EditorTableFindState): void {
         if (this.currentState !== state) {
             this.unobserveState();
             this.clearSearchScrollbarMarkers();
@@ -229,7 +238,7 @@ export class EditorTableFindBar {
         this.inputElement.select();
     }
 
-    hideForState(state: TabState): void {
+    hideForState(state: EditorTableFindState): void {
         if (this.currentState !== state) return;
         this.hide(false);
         this.element.remove();
@@ -423,6 +432,11 @@ export class EditorTableFindBar {
         }
         for (let row = 1; row < rowCount; row++) {
             if (requestId !== this.searchRequestId) return;
+            // 差分の位置合わせ用空行は実データではないため、空文字の正規表現にも一致させない。
+            if (editorTable.diffTab !== false && editorTable.diffTab.isPaddingRow(editorTable, row - 1)) {
+                scannedCells += columnCount;
+                continue;
+            }
             for (let dataColumn = 0; dataColumn < columnCount; dataColumn++) {
                 const column = dataColumn + offset;
                 const value = editorTable.getCellValueAt(row, column);
@@ -512,7 +526,7 @@ export class EditorTableFindBar {
         this.updateCount();
     }
 
-    private observeState(state: TabState): void {
+    private observeState(state: EditorTableFindState): void {
         if (this.observedState === state) return;
         this.unobserveState();
         this.observedState = state;

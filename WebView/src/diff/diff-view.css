@@ -184,6 +184,24 @@
     opacity: var(--diff-empty-opacity);
 }
 
+/* 差分色のあるセルでも検索結果と現在の一致位置を識別できるようにする。 */
+.diff-tab .editor-table-row .editor-table-cell.editor-table-cell-find-match {
+    background-color: var(--editor-table-find-match-bg);
+}
+
+.diff-tab .editor-table-row .editor-table-cell.editor-table-cell-find-current {
+    background-color: var(--editor-table-find-current-bg);
+}
+
+/* ペインを狭めても検索オプションと閉じるボタンを操作できるよう折り返す。 */
+.diff-tab .editor-table-find-bar {
+    flex-wrap: wrap;
+}
+
+.diff-tab .editor-table-find-input {
+    flex: 1 1 80px;
+}
+
 /* innerWrapper — position:absolute 要素の含有ブロック */
 .diff-pane-inner {
     position: relative;

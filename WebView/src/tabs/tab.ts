@@ -3286,6 +3286,8 @@ export class Tab {
     }
 
     openFindBarForActiveEditorTable(target: EventTarget | null): boolean {
+        const diffTab = this.activeTabName === false ? undefined : this.diffTabs.get(this.activeTabName);
+        if (diffTab !== undefined) return diffTab.openFindBar(target);
         const state = this.getActiveTabState();
         if (state === false) return false;
         const targetElement = target instanceof HTMLElement ? target : null;

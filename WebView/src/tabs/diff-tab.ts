@@ -25,6 +25,7 @@ import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} f
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
 import type {BranchCompareChanges} from "../diff/branch-compare-changes";
 import {BranchCompareCellTooltip} from "../diff/branch-compare-cell-tooltip";
+import {EditorTableFindBar, type EditorTableFindState} from "../editor/editor-table-find-bar";
 
 /**
  * DiffTab — 差分ビューを EditorTable ベースで表示する特別タブ
@@ -113,6 +114,10 @@ export class DiffTab {
     private readonly rightHistory: History;
     private readonly rightAreaResizer: AreaResizer;
     private readonly rightFillController: FillController;
+
+    private readonly findBar: EditorTableFindBar;
+    private readonly leftFindState: EditorTableFindState;
+    private readonly rightFindState: EditorTableFindState;
 
     /** スクロール同期の再帰ループ防止フラグ */
     private isSyncing: boolean;
@@ -376,6 +381,20 @@ export class DiffTab {
         this.rightHistory = rightResult.history;
         this.rightAreaResizer = rightResult.areaResizer;
         this.rightFillController = rightResult.fillController;
+
+        this.findBar = new EditorTableFindBar();
+        this.leftFindState = {
+            editorTable: this.leftEditorTable,
+            selection: this.leftEditorTable.getSelection(),
+            editorTableHandler: this.leftEditorTableHandler,
+            wrapperElement: leftPaneElement,
+        };
+        this.rightFindState = {
+            editorTable: this.rightEditorTable,
+            selection: this.rightEditorTable.getSelection(),
+            editorTableHandler: this.rightEditorTableHandler,
+            wrapperElement: rightPaneElement,
+        };
 
         // 右ペインの参照ヒントを設定する（通常テーブルと同パターン）
         tabReference.preloadReferenceTables(rightResult.tableData, this.rightEditorTable);
@@ -824,11 +843,13 @@ export class DiffTab {
      */
     activateHandler(targetEditorTable: EditorTable): void {
         if (targetEditorTable === this.leftEditorTable) {
+            this.findBar.hideForState(this.rightFindState);
             this.leftEditorTable.getHandler().activate();
             this.leftEditorTable.setInactiveAppearance(false);
             this.rightEditorTable.getHandler().deactivate();
             this.rightEditorTable.setInactiveAppearance(true);
         } else if (targetEditorTable === this.rightEditorTable) {
+            this.findBar.hideForState(this.leftFindState);
             this.rightEditorTable.getHandler().activate();
             this.rightEditorTable.setInactiveAppearance(false);
             this.leftEditorTable.getHandler().deactivate();
@@ -836,6 +857,27 @@ export class DiffTab {
         } else {
             throw new Error('activateHandler: targetEditorTableはDiffTabに属していません');
         }
+    }
+
+    /** フォーカスのある側のリビジョンを検索する。 */
+    openFindBar(target: EventTarget | null): boolean {
+        if (!(target instanceof HTMLElement)) return false;
+        const state = this.leftPaneElement.contains(target) ? this.leftFindState
+            : this.rightPaneElement.contains(target) ? this.rightFindState : null;
+        if (state === null) return false;
+        this.activateHandler(state.editorTable);
+        this.findBar.show(state);
+        return true;
+    }
+
+    isPaddingRow(editorTable: EditorTable, dataRowIndex: number): boolean {
+        const rowClasses = editorTable === this.leftEditorTable ? this.leftRowClasses : this.rightRowClasses;
+        return rowClasses.get(dataRowIndex)?.includes('diff-row-empty') ?? false;
+    }
+
+    updateSearchScrollbarMarkers(editorTable: EditorTable, markers: ReadonlyArray<MarkerEntry>): void {
+        const track = editorTable === this.leftEditorTable ? this.leftTrack : this.rightTrack;
+        track.updateSearch(markers);
     }
 
     /**
@@ -975,6 +1017,8 @@ export class DiffTab {
      * （display:none 後は scrollLeft が 0 にリセット済みのため、保存値を上書きしてはならない）
      */
     hide(): void {
+        this.findBar.hideForState(this.leftFindState);
+        this.findBar.hideForState(this.rightFindState);
         if (this.branchCompareTooltip !== false) this.branchCompareTooltip.hide();
         if (this.wrapperElement.style.display === 'none') return;
         // display:none にするとブラウザがscrollLeftを0にリセットするため、事前に保存する
@@ -988,6 +1032,8 @@ export class DiffTab {
      * ストアのテーブルデータとHistoryを解除してからDOMを削除する
      */
     destroy(store: InMemoryTableStore): void {
+        this.findBar.hideForState(this.leftFindState);
+        this.findBar.hideForState(this.rightFindState);
         if (this.branchCompareTooltip !== false) this.branchCompareTooltip.destroy();
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
         this.leftPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
