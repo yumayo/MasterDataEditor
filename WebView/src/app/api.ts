@@ -265,7 +265,7 @@ export interface GitBranchInfo {
     kind: 'local' | 'remote';
 }
 
-/** ブランチ間で変更されたCSVファイル。 */
+/** リビジョン間で変更されたCSVファイル。 */
 export interface GitBranchCompareFile {
     path: string;
     tableName: string;
@@ -324,7 +324,7 @@ export async function gitBranchListAsync(): Promise<GitBranchInfo[]> {
     return postMessageAsync<GitBranchInfo[]>('git_branch_list', {});
 }
 
-/** 2つの完全refを比較し、比較時点のSHAとA/M/Dファイル一覧を取得する。 */
+/** ブランチの完全refまたはコミットIDを比較し、比較時点のSHAとA/M/Dファイル一覧を取得する。 */
 export async function gitBranchCompareAsync(leftRef: string, rightRef: string): Promise<GitBranchCompareResult> {
     return postMessageAsync<GitBranchCompareResult>('git_branch_compare', {leftRef, rightRef});
 }

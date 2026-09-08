@@ -233,7 +233,7 @@ async function getHoverTextBoundsAsync(page: Page, text: string): Promise<{x: nu
     }, text);
 }
 
-test.describe('ブランチ比較パネル', () => {
+test.describe('リビジョン比較パネル', () => {
     test.beforeEach(async ({page}) => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
     });
@@ -540,9 +540,9 @@ test.describe('ブランチ比較パネル', () => {
 
         const panel = page.locator('.branch-compare-panel');
         await expect(panel).toBeVisible();
-        await expect(panel.locator('.sidebar-panel-header')).toHaveText('BRANCH COMPARE');
-        await expect(panel.locator('.branch-compare-base-input')).toHaveAttribute('placeholder', '比較元ブランチ');
-        await expect(panel.locator('.branch-compare-target-input')).toHaveAttribute('placeholder', '比較先ブランチ');
+        await expect(panel.locator('.sidebar-panel-header')).toHaveText('REVISION COMPARE');
+        await expect(panel.locator('.branch-compare-base-input')).toHaveAttribute('placeholder', 'ブランチ / コミットID');
+        await expect(panel.locator('.branch-compare-target-input')).toHaveAttribute('placeholder', 'ブランチ / コミットID');
         await expect(panel.locator('.branch-compare-button')).toHaveText('比較');
     });
 
@@ -558,8 +558,8 @@ test.describe('ブランチ比較パネル', () => {
         }
 
         const branchCompareItem = page.locator('.activity-bar-item[data-panel="branchCompare"]');
-        await expect(branchCompareItem).toHaveAttribute('aria-label', 'ブランチ比較');
-        await expect(branchCompareItem).toHaveAttribute('title', 'ブランチ比較');
+        await expect(branchCompareItem).toHaveAttribute('aria-label', 'リビジョン比較');
+        await expect(branchCompareItem).toHaveAttribute('title', 'リビジョン比較');
         await branchCompareItem.focus();
         await branchCompareItem.press('Enter');
         await expect(page.locator('.branch-compare-panel')).toBeVisible();
@@ -918,6 +918,127 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator(`.branch-compare-suggestion[data-ref="${RIGHT_REF}"]`)).toBeVisible();
     });
 
+    test('コミットIDの短縮形と完全形を直接入力して差分を開き再起動後も復元できる', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        const baseInput = page.locator('.branch-compare-base-input');
+        const targetInput = page.locator('.branch-compare-target-input');
+        const fullCommit = 'abcdef0123456789abcdef0123456789abcdef01';
+        await baseInput.fill(LEFT_SHA);
+        await targetInput.fill('  ' + fullCommit.toUpperCase() + '  ');
+        await expect(targetInput).toHaveAttribute('data-selected-ref', fullCommit);
+        await expect(page.locator('.branch-compare-suggestion-empty')).toHaveText('コミットIDで比較します');
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible')).toContainText('before');
+        await expect(page.locator('.diff-tab:visible')).toContainText('after');
+        const requests = await page.evaluate(() => (window as unknown as {__mockApiRequestDetails: Array<Record<string, string>>}).__mockApiRequestDetails);
+        expect(requests.filter(request => request.type === 'git_branch_compare_request')).toMatchObject([{leftRef: LEFT_SHA, rightRef: fullCommit}]);
+        expect(requests.filter(request => request.type === 'git_show_at_commit_request').map(request => request.commit)).toEqual(expect.arrayContaining([LEFT_SHA, RIGHT_SHA]));
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_SHA, targetRef: fullCommit, compared: true});
+        await page.reload();
+        await expect(baseInput).toHaveValue(LEFT_SHA);
+        await expect(targetInput).toHaveValue(fullCommit);
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await page.locator('[data-panel="files"]').click();
+        await openBranchComparePanelAsync(page);
+        await expect(targetInput).toHaveValue(fullCommit);
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_SHA, targetRef: fullCommit, compared: true});
+    });
+
+    test('ブランチとコミットIDを混在させ入れ替えて比較できる', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
+        await page.locator('.branch-compare-target-input').fill(RIGHT_SHA);
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+        await page.getByRole('button', {name: '入れ替え', exact: true}).click();
+        await expect(page.locator('.branch-compare-base-input')).toHaveValue(RIGHT_SHA);
+        await expect(page.locator('.branch-compare-target-input')).toHaveValue('main');
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
+        await page.locator('.branch-compare-button').click();
+        await expectSavedBranchCompareAsync(page, {baseRef: RIGHT_SHA, targetRef: LEFT_REF, compared: true});
+        const requests = await page.evaluate(() => (window as unknown as {__mockApiRequestDetails: Array<Record<string, string>>}).__mockApiRequestDetails);
+        expect(requests.filter(request => request.type === 'git_branch_compare_request')).toMatchObject([
+            {leftRef: LEFT_REF, rightRef: RIGHT_SHA}, {leftRef: RIGHT_SHA, rightRef: LEFT_REF},
+        ]);
+        await page.reload();
+        await expect(page.locator('.branch-compare-base-input')).toHaveValue(RIGHT_SHA);
+        await expect(page.locator('.branch-compare-target-input')).toHaveValue('main');
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+    });
+
+    test('コミットIDの入力がTabやEnterで部分一致したブランチへ変わらず明示選択はできる', async ({page}) => {
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranches: MockBranch[]}).__mockGitBranches.push(
+                {name: 'fix/abcdef0', ref: 'refs/heads/fix/abcdef0', kind: 'local'},
+                {name: 'deadbeef', ref: 'refs/heads/deadbeef', kind: 'local'},
+            );
+        });
+        await openBranchComparePanelAsync(page);
+        const input = page.locator('.branch-compare-base-input');
+        await input.fill('abcdef0');
+        await expect(page.locator('.branch-compare-suggestion')).toHaveCount(1);
+        await expect(page.locator('.branch-compare-suggestion.selected')).toHaveCount(0);
+        await input.press('Enter');
+        await expect(input).toHaveAttribute('data-selected-ref', 'abcdef0');
+        await input.press('Tab');
+        await expect(input).toHaveValue('abcdef0');
+        await input.focus();
+        await input.press('ArrowDown');
+        await input.press('Enter');
+        await expect(input).toHaveAttribute('data-selected-ref', 'refs/heads/fix/abcdef0');
+        await input.fill('deadbeef');
+        await expect(input).toHaveAttribute('data-selected-ref', 'refs/heads/deadbeef');
+    });
+
+    test('コミットIDの形式を検証し同一IDの大文字小文字違いでは比較しない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await page.locator('.branch-compare-base-input').fill('abcdef0');
+        const target = page.locator('.branch-compare-target-input');
+        const button = page.locator('.branch-compare-button');
+        for (const invalid of ['', 'abc', 'g123456', 'a'.repeat(65), '--help', 'HEAD~1', 'ABCDEF0']) {
+            await target.fill(invalid);
+            await expect(button).toBeDisabled();
+        }
+        for (const commit of ['1234', 'b'.repeat(40), 'c'.repeat(64)]) {
+            await target.fill(commit);
+            await expect(button).toBeEnabled();
+            await expectSavedBranchCompareAsync(page, {baseRef: 'abcdef0', targetRef: commit, compared: false});
+        }
+    });
+
+    test('ブランチ候補の取得に失敗してもコミットID同士は比較できる', async ({page}) => {
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchListError: string | null}).__mockGitBranchListError = 'branch list failed';
+        });
+        await openBranchComparePanelAsync(page);
+        await expect(page.locator('.notification-toast-error')).toHaveText('branch list failed');
+        await page.locator('.branch-compare-base-input').fill(LEFT_SHA);
+        await page.locator('.branch-compare-target-input').fill(RIGHT_SHA);
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+    });
+
+    test('存在しないコミットIDのエラー後に入力を修正して再比較できる', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchCompareError: string | null}).__mockGitBranchCompareError = '比較先のコミットを特定できません';
+        });
+        await page.locator('.branch-compare-base-input').fill(LEFT_SHA);
+        await page.locator('.branch-compare-target-input').fill('deadbeef');
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.notification-toast-error')).toHaveText('比較先のコミットを特定できません');
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
+        await expectSavedBranchCompareAsync(page, {baseRef: LEFT_SHA, targetRef: 'deadbeef', compared: false});
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchCompareError: string | null}).__mockGitBranchCompareError = null;
+        });
+        await page.locator('.branch-compare-target-input').fill(RIGHT_SHA);
+        await page.locator('.branch-compare-button').click();
+        await expect(page.locator('.branch-compare-file-item')).toHaveCount(3);
+    });
+
     test('入れ替えで旧結果を破棄して選択を保存し反転したrefで比較でき比較中は入れ替えを無効にする', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
@@ -1206,7 +1327,7 @@ test.describe('ブランチ比較パネル', () => {
         await expect(diffTab.locator('.diff-pane-right')).not.toContainText('deleted-only');
         await expect(diffTab.locator('.diff-pane-left .diff-row-deleted, .diff-pane-left .diff-cell-deleted').first()).toBeVisible();
 
-        // ブランチ比較差分は左右とも読み取り専用。
+        // リビジョン比較差分は左右とも読み取り専用。
         await diffTab.locator('.diff-pane-right .editor-table-cell').last().dblclick();
         await expect(page.locator('.grid-textfield-active')).not.toBeVisible();
 
@@ -1389,7 +1510,7 @@ test.describe('ブランチ比較パネル', () => {
         const input = page.locator('.branch-compare-base-input');
         const suggestions = page.locator('.branch-compare-suggestions');
         await input.focus();
-        await page.locator('.sidebar-panel-header').filter({hasText: 'BRANCH COMPARE'}).click();
+        await page.locator('.sidebar-panel-header').filter({hasText: 'REVISION COMPARE'}).click();
         await expect(suggestions).toBeHidden();
         await page.waitForTimeout(180);
         await expect(suggestions).toBeHidden();
@@ -1446,7 +1567,7 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.branch-compare-panel [role="alert"]')).toHaveCount(0);
     });
 
-    test('source controlと異なるブランチ比較の同一table差分が内部状態を共有せず共存する', async ({page}) => {
+    test('source controlと異なるリビジョン比較の同一table差分が内部状態を共有せず共存する', async ({page}) => {
         await page.locator('[data-panel="sourceControl"]').click();
         await page.locator('.source-control-changes-section .source-control-file-item').first().click();
         await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
@@ -1473,7 +1594,7 @@ test.describe('ブランチ比較パネル', () => {
         await expect(page.locator('.tab-button', {hasText: '差分: modified'})).toHaveCount(3);
     });
 
-    test('ブランチ比較差分を固定SHAとstatus付きでui-stateへ保存する', async ({page}) => {
+    test('リビジョン比較差分を固定SHAとstatus付きでui-stateへ保存する', async ({page}) => {
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
@@ -1520,7 +1641,7 @@ test.describe('ブランチ比較パネル', () => {
                 mockWindow.__mockGitCommitFiles[sha]['schema/modified.json'] = '{}';
             }, commit);
             await page.locator('.branch-compare-file-item[data-status="M"]').click();
-            const message = side + 'ブランチのスキーマが不正です';
+            const message = side + 'のスキーマが不正です';
             await expect(page.locator('.notification-toast-error')).toHaveText(message);
             await expect(page.locator('.debug-console-row-error', {hasText: message})).toBeAttached();
             await expect(page.locator('.branch-compare-panel')).not.toContainText(message);
@@ -1690,7 +1811,7 @@ test.describe('ブランチ比較パネル', () => {
         await targetInput.focus();
         await expect(baseInput).toHaveAttribute('aria-expanded', 'false');
         await expect(targetInput).toHaveAttribute('aria-expanded', 'true');
-        await page.locator('.sidebar-panel-header').filter({hasText: 'BRANCH COMPARE'}).click();
+        await page.locator('.sidebar-panel-header').filter({hasText: 'REVISION COMPARE'}).click();
         await expect(suggestions).toBeHidden();
         await expect(targetInput).toHaveAttribute('aria-expanded', 'false');
 
@@ -1703,7 +1824,7 @@ test.describe('ブランチ比較パネル', () => {
     });
 });
 
-test.describe('ブランチ比較の空状態・エラー状態', () => {
+test.describe('リビジョン比較の空状態・エラー状態', () => {
     test('差分が0件なら空状態メッセージを表示する', async ({page}) => {
         await installBranchComparePageAsync(page, {
             leftCommit: LEFT_SHA,

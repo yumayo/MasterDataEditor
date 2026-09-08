@@ -2,8 +2,9 @@ import {gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, ty
 import {Tab} from '../tabs/tab';
 import type {UiStateStore} from '../app/ui-state';
 import type {NotificationToast} from '../ui/notification';
+import {isCommitId} from '../core/git-revision';
 
-type BranchInput = HTMLInputElement;
+type RevisionInput = HTMLInputElement;
 
 interface BranchCompareFileView {
     file: GitBranchCompareFile;
@@ -13,13 +14,13 @@ interface BranchCompareFileView {
 }
 
 /**
- * 2ブランチ間のCSV差分を選択・表示するサイドバーパネル。
+ * ブランチまたはコミットIDを指定し、2つのリビジョン間のCSV差分を表示するサイドバーパネル。
  * 選択済みrefは各inputのdata-selected-refへ保持し、DOMを選択状態のSSOTとする。
  */
 export class BranchComparePanel {
     private readonly element: HTMLElement;
-    private readonly baseInput: BranchInput;
-    private readonly targetInput: BranchInput;
+    private readonly baseInput: RevisionInput;
+    private readonly targetInput: RevisionInput;
     private readonly suggestionsElement: HTMLElement;
     private readonly compareButton: HTMLButtonElement;
     private readonly swapButton: HTMLButtonElement;
@@ -31,7 +32,7 @@ export class BranchComparePanel {
     private restoreComparisonPending: boolean;
     private branches: GitBranchInfo[];
     private filteredBranches: GitBranchInfo[];
-    private activeInput: BranchInput | false;
+    private activeInput: RevisionInput | false;
     private selectedSuggestionIndex: number;
     private branchListLoaded: boolean;
     private branchListFailed: boolean;
@@ -63,7 +64,7 @@ export class BranchComparePanel {
 
         const header = document.createElement('div');
         header.classList.add('sidebar-panel-header');
-        header.textContent = 'BRANCH COMPARE';
+        header.textContent = 'REVISION COMPARE';
         this.element.appendChild(header);
 
         const controls = document.createElement('div');
@@ -75,10 +76,16 @@ export class BranchComparePanel {
         this.suggestionsElement.classList.add('branch-compare-suggestions');
         this.suggestionsElement.setAttribute('role', 'listbox');
 
-        this.baseInput = this.createBranchInput('branch-compare-base-input', 'branch-compare-base-input', '比較元ブランチ', '比較元ブランチ');
-        this.targetInput = this.createBranchInput('branch-compare-target-input', 'branch-compare-target-input', '比較先ブランチ', '比較先ブランチ');
-        if (storedState.baseRef !== null) this.baseInput.setAttribute('data-selected-ref', storedState.baseRef);
-        if (storedState.targetRef !== null) this.targetInput.setAttribute('data-selected-ref', storedState.targetRef);
+        this.baseInput = this.createRevisionInput('branch-compare-base-input', 'branch-compare-base-input', '比較元（ブランチ / コミットID）');
+        this.targetInput = this.createRevisionInput('branch-compare-target-input', 'branch-compare-target-input', '比較先（ブランチ / コミットID）');
+        for (const [input, ref] of [[this.baseInput, storedState.baseRef], [this.targetInput, storedState.targetRef]] as const) {
+            if (ref === null) continue;
+            input.setAttribute('data-selected-ref', ref);
+            if (isCommitId(ref)) {
+                input.value = ref;
+                input.title = ref;
+            }
+        }
         controls.appendChild(this.createInputLabel('branch-compare-base-input', '比較元'));
         controls.appendChild(this.baseInput);
         controls.appendChild(this.createInputLabel('branch-compare-target-input', '比較先'));
@@ -151,7 +158,7 @@ export class BranchComparePanel {
         parent.appendChild(this.element);
     }
 
-    /** 起動時に別パネルが開いていても保存済みブランチを検証・復元する。 */
+    /** 起動時に別パネルが開いていても保存済みの比較対象を検証・復元する。 */
     restore(): void {
         if (this.isVisible()) return;
         if (!this.baseInput.hasAttribute('data-selected-ref') && !this.targetInput.hasAttribute('data-selected-ref')) return;
@@ -183,12 +190,12 @@ export class BranchComparePanel {
         return label;
     }
 
-    private createBranchInput(id: string, className: string, placeholder: string, ariaLabel: string): BranchInput {
+    private createRevisionInput(id: string, className: string, ariaLabel: string): RevisionInput {
         const input = document.createElement('input');
         input.id = id;
         input.type = 'text';
         input.classList.add(className);
-        input.placeholder = placeholder;
+        input.placeholder = 'ブランチ / コミットID';
         input.title = ariaLabel;
         input.setAttribute('aria-label', ariaLabel);
         input.setAttribute('role', 'combobox');
@@ -205,7 +212,7 @@ export class BranchComparePanel {
         });
         input.addEventListener('blur', () => { this.dismissSuggestions(); });
         input.addEventListener('input', () => {
-            this.resolveExactBranch(input);
+            this.resolveRevision(input);
             input.title = input.value === '' ? ariaLabel : input.value;
             this.invalidateResults(true);
             this.persistState(false);
@@ -257,7 +264,12 @@ export class BranchComparePanel {
             for (const input of [this.baseInput, this.targetInput]) {
                 const selectedRef = input.getAttribute('data-selected-ref');
                 if (selectedRef === null) {
-                    this.resolveExactBranch(input);
+                    this.resolveRevision(input);
+                    continue;
+                }
+                if (isCommitId(selectedRef)) {
+                    input.value = selectedRef;
+                    input.title = selectedRef;
                     continue;
                 }
                 const branch = this.branches.find(branch => branch.ref === selectedRef);
@@ -282,21 +294,26 @@ export class BranchComparePanel {
             this.updateCompareButton();
             this.dismissSuggestions();
             this.showOperationError(error);
-            return;
         }
-        if (this.restoreComparisonPending) {
+        if (this.restoreComparisonPending && this.areRefsReady()) {
             this.restoreComparisonPending = false;
             await this.compareAsync().catch((error: unknown) => { this.handleUnexpectedCompareError(error); });
         }
     }
 
-    private resolveExactBranch(input: BranchInput): void {
+    private resolveRevision(input: RevisionInput): void {
         input.removeAttribute('data-selected-ref');
-        if (!this.branchListLoaded) return;
-        const matches = this.branches.filter(branch => branch.name === input.value || branch.ref === input.value);
-        // 同名のlocal/remoteブランチがある場合は候補からの明示選択を必要とする。
-        if (matches.length !== 1) return;
-        input.setAttribute('data-selected-ref', matches[0].ref);
+        const value = input.value.trim();
+        if (this.branchListLoaded) {
+            const matches = this.branches.filter(branch => branch.name === value || branch.ref === value);
+            // 同名のlocal/remoteブランチがある場合は候補からの明示選択を必要とする。
+            if (matches.length > 1) return;
+            if (matches.length === 1) {
+                input.setAttribute('data-selected-ref', matches[0].ref);
+                return;
+            }
+        }
+        if (isCommitId(value)) input.setAttribute('data-selected-ref', value.toLowerCase());
     }
 
     private persistState(compared: boolean): void {
@@ -322,7 +339,7 @@ export class BranchComparePanel {
         this.targetInput.removeAttribute('aria-activedescendant');
         input.setAttribute('aria-expanded', 'true');
         input.after(this.suggestionsElement);
-        const query = input.value.toLocaleLowerCase();
+        const query = input.value.trim().toLocaleLowerCase();
         const matches = this.branches.filter(branch => branch.name.toLocaleLowerCase().includes(query) || branch.ref.toLocaleLowerCase().includes(query));
         this.filteredBranches = [
             ...matches.filter(branch => branch.kind === 'local'),
@@ -334,13 +351,15 @@ export class BranchComparePanel {
             this.appendSuggestionStatus('読み込み中…');
             return;
         }
+        const selectedRef = input.getAttribute('data-selected-ref');
+        const commitSelected = selectedRef !== null && isCommitId(selectedRef);
+        if (commitSelected) this.appendSuggestionStatus('コミットIDで比較します');
         if (this.filteredBranches.length === 0) {
-            this.appendSuggestionStatus('該当するブランチがありません');
+            if (!commitSelected) this.appendSuggestionStatus('該当するブランチがありません');
             return;
         }
-        if (this.selectedSuggestionIndex === -1) {
+        if (this.selectedSuggestionIndex === -1 && !commitSelected) {
             // 完全一致したrefを優先し、TabやEnterで別ブランチへ変わることを防ぐ。
-            const selectedRef = input.getAttribute('data-selected-ref');
             const matchedIndex = this.filteredBranches.findIndex(branch => branch.ref === selectedRef);
             this.selectedSuggestionIndex = matchedIndex === -1 ? 0 : matchedIndex;
         }
@@ -392,7 +411,7 @@ export class BranchComparePanel {
         this.suggestionsElement.appendChild(status);
     }
 
-    private confirmBranch(input: BranchInput, branch: GitBranchInfo): void {
+    private confirmBranch(input: RevisionInput, branch: GitBranchInfo): void {
         this.invalidateResults(true);
         input.value = branch.name;
         input.title = branch.name;
@@ -426,20 +445,25 @@ export class BranchComparePanel {
         this.targetInput.removeAttribute('aria-activedescendant');
     }
 
-    private updateCompareButton(): void {
+    private areRefsReady(): boolean {
         const leftRef = this.baseInput.getAttribute('data-selected-ref');
         const rightRef = this.targetInput.getAttribute('data-selected-ref');
-        this.compareButton.disabled = this.compareBusy || !this.branchListLoaded || leftRef === null || rightRef === null || leftRef === rightRef;
+        return leftRef !== null && rightRef !== null && leftRef !== rightRef
+            && (this.branchListLoaded || (isCommitId(leftRef) && isCommitId(rightRef)));
+    }
+
+    private updateCompareButton(): void {
+        this.compareButton.disabled = this.compareBusy || !this.areRefsReady();
         this.swapButton.disabled = this.compareBusy;
     }
 
     private async compareAsync(): Promise<void> {
         const leftRef = this.baseInput.getAttribute('data-selected-ref');
         const rightRef = this.targetInput.getAttribute('data-selected-ref');
-        if (this.compareBusy || !this.branchListLoaded || leftRef === null || rightRef === null || leftRef === rightRef) return;
+        if (this.compareBusy || !this.areRefsReady() || leftRef === null || rightRef === null) return;
         const requestId = ++this.compareRequestId;
-        const leftLabel = this.baseInput.value;
-        const rightLabel = this.targetInput.value;
+        const leftLabel = this.baseInput.value.trim();
+        const rightLabel = this.targetInput.value.trim();
         this.invalidateResults(false);
         this.persistState(false);
         this.dismissSuggestions();

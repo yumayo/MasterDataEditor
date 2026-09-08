@@ -10,7 +10,7 @@
     user-select: none;
 }
 
-/* ファイルリストの基本表示はEXPLORERとBRANCH COMPAREで共有する。 */
+/* ファイルリストの基本表示はEXPLORERとREVISION COMPAREで共有する。 */
 .explorer-file,
 .branch-compare-file-item {
     display: flex;

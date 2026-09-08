@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/GitCommandHelper.cs" Link="GitCommandHelper.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/WebView2Handler/Handlers/WebView2HandlerGitBranchCompareRequest.cs" Link="WebView2HandlerGitBranchCompareRequest.cs" />
+  </ItemGroup>
+</Project>

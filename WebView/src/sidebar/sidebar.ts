@@ -125,7 +125,7 @@ export class Sidebar {
         this.sourceControlPanel = new SourceControlPanel(tab, this.activityBar);
         this.sourceControlPanel.appendTo(sidebarContent);
 
-        // ブランチ比較パネル（比較時点のSHA同士で読み取り専用差分を開く）
+        // リビジョン比較パネル（比較時点のSHA同士で読み取り専用差分を開く）
         this.branchComparePanel = new BranchComparePanel(tab, uiStateStore, notification);
         this.branchComparePanel.appendTo(sidebarContent);
 
@@ -436,7 +436,7 @@ export class Sidebar {
         this.branchComparePanel.hide();
         this.timelinePanel.hide();
 
-        // ソース管理・ブランチ比較・history は差分タブを閉じない（closeAllDiffTabs の除外対象）
+        // ソース管理・リビジョン比較・history は差分タブを閉じない（closeAllDiffTabs の除外対象）
         if (item === 'sourceControl') {
             this.sourceControlPanel.show();
             return;
@@ -460,7 +460,7 @@ export class Sidebar {
             return;
         }
 
-        // ソース管理・ブランチ比較・履歴以外に切り替えた場合は全差分タブを閉じる
+        // ソース管理・リビジョン比較・履歴以外に切り替えた場合は全差分タブを閉じる
         this.tab.closeAllDiffTabs();
 
         if (item === 'files') {

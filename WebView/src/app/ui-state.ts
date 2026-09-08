@@ -1,6 +1,7 @@
 import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
+import {isCommitId} from "../core/git-revision";
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'branchCompare' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -346,12 +347,13 @@ function normalizeCommitRef(value: unknown): string | null {
 
 function normalizeBranchCompareState(value: unknown): UiBranchCompareState {
     const record = asRecord(value);
-    const normalizeBranchRef = (ref: unknown): string | null => {
-        if (typeof ref !== 'string' || !/^refs\/(heads|remotes)\/.+/.test(ref)) return null;
-        return ref;
+    const normalizeRevision = (ref: unknown): string | null => {
+        if (typeof ref !== 'string') return null;
+        if (isCommitId(ref)) return ref.toLowerCase();
+        return /^refs\/(heads|remotes)\/.+/.test(ref) ? ref : null;
     };
-    const baseRef = normalizeBranchRef(record?.['baseRef']);
-    const targetRef = normalizeBranchRef(record?.['targetRef']);
+    const baseRef = normalizeRevision(record?.['baseRef']);
+    const targetRef = normalizeRevision(record?.['targetRef']);
     return {
         baseRef,
         targetRef,

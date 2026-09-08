@@ -21,7 +21,7 @@ const ACTIVITY_BAR_LABELS: Record<ActivityBarItem, string> = {
     calendar: 'スケジュール',
     views: 'ビュープラグイン',
     sourceControl: 'ソース管理',
-    branchCompare: 'ブランチ比較',
+    branchCompare: 'リビジョン比較',
     history: 'タイムライン',
 };
 
@@ -86,7 +86,7 @@ const SOURCE_CONTROL_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24"
   <path d="M12 6.5V11M12 11C12 15 6 15 6 17.5M12 11C12 15 18 15 18 17.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
 </svg>`;
 
-/** 2ブランチ比較アイコン（左右のブランチと差分矢印） */
+/** 2リビジョン比較アイコン（左右のブランチと差分矢印） */
 const BRANCH_COMPARE_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <circle cx="6" cy="5" r="2" stroke="currentColor" stroke-width="1.5"/>
   <circle cx="6" cy="19" r="2" stroke="currentColor" stroke-width="1.5"/>

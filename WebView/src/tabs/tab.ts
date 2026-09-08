@@ -3012,7 +3012,7 @@ export class Tab {
     }
 
     /**
-     * ブランチ比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
+     * リビジョン比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
      * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
      */
     async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal): Promise<void> {
@@ -3048,9 +3048,9 @@ export class Tab {
                 gitShowAtCommitAsync(rightCommit, file.path),
             ]);
             if (abortSignal !== null && abortSignal.aborted) return null;
-            const leftSchema = this.normalizeBranchCompareSchema(versions[0], '比較元ブランチ');
-            const rightSchema = this.normalizeBranchCompareSchema(versions[1], '比較先ブランチ');
-            if (JSON.stringify(leftSchema.primaryKey) !== JSON.stringify(rightSchema.primaryKey)) throw new Error('左右ブランチでprimary_keyが異なるため比較できません');
+            const leftSchema = this.normalizeBranchCompareSchema(versions[0], '比較元');
+            const rightSchema = this.normalizeBranchCompareSchema(versions[1], '比較先');
+            if (JSON.stringify(leftSchema.primaryKey) !== JSON.stringify(rightSchema.primaryKey)) throw new Error('比較元と比較先でprimary_keyが異なるため比較できません');
             return {schemaJson: rightSchema.schemaJson, leftCsv: versions[2], rightCsv: versions[3]};
         }
         if (file.status === 'A') {
@@ -3059,7 +3059,7 @@ export class Tab {
                 gitShowAtCommitAsync(rightCommit, file.path),
             ]);
             if (abortSignal !== null && abortSignal.aborted) return null;
-            const schema = this.normalizeBranchCompareSchema(versions[0], '比較先ブランチ');
+            const schema = this.normalizeBranchCompareSchema(versions[0], '比較先');
             return {schemaJson: schema.schemaJson, leftCsv: this.buildHeaderOnlyCsv(schema.schemaJson), rightCsv: versions[1]};
         }
         const versions = await Promise.all([
@@ -3067,7 +3067,7 @@ export class Tab {
             gitShowAtCommitAsync(leftCommit, file.path),
         ]);
         if (abortSignal !== null && abortSignal.aborted) return null;
-        const schema = this.normalizeBranchCompareSchema(versions[0], '比較元ブランチ');
+        const schema = this.normalizeBranchCompareSchema(versions[0], '比較元');
         return {schemaJson: schema.schemaJson, leftCsv: versions[1], rightCsv: this.buildHeaderOnlyCsv(schema.schemaJson)};
     }
 

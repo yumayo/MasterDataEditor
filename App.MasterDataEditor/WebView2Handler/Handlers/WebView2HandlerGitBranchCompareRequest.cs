@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace App.MasterDataEditor
 {
 	/// <summary>
-	/// 2つのブランチ先端をSHAへ固定し、data/*.csvのA/M/D差分を返す。
+	/// ブランチまたはコミットIDで指定した2つのリビジョンをSHAへ固定し、data/*.csvのA/M/D差分を返す。
 	/// </summary>
 	public static class WebView2HandlerGitBranchCompareRequest
 	{
@@ -30,19 +31,21 @@ namespace App.MasterDataEditor
 
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
-				var branches = GitCommandHelper.GetBranchReferences(gitRoot);
-				if (!ContainsRef(branches, leftRef))
+				var leftIsCommitId = IsCommitId(leftRef);
+				var rightIsCommitId = IsCommitId(rightRef);
+				var branches = leftIsCommitId && rightIsCommitId ? new List<GitBranchReference>() : GitCommandHelper.GetBranchReferences(gitRoot);
+				if (!leftIsCommitId && !ContainsRef(branches, leftRef))
 				{
-					return ErrorResponse(requestId, "leftRef is not a branch ref");
+					return ErrorResponse(requestId, "比較元にはブランチまたはコミットIDを指定してください");
 				}
-				if (!ContainsRef(branches, rightRef))
+				if (!rightIsCommitId && !ContainsRef(branches, rightRef))
 				{
-					return ErrorResponse(requestId, "rightRef is not a branch ref");
+					return ErrorResponse(requestId, "比較先にはブランチまたはコミットIDを指定してください");
 				}
 
 				// refの移動に影響されないよう、一覧生成前に両端をコミットSHAへ解決する。
-				var leftCommit = ResolveCommit(gitRoot, leftRef);
-				var rightCommit = ResolveCommit(gitRoot, rightRef);
+				var leftCommit = ResolveCommit(gitRoot, leftIsCommitId ? leftRef.ToLowerInvariant() : leftRef, "比較元");
+				var rightCommit = ResolveCommit(gitRoot, rightIsCommitId ? rightRef.ToLowerInvariant() : rightRef, "比較先");
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
 				var output = GitCommandHelper.RunGitCommand(
 					gitRoot,
@@ -63,7 +66,7 @@ namespace App.MasterDataEditor
 			}
 			catch (Exception ex)
 			{
-				Logger.Error(ex, "git branch compare 実行時にエラーが発生しました。");
+				Logger.Error(ex, "git revision compare 実行時にエラーが発生しました。");
 				return ErrorResponse(requestId, ex.Message);
 			}
 		}
@@ -98,9 +101,21 @@ namespace App.MasterDataEditor
 			return false;
 		}
 
-		private static string ResolveCommit(string gitRoot, string refName)
+		private static bool IsCommitId(string value)
 		{
-			return GitCommandHelper.RunGitCommand(gitRoot, "rev-parse", "--verify", refName + "^{commit}").Trim();
+			return Regex.IsMatch(value, @"\A[0-9a-fA-F]{4,64}\z");
+		}
+
+		private static string ResolveCommit(string gitRoot, string revision, string sideLabel)
+		{
+			try
+			{
+				return GitCommandHelper.RunGitCommand(gitRoot, "rev-parse", "--verify", "--end-of-options", revision + "^{commit}").Trim();
+			}
+			catch (InvalidOperationException ex)
+			{
+				throw new InvalidOperationException(sideLabel + "のコミットを特定できません。ブランチまたはコミットIDを確認してください（短縮IDは一意に特定できる長さが必要です）。", ex);
+			}
 		}
 
 		private static List<GitBranchCompareFileResponseData> ParseChangedFiles(string output, string dataPrefix)
