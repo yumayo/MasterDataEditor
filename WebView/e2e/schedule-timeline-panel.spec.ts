@@ -234,6 +234,51 @@ test.describe('予定日タイムラインパネル', () => {
         await expect(jan5Header).toHaveAttribute('aria-expanded', 'false');
     });
 
+    test('SVGの一括折りたたみボタンで全日付を閉じ、個別に開き直して再び閉じられる', async ({page}) => {
+        await installScheduleTimelineFixtureAsync(page);
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+
+        const panel = page.locator('.schedule-timeline-panel');
+        const collapseButton = panel.getByRole('button', {name: 'すべての日付を折りたたむ'});
+        await expect(panel.locator('.schedule-timeline-group-header[aria-expanded="true"]')).toHaveCount(4);
+        await expect(collapseButton.locator('svg')).toBeVisible();
+        await collapseButton.click();
+        await expect(panel.locator('.schedule-timeline-group-header[aria-expanded="false"]')).toHaveCount(4);
+        await expect(panel.locator('.schedule-timeline-table:visible')).toHaveCount(0);
+
+        const jan5Header = panel.locator('.schedule-timeline-group[data-date="2026-01-05"] .schedule-timeline-group-header');
+        await jan5Header.click();
+        await expect(jan5Header).toHaveAttribute('aria-expanded', 'true');
+        await expect(panel.locator('.schedule-timeline-table:visible')).toHaveCount(2);
+        await collapseButton.focus();
+        await page.keyboard.press('Enter');
+        await expect(panel.locator('.schedule-timeline-group-header[aria-expanded="false"]')).toHaveCount(4);
+        await expect(panel.locator('.schedule-timeline-table:visible')).toHaveCount(0);
+    });
+
+    test('検索中の一括折りたたみは非表示の日付も保存し、検索解除と再表示後も全日付を閉じる', async ({page}) => {
+        await installScheduleTimelineFixtureAsync(page);
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+
+        const panel = page.locator('.schedule-timeline-panel');
+        await panel.locator('.schedule-timeline-filter-input').fill('event');
+        await expect(panel.locator('.schedule-timeline-group-header:visible')).toHaveCount(2);
+        await panel.getByRole('button', {name: 'すべての日付を折りたたむ'}).click();
+        await expect(panel.locator('.schedule-timeline-table:visible')).toHaveCount(0);
+        await panel.locator('.schedule-timeline-filter-clear').click();
+        await expect(panel.locator('.schedule-timeline-group-header[aria-expanded="false"]')).toHaveCount(4);
+
+        await waitForSavedScheduleTimelineStateAsync(page, '2026-01-03', 0);
+        const raw = await readMockFileAsync(page, UI_STATE_FILE);
+        const state = JSON.parse(raw) as {sidebar: {scheduleTimeline: {collapsedDates: string[]}}};
+        expect(state.sidebar.scheduleTimeline.collapsedDates).toEqual(['2026-01-03', '2026-01-05', '2026-01-20', '2026-02-01']);
+
+        await page.locator('.activity-bar-item[data-panel="files"]').click();
+        await page.locator('.activity-bar-item[data-panel="calendar"]').click();
+        await expect(panel.locator('.schedule-timeline-group-header[aria-expanded="false"]')).toHaveCount(4);
+        await expect(panel.locator('.schedule-timeline-table:visible')).toHaveCount(0);
+    });
+
     test('カレンダーパネル内のCtrl+Fで予定日検索欄へフォーカスする', async ({page}) => {
         await installScheduleTimelineFixtureAsync(page);
         await page.locator('.activity-bar-item[data-panel="calendar"]').click();
@@ -311,11 +356,17 @@ test.describe('予定日タイムラインパネル', () => {
         await jan10Group.locator('.schedule-timeline-group-header').click();
         await expect(jan10Group.locator('.schedule-timeline-group-header')).toHaveAttribute('aria-expanded', 'false');
 
-        await panel.evaluate((element) => {
+        const input = panel.locator('.schedule-timeline-filter-input');
+        const inputTop = await input.evaluate(element => element.getBoundingClientRect().top);
+        const content = panel.locator('.schedule-timeline-content');
+        await content.evaluate((element) => {
             element.scrollTop = 420;
             element.dispatchEvent(new Event('scroll'));
         });
-        await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+        await expect.poll(() => content.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+        await expect(input).toBeInViewport();
+        expect(await input.evaluate(element => element.getBoundingClientRect().top)).toBe(inputTop);
+        expect(await panel.evaluate(element => element.scrollTop)).toBe(0);
 
         await waitForSavedScheduleTimelineStateAsync(page, '2026-01-10', 100);
         const raw = await readMockFileAsync(page, UI_STATE_FILE);
@@ -351,6 +402,9 @@ test.describe('予定日タイムラインパネル', () => {
         const jan10Group = panel.locator('.schedule-timeline-group[data-date="2026-01-10"]');
         await expect(jan10Group.locator('.schedule-timeline-group-header')).toHaveAttribute('aria-expanded', 'false');
         await expect(jan10Group.locator('.schedule-timeline-items')).toHaveAttribute('aria-hidden', 'true');
-        await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(100);
+        await expect.poll(() => panel.locator('.schedule-timeline-content').evaluate(element => element.scrollTop)).toBeGreaterThan(100);
+        await expect(panel.locator('.schedule-timeline-filter-input')).toBeInViewport();
+        await expect(panel.getByRole('button', {name: 'すべての日付を折りたたむ'})).toBeInViewport();
+        expect(await panel.evaluate(element => element.scrollTop)).toBe(0);
     });
 });

@@ -5,7 +5,7 @@ export class ExplorerDirectory {
 
     private readonly tab: Tab;
 
-    private readonly element: HTMLElement;
+    private readonly filesElement: HTMLElement;
     private readonly depth: number;
     private readonly filterInput: HTMLInputElement;
 
@@ -18,11 +18,10 @@ export class ExplorerDirectory {
         depth: number
     ) {
         this.tab = tab;
-        this.element = element;
         this.depth = depth;
         this.files = new Map();
 
-        // フィルター入力欄をファイルリストの先頭に配置する
+        // フィルター入力欄は固定し、その下のファイルリストだけをスクロールする。
         const filterContainer = document.createElement('div');
         filterContainer.classList.add('explorer-filter-container');
         const filterInput = document.createElement('input');
@@ -58,7 +57,11 @@ export class ExplorerDirectory {
         });
         filterContainer.appendChild(filterInput);
         filterContainer.appendChild(clearButton);
-        this.element.appendChild(filterContainer);
+        element.appendChild(filterContainer);
+
+        this.filesElement = document.createElement('div');
+        this.filesElement.classList.add('explorer-file-list', 'sidebar-panel-scroll-content');
+        element.appendChild(this.filesElement);
     }
 
     focusFilter(): void {
@@ -71,7 +74,7 @@ export class ExplorerDirectory {
             throw new Error(`[ExplorerDirectory] appendFile: 重複登録: ${name}`);
         }
         const file = new ExplorerFile(this.tab, name, this.depth + 1, description);
-        file.appendTo(this.element);
+        file.appendTo(this.filesElement);
         this.files.set(name, file);
     }
 

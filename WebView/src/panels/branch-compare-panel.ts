@@ -60,7 +60,7 @@ export class BranchComparePanel {
         this.fileOpenController = false;
 
         this.element = document.createElement('div');
-        this.element.classList.add('sidebar-panel', 'branch-compare-panel');
+        this.element.classList.add('sidebar-panel', 'branch-compare-panel', 'sidebar-panel-fixed-header');
 
         const header = document.createElement('div');
         header.classList.add('sidebar-panel-header');
@@ -138,7 +138,7 @@ export class BranchComparePanel {
         controls.appendChild(this.statusElement);
 
         this.resultsElement = document.createElement('div');
-        this.resultsElement.classList.add('branch-compare-results');
+        this.resultsElement.classList.add('branch-compare-results', 'sidebar-panel-scroll-content');
         this.resultsElement.setAttribute('role', 'list');
         this.element.appendChild(this.resultsElement);
 

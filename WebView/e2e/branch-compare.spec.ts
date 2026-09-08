@@ -241,6 +241,48 @@ test.describe('リビジョン比較パネル', () => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
     });
 
+    test('テーブル一覧だけをスクロールしても比較条件と比較ボタンを操作できる', async ({page}) => {
+        await page.setViewportSize({width: 1280, height: 640});
+        const files: MockBranchCompareFile[] = Array.from({length: 80}, (_, index) => ({
+            path: `data/table_${String(index).padStart(2, '0')}.csv`,
+            tableName: `table_${String(index).padStart(2, '0')}`,
+            status: 'M',
+        }));
+        await page.evaluate(compareFiles => {
+            const mockWindow = window as unknown as {__mockGitBranchCompare: MockBranchCompareResult};
+            mockWindow.__mockGitBranchCompare.files = compareFiles;
+        }, files);
+        await openBranchComparePanelAsync(page);
+        await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
+        await selectBranchByMouseAsync(page, '.branch-compare-target-input', RIGHT_REF);
+        const panel = page.locator('.branch-compare-panel');
+        const compareButton = panel.locator('.branch-compare-button');
+        await compareButton.click();
+        await expect(panel.locator('.branch-compare-file-item')).toHaveCount(80);
+
+        const controls = panel.locator('.branch-compare-controls');
+        const controlsTop = await controls.evaluate(element => element.getBoundingClientRect().top);
+        const results = panel.locator('.branch-compare-results');
+        await panel.locator('.branch-compare-file-item').first().hover();
+        await page.mouse.wheel(0, 10000);
+        await expect.poll(() => results.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+        await expect(panel.locator('.branch-compare-file-item').last()).toBeInViewport();
+        expect(await controls.evaluate(element => element.getBoundingClientRect().top)).toBe(controlsTop);
+        await expect(compareButton).toBeInViewport();
+        await expect(panel.locator('.branch-compare-base-input')).toBeInViewport();
+        expect(await panel.evaluate(element => element.scrollTop)).toBe(0);
+
+        // 一覧末尾にいても固定欄から条件を変更し、再比較できる。
+        await panel.getByRole('button', {name: '入れ替え', exact: true}).click();
+        await expect(panel.locator('.branch-compare-base-input')).toHaveValue('feature/orders');
+        await expect(panel.locator('.branch-compare-target-input')).toHaveValue('main');
+        await compareButton.click();
+        await expect(panel.locator('.branch-compare-file-item')).toHaveCount(80);
+        await panel.locator('.branch-compare-file-item').first().hover();
+        await page.mouse.wheel(0, 10000);
+        await expect(panel.locator('.branch-compare-file-item').last()).toBeInViewport();
+    });
+
     test('アクティブな一時差分タブを同じ位置で再利用し古い差分を破棄する', async ({page}) => {
         await page.locator('[data-panel="sourceControl"]').click();
         await page.locator('.source-control-changes-section .source-control-file-item').first().click();
@@ -1158,25 +1200,51 @@ test.describe('リビジョン比較パネル', () => {
         await expect(baseInput).not.toHaveAttribute('data-selected-ref', /.+/);
     });
 
-    test('候補をマウスまたは先頭active候補から下キーとEnterで選択できる', async ({page}) => {
+    test('小さい画面でも多数の候補をマウスと下キー・Enterで選択し比較操作を画面内に保つ', async ({page}) => {
+        await page.evaluate(branches => {
+            const mockWindow = window as unknown as {__mockGitBranches: MockBranch[]};
+            const additionalBranches: MockBranch[] = Array.from({length: 18}, (_, index) => ({
+                name: `work_${index}`, ref: `refs/heads/work_${index}`, kind: 'local',
+            }));
+            mockWindow.__mockGitBranches = [branches[0], ...additionalBranches, branches[1]];
+        }, BRANCHES);
         await openBranchComparePanelAsync(page);
+        const panel = page.locator('.branch-compare-panel');
+        const baseInput = panel.locator('.branch-compare-base-input');
+        const targetInput = panel.locator('.branch-compare-target-input');
+        const compareButton = panel.locator('.branch-compare-button');
+        const suggestions = panel.locator('.branch-compare-suggestions');
 
+        for (const height of [450, 400]) {
+            await page.setViewportSize({width: 1280, height});
+            await baseInput.focus();
+            await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(20);
+            const panelBounds = await panel.evaluate(element => ({top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom}));
+            for (const control of [baseInput, targetInput, panel.locator('.branch-compare-swap-button'), compareButton]) {
+                const bounds = await control.evaluate(element => ({top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom}));
+                expect(bounds.top).toBeGreaterThanOrEqual(panelBounds.top);
+                expect(bounds.bottom).toBeLessThanOrEqual(panelBounds.bottom);
+            }
+        }
         await selectBranchByMouseAsync(page, '.branch-compare-base-input', LEFT_REF);
-        await expect(page.locator('.branch-compare-base-input')).toHaveValue('main');
+        await expect(baseInput).toHaveValue('main');
 
-        const targetInput = page.locator('.branch-compare-target-input');
         await targetInput.focus();
-        const suggestions = page.locator('.branch-compare-suggestions');
         await expect(suggestions).toBeVisible();
         await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveText('main');
         await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
-        await targetInput.press('ArrowDown');
-        await expect(suggestions.locator('.branch-compare-suggestion.selected')).toHaveText('feature/orders');
+        for (let index = 0; index < 19; index++) await targetInput.press('ArrowDown');
+        const selectedOption = suggestions.locator('.branch-compare-suggestion.selected');
+        await expect(selectedOption).toHaveText('feature/orders');
+        await expect(selectedOption).toBeInViewport({ratio: 1});
+        expect(await suggestions.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
         await targetInput.press('Enter');
         await expect(targetInput).toHaveValue('feature/orders');
         await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
         await expect(suggestions).not.toBeVisible();
-        await expect(page.locator('.branch-compare-button')).toBeEnabled();
+        await expect(compareButton).toBeEnabled();
+        await compareButton.click();
+        await expect(panel.locator('.branch-compare-file-item')).toHaveCount(3);
     });
 
     test('未確定・同一ブランチ・選択後に手入力で変更した状態では比較ボタンが無効になる', async ({page}) => {

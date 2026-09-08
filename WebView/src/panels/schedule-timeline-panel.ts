@@ -73,7 +73,7 @@ export class ScheduleTimelinePanel {
         this.scrollPosition = storedState.scroll;
 
         this.element = document.createElement('div');
-        this.element.classList.add('sidebar-panel', 'schedule-timeline-panel');
+        this.element.classList.add('sidebar-panel', 'schedule-timeline-panel', 'sidebar-panel-fixed-header');
 
         const headerElement = document.createElement('div');
         headerElement.classList.add('sidebar-panel-header');
@@ -110,13 +110,33 @@ export class ScheduleTimelinePanel {
         filterContainer.appendChild(this.filterClearButton);
         this.element.appendChild(filterContainer);
 
+        const toolbar = document.createElement('div');
+        toolbar.classList.add('schedule-timeline-toolbar');
+        const collapseButton = document.createElement('button');
+        collapseButton.type = 'button';
+        collapseButton.classList.add('schedule-timeline-collapse-all');
+        collapseButton.setAttribute('aria-label', 'すべての日付を折りたたむ');
+        collapseButton.title = 'すべての日付を折りたたむ';
+        collapseButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3V1.75h8.25V10H13M1.75 5.75H10.25V14.25H1.75zM4 10h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        collapseButton.addEventListener('click', () => {
+            // 一括操作は検索で隠れた日付も保存し、検索解除後も折りたたみを維持する。
+            for (const date of this.dateGroups.keys()) this.collapsedDates.add(date);
+            for (const group of this.contentElement.querySelectorAll<HTMLElement>('.schedule-timeline-group')) {
+                this.setGroupCollapsed(group, true);
+            }
+            this.saveCollapsedDates();
+            this.saveScrollPosition();
+        });
+        toolbar.appendChild(collapseButton);
+        this.element.appendChild(toolbar);
+
         this.contentElement = document.createElement('div');
-        this.contentElement.classList.add('schedule-timeline-content');
+        this.contentElement.classList.add('schedule-timeline-content', 'sidebar-panel-scroll-content');
         this.contentElement.setAttribute('role', 'list');
         this.element.appendChild(this.contentElement);
         this.renderMessage('予定日はありません');
 
-        this.element.addEventListener('scroll', () => {
+        this.contentElement.addEventListener('scroll', () => {
             this.saveScrollPosition();
         }, {passive: true});
 
@@ -707,15 +727,15 @@ export class ScheduleTimelinePanel {
 
     private getCurrentScrollPosition(): UiScrollPosition {
         return {
-            scrollLeft: this.element.scrollLeft,
-            scrollTop: this.element.scrollTop,
+            scrollLeft: this.contentElement.scrollLeft,
+            scrollTop: this.contentElement.scrollTop,
         };
     }
 
     private restoreScrollPosition(position: UiScrollPosition): void {
         window.requestAnimationFrame(() => {
-            this.element.scrollLeft = position.scrollLeft;
-            this.element.scrollTop = position.scrollTop;
+            this.contentElement.scrollLeft = position.scrollLeft;
+            this.contentElement.scrollTop = position.scrollTop;
         });
     }
 

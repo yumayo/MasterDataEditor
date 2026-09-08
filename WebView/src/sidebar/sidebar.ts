@@ -75,7 +75,7 @@ export class Sidebar {
 
         // ファイルパネル
         this.filesPanel = document.createElement('div');
-        this.filesPanel.classList.add('sidebar-panel', 'sidebar-panel-active');
+        this.filesPanel.classList.add('sidebar-panel', 'sidebar-panel-active', 'sidebar-panel-fixed-header');
         const filesPanelHeader = document.createElement('div');
         filesPanelHeader.classList.add('sidebar-panel-header');
         filesPanelHeader.textContent = 'EXPLORER';

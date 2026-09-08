@@ -107,6 +107,29 @@
     display: block;
 }
 
+/* 検索・比較操作を固定し、本文だけをスクロールするパネルで共用する。 */
+.sidebar-panel-fixed-header {
+    height: 100%;
+    overflow: hidden;
+    flex-direction: column;
+}
+
+.sidebar-panel-fixed-header.sidebar-panel-active {
+    display: flex;
+}
+
+.sidebar-panel-fixed-header > :not(.sidebar-panel-scroll-content) {
+    flex-shrink: 0;
+}
+
+.sidebar-panel-scroll-content {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+}
+
 /* パネルヘッダー共通 */
 .sidebar-panel-header {
     display: flex;

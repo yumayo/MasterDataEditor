@@ -1,14 +1,16 @@
-.branch-compare-panel {
-    height: 100%;
-    overflow-y: auto;
-}
-
-.branch-compare-controls {
+/* 小さい画面では操作欄の不足分を候補一覧の内部スクロールで受け持つ。 */
+.branch-compare-panel > .branch-compare-controls {
     position: relative;
     display: flex;
     flex-direction: column;
+    flex-shrink: 1;
+    min-height: 0;
     gap: 4px;
     padding: 8px;
+}
+
+.branch-compare-controls > :not(.branch-compare-suggestions) {
+    flex-shrink: 0;
 }
 
 .branch-compare-input-label {
@@ -45,6 +47,7 @@
     width: 100%;
     box-sizing: border-box;
     max-height: 240px;
+    min-height: 0;
     overflow-y: auto;
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);
