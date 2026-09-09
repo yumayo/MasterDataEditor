@@ -2,6 +2,7 @@ import type {BackgroundTaskTracker} from "./background-task-tracker";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 import {stringifyJsonForFile} from "../core/json-format";
 import type {LargeFileSettings} from "../settings/settings-schema";
+import {configureGitBlameTiming, parseWebViewMessageWithBlameTiming, recordGitBlameTiming, type GitBlameTimingContext} from "./git-blame-timing";
 
 /** postMessageAsync に統合されるバックグラウンドタスクトラッカー（main.ts で設定される） */
 let tracker: BackgroundTaskTracker | false = false;
@@ -12,6 +13,7 @@ let tracker: BackgroundTaskTracker | false = false;
  */
 export function configureBackgroundTracker(t: BackgroundTaskTracker): void {
     tracker = t;
+    configureGitBlameTiming(timing => t.recordGitBlameTiming(timing));
 }
 
 // =========================================================================
@@ -441,8 +443,8 @@ export interface LogEntry {
 /**
  * git blame でファイルの各行の著者・日付・コミット情報を取得する
  */
-export async function gitBlameAsync(filename: string, commit?: string): Promise<BlameEntry[]> {
-    return postMessageAsync<BlameEntry[]>('git_blame', commit === undefined ? {filename} : {filename, commit});
+export async function gitBlameAsync(filename: string, commit?: string, timing?: GitBlameTimingContext): Promise<BlameEntry[]> {
+    return postMessageAsync<BlameEntry[]>('git_blame', commit === undefined ? {filename} : {filename, commit}, timing);
 }
 
 /**
@@ -480,9 +482,11 @@ function getRequestTimeoutMs(apiName: string): number {
 
 function postMessageAsync<T>(
     apiName: string,
-    requestData: Record<string, unknown>
+    requestData: Record<string, unknown>,
+    timing?: GitBlameTimingContext
 ): Promise<T> {
     const detail = createApiDebugDetail(apiName, requestData);
+    if (timing !== undefined) timing.requestId = detail.requestId!;
     const promise = sendRequest<T>(apiName, requestData, detail);
     // トラッカーが設定されている場合はバックグラウンドタスクとして追跡する
     if (tracker !== false) {
@@ -503,6 +507,7 @@ function sendRequest<T>(
         ...requestData
     };
     detail.request = requestMessage;
+    const requestStartedAt = performance.now();
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             window.chrome.webview.removeEventListener('message', responseHandler);
@@ -521,8 +526,9 @@ function sendRequest<T>(
         }, getRequestTimeoutMs(apiName));
 
         const responseHandler = (event: MessageEvent) => {
+            const receivedAt = performance.now();
             try {
-                const responseData = JSON.parse(event.data);
+                const responseData = parseWebViewMessageWithBlameTiming(event.data, `api:${apiName}#${requestId}`);
                 // リクエストIDで照合する。IDが一致しないメッセージは無視して待ち続ける。
                 if (!responseData || responseData.type !== `${apiName}_response` || responseData.requestId !== requestId) {
                     return;
@@ -530,6 +536,9 @@ function sendRequest<T>(
 
                 clearTimeout(timeout);
                 window.chrome.webview.removeEventListener('message', responseHandler);
+                if (apiName === 'git_blame') {
+                    recordGitBlameTiming(requestId, 'request_to_response_event_total', receivedAt - requestStartedAt, {filename: requestData.filename});
+                }
                 detail.response = responseData;
                 detail.completedAt = new Date().toISOString();
                 if (!responseData.success) {
@@ -641,7 +650,16 @@ function getDebugString(value: unknown): string | false {
 }
 
 function writeApiLog(phase: 'request' | 'response', apiName: string, requestId: string, payload: unknown): void {
-    console.info(`[API ${phase}] ${apiName} requestId=${requestId} ${safeStringify(payload)}`);
+    const startedAt = performance.now();
+    const json = safeStringify(payload);
+    const stringifiedAt = performance.now();
+    console.info(`[API ${phase}] ${apiName} requestId=${requestId} ${json}`);
+    const loggedAt = performance.now();
+    if (phase === 'response' && apiName === 'git_blame') {
+        recordGitBlameTiming(requestId, 'response_log_json_stringify', stringifiedAt - startedAt, {chars: json.length});
+        // console.infoの呼び出し時間。C#側のファイル書き込みは別の計測値になる。
+        recordGitBlameTiming(requestId, 'response_console_info_call', loggedAt - stringifiedAt, {chars: json.length});
+    }
 }
 
 function safeStringify(value: unknown): string {

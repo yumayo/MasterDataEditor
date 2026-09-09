@@ -1,6 +1,7 @@
 import type {StatusBar} from "../ui/status-bar";
 import type {DebugConsole, DebugConsoleEntryDetail} from "../panels/debug-console";
 import {parseCallerInfo} from "../core/caller-info";
+import type {GitBlameTiming} from "./git-blame-timing";
 
 /**
  * バックグラウンドタスクの追跡
@@ -64,6 +65,21 @@ export class BackgroundTaskTracker {
         const caller = parseCallerInfo(BackgroundTaskTracker.SKIP_PATTERNS);
         const elapsedUs = Math.round((performance.now() - startTime) * 1000);
         this.debugConsole.appendEntry(detail?.apiName ?? `${label} (cache)`, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
+    }
+
+    recordGitBlameTiming(timing: GitBlameTiming): void {
+        const label = `git_blame [${timing.stage}] #${timing.requestId}`;
+        const status = timing.success ? 'success' : 'error';
+        const caller = typeof timing.consumer === 'string' ? timing.consumer : timing.source;
+        this.debugConsole.appendEntry(label, Math.round(timing.durationMs * 1000), status, caller, {
+            apiName: label,
+            requestId: timing.requestId,
+            request: {type: 'git_blame_request', requestId: timing.requestId},
+            response: timing,
+            status,
+            caller,
+            durationUs: Math.round(timing.durationMs * 1000),
+        });
     }
 
     private completeDetail(detail: DebugConsoleEntryDetail | undefined, status: 'success' | 'error', caller: string, durationUs: number): DebugConsoleEntryDetail | undefined {

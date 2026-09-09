@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -11,8 +12,9 @@ namespace App.MasterDataEditor
 	/// </summary>
 	public static class WebView2HandlerGitBlameRequest
 	{
-		public static object Invoke(JsonElement root, string requestId)
+		public static object Invoke(JsonElement root, string requestId, GitBlameTiming? timing = null)
 		{
+			var handlerStartedAt = Stopwatch.GetTimestamp();
 			try
 			{
 				if (!root.TryGetProperty("filename", out var filenameElement))
@@ -22,6 +24,7 @@ namespace App.MasterDataEditor
 
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
+				timing?.RecordSince("resolve_git_root", handlerStartedAt);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
 				var filename = GitCommandHelper.ToGitRootRelativePath(filenameElement.GetString(), dataPrefix);
 				var validationError = GitCommandHelper.ValidateDataPath(filename, dataPrefix);
@@ -39,10 +42,13 @@ namespace App.MasterDataEditor
 						return new { type = "git_blame_response", requestId, success = false, error = "invalid commit hash format" };
 					}
 				}
+				var gitStartedAt = Stopwatch.GetTimestamp();
 				var output = commit == null
 					? GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", "--", filename)
 					: GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", commit, "--", filename);
-				var entries = ParsePorcelainBlame(output);
+				// RunGitCommand は標準出力の ReadToEnd とプロセス終了待ちを含む。
+				timing?.RecordSince("git_command_and_read_stdout", gitStartedAt, chars: output.Length);
+				var entries = ParsePorcelainBlame(output, timing);
 
 				return new
 				{
@@ -54,6 +60,7 @@ namespace App.MasterDataEditor
 			}
 			catch (Exception ex)
 			{
+				timing?.RecordSince("handler_failed_total", handlerStartedAt, success: false);
 				Logger.Error(ex, "git blame 実行時にエラーが発生しました。");
 				return new
 				{
@@ -77,10 +84,13 @@ namespace App.MasterDataEditor
 		///   ...
 		///   \t{行の内容}  ← タブで始まる行が実際のソースコード行
 		/// </summary>
-		private static List<object> ParsePorcelainBlame(string output)
+		private static List<object> ParsePorcelainBlame(string output, GitBlameTiming? timing)
 		{
 			var entries = new List<object>();
+			var splitStartedAt = Stopwatch.GetTimestamp();
 			var lines = output.Split('\n');
+			timing?.RecordSince("porcelain_split_lines", splitStartedAt, chars: output.Length);
+			var parseStartedAt = Stopwatch.GetTimestamp();
 
 			// git blame --porcelain では同じコミットハッシュの2回目以降の出現で
 			// author/author-time/summary 等のヘッダー行が省略される。
@@ -160,6 +170,7 @@ namespace App.MasterDataEditor
 				}
 			}
 
+			timing?.RecordSince("porcelain_parse_entries", parseStartedAt, entryCount: entries.Count);
 			return entries;
 		}
 

@@ -3,6 +3,7 @@ import {BLAME_COLUMN_WIDTH_PX, DEFAULT_ROW_HEIGHT} from "../core/constant";
 import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult} from "../app/api";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
+import {recordGitBlameTiming} from "../app/git-blame-timing";
 
 /**
  * blame 表示と git 差分ハイライトを担当する。
@@ -45,22 +46,28 @@ export class EditorTableGit {
         const requestId = ++this.blameRequestId;
         this.isBlameLoading = true;
         const filename = 'data/' + this.tableName + '.csv';
+        const timing = {requestId: '', filename};
+        const showStartedAt = performance.now();
         let entries: BlameEntry[];
         try {
-            entries = await gitBlameAsync(filename);
+            entries = await gitBlameAsync(filename, undefined, timing);
         } catch (error) {
             if (this.blameRequestId === requestId) this.isBlameLoading = false;
+            recordGitBlameTiming(timing.requestId, 'show_total', performance.now() - showStartedAt, {filename, success: false});
             throw error;
         }
         if (this.blameRequestId !== requestId) return;
         this.isBlameLoading = false;
+        const prepareStartedAt = performance.now();
         this.removeBlameCellsFromRenderedRows();
         this.isBlameVisible = true;
         this.blameEntriesByDataRowIndex = [];
+        const indexStartedAt = performance.now();
         for (const entry of entries) {
             const dataRowIndex = entry.lineNumber - 2;
             if (dataRowIndex >= 0) this.blameEntriesByDataRowIndex[dataRowIndex] = entry;
         }
+        const cellsStartedAt = performance.now();
         // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
         this.element.classList.add('editor-table--blame-visible');
         // 列ヘッダー行（element.children[0]）の先頭に blame-column-header を prepend する
@@ -73,19 +80,36 @@ export class EditorTableGit {
         headerRow.prepend(blameHeaderCell);
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
         // 仮想スクロールでは描画行数と論理行番号が一致しないため、描画済み行を直接走査する。
+        let renderedRows = 0;
         for (const rowElement of this.getRenderedRowElements()) {
             const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
             if (logicalRowIndex === null || logicalRowIndex === 0) continue;
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
             const blameCell = this.createBlameCellForDataRow(logicalRowIndex - 1, isEmptyRow);
             rowElement.prepend(blameCell);
+            renderedRows++;
         }
+        const selectionStartedAt = performance.now();
         // blame列挿入でDOMインデックスが1つずれるため、フォーカス位置とSelection範囲を補正する
         if (this.lastFocusedCol >= 0) this.lastFocusedCol += 1;
         this.selection.shiftColumnsBy(1);
         // blame列挿入でデータセルの絶対座標がずれるため、選択範囲の描画を再計算する
         this.selection.updateRendererAfterResize();
+        const layoutStartedAt = performance.now();
         this.refreshFreezeVisualState();
+        const completedAt = performance.now();
+        // 計測ログのDOM更新が各段階の計測に混ざらないよう、表示反映後にまとめて記録する。
+        const stages: Array<[string, number]> = [
+            ['prepare_rendered_rows', indexStartedAt - prepareStartedAt],
+            ['index_entries', cellsStartedAt - indexStartedAt],
+            ['insert_blame_cells', selectionStartedAt - cellsStartedAt],
+            ['update_selection', layoutStartedAt - selectionStartedAt],
+            ['refresh_layout', completedAt - layoutStartedAt],
+            ['show_total', completedAt - showStartedAt],
+        ];
+        for (const [stage, durationMs] of stages) {
+            recordGitBlameTiming(timing.requestId, stage, durationMs, {filename, entryCount: entries.length, renderedRows});
+        }
     }
 
     /**

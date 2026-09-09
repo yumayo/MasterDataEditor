@@ -19,6 +19,7 @@ import {ResizeHandle} from "../ui/resize-handle";
 import {consumeSuppressedSelfSaveGitRefresh, invalidateGitStatusCache, invalidateGitShowCache, invalidateMasterDataFileCaches, readFileAsync, gitShowAtCommitAsync, LogEntry, type GitStatusResult} from "../app/api";
 import type {UiStateStore, UiStoredDiffTab} from "../app/ui-state";
 import type {NotificationToast} from "../ui/notification";
+import {parseWebViewMessageWithBlameTiming} from "../app/git-blame-timing";
 // Editor は sidebar の applyWidth でのみ使用する（差分ビュー制御は Tab 経由で行う）
 
 /**
@@ -165,7 +166,7 @@ export class Sidebar {
             if (typeof event.data !== 'string') return;
             let data: { type: string; filename?: string; filenames?: string[] };
             try {
-                data = JSON.parse(event.data) as { type: string };
+                data = parseWebViewMessageWithBlameTiming(event.data, 'sidebar');
             } catch {
                 return;
             }

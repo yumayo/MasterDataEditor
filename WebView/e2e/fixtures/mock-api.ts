@@ -442,8 +442,12 @@ export async function installMockApiAsync(
                     type BlameWindow = {
                         __mockGitBlame?: Record<string, object[]>;
                         __mockGitBlameAtCommit?: Record<string, Record<string, object[]>>;
+                        __mockGitBlameTimings?: Array<{stage: string; durationMs: number}>;
                     };
                     const blameWindow = window as unknown as BlameWindow;
+                    for (const timing of blameWindow.__mockGitBlameTimings ?? []) {
+                        dispatch({type: 'git_blame_timing', requestId, filename, source: 'host', success: true, ...timing});
+                    }
                     const mockBlame = typeof request.commit === 'string'
                         ? blameWindow.__mockGitBlameAtCommit?.[request.commit]
                         : blameWindow.__mockGitBlame;

@@ -1,5 +1,6 @@
 using App.MasterDataEditor.Mcp;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -108,7 +109,9 @@ public class WebView2Handler : IDisposable
 
 	private void OnConsoleAPICalled(object? sender, CoreWebView2DevToolsProtocolEventReceivedEventArgs e)
 	{
+		var parseStartedAt = Stopwatch.GetTimestamp();
 		using var doc = JsonDocument.Parse(e.ParameterObjectAsJson);
+		var parsedAt = Stopwatch.GetTimestamp();
 		var root = doc.RootElement;
 
 		var type = root.GetProperty("type").GetString();
@@ -138,7 +141,23 @@ public class WebView2Handler : IDisposable
 		}
 
 		var logLine = $"[{DateTime.Now:HH:mm:ss}] [{type}] {message} ({source}:{line})";
+		var writeStartedAt = Stopwatch.GetTimestamp();
 		File.AppendAllText(_consoleLogPath, logLine + Environment.NewLine);
+		var writtenAt = Stopwatch.GetTimestamp();
+		// 計測ログ自身は対象にしない。元の巨大なAPIレスポンスのログだけを測る。
+		const string blamePrefix = "[API response] git_blame requestId=";
+		if (message.StartsWith(blamePrefix, StringComparison.Ordinal))
+		{
+			var idEnd = message.IndexOf(' ', blamePrefix.Length);
+			if (idEnd > blamePrefix.Length)
+			{
+				var requestId = message.Substring(blamePrefix.Length, idEnd - blamePrefix.Length);
+				var timing = new GitBlameTiming(requestId, "", SendMessageToWebView);
+				timing.Record("console_event_json_parse", Stopwatch.GetElapsedTime(parseStartedAt, parsedAt).TotalMilliseconds);
+				timing.Record("console_log_prepare", Stopwatch.GetElapsedTime(parsedAt, writeStartedAt).TotalMilliseconds, chars: logLine.Length);
+				timing.Record("console_log_file_write", Stopwatch.GetElapsedTime(writeStartedAt, writtenAt).TotalMilliseconds, chars: logLine.Length);
+			}
+		}
 	}
 
 	public static async Task<WebView2Handler> CreateAsync(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
@@ -226,7 +245,13 @@ public class WebView2Handler : IDisposable
 
 	public void SendMessageToWebView(object data)
 	{
+		SendMessageToWebView(data, null);
+	}
+
+	private void SendMessageToWebView(object data, GitBlameTiming? timing)
+	{
 		string json;
+		var serializeStartedAt = Stopwatch.GetTimestamp();
 		try
 		{
 			json = JsonSerializer.Serialize(data, WebMessageJsonOptions);
@@ -237,11 +262,18 @@ public class WebView2Handler : IDisposable
 			return;
 		}
 
+		var serializedAt = Stopwatch.GetTimestamp();
 		_dispatcher.InvokeAsync(() =>
 		{
 			try
 			{
+				var sendStartedAt = Stopwatch.GetTimestamp();
 				_webView2.CoreWebView2.PostWebMessageAsString(json);
+				var sentAt = Stopwatch.GetTimestamp();
+				// 送信APIの戻りまでを計測。WebViewでの受信完了を意味しない。
+				timing?.Record("response_json_serialize", Stopwatch.GetElapsedTime(serializeStartedAt, serializedAt).TotalMilliseconds, chars: json.Length);
+				timing?.Record("response_dispatcher_wait", Stopwatch.GetElapsedTime(serializedAt, sendStartedAt).TotalMilliseconds);
+				timing?.Record("response_post_message_call", Stopwatch.GetElapsedTime(sendStartedAt, sentAt).TotalMilliseconds, chars: json.Length);
 			}
 			catch (Exception e)
 			{
@@ -327,7 +359,9 @@ public class WebView2Handler : IDisposable
 							break;
 
 						case "git_blame_request":
-							RunRequestInBackground(root, requestId, WebView2HandlerGitBlameRequest.Invoke);
+							var blameFilename = root.TryGetProperty("filename", out var blameFilenameElement) ? blameFilenameElement.GetString() ?? "" : "";
+							var blameTiming = new GitBlameTiming(requestId, blameFilename, SendMessageToWebView);
+							RunRequestInBackground(root, requestId, (request, id) => WebView2HandlerGitBlameRequest.Invoke(request, id, blameTiming), timing: blameTiming);
 							break;
 
 						case "git_cell_blame_request":
@@ -371,14 +405,15 @@ public class WebView2Handler : IDisposable
 		JsonElement root,
 		string requestId,
 		Func<JsonElement, string, object> requestHandler,
-		bool preserveRequestOrder = false)
+		bool preserveRequestOrder = false,
+		GitBlameTiming? timing = null)
 	{
 		// root は using スコープの JsonDocument に紐づくため、バックグラウンド処理へ渡す前に独立させる。
 		var clonedRoot = root.Clone();
-		_ = RunRequestInBackgroundAsync(() => requestHandler(clonedRoot, requestId), preserveRequestOrder);
+		_ = RunRequestInBackgroundAsync(() => requestHandler(clonedRoot, requestId), preserveRequestOrder, timing);
 	}
 
-	private async Task RunRequestInBackgroundAsync(Func<object> requestHandler, bool preserveRequestOrder)
+	private async Task RunRequestInBackgroundAsync(Func<object> requestHandler, bool preserveRequestOrder, GitBlameTiming? timing)
 	{
 		var lockTaken = false;
 		try
@@ -389,8 +424,13 @@ public class WebView2Handler : IDisposable
 				lockTaken = true;
 			}
 
-			var response = await Task.Run(requestHandler).ConfigureAwait(false);
-			SendMessageToWebView(response);
+			var queuedAt = Stopwatch.GetTimestamp();
+			var response = await Task.Run(() =>
+			{
+				timing?.RecordSince("background_queue_wait", queuedAt);
+				return requestHandler();
+			}).ConfigureAwait(false);
+			SendMessageToWebView(response, timing);
 		}
 		catch (Exception ex)
 		{
