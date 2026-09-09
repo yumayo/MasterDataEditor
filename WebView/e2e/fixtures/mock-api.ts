@@ -443,8 +443,13 @@ export async function installMockApiAsync(
                         __mockGitBlame?: Record<string, object[]>;
                         __mockGitBlameAtCommit?: Record<string, Record<string, object[]>>;
                         __mockGitBlameTimings?: Array<{stage: string; durationMs: number}>;
+                        __mockGitBlameRequests?: unknown[];
+                        __mockGitBlameManualResponses?: boolean;
+                        __mockGitBlamePendingResponses?: Array<() => void>;
+                        __mockGitBlameError?: string;
                     };
                     const blameWindow = window as unknown as BlameWindow;
+                    (blameWindow.__mockGitBlameRequests ??= []).push(request);
                     for (const timing of blameWindow.__mockGitBlameTimings ?? []) {
                         dispatch({type: 'git_blame_timing', requestId, filename, source: 'host', success: true, ...timing});
                     }
@@ -455,12 +460,17 @@ export async function installMockApiAsync(
                         dispatch({ type: "git_blame_response", requestId, success: false, error: "git blame not available" });
                         return;
                     }
-                    const entries = mockBlame[filename];
-                    if (entries) {
-                        dispatch({ type: "git_blame_response", requestId, success: true, data: entries });
-                    } else {
-                        dispatch({ type: "git_blame_response", requestId, success: true, data: [] });
-                    }
+                    const entries = mockBlame[filename] ?? [];
+                    const selected = typeof request.startLine === 'number' && typeof request.endLine === 'number'
+                        ? entries.filter(entry => {
+                            const lineNumber = (entry as {lineNumber: number}).lineNumber;
+                            return lineNumber >= (request.startLine as number) && lineNumber <= (request.endLine as number);
+                        }) : entries;
+                    const response = blameWindow.__mockGitBlameError === undefined
+                        ? {type: 'git_blame_response', requestId, success: true, data: selected, startLine: request.startLine, endLine: request.endLine}
+                        : {type: 'git_blame_response', requestId, success: false, error: blameWindow.__mockGitBlameError};
+                    if (blameWindow.__mockGitBlameManualResponses) (blameWindow.__mockGitBlamePendingResponses ??= []).push(() => dispatch(response));
+                    else dispatch(response);
                     return;
                 }
 

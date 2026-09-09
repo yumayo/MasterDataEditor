@@ -412,6 +412,12 @@ export interface BlameEntry {
     commitMessage: string;
 }
 
+/** Gitの物理行番号（1始まり、両端を含む）。CSVヘッダーは1行目。 */
+export interface GitBlameRange {
+    startLine: number;
+    endLine: number;
+}
+
 export interface CellBlameTarget {
     lineNumber: number;
     columnName: string;
@@ -443,8 +449,12 @@ export interface LogEntry {
 /**
  * git blame でファイルの各行の著者・日付・コミット情報を取得する
  */
-export async function gitBlameAsync(filename: string, commit?: string, timing?: GitBlameTimingContext): Promise<BlameEntry[]> {
-    return postMessageAsync<BlameEntry[]>('git_blame', commit === undefined ? {filename} : {filename, commit}, timing);
+export async function gitBlameAsync(filename: string, commit?: string, timing?: GitBlameTimingContext, range?: GitBlameRange): Promise<BlameEntry[]> {
+    return postMessageAsync<BlameEntry[]>('git_blame', {
+        filename,
+        ...(commit === undefined ? {} : {commit}),
+        ...range,
+    }, timing);
 }
 
 /**

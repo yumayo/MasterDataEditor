@@ -22,6 +22,23 @@ namespace App.MasterDataEditor
 					return new { type = "git_blame_response", requestId, success = false, error = "filename is required" };
 				}
 
+				int? startLine = null;
+				int? endLine = null;
+				var hasStart = root.TryGetProperty("startLine", out var startElement);
+				var hasEnd = root.TryGetProperty("endLine", out var endElement);
+				if (hasStart || hasEnd)
+				{
+					if (!hasStart || !hasEnd || startElement.ValueKind != JsonValueKind.Number || endElement.ValueKind != JsonValueKind.Number
+						|| !startElement.TryGetInt32(out var start) || !endElement.TryGetInt32(out var end)
+						|| start < 1 || end < start || (long)end - start + 1 > 10000)
+					{
+						return new {type = "git_blame_response", requestId, success = false, error = "startLine/endLine must specify 1 to 10000 lines using positive integers"};
+					}
+					startLine = start;
+					endLine = end;
+					timing?.SetRange(start, end);
+				}
+
 				var workDir = AppEnvironment.GetWorkDir();
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				timing?.RecordSince("resolve_git_root", handlerStartedAt);
@@ -43,9 +60,16 @@ namespace App.MasterDataEditor
 					}
 				}
 				var gitStartedAt = Stopwatch.GetTimestamp();
-				var output = commit == null
-					? GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", "--", filename)
-					: GitCommandHelper.RunGitCommand(gitRoot, "blame", "--porcelain", commit, "--", filename);
+				var arguments = new List<string> {"blame", "--porcelain"};
+				if (startLine.HasValue)
+				{
+					arguments.Add("-L");
+					arguments.Add(FormattableString.Invariant($"{startLine},{endLine}"));
+				}
+				if (commit != null) arguments.Add(commit);
+				arguments.Add("--");
+				arguments.Add(filename);
+				var output = GitCommandHelper.RunGitCommand(gitRoot, arguments.ToArray());
 				// RunGitCommand は標準出力の ReadToEnd とプロセス終了待ちを含む。
 				timing?.RecordSince("git_command_and_read_stdout", gitStartedAt, chars: output.Length);
 				var entries = ParsePorcelainBlame(output, timing);
@@ -55,6 +79,8 @@ namespace App.MasterDataEditor
 					type = "git_blame_response",
 					requestId,
 					success = true,
+					startLine,
+					endLine,
 					data = entries
 				};
 			}

@@ -1,9 +1,15 @@
 import {EditorTable} from "./editor-table";
 import {BLAME_COLUMN_WIDTH_PX, DEFAULT_ROW_HEIGHT} from "../core/constant";
-import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult} from "../app/api";
+import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEntry, GitStatusResult, type GitBlameRange} from "../app/api";
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
 import {recordGitBlameTiming} from "../app/git-blame-timing";
+
+const BLAME_CHUNK_ROWS = 10000;
+interface BlameChunks {
+    rowCount: number;
+    loaded: Set<number>;
+}
 
 /**
  * blame 表示と git 差分ハイライトを担当する。
@@ -13,7 +19,8 @@ import {recordGitBlameTiming} from "../app/git-blame-timing";
 export class EditorTableGit {
     [key: string]: any;
     private gitDiffMarkerRows = getApplicationDefaultValue('largeFileGitDiffMarkerRows');
-    private blameEntriesByDataRowIndex: Array<BlameEntry | undefined> = [];
+    private blameEntriesByStoreRowIndex: Array<BlameEntry | undefined> = [];
+    private blameChunks: BlameChunks | null = null;
     private isBlameLoading = false;
     private blameRequestId = 0;
 
@@ -35,7 +42,7 @@ export class EditorTableGit {
      * blame情報が表示中かどうかを返す（コンテキストメニューのトグルラベル判定に使用）
      */
     isBlameShown(): boolean {
-        return this.isBlameVisible;
+        return this.isBlameVisible || this.isBlameLoading;
     }
 
     /**
@@ -48,24 +55,33 @@ export class EditorTableGit {
         const filename = 'data/' + this.tableName + '.csv';
         const timing = {requestId: '', filename};
         const showStartedAt = performance.now();
+        const storeRows = this.store.getRows(this.tableName);
+        const rowCount = storeRows === false ? this.storeRowIndices.length : storeRows.length;
+        const chunks: BlameChunks | null = rowCount > BLAME_CHUNK_ROWS ? {rowCount, loaded: new Set()} : null;
+        this.blameChunks = chunks;
+        const firstChunk = chunks === null ? null : this.nextBlameChunk(chunks);
+        const range = chunks === null || firstChunk === null ? undefined : this.blameChunkRange(chunks, firstChunk);
         let entries: BlameEntry[];
         try {
-            entries = await gitBlameAsync(filename, undefined, timing);
+            entries = await gitBlameAsync(filename, undefined, timing, range);
         } catch (error) {
-            if (this.blameRequestId === requestId) this.isBlameLoading = false;
-            recordGitBlameTiming(timing.requestId, 'show_total', performance.now() - showStartedAt, {filename, success: false});
+            if (this.blameRequestId !== requestId) return;
+            this.isBlameLoading = false;
+            this.blameChunks = null;
+            recordGitBlameTiming(timing.requestId, 'show_total', performance.now() - showStartedAt, {filename, ...range, success: false});
             throw error;
         }
         if (this.blameRequestId !== requestId) return;
+        if (chunks !== null && firstChunk !== null) chunks.loaded.add(firstChunk);
         this.isBlameLoading = false;
         const prepareStartedAt = performance.now();
         this.removeBlameCellsFromRenderedRows();
         this.isBlameVisible = true;
-        this.blameEntriesByDataRowIndex = [];
+        this.blameEntriesByStoreRowIndex = [];
         const indexStartedAt = performance.now();
         for (const entry of entries) {
             const dataRowIndex = entry.lineNumber - 2;
-            if (dataRowIndex >= 0) this.blameEntriesByDataRowIndex[dataRowIndex] = entry;
+            if (dataRowIndex >= 0) this.blameEntriesByStoreRowIndex[dataRowIndex] = entry;
         }
         const cellsStartedAt = performance.now();
         // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
@@ -85,7 +101,7 @@ export class EditorTableGit {
             const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
             if (logicalRowIndex === null || logicalRowIndex === 0) continue;
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
-            const blameCell = this.createBlameCellForDataRow(logicalRowIndex - 1, isEmptyRow);
+            const blameCell = this.createBlameCellForStoreRow(this.resolveStoreRowIndex(logicalRowIndex - 1), isEmptyRow);
             rowElement.prepend(blameCell);
             renderedRows++;
         }
@@ -108,7 +124,95 @@ export class EditorTableGit {
             ['show_total', completedAt - showStartedAt],
         ];
         for (const [stage, durationMs] of stages) {
-            recordGitBlameTiming(timing.requestId, stage, durationMs, {filename, entryCount: entries.length, renderedRows});
+            recordGitBlameTiming(timing.requestId, stage, durationMs, {filename, ...range, entryCount: entries.length, renderedRows});
+        }
+        if (chunks !== null) void this.loadRemainingBlameChunksAsync(chunks, filename, timing.requestId, showStartedAt, completedAt - showStartedAt);
+    }
+
+    private blameChunkRange(chunks: BlameChunks, chunk: number): GitBlameRange {
+        return {startLine: chunk * BLAME_CHUNK_ROWS + 2, endLine: Math.min((chunk + 1) * BLAME_CHUNK_ROWS, chunks.rowCount) + 1};
+    }
+
+    /** 毎回現在の表示範囲を読み直す。ソート/フィルター後もCSVの行番号で範囲を選ぶ。 */
+    private nextBlameChunk(chunks: BlameChunks): number | null {
+        const chunkCount = Math.ceil(chunks.rowCount / BLAME_CHUNK_ROWS);
+        const start = this.getVirtualScrollRenderedStart();
+        const end = this.getVirtualScrollRenderedEnd();
+        const centerRow = Math.min(Math.floor((start + end) / 2), this.getFilteredDataRowCount() - 1);
+        const centerStoreRow = this.resolveStoreRowIndex(centerRow);
+        const centerChunk = Math.max(0, Math.min(chunkCount - 1, Math.floor(centerStoreRow / BLAME_CHUNK_ROWS)));
+        if (!chunks.loaded.has(centerChunk)) return centerChunk;
+        // 表示範囲がチャンク境界をまたぐ場合と固定行も、周辺の先読みより優先する。
+        for (const rowElement of this.getRenderedRowElements()) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex === 0) continue;
+            const storeRowIndex = this.resolveStoreRowIndex(logicalRowIndex - 1);
+            if (storeRowIndex < 0 || storeRowIndex >= chunks.rowCount) continue;
+            const chunk = Math.floor(storeRowIndex / BLAME_CHUNK_ROWS);
+            if (!chunks.loaded.has(chunk)) return chunk;
+        }
+        for (let distance = 1; distance < chunkCount; distance++) {
+            const above = centerChunk - distance;
+            if (above >= 0 && !chunks.loaded.has(above)) return above;
+            const below = centerChunk + distance;
+            if (below < chunkCount && !chunks.loaded.has(below)) return below;
+        }
+        return null;
+    }
+
+    private async loadRemainingBlameChunksAsync(chunks: BlameChunks, filename: string, firstRequestId: string, startedAt: number, firstShowDurationMs: number): Promise<void> {
+        try {
+            while (this.blameChunks === chunks && this.isBlameVisible) {
+                // 画面更新と入力のために制御を返す。同時に走らせるGitコマンドは1件だけ。
+                await new Promise<void>(resolve => setTimeout(resolve, 50));
+                if (this.blameChunks !== chunks || !this.isBlameVisible || !this.element.isConnected) return;
+                const chunk = this.nextBlameChunk(chunks);
+                if (chunk === null) {
+                    this.blameChunks = null;
+                    recordGitBlameTiming(firstRequestId, 'load_all_chunks_total', performance.now() - startedAt, {filename, chunkCount: chunks.loaded.size, firstShowDurationMs});
+                    return;
+                }
+                const range = this.blameChunkRange(chunks, chunk);
+                const timing = {requestId: '', filename};
+                const chunkStartedAt = performance.now();
+                const entries = await gitBlameAsync(filename, undefined, timing, range);
+                // 解除・タブ切替・行構造変更・再表示後に古いレスポンスを適用しない。
+                if (this.blameChunks !== chunks || !this.isBlameVisible || !this.element.isConnected) return;
+                chunks.loaded.add(chunk);
+                const indexStartedAt = performance.now();
+                for (const entry of entries) {
+                    const storeRowIndex = entry.lineNumber - 2;
+                    if (storeRowIndex >= 0) this.blameEntriesByStoreRowIndex[storeRowIndex] = entry;
+                }
+                const cellsStartedAt = performance.now();
+                let renderedRows = 0;
+                for (const rowElement of this.getRenderedRowElements()) {
+                    const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+                    if (logicalRowIndex === null || logicalRowIndex === 0 || rowElement.classList.contains('editor-table-empty-row')) continue;
+                    const storeRowIndex = this.resolveStoreRowIndex(logicalRowIndex - 1);
+                    if (storeRowIndex + 2 < range.startLine || storeRowIndex + 2 > range.endLine) continue;
+                    const cell = rowElement.querySelector('.blame-cell');
+                    if (cell === null) continue;
+                    this.updateBlameCell(cell, storeRowIndex);
+                    renderedRows++;
+                }
+                const layoutStartedAt = performance.now();
+                if (renderedRows > 0) this.refreshDetachedHeaderLayout();
+                const completedAt = performance.now();
+                for (const [stage, durationMs] of [
+                    ['index_entries', cellsStartedAt - indexStartedAt],
+                    ['update_blame_cells', layoutStartedAt - cellsStartedAt],
+                    ['refresh_layout', completedAt - layoutStartedAt],
+                    ['chunk_total', completedAt - chunkStartedAt],
+                ] as const) {
+                    recordGitBlameTiming(timing.requestId, stage, durationMs, {filename, ...range, firstRequestId, entryCount: entries.length, renderedRows});
+                }
+            }
+        } catch (error) {
+            if (this.blameChunks !== chunks) return;
+            recordGitBlameTiming(firstRequestId, 'load_all_chunks_total', performance.now() - startedAt, {filename, firstShowDurationMs, success: false, error: String(error)});
+            this.hideBlame();
+            console.error('BLAMEのバックグラウンド取得に失敗しました。', error);
         }
     }
 
@@ -120,7 +224,8 @@ export class EditorTableGit {
         ++this.blameRequestId;
         this.isBlameLoading = false;
         this.isBlameVisible = false;
-        this.blameEntriesByDataRowIndex = [];
+        this.blameChunks = null;
+        this.blameEntriesByStoreRowIndex = [];
         this.element.classList.remove('editor-table--blame-visible');
         this.removeBlameCellsFromRenderedRows();
         // blame列除去でDOMインデックスが1つ戻るため、フォーカス位置とSelection範囲を補正する
@@ -132,13 +237,33 @@ export class EditorTableGit {
     }
 
     createBlameCellForDataRow(dataRowIndex: number, isEmptyRow: boolean): HTMLElement {
+        return this.createBlameCellForStoreRow(this.storeRowIndices[dataRowIndex], isEmptyRow);
+    }
+
+    private createBlameCellForStoreRow(storeRowIndex: number, isEmptyRow: boolean): HTMLElement {
         const blameCell = document.createElement('div');
         blameCell.classList.add('blame-cell', 'editor-table-cell');
         EditorTable.applyCellWidth(blameCell, `${BLAME_COLUMN_WIDTH_PX}px`);
         EditorTable.applyCellHeight(blameCell, DEFAULT_ROW_HEIGHT);
         if (isEmptyRow) return blameCell;
-        const entry = this.blameEntriesByDataRowIndex[dataRowIndex];
-        if (entry === undefined) return blameCell;
+        this.updateBlameCell(blameCell, storeRowIndex);
+        return blameCell;
+    }
+
+    private updateBlameCell(blameCell: HTMLElement, storeRowIndex: number): void {
+        blameCell.replaceChildren();
+        blameCell.removeAttribute('title');
+        blameCell.removeAttribute('role');
+        blameCell.removeAttribute('aria-label');
+        const entry = this.blameEntriesByStoreRowIndex[storeRowIndex];
+        if (entry === undefined) {
+            if (this.blameChunks !== null && storeRowIndex >= 0 && storeRowIndex < this.blameChunks.rowCount
+                && !this.blameChunks.loaded.has(Math.floor(storeRowIndex / BLAME_CHUNK_ROWS))) {
+                blameCell.textContent = '…';
+                blameCell.title = '変更履歴を読み込み中';
+            }
+            return;
+        }
         blameCell.title = '最終変更: ' + entry.author + '（' + entry.date + '）';
         blameCell.setAttribute('role', 'note');
         blameCell.setAttribute('aria-label', '最終変更: ' + entry.author + '（' + entry.date + '）');
@@ -150,13 +275,18 @@ export class EditorTableGit {
         dateSpan.classList.add('blame-date');
         dateSpan.textContent = entry.date;
         blameCell.appendChild(dateSpan);
-        return blameCell;
     }
 
     moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
-        if (this.blameEntriesByDataRowIndex.length === 0) return;
-        const [entry] = this.blameEntriesByDataRowIndex.splice(fromDomDataRowIndex, 1);
-        this.blameEntriesByDataRowIndex.splice(toDomDataRowIndex, 0, entry);
+        if (this.blameChunks !== null) {
+            this.hideBlame();
+            return;
+        }
+        if (this.blameEntriesByStoreRowIndex.length === 0) return;
+        const entries = (this.storeRowIndices as number[]).map(index => this.blameEntriesByStoreRowIndex[index]);
+        const [entry] = entries.splice(fromDomDataRowIndex, 1);
+        entries.splice(toDomDataRowIndex, 0, entry);
+        this.blameEntriesByStoreRowIndex = entries;
     }
 
     /**

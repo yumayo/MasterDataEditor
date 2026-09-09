@@ -349,6 +349,7 @@ export class EditorTableRenderer {
 
     /** グローバルイベントリスナーを解除する（タブが非アクティブになったとき） */
     deactivate(): void {
+        this.hideBlameIfVisible();
         this.handler.deactivate();
         this.selectionDragController.deactivate();
         const wasActive = this.isActive;

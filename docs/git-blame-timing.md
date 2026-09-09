@@ -2,11 +2,24 @@
 
 テーブルの行番号を右クリックし、「変更履歴を表示」を実行する。
 下部の **DEBUG CONSOLE** に `git_blame [段階名] #requestId` が追加される。
-同じ `requestId` の行が1回の実行に対応し、「時間」列に各段階の所要時間が表示される。
+同じ `requestId` の行が1回の API 呼び出しに対応し、「時間」列に各段階の所要時間が表示される。
 計測行をクリックすると、小さな計測データだけを API 詳細タブで確認できる。
+
+データ行数が1万行を超えるテーブルは、`git blame -L startLine,endLine` で最大1万行ずつ取得する。
+最初は現在の表示範囲の中央を含むチャンクを取得し、その結果で BLAME 列を表示する。
+その後は同じ表示範囲・固定行の未取得チャンクを優先し、近い上下のチャンクへ先読みを広げる。
+次のリクエストを選ぶたびに表示範囲を確認するため、スクロール先も優先される。
+1回の BLAME 表示につき同時リクエストは1件で、取得の合間に50ms制御を返す。
+未取得の行は `…` と表示する。1万行以下のテーブルは従来どおり一括取得する。
+
+BLAME の解除・タブ切り替え・行挿入/削除・ソート/フィルター変更で後続取得を停止する。
+既に送信済みの Git コマンドは完了まで動作するが、古い応答は表示に適用しない。
+後続取得が失敗した場合は計測ログに失敗を記録し、BLAME 列を解除する。
 
 計測データには `durationMs`（ミリ秒）、`source`（`host` または `webview`）、
 対象に応じて `filename`、`chars`、`entryCount`、`renderedRows`、`consumer` が含まれる。
+範囲取得には `startLine`・`endLine`（Gitの物理行番号、1始まり・両端を含む）も記録される。
+後続チャンクの表示反映ログの `firstRequestId` は、その BLAME 表示の最初のリクエストIDを示す。
 `chars` は .NET / JavaScript の文字列の長さ（UTF-16 コード単位数）で、バイト数ではない。
 
 ## 計測区間
@@ -28,12 +41,15 @@
 | `console_log_prepare` | コンソールイベントから文字列を取り出し、ファイル用のログ行を組み立て |
 | `console_log_file_write` | 上記ログ行の同期ファイル書き込み |
 | `prepare_rendered_rows` | 既存の BLAME セルの除去と表示状態の準備 |
-| `index_entries` | 全 BLAME エントリを行番号で引ける配列へ格納 |
+| `index_entries` | 今回取得した BLAME エントリをCSV行番号で引ける配列へ格納 |
 | `insert_blame_cells` | 描画中の行に BLAME ヘッダー・セルを追加 |
+| `update_blame_cells` | 後続チャンクの結果で、現在描画中の該当BLAMEセルを更新 |
 | `update_selection` | BLAME 列挿入に伴う選択範囲の補正と描画更新 |
 | `refresh_layout` | 固定行・固定列・表示用ヘッダー等のレイアウト更新 |
 | `request_to_response_event_total` | API 呼び出し開始から、対応する受信ハンドラーに入るまでの合計 |
-| `show_total` | BLAME 表示開始から、API 取得と上記の同期表示反映が終わるまでの合計 |
+| `show_total` | BLAME 表示開始から、最初のAPI取得と同期表示反映が終わるまでの合計 |
+| `chunk_total` | 後続チャンク1件のAPI取得開始から、同期表示反映までの合計 |
+| `load_all_chunks_total` | BLAME 表示開始から全チャンクの先読みが終わるまでの合計 |
 | `handler_failed_total` | C# の BLAME 処理が例外で終了した場合の経過時間 |
 
 `response_json_parse` の `consumer=sidebar` はサイドバーの通知リスナー、
@@ -44,6 +60,10 @@
 
 - `*_total` は他の段階を含む合計なので、各段階と足し合わせない。
   `show_total` にはブラウザーの次のフレームでの描画完了は含まれない。
+- 分割取得の比較には `show_total`（最初の表示まで）、各 `chunk_total`、
+  `load_all_chunks_total`（先読み全体）を使い分ける。
+  全体の完了ログにも `firstShowDurationMs` として最初の表示時間を残すため、
+  DEBUG CONSOLE の件数上限で最初の計測行が消えた場合も比較できる。
 - Git の実行と標準出力の読み取りは並行して進むため、一つの区間として計測する。
 - `response_post_message_call` は送信 API の呼び出し時間であり、WebView の受信完了までの転送時間ではない。
   `request_to_response_event_total` には Git・解析・シリアライズ・通信・受信キュー等が含まれる。
@@ -63,5 +83,5 @@
 - C# と WebView 両方の計測値: `MASTER_DATA_EDITOR_CONSOLE_LOG_PATH` で指定したコンソールログ
   （未設定の場合は `NUL` なのでファイルには残らない）。
 
-計測ログにはレスポンス本体を含めない。既存の全件取得、JSON の解析・ログ出力、
-表示処理は維持しているため、最適化前の各処理の負荷を確認できる。
+計測ログにはレスポンス本体を含めない。既存のAPIレスポンス全文ログはチャンクごとに出力する。
+JSON の解析・ログ出力の経路は維持しており、分割取得前と段階別の負荷を比較できる。
