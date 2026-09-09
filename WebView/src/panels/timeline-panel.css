@@ -89,6 +89,8 @@
 .blame-cell .blame-date {
     display: inline;
     margin-right: 8px;
+    /* フォントサイズが異なる著者・日付にセルのpx行高を継承させず、取得後の行高増加を防ぐ。 */
+    line-height: 1;
 }
 
 .blame-author {

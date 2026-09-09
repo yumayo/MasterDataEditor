@@ -143,9 +143,7 @@ const test = base.extend<HistoryFixtures>({
  */
 async function rightClickRowHeaderAsync(table: Locator, rowIndex: number): Promise<void> {
     const header = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex);
-    const box = await header.boundingBox();
-    if (!box) throw new Error('row header bounding box is null');
-    await header.page().mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+    await header.click({button: 'right'});
 }
 
 /**
@@ -445,9 +443,9 @@ test.describe('blameビュー', () => {
     );
 
     test(
-        'blame表示後に別タブへ移動して戻ってもblame列幅の空白が残らないこと',
+        'blame表示後に別タブへ移動して戻るとblameが復元され、列幅に空白や重なりがないこと',
         async ({ page, historyTest: _historyTest }) => {
-            const table = page.locator('.editor-left-pane .editor-table');
+            const table = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table');
 
             await showBlameAsync(page, table);
 
@@ -457,7 +455,13 @@ test.describe('blameビュー', () => {
             await page.locator('.tab-button').filter({ hasText: 'test' }).first().click();
             await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
 
-            await expectNoBlameBlankAreaAsync(page);
+            await expect(table.locator('.editor-table-detached-row-header-layer .blame-cell').first()).toBeVisible();
+            const metrics = await getBlameLayoutMetricsAsync(page);
+            expect(metrics.sourceBlameCount).toBeGreaterThan(0);
+            expect(metrics.detachedBlameCount).toBe(metrics.sourceBlameCount);
+            expect(metrics.sourceBlameMainPaneIntersections, JSON.stringify(metrics)).toBe(0);
+            expect(Math.abs(metrics.bottomRightLeft - metrics.rowHeaderRight), JSON.stringify(metrics)).toBeLessThanOrEqual(1);
+            expect(Math.abs(metrics.topRightLeft - metrics.cornerRight), JSON.stringify(metrics)).toBeLessThanOrEqual(1);
         },
     );
 });

@@ -46,7 +46,7 @@ export class EditorTableGit {
     }
 
     /**
-     * git blame を実行して各行の先頭（children[0]）に独立した blame-cell を挿入する
+     * BLAME列の枠を先に表示し、git blame の取得完了後にセル内容を更新する
      */
     async showBlameAsync(): Promise<void> {
         if (this.isBlameVisible || this.isBlameLoading) return;
@@ -61,28 +61,11 @@ export class EditorTableGit {
         this.blameChunks = chunks;
         const firstChunk = chunks === null ? null : this.nextBlameChunk(chunks);
         const range = chunks === null || firstChunk === null ? undefined : this.blameChunkRange(chunks, firstChunk);
-        let entries: BlameEntry[];
-        try {
-            entries = await gitBlameAsync(filename, undefined, timing, range);
-        } catch (error) {
-            if (this.blameRequestId !== requestId) return;
-            this.isBlameLoading = false;
-            this.blameChunks = null;
-            recordGitBlameTiming(timing.requestId, 'show_total', performance.now() - showStartedAt, {filename, ...range, success: false});
-            throw error;
-        }
-        if (this.blameRequestId !== requestId) return;
-        if (chunks !== null && firstChunk !== null) chunks.loaded.add(firstChunk);
-        this.isBlameLoading = false;
+        // 応答を待つ前に列幅と選択位置を確定し、取得完了時の横ずれを防ぐ。
         const prepareStartedAt = performance.now();
         this.removeBlameCellsFromRenderedRows();
         this.isBlameVisible = true;
         this.blameEntriesByStoreRowIndex = [];
-        const indexStartedAt = performance.now();
-        for (const entry of entries) {
-            const dataRowIndex = entry.lineNumber - 2;
-            if (dataRowIndex >= 0) this.blameEntriesByStoreRowIndex[dataRowIndex] = entry;
-        }
         const cellsStartedAt = performance.now();
         // blame表示中クラスを付与して行ヘッダー・corner-cellのleftをCSSでずらす
         this.element.classList.add('editor-table--blame-visible');
@@ -113,14 +96,38 @@ export class EditorTableGit {
         this.selection.updateRendererAfterResize();
         const layoutStartedAt = performance.now();
         this.refreshFreezeVisualState();
+        const placeholderCompletedAt = performance.now();
+        let entries: BlameEntry[];
+        try {
+            entries = await gitBlameAsync(filename, undefined, timing, range);
+        } catch (error) {
+            if (this.blameRequestId !== requestId) return;
+            this.hideBlame();
+            recordGitBlameTiming(timing.requestId, 'show_total', performance.now() - showStartedAt, {filename, ...range, success: false});
+            throw error;
+        }
+        if (this.blameRequestId !== requestId) return;
+        if (chunks !== null && firstChunk !== null) chunks.loaded.add(firstChunk);
+        this.isBlameLoading = false;
+        const indexStartedAt = performance.now();
+        for (const entry of entries) {
+            const dataRowIndex = entry.lineNumber - 2;
+            if (dataRowIndex >= 0) this.blameEntriesByStoreRowIndex[dataRowIndex] = entry;
+        }
+        const updateStartedAt = performance.now();
+        // 読み込み中のスクロールで行が入れ替わるため、現在描画中のセルを更新する。
+        this.updateRenderedBlameCells(null);
+        const refreshStartedAt = performance.now();
+        this.refreshDetachedHeaderLayout();
         const completedAt = performance.now();
         // 計測ログのDOM更新が各段階の計測に混ざらないよう、表示反映後にまとめて記録する。
         const stages: Array<[string, number]> = [
-            ['prepare_rendered_rows', indexStartedAt - prepareStartedAt],
-            ['index_entries', cellsStartedAt - indexStartedAt],
+            ['prepare_rendered_rows', cellsStartedAt - prepareStartedAt],
+            ['index_entries', updateStartedAt - indexStartedAt],
             ['insert_blame_cells', selectionStartedAt - cellsStartedAt],
+            ['update_blame_cells', refreshStartedAt - updateStartedAt],
             ['update_selection', layoutStartedAt - selectionStartedAt],
-            ['refresh_layout', completedAt - layoutStartedAt],
+            ['refresh_layout', placeholderCompletedAt - layoutStartedAt + completedAt - refreshStartedAt],
             ['show_total', completedAt - showStartedAt],
         ];
         for (const [stage, durationMs] of stages) {
@@ -185,17 +192,7 @@ export class EditorTableGit {
                     if (storeRowIndex >= 0) this.blameEntriesByStoreRowIndex[storeRowIndex] = entry;
                 }
                 const cellsStartedAt = performance.now();
-                let renderedRows = 0;
-                for (const rowElement of this.getRenderedRowElements()) {
-                    const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
-                    if (logicalRowIndex === null || logicalRowIndex === 0 || rowElement.classList.contains('editor-table-empty-row')) continue;
-                    const storeRowIndex = this.resolveStoreRowIndex(logicalRowIndex - 1);
-                    if (storeRowIndex + 2 < range.startLine || storeRowIndex + 2 > range.endLine) continue;
-                    const cell = rowElement.querySelector('.blame-cell');
-                    if (cell === null) continue;
-                    this.updateBlameCell(cell, storeRowIndex);
-                    renderedRows++;
-                }
+                const renderedRows = this.updateRenderedBlameCells(range);
                 const layoutStartedAt = performance.now();
                 if (renderedRows > 0) this.refreshDetachedHeaderLayout();
                 const completedAt = performance.now();
@@ -250,6 +247,21 @@ export class EditorTableGit {
         return blameCell;
     }
 
+    private updateRenderedBlameCells(range: GitBlameRange | null): number {
+        let renderedRows = 0;
+        for (const rowElement of this.getRenderedRowElements()) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex === 0 || rowElement.classList.contains('editor-table-empty-row')) continue;
+            const storeRowIndex = this.resolveStoreRowIndex(logicalRowIndex - 1);
+            if (range !== null && (storeRowIndex + 2 < range.startLine || storeRowIndex + 2 > range.endLine)) continue;
+            const cell = rowElement.querySelector('.blame-cell');
+            if (cell === null) continue;
+            this.updateBlameCell(cell, storeRowIndex);
+            renderedRows++;
+        }
+        return renderedRows;
+    }
+
     private updateBlameCell(blameCell: HTMLElement, storeRowIndex: number): void {
         blameCell.replaceChildren();
         blameCell.removeAttribute('title');
@@ -257,8 +269,8 @@ export class EditorTableGit {
         blameCell.removeAttribute('aria-label');
         const entry = this.blameEntriesByStoreRowIndex[storeRowIndex];
         if (entry === undefined) {
-            if (this.blameChunks !== null && storeRowIndex >= 0 && storeRowIndex < this.blameChunks.rowCount
-                && !this.blameChunks.loaded.has(Math.floor(storeRowIndex / BLAME_CHUNK_ROWS))) {
+            if (storeRowIndex >= 0 && (this.isBlameLoading || (this.blameChunks !== null && storeRowIndex < this.blameChunks.rowCount
+                && !this.blameChunks.loaded.has(Math.floor(storeRowIndex / BLAME_CHUNK_ROWS))))) {
                 blameCell.textContent = '…';
                 blameCell.title = '変更履歴を読み込み中';
             }
@@ -278,7 +290,7 @@ export class EditorTableGit {
     }
 
     moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
-        if (this.blameChunks !== null) {
+        if (this.isBlameLoading || this.blameChunks !== null) {
             this.hideBlame();
             return;
         }

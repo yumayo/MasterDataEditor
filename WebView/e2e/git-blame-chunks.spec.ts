@@ -70,6 +70,8 @@ test('表示範囲を先に取得し、上下への先読み中もスクロー�
     await expect(table.locator('.editor-table-grid > .editor-table-row[data-row-index="22500"]')).toBeAttached();
     await toggleAsync(page, table, true);
     expect(await waitRequestAsync(page, 1)).toMatchObject({startLine: 20002, endLine: 30001});
+    await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+    await expect(table.locator('.editor-table-detached-row-header-layer .blame-cell').first()).toHaveText('…');
     // 応答を止めている間に次のGitを起動しない。
     await page.waitForTimeout(150);
     expect(await requestsAsync(page)).toHaveLength(1);
@@ -107,7 +109,7 @@ test('解除・再表示後に前回のチャンクが返っても新しい表�
     await toggleAsync(page, table, true);
     expect(await waitRequestAsync(page, 3)).toMatchObject({startLine: 2, endLine: 10001});
     await releaseAsync(page); // 前回の応答
-    await expect(table.locator('.blame-cell')).toHaveCount(0);
+    await expect(table.locator('.editor-table-detached-row-header-layer .blame-cell').first()).toHaveText('…');
     await releaseAsync(page); // 今回の応答
     await expect(table.locator('.editor-table-detached-row-header-layer .blame-author').first()).toHaveText('author_1');
     expect(await waitRequestAsync(page, 4)).toMatchObject({startLine: 10002, endLine: 20001});
@@ -140,6 +142,57 @@ test('ソート後の表示行をCSV行へ変換して取得し、著者を対�
     await releaseAsync(page);
     await expect(table.locator('.editor-table-grid > .editor-table-row[data-row-index="0"] .blame-author')).toHaveText('author_45000');
     await toggleAsync(page, table, false);
+});
+
+for (const firstChunkLoaded of [false, true]) {
+    test(`${firstChunkLoaded ? '先読み' : '初回取得'}中のタブ切り替えから戻るとBLAMEを再開し、古い応答を適用しない`, async ({page}) => {
+        const table = await openAsync(page, true);
+        await toggleAsync(page, table, true);
+        await waitRequestAsync(page, 1);
+        if (firstChunkLoaded) {
+            await releaseAsync(page);
+            await waitRequestAsync(page, 2);
+        }
+        const previousRequestCount = firstChunkLoaded ? 2 : 1;
+        await page.locator('#explorer').getByText('other', {exact: true}).click();
+        await page.waitForTimeout(150);
+        expect(await requestsAsync(page)).toHaveLength(previousRequestCount);
+        await expect(table.locator('.blame-cell')).toHaveCount(0);
+
+        await page.locator('.tab-button').getByText('large', {exact: true}).click();
+        expect(await waitRequestAsync(page, previousRequestCount + 1)).toMatchObject({startLine: 40002, endLine: 45001});
+        await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+        await releaseAsync(page); // タブ切り替え前の応答は破棄する。
+        await expect(table.locator('.editor-table-grid > .editor-table-row[data-row-index="0"] .blame-cell')).toHaveText('…');
+        await releaseAsync(page);
+        await expect(table.locator('.editor-table-grid > .editor-table-row[data-row-index="0"] .blame-author')).toHaveText('author_45000');
+        expect(await waitRequestAsync(page, previousRequestCount + 2)).toMatchObject({startLine: 30002, endLine: 40001});
+        await toggleAsync(page, table, false);
+        await releaseAsync(page);
+    });
+}
+
+test('タブ復帰後の初回取得が失敗したら、先に確保したBLAME列を解除する', async ({page}) => {
+    const errors: Error[] = [];
+    page.on('pageerror', error => errors.push(error));
+    const table = await openAsync(page);
+    const viewport = table.locator('.editor-table-main-viewport');
+    const withoutBlame = await viewport.boundingBox();
+    await toggleAsync(page, table, true);
+    await waitRequestAsync(page, 1);
+    await page.locator('#explorer').getByText('other', {exact: true}).click();
+    await releaseAsync(page);
+    await page.evaluate(() => {(window as unknown as BlameMockWindow).__mockGitBlameError = 'initial request failed';});
+    await page.locator('.tab-button').getByText('large', {exact: true}).click();
+    await waitRequestAsync(page, 2);
+    await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+    expect((await viewport.boundingBox())!.x - withoutBlame!.x).toBe(200);
+    await releaseAsync(page);
+    await expect(table.locator('.blame-cell, .blame-column-header')).toHaveCount(0);
+    await expect(page.locator('.notification-toast-error')).toHaveText('変更履歴の取得に失敗しました');
+    expect(await viewport.boundingBox()).toEqual(withoutBlame);
+    expect(await requestsAsync(page)).toHaveLength(2);
+    expect(errors).toEqual([]);
 });
 
 test('後続チャンクの失敗時は取得を止め、BLAME列を解除する', async ({page}) => {

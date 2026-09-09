@@ -108,6 +108,8 @@ export interface TabState {
     savedSortKeys: SerializedSortKey[];
     /** タブ非アクティブ時に保存されたフィルター状態（reloadCellsFromStore後に復元するため） */
     savedFilters: SerializedFilters;
+    /** タブ非アクティブ時のBLAME表示状態（読み込み中も表示として保持する） */
+    savedBlameVisible: boolean;
     /** タブごとの RelationsPanel 表示状態 */
     relationsPanelVisible: boolean;
     /** タブ非アクティブ時に開いていたフォームビューの状態。null は閉じている状態を表す。 */
@@ -2369,6 +2371,7 @@ export class Tab {
             if (!currentState) throw new Error(`[Tab] activateTabButton: アクティブタブ "${name}" の状態が tabStates に存在しません`);
             currentState.savedScrollLeft = currentState.editorTable.getScrollLeft();
             currentState.savedScrollTop = currentState.editorTable.getScrollTop();
+            currentState.savedBlameVisible = currentState.editorTable.isBlameShown();
             currentState.paneStack = this.paneStack.slice();
             currentState.viewIndex = this.viewIndex;
         }
@@ -2408,6 +2411,12 @@ export class Tab {
             existingState.editorTable.forceRefreshRelationsPanel();
             this.editor.syncActiveTableScrollState();
             this.restoreFormPanelForTabState(existingState);
+            // 再読み込みとソート/フィルター復元がBLAMEを解除するため、行構造の確定後に再取得する。
+            if (existingState.savedBlameVisible) {
+                existingState.editorTable.showBlameAsync().catch((error: unknown) => {
+                    this.notification.showError(error, '変更履歴の取得に失敗しました');
+                });
+            }
             // 既存タブの再アクティブ化では emitTableOpened を発火しない（Open/Close の対称性を維持するため）
             return existingState;
         }
@@ -3623,6 +3632,7 @@ export class Tab {
      * これにより、タブ復帰時（activateTabState）に追加RPの内容がそのまま表示される。
      */
     private deactivateTabState(state: TabState): void {
+        state.savedBlameVisible = state.editorTable.isBlameShown();
         this.editorTableFindBar.hideForState(state);
         // FormPanel 退避で右スロットが閉じると左ペイン幅が変わり、scrollLeft がクランプされる。
         // その前に、ユーザーが見ていたレイアウトでのスクロール位置を保存する。
@@ -4152,6 +4162,7 @@ export class Tab {
                 viewIndex: 0,
                 savedSortKeys: [],
                 savedFilters: {},
+                savedBlameVisible: false,
                 relationsPanelVisible: restoredFormPanelState !== null ? false : (restoredEditorTableState?.relationsPanelVisible ?? this.defaultRelationsPanelVisible),
                 formPanelState: restoredFormPanelState,
             };

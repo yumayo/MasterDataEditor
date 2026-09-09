@@ -39,7 +39,7 @@ async function openTableAsync(page: Page, frozenRowCount: number, frozenColumnCo
     await installMockApiAsync(page, createFileSystem(frozenRowCount, frozenColumnCount));
     await page.goto('/');
     await page.locator('#explorer').getByText('item', {exact: true}).click();
-    const table = page.locator('.editor-left-pane .editor-table');
+    const table = page.locator('.editor-left-pane .editor-table:visible');
     await expect(table).toBeVisible();
     await expect(table.locator('.editor-table-grid .cell-reference-hint').first()).toHaveText('ヒント1');
     return table;
@@ -71,6 +71,14 @@ async function scrollAsync(table: Locator, position: 'top' | 'middle' | 'bottom'
     }, position);
     const rowIndex = position === 'top' ? 2 : position === 'bottom' ? ROW_COUNT - 1 : ROW_COUNT / 2;
     await expect(table.locator(`.editor-table-grid > .editor-table-row[data-row-index="${rowIndex}"]`)).toBeAttached();
+}
+
+async function releaseBlameAsync(page: Page): Promise<void> {
+    await page.evaluate(() => {
+        const respond = (window as unknown as {__mockGitBlamePendingResponses: Array<() => void>}).__mockGitBlamePendingResponses.shift();
+        if (respond === undefined) throw new Error('BLAMEの応答がありません');
+        respond();
+    });
 }
 
 async function expectColumnsAlignedAsync(table: Locator, showBlame: boolean, frozenColumnCount: number): Promise<void> {
@@ -113,6 +121,60 @@ for (const frozen of [false, true]) {
     test.describe(frozen ? '固定行・固定列ありのBLAME仮想スクロール' : 'BLAME仮想スクロール', () => {
         const frozenRowCount = frozen ? 2 : 0;
         const frozenColumnCount = frozen ? 1 : 0;
+
+        test('BLAMEの取得前に列幅を確保し、スクロールやタブ復帰後も取得完了で位置がずれない', async ({page}) => {
+            await page.addInitScript(() => {
+                (window as unknown as {__mockGitBlameManualResponses: boolean}).__mockGitBlameManualResponses = true;
+            });
+            const table = await openTableAsync(page, frozenRowCount, frozenColumnCount);
+            const viewport = table.locator('.editor-table-main-viewport');
+            const withoutBlame = await viewport.boundingBox();
+            await toggleBlameAsync(page, table, true);
+            const loading = await viewport.boundingBox();
+            expect(loading!.x - withoutBlame!.x).toBe(200);
+            await scrollAsync(table, 'bottom');
+            const lastRow = table.locator(`.editor-table-grid > .editor-table-row[data-row-index="${ROW_COUNT - 1}"]`);
+            await expect(lastRow.locator('.blame-cell')).toHaveText('…');
+            await expect(table.locator('.editor-table-grid > .editor-table-empty-row .blame-cell')).toHaveText('');
+            const beforeResponse = await viewport.boundingBox();
+            await page.screenshot({path: `../.CONTEXT/dump/virtual-scroll-blame/blame-loading-${frozen}.png`});
+            await releaseBlameAsync(page);
+            await expect(lastRow.locator('.blame-author')).toHaveText(`author_${ROW_COUNT}`);
+            expect(await viewport.boundingBox()).toEqual(beforeResponse);
+            await expectColumnsAlignedAsync(table, true, frozenColumnCount);
+
+            await page.locator('#explorer').getByText('item_name', {exact: true}).click();
+            await page.locator('.tab-button').getByText('item', {exact: true}).click();
+            await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+            await expect(lastRow.locator('.blame-cell')).toHaveText('…');
+            expect(await viewport.boundingBox()).toEqual(beforeResponse);
+            await releaseBlameAsync(page);
+            await expect(lastRow.locator('.blame-author')).toHaveText(`author_${ROW_COUNT}`);
+            expect(await viewport.boundingBox()).toEqual(beforeResponse);
+            await expectColumnsAlignedAsync(table, true, frozenColumnCount);
+        });
+
+        test('タブごとにBLAMEの表示・非表示を保持し、復帰や同じタブの再選択でも列がずれない', async ({page}) => {
+            const table = await openTableAsync(page, frozenRowCount, frozenColumnCount);
+            await toggleBlameAsync(page, table, true);
+            await scrollAsync(table, 'bottom');
+            await page.locator('#explorer').getByText('item_name', {exact: true}).click();
+            await expect(page.locator('.tab-button-active')).toHaveText('item_name');
+            await expect(table.locator('.blame-column-header')).toHaveCount(0);
+
+            await page.locator('.tab-button').getByText('item', {exact: true}).click();
+            await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+            await expect(table.locator(`.editor-table-grid > .editor-table-row[data-row-index="${ROW_COUNT - 1}"]`)).toBeAttached();
+            await expectColumnsAlignedAsync(table, true, frozenColumnCount);
+            await page.locator('.tab-button').getByText('item', {exact: true}).click();
+            await expect(table.locator('.editor-table-detached-corner-layer .blame-column-header')).toBeVisible();
+            await expectColumnsAlignedAsync(table, true, frozenColumnCount);
+
+            await toggleBlameAsync(page, table, false);
+            await page.locator('.tab-button').getByText('item_name', {exact: true}).click();
+            await page.locator('.tab-button').getByText('item', {exact: true}).click();
+            await expectColumnsAlignedAsync(table, false, frozenColumnCount);
+        });
 
         test('末尾でBLAMEを切り替えても行番号・参照ヒントの列がずれない', async ({page}) => {
             const table = await openTableAsync(page, frozenRowCount, frozenColumnCount);
