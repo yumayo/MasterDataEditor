@@ -97,13 +97,16 @@
 }
 
 .schedule-timeline-group-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     width: 100%;
     height: 28px;
     display: flex;
     align-items: center;
     gap: 6px;
     border: 0;
-    background: transparent;
+    background: var(--background-color);
     color: var(--font-color);
     padding: 4px 10px;
     cursor: pointer;
@@ -112,7 +115,8 @@
 }
 
 .schedule-timeline-group-header:hover {
-    background-color: var(--panel-item-hover-bg);
+    /* 半透明のホバー色を不透明な下地に重ね、背後のテーブル行が透けるのを防ぐ。 */
+    background-image: linear-gradient(var(--panel-item-hover-bg), var(--panel-item-hover-bg));
 }
 
 .schedule-timeline-group-chevron {
