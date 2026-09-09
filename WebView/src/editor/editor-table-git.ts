@@ -72,15 +72,12 @@ export class EditorTableGit {
         EditorTable.applyCellHeight(blameHeaderCell, `${this.getHeaderLayoutHeightPx()}px`);
         headerRow.prepend(blameHeaderCell);
         // 各データ行・バッファ空行の先頭（children[0]）に blame-cell を prepend する
-        const rowCount = this.getRowCount();
-        for (let row = 1; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
+        // 仮想スクロールでは描画行数と論理行番号が一致しないため、描画済み行を直接走査する。
+        for (const rowElement of this.getRenderedRowElements()) {
+            const logicalRowIndex = this.getLogicalRowIndexFromElement(rowElement);
+            if (logicalRowIndex === null || logicalRowIndex === 0) continue;
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
-            const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-            const rowIndexStr = rowHeader !== null ? rowHeader.dataset.rowIndex : undefined;
-            const dataRowIndex = rowIndexStr !== undefined ? parseInt(rowIndexStr) : row - 1;
-            const blameCell = this.createBlameCellForDataRow(dataRowIndex, isEmptyRow);
+            const blameCell = this.createBlameCellForDataRow(logicalRowIndex - 1, isEmptyRow);
             rowElement.prepend(blameCell);
         }
         // blame列挿入でDOMインデックスが1つずれるため、フォーカス位置とSelection範囲を補正する
@@ -148,10 +145,8 @@ export class EditorTableGit {
     }
 
     private removeBlameCellsFromRenderedRows(): void {
-        const rowCount = this.getRowCount();
-        for (let row = 0; row < rowCount; row++) {
-            const rowElement = this.getRowElement(row);
-            if (!rowElement) continue;
+        // ヘッダー・固定行・表示範囲の行を対象にし、末尾までスクロールしていても取り残さない。
+        for (const rowElement of this.getRenderedRowElements()) {
             for (const child of Array.from(rowElement.children)) {
                 if (!(child instanceof HTMLElement)) continue;
                 if (child.classList.contains('blame-cell') || child.classList.contains('blame-column-header')) child.remove();
