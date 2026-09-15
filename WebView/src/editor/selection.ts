@@ -298,12 +298,10 @@ export class Selection {
     extendSelection(row: number, column: number): void {
         const endRow = Math.max(1, row);
         const endColumn = Math.max(this.editorTable.dataColumnOffset(), column);
-        this.range = {
-            ...this.range,
-            endRow: endRow,
-            endColumn: endColumn
-        };
-        this.updateRenderer();
+        if (this.range.endRow !== endRow || this.range.endColumn !== endColumn) {
+            this.range = { ...this.range, endRow, endColumn };
+            this.updateRenderer();
+        }
         // Shift+クリック時のみスクロール。ドラッグ中（selecting=true）はDragControllerがスクロールを管理する
         if (!this.selecting) {
             this.scrollCellIntoView(endRow, endColumn);
@@ -360,8 +358,10 @@ export class Selection {
         if (columnCount < 2) return;
         if (column >= columnCount) return;
 
-        this.range = { ...this.range, endColumn: column };
-        this.updateRenderer();
+        if (this.range.endColumn !== column) {
+            this.range = { ...this.range, endColumn: column };
+            this.updateRenderer();
+        }
     }
 
     /**
@@ -378,8 +378,10 @@ export class Selection {
         const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
-        this.range = { ...this.range, endRow: row };
-        this.updateRenderer();
+        if (this.range.endRow !== row) {
+            this.range = { ...this.range, endRow: row };
+            this.updateRenderer();
+        }
     }
 
     /**
@@ -576,7 +578,7 @@ export class Selection {
         // フォーカスセルに editor-table-cell-focused クラスを付与する（ジャンプ確認用）
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
-        this.editorTable.syncDetachedVisualState();
+        this.editorTable.syncDetachedCellClasses();
         this.updateSelectionOverlay(selectionRange);
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
@@ -703,13 +705,10 @@ export class Selection {
         const { startRow, startColumn, endRow, endColumn } = selectionRange;
         this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
+        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
         // 純スクロール時はこの直後に EditorTable.reapplyRowDecorations() 側で
         // detached row header の差分同期が走るため、ここでは静的 layer の全同期を省く。
-        if (triggeredByScroll) {
-            this.editorTable.updateHeaderSelectionForVirtualScroll(startRow, startColumn, endRow, endColumn);
-        } else {
-            this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
-        }
+        if (!triggeredByScroll) this.editorTable.syncDetachedCellClasses();
         if (triggeredByScroll) {
             // スクロール入力ではこの直後の scroll-bound sync で overlay をまとめて更新する。
             // 行差し替え直後に getBoundingClientRect() を読むと、大量の class/DOM 更新が同期レイアウト化する。

@@ -281,24 +281,12 @@ export class EditorTableRenderer {
      * バーチャルスクロールで行の入れ替えが完了した後に、表示中の行に装飾を再適用する。
      */
     reapplyRowDecorations(update: RenderedRowsUpdate): void {
-        // ドラッグ選択中（mousedown→mousemove中）は選択クラス再適用をスキップする。
-        if (this.selection.isSelecting() || this.selection.isSelectingColumn() || this.selection.isSelectingRow()) {
-            this.applyFreezeVisualStateToRenderedRows();
-            if (this.usesInternalMainViewport) {
-                this.refreshQuadrantViewportRowHeaders(update);
-                if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();
-                return;
-            }
-            if (update.triggeredByScroll) {
-                this.refreshDetachedViewportRowHeaders(update);
-                return;
-            }
-            this.refreshDetachedHeaderLayout();
-            return;
-        }
         this.applyFreezeVisualStateToRenderedRows();
+        // ドラッグ終点が変わらなくても、仮想スクロールで生成された行には選択状態を適用する。
         this.selection.reapplySelectionClassesOnly(update.triggeredByScroll);
-        this.reapplyReferenceAndBookmarkDecorations(update);
+        if (!this.selection.isSelecting() && !this.selection.isSelectingColumn() && !this.selection.isSelectingRow()) {
+            this.reapplyReferenceAndBookmarkDecorations(update);
+        }
         if (this.usesInternalMainViewport) {
             this.refreshQuadrantViewportRowHeaders(update);
             if (!update.triggeredByScroll) this.syncQuadrantStaticCellStates();

@@ -128,6 +128,8 @@ await expectCsvAsync(page, 'data/skill.csv', `
 
 ## e2e テストパターン
 
+- [選択ドラッグのテスト前提](selection-drag-test-patterns.md) — 選択済み行は行移動、overlayはタブwrapperで取得
+
 ### ミニテーブルのコンテキストメニューで行操作
 ```typescript
 // ミニテーブルの行ヘッダーを右クリック（rowIndex: 0始まり、データ行）

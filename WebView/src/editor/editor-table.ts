@@ -2098,8 +2098,8 @@ export class EditorTable {
         this.selectionView.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
     }
 
-    updateHeaderSelectionForVirtualScroll(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.selectionView.updateHeaderSelectionForVirtualScroll(startRow, startColumn, endRow, endColumn);
+    syncDetachedCellClasses(): void {
+        this.selectionView.syncDetachedCellClasses();
     }
 
     /**

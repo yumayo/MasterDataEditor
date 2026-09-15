@@ -117,20 +117,8 @@ export class EditorTableSelectionView {
         this.lastSelectionCells = [];
     }
 
-    /** ヘッダーの選択状態を更新する */
+    /** source DOM のヘッダー選択状態を更新する。detached 同期はセル・フォーカス更新後にまとめて行う。 */
     updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, true);
-    }
-
-    /**
-     * 仮想スクロールの純スクロール時に、静的 detached layer の全同期を避けつつ
-     * source DOM 側の行・列ヘッダー選択状態だけを更新する。
-     */
-    updateHeaderSelectionForVirtualScroll(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.applyHeaderSelection(startRow, startColumn, endRow, endColumn, false);
-    }
-
-    private applyHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number, syncDetachedLayers: boolean): void {
         const columnHeaderRow = this.gridElement.children[0] as HTMLElement;
         // すべての列ヘッダーから選択状態を解除
         for (let i = 1; i < columnHeaderRow.children.length; i++) {
@@ -169,13 +157,36 @@ export class EditorTableSelectionView {
                 }
             }
         }
-        if (!syncDetachedLayers) return;
-        if (this.usesInternalMainViewport) {
-            this.syncQuadrantStaticCellStates();
-            return;
+    }
+
+    /** 選択更新ではセル内容・配置・罫線に触れず、source のクラスとブックマーク属性だけを同期する。 */
+    syncDetachedCellClasses(): void {
+        const scrollableColumnOffset = this.dataColumnOffset() + (this.usesInternalMainViewport ? this.frozenColumnCount : 0);
+        const layers: { layer: HTMLElement; columnOffset: number; header: boolean }[] = [
+            { layer: this.detachedCornerLayer, columnOffset: 0, header: true },
+            { layer: this.detachedColumnHeaderLayer, columnOffset: scrollableColumnOffset, header: true },
+            { layer: this.detachedFrozenCornerDataLayer, columnOffset: 0, header: false },
+            { layer: this.detachedFrozenRowDataLayer, columnOffset: scrollableColumnOffset, header: false },
+            { layer: this.detachedRowHeaderLayer, columnOffset: 0, header: false }
+        ];
+        for (const { layer, columnOffset, header } of layers) {
+            for (const detachedRow of layer.children) {
+                // 罫線グループは行セルの複製ではないため、同期対象に含めない。
+                if (!detachedRow.classList.contains('editor-table-detached-row')) continue;
+                const rowIndexText = detachedRow.getAttribute('data-row-index');
+                if (!header && rowIndexText === null) throw new Error('detached row に data-row-index がありません');
+                const sourceRow: HTMLElement | null = this.getRowElement(header ? 0 : Number(rowIndexText) + 1);
+                if (sourceRow === null) continue;
+                const count = Math.min(detachedRow.children.length, sourceRow.children.length - columnOffset);
+                for (let column = 0; column < count; column++) {
+                    const sourceCell = sourceRow.children[column + columnOffset];
+                    const detachedCell = detachedRow.children[column];
+                    if (detachedCell.className !== sourceCell.className) detachedCell.className = sourceCell.className;
+                    const bookmarked = sourceCell.hasAttribute('data-bookmarked');
+                    if (detachedCell.hasAttribute('data-bookmarked') !== bookmarked) detachedCell.toggleAttribute('data-bookmarked', bookmarked);
+                }
+            }
         }
-        this.syncDetachedLegacyStaticCellStates();
-        this.syncDetachedViewportRowHeaderStates();
     }
 
     private getVisibleSelectedRowRanges(startRow: number, endRow: number): Array<[number, number]> {

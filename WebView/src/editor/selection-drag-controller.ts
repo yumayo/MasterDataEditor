@@ -3,6 +3,13 @@ import {Selection} from "./selection";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {clamp} from "../core/helper";
 
+interface SelectionViewportRect {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+}
+
 export class SelectionDragController {
     private tableElement: HTMLElement;
     private selection: Selection;
@@ -29,8 +36,15 @@ export class SelectionDragController {
             this.lastMouseY = e.clientY;
             const isActive = selection.isSelectingColumn() || selection.isSelectingRow() || selection.isSelecting();
             if (isActive) {
-                this.updateSelectionFromPoint(e.clientX, e.clientY);
-                this.updateAutoScrollState(e.clientX, e.clientY);
+                // 選択クラス更新後の再計測を避け、同じイベント内では表示領域の測定を共有する。
+                const viewport = this.getSelectionViewportRect();
+                this.updateSelectionFromPoint(e.clientX, e.clientY, viewport);
+                const delta = this.getAutoScrollDelta(e.clientX, e.clientY, viewport);
+                if (delta.x !== 0 || delta.y !== 0) {
+                    this.startAutoScroll();
+                } else {
+                    this.stopAutoScroll();
+                }
             } else {
                 this.stopAutoScroll();
             }
@@ -61,8 +75,7 @@ export class SelectionDragController {
         this.stopAutoScroll();
     }
 
-    private updateSelectionFromPoint(clientX: number, clientY: number): void {
-        const viewport = this.getSelectionViewportRect();
+    private updateSelectionFromPoint(clientX: number, clientY: number, viewport: SelectionViewportRect): void {
         if (viewport.right <= viewport.left || viewport.bottom <= viewport.top) return;
 
         const clampedX = clamp(clientX, viewport.left, viewport.right - 1);
@@ -84,15 +97,6 @@ export class SelectionDragController {
         }
     }
 
-    private updateAutoScrollState(clientX: number, clientY: number): void {
-        const delta = this.getAutoScrollDelta(clientX, clientY);
-        if (delta.x !== 0 || delta.y !== 0) {
-            this.startAutoScroll();
-        } else {
-            this.stopAutoScroll();
-        }
-    }
-
     private startAutoScroll(): void {
         if (this.autoScrollActive) return;
         this.autoScrollActive = true;
@@ -107,7 +111,7 @@ export class SelectionDragController {
             this.stopAutoScroll();
             return;
         }
-        const delta = this.getAutoScrollDelta(this.lastMouseX, this.lastMouseY);
+        const delta = this.getAutoScrollDelta(this.lastMouseX, this.lastMouseY, this.getSelectionViewportRect());
         if (delta.x === 0 && delta.y === 0) {
             this.stopAutoScroll();
             return;
@@ -115,7 +119,8 @@ export class SelectionDragController {
         const scrollTop = this.scrollBinding.getScrollTop();
         const scrollLeft = this.scrollBinding.getScrollLeft();
         this.scrollBinding.setScrollPosition(scrollTop + delta.y, scrollLeft + delta.x);
-        this.updateSelectionFromPoint(this.lastMouseX, this.lastMouseY);
+        // スクロールで行と表示領域が変わるため、スクロール後の座標を読み直す。
+        this.updateSelectionFromPoint(this.lastMouseX, this.lastMouseY, this.getSelectionViewportRect());
         this.autoScrollFrameId = window.requestAnimationFrame(() => {
             this.handleAutoScrollFrame();
         });
@@ -130,8 +135,7 @@ export class SelectionDragController {
         }
     }
 
-    private getAutoScrollDelta(clientX: number, clientY: number): { x: number; y: number } {
-        const viewport = this.getSelectionViewportRect();
+    private getAutoScrollDelta(clientX: number, clientY: number, viewport: SelectionViewportRect): { x: number; y: number } {
         if (viewport.right <= viewport.left || viewport.bottom <= viewport.top) {
             return { x: 0, y: 0 };
         }
@@ -161,7 +165,7 @@ export class SelectionDragController {
         return Math.min(maxSpeed, Math.max(minSpeed, scaled));
     }
 
-    private getSelectionViewportRect(): { top: number; bottom: number; left: number; right: number } {
+    private getSelectionViewportRect(): SelectionViewportRect {
         const containerRect = this.scrollBinding.getBoundingClientRect();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
         const columnHeader = this.tableElement.querySelector<HTMLElement>(

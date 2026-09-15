@@ -26,9 +26,16 @@ export class ScrollViewportController {
     }
 
     setScrollPosition(scrollTop: number, scrollLeft: number): void {
+        const previousTop = this.container.scrollTop;
+        const previousLeft = this.container.scrollLeft;
+        const previousLogicalTop = this.getScrollTop();
         this.container.scrollTop = this.physicalScrollTopFromLogical(scrollTop);
         this.container.scrollLeft = scrollLeft;
-        this.container.dispatchEvent(new Event('scroll'));
+        // 圧縮スクロールでは物理座標の丸めで見えない論理位置の変化も通知する。
+        // 範囲制限後の位置で比較し、フォーカス復元など位置維持だけでは再描画を通知しない。
+        if (this.container.scrollTop !== previousTop || this.container.scrollLeft !== previousLeft || this.getScrollTop() !== previousLogicalTop) {
+            this.container.dispatchEvent(new Event('scroll'));
+        }
     }
 
     getBoundingClientRect(): DOMRect {
