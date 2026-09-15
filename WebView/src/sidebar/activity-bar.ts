@@ -117,18 +117,18 @@ const SETTINGS_ICON_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill=
  */
 export class ActivityBar {
     private readonly element: HTMLElement;
-    private activeItem: ActivityBarItem;
+    private activeItem: ActivityBarItem | null;
     private readonly buttons: Map<ActivityBarItem, HTMLElement>;
     private readonly settingsButton: HTMLElement;
     private order: ActivityBarItem[];
     private draggedItem: ActivityBarItem | null;
     private suppressNextClick: boolean;
-    private readonly onItemClick: (item: ActivityBarItem) => void;
+    private readonly onItemClick: (item: ActivityBarItem | null) => void;
     private readonly onSettingsClick: () => void;
     private readonly onOrderChanged: (order: ActivityBarItem[]) => void;
 
     constructor(
-        onItemClick: (item: ActivityBarItem) => void,
+        onItemClick: (item: ActivityBarItem | null) => void,
         onSettingsClick: () => void,
         initialOrder: ActivityBarItem[] = DEFAULT_ACTIVITY_BAR_ORDER,
         onOrderChanged: (order: ActivityBarItem[]) => void = () => {},
@@ -175,10 +175,15 @@ export class ActivityBar {
         parent.appendChild(this.element);
     }
 
+    /** 境界線を含むアイコン列の表示幅を計測する */
+    measureWidth(): number {
+        return this.element.getBoundingClientRect().width;
+    }
+
     /**
-     * アクティブなアイテムを切り替える
+     * アクティブなアイテムを切り替える。null はサイドバーが閉じている状態。
      */
-    activateItem(item: ActivityBarItem): void {
+    activateItem(item: ActivityBarItem | null): void {
         this.activeItem = item;
         this.updateActiveState();
     }
@@ -198,8 +203,7 @@ export class ActivityBar {
                 this.suppressNextClick = false;
                 return;
             }
-            this.activateItem(item);
-            this.onItemClick(item);
+            this.onItemClick(this.activeItem === item ? null : item);
         });
         return button;
     }

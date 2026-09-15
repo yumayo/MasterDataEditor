@@ -62,7 +62,7 @@ export class Sidebar {
 
         // アクティビティバー（歯車ボタンクリックで設定タブを開く）
         this.activityBar = new ActivityBar(
-            (item: ActivityBarItem) => { this.switchPanel(item); },
+            (item: ActivityBarItem | null) => { this.switchPanel(item); },
             () => { this.tab.openSettingsTab(); },
             storedUiState.activityBar.order,
             (order: ActivityBarItem[]) => { this.uiStateStore.setActivityBarOrder(order); },
@@ -144,7 +144,6 @@ export class Sidebar {
         this.directory = new ExplorerDirectory(tab, this.filesPanel, 0);
 
         const storedSidebarState = storedUiState.sidebar;
-        this.applyWidth(storedSidebarState.width);
 
         // リサイズハンドル: ドラッグ差分を受け取り現在幅にdeltaを加算してクランプし、実際に変化した量を返す
         const resizeHandle = new ResizeHandle('horizontal', (delta: number): number => {
@@ -157,7 +156,6 @@ export class Sidebar {
         });
         resizeHandle.appendTo(explorerElement);
 
-        this.activityBar.activateItem(storedSidebarState.activePanel);
         this.switchPanel(storedSidebarState.activePanel);
         this.branchComparePanel.restore();
 
@@ -264,8 +262,6 @@ export class Sidebar {
      */
     showReferences(pkValue: string, entries: ReverseReferenceEntry[]): void {
         this.referencesPanel.showEntries(pkValue, entries);
-        this.activityBar.activateItem('references');
-        this.uiStateStore.setActiveActivityBarItem('references');
         this.switchPanel('references');
     }
 
@@ -274,8 +270,6 @@ export class Sidebar {
      * Ctrl+Shift+F から呼ばれる（検索のみモード）
      */
     activateSearchPanel(): void {
-        this.activityBar.activateItem('search');
-        this.uiStateStore.setActiveActivityBarItem('search');
         this.switchPanel('search');
         this.searchPanel.hideReplaceMode();
         this.searchPanel.focus();
@@ -286,8 +280,6 @@ export class Sidebar {
      * Ctrl+H から呼ばれる
      */
     activateSearchPanelWithReplace(): void {
-        this.activityBar.activateItem('search');
-        this.uiStateStore.setActiveActivityBarItem('search');
         this.switchPanel('search');
         this.searchPanel.showReplaceMode();
         this.searchPanel.focus();
@@ -424,9 +416,7 @@ export class Sidebar {
         this.tab.openDiffTab(tableName, true, schemaJson, prevCsv, commitCsv, path, leftLabel, rightLabel, prevEntry === null, metadata);
     }
 
-    private switchPanel(item: ActivityBarItem): void {
-        this.uiStateStore.setActiveActivityBarItem(item);
-
+    private switchPanel(item: ActivityBarItem | null): void {
         this.filesPanel.classList.remove('sidebar-panel-active');
         this.referencesPanel.hide();
         this.searchPanel.hide();
@@ -436,6 +426,14 @@ export class Sidebar {
         this.sourceControlPanel.hide();
         this.branchComparePanel.hide();
         this.timelinePanel.hide();
+
+        this.activityBar.activateItem(item);
+        this.explorerElement.classList.toggle('sidebar-collapsed', item === null);
+        // 折りたたみ幅は保存せず、再表示時にはリサイズ済みの幅に戻す。
+        this.applyWidth(item === null ? this.activityBar.measureWidth() : this.uiStateStore.getState().sidebar.width);
+        // サイドバーを閉じるだけの場合は、表示中の差分タブも維持する。
+        if (item === null) return;
+        this.uiStateStore.setActiveActivityBarItem(item);
 
         // ソース管理・リビジョン比較・history は差分タブを閉じない（closeAllDiffTabs の除外対象）
         if (item === 'sourceControl') {

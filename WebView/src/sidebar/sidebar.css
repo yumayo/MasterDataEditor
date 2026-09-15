@@ -98,6 +98,12 @@
     min-width: 0;
 }
 
+/* 折りたたみ中はアイコン列だけを残す。 */
+.sidebar-collapsed > .sidebar-content,
+.sidebar-collapsed > .resize-handle {
+    display: none;
+}
+
 /* サイドバーパネル */
 .sidebar-panel {
     display: none;
