@@ -1,5 +1,5 @@
 /**
- * スキーマJSON永続化用のフィルター表現（列名ベース）
+ * ユーザーデータ永続化用のフィルター表現（列名ベース）
  */
 export interface SerializedFilters {
     [columnName: string]: string[];
@@ -27,7 +27,7 @@ export class ColumnFilter {
     private readonly filterMap: Map<number, Set<string>>;
     /**
      * ナビゲーション等で一時的に適用するフィルター。
-     * スキーマ永続化対象の filterMap とは分離し、serializeFilters() には含めない。
+     * ユーザー設定の永続化対象の filterMap とは分離し、serializeFilters() には含めない。
      */
     private readonly temporaryFilterMap: Map<number, Set<string>>;
     private temporaryFilterMode: TemporaryFilterMode;
@@ -179,7 +179,7 @@ export class ColumnFilter {
     }
 
     /**
-     * 現在のフィルター状態をスキーマJSON永続化用にシリアライズする。
+     * 現在のフィルター状態をユーザーデータ永続化用にシリアライズする。
      * ストア列インデックスを列名に変換するため、CSVヘッダー（storeColumnNames）を受け取る。
      * フィルターがない場合は空オブジェクトを返す。
      *
@@ -196,10 +196,10 @@ export class ColumnFilter {
     }
 
     /**
-     * スキーマJSONから読み込んだフィルター状態を復元する。
+     * ユーザーデータから読み込んだフィルター状態を復元する。
      * 列名をストア列インデックスに逆引きし、存在しない列名は無視する。
      *
-     * @param serialized スキーマJSONから読み込んだフィルターオブジェクト
+     * @param serialized ユーザーデータから読み込んだフィルターオブジェクト
      * @param storeColumnNames ストア（CSV）の列名配列（storeColumnNames[storeColIndex] = 列名）
      */
     restoreFilters(serialized: SerializedFilters, storeColumnNames: readonly string[]): void {

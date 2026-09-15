@@ -2,7 +2,6 @@ import {ColumnFilter} from "../editor/column-filter";
 import {EditorTable} from "../editor/editor-table";
 import {parseReferenceExpression, isSimpleReference} from "../references/reference-expression";
 import {fuzzyMatch, appendHighlightedSegments} from "../search/fuzzy-search";
-import {saveSchemaDataAsync} from "../editor/editor-actions";
 
 /**
  * フィルタードロップダウン UI コンポーネント
@@ -324,8 +323,8 @@ export class FilterDropdown {
         this.table.applyFilterDisplay();
         // フィルター変更後の状態を記録する
         const newFilters = this.table.serializeFilters();
-        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this.table);
+        // フィルター状態をユーザーデータに永続化する（fire-and-forget）
+        this.table.saveTableViewSettings();
         // FilterCommand を履歴に積む（既に実行済みのため pushCommand を使う）
         this.table.pushFilterCommand(oldFilters, newFilters);
     }
@@ -344,8 +343,8 @@ export class FilterDropdown {
         this.table.applyFilterDisplay();
         // フィルター変更後の状態を記録する
         const newFilters = this.table.serializeFilters();
-        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this.table);
+        // フィルター状態をユーザーデータに永続化する（fire-and-forget）
+        this.table.saveTableViewSettings();
         // FilterCommand を履歴に積む（既に実行済みのため pushCommand を使う）
         this.table.pushFilterCommand(oldFilters, newFilters);
     }

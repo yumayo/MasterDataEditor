@@ -2,6 +2,7 @@ import {EditorTableData} from "../data/models/editor-table-data";
 import {TabButton} from "./tab-button";
 import {readFileAsync, gitShowFreshAsync, gitShowAtCommitAsync, gitStatusAsync, type GitBranchCompareFile, type GitStatusEntry, type GitStatusResult} from "../app/api";
 import {applyStoredColumnWidthsToSchemaAsync} from "../app/column-widths";
+import {loadTableViewSettingsForTableAsync} from "../app/table-view-settings";
 import {CommitSelectorDialog} from "../ui/commit-selector-dialog";
 import {Editor} from "../editor/editor";
 import {EditorTable} from "../editor/editor-table";
@@ -4056,7 +4057,10 @@ export class Tab {
         // タブの名前から同名のマスターデータを取り出してきます。
         readFileAsync("schema/" + name + ".json").then(async (text) => {
             const rawJson = JSON.parse(text) as Record<string, unknown>;
-            const json = await applyStoredColumnWidthsToSchemaAsync(name, rawJson);
+            const [json, viewSettings] = await Promise.all([
+                applyStoredColumnWidthsToSchemaAsync(name, rawJson),
+                loadTableViewSettingsForTableAsync(name, rawJson, this.notification),
+            ]);
             if (!this.tabButtons.includes(tabButton)) {
                 if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
                 this.resolvePendingTableOpen(name, false);
@@ -4089,26 +4093,12 @@ export class Tab {
             const areaResizer = editorTableFactoryResult.areaResizer;
             const fillController = editorTableFactoryResult.fillController;
 
-            // フリーズペイン状態の復元: スキーマJSONに保存された固定列数・固定行数を適用する
-            // createEditorTable() 内で initialize() が完了しているためDOM構築済み
-            if ('frozenColumnCount' in json && (json.frozenColumnCount as number) > 0) {
-                editorTable.freezeColumns(json.frozenColumnCount as number);
-            }
-            if ('frozenRowCount' in json && (json.frozenRowCount as number) > 0) {
-                editorTable.freezeRows(json.frozenRowCount as number);
-            }
-
-            // ソート状態の復元: スキーマJSONに保存されたソートキーを適用する
-            // ソート復元はDOM行の再配置を行うためフリーズ復元後に実施する
-            if ('sortKeys' in json && Array.isArray(json.sortKeys) && (json.sortKeys as unknown[]).length > 0) {
-                editorTable.restoreSortState(json.sortKeys as { columnName: string; direction: 'asc' | 'desc' }[]);
-            }
-
-            // フィルター状態の復元: スキーマJSONに保存されたフィルターを適用する
-            // ソート復元後に実施することで、ソート順を維持したままフィルターが適用される
-            if ('filters' in json && typeof json.filters === 'object' && json.filters !== null && Object.keys(json.filters as object).length > 0) {
-                editorTable.restoreFilterState(json.filters as { [columnName: string]: string[] });
-            }
+            // 表示設定はユーザーデータから復元する。固定・ソート・フィルターの順に適用する。
+            // createEditorTable() 内で initialize() が完了しているためDOM構築済み。
+            if (viewSettings.frozenColumnCount > 0) editorTable.freezeColumns(viewSettings.frozenColumnCount);
+            if (viewSettings.frozenRowCount > 0) editorTable.freezeRows(viewSettings.frozenRowCount);
+            if (viewSettings.sortKeys.length > 0) editorTable.restoreSortState(viewSettings.sortKeys);
+            if (Object.keys(viewSettings.filters).length > 0) editorTable.restoreFilterState(viewSettings.filters);
 
             // 開いているテーブルのマップに登録
             this.openEditorTables.set(name, editorTable);
@@ -4242,7 +4232,8 @@ export class Tab {
 
             // openTableAsync() で待機中の呼び出し元には、TabState の構築完了後に通知する。
             this.resolvePendingTableOpen(name, true);
-        }).catch(() => {
+        }).catch((error: unknown) => {
+            this.notification.showError(error, 'テーブルの読み込みに失敗しました');
             // テーブル読み込み失敗時にpending解決を通知する
             if (this.removeLoadingWrapper(name, wrapperElement)) this.loadingTabNames.delete(name);
             this.resolvePendingTableOpen(name, false);

@@ -3,8 +3,9 @@ import {Selection, FillDirection} from "./selection";
 import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {generateSeriesData} from "./fill-series";
-import {readFileAsync, writeFileAsync, type WriteFileOptions} from "../app/api";
+import {writeFileAsync, type WriteFileOptions} from "../app/api";
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
+import {saveTableViewSettingsForTableAsync} from "../app/table-view-settings";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 
 /**
@@ -314,60 +315,14 @@ export function applyFillSeries(
     selection.setRange(newStartRow, newStartColumn, newEndRow, newEndColumn);
 }
 
-/**
- * スキーマJSONにテーブルの表示設定（列幅以外）を保存する
- * 既存JSONを読み込んでフリーズペイン状態等を更新することで、
- * serialize()では保持できないフィールド（unique_key, index等）を破壊しない
- *
- * 列幅はユーザーごとの表示状態として column-widths.json に保存する。
- */
-export async function saveSchemaDataAsync(table: EditorTable, writeOptions?: WriteFileOptions): Promise<void> {
-    const tableName = table.tableName;
-    const schemaPath = `schema/${tableName}.json`;
-
-    const existingSchemaText = await readFileAsync(schemaPath);
-    const existingSchema = JSON.parse(existingSchemaText);
-
-    const header = existingSchema['header'];
-    if (Array.isArray(header)) {
-        for (const column of header) {
-            if (column !== null && typeof column === 'object') {
-                delete (column as Record<string, unknown>).renderAsHtml;
-            }
-        }
-    }
-
-    // フリーズペイン状態の永続化: 値が0の場合はフィールド自体を省略して既存スキーマとの互換性を保つ
-    const frozenColumnCount = table.getFrozenColumnCount();
-    const frozenRowCount = table.getFrozenRowCount();
-    if (frozenColumnCount > 0) {
-        existingSchema.frozenColumnCount = frozenColumnCount;
-    } else {
-        delete existingSchema.frozenColumnCount;
-    }
-    if (frozenRowCount > 0) {
-        existingSchema.frozenRowCount = frozenRowCount;
-    } else {
-        delete existingSchema.frozenRowCount;
-    }
-
-    // ソートキーの永続化: 空配列の場合はフィールド自体を省略してスキーマを汚染しない
-    const sortKeys = table.serializeSortKeys();
-    if (sortKeys.length > 0) {
-        existingSchema.sortKeys = sortKeys;
-    } else {
-        delete existingSchema.sortKeys;
-    }
-
-    // フィルター状態の永続化: 空オブジェクトの場合はフィールド自体を省略してスキーマを汚染しない
-    const filters = table.serializeFilters();
-    if (Object.keys(filters).length > 0) {
-        existingSchema.filters = filters;
-    } else {
-        delete existingSchema.filters;
-    }
-
-    await writeFileAsync(schemaPath, existingSchema, writeOptions);
+/** ソート・フィルター・固定列・固定行をユーザーデータへ保存する。 */
+export async function saveTableViewSettingsDataAsync(table: EditorTable): Promise<void> {
+    await saveTableViewSettingsForTableAsync(table.tableName, {
+        frozenColumnCount: table.getFrozenColumnCount(),
+        frozenRowCount: table.getFrozenRowCount(),
+        sortKeys: table.serializeSortKeys(),
+        filters: table.serializeFilters(),
+    });
 }
 
 /**

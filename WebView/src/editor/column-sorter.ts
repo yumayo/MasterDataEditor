@@ -15,7 +15,7 @@ export interface SortKey {
 }
 
 /**
- * スキーマJSON永続化用のソートキー表現（列名ベース）
+ * ユーザーデータ永続化用のソートキー表現（列名ベース）
  */
 export interface SerializedSortKey {
     columnName: string;
@@ -164,7 +164,7 @@ export class ColumnSorter {
     }
 
     /**
-     * 現在のソート状態をスキーマJSON永続化用にシリアライズする。
+     * 現在のソート状態をユーザーデータ永続化用にシリアライズする。
      * DOM列インデックスを列名に変換する（EditorTableData.header 経由）。
      * ソートキーがない場合は空配列を返す。
      */
@@ -180,7 +180,7 @@ export class ColumnSorter {
     }
 
     /**
-     * スキーマJSONから読み込んだソートキーを復元する。
+     * ユーザーデータから読み込んだソートキーを復元する。
      * 列名をDOM列インデックスに逆引きし、存在しない列名は無視する。
      * 現在の storeRowIndices（currentIndices）を元にソート済みインデックスを計算して返す。
      * 復元するソートキーがない場合は currentIndices をそのまま返す。

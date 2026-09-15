@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
-import { installMockApiAsync, readMockFileAsync, MockFileSystem } from './fixtures/mock-api';
+import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import {readMockTableViewSettingsAsync} from './fixtures/table-view-settings';
 import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
@@ -2084,7 +2085,7 @@ test.describe('フリーズペイン', () => {
         });
 
         test(
-            '列を固定するとスキーマに frozenColumnCount が保存される',
+            '列を固定するとユーザーデータに frozenColumnCount が保存される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
@@ -2092,16 +2093,16 @@ test.describe('フリーズペイン', () => {
                 await rightClickColumnHeaderAsync(table, 1);
                 await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
 
-                // saveFreezeStateAsync は fire-and-forget のため非同期書き込み完了を poll で待機する
+                // saveTableViewSettings は fire-and-forget のため非同期書き込み完了を poll で待機する
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenColumnCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenColumnCount;
                 }).toBe(2);
             },
         );
 
         test(
-            '列の固定を解除するとスキーマから frozenColumnCount が消える',
+            '列の固定を解除するとユーザーデータの frozenColumnCount が0になる',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
@@ -2109,26 +2110,26 @@ test.describe('フリーズペイン', () => {
                 await rightClickColumnHeaderAsync(table, 1);
                 await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
 
-                // 固定が保存されていることを確認（saveFreezeStateAsync は fire-and-forget のため poll で待機）
+                // 固定が保存されていることを確認（saveTableViewSettings は fire-and-forget のため poll で待機）
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenColumnCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenColumnCount;
                 }).toBe(2);
 
                 // 列の固定を解除する
                 await rightClickColumnHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, '列の固定を解除');
 
-                // frozenColumnCount フィールドが除去されていることを確認（saveFreezeStateAsync は非同期のため poll で待機）
+                // frozenColumnCount に0が保存されていることを確認（saveTableViewSettings は非同期のため poll で待機）
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenColumnCount;
-                }).toBeUndefined();
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenColumnCount;
+                }).toBe(0);
             },
         );
 
         test(
-            '行を固定するとスキーマに frozenRowCount が保存される',
+            '行を固定するとユーザーデータに frozenRowCount が保存される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
@@ -2136,16 +2137,16 @@ test.describe('フリーズペイン', () => {
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
-                // saveFreezeStateAsync は fire-and-forget のため非同期書き込み完了を poll で待機する
+                // saveTableViewSettings は fire-and-forget のため非同期書き込み完了を poll で待機する
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenRowCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenRowCount;
                 }).toBe(1);
             },
         );
 
         test(
-            '行の固定を解除するとスキーマから frozenRowCount が消える',
+            '行の固定を解除するとユーザーデータの frozenRowCount が0になる',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
@@ -2153,37 +2154,37 @@ test.describe('フリーズペイン', () => {
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
-                // 固定が保存されていることを確認（saveFreezeStateAsync は fire-and-forget のため poll で待機）
+                // 固定が保存されていることを確認（saveTableViewSettings は fire-and-forget のため poll で待機）
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenRowCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenRowCount;
                 }).toBe(1);
 
                 // 行の固定を解除する
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, '行の固定を解除');
 
-                // frozenRowCount フィールドが除去されていることを確認（saveFreezeStateAsync は非同期のため poll で待機）
+                // frozenRowCount に0が保存されていることを確認（saveTableViewSettings は非同期のため poll で待機）
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenRowCount;
-                }).toBeUndefined();
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenRowCount;
+                }).toBe(0);
             },
         );
 
         test(
-            'frozenColumnCount がスキーマにあるテーブルを開くと列固定が復元される',
+            'frozenColumnCount がユーザーデータにあるテーブルを開くと列固定が復元される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
-                // 列を固定してスキーマに保存
+                // 列を固定してユーザーデータに保存
                 await rightClickColumnHeaderAsync(table, 1);
                 await clickContextMenuItemAsync(page, '先頭からこの列まで固定');
 
-                // saveFreezeStateAsync の非同期書き込み完了を待機してからタブを閉じる
+                // saveTableViewSettings の非同期書き込み完了を待機してからタブを閉じる
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenColumnCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenColumnCount;
                 }).toBe(2);
 
                 // タブを閉じる（タブの×ボタン）
@@ -2210,18 +2211,18 @@ test.describe('フリーズペイン', () => {
         );
 
         test(
-            'frozenRowCount がスキーマにあるテーブルを開くと行固定が復元される',
+            'frozenRowCount がユーザーデータにあるテーブルを開くと行固定が復元される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'freeze_test');
 
-                // 行を固定してスキーマに保存
+                // 行を固定してユーザーデータに保存
                 await rightClickRowHeaderAsync(table, 0);
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
-                // saveFreezeStateAsync の非同期書き込み完了を待機してからタブを閉じる
+                // saveTableViewSettings の非同期書き込み完了を待機してからタブを閉じる
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_test.json');
-                    return JSON.parse(text).frozenRowCount;
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_test');
+                    return settings === null ? null : settings.frozenRowCount;
                 }).toBe(1);
 
                 // タブを閉じる
@@ -2255,9 +2256,8 @@ test.describe('フリーズペイン', () => {
                 await clickContextMenuItemAsync(page, 'この行まで固定');
 
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/freeze_combo.json');
-                    const json = JSON.parse(text);
-                    return { frozenColumnCount: json.frozenColumnCount, frozenRowCount: json.frozenRowCount };
+                    const settings = await readMockTableViewSettingsAsync(page, 'freeze_combo');
+                    return settings === null ? null : { frozenColumnCount: settings.frozenColumnCount, frozenRowCount: settings.frozenRowCount };
                 }).toEqual({ frozenColumnCount: 2, frozenRowCount: 1 });
 
                 const tabButton = page.locator('.tab-button', { hasText: 'freeze_combo' });

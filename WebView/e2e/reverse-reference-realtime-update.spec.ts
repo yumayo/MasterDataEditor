@@ -124,7 +124,7 @@ test.describe('逆参照エンジンのリアルタイム更新', () => {
             async () => readMockFileAsync(page, 'data/enemy_name.csv')
         ).toContain('slime realtime');
 
-        await dispatchSelfSaveFileChangedAsync(page, ['data/enemy_name.csv', 'schema/enemy_name.json']);
+        await dispatchSelfSaveFileChangedAsync(page, ['data/enemy_name.csv']);
         await clearApiRequestsAsync(page);
 
         const reopenedEnemyTable = await openTableAsync(page, 'enemy');

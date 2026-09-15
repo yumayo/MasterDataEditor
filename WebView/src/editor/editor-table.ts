@@ -46,7 +46,7 @@ import {Utility} from "../core/utility";
 import {Tab} from "../tabs/tab";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
-import {saveColumnWidthsDataAsync, saveSchemaDataAsync} from "./editor-actions";
+import {saveColumnWidthsDataAsync} from "./editor-actions";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
 import {VirtualScrollController, RenderedRowsUpdate} from "./virtual-scroll-controller";
 import {EditorTableCellFactory} from "./editor-table-cell-factory";
@@ -1427,7 +1427,7 @@ export class EditorTable {
      * 先頭からcount列を固定する。
      * 固定列のセルにはスクロール量を打ち消す transform を適用し、
      * 最後の固定列に freeze-column-border クラスを付与する。
-     * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
+     * 永続化はコンテキストメニューのaction側が saveTableViewSettings() を呼ぶ責務。
      */
     freezeColumns(count: number): void {
         if (count === 0) { this.unfreezeColumns(); return; }
@@ -1450,7 +1450,7 @@ export class EditorTable {
      * 先頭からcount行を固定する。
      * 該当行にはスクロール量を打ち消す transform を適用し、
      * 最後の固定行に freeze-row-border クラスを付与する。
-     * 永続化はコンテキストメニューのaction側が saveFreezeStateAsync() を呼ぶ責務。
+     * 永続化はコンテキストメニューのaction側が saveTableViewSettings() を呼ぶ責務。
      */
     freezeRows(count: number): void {
         if (count === 0) { this.unfreezeRows(); return; }
@@ -1473,14 +1473,9 @@ export class EditorTable {
         this.refreshFreezeVisualState();
     }
 
-    /**
-     * フリーズペイン状態をスキーマJSONに永続化する。
-     * コンテキストメニューからのfreeze/unfreeze操作後に呼び出す。
-     * テーブルオープン時の復元ではsaveSchemaDataAsyncを呼ばないよう、
-     * freeze/unfreezeメソッド自体からは分離している。
-     */
-    saveFreezeStateAsync(): void {
-        saveSchemaDataAsync(this);
+    /** 表示操作の結果をユーザーデータに保存し、失敗時は共通通知を表示する。 */
+    saveTableViewSettings(): void {
+        this.handler.saveTableViewSettings();
     }
 
     /**

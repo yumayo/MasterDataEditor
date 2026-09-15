@@ -27,7 +27,7 @@ import {
     moveCellRightWithinSelection,
     moveCellLeftWithinSelection,
     saveColumnWidthsDataAsync,
-    saveSchemaDataAsync,
+    saveTableViewSettingsDataAsync,
     saveTableDataFromStoreAsync,
     saveDiffTableDataFromStoreAsync,
     getTarget
@@ -1060,13 +1060,20 @@ export class EditorTableHandler {
         // 行挿入・削除を含む全変更を正確にCSVに反映できる。
         await Promise.all([
             saveTableDataFromStoreAsync(this.table.tableName, store, saveWriteOptions),
-            saveSchemaDataAsync(this.table, saveWriteOptions),
+            saveTableViewSettingsDataAsync(this.table),
             saveColumnWidthsDataAsync(this.table)
         ]);
         await this.markSavedAndUpdatePanelAsync();
         if (this.table.tab !== false) {
             await this.table.tab.saveCurrentFormPanelEditedTablesAsync(this.table.tableName);
         }
+    }
+
+    /** 表示操作の自動保存では、このハンドラが共有する通知へ失敗を伝える。 */
+    saveTableViewSettings(): void {
+        void saveTableViewSettingsDataAsync(this.table).catch((error: unknown) => {
+            this.notification.showError(error, 'テーブル表示設定の保存に失敗しました');
+        });
     }
 
     /**

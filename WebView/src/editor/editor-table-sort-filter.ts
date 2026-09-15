@@ -2,7 +2,6 @@ import {EditorTable} from "./editor-table";
 import {FilterCommand, SortCommand} from "./command";
 import {SerializedSortKey} from "./column-sorter";
 import type {SerializedFilters, TemporaryFilterMode} from "./column-filter";
-import {saveSchemaDataAsync} from "./editor-actions";
 
 /**
  * ソート・フィルター状態と表示更新を担当する。
@@ -28,11 +27,11 @@ export class EditorTableSortFilter {
         });
     }
 
-    /** 現在のソート状態をスキーマJSON永続化用にシリアライズする */
+    /** 現在のソート状態をユーザーデータ永続化用にシリアライズする */
     serializeSortKeys(): SerializedSortKey[] { return this.columnSorter.serializeSortKeys(); }
 
     /**
-     * 現在のフィルター状態をスキーマJSON永続化用にシリアライズする。
+     * 現在のフィルター状態をユーザーデータ永続化用にシリアライズする。
      * ストアのCSVヘッダーから列名を取得してストア列インデックスを列名に変換する。
      */
     serializeFilters(): SerializedFilters {
@@ -82,9 +81,9 @@ export class EditorTableSortFilter {
     }
 
     /**
-     * スキーマJSONから読み込んだソートキーを復元する。
+     * ユーザーデータから読み込んだソートキーを復元する。
      * tab.ts の createTabState() からテーブルオープン時に呼ばれる。
-     * saveSchemaDataAsync は呼ばない（復元時の保存は不要）。
+     * saveTableViewSettings は呼ばない（復元時の保存は不要）。
      */
     restoreSortState(serializedSortKeys: SerializedSortKey[]): void {
         const newIndices = this.columnSorter.restoreSortKeys(serializedSortKeys, this.storeRowIndices);
@@ -98,9 +97,9 @@ export class EditorTableSortFilter {
     }
 
     /**
-     * スキーマJSONから読み込んだフィルター状態を復元する。
+     * ユーザーデータから読み込んだフィルター状態を復元する。
      * tab.ts の createTabState() からテーブルオープン時に呼ばれる。
-     * saveSchemaDataAsync は呼ばない（復元時の保存は不要）。
+     * saveTableViewSettings は呼ばない（復元時の保存は不要）。
      */
     restoreFilterState(serializedFilters: SerializedFilters): void {
         const storeColumnNames = this.store.getHeader(this.tableName);
@@ -111,7 +110,7 @@ export class EditorTableSortFilter {
 
     /**
      * ジャンプ操作用の一時フィルターを適用する。
-     * スキーマ永続化や Undo/Redo 履歴には含めない。
+     * ユーザー設定の永続化や Undo/Redo 履歴には含めない。
      */
     applyTemporaryFilterState(filters: SerializedFilters, mode: TemporaryFilterMode = 'and'): void {
         const storeColumnNames = this.store.getHeader(this.tableName);
@@ -154,8 +153,8 @@ export class EditorTableSortFilter {
         this.refreshFilterDisplayIfActive();
         this.refreshScrollbarMarkers();
 
-        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this.table);
+        // ソート状態をユーザーデータに永続化する（fire-and-forget）
+        this.table.saveTableViewSettings();
 
         // SortCommand を履歴に積む（既に実行済みのため pushCommand を使う）
         const command = new SortCommand(this.table, oldSortKeys, newSortKeys);
@@ -168,8 +167,8 @@ export class EditorTableSortFilter {
     /**
      * シリアライズ済みソートキーからソート状態を適用する（SortCommand の execute/undo 用）。
      *
-     * restoreSortState() はタブ復元専用（saveSchemaDataAsync を呼ばない）であるのに対し、
-     * このメソッドはコマンドの undo/redo から呼ばれ、saveSchemaDataAsync も呼ぶ。
+     * restoreSortState() はタブ復元専用（saveTableViewSettings を呼ばない）であるのに対し、
+     * このメソッドはコマンドの undo/redo から呼ばれ、saveTableViewSettings も呼ぶ。
      */
     applySortState(sortKeys: SerializedSortKey[]): void {
         // blameはgit committed dataのため、ソート変更でDOM行並び替えが発生し陳腐化する
@@ -193,15 +192,15 @@ export class EditorTableSortFilter {
         this.updateAllSortIndicators();
         this.refreshFilterDisplayIfActive();
         this.refreshScrollbarMarkers();
-        // ソート状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this.table);
+        // ソート状態をユーザーデータに永続化する（fire-and-forget）
+        this.table.saveTableViewSettings();
     }
 
     /**
      * シリアライズ済みフィルターからフィルター状態を適用する（FilterCommand の execute/undo 用）。
      *
-     * restoreFilterState() はタブ復元専用（saveSchemaDataAsync を呼ばない）であるのに対し、
-     * このメソッドはコマンドの undo/redo から呼ばれ、saveSchemaDataAsync も呼ぶ。
+     * restoreFilterState() はタブ復元専用（saveTableViewSettings を呼ばない）であるのに対し、
+     * このメソッドはコマンドの undo/redo から呼ばれ、saveTableViewSettings も呼ぶ。
      */
     applyFilterState(filters: SerializedFilters): void {
         const storeColumnNames = this.store.getHeader(this.tableName);
@@ -215,8 +214,8 @@ export class EditorTableSortFilter {
         // フィルター有無に関わらず applyFilterDisplay() を呼ぶ
         // （フィルター解除時に全行を再表示し、行数カウンターを非表示にするため）
         this.applyFilterDisplay();
-        // フィルター状態をスキーマJSONに永続化する（fire-and-forget）
-        saveSchemaDataAsync(this.table);
+        // フィルター状態をユーザーデータに永続化する（fire-and-forget）
+        this.table.saveTableViewSettings();
     }
 
     /**

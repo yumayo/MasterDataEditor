@@ -61,7 +61,7 @@ async function getVisibleColumnValuesAsync(table: Locator, colIndex: number): Pr
     return values;
 }
 
-async function countSchemaWritesAsync(page: Page, filename: string): Promise<number> {
+async function countFileWritesAsync(page: Page, filename: string): Promise<number> {
     return page.evaluate((target) => {
         const details = (window as unknown as {
             __mockApiRequestDetails: Array<{ type: string; filename?: string }>;
@@ -92,12 +92,13 @@ test.describe('参照ジャンプの一時フィルター', () => {
         await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveCount(0);
         await expect.poll(() => getVisibleColumnValuesAsync(enemyTable, 0)).toEqual(['1', '2']);
 
-        expect(await countSchemaWritesAsync(page, 'schema/enemy.json')).toBe(0);
+        expect(await countFileWritesAsync(page, 'schema/enemy.json')).toBe(0);
         const schema = JSON.parse(await readMockFileAsync(page, 'schema/enemy.json'));
         expect(schema.filters).toBeUndefined();
+        expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 
-    test('設定ONの場合、FKセルをCtrl+クリックすると参照先列に一時フィルターが適用され、schemaには保存されない', async ({ page }) => {
+    test('設定ONの場合、FKセルをCtrl+クリックすると参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
         await installReferenceJumpFilterFixtureAsync(page, true);
         const questTable = await openTableAsync(page, 'quest');
         await getDataCell(questTable, 0, 2).click({ modifiers: ['Control'] });
@@ -107,12 +108,13 @@ test.describe('参照ジャンプの一時フィルター', () => {
         await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('1 / 2 行');
         await expect.poll(() => getVisibleColumnValuesAsync(enemyTable, 0)).toEqual(['2']);
 
-        expect(await countSchemaWritesAsync(page, 'schema/enemy.json')).toBe(0);
+        expect(await countFileWritesAsync(page, 'schema/enemy.json')).toBe(0);
         const schema = JSON.parse(await readMockFileAsync(page, 'schema/enemy.json'));
         expect(schema.filters).toBeUndefined();
+        expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 
-    test('設定ONの場合、PKセルをCtrl+クリックすると逆参照先列に一時フィルターが適用され、schemaには保存されない', async ({ page }) => {
+    test('設定ONの場合、PKセルをCtrl+クリックすると逆参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
         await installReferenceJumpFilterFixtureAsync(page, true);
         const enemyTable = await openTableAsync(page, 'enemy');
         await expect.poll(async () => {
@@ -126,8 +128,9 @@ test.describe('参照ジャンプの一時フィルター', () => {
         await expect(page.locator('.editor-left-slot .filter-row-count:visible')).toHaveText('1 / 2 行');
         await expect.poll(() => getVisibleColumnValuesAsync(questTable, 2)).toEqual(['1']);
 
-        expect(await countSchemaWritesAsync(page, 'schema/quest.json')).toBe(0);
+        expect(await countFileWritesAsync(page, 'schema/quest.json')).toBe(0);
         const schema = JSON.parse(await readMockFileAsync(page, 'schema/quest.json'));
         expect(schema.filters).toBeUndefined();
+        expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 });

@@ -187,10 +187,12 @@ test.describe('保存後のgit差分ハイライト更新', () => {
                         request.type === "write_file_request"
                         && (request.filename === "data/quest.csv" || request.filename === "schema/quest.json")
                     ).length,
+                    schemaWrites: requests.filter(request => request.type === "write_file_request" && request.filename === "schema/quest.json").length,
                     gitStatus: requests.filter(request => request.type === "git_status_request").length,
                 };
             });
-            expect(requestCounts.tableWrites).toBe(2);
+            expect(requestCounts.tableWrites).toBe(1);
+            expect(requestCounts.schemaWrites).toBe(0);
             expect(requestCounts.gitStatus).toBe(1);
         },
     );

@@ -1,28 +1,10 @@
 import { test, expect } from './fixtures/test';
 import { Page, Locator } from '@playwright/test';
-import { installMockApiAsync, readMockFileAsync, MockFileSystem } from './fixtures/mock-api';
+import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import {readMockTableViewSettingsAsync} from './fixtures/table-view-settings';
 
-// =============================================================================
-// ソート・フィルター永続化テスト
-//
-// 機能概要:
-//   ソート・フィルターの状態をスキーマJSON（schema/{テーブル名}.json）に永続化する。
-//   ソート変更時・フィルター変更時に saveSchemaDataAsync() 経由で即座に保存する。
-//   テーブル再オープン時にスキーマから読み込み、ソート・フィルター状態を復元する。
-//   存在しない列名は無視する。値が空の場合はフィールド省略する。
-//
-// テストケース一覧:
-//   1. ソート適用後にスキーマに sortKeys が保存される
-//   2. ソート解除後にスキーマから sortKeys が消える
-//   3. sortKeys がスキーマにあるテーブルを開くとソートが復元される
-//   4. フィルター適用後にスキーマに filters が保存される
-//   5. フィルター解除後にスキーマから filters が消える
-//   6. filters がスキーマにあるテーブルを開くとフィルターが復元される
-//   7. 存在しない列名の sortKeys は無視されて復元される
-//   8. 存在しない列名の filters は無視されて復元される
-//   9. ソートとフィルターが同時にスキーマに保存される
-//  10. ソートとフィルターが同時に復元される
-// =============================================================================
+// ソート・フィルターは user scope の table-view-settings.json に保存する。
+// 既存スキーマからの初回移行と、存在しない列名を無視する復元も検証する。
 
 // =============================================================================
 // フィクスチャ生成ヘルパー
@@ -293,18 +275,17 @@ test.describe('ソート・フィルター永続化', () => {
         });
 
         test(
-            'ソート適用後にスキーマに sortKeys が保存される',
+            'ソート適用後にユーザーデータに sortKeys が保存される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
                 // id列（colIndex=0）を昇順ソート
                 await clickSortIndicatorAsync(table, 0);
 
-                // saveSchemaDataAsync は fire-and-forget のため poll で待機する
+                // saveTableViewSettingsDataAsync は fire-and-forget のため poll で待機する
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return schema.sortKeys;
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.sortKeys;
                 }).toEqual([
                     { columnName: "id", direction: "asc" },
                 ]);
@@ -312,7 +293,7 @@ test.describe('ソート・フィルター永続化', () => {
         );
 
         test(
-            'ソート方向変更後にスキーマの sortKeys が更新される',
+            'ソート方向変更後にユーザーデータの sortKeys が更新される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
@@ -322,9 +303,8 @@ test.describe('ソート・フィルター永続化', () => {
                 await clickSortIndicatorAsync(table, 0);
 
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return schema.sortKeys;
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.sortKeys;
                 }).toEqual([
                     { columnName: "id", direction: "desc" },
                 ]);
@@ -332,7 +312,7 @@ test.describe('ソート・フィルター永続化', () => {
         );
 
         test(
-            'ソート解除後にスキーマから sortKeys が消える',
+            'ソート解除後にユーザーデータの sortKeys が空配列になる',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
@@ -341,17 +321,16 @@ test.describe('ソート・フィルター永続化', () => {
                 await clickSortIndicatorAsync(table, 0);
                 await clickSortIndicatorAsync(table, 0);
 
-                // sortKeys フィールドが除去されていることを確認
+                // sortKeys が空配列として保存されていることを確認
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return schema.sortKeys;
-                }).toBeUndefined();
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.sortKeys;
+                }).toEqual([]);
             },
         );
 
         test(
-            '複数列ソートがスキーマに正しく保存される',
+            '複数列ソートがユーザーデータに正しく保存される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
@@ -361,9 +340,8 @@ test.describe('ソート・フィルター永続化', () => {
                 await clickSortIndicatorAsync(table, 2);
 
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return schema.sortKeys;
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.sortKeys;
                 }).toEqual([
                     { columnName: "name", direction: "asc" },
                     { columnName: "value", direction: "asc" },
@@ -428,7 +406,7 @@ test.describe('ソート・フィルター永続化', () => {
         });
 
         test(
-            'フィルター適用後にスキーマに filters が保存される',
+            'フィルター適用後にユーザーデータに filters が保存される',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
@@ -438,11 +416,10 @@ test.describe('ソート・フィルター永続化', () => {
                 await setFilterItemCheckedAsync(page, 'beta', false);
                 await applyFilterAsync(page);
 
-                // saveSchemaDataAsync は fire-and-forget のため poll で待機する
+                // saveTableViewSettingsDataAsync は fire-and-forget のため poll で待機する
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return schema.filters;
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.filters;
                 }).toEqual({
                     name: ["alpha"],
                 });
@@ -450,7 +427,7 @@ test.describe('ソート・フィルター永続化', () => {
         );
 
         test(
-            'フィルター解除後にスキーマから filters が消える',
+            'フィルター解除後にユーザーデータの filters が空オブジェクトになる',
             async ({ page }) => {
                 const table = await openTableAsync(page, 'item');
 
@@ -461,8 +438,8 @@ test.describe('ソート・フィルター永続化', () => {
 
                 // 保存されたことを確認
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    return JSON.parse(text).filters;
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.filters;
                 }).toEqual({ name: ["alpha"] });
 
                 // フィルター解除（クリアボタン）
@@ -470,11 +447,11 @@ test.describe('ソート・フィルター永続化', () => {
                 const dropdown = page.locator('.filter-dropdown.visible');
                 await dropdown.locator('.filter-clear').click();
 
-                // filters フィールドが除去されていることを確認
+                // filters が空オブジェクトとして保存されていることを確認
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    return JSON.parse(text).filters;
-                }).toBeUndefined();
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : settings.filters;
+                }).toEqual({});
             },
         );
     });
@@ -546,7 +523,7 @@ test.describe('ソート・フィルター永続化', () => {
 
     test.describe('ソートとフィルターの同時永続化', () => {
         test(
-            'ソートとフィルターが同時にスキーマに保存される',
+            'ソートとフィルターが同時にユーザーデータに保存される',
             async ({ page }) => {
                 const fs = createPersistenceTestFileSystem();
                 await installMockApiAsync(page, fs);
@@ -562,11 +539,10 @@ test.describe('ソート・フィルター永続化', () => {
                 await setFilterItemCheckedAsync(page, 'beta', false);
                 await applyFilterAsync(page);
 
-                // 両方がスキーマに保存されていることを確認
+                // 両方がユーザーデータに保存されていることを確認
                 await expect.poll(async () => {
-                    const text = await readMockFileAsync(page, 'schema/item.json');
-                    const schema = JSON.parse(text);
-                    return { sortKeys: schema.sortKeys, filters: schema.filters };
+                    const settings = await readMockTableViewSettingsAsync(page, 'item');
+                    return settings === null ? null : { sortKeys: settings.sortKeys, filters: settings.filters };
                 }).toEqual({
                     sortKeys: [{ columnName: "id", direction: "asc" }],
                     filters: { name: ["alpha"] },
