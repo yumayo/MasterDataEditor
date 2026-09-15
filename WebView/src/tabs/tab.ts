@@ -1925,25 +1925,32 @@ export class Tab {
      * dirty 状態の場合は確認ダイアログを表示し、ユーザーの確認後にクローズを実行する。
      */
     closeTab(name: string): void {
-        const tabButton = this.tabButtons.find(x => x.name === name);
-        if (!tabButton) return;
+        this.closeTabs([name]);
+    }
 
+    /** 未保存タブの確認を一つずつ行い、キャンセルされた場合は残りのクローズを中止する。 */
+    private closeTabs(names: readonly string[]): void {
         // ダイアログ表示中は別タブの閉じ操作を無視する（多重ダイアログ防止）
         // DOMがSSOTのため、オーバーレイ要素の存在で判定する
         if (document.querySelector('.close-confirm-overlay')) return;
 
-        // dirty 状態のタブは確認ダイアログを表示してからクローズする
-        if (tabButton.isDirty()) {
-            this.showCloseConfirmDialog(name);
-            return;
-        }
+        for (const [index, name] of names.entries()) {
+            const tabButton = this.tabButtons.find(button => button.name === name);
+            if (!tabButton) continue;
 
-        this.performCloseTab(name);
+            // 確認後に残りのタブを処理する。キャンセル時は再開しない。
+            if (tabButton.isDirty()) {
+                this.showCloseConfirmDialog(name, names.slice(index + 1));
+                return;
+            }
+
+            this.performCloseTab(name);
+        }
     }
 
     /**
      * タブの実際のクローズ処理。
-     * closeTab() の非 dirty パスと、確認ダイアログの「閉じる」ボタンの2箇所から呼ばれるため
+     * closeTabs() の非 dirty パスと、確認ダイアログの「閉じる」ボタンなどから呼ばれるため
      * private メソッドとして抽出している。
      * name のみを受け取り、tabButton は内部で解決する。
      * ダイアログ表示中にタブが別経路で閉じられる理論的可能性を考慮し、
@@ -2053,9 +2060,9 @@ export class Tab {
 
     /**
      * dirty 状態のタブを閉じる確認ダイアログを表示する。
-     * 「閉じる」で performCloseTab を実行、「キャンセル」またはオーバーレイクリックでダイアログを閉じる。
+     * 「閉じる」で対象を閉じて残りの処理を再開し、キャンセル時はダイアログを閉じて中止する。
      */
-    private showCloseConfirmDialog(name: string): void {
+    private showCloseConfirmDialog(name: string, remainingNames: readonly string[]): void {
         // オーバーレイ
         const overlay = document.createElement('div');
         overlay.classList.add('close-confirm-overlay');
@@ -2104,6 +2111,7 @@ export class Tab {
         closeButton.addEventListener('click', () => {
             dismissDialog();
             this.performCloseTab(name);
+            this.closeTabs(remainingNames);
         });
 
         // 「キャンセル」ボタン: ダイアログを閉じるだけ
@@ -2913,27 +2921,38 @@ export class Tab {
     /**
      * タブボタンの右クリックコンテキストメニューを表示する。
      * TabButton.onContextMenu から呼ばれる。
-     * 固定/固定解除は永続タブ全体、テーブル操作は通常テーブルタブに表示する。
+     * 閉じる操作は全タブ、固定/固定解除は永続タブ、テーブル操作は通常テーブルタブに表示する。
      */
     showTabButtonContextMenu(tabName: string, x: number, y: number): void {
-        if (this.isTemporaryTabName(tabName)) return;
         const tabButton = this.tabButtons.find(button => button.name === tabName);
         if (tabButton === undefined) return;
 
         const items: ContextMenuEntry[] = [
             {
-                label: tabButton.isPinned() ? 'タブの固定を解除' : 'タブを固定',
+                label: 'タブを閉じる',
+                action: () => this.closeTab(tabName),
+            },
+            {
+                label: '他のタブを閉じる',
                 action: () => {
-                    this.setTabPinned(tabName, !tabButton.isPinned());
+                    // 対象タブと固定タブを残す。閉じるたびに配列が変わるため、操作開始時の対象名を保持する。
+                    this.closeTabs(this.tabButtons.filter(button => button.name !== tabName && !button.isPinned()).map(button => button.name));
                 },
             },
         ];
 
+        if (!this.isTemporaryTabName(tabName)) {
+            items.push(
+                { separator: true },
+                {
+                    label: tabButton.isPinned() ? 'タブの固定を解除' : 'タブを固定',
+                    action: () => this.setTabPinned(tabName, !tabButton.isPinned()),
+                },
+            );
+        }
+
         // 差分タブ・設定タブ・テーブル定義タブ・API詳細タブ・Viewプラグインタブは通常テーブル操作の対象外
-        if (tabName !== SETTINGS_TAB_NAME
-            && !this.isTableDefinitionTabName(tabName)
-            && !tabName.startsWith(DIFF_TAB_PREFIX)
-            && !this.isViewPluginTabName(tabName)) {
+        if (!this.isFullWidthSpecialTabName(tabName)) {
             items.push(
                 { separator: true },
                 {
