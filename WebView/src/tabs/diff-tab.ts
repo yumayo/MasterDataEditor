@@ -122,6 +122,11 @@ export class DiffTab {
     /** スクロール同期の再帰ループ防止フラグ */
     private isSyncing: boolean;
 
+    /** 選択同期による反対ペインからの再通知を抑止する */
+    private isSyncingSelection: boolean;
+    private readonly boundLeftSelectionChanged: () => void;
+    private readonly boundRightSelectionChanged: () => void;
+
     /** destroy() 時にスクロールリスナーを解除するためのバインド済み関数 */
     private readonly boundLeftScroll: (event: Event) => void;
     private readonly boundRightScroll: (event: Event) => void;
@@ -217,6 +222,7 @@ export class DiffTab {
     ) {
         this.tableName = tableName;
         this.isSyncing = false;
+        this.isSyncingSelection = false;
         this.dragMouseMove = null;
         this.dragMouseUp = null;
         this.layoutRefreshFrame = false;
@@ -507,8 +513,37 @@ export class DiffTab {
         leftPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
         rightPaneElement.addEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
 
+        // クリック・ドラッグ・キー操作など、選択方法によらず同じ表示位置を同期する。
+        this.boundLeftSelectionChanged = () => { this.syncPaneSelection(this.leftEditorTable, this.rightEditorTable); };
+        this.boundRightSelectionChanged = () => { this.syncPaneSelection(this.rightEditorTable, this.leftEditorTable); };
+        leftPaneElement.addEventListener('editor-table-selection-changed', this.boundLeftSelectionChanged);
+        rightPaneElement.addEventListener('editor-table-selection-changed', this.boundRightSelectionChanged);
+
         // 初期状態: 左ペイン（HEAD版）を非アクティブ表示にする（右ペインが操作対象）
         this.leftEditorTable.setInactiveAppearance(true);
+    }
+
+    private syncPaneSelection(sourceTable: EditorTable, targetTable: EditorTable): void {
+        if (this.isSyncingSelection) return;
+        const sourceSelection = sourceTable.getSelection();
+        const targetSelection = targetTable.getSelection();
+        // 正規化前の範囲を使い、逆方向に選択したときのアンカーも保持する。
+        const range = sourceSelection.getRange();
+        const focus = sourceSelection.getFocus();
+        const targetRange = targetSelection.getRange();
+        const targetFocus = targetSelection.getFocus();
+        // リサイズ等の再描画でもイベントが発生するため、同じ状態なら更新しない。
+        if (range.startRow === targetRange.startRow && range.startColumn === targetRange.startColumn
+            && range.endRow === targetRange.endRow && range.endColumn === targetRange.endColumn
+            && focus.row === targetFocus.row && focus.column === targetFocus.column) return;
+
+        this.isSyncingSelection = true;
+        try {
+            // restoreState はスクロールやハンドラーのアクティブ化を行わない。
+            targetSelection.restoreState(range, focus);
+        } finally {
+            this.isSyncingSelection = false;
+        }
     }
 
     /** 操作された列名だけを反対ペインとユーザーデータへ反映する。 */
@@ -1038,6 +1073,8 @@ export class DiffTab {
         // スクロールリスナーを解除する（DOM除去後もガベージコレクションされるよう明示的に解除）
         this.leftPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundLeftScroll);
         this.rightPaneElement.removeEventListener('editor-table-scroll-metrics-changed', this.boundRightScroll);
+        this.leftPaneElement.removeEventListener('editor-table-selection-changed', this.boundLeftSelectionChanged);
+        this.rightPaneElement.removeEventListener('editor-table-selection-changed', this.boundRightSelectionChanged);
         this.leftPaneElement.removeEventListener('wheel', this.boundLeftWheel);
         this.rightPaneElement.removeEventListener('wheel', this.boundRightWheel);
         // リサイズハンドルの mousedown リスナーを解除する
