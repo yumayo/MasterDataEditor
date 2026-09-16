@@ -4,6 +4,7 @@ import {gitBlameAsync, gitShowAsync, gitShowFreshAsync, gitStatusAsync, BlameEnt
 import {GitDiffTracker} from "../diff/git-diff-tracker";
 import {getApplicationDefaultValue, type LargeFileSettings} from "../settings/settings-schema";
 import {recordGitBlameTiming} from "../app/git-blame-timing";
+import {getAppliedSettings} from "../panels/settings-panel";
 
 const BLAME_CHUNK_ROWS = 10000;
 interface BlameChunks {
@@ -345,6 +346,29 @@ export class EditorTableGit {
         }
     }
 
+    /** 比較対象のHEAD行が変わる編集時と全体更新で、描画済みの1行を再評価する。 */
+    updateRowGitHighlight(row: number, storeRows: string[][], storeRowIndex: number): void {
+        const columnMapping: readonly number[] = this.tableData.columnMapping;
+        const offset = this.dataColumnOffset();
+        for (let dataColumnIndex = 0; dataColumnIndex < columnMapping.length; dataColumnIndex++) {
+            const storeColumnIndex = columnMapping[dataColumnIndex];
+            if (storeColumnIndex === -1) continue;
+            this.updateSingleCellGitHighlight(this.getCell(row, dataColumnIndex + offset), storeRows, storeRowIndex, storeColumnIndex);
+        }
+    }
+
+    /** 主キーに、設定で指定された公開期間列のうち存在する列を加える。 */
+    private buildRowIdentityColumnIndices(storeHeader: readonly string[], pkColumnIndices: readonly number[]): number[] {
+        const settings = getAppliedSettings();
+        const indices = [...pkColumnIndices];
+        for (const columnName of [settings.exportBeginDateColumnName.trim(), settings.exportEndDateColumnName.trim()]) {
+            if (columnName === '') continue;
+            const index = storeHeader.indexOf(columnName);
+            if (index !== -1 && !indices.includes(index)) indices.push(index);
+        }
+        return indices;
+    }
+
     /**
      * 全データセルを走査し、gitのHEAD版との差分に応じて .cell-git-changed クラスを付与/除去する。
      * テーブルオープン時・行挿入・削除・バッファ行昇格・降格・保存後に呼ばれる。
@@ -380,7 +404,6 @@ export class EditorTableGit {
         // DOM列インデックス（0始まり）→ ストア（CSV）列インデックスのマッピングを取得する。
         // 非連番keyスキーマではDOMインデックスとCSVインデックスが一致しないため変換が必須。
         const columnMapping = this.tableData.columnMapping;
-        const offset2 = this.dataColumnOffset();
         // ストアベースで全データ行を走査し、git変更行・列のデータ行インデックスを収集する。
         // 仮想スクロール時はDOMに表示範囲の行しか存在しないため、DOM走査では全行を検出できない。
         // マーカー描画にはDOMに存在しない行のインデックスも必要なのでストア全行を走査する。
@@ -412,13 +435,7 @@ export class EditorTableGit {
             if (domDataRowIndex >= dataRowCount) continue;
             const storeRowIndex = this.resolveStoreRowIndex(domDataRowIndex);
             if (storeRowIndex < 0) continue;
-            for (let col = offset2; col < totalColCount; col++) {
-                const domColIndex = col - offset2;
-                const storeColIndex = columnMapping[domColIndex];
-                if (storeColIndex === -1) continue;
-                const cell = this.getCell(row, col);
-                this.updateSingleCellGitHighlight(cell, storeRows, storeRowIndex, storeColIndex);
-            }
+            this.updateRowGitHighlight(row, storeRows, storeRowIndex);
         }
         // git変更行・列をスクロールバーマーカーに反映する
         this.currentGitChangedDomRows = changedDataRows;
@@ -488,12 +505,13 @@ export class EditorTableGit {
             }
             pkColumnIndices.push(idx);
         }
+        const rowIdentityColumnIndices = this.buildRowIdentityColumnIndices(storeHeader, pkColumnIndices);
         if (entry.isNew) {
             // HEADに存在しない新規テーブル → 全セルchanged
-            const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
+            const tracker = GitDiffTracker.createForNewTable(rowIdentityColumnIndices);
             this.connectGitDiffTracker(tracker);
         } else {
-            // 既存テーブルの変更 → HEAD版CSVを取得してPKベースのマップを構築する
+            // 既存テーブルの変更 → 主キーと公開期間でHEAD版の比較対象行を特定する。
             let headCsv: string;
             try {
                 headCsv = await gitShowAsync(entry.path);
@@ -507,8 +525,8 @@ export class EditorTableGit {
             }
             // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
             if (requestId !== this.refreshGitDiffRequestId) return;
-            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices, storeHeader);
-            const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
+            const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, rowIdentityColumnIndices, storeHeader);
+            const tracker = new GitDiffTracker(headRowMap, rowIdentityColumnIndices, false);
             this.connectGitDiffTracker(tracker);
         }
         // トラッカー再構築後に全セルのハイライトを一括再適用する
@@ -551,6 +569,7 @@ export class EditorTableGit {
             }
             pkColumnIndices.push(idx);
         }
+        const rowIdentityColumnIndices = this.buildRowIdentityColumnIndices(storeHeader, pkColumnIndices);
         // gitPath（gitルート相対パス）を使ってHEAD版CSVを取得する。
         // 保存直後の再取得のためキャッシュをバイパスしてC#へ直接問い合わせる。
         // キャッシュ済みの古いHEAD版CSVを返すと、保存後のエラー注入や
@@ -564,7 +583,7 @@ export class EditorTableGit {
             const message = e instanceof Error ? e.message : String(e);
             if (message.includes('does not exist')) {
                 // HEADに存在しない（新規テーブル等） → 全セルchanged
-                const tracker = GitDiffTracker.createForNewTable(pkColumnIndices);
+                const tracker = GitDiffTracker.createForNewTable(rowIdentityColumnIndices);
                 this.connectGitDiffTracker(tracker);
             } else {
                 // バリデーションエラー等その他のエラー → ハイライトなし
@@ -575,8 +594,8 @@ export class EditorTableGit {
         }
         // awaitで中断中に新しいリクエストが来た場合は処理を破棄する
         if (requestId !== this.refreshGitDiffRequestId) return;
-        const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, pkColumnIndices, storeHeader);
-        const tracker = new GitDiffTracker(headRowMap, pkColumnIndices, false);
+        const headRowMap = GitDiffTracker.buildHeadRowMap(headCsv, rowIdentityColumnIndices, storeHeader);
+        const tracker = new GitDiffTracker(headRowMap, rowIdentityColumnIndices, false);
         this.connectGitDiffTracker(tracker);
         this.applyGitDiffHighlight();
     }

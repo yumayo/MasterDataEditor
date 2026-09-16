@@ -2437,17 +2437,22 @@ export class EditorTable {
         const rowElement = this.getRowElement(row);
         if (rowElement === null) return;
         this.reference.setCellValueAt(row, column, value);
+        const rowIdentityChanged = this.gitDiffTracker !== false && this.gitDiffTracker.isRowIdentityColumn(storeColIndex);
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
-        const requiresDetachedCloneSync = row <= this.frozenRowCount || column < fixedLeftColumnCount;
+        // 非固定の公開期間列の編集でも、固定された主キー等のハイライトが変わる。
+        const requiresDetachedCloneSync = row <= this.frozenRowCount || column < fixedLeftColumnCount || (rowIdentityChanged && this.frozenColumnCount > 0);
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
-        // git差分ハイライトをこのセル1つ分だけ再評価する
+        // 主キー・公開期間の変更時は行全体、それ以外は編集セルだけを再評価する。
         if (this.gitDiffTracker !== false) {
             const latestRows = this.store.getRows(this.tableName);
             if (latestRows !== false) {
-                const cell = this.getCell(row, column);
-                this.updateSingleCellGitHighlight(cell, latestRows, storeRowIndex, storeColIndex);
+                if (rowIdentityChanged) {
+                    this.git.updateRowGitHighlight(row, latestRows, storeRowIndex);
+                } else {
+                    this.updateSingleCellGitHighlight(this.getCell(row, column), latestRows, storeRowIndex, storeColIndex);
+                }
             }
         }
         // 差分タブのdiff-cell-added/diff-cell-deletedクラスをセル単位で再評価する
