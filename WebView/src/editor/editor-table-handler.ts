@@ -716,12 +716,9 @@ export class EditorTableHandler {
                 this.dropdownInput.moveSelection(-1);
                 break;
             case 'Enter':
-                keyboardEvent.preventDefault();
-                this.dropdownInput.confirmSelection();
-                break;
             case 'Tab':
                 keyboardEvent.preventDefault();
-                this.dropdownInput.confirmSelection();
+                this.submitDropdownSelection(this.dropdownInput.getSelectedId(), false);
                 break;
             case 'Escape':
                 keyboardEvent.preventDefault();
@@ -1773,16 +1770,16 @@ export class EditorTableHandler {
 
     /**
      * ドロップダウンからの選択を確定
+     * @param moveDown 確定後に下のセルへ移動するか（Enter・Tabでの確定時は移動しない）
      */
-    submitDropdownSelection(id: string): void {
+    submitDropdownSelection(id: string, moveDown: boolean = true): void {
         if (!this.dropdownActive) return;
         const target = getTarget(this.table, this.selection);
         const range = { startRow: target.row, startColumn: target.column, endRow: target.row, endColumn: target.column };
         const changes: CellChange[] = [{ row: target.row, column: target.column, oldValue: target.cellValue, newValue: id }];
         this.applyCellChangesWithHistory(changes, range, this.selection.getCopyRange());
-        this.dropdownActive = false;
         this.hide();
-        moveCellDownWithinSelection(this.table, this.selection);
+        if (moveDown) moveCellDownWithinSelection(this.table, this.selection);
     }
 
     /**
