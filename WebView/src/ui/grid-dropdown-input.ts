@@ -60,6 +60,10 @@ export class GridDropdownInput {
         // ドロップダウンリスト
         this.dropdownElement = document.createElement('div');
         this.dropdownElement.classList.add('grid-dropdown-list');
+        // 親のEditorTableによるホイール転送を止め、リストの標準スクロールを使う。
+        this.dropdownElement.addEventListener('wheel', (event) => {
+            event.stopPropagation();
+        }, { passive: true });
         this.element.appendChild(this.dropdownElement);
 
         this.parentElement = parentElement;
