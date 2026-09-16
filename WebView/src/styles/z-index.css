@@ -46,7 +46,6 @@
     /* ─── 最前面 UI ─── */
     --z-index-date-time-picker: 1000;
     --z-index-filter-dropdown-container: 1000;
-    --z-index-dropdown-quick-view: 1000;
     --z-index-cell-tooltip: 1200;
     --z-index-notification: 1500;
     --z-index-close-confirm-overlay: 2000;

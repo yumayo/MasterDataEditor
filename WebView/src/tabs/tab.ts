@@ -14,7 +14,6 @@ import {ScrollViewportController} from "../editor/scroll-viewport-controller";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {ReverseReferenceEngine} from "../references/reverse-reference-engine";
 import {GridDropdownInput} from "../ui/grid-dropdown-input";
-import {DropdownQuickView} from "../ui/dropdown-quick-view";
 import {FillController} from "../editor/fill-controller";
 import {EditorTableHandler} from "../editor/editor-table-handler";
 import {Sidebar} from "../sidebar/sidebar";
@@ -344,13 +343,6 @@ export class Tab {
      */
     private readonly navigationHistory: NavigationHistory;
 
-    /**
-     * 全 GridDropdownInput が共有するシングルトン DropdownQuickView。
-     * body 直下に1つだけ配置されることで、strict mode の複数マッチ問題を回避する。
-     * Tab コンストラクタで生成し、各 GridDropdownInput へ connectDropdownQuickView() で接続する。
-     */
-    private readonly sharedDropdownQuickView: DropdownQuickView;
-
     /** エラー通知トースト（各子コンポーネントに伝播させる） */
     private readonly notification: NotificationToast;
 
@@ -454,11 +446,6 @@ export class Tab {
         this.commitSelectorDialog = new CommitSelectorDialog();
         this.editorTableFindBar = new EditorTableFindBar();
         this.uiStateStore = uiStateStore;
-
-        // シングルトン DropdownQuickView を生成して Tab・Store を接続する。
-        // body 直下に1つだけ配置されることで、複数の GridDropdownInput が共有できる。
-        this.sharedDropdownQuickView = new DropdownQuickView(this.referenceDataCache);
-        this.sharedDropdownQuickView.connectTab(this, this.store);
 
         // グローバルなリレーションパネルをeditor.elementの右ペインとして配置する
         // editor.appendChildは左ペインへのappendなので、appendRelationsPanel経由で直接追加する
@@ -580,14 +567,6 @@ export class Tab {
 
     markReverseReferenceSchemaIndexComplete(): void {
         this.reverseReferenceEngine.markSchemaIndexComplete();
-    }
-
-    /**
-     * フォームビュー等の EditorTable 外コンポーネントにも、
-     * EditorTable と同じ共有 DropdownQuickView を接続する。
-     */
-    connectDropdownQuickView(dropdownInput: GridDropdownInput): void {
-        dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView);
     }
 
     /** FormPanel 表示/非表示変更時のリスナーを設定する（Toolbar から呼ばれる） */
@@ -4119,8 +4098,6 @@ export class Tab {
             // ドロップダウン入力コンポーネントを作成。
             // 入力フィールド(element)の公開を避けるため EditorTableHandler.createDropdownInput 経由で生成する。
             const dropdownInput = editorTableHandler.createDropdownInput(wrapperElement);
-            // シングルトン DropdownQuickView を接続してクイックビュー機能を有効にする
-            dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView);
 
             // EditorTableHandler に参照データキャッシュとドロップダウンを設定
             editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
@@ -4386,8 +4363,7 @@ export class Tab {
         schemaJson: Record<string, unknown>,
         csvHeader: string[],
         csvRows: string[][],
-        emptyRowCount: number,
-        connectQuickView: boolean
+        emptyRowCount: number
     ): {editorTable: EditorTable; fillController: FillController; areaResizer: AreaResizer; history: History} {
         // CSVオブジェクトを組み立てる
         const csv = new Csv();
@@ -4446,9 +4422,6 @@ export class Tab {
         // ドロップダウンは scrollContainer の overflow:auto にクリッピングされないよう
         // scrollContainer の外側（dropdownContainer）に配置する。
         const dropdownInput = editorTableHandler.createDropdownInput(dropdownContainer);
-        // QV内ミニテーブルは自己破棄ループを防ぐためクイックビューを接続しない。
-        // RelationsPanel 等の通常ミニテーブルのみ接続する。
-        if (connectQuickView) { dropdownInput.connectDropdownQuickView(this.sharedDropdownQuickView); }
         editorTableHandler.setReferenceComponents(this.referenceDataCache, dropdownInput, tableData);
 
         // ミニEditorTableのhandlerは初期状態では非アクティブとする。
@@ -4494,7 +4467,7 @@ export class Tab {
         }
 
         // git差分ハイライト（refreshGitDiffAsync）は呼び出し元が適切なタイミングで呼ぶ。
-        // RelationsPanelはsetStoreRowIndices()後に呼び、DropdownQuickViewはReadOnly専用のため呼ばない。
+        // RelationsPanelはsetStoreRowIndices()後に呼ぶ。
 
         return {editorTable, fillController, areaResizer, history};
     }

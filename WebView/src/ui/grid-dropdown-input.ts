@@ -1,5 +1,4 @@
 import {ReferenceItem} from "../references/reference-data-cache";
-import {DropdownQuickView} from "./dropdown-quick-view";
 
 /**
  * ドロップダウンでの選択完了時のコールバック
@@ -13,20 +12,13 @@ export type DropdownCancelCallback = () => void;
 
 export type DropdownTextProvider = () => string;
 
-export type GridDropdownItem = ReferenceItem & {
-    /** クイックビューで開く行のID。未指定なら id を使用する。 */
-    previewId?: string;
-};
+export type GridDropdownItem = ReferenceItem;
 
 /**
  * 参照列用のドロップダウン付き入力コンポーネント
  *
  * 入力フィールド自体は呼び出し側が所有し、
- * このコンポーネントはドロップダウンリストとクイックビューパネルを管理する。
- *
- * クイックビューは Tab が所有するシングルトン DropdownQuickView を
- * connectDropdownQuickView() で接続することで有効になる。
- * 接続なし（false）の場合はクイックビュー機能が無効になる（差分タブ等で使用）。
+ * このコンポーネントはドロップダウンリストを管理する。
  */
 export class GridDropdownInput {
     readonly element: HTMLElement;
@@ -34,12 +26,6 @@ export class GridDropdownInput {
     private readonly parentElement: HTMLElement;
     private readonly textProvider: DropdownTextProvider | false;
     private dropdownElement: HTMLElement;
-    /** Tab から接続されるシングルトン DropdownQuickView（未接続時は false） */
-    private quickView: DropdownQuickView | false;
-    /** show() で受け取った参照先テーブル名。mouseenter/moveSelection時にQuickViewへ渡す */
-    private referenceTableName: string;
-    /** キーボード操作によるDOM再構築時にmouseenterイベントを抑制するフラグ */
-    private suppressMouseEnterQuickView: boolean;
 
     private items: GridDropdownItem[];
     private filteredItems: GridDropdownItem[];
@@ -60,11 +46,8 @@ export class GridDropdownInput {
         this.filteredItems = [];
         this.selectedIndex = 0;
         this.visible = false;
-        this.referenceTableName = '';
-        this.suppressMouseEnterQuickView = false;
         this.onSelect = onSelect;
         this.onCancel = onCancel;
-        this.quickView = false;
 
         // 入力要素への参照を保持（EditorTable は contenteditable、FormPanel は input/textarea）
         this.inputElement = inputElement;
@@ -84,21 +67,10 @@ export class GridDropdownInput {
     }
 
     /**
-     * Tab が所有するシングルトン DropdownQuickView を接続する。
-     * 接続後はドロップダウンアイテムにホバーしたときクイックビューが表示される。
-     * Tab.createTabState / Tab.createMiniEditorTable から呼ばれる。
-     * diff-tab.ts のように Tab を持たない場面では接続しない（クイックビュー無効）。
-     */
-    connectDropdownQuickView(quickView: DropdownQuickView): void {
-        this.quickView = quickView;
-    }
-
-    /**
      * ドロップダウンを表示する。
      * 入力フィールドの表示は呼び出し側（EditorTableHandler）が行う。
-     * @param referenceTableName 参照先テーブル名（クイックビュー用）
      */
-    show(rect: DOMRect, items: GridDropdownItem[], currentValue: string, referenceTableName: string): void {
+    show(rect: DOMRect, items: GridDropdownItem[], currentValue: string): void {
 
         this.items = items;
         this.visible = true;
@@ -117,11 +89,6 @@ export class GridDropdownInput {
             this.selectedIndex = currentIndex;
         }
 
-        // 参照先テーブル名を保持（mouseenter/moveSelection時にQuickViewへ渡す）
-        this.referenceTableName = referenceTableName;
-        // 表示前にQuickViewをリセット（タイマー・表示・キャッシュをクリア）
-        if (this.quickView !== false) { this.quickView.cleanup(); }
-
         // フィルタを適用（初期表示時は選択を維持）
         this.filterItems('', true);
 
@@ -138,8 +105,6 @@ export class GridDropdownInput {
         this.visible = false;
         this.element.classList.remove('visible');
         this.dropdownElement.innerHTML = '';
-        // クイックビューもクリーンアップ（接続済みの場合のみ）
-        if (this.quickView !== false) { this.quickView.cleanup(); }
     }
 
     /**
@@ -172,7 +137,6 @@ export class GridDropdownInput {
 
     /**
      * 矢印キーで選択を移動する。
-     * キーボード選択時はクイックビューを即時更新する。
      */
     moveSelection(delta: number): void {
         if (this.filteredItems.length === 0) return;
@@ -186,20 +150,7 @@ export class GridDropdownInput {
             this.selectedIndex = 0;
         }
 
-        // DOM再構築時のmouseenter抑制（キーボード操作によるDOM再構築でカーソル下の要素に
-        // mouseenterが発火し、キーボード選択したアイテムのクイックビューを上書きしてしまうのを防ぐ）
-        this.suppressMouseEnterQuickView = true;
         this.renderDropdown();
-        requestAnimationFrame(() => { this.suppressMouseEnterQuickView = false; });
-
-        // キーボード選択時はクイックビューを即時更新（接続済みの場合のみ）
-        if (this.quickView !== false) {
-            const selectedItem = this.filteredItems[this.selectedIndex];
-            const selectedElement = this.dropdownElement.querySelector('.grid-dropdown-item.selected');
-            if (selectedElement instanceof HTMLElement) {
-                this.quickView.showPreview(this.referenceTableName, selectedItem.previewId ?? selectedItem.id, selectedElement, this.dropdownElement);
-            }
-        }
     }
 
     /**
@@ -247,7 +198,6 @@ export class GridDropdownInput {
 
     /**
      * ドロップダウンを描画する。
-     * 各アイテムにマウスオーバー/マウスリーブイベントを設定してクイックビュー連携する。
      */
     private renderDropdown(): void {
         this.dropdownElement.innerHTML = '';
@@ -288,20 +238,6 @@ export class GridDropdownInput {
                 e.preventDefault();
                 this.selectedIndex = i;
                 this.confirmSelection();
-            });
-
-            // マウスオーバー: クイックビュー表示（接続済みかつキーボード操作中でない場合のみ）
-            // suppressMouseEnterQuickView が true の場合はキーボード操作によるDOM再構築なので無視する
-            itemElement.addEventListener('mouseenter', () => {
-                if (this.quickView !== false && !this.suppressMouseEnterQuickView) {
-                    this.quickView.showPreview(this.referenceTableName, item.previewId ?? item.id, itemElement, this.dropdownElement);
-                }
-            });
-
-            // マウスリーブ: 短いディレイ後にクイックビュー非表示（接続済みの場合のみ）
-            // クイックビュー自体へマウスが移動した場合はhideをキャンセルする
-            itemElement.addEventListener('mouseleave', () => {
-                if (this.quickView !== false) { this.quickView.hidePreviewWithDelay(); }
             });
 
             this.dropdownElement.appendChild(itemElement);

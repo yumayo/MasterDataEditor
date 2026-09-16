@@ -89,7 +89,6 @@ interface RowReferenceSummary {
 }
 
 interface ReferenceFieldDropdownData {
-    tableName: string;
     items: GridDropdownItem[];
 }
 
@@ -177,7 +176,6 @@ export class FormPanel {
             () => { this.activeReferenceField = null; },
             () => this.activeReferenceField?.input.value ?? '',
         );
-        this.tab.connectDropdownQuickView(this.referenceDropdown);
         content.addEventListener('scroll', () => {
             if (this.referenceDropdown.isVisible()) this.hideReferenceDropdown();
         });
@@ -690,7 +688,7 @@ export class FormPanel {
         }
 
         const rect = input.getBoundingClientRect();
-        this.referenceDropdown.show(rect, dropdownData.items, input.value, dropdownData.tableName);
+        this.referenceDropdown.show(rect, dropdownData.items, input.value);
         if (filterByInput) this.referenceDropdown.onInputChanged(input.value);
     }
 
@@ -779,7 +777,6 @@ export class FormPanel {
             ]);
             if (requestId !== this.currentRequestId) return null;
             return {
-                tableName: expr.tableName,
                 items: await this.buildReferenceFieldDropdownItemsAsync(expr.tableName, expr.columnName, targetData.header, targetData.rows, targetSchema),
             };
         }
@@ -787,7 +784,6 @@ export class FormPanel {
             const resolved = await this.resolveDynamicReferenceTargetAsync(expr, data, requestId);
             if (resolved === null || requestId !== this.currentRequestId) return null;
             return {
-                tableName: resolved.tableName,
                 items: await this.buildReferenceFieldDropdownItemsAsync(resolved.tableName, resolved.columnName, resolved.header, resolved.rows, resolved.schema),
             };
         }
@@ -997,14 +993,9 @@ export class FormPanel {
         const valueColIdx = header.indexOf(referenceColumnName);
         if (valueColIdx === -1) return [];
         const pkColumnName = extractFirstPrimaryKeyColumn(schema);
-        const pkColIdx = header.indexOf(pkColumnName);
         if (referenceColumnName === pkColumnName) {
             const referenceData = await this.referenceDataCache.get(tableName);
-            return referenceData.items.map(item => ({
-                id: item.id,
-                displayText: item.displayText,
-                previewId: item.id,
-            }));
+            return referenceData.items;
         }
         const displayColIdx = this.resolveReferenceDisplayColumnIndex(header, pkColumnName);
         const result: GridDropdownItem[] = [];
@@ -1015,11 +1006,9 @@ export class FormPanel {
             seenValues.add(value);
             const displayValue = displayColIdx !== -1 ? (row[displayColIdx] ?? '') : '';
             const displayText = displayValue !== '' ? displayValue : value;
-            const previewId = pkColIdx !== -1 ? (row[pkColIdx] ?? '') : value;
             result.push({
                 id: value,
                 displayText,
-                previewId,
             });
         }
         return result;

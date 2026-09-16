@@ -293,8 +293,6 @@ export class EditorTableHandler {
     /**
      * GridDropdownInput を生成して返す。
      * element の public 露出を避けるため、このメソッド経由で生成する。
-     * DropdownQuickView は呼び出し元（Tab）が dropdownInput.connectDropdownQuickView() で後から接続する。
-     * diff-tab.ts のように Tab を持たない場面では接続しないことでクイックビュー無効になる。
      */
     createDropdownInput(container: HTMLElement): GridDropdownInput {
         return new GridDropdownInput(
@@ -1762,8 +1760,8 @@ export class EditorTableHandler {
             this.visible = true;
             this.dropdownActive = true;
 
-            // ドロップダウンリストを表示（参照先テーブル名をクイックビュー用に渡す）
-            this.dropdownInput.show(rect, refData.items, initialValue, resolvedReference.tableName);
+            // ドロップダウンリストを表示
+            this.dropdownInput.show(rect, refData.items, initialValue);
 
             return true;
         } catch (e) {
