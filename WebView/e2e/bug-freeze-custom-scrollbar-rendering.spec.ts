@@ -2,7 +2,7 @@ import { test, expect } from './fixtures/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 import type { Page } from '@playwright/test';
 
-function createPerformanceGroupFileSystem(): MockFileSystem {
+function createPerformanceGroupFileSystem(frozenRowCount: number): MockFileSystem {
     const rows: string[] = ['id,group_id,label,score,rank,export_begin_date,export_end_date'];
     const ranks = ['S', 'A', 'B', 'C', 'D'];
     for (let i = 1; i <= 1000; i++) {
@@ -30,7 +30,7 @@ function createPerformanceGroupFileSystem(): MockFileSystem {
                 { key: 6, name: 'export_end_date', type: 'datetime', comment: '削除予定日', width: 175 },
             ],
             primary_key: ['id'],
-            frozenRowCount: 5,
+            frozenRowCount,
             frozenColumnCount: 2,
         }),
         'data/performance_group.csv': rows.join('\n'),
@@ -135,7 +135,7 @@ async function readQuadrantRowMetrics(page: Page): Promise<{
 
 test('固定2列5行で横スクロールバーを左へ引っ張っても本文列が固定列の下へ残らない', async ({ page }) => {
     await page.setViewportSize({ width: 1160, height: 580 });
-    await installMockApiAsync(page, createPerformanceGroupFileSystem());
+    await installMockApiAsync(page, createPerformanceGroupFileSystem(5));
     await page.goto('/');
 
     await page.locator('#explorer .explorer-file').getByText('performance_group', { exact: true }).click();
@@ -181,7 +181,7 @@ test('固定2列5行で横スクロールバーを左へ引っ張っても本文
 
 test('横スクロールバーを押している間と離した後で固定行列の列位置が一致する', async ({ page }) => {
     await page.setViewportSize({ width: 1160, height: 580 });
-    await installMockApiAsync(page, createPerformanceGroupFileSystem());
+    await installMockApiAsync(page, createPerformanceGroupFileSystem(5));
     await page.goto('/');
 
     await page.locator('#explorer .explorer-file').getByText('performance_group', { exact: true }).click();
@@ -233,7 +233,7 @@ test('横スクロールバーを押している間と離した後で固定行�
 
 test('縦スクロールバーを押している間と離した後で固定列と本文行の位置が一致する', async ({ page }) => {
     await page.setViewportSize({ width: 1160, height: 580 });
-    await installMockApiAsync(page, createPerformanceGroupFileSystem());
+    await installMockApiAsync(page, createPerformanceGroupFileSystem(5));
     await page.goto('/');
 
     await page.locator('#explorer .explorer-file').getByText('performance_group', { exact: true }).click();
@@ -295,3 +295,146 @@ test('縦スクロールバーを押している間と離した後で固定列�
     expect(Math.abs(releasedMetrics.bodyLabelLeft - releasedMetrics.headerLabelLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(releasedMetrics.frozenRowTop - draggingMetrics.frozenRowTop)).toBeLessThanOrEqual(1);
 });
+
+interface FrozenColumnFirstFrameMetrics {
+    scrollTop: number;
+    previousScrollTop: number;
+    rowCount: number;
+    insertedRowCount: number;
+    removedRowCount: number;
+    reusedRowCount: number;
+    lineGroupCount: number;
+    horizontalLineCount: number;
+    verticalLineCount: number;
+    cellCount: number;
+    rowsWithoutAlignedHorizontalLine: number[];
+    rowsWithoutAlignedVerticalLines: number[];
+    rowsMisalignedWithBody: number[];
+}
+
+type FrozenColumnFrameWindow = Window & typeof globalThis & {
+    frozenColumnFirstFrame: Promise<FrozenColumnFirstFrameMetrics>;
+};
+
+for (const frozenRowCount of [0, 5]) {
+    for (const direction of [{ name: '下', sign: 1 }, { name: '上', sign: -1 }]) {
+        for (const updateMode of ['差分更新', '全再生成']) {
+            test(`固定2列${frozenRowCount}行で縦バーを${direction.name}へ高速ドラッグした最初の描画フレームから罫線が揃う（${updateMode}）`, async ({ page }) => {
+                await page.setViewportSize({ width: 1160, height: 580 });
+                await installMockApiAsync(page, createPerformanceGroupFileSystem(frozenRowCount));
+                await page.goto('/');
+                await page.locator('#explorer .explorer-file').getByText('performance_group', { exact: true }).click();
+                const table = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="performance_group"] .editor-table');
+                await expect(table).toBeVisible();
+
+                // 準備時だけ描画完了を待つ。ドラッグ後の測定では罫線が復活する次フレームを待たない。
+                await page.evaluate(async () => {
+                    const editor = (window as unknown as {
+                        editor: { activeEditorTable: {
+                            getScrollMetrics(): { scrollHeight: number; clientHeight: number };
+                            restoreScrollPosition(scrollTop: number, scrollLeft: number): void;
+                        } | false };
+                    }).editor;
+                    if (editor.activeEditorTable === false) throw new Error('activeEditorTable が見つかりません');
+                    const metrics = editor.activeEditorTable.getScrollMetrics();
+                    editor.activeEditorTable.restoreScrollPosition((metrics.scrollHeight - metrics.clientHeight) / 2, 180);
+                    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                });
+
+                const thumb = table.locator('.editor-table-logical-vertical-scrollbar-thumb');
+                const track = table.locator('.editor-table-logical-vertical-scrollbar');
+                const thumbBox = await thumb.boundingBox();
+                const trackBox = await track.boundingBox();
+                if (thumbBox === null || trackBox === null) throw new Error('縦スクロールバーの座標が取得できません');
+                const x = thumbBox.x + thumbBox.width / 2;
+                const y = thumbBox.y + thumbBox.height / 2;
+                await page.mouse.move(x, y);
+                await page.mouse.down();
+
+                // アプリは pointerdown で window の pointermove リスナーを登録する。
+                // その後に測定リスナーを登録し、同じ pointermove が予約した更新 rAF の直後に測る。
+                // rAF は差し替えず、行 DOM を更新した最初のフレームの状態を保存する。
+                const scrollDeltaRatio = await page.evaluate(({ sign, incremental }) => {
+                    const root = document.querySelector<HTMLElement>('.editor-left-pane .tab-wrapper[data-tab-name="performance_group"] .editor-table');
+                    const layer = root?.querySelector<HTMLElement>('.editor-table-detached-row-header-layer') ?? null;
+                    const viewport = root?.querySelector<HTMLElement>('.editor-table-main-viewport') ?? null;
+                    if (root === null || layer === null || viewport === null) throw new Error('固定列の表示レイヤーが見つかりません');
+                    const previousRows = new Set(layer.querySelectorAll<HTMLElement>(':scope > .editor-table-detached-row'));
+                    const firstRow = layer.querySelector<HTMLElement>(':scope > .editor-table-detached-row');
+                    if (firstRow === null) throw new Error('ドラッグ前の固定列行が見つかりません');
+                    if (layer.querySelector(':scope > .editor-table-grid-line-group') === null) throw new Error('ドラッグ前の固定列罫線が見つかりません');
+                    const previousScrollTop = viewport.scrollTop;
+                    const maxScrollTop = viewport.scrollHeight - viewport.clientHeight;
+                    const scrollDelta = incremental ? firstRow.getBoundingClientRect().height * 5 : maxScrollTop / 4;
+                    (window as FrozenColumnFrameWindow).frozenColumnFirstFrame = new Promise<FrozenColumnFirstFrameMetrics>((resolve, reject) => {
+                        window.addEventListener('pointermove', () => {
+                            requestAnimationFrame(() => {
+                                try {
+                                    const rows = Array.from(layer.querySelectorAll<HTMLElement>(':scope > .editor-table-detached-row'));
+                                    const horizontalLines = Array.from(layer.querySelectorAll<HTMLElement>('.editor-table-grid-line-horizontal'), line => line.getBoundingClientRect());
+                                    const verticalLines = Array.from(layer.querySelectorAll<HTMLElement>('.editor-table-grid-line-vertical'), line => line.getBoundingClientRect());
+                                    const rowsWithoutAlignedHorizontalLine: number[] = [];
+                                    const rowsWithoutAlignedVerticalLines: number[] = [];
+                                    const rowsMisalignedWithBody: number[] = [];
+                                    for (const row of rows) {
+                                        const rowIndex = Number(row.dataset.rowIndex);
+                                        const cells = Array.from(row.querySelectorAll<HTMLElement>(':scope > .editor-table-cell'));
+                                        const rowRect = row.getBoundingClientRect();
+                                        const firstCell = cells[0].getBoundingClientRect();
+                                        const lastCell = cells[cells.length - 1].getBoundingClientRect();
+                                        if (!horizontalLines.some(line => Math.abs(line.bottom - rowRect.bottom) <= 1 && Math.abs(line.left - firstCell.left) <= 1 && Math.abs(line.right - lastCell.right) <= 1)) {
+                                            rowsWithoutAlignedHorizontalLine.push(rowIndex);
+                                        }
+                                        if (cells.some(cell => !verticalLines.some(line => Math.abs(line.right - cell.getBoundingClientRect().right) <= 1 && line.top <= rowRect.top + 1 && line.bottom >= rowRect.bottom - 1))) {
+                                            rowsWithoutAlignedVerticalLines.push(rowIndex);
+                                        }
+                                        const bodyCell = root.querySelector<HTMLElement>(`.editor-table-grid .editor-table-row[data-row-index="${rowIndex}"] .editor-table-cell[data-col="2"]`);
+                                        if (bodyCell === null) throw new Error(`本文セルが見つかりません: rowIndex=${rowIndex}`);
+                                        const bodyRect = bodyCell.getBoundingClientRect();
+                                        if (Math.abs(bodyRect.top - rowRect.top) > 1 || Math.abs(bodyRect.bottom - rowRect.bottom) > 1) rowsMisalignedWithBody.push(rowIndex);
+                                    }
+                                    resolve({
+                                        scrollTop: viewport.scrollTop,
+                                        previousScrollTop,
+                                        rowCount: rows.length,
+                                        insertedRowCount: rows.filter(row => !previousRows.has(row)).length,
+                                        removedRowCount: Array.from(previousRows).filter(row => !row.isConnected).length,
+                                        reusedRowCount: rows.filter(row => previousRows.has(row)).length,
+                                        lineGroupCount: layer.querySelectorAll(':scope > .editor-table-grid-line-group').length,
+                                        horizontalLineCount: horizontalLines.length,
+                                        verticalLineCount: verticalLines.length,
+                                        cellCount: firstRow.childElementCount,
+                                        rowsWithoutAlignedHorizontalLine,
+                                        rowsWithoutAlignedVerticalLines,
+                                        rowsMisalignedWithBody,
+                                    });
+                                } catch (error) {
+                                    reject(error);
+                                }
+                            });
+                        }, { once: true });
+                    });
+                    return sign * scrollDelta / maxScrollTop;
+                }, { sign: direction.sign, incremental: updateMode === '差分更新' });
+
+                // 1 回の実 pointermove でジャンプし、pointerup による最終同期より前に採取する。
+                await page.mouse.move(x, y + scrollDeltaRatio * (trackBox.height - thumbBox.height));
+                const metrics = await page.evaluate(() => (window as FrozenColumnFrameWindow).frozenColumnFirstFrame);
+                await page.mouse.up();
+
+                expect((metrics.scrollTop - metrics.previousScrollTop) * direction.sign).toBeGreaterThan(0);
+                expect(metrics.rowCount).toBeGreaterThan(0);
+                expect(metrics.insertedRowCount, '測定フレームで新しい行が表示されている').toBeGreaterThan(0);
+                expect(metrics.removedRowCount, '測定フレームで古い行が除去されている').toBeGreaterThan(0);
+                if (updateMode === '差分更新') expect(metrics.reusedRowCount).toBeGreaterThan(0);
+                else expect(metrics.reusedRowCount).toBe(0);
+                expect(metrics.lineGroupCount, '行 DOM を更新した最初のフレームから固定列の罫線が必要').toBe(1);
+                expect(metrics.horizontalLineCount).toBe(metrics.rowCount);
+                expect(metrics.verticalLineCount).toBe(metrics.cellCount);
+                expect(metrics.rowsWithoutAlignedHorizontalLine, '横罫線が各行の下端と固定列の左右端に揃う').toEqual([]);
+                expect(metrics.rowsWithoutAlignedVerticalLines, '縦罫線が各セルの右端に揃い、表示行全体を覆う').toEqual([]);
+                expect(metrics.rowsMisalignedWithBody, '固定列と本文セルの行位置が揃う').toEqual([]);
+            });
+        }
+    }
+}

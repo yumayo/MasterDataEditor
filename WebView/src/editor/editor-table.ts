@@ -560,13 +560,15 @@ export class EditorTable {
     syncDetachedHeaderScrollOffsetWithPositions(scrollTop: number, scrollLeft: number): void { this.layout.syncDetachedHeaderScrollOffsetWithPositions(scrollTop, scrollLeft); }
     private syncScrollBoundVisuals(): void {
         this.layout.syncScrollBoundVisuals();
-        this.scheduleGridLinesRefresh();
+        // バードラッグ自体が rAF 内で動くため、行入れ替えで消えた罫線も同じフレームで確定する。
+        this.refreshGridLines();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
     syncScrollBoundVisualsWithPositions(scrollTop: number, scrollLeft: number): void {
         this.layout.syncScrollBoundVisualsWithPositions(scrollTop, scrollLeft);
-        this.scheduleGridLinesRefresh();
+        // 仮想スクロールでも全レイヤーの座標同期後に罫線を更新し、次フレームへの描画遅延を防ぐ。
+        this.refreshGridLines();
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
     }
@@ -591,7 +593,14 @@ export class EditorTable {
     getQuadrantViewportRowTopPx(logicalRowIndex: number): number { return this.layout.getQuadrantViewportRowTopPx(logicalRowIndex); }
     applyFreezeVisualStateToRenderedRows(): void { this.layout.applyFreezeVisualStateToRenderedRows(); }
     syncFreezeTransforms(scrollTop: number, scrollLeft: number): void { this.layout.syncFreezeTransforms(scrollTop, scrollLeft); }
-    refreshGridLines(): void { this.gridLines.refresh(); }
+    refreshGridLines(): void {
+        // 同期描画で予約分も確定するため、次フレームの重複再生成を取り消す。
+        if (this.gridLinesRefreshFrame !== false) {
+            cancelAnimationFrame(this.gridLinesRefreshFrame);
+            this.gridLinesRefreshFrame = false;
+        }
+        this.gridLines.refresh();
+    }
     private scheduleGridLinesRefresh(): void {
         if (this.gridLinesRefreshFrame !== false) return;
         this.gridLinesRefreshFrame = requestAnimationFrame(() => {
