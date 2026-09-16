@@ -324,9 +324,18 @@ test.describe('ペインスタックナビゲーション', () => {
 		const explorer = page.locator('#explorer');
 		await explorer.getByText('area', { exact: true }).click();
 
-		// 既存のペインスタック表示が維持されること
+		// 新しいタブは初期の2ペインで開き、元タブの深いスタックを引き継がない。
+		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+		const areaTable = page.locator('.editor-left-slot .tab-wrapper[data-tab-name="area"] .editor-table');
+		await expect(areaTable).toBeVisible();
+		await expect(areaTable.locator('.editor-table-detached-column-header-layer .editor-table-column-header').filter({ hasText: 'world_id' })).toBeVisible();
+
+		// 元タブに戻ると、そのタブ固有のスタックと表示位置が復元される。
+		await page.locator('.tab-button').filter({ has: page.locator('.tab-button-name', { hasText: /^world$/ }) }).click();
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');
+		await expect(page.locator('.editor-left-slot .relations-panel')).toBeVisible();
+		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 	});
 
 	// ---------------------------------------------------------------------------

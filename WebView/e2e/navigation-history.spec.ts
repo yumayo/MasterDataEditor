@@ -461,9 +461,12 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 		// paneStack深化を確認する（ナビゲーションバーが表示される）
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
-		// goBack 後もアプリ内のペインスタック表示が維持されること
+		// goBack で定義ジャンプ前の深さへ戻り、左スロットに元のメインテーブルが表示される。
 		await page.goBack();
-		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+		await expect(mainTable).toBeVisible();
+		await expect(page.locator('.editor-left-slot .tab-wrapper[data-tab-name="world"]')).toBeVisible();
+		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 	});
 
 	// ---------------------------------------------------------------------------
@@ -485,13 +488,19 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 		await firstCell.click({ modifiers: ['Control'] });
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
-		// goBack 後もアプリ内のペインスタック表示が維持されること
+		// goBack で定義ジャンプ前の深さへ戻り、左スロットに元のメインテーブルが表示される。
 		await page.goBack();
-		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+		await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+		await expect(mainTable).toBeVisible();
+		await expect(page.locator('.editor-left-slot .tab-wrapper[data-tab-name="world"]')).toBeVisible();
+		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 
-		// goForward で再びpaneStackが深化すること
+		// goForward で破棄されたペインが再構築され、左右に関連テーブルが表示される。
 		await page.goForward();
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
+		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');
+		await expect(page.locator('.editor-left-slot .relations-panel')).toBeVisible();
+		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
 	});
 });
 

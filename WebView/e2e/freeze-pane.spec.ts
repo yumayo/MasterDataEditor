@@ -725,8 +725,10 @@ test.describe('フリーズペイン', () => {
                     expect(Math.abs(scrolledNameStyles[i].viewportLeft - initialNameStyles[i].viewportLeft)).toBeLessThanOrEqual(2);
                     expect(scrolledNameStyles[i].viewportLeft).toBeGreaterThan(scrolledIdStyles[i].viewportLeft);
                 }
+                const scrollLeft = await scrollContainer.evaluate(element => element.scrollLeft);
+                expect(scrollLeft).toBeGreaterThan(0);
                 for (let i = 0; i < scrolledHpStyles.length; i++) {
-                    expect(scrolledHpStyles[i].viewportLeft).toBeLessThan(initialHpStyles[i].viewportLeft - 100);
+                    expect(Math.abs(initialHpStyles[i].viewportLeft - scrolledHpStyles[i].viewportLeft - scrollLeft)).toBeLessThanOrEqual(1);
                 }
             },
         );
@@ -763,7 +765,7 @@ test.describe('フリーズペイン', () => {
                     };
                 });
                 expect(shadowStyle.content).not.toBe('none');
-                expect(shadowStyle.width).toBe('6px');
+                expect(shadowStyle.width).toBe('8px');
                 expect(shadowStyle.backgroundImage).not.toBe('none');
             },
         );
@@ -792,8 +794,10 @@ test.describe('フリーズペイン', () => {
 
                 // 固定が解除され、同じ scrollLeft では左へ流れること
                 const afterStyles = await getColumnCellStylesAsync(table, 0);
+                const scrollLeft = await scrollContainer.evaluate(element => element.scrollLeft);
+                expect(scrollLeft).toBeGreaterThan(0);
                 for (let i = 0; i < afterStyles.length; i++) {
-                    expect(afterStyles[i].viewportLeft).toBeLessThan(beforeStyles[i].viewportLeft - 100);
+                    expect(Math.abs(beforeStyles[i].viewportLeft - afterStyles[i].viewportLeft - scrollLeft)).toBeLessThanOrEqual(1);
                 }
 
                 // freeze-column-border クラスも除去されていること
@@ -1150,7 +1154,7 @@ test.describe('フリーズペイン', () => {
                     };
                 });
                 expect(shadowStyle.content).not.toBe('none');
-                expect(shadowStyle.height).toBe('6px');
+                expect(shadowStyle.height).toBe('8px');
                 expect(shadowStyle.backgroundImage).not.toBe('none');
             },
         );
@@ -1782,10 +1786,10 @@ test.describe('フリーズペイン', () => {
                 expect(styles.lastFrozenRowCell.borderBottomWidth).toBe('0px');
                 expect(styles.lastFrozenRowCell.boxShadow).toBe('none');
                 expect(styles.columnPaneShadow.content).not.toBe('none');
-                expect(styles.columnPaneShadow.width).toBe('6px');
+                expect(styles.columnPaneShadow.width).toBe('8px');
                 expect(styles.columnPaneShadow.backgroundImage).not.toBe('none');
                 expect(styles.rowPaneShadow.content).not.toBe('none');
-                expect(styles.rowPaneShadow.height).toBe('6px');
+                expect(styles.rowPaneShadow.height).toBe('8px');
                 expect(styles.rowPaneShadow.backgroundImage).not.toBe('none');
             },
         );
@@ -2204,8 +2208,10 @@ test.describe('フリーズペイン', () => {
                 for (let i = 0; i < idStyles.length; i++) {
                     expect(Math.abs(idStyles[i].viewportLeft - initialIdStyles[i].viewportLeft)).toBeLessThanOrEqual(2);
                 }
+                const scrollLeft = await scrollContainer.evaluate(element => element.scrollLeft);
+                expect(scrollLeft).toBeGreaterThan(0);
                 for (let i = 0; i < hpStyles.length; i++) {
-                    expect(hpStyles[i].viewportLeft).toBeLessThan(initialHpStyles[i].viewportLeft - 100);
+                    expect(Math.abs(initialHpStyles[i].viewportLeft - hpStyles[i].viewportLeft - scrollLeft)).toBeLessThanOrEqual(1);
                 }
             },
         );

@@ -18,7 +18,7 @@ interface PngImage {
 }
 
 interface ColorRun {
-    kind: 'selected' | 'background' | 'other';
+    kind: 'selected' | 'background' | 'border' | 'other';
     start: number;
     end: number;
 }
@@ -111,6 +111,8 @@ function isNearColor(actual: Rgb, expected: Rgb): boolean {
 function classifyColor(pixel: Rgb): ColorRun['kind'] {
     if (isNearColor(pixel, [23, 62, 95])) return 'selected';
     if (isNearColor(pixel, [33, 37, 43])) return 'background';
+    // 独立した罫線レイヤーの rgba(128,128,128,.35) が選択色に重なる。
+    if (isNearColor(pixel, [60, 85, 107])) return 'border';
     return 'other';
 }
 
@@ -259,14 +261,18 @@ async function assertRowHeaderPixelsAsync(
             run => run.start > selectedRuns[i].end && run.end < selectedRuns[i + 1].start,
         );
         expect(separatorRuns).toHaveLength(1);
-        expect(separatorRuns[0].kind).toBe('background');
-        expect(separatorRuns[0].end - separatorRuns[0].start + 1).toBeLessThanOrEqual(Math.ceil(devicePixelRatio));
+        expect(separatorRuns[0].kind).toBe('border');
+        expect(separatorRuns[0].end - separatorRuns[0].start + 1).toBe(1);
     }
+
+    const belowSelectionY = Math.ceil((lastRect.top + lastRect.height) * devicePixelRatio);
+    expect(classifyColor(rgbAt(image, sampleX, belowSelectionY))).not.toBe('selected');
 
     for (const rect of rects) {
         const edgeX = Math.ceil((rect.left + rect.width) * devicePixelRatio) - 1;
         const edgeY = Math.floor((rect.top + rect.height * 0.35) * devicePixelRatio);
-        expect(classifyColor(rgbAt(image, edgeX, edgeY))).toBe('background');
+        expect(classifyColor(rgbAt(image, edgeX, edgeY))).toBe('border');
+        expect(classifyColor(rgbAt(image, edgeX - 1, edgeY))).toBe('selected');
     }
 }
 
@@ -294,8 +300,9 @@ async function assertColumnHeaderPixelsAsync(
             Math.max(0, boundaryX - Math.ceil(3 * devicePixelRatio)),
             Math.min(image.width - 1, boundaryX + Math.ceil(3 * devicePixelRatio)),
         );
-        const separatorRuns = runs.filter(run => run.kind === 'background');
-        expect(separatorRuns.some(run => run.end - run.start + 1 <= Math.ceil(devicePixelRatio))).toBe(true);
+        const separatorRuns = runs.filter(run => run.kind === 'border');
+        expect(separatorRuns).toHaveLength(1);
+        expect(separatorRuns[0].end - separatorRuns[0].start + 1).toBe(1);
     }
 
     for (const rect of rects) {
@@ -304,14 +311,17 @@ async function assertColumnHeaderPixelsAsync(
         expect(visibleRight).toBeGreaterThan(visibleLeft);
         const bottomY = Math.ceil((rect.top + rect.height) * devicePixelRatio) - 1;
         const bottomX = Math.floor((visibleLeft + (visibleRight - visibleLeft) * 0.85) * devicePixelRatio);
-        expect(classifyColor(rgbAt(image, bottomX, bottomY))).toBe('background');
+        expect(classifyColor(rgbAt(image, bottomX, bottomY))).toBe('border');
+        expect(classifyColor(rgbAt(image, bottomX, bottomY - 1))).toBe('selected');
     }
 
     const lastRect = rects[rects.length - 1];
     const lastRight = lastRect.left + lastRect.width;
     if (lastRight <= clipRight) {
         const rightX = Math.ceil(lastRight * devicePixelRatio) - 1;
-        expect(classifyColor(rgbAt(image, rightX, sampleY))).toBe('background');
+        expect(classifyColor(rgbAt(image, rightX, sampleY))).toBe('border');
+        expect(classifyColor(rgbAt(image, rightX - 1, sampleY))).toBe('selected');
+        if (rightX + 1 < image.width) expect(classifyColor(rgbAt(image, rightX + 1, sampleY))).not.toBe('selected');
     }
 }
 

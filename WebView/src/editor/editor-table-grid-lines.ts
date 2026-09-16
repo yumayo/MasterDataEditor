@@ -41,7 +41,6 @@ export class EditorTableGridLines {
     }
 
     refresh(): void {
-        this.clearDetachedLineGroups();
         if (this.usesInternalMainViewport) {
             this.refreshInternalMainLayer();
         } else {
@@ -84,15 +83,24 @@ export class EditorTableGridLines {
     }
 
     private refreshDetachedLineGroup(layer: HTMLElement): void {
+        const existingGroup = Array.from(layer.children).find(child => child.classList.contains('editor-table-grid-line-group'));
         const rows = this.getDetachedRows(layer);
-        if (rows.length === 0) return;
+        if (rows.length === 0) {
+            if (existingGroup instanceof HTMLElement) existingGroup.remove();
+            return;
+        }
         const group = document.createElement('div');
         group.classList.add('editor-table-grid-line-group');
         const fragment = document.createDocumentFragment();
         const pixelMetrics = this.getPixelMetrics(layer);
         this.appendGridLines(fragment, rows, layer, 0, 0, 0, pixelMetrics);
         group.appendChild(fragment);
-        layer.appendChild(group);
+        // 静的ヘッダーはスクロールしても罫線の形状が変わらないため、同一のDOMを保持する。
+        if (existingGroup instanceof HTMLElement) {
+            if (!existingGroup.isEqualNode(group)) existingGroup.replaceChildren(...Array.from(group.childNodes));
+        } else {
+            layer.appendChild(group);
+        }
     }
 
     private appendGridLines(
@@ -205,10 +213,14 @@ export class EditorTableGridLines {
         if (clipHeight > 0 && (snappedTop + snappedHeight < 0 || snappedTop > clipHeight)) return;
         const line = document.createElement('div');
         line.classList.add('editor-table-grid-line', className);
-        line.style.left = `${snappedLeft}px`;
-        line.style.top = `${snappedTop}px`;
-        line.style.width = `${snappedWidth}px`;
-        line.style.height = `${snappedHeight}px`;
+        // fractional な background の矩形は Chromium が CSS px 単位で丸める。
+        // 1 CSS px の線を transform で配置・縮小し、DPIに依らず1物理pxを描画する。
+        line.style.left = '0px';
+        line.style.top = '0px';
+        line.style.width = `${isVerticalLine ? 1 : snappedWidth}px`;
+        line.style.height = `${isVerticalLine ? snappedHeight : 1}px`;
+        line.style.transformOrigin = 'top left';
+        line.style.transform = `translate(${snappedLeft}px, ${snappedTop}px) ${isVerticalLine ? 'scaleX' : 'scaleY'}(${pixelMetrics.hairlineWidth})`;
         fragment.appendChild(line);
     }
 
@@ -242,21 +254,6 @@ export class EditorTableGridLines {
             rows.push(child);
         }
         return rows;
-    }
-
-    private clearDetachedLineGroups(): void {
-        const layers: HTMLElement[] = [
-            this.detachedCornerLayer,
-            this.detachedColumnHeaderLayer,
-            this.detachedFrozenCornerDataLayer,
-            this.detachedFrozenRowDataLayer,
-            this.detachedRowHeaderLayer,
-        ];
-        for (const layer of layers) {
-            for (const child of Array.from(layer.children)) {
-                if (child instanceof HTMLElement && child.classList.contains('editor-table-grid-line-group')) child.remove();
-            }
-        }
     }
 
     private getCellWidth(cell: HTMLElement): number {

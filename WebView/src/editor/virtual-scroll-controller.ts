@@ -418,6 +418,8 @@ export class VirtualScrollController {
     forceRecalculate(): void {
         if (!this.enabled) return;
         this.recalculate();
+        // 行の挿入・置換では描画範囲や行数が同じでもDOM自体が変わるため、全表示行の座標を確定する。
+        this.positionExistingRows();
     }
 
     /**

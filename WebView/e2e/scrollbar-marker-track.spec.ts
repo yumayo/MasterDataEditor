@@ -323,13 +323,16 @@ base.describe('ScrollbarMarkerTrack', () => {
                 if (verticalScrollbar === null) throw new Error('カスタム縦スクロールバーが見つかりません');
                 const canvasRect = canvasElement.getBoundingClientRect();
                 const viewportRect = viewport.getBoundingClientRect();
+                const scrollbarRect = verticalScrollbar.getBoundingClientRect();
                 const canvasStyle = window.getComputedStyle(canvasElement);
                 const verticalScrollbarStyle = window.getComputedStyle(verticalScrollbar);
                 return {
                     parentIsViewportHost: canvasElement.parentElement === viewport.parentElement,
                     topDiff: Math.abs(canvasRect.top - viewportRect.top),
-                    rightDiff: Math.abs(canvasRect.right - viewportRect.right),
-                    heightDiff: Math.abs(canvasRect.height - viewport.clientHeight),
+                    rightDiff: Math.abs(canvasRect.right - scrollbarRect.right),
+                    heightDiff: Math.abs(canvasRect.height - scrollbarRect.height),
+                    canvasLeft: canvasRect.left,
+                    viewportRight: viewportRect.right,
                     canvasTop: canvasRect.top,
                     viewportTop: viewportRect.top,
                     canvasBottom: canvasRect.bottom,
@@ -343,6 +346,7 @@ base.describe('ScrollbarMarkerTrack', () => {
             expect(placement.topDiff).toBeLessThanOrEqual(1);
             expect(placement.rightDiff).toBeLessThanOrEqual(1);
             expect(placement.heightDiff).toBeLessThanOrEqual(1);
+            expect(placement.canvasLeft).toBeGreaterThanOrEqual(placement.viewportRight - 1);
             expect(placement.canvasTop).toBeGreaterThanOrEqual(placement.viewportTop - 1);
             expect(placement.canvasBottom).toBeLessThanOrEqual(placement.viewportBottom + 1);
             expect(placement.canvasZIndex).toBeGreaterThan(placement.verticalScrollbarZIndex);

@@ -107,8 +107,8 @@ test.describe('差分タブの重複防止と DOM 除去', () => {
     // 検証手順:
     //   1. ソース管理パネルを開く
     //   2. test テーブルの差分タブを1度目に開く → タブボタン「差分: test」が1つ表示される
-    //   3. ソース管理パネルアイコンをもう一度クリックしてパネルを表示したまま
-    //      同じ test テーブルを再クリックする（差分タブが開いたままの状態で openDiffTab を再呼び出し）
+    //   3. 表示中のソース管理パネルで同じ test テーブルを再クリックする
+    //      （差分タブが開いたままの状態で openDiffTab を再呼び出し）
     //   4. 「差分: test」というタブボタンが DOM 上に1つしか存在しないことを確認する
     //   5. 差分タブの .diff-tab 要素が visible であること（タブが存在し続けている）を確認する
     //   6. タブボタンが active クラスを持っていること（アクティブ化されている）を確認する
@@ -142,9 +142,8 @@ test.describe('差分タブの重複防止と DOM 除去', () => {
             const diffTab = page.locator('.diff-tab');
             await expect(diffTab).toBeVisible();
 
-            // ソース管理パネルアイコンをもう一度クリックして CHANGES リストを再表示する
-            // （差分タブが開いたままの状態でパネルを切り替え、openDiffTab の再呼び出し条件を整える）
-            await page.locator('[data-panel="sourceControl"]').click();
+            // 差分を開いても CHANGES は表示されたままなので、同じ一覧から再度開く。
+            // アクティブなアイコンの再クリックはサイドバーを閉じる操作になる。
             await expect(changesSection).toBeVisible();
 
             // 2度目: 同じ test テーブルをクリックする

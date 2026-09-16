@@ -168,17 +168,19 @@ test('右下ビューポートの横スクロールバー領域をeditor-table�
         const cornerRect = scrollbarCorner.getBoundingClientRect();
         const reservedHeight = horizontalRect.height;
         const hit = document.elementFromPoint(
-            viewportRect.left + (viewportRect.width / 2),
-            viewportRect.bottom - (reservedHeight / 2)
+            horizontalRect.left + (horizontalRect.width / 2),
+            horizontalRect.top + (horizontalRect.height / 2)
         ) as HTMLElement | null;
         const cornerHit = document.elementFromPoint(
             cornerRect.left + (cornerRect.width / 2),
-            viewportRect.bottom - (reservedHeight / 2)
+            cornerRect.top + (cornerRect.height / 2)
         ) as HTMLElement | null;
 
         return {
             gutterHeight,
             reservedHeight,
+            contentBottom: viewportRect.top + viewport.clientTop + viewport.clientHeight,
+            horizontalTop: horizontalRect.top,
             cornerWidth: cornerRect.width,
             cornerHeight: cornerRect.height,
             cornerDisabled: scrollbarCorner.classList.contains('editor-table-logical-scrollbar-corner--disabled'),
@@ -196,6 +198,7 @@ test('右下ビューポートの横スクロールバー領域をeditor-table�
 
     expect(metrics.gutterHeight).toBeGreaterThanOrEqual(0);
     expect(metrics.reservedHeight).toBe(12);
+    expect(metrics.contentBottom).toBeLessThanOrEqual(metrics.horizontalTop);
     expect(metrics.cornerWidth).toBe(14);
     expect(metrics.cornerHeight).toBe(12);
     expect(metrics.cornerDisabled).toBeFalsy();

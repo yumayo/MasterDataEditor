@@ -473,9 +473,13 @@ export class EditorTableLayout {
 
         // 右下だけが実スクロール担当なので、そこで消費されるガター幅・高さを
         // 右上ヘッダー領域と左下行ヘッダー領域にも反映して見た目の列幅・行高を揃える。
+        this.scrollContainer.style.width = `calc(100% - ${customVerticalScrollbarWidth}px)`;
         const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth)
             + customVerticalScrollbarWidth;
         const mainViewportScrollbarHeight = this.getMainViewportHorizontalScrollbarHeightPx();
+        const nativeScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
+        // 自作バーは本文の外側に置き、末尾の行・列がバーの下に隠れない表示領域を確保する。
+        this.scrollContainer.style.height = `calc(100% - ${Math.max(0, mainViewportScrollbarHeight - nativeScrollbarHeight)}px)`;
         this.topRightPane.style.right = `${mainViewportScrollbarWidth}px`;
         this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
         this.updateCustomVerticalScrollbar();

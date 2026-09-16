@@ -457,6 +457,10 @@ test.describe('差分ビューのパディング行同期', () => {
             const afterUndoLeftRowCount = await leftTable.locator('.editor-table-row').count();
             const afterUndoRightRowCount = await rightTable.locator('.editor-table-row').count();
             expect(afterUndoLeftRowCount).toBe(afterUndoRightRowCount);
+            // Undoで旧パディング行を除いた後も、後続行の論理位置が飛ばないこと。
+            for (let rowIndex = 0; rowIndex < initialRowCount; rowIndex++) {
+                await expect(rightTable.locator('.editor-table-row').nth(rowIndex)).toHaveAttribute('data-row-index', String(rowIndex));
+            }
 
             // 右ペインのセルをクリックしてフォーカスを確保してからRedoする
             const rightCellBeforeRedo = rightTable.locator('.editor-table-row').nth(0)

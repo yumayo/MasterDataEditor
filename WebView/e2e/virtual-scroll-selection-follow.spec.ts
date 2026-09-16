@@ -129,6 +129,13 @@ test.describe('バーチャルスクロール selection 追従', () => {
         const table = page.locator('.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table');
         await expect(table).toBeVisible();
 
+        const viewport = table.locator('.editor-table-main-viewport');
+        await viewport.evaluate(element => { element.scrollTop = 8200; });
+        // ネイティブscrollの仮想行更新はrAFで行われる。更新前の旧行を選んで先頭へ戻さない。
+        await expect.poll(() => table.locator('.editor-table-grid .editor-table-row[data-row-index]').evaluateAll(rows =>
+            rows.some(row => Number((row as HTMLElement).dataset.rowIndex) >= 400)
+        )).toBe(true);
+
         const selectedDataRowIndex = await page.evaluate(() => {
             const editor = (window as unknown as {
                 editor?: { activeEditorTable: {
@@ -144,9 +151,6 @@ test.describe('バーチャルスクロール selection 追従', () => {
                 '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-main-viewport',
             );
             if (viewport === null) throw new Error('viewport not found');
-            viewport.scrollTop = 8200;
-            viewport.dispatchEvent(new Event('scroll'));
-
             const viewportRect = viewport.getBoundingClientRect();
             const rows = Array.from(document.querySelectorAll<HTMLElement>(
                 '.editor-left-pane .tab-wrapper[data-tab-name="item"] .editor-table-grid .editor-table-row[data-row-index]',
@@ -164,6 +168,7 @@ test.describe('バーチャルスクロール selection 追従', () => {
             editor.activeEditorTable.getSelection().end();
             return dataRowIndex;
         });
+        expect(selectedDataRowIndex).toBeGreaterThanOrEqual(400);
         await expect(page.locator('.selection-overlay-border')).toHaveCount(1);
 
         const movement = await page.evaluate(async (selectedDataRowIndex) => {
@@ -185,6 +190,8 @@ test.describe('バーチャルスクロール selection 追従', () => {
             const beforeBorderTop = border.getBoundingClientRect().top;
             const beforeCellTop = cell.getBoundingClientRect().top;
             const beforeWrapperTop = wrapper.getBoundingClientRect().top;
+            const viewportTop = viewport.getBoundingClientRect().top;
+            const viewportBottom = viewport.getBoundingClientRect().bottom;
             viewport.scrollTop += 7;
             viewport.dispatchEvent(new Event('scroll'));
 
@@ -201,6 +208,8 @@ test.describe('バーチャルスクロール selection 追従', () => {
                 beforeBorderTop,
                 beforeCellTop,
                 beforeWrapperTop,
+                viewportTop,
+                viewportBottom,
                 afterBorderTop,
                 afterCellTop,
                 afterWrapperTop,
@@ -213,6 +222,8 @@ test.describe('バーチャルスクロール selection 追従', () => {
             };
         }, selectedDataRowIndex);
 
+        expect(movement.beforeCellTop - movement.viewportTop, '選択セルがヘッダーのクリップ境界から離れていること').toBeGreaterThan(100);
+        expect(movement.viewportBottom - movement.beforeCellTop).toBeGreaterThan(100);
         expect(movement.cellDelta, 'セル自体が7px前後スクロール移動していること').toBeLessThan(-5);
         expect(Math.abs(movement.borderDelta - movement.cellDelta), `selectionの移動量がセルと一致すること: ${JSON.stringify(movement)}`).toBeLessThanOrEqual(1);
         expect(Math.abs(movement.borderCellGap), `selectionとセルのtop座標が揃っていること: ${JSON.stringify(movement)}`).toBeLessThanOrEqual(1);

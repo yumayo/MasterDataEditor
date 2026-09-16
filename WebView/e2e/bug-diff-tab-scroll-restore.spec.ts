@@ -105,7 +105,7 @@ const test = base.extend<ScrollRestoreFixtures>({
 
         // 通常テーブルを先に開く（エクスプローラーから）
         // これにより後でタブバーから通常テーブルに切り替えられる（closeAllDiffTabs を避ける）
-        await page.locator('[data-panel="files"]').click();
+        await expect(page.locator('[data-panel="files"]')).toHaveClass(/active/);
         await page.locator('#explorer .explorer-file').getByText('normal', { exact: true }).click();
         const normalTable = page.locator('.tab-wrapper[data-tab-name="normal"] .editor-table');
         await expect(normalTable).toBeVisible();

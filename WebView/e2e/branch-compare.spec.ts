@@ -1586,6 +1586,9 @@ test.describe('リビジョン比較パネル', () => {
             await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
             await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);
             await item.click();
+            // 選択表示は読み込み完了後のアクティブな差分タブに同期される。
+            await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'false');
+            await expect(item).toHaveAttribute('aria-current', 'true');
             expect(await item.evaluate(styles, rowProperties)).toEqual(activeStyle);
             await expect(item.locator('.branch-compare-file-name')).toHaveCSS('color', textColor);
             await expect(item.locator('.branch-compare-file-status')).toHaveCSS('color', textColor);

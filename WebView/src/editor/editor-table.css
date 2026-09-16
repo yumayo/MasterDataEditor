@@ -218,12 +218,13 @@
 .editor-table--quadrant-layout {
     width: 100%;
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
 }
 
 .editor-table-pane {
     position: absolute;
-    overflow: hidden;
+    /* セルへのfocus/scrollIntoViewで領域自体がスクロールすると固定境界がずれる。 */
+    overflow: clip;
 }
 
 .editor-table--quadrant-layout .editor-table-pane-top-left {
@@ -533,6 +534,8 @@
     display: flex;
     position: absolute;
     left: 0;
+    /* セルの重なり順を行内に閉じ込め、兄弟の罫線レイヤーより前に背景が出ないようにする。 */
+    isolation: isolate;
 }
 
 .editor-table-detached-layer .editor-table-cell {

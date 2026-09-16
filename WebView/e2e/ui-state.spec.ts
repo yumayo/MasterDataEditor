@@ -233,22 +233,25 @@ test.describe('UI状態のUserスコープ永続化', () => {
 
         await openTestTableAsync(page);
         const viewport = page.locator('.editor-left-pane .editor-table-main-viewport');
-        await viewport.evaluate((element) => {
-            element.scrollTop = 900;
-            element.scrollLeft = 320;
-        });
-        await page.waitForFunction(() => {
+        // 選択する31行目が本文内に収まる位置にする。画面外のセルをclickすると
+        // Playwrightの自動scrollIntoViewが保存対象のスクロール位置を変更してしまう。
+        const expectedScroll = {scrollTop: 400, scrollLeft: 320};
+        await viewport.evaluate((element, scroll) => {
+            element.scrollTop = scroll.scrollTop;
+            element.scrollLeft = scroll.scrollLeft;
+        }, expectedScroll);
+        await page.waitForFunction((scroll) => {
             const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
-            return element !== null && element.scrollTop >= 800 && element.scrollLeft >= 200;
-        });
+            return element !== null && element.scrollTop === scroll.scrollTop && element.scrollLeft === scroll.scrollLeft;
+        }, expectedScroll);
 
         const targetCell = page.locator('.editor-left-pane .editor-table-row[data-row-index="30"] .editor-table-cell[data-col="5"]');
-        await expect(targetCell).toBeVisible();
+        await expect(targetCell).toBeInViewport({ratio: 1});
         await targetCell.click();
         await page.locator('#toolbar .toolbar-button-form-toggle').click();
         await expect(page.locator('.form-panel')).toBeVisible();
 
-        await page.waitForFunction((path) => {
+        await page.waitForFunction(({path, scroll}) => {
             const raw = (window as unknown as {__mockFs: Record<string, string>}).__mockFs[path];
             if (typeof raw !== 'string') return false;
             const parsed = JSON.parse(raw) as {
@@ -266,20 +269,16 @@ test.describe('UI状態のUserスコープ永続化', () => {
                 };
             };
             const tab = parsed.tabs?.open?.find(item => item.name === 'test');
-            return tab?.scroll?.scrollTop !== undefined
-                && tab.scroll.scrollTop > 0
-                && tab.scroll.scrollLeft !== undefined
-                && tab.scroll.scrollLeft > 0
-                && tab.editorTable?.scroll?.scrollTop !== undefined
-                && tab.editorTable.scroll.scrollTop > 0
-                && tab.editorTable.scroll.scrollLeft !== undefined
-                && tab.editorTable.scroll.scrollLeft > 0
+            return tab?.scroll?.scrollTop === scroll.scrollTop
+                && tab.scroll.scrollLeft === scroll.scrollLeft
+                && tab.editorTable?.scroll?.scrollTop === scroll.scrollTop
+                && tab.editorTable.scroll.scrollLeft === scroll.scrollLeft
                 && tab.editorTable.relationsPanelVisible === false
                 && tab.editorTable.formPanel?.navStack?.[0]?.tableName === 'test'
                 && tab.editorTable.formPanel.navStack[0].pkValue === '31'
                 && tab.editorTable.selection?.focus?.row === 31
                 && tab.editorTable.selection.focus.column === 6;
-        }, UI_STATE_FILE, {timeout: 5000});
+        }, {path: UI_STATE_FILE, scroll: expectedScroll}, {timeout: 5000});
 
         const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
         const restoredFs = createDefaultFileSystem();
@@ -293,10 +292,10 @@ test.describe('UI状態のUserスコープ永続化', () => {
 
         await expect(secondPage.locator('.form-panel')).toBeVisible();
         await expect(secondPage.locator('.form-panel-field[data-column-name="id"] .form-panel-field-input')).toHaveValue('31');
-        await secondPage.waitForFunction(() => {
+        await secondPage.waitForFunction((scroll) => {
             const element = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
-            return element !== null && element.scrollTop > 0 && element.scrollLeft > 0;
-        });
+            return element !== null && element.scrollTop === scroll.scrollTop && element.scrollLeft === scroll.scrollLeft;
+        }, expectedScroll);
         const focusedInfo = await secondPage.evaluate(() => {
             const cell = document.querySelector('.editor-left-pane .editor-table-cell-focused') as HTMLElement | null;
             const row = cell?.closest('.editor-table-row') as HTMLElement | null;

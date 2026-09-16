@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures/test';
 import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
+import type {EditorTable} from '../src/editor/editor-table';
 
 // =============================================================================
 // 仮想スクロール 高速下方スクロールで行が消失する不具合のテスト
@@ -59,15 +60,17 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
                 finalDataRowCount: number,
                 maxScrollTop: number,
             }>((resolve) => {
-                const container = document.querySelector('.editor-left-pane') as HTMLElement;
-                const tableEl = container.querySelector('.editor-table') as HTMLElement;
-                const maxScrollTop = container.scrollHeight - container.clientHeight;
+                const table = (window as unknown as {editor: {activeEditorTable: EditorTable | false}}).editor.activeEditorTable;
+                if (table === false) throw new Error('activeEditorTable not found');
+                const tableEl = document.querySelector('.editor-left-pane .editor-table') as HTMLElement;
+                const metrics = table.getScrollMetrics();
+                const maxScrollTop = metrics.scrollHeight - metrics.clientHeight;
                 const zeroRowFrames: Array<{frame: number, scrollTop: number, childCount: number}> = [];
                 let frame = 0;
                 const scrollPerFrame = 500; // 1フレームあたり500pxスクロール（高速）
 
                 function step() {
-                    container.scrollTop += scrollPerFrame;
+                    table.scrollByInput(scrollPerFrame, 0);
                     frame++;
 
                     // scrollイベントハンドラが同期的に処理された後のDOM状態をチェック
@@ -78,21 +81,21 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
                     if (dataRowCount === 0) {
                         zeroRowFrames.push({
                             frame,
-                            scrollTop: Math.round(container.scrollTop),
+                            scrollTop: Math.round(table.getScrollMetrics().scrollTop),
                             childCount: tableEl.children.length,
                         });
-                        console.error(`[SCROLL-BUG] frame=${frame}: データ行0件! scrollTop=${Math.round(container.scrollTop)}, children=${tableEl.children.length}`);
+                        console.error(`[SCROLL-BUG] frame=${frame}: データ行0件! scrollTop=${Math.round(table.getScrollMetrics().scrollTop)}, children=${tableEl.children.length}`);
                     }
 
                     // 末尾に到達するか60フレーム経過で終了
-                    if (container.scrollTop >= maxScrollTop || frame >= 60) {
+                    if (table.getScrollMetrics().scrollTop >= maxScrollTop || frame >= 60) {
                         const finalDataRowCount = tableEl.querySelectorAll(
                             '.editor-table-row:not(.editor-table-column-header-row):not(.editor-table-empty-row)'
                         ).length;
                         resolve({
                             zeroRowFrames,
                             totalFrames: frame,
-                            finalScrollTop: Math.round(container.scrollTop),
+                            finalScrollTop: Math.round(table.getScrollMetrics().scrollTop),
                             finalDataRowCount,
                             maxScrollTop: Math.round(maxScrollTop),
                         });
@@ -115,6 +118,8 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
             }
         }
 
+        expect(result.maxScrollTop).toBeGreaterThan(10000);
+        expect(result.finalScrollTop).toBe(result.maxScrollTop);
         // スクロール中にデータ行が0件になるフレームが存在してはならない
         expect(result.zeroRowFrames.length, 'スクロール中にデータ行が消失するフレームがあってはならない').toBe(0);
         expect(result.finalDataRowCount, 'スクロール完了後にデータ行が存在すること').toBeGreaterThan(0);
@@ -132,19 +137,22 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
 
         // rAFループで段階的にscrollTopを増加させ、各ステップでscrollTopが進んでいることを確認
         // scrollTop復元が戦っている場合、scrollTopが進まない
-        const scrollPositions = await page.evaluate(() => {
-            return new Promise<number[]>((resolve) => {
-                const container = document.querySelector('.editor-left-pane') as HTMLElement;
+        const {scrollPositions, maxScrollTop} = await page.evaluate(() => {
+            return new Promise<{scrollPositions: number[]; maxScrollTop: number}>((resolve) => {
+                const table = (window as unknown as {editor: {activeEditorTable: EditorTable | false}}).editor.activeEditorTable;
+                if (table === false) throw new Error('activeEditorTable not found');
+                const metrics = table.getScrollMetrics();
+                const maxScrollTop = metrics.scrollHeight - metrics.clientHeight;
                 const positions: number[] = [];
                 let frame = 0;
 
                 function step() {
-                    container.scrollTop += 300;
+                    table.scrollByInput(300, 0);
                     frame++;
-                    positions.push(Math.round(container.scrollTop));
+                    positions.push(Math.round(table.getScrollMetrics().scrollTop));
 
                     if (frame >= 40) {
-                        resolve(positions);
+                        resolve({scrollPositions: positions, maxScrollTop});
                         return;
                     }
                     requestAnimationFrame(step);
@@ -161,7 +169,7 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
         let stuckCount = 0;
         let decreaseCount = 0;
         for (let i = 1; i < scrollPositions.length; i++) {
-            if (scrollPositions[i] <= scrollPositions[i - 1] && scrollPositions[i - 1] < 20000) {
+            if (scrollPositions[i] <= scrollPositions[i - 1] && scrollPositions[i - 1] < maxScrollTop) {
                 // 末尾到達前にscrollTopが停滞/減少している
                 if (scrollPositions[i] < scrollPositions[i - 1]) {
                     decreaseCount++;
@@ -172,6 +180,7 @@ test.describe('仮想スクロール 高速下方スクロール', () => {
         }
         console.log(`停滞回数: ${stuckCount}, 減少回数: ${decreaseCount}`);
 
+        expect(scrollPositions[scrollPositions.length - 1]).toBeGreaterThan(10000);
         // scrollTopは基本的に増加し続けるべき（末尾到達前に停滞5回以上は異常）
         expect(stuckCount, 'scrollTopが末尾到達前に停滞してはならない（scrollTop復元の戦い）').toBeLessThan(5);
         expect(decreaseCount, 'scrollTopが減少してはならない（scrollTop復元による巻き戻り）').toBe(0);

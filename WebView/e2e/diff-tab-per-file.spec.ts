@@ -164,7 +164,7 @@ test.describe('複数差分タブの独立管理', () => {
             await expect(questDiffTabButton).toBeVisible();
 
             // 2つ目: shop_product の差分タブを開く（this.diffTab が上書きされるバグが発生する）
-            await page.locator('[data-panel="sourceControl"]').click();
+            await expect(changesSection).toBeVisible();
             await changesSection.getByText('shop_product').click();
             const shopDiffTabButton = page.locator('.tab-button', { hasText: '差分: shop_product' });
             await expect(shopDiffTabButton).toBeVisible();
@@ -228,7 +228,7 @@ test.describe('複数差分タブの独立管理', () => {
             // shop_product の差分タブを開く（2つ目 = アクティブ）
             // この時点で this.diffTab が shop_product の DiffTab に上書きされ、
             // quest_reward の wrapperElement が残留するバグが発生する
-            await page.locator('[data-panel="sourceControl"]').click();
+            await expect(changesSection).toBeVisible();
             await changesSection.getByText('shop_product').click();
             await expect(page.locator('.tab-button', { hasText: '差分: shop_product' })).toBeVisible();
 
@@ -278,7 +278,7 @@ test.describe('複数差分タブの独立管理', () => {
             await expect(page.locator('.tab-button', { hasText: '差分: quest_reward' })).toBeVisible();
 
             // shop_product の差分タブを開く（2つ目）
-            await page.locator('[data-panel="sourceControl"]').click();
+            await expect(changesSection).toBeVisible();
             await changesSection.getByText('shop_product').click();
             await expect(page.locator('.tab-button', { hasText: '差分: shop_product' })).toBeVisible();
 
@@ -332,7 +332,7 @@ test.describe('複数差分タブの独立管理', () => {
             await expect(page.locator('.tab-button', { hasText: '差分: quest_reward' })).toBeVisible();
 
             // shop_product の差分タブを開く（2つ目、アクティブになる）
-            await page.locator('[data-panel="sourceControl"]').click();
+            await expect(changesSection).toBeVisible();
             await changesSection.getByText('shop_product').click();
             await expect(page.locator('.tab-button', { hasText: '差分: shop_product' })).toBeVisible();
 

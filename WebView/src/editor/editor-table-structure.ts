@@ -234,8 +234,12 @@ export class EditorTableStructure {
         }
         // ソート中の場合、originalIndices も同期する（行挿入でストアインデックスがずれるため）
         this.table.notifySortRowInserted(storeRowIndex);
+        // 差分の削除Undoは旧パディング行を除くため、最終的な行構造を確定してから再採番する。
+        if (this.table.diffTab !== false) {
+            this.table.diffTab.notifyRightPaneRowInserted(rowIndex);
+        }
+        this.table.syncVirtualScrollTotalRowCount();
         if (rebuildVirtualRows) {
-            this.table.syncVirtualScrollTotalRowCount();
             this.table.forceVirtualScrollFullRerender();
         }
         // 挿入行を含む以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
@@ -256,12 +260,6 @@ export class EditorTableStructure {
         this.table.runValidation();
         // フィルター適用中の場合は行数カウンターと表示/非表示を再計算する（挿入行がフィルター条件を満たさない可能性）
         this.table.refreshFilterDisplayIfActive();
-        // 差分ビューの右ペインで行挿入した場合、左ペインの同一位置にパディング行を挿入して行数を同期する
-        if (this.table.diffTab !== false) {
-            this.table.diffTab.notifyRightPaneRowInserted(rowIndex);
-        }
-        // 行追加後にバーチャルスクロールの総行数を同期する
-        this.table.syncVirtualScrollTotalRowCount();
     }
 
     /**
@@ -424,8 +422,8 @@ export class EditorTableStructure {
                 }
             }
         }
+        this.table.syncVirtualScrollTotalRowCount();
         if (rebuildVirtualRows) {
-            this.table.syncVirtualScrollTotalRowCount();
             this.table.forceVirtualScrollFullRerender();
         }
         // 削除行以降の全行を再ナンバリングする（data-row 属性・行ヘッダーテキスト・リサイズハンドル）
@@ -618,7 +616,8 @@ export class EditorTableStructure {
             header.dataset.rowIndex = String(logicalRowNumber - 1);
         }
         this.table.refreshRowHeaderWidth();
-        this.table.refreshDetachedHeaderLayout();
+        // 直接挿入・置換した行も、確定した論理インデックスから絶対位置と分離ヘッダーを更新する。
+        this.table.forceVirtualScrollRecalculate();
     }
 
     /**

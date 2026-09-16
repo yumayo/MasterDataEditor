@@ -155,8 +155,12 @@ test.describe('通常テーブルとGit差分の保存済み列幅', () => {
             await expect.poll(() => readWidthsAsync(page)).toEqual(expectedState);
 
             await page.reload();
-            await page.locator('[data-panel="files"]').click();
-            await page.locator('#explorer').getByText('enemy', {exact: true}).first().click();
+            // 保存済みのパネルが復元されるため、EXPLORER が閉じている場合だけ切り替える。
+            const explorerFile = page.locator('#explorer').getByText('enemy', {exact: true}).first();
+            await expect(explorerFile).toBeAttached();
+            if (!await explorerFile.isVisible()) await page.locator('[data-panel="files"]').click();
+            await expect(explorerFile).toBeVisible();
+            await explorerFile.click();
             const normalHeader = page.locator('.tab-wrapper[data-tab-name="enemy"] .editor-table-column-header').first();
             await expect(normalHeader).toHaveCSS('width', `${resizedWidth}px`);
         });
