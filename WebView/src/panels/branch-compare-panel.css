@@ -25,7 +25,8 @@
 }
 
 .branch-compare-base-input,
-.branch-compare-target-input {
+.branch-compare-target-input,
+.branch-compare-filter-input {
     width: 100%;
     box-sizing: border-box;
     padding: var(--input-padding);
@@ -38,8 +39,45 @@
 }
 
 .branch-compare-base-input:focus,
-.branch-compare-target-input:focus {
+.branch-compare-target-input:focus,
+.branch-compare-filter-input:focus {
     border-color: var(--focus-border);
+}
+
+.branch-compare-filter-container {
+    position: relative;
+    display: flex;
+}
+
+.branch-compare-filter-input {
+    padding-right: 26px;
+}
+
+.branch-compare-filter-clear {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--font-color);
+    opacity: 0.5;
+    cursor: pointer;
+}
+
+.branch-compare-filter-clear[hidden] {
+    display: none;
+}
+
+.branch-compare-filter-clear:hover,
+.branch-compare-filter-clear:focus-visible {
+    opacity: 1;
+    background-color: var(--icon-button-hover-bg);
 }
 
 .branch-compare-suggestions {
@@ -96,13 +134,20 @@
     overflow: hidden;
 }
 
+.branch-compare-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
 .branch-compare-button {
-    align-self: flex-end;
     padding: 4px 10px;
 }
 
 .branch-compare-button,
 .branch-compare-swap-button {
+    box-sizing: border-box;
+    height: 28px;
     white-space: nowrap;
     border: var(--input-border);
     border-radius: var(--border-radius);
@@ -112,13 +157,10 @@
 }
 
 .branch-compare-swap-button {
-    align-self: center;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-sizing: border-box;
     width: 28px;
-    height: 28px;
     padding: 4px;
 }
 

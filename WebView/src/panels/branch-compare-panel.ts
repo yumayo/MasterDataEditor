@@ -3,6 +3,7 @@ import {Tab} from '../tabs/tab';
 import type {UiStateStore} from '../app/ui-state';
 import type {NotificationToast} from '../ui/notification';
 import {isCommitId} from '../core/git-revision';
+import {appendHighlightedSegments} from '../search/fuzzy-search';
 
 type RevisionInput = HTMLInputElement;
 
@@ -11,6 +12,8 @@ interface BranchCompareFileView {
     leftCommit: string;
     rightCommit: string;
     item: HTMLElement;
+    group: HTMLElement;
+    name: HTMLElement;
 }
 
 /**
@@ -24,6 +27,9 @@ export class BranchComparePanel {
     private readonly suggestionsElement: HTMLElement;
     private readonly compareButton: HTMLButtonElement;
     private readonly swapButton: HTMLButtonElement;
+    private readonly filterInput: HTMLInputElement;
+    private readonly filterClearButton: HTMLButtonElement;
+    private readonly filterEmptyElement: HTMLElement;
     private readonly statusElement: HTMLElement;
     private readonly notification: NotificationToast;
     private readonly resultsElement: HTMLElement;
@@ -100,7 +106,6 @@ export class BranchComparePanel {
         this.compareButton.addEventListener('click', () => {
             this.compareAsync().catch((error: unknown) => { this.handleUnexpectedCompareError(error); });
         });
-        controls.appendChild(this.compareButton);
 
         this.swapButton = document.createElement('button');
         this.swapButton.type = 'button';
@@ -124,13 +129,52 @@ export class BranchComparePanel {
             this.dismissSuggestions();
             this.updateCompareButton();
         });
-        this.baseInput.after(this.swapButton);
+        const actions = document.createElement('div');
+        actions.classList.add('branch-compare-actions');
+        actions.append(this.swapButton, this.compareButton);
+        controls.appendChild(actions);
         for (const button of [this.compareButton, this.swapButton]) {
             // 候補を畳むのはclick時とし、mousedownのblurでボタンが動くことを防ぐ。
             button.addEventListener('mousedown', (event: MouseEvent) => {
                 if (this.suggestionsElement.classList.contains('visible')) event.preventDefault();
             });
         }
+
+        this.filterInput = document.createElement('input');
+        this.filterInput.type = 'text';
+        this.filterInput.classList.add('branch-compare-filter-input');
+        this.filterInput.placeholder = 'テーブル名でフィルタ';
+        this.filterInput.setAttribute('aria-label', 'テーブル名でフィルタ');
+        this.filterInput.autocomplete = 'off';
+        this.filterInput.spellcheck = false;
+        this.filterInput.addEventListener('input', () => {
+            this.applyFileFilter();
+            this.resultsElement.scrollTop = 0;
+        });
+        this.filterClearButton = document.createElement('button');
+        this.filterClearButton.type = 'button';
+        this.filterClearButton.classList.add('branch-compare-filter-clear');
+        this.filterClearButton.setAttribute('aria-label', 'テーブル名フィルタをクリア');
+        this.filterClearButton.title = 'テーブル名フィルタをクリア';
+        this.filterClearButton.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M9.35 3.35L6.71 6l2.64 2.65-.71.7L6 6.71 3.35 9.35l-.7-.7L5.29 6 2.65 3.35l.7-.7L6 5.29l2.65-2.64.7.7z" fill="currentColor"/></svg>';
+        this.filterClearButton.hidden = true;
+        this.filterClearButton.addEventListener('click', () => {
+            this.filterInput.value = '';
+            this.applyFileFilter();
+            this.resultsElement.scrollTop = 0;
+            this.filterInput.focus();
+        });
+
+        const filterContainer = document.createElement('div');
+        filterContainer.classList.add('branch-compare-filter-container');
+        filterContainer.append(this.filterInput, this.filterClearButton);
+        controls.appendChild(filterContainer);
+
+        this.filterEmptyElement = document.createElement('div');
+        this.filterEmptyElement.classList.add('branch-compare-empty-message');
+        this.filterEmptyElement.setAttribute('role', 'status');
+        this.filterEmptyElement.textContent = '該当するテーブルはありません';
+        this.filterEmptyElement.hidden = true;
 
         this.statusElement = document.createElement('div');
         this.statusElement.classList.add('branch-compare-status');
@@ -485,6 +529,8 @@ export class BranchComparePanel {
                 this.resultsElement.appendChild(empty);
             } else {
                 for (const file of result.files) this.resultsElement.appendChild(this.createFileItem(file, result.leftCommit, result.rightCommit, leftLabel, rightLabel));
+                this.resultsElement.appendChild(this.filterEmptyElement);
+                this.applyFileFilter();
             }
             this.statusElement.textContent = '';
             this.persistState(true);
@@ -583,8 +629,24 @@ export class BranchComparePanel {
             openDiff();
         });
         group.appendChild(item);
-        this.fileViews.push({file, leftCommit, rightCommit, item});
+        this.fileViews.push({file, leftCommit, rightCommit, item, group, name});
         return group;
+    }
+
+    private applyFileFilter(): void {
+        this.filterClearButton.hidden = this.filterInput.value === '';
+        const query = this.filterInput.value.trim().toLocaleLowerCase();
+        let visibleCount = 0;
+        for (const view of this.fileViews) {
+            const matches = view.file.tableName.toLocaleLowerCase().includes(query);
+            view.group.hidden = !matches;
+            if (matches) {
+                view.name.replaceChildren();
+                appendHighlightedSegments(view.name, view.file.tableName, query);
+                visibleCount++;
+            }
+        }
+        this.filterEmptyElement.hidden = this.fileViews.length === 0 || visibleCount > 0;
     }
 
     private invalidateResults(invalidateCompare: boolean): void {

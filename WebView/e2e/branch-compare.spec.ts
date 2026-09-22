@@ -241,6 +241,67 @@ test.describe('リビジョン比較パネル', () => {
         await installBranchComparePageAsync(page, COMPARE_RESULT, null);
     });
 
+    test('テーブル名の部分一致で絞り込み、該当なし表示と解除ができ差分の選択を維持する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        const panel = page.locator('.branch-compare-panel');
+        const filterInput = panel.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true});
+        const visibleNames = panel.locator('.branch-compare-file-item:visible .branch-compare-file-name');
+        const emptyMessage = panel.locator('.branch-compare-empty-message');
+        const clearButton = panel.getByRole('button', {name: 'テーブル名フィルタをクリア', exact: true});
+        await expect(clearButton).toBeHidden();
+
+        await filterInput.fill('  DIF  ');
+        await expect(clearButton).toBeVisible();
+        await expect(visibleNames).toHaveText(['modified']);
+        await panel.locator('.branch-compare-file-item:visible').click();
+        await expect(page.locator('.diff-tab:visible')).toHaveCount(1);
+
+        await filterInput.fill('data/');
+        await expect(visibleNames).toHaveCount(0);
+        await expect(emptyMessage).toHaveText('該当するテーブルはありません');
+        await expect(emptyMessage).toBeVisible();
+        await expect(page.locator('.diff-tab:visible')).toHaveCount(1);
+
+        await filterInput.fill('  ');
+        await expect(visibleNames).toHaveText(['modified', 'added', 'deleted']);
+        await expect(emptyMessage).toBeHidden();
+        await filterInput.fill('DIF');
+        await clearButton.click();
+        await expect(filterInput).toHaveValue('');
+        await expect(filterInput).toBeFocused();
+        await expect(clearButton).toBeHidden();
+        await expect(visibleNames).toHaveText(['modified', 'added', 'deleted']);
+        await expect(visibleNames.locator('.search-highlight')).toHaveCount(0);
+        await expect(panel.locator('.branch-compare-file-item-active .branch-compare-file-name')).toHaveText('modified');
+        expect(await page.evaluate(() => (window as unknown as {__mockApiRequests: string[]}).__mockApiRequests.filter(type => type === 'git_branch_compare_request'))).toHaveLength(1);
+    });
+
+    test('比較前のテーブル名フィルタを結果と再比較にも適用し、差分なしと区別する', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        const panel = page.locator('.branch-compare-panel');
+        const filterInput = panel.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true});
+        const visibleNames = panel.locator('.branch-compare-file-item:visible .branch-compare-file-name');
+        await filterInput.fill('ADD');
+        await expect(panel.locator('.branch-compare-empty-message:visible')).toHaveCount(0);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await expect(visibleNames).toHaveText(['added']);
+
+        await panel.getByRole('button', {name: '入れ替え', exact: true}).click();
+        await expect(panel.locator('.branch-compare-file-item')).toHaveCount(0);
+        await expect(filterInput).toHaveValue('ADD');
+        await panel.locator('.branch-compare-button').click();
+        await expect(visibleNames).toHaveText(['added']);
+
+        await page.evaluate(() => {
+            (window as unknown as {__mockGitBranchCompare: MockBranchCompareResult}).__mockGitBranchCompare.files = [];
+        });
+        await panel.locator('.branch-compare-button').click();
+        await expect(panel.locator('.branch-compare-empty-message:visible')).toHaveText('変更されたファイルはありません');
+        await filterInput.fill('modified');
+        await expect(panel.locator('.branch-compare-empty-message:visible')).toHaveText('変更されたファイルはありません');
+    });
+
     test('テーブル一覧だけをスクロールしても比較条件と比較ボタンを操作できる', async ({page}) => {
         await page.setViewportSize({width: 1280, height: 640});
         const files: MockBranchCompareFile[] = Array.from({length: 80}, (_, index) => ({
@@ -270,6 +331,18 @@ test.describe('リビジョン比較パネル', () => {
         expect(await controls.evaluate(element => element.getBoundingClientRect().top)).toBe(controlsTop);
         await expect(compareButton).toBeInViewport();
         await expect(panel.locator('.branch-compare-base-input')).toBeInViewport();
+        const filterInput = panel.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true});
+        await expect(filterInput).toBeInViewport();
+        const swapBounds = await panel.locator('.branch-compare-swap-button').boundingBox();
+        const compareBounds = await compareButton.boundingBox();
+        const filterBounds = await filterInput.boundingBox();
+        expect(swapBounds).not.toBeNull();
+        expect(compareBounds).not.toBeNull();
+        expect(filterBounds).not.toBeNull();
+        expect(swapBounds!.y).toBe(compareBounds!.y);
+        expect(swapBounds!.height).toBe(compareBounds!.height);
+        expect(swapBounds!.x + swapBounds!.width).toBeLessThan(compareBounds!.x);
+        expect(filterBounds!.y).toBeGreaterThan(compareBounds!.y + compareBounds!.height);
         expect(await panel.evaluate(element => element.scrollTop)).toBe(0);
 
         // 一覧末尾にいても固定欄から条件を変更し、再比較できる。
@@ -995,7 +1068,7 @@ test.describe('リビジョン比較パネル', () => {
 
     test('比較元と比較先のラベルでは入力が反応せず入力枠のクリックで候補を開く', async ({page}) => {
         await openBranchComparePanelAsync(page);
-        const inputs = page.locator('.branch-compare-controls input');
+        const inputs = page.locator('.branch-compare-controls').getByRole('combobox');
         const suggestions = page.locator('.branch-compare-suggestions');
         for (const inputId of ['branch-compare-base-input', 'branch-compare-target-input']) {
             await page.locator(`label[for="${inputId}"]`).click();
@@ -1141,7 +1214,7 @@ test.describe('リビジョン比較パネル', () => {
         await expect(targetInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
     });
 
-    test('Tabでactive候補を確定して比較元から入れ替え、比較先、比較ボタンへフォーカスを進める', async ({page}) => {
+    test('Tabでactive候補を確定して比較元から比較先、入れ替え、比較、フィルタへフォーカスを進める', async ({page}) => {
         await openBranchComparePanelAsync(page);
 
         const baseInput = page.locator('.branch-compare-base-input');
@@ -1155,10 +1228,8 @@ test.describe('リビジョン比較パネル', () => {
         await baseInput.press('Tab');
         await expect(baseInput).toHaveValue('main');
         await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
-        await expect(swapButton).toBeFocused();
-        await expect(suggestions).toBeHidden();
-        await swapButton.press('Tab');
         await expect(targetInput).toBeFocused();
+        await expect(baseInput).toHaveAttribute('aria-expanded', 'false');
 
         await targetInput.fill('feature');
         await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
@@ -1166,8 +1237,12 @@ test.describe('リビジョン比較パネル', () => {
         await expect(targetInput).toHaveValue('feature/orders');
         await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
         await expect(compareButton).toBeEnabled();
-        await expect(compareButton).toBeFocused();
+        await expect(swapButton).toBeFocused();
         await expect(suggestions).toBeHidden();
+        await swapButton.press('Tab');
+        await expect(compareButton).toBeFocused();
+        await compareButton.press('Tab');
+        await expect(page.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true})).toBeFocused();
     });
 
     test('Shift+Tabと候補0件のTabは未確定のまま通常のフォーカス移動をする', async ({page}) => {
@@ -1181,10 +1256,8 @@ test.describe('リビジョン比較パネル', () => {
         await targetInput.fill('feature');
         await expect(suggestions.locator('.branch-compare-suggestion').first()).toHaveClass(/selected/);
         await targetInput.press('Shift+Tab');
-        await expect(swapButton).toBeFocused();
-        await expect(suggestions).toBeHidden();
-        await swapButton.press('Shift+Tab');
         await expect(baseInput).toBeFocused();
+        await expect(targetInput).toHaveAttribute('aria-expanded', 'false');
         await expect(targetInput).toHaveValue('feature');
         await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);
 
@@ -1192,12 +1265,18 @@ test.describe('リビジョン比較パネル', () => {
         await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(0);
         await expect(baseInput).not.toHaveAttribute('aria-activedescendant', /.+/);
         await baseInput.press('Tab');
-        await expect(swapButton).toBeFocused();
-        await expect(suggestions).toBeHidden();
-        await swapButton.press('Tab');
         await expect(targetInput).toBeFocused();
         await expect(baseInput).toHaveValue('該当しないブランチ');
         await expect(baseInput).not.toHaveAttribute('data-selected-ref', /.+/);
+
+        await targetInput.fill('該当しない比較先');
+        await targetInput.press('Tab');
+        await expect(swapButton).toBeFocused();
+        await expect(suggestions).toBeHidden();
+        await swapButton.press('Shift+Tab');
+        await expect(targetInput).toBeFocused();
+        await expect(targetInput).toHaveValue('該当しない比較先');
+        await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);
     });
 
     test('小さい画面でも多数の候補をマウスと下キー・Enterで選択し比較操作を画面内に保つ', async ({page}) => {
@@ -1220,7 +1299,7 @@ test.describe('リビジョン比較パネル', () => {
             await baseInput.focus();
             await expect(suggestions.locator('.branch-compare-suggestion')).toHaveCount(20);
             const panelBounds = await panel.evaluate(element => ({top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom}));
-            for (const control of [baseInput, targetInput, panel.locator('.branch-compare-swap-button'), compareButton]) {
+            for (const control of [baseInput, targetInput, panel.locator('.branch-compare-swap-button'), compareButton, panel.locator('.branch-compare-filter-input')]) {
                 const bounds = await control.evaluate(element => ({top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom}));
                 expect(bounds.top).toBeGreaterThanOrEqual(panelBounds.top);
                 expect(bounds.bottom).toBeLessThanOrEqual(panelBounds.bottom);
@@ -1269,7 +1348,6 @@ test.describe('リビジョン比較パネル', () => {
         await openBranchComparePanelAsync(page);
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
-        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const compareButton = page.locator('.branch-compare-button');
         const suggestions = page.locator('.branch-compare-suggestions');
         await baseInput.fill('main');
@@ -1280,8 +1358,6 @@ test.describe('リビジョン比較パネル', () => {
         await baseInput.press('Tab');
         await expect(baseInput).toHaveValue('main');
         await expect(baseInput).toHaveAttribute('data-selected-ref', LEFT_REF);
-        await expect(swapButton).toBeFocused();
-        await swapButton.press('Tab');
         await expect(targetInput).toBeFocused();
         await targetInput.fill('feature/orders');
         await expect(targetInput).toBeFocused();
