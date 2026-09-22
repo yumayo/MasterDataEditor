@@ -41,6 +41,11 @@ namespace App.MasterDataEditor
 			return GetWorkDirRelativePrefix(gitRoot, workDir, "schema/");
 		}
 
+		public static string GetWorkspaceSettingsPath(string gitRoot, string workDir)
+		{
+			return GetWorkDirRelativePrefix(gitRoot, workDir, ".masterdataeditor/settings.json");
+		}
+
 		/// <summary>
 		/// git操作対象パスのバリデーションを行う
 		/// パストラバーサル防止・data/ディレクトリ内の.csvファイル制限を一元的にチェックする

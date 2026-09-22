@@ -8,6 +8,8 @@ foreach (var format in new[] {"sha1", "sha256"})
     var root = Path.Combine(Path.GetTempPath(), "revision-compare-test-" + Guid.NewGuid());
     var workDir = Path.Combine(root, "nested");
     Directory.CreateDirectory(Path.Combine(workDir, "data"));
+    Directory.CreateDirectory(Path.Combine(workDir, ".masterdataeditor"));
+    Directory.CreateDirectory(Path.Combine(root, ".masterdataeditor"));
     AppEnvironment.WorkDir = workDir;
     string Git(params string[] args) => GitCommandHelper.RunGitCommand(root, args);
     void Save(string path, string content) => File.WriteAllText(Path.Combine(workDir, path), content);
@@ -20,6 +22,9 @@ foreach (var format in new[] {"sha1", "sha256"})
     try
     {
         Git("init", "-q", "--object-format=" + format, "--initial-branch=main");
+        File.WriteAllText(Path.Combine(root, ".masterdataeditor/settings.json"), "{\"exportValidationDateTime\":\"2020-01-01T00:00:00\"}");
+        Save(".masterdataeditor/settings.json", "{\"exportValidationDateTime\":\"2026-09-22T12:00:00\"}");
+        Save(".masterdataeditor/private.json", "{}");
         Save("data/modified.csv", "id,name\n1,before\n");
         Save("data/deleted.csv", "id,name\n1,removed\n");
         var left = Commit();
@@ -27,9 +32,21 @@ foreach (var format in new[] {"sha1", "sha256"})
         Git("update-ref", "refs/remotes/origin/base", left);
         Save("data/modified.csv", "id,name\n1,after\n");
         Save("data/added.csv", "id,name\n1,added\n");
+        Save(".masterdataeditor/settings.json", "{\"exportValidationDateTime\":\"2027-06-01T12:00:00\"}");
         File.Delete(Path.Combine(workDir, "data/deleted.csv"));
         var right = Commit();
         Save("data/modified.csv", "id,name\n1,uncommitted\n");
+        Save(".masterdataeditor/settings.json", "{\"exportValidationDateTime\":\"2028-01-01T00:00:00\"}");
+
+        // ネストしたワークスペースでも、作業中の設定ではなく指定コミットの設定を読む。
+        Equal("{\"exportValidationDateTime\":\"2026-09-22T12:00:00\"}", Show(left, ".masterdataeditor/settings.json").GetProperty("data").GetString());
+        Equal("{\"exportValidationDateTime\":\"2027-06-01T12:00:00\"}", Show(right, ".masterdataeditor/settings.json").GetProperty("data").GetString());
+        Equal("id,name\n1,before\n", Show(left, "data/modified.csv").GetProperty("data").GetString());
+        foreach (var invalidPath in new[] {".masterdataeditor/private.json", "../.masterdataeditor/settings.json", ".masterdataeditor/../settings.json", "/.masterdataeditor/settings.json", "nested/.masterdataeditor/settings.json"})
+            Equal(false, Show(left, invalidPath).GetProperty("success").GetBoolean());
+        AppEnvironment.WorkDir = root;
+        Equal("{\"exportValidationDateTime\":\"2020-01-01T00:00:00\"}", Show(left, ".masterdataeditor/settings.json").GetProperty("data").GetString());
+        AppEnvironment.WorkDir = workDir;
 
         foreach (var (leftRef, rightRef) in new[] {
             (left, right), (left[..4], right[..7]), (left.ToUpperInvariant(), right.ToUpperInvariant()),
@@ -92,6 +109,11 @@ static JsonElement Invoke(string leftRef, string rightRef)
 {
     var request = JsonSerializer.SerializeToElement(new {leftRef, rightRef});
     return JsonSerializer.SerializeToElement(WebView2HandlerGitBranchCompareRequest.Invoke(request, "test"));
+}
+static JsonElement Show(string commit, string path)
+{
+    var request = JsonSerializer.SerializeToElement(new {commit, path});
+    return JsonSerializer.SerializeToElement(WebView2HandlerGitShowAtCommitRequest.Invoke(request, "test"));
 }
 static JsonElement Compare(string leftRef, string rightRef)
 {

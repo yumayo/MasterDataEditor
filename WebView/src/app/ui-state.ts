@@ -21,6 +21,7 @@ export interface UiBranchCompareState {
     targetRef: string | null;
     compared: boolean;
     exportFilterEnabled?: boolean;
+    exportFilterSource?: 'base' | 'target' | 'current';
 }
 
 export interface UiBottomPanelState {
@@ -361,11 +362,13 @@ function normalizeBranchCompareState(value: unknown): UiBranchCompareState {
     };
     const baseRef = normalizeRevision(record?.['baseRef']);
     const targetRef = normalizeRevision(record?.['targetRef']);
+    const exportFilterSource = record?.['exportFilterSource'];
     return {
         baseRef,
         targetRef,
         compared: record?.['compared'] === true && baseRef !== null && targetRef !== null && baseRef !== targetRef,
         ...(record?.['exportFilterEnabled'] === true ? {exportFilterEnabled: true} : {}),
+        ...(exportFilterSource === 'target' || exportFilterSource === 'current' ? {exportFilterSource} : {}),
     };
 }
 

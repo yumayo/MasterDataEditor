@@ -8,5 +8,6 @@
   <ItemGroup>
     <Compile Include="../../../../App.MasterDataEditor/Helpers/GitCommandHelper.cs" Link="GitCommandHelper.cs" />
     <Compile Include="../../../../App.MasterDataEditor/WebView2Handler/Handlers/WebView2HandlerGitBranchCompareRequest.cs" Link="WebView2HandlerGitBranchCompareRequest.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/WebView2Handler/Handlers/WebView2HandlerGitShowAtCommitRequest.cs" Link="WebView2HandlerGitShowAtCommitRequest.cs" />
   </ItemGroup>
 </Project>

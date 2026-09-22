@@ -1,12 +1,13 @@
-import {gitBranchCompareAsync, gitBranchListAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
+import {gitBranchCompareAsync, gitBranchListAsync, gitShowAtCommitAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
 import type {UiStateStore} from '../app/ui-state';
 import type {NotificationToast} from '../ui/notification';
 import {isCommitId} from '../core/git-revision';
 import {appendHighlightedSegments} from '../search/fuzzy-search';
 import {getAppliedSettings} from './settings-panel';
-import {createExportValidationSettings, hasRuntimeGroupSettingsChange, SETTINGS_CHANGED_EVENT, type SettingsChangedEventDetail, type ExportValidationSettings} from '../settings/settings-schema';
+import {createExportValidationSettings, SETTINGS_CHANGED_EVENT, type SettingsChangedEventDetail, type ExportValidationSettings} from '../settings/settings-schema';
 import {parseTemporalValue} from '../core/export-window';
+import {WORKSPACE_SETTINGS_FILE} from '../config/masterdataeditor-path';
 
 type RevisionInput = HTMLInputElement;
 
@@ -35,7 +36,11 @@ export class BranchComparePanel {
     private readonly filterClearButton: HTMLButtonElement;
     private readonly filterEmptyElement: HTMLElement;
     private readonly exportFilterCheckbox: HTMLInputElement;
+    private readonly exportFilterSourceRow: HTMLElement;
+    private readonly exportFilterSource: HTMLSelectElement;
     private readonly exportFilterSummary: HTMLElement;
+    private exportFilterDateTime: string | null = null;
+    private exportFilterError: string | null = null;
     private readonly statusElement: HTMLElement;
     private readonly notification: NotificationToast;
     private readonly resultsElement: HTMLElement;
@@ -201,10 +206,25 @@ export class BranchComparePanel {
         exportFilterCaption.textContent = '出力時刻でフィルタ';
         exportFilterLabel.append(this.exportFilterCheckbox, exportFilterTrack, exportFilterCaption);
         actions.prepend(exportFilterLabel);
+        this.exportFilterSourceRow = document.createElement('label');
+        this.exportFilterSourceRow.classList.add('branch-compare-export-filter-source-row');
+        this.exportFilterSourceRow.append('出力時刻の取得元');
+        this.exportFilterSource = document.createElement('select');
+        this.exportFilterSource.classList.add('branch-compare-export-filter-source');
+        this.exportFilterSource.setAttribute('aria-label', '出力時刻の取得元');
+        for (const [value, caption] of [['base', '比較元'], ['target', '比較先'], ['current', '現在の設定']]) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = caption;
+            this.exportFilterSource.appendChild(option);
+        }
+        this.exportFilterSource.value = storedState.exportFilterSource ?? 'base';
+        this.exportFilterSource.addEventListener('change', () => { this.refreshExportComparison(); });
+        this.exportFilterSourceRow.appendChild(this.exportFilterSource);
         this.exportFilterSummary = document.createElement('div');
         this.exportFilterSummary.classList.add('branch-compare-export-filter-summary');
         this.exportFilterSummary.setAttribute('role', 'status');
-        filterContainer.before(this.exportFilterSummary);
+        filterContainer.before(this.exportFilterSourceRow, this.exportFilterSummary);
 
         this.filterEmptyElement = document.createElement('div');
         this.filterEmptyElement.classList.add('branch-compare-empty-message');
@@ -235,7 +255,9 @@ export class BranchComparePanel {
         });
         window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
             const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
-            if (hasRuntimeGroupSettingsChange('exportValidation', detail.changedKeys) && this.exportFilterCheckbox.checked) this.refreshExportComparison();
+            const filterChanged = detail.changedKeys.some(key => key === 'exportBeginDateColumnName' || key === 'exportEndDateColumnName'
+                || (key === 'exportValidationDateTime' && this.exportFilterSource.value === 'current'));
+            if (filterChanged && this.exportFilterCheckbox.checked) this.refreshExportComparison();
         });
         this.updateCompareButton();
     }
@@ -403,11 +425,13 @@ export class BranchComparePanel {
     }
 
     private persistState(compared: boolean): void {
+        const exportFilterSource = this.exportFilterSource.value;
         this.uiStateStore.setBranchCompareState({
             baseRef: this.baseInput.getAttribute('data-selected-ref'),
             targetRef: this.targetInput.getAttribute('data-selected-ref'),
             compared,
             ...(this.exportFilterCheckbox.checked ? {exportFilterEnabled: true} : {}),
+            ...(exportFilterSource === 'target' || exportFilterSource === 'current' ? {exportFilterSource} : {}),
         });
     }
 
@@ -541,11 +565,22 @@ export class BranchComparePanel {
 
     private updateCompareButton(): void {
         const settings = createExportValidationSettings(getAppliedSettings());
-        const configured = parseTemporalValue(settings.dateTime).kind === 'valid' && settings.beginColumnName.trim() !== '' && settings.endColumnName.trim() !== '';
+        const columnsConfigured = settings.beginColumnName.trim() !== '' && settings.endColumnName.trim() !== '';
+        const useCurrentSettings = this.exportFilterSource.value === 'current';
+        const timeConfigured = !useCurrentSettings || parseTemporalValue(settings.dateTime).kind === 'valid';
+        this.exportFilterSourceRow.hidden = !this.exportFilterCheckbox.checked;
         this.exportFilterSummary.hidden = !this.exportFilterCheckbox.checked;
-        this.exportFilterSummary.textContent = configured ? '出力時刻: ' + settings.dateTime.replace('T', ' ') : '設定画面で出力フィルター時刻と開始・終了日時列を設定してください';
+        if (!columnsConfigured) {
+            this.exportFilterSummary.textContent = '設定画面で開始・終了日時列を設定してください';
+        } else if (useCurrentSettings) {
+            this.exportFilterSummary.textContent = timeConfigured ? '出力時刻: ' + settings.dateTime.replace('T', ' ')
+                : '設定画面で出力フィルター時刻を設定してください';
+        } else {
+            this.exportFilterSummary.textContent = this.exportFilterError ?? (this.exportFilterDateTime !== null ? '出力時刻: ' + this.exportFilterDateTime.replace('T', ' ')
+                : this.compareBusy ? '出力時刻を取得中…' : '比較すると選択したリビジョンの出力時刻を取得します');
+        }
         this.exportFilterSummary.title = '開始日時列: ' + settings.beginColumnName + ' / 終了日時列: ' + settings.endColumnName;
-        this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterCheckbox.checked && !configured);
+        this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterCheckbox.checked && (!columnsConfigured || !timeConfigured));
         this.swapButton.disabled = this.compareBusy;
     }
 
@@ -569,6 +604,7 @@ export class BranchComparePanel {
         const controller = new AbortController();
         this.compareController = controller;
         const exportFilter = this.exportFilterCheckbox.checked ? createExportValidationSettings(getAppliedSettings()) : undefined;
+        const exportFilterSource = this.exportFilterSource.value;
         this.persistState(false);
         this.dismissSuggestions();
         this.compareBusy = true;
@@ -581,6 +617,16 @@ export class BranchComparePanel {
         try {
             const result = await gitBranchCompareAsync(leftRef, rightRef);
             if (requestId !== this.compareRequestId) return;
+            if (exportFilter !== undefined) {
+                if (exportFilterSource !== 'current') {
+                    // リビジョン指定ではCSVと同じ確定コミットから時刻を取得する。
+                    const commit = exportFilterSource === 'target' ? result.rightCommit : result.leftCommit;
+                    exportFilter.dateTime = await this.loadExportDateTimeAsync(commit, exportFilterSource === 'target' ? '比較先' : '比較元');
+                    if (requestId !== this.compareRequestId) return;
+                }
+                this.exportFilterDateTime = exportFilter.dateTime;
+                this.updateCompareButton();
+            }
             const files = exportFilter === undefined ? result.files : await this.tab.filterBranchCompareFilesAsync(result.files, result.leftCommit, result.rightCommit, exportFilter, controller.signal);
             if (requestId !== this.compareRequestId) return;
             this.resultsElement.replaceChildren();
@@ -599,6 +645,7 @@ export class BranchComparePanel {
             this.tab.notifyBranchCompareSelection();
         } catch (error: unknown) {
             if (requestId !== this.compareRequestId) return;
+            if (exportFilter !== undefined && this.exportFilterDateTime === null) this.exportFilterError = error instanceof Error ? error.message : String(error);
             this.resultsElement.replaceChildren();
             this.showOperationError(error);
         }
@@ -611,6 +658,26 @@ export class BranchComparePanel {
         this.baseInput.disabled = false;
         this.targetInput.disabled = false;
         this.updateCompareButton();
+    }
+
+    private async loadExportDateTimeAsync(commit: string, sourceLabel: string): Promise<string> {
+        let json: string;
+        try {
+            json = await gitShowAtCommitAsync(commit, WORKSPACE_SETTINGS_FILE);
+        } catch {
+            throw new Error(sourceLabel + 'のリビジョンから設定ファイル（' + WORKSPACE_SETTINGS_FILE + '）を読み込めませんでした。');
+        }
+        let settings: unknown;
+        try {
+            settings = JSON.parse(json);
+        } catch {
+            throw new Error(sourceLabel + 'のリビジョンの設定ファイルが正しいJSONではありません。');
+        }
+        const dateTime = settings !== null && typeof settings === 'object' && 'exportValidationDateTime' in settings ? settings.exportValidationDateTime : undefined;
+        if (typeof dateTime !== 'string' || parseTemporalValue(dateTime).kind !== 'valid') {
+            throw new Error(sourceLabel + 'のリビジョンに有効な出力フィルター時刻が設定されていません。');
+        }
+        return dateTime;
     }
 
     private createFileItem(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, exportFilter?: ExportValidationSettings): HTMLElement {
@@ -714,6 +781,8 @@ export class BranchComparePanel {
 
     private invalidateResults(invalidateCompare: boolean): void {
         this.restoreComparisonPending = false;
+        this.exportFilterDateTime = null;
+        this.exportFilterError = null;
         if (invalidateCompare) {
             if (this.compareController !== false) this.compareController.abort();
             this.compareController = false;

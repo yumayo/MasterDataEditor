@@ -47,12 +47,20 @@ namespace App.MasterDataEditor
 				var gitRoot = GitCommandHelper.GetGitRoot(workDir);
 				var dataPrefix = GitCommandHelper.GetDataPrefix(gitRoot, workDir);
 				var schemaPrefix = GitCommandHelper.GetSchemaPrefix(gitRoot, workDir);
-				// フロントエンドから受け取ったパスをgitルート相対パスに変換する
-				path = GitCommandHelper.ToGitRootRelativeVersionedPath(path, dataPrefix, schemaPrefix);
-				var validationError = GitCommandHelper.ValidateVersionedFilePath(path, dataPrefix, schemaPrefix);
-				if (validationError != null)
+				// 出力比較の時刻取得では、ワークスペース設定ファイルだけを追加で許可する。
+				if (path == ".masterdataeditor/settings.json")
 				{
-					return new { type = "git_show_at_commit_response", requestId, success = false, error = validationError };
+					path = GitCommandHelper.GetWorkspaceSettingsPath(gitRoot, workDir);
+				}
+				else
+				{
+					// フロントエンドから受け取ったパスをgitルート相対パスに変換する
+					path = GitCommandHelper.ToGitRootRelativeVersionedPath(path, dataPrefix, schemaPrefix);
+					var validationError = GitCommandHelper.ValidateVersionedFilePath(path, dataPrefix, schemaPrefix);
+					if (validationError != null)
+					{
+						return new { type = "git_show_at_commit_response", requestId, success = false, error = validationError };
+					}
 				}
 
 				// git show {commit}:{path} で指定コミット時点のファイル内容を取得する
