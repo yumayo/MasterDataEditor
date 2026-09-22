@@ -180,14 +180,14 @@ export class BranchComparePanel {
 
         const exportFilterLabel = document.createElement('label');
         exportFilterLabel.classList.add('settings-toggle', 'branch-compare-export-filter-label');
-        exportFilterLabel.title = '出力フィルター時刻で比較';
+        exportFilterLabel.title = '出力時刻でフィルタ';
         exportFilterLabel.addEventListener('mousedown', (event: MouseEvent) => {
             if (this.suggestionsElement.classList.contains('visible')) event.preventDefault();
         });
         this.exportFilterCheckbox = document.createElement('input');
         this.exportFilterCheckbox.type = 'checkbox';
         this.exportFilterCheckbox.classList.add('settings-toggle-input');
-        this.exportFilterCheckbox.setAttribute('aria-label', '出力フィルター時刻で比較');
+        this.exportFilterCheckbox.setAttribute('aria-label', '出力時刻でフィルタ');
         this.exportFilterCheckbox.checked = storedState.exportFilterEnabled === true;
         this.exportFilterCheckbox.addEventListener('change', () => { this.refreshExportComparison(); });
         const exportFilterTrack = document.createElement('span');
@@ -198,13 +198,13 @@ export class BranchComparePanel {
         exportFilterTrack.appendChild(exportFilterThumb);
         const exportFilterCaption = document.createElement('span');
         exportFilterCaption.classList.add('branch-compare-export-filter-caption');
-        exportFilterCaption.textContent = '出力時刻';
+        exportFilterCaption.textContent = '出力時刻でフィルタ';
         exportFilterLabel.append(this.exportFilterCheckbox, exportFilterTrack, exportFilterCaption);
         actions.prepend(exportFilterLabel);
         this.exportFilterSummary = document.createElement('div');
         this.exportFilterSummary.classList.add('branch-compare-export-filter-summary');
         this.exportFilterSummary.setAttribute('role', 'status');
-        controls.appendChild(this.exportFilterSummary);
+        filterContainer.before(this.exportFilterSummary);
 
         this.filterEmptyElement = document.createElement('div');
         this.filterEmptyElement.classList.add('branch-compare-empty-message');

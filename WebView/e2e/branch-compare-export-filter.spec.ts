@@ -77,7 +77,7 @@ async function installPageAsync(page: Page, time: string): Promise<void> {
 }
 
 async function compareAsync(page: Page, filtered: boolean): Promise<void> {
-    await page.getByRole('checkbox', {name: '出力フィルター時刻で比較', exact: true}).setChecked(filtered);
+    await page.getByRole('checkbox', {name: '出力時刻でフィルタ', exact: true}).setChecked(filtered);
     await page.locator('.branch-compare-base-input').fill('main');
     await page.locator('.branch-compare-target-input').fill('feature');
     await page.locator('.branch-compare-button').click();
@@ -122,7 +122,7 @@ test('通常比較からモードを切り替えると自動再比較し、名�
     await installPageAsync(page, TIME);
     await compareAsync(page, false);
     await expect(names(page)).toHaveCount(5);
-    const mode = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
+    const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
     await mode.check();
     await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
     await page.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true}).fill('active');
@@ -139,7 +139,7 @@ test('時刻が未設定なら設定案内を表示し、通常比較には切�
     await installPageAsync(page, '');
     await page.locator('.branch-compare-base-input').fill('main');
     await page.locator('.branch-compare-target-input').fill('feature');
-    const mode = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
+    const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
     await mode.check();
     await expect(page.locator('.branch-compare-button')).toBeDisabled();
     await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('設定画面で');
@@ -160,7 +160,7 @@ test('出力比較モードと開いたタブの時刻を保存し、再起動�
         return {mode: state.sidebar.branchCompare.exportFilterEnabled, filter: state.tabs.open.find((tab: {diff?: {exportFilter?: object}}) => tab.diff?.exportFilter)?.diff.exportFilter};
     }).toEqual({mode: true, filter: {dateTime: TIME, beginColumnName: 'available_from', endColumnName: 'available_until'}});
     await page.reload();
-    await expect(page.getByRole('checkbox', {name: '出力フィルター時刻で比較'})).toBeChecked();
+    await expect(page.getByRole('checkbox', {name: '出力時刻でフィルタ'})).toBeChecked();
     await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
     await expect(page.locator('.diff-tab:visible')).toContainText('after');
     await expect(page.locator('.diff-tab:visible')).not.toContainText('outside-');
@@ -192,7 +192,7 @@ test('出力比較中にモードを解除すると遅れて届く旧結果で�
     await page.evaluate(() => {
         Object.assign(window, {__mockGitShowAtCommitDelays: {'1111111:data/active.csv': 700}});
     });
-    const mode = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
+    const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
     await mode.check();
     await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'true');
     await mode.uncheck();

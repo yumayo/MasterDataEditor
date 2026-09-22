@@ -1226,7 +1226,7 @@ test.describe('リビジョン比較パネル', () => {
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
-        const exportFilterToggle = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
+        const exportFilterToggle = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
         const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const compareButton = page.locator('.branch-compare-button');
         const suggestions = page.locator('.branch-compare-suggestions');
@@ -1260,7 +1260,7 @@ test.describe('リビジョン比較パネル', () => {
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
-        const exportFilterToggle = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
+        const exportFilterToggle = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
         const suggestions = page.locator('.branch-compare-suggestions');
 
         await targetInput.fill('feature');
