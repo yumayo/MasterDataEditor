@@ -2,6 +2,8 @@ import {readFileAsync, writeFileAsync} from "./api";
 import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../core/constant";
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 import {isCommitId} from "../core/git-revision";
+import {parseTemporalValue} from '../core/export-window';
+import type {ExportValidationSettings} from '../settings/settings-schema';
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'branchCompare' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -18,6 +20,7 @@ export interface UiBranchCompareState {
     baseRef: string | null;
     targetRef: string | null;
     compared: boolean;
+    exportFilterEnabled?: boolean;
 }
 
 export interface UiBottomPanelState {
@@ -110,6 +113,7 @@ export interface UiStoredBranchCompareDiffTab extends UiStoredDiffTabBase {
     leftLabel: string;
     rightLabel: string;
     fileStatus: 'A' | 'M' | 'D';
+    exportFilter?: ExportValidationSettings;
 }
 
 export type UiStoredDiffTab = UiStoredGitStatusDiffTab | UiStoredCommitCompareDiffTab | UiStoredBranchCompareDiffTab;
@@ -361,6 +365,7 @@ function normalizeBranchCompareState(value: unknown): UiBranchCompareState {
         baseRef,
         targetRef,
         compared: record?.['compared'] === true && baseRef !== null && targetRef !== null && baseRef !== targetRef,
+        ...(record?.['exportFilterEnabled'] === true ? {exportFilterEnabled: true} : {}),
     };
 }
 
@@ -494,6 +499,15 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
             ? record['fileStatus']
             : null;
         if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null || fileStatus === null) return null;
+        const filter = asRecord(record['exportFilter']);
+        let exportFilter: ExportValidationSettings | null = null;
+        if (record['exportFilter'] !== undefined) {
+            const dateTime = normalizeLimitedString(filter?.['dateTime'], MAX_DIFF_LABEL_LENGTH);
+            const beginColumnName = normalizeLimitedString(filter?.['beginColumnName'], MAX_DIFF_LABEL_LENGTH);
+            const endColumnName = normalizeLimitedString(filter?.['endColumnName'], MAX_DIFF_LABEL_LENGTH);
+            if (dateTime === null || beginColumnName === null || endColumnName === null || beginColumnName.trim() === '' || endColumnName.trim() === '' || parseTemporalValue(dateTime).kind !== 'valid') return null;
+            exportFilter = {dateTime, beginColumnName, endColumnName};
+        }
         return {
             kind: 'branchCompare',
             tableName,
@@ -505,6 +519,7 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
             leftLabel,
             rightLabel,
             fileStatus,
+            ...(exportFilter === null ? {} : {exportFilter}),
         };
     }
     if (record['kind'] === 'commitCompare') {

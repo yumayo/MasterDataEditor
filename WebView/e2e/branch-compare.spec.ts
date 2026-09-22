@@ -1161,6 +1161,13 @@ test.describe('リビジョン比較パネル', () => {
 
         await selectBranchByMouseAsync(page, '.branch-compare-target-input', longTargetRef);
         await expect(page.locator('.branch-compare-target-input')).toHaveAttribute('title', longTargetName);
+        const actionBounds = await page.locator('.branch-compare-actions').evaluate(element => ({left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, top: element.getBoundingClientRect().top}));
+        for (const selector of ['.branch-compare-export-filter-label', '.branch-compare-swap-button', '.branch-compare-button']) {
+            const bounds = await page.locator(selector).evaluate(element => ({left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right, top: element.getBoundingClientRect().top}));
+            expect(bounds.left).toBeGreaterThanOrEqual(actionBounds.left);
+            expect(bounds.right).toBeLessThanOrEqual(actionBounds.right);
+            expect(bounds.top).toBe(actionBounds.top);
+        }
         await page.locator('.branch-compare-button').click();
         const fileItem = page.locator('.branch-compare-file-item');
         await expect(fileItem).toHaveAttribute('title', longPath);
@@ -1214,11 +1221,12 @@ test.describe('リビジョン比較パネル', () => {
         await expect(targetInput).toHaveAttribute('aria-activedescendant', 'branch-compare-suggestion-0');
     });
 
-    test('Tabでactive候補を確定して比較元から比較先、入れ替え、比較、フィルタへフォーカスを進める', async ({page}) => {
+    test('Tabでactive候補を確定して比較元から比較先、出力時刻、入れ替え、比較、フィルタへフォーカスを進める', async ({page}) => {
         await openBranchComparePanelAsync(page);
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
+        const exportFilterToggle = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
         const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
         const compareButton = page.locator('.branch-compare-button');
         const suggestions = page.locator('.branch-compare-suggestions');
@@ -1237,8 +1245,10 @@ test.describe('リビジョン比較パネル', () => {
         await expect(targetInput).toHaveValue('feature/orders');
         await expect(targetInput).toHaveAttribute('data-selected-ref', RIGHT_REF);
         await expect(compareButton).toBeEnabled();
-        await expect(swapButton).toBeFocused();
+        await expect(exportFilterToggle).toBeFocused();
         await expect(suggestions).toBeHidden();
+        await exportFilterToggle.press('Tab');
+        await expect(swapButton).toBeFocused();
         await swapButton.press('Tab');
         await expect(compareButton).toBeFocused();
         await compareButton.press('Tab');
@@ -1250,7 +1260,7 @@ test.describe('リビジョン比較パネル', () => {
 
         const baseInput = page.locator('.branch-compare-base-input');
         const targetInput = page.locator('.branch-compare-target-input');
-        const swapButton = page.getByRole('button', {name: '入れ替え', exact: true});
+        const exportFilterToggle = page.getByRole('checkbox', {name: '出力フィルター時刻で比較'});
         const suggestions = page.locator('.branch-compare-suggestions');
 
         await targetInput.fill('feature');
@@ -1271,9 +1281,9 @@ test.describe('リビジョン比較パネル', () => {
 
         await targetInput.fill('該当しない比較先');
         await targetInput.press('Tab');
-        await expect(swapButton).toBeFocused();
+        await expect(exportFilterToggle).toBeFocused();
         await expect(suggestions).toBeHidden();
-        await swapButton.press('Shift+Tab');
+        await exportFilterToggle.press('Shift+Tab');
         await expect(targetInput).toBeFocused();
         await expect(targetInput).toHaveValue('該当しない比較先');
         await expect(targetInput).not.toHaveAttribute('data-selected-ref', /.+/);

@@ -1,4 +1,7 @@
+import type {ExportValidationSettings} from '../settings/settings-schema';
+
 export interface DiffBuildResult {
+    hasChanges: boolean;
     mode: 'full' | 'indexed';
     displayHeader: string[];
     newColumnIndices: number[];
@@ -23,6 +26,7 @@ export interface DiffBuildWorkerRequest {
     schemaJson: string;
     headCsv: string;
     currentCsv: string;
+    exportFilter?: ExportValidationSettings;
 }
 
 export type DiffBuildWorkerResponse =

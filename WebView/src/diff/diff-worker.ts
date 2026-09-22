@@ -2,6 +2,8 @@ import {buildDiffRows, buildMergedData, type DiffRow, type SchemaJson} from "./d
 import {Csv} from "../data/csv";
 import {GitDiffTracker} from "./git-diff-tracker";
 import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "./diff-build-result";
+import {parseTemporalValue, resolveExportWindowColumns, isRowActiveAtExportTime} from '../core/export-window';
+import type {ExportValidationSettings} from '../settings/settings-schema';
 
 const INDEXED_DIFF_ROW_THRESHOLD = 100000;
 
@@ -82,6 +84,7 @@ function buildFullDiffData(request: DiffBuildWorkerRequest): DiffBuildResult {
     const merged = buildMergedData(diffRows, columnCount);
     return {
         mode: 'full',
+        hasChanges: diffRows.some(row => row.kind !== 'unchanged') || (diffRows.length > 0 && newColumnIndices.size > 0),
         displayHeader,
         newColumnIndices: Array.from(newColumnIndices),
         leftOriginalRowIndices,
@@ -117,11 +120,18 @@ function buildIndexedDiffData(request: DiffBuildWorkerRequest): DiffBuildResult 
     const leftDeletedRowIndices: number[] = [];
     const rightAddedRowIndices: number[] = [];
     const processedCurrentKeys = new Set<string>();
+    const currentHeaderMap = GitDiffTracker.buildHeaderIndexMap(current.header);
+    let hasModifiedRows = false;
 
     for (const headEntry of headOrder) {
         const currentEntry = currentMap.get(headEntry.key);
         const rowIdx = leftSourceIndices.length;
         if (currentEntry !== undefined) {
+            if (!hasModifiedRows) {
+                const left = GitDiffTracker.remapRow(head.rows[headEntry.rowIndex], headHeaderMap, displayHeader);
+                const right = GitDiffTracker.remapRow(current.rows[currentEntry.rowIndex], currentHeaderMap, displayHeader);
+                hasModifiedRows = left.some((value, index) => value !== right[index]);
+            }
             processedCurrentKeys.add(headEntry.key);
             leftSourceIndices.push(headEntry.rowIndex);
             rightSourceIndices.push(currentEntry.rowIndex);
@@ -145,6 +155,7 @@ function buildIndexedDiffData(request: DiffBuildWorkerRequest): DiffBuildResult 
 
     return {
         mode: 'indexed',
+        hasChanges: hasModifiedRows || leftDeletedRowIndices.length > 0 || rightAddedRowIndices.length > 0 || (leftSourceIndices.length > 0 && newColumnIndices.length > 0),
         displayHeader,
         newColumnIndices,
         leftRowSourceIndices: Int32Array.from(leftSourceIndices),
@@ -176,10 +187,44 @@ function buildDiffData(request: DiffBuildWorkerRequest): DiffBuildResult {
     return buildFullDiffData(request);
 }
 
+function filterExportCsv(text: string, settings: ExportValidationSettings, timeMs: number): {text: string; originalIndices: number[]} {
+    const csv = new Csv();
+    csv.load(text);
+    const columns = resolveExportWindowColumns(csv.header, settings.beginColumnName.trim(), settings.endColumnName.trim());
+    const originalIndices: number[] = [];
+    csv.body = csv.body.filter((row, index) => {
+        if (!isRowActiveAtExportTime(row, columns, timeMs)) return false;
+        originalIndices.push(index);
+        return true;
+    });
+    return {text: csv.toString(), originalIndices};
+}
+
+function buildExportFilteredDiffData(request: DiffBuildWorkerRequest, settings: ExportValidationSettings): DiffBuildResult {
+    const time = parseTemporalValue(settings.dateTime);
+    if (time.kind !== 'valid' || settings.beginColumnName.trim() === '' || settings.endColumnName.trim() === '') {
+        throw new Error('出力フィルター時刻と開始・終了日時列を設定してください');
+    }
+    const left = filterExportCsv(request.headCsv, settings, time.ms);
+    const right = filterExportCsv(request.currentCsv, settings, time.ms);
+    const result = buildDiffData({...request, headCsv: left.text, currentCsv: right.text});
+    // 表示用の行と変更履歴の参照を、絞り込み前のCSVの行へ対応付ける。
+    for (const [indices, originals] of [
+        [result.leftOriginalRowIndices, left.originalIndices], [result.rightOriginalRowIndices, right.originalIndices],
+        [result.leftRowSourceIndices, left.originalIndices], [result.rightRowSourceIndices, right.originalIndices],
+    ] as const) {
+        if (indices === undefined) continue;
+        for (let index = 0; index < indices.length; index++) {
+            if (indices[index] >= 0) indices[index] = originals[indices[index]];
+        }
+    }
+    return result;
+}
+
 self.onmessage = (event: MessageEvent<DiffBuildWorkerRequest>) => {
     const request = event.data;
     try {
-        const data = buildDiffData(request);
+        const data = request.exportFilter === undefined ? buildDiffData(request) : buildExportFilteredDiffData(request, request.exportFilter);
         const response: DiffBuildWorkerResponse = {
             requestId: request.requestId,
             success: true,

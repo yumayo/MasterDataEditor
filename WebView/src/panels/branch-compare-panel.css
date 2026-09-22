@@ -53,6 +53,22 @@
     padding-right: 26px;
 }
 
+.branch-compare-export-filter-label.settings-toggle {
+    width: auto;
+    height: 28px;
+    margin-right: auto;
+    flex-shrink: 0;
+    gap: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.branch-compare-export-filter-summary {
+    color: var(--secondary-font-color);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
 .branch-compare-filter-clear {
     position: absolute;
     right: 4px;
@@ -135,9 +151,17 @@
 }
 
 .branch-compare-actions {
+    container: branch-compare-actions / inline-size;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 4px;
+}
+
+@container branch-compare-actions (max-width: 180px) {
+    .branch-compare-export-filter-caption {
+        display: none;
+    }
 }
 
 .branch-compare-button {

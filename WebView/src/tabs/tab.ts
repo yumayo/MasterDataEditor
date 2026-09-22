@@ -25,7 +25,7 @@ import {RelationsPanel} from "../panels/relations-panel";
 import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
-import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail} from "../settings/settings-schema";
+import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail, type ExportValidationSettings} from "../settings/settings-schema";
 import {DiffTab} from "./diff-tab";
 import {BranchCompareChanges} from "../diff/branch-compare-changes";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
@@ -3034,8 +3034,8 @@ export class Tab {
      * リビジョン比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
      * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
      */
-    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal): Promise<void> {
-        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')';
+    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, exportFilter?: ExportValidationSettings): Promise<void> {
+        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')' + (exportFilter === undefined ? '' : ' [出力 ' + exportFilter.dateTime + ']');
         // 通常タブを経由した場合も、既存の一時タブを再利用する。
         const previewTab = this.tabButtons.find(button => button.name === this.activeTabName && button.isPreview())
             ?? this.tabButtons.find(button => button.isPreview());
@@ -3053,6 +3053,7 @@ export class Tab {
             leftLabel,
             rightLabel,
             fileStatus: file.status,
+            ...(exportFilter === undefined ? {} : {exportFilter}),
         };
         await this.createOrReplaceDiffTabAsync(
             diffTabName, file.tableName, true, versions.schemaJson, versions.leftCsv, versions.rightCsv, file.path,
@@ -3063,6 +3064,24 @@ export class Tab {
                     && !this.tabButtons.some(button => button.name === diffTabName) ? previewTab : undefined,
             }
         );
+    }
+
+    async filterBranchCompareFilesAsync(files: GitBranchCompareFile[], leftCommit: string, rightCommit: string, exportFilter: ExportValidationSettings, signal: AbortSignal): Promise<GitBranchCompareFile[]> {
+        const filtered: GitBranchCompareFile[] = [];
+        // 多数のCSVを比較するときも、同時取得とworker数を制限する。
+        for (let offset = 0; offset < files.length; offset += 4) {
+            if (signal.aborted) return [];
+            const batch = files.slice(offset, offset + 4);
+            const matches = await Promise.all(batch.map(async file => {
+                const versions = await this.loadBranchCompareDiffVersionsAsync(file, leftCommit, rightCommit, signal);
+                if (versions === null || signal.aborted) return false;
+                const diff = await DiffTab.buildDiffDataAsync(versions.schemaJson, versions.leftCsv, versions.rightCsv, exportFilter);
+                return diff.hasChanges;
+            }));
+            if (signal.aborted) return [];
+            filtered.push(...batch.filter((_, index) => matches[index]));
+        }
+        return filtered;
     }
 
     private async loadBranchCompareDiffVersionsAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, abortSignal: AbortSignal | null): Promise<BranchCompareDiffVersions | null> {
@@ -3404,7 +3423,7 @@ export class Tab {
         if (isAborted()) return;
         // 入れ替え時は旧タブを表示したまま準備し、失敗・キャンセル時にも旧差分を残す。
         const buildDiff = () => Promise.all([
-            DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv),
+            DiffTab.buildDiffDataAsync(schemaJson, headCsv, currentCsv, options.metadata?.kind === 'branchCompare' ? options.metadata.exportFilter : undefined),
             applyStoredColumnWidthsToSchemaAsync(tableName, JSON.parse(schemaJson) as Record<string, unknown>),
         ] as const);
         const replacePreview = options.replacePreview;

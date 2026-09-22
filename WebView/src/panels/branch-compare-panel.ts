@@ -4,6 +4,9 @@ import type {UiStateStore} from '../app/ui-state';
 import type {NotificationToast} from '../ui/notification';
 import {isCommitId} from '../core/git-revision';
 import {appendHighlightedSegments} from '../search/fuzzy-search';
+import {getAppliedSettings} from './settings-panel';
+import {createExportValidationSettings, hasRuntimeGroupSettingsChange, SETTINGS_CHANGED_EVENT, type SettingsChangedEventDetail, type ExportValidationSettings} from '../settings/settings-schema';
+import {parseTemporalValue} from '../core/export-window';
 
 type RevisionInput = HTMLInputElement;
 
@@ -14,6 +17,7 @@ interface BranchCompareFileView {
     item: HTMLElement;
     group: HTMLElement;
     name: HTMLElement;
+    exportFilter?: ExportValidationSettings;
 }
 
 /**
@@ -30,6 +34,8 @@ export class BranchComparePanel {
     private readonly filterInput: HTMLInputElement;
     private readonly filterClearButton: HTMLButtonElement;
     private readonly filterEmptyElement: HTMLElement;
+    private readonly exportFilterCheckbox: HTMLInputElement;
+    private readonly exportFilterSummary: HTMLElement;
     private readonly statusElement: HTMLElement;
     private readonly notification: NotificationToast;
     private readonly resultsElement: HTMLElement;
@@ -45,6 +51,7 @@ export class BranchComparePanel {
     private branchListRequestId: number;
     private compareRequestId: number;
     private compareBusy: boolean;
+    private compareController: AbortController | false;
     private fileOpenController: AbortController | false;
     private readonly fileViews: BranchCompareFileView[] = [];
 
@@ -63,6 +70,7 @@ export class BranchComparePanel {
         this.branchListRequestId = 0;
         this.compareRequestId = 0;
         this.compareBusy = false;
+        this.compareController = false;
         this.fileOpenController = false;
 
         this.element = document.createElement('div');
@@ -170,6 +178,34 @@ export class BranchComparePanel {
         filterContainer.append(this.filterInput, this.filterClearButton);
         controls.appendChild(filterContainer);
 
+        const exportFilterLabel = document.createElement('label');
+        exportFilterLabel.classList.add('settings-toggle', 'branch-compare-export-filter-label');
+        exportFilterLabel.title = '出力フィルター時刻で比較';
+        exportFilterLabel.addEventListener('mousedown', (event: MouseEvent) => {
+            if (this.suggestionsElement.classList.contains('visible')) event.preventDefault();
+        });
+        this.exportFilterCheckbox = document.createElement('input');
+        this.exportFilterCheckbox.type = 'checkbox';
+        this.exportFilterCheckbox.classList.add('settings-toggle-input');
+        this.exportFilterCheckbox.setAttribute('aria-label', '出力フィルター時刻で比較');
+        this.exportFilterCheckbox.checked = storedState.exportFilterEnabled === true;
+        this.exportFilterCheckbox.addEventListener('change', () => { this.refreshExportComparison(); });
+        const exportFilterTrack = document.createElement('span');
+        exportFilterTrack.classList.add('settings-toggle-track');
+        exportFilterTrack.setAttribute('aria-hidden', 'true');
+        const exportFilterThumb = document.createElement('span');
+        exportFilterThumb.classList.add('settings-toggle-thumb');
+        exportFilterTrack.appendChild(exportFilterThumb);
+        const exportFilterCaption = document.createElement('span');
+        exportFilterCaption.classList.add('branch-compare-export-filter-caption');
+        exportFilterCaption.textContent = '出力時刻';
+        exportFilterLabel.append(this.exportFilterCheckbox, exportFilterTrack, exportFilterCaption);
+        actions.prepend(exportFilterLabel);
+        this.exportFilterSummary = document.createElement('div');
+        this.exportFilterSummary.classList.add('branch-compare-export-filter-summary');
+        this.exportFilterSummary.setAttribute('role', 'status');
+        controls.appendChild(this.exportFilterSummary);
+
         this.filterEmptyElement = document.createElement('div');
         this.filterEmptyElement.classList.add('branch-compare-empty-message');
         this.filterEmptyElement.setAttribute('role', 'status');
@@ -191,11 +227,17 @@ export class BranchComparePanel {
         });
         this.tab.connectBranchCompareListener(metadata => {
             for (const view of this.fileViews) {
-                const active = metadata !== null && metadata.gitPath === view.file.path && metadata.leftCommit === view.leftCommit && metadata.rightCommit === view.rightCommit;
+                const active = metadata !== null && metadata.gitPath === view.file.path && metadata.leftCommit === view.leftCommit && metadata.rightCommit === view.rightCommit
+                    && JSON.stringify(metadata.exportFilter) === JSON.stringify(view.exportFilter);
                 view.item.classList.toggle('branch-compare-file-item-active', active);
                 view.item.setAttribute('aria-current', String(active));
             }
         });
+        window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
+            const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
+            if (hasRuntimeGroupSettingsChange('exportValidation', detail.changedKeys) && this.exportFilterCheckbox.checked) this.refreshExportComparison();
+        });
+        this.updateCompareButton();
     }
 
     appendTo(parent: HTMLElement): void {
@@ -365,6 +407,7 @@ export class BranchComparePanel {
             baseRef: this.baseInput.getAttribute('data-selected-ref'),
             targetRef: this.targetInput.getAttribute('data-selected-ref'),
             compared,
+            ...(this.exportFilterCheckbox.checked ? {exportFilterEnabled: true} : {}),
         });
     }
 
@@ -497,18 +540,35 @@ export class BranchComparePanel {
     }
 
     private updateCompareButton(): void {
-        this.compareButton.disabled = this.compareBusy || !this.areRefsReady();
+        const settings = createExportValidationSettings(getAppliedSettings());
+        const configured = parseTemporalValue(settings.dateTime).kind === 'valid' && settings.beginColumnName.trim() !== '' && settings.endColumnName.trim() !== '';
+        this.exportFilterSummary.hidden = !this.exportFilterCheckbox.checked;
+        this.exportFilterSummary.textContent = configured ? '出力時刻: ' + settings.dateTime.replace('T', ' ') : '設定画面で出力フィルター時刻と開始・終了日時列を設定してください';
+        this.exportFilterSummary.title = '開始日時列: ' + settings.beginColumnName + ' / 終了日時列: ' + settings.endColumnName;
+        this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterCheckbox.checked && !configured);
         this.swapButton.disabled = this.compareBusy;
+    }
+
+    private refreshExportComparison(): void {
+        const compared = this.compareBusy || this.uiStateStore.getState().sidebar.branchCompare.compared;
+        this.dismissSuggestions();
+        this.invalidateResults(true);
+        this.persistState(false);
+        this.updateCompareButton();
+        if (compared && !this.compareButton.disabled) this.compareAsync().catch((error: unknown) => { this.handleUnexpectedCompareError(error); });
     }
 
     private async compareAsync(): Promise<void> {
         const leftRef = this.baseInput.getAttribute('data-selected-ref');
         const rightRef = this.targetInput.getAttribute('data-selected-ref');
-        if (this.compareBusy || !this.areRefsReady() || leftRef === null || rightRef === null) return;
+        if (this.compareButton.disabled || this.compareBusy || !this.areRefsReady() || leftRef === null || rightRef === null) return;
         const requestId = ++this.compareRequestId;
         const leftLabel = this.baseInput.value.trim();
         const rightLabel = this.targetInput.value.trim();
         this.invalidateResults(false);
+        const controller = new AbortController();
+        this.compareController = controller;
+        const exportFilter = this.exportFilterCheckbox.checked ? createExportValidationSettings(getAppliedSettings()) : undefined;
         this.persistState(false);
         this.dismissSuggestions();
         this.compareBusy = true;
@@ -521,14 +581,16 @@ export class BranchComparePanel {
         try {
             const result = await gitBranchCompareAsync(leftRef, rightRef);
             if (requestId !== this.compareRequestId) return;
+            const files = exportFilter === undefined ? result.files : await this.tab.filterBranchCompareFilesAsync(result.files, result.leftCommit, result.rightCommit, exportFilter, controller.signal);
+            if (requestId !== this.compareRequestId) return;
             this.resultsElement.replaceChildren();
-            if (result.files.length === 0) {
+            if (files.length === 0) {
                 const empty = document.createElement('div');
                 empty.classList.add('branch-compare-empty-message');
-                empty.textContent = '変更されたファイルはありません';
+                empty.textContent = exportFilter === undefined ? '変更されたファイルはありません' : '出力対象に差分のあるテーブルはありません';
                 this.resultsElement.appendChild(empty);
             } else {
-                for (const file of result.files) this.resultsElement.appendChild(this.createFileItem(file, result.leftCommit, result.rightCommit, leftLabel, rightLabel));
+                for (const file of files) this.resultsElement.appendChild(this.createFileItem(file, result.leftCommit, result.rightCommit, leftLabel, rightLabel, exportFilter));
                 this.resultsElement.appendChild(this.filterEmptyElement);
                 this.applyFileFilter();
             }
@@ -541,6 +603,7 @@ export class BranchComparePanel {
             this.showOperationError(error);
         }
         if (requestId !== this.compareRequestId) return;
+        this.compareController = false;
         this.compareBusy = false;
         this.element.classList.remove('branch-compare-busy');
         this.resultsElement.setAttribute('aria-busy', 'false');
@@ -550,7 +613,7 @@ export class BranchComparePanel {
         this.updateCompareButton();
     }
 
-    private createFileItem(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string): HTMLElement {
+    private createFileItem(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, exportFilter?: ExportValidationSettings): HTMLElement {
         const group = document.createElement('div');
         group.classList.add('branch-compare-file-group');
         const item = document.createElement('div');
@@ -606,7 +669,7 @@ export class BranchComparePanel {
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
-            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal)
+            this.tab.openBranchCompareDiffTabAsync(file, leftCommit, rightCommit, leftLabel, rightLabel, controller.signal, exportFilter)
                 .then(() => {
                     if (this.fileOpenController !== controller || controller.signal.aborted) return;
                     this.fileOpenController = false;
@@ -629,7 +692,7 @@ export class BranchComparePanel {
             openDiff();
         });
         group.appendChild(item);
-        this.fileViews.push({file, leftCommit, rightCommit, item, group, name});
+        this.fileViews.push({file, leftCommit, rightCommit, item, group, name, exportFilter});
         return group;
     }
 
@@ -652,6 +715,8 @@ export class BranchComparePanel {
     private invalidateResults(invalidateCompare: boolean): void {
         this.restoreComparisonPending = false;
         if (invalidateCompare) {
+            if (this.compareController !== false) this.compareController.abort();
+            this.compareController = false;
             this.compareRequestId++;
             this.compareBusy = false;
             this.element.classList.remove('branch-compare-busy');
@@ -685,6 +750,8 @@ export class BranchComparePanel {
     }
 
     private handleUnexpectedCompareError(error: unknown): void {
+        if (this.compareController !== false) this.compareController.abort();
+        this.compareController = false;
         this.compareBusy = false;
         this.element.classList.remove('branch-compare-busy');
         this.resultsElement.setAttribute('aria-busy', 'false');
