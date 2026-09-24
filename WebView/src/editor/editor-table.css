@@ -12,6 +12,8 @@
     --editor-table-find-current-frozen-bg: color-mix(in srgb, #ffc107 38%, var(--background-sub-color));
     --editor-table-scrollbar-thumb-color: color-mix(in srgb, var(--font-color) 38%, var(--background-sub-color));
     --editor-table-scrollbar-thumb-hover-color: color-mix(in srgb, var(--font-color) 56%, var(--background-sub-color));
+    --git-changed-row-bg: color-mix(in srgb, var(--git-changed-bg) 50%, transparent);
+    --git-changed-row-frozen-bg: color-mix(in srgb, var(--git-changed-frozen-bg) 50%, var(--background-sub-color));
 
     user-select: none;
 }
@@ -139,6 +141,17 @@
 .editor-table-find-option-button {
     width: 28px;
     font-weight: 600;
+}
+
+/* 変更行は薄い緑、変更セルは従来の濃さ。検索・選択の強調表示を優先する。 */
+.cell-git-in-changed-row {
+    background-color: var(--git-changed-row-bg);
+}
+
+.editor-table-row-header.cell-git-in-changed-row,
+.blame-cell.cell-git-in-changed-row {
+    background-color: var(--background-color);
+    background-image: linear-gradient(var(--git-changed-row-bg), var(--git-changed-row-bg));
 }
 
 .editor-table-cell-find-match {
@@ -1015,6 +1028,12 @@
 
 .freeze-cell {
     background-color: var(--background-sub-color);
+}
+
+/* 行全体の差分色も固定領域では不透明にし、背面のセルが透けるのを防ぐ。 */
+.freeze-row .editor-table-cell.cell-git-in-changed-row:not(.editor-table-row-header),
+.freeze-cell.cell-git-in-changed-row {
+    background-color: var(--git-changed-row-frozen-bg);
 }
 
 /* 固定セルは透過防止の不透明背景を持つため、検索ハイライトも不透明色で上書きする。 */

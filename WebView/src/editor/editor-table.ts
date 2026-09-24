@@ -2515,8 +2515,8 @@ export class EditorTable {
         if (rowElement === null) return;
         this.reference.setCellValueAt(row, column, value);
         const rowIdentityChanged = this.gitDiffTracker !== false && this.gitDiffTracker.isRowIdentityColumn(storeColIndex);
-        // 非固定の公開期間列の編集でも、固定された主キー等のハイライトが変わる。
-        const requiresDetachedCloneSync = row <= this.frozenRowCount || this.isFrozenDomColumn(column) || (rowIdentityChanged && (this.frozenColumnCount > 0 || this.frozenRightColumnCount > 0));
+        // Git差分がある場合は、非固定セルの編集でも行番号・固定セルの行背景が変わる。
+        const requiresDetachedCloneSync = row <= this.frozenRowCount || this.isFrozenDomColumn(column) || this.gitDiffTracker !== false;
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
@@ -2528,6 +2528,7 @@ export class EditorTable {
                     this.git.updateRowGitHighlight(row, latestRows, storeRowIndex);
                 } else {
                     this.updateSingleCellGitHighlight(this.getCell(row, column), latestRows, storeRowIndex, storeColIndex);
+                    this.git.updateRowGitBackground(rowElement);
                 }
             }
         }

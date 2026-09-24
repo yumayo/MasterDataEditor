@@ -266,6 +266,7 @@ export class EditorTableRenderer {
                         cell.classList.add('cell-git-changed');
                     }
                 }
+                this.git.updateRowGitBackground(rowElement);
             }
         }
     }

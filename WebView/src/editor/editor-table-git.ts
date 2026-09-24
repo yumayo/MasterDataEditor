@@ -87,6 +87,7 @@ export class EditorTableGit {
             const isEmptyRow = rowElement.classList.contains('editor-table-empty-row');
             const blameCell = this.createBlameCellForStoreRow(this.resolveStoreRowIndex(logicalRowIndex - 1), isEmptyRow);
             rowElement.prepend(blameCell);
+            this.updateRowGitBackground(rowElement);
             renderedRows++;
         }
         const selectionStartedAt = performance.now();
@@ -346,6 +347,14 @@ export class EditorTableGit {
         }
     }
 
+    /** 分離描画される行番号や固定セルにも、変更行の薄い背景色を引き継ぐ。 */
+    updateRowGitBackground(rowElement: HTMLElement): void {
+        const hasChanges = rowElement.querySelector('.cell-git-changed') !== null;
+        for (const cell of rowElement.children) {
+            cell.classList.toggle('cell-git-in-changed-row', hasChanges);
+        }
+    }
+
     /** 比較対象のHEAD行が変わる編集時と全体更新で、描画済みの1行を再評価する。 */
     updateRowGitHighlight(row: number, storeRows: string[][], storeRowIndex: number): void {
         const columnMapping: readonly number[] = this.tableData.columnMapping;
@@ -355,6 +364,8 @@ export class EditorTableGit {
             if (storeColumnIndex === -1) continue;
             this.updateSingleCellGitHighlight(this.getCell(row, dataColumnIndex + offset), storeRows, storeRowIndex, storeColumnIndex);
         }
+        const rowElement = this.getRowElement(row);
+        if (rowElement !== null) this.updateRowGitBackground(rowElement);
     }
 
     /** 主キーに、設定で指定された公開期間列のうち存在する列を加える。 */
@@ -388,7 +399,9 @@ export class EditorTableGit {
                 for (let col = offset; col < totalColCount; col++) {
                     this.getCell(row, col).classList.remove('cell-git-changed');
                 }
+                this.updateRowGitBackground(rowElement);
             }
+            this.syncDetachedVisualState();
             // git変更なし → スクロールバーマーカーもクリアする
             this.currentGitChangedDomRows = new Set();
             this.refreshScrollbarMarkers();
@@ -437,6 +450,7 @@ export class EditorTableGit {
             if (storeRowIndex < 0) continue;
             this.updateRowGitHighlight(row, storeRows, storeRowIndex);
         }
+        this.syncDetachedVisualState();
         // git変更行・列をスクロールバーマーカーに反映する
         this.currentGitChangedDomRows = changedDataRows;
         this.refreshScrollbarMarkers();
