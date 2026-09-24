@@ -853,6 +853,16 @@ export class DiffTab {
                 leftCell.classList.add('diff-cell-deleted');
             }
         }
+        const rightRow = rightCell === null ? null : rightCell.parentElement;
+        const leftRow = leftCell === null ? null : leftCell.parentElement;
+        if (rightRow !== null) {
+            this.applyModifiedRowDecorations(rightRow);
+            this.rightEditorTable.syncDetachedVisualState();
+        }
+        if (leftRow !== null) {
+            this.applyModifiedRowDecorations(leftRow);
+            this.leftEditorTable.syncDetachedVisualState();
+        }
         // セル編集で差分クラスが変わるためマーカーを再計算する
         this.refreshDiffMarkers();
     }
@@ -1368,6 +1378,15 @@ export class DiffTab {
             if (className !== undefined) {
                 (rowElement.children[domCol] as HTMLElement).classList.add(className);
             }
+        }
+        this.applyModifiedRowDecorations(rowElement);
+    }
+
+    /** 行全体の薄い差分色を、分離描画される行ヘッダー・固定セルにも引き継ぐ。 */
+    private applyModifiedRowDecorations(rowElement: HTMLElement): void {
+        const isModified = rowElement.querySelector('.diff-cell-deleted, .diff-cell-added') !== null;
+        for (const cell of rowElement.children) {
+            cell.classList.toggle('diff-cell-in-modified-row', isModified);
         }
     }
 
