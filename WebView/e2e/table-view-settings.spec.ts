@@ -3,7 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import { installMockApiAsync, readMockFileAsync, type MockFileSystem } from './fixtures/mock-api';
 
 const VIEW_SETTINGS_FILE = 'user:table-view-settings.json';
-const EMPTY_SETTINGS = { frozenColumnCount: 0, frozenRowCount: 0, sortKeys: [], filters: {} };
+const EMPTY_SETTINGS = { frozenRightColumnCount: 0, frozenColumnCount: 0, frozenRowCount: 0, sortKeys: [], filters: {} };
 const LEGACY_SETTINGS = {
     frozenColumnCount: 2,
     frozenRowCount: 1,
@@ -112,7 +112,7 @@ test.describe('テーブル表示設定のユーザーデータ保存', () => {
         await contextActionAsync(page, columnHeader(table, 1), '先頭からこの列まで固定');
         await contextActionAsync(page, table.locator('.editor-table-detached-row-header-layer .editor-table-row-header:visible').first(), 'この行まで固定');
 
-        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: LEGACY_SETTINGS } });
+        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: {...LEGACY_SETTINGS, frozenRightColumnCount: 0} } });
         await page.keyboard.press('Control+s');
         await expect.poll(async () => page.evaluate(() => {
             const requests = (window as unknown as { __mockApiRequestDetails: { type: string; filename: string | null }[] }).__mockApiRequestDetails;
@@ -132,7 +132,7 @@ test.describe('テーブル表示設定のユーザーデータ保存', () => {
         await installMockApiAsync(page, fs);
         await page.goto('/');
         await expectRestoredAsync(await openTableAsync(page, 'item'));
-        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: LEGACY_SETTINGS } });
+        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: {...LEGACY_SETTINGS, frozenRightColumnCount: 0} } });
         await expectSchemaUnchangedAsync(page, fs);
     });
 
@@ -162,7 +162,7 @@ test.describe('テーブル表示設定のユーザーデータ保存', () => {
         await expectSchemaUnchangedAsync(page, fs);
 
         await page.keyboard.press('Control+s');
-        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: LEGACY_SETTINGS } });
+        await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: { item: {...LEGACY_SETTINGS, frozenRightColumnCount: 0} } });
         await expectSchemaUnchangedAsync(page, fs);
     });
 
@@ -256,7 +256,7 @@ test.describe('テーブル表示設定のユーザーデータ保存', () => {
         await filterAlphaAsync(page, other);
         await page.evaluate(() => (window as unknown as { __releaseViewSettingsWrite: () => void }).__releaseViewSettingsWrite());
         await expect.poll(() => readSettingsAsync(page)).toEqual({ tables: {
-            unopened: LEGACY_SETTINGS,
+            unopened: {...LEGACY_SETTINGS, frozenRightColumnCount: 0},
             item: { ...EMPTY_SETTINGS, sortKeys: LEGACY_SETTINGS.sortKeys },
             other: { ...EMPTY_SETTINGS, filters: LEGACY_SETTINGS.filters },
         } });

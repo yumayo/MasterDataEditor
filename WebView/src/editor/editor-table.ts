@@ -98,12 +98,18 @@ export class EditorTable {
     private readonly topRightPane: HTMLElement;
     private readonly bottomLeftPane: HTMLElement;
     private readonly bottomRightPane: HTMLElement;
+    private readonly rightFrozenTopPane: HTMLElement;
+    private readonly rightFrozenBottomPane: HTMLElement;
+    private readonly detachedRightColumnHeaderLayer: HTMLElement;
+    private readonly detachedRightColumnLayer: HTMLElement;
+    private readonly detachedFrozenRightCornerLayer: HTMLElement;
     private readonly topRightViewport: HTMLElement;
     private readonly leftBottomViewport: HTMLElement;
     private readonly topLeftContent: HTMLElement;
     private readonly topRightContent: HTMLElement;
     private readonly leftBottomContent: HTMLElement;
     private readonly mainContent: HTMLElement;
+    private readonly mainCellsViewport: HTMLElement;
     private readonly customVerticalScrollbar: HTMLElement;
     private readonly customVerticalScrollbarThumb: HTMLElement;
     private readonly customHorizontalScrollbar: HTMLElement;
@@ -150,6 +156,7 @@ export class EditorTable {
 
     /** 固定列数（0=未固定） */
     private frozenColumnCount: number;
+    private frozenRightColumnCount: number;
     /** 固定行数（0=未固定） */
     private frozenRowCount: number;
     /** blame情報の表示状態（false: 非表示、true: 表示中） */
@@ -276,6 +283,18 @@ export class EditorTable {
         this.bottomLeftPane.classList.add('editor-table-pane', 'editor-table-pane-bottom-left');
         this.bottomRightPane = document.createElement('div');
         this.bottomRightPane.classList.add('editor-table-pane', 'editor-table-pane-bottom-right');
+        this.rightFrozenTopPane = document.createElement('div');
+        this.rightFrozenTopPane.classList.add('editor-table-pane', 'editor-table-pane-frozen-right-top');
+        this.rightFrozenBottomPane = document.createElement('div');
+        this.rightFrozenBottomPane.classList.add('editor-table-pane', 'editor-table-pane-frozen-right-bottom');
+        this.detachedRightColumnHeaderLayer = document.createElement('div');
+        this.detachedRightColumnHeaderLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-right-column-header-layer');
+        this.detachedRightColumnLayer = document.createElement('div');
+        this.detachedRightColumnLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-right-column-layer');
+        this.detachedFrozenRightCornerLayer = document.createElement('div');
+        this.detachedFrozenRightCornerLayer.classList.add('editor-table-detached-layer', 'editor-table-detached-frozen-right-corner-layer');
+        this.rightFrozenTopPane.append(this.detachedRightColumnHeaderLayer, this.detachedFrozenRightCornerLayer);
+        this.rightFrozenBottomPane.appendChild(this.detachedRightColumnLayer);
         this.topRightViewport = document.createElement('div');
         this.topRightViewport.classList.add('editor-table-top-viewport');
         this.leftBottomViewport = document.createElement('div');
@@ -286,6 +305,8 @@ export class EditorTable {
         this.topRightContent.classList.add('editor-table-pane-content', 'editor-table-top-right-content');
         this.leftBottomContent = document.createElement('div');
         this.leftBottomContent.classList.add('editor-table-pane-content', 'editor-table-left-bottom-content');
+        this.mainCellsViewport = document.createElement('div');
+        this.mainCellsViewport.classList.add('editor-table-main-cells-viewport');
         this.mainContent = document.createElement('div');
         this.mainContent.classList.add('editor-table-main-content');
         this.customVerticalScrollbar = document.createElement('div');
@@ -340,8 +361,8 @@ export class EditorTable {
             this.scrollContainer.classList.add('editor-table-main-viewport');
             this.scrollContainer.classList.add('editor-table-main-viewport--custom-vertical-scroll');
             this.scrollContainer.appendChild(this.mainContent);
-            this.bottomRightPane.appendChild(this.gridElement);
-            this.bottomRightPane.appendChild(this.gridLineMainLayer);
+            this.mainCellsViewport.append(this.gridElement, this.gridLineMainLayer);
+            this.bottomRightPane.appendChild(this.mainCellsViewport);
             this.bottomRightPane.appendChild(this.customVerticalScrollbar);
             this.bottomRightPane.appendChild(this.customHorizontalScrollbar);
             this.bottomRightPane.appendChild(this.customScrollbarCorner);
@@ -349,6 +370,7 @@ export class EditorTable {
             this.element.appendChild(this.topRightPane);
             this.element.appendChild(this.bottomLeftPane);
             this.element.appendChild(this.bottomRightPane);
+            this.element.append(this.rightFrozenTopPane, this.rightFrozenBottomPane);
         } else {
             this.element.appendChild(this.detachedColumnHeaderLayer);
             this.element.appendChild(this.detachedRowHeaderLayer);
@@ -367,6 +389,7 @@ export class EditorTable {
         this.refreshGitDiffRequestId = 0;
         this.autoFillEntries = [];
         this.frozenColumnCount = 0;
+        this.frozenRightColumnCount = 0;
         this.frozenRowCount = 0;
         this.isBlameVisible = false;
         this.rowHeaderWidthPx = ROW_HEADER_WIDTH_PX;
@@ -486,6 +509,12 @@ export class EditorTable {
         this.customVerticalScrollbar.addEventListener('wheel', (event) => this.handleCustomVerticalScrollbarWheel(event), { passive: false });
         this.customHorizontalScrollbar.addEventListener('pointerdown', (event) => this.handleCustomHorizontalScrollbarPointerDown(event));
         this.customHorizontalScrollbar.addEventListener('wheel', (event) => this.handleCustomHorizontalScrollbarWheel(event), { passive: false });
+        for (const pane of [this.rightFrozenTopPane, this.rightFrozenBottomPane]) {
+            pane.addEventListener('wheel', (event) => this.layout.scrollFrozenPane(event, 'right'), {passive: false});
+        }
+        for (const pane of [this.topLeftPane, this.bottomLeftPane]) {
+            pane.addEventListener('wheel', (event) => this.layout.scrollFrozenPane(event, 'left'), {passive: false});
+        }
         this.internalScrollEventListenersRegistered = true;
     }
 
@@ -586,6 +615,9 @@ export class EditorTable {
         this.refreshGridLines();
     }
     private refreshFreezeVisualState(): void {
+        // 構造変更のUndo/Redoもここを通るため、削除直後の描画前に範囲を正規化する。
+        this.frozenColumnCount = Math.min(this.frozenColumnCount, this.getColumnCount());
+        this.frozenRightColumnCount = Math.min(this.frozenRightColumnCount, this.getColumnCount() - this.frozenColumnCount);
         this.layout.refreshFreezeVisualState();
         this.refreshGridLines();
     }
@@ -950,6 +982,16 @@ export class EditorTable {
     private getVisibleDetachedCellOrNull(row: number, column: number): HTMLElement | null {
         if (!this.usesInternalMainViewport) return null;
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
+        const rightColumnStart = this.getTotalColumnCount() - this.frozenRightColumnCount;
+        if (column >= rightColumnStart && column < this.getTotalColumnCount()) {
+            const layer = row === 0 ? this.detachedRightColumnHeaderLayer
+                : row <= this.frozenRowCount ? this.detachedFrozenRightCornerLayer : this.detachedRightColumnLayer;
+            const detachedRow = row === 0 ? layer.querySelector<HTMLElement>('.editor-table-detached-row')
+                : layer.querySelector<HTMLElement>(`.editor-table-detached-row[data-row-index="${row - 1}"]`);
+            if (detachedRow === null) return null;
+            const cell = detachedRow.children[column - rightColumnStart];
+            return cell instanceof HTMLElement ? cell : null;
+        }
         if (row === 0) {
             const headerLayer = column < fixedLeftColumnCount ? this.detachedCornerLayer : this.detachedColumnHeaderLayer;
             const headerRow = headerLayer.firstElementChild as HTMLElement | null;
@@ -1145,7 +1187,7 @@ export class EditorTable {
         const verticalScrollbarWidth = verticalMetrics.scrollHeight > verticalMetrics.clientHeight
             ? CUSTOM_VERTICAL_SCROLLBAR_WIDTH_PX
             : 0;
-        this.customHorizontalScrollbar.style.right = `${verticalScrollbarWidth}px`;
+        this.customHorizontalScrollbar.style.right = `${verticalScrollbarWidth + this.getRightFrozenVisibleWidthPx()}px`;
         this.updateCustomScrollbarCorner(height, verticalScrollbarWidth);
         const scrollWidth = this.scrollContainer.scrollWidth;
         const clientWidth = this.scrollContainer.clientWidth;
@@ -1429,6 +1471,30 @@ export class EditorTable {
     /** 現在の固定列数を返す */
     getFrozenColumnCount(): number { return this.frozenColumnCount; }
 
+    getFrozenRightColumnCount(): number { return this.frozenRightColumnCount; }
+
+    /** 末尾からcount列を固定する。重なる左固定範囲は今回の指定に合わせて縮める。 */
+    freezeRightColumns(count: number): void {
+        if (!Number.isSafeInteger(count) || count < 0) throw new Error('右固定列数が不正です');
+        this.frozenRightColumnCount = Math.min(count, this.getColumnCount());
+        this.frozenColumnCount = Math.min(this.frozenColumnCount, this.getColumnCount() - this.frozenRightColumnCount);
+        this.layout.resetRightFrozenScroll();
+        this.refreshFreezeVisualState();
+    }
+
+    unfreezeRightColumns(): void {
+        this.freezeRightColumns(0);
+    }
+
+    /** 幅の狭い右固定領域でも、キーボードで移動した列を表示する。 */
+    revealFrozenColumn(column: number): void {
+        this.layout.revealFrozenColumn(column);
+    }
+
+    getRightFrozenVisibleWidthPx(): number {
+        return this.rightFrozenBottomPane.clientWidth;
+    }
+
     /** 現在の固定行数を返す */
     getFrozenRowCount(): number { return this.frozenRowCount; }
 
@@ -1440,8 +1506,10 @@ export class EditorTable {
      */
     freezeColumns(count: number): void {
         if (count === 0) { this.unfreezeColumns(); return; }
+        if (!Number.isSafeInteger(count) || count < 0) throw new Error('左固定列数が不正です');
         this.clearFreezeColumnStyles();
-        this.frozenColumnCount = count;
+        this.frozenColumnCount = Math.min(count, this.getColumnCount());
+        this.frozenRightColumnCount = Math.min(this.frozenRightColumnCount, this.getColumnCount() - this.frozenColumnCount);
         this.applyFreezeColumnStyles();
     }
 
@@ -1572,7 +1640,7 @@ export class EditorTable {
                 const cell = rowElement.children[col] as HTMLElement;
                 cell.style.transform = '';
                 cell.style.zIndex = '';
-                cell.classList.remove('freeze-column-border', 'freeze-row-border', 'freeze-cell');
+                cell.classList.remove('freeze-column-border', 'freeze-right-column-border', 'freeze-row-border', 'freeze-cell');
             }
         }
     }
@@ -2041,7 +2109,7 @@ export class EditorTable {
     isFrozenDomColumn(column: number): boolean {
         const dataColumnIndex = column - this.dataColumnOffset();
         if (dataColumnIndex < 0) return true;
-        return dataColumnIndex >= 0 && dataColumnIndex < this.frozenColumnCount;
+        return dataColumnIndex < this.frozenColumnCount || (dataColumnIndex >= this.getColumnCount() - this.frozenRightColumnCount && dataColumnIndex < this.getColumnCount());
     }
 
     /**
@@ -2447,9 +2515,8 @@ export class EditorTable {
         if (rowElement === null) return;
         this.reference.setCellValueAt(row, column, value);
         const rowIdentityChanged = this.gitDiffTracker !== false && this.gitDiffTracker.isRowIdentityColumn(storeColIndex);
-        const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
         // 非固定の公開期間列の編集でも、固定された主キー等のハイライトが変わる。
-        const requiresDetachedCloneSync = row <= this.frozenRowCount || column < fixedLeftColumnCount || (rowIdentityChanged && this.frozenColumnCount > 0);
+        const requiresDetachedCloneSync = row <= this.frozenRowCount || this.isFrozenDomColumn(column) || (rowIdentityChanged && (this.frozenColumnCount > 0 || this.frozenRightColumnCount > 0));
         // 動的参照用のfullDataCacheも同期する（PKベース: 参照先テーブルはPK重複のないテーブルが前提）
         const id = this.reference.getRowPkValue(row);
         this.referenceDataCache.updateFullDataCell(this.tableName, id, storeColIndex, value);
@@ -2544,7 +2611,7 @@ export class EditorTable {
     }
 
     private syncDetachedFrozenClonesAfterVisualContentChange(): void {
-        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0) return;
+        if (this.frozenRowCount === 0 && this.frozenColumnCount === 0 && this.frozenRightColumnCount === 0) return;
         if (this.usesInternalMainViewport) {
             this.syncQuadrantStaticCellStates();
             return;

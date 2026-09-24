@@ -1063,13 +1063,15 @@ test.describe('フリーズペイン', () => {
                     '.editor-table-grid .editor-table-row[data-row-index="15"] .editor-table-cell[data-col="2"]',
                 );
                 const pane = cell?.closest<HTMLElement>('.editor-table-pane');
+                const viewport = cell?.closest<HTMLElement>('.editor-table-main-cells-viewport');
                 const table = document.querySelector<HTMLElement>('.editor-table');
                 const handleRect = handle?.getBoundingClientRect();
                 const cellRect = cell?.getBoundingClientRect();
                 const paneRect = pane?.getBoundingClientRect();
                 const tableRect = table?.getBoundingClientRect();
-                const clippedRight = cellRect && paneRect && tableRect
-                    ? Math.min(cellRect.right, paneRect.right, tableRect.right)
+                const viewportRect = viewport?.getBoundingClientRect();
+                const clippedRight = cellRect && paneRect && tableRect && viewportRect
+                    ? Math.min(cellRect.right, paneRect.right, tableRect.right, viewportRect.right)
                     : Number.NEGATIVE_INFINITY;
                 const expectedRight = cellRect && clippedRight < cellRect.right - 0.5 ? clippedRight - 1 : (cellRect?.right ?? 0) + 3;
                 const expectedBottom = (cellRect?.bottom ?? 0) + 3;

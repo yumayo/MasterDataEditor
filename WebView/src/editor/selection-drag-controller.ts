@@ -168,8 +168,10 @@ export class SelectionDragController {
     private getSelectionViewportRect(): SelectionViewportRect {
         const containerRect = this.scrollBinding.getBoundingClientRect();
         const { scrollbarWidth, scrollbarHeight } = this.scrollBinding.getScrollbarSize();
-        const columnHeader = this.tableElement.querySelector<HTMLElement>(
-            '.editor-table-pane-top-right .editor-table-column-header, .editor-table-detached-column-header-layer .editor-table-column-header, .editor-table-grid .editor-table-column-header'
+        // 全列が固定されたときも、本文内の非表示sourceヘッダーを境界判定に使わない。
+        const rightHeader = this.tableElement.querySelector<HTMLElement>('.editor-table-pane-frozen-right-top .editor-table-column-header');
+        const columnHeader = rightHeader ?? this.tableElement.querySelector<HTMLElement>(
+            '.editor-table-pane-top-left .editor-table-column-header, .editor-table-pane-top-right .editor-table-column-header, .editor-table-detached-column-header-layer .editor-table-column-header, .editor-table-grid .editor-table-column-header'
         );
         const rowHeader = this.tableElement.querySelector<HTMLElement>(
             '.editor-table-pane-top-left .editor-table-row-header, .editor-table-pane-bottom-left .editor-table-row-header, .editor-table-detached-row-header-layer .editor-table-row-header, .editor-table-grid .editor-table-row-header'
@@ -177,11 +179,13 @@ export class SelectionDragController {
         const top = columnHeader !== null ? columnHeader.getBoundingClientRect().bottom : containerRect.top;
         const left = rowHeader !== null ? rowHeader.getBoundingClientRect().right : containerRect.left;
 
+        const rightPane = this.tableElement.querySelector<HTMLElement>('.editor-table-pane-frozen-right-bottom');
+        const right = rightPane !== null && rightPane.clientWidth > 0 ? rightPane.getBoundingClientRect().right : containerRect.right - scrollbarWidth;
         return {
             top,
             bottom: containerRect.bottom - scrollbarHeight,
             left,
-            right: containerRect.right - scrollbarWidth
+            right
         };
     }
 

@@ -1080,3 +1080,51 @@
     z-index: 50;
     pointer-events: none;
 }
+
+/* 右固定領域を除いた本文だけが中央の選択・描画対象になる。 */
+.editor-table-main-cells-viewport {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: clip;
+    pointer-events: none;
+}
+
+.editor-table-main-cells-viewport .editor-table-grid {
+    pointer-events: auto;
+}
+
+.editor-table-pane-frozen-right-top,
+.editor-table-pane-frozen-right-bottom {
+    background-color: var(--background-sub-color);
+    box-shadow: -4px 0 6px -4px var(--editor-table-freeze-shadow-color);
+}
+
+.editor-table--quadrant-layout.editor-table--has-right-frozen-columns .editor-table-pane-top-left,
+.editor-table--quadrant-layout.editor-table--has-right-frozen-columns .editor-table-pane-bottom-left {
+    overflow: clip;
+}
+
+.editor-table-detached-right-column-header-layer {
+    z-index: var(--z-index-editor-table-column-header-row);
+}
+
+.editor-table-detached-right-column-layer .freeze-cell {
+    z-index: var(--z-index-freeze-column);
+}
+
+.editor-table-detached-frozen-right-corner-layer .freeze-cell {
+    z-index: var(--z-index-freeze-corner);
+}
+
+.editor-table--has-frozen-rows .editor-table-pane-frozen-right-bottom::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--editor-table-freeze-shadow-size);
+    background-image: linear-gradient(to bottom, var(--editor-table-freeze-shadow-color), transparent);
+    pointer-events: none;
+    z-index: var(--z-index-freeze-shadow);
+}

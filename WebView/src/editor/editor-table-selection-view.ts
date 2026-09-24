@@ -163,6 +163,9 @@ export class EditorTableSelectionView {
     syncDetachedCellClasses(): void {
         const scrollableColumnOffset = this.dataColumnOffset() + (this.usesInternalMainViewport ? this.frozenColumnCount : 0);
         const layers: { layer: HTMLElement; columnOffset: number; header: boolean }[] = [
+            { layer: this.detachedRightColumnHeaderLayer, columnOffset: this.getTotalColumnCount() - this.frozenRightColumnCount, header: true },
+            { layer: this.detachedRightColumnLayer, columnOffset: this.getTotalColumnCount() - this.frozenRightColumnCount, header: false },
+            { layer: this.detachedFrozenRightCornerLayer, columnOffset: this.getTotalColumnCount() - this.frozenRightColumnCount, header: false },
             { layer: this.detachedCornerLayer, columnOffset: 0, header: true },
             { layer: this.detachedColumnHeaderLayer, columnOffset: scrollableColumnOffset, header: true },
             { layer: this.detachedFrozenCornerDataLayer, columnOffset: 0, header: false },

@@ -148,7 +148,7 @@ test('右下ビューポートの横スクロールバー領域をeditor-table�
 
     const metrics = await page.evaluate(() => {
         const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
-        const grid = document.querySelector('.editor-left-pane .editor-table-pane-bottom-right > .editor-table-grid') as HTMLElement | null;
+        const grid = document.querySelector('.editor-left-pane .editor-table-main-cells-viewport > .editor-table-grid') as HTMLElement | null;
         const horizontalScrollbar = document.querySelector('.editor-left-pane .editor-table-logical-horizontal-scrollbar') as HTMLElement | null;
         const scrollbarCorner = document.querySelector('.editor-left-pane .editor-table-logical-scrollbar-corner') as HTMLElement | null;
         const editor = (window as unknown as {

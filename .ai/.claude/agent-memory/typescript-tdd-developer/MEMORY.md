@@ -10,6 +10,7 @@
 - Build: Vite (`WebView/` directory)
 
 ## Virtual Scroll
+- [固定列の分離描画と操作座標](frozen-column-regions.md) — 中央の元セルclip、左右幅超過時の到達性、Enter後のrAF競合
 - [VirtualScrollControllerパターン](virtual-scroll-patterns.md) — 方式B（テーブル内topSpacer）: scrollTopリセット問題、totalRowCountにバッファ行含む、rAF復元
 - [バーチャルスクロール統合問題](virtual-scroll-integration-issues.md) — getCellPosition修正、renderedEnd同期、スクロール位置復元
 - [仮想スクロール×固定行の統合](virtual-scroll-frozen-rows.md) — 固定行DOM常駐、renderedStart引き上げ、viewportDomStartオフセット

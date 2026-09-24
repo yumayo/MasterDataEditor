@@ -51,6 +51,9 @@ export class EditorTableGridLines {
         this.refreshDetachedLineGroup(this.detachedFrozenCornerDataLayer);
         this.refreshDetachedLineGroup(this.detachedFrozenRowDataLayer);
         this.refreshDetachedLineGroup(this.detachedRowHeaderLayer);
+        this.refreshDetachedLineGroup(this.detachedRightColumnHeaderLayer);
+        this.refreshDetachedLineGroup(this.detachedRightColumnLayer);
+        this.refreshDetachedLineGroup(this.detachedFrozenRightCornerLayer);
     }
 
     private refreshInternalMainLayer(): void {
@@ -58,7 +61,7 @@ export class EditorTableGridLines {
         const fragment = document.createDocumentFragment();
         const rows = this.getRenderedRowElements() as HTMLElement[];
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
-        const clipWidth = this.bottomRightPane.clientWidth;
+        const clipWidth = this.scrollContainer.clientWidth;
         const clipHeight = this.bottomRightPane.clientHeight;
         const pixelMetrics = this.getPixelMetrics(this.gridLineMainLayer);
         const targetRows: HTMLElement[] = [];
@@ -142,7 +145,10 @@ export class EditorTableGridLines {
             );
         }
         if (!Number.isFinite(minTop) || !Number.isFinite(maxBottom) || maxBottom <= minTop) return;
+        const leftFrozenLayer = lineContainer === this.detachedCornerLayer || lineContainer === this.detachedRowHeaderLayer || lineContainer === this.detachedFrozenCornerDataLayer;
         for (let index = startCellIndex + 1; index < boundaries.length; index++) {
+            // 左固定列の内部スクロールで行番号の裏へ移動した列境界は描かない。
+            if (this.frozenRightColumnCount > 0 && leftFrozenLayer && index > this.dataColumnOffset() && boundaries[index] <= this.getDetachedPrefixWidthPx()) continue;
             this.appendLine(
                 fragment,
                 'editor-table-grid-line-vertical',

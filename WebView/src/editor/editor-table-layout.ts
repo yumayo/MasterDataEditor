@@ -19,9 +19,15 @@ import {
 export class EditorTableLayout {
     [key: string]: any;
     private quadrantFixedLeftWidthPx: number;
+    private rightFrozenScrollLeft: number;
+    private leftFrozenScrollLeft: number;
+    private readonly rightFrozenRowSources: WeakMap<HTMLElement, HTMLElement>;
 
     constructor(table: EditorTable) {
         this.quadrantFixedLeftWidthPx = 0;
+        this.rightFrozenScrollLeft = 0;
+        this.leftFrozenScrollLeft = 0;
+        this.rightFrozenRowSources = new WeakMap();
         return new Proxy(this, {
             get: (target, property, receiver) => {
                 if (property in target) return Reflect.get(target, property, receiver);
@@ -77,6 +83,132 @@ export class EditorTableLayout {
 
     getFrozenColumnAreaWidthPx(): number {
         return this.getRenderedDataBoundaryOffsetPx(this.frozenColumnCount);
+    }
+
+    getFrozenRightColumnAreaWidthPx(): number {
+        return this.getDataAreaWidthPx() - this.getRenderedDataBoundaryOffsetPx(this.getColumnCount() - this.frozenRightColumnCount);
+    }
+
+    resetRightFrozenScroll(): void {
+        // 表示幅が足りないときも末尾の列から表示し、選択移動で隠れた列へ到達できる。
+        this.rightFrozenScrollLeft = this.getFrozenRightColumnAreaWidthPx();
+    }
+
+    revealFrozenColumn(column: number): void {
+        const startColumn = this.getColumnCount() - this.frozenRightColumnCount;
+        const dataColumn = column - this.dataColumnOffset();
+        if (dataColumn >= 0 && dataColumn < this.frozenColumnCount && this.frozenRightColumnCount > 0) {
+            const left = this.getRenderedDataBoundaryOffsetPx(dataColumn);
+            const right = this.getRenderedDataBoundaryOffsetPx(dataColumn + 1);
+            const visibleWidth = Math.max(0, this.bottomLeftPane.clientWidth - this.getDetachedPrefixWidthPx());
+            if (left < this.leftFrozenScrollLeft) this.leftFrozenScrollLeft = left;
+            else if (right > this.leftFrozenScrollLeft + visibleWidth) this.leftFrozenScrollLeft = Math.max(left, right - visibleWidth);
+            this.syncLeftFrozenHorizontalOffset();
+            this.refreshGridLines();
+            return;
+        }
+        if (dataColumn < startColumn || dataColumn >= this.getColumnCount()) return;
+        const origin = this.getRenderedDataBoundaryOffsetPx(startColumn);
+        const left = this.getRenderedDataBoundaryOffsetPx(dataColumn) - origin;
+        const right = this.getRenderedDataBoundaryOffsetPx(dataColumn + 1) - origin;
+        const visibleWidth = this.rightFrozenBottomPane.clientWidth;
+        if (left < this.rightFrozenScrollLeft) this.rightFrozenScrollLeft = left;
+        else if (right > this.rightFrozenScrollLeft + visibleWidth) this.rightFrozenScrollLeft = Math.max(left, right - visibleWidth);
+        this.syncRightFrozenHorizontalOffset();
+    }
+
+    scrollFrozenPane(event: WheelEvent, side: 'left' | 'right'): void {
+        if (event.ctrlKey || (side === 'left' && this.frozenRightColumnCount === 0)) return;
+        const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+            : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.scrollContainer.clientHeight : 1;
+        const deltaX = (event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX) * unit;
+        const deltaY = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY * unit;
+        event.preventDefault();
+        if (side === 'right') {
+            this.rightFrozenScrollLeft += deltaX;
+            this.syncRightFrozenHorizontalOffset();
+        } else {
+            this.leftFrozenScrollLeft += deltaX;
+            this.syncLeftFrozenHorizontalOffset();
+            this.refreshGridLines();
+        }
+        this.scrollByInput(deltaY, 0);
+        this.selection.refreshScrollBoundOverlays();
+    }
+
+    /** 行番号は動かさず、狭い左固定領域のデータ列だけをスクロールする。 */
+    private syncLeftFrozenHorizontalOffset(): void {
+        if (this.frozenRightColumnCount === 0 && this.leftFrozenScrollLeft === 0) return;
+        const visibleWidth = Math.max(0, this.bottomLeftPane.clientWidth - this.getDetachedPrefixWidthPx());
+        const maxScroll = this.frozenRightColumnCount > 0 ? Math.max(0, this.getFrozenColumnAreaWidthPx() - visibleWidth) : 0;
+        this.leftFrozenScrollLeft = Math.min(maxScroll, Math.max(0, this.leftFrozenScrollLeft));
+        for (const layer of [this.detachedCornerLayer, this.detachedRowHeaderLayer, this.detachedFrozenCornerDataLayer] as HTMLElement[]) {
+            for (const row of Array.from(layer.children)) {
+                if (!(row instanceof HTMLElement) || !row.classList.contains('editor-table-detached-row')) continue;
+                let columnLeft = 0;
+                for (let column = this.dataColumnOffset(); column < row.children.length; column++) {
+                    const cell = row.children[column] as HTMLElement;
+                    const dataColumn = column - this.dataColumnOffset();
+                    const clippedLeft = Math.max(0, this.leftFrozenScrollLeft - columnLeft);
+                    columnLeft += this.getColumnLayoutWidthPx(dataColumn);
+                    this.setInlineTransformIfChanged(cell, this.leftFrozenScrollLeft > 0 ? `translateX(${-this.leftFrozenScrollLeft}px)` : '');
+                    const clipPath = clippedLeft > 0 ? `inset(0 0 0 ${clippedLeft}px)` : '';
+                    if (cell.style.clipPath !== clipPath) cell.style.clipPath = clipPath;
+                }
+            }
+        }
+    }
+
+    private syncRightFrozenHorizontalOffset(): void {
+        const width = this.getFrozenRightColumnAreaWidthPx();
+        this.rightFrozenScrollLeft = Math.min(Math.max(0, width - this.rightFrozenBottomPane.clientWidth), Math.max(0, this.rightFrozenScrollLeft));
+        for (const layer of [this.detachedRightColumnHeaderLayer, this.detachedRightColumnLayer, this.detachedFrozenRightCornerLayer]) {
+            layer.style.width = `${width}px`;
+            this.setInlineLeftIfChanged(layer, `${-this.rightFrozenScrollLeft}px`);
+        }
+    }
+
+    /** 通常行は差分で複製し、固定行はスクロール中に再構築しない。 */
+    private syncRightFrozenRows(refreshContent: boolean): void {
+        if (!this.usesInternalMainViewport || this.frozenRightColumnCount === 0) return;
+        const startColumn = this.getTotalColumnCount() - this.frozenRightColumnCount;
+        const scrollTop = this.getScrollTop();
+        const renderedRows = this.getRenderedRowElements() as HTMLElement[];
+        for (const layer of [this.detachedFrozenRightCornerLayer, this.detachedRightColumnLayer] as HTMLElement[]) {
+            const fixedRows = layer === this.detachedFrozenRightCornerLayer;
+            const existing = new Map<string, HTMLElement>();
+            for (const child of Array.from(layer.children)) {
+                if (child instanceof HTMLElement && child.classList.contains('editor-table-detached-row')) {
+                    const rowIndex = child.getAttribute('data-row-index');
+                    if (rowIndex !== null) existing.set(rowIndex, child);
+                }
+            }
+            for (const source of renderedRows) {
+                const logicalRow = this.getLogicalRowIndexFromElement(source) as number | null;
+                if (logicalRow === null || logicalRow === 0 || (logicalRow <= this.frozenRowCount) !== fixedRows) continue;
+                const key = String(logicalRow - 1);
+                let row = existing.get(key) ?? null;
+                existing.delete(key);
+                if (row === null || this.rightFrozenRowSources.get(row) !== source) {
+                    if (row !== null) row.remove();
+                    row = document.createElement('div');
+                    row.classList.add('editor-table-detached-row');
+                    row.dataset.rowIndex = key;
+                    for (let column = startColumn; column < source.children.length; column++) {
+                        row.appendChild(this.cloneDetachedCell(source.children[column] as HTMLElement));
+                    }
+                    this.rightFrozenRowSources.set(row, source);
+                    layer.appendChild(row);
+                } else if (refreshContent) {
+                    for (let column = 0; column < row.children.length; column++) {
+                        this.syncDetachedCellVisualState(source.children[startColumn + column] as HTMLElement, row.children[column] as HTMLElement);
+                    }
+                }
+                this.syncDetachedRowVisualState(source, row);
+                this.setInlineTopIfChanged(row, `${this.getQuadrantViewportRowTopPx(logicalRow) - (fixedRows ? 0 : scrollTop)}px`);
+            }
+            for (const row of existing.values()) row.remove();
+        }
     }
 
     getFixedLeftWidthPx(): number {
@@ -425,6 +557,9 @@ export class EditorTableLayout {
         this.detachedCornerLayer.replaceChildren();
         this.detachedFrozenRowDataLayer.replaceChildren();
         this.detachedFrozenCornerDataLayer.replaceChildren();
+        this.detachedRightColumnHeaderLayer.replaceChildren();
+        this.detachedRightColumnLayer.replaceChildren();
+        this.detachedFrozenRightCornerLayer.replaceChildren();
 
         const headerRow = this.getRowElement(0);
         if (headerRow === null) return;
@@ -432,17 +567,32 @@ export class EditorTableLayout {
         const actualFixedLeftWidth = this.resolveQuadrantFixedLeftWidthPx(this.getFixedLeftWidthPx());
         const availableWidth = this.element.clientWidth > 0 ? this.element.clientWidth : actualFixedLeftWidth;
         const customVerticalScrollbarWidth = this.getCustomVerticalScrollbarWidthPx();
-        const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - customVerticalScrollbarWidth - 1));
+        const rightColumnWidth = this.getFrozenRightColumnAreaWidthPx();
+        const rightColumnStart = this.getTotalColumnCount() - this.frozenRightColumnCount;
+        const availableDataWidth = Math.max(0, availableWidth - customVerticalScrollbarWidth - this.getDetachedPrefixWidthPx());
+        const middleMinimumWidth = rightColumnStart > fixedLeftColumnCount ? Math.min(100, availableDataWidth / 4) : 1;
+        const fixedBudget = Math.max(0, availableDataWidth - middleMinimumWidth);
+        const visibleRightWidth = Math.min(rightColumnWidth, Math.max(0, fixedBudget - Math.min(this.getFrozenColumnAreaWidthPx(), fixedBudget / 2)));
+        const visibleFixedLeftWidth = Math.min(actualFixedLeftWidth, Math.max(0, availableWidth - customVerticalScrollbarWidth - visibleRightWidth - (this.frozenRightColumnCount > 0 ? middleMinimumWidth : 1)));
         const fixedTopHeight = this.getFixedTopHeightPx();
         const rowHeight = this.getDataRowHeightPx();
         this.virtualScroll.setScrollTopCompensationPx(fixedTopHeight);
         const frozenColumnWidth = this.getFrozenColumnAreaWidthPx();
         const dataAreaWidth = this.getDataAreaWidthPx();
-        const mainContentWidth = Math.max(0, dataAreaWidth - frozenColumnWidth);
+        const mainContentWidth = Math.max(0, dataAreaWidth - frozenColumnWidth - rightColumnWidth);
         const logicalMainContentHeight = Math.max(0, (this.getLogicalRowCount() - 1 - this.frozenRowCount) * rowHeight);
         const physicalMainContentHeight = Math.min(logicalMainContentHeight, MAX_SCROLL_CONTENT_HEIGHT_PX);
         const paneTop = this.detachedHeaderTopOffset;
 
+        this.rightFrozenTopPane.style.top = `${paneTop}px`;
+        this.rightFrozenTopPane.style.height = `${fixedTopHeight}px`;
+        this.rightFrozenBottomPane.style.top = `${paneTop + fixedTopHeight}px`;
+        for (const pane of [this.rightFrozenTopPane, this.rightFrozenBottomPane]) {
+            pane.style.width = `${visibleRightWidth}px`;
+            pane.style.right = `${customVerticalScrollbarWidth}px`;
+            pane.style.display = this.frozenRightColumnCount > 0 ? '' : 'none';
+        }
+        this.syncRightFrozenHorizontalOffset();
         this.topLeftPane.style.top = `${paneTop}px`;
         this.topLeftPane.style.left = '0px';
         this.topLeftPane.style.width = `${visibleFixedLeftWidth}px`;
@@ -473,15 +623,18 @@ export class EditorTableLayout {
 
         // 右下だけが実スクロール担当なので、そこで消費されるガター幅・高さを
         // 右上ヘッダー領域と左下行ヘッダー領域にも反映して見た目の列幅・行高を揃える。
-        this.scrollContainer.style.width = `calc(100% - ${customVerticalScrollbarWidth}px)`;
+        this.scrollContainer.style.width = `calc(100% - ${customVerticalScrollbarWidth + visibleRightWidth}px)`;
         const mainViewportScrollbarWidth = Math.max(0, this.scrollContainer.offsetWidth - this.scrollContainer.clientWidth)
             + customVerticalScrollbarWidth;
         const mainViewportScrollbarHeight = this.getMainViewportHorizontalScrollbarHeightPx();
         const nativeScrollbarHeight = Math.max(0, this.scrollContainer.offsetHeight - this.scrollContainer.clientHeight);
         // 自作バーは本文の外側に置き、末尾の行・列がバーの下に隠れない表示領域を確保する。
         this.scrollContainer.style.height = `calc(100% - ${Math.max(0, mainViewportScrollbarHeight - nativeScrollbarHeight)}px)`;
-        this.topRightPane.style.right = `${mainViewportScrollbarWidth}px`;
+        this.topRightPane.style.right = `${mainViewportScrollbarWidth + visibleRightWidth}px`;
         this.bottomLeftPane.style.bottom = `${mainViewportScrollbarHeight}px`;
+        this.rightFrozenBottomPane.style.bottom = `${mainViewportScrollbarHeight}px`;
+        this.mainCellsViewport.style.width = `${Math.min(mainContentWidth, this.scrollContainer.clientWidth)}px`;
+        this.mainCellsViewport.style.height = `${this.scrollContainer.clientHeight}px`;
         this.updateCustomVerticalScrollbar();
         this.updateCustomHorizontalScrollbar();
 
@@ -498,12 +651,20 @@ export class EditorTableLayout {
         const detachedHeaderRow = document.createElement('div');
         detachedHeaderRow.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
         detachedHeaderRow.style.top = '0px';
-        for (let col = fixedLeftColumnCount; col < headerRow.children.length; col++) {
+        for (let col = fixedLeftColumnCount; col < rightColumnStart; col++) {
             const sourceCell = headerRow.children[col] as HTMLElement | null;
             if (sourceCell === null) continue;
             detachedHeaderRow.appendChild(this.cloneDetachedCell(sourceCell));
         }
         this.detachedColumnHeaderLayer.appendChild(detachedHeaderRow);
+        if (this.frozenRightColumnCount > 0) {
+            const rightHeader = document.createElement('div');
+            rightHeader.classList.add('editor-table-detached-row', 'editor-table-column-header-row');
+            for (let column = rightColumnStart; column < headerRow.children.length; column++) {
+                rightHeader.appendChild(this.cloneDetachedCell(headerRow.children[column] as HTMLElement));
+            }
+            this.detachedRightColumnHeaderLayer.appendChild(rightHeader);
+        }
 
         const renderedRows = this.getRenderedRowElements();
         for (const rowElement of renderedRows) {
@@ -544,7 +705,7 @@ export class EditorTableLayout {
                 if (logicalRowIndex === this.frozenRowCount) frozenDataRow.classList.add('freeze-row-border');
                 frozenDataRow.dataset.rowIndex = rowIndexText;
                 frozenDataRow.style.top = rowTopPx;
-                for (let col = fixedLeftColumnCount; col < rowElement.children.length; col++) {
+                for (let col = fixedLeftColumnCount; col < rightColumnStart; col++) {
                     const sourceCell = rowElement.children[col] as HTMLElement | null;
                     if (sourceCell === null) continue;
                     frozenDataRow.appendChild(this.cloneDetachedCell(sourceCell));
@@ -665,6 +826,7 @@ export class EditorTableLayout {
 
     syncQuadrantViewportRowHeaderPositions(scrollTop: number = this.getScrollTop()): void {
         if (!this.usesInternalMainViewport) return;
+        this.syncRightFrozenRows(false);
         const detachedRows = this.detachedRowHeaderLayer.children;
         for (let rowIndex = 0; rowIndex < detachedRows.length; rowIndex++) {
             const detachedRow = detachedRows[rowIndex] as HTMLElement;
@@ -681,6 +843,7 @@ export class EditorTableLayout {
             }
             this.setInlineTopIfChanged(detachedRow, this.formatPx(this.getQuadrantViewportRowTopPx(logicalRowIndex) - scrollTop));
         }
+        this.syncLeftFrozenHorizontalOffset();
     }
 
     /** legacy detached-layer 用: row header clone の top 座標を旧 full rebuild と同じ規則で返す */
@@ -868,6 +1031,15 @@ export class EditorTableLayout {
 
     syncQuadrantStaticCellStates(): void {
         if (!this.usesInternalMainViewport) return;
+        this.syncRightFrozenRows(true);
+        const rightHeader = this.detachedRightColumnHeaderLayer.querySelector('.editor-table-detached-row') as HTMLElement | null;
+        const sourceHeader = this.getRowElement(0) as HTMLElement | null;
+        if (rightHeader !== null && sourceHeader !== null) {
+            const start = this.getTotalColumnCount() - this.frozenRightColumnCount;
+            for (let column = 0; column < rightHeader.children.length; column++) {
+                this.syncDetachedCellVisualState(sourceHeader.children[start + column] as HTMLElement, rightHeader.children[column] as HTMLElement);
+            }
+        }
         const headerRow = this.getRowElement(0);
         if (headerRow === null) return;
         const fixedLeftColumnCount = this.dataColumnOffset() + this.frozenColumnCount;
@@ -929,6 +1101,7 @@ export class EditorTableLayout {
                 }
             }
         }
+        this.syncLeftFrozenHorizontalOffset();
     }
 
     syncDetachedHeaderScrollOffset(): void {
@@ -1054,6 +1227,7 @@ export class EditorTableLayout {
 
     syncFreezeStateCssClasses(): void {
         this.element.classList.toggle('editor-table--has-frozen-columns', this.frozenColumnCount > 0);
+        this.element.classList.toggle('editor-table--has-right-frozen-columns', this.frozenRightColumnCount > 0);
         this.element.classList.toggle('editor-table--has-frozen-rows', this.frozenRowCount > 0);
     }
 
@@ -1095,6 +1269,12 @@ export class EditorTableLayout {
                 for (let col = dataColumnOffset; col < cellCount; col++) {
                     rowElement.children[col].classList.add('freeze-cell');
                 }
+            }
+            for (let dataColIndex = this.getColumnCount() - this.frozenRightColumnCount; dataColIndex < this.getColumnCount(); dataColIndex++) {
+                const cell = rowElement.children[dataColIndex + dataColumnOffset];
+                if (!(cell instanceof HTMLElement)) continue;
+                if (dataColIndex === this.getColumnCount() - this.frozenRightColumnCount) cell.classList.add('freeze-right-column-border');
+                if (!isHeaderRow) cell.classList.add('freeze-cell');
             }
             if (this.frozenColumnCount === 0) continue;
             for (let dataColIndex = 0; dataColIndex < this.frozenColumnCount; dataColIndex++) {

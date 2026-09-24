@@ -319,6 +319,7 @@ export function applyFillSeries(
 export async function saveTableViewSettingsDataAsync(table: EditorTable): Promise<void> {
     await saveTableViewSettingsForTableAsync(table.tableName, {
         frozenColumnCount: table.getFrozenColumnCount(),
+        frozenRightColumnCount: table.getFrozenRightColumnCount(),
         frozenRowCount: table.getFrozenRowCount(),
         sortKeys: table.serializeSortKeys(),
         filters: table.serializeFilters(),

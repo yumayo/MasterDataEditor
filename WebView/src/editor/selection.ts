@@ -631,8 +631,10 @@ export class Selection {
     }
 
     private scrollCellIntoView(row: number, column: number): void {
+        const initialScrollTop = this.scrollBinding.getScrollTop();
         // バーチャルスクロールにより対象行がDOMに存在しない場合があるため、先に確保する
         this.editorTable.ensureRowVisible(row);
+        this.editorTable.revealFrozenColumn(column);
         const useLogicalVerticalScroll = this.editorTable.usesLogicalVerticalScroll();
         const targetRect = useLogicalVerticalScroll ? null : this.editorTable.getCellRectOrNull(row, column);
         if (!useLogicalVerticalScroll && !targetRect) return;
@@ -665,7 +667,8 @@ export class Selection {
             }
         }
 
-        if (nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
+        // ensureRowVisible による移動も保護し、編集UIのフォーカス復元で以前の行へ戻されないようにする。
+        if (nextScrollTop !== initialScrollTop || nextScrollTop !== this.scrollBinding.getScrollTop() || nextScrollLeft !== this.scrollBinding.getScrollLeft()) {
             this.scrollBinding.setScrollPosition(nextScrollTop, nextScrollLeft);
             this.editorTable.syncScrollBoundVisualsWithPositions(nextScrollTop, nextScrollLeft);
 
@@ -877,9 +880,18 @@ export class Selection {
         const clipRects: DOMRect[] = [this.editorTable.getTableBoundingClientRect()];
         const quadrantPane = cell.closest('.editor-table-pane');
         if (quadrantPane instanceof HTMLElement) {
-            clipRects.push(quadrantPane.getBoundingClientRect());
+            const paneRect = quadrantPane.getBoundingClientRect();
+            clipRects.push(paneRect);
+            // 左固定データ列が内部スクロールしても、行番号/blame の上へ選択枠を描かない。
+            if (cell.hasAttribute('data-col') && (quadrantPane.classList.contains('editor-table-pane-top-left') || quadrantPane.classList.contains('editor-table-pane-bottom-left'))) {
+                const prefixCell = cell.parentElement?.children[this.editorTable.dataColumnOffset() - 1];
+                if (prefixCell instanceof HTMLElement) {
+                    const left = prefixCell.getBoundingClientRect().right;
+                    clipRects.push(new DOMRect(left, paneRect.top, Math.max(0, paneRect.right - left), paneRect.height));
+                }
+            }
         }
-        const quadrantViewport = cell.closest('.editor-table-top-viewport, .editor-table-left-viewport, .editor-table-main-viewport');
+        const quadrantViewport = cell.closest('.editor-table-top-viewport, .editor-table-left-viewport, .editor-table-main-viewport, .editor-table-main-cells-viewport');
         if (quadrantViewport instanceof HTMLElement) {
             clipRects.push(quadrantViewport.getBoundingClientRect());
         }
@@ -890,8 +902,10 @@ export class Selection {
     }
 
     private getOverlayVisualGroupKey(row: number, column: number, cell: HTMLElement): string {
-        const quadrantPane = cell.closest('.editor-table-pane-top-left, .editor-table-pane-top-right, .editor-table-pane-bottom-left, .editor-table-pane-bottom-right');
+        const quadrantPane = cell.closest('.editor-table-pane');
         if (quadrantPane instanceof HTMLElement) {
+            if (quadrantPane.classList.contains('editor-table-pane-frozen-right-top')) return 'pane:frozen-right-top';
+            if (quadrantPane.classList.contains('editor-table-pane-frozen-right-bottom')) return 'pane:frozen-right-bottom';
             if (quadrantPane.classList.contains('editor-table-pane-top-left')) return 'pane:top-left';
             if (quadrantPane.classList.contains('editor-table-pane-top-right')) return 'pane:top-right';
             if (quadrantPane.classList.contains('editor-table-pane-bottom-left')) return 'pane:bottom-left';

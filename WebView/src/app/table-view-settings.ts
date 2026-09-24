@@ -6,6 +6,7 @@ import type {NotificationToast} from '../ui/notification';
 
 export interface TableViewSettings {
     frozenColumnCount: number;
+    frozenRightColumnCount: number;
     frozenRowCount: number;
     sortKeys: SerializedSortKey[];
     filters: SerializedFilters;
@@ -27,7 +28,10 @@ function parseTableViewSettings(value: unknown): TableViewSettings {
     const record = requireRecord(value);
     const frozenColumnCount = record['frozenColumnCount'];
     const frozenRowCount = record['frozenRowCount'];
+    // 右固定が追加される前に保存したユーザー設定は未固定として移行する。
+    const frozenRightColumnCount = Object.hasOwn(record, 'frozenRightColumnCount') ? record['frozenRightColumnCount'] : 0;
     if (typeof frozenColumnCount !== 'number' || !Number.isSafeInteger(frozenColumnCount) || frozenColumnCount < 0
+        || typeof frozenRightColumnCount !== 'number' || !Number.isSafeInteger(frozenRightColumnCount) || frozenRightColumnCount < 0
         || typeof frozenRowCount !== 'number' || !Number.isSafeInteger(frozenRowCount) || frozenRowCount < 0) {
         throw new Error('テーブル表示設定の固定列数・固定行数が不正です');
     }
@@ -43,7 +47,7 @@ function parseTableViewSettings(value: unknown): TableViewSettings {
         if (!Array.isArray(values) || !values.every((value: unknown) => typeof value === 'string')) throw new Error('テーブル表示設定のフィルターが不正です');
         return [columnName, [...values]];
     }));
-    return {frozenColumnCount, frozenRowCount, sortKeys, filters};
+    return {frozenColumnCount, frozenRightColumnCount, frozenRowCount, sortKeys, filters};
 }
 
 async function readTableViewSettingsStateAsync(): Promise<TableViewSettingsState> {
@@ -67,7 +71,7 @@ async function readTableViewSettingsStateAsync(): Promise<TableViewSettingsState
 export async function loadTableViewSettingsForTableAsync(tableName: string, schema: Record<string, unknown>, notification: NotificationToast): Promise<TableViewSettings> {
     const state = await readTableViewSettingsStateAsync();
     if (Object.hasOwn(state.tables, tableName)) return structuredClone(state.tables[tableName]);
-    const defaults: TableViewSettings = {frozenColumnCount: 0, frozenRowCount: 0, sortKeys: [], filters: {}};
+    const defaults: TableViewSettings = {frozenColumnCount: 0, frozenRightColumnCount: 0, frozenRowCount: 0, sortKeys: [], filters: {}};
     const legacyEntries = Object.keys(defaults).filter(key => Object.hasOwn(schema, key)).map(key => [key, schema[key]]);
     if (legacyEntries.length === 0) return defaults;
     const settings = parseTableViewSettings({...defaults, ...Object.fromEntries(legacyEntries)});

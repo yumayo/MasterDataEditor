@@ -33,7 +33,7 @@ test('列の右側の余白でもテーブル内と同じ固定行スクロー�
 
     const result = await page.evaluate(() => {
         const viewport = document.querySelector('.editor-left-pane .editor-table-main-viewport') as HTMLElement | null;
-        const grid = document.querySelector('.editor-left-pane .editor-table-pane-bottom-right > .editor-table-grid') as HTMLElement | null;
+        const grid = document.querySelector('.editor-left-pane .editor-table-main-cells-viewport > .editor-table-grid') as HTMLElement | null;
         const frozenRow = document.querySelector('.editor-left-pane .editor-table-detached-frozen-row-layer .editor-table-detached-row') as HTMLElement | null;
         const dataCell = grid?.querySelector('.editor-table-row[data-row-index="5"] .editor-table-cell:not(.editor-table-row-header)') as HTMLElement | null;
         const editor = (window as unknown as {

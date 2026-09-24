@@ -104,8 +104,15 @@ export class EditorTableContextMenu {
                 ...(this.table.isMiniTableInstance() ? [] : [
                     {separator: true} as ContextMenuEntry,
                     ...(this.table.getFrozenColumnCount() > 0
-                        ? [{label: '列の固定を解除', action: () => { this.table.unfreezeColumns(); this.table.saveTableViewSettings(); }}]
+                        ? [{label: this.table.getFrozenRightColumnCount() > 0 ? '左側の列固定を解除' : '列の固定を解除', action: () => { this.table.unfreezeColumns(); this.table.saveTableViewSettings(); }}]
                         : [{label: `先頭からこの列まで固定 (${contextMenuColumnIndex + 1}列)`, action: () => { this.table.freezeColumns(contextMenuColumnIndex + 1); this.table.saveTableViewSettings(); }}]),
+                    {label: `この列から末尾まで右に固定 (${this.table.getColumnCount() - contextMenuColumnIndex}列)`, action: () => {
+                        this.table.freezeRightColumns(this.table.getColumnCount() - contextMenuColumnIndex);
+                        this.table.saveTableViewSettings();
+                    }},
+                    ...(this.table.getFrozenRightColumnCount() > 0
+                        ? [{label: '右側の列固定を解除', action: () => { this.table.unfreezeRightColumns(); this.table.saveTableViewSettings(); }}]
+                        : []),
                 ]),
             ];
             this.contextMenu.show(e.clientX, e.clientY, menuItems);

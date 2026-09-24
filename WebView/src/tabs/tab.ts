@@ -648,6 +648,7 @@ export class Tab {
         const editorTable = activeState.editorTable;
         const shouldRefreshLayout = editorTable.usesInternalScrollLayout()
             || editorTable.getFrozenColumnCount() > 0
+            || editorTable.getFrozenRightColumnCount() > 0
             || editorTable.getFrozenRowCount() > 0;
         if (!shouldRefreshLayout) return;
         editorTable.forceVirtualScrollRecalculate();
@@ -4095,6 +4096,7 @@ export class Tab {
             // 表示設定はユーザーデータから復元する。固定・ソート・フィルターの順に適用する。
             // createEditorTable() 内で initialize() が完了しているためDOM構築済み。
             if (viewSettings.frozenColumnCount > 0) editorTable.freezeColumns(viewSettings.frozenColumnCount);
+            if (viewSettings.frozenRightColumnCount > 0) editorTable.freezeRightColumns(viewSettings.frozenRightColumnCount);
             if (viewSettings.frozenRowCount > 0) editorTable.freezeRows(viewSettings.frozenRowCount);
             if (viewSettings.sortKeys.length > 0) editorTable.restoreSortState(viewSettings.sortKeys);
             if (Object.keys(viewSettings.filters).length > 0) editorTable.restoreFilterState(viewSettings.filters);
