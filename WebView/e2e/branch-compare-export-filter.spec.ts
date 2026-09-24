@@ -21,7 +21,7 @@ function csv(rows: string[][]): string {
     return [HEADER.join(','), ...rows.map(row => row.join(','))].join('\n');
 }
 
-async function installPageAsync(page: Page, time: string, currentTime = ''): Promise<void> {
+async function installPageAsync(page: Page, time: string, targetTime: string, currentTime: string): Promise<void> {
     const leftRows = [
         ['1', 'outside-old', '100', '2027-01-01', ''],
         ['1', 'before', '100', '2026-01-01', '2026-12-31'],
@@ -32,10 +32,11 @@ async function installPageAsync(page: Page, time: string, currentTime = ''): Pro
     const rightRows = [
         ['1', 'outside-new', '100', '2027-01-01', ''],
         ['1', 'after', '150', '2026-01-01', '2026-12-31'],
-        ['2', 'future-new', '200', '2027-01-01', ''],
-        ['3', 'begins-now', '300', TIME, ''],
+        ['2', 'between-times', '200', '2027-01-01', ''],
+        ['3', 'begins-now', '300', TARGET_TIME, ''],
         ['4', 'unchanged', '400', '', ''],
     ];
+    rightRows.push(['5', 'future-new', '500', '2028-01-01', '']);
     const reorderedColumns = [4, 1, 0, 2, 3];
     const commits: Record<string, Record<string, string>> = {[LEFT]: {}, [RIGHT]: {}};
     for (const file of FILES) {
@@ -49,7 +50,7 @@ async function installPageAsync(page: Page, time: string, currentTime = ''): Pro
         'data/plain.csv': 'id,name,value\n1,plain-before,1',
     });
     Object.assign(commits[RIGHT], {
-        '.masterdataeditor/settings.json': JSON.stringify({exportValidationDateTime: TARGET_TIME}),
+        '.masterdataeditor/settings.json': JSON.stringify({exportValidationDateTime: targetTime}),
         'data/active.csv': [reorderedColumns.map(index => HEADER[index]).join(','), ...rightRows.map(row => reorderedColumns.map(index => row[index]).join(','))].join('\n'),
         'data/outside.csv': csv([['1', 'outside-after', '1', '2027-01-01', '']]),
         'data/added.csv': csv([['1', 'added-future', '1', '2027-01-01', '']]),
@@ -71,7 +72,12 @@ async function installPageAsync(page: Page, time: string, currentTime = ''): Pro
             __mockGitBranchCompareDelayMs: 0,
             __mockGitCommitFiles: commits,
             __mockGitShowAtCommitDelays: {},
-            __mockGitCellBlame: {[right]: {'data/active.csv': [{lineNumber: 3, columnName: 'name', author: '出力担当', date: '2026-09-22', commitHash: right, commitMessage: '公開行を更新'}]}},
+            __mockGitCellBlame: {
+                [right]: {'data/active.csv': [
+                    {lineNumber: 2, columnName: 'name', author: '比較先担当', date: '2027-06-01', commitHash: right, commitMessage: '比較先の公開行を更新'},
+                    {lineNumber: 5, columnName: 'name', author: '比較先担当', date: '2027-06-01', commitHash: right, commitMessage: '比較先の境界行を更新'},
+                ]},
+            },
         });
     }, {commits, files: FILES, left: LEFT, right: RIGHT});
     await installMockApiAsync(page, fs);
@@ -101,28 +107,56 @@ test('出力期間は両端を含み、空欄は無期限、不正な期間は�
     expect(isRowActiveAtExportTime(['value'], resolveExportWindowColumns(['name'], 'start', 'end'), time.ms)).toBe(true);
 });
 
-test('出力時刻の差分が残るテーブルだけ表示し、左右を独立して絞り込み元CSVの履歴行を維持する', async ({page}) => {
-    await installPageAsync(page, TIME);
+test('比較元と比較先それぞれの出力時刻で絞り込み元CSVの履歴行を維持する', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
     await compareAsync(page, true);
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
+    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'deleted', 'plain']);
+    await expect(page.getByRole('combobox', {name: '出力時刻の取得元', exact: true})).toHaveCount(0);
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('比較元');
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2026-09-22');
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('比較先');
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
     await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
     const diff = page.locator('.diff-tab:visible');
-    await expect(diff).toBeVisible();
-    await expect(diff.locator('.diff-pane-left')).toContainText('before');
-    await expect(diff.locator('.diff-pane-right')).toContainText('after');
-    await expect(diff.locator('.diff-pane-left')).toContainText('ends-now');
-    await expect(diff.locator('.diff-pane-right')).toContainText('begins-now');
-    await expect(diff).not.toContainText('outside-');
-    await expect(diff).not.toContainText('future-');
-    await expect(diff.locator('.diff-pane-left .editor-table-row')).toHaveCount(4);
-    await expect(diff.locator('.diff-pane-right .editor-table-row')).toHaveCount(4);
-    await diff.locator('.diff-pane-right .editor-table-cell').filter({hasText: /^after$/}).hover();
-    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('元CSV 3行');
-    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('出力担当');
+    const left = diff.locator('.diff-pane-left');
+    const right = diff.locator('.diff-pane-right');
+    await expect(left).toContainText('before');
+    await expect(left).toContainText('ends-now');
+    await expect(left).not.toContainText('outside-old');
+    await expect(left).not.toContainText('future-old');
+    await expect(right).toContainText('outside-new');
+    await expect(right).toContainText('between-times');
+    await expect(right).toContainText('begins-now');
+    await expect(right.locator('.editor-table-cell').filter({hasText: /^after$/})).toHaveCount(0);
+    await expect(right).not.toContainText('future-new');
+    await expect(left.locator('.editor-table-row')).toHaveCount(4);
+    await expect(right.locator('.editor-table-row')).toHaveCount(4);
+    // 変更セルは左右どちらから確認しても、比較先の変更履歴を表示する。
+    await left.locator('.editor-table-cell').filter({hasText: /^before$/}).hover();
+    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('元CSV 2行');
+    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('比較先担当');
+    await right.locator('.editor-table-cell').filter({hasText: /^begins-now$/}).hover();
+    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('元CSV 5行');
+    await expect(page.locator('.branch-compare-cell-tooltip:visible')).toContainText('比較先担当');
 });
 
-test('通常比較からモードを切り替えると自動再比較し、名前フィルタとクリアを併用できる', async ({page}) => {
-    await installPageAsync(page, TIME);
+test('追加・削除テーブルと片側の全行が期間外のテーブルにも各リビジョンの出力時刻を使う', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
+    await compareAsync(page, true);
+    for (const [table, pane, included, excluded] of [
+        ['outside', 'right', 'outside-after', 'outside-before'],
+        ['added', 'right', 'added-future', ''],
+        ['deleted', 'left', 'deleted-active', ''],
+    ] as const) {
+        await page.locator('.branch-compare-file-name').filter({hasText: new RegExp('^' + table + '$')}).click();
+        const diff = page.locator('.diff-tab:visible');
+        await expect(diff.locator('.diff-pane-' + pane)).toContainText(included);
+        if (excluded !== '') await expect(diff).not.toContainText(excluded);
+    }
+});
+
+test('左右が同じ出力時刻なら期間外だけに差分のあるテーブルを隠し、名前フィルタを併用できる', async ({page}) => {
+    await installPageAsync(page, TIME, TIME, '');
     await compareAsync(page, false);
     await expect(names(page)).toHaveCount(5);
     const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
@@ -138,133 +172,92 @@ test('通常比較からモードを切り替えると自動再比較し、名�
     await expect(names(page)).toHaveCount(5);
 });
 
-test('比較元の時刻が未設定なら案内を表示し、比較先の時刻と通常比較に切り替えられる', async ({page}) => {
-    await installPageAsync(page, '');
+test('左右とも全行が出力時刻より未来のテーブルは追加・削除も含めて表示しない', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
+    await page.evaluate(({left, right, header}) => {
+        const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>; __mockGitBranchCompare: {files: {tableName: string; path: string; status: string}[]}};
+        for (const commit of [left, right]) {
+            for (const file of mock.__mockGitBranchCompare.files) {
+                if ((commit === left && file.status === 'A') || (commit === right && file.status === 'D')) continue;
+                mock.__mockGitCommitFiles[commit][file.path] = header.join(',') + '\n1,future-' + commit + ',100,2028-01-01,';
+            }
+        }
+    }, {left: LEFT, right: RIGHT, header: HEADER});
     await compareAsync(page, true);
-    const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
     await expect(names(page)).toHaveCount(0);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('比較元のリビジョンに有効な出力フィルター時刻が設定されていません');
-    await page.getByRole('combobox', {name: '出力時刻の取得元', exact: true}).selectOption('target');
-    await page.locator('.branch-compare-button').click();
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await mode.uncheck();
-    await expect(names(page)).toHaveCount(5);
-    await expect(page.locator('.branch-compare-button')).toBeEnabled();
+    await expect(page.locator('.branch-compare-empty-message:visible')).toHaveText('出力対象に差分のあるテーブルはありません');
 });
 
-test('出力比較モードと開いたタブの時刻を保存し、再起動しても絞り込みを復元する', async ({page}) => {
-    await installPageAsync(page, TIME);
+test('出力比較モードと左右の時刻を保存し、再起動しても絞り込みを復元する', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
     await compareAsync(page, true);
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
     await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
     await expect(page.locator('.diff-tab:visible')).toBeVisible();
     await expect.poll(async () => {
         const raw = await readMockFileAsync(page, 'user:ui-state.json');
         if (typeof raw !== 'string') return null;
         const state = JSON.parse(raw);
-        return {mode: state.sidebar.branchCompare.exportFilterEnabled, filter: state.tabs.open.find((tab: {diff?: {exportFilter?: object}}) => tab.diff?.exportFilter)?.diff.exportFilter};
-    }).toEqual({mode: true, filter: {dateTime: TIME, beginColumnName: 'available_from', endColumnName: 'available_until'}});
+        return {mode: state.sidebar.branchCompare.exportFilterEnabled, filter: state.tabs.open.find((tab: {diff?: {exportFilter?: object}}) => tab.diff?.exportFilter)?.diff.exportFilter, hasSource: 'exportFilterSource' in state.sidebar.branchCompare};
+    }).toEqual({mode: true, filter: {leftDateTime: TIME, rightDateTime: TARGET_TIME, beginColumnName: 'available_from', endColumnName: 'available_until'}, hasSource: false});
     await page.reload();
     await expect(page.getByRole('checkbox', {name: '出力時刻でフィルタ'})).toBeChecked();
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-    await expect(page.locator('.diff-tab:visible')).toContainText('after');
-    await expect(page.locator('.diff-tab:visible')).not.toContainText('outside-');
+    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'deleted', 'plain']);
+    await expect(page.locator('.diff-tab:visible .diff-pane-left')).toContainText('before');
+    await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('outside-new');
+    await expect(page.locator('.diff-tab:visible')).not.toContainText('future-new');
 });
 
-test('取得元は比較元が初期値で、比較先に切り替えると再比較し、作業中の設定時刻には影響されない', async ({page}) => {
-    await installPageAsync(page, TIME);
+test('作業中の設定時刻を変更しても比較一覧と開いたタブは左右のコミット時刻を維持する', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '2028-01-01T12:00:00');
     await compareAsync(page, true);
-    const source = page.getByRole('combobox', {name: '出力時刻の取得元', exact: true});
-    await expect(source).toHaveValue('base');
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
     await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
-    await expect(page.locator('.diff-tab:visible')).toBeVisible();
+    await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('outside-new');
     await page.locator('.activity-bar-settings').click();
     await page.locator('.settings-scope-tab[data-scope="workspace"]').click();
     const input = page.locator('.settings-export-validation-datetime-input');
-    await input.fill('2028-01-01T12:00:00');
+    await input.fill('2030-01-01T12:00:00');
     await input.blur();
     await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2026-09-22');
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-    await source.selectOption('target');
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
     await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
-    await page.locator('.tab-button').filter({hasText: '[出力 ' + TIME + ']'}).click();
-    await expect(page.locator('.diff-tab:visible')).toContainText('after');
-    await expect(page.locator('.diff-tab:visible')).not.toContainText('outside-');
-    await expect(page.locator('.branch-compare-file-item-active')).toHaveCount(0);
-    await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
-    await expect(page.locator('.diff-tab:visible')).toContainText('outside-new');
-    await expect(page.locator('.diff-tab:visible')).not.toContainText('after');
-    await expect.poll(async () => {
-        const raw = await readMockFileAsync(page, 'user:ui-state.json');
-        return typeof raw === 'string' ? JSON.parse(raw).sidebar.branchCompare.exportFilterSource : null;
-    }).toBe('target');
-    await page.reload();
-    await expect(source).toHaveValue('target');
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
+    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'deleted', 'plain']);
+    await page.locator('.tab-button').filter({hasText: 'active'}).click();
+    await expect(page.locator('.diff-tab:visible .diff-pane-left')).toContainText('before');
+    await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('outside-new');
+    await expect(page.locator('.diff-tab:visible')).not.toContainText('future-new');
+    await expect(page.locator('.branch-compare-file-item-active')).toHaveCount(1);
+    await expect(page.getByRole('combobox', {name: '出力時刻の取得元', exact: true})).toHaveCount(0);
 });
 
-test('現在の設定を選ぶと設定時刻で再比較し、時刻変更を反映して選択を復元する', async ({page}) => {
-    await installPageAsync(page, TIME, TARGET_TIME);
+test('旧形式の単一出力時刻は復元せず、比較を実行し直すと左右の時刻を使う', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
     await compareAsync(page, true);
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-    await page.evaluate(() => {
-        const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>};
-        for (const files of Object.values(mock.__mockGitCommitFiles)) delete files['.masterdataeditor/settings.json'];
-    });
-    const source = page.getByRole('combobox', {name: '出力時刻の取得元', exact: true});
-    await source.selectOption({label: '現在の設定'});
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
     await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
-    await expect(page.locator('.diff-tab:visible')).toContainText('outside-new');
-    await page.locator('.activity-bar-settings').click();
-    await page.locator('.settings-scope-tab[data-scope="workspace"]').click();
-    const input = page.locator('.settings-export-validation-datetime-input');
-    await input.fill(TIME);
-    await input.blur();
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2026-09-22');
-    await page.locator('.tab-button').filter({hasText: '[出力 ' + TARGET_TIME + ']'}).click();
-    await expect(page.locator('.diff-tab:visible')).toContainText('outside-new');
-    await expect(page.locator('.branch-compare-file-item-active')).toHaveCount(0);
     await expect.poll(async () => {
         const raw = await readMockFileAsync(page, 'user:ui-state.json');
-        return typeof raw === 'string' ? JSON.parse(raw).sidebar.branchCompare.exportFilterSource : null;
-    }).toBe('current');
+        return typeof raw === 'string' && JSON.parse(raw).tabs.open.some((tab: {diff?: {exportFilter?: object}}) => tab.diff?.exportFilter);
+    }).toBe(true);
+    await page.evaluate(time => {
+        const mock = window as unknown as {__mockFs: Record<string, string>};
+        const state = JSON.parse(mock.__mockFs['user:ui-state.json']);
+        state.sidebar.branchCompare.exportFilterSource = 'current';
+        for (const tab of state.tabs.open) {
+            if (tab.diff?.exportFilter) tab.diff.exportFilter = {dateTime: time, beginColumnName: 'available_from', endColumnName: 'available_until'};
+        }
+        mock.__mockFs['user:ui-state.json'] = JSON.stringify(state);
+        sessionStorage.setItem('__mockFs', JSON.stringify(mock.__mockFs));
+    }, TIME);
     await page.reload();
-    await expect(source).toHaveValue('current');
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2026-09-22');
+    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'deleted', 'plain']);
+    await expect(page.locator('.diff-tab')).toHaveCount(0);
+    await expect(page.getByRole('combobox', {name: '出力時刻の取得元', exact: true})).toHaveCount(0);
+    await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
+    await expect(page.locator('.diff-tab:visible .diff-pane-left')).toContainText('before');
+    await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('outside-new');
     await expect(page.locator('.notification-toast-error')).toHaveCount(0);
 });
 
-test('現在の設定の時刻が空欄なら案内し、設定すると比較できる', async ({page}) => {
-    await installPageAsync(page, TIME);
-    await page.getByRole('checkbox', {name: '出力時刻でフィルタ'}).check();
-    const source = page.getByRole('combobox', {name: '出力時刻の取得元', exact: true});
-    await source.selectOption('current');
-    await page.locator('.branch-compare-base-input').fill('main');
-    await page.locator('.branch-compare-target-input').fill('feature');
-    await expect(page.locator('.branch-compare-button')).toBeDisabled();
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('設定画面で出力フィルター時刻を設定してください');
-    await source.selectOption('base');
-    await expect(page.locator('.branch-compare-button')).toBeEnabled();
-    await source.selectOption('current');
-    await page.locator('.activity-bar-settings').click();
-    await page.locator('.settings-scope-tab[data-scope="workspace"]').click();
-    const input = page.locator('.settings-export-validation-datetime-input');
-    await input.fill(TIME);
-    await input.blur();
-    await expect(page.locator('.branch-compare-button')).toBeEnabled();
-    await page.locator('.branch-compare-button').click();
-    await expect(names(page)).toHaveText(['active', 'deleted', 'plain']);
-});
-
-test('入れ替え後は選択した側の新しいリビジョンから時刻を取得する', async ({page}) => {
-    await installPageAsync(page, TIME);
+test('入れ替え後は左右それぞれの新しいリビジョンの出力時刻を使う', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
     await compareAsync(page, true);
     await page.evaluate(() => {
         const mock = window as unknown as {__mockGitBranchCompare: {leftCommit: string; rightCommit: string; files: {status: string}[]}};
@@ -273,52 +266,68 @@ test('入れ替え後は選択した側の新しいリビジョンから時刻�
         for (const file of result.files) file.status = file.status === 'A' ? 'D' : file.status === 'D' ? 'A' : 'M';
     });
     await page.getByRole('button', {name: '入れ替え', exact: true}).click();
-    await expect(page.getByRole('combobox', {name: '出力時刻の取得元', exact: true})).toHaveValue('base');
-    await expect(page.locator('.branch-compare-export-filter-summary')).not.toContainText('2026-09-22');
     await page.locator('.branch-compare-button').click();
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
+    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'deleted', 'plain']);
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText(/比較元.*2027-06-01[\s\S]*比較先.*2026-09-22/);
+    await page.locator('.branch-compare-file-item').filter({hasText: 'active'}).click();
+    await expect(page.locator('.diff-tab:visible .diff-pane-left')).toContainText('outside-new');
+    await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('before');
+    await expect(page.locator('.diff-tab:visible')).not.toContainText('future-');
+    await expect.poll(async () => {
+        const raw = await readMockFileAsync(page, 'user:ui-state.json');
+        if (typeof raw !== 'string') return null;
+        return JSON.parse(raw).tabs.open.find((tab: {diff?: {exportFilter?: object}}) => tab.diff?.exportFilter)?.diff.exportFilter;
+    }).toEqual({leftDateTime: TARGET_TIME, rightDateTime: TIME, beginColumnName: 'available_from', endColumnName: 'available_until'});
 });
 
-for (const [title, settings, message] of [
-    ['ファイルなし', null, '設定ファイル（.masterdataeditor/settings.json）を読み込めませんでした'],
-    ['JSON破損', '{invalid', '設定ファイルが正しいJSONではありません'],
-    ['値が不正', '{"exportValidationDateTime":"invalid"}', '有効な出力フィルター時刻が設定されていません'],
-] as const) {
-    test('リビジョンの時刻取得エラーを明示する: ' + title, async ({page}) => {
-        await installPageAsync(page, TIME);
-        await page.evaluate(({left, settings}) => {
-            const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>};
-            if (settings === null) delete mock.__mockGitCommitFiles[left]['.masterdataeditor/settings.json'];
-            else mock.__mockGitCommitFiles[left]['.masterdataeditor/settings.json'] = settings;
-        }, {left: LEFT, settings});
-        await compareAsync(page, true);
-        await expect(names(page)).toHaveCount(0);
-        await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('比較元のリビジョン');
-        await expect(page.locator('.branch-compare-export-filter-summary')).toContainText(message);
+for (const [side, commit] of [['比較元', LEFT], ['比較先', RIGHT]] as const) {
+    for (const [title, settings, message] of [
+        ['ファイルなし', null, '設定ファイル（.masterdataeditor/settings.json）を読み込めませんでした'],
+        ['JSON破損', '{invalid', '設定ファイルが正しいJSONではありません'],
+        ['値が不正', '{"exportValidationDateTime":"invalid"}', '有効な出力フィルター時刻が設定されていません'],
+        ['時刻が未設定', '{"exportValidationDateTime":""}', '有効な出力フィルター時刻が設定されていません'],
+    ] as const) {
+        test(side + 'の時刻取得エラーを明示し通常比較に戻せる: ' + title, async ({page}) => {
+            await installPageAsync(page, TIME, TARGET_TIME, TIME);
+            await page.evaluate(({commit, settings}) => {
+                const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>};
+                if (settings === null) delete mock.__mockGitCommitFiles[commit]['.masterdataeditor/settings.json'];
+                else mock.__mockGitCommitFiles[commit]['.masterdataeditor/settings.json'] = settings;
+            }, {commit, settings});
+            await compareAsync(page, true);
+            await expect(names(page)).toHaveCount(0);
+            await expect(page.locator('.branch-compare-export-filter-summary')).toContainText(side + 'のリビジョン');
+            await expect(page.locator('.branch-compare-export-filter-summary')).toContainText(message);
+            await page.getByRole('checkbox', {name: '出力時刻でフィルタ'}).uncheck();
+            await expect(page.locator('.branch-compare-button')).toBeEnabled();
+            await page.locator('.branch-compare-button').click();
+            await expect(names(page)).toHaveCount(5);
+        });
+    }
+}
+
+for (const [side, commit] of [['比較元', LEFT], ['比較先', RIGHT]] as const) {
+    test(side + 'の時刻の取得中にモードを解除しても遅れて届く結果で上書きしない', async ({page}) => {
+        await installPageAsync(page, TIME, TIME, '');
+        await compareAsync(page, false);
+        await page.evaluate(commit => {
+            Object.assign(window, {__mockGitShowAtCommitDelays: {[commit + ':.masterdataeditor/settings.json']: 700}});
+        }, commit);
+        const mode = page.getByRole('checkbox', {name: '出力時刻でフィルタ'});
+        await mode.check();
+        await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'true');
+        await mode.uncheck();
+        await expect(names(page)).toHaveCount(5);
+        await page.waitForTimeout(850);
+        await expect(names(page)).toHaveCount(5);
+        await expect(page.locator('.branch-compare-export-filter-summary')).toBeHidden();
+        await expect(page.locator('.notification-toast-error')).toHaveCount(0);
     });
 }
 
-test('時刻の取得中に比較先へ切り替えても遅れて届く比較元の時刻で上書きしない', async ({page}) => {
-    await installPageAsync(page, TIME);
-    await compareAsync(page, false);
-    await page.evaluate(() => {
-        Object.assign(window, {__mockGitShowAtCommitDelays: {'1111111:.masterdataeditor/settings.json': 700}});
-    });
-    await page.getByRole('checkbox', {name: '出力時刻でフィルタ'}).check();
-    await expect(page.locator('.branch-compare-results')).toHaveAttribute('aria-busy', 'true');
-    await page.getByRole('combobox', {name: '出力時刻の取得元', exact: true}).selectOption('target');
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await page.waitForTimeout(850);
-    await expect(names(page)).toHaveText(['active', 'outside', 'added', 'plain']);
-    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('2027-06-01');
-    await expect(page.locator('.notification-toast-error')).toHaveCount(0);
-});
-
 test('出力比較中にモードを解除すると遅れて届く旧結果で一覧を上書きしない', async ({page}) => {
-    await installPageAsync(page, TIME);
+    await installPageAsync(page, TIME, TIME, '');
     await compareAsync(page, false);
-    await expect(names(page)).toHaveCount(5);
     await page.evaluate(() => {
         Object.assign(window, {__mockGitShowAtCommitDelays: {'1111111:data/active.csv': 700}});
     });
@@ -333,14 +342,16 @@ test('出力比較中にモードを解除すると遅れて届く旧結果で�
 });
 
 for (const changed of [false, true]) {
-    test(`大規模な出力比較で元CSVの行対応を保ち、変更${changed ? 'あり' : 'なし'}を判定する`, async ({page}) => {
-        await installPageAsync(page, TIME);
+    test(`大規模な出力比較で左右別の元CSVの行対応を保ち、変更${changed ? 'あり' : 'なし'}を判定する`, async ({page}) => {
+        await installPageAsync(page, TIME, TARGET_TIME, '');
         await page.evaluate(({left, right, header, changed}) => {
             const mock = window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>; __mockGitBranchCompare: {files: object[]}; __exportDiffResults: object[]};
             const rows = Array.from({length: 50005}, (_, index) => `${index},row,100,,`);
+            // 左の除外行は右の時刻なら有効になる。左右の時刻を共用すると変更なし判定が崩れる。
             rows[0] = '0,excluded-before,100,2027-01-01,';
             mock.__mockGitCommitFiles[left]['data/active.csv'] = header.join(',') + '\n' + rows.join('\n');
-            rows[0] = '0,excluded-after,100,2027-01-01,';
+            rows[0] = rows[1];
+            rows[1] = '0,excluded-after,100,2028-01-01,';
             if (changed) rows[50004] = '50004,last-changed,150,,';
             mock.__mockGitCommitFiles[right]['data/active.csv'] = header.join(',') + '\n' + rows.join('\n');
             mock.__mockGitBranchCompare.files = [{path: 'data/active.csv', tableName: 'active', status: 'M'}];
@@ -350,14 +361,14 @@ for (const changed of [false, true]) {
                 const worker = Reflect.construct(Target, args) as Worker;
                 worker.addEventListener('message', (event: MessageEvent) => {
                     const data = event.data.data;
-                    if (data?.mode === 'indexed') mock.__exportDiffResults.push({mode: data.mode, hasChanges: data.hasChanges, first: data.rightRowSourceIndices[0], last: data.rightRowSourceIndices.at(-1)});
+                    if (data?.mode === 'indexed') mock.__exportDiffResults.push({mode: data.mode, hasChanges: data.hasChanges, leftFirst: data.leftRowSourceIndices[0], rightFirst: data.rightRowSourceIndices[0], leftLast: data.leftRowSourceIndices.at(-1), rightLast: data.rightRowSourceIndices.at(-1)});
                 });
                 return worker;
             }});
         }, {left: LEFT, right: RIGHT, header: HEADER, changed});
         await compareAsync(page, true);
         await expect(names(page)).toHaveCount(changed ? 1 : 0);
-        await expect.poll(() => page.evaluate(() => (window as unknown as {__exportDiffResults: object[]}).__exportDiffResults)).toEqual([{mode: 'indexed', hasChanges: changed, first: 1, last: 50004}]);
+        await expect.poll(() => page.evaluate(() => (window as unknown as {__exportDiffResults: object[]}).__exportDiffResults)).toEqual([{mode: 'indexed', hasChanges: changed, leftFirst: 1, rightFirst: 0, leftLast: 50004, rightLast: 50004}]);
         if (!changed) await expect(page.locator('.branch-compare-empty-message:visible')).toHaveText('出力対象に差分のあるテーブルはありません');
     });
 }

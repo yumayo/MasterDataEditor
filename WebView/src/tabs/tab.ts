@@ -25,7 +25,8 @@ import {RelationsPanel} from "../panels/relations-panel";
 import {ValidationPanel} from "../panels/validation-panel";
 import {Csv} from "../data/csv";
 import {SettingsPanel, getAppliedSettings} from "../panels/settings-panel";
-import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail, type ExportValidationSettings} from "../settings/settings-schema";
+import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings, type SettingsChangedEventDetail} from "../settings/settings-schema";
+import type {BranchCompareExportFilter} from "../diff/diff-build-result";
 import {DiffTab} from "./diff-tab";
 import {BranchCompareChanges} from "../diff/branch-compare-changes";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
@@ -3034,8 +3035,8 @@ export class Tab {
      * リビジョン比較一覧で選択されたCSVを、比較時に固定した2つのSHAから読み取り専用で開く。
      * 追加・削除ファイルの存在しない側には、存在する側のスキーマから生成したヘッダーだけを表示する。
      */
-    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, exportFilter?: ExportValidationSettings): Promise<void> {
-        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')' + (exportFilter === undefined ? '' : ' [出力 ' + exportFilter.dateTime + ']');
+    async openBranchCompareDiffTabAsync(file: GitBranchCompareFile, leftCommit: string, rightCommit: string, leftLabel: string, rightLabel: string, abortSignal: AbortSignal, exportFilter?: BranchCompareExportFilter): Promise<void> {
+        const diffTabName = DIFF_TAB_PREFIX + file.tableName + ' (' + leftLabel + ' \u2194 ' + rightLabel + ')' + (exportFilter === undefined ? '' : ' [出力 ' + exportFilter.leftDateTime + ' ↔ ' + exportFilter.rightDateTime + ']');
         // 通常タブを経由した場合も、既存の一時タブを再利用する。
         const previewTab = this.tabButtons.find(button => button.name === this.activeTabName && button.isPreview())
             ?? this.tabButtons.find(button => button.isPreview());
@@ -3066,7 +3067,7 @@ export class Tab {
         );
     }
 
-    async filterBranchCompareFilesAsync(files: GitBranchCompareFile[], leftCommit: string, rightCommit: string, exportFilter: ExportValidationSettings, signal: AbortSignal): Promise<GitBranchCompareFile[]> {
+    async filterBranchCompareFilesAsync(files: GitBranchCompareFile[], leftCommit: string, rightCommit: string, exportFilter: BranchCompareExportFilter, signal: AbortSignal): Promise<GitBranchCompareFile[]> {
         const filtered: GitBranchCompareFile[] = [];
         // 多数のCSVを比較するときも、同時取得とworker数を制限する。
         for (let offset = 0; offset < files.length; offset += 4) {

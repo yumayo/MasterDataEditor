@@ -3,7 +3,7 @@ import {MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH} from "../co
 import {UI_STATE_FILE, UI_STATE_FILE_OPTIONS} from "../config/masterdataeditor-path";
 import {isCommitId} from "../core/git-revision";
 import {parseTemporalValue} from '../core/export-window';
-import type {ExportValidationSettings} from '../settings/settings-schema';
+import type {BranchCompareExportFilter} from '../diff/diff-build-result';
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'branchCompare' | 'history';
 export type UiBottomPanelTab = 'problems' | 'debug';
@@ -21,7 +21,6 @@ export interface UiBranchCompareState {
     targetRef: string | null;
     compared: boolean;
     exportFilterEnabled?: boolean;
-    exportFilterSource?: 'base' | 'target' | 'current';
 }
 
 export interface UiBottomPanelState {
@@ -114,7 +113,7 @@ export interface UiStoredBranchCompareDiffTab extends UiStoredDiffTabBase {
     leftLabel: string;
     rightLabel: string;
     fileStatus: 'A' | 'M' | 'D';
-    exportFilter?: ExportValidationSettings;
+    exportFilter?: BranchCompareExportFilter;
 }
 
 export type UiStoredDiffTab = UiStoredGitStatusDiffTab | UiStoredCommitCompareDiffTab | UiStoredBranchCompareDiffTab;
@@ -362,13 +361,11 @@ function normalizeBranchCompareState(value: unknown): UiBranchCompareState {
     };
     const baseRef = normalizeRevision(record?.['baseRef']);
     const targetRef = normalizeRevision(record?.['targetRef']);
-    const exportFilterSource = record?.['exportFilterSource'];
     return {
         baseRef,
         targetRef,
         compared: record?.['compared'] === true && baseRef !== null && targetRef !== null && baseRef !== targetRef,
         ...(record?.['exportFilterEnabled'] === true ? {exportFilterEnabled: true} : {}),
-        ...(exportFilterSource === 'target' || exportFilterSource === 'current' ? {exportFilterSource} : {}),
     };
 }
 
@@ -503,13 +500,16 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
             : null;
         if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null || fileStatus === null) return null;
         const filter = asRecord(record['exportFilter']);
-        let exportFilter: ExportValidationSettings | null = null;
+        let exportFilter: BranchCompareExportFilter | null = null;
         if (record['exportFilter'] !== undefined) {
-            const dateTime = normalizeLimitedString(filter?.['dateTime'], MAX_DIFF_LABEL_LENGTH);
+            const leftDateTime = normalizeLimitedString(filter?.['leftDateTime'], MAX_DIFF_LABEL_LENGTH);
+            const rightDateTime = normalizeLimitedString(filter?.['rightDateTime'], MAX_DIFF_LABEL_LENGTH);
             const beginColumnName = normalizeLimitedString(filter?.['beginColumnName'], MAX_DIFF_LABEL_LENGTH);
             const endColumnName = normalizeLimitedString(filter?.['endColumnName'], MAX_DIFF_LABEL_LENGTH);
-            if (dateTime === null || beginColumnName === null || endColumnName === null || beginColumnName.trim() === '' || endColumnName.trim() === '' || parseTemporalValue(dateTime).kind !== 'valid') return null;
-            exportFilter = {dateTime, beginColumnName, endColumnName};
+            // 旧形式の単一時刻では左右の条件を再現できないため、その差分タブは復元しない。
+            if (leftDateTime === null || rightDateTime === null || beginColumnName === null || endColumnName === null || beginColumnName.trim() === '' || endColumnName.trim() === ''
+                || parseTemporalValue(leftDateTime).kind !== 'valid' || parseTemporalValue(rightDateTime).kind !== 'valid') return null;
+            exportFilter = {leftDateTime, rightDateTime, beginColumnName, endColumnName};
         }
         return {
             kind: 'branchCompare',

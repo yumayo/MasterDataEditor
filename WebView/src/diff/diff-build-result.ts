@@ -1,4 +1,10 @@
-import type {ExportValidationSettings} from '../settings/settings-schema';
+/** リビジョンごとの出力時刻を固定した比較条件。通常の出力検証設定とは分離する。 */
+export interface BranchCompareExportFilter {
+    leftDateTime: string;
+    rightDateTime: string;
+    beginColumnName: string;
+    endColumnName: string;
+}
 
 export interface DiffBuildResult {
     hasChanges: boolean;
@@ -26,7 +32,7 @@ export interface DiffBuildWorkerRequest {
     schemaJson: string;
     headCsv: string;
     currentCsv: string;
-    exportFilter?: ExportValidationSettings;
+    exportFilter?: BranchCompareExportFilter;
 }
 
 export type DiffBuildWorkerResponse =

@@ -1,9 +1,8 @@
 import {buildDiffRows, buildMergedData, type DiffRow, type SchemaJson} from "./diff-rows";
 import {Csv} from "../data/csv";
 import {GitDiffTracker} from "./git-diff-tracker";
-import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "./diff-build-result";
+import type {BranchCompareExportFilter, DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "./diff-build-result";
 import {parseTemporalValue, resolveExportWindowColumns, isRowActiveAtExportTime} from '../core/export-window';
-import type {ExportValidationSettings} from '../settings/settings-schema';
 
 const INDEXED_DIFF_ROW_THRESHOLD = 100000;
 
@@ -187,7 +186,7 @@ function buildDiffData(request: DiffBuildWorkerRequest): DiffBuildResult {
     return buildFullDiffData(request);
 }
 
-function filterExportCsv(text: string, settings: ExportValidationSettings, timeMs: number): {text: string; originalIndices: number[]} {
+function filterExportCsv(text: string, settings: BranchCompareExportFilter, timeMs: number): {text: string; originalIndices: number[]} {
     const csv = new Csv();
     csv.load(text);
     const columns = resolveExportWindowColumns(csv.header, settings.beginColumnName.trim(), settings.endColumnName.trim());
@@ -200,13 +199,14 @@ function filterExportCsv(text: string, settings: ExportValidationSettings, timeM
     return {text: csv.toString(), originalIndices};
 }
 
-function buildExportFilteredDiffData(request: DiffBuildWorkerRequest, settings: ExportValidationSettings): DiffBuildResult {
-    const time = parseTemporalValue(settings.dateTime);
-    if (time.kind !== 'valid' || settings.beginColumnName.trim() === '' || settings.endColumnName.trim() === '') {
-        throw new Error('出力フィルター時刻と開始・終了日時列を設定してください');
+function buildExportFilteredDiffData(request: DiffBuildWorkerRequest, settings: BranchCompareExportFilter): DiffBuildResult {
+    const leftTime = parseTemporalValue(settings.leftDateTime);
+    const rightTime = parseTemporalValue(settings.rightDateTime);
+    if (leftTime.kind !== 'valid' || rightTime.kind !== 'valid' || settings.beginColumnName.trim() === '' || settings.endColumnName.trim() === '') {
+        throw new Error('比較元・比較先の出力フィルター時刻と開始・終了日時列を設定してください');
     }
-    const left = filterExportCsv(request.headCsv, settings, time.ms);
-    const right = filterExportCsv(request.currentCsv, settings, time.ms);
+    const left = filterExportCsv(request.headCsv, settings, leftTime.ms);
+    const right = filterExportCsv(request.currentCsv, settings, rightTime.ms);
     const result = buildDiffData({...request, headCsv: left.text, currentCsv: right.text});
     // 表示用の行と変更履歴の参照を、絞り込み前のCSVの行へ対応付ける。
     for (const [indices, originals] of [

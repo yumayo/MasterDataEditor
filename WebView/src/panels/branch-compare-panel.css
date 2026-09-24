@@ -26,8 +26,7 @@
 
 .branch-compare-base-input,
 .branch-compare-target-input,
-.branch-compare-filter-input,
-.branch-compare-export-filter-source {
+.branch-compare-filter-input {
     width: 100%;
     box-sizing: border-box;
     padding: var(--input-padding);
@@ -41,8 +40,7 @@
 
 .branch-compare-base-input:focus,
 .branch-compare-target-input:focus,
-.branch-compare-filter-input:focus,
-.branch-compare-export-filter-source:focus {
+.branch-compare-filter-input:focus {
     border-color: var(--focus-border);
 }
 
@@ -66,29 +64,10 @@
 }
 
 .branch-compare-export-filter-summary {
+    white-space: pre-line;
     color: var(--secondary-font-color);
     font-size: 11px;
     overflow-wrap: anywhere;
-}
-
-.branch-compare-export-filter-source-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
-    color: var(--secondary-font-color);
-    font-size: 11px;
-}
-
-.branch-compare-export-filter-source-row[hidden] {
-    display: none;
-}
-
-.branch-compare-export-filter-source {
-    width: auto;
-    flex: 1;
-    min-width: 72px;
-    font-size: 11px;
 }
 
 .branch-compare-filter-clear {

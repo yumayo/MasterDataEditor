@@ -19,9 +19,9 @@ import {GridDropdownInput} from "../ui/grid-dropdown-input";
 import {NotificationToast} from "../ui/notification";
 import {ValidationPanel} from "../panels/validation-panel";
 import {ScrollbarMarkerTrack, MarkerEntry} from "../ui/scrollbar-marker-track";
-import type {LargeFileSettings, ExportValidationSettings} from "../settings/settings-schema";
+import type {LargeFileSettings} from "../settings/settings-schema";
 import DiffBuildWorker from "../diff/diff-worker?worker&inline";
-import type {DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
+import type {BranchCompareExportFilter, DiffBuildResult, DiffBuildWorkerRequest, DiffBuildWorkerResponse} from "../diff/diff-build-result";
 import {saveColumnWidthsForTableAsync} from "../app/column-widths";
 import type {BranchCompareChanges} from "../diff/branch-compare-changes";
 import {BranchCompareCellTooltip} from "../diff/branch-compare-cell-tooltip";
@@ -37,7 +37,7 @@ import {EditorTableFindBar, type EditorTableFindState} from "../editor/editor-ta
 export class DiffTab {
     private static nextDiffBuildRequestId = 1;
 
-    static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string, exportFilter?: ExportValidationSettings): Promise<DiffBuildResult> {
+    static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string, exportFilter?: BranchCompareExportFilter): Promise<DiffBuildResult> {
         const worker = new DiffBuildWorker();
         const requestId = DiffTab.nextDiffBuildRequestId++;
         const request: DiffBuildWorkerRequest = {requestId, schemaJson, headCsv, currentCsv, exportFilter};
