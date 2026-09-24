@@ -1,3 +1,4 @@
+import type {UiStoredBranchCompareListTab} from '../app/ui-state';
 import {gitBranchCompareAsync, gitBranchListAsync, gitShowAtCommitAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
 import type {UiStateStore} from '../app/ui-state';
@@ -32,6 +33,9 @@ interface BranchCompareFileView {
  * 選択済みrefは各inputのdata-selected-refへ保持し、DOMを選択状態のSSOTとする。
  */
 export class BranchComparePanel {
+    private readonly openListButton: HTMLButtonElement;
+    private listMetadata: UiStoredBranchCompareListTab | false = false;
+    private listOpenController: AbortController | false = false;
     private readonly element: HTMLElement;
     private readonly baseInput: RevisionInput;
     private readonly targetInput: RevisionInput;
@@ -149,6 +153,28 @@ export class BranchComparePanel {
         actions.classList.add('branch-compare-actions');
         actions.append(this.swapButton, this.compareButton);
         controls.appendChild(actions);
+        this.openListButton = document.createElement('button');
+        this.openListButton.type = 'button';
+        this.openListButton.classList.add('branch-compare-open-list');
+        this.openListButton.textContent = '一覧で表示';
+        this.openListButton.disabled = true;
+        this.openListButton.addEventListener('click', () => {
+            if (this.listMetadata === false) return;
+            this.cancelFileOpen(true);
+            const controller = new AbortController();
+            this.fileOpenController = controller;
+            this.listOpenController = controller;
+            this.updateCompareButton();
+            this.tab.openBranchCompareListTabAsync(this.listMetadata, controller.signal).catch((error: unknown) => {
+                if (!controller.signal.aborted) this.showOperationError(error);
+            }).finally(() => {
+                if (this.listOpenController !== controller) return;
+                this.listOpenController = false;
+                if (this.fileOpenController === controller) this.fileOpenController = false;
+                this.updateCompareButton();
+            });
+        });
+        controls.appendChild(this.openListButton);
         for (const button of [this.compareButton, this.swapButton]) {
             // 候補を畳むのはclick時とし、mousedownのblurでボタンが動くことを防ぐ。
             button.addEventListener('mousedown', (event: MouseEvent) => {
@@ -565,6 +591,7 @@ export class BranchComparePanel {
         this.exportFilterSummary.title = '開始日時列: ' + settings.exportBeginDateColumnName + ' / 終了日時列: ' + settings.exportEndDateColumnName;
         this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterCheckbox.checked && !columnsConfigured);
         this.swapButton.disabled = this.compareBusy;
+        this.openListButton.disabled = this.compareBusy || this.listMetadata === false || this.listOpenController !== false;
     }
 
     private refreshExportComparison(): void {
@@ -627,6 +654,12 @@ export class BranchComparePanel {
                 this.resultsElement.appendChild(this.filterEmptyElement);
                 this.applyFileFilter();
             }
+            this.listMetadata = files.length === 0 ? false : {
+                kind: 'branchCompareList', tableName: '一覧', gitPath: 'revision-compare-list', isStaged: true, isNew: false, fileStatus: null,
+                leftCommit: result.leftCommit, rightCommit: result.rightCommit, leftLabel, rightLabel, files: files.map(file => ({...file})),
+                ...(exportFilter ? {exportFilter: {...exportFilter}} : {}),
+            };
+            this.openListButton.title = 'テーブル名フィルタに関係なく全 ' + files.length + ' テーブルの差分を表示';
             this.statusElement.textContent = '';
             this.persistState(true);
             this.tab.notifyBranchCompareSelection();
@@ -719,7 +752,7 @@ export class BranchComparePanel {
             });
             item.classList.add('branch-compare-file-item-active');
             item.setAttribute('aria-current', 'true');
-            if (this.fileOpenController !== false) this.fileOpenController.abort();
+            this.cancelFileOpen(false);
             const controller = new AbortController();
             this.fileOpenController = controller;
             this.resultsElement.setAttribute('aria-busy', 'true');
@@ -767,6 +800,8 @@ export class BranchComparePanel {
     }
 
     private invalidateResults(invalidateCompare: boolean): void {
+        this.listMetadata = false;
+        this.openListButton.disabled = true;
         this.restoreComparisonPending = false;
         this.exportFilterTimeState = {kind: 'idle'};
         if (invalidateCompare) {
@@ -788,6 +823,8 @@ export class BranchComparePanel {
     private cancelFileOpen(clearSelection: boolean): void {
         if (this.fileOpenController !== false) this.fileOpenController.abort();
         this.fileOpenController = false;
+        this.listOpenController = false;
+        this.openListButton.disabled = this.compareBusy || this.listMetadata === false;
         if (!this.compareBusy) {
             this.resultsElement.setAttribute('aria-busy', 'false');
             this.statusElement.textContent = '';

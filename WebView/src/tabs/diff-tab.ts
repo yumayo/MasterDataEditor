@@ -37,10 +37,10 @@ import {EditorTableFindBar, type EditorTableFindState} from "../editor/editor-ta
 export class DiffTab {
     private static nextDiffBuildRequestId = 1;
 
-    static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string, exportFilter?: BranchCompareExportFilter): Promise<DiffBuildResult> {
+    static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string, exportFilter?: BranchCompareExportFilter, contextLines?: number): Promise<DiffBuildResult> {
         const worker = new DiffBuildWorker();
         const requestId = DiffTab.nextDiffBuildRequestId++;
-        const request: DiffBuildWorkerRequest = {requestId, schemaJson, headCsv, currentCsv, exportFilter};
+        const request: DiffBuildWorkerRequest = {requestId, schemaJson, headCsv, currentCsv, exportFilter, contextLines};
 
         return new Promise<DiffBuildResult>((resolve, reject) => {
             const finish = (): void => {

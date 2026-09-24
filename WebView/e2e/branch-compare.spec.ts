@@ -2346,3 +2346,200 @@ test.describe('リビジョン比較の空状態・エラー状態', () => {
         await expect(page.locator('.branch-compare-file-item')).toHaveCount(0);
     });
 });
+
+
+test.describe('リビジョン比較の一覧表示', () => {
+    test.beforeEach(async ({page}) => {
+        await installBranchComparePageAsync(page, COMPARE_RESULT, null);
+    });
+
+    test('比較した全ファイルを1つの読み取り専用タブに表示しテーブル名フィルタに左右されない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        const openList = page.getByRole('button', {name: '一覧で表示', exact: true});
+        await expect(openList).toBeDisabled();
+        await selectDefaultBranchesAndCompareAsync(page);
+        await expect(openList).toBeEnabled();
+        await page.getByRole('textbox', {name: 'テーブル名でフィルタ', exact: true}).fill('modified');
+        await expect(page.locator('.branch-compare-file-item:visible')).toHaveCount(1);
+        await openList.click();
+
+        const list = page.locator('.branch-compare-list-tab:visible');
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        for (const file of COMPARE_RESULT.files) {
+            const section = list.locator(`.branch-compare-list-section[data-path="${file.path}"]`);
+            await expect(section).toContainText(file.tableName);
+            await expect(section).toHaveAttribute('data-status', file.status);
+        }
+        await expect(list).toContainText('main');
+        await expect(list).toContainText('feature/orders');
+        for (const value of ['before', 'after', 'added-only', 'deleted-only']) {
+            await expect(list.getByText(value, {exact: true})).toHaveCount(1);
+        }
+        await list.getByText('after', {exact: true}).dblclick();
+        await page.keyboard.press('Delete');
+        await page.keyboard.press('Control+s');
+        await expect(list.getByText('after', {exact: true})).toHaveCount(1);
+        await expect(list.locator('input, textarea, [contenteditable="true"]')).toHaveCount(0);
+        expect(await readMockFileAsync(page, 'data/modified.csv')).toBe(COMMIT_FILES[RIGHT_SHA]['data/modified.csv']);
+        await expect(page.locator('.tab-button-active')).not.toHaveClass(/tab-button-dirty/);
+    });
+
+    test('変更行の前後5行を表示し重なる範囲を統合して離れた未変更行を省略する', async ({page}) => {
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            const rows = Array.from({length: 80}, (_, index) => `${index + 1},row-${String(index + 1).padStart(3, '0')},100`);
+            files['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            files['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.map((row, index) => [10, 16, 50].includes(index + 1) ? row.replace('row-', 'changed-') : row).join('\n');
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+        const section = page.locator('.branch-compare-list-tab:visible .branch-compare-list-section[data-path="data/modified.csv"]');
+        await expect(section.getByText('changed-050', {exact: true})).toHaveCount(1);
+        // 10行目と16行目のコンテキストは5〜21行目に統合され、50行目は45〜55行目を表示する。
+        const expectedNames: string[] = [];
+        for (let row = 1; row <= 80; row++) {
+            if ((row < 5 || row > 21) && (row < 45 || row > 55)) continue;
+            expectedNames.push(`row-${String(row).padStart(3, '0')}`);
+            if (![10, 16, 50].includes(row)) expectedNames.push(`row-${String(row).padStart(3, '0')}`);
+        }
+        const shownNames = await section.getByText(/^row-\d{3}$/).allTextContents();
+        expect(shownNames.sort()).toEqual(expectedNames.sort());
+        await expect(section.getByText(/^changed-\d{3}$/)).toHaveText(['changed-010', 'changed-016', 'changed-050']);
+        const gaps = section.locator('.branch-compare-list-gap');
+        await expect(gaps).toHaveCount(3);
+        await expect(gaps).toHaveText([/4.*省略/, /23.*省略/, /25.*省略/]);
+    });
+
+    test('単一の縦スクロールで次のテーブルから最後のテーブルまで連続して確認できる', async ({page}) => {
+        await page.setViewportSize({width: 1280, height: 640});
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            for (const [commit, table] of [['2222222', 'added'], ['1111111', 'deleted']]) {
+                files[commit][`data/${table}.csv`] = 'id,name,value\n' + Array.from({length: 30}, (_, index) => `${index + 1},${table}-row-${index + 1},100`).join('\n');
+            }
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+        const list = page.locator('.branch-compare-list-tab:visible');
+        const scroller = list.locator('.branch-compare-list-scroll');
+        const sections = list.locator('.branch-compare-list-section');
+        await expect(sections).toHaveCount(3);
+        await expect(sections.first()).toBeInViewport();
+        await list.getByText('before', {exact: true}).hover();
+        await page.mouse.wheel(0, 500);
+        await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+        await expect(sections.nth(1)).toBeInViewport();
+        await page.mouse.wheel(0, 10000);
+        await expect(list.getByText('deleted-row-30', {exact: true})).toBeInViewport();
+        const verticalScrollers = await list.evaluate(element => [element, ...element.querySelectorAll<HTMLElement>('*')].filter(candidate => {
+            const style = getComputedStyle(candidate);
+            return /^(auto|scroll)$/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
+        }).length);
+        expect(verticalScrollers).toBe(1);
+        expect(await sections.evaluateAll(elements => elements.map(element => element.scrollTop))).toEqual([0, 0, 0]);
+    });
+
+    test('個別比較と併用し一覧タブの再選択と再起動後の復元と終了ができる', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        const openList = page.getByRole('button', {name: '一覧で表示', exact: true});
+        await openList.click();
+        const list = page.locator('.branch-compare-list-tab');
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        await openList.click();
+        await expect(list).toHaveCount(1);
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
+        await expect(list).toBeHidden();
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await openList.click();
+        await expect(list).toBeVisible();
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await expect.poll(async () => {
+            const raw = await readMockFileAsync(page, UI_STATE_FILE);
+            if (typeof raw !== 'string') return null;
+            const state = JSON.parse(raw) as {tabs: {active: string | null; open: Array<{name: string; diff: {kind: string} | null}>}};
+            return state.tabs.open.some(item => item.name === state.tabs.active && item.diff?.kind === 'branchCompareList');
+        }).toBe(true);
+        await page.reload();
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        await expect(list).toBeVisible();
+        await expect(list).toContainText('deleted-only');
+        await openList.click();
+        await expect(list).toHaveCount(1);
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await page.locator('.tab-button-active .tab-button-close').click();
+        await expect(list).toHaveCount(0);
+        await openList.click();
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        await expect(page.locator('.tab-button')).toHaveCount(2);
+        await page.locator('.branch-compare-target-input').fill('unresolved');
+        await expect(openList).toBeDisabled();
+        // 開いた一覧は比較済みコミットに固定され、パネルの次の入力では内容が変わらない。
+        await expect(list).toContainText('after');
+    });
+
+    test('差分一覧の読み込み中は連打を防ぎ終了後に遅い応答でタブを復活させない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await delayDiffWorkerMessagesAsync(page, 500);
+        const openList = page.getByRole('button', {name: '一覧で表示', exact: true});
+        await openList.click();
+        await expect(openList).toBeDisabled();
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect.poll(() => page.evaluate(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount)).toBeGreaterThan(0);
+        await page.locator('.tab-button-active .tab-button-close').click();
+        await expect(page.locator('.tab-button')).toHaveCount(0);
+        // 遅延応答を受け取ってからもタブが復活せず、残りのファイルを読み進めない。
+        await expect(openList).toBeEnabled();
+        await expect(page.locator('.branch-compare-list-tab')).toHaveCount(0);
+        await expect(page.locator('.tab-button')).toHaveCount(0);
+        expect(await page.evaluate(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount)).toBe(1);
+        await openList.click();
+        await expect(page.locator('.branch-compare-list-section')).toHaveCount(3);
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+    });
+
+    test('大きなCSVでも末尾の変更と前後5行だけを元の行番号で一覧に表示する', async ({page}) => {
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            const rows = Array.from({length: 50010}, (_, index) => `${index + 1},large-${index + 1},100`);
+            files['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+            rows[50000] = '50001,changed-large,200';
+            files['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+        const section = page.locator('.branch-compare-list-section[data-path="data/modified.csv"]');
+        await expect(section.getByText('changed-large', {exact: true})).toHaveCount(1);
+        await expect(section.getByText(/^large-\d+$/)).toHaveCount(21);
+        await expect(section.getByText('large-49996', {exact: true})).toHaveCount(2);
+        await expect(section.getByText('large-50006', {exact: true})).toHaveCount(2);
+        await expect(section.locator('.branch-compare-list-gap')).toHaveText([/49995.*省略/, /4.*省略/]);
+        await expect(section.locator('.branch-compare-list-line').filter({hasText: /^50001$/})).toHaveCount(2);
+    });
+
+    test('読み込み中の一覧を個別比較で中断してすぐ一覧を開き直しても古い応答に破棄されない', async ({page}) => {
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await delayDiffWorkerMessagesAsync(page, 1000);
+        const openList = page.getByRole('button', {name: '一覧で表示', exact: true});
+        await openList.click();
+        await expect.poll(() => page.evaluate(() => (window as unknown as {__delayedDiffWorkerMessageCount: number}).__delayedDiffWorkerMessageCount)).toBeGreaterThan(0);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        await expect(openList).toBeEnabled();
+        await openList.click();
+        await expect(openList).toBeDisabled();
+        await expect(page.locator('.branch-compare-list-tab:visible .branch-compare-list-section')).toHaveCount(3);
+        await expect(openList).toBeEnabled();
+        await expect(page.locator('.branch-compare-list-tab')).toHaveCount(1);
+        await expect(page.locator('.tab-button')).toHaveCount(1);
+        await expect(page.locator('.branch-compare-list-tab')).toContainText('deleted-only');
+    });
+
+});

@@ -25,6 +25,8 @@ export interface DiffBuildResult {
     leftModifiedCells: Array<{ row: number; col: number }>;
     rightModifiedCells: Array<{ row: number; col: number }>;
     headRowValuesPerDomRow?: Array<string[] | null>;
+    /** コンテキスト表示で取り除いた行数と、その直後の表示行位置。末尾は表示行数。 */
+    omittedRows?: Array<{beforeRow: number; count: number}>;
 }
 
 export interface DiffBuildWorkerRequest {
@@ -33,6 +35,7 @@ export interface DiffBuildWorkerRequest {
     headCsv: string;
     currentCsv: string;
     exportFilter?: BranchCompareExportFilter;
+    contextLines?: number;
 }
 
 export type DiffBuildWorkerResponse =

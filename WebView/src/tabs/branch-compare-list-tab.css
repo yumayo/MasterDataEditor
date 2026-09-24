@@ -1,0 +1,47 @@
+.branch-compare-list-tab {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    color: var(--font-color);
+    background: var(--background-color);
+}
+
+.branch-compare-list-summary {
+    flex: none;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    line-height: 1.6;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.branch-compare-list-summary strong { font-size: 13px; }
+.branch-compare-list-note, .branch-compare-list-path { color: var(--secondary-font-color); font-size: 11px; }
+
+.branch-compare-list-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+    scrollbar-gutter: stable;
+}
+
+.branch-compare-list-section { margin-bottom: 24px; }
+.branch-compare-list-section h2 { display: flex; align-items: center; gap: 10px; font-size: 14px; margin: 0 0 4px; }
+.branch-compare-list-path { margin-bottom: 8px; }
+.branch-compare-list-status { font-size: 11px; font-weight: normal; border: 1px solid var(--border-color); border-radius: 3px; padding: 2px 5px; }
+.branch-compare-list-section[data-status="A"] .branch-compare-list-status { color: var(--diff-added-color); }
+.branch-compare-list-section[data-status="D"] .branch-compare-list-status { color: var(--diff-deleted-color); }
+
+.branch-compare-list-section table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.branch-compare-list-section th, .branch-compare-list-section td { border: 1px solid var(--border-color); padding: 4px 7px; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+.branch-compare-list-section th { text-align: left; font-weight: 600; background: var(--background-sub-color); }
+.branch-compare-list-section .branch-compare-list-line { width: 44px; text-align: right; color: var(--secondary-font-color); font-variant-numeric: tabular-nums; }
+.branch-compare-list-section .branch-compare-list-right { border-left-width: 3px; }
+.branch-compare-list-empty { background: var(--diff-empty-bg); }
+.branch-compare-list-deleted { background: var(--diff-deleted-bg); }
+.branch-compare-list-added { background: var(--diff-added-bg); }
+.branch-compare-list-gap td { text-align: center; color: var(--secondary-font-color); background: var(--background-sub-color); font-size: 11px; padding: 6px; }

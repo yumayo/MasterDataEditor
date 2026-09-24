@@ -116,7 +116,18 @@ export interface UiStoredBranchCompareDiffTab extends UiStoredDiffTabBase {
     exportFilter?: BranchCompareExportFilter;
 }
 
-export type UiStoredDiffTab = UiStoredGitStatusDiffTab | UiStoredCommitCompareDiffTab | UiStoredBranchCompareDiffTab;
+export interface UiStoredBranchCompareListTab extends UiStoredDiffTabBase {
+    kind: 'branchCompareList';
+    leftCommit: string;
+    rightCommit: string;
+    leftLabel: string;
+    rightLabel: string;
+    fileStatus: null;
+    files: Array<{path: string; tableName: string; status: 'A' | 'M' | 'D'}>;
+    exportFilter?: BranchCompareExportFilter;
+}
+
+export type UiStoredDiffTab = UiStoredGitStatusDiffTab | UiStoredCommitCompareDiffTab | UiStoredBranchCompareDiffTab | UiStoredBranchCompareListTab;
 
 export interface UiStoredViewPluginTab {
     pluginId: string;
@@ -255,7 +266,7 @@ function cloneEditorTableState(state: UiStoredEditorTableState): UiStoredEditorT
 }
 
 function cloneStoredDiffTab(diff: UiStoredDiffTab): UiStoredDiffTab {
-    return {...diff};
+    return diff.kind === 'branchCompareList' ? {...diff, files: diff.files.map(file => ({...file}))} : {...diff};
 }
 
 function cloneStoredViewPluginTab(view: UiStoredViewPluginTab): UiStoredViewPluginTab {
@@ -490,7 +501,7 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
     const tableName = normalizeTabName(record['tableName']);
     const gitPath = normalizeTabName(record['gitPath']);
     if (tableName === null || gitPath === null) return null;
-    if (record['kind'] === 'branchCompare') {
+    if (record['kind'] === 'branchCompare' || record['kind'] === 'branchCompareList') {
         const leftCommit = normalizeCommitOid(record['leftCommit']);
         const rightCommit = normalizeCommitOid(record['rightCommit']);
         const leftLabel = normalizeLimitedString(record['leftLabel'], MAX_DIFF_LABEL_LENGTH);
@@ -498,7 +509,8 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
         const fileStatus = record['fileStatus'] === 'A' || record['fileStatus'] === 'M' || record['fileStatus'] === 'D'
             ? record['fileStatus']
             : null;
-        if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null || fileStatus === null) return null;
+        if (leftCommit === null || rightCommit === null || leftLabel === null || rightLabel === null) return null;
+        if (record['kind'] === 'branchCompare' && fileStatus === null) return null;
         const filter = asRecord(record['exportFilter']);
         let exportFilter: BranchCompareExportFilter | null = null;
         if (record['exportFilter'] !== undefined) {
@@ -511,6 +523,22 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
                 || parseTemporalValue(leftDateTime).kind !== 'valid' || parseTemporalValue(rightDateTime).kind !== 'valid') return null;
             exportFilter = {leftDateTime, rightDateTime, beginColumnName, endColumnName};
         }
+        if (record['kind'] === 'branchCompareList') {
+            if (!Array.isArray(record['files']) || record['files'].length === 0) return null;
+            const files: UiStoredBranchCompareListTab['files'] = [];
+            for (const value of record['files']) {
+                const file = asRecord(value);
+                if (file === null) return null;
+                const path = normalizeTabName(file['path']);
+                const name = normalizeTabName(file['tableName']);
+                const status = file['status'];
+                if (path === null || name === null || (status !== 'A' && status !== 'M' && status !== 'D')) return null;
+                files.push({path, tableName: name, status});
+            }
+            return {kind: 'branchCompareList', tableName, gitPath, isStaged: true, isNew: false, leftCommit, rightCommit, leftLabel, rightLabel, fileStatus: null, files,
+                ...(exportFilter === null ? {} : {exportFilter})};
+        }
+        if (fileStatus === null) return null;
         return {
             kind: 'branchCompare',
             tableName,

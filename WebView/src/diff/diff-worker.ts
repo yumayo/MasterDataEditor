@@ -221,10 +221,83 @@ function buildExportFilteredDiffData(request: DiffBuildWorkerRequest, settings: 
     return result;
 }
 
+/** 一覧に必要な行だけを worker 内で残し、巨大CSV全体のDOM化とメインスレッドへの転送を避ける。 */
+function compactContextRows(request: DiffBuildWorkerRequest, diff: DiffBuildResult, contextLines: number): DiffBuildResult {
+    const leftOriginal = diff.leftOriginalRowIndices ?? diff.leftRowSourceIndices;
+    const rightOriginal = diff.rightOriginalRowIndices ?? diff.rightRowSourceIndices;
+    if (!leftOriginal || !rightOriginal) throw new Error('差分の元行番号がありません');
+    const head = diff.mode === 'indexed' ? parseCsv(request.headCsv) : null;
+    const current = diff.mode === 'indexed' ? parseCsv(request.currentCsv) : null;
+    const headColumns = head === null ? new Map<string, number>() : GitDiffTracker.buildHeaderIndexMap(head.header);
+    const currentColumns = current === null ? new Map<string, number>() : GitDiffTracker.buildHeaderIndexMap(current.header);
+    const readRow = (index: number, left: boolean): string[] => {
+        if (diff.mode === 'full') {
+            const rows = left ? diff.leftRows : diff.rightRows;
+            if (!rows) throw new Error('差分の行データがありません');
+            return rows[index];
+        }
+        const source = left ? head : current;
+        const sourceIndex = (left ? leftOriginal : rightOriginal)[index];
+        if (source === null) throw new Error('差分の元CSVがありません');
+        return sourceIndex < 0 ? diff.displayHeader.map(() => '') : GitDiffTracker.remapRow(source.rows[sourceIndex], left ? headColumns : currentColumns, diff.displayHeader);
+    };
+    const ranges: Array<{start: number; end: number}> = [];
+    for (let index = 0; index < leftOriginal.length; index++) {
+        const left = readRow(index, true);
+        const right = readRow(index, false);
+        if (leftOriginal[index] >= 0 && rightOriginal[index] >= 0 && diff.newColumnIndices.length === 0 && left.every((value, column) => value === right[column])) continue;
+        const start = Math.max(0, index - contextLines);
+        const end = Math.min(leftOriginal.length, index + contextLines + 1);
+        const previous = ranges.at(-1);
+        if (previous && start <= previous.end) previous.end = end;
+        else ranges.push({start, end});
+    }
+    const result: DiffBuildResult = {
+        mode: 'full', hasChanges: diff.hasChanges, displayHeader: diff.displayHeader, newColumnIndices: diff.newColumnIndices,
+        leftRows: [], rightRows: [], leftEmptyRowIndices: [], rightEmptyRowIndices: [], leftDeletedRowIndices: [], rightAddedRowIndices: [],
+        leftModifiedCells: [], rightModifiedCells: [], omittedRows: [],
+    };
+    const leftRows: string[][] = [];
+    const rightRows: string[][] = [];
+    const leftIndices: number[] = [];
+    const rightIndices: number[] = [];
+    const omittedRows: Array<{beforeRow: number; count: number}> = [];
+    let previousEnd = 0;
+    for (const range of ranges) {
+        if (range.start > previousEnd) omittedRows.push({beforeRow: leftRows.length, count: range.start - previousEnd});
+        for (let index = range.start; index < range.end; index++) {
+            const row = leftRows.length;
+            const left = readRow(index, true);
+            const right = readRow(index, false);
+            leftRows.push(left);
+            rightRows.push(right);
+            leftIndices.push(leftOriginal[index]);
+            rightIndices.push(rightOriginal[index]);
+            if (leftOriginal[index] < 0) {
+                result.leftEmptyRowIndices.push(row);
+                result.rightAddedRowIndices.push(row);
+            } else if (rightOriginal[index] < 0) {
+                result.rightEmptyRowIndices.push(row);
+                result.leftDeletedRowIndices.push(row);
+            } else {
+                for (let col = 0; col < diff.displayHeader.length; col++) {
+                    if (left[col] === right[col] && !diff.newColumnIndices.includes(col)) continue;
+                    result.leftModifiedCells.push({row, col});
+                    result.rightModifiedCells.push({row, col});
+                }
+            }
+        }
+        previousEnd = range.end;
+    }
+    if (previousEnd < leftOriginal.length) omittedRows.push({beforeRow: leftRows.length, count: leftOriginal.length - previousEnd});
+    return {...result, leftRows, rightRows, leftOriginalRowIndices: Int32Array.from(leftIndices), rightOriginalRowIndices: Int32Array.from(rightIndices), omittedRows};
+}
+
 self.onmessage = (event: MessageEvent<DiffBuildWorkerRequest>) => {
     const request = event.data;
     try {
-        const data = request.exportFilter === undefined ? buildDiffData(request) : buildExportFilteredDiffData(request, request.exportFilter);
+        const fullData = request.exportFilter === undefined ? buildDiffData(request) : buildExportFilteredDiffData(request, request.exportFilter);
+        const data = typeof request.contextLines === 'number' ? compactContextRows(request, fullData, request.contextLines) : fullData;
         const response: DiffBuildWorkerResponse = {
             requestId: request.requestId,
             success: true,

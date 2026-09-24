@@ -372,3 +372,33 @@ for (const changed of [false, true]) {
         if (!changed) await expect(page.locator('.branch-compare-empty-message:visible')).toHaveText('出力対象に差分のあるテーブルはありません');
     });
 }
+
+
+test('差分一覧は左右の固定出力時刻で絞り込み、列順と元行番号を保ち再起動後も同じ条件を表示する', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
+    await compareAsync(page, true);
+    await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+    const list = page.locator('.branch-compare-list-tab:visible');
+    await expect(list.locator('.branch-compare-list-section')).toHaveCount(5);
+    const active = list.locator('.branch-compare-list-section[data-path="data/active.csv"]');
+    for (const included of ['before', 'outside-new', 'between-times', 'begins-now']) {
+        await expect(active.getByText(included, {exact: true})).toHaveCount(1);
+    }
+    for (const excluded of ['outside-old', 'after', 'future-old', 'future-new']) {
+        await expect(active.getByText(excluded, {exact: true})).toHaveCount(0);
+    }
+    await expect(active.locator('thead tr').last().locator('th')).toHaveText(['行', 'available_until', 'name', 'id', 'value', 'available_from', '行', 'available_until', 'name', 'id', 'value', 'available_from']);
+    await expect(active.getByText('before', {exact: true}).locator('..').locator('.branch-compare-list-line').first()).toHaveText('2');
+    await expect.poll(async () => {
+        const raw = await readMockFileAsync(page, 'user:ui-state.json');
+        if (typeof raw !== 'string') return null;
+        const state = JSON.parse(raw);
+        return state.tabs.open.find((tab: {diff: {kind: string; exportFilter: object} | null}) => tab.diff?.kind === 'branchCompareList')?.diff.exportFilter;
+    }).toEqual({leftDateTime: TIME, rightDateTime: TARGET_TIME, beginColumnName: 'available_from', endColumnName: 'available_until'});
+    await page.reload();
+    await expect(list.locator('.branch-compare-list-section')).toHaveCount(5);
+    await expect(active.getByText('outside-new', {exact: true})).toHaveCount(1);
+    await expect(active.getByText('after', {exact: true})).toHaveCount(0);
+    await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+    await expect(page.locator('.tab-button')).toHaveCount(1);
+});
