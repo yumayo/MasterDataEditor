@@ -2374,13 +2374,13 @@ test.describe('リビジョン比較の一覧表示', () => {
         await expect(list).toContainText('main');
         await expect(list).toContainText('feature/orders');
         for (const value of ['before', 'after', 'added-only', 'deleted-only']) {
-            await expect(list.getByText(value, {exact: true})).toHaveCount(1);
+            await expect(list.locator('.editor-table-row .editor-table-cell').filter({hasText: new RegExp('^' + value + '$')})).toHaveCount(1);
         }
-        await list.getByText('after', {exact: true}).dblclick();
+        await list.locator('.editor-table-row .editor-table-cell').filter({hasText: /^after$/}).dblclick();
         await page.keyboard.press('Delete');
         await page.keyboard.press('Control+s');
-        await expect(list.getByText('after', {exact: true})).toHaveCount(1);
-        await expect(list.locator('input, textarea, [contenteditable="true"]')).toHaveCount(0);
+        await expect(list.locator('.editor-table-row .editor-table-cell').filter({hasText: /^after$/})).toHaveCount(1);
+        await expect(list.locator('.grid-textfield-active:visible')).toHaveCount(0);
         expect(await readMockFileAsync(page, 'data/modified.csv')).toBe(COMMIT_FILES[RIGHT_SHA]['data/modified.csv']);
         await expect(page.locator('.tab-button-active')).not.toHaveClass(/tab-button-dirty/);
     });
@@ -2396,7 +2396,7 @@ test.describe('リビジョン比較の一覧表示', () => {
         await selectDefaultBranchesAndCompareAsync(page);
         await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
         const section = page.locator('.branch-compare-list-tab:visible .branch-compare-list-section[data-path="data/modified.csv"]');
-        await expect(section.getByText('changed-050', {exact: true})).toHaveCount(1);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^changed-050$/})).toHaveCount(1);
         // 10行目と16行目のコンテキストは5〜21行目に統合され、50行目は45〜55行目を表示する。
         const expectedNames: string[] = [];
         for (let row = 1; row <= 80; row++) {
@@ -2404,9 +2404,9 @@ test.describe('リビジョン比較の一覧表示', () => {
             expectedNames.push(`row-${String(row).padStart(3, '0')}`);
             if (![10, 16, 50].includes(row)) expectedNames.push(`row-${String(row).padStart(3, '0')}`);
         }
-        const shownNames = await section.getByText(/^row-\d{3}$/).allTextContents();
+        const shownNames = await section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^row-\d{3}$/}).allTextContents();
         expect(shownNames.sort()).toEqual(expectedNames.sort());
-        await expect(section.getByText(/^changed-\d{3}$/)).toHaveText(['changed-010', 'changed-016', 'changed-050']);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^changed-\d{3}$/})).toHaveText(['changed-010', 'changed-016', 'changed-050']);
         const gaps = section.locator('.branch-compare-list-gap');
         await expect(gaps).toHaveCount(3);
         await expect(gaps).toHaveText([/4.*省略/, /23.*省略/, /25.*省略/]);
@@ -2428,12 +2428,12 @@ test.describe('リビジョン比較の一覧表示', () => {
         const sections = list.locator('.branch-compare-list-section');
         await expect(sections).toHaveCount(3);
         await expect(sections.first()).toBeInViewport();
-        await list.getByText('before', {exact: true}).hover();
+        await list.locator('.editor-table-row .editor-table-cell').filter({hasText: /^before$/}).hover();
         await page.mouse.wheel(0, 500);
         await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
         await expect(sections.nth(1)).toBeInViewport();
         await page.mouse.wheel(0, 10000);
-        await expect(list.getByText('deleted-row-30', {exact: true})).toBeInViewport();
+        await expect(list.locator('.editor-table-row .editor-table-cell').filter({hasText: /^deleted-row-30$/})).toBeInViewport();
         const verticalScrollers = await list.evaluate(element => [element, ...element.querySelectorAll<HTMLElement>('*')].filter(candidate => {
             const style = getComputedStyle(candidate);
             return /^(auto|scroll)$/.test(style.overflowY) && candidate.scrollHeight > candidate.clientHeight + 1;
@@ -2453,7 +2453,7 @@ test.describe('リビジョン比較の一覧表示', () => {
         await expect(list).toHaveCount(1);
         await expect(page.locator('.tab-button')).toHaveCount(1);
         await page.locator('.branch-compare-file-item[data-status="M"]').click();
-        await expect(page.locator('.diff-tab:visible .diff-pane-right')).toContainText('after');
+        await expect(page.locator('.diff-tab-wrapper:not(.diff-tab-embedded):visible .diff-pane-right')).toContainText('after');
         await expect(list).toBeHidden();
         await expect(page.locator('.tab-button')).toHaveCount(2);
         await openList.click();
@@ -2463,8 +2463,12 @@ test.describe('リビジョン比較の一覧表示', () => {
             const raw = await readMockFileAsync(page, UI_STATE_FILE);
             if (typeof raw !== 'string') return null;
             const state = JSON.parse(raw) as {tabs: {active: string | null; open: Array<{name: string; diff: {kind: string} | null}>}};
-            return state.tabs.open.some(item => item.name === state.tabs.active && item.diff?.kind === 'branchCompareList');
-        }).toBe(true);
+            // 初回の一覧だけの保存状態もactiveは同じなので、個別タブを含む最新の保存を待つ。
+            return {
+                active: state.tabs.open.find(item => item.name === state.tabs.active)?.diff?.kind,
+                open: state.tabs.open.map(item => item.diff?.kind),
+            };
+        }).toEqual({active: 'branchCompareList', open: ['branchCompareList', 'branchCompare']});
         await page.reload();
         await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
         await expect(list).toBeVisible();
@@ -2507,21 +2511,34 @@ test.describe('リビジョン比較の一覧表示', () => {
     test('大きなCSVでも末尾の変更と前後5行だけを元の行番号で一覧に表示する', async ({page}) => {
         await page.evaluate(() => {
             const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
-            const rows = Array.from({length: 50010}, (_, index) => `${index + 1},large-${index + 1},100`);
+            const rows = Array.from({length: 100010}, (_, index) => `${index + 1},large-${index + 1},100`);
             files['1111111']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
-            rows[50000] = '50001,changed-large,200';
+            rows[100000] = '100001,changed-large,200';
             files['2222222']['data/modified.csv'] = 'id,name,value\n' + rows.join('\n');
         });
         await openBranchComparePanelAsync(page);
         await selectDefaultBranchesAndCompareAsync(page);
         await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
         const section = page.locator('.branch-compare-list-section[data-path="data/modified.csv"]');
-        await expect(section.getByText('changed-large', {exact: true})).toHaveCount(1);
-        await expect(section.getByText(/^large-\d+$/)).toHaveCount(21);
-        await expect(section.getByText('large-49996', {exact: true})).toHaveCount(2);
-        await expect(section.getByText('large-50006', {exact: true})).toHaveCount(2);
-        await expect(section.locator('.branch-compare-list-gap')).toHaveText([/49995.*省略/, /4.*省略/]);
-        await expect(section.locator('.branch-compare-list-line').filter({hasText: /^50001$/})).toHaveCount(2);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^changed-large$/})).toHaveCount(1);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^large-\d+$/})).toHaveCount(21);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^large-99996$/})).toHaveCount(2);
+        await expect(section.locator('.editor-table-row .editor-table-cell').filter({hasText: /^large-100006$/})).toHaveCount(2);
+        await expect(section.locator('.branch-compare-list-gap')).toHaveText([/99995.*省略/, /4.*省略/]);
+        for (const side of ['left', 'right']) {
+            const header = section.locator(`.diff-pane-${side} .editor-table-pane-bottom-left .editor-table-row-header`).filter({hasText: /^100001$/});
+            await expect(header).toHaveCount(1);
+            // 6桁の元行番号がコンパクト表示行数の幅で切れず、グリッドの行ヘッダー内に収まる。
+            expect(await header.evaluate(element => {
+                const text = [...element.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+                if (!text) throw new Error('行番号がありません');
+                const range = document.createRange();
+                range.selectNodeContents(text);
+                const glyphs = range.getBoundingClientRect();
+                const bounds = element.getBoundingClientRect();
+                return glyphs.left >= bounds.left && glyphs.right <= bounds.right;
+            })).toBe(true);
+        }
     });
 
     test('読み込み中の一覧を個別比較で中断してすぐ一覧を開き直しても古い応答に破棄されない', async ({page}) => {
@@ -2540,6 +2557,109 @@ test.describe('リビジョン比較の一覧表示', () => {
         await expect(page.locator('.branch-compare-list-tab')).toHaveCount(1);
         await expect(page.locator('.tab-button')).toHaveCount(1);
         await expect(page.locator('.branch-compare-list-tab')).toContainText('deleted-only');
+    });
+
+    test('一覧でもGit差分の共通グリッドを使い保存列幅とセル選択コピーと読み取り専用を維持する', async ({page}) => {
+        await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.evaluate(() => {
+            const mock = window as unknown as {__mockFs: Record<string, string>};
+            mock.__mockFs['user:column-widths.json'] = JSON.stringify({tables: {modified: {name: 214}}});
+            sessionStorage.setItem('__mockFs', JSON.stringify(mock.__mockFs));
+        });
+        await page.reload();
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.locator('.branch-compare-file-item[data-status="M"]').click();
+        const individual = page.locator('.diff-tab:visible');
+        await expect(individual.locator('.diff-pane-right .editor-table-column-header').nth(1)).toHaveCSS('width', '214px');
+        const individualColor = await individual.locator('.diff-pane-right .editor-table-cell').filter({hasText: /^after$/}).evaluate(element => getComputedStyle(element).backgroundColor);
+        await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+        const list = page.locator('.branch-compare-list-tab:visible');
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        for (const section of await list.locator('.branch-compare-list-section').all()) {
+            await expect(section.locator('.diff-pane-left .editor-table')).toHaveCount(1);
+            await expect(section.locator('.diff-pane-right .editor-table')).toHaveCount(1);
+        }
+        const modified = list.locator('.branch-compare-list-section[data-path="data/modified.csv"]');
+        for (const side of ['left', 'right']) {
+            await expect(modified.locator(`.diff-pane-${side} .editor-table-column-header`).nth(1)).toHaveCSS('width', '214px');
+        }
+        const after = modified.locator('.diff-pane-right .editor-table-cell').filter({hasText: /^after$/});
+        await expect(after).toHaveCSS('background-color', individualColor);
+        await after.click();
+        await page.keyboard.press('Control+c');
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('after');
+        await page.keyboard.press('Shift+ArrowRight');
+        await page.keyboard.press('Control+c');
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('after\t150');
+        await page.keyboard.press('Delete');
+        await page.keyboard.press('Control+s');
+        await expect(after).toHaveText('after');
+        expect(await readMockFileAsync(page, 'data/modified.csv')).toBe(COMMIT_FILES[RIGHT_SHA]['data/modified.csv']);
+    });
+
+    test('一覧のテーブル名をスクロール上端に固定し次の名前へ切り替えクリックとEnterで折り畳める', async ({page}) => {
+        await page.setViewportSize({width: 1280, height: 640});
+        await page.evaluate(() => {
+            const files = (window as unknown as {__mockGitCommitFiles: Record<string, Record<string, string>>}).__mockGitCommitFiles;
+            for (const [commit, label] of [['1111111', 'before'], ['2222222', 'after']]) {
+                files[commit]['data/modified.csv'] = 'id,name,value\n' + Array.from({length: 60}, (_, index) => `${index + 1},${label}-${index + 1},100`).join('\n');
+            }
+            files['2222222']['data/added.csv'] = 'id,name,value\n' + Array.from({length: 30}, (_, index) => `${index + 1},added-${index + 1},100`).join('\n');
+        });
+        await openBranchComparePanelAsync(page);
+        await selectDefaultBranchesAndCompareAsync(page);
+        await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+        const list = page.locator('.branch-compare-list-tab:visible');
+        const scroller = list.locator('.branch-compare-list-scroll');
+        const modified = list.locator('.branch-compare-list-section[data-path="data/modified.csv"]');
+        const added = list.locator('.branch-compare-list-section[data-path="data/added.csv"]');
+        const firstHeading = modified.locator('.branch-compare-list-heading');
+        const nextHeading = added.locator('.branch-compare-list-heading');
+        const toggle = firstHeading.getByRole('button', {name: /modified/});
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(modified.locator('.diff-pane-right .editor-table')).toBeVisible();
+        await scroller.evaluate(element => { element.scrollTop = 180; });
+        await expect.poll(async () => {
+            const heading = await firstHeading.boundingBox();
+            const bounds = await scroller.boundingBox();
+            return heading !== null && bounds !== null && Math.abs(heading.y - bounds.y) <= 2;
+        }).toBe(true);
+        await scroller.evaluate(element => {
+            const next = element.querySelector('.branch-compare-list-section[data-path="data/added.csv"] .branch-compare-list-heading');
+            if (next === null) throw new Error('次のテーブル名がありません');
+            element.scrollTop += next.getBoundingClientRect().top - element.getBoundingClientRect().top + 80;
+        });
+        await expect(firstHeading).not.toBeInViewport();
+        await expect.poll(async () => {
+            const heading = await nextHeading.boundingBox();
+            const bounds = await scroller.boundingBox();
+            return heading !== null && bounds !== null && Math.abs(heading.y - bounds.y) <= 2;
+        }).toBe(true);
+        await scroller.evaluate(element => { element.scrollTop = 0; });
+        const expandedNextTop = await added.evaluate(element => element.getBoundingClientRect().top);
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(modified.locator('.diff-pane-right .editor-table')).toBeHidden();
+        await expect.poll(() => added.evaluate(element => element.getBoundingClientRect().top)).toBeLessThan(expandedNextTop - 200);
+        await expect(added.locator('.diff-pane-right .editor-table')).toBeVisible();
+        await toggle.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(modified.locator('.diff-pane-right .editor-table')).toBeVisible();
+        await expect.poll(() => added.evaluate(element => element.getBoundingClientRect().top)).toBeCloseTo(expandedNextTop, 0);
+        await expect(list.locator('.branch-compare-list-section')).toHaveCount(3);
+        await scroller.evaluate(element => { element.scrollTop = 180; });
+        await expect.poll(async () => {
+            const heading = await firstHeading.boundingBox();
+            const bounds = await scroller.boundingBox();
+            return heading !== null && bounds !== null && Math.abs(heading.y - bounds.y) <= 2;
+        }).toBe(true);
+        // 固定中の名前からも折り畳み・展開でき、最終ダンプは固定見出しの重なりを記録する。
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await toggle.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await scroller.evaluate(element => { element.scrollTop = 180; });
     });
 
 });

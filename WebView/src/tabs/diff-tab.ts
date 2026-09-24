@@ -1,3 +1,4 @@
+import {ROW_TOTAL_HEIGHT_PX} from '../core/constant';
 import {EditorTable} from "../editor/editor-table";
 import {Selection} from "../editor/selection";
 import {EditorTableHandler} from "../editor/editor-table-handler";
@@ -36,6 +37,7 @@ import {EditorTableFindBar, type EditorTableFindState} from "../editor/editor-ta
  */
 export class DiffTab {
     private static nextDiffBuildRequestId = 1;
+    private readonly embeddedOriginalRows: {left: Int32Array; right: Int32Array; maxRowNumber: number} | false;
 
     static buildDiffDataAsync(schemaJson: string, headCsv: string, currentCsv: string, exportFilter?: BranchCompareExportFilter, contextLines?: number): Promise<DiffBuildResult> {
         const worker = new DiffBuildWorker();
@@ -204,7 +206,7 @@ export class DiffTab {
         currentCsv: string,
         isStaged: boolean,
         gitPath: string,
-        editor: Editor,
+        editor: Editor | HTMLElement,
         sidebar: Sidebar,
         store: InMemoryTableStore,
         referenceDataCache: ReferenceDataCache,
@@ -221,6 +223,15 @@ export class DiffTab {
         branchCompareChanges: BranchCompareChanges | false
     ) {
         this.tableName = tableName;
+        if (editor instanceof HTMLElement) {
+            if (!diffBuildResult.leftOriginalRowIndices || !diffBuildResult.rightOriginalRowIndices) throw new Error('埋め込み差分の元行番号がありません');
+            this.embeddedOriginalRows = {
+                left: diffBuildResult.leftOriginalRowIndices, right: diffBuildResult.rightOriginalRowIndices,
+                maxRowNumber: Math.max(diffBuildResult.leftOriginalRowIndices.reduce((max, row) => Math.max(max, row + 1), 0), diffBuildResult.rightOriginalRowIndices.reduce((max, row) => Math.max(max, row + 1), 0)),
+            };
+        } else {
+            this.embeddedOriginalRows = false;
+        }
         this.isSyncing = false;
         this.isSyncingSelection = false;
         this.dragMouseMove = null;
@@ -262,6 +273,7 @@ export class DiffTab {
         // ルートラッパー要素（初期は非表示にして activateDiffTab() で表示する）
         const wrapperElement = document.createElement('div');
         wrapperElement.classList.add('tab-wrapper', 'diff-tab-wrapper');
+        if (this.embeddedOriginalRows !== false) wrapperElement.classList.add('diff-tab-embedded');
         wrapperElement.style.display = 'none';
         editor.appendChild(wrapperElement);
         this.wrapperElement = wrapperElement;
@@ -904,6 +916,15 @@ export class DiffTab {
         }
     }
 
+    /** 一覧の縦wheel処理と分離し、トラックパッドの横移動だけを元のペインへ適用する。 */
+    scrollHorizontallyAt(target: EventTarget | null, delta: number): boolean {
+        if (!(target instanceof Element)) return false;
+        const table = this.leftPaneElement.contains(target) ? this.leftEditorTable : this.rightPaneElement.contains(target) ? this.rightEditorTable : null;
+        if (table === null) return false;
+        table.scrollByInput(0, delta);
+        return true;
+    }
+
     /** フォーカスのある側のリビジョンを検索する。 */
     openFindBar(target: EventTarget | null): boolean {
         if (!(target instanceof HTMLElement)) return false;
@@ -914,6 +935,8 @@ export class DiffTab {
         this.findBar.show(state);
         return true;
     }
+
+    maxDisplayedRowNumber(): number { return this.embeddedOriginalRows === false ? 0 : this.embeddedOriginalRows.maxRowNumber; }
 
     isPaddingRow(editorTable: EditorTable, dataRowIndex: number): boolean {
         const rowClasses = editorTable === this.leftEditorTable ? this.leftRowClasses : this.rightRowClasses;
@@ -1039,6 +1062,16 @@ export class DiffTab {
         if (this.wrapperElement.style.display === 'none') return;
         // ラベルはテーブルホストの外側に置くため、列ヘッダー行の追加オフセットは不要。
         this.applyLabelOffsetToColumnHeaders();
+        if (this.embeddedOriginalRows !== false) {
+            // 一覧では本文全体を自然な高さにし、縦方向のスクロールを外側へ集約する。
+            const heights = [[this.leftPaneElement, this.leftEditorTable], [this.rightPaneElement, this.rightEditorTable]] as const;
+            const height = Math.max(...heights.map(([pane, table]) => {
+                const label = pane.querySelector('.diff-pane-label-left, .diff-pane-label-right');
+                const labelHeight = label === null ? 0 : label.getBoundingClientRect().height;
+                return (this.embeddedOriginalRows === false ? 0 : this.embeddedOriginalRows.left.length * ROW_TOTAL_HEIGHT_PX) + table.getHeaderLayoutHeightPx() + table.getMainViewportHorizontalScrollbarHeightPx() + labelHeight;
+            }));
+            this.wrapperElement.style.height = Math.ceil(height + 2) + 'px';
+        }
         // ビューポートサイズ変更後に仮想スクロール範囲と独自スクロールバーを再計算する。
         this.leftEditorTable.forceVirtualScrollRecalculate();
         this.rightEditorTable.forceVirtualScrollRecalculate();
@@ -1062,6 +1095,10 @@ export class DiffTab {
      * （display:none 後は scrollLeft が 0 にリセット済みのため、保存値を上書きしてはならない）
      */
     hide(): void {
+        if (this.embeddedOriginalRows !== false) {
+            this.leftEditorTableHandler.deactivate();
+            this.rightEditorTableHandler.deactivate();
+        }
         this.findBar.hideForState(this.leftFindState);
         this.findBar.hideForState(this.rightFindState);
         if (this.branchCompareTooltip !== false) this.branchCompareTooltip.hide();
@@ -1344,6 +1381,18 @@ export class DiffTab {
      */
     applyDiffDecorationsToRow(rowElement: HTMLElement, dataRowIndex: number, editorTable: EditorTable): void {
         const isLeft = editorTable === this.leftEditorTable;
+        if (this.embeddedOriginalRows !== false) {
+            const originalIndex = (isLeft ? this.embeddedOriginalRows.left : this.embeddedOriginalRows.right)[dataRowIndex];
+            const header = rowElement.querySelector('.editor-table-row-header');
+            if (header !== null) {
+                // 行リサイズの子要素を保持し、分離レイヤーへ複製される前に表示番号だけを置き換える。
+                for (const node of header.childNodes) {
+                    if (node.nodeType !== Node.TEXT_NODE) continue;
+                    node.textContent = originalIndex < 0 ? '' : String(originalIndex + 1);
+                    break;
+                }
+            }
+        }
         const rowClasses = isLeft ? this.leftRowClasses : this.rightRowClasses;
         const cellClasses = isLeft ? this.leftCellClasses : this.rightCellClasses;
 

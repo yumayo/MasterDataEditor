@@ -2,21 +2,34 @@ import type {Editor} from '../editor/editor';
 import type {GitBranchCompareFile} from '../app/api';
 import type {DiffBuildResult} from '../diff/diff-build-result';
 import type {UiStoredBranchCompareListTab, UiScrollPosition} from '../app/ui-state';
+import type {InMemoryTableStore} from '../data/in-memory-table-store';
+import type {LargeFileSettings} from '../settings/settings-schema';
+import type {Tab} from './tab';
+import type {DiffTab} from './diff-tab';
 import './branch-compare-list-tab.css';
 
 export interface BranchCompareListSection {
     file: GitBranchCompareFile;
     diff: DiffBuildResult;
+    schemaJson: string;
 }
 
-/** 読み取り専用の差分一覧。各テーブルは自然な高さで並べ、縦スクロールを共有する。 */
+interface ListSectionView {
+    body: HTMLElement;
+    diffs: DiffTab[];
+}
+
+/** Git差分の共通グリッドを連続配置し、見出しと縦スクロールだけを一覧で管理する。 */
 export class BranchCompareListTab {
+    private static nextListId = 1;
     private readonly wrapper: HTMLElement;
     private readonly scroller: HTMLElement;
+    private readonly sections: ListSectionView[] = [];
+    private readonly diffs: DiffTab[] = [];
     private savedScroll: UiScrollPosition = {scrollTop: 0, scrollLeft: 0};
     private uiStateChangeListener: (() => void) | false = false;
 
-    constructor(editor: Editor, metadata: UiStoredBranchCompareListTab, sections: BranchCompareListSection[]) {
+    constructor(editor: Editor, tab: Tab, store: InMemoryTableStore, metadata: UiStoredBranchCompareListTab, sections: BranchCompareListSection[], identity: string) {
         this.wrapper = document.createElement('div');
         this.wrapper.classList.add('branch-compare-list-tab');
         this.wrapper.style.display = 'none';
@@ -46,95 +59,113 @@ export class BranchCompareListTab {
             this.savedScroll = {scrollTop: this.scroller.scrollTop, scrollLeft: this.scroller.scrollLeft};
             if (this.uiStateChangeListener !== false) this.uiStateChangeListener();
         });
-        for (const {file, diff} of sections) {
-            const leftRows = diff.leftRows;
-            const rightRows = diff.rightRows;
-            const leftIndices = diff.leftOriginalRowIndices;
-            const rightIndices = diff.rightOriginalRowIndices;
-            const gaps = diff.omittedRows;
-            if (!leftRows || !rightRows || !leftIndices || !rightIndices || !gaps) throw new Error('一覧用の差分データがありません: ' + file.path);
-            const section = document.createElement('section');
-            section.classList.add('branch-compare-list-section');
-            section.dataset.path = file.path;
-            section.dataset.status = file.status;
-            const heading = document.createElement('h2');
-            const status = document.createElement('span');
-            status.classList.add('branch-compare-list-status');
-            status.textContent = file.status + ' ' + ({M: '変更', A: '追加', D: '削除'}[file.status]);
-            heading.append(status, document.createTextNode(file.tableName));
-            const path = document.createElement('div');
-            path.classList.add('branch-compare-list-path');
-            path.textContent = file.path;
-            section.append(heading, path);
-            const table = document.createElement('table');
-            table.setAttribute('aria-label', file.tableName + ' の差分');
-            table.style.minWidth = Math.max(680, diff.displayHeader.length * 180 + 88) + 'px';
-            const head = table.createTHead();
-            const labels = head.insertRow();
-            for (const [side, label] of [['left', metadata.leftLabel], ['right', metadata.rightLabel]]) {
-                const cell = document.createElement('th');
-                cell.colSpan = diff.displayHeader.length + 1;
-                cell.scope = 'colgroup';
-                cell.classList.add('branch-compare-list-' + side);
-                cell.textContent = (side === 'left' ? '比較元: ' : '比較先: ') + label;
-                labels.appendChild(cell);
+        this.scroller.addEventListener('wheel', (event: WheelEvent) => {
+            if (event.ctrlKey || event.shiftKey || event.deltaY === 0) return;
+            // 内側の固定セル・差分ペインが縦wheelを消費する前に、外側へ1度だけ適用する。
+            const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? this.scroller.clientHeight : 1;
+            this.scroller.scrollTop += event.deltaY * scale;
+            if (event.deltaX !== 0) {
+                for (const diff of this.diffs) if (diff.scrollHorizontallyAt(event.target, event.deltaX * scale)) break;
             }
-            const columns = head.insertRow();
-            for (const side of ['left', 'right']) {
-                for (const [index, name] of ['行', ...diff.displayHeader].entries()) {
-                    const cell = document.createElement('th');
-                    cell.scope = 'col';
-                    cell.textContent = name;
-                    if (index === 0) cell.classList.add('branch-compare-list-line', 'branch-compare-list-' + side);
-                    columns.appendChild(cell);
-                }
-            }
-            const body = table.createTBody();
-            const omitted = new Map(gaps.map(gap => [gap.beforeRow, gap.count]));
-            const leftModified = new Set(diff.leftModifiedCells.map(cell => cell.row + ':' + cell.col));
-            const rightModified = new Set(diff.rightModifiedCells.map(cell => cell.row + ':' + cell.col));
-            const addedRows = new Set(diff.rightAddedRowIndices);
-            const deletedRows = new Set(diff.leftDeletedRowIndices);
-            for (let rowIndex = 0; rowIndex <= leftRows.length; rowIndex++) {
-                const count = omitted.get(rowIndex);
-                if (typeof count === 'number') {
-                    const row = body.insertRow();
-                    row.classList.add('branch-compare-list-gap');
-                    const cell = row.insertCell();
-                    cell.colSpan = (diff.displayHeader.length + 1) * 2;
-                    cell.textContent = count + ' 行を省略';
-                }
-                if (rowIndex === leftRows.length) continue;
-                const row = body.insertRow();
-                for (const side of ['left', 'right']) {
-                    const originalIndex = (side === 'left' ? leftIndices : rightIndices)[rowIndex];
-                    const values = (side === 'left' ? leftRows : rightRows)[rowIndex];
-                    const wholeRowChanged = side === 'left' ? deletedRows.has(rowIndex) : addedRows.has(rowIndex);
-                    const modified = side === 'left' ? leftModified : rightModified;
-                    for (let col = -1; col < diff.displayHeader.length; col++) {
-                        const cell = row.insertCell();
-                        cell.textContent = originalIndex < 0 ? '' : col < 0 ? String(originalIndex + 1) : values[col];
-                        if (col < 0) cell.classList.add('branch-compare-list-line', 'branch-compare-list-' + side);
-                        if (originalIndex < 0) cell.classList.add('branch-compare-list-empty');
-                        else if (wholeRowChanged || modified.has(rowIndex + ':' + col)) cell.classList.add(side === 'left' ? 'branch-compare-list-deleted' : 'branch-compare-list-added');
-                    }
-                }
-            }
-            if (leftRows.length === 0) {
-                const cell = body.insertRow().insertCell();
-                cell.colSpan = (diff.displayHeader.length + 1) * 2;
-                cell.classList.add('branch-compare-list-note');
-                cell.textContent = '行データの差分はありません';
-            }
-            section.appendChild(table);
-            this.scroller.appendChild(section);
-        }
+            event.preventDefault();
+            event.stopPropagation();
+        }, {capture: true, passive: false});
         this.wrapper.append(summary, this.scroller);
         editor.appendChild(this.wrapper);
+        const listId = BranchCompareListTab.nextListId++;
+        try {
+            for (const [sectionIndex, data] of sections.entries()) {
+                const {file, diff} = data;
+                const leftRows = diff.leftRows;
+                const rightRows = diff.rightRows;
+                const leftIndices = diff.leftOriginalRowIndices;
+                const rightIndices = diff.rightOriginalRowIndices;
+                const gaps = diff.omittedRows;
+                if (!leftRows || !rightRows || !leftIndices || !rightIndices || !gaps) throw new Error('一覧用の差分データがありません: ' + file.path);
+                const section = document.createElement('section');
+                section.classList.add('branch-compare-list-section');
+                section.dataset.path = file.path;
+                section.dataset.status = file.status;
+                const heading = document.createElement('h2');
+                heading.classList.add('branch-compare-list-heading');
+                const toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.classList.add('branch-compare-list-toggle');
+                toggle.setAttribute('aria-expanded', 'true');
+                const chevron = document.createElement('span');
+                chevron.classList.add('branch-compare-list-chevron');
+                chevron.textContent = '▾';
+                chevron.setAttribute('aria-hidden', 'true');
+                const status = document.createElement('span');
+                status.classList.add('branch-compare-list-status');
+                status.textContent = file.status + ' ' + ({M: '変更', A: '追加', D: '削除'}[file.status]);
+                const name = document.createElement('span');
+                name.classList.add('branch-compare-list-name');
+                name.textContent = file.tableName;
+                const path = document.createElement('span');
+                path.classList.add('branch-compare-list-path');
+                path.textContent = file.path;
+                toggle.append(chevron, status, name, path);
+                heading.appendChild(toggle);
+                const body = document.createElement('div');
+                body.classList.add('branch-compare-list-body');
+                body.id = 'branch-compare-list-' + listId + '-section-' + sectionIndex;
+                toggle.setAttribute('aria-controls', body.id);
+                section.append(heading, body);
+                this.scroller.appendChild(section);
+                const view: ListSectionView = {body, diffs: []};
+                this.sections.push(view);
+                toggle.addEventListener('click', () => {
+                    const oldTop = heading.getBoundingClientRect().top;
+                    const collapse = !body.hidden;
+                    if (collapse) for (const child of view.diffs) child.hide();
+                    body.hidden = collapse;
+                    toggle.setAttribute('aria-expanded', String(!collapse));
+                    chevron.textContent = collapse ? '▸' : '▾';
+                    if (!collapse) for (const child of view.diffs) child.show();
+                    // 表の高さが変わっても、操作した見出しを可能な範囲で同じ画面位置に保つ。
+                    this.scroller.scrollTop += heading.getBoundingClientRect().top - oldTop;
+                });
+                const omitted = new Map(gaps.map(gap => [gap.beforeRow, gap.count]));
+                const boundaries = [...new Set([0, ...gaps.map(gap => gap.beforeRow), leftRows.length])].sort((a, b) => a - b);
+                for (const [boundaryIndex, start] of boundaries.entries()) {
+                    const count = omitted.get(start);
+                    if (typeof count === 'number') {
+                        const gap = document.createElement('div');
+                        gap.classList.add('branch-compare-list-gap');
+                        gap.textContent = count + ' 行を省略';
+                        body.appendChild(gap);
+                    }
+                    if (boundaryIndex === boundaries.length - 1 && leftRows.length !== 0) continue;
+                    const end = leftRows.length === 0 ? 0 : boundaries[boundaryIndex + 1];
+                    const shiftRows = (rows: number[]): number[] => rows.filter(row => row >= start && row < end).map(row => row - start);
+                    const shiftCells = (cells: Array<{row: number; col: number}>): Array<{row: number; col: number}> => cells.filter(cell => cell.row >= start && cell.row < end).map(cell => ({row: cell.row - start, col: cell.col}));
+                    const hunk: DiffBuildResult = {
+                        mode: 'full', hasChanges: diff.hasChanges, displayHeader: diff.displayHeader, newColumnIndices: diff.newColumnIndices,
+                        leftRows: leftRows.slice(start, end), rightRows: rightRows.slice(start, end),
+                        leftOriginalRowIndices: leftIndices.slice(start, end), rightOriginalRowIndices: rightIndices.slice(start, end),
+                        leftEmptyRowIndices: shiftRows(diff.leftEmptyRowIndices), rightEmptyRowIndices: shiftRows(diff.rightEmptyRowIndices),
+                        leftDeletedRowIndices: shiftRows(diff.leftDeletedRowIndices), rightAddedRowIndices: shiftRows(diff.rightAddedRowIndices),
+                        leftModifiedCells: shiftCells(diff.leftModifiedCells), rightModifiedCells: shiftCells(diff.rightModifiedCells),
+                    };
+                    const child = tab.createEmbeddedBranchCompareDiff(identity, data, hunk, start, body, metadata);
+                    view.diffs.push(child);
+                    this.diffs.push(child);
+                }
+                if (leftRows.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.classList.add('branch-compare-list-note');
+                    empty.textContent = '行データの差分はありません';
+                    body.appendChild(empty);
+                }
+            }
+        } catch (error: unknown) {
+            this.destroy(store);
+            throw error;
+        }
     }
 
     connectUiStateChangeListener(listener: () => void): void { this.uiStateChangeListener = listener; }
-
     getScrollPosition(): UiScrollPosition { return {...this.savedScroll}; }
 
     restoreScrollPosition(scrollTop: number, scrollLeft: number): void {
@@ -145,10 +176,24 @@ export class BranchCompareListTab {
 
     show(): void {
         this.wrapper.style.display = 'flex';
+        for (const section of this.sections) if (!section.body.hidden) for (const diff of section.diffs) diff.show();
         this.restoreScrollPosition(this.savedScroll.scrollTop, this.savedScroll.scrollLeft);
     }
 
-    hide(): void { this.wrapper.style.display = 'none'; }
+    hide(): void {
+        for (const diff of this.diffs) diff.hide();
+        this.wrapper.style.display = 'none';
+    }
 
-    destroy(): void { this.wrapper.remove(); }
+    refreshLayoutAfterResize(): void {
+        for (const section of this.sections) if (!section.body.hidden) for (const diff of section.diffs) diff.refreshLayoutAfterResize();
+    }
+
+    setLargeFileSettings(settings: LargeFileSettings): void { for (const diff of this.diffs) diff.setLargeFileSettings(settings); }
+    openFindBar(target: EventTarget | null): boolean { return this.diffs.some(diff => diff.openFindBar(target)); }
+
+    destroy(store: InMemoryTableStore): void {
+        for (const diff of this.diffs) diff.destroy(store);
+        this.wrapper.remove();
+    }
 }

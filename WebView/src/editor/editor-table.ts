@@ -2140,7 +2140,7 @@ export class EditorTable {
 
     private getMaxRowHeaderNumber(): number {
         const bufferRowCount = this.diffTab === false ? 1 : 0;
-        return Math.max(1, this.getFilteredDataRowCount() + bufferRowCount);
+        return Math.max(1, this.getFilteredDataRowCount() + bufferRowCount, this.diffTab === false ? 0 : this.diffTab.maxDisplayedRowNumber());
     }
 
     /**

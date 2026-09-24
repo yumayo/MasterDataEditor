@@ -382,13 +382,19 @@ test('差分一覧は左右の固定出力時刻で絞り込み、列順と元�
     await expect(list.locator('.branch-compare-list-section')).toHaveCount(5);
     const active = list.locator('.branch-compare-list-section[data-path="data/active.csv"]');
     for (const included of ['before', 'outside-new', 'between-times', 'begins-now']) {
-        await expect(active.getByText(included, {exact: true})).toHaveCount(1);
+        await expect(active.locator('.editor-table-row .editor-table-cell').filter({hasText: new RegExp('^' + included + '$')})).toHaveCount(1);
     }
     for (const excluded of ['outside-old', 'after', 'future-old', 'future-new']) {
-        await expect(active.getByText(excluded, {exact: true})).toHaveCount(0);
+        await expect(active.locator('.editor-table-row .editor-table-cell').filter({hasText: new RegExp('^' + excluded + '$')})).toHaveCount(0);
     }
-    await expect(active.locator('thead tr').last().locator('th')).toHaveText(['行', 'available_until', 'name', 'id', 'value', 'available_from', '行', 'available_until', 'name', 'id', 'value', 'available_from']);
-    await expect(active.getByText('before', {exact: true}).locator('..').locator('.branch-compare-list-line').first()).toHaveText('2');
+    for (const side of ['left', 'right']) {
+        await expect.poll(() => active.locator(`.diff-pane-${side} .editor-table-pane-top-right .editor-table-column-header`).evaluateAll(headers => headers.map(header => {
+            const label = header.cloneNode(true) as HTMLElement;
+            label.querySelectorAll('.column-header-badge-area').forEach(badge => badge.remove());
+            return label.textContent;
+        }))).toEqual(HEADER);
+    }
+    await expect(active.locator('.editor-table-row .editor-table-cell').filter({hasText: /^before$/}).locator('..').locator('.editor-table-row-header').first()).toHaveText('2');
     await expect.poll(async () => {
         const raw = await readMockFileAsync(page, 'user:ui-state.json');
         if (typeof raw !== 'string') return null;
@@ -397,8 +403,8 @@ test('差分一覧は左右の固定出力時刻で絞り込み、列順と元�
     }).toEqual({leftDateTime: TIME, rightDateTime: TARGET_TIME, beginColumnName: 'available_from', endColumnName: 'available_until'});
     await page.reload();
     await expect(list.locator('.branch-compare-list-section')).toHaveCount(5);
-    await expect(active.getByText('outside-new', {exact: true})).toHaveCount(1);
-    await expect(active.getByText('after', {exact: true})).toHaveCount(0);
+    await expect(active.locator('.editor-table-row .editor-table-cell').filter({hasText: /^outside-new$/})).toHaveCount(1);
+    await expect(active.locator('.editor-table-row .editor-table-cell').filter({hasText: /^after$/})).toHaveCount(0);
     await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
     await expect(page.locator('.tab-button')).toHaveCount(1);
 });

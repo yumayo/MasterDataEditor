@@ -29,6 +29,7 @@ import {createLargeFileSettings, SETTINGS_CHANGED_EVENT, type LargeFileSettings,
 import type {BranchCompareExportFilter} from "../diff/diff-build-result";
 import {DiffTab} from "./diff-tab";
 import {BranchCompareListTab, type BranchCompareListSection} from "./branch-compare-list-tab";
+import type {DiffBuildResult} from "../diff/diff-build-result";
 import {BranchCompareChanges} from "../diff/branch-compare-changes";
 import {FormPanel, type FormPanelNavEntry} from "../panels/form-panel";
 import {NavigationHistory} from "./navigation-history";
@@ -539,7 +540,7 @@ export class Tab {
             editorTable.setLargeFileSettings(settings);
         }
         for (const diffTab of this.diffTabs.values()) {
-            if (diffTab instanceof DiffTab) diffTab.setLargeFileSettings(settings);
+            diffTab.setLargeFileSettings(settings);
         }
     }
 
@@ -641,7 +642,7 @@ export class Tab {
         if (this.activeTabName === false) return;
         if (this.activeTabName.startsWith(DIFF_TAB_PREFIX)) {
             const diffTab = this.diffTabs.get(this.activeTabName);
-            if (diffTab instanceof DiffTab) diffTab.refreshLayoutAfterResize();
+            if (diffTab) diffTab.refreshLayoutAfterResize();
             return;
         }
         const activeState = this.tabStates.get(this.activeTabName);
@@ -3112,15 +3113,18 @@ export class Tab {
                 if (cancelled()) break;
                 const versions = await this.loadBranchCompareDiffVersionsAsync(file, metadata.leftCommit, metadata.rightCommit, signal);
                 if (versions === null || cancelled()) break;
-                const diff = await DiffTab.buildDiffDataAsync(versions.schemaJson, versions.leftCsv, versions.rightCsv, metadata.exportFilter, 5);
+                const [diff, schema] = await Promise.all([
+                    DiffTab.buildDiffDataAsync(versions.schemaJson, versions.leftCsv, versions.rightCsv, metadata.exportFilter, 5),
+                    applyStoredColumnWidthsToSchemaAsync(file.tableName, JSON.parse(versions.schemaJson) as Record<string, unknown>),
+                ]);
                 if (cancelled()) break;
-                sections.push({file, diff});
+                sections.push({file, diff, schemaJson: JSON.stringify(schema)});
             }
             if (cancelled()) {
                 cancelLoading();
                 return;
             }
-            const list = new BranchCompareListTab(this.editor, metadata, sections);
+            const list = new BranchCompareListTab(this.editor, this, this.store, metadata, sections, name);
             this.diffTabs.set(name, list);
             this.connectDiffTabUiState(name, list);
             const wasActive = this.activeTabName === name;
@@ -3134,6 +3138,20 @@ export class Tab {
         } finally {
             signal?.removeEventListener('abort', cancelLoading);
         }
+    }
+
+    /** 一覧の連続した差分範囲にも、個別Git差分と同じEditorTableと操作系を組み立てる。 */
+    createEmbeddedBranchCompareDiff(name: string, section: BranchCompareListSection, diff: DiffBuildResult, start: number, host: HTMLElement, metadata: UiStoredBranchCompareListTab): DiffTab {
+        const button = this.tabButtons.find(tab => tab.name === name);
+        if (!button) throw new Error('差分一覧のタブがありません: ' + name);
+        const file = section.file;
+        // fullモードの圧縮済み行データを使うため、元CSV文字列は再保持しない。
+        return new DiffTab(
+            file.tableName, name + ':' + file.path + ':' + start, section.schemaJson, '', '', true, file.path,
+            host, this.sidebar, this.store, this.referenceDataCache, this.contextMenu, button,
+            this.reference, this.openEditorTables, this.notification, this.validationPanel,
+            createLargeFileSettings(getAppliedSettings()), metadata.leftLabel, metadata.rightLabel, diff, false
+        );
     }
 
     async filterBranchCompareFilesAsync(files: GitBranchCompareFile[], leftCommit: string, rightCommit: string, exportFilter: BranchCompareExportFilter, signal: AbortSignal): Promise<GitBranchCompareFile[]> {
@@ -3403,8 +3421,7 @@ export class Tab {
 
     openFindBarForActiveEditorTable(target: EventTarget | null): boolean {
         const diffTab = this.activeTabName === false ? undefined : this.diffTabs.get(this.activeTabName);
-        if (diffTab instanceof BranchCompareListTab) return false;
-        if (diffTab instanceof DiffTab) return diffTab.openFindBar(target);
+        if (diffTab) return diffTab.openFindBar(target);
         const state = this.getActiveTabState();
         if (state === false) return false;
         const targetElement = target instanceof HTMLElement ? target : null;
