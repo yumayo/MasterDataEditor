@@ -164,8 +164,7 @@ export class Editor {
         if (this.tab === false) return;
         const activeState = this.tab.getActiveTabState();
         if (activeState === false) {
-            this.leftPaneScrollProxy.style.height = '100%';
-            this.leftPaneScrollProxy.style.width = '1px';
+            this.resetLeftPaneScrollState();
             return;
         }
         if (!activeState.editorTable.usesInternalScrollLayout()) return;
@@ -190,6 +189,14 @@ export class Editor {
         } finally {
             this.isSyncingLeftPaneFromTable = false;
         }
+    }
+
+    private resetLeftPaneScrollState(): void {
+        this.leftPaneScrollProxy.style.height = '100%';
+        this.leftPaneScrollProxy.style.width = '1px';
+        this.leftPane.scrollTop = 0;
+        this.leftPane.scrollLeft = 0;
+        this.lastLeftPaneSyncedScrollLeft = 0;
     }
 
     private forwardLeftPaneScrollToActiveTable(): void {
@@ -388,6 +395,8 @@ export class Editor {
     enterSettingsMode(): void {
         this.rightSlot.style.display = 'none';
         this.navigationBar.style.display = 'none';
+        // 設定など独自にスクロールするタブへ、通常テーブルのスクロール領域と位置を持ち越さない。
+        this.resetLeftPaneScrollState();
     }
 
     /**
