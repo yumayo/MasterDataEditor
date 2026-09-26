@@ -104,7 +104,10 @@ export class Csv {
 
         let result = '';
         result += this.header.map(serializeField).join(',') + '\n';
-        result += this.body.map(row => row.map(serializeField).join(',')).join('\n') + '\n';
+        // データ行がない場合、余分な改行を空のデータ行として出力しない。
+        if (this.body.length > 0) {
+            result += this.body.map(row => row.map(serializeField).join(',')).join('\n') + '\n';
+        }
         return result;
     }
 }

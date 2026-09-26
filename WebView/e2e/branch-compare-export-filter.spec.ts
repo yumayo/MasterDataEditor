@@ -150,7 +150,11 @@ test('追加・削除テーブルと片側の全行が期間外のテーブル�
     ] as const) {
         await page.locator('.branch-compare-file-name').filter({hasText: new RegExp('^' + table + '$')}).click();
         const diff = page.locator('.diff-tab:visible');
-        await expect(diff.locator('.diff-pane-' + pane)).toContainText(included);
+        const dataRows = diff.locator('.diff-pane-' + pane + ' .editor-table-row');
+        // 空の比較元・比較先から余分なパディング行を作らず、先頭から実データを表示する。
+        await expect(dataRows).toHaveCount(1);
+        await expect(dataRows.first()).toContainText(included);
+        await expect(dataRows.first()).not.toHaveClass(/diff-row-empty/);
         if (excluded !== '') await expect(diff).not.toContainText(excluded);
     }
 });
