@@ -71,11 +71,11 @@ export class EditorTableSelectionView {
      * 前回付与したクラスを除去してから新しいクラスを付与する。
      * フォーカスセルには sel-bg を付与しない。
      *
-     * @param range 正規化済みの選択範囲（startRow <= endRow, startColumn <= endColumn）
+     * @param ranges 正規化済みの選択範囲（startRow <= endRow, startColumn <= endColumn）
      * @param focusRow フォーカスセルのDOM行インデックス
      * @param focusCol フォーカスセルのDOM列インデックス
      */
-    applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void {
+    applySelectionClasses(ranges: CellRange[], focusRow: number, focusCol: number): void {
         // 前回のクラスを除去する
         for (const entry of this.lastSelectionCells) {
             const cell = this.getCellOrNull(entry.row, entry.col);
@@ -83,25 +83,27 @@ export class EditorTableSelectionView {
         }
         this.lastSelectionCells = [];
 
-        const { startRow, startColumn, endRow, endColumn } = range;
+        for (const range of ranges) {
+            const { startRow, startColumn, endRow, endColumn } = range;
 
-        // 仮想スクロール時に論理上の全選択行を走査すると、列選択のスクロールが総行数に比例して重くなる。
-        // DOM に存在する固定行・表示中行だけへクラスを付ける。
-        for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
-            for (let row = rowStart; row <= rowEnd; row++) {
-                for (let col = startColumn; col <= endColumn; col++) {
-                    const cell = this.getCellOrNull(row, col);
-                    if (cell === null) continue;
-                    const classes: string[] = [];
-                    // フォーカスセル以外の選択状態をクラスとして保持する
-                    if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
-                    if (row === startRow) classes.push('sel-top');
-                    if (row === endRow) classes.push('sel-bottom');
-                    if (col === startColumn) classes.push('sel-left');
-                    if (col === endColumn) classes.push('sel-right');
-                    if (classes.length > 0) {
-                        cell.classList.add(...classes);
-                        this.lastSelectionCells.push({ row, col, classes });
+            // 仮想スクロール時に論理上の全選択行を走査すると、列選択のスクロールが総行数に比例して重くなる。
+            // DOM に存在する固定行・表示中行だけへクラスを付ける。
+            for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
+                for (let row = rowStart; row <= rowEnd; row++) {
+                    for (let col = startColumn; col <= endColumn; col++) {
+                        const cell = this.getCellOrNull(row, col);
+                        if (cell === null) continue;
+                        const classes: string[] = [];
+                        // フォーカスセル以外の選択状態をクラスとして保持する
+                        if (row !== focusRow || col !== focusCol) classes.push('sel-bg');
+                        if (row === startRow) classes.push('sel-top');
+                        if (row === endRow) classes.push('sel-bottom');
+                        if (col === startColumn) classes.push('sel-left');
+                        if (col === endColumn) classes.push('sel-right');
+                        if (classes.length > 0) {
+                            cell.classList.add(...classes);
+                            this.lastSelectionCells.push({ row, col, classes });
+                        }
                     }
                 }
             }
@@ -118,7 +120,7 @@ export class EditorTableSelectionView {
     }
 
     /** source DOM のヘッダー選択状態を更新する。detached 同期はセル・フォーカス更新後にまとめて行う。 */
-    updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+    updateHeaderSelection(ranges: CellRange[]): void {
         const columnHeaderRow = this.gridElement.children[0] as HTMLElement;
         // すべての列ヘッダーから選択状態を解除
         for (let i = 1; i < columnHeaderRow.children.length; i++) {
@@ -135,24 +137,26 @@ export class EditorTableSelectionView {
             const rowHeader = row.querySelector('.editor-table-row-header') as HTMLElement | null;
             if (rowHeader) rowHeader.classList.remove('selected', 'selected-row-end');
         }
-        // 選択範囲に含まれる列ヘッダーに選択状態を追加
-        for (let col = startColumn; col <= endColumn; col++) {
-            const headerCell = columnHeaderRow.children[col] as HTMLElement;
-            if (headerCell) {
-                headerCell.classList.add('selected');
-                if (col === endColumn) headerCell.classList.add('selected-column-end');
+        for (const {startRow, startColumn, endRow, endColumn} of ranges) {
+            // 選択範囲に含まれる列ヘッダーに選択状態を追加
+            for (let col = startColumn; col <= endColumn; col++) {
+                const headerCell = columnHeaderRow.children[col] as HTMLElement;
+                if (headerCell) {
+                    headerCell.classList.add('selected');
+                    if (col === endColumn) headerCell.classList.add('selected-column-end');
+                }
             }
-        }
-        // 選択範囲に含まれる行ヘッダーに選択状態を追加する。
-        // ここも表示中行だけを対象にし、全行列選択時の O(totalRows) 走査を避ける。
-        for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
-            for (let row = rowStart; row <= rowEnd; row++) {
-                const rowElement = this.getRowElement(row);
-                if (rowElement) {
-                    const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
-                    if (rowHeader) {
-                        rowHeader.classList.add('selected');
-                        if (row === endRow) rowHeader.classList.add('selected-row-end');
+            // 選択範囲に含まれる行ヘッダーに選択状態を追加する。
+            // ここも表示中行だけを対象にし、全行列選択時の O(totalRows) 走査を避ける。
+            for (const [rowStart, rowEnd] of this.getVisibleSelectedRowRanges(startRow, endRow)) {
+                for (let row = rowStart; row <= rowEnd; row++) {
+                    const rowElement = this.getRowElement(row);
+                    if (rowElement) {
+                        const rowHeader = rowElement.querySelector('.editor-table-row-header') as HTMLElement | null;
+                        if (rowHeader) {
+                            rowHeader.classList.add('selected');
+                            if (row === endRow) rowHeader.classList.add('selected-row-end');
+                        }
                     }
                 }
             }

@@ -14,7 +14,7 @@ import {
     FilterCommand,
     ColumnWidthCommand,
 } from "./command";
-import { CellRange } from "./selection";
+import { CellRange, SelectionRange } from "./selection";
 import { EditorTable } from "./editor-table";
 import { TabButton } from "../tabs/tab-button";
 import { InMemoryTableStore, IHistory } from "../data/in-memory-table-store";
@@ -41,20 +41,20 @@ export interface HistoryEntry {
      * 操作前の選択範囲
      * Undo時に復元する。Redo時はchangesを含めた範囲を計算して使用する。
      */
-    range: CellRange;
+    range: SelectionRange;
     /**
      * コピー範囲（点線表示用）
      * アクション実行前のコピー範囲を保存し、Undo時に復元する。
      */
-    copyRange: CellRange;
+    copyRange: SelectionRange;
 }
 
 /**
  * Undo/Redo操作の結果
  */
 export interface HistoryResult {
-    range: CellRange;
-    copyRange: CellRange;
+    range: SelectionRange;
+    copyRange: SelectionRange;
 }
 
 /**
@@ -130,7 +130,7 @@ export class History implements IHistory {
     /**
      * コマンドを履歴に追加して実行する
      */
-    executeCommand(command: Command, range: CellRange, copyRange: CellRange): void {
+    executeCommand(command: Command, range: SelectionRange, copyRange: SelectionRange): void {
         command.execute();
 
         // 現在の位置より後の履歴を削除
@@ -170,7 +170,7 @@ export class History implements IHistory {
     /**
      * コマンドを履歴に追加（既に実行済みの場合）
      */
-    pushCommand(command: Command, range: CellRange, copyRange: CellRange): void {
+    pushCommand(command: Command, range: SelectionRange, copyRange: SelectionRange): void {
         // 現在の位置より後の履歴を削除
         // savedIndexがこの削除範囲にある場合は無効化
         if (this.savedIndex > this.currentIndex) {
@@ -208,7 +208,7 @@ export class History implements IHistory {
     /**
      * 後方互換性: 旧形式のアクションを履歴に追加
      */
-    push(action: { changes: CellChange[]; range: CellRange; copyRange: CellRange }): void {
+    push(action: { changes: CellChange[]; range: SelectionRange; copyRange: SelectionRange }): void {
         // 実際に値が変わっているchangeのみをフィルタ
         const meaningfulChanges = action.changes.filter(
             change => change.oldValue !== change.newValue
@@ -231,7 +231,7 @@ export class History implements IHistory {
     /**
      * 単一セルの変更を履歴に追加
      */
-    pushSingleChange(row: number, column: number, oldValue: string, newValue: string, copyRange: CellRange): void {
+    pushSingleChange(row: number, column: number, oldValue: string, newValue: string, copyRange: SelectionRange): void {
         this.push({
             changes: [{ row, column, oldValue, newValue }],
             range: { startRow: row, startColumn: column, endRow: row, endColumn: column },
@@ -271,7 +271,7 @@ export class History implements IHistory {
 
         // Redo時はCellChangeCommandの場合、changesを含めた範囲を計算
         let redoRange = { ...entry.range };
-        if (entry.command instanceof CellChangeCommand) {
+        if (entry.command instanceof CellChangeCommand && !entry.range.additionalRanges?.length) {
             const changes = entry.command.getChanges();
             for (const change of changes) {
                 redoRange.startRow = Math.min(redoRange.startRow, change.row);

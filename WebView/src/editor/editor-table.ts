@@ -1024,7 +1024,7 @@ export class EditorTable {
 
     markFocusedCell(row: number, col: number): void { this.selectionView.markFocusedCell(row, col); }
     clearFocusedCell(): void { this.selectionView.clearFocusedCell(); }
-    applySelectionClasses(range: CellRange, focusRow: number, focusCol: number): void { this.selectionView.applySelectionClasses(range, focusRow, focusCol); }
+    applySelectionClasses(ranges: CellRange[], focusRow: number, focusCol: number): void { this.selectionView.applySelectionClasses(ranges, focusRow, focusCol); }
     clearSelectionClasses(): void { this.selectionView.clearSelectionClasses(); }
 
     connectValidationPanel(panel: ValidationPanel): void { this.validationMarkers.connectValidationPanel(panel); }
@@ -2166,8 +2166,8 @@ export class EditorTable {
     // UI
     // =========================================================================
 
-    updateHeaderSelection(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        this.selectionView.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+    updateHeaderSelection(ranges: CellRange[]): void {
+        this.selectionView.updateHeaderSelection(ranges);
     }
 
     syncDetachedCellClasses(): void {

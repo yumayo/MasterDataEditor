@@ -13,6 +13,11 @@ export interface CellRange {
     endColumn: number;
 }
 
+/** アクティブ範囲と、Ctrl/Command で追加した範囲のスナップショット。 */
+export interface SelectionRange extends CellRange {
+    additionalRanges?: CellRange[];
+}
+
 export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 interface OverlayBounds {
@@ -36,6 +41,7 @@ export class Selection {
     fillPreviewElement: HTMLElement;
 
     private range: CellRange;
+    private additionalRanges: CellRange[] = [];
 
     private focus: CellPosition;
 
@@ -49,7 +55,8 @@ export class Selection {
 
     private editorElement: HTMLElement;
 
-    private copyRange: CellRange;
+    private copyRange: SelectionRange;
+    private copiedData: string[][] | null = null;
 
     fillHandle: HTMLElement;
 
@@ -128,6 +135,7 @@ export class Selection {
         row = Math.max(1, row);
         column = Math.max(this.editorTable.dataColumnOffset(), column);
 
+        this.additionalRanges = [];
         this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
         this.focus = { row, column };
         this.scrollFocusIntoView();
@@ -147,6 +155,7 @@ export class Selection {
         endRow = Math.max(1, endRow);
         endColumn = Math.max(this.editorTable.dataColumnOffset(), endColumn);
 
+        this.additionalRanges = [];
         this.range = { startRow, startColumn, endRow, endColumn };
         this.updateRenderer();
     }
@@ -156,6 +165,7 @@ export class Selection {
         column = Math.max(this.editorTable.dataColumnOffset(), column);
 
         this.selecting = true;
+        this.additionalRanges = [];
         this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
         this.focus = { row, column }; // start 選択開始位置にフォーカスを設定
         this.updateRenderer();
@@ -175,6 +185,7 @@ export class Selection {
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
+        this.additionalRanges = [];
         this.range = { startRow: 1, startColumn: column, endRow: rowCount - 1, endColumn: column };
         this.focus = { row: 1, column: column }; // selectColumn 列ヘッダークリック
         this.selecting = true;
@@ -193,8 +204,9 @@ export class Selection {
         const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
-        this.range = { startRow: row, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
-        this.focus = { row: row, column: 1 }; // selectRow 行ヘッダークリック
+        this.additionalRanges = [];
+        this.range = { startRow: row, startColumn: this.editorTable.dataColumnOffset(), endRow: row, endColumn: columnCount - 1 };
+        this.focus = { row: row, column: this.editorTable.dataColumnOffset() }; // selectRow 行ヘッダークリック
         this.selecting = true;
         this.selectingColumn = false;
         this.selectingRow = true;
@@ -209,6 +221,7 @@ export class Selection {
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
+        if (this.additionalRanges.some(range => range.startRow !== 1 || range.endRow !== rowCount - 1)) this.additionalRanges = [];
         // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
         this.range = { startRow: 1, startColumn: this.range.startColumn, endRow: rowCount - 1, endColumn: column };
         // 列ヘッダークリック時はビューポート位置を維持するためスクロールしない
@@ -224,8 +237,9 @@ export class Selection {
         const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
+        if (this.additionalRanges.some(range => range.startColumn !== this.editorTable.dataColumnOffset() || range.endColumn !== columnCount - 1)) this.additionalRanges = [];
         // アンカー（startRow）を保持したまま、endRowを新しい行に拡張
-        this.range = { startRow: this.range.startRow, startColumn: 1, endRow: row, endColumn: columnCount - 1 };
+        this.range = { startRow: this.range.startRow, startColumn: this.editorTable.dataColumnOffset(), endRow: row, endColumn: columnCount - 1 };
         // 行ヘッダークリック時はビューポート位置を維持するためスクロールしない
         this.updateRenderer();
     }
@@ -240,8 +254,9 @@ export class Selection {
         const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
-        this.range = { startRow: 1, startColumn: 1, endRow: rowCount - 1, endColumn: columnCount - 1 };
-        this.focus = { row: 1, column: 1 }; // selectAll 左上コーナークリック
+        this.additionalRanges = [];
+        this.range = { startRow: 1, startColumn: this.editorTable.dataColumnOffset(), endRow: rowCount - 1, endColumn: columnCount - 1 };
+        this.focus = { row: 1, column: this.editorTable.dataColumnOffset() }; // selectAll 左上コーナークリック
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
@@ -256,37 +271,52 @@ export class Selection {
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
-        // 新しい選択範囲を計算（列を含めるように拡張）
-        const newStartColumn = Math.min(this.range.startColumn, column);
-        const newEndColumn = Math.max(this.range.endColumn, column);
-
-        // 行は全行を選択
-        this.range = { startRow: 1, startColumn: newStartColumn, endRow: rowCount - 1, endColumn: newEndColumn };
-        this.selecting = true;
-        this.selectingColumn = true;
-        this.selectingRow = false;
-        this.updateRenderer();
+        this.addHeaderRange(column, 'column');
     }
 
-    /**
-     * 現在の選択範囲に行を追加する（Ctrl+行ヘッダークリック時）
-     * selectingRow を true にすることで、後続のドラッグ（updateRow）で選択範囲を拡張できるようにする。
-     */
+    /** Ctrl/Command+行ヘッダーで、離れた行を追加・解除する。 */
     addRow(row: number): void {
-        if (row < 1) return;
+        if (row < 1 || this.editorTable.getTotalColumnCount() <= this.editorTable.dataColumnOffset()) return;
+        this.addHeaderRange(row, 'row');
+    }
 
-        const columnCount = this.editorTable.getTotalColumnCount();
-        if (columnCount < 2) return;
-
-        // 新しい選択範囲を計算（行を含めるように拡張）
-        const newStartRow = Math.min(this.range.startRow, row);
-        const newEndRow = Math.max(this.range.endRow, row);
-
-        // 列は全列を選択
-        this.range = { startRow: newStartRow, startColumn: 1, endRow: newEndRow, endColumn: columnCount - 1 };
-        this.selecting = true;
-        this.selectingColumn = false;
-        this.selectingRow = true;
+    private addHeaderRange(index: number, axis: 'row' | 'column'): void {
+        const minColumn = this.editorTable.dataColumnOffset();
+        const lastColumn = this.editorTable.getTotalColumnCount() - 1;
+        const lastRow = this.editorTable.getLogicalRowCount() - 1;
+        const ranges = this.getSelectionRanges();
+        const compatible = ranges.every(range => axis === 'row'
+            ? range.startColumn === minColumn && range.endColumn === lastColumn
+            : range.startRow === 1 && range.endRow === lastRow);
+        const start = axis === 'row' ? 'startRow' : 'startColumn';
+        const end = axis === 'row' ? 'endRow' : 'endColumn';
+        // 既に選択済みのヘッダーは解除する。最後の一つは選択状態を維持する。
+        if (compatible && ranges.some(range => range[start] <= index && index <= range[end])) {
+            const remaining: CellRange[] = [];
+            for (const range of ranges) {
+                if (index < range[start] || index > range[end]) {
+                    remaining.push(range);
+                    continue;
+                }
+                if (range[start] < index) remaining.push({...range, [end]: index - 1});
+                if (index < range[end]) remaining.push({...range, [start]: index + 1});
+            }
+            if (remaining.length > 0) {
+                this.range = remaining.pop()!;
+                this.additionalRanges = remaining;
+                this.focus = {row: this.range.startRow, column: this.range.startColumn};
+            }
+            this.end();
+        } else {
+            this.additionalRanges = compatible ? ranges : [];
+            this.range = axis === 'row'
+                ? {startRow: index, startColumn: minColumn, endRow: index, endColumn: lastColumn}
+                : {startRow: 1, startColumn: index, endRow: lastRow, endColumn: index};
+            this.focus = {row: this.range.startRow, column: this.range.startColumn};
+            this.selecting = true;
+            this.selectingRow = axis === 'row';
+            this.selectingColumn = axis === 'column';
+        }
         this.updateRenderer();
     }
 
@@ -296,9 +326,11 @@ export class Selection {
      * フォーカスは移動しません（選択開始位置に固定）。
      */
     extendSelection(row: number, column: number): void {
+        const hadAdditionalRanges = this.additionalRanges.length > 0;
+        this.additionalRanges = [];
         const endRow = Math.max(1, row);
         const endColumn = Math.max(this.editorTable.dataColumnOffset(), column);
-        if (this.range.endRow !== endRow || this.range.endColumn !== endColumn) {
+        if (hadAdditionalRanges || this.range.endRow !== endRow || this.range.endColumn !== endColumn) {
             this.range = { ...this.range, endRow, endColumn };
             this.updateRenderer();
         }
@@ -318,6 +350,7 @@ export class Selection {
      * @param maxColumn 最大列インデックス（テーブルの列数-1）
      */
     extendSelectionOffset(x: number, y: number, maxRow: number, maxColumn: number): void {
+        this.additionalRanges = [];
         const nextEndRow = this.range.endRow + y;
         const nextEndColumn = this.range.endColumn + x;
 
@@ -390,8 +423,10 @@ export class Selection {
      * updateRenderer() は呼ばない（DOM構造変更の途中で呼ぶと不整合を起こすため）。
      */
     shiftColumnsBy(delta: number): void {
-        this.range.startColumn += delta;
-        this.range.endColumn += delta;
+        for (const range of [this.range, ...this.additionalRanges]) {
+            range.startColumn += delta;
+            range.endColumn += delta;
+        }
         this.focus = { row: this.focus.row, column: this.focus.column + delta };
     }
 
@@ -407,8 +442,10 @@ export class Selection {
     clampToFilteredRowCount(maxDataRow: number): void {
         const needsClamp = this.focus.row > maxDataRow
             || this.range.startRow > maxDataRow
-            || this.range.endRow > maxDataRow;
+            || this.range.endRow > maxDataRow
+            || this.additionalRanges.some(range => range.endRow > maxDataRow);
         if (!needsClamp) return;
+        this.additionalRanges = [];
         const clampedFocusRow = Math.min(this.focus.row, maxDataRow);
         // maxDataRow=0（全行フィルターアウト）の場合は row=1（バッファ行）にフォールバック
         const safeRow = clampedFocusRow < 1 ? 1 : clampedFocusRow;
@@ -421,7 +458,7 @@ export class Selection {
     }
 
     isSingleCell(): boolean {
-        return this.range.startRow === this.range.endRow && this.range.startColumn === this.range.endColumn;
+        return this.additionalRanges.length === 0 && this.range.startRow === this.range.endRow && this.range.startColumn === this.range.endColumn;
     }
 
     getAnchor(): CellPosition {
@@ -432,17 +469,57 @@ export class Selection {
         return this.focus;
     }
 
-    getRange(): CellRange {
-        return this.range;
+    getRange(): SelectionRange {
+        return this.additionalRanges.length === 0 ? {...this.range}
+            : {...this.range, additionalRanges: this.additionalRanges.map(range => ({...range}))};
     }
 
-    restoreState(range: CellRange, focus: CellPosition): void {
+    /** 全選択範囲を表の順に返す。同じ行/列の重複と隣接範囲はまとめる。 */
+    getSelectionRanges(): CellRange[] {
+        const ranges = [...this.additionalRanges, this.range].map(range => this.normalizeCellRange(range))
+            .sort((a, b) => a.startRow - b.startRow || a.startColumn - b.startColumn);
+        const merged: CellRange[] = [];
+        for (const range of ranges) {
+            const previous = merged[merged.length - 1];
+            if (previous && previous.startColumn === range.startColumn && previous.endColumn === range.endColumn
+                && range.startRow <= previous.endRow + 1) {
+                previous.endRow = Math.max(previous.endRow, range.endRow);
+            } else if (previous && previous.startRow === range.startRow && previous.endRow === range.endRow
+                && range.startColumn <= previous.endColumn + 1) {
+                previous.endColumn = Math.max(previous.endColumn, range.endColumn);
+            } else {
+                merged.push(range);
+            }
+        }
+        return merged;
+    }
+
+    /** 空白の行・列を飛ばした、コピー/貼り付け用の座標。 */
+    getSelectedAxes(): {rows: number[]; columns: number[]} {
+        const rows = new Set<number>();
+        const columns = new Set<number>();
+        for (const range of this.getSelectionRanges()) {
+            for (let row = range.startRow; row <= range.endRow; row++) rows.add(row);
+            for (let col = range.startColumn; col <= range.endColumn; col++) columns.add(col);
+        }
+        return {rows: [...rows].sort((a, b) => a - b), columns: [...columns].sort((a, b) => a - b)};
+    }
+
+    hasMultipleRanges(): boolean {
+        return this.additionalRanges.length > 0;
+    }
+
+    restoreState(range: SelectionRange, focus: CellPosition): void {
         const maxRow = Math.max(1, this.editorTable.getLogicalRowCount() - 1);
         const minColumn = this.editorTable.dataColumnOffset();
         const maxColumn = Math.max(minColumn, this.editorTable.getTotalColumnCount() - 1);
         const clampRow = (row: number) => Math.max(1, Math.min(maxRow, Math.round(row)));
         const clampColumn = (column: number) => Math.max(minColumn, Math.min(maxColumn, Math.round(column)));
 
+        this.additionalRanges = (range.additionalRanges ?? []).map(part => ({
+            startRow: clampRow(part.startRow), startColumn: clampColumn(part.startColumn),
+            endRow: clampRow(part.endRow), endColumn: clampColumn(part.endColumn),
+        }));
         this.range = {
             startRow: clampRow(range.startRow),
             startColumn: clampColumn(range.startColumn),
@@ -459,17 +536,18 @@ export class Selection {
         this.updateRenderer();
     }
 
-    getSelectionRange(): CellRange {
-        return {
-            startRow: Math.min(this.range.startRow, this.range.endRow),
-            startColumn: Math.min(this.range.startColumn, this.range.endColumn),
-            endRow: Math.max(this.range.startRow, this.range.endRow),
-            endColumn: Math.max(this.range.startColumn, this.range.endColumn)
-        };
+    getSelectionRange(): SelectionRange {
+        const active = this.normalizeCellRange(this.range);
+        return this.additionalRanges.length === 0 ? active
+            : {...active, additionalRanges: this.additionalRanges.map(range => ({...range}))};
     }
 
-    getCopyRange(): CellRange {
+    getCopyRange(): SelectionRange {
         return this.copyRange;
+    }
+
+    getCopiedData(): string[][] | null {
+        return this.copiedData;
     }
 
     hasCopyRange(): boolean {
@@ -477,43 +555,19 @@ export class Selection {
     }
 
     copy(): void {
-        const selectionRange = this.getSelectionRange();
-
-        this.copyRange = selectionRange;
+        const ranges = this.getSelectionRanges();
+        this.copyRange = ranges.length === 1 ? ranges[0] : {...ranges[0], additionalRanges: ranges.slice(1)};
         this.updateCopyRenderer();
-
-        // システムクリップボードにコピー
-        this.copyToClipboard(selectionRange.startRow, selectionRange.startColumn, selectionRange.endRow, selectionRange.endColumn);
+        const {rows, columns} = this.getSelectedAxes();
+        const data = rows.map(row => columns.map(column => this.editorTable.getCellValueAt(row, column)));
+        this.copiedData = data;
+        this.copyToClipboard(data);
     }
 
-    /**
-     * 選択範囲をシステムクリップボードにコピーする
-     */
-    private copyToClipboard(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
-        const rows: string[] = [];
-
-        for (let r = startRow; r <= endRow; r++) {
-            const cells: string[] = [];
-            for (let c = startColumn; c <= endColumn; c++) {
-                const value = this.editorTable.getCellValueAt(r, c);
-                cells.push(value);
-            }
-            rows.push(cells.join('\t'));
-        }
-
-        const textData = rows.join('\n');
-
-        // HTML形式も作成（Excelやスプレッドシートでより良い形式で貼り付けられる）
-        const htmlRows: string[] = [];
-        for (let r = startRow; r <= endRow; r++) {
-            const htmlCells: string[] = [];
-            for (let c = startColumn; c <= endColumn; c++) {
-                const value = this.editorTable.getCellValueAt(r, c);
-                const content = this.escapeHtml(value);
-                htmlCells.push(`<td>${content}</td>`);
-            }
-            htmlRows.push(`<tr>${htmlCells.join('')}</tr>`);
-        }
+    /** 選択した行・列だけを詰めて、TSV と HTML の両形式でコピーする。 */
+    private copyToClipboard(data: string[][]): void {
+        const textData = data.map(row => row.join('\t')).join('\n');
+        const htmlRows = data.map(row => `<tr>${row.map(value => `<td>${this.escapeHtml(value)}</td>`).join('')}</tr>`);
         const htmlData = `<table>${htmlRows.join('')}</table>`;
 
         // クリップボードに書き込み
@@ -540,6 +594,7 @@ export class Selection {
     }
 
     clearCopyRange(): void {
+        this.copiedData = null;
         this.copyRange = { startRow: -1, startColumn: -1, endRow: -1, endColumn: -1 };
         this.hideCopyBorder();
     }
@@ -547,7 +602,7 @@ export class Selection {
     /**
      * コピー範囲を設定する（Undo/Redo用）
      */
-    setCopyRange(range: CellRange): void {
+    setCopyRange(range: SelectionRange): void {
         if (range.startRow < 0) {
             this.clearCopyRange();
         } else {
@@ -559,18 +614,17 @@ export class Selection {
     private updateCopyRenderer(): void {
         this.clearCopyOverlay();
         if (!this.hasCopyRange()) return;
-        this.updateCopyOverlay(this.copyRange);
+        for (const range of [this.copyRange, ...(this.copyRange.additionalRanges ?? [])]) this.updateCopyOverlay(range);
     }
 
     private updateRenderer(notifyRowSelection: boolean = true): void {
-        const selectionRange = this.getSelectionRange();
-        const { startRow, startColumn, endRow, endColumn } = selectionRange;
+        const selectionRanges = this.getSelectionRanges();
 
         // EditorTable にセル単位でクラスを付与させる（座標計算不要）
-        this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
+        this.editorTable.applySelectionClasses(selectionRanges, this.focus.row, this.focus.column);
 
         // ヘッダーの選択状態を更新
-        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+        this.editorTable.updateHeaderSelection(selectionRanges);
 
         // フォーカス行が変化したときにRelationsPanelへ通知する（重複制御はEditorTable側で行う）
         if (notifyRowSelection) this.editorTable.notifyRowSelectionChanged(this.focus.row);
@@ -579,7 +633,7 @@ export class Selection {
         // DOM要素の流出防止のため EditorTable 側でクラスを管理する
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
         this.editorTable.syncDetachedCellClasses();
-        this.updateSelectionOverlay(selectionRange);
+        this.updateSelectionOverlay();
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }
@@ -704,11 +758,10 @@ export class Selection {
      * ドラッグ選択中に呼んでもドラッグを妨害しない。
      */
     reapplySelectionClassesOnly(triggeredByScroll: boolean): void {
-        const selectionRange = this.getSelectionRange();
-        const { startRow, startColumn, endRow, endColumn } = selectionRange;
-        this.editorTable.applySelectionClasses(selectionRange, this.focus.row, this.focus.column);
+        const selectionRanges = this.getSelectionRanges();
+        this.editorTable.applySelectionClasses(selectionRanges, this.focus.row, this.focus.column);
         this.editorTable.markFocusedCell(this.focus.row, this.focus.column);
-        this.editorTable.updateHeaderSelection(startRow, startColumn, endRow, endColumn);
+        this.editorTable.updateHeaderSelection(selectionRanges);
         // 純スクロール時はこの直後に EditorTable.reapplyRowDecorations() 側で
         // detached row header の差分同期が走るため、ここでは静的 layer の全同期を省く。
         if (!triggeredByScroll) this.editorTable.syncDetachedCellClasses();
@@ -722,7 +775,7 @@ export class Selection {
             return;
         }
 
-        this.updateSelectionOverlay(selectionRange);
+        this.updateSelectionOverlay();
         // フィルハンドル位置も再計算する（バーチャルスクロールで表示範囲が変わるとクランプ先が変わるため）
         this.updateFillHandlePosition();
         if (this.hasCopyRange()) {
@@ -736,7 +789,7 @@ export class Selection {
      * セルの getBoundingClientRect() に追従させる必要がある。
      */
     refreshScrollBoundOverlays(): void {
-        this.updateSelectionOverlay(this.getSelectionRange());
+        this.updateSelectionOverlay();
         if (this.hasCopyRange()) {
             this.updateCopyRenderer();
         }
@@ -803,11 +856,10 @@ export class Selection {
         return merged;
     }
 
-    private updateSelectionOverlay(selectionRange: CellRange): void {
+    private updateSelectionOverlay(): void {
         this.clearSelectionOverlay();
-
-        for (const group of this.getVisibleOverlayGroups(selectionRange)) {
-            this.appendSelectionOverlayGroup(group);
+        for (const range of this.getSelectionRanges()) {
+            for (const group of this.getVisibleOverlayGroups(range)) this.appendSelectionOverlayGroup(group);
         }
     }
 
@@ -1061,6 +1113,10 @@ export class Selection {
     }
 
     private updateFillHandlePosition(): void {
+        if (this.hasMultipleRanges()) {
+            this.hideFillHandle();
+            return;
+        }
         const selectionRange = this.getSelectionRange();
         const endRow = selectionRange.endRow;
         const endColumn = selectionRange.endColumn;

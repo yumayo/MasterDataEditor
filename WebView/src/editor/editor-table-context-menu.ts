@@ -1,4 +1,5 @@
 import {EditorTable} from "./editor-table";
+import {CompositeCommand, DeleteRowsCommand, DeleteColumnsCommand} from "./command";
 import {Selection} from "./selection";
 import {ContextMenu, ContextMenuEntry} from "../ui/context-menu";
 
@@ -60,21 +61,17 @@ export class EditorTableContextMenu {
             if (this.readOnly) return;
             const contextMenuColumnIndex = parseInt(columnHeaderCell.dataset.col!);
             const contextMenuSelectionColumnIndex = contextMenuColumnIndex + this.table.dataColumnOffset();
-            // 選択範囲を取得
-            const selRange = this.selection.getSelectionRange();
-            // 列全体が選択されているか判定（行範囲がテーブル全高さか確認）
-            // getLogicalRowCount() は仮想スクロールのDOM行数に依存しない論理行数を返す
+            const ranges = this.selection.getSelectionRanges();
             const lastRow = this.table.getLogicalRowCount() - 1;
-            const isColumnSelection = selRange.startRow === 1 && selRange.endRow === lastRow;
-            // 右クリックした列が選択範囲内か判定
-            const isInSelection = contextMenuSelectionColumnIndex >= selRange.startColumn
-                && contextMenuSelectionColumnIndex <= selRange.endColumn;
-            // 列全体選択かつ範囲内の場合のみ複数列操作とする
-            const useSelectedColumns = isColumnSelection && isInSelection;
-            // 複数列選択時の列情報を計算
-            const columnCount = useSelectedColumns ? selRange.endColumn - selRange.startColumn + 1 : 1;
-            const startColumnIndex = useSelectedColumns ? selRange.startColumn - this.table.dataColumnOffset() : contextMenuColumnIndex;
-            const endColumnIndex = useSelectedColumns ? selRange.endColumn - this.table.dataColumnOffset() : contextMenuColumnIndex;
+            const useSelectedColumns = ranges.every(range => range.startRow === 1 && range.endRow === lastRow)
+                && ranges.some(range => range.startColumn <= contextMenuSelectionColumnIndex && contextMenuSelectionColumnIndex <= range.endColumn);
+            const columnRanges = useSelectedColumns ? ranges : [{
+                startColumn: contextMenuSelectionColumnIndex, endColumn: contextMenuSelectionColumnIndex,
+                startRow: 1, endRow: lastRow,
+            }];
+            const columnCount = columnRanges.reduce((count, range) => count + range.endColumn - range.startColumn + 1, 0);
+            const startColumnIndex = columnRanges[0].startColumn - this.table.dataColumnOffset();
+            const endColumnIndex = columnRanges[columnRanges.length - 1].endColumn - this.table.dataColumnOffset();
             // 選択範囲外の右クリック時は対象列を選択する
             if (!useSelectedColumns) {
                 this.selection.selectColumn(contextMenuSelectionColumnIndex);
@@ -99,7 +96,16 @@ export class EditorTableContextMenu {
                 ...tableDefinitionMenuItems,
                 {label: insertLeftLabel, action: () => { this.table.insertColumns(startColumnIndex, columnCount); }},
                 {label: insertRightLabel, action: () => { this.table.insertColumns(endColumnIndex + 1, columnCount); }},
-                {label: deleteLabel, action: () => { this.table.removeColumns(startColumnIndex, columnCount); }},
+                {label: deleteLabel, action: () => {
+                    if (columnRanges.length === 1) {
+                        this.table.removeColumns(startColumnIndex, columnCount);
+                        return;
+                    }
+                    const commands = [...columnRanges].reverse().map(range => new DeleteColumnsCommand(
+                        this.table, range.startColumn - this.table.dataColumnOffset(), range.endColumn - range.startColumn + 1,
+                    ));
+                    this.table.executeExternalCommand(new CompositeCommand(commands), this.selection.getRange());
+                }},
                 // フリーズペイン: ミニテーブルでは固定メニューを表示しない
                 ...(this.table.isMiniTableInstance() ? [] : [
                     {separator: true} as ContextMenuEntry,
@@ -158,19 +164,17 @@ export class EditorTableContextMenu {
             // 読み取り専用の場合はコンテキストメニューを表示しない
             if (this.readOnly) return;
             const contextMenuRowIndex = parseInt(rowHeaderCell.dataset.rowIndex!) + 1;
-            // 選択範囲を取得
-            const selRange = this.selection.getSelectionRange();
-            // 行全体が選択されているか判定（カラム範囲がテーブル全幅か確認）
+            const ranges = this.selection.getSelectionRanges();
             const lastColumn = this.table.getTotalColumnCount() - 1;
-            const isRowSelection = selRange.startColumn === 1 && selRange.endColumn === lastColumn;
-            // 右クリックした行が選択範囲内か判定
-            const isInSelection = contextMenuRowIndex >= selRange.startRow && contextMenuRowIndex <= selRange.endRow;
-            // 行全体選択かつ範囲内の場合のみ複数行操作とする
-            const useSelectedRows = isRowSelection && isInSelection;
-            // 複数行選択時の行数を計算
-            const rowCount = useSelectedRows ? selRange.endRow - selRange.startRow + 1 : 1;
-            const startRow = useSelectedRows ? selRange.startRow : contextMenuRowIndex;
-            const endRow = useSelectedRows ? selRange.endRow : contextMenuRowIndex;
+            const useSelectedRows = ranges.every(range => range.startColumn === this.table.dataColumnOffset() && range.endColumn === lastColumn)
+                && ranges.some(range => range.startRow <= contextMenuRowIndex && contextMenuRowIndex <= range.endRow);
+            const rowRanges = useSelectedRows ? ranges : [{
+                startRow: contextMenuRowIndex, endRow: contextMenuRowIndex,
+                startColumn: this.table.dataColumnOffset(), endColumn: lastColumn,
+            }];
+            const rowCount = rowRanges.reduce((count, range) => count + range.endRow - range.startRow + 1, 0);
+            const startRow = rowRanges[0].startRow;
+            const endRow = rowRanges[rowRanges.length - 1].endRow;
             // 選択範囲外の右クリック時は対象行を選択する
             if (!useSelectedRows) {
                 this.selection.selectRow(contextMenuRowIndex);
@@ -193,7 +197,16 @@ export class EditorTableContextMenu {
             this.contextMenu.show(e.clientX, e.clientY, [
                 {label: insertAboveLabel, action: () => { this.table.insertRows(startRow, rowCount); }},
                 {label: insertBelowLabel, action: () => { this.table.insertRows(endRow + 1, rowCount); }},
-                {label: deleteLabel, action: () => { this.table.removeRows(startRow, rowCount); }},
+                {label: deleteLabel, action: () => {
+                    if (rowRanges.length === 1) {
+                        this.table.removeRows(startRow, rowCount);
+                        return;
+                    }
+                    const commands = [...rowRanges].reverse().map(range => new DeleteRowsCommand(
+                        this.table, range.startRow, range.endRow - range.startRow + 1,
+                    ));
+                    this.table.executeExternalCommand(new CompositeCommand(commands), this.selection.getRange());
+                }},
                 // フリーズペイン: ミニテーブルでは固定メニューを表示しない
                 ...(this.table.isMiniTableInstance() ? [] : [
                     {separator: true} as ContextMenuEntry,

@@ -1,6 +1,6 @@
 import {EditorTable} from "./editor-table";
 import {GridTextField} from "../ui/grid-textfield";
-import {Selection, CellRange} from "./selection";
+import {Selection, CellRange, SelectionRange} from "./selection";
 import {History} from "./history";
 import {CellChange, CellChangeCommand, CompositeCommand, PromoteBufferRowCommand} from "./command";
 import {ReferenceDataCache} from "../references/reference-data-cache";
@@ -763,14 +763,14 @@ export class EditorTableHandler {
         }
 
         // Ctrl+C: コピー
-        if (keyboardEvent.ctrlKey && keyboardEvent.key === 'c') {
+        if ((keyboardEvent.ctrlKey || keyboardEvent.metaKey) && keyboardEvent.key === 'c') {
             keyboardEvent.preventDefault();
             this.selection.copy();
             return;
         }
 
         // Ctrl+V: ペースト（pasteイベントで処理するためpreventDefaultしない）
-        if (keyboardEvent.ctrlKey && keyboardEvent.key === 'v') {
+        if ((keyboardEvent.ctrlKey || keyboardEvent.metaKey) && keyboardEvent.key === 'v') {
             // pasteイベントに任せる
             return;
         }
@@ -780,7 +780,7 @@ export class EditorTableHandler {
             keyboardEvent.preventDefault();
             const result = this.history.undo();
             if (result) {
-                this.selection.setRange(result.range.startRow, result.range.startColumn, result.range.endRow, result.range.endColumn);
+                this.selection.restoreState(result.range, {row: result.range.startRow, column: result.range.startColumn});
                 this.selection.move(result.range.startRow, result.range.startColumn);
                 this.selection.setCopyRange(result.copyRange);
             }
@@ -793,7 +793,7 @@ export class EditorTableHandler {
             keyboardEvent.preventDefault();
             const result = this.history.redo();
             if (result) {
-                this.selection.setRange(result.range.startRow, result.range.startColumn, result.range.endRow, result.range.endColumn);
+                this.selection.restoreState(result.range, {row: result.range.startRow, column: result.range.startColumn});
                 this.selection.move(result.range.startRow, result.range.startColumn);
                 this.selection.setCopyRange(result.copyRange);
             }
@@ -884,10 +884,12 @@ export class EditorTableHandler {
             const scrollLeft = this.scrollController.getScrollLeft();
             const deleteRange = this.selection.getSelectionRange();
             const changes: CellChange[] = [];
-            for (let r = deleteRange.startRow; r <= deleteRange.endRow; r++) {
-                for (let c = deleteRange.startColumn; c <= deleteRange.endColumn; c++) {
-                    const oldValue = this.table.getCellValueAt(r, c);
-                    if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
+            for (const range of this.selection.getSelectionRanges()) {
+                for (let r = range.startRow; r <= range.endRow; r++) {
+                    for (let c = range.startColumn; c <= range.endColumn; c++) {
+                        const oldValue = this.table.getCellValueAt(r, c);
+                        if (oldValue !== '') changes.push({ row: r, column: c, oldValue, newValue: '' });
+                    }
                 }
             }
             if (changes.length > 0) {
@@ -1362,10 +1364,10 @@ export class EditorTableHandler {
 
         // クリップボードからテキストを取得
         const text = clipboardData.getData('text/plain');
-        if (!text) return;
+        if (!text && !clipboardData.types.includes('text/plain')) return;
 
         // コピー範囲がある場合、クリップボードの内容と比較
-        if (this.selection.hasCopyRange()) {
+        if (this.selection.hasCopyRange() && this.selection.getCopiedData() !== null) {
             const copyRangeText = this.getCopyRangeText();
             // 改行コードを正規化して比較（\r\nを\nに変換、末尾の改行を除去）
             const normalizedClipboardText = text.replace(/\r\n/g, '\n').replace(/\n$/, '');
@@ -1389,18 +1391,7 @@ export class EditorTableHandler {
      * （クリップボードと同じ形式：タブ区切り、改行区切り）
      */
     private getCopyRangeText(): string {
-        const copyRange = this.selection.getCopyRange();
-        const rows: string[] = [];
-
-        for (let r = copyRange.startRow; r <= copyRange.endRow; r++) {
-            const cells: string[] = [];
-            for (let c = copyRange.startColumn; c <= copyRange.endColumn; c++) {
-                cells.push(this.table.getCellValueAt(r, c));
-            }
-            rows.push(cells.join('\t'));
-        }
-
-        return rows.join('\n');
+        return (this.selection.getCopiedData() ?? []).map(row => row.join('\t')).join('\n');
     }
 
     /**
@@ -1429,25 +1420,31 @@ export class EditorTableHandler {
      */
     private pasteFromClipboardData(sourceData: string[][]): void {
         const copyRange = this.selection.getCopyRange();
-        this.pasteNormal(sourceData, copyRange);
+        if (this.selection.hasMultipleRanges()) {
+            this.pasteToSelectedRanges(sourceData, copyRange);
+        } else {
+            this.pasteNormal(sourceData, copyRange);
+        }
     }
 
-    /**
-     * コピー範囲からソースデータを取得する
-     */
-    private getSourceData(copyRange: CellRange): string[][] {
-        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
-        const copyColumnCount = copyRange.endColumn - copyRange.startColumn + 1;
-
-        const sourceData: string[][] = [];
-        for (let r = 0; r < copyRowCount; r++) {
-            const rowData: string[] = [];
-            for (let c = 0; c < copyColumnCount; c++) {
-                rowData.push(this.table.getCellValueAt(copyRange.startRow + r, copyRange.startColumn + c));
+    /** 離れた選択先へ表の順に貼り付ける。1セルや倍数サイズのデータは繰り返す。 */
+    private pasteToSelectedRanges(sourceData: string[][], copyRange: SelectionRange): void {
+        const {rows, columns} = this.selection.getSelectedAxes();
+        const sourceRows = sourceData.length;
+        const sourceColumns = sourceData.reduce((width, row) => Math.max(width, row.length), 0);
+        const repeat = rows.length % sourceRows === 0 && columns.length % sourceColumns === 0;
+        const changes: CellChange[] = [];
+        for (let r = 0; r < rows.length && (repeat || r < sourceRows); r++) {
+            for (let c = 0; c < columns.length && (repeat || c < sourceColumns); c++) {
+                changes.push({
+                    row: rows[r], column: columns[c],
+                    oldValue: this.table.getCellValueAt(rows[r], columns[c]),
+                    newValue: sourceData[r % sourceRows][c % sourceColumns] ?? '',
+                });
             }
-            sourceData.push(rowData);
         }
-        return sourceData;
+        this.applyCellChangesWithHistory(changes, this.selection.getSelectionRange(), copyRange);
+        this.selection.updateRendererAfterResize();
     }
 
     /**
@@ -1503,9 +1500,9 @@ export class EditorTableHandler {
     /**
      * 選択範囲がコピー範囲の倍数かどうかを判定
      */
-    private shouldFillSelection(copyRange: CellRange, selectionRange: CellRange): boolean {
-        const copyRowCount = copyRange.endRow - copyRange.startRow + 1;
-        const copyColumnCount = copyRange.endColumn - copyRange.startColumn + 1;
+    private shouldFillSelection(sourceData: string[][], selectionRange: CellRange): boolean {
+        const copyRowCount = sourceData.length;
+        const copyColumnCount = sourceData[0].length;
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
         const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
 
@@ -1524,9 +1521,12 @@ export class EditorTableHandler {
 
         const copyRange = this.selection.getCopyRange();
         const selectionRange = this.selection.getSelectionRange();
-        const sourceData = this.getSourceData(copyRange);
+        const sourceData = this.selection.getCopiedData();
+        if (sourceData === null) return;
 
-        if (this.shouldFillSelection(copyRange, selectionRange)) {
+        if (this.selection.hasMultipleRanges()) {
+            this.pasteToSelectedRanges(sourceData, copyRange);
+        } else if (this.shouldFillSelection(sourceData, selectionRange)) {
             this.pasteWithFill(sourceData, selectionRange, copyRange);
         } else {
             this.pasteNormal(sourceData, copyRange);
@@ -1549,7 +1549,7 @@ export class EditorTableHandler {
      * 事前にその行をストアに昇格し、PromoteBufferRowCommand + CellChangeCommand の
      * CompositeCommand として履歴に積む（Undoで正しくストア行を削除できるようにする）。
      */
-    private applyCellChangesWithHistory(changes: CellChange[], range: CellRange, copyRange: CellRange): void {
+    private applyCellChangesWithHistory(changes: CellChange[], range: SelectionRange, copyRange: SelectionRange): void {
         // バッファ空行への変更を検出して昇格が必要な行を収集し、昇格コマンドを構築する。
         // 同一行に対して重複昇格しないよう domDataRowIndex の Set で管理する。
         // 昇格を実際に行う前に storeRowIndices.length を記録することで Undo 時の対称性を保つ。

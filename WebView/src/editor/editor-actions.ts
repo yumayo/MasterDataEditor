@@ -60,6 +60,21 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
     selection.extendSelectionOffset(x, y, maxRow, maxColumn);
 }
 
+/** Enter/Tab では、離れた選択範囲の間のセルを飛ばす。 */
+function moveWithinMultipleRanges(selection: Selection, vertical: boolean, step: number): boolean {
+    if (!selection.hasMultipleRanges()) return false;
+    const {rows, columns} = selection.getSelectedAxes();
+    const focus = selection.getFocus();
+    const row = Math.max(0, rows.indexOf(focus.row));
+    const column = Math.max(0, columns.indexOf(focus.column));
+    const index = vertical ? column * rows.length + row : row * columns.length + column;
+    const total = rows.length * columns.length;
+    const next = (index + step + total) % total;
+    selection.move(rows[vertical ? next % rows.length : Math.floor(next / columns.length)],
+        columns[vertical ? Math.floor(next / rows.length) : next % columns.length]);
+    return true;
+}
+
 /**
  * 範囲選択内で下方向に移動する（Enterキー用）
  * 範囲選択がない場合は通常の下方向移動
@@ -67,6 +82,7 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
  * 右端の列の最下行にいる場合は範囲の左上に戻る
  */
 export function moveCellDownWithinSelection(table: EditorTable, selection: Selection): void {
+    if (moveWithinMultipleRanges(selection, true, 1)) return;
     const range = selection.getSelectionRange();
     const focus = selection.getFocus();
 
@@ -100,6 +116,7 @@ export function moveCellDownWithinSelection(table: EditorTable, selection: Selec
  * 左端の列の最上行にいる場合は範囲の右下に戻る
  */
 export function moveCellUpWithinSelection(table: EditorTable, selection: Selection): void {
+    if (moveWithinMultipleRanges(selection, true, -1)) return;
     const range = selection.getSelectionRange();
     const focus = selection.getFocus();
 
@@ -133,6 +150,7 @@ export function moveCellUpWithinSelection(table: EditorTable, selection: Selecti
  * 右端の最下行にいる場合は範囲の左上に戻る
  */
 export function moveCellRightWithinSelection(table: EditorTable, selection: Selection): void {
+    if (moveWithinMultipleRanges(selection, false, 1)) return;
     const range = selection.getSelectionRange();
     const focus = selection.getFocus();
 
@@ -166,6 +184,7 @@ export function moveCellRightWithinSelection(table: EditorTable, selection: Sele
  * 左端の最上行にいる場合は範囲の右下に戻る
  */
 export function moveCellLeftWithinSelection(table: EditorTable, selection: Selection): void {
+    if (moveWithinMultipleRanges(selection, false, -1)) return;
     const range = selection.getSelectionRange();
     const focus = selection.getFocus();
 

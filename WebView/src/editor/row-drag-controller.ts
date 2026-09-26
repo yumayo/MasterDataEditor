@@ -95,6 +95,8 @@ export class RowDragController {
      *   ドラッグで通過した行を選択範囲に追加する。
      */
     onRowHeaderMouseDown(domDataRowIndex: number, startY: number, rowHeaderElement: HTMLElement, event: MouseEvent): void {
+        // 修飾キー付き操作は選択コントローラーに任せ、行移動で横取りしない。
+        if (event.ctrlKey || event.metaKey || event.shiftKey) return;
         const isSelected = rowHeaderElement.classList.contains('selected');
         // 末尾の入力待機用バッファ行はストアに存在しないため、移動対象にしない。
         const isMovableRow = domDataRowIndex >= 0 && domDataRowIndex < this.table.getStoreRowIndices().length;

@@ -547,7 +547,8 @@ export class DiffTab {
         // リサイズ等の再描画でもイベントが発生するため、同じ状態なら更新しない。
         if (range.startRow === targetRange.startRow && range.startColumn === targetRange.startColumn
             && range.endRow === targetRange.endRow && range.endColumn === targetRange.endColumn
-            && focus.row === targetFocus.row && focus.column === targetFocus.column) return;
+            && focus.row === targetFocus.row && focus.column === targetFocus.column
+            && JSON.stringify(range.additionalRanges) === JSON.stringify(targetRange.additionalRanges)) return;
 
         this.isSyncingSelection = true;
         try {
