@@ -32,15 +32,15 @@ async function openTableAsync(page: Page): Promise<Locator> {
 }
 
 async function selectRowAsync(table: Locator, rowIndex: number): Promise<void> {
-    await table.locator('.editor-table-row-header').nth(rowIndex).click();
+    await table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex).click();
 }
 
 async function dragRowAsync(table: Locator, fromRowIndex: number, toRowIndex: number): Promise<void> {
-    const fromHeader = table.locator('.editor-table-row-header').nth(fromRowIndex);
+    const fromHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(fromRowIndex);
     const fromBox = await fromHeader.boundingBox();
     if (!fromBox) throw new Error('fromHeader bounding box is null');
 
-    const toHeader = table.locator('.editor-table-row-header').nth(toRowIndex);
+    const toHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(toRowIndex);
     const toBox = await toHeader.boundingBox();
     if (!toBox) throw new Error('toHeader bounding box is null');
 
@@ -76,13 +76,13 @@ async function saveAsync(page: Page, table: Locator): Promise<void> {
         .not.toHaveClass(/tab-button-dirty-visible/);
 }
 
-test.describe('PK重複テーブルの行ドラッグ保存', () => {
+test.describe('PK重複テーブルの行ヘッダードラッグ', () => {
     test.beforeEach(async ({ page }) => {
         await installMockApiAsync(page, createDuplicatePkFileSystem());
         await page.goto('/');
     });
 
-    test('PK重複行を含むテーブルで行移動後に保存しても行数と順序が一致する', async ({ page }) => {
+    test('PK重複行を含むテーブルでドラッグして保存しても元の行数と順序を保つ', async ({ page }) => {
         const table = await openTableAsync(page);
 
         await selectRowAsync(table, 1);
@@ -91,8 +91,8 @@ test.describe('PK重複テーブルの行ドラッグ保存', () => {
         const editorRows = await getVisibleRowsAsync(table);
         expect(editorRows).toEqual([
             ['1', 'item_a', '100'],
-            ['2', 'item_c', '300'],
             ['1', 'item_b', '200'],
+            ['2', 'item_c', '300'],
             ['3', 'item_d', '400'],
         ]);
 
@@ -103,8 +103,8 @@ test.describe('PK重複テーブルの行ドラッグ保存', () => {
         expect(lines).toEqual([
             'id,name,value',
             '1,item_a,100',
-            '2,item_c,300',
             '1,item_b,200',
+            '2,item_c,300',
             '3,item_d,400',
         ]);
     });

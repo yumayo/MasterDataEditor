@@ -526,10 +526,10 @@ test.describe('blame表示時の列選択', () => {
     );
 });
 
-test.describe('blame表示時の行ドラッグ移動', () => {
+test.describe('blame表示時の行ドラッグ選択', () => {
 
     test(
-        'blame表示中に行ドラッグで行移動後、移動先の行が選択状態になること',
+        'blame表示中も行ドラッグで行順を変えず範囲選択できること',
         async ({ page, historyTest: _historyTest }) => {
             const table = page.locator('.editor-table');
 
@@ -544,7 +544,7 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             // 1行目が選択されていることを確認する
             await expect(firstHeader).toHaveClass(/selected/);
 
-            // 1行目を3行目の下にドラッグ移動する（テストデータは3行なので最終行の下端に移動）
+            // 選択済みの1行目から3行目までドラッグする
             const fromBox = await firstHeader.boundingBox();
             if (!fromBox) throw new Error('fromHeader bounding box is null');
             const startX = fromBox.x + fromBox.width / 2;
@@ -563,19 +563,15 @@ test.describe('blame表示時の行ドラッグ移動', () => {
             await page.mouse.move(endX, endY);
             await page.mouse.up();
 
-            // 移動後: 2, 3, 1 の順になる
-            const row0Id = await table.locator('.editor-table-row').nth(0).locator('.editor-table-cell[data-col="0"]').innerText();
-            const row2Id = await table.locator('.editor-table-row').nth(2).locator('.editor-table-cell[data-col="0"]').innerText();
-            expect(row0Id).toBe('2');
-            expect(row2Id).toBe('1');
-
-            // 移動先の行（index=2、元の1行目）が選択状態になること
-            const movedHeader = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(2);
-            await expect(movedHeader).toHaveClass(/selected/);
-
-            // 移動元の位置（index=0）は選択されていないこと
-            const firstPos = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(0);
-            await expect(firstPos).not.toHaveClass(/selected/);
+            // 行順と各行のblameを保ったまま、1〜3行目を範囲選択する。
+            const authors = ['Alice', 'Bob', 'Charlie'];
+            for (let rowIndex = 0; rowIndex < 3; rowIndex++) {
+                const row = table.locator('.editor-table-grid .editor-table-row').nth(rowIndex);
+                await expect(row.locator('.editor-table-cell[data-col="0"]')).toHaveText(String(rowIndex + 1));
+                const header = table.locator('.editor-table-pane-bottom-left .editor-table-row-header').nth(rowIndex);
+                await expect(header).toHaveClass(/selected/);
+                await expect(table.locator('.blame-author').nth(rowIndex)).toHaveText(authors[rowIndex]);
+            }
 
             // blame-cell がまだ表示されていること（blameが解除されていないこと）
             await expect(table.locator('.blame-cell').first()).toBeVisible();

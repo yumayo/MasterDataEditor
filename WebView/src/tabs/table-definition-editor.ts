@@ -534,8 +534,7 @@ export class TableDefinitionEditor {
      * インジケーターは position:fixed なので、ビューポート座標をそのまま top に設定する。
      * left/width はコンテナの水平範囲と一致させる。
      *
-     * currentInsertIndex は「fromを抜いた後のインデックス」として計算する
-     * （row-drag-controller.ts と同じロジック）。
+     * currentInsertIndex は「fromを抜いた後のインデックス」として計算する。
      */
     private updateIndicatorPosition(clientY: number): void {
         const rows = this.columnsContainer.children;

@@ -148,11 +148,6 @@ for (const frozen of [false, true]) {
     for (const mode of ['セル', '行', '列'] as const) {
         test(`${frozen ? '固定行列あり' : '通常'}の${mode}ドラッグは罫線を再生成せず同じ終点でDOM更新と通知を行わない`, async ({page, context}) => {
             const table = await openTableAsync(page, frozen);
-            if (mode === '行') {
-                // 初期選択行のヘッダーでは行移動になるため、測定前に別行へ選択を移す。
-                await dataCell(table, frozen, 8, 0).click();
-                await settleFramesAsync(page);
-            }
             const firstCell = dataCell(table, frozen, 0, 0);
             const start = mode === '行'
                 ? table.locator(`${frozen ? '.editor-table-detached-frozen-corner-layer' : '.editor-table-detached-row-header-layer'} [data-row-index="0"] .editor-table-row-header`)

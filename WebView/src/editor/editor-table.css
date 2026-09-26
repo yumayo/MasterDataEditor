@@ -801,7 +801,7 @@
     background-size: 100% 100%;
 }
 
-/* 選択された行ヘッダーのスタイル（ドラッグ移動可能を示す grab カーソル付き） */
+/* 選択された行ヘッダーのスタイル */
 .editor-table-row-header.selected {
     --editor-table-selected-header-fill: color-mix(in srgb, #0078d7 30%, var(--background-color));
     background-color: var(--background-color);
@@ -811,7 +811,6 @@
     background-repeat: no-repeat;
     background-position: left top;
     background-size: 100% 100%;
-    cursor: grab;
 }
 
 /* 非アクティブテーブルのヘッダー選択色（灰色系）: editor-table--inactive クラスが付与された場合 */
@@ -1085,19 +1084,6 @@
 .freeze-row .editor-table-cell.cell-git-changed:not(.editor-table-row-header),
 .freeze-cell.cell-git-changed {
     background-color: var(--git-changed-frozen-bg);
-}
-
-/* ==========================================================================
-   行ドラッグ移動インジケーター
-   ========================================================================== */
-
-/* ドラッグ中に表示される挿入位置の水平線（position:fixed でビューポート座標に配置） */
-.row-drag-indicator {
-    height: 2px;
-    background: var(--selection-color);
-    position: fixed;
-    z-index: 50;
-    pointer-events: none;
 }
 
 /* 右固定領域を除いた本文だけが中央の選択・描画対象になる。 */

@@ -22,7 +22,6 @@ import {
 } from "../core/constant";
 import {ScrollViewportController} from "./scroll-viewport-controller";
 import {SelectionDragController} from "./selection-drag-controller";
-import {RowDragController} from "./row-drag-controller";
 import {ReferenceDataCache} from "../references/reference-data-cache";
 import {ReverseReferenceEntry, ReverseReferenceMap} from "../references/reverse-reference-resolver";
 import {Sidebar} from "../sidebar/sidebar";
@@ -84,8 +83,6 @@ export class EditorTable {
     private readonly contextMenu: ContextMenu;
     private readonly history: History;
     readonly selectionDragController: SelectionDragController;
-    /** 行ドラッグ移動コントローラー（initializeModulesで再作成されるためreadonlyではない） */
-    private rowDragController: RowDragController;
     private readonly referenceDataCache: ReferenceDataCache;
     /** テーブルデータの中央ストア（セル編集の同期用） */
     private readonly store: InMemoryTableStore;
@@ -414,7 +411,6 @@ export class EditorTable {
             selection,
             scrollBinding
         );
-        this.rowDragController = new RowDragController(this, selection, history);
         // バーチャルスクロール: enableVirtualScroll=true で有効化
         // 通常テーブル: true、ミニテーブル: false、差分テーブル: true（isMiniTable=true だが仮想スクロール有効）
         // renderRow コールバックは Object.Assign 後に initializeModules() で設定する
@@ -483,10 +479,6 @@ export class EditorTable {
         // destroy() を呼ばないと document.mousedown リスナーが蓄積してメモリリークになる。
         this.filterDropdown.destroy();
         this.filterDropdown = new FilterDropdown(this, this.columnFilter);
-        // RowDragController も正しい this（プロキシオブジェクト）で再作成する。
-        // 旧インスタンスのインジケーター要素を document.body から除去してからの再作成。
-        this.rowDragController.destroy();
-        this.rowDragController = new RowDragController(this, this.selection, this.history);
         // バーチャルスクロールの行生成コールバックを正しい this（プロキシオブジェクト）で設定する。
         // コンストラクタ時点の this は realEditorTable を指すためクロージャが旧オブジェクトを捕捉してしまう。
         // ミニテーブル（enabled=false）では renderRow は使用されないが、connectRenderRow 自体は安全。
@@ -711,9 +703,6 @@ export class EditorTable {
     /** 内部モジュール用: EditorTableHandler を取得する */
     getHandler(): EditorTableHandler { return this.handler; }
 
-    /** 内部モジュール用: RowDragController を取得する（行ヘッダー生成時のイベント接続用） */
-    getRowDragController(): RowDragController { return this.rowDragController; }
-
     /** 内部モジュール用: 自テーブルの参照データキャッシュを無効化する（行追加・削除後に呼ぶ） */
     evictOwnReferenceDataCache(): void { this.referenceDataCache.evictEntry(this.tableName); }
 
@@ -896,7 +885,6 @@ export class EditorTable {
     async showBlameAsync(): Promise<void> { return this.git.showBlameAsync(); }
     hideBlame(): void { this.git.hideBlame(); }
     createBlameCellForDataRow(dataRowIndex: number, isEmptyRow: boolean): HTMLElement { return this.git.createBlameCellForDataRow(dataRowIndex, isEmptyRow); }
-    moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void { this.git.moveBlameEntry(fromDomDataRowIndex, toDomDataRowIndex); }
     private hideBlameIfVisible(): void { this.git.hideBlameIfVisible(); }
 
     // =========================================================================
@@ -1656,7 +1644,6 @@ export class EditorTable {
      * テーブル内のデータ行が始まる children オフセットを返す。
      * 仮想スクロール有効: 1（ヘッダー行）+ 1（topSpacer）= 2
      * 仮想スクロール無効（ミニテーブル）: 1（ヘッダー行のみ）
-     * RowDragController が children[i + offset] でデータ行にアクセスするために使用する。
      */
     getDataRowChildOffset(): number {
         return 1 + this.virtualScroll.spacerCount();
@@ -2753,91 +2740,6 @@ export class EditorTable {
         this.structure.deleteRow(rowIndex);
     }
 
-    /**
-     * 行を移動する（ドラッグ移動用）
-     *
-     * fromDomDataRowIndex, toDomDataRowIndex: DOMデータ行インデックス（0始まり、列ヘッダー除く）
-     * toDomDataRowIndex は「fromを抜いた後の挿入位置」を指す。
-     *
-     * 1. ストアの行を移動する
-     * 2. DOM行要素を移動する
-     * 3. storeRowIndices を再構築する
-     * 4. 行番号を再ナンバリングする
-     */
-    public moveRow(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
-        if (fromDomDataRowIndex === toDomDataRowIndex) return;
-        // blame-cell は各行要素の children[0] に配置されており、行要素ごとDOM移動するため陳腐化しない
-        // フィルター適用中は表示行が storeRowIndices の部分列になるため、手動行移動は扱わない。
-        if (this.columnFilter.hasActiveFilter()) return;
-        const selectionRangeBeforeMove = this.selection.getSelectionRange();
-        const shouldSelectMovedRow =
-            selectionRangeBeforeMove.startRow === fromDomDataRowIndex + 1 &&
-            selectionRangeBeforeMove.endRow === fromDomDataRowIndex + 1 &&
-            selectionRangeBeforeMove.startColumn === 1 &&
-            selectionRangeBeforeMove.endColumn === this.getTotalColumnCount() - 1;
-        // ストアの行順を、移動後の表示順そのものに並び替える。
-        // 下方向移動では toDomDataRowIndex が「fromを抜いた後」の位置なので、
-        // store.moveRow の挿入先をストアインデックスから逆算すると1行ずれるケースがある。
-        const storeRows = this.store.getRows(this.tableName);
-        if (storeRows === false) return;
-        const movedStoreRowIndices = [...this.storeRowIndices];
-        const [movedStoreRowIndex] = movedStoreRowIndices.splice(fromDomDataRowIndex, 1);
-        movedStoreRowIndices.splice(toDomDataRowIndex, 0, movedStoreRowIndex);
-        if (!isCompleteStoreRowPermutation(movedStoreRowIndices, storeRows.length)) return;
-        this.store.replaceAllRows(this.tableName, movedStoreRowIndices.map(storeRowIndex => storeRows[storeRowIndex]));
-        if (this.isBlameVisible) this.moveBlameEntry(fromDomDataRowIndex, toDomDataRowIndex);
-        // storeRowIndices を再構築する
-        // 通常テーブル: 移動後は storeRowIndices[i] = i となる
-        // ミニテーブルでは使わない前提（ドラッグ移動はミニテーブル非対応）
-        for (let i = 0; i < this.storeRowIndices.length; i++) {
-            this.storeRowIndices[i] = i;
-        }
-        if (this.virtualScroll.handlesScrollEvents()) {
-            // 仮想スクロールの行は absolute 配置の top で描画されるため、DOM順だけを入れ替えても
-            // 見た目の行位置は変わらない。ストア順更新後に表示行を作り直して top と内容を同期する。
-            this.forceVirtualScrollFullRerender();
-        } else {
-            // DOM行要素を移動する（DOMインデックスは列ヘッダー行を含むため+1）
-            const fromDomIndex = fromDomDataRowIndex + 1;
-            const toDomIndex = toDomDataRowIndex + 1;
-            const rowElement = this.getRowElement(fromDomIndex);
-            if (!rowElement) throw new Error(`[EditorTable.moveRowInternal] 移動元のDOM行が存在しません: fromDomIndex=${fromDomIndex}`);
-            rowElement.remove();
-            // 挿入位置のDOM要素（fromを抜いた後のインデックス）
-            const insertBefore = this.getRowElement(toDomIndex);
-            if (insertBefore) {
-                this.gridElement.insertBefore(rowElement, insertBefore);
-            } else {
-                // bottomSpacerの手前に挿入する（enabled=false なら通常の appendChild）
-                this.virtualScroll.appendDataRow(rowElement);
-            }
-            // data-store-index DOM属性も更新する
-            for (let i = 0; i < this.storeRowIndices.length; i++) {
-                const domRow = this.getRowElement(i + 1);
-                if (domRow) domRow.dataset.storeIndex = String(i);
-            }
-            // 行番号を再ナンバリングする
-            const startIndex = Math.min(fromDomIndex, toDomIndex);
-            this.structure.renumberRowsFrom(startIndex);
-        }
-        this.refreshDetachedHeaderLayout();
-        // コピー範囲をクリア（行構造が変わったため）
-        this.selection.clearCopyRange();
-        // 行選択中のドラッグでは、移動元ではなく移動後の行を選択状態にする。
-        if (shouldSelectMovedRow) {
-            this.selection.selectRow(toDomDataRowIndex + 1);
-            this.selection.end();
-        } else {
-            this.selection.updateRendererAfterResize();
-        }
-        // ソート状態をリセットする（行順が手動変更されたため）
-        this.clearSortState();
-        // git差分ハイライトを再評価する
-        this.applyGitDiffHighlight();
-        // バリデーションを再実行する
-        this.runValidation();
-    }
-
     runValidation(): void { this.validationMarkers.runValidation(); }
     public applyValidationErrors(errors: ValidationError[]): void { this.validationMarkers.applyValidationErrors(errors); }
     refreshScrollbarMarkers(): void { this.validationMarkers.refreshScrollbarMarkers(); }
@@ -2858,14 +2760,4 @@ export class EditorTable {
         }
     }
 
-}
-
-function isCompleteStoreRowPermutation(indices: readonly number[], rowCount: number): boolean {
-    if (indices.length !== rowCount) return false;
-    const seen = new Set<number>();
-    for (const index of indices) {
-        if (index < 0 || index >= rowCount || seen.has(index)) return false;
-        seen.add(index);
-    }
-    return true;
 }

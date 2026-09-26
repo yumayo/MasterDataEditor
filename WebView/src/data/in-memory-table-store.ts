@@ -32,7 +32,6 @@ export type TableDataChangeReason =
     | 'cell'
     | 'rowInserted'
     | 'rowRemoved'
-    | 'rowMoved'
     | 'rowsReplaced'
     | 'columnInserted'
     | 'columnRemoved'
@@ -399,23 +398,6 @@ export class InMemoryTableStore {
         tableRows.splice(rowIndex, 0, values);
         this.rowIds.get(tableName)!.splice(rowIndex, 0, this.createRowId());
         this.bumpDataRevision(tableName, { reason: 'rowInserted', rowIndex, rowValues: [...values] });
-    }
-
-    /** 行を移動する（fromIndex の行を取り出して toIndex に挿入する） */
-    moveRow(tableName: string, fromIndex: number, toIndex: number): void {
-        if (!this.rows.has(tableName)) return;
-        const tableRows = this.rows.get(tableName)!;
-        if (fromIndex < 0 || fromIndex >= tableRows.length) return;
-        // splice で取り出して挿入先に再挿入する
-        const [row] = tableRows.splice(fromIndex, 1);
-        const ids = this.rowIds.get(tableName)!;
-        const [rowId] = ids.splice(fromIndex, 1);
-        // fromIndex の行を抜いた後のインデックスに挿入する
-        // toIndex が fromIndex より大きい場合、splice で1行減っているため toIndex はそのまま正しい
-        // （呼び出し元が「移動後の挿入位置」を渡す前提）
-        tableRows.splice(toIndex, 0, row);
-        ids.splice(toIndex, 0, rowId);
-        this.bumpDataRevision(tableName, { reason: 'rowMoved', rowIndex: fromIndex });
     }
 
     private createRowId(): string {

@@ -286,7 +286,7 @@ export class ScheduleTimelinePanel {
 
     private handleStoreDataChanged(event: TableDataChangeEvent): void {
         if (!this.isVisible()) return;
-        if (event.reason === 'stale' || event.reason === 'rowMoved') return;
+        if (event.reason === 'stale') return;
         if (this.knownTableNames.size > 0 && !this.knownTableNames.has(event.tableName)) return;
 
         if (this.requiresTableReindex(event)) {

@@ -649,19 +649,7 @@ export class EditorTableStructure {
         rowHeaderCell.textContent = text;
         rowHeaderCell.dataset.rowIndex = String(rowIndex);
         EditorTable.applyCellHeight(rowHeaderCell, DEFAULT_ROW_HEIGHT);
-        // 行ヘッダーの mousedown を RowDragController に統合する
-        // RowDragController は selected クラスの有無でモードを判定するため、
-        // selectRow() で selected が付与される前に呼ばれる必要がある。
-        // 選択済み行（moveモード）では stopImmediatePropagation で後続の selectRow を抑制し、
-        // mouseup時に5px未満なら selectRow を呼ぶ（クリック操作として扱う）。
-        rowHeaderCell.addEventListener('mousedown', (e: MouseEvent) => {
-            // 左ボタンのみ反応する（右クリック・中ボタンは除外）
-            if (e.button !== 0) return;
-            const idx = Number(rowHeaderCell.dataset.rowIndex);
-            this.table.getRowDragController().onRowHeaderMouseDown(idx, e.clientY, rowHeaderCell, e);
-        });
-        // 行ヘッダークリックで行全体を選択（RowDragControllerの後に登録。
-        // moveモードでは stopImmediatePropagation で到達しない）
+        // 行ヘッダーから行全体の選択を開始する
         rowHeaderCell.addEventListener('mousedown', this.table.contextMenuHandler.createRowHeaderClickHandler(rowHeaderCell));
         // 行ヘッダー右クリックでコンテキストメニュー
         rowHeaderCell.addEventListener('contextmenu', this.table.contextMenuHandler.createRowHeaderContextMenuHandler(rowHeaderCell));

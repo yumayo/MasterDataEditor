@@ -291,21 +291,9 @@ export class EditorTableGit {
         blameCell.appendChild(dateSpan);
     }
 
-    moveBlameEntry(fromDomDataRowIndex: number, toDomDataRowIndex: number): void {
-        if (this.isBlameLoading || this.blameChunks !== null) {
-            this.hideBlame();
-            return;
-        }
-        if (this.blameEntriesByStoreRowIndex.length === 0) return;
-        const entries = (this.storeRowIndices as number[]).map(index => this.blameEntriesByStoreRowIndex[index]);
-        const [entry] = entries.splice(fromDomDataRowIndex, 1);
-        entries.splice(toDomDataRowIndex, 0, entry);
-        this.blameEntriesByStoreRowIndex = entries;
-    }
-
     /**
      * blame表示中であれば自動的に非表示にする。
-     * 行構造変更（ソート・フィルター・行追加/削除・行移動・タブ切替リロード）の冒頭で呼ぶ。
+     * 行構造変更（ソート・フィルター・行追加/削除・タブ切替リロード）の冒頭で呼ぶ。
      * blameはgit committed dataのため、テーブル内容が変更された時点で陳腐化する。
      */
     hideBlameIfVisible(): void {
