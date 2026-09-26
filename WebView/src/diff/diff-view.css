@@ -167,10 +167,10 @@
     background-image: linear-gradient(var(--diff-row-added-bg), var(--diff-row-added-bg));
 }
 
-.diff-pane-left .editor-table-row.diff-row-deleted .editor-table-cell {
+.diff-pane-left .editor-table .editor-table-cell.diff-cell-in-deleted-row {
     background-color: var(--diff-deleted-bg);
 }
-.diff-pane-left .editor-table-row.diff-row-deleted .editor-table-row-header {
+.diff-pane-left .editor-table .editor-table-row-header.diff-cell-in-deleted-row {
     background-color: var(--background-color);
     background-image: linear-gradient(var(--diff-deleted-bg), var(--diff-deleted-bg));
 }

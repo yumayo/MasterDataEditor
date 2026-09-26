@@ -605,7 +605,11 @@ export class DiffTab {
             }
             // DOM更新（行がDOM上に存在する場合のみ）
             const leftRow = this.leftEditorTable.getRowElementForInsert(dataRowIndex + 1);
-            if (leftRow !== null) leftRow.classList.remove('diff-row-deleted');
+            if (leftRow !== null) {
+                leftRow.classList.remove('diff-row-deleted');
+                this.applyRowDiffDecorations(leftRow);
+                this.leftEditorTable.syncDetachedVisualState();
+            }
             // 右ペインの旧パディング化行（insertRowInternal が押し出した位置 = rowIndex+1）を削除する
             const oldPaddingRow = this.rightEditorTable.getRowElementForInsert(rowIndex + 1);
             if (oldPaddingRow !== null) {
@@ -723,7 +727,11 @@ export class DiffTab {
             }
             // DOM更新（左ペインの行がDOM上に存在する場合のみ）
             const leftRow = this.leftEditorTable.getRowElementForInsert(dataRowIndex + 1);
-            if (leftRow !== null) leftRow.classList.add('diff-row-deleted');
+            if (leftRow !== null) {
+                leftRow.classList.add('diff-row-deleted');
+                this.applyRowDiffDecorations(leftRow);
+                this.leftEditorTable.syncDetachedVisualState();
+            }
         }
         if (this.indexedDiffMode) {
             this.rightEditorTable.syncVirtualScrollTotalRowCount();
@@ -868,11 +876,11 @@ export class DiffTab {
         const rightRow = rightCell === null ? null : rightCell.parentElement;
         const leftRow = leftCell === null ? null : leftCell.parentElement;
         if (rightRow !== null) {
-            this.applyModifiedRowDecorations(rightRow);
+            this.applyRowDiffDecorations(rightRow);
             this.rightEditorTable.syncDetachedVisualState();
         }
         if (leftRow !== null) {
-            this.applyModifiedRowDecorations(leftRow);
+            this.applyRowDiffDecorations(leftRow);
             this.leftEditorTable.syncDetachedVisualState();
         }
         // セル編集で差分クラスが変わるためマーカーを再計算する
@@ -1428,14 +1436,16 @@ export class DiffTab {
                 (rowElement.children[domCol] as HTMLElement).classList.add(className);
             }
         }
-        this.applyModifiedRowDecorations(rowElement);
+        this.applyRowDiffDecorations(rowElement);
     }
 
-    /** 行全体の薄い差分色を、分離描画される行ヘッダー・固定セルにも引き継ぐ。 */
-    private applyModifiedRowDecorations(rowElement: HTMLElement): void {
+    /** 行全体の差分色を、分離描画される行ヘッダー・固定セルにも引き継ぐ。 */
+    private applyRowDiffDecorations(rowElement: HTMLElement): void {
         const isModified = rowElement.querySelector('.diff-cell-deleted, .diff-cell-added') !== null;
+        const isDeleted = rowElement.classList.contains('diff-row-deleted');
         for (const cell of rowElement.children) {
             cell.classList.toggle('diff-cell-in-modified-row', isModified);
+            cell.classList.toggle('diff-cell-in-deleted-row', isDeleted);
         }
     }
 
