@@ -1429,17 +1429,19 @@ export class EditorTableHandler {
 
     /** 離れた選択先へ表の順に貼り付ける。1セルや倍数サイズのデータは繰り返す。 */
     private pasteToSelectedRanges(sourceData: string[][], copyRange: SelectionRange): void {
-        const {rows, columns} = this.selection.getSelectedAxes();
+        const rows = this.selection.getSelectedCellRows();
         const sourceRows = sourceData.length;
-        const sourceColumns = sourceData.reduce((width, row) => Math.max(width, row.length), 0);
-        const repeat = rows.length % sourceRows === 0 && columns.length % sourceColumns === 0;
+        const repeat = rows.length % sourceRows === 0
+            && rows.every((row, index) => row.length % sourceData[index % sourceRows].length === 0);
         const changes: CellChange[] = [];
         for (let r = 0; r < rows.length && (repeat || r < sourceRows); r++) {
-            for (let c = 0; c < columns.length && (repeat || c < sourceColumns); c++) {
+            const source = sourceData[r % sourceRows];
+            for (let c = 0; c < rows[r].length && (repeat || c < source.length); c++) {
+                const {row, column} = rows[r][c];
                 changes.push({
-                    row: rows[r], column: columns[c],
-                    oldValue: this.table.getCellValueAt(rows[r], columns[c]),
-                    newValue: sourceData[r % sourceRows][c % sourceColumns] ?? '',
+                    row, column,
+                    oldValue: this.table.getCellValueAt(row, column),
+                    newValue: source[c % source.length],
                 });
             }
         }
@@ -1455,12 +1457,12 @@ export class EditorTableHandler {
         const tableRowCount = this.table.getLogicalRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
         const rowCount = sourceData.length;
-        const columnCount = sourceData[0].length;
+        const columnCount = sourceData.reduce((width, row) => Math.max(width, row.length), 0);
         const changes: CellChange[] = [];
         for (let r = 0; r < rowCount; r++) {
             const destRow = anchor.row + r;
             if (destRow >= tableRowCount) break;
-            for (let c = 0; c < columnCount; c++) {
+            for (let c = 0; c < sourceData[r].length; c++) {
                 const destColumn = anchor.column + c;
                 if (destColumn >= tableColumnCount) break;
                 changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[r][c] });
@@ -1477,7 +1479,6 @@ export class EditorTableHandler {
      */
     private pasteWithFill(sourceData: string[][], selectionRange: CellRange, copyRange: CellRange): void {
         const copyRowCount = sourceData.length;
-        const copyColumnCount = sourceData[0].length;
         const tableRowCount = this.table.getLogicalRowCount();
         const tableColumnCount = this.table.getTotalColumnCount();
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
@@ -1490,7 +1491,7 @@ export class EditorTableHandler {
             for (let c = 0; c < selectionColumnCount; c++) {
                 const destColumn = selectionRange.startColumn + c;
                 if (destColumn >= tableColumnCount) break;
-                const srcColumnIndex = c % copyColumnCount;
+                const srcColumnIndex = c % sourceData[srcRowIndex].length;
                 changes.push({ row: destRow, column: destColumn, oldValue: this.table.getCellValueAt(destRow, destColumn), newValue: sourceData[srcRowIndex][srcColumnIndex] });
             }
         }
@@ -1502,13 +1503,12 @@ export class EditorTableHandler {
      */
     private shouldFillSelection(sourceData: string[][], selectionRange: CellRange): boolean {
         const copyRowCount = sourceData.length;
-        const copyColumnCount = sourceData[0].length;
         const selectionRowCount = selectionRange.endRow - selectionRange.startRow + 1;
         const selectionColumnCount = selectionRange.endColumn - selectionRange.startColumn + 1;
 
         const isRowMultiple = selectionRowCount >= copyRowCount && selectionRowCount % copyRowCount === 0;
-        const isColumnMultiple = selectionColumnCount >= copyColumnCount && selectionColumnCount % copyColumnCount === 0;
-        const isLarger = selectionRowCount > copyRowCount || selectionColumnCount > copyColumnCount;
+        const isColumnMultiple = sourceData.every(row => selectionColumnCount >= row.length && selectionColumnCount % row.length === 0);
+        const isLarger = selectionRowCount > copyRowCount || sourceData.some(row => selectionColumnCount > row.length);
 
         return isRowMultiple && isColumnMultiple && isLarger;
     }

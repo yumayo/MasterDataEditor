@@ -85,3 +85,21 @@ for (const staged of [false, true]) {
         });
     });
 }
+
+test('差分の左右ペインで離れたセルの追加選択と解除を同期する', async ({page}) => {
+    await openDiffTab(page, false);
+    const left = page.locator('.diff-pane-left .editor-table');
+    const right = page.locator('.diff-pane-right .editor-table');
+    await getDataCell(right, 0, 1).click();
+    await getDataCell(right, 1, 2).click({modifiers: ['Control']});
+    for (const table of [left, right]) {
+        await expect(getDataCell(table, 0, 1)).toHaveClass(/sel-bg/);
+        await expect(getDataCell(table, 1, 2)).toHaveClass(/editor-table-cell-focused/);
+        await expect(getDataCell(table, 0, 2)).not.toHaveClass(/sel-bg/);
+    }
+    await getDataCell(left, 0, 1).click({modifiers: ['Control']});
+    for (const table of [left, right]) {
+        await expect(getDataCell(table, 0, 1)).not.toHaveClass(/sel-bg|editor-table-cell-focused/);
+        await expect(getDataCell(table, 1, 2)).toHaveClass(/editor-table-cell-focused/);
+    }
+});

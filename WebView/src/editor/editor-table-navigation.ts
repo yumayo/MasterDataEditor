@@ -29,7 +29,7 @@ export class EditorTableNavigation {
     }
 
     /**
-     * ミニテーブル専用: Ctrl+クリックまたはF12でミニテーブル自身のテーブルを左ペインで開く。
+     * ミニテーブル専用: Alt+クリックまたはF12でミニテーブル自身のテーブルを左ペインで開く。
      */
     navigateToDefinition(row: number): void {
         if (this.relationsPanel === false) return;
@@ -40,7 +40,7 @@ export class EditorTableNavigation {
     }
 
     /**
-     * メインテーブル専用: Ctrl+クリックまたはF12でFK列の参照先テーブルをタブで開く。
+     * メインテーブル専用: Alt+クリックまたはF12でFK列の参照先テーブルをタブで開く。
      * RelationsPanelが非表示の場合のみ動作する（表示中はRelationsPanelで参照できるため不要）。
      */
     navigateToReferenceTable(row: number, column: number): boolean {
@@ -99,7 +99,7 @@ export class EditorTableNavigation {
     }
 
     /**
-     * メインテーブル専用: Ctrl+クリックまたはF12で逆参照先テーブルをタブで開く。
+     * メインテーブル専用: Alt+クリックまたはF12で逆参照先テーブルをタブで開く。
      * PK列では行内の全逆参照候補を対象にし、非PK列ではクリック列を参照している候補だけを対象にする。
      * 逆参照が1つなら直接ジャンプ、複数ならモーダルで選択させる。
      */

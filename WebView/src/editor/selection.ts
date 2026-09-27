@@ -42,6 +42,7 @@ export class Selection {
 
     private range: CellRange;
     private additionalRanges: CellRange[] = [];
+    private pendingCellToggle: CellPosition | null = null;
 
     private focus: CellPosition;
 
@@ -132,6 +133,7 @@ export class Selection {
      * キー押しっぱなし時にイベント処理が追いつかなくなるため、1回の描画にまとめる。
      */
     moveAndClearRange(row: number, column: number): void {
+        this.pendingCellToggle = null;
         row = Math.max(1, row);
         column = Math.max(this.editorTable.dataColumnOffset(), column);
 
@@ -150,6 +152,7 @@ export class Selection {
      * @param endColumn
      */
     setRange(startRow: number, startColumn: number, endRow: number, endColumn: number): void {
+        this.pendingCellToggle = null;
         startRow = Math.max(1, startRow);
         startColumn = Math.max(this.editorTable.dataColumnOffset(), startColumn);
         endRow = Math.max(1, endRow);
@@ -161,13 +164,33 @@ export class Selection {
     }
 
     start(row: number, column: number): void {
+        this.pendingCellToggle = null;
         row = Math.max(1, row);
         column = Math.max(this.editorTable.dataColumnOffset(), column);
 
         this.selecting = true;
+        this.selectingColumn = false;
+        this.selectingRow = false;
         this.additionalRanges = [];
         this.range = { startRow: row, startColumn: column, endRow: row, endColumn: column };
         this.focus = { row, column }; // start 選択開始位置にフォーカスを設定
+        this.updateRenderer();
+        this.scrollFocusIntoView();
+    }
+
+    /** Ctrl/Command+クリックで追加。選択済みセルはクリックなら解除、ドラッグなら範囲を追加する。 */
+    addCell(row: number, column: number): void {
+        row = Math.max(1, row);
+        column = Math.max(this.editorTable.dataColumnOffset(), column);
+        const ranges = this.getSelectionRanges();
+        this.pendingCellToggle = ranges.some(range => row >= range.startRow && row <= range.endRow
+            && column >= range.startColumn && column <= range.endColumn) ? {row, column} : null;
+        this.additionalRanges = ranges;
+        this.range = {startRow: row, startColumn: column, endRow: row, endColumn: column};
+        this.focus = {row, column};
+        this.selecting = true;
+        this.selectingColumn = false;
+        this.selectingRow = false;
         this.updateRenderer();
         this.scrollFocusIntoView();
     }
@@ -176,12 +199,32 @@ export class Selection {
         this.selecting = false;
         this.selectingColumn = false;
         this.selectingRow = false;
+        if (this.pendingCellToggle === null) return;
+        const {row, column} = this.pendingCellToggle;
+        this.pendingCellToggle = null;
+        const remaining: CellRange[] = [];
+        for (const range of this.getSelectionRanges()) {
+            if (row < range.startRow || row > range.endRow || column < range.startColumn || column > range.endColumn) {
+                remaining.push(range);
+                continue;
+            }
+            if (row > range.startRow) remaining.push({...range, endRow: row - 1});
+            if (row < range.endRow) remaining.push({...range, startRow: row + 1});
+            if (column > range.startColumn) remaining.push({...range, startRow: row, endRow: row, endColumn: column - 1});
+            if (column < range.endColumn) remaining.push({...range, startRow: row, endRow: row, startColumn: column + 1});
+        }
+        // 最後のセルは選択を維持する。
+        this.range = remaining.pop() ?? {startRow: row, startColumn: column, endRow: row, endColumn: column};
+        this.additionalRanges = remaining;
+        this.focus = {row: this.range.startRow, column: this.range.startColumn};
+        this.updateRenderer();
     }
 
     /**
      * 列全体を選択する（列ヘッダークリック時）
      */
     selectColumn(column: number): void {
+        this.pendingCellToggle = null;
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
@@ -199,6 +242,7 @@ export class Selection {
      * 行全体を選択する（行ヘッダークリック時）
      */
     selectRow(row: number): void {
+        this.pendingCellToggle = null;
         if (row < 1) return;
 
         const columnCount = this.editorTable.getTotalColumnCount();
@@ -221,7 +265,6 @@ export class Selection {
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
-        if (this.additionalRanges.some(range => range.startRow !== 1 || range.endRow !== rowCount - 1)) this.additionalRanges = [];
         // アンカー（startColumn）を保持したまま、endColumnを新しい列に拡張
         this.range = { startRow: 1, startColumn: this.range.startColumn, endRow: rowCount - 1, endColumn: column };
         // 列ヘッダークリック時はビューポート位置を維持するためスクロールしない
@@ -237,7 +280,6 @@ export class Selection {
         const columnCount = this.editorTable.getTotalColumnCount();
         if (columnCount < 2) return;
 
-        if (this.additionalRanges.some(range => range.startColumn !== this.editorTable.dataColumnOffset() || range.endColumn !== columnCount - 1)) this.additionalRanges = [];
         // アンカー（startRow）を保持したまま、endRowを新しい行に拡張
         this.range = { startRow: this.range.startRow, startColumn: this.editorTable.dataColumnOffset(), endRow: row, endColumn: columnCount - 1 };
         // 行ヘッダークリック時はビューポート位置を維持するためスクロールしない
@@ -248,6 +290,7 @@ export class Selection {
      * 全セルを選択する（左上コーナークリック時）
      */
     selectAll(): void {
+        this.pendingCellToggle = null;
         const rowCount = this.editorTable.getLogicalRowCount();
         if (rowCount < 2) return;
 
@@ -281,6 +324,7 @@ export class Selection {
     }
 
     private addHeaderRange(index: number, axis: 'row' | 'column'): void {
+        this.pendingCellToggle = null;
         const minColumn = this.editorTable.dataColumnOffset();
         const lastColumn = this.editorTable.getTotalColumnCount() - 1;
         const lastRow = this.editorTable.getLogicalRowCount() - 1;
@@ -308,7 +352,7 @@ export class Selection {
             }
             this.end();
         } else {
-            this.additionalRanges = compatible ? ranges : [];
+            this.additionalRanges = ranges;
             this.range = axis === 'row'
                 ? {startRow: index, startColumn: minColumn, endRow: index, endColumn: lastColumn}
                 : {startRow: 1, startColumn: index, endRow: lastRow, endColumn: index};
@@ -326,11 +370,10 @@ export class Selection {
      * フォーカスは移動しません（選択開始位置に固定）。
      */
     extendSelection(row: number, column: number): void {
-        const hadAdditionalRanges = this.additionalRanges.length > 0;
-        this.additionalRanges = [];
         const endRow = Math.max(1, row);
         const endColumn = Math.max(this.editorTable.dataColumnOffset(), column);
-        if (hadAdditionalRanges || this.range.endRow !== endRow || this.range.endColumn !== endColumn) {
+        if (this.range.endRow !== endRow || this.range.endColumn !== endColumn) {
+            this.pendingCellToggle = null;
             this.range = { ...this.range, endRow, endColumn };
             this.updateRenderer();
         }
@@ -350,7 +393,7 @@ export class Selection {
      * @param maxColumn 最大列インデックス（テーブルの列数-1）
      */
     extendSelectionOffset(x: number, y: number, maxRow: number, maxColumn: number): void {
-        this.additionalRanges = [];
+        this.pendingCellToggle = null;
         const nextEndRow = this.range.endRow + y;
         const nextEndColumn = this.range.endColumn + x;
 
@@ -474,35 +517,59 @@ export class Selection {
             : {...this.range, additionalRanges: this.additionalRanges.map(range => ({...range}))};
     }
 
-    /** 全選択範囲を表の順に返す。同じ行/列の重複と隣接範囲はまとめる。 */
+    /** 選択の和集合を、重複しない長方形に分割する。行数ではなく範囲の境界だけを走査する。 */
     getSelectionRanges(): CellRange[] {
-        const ranges = [...this.additionalRanges, this.range].map(range => this.normalizeCellRange(range))
-            .sort((a, b) => a.startRow - b.startRow || a.startColumn - b.startColumn);
-        const merged: CellRange[] = [];
-        for (const range of ranges) {
-            const previous = merged[merged.length - 1];
-            if (previous && previous.startColumn === range.startColumn && previous.endColumn === range.endColumn
-                && range.startRow <= previous.endRow + 1) {
-                previous.endRow = Math.max(previous.endRow, range.endRow);
-            } else if (previous && previous.startRow === range.startRow && previous.endRow === range.endRow
-                && range.startColumn <= previous.endColumn + 1) {
-                previous.endColumn = Math.max(previous.endColumn, range.endColumn);
-            } else {
-                merged.push(range);
+        const ranges = [...this.additionalRanges, this.range].map(range => this.normalizeCellRange(range));
+        if (ranges.length === 1) return ranges;
+        const boundaries = [...new Set(ranges.flatMap(range => [range.startRow, range.endRow + 1]))].sort((a, b) => a - b);
+        const result: CellRange[] = [];
+        let previous = new Map<string, CellRange>();
+        for (let i = 0; i < boundaries.length - 1; i++) {
+            const startRow = boundaries[i];
+            const endRow = boundaries[i + 1] - 1;
+            const columns = ranges.filter(range => range.startRow <= startRow && range.endRow >= startRow)
+                .sort((a, b) => a.startColumn - b.startColumn);
+            const spans: CellRange[] = [];
+            for (const range of columns) {
+                const last = spans[spans.length - 1];
+                if (last && range.startColumn <= last.endColumn + 1) {
+                    last.endColumn = Math.max(last.endColumn, range.endColumn);
+                } else {
+                    spans.push({startRow, endRow, startColumn: range.startColumn, endColumn: range.endColumn});
+                }
             }
+            const current = new Map<string, CellRange>();
+            for (const span of spans) {
+                const key = `${span.startColumn}:${span.endColumn}`;
+                const above = previous.get(key);
+                if (above) {
+                    above.endRow = endRow;
+                    current.set(key, above);
+                } else {
+                    result.push(span);
+                    current.set(key, span);
+                }
+            }
+            previous = current;
         }
-        return merged;
+        return result.sort((a, b) => a.startRow - b.startRow || a.startColumn - b.startColumn);
     }
 
-    /** 空白の行・列を飛ばした、コピー/貼り付け用の座標。 */
-    getSelectedAxes(): {rows: number[]; columns: number[]} {
-        const rows = new Set<number>();
-        const columns = new Set<number>();
+    /** 選択したセルだけを行ごとに左から並べる。未選択の行・セルは詰める。 */
+    getSelectedCellRows(): CellPosition[][] {
+        const rows = new Map<number, CellPosition[]>();
         for (const range of this.getSelectionRanges()) {
-            for (let row = range.startRow; row <= range.endRow; row++) rows.add(row);
-            for (let col = range.startColumn; col <= range.endColumn; col++) columns.add(col);
+            for (let row = range.startRow; row <= range.endRow; row++) {
+                let cells = rows.get(row);
+                if (!cells) {
+                    cells = [];
+                    rows.set(row, cells);
+                }
+                for (let column = range.startColumn; column <= range.endColumn; column++) cells.push({row, column});
+            }
         }
-        return {rows: [...rows].sort((a, b) => a - b), columns: [...columns].sort((a, b) => a - b)};
+        return [...rows.entries()].sort(([a], [b]) => a - b)
+            .map(([, cells]) => cells.sort((a, b) => a.column - b.column));
     }
 
     hasMultipleRanges(): boolean {
@@ -510,6 +577,7 @@ export class Selection {
     }
 
     restoreState(range: SelectionRange, focus: CellPosition): void {
+        this.pendingCellToggle = null;
         const maxRow = Math.max(1, this.editorTable.getLogicalRowCount() - 1);
         const minColumn = this.editorTable.dataColumnOffset();
         const maxColumn = Math.max(minColumn, this.editorTable.getTotalColumnCount() - 1);
@@ -558,8 +626,7 @@ export class Selection {
         const ranges = this.getSelectionRanges();
         this.copyRange = ranges.length === 1 ? ranges[0] : {...ranges[0], additionalRanges: ranges.slice(1)};
         this.updateCopyRenderer();
-        const {rows, columns} = this.getSelectedAxes();
-        const data = rows.map(row => columns.map(column => this.editorTable.getCellValueAt(row, column)));
+        const data = this.getSelectedCellRows().map(row => row.map(cell => this.editorTable.getCellValueAt(cell.row, cell.column)));
         this.copiedData = data;
         this.copyToClipboard(data);
     }

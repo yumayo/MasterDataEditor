@@ -85,7 +85,7 @@ test.describe('参照ジャンプの一時フィルター', () => {
     test('設定未指定時はデフォルトOFFになり、FKジャンプで一時フィルターは適用されない', async ({ page }) => {
         await installReferenceJumpFilterFixtureAsync(page, null);
         const questTable = await openTableAsync(page, 'quest');
-        await getDataCell(questTable, 0, 2).click({ modifiers: ['Control'] });
+        await getDataCell(questTable, 0, 2).click({ modifiers: ['Alt'] });
 
         await expect(page.locator('.tab-button-active')).toContainText('enemy');
         const enemyTable = getActiveTable(page);
@@ -98,10 +98,10 @@ test.describe('参照ジャンプの一時フィルター', () => {
         expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 
-    test('設定ONの場合、FKセルをCtrl+クリックすると参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
+    test('設定ONの場合、FKセルをAlt+クリックすると参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
         await installReferenceJumpFilterFixtureAsync(page, true);
         const questTable = await openTableAsync(page, 'quest');
-        await getDataCell(questTable, 0, 2).click({ modifiers: ['Control'] });
+        await getDataCell(questTable, 0, 2).click({ modifiers: ['Alt'] });
 
         await expect(page.locator('.tab-button-active')).toContainText('enemy');
         const enemyTable = getActiveTable(page);
@@ -114,13 +114,13 @@ test.describe('参照ジャンプの一時フィルター', () => {
         expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 
-    test('設定ONの場合、PKセルをCtrl+クリックすると逆参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
+    test('設定ONの場合、PKセルをAlt+クリックすると逆参照先列に一時フィルターが適用され、スキーマとユーザーデータには保存されない', async ({ page }) => {
         await installReferenceJumpFilterFixtureAsync(page, true);
         const enemyTable = await openTableAsync(page, 'enemy');
         await expect.poll(async () => {
             const activeTabName = await page.locator('.tab-button-active .tab-button-name').innerText();
             if (activeTabName !== 'quest') {
-                await getDataCell(enemyTable, 0, 0).click({ modifiers: ['Control'] });
+                await getDataCell(enemyTable, 0, 0).click({ modifiers: ['Alt'] });
             }
             return page.locator('.tab-button-active .tab-button-name').innerText();
         }).toBe('quest');
@@ -134,3 +134,20 @@ test.describe('参照ジャンプの一時フィルター', () => {
         expect(await countFileWritesAsync(page, 'table-view-settings.json')).toBe(0);
     });
 });
+
+for (const tableName of ['quest', 'enemy']) {
+    test(`${tableName}: Ctrl/Command+クリックは参照ジャンプせず離れたセルを選択する`, async ({page}) => {
+        await installReferenceJumpFilterFixtureAsync(page, null);
+        const table = await openTableAsync(page, tableName);
+        const targetCol = tableName === 'quest' ? 2 : 0;
+        await getDataCell(table, 0, 1).click();
+        await getDataCell(table, 1, targetCol).click({modifiers: ['Control']});
+        await expect(page.locator('.tab-button-active')).toContainText(tableName);
+        await expect(getDataCell(table, 0, 1)).toHaveClass(/sel-bg/);
+        await expect(getDataCell(table, 1, targetCol)).toHaveClass(/editor-table-cell-focused/);
+        await expect(getDataCell(table, 0, targetCol)).not.toHaveClass(/sel-bg/);
+        await getDataCell(table, 1, targetCol).click({modifiers: ['Meta']});
+        await expect(page.locator('.tab-button-active')).toContainText(tableName);
+        await expect(getDataCell(table, 1, targetCol)).not.toHaveClass(/sel-bg|editor-table-cell-focused/);
+    });
+}

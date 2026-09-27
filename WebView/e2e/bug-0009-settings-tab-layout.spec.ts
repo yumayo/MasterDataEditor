@@ -36,7 +36,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
  *   area:  id, name, world_id（→ world.id）
  *
  * world を開いて row0 を選択すると RelationsPanel に area（1:N）が表示される。
- * area ミニテーブルのセルを Ctrl+Click するとペインスタックが追加され
+ * area ミニテーブルのセルを Alt+Click するとペインスタックが追加され
  * ナビゲーションバー（← N/M →）が表示される。
  */
 function createBug0009TestFileSystem(): MockFileSystem {
@@ -177,7 +177,7 @@ test.describe('BUG_0009: 設定タブ表示時のレイアウト問題', () => {
 	// 再現手順:
 	//   1. world テーブルを開く
 	//   2. row0 を選択 → RelationsPanel が右スロットに表示される
-	//   3. area ミニテーブルのセルを Ctrl+Click → ペインスタックが3つになる
+	//   3. area ミニテーブルのセルを Alt+Click → ペインスタックが3つになる
 	//      （ナビゲーションバーに "2 / 3" が表示される）
 	//   4. 設定タブを開く（歯車アイコンをクリック）
 	//
@@ -202,10 +202,10 @@ test.describe('BUG_0009: 設定タブ表示時のレイアウト問題', () => {
 			const rightSlotMiniTable = page.locator('.editor-right-slot .relations-panel .editor-table').first();
 			await expect(rightSlotMiniTable).toBeVisible();
 
-			// area ミニテーブルのvisibleなデータセルを Ctrl+Click してペインスタックを追加する
+			// area ミニテーブルのvisibleなデータセルを Alt+Click してペインスタックを追加する
 			const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
-			await visibleCell.click({ modifiers: ['Control'] });
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// ナビゲーションバーが表示されていることを前提確認する（"2 / 3"）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();

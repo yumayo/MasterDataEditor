@@ -79,19 +79,19 @@ export class EditorTableCellFactory {
             } else {
                 table.getHandler().activate();
             }
-            // ミニテーブルのCtrl+クリックで自テーブルを左ペインで開く（ドリルダウン）
+            // ミニテーブルのAlt+クリックで自テーブルを左ペインで開く（ドリルダウン）
             // ペインスタック追加（navigateToDefinition）を先に行い、正しいRPに対して選択状態を設定する。
             // 逆順（selection.start → navigateToDefinition）だと古いRPに対してnotifyが走り無駄な処理が発生する。
-            if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
+            if (e.altKey && !e.ctrlKey && !e.metaKey && table.isMiniTableInstance()) {
                 table.navigateToDefinition(position.row);
                 table.getSelection().start(position.row, position.column);
                 e.preventDefault();
                 return;
             }
-            // メインテーブルのCtrl+クリックでFK列の参照先 / PK列の逆参照先テーブルを開く（RelationsPanel非表示時のみ）
+            // メインテーブルのAlt+クリックでFK列の参照先 / PK列の逆参照先テーブルを開く（RelationsPanel非表示時のみ）
             // start()でセルを選択した後、end()でドラッグ状態を即解除する。
             // end()を呼ばないとmouseupが発火しないままselecting=trueが残り、戻ったときに範囲選択になる。
-            if ((e.ctrlKey || e.metaKey) && !table.isMiniTableInstance()
+            if (e.altKey && !e.ctrlKey && !e.metaKey && !table.isMiniTableInstance()
                 && (table.navigateToReferenceTable(position.row, position.column)
                     || table.navigateToReverseReferenceTable(position.row, position.column))) {
                 table.getSelection().start(position.row, position.column);
@@ -107,7 +107,11 @@ export class EditorTableCellFactory {
                 // タイミングによっては呼ばれないケースがあるため、mousedown 時にも確実に有効化する。
                 // addEventListener の重複登録は SelectionDragController 側でガードする。
                 tableAny.selectionDragController.activate();
-                table.getSelection().start(position.row, position.column);
+                if (e.ctrlKey || e.metaKey) {
+                    table.getSelection().addCell(position.row, position.column);
+                } else {
+                    table.getSelection().start(position.row, position.column);
+                }
             }
         });
         cell.addEventListener('contextmenu', (e) => {

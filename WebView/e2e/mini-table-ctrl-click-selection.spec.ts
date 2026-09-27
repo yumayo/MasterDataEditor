@@ -4,14 +4,14 @@ import { installMockApiAsync, MockFileSystem } from './fixtures/mock-api';
 import { enableRelationsPanelAsync } from './fixtures/test-utils';
 
 // =============================================================================
-// ミニテーブルのCtrl+クリック後に選択ボーダーが表示されることを検証するテスト
+// ミニテーブルのAlt+クリック後に選択ボーダーが表示されることを検証するテスト
 //
 // 修正済み（editor-table.ts mousedownハンドラ）:
-//   Ctrl+クリック時に navigateToDefinition() を先に呼んでペインスタックを追加してから
+//   Alt+クリック時に navigateToDefinition() を先に呼んでペインスタックを追加してから
 //   selection.start() を呼ぶ。これにより正しいRPに対して選択状態が設定される。
 //
 //   ```typescript
-//   if ((e.ctrlKey || e.metaKey) && table.isMiniTableInstance()) {
+//   if (e.altKey && table.isMiniTableInstance()) {
 //       table.navigateToDefinition(position.row);  // ← ペインスタック追加を先に行う
 //       table.selection.start(position.row, position.column);
 //       e.preventDefault();
@@ -20,8 +20,8 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   ```
 //
 // 期待動作:
-//   ミニテーブルのセルをCtrl+クリックしてペインスタックが追加された後、
-//   左スロットに移動したRelationsPanelのミニテーブルで Ctrl+クリックしたセルに
+//   ミニテーブルのセルをAlt+クリックしてペインスタックが追加された後、
+//   左スロットに移動したRelationsPanelのミニテーブルで Alt+クリックしたセルに
 //   選択ボーダー（.selection-overlay-border が生成され、border-color が青色）が表示されること。
 //
 // テーブル構成:
@@ -29,7 +29,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   quest: id, name, enemy_id（クエスト。enemy.id をFKとして参照）
 //
 //   quest を開いて row0 を選択 → RelationsPanelに enemy の N:1 ミニテーブルが表示される。
-//   enemy ミニテーブルのセルをCtrl+クリック → ペインスタックが追加され、
+//   enemy ミニテーブルのセルをAlt+クリック → ペインスタックが追加され、
 //   左スロットに enemy ミニテーブルが残る。クリックしたセルに選択ボーダーが表示されること。
 // =============================================================================
 
@@ -75,7 +75,7 @@ function createCtrlClickSelectionTestFileSystem(): MockFileSystem {
 
 /**
  * エクスプローラーからテーブルを開き、左スロットのEditorTable Locatorを返す
- * .editor-left-slot を使う理由: Ctrl+クリック後にペインスタックが追加されると
+ * .editor-left-slot を使う理由: Alt+クリック後にペインスタックが追加されると
  * .editor-left-slot 内に RelationsPanel（とその中の .editor-table）が現れるが、
  * メインテーブルは .editor-left-pane 内に留まる。
  * ペインスタック後に strict mode violation を避けるため .editor-left-pane で限定する。
@@ -150,10 +150,10 @@ const RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR = [
 ].join('');
 
 // =============================================================================
-// テストスイート: ミニテーブルのCtrl+クリック後のセル選択状態
+// テストスイート: ミニテーブルのAlt+クリック後のセル選択状態
 // =============================================================================
 
-test.describe('ミニテーブルのCtrl+クリック後にクリックしたセルの選択ボーダーが表示されること', () => {
+test.describe('ミニテーブルのAlt+クリック後にクリックしたセルの選択ボーダーが表示されること', () => {
 	test.beforeEach(async ({ page }) => {
 		const fs = createCtrlClickSelectionTestFileSystem();
 		await installMockApiAsync(page, fs);
@@ -162,19 +162,19 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 	});
 
 	// ---------------------------------------------------------------------------
-	// テスト1: ミニテーブルのCtrl+クリック後、左スロットのミニテーブルに選択ボーダーが表示されること
+	// テスト1: ミニテーブルのAlt+クリック後、左スロットのミニテーブルに選択ボーダーが表示されること
 	//
 	// 再現手順:
 	//   1. quest テーブルを開いて row0 を行選択する
 	//   2. RelationsPanelに enemy の N:1 ミニテーブルが表示されるのを待つ
-	//   3. enemy ミニテーブルの ja 列のセル（row0）をCtrl+クリックする
+	//   3. enemy ミニテーブルの ja 列のセル（row0）をAlt+クリックする
 	//      → navigateToDefinition() が呼ばれてペインスタックが追加される
 	//      → RP が左スロットに移動し、enemy ミニテーブルが左スロットに残る
 	//   4. 左スロットの enemy ミニテーブルに .selection 要素が表示されること
 	//      （バグ時: selection.start() が呼ばれないため .selection が非表示のまま）
 	// ---------------------------------------------------------------------------
 	test(
-		'enemyミニテーブルのセルをCtrl+クリックした後、左スロットに移動したミニテーブルで選択ボーダーが表示されること',
+		'enemyミニテーブルのセルをAlt+クリックした後、左スロットに移動したミニテーブルで選択ボーダーが表示されること',
 		async ({ page }) => {
 			// quest テーブルを開いて1行目を選択する
 			const mainTable = await openTableAsync(page, 'quest');
@@ -192,11 +192,11 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 			const targetCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 			await expect(targetCell).toBeVisible();
 
-			// Ctrl+クリック前はナビゲーションバーが非表示であること（前提確認）
+			// Alt+クリック前はナビゲーションバーが非表示であること（前提確認）
 			await expect(page.locator('.editor-navigation-bar')).toBeHidden();
 
-			// enemy ミニテーブルのセルをCtrl+クリックしてペインスタックを追加する
-			await targetCell.click({ modifiers: ['Control'] });
+			// enemy ミニテーブルのセルをAlt+クリックしてペインスタックを追加する
+			await targetCell.click({ modifiers: ['Alt'] });
 
 			// ペインスタックが追加されてナビゲーションバーが表示されること（前提確認）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -215,17 +215,17 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 	);
 
 	// ---------------------------------------------------------------------------
-	// テスト2: Ctrl+クリックしたセルの選択ボーダーが青色（アクティブ色）であること
+	// テスト2: Alt+クリックしたセルの選択ボーダーが青色（アクティブ色）であること
 	//
 	// 選択ボーダーの色仕様:
 	//   アクティブ時: rgba(0, 120, 215, 0.5)（青色）
 	//   非アクティブ時: rgba(128, 128, 128, 0.5)（灰色）
 	//
-	// Ctrl+クリックしたセルがアクティブな選択として扱われるべきであるため、
+	// Alt+クリックしたセルがアクティブな選択として扱われるべきであるため、
 	// 選択ボーダーは青色であること。
 	// ---------------------------------------------------------------------------
 	test(
-		'enemyミニテーブルのセルをCtrl+クリックした後、左スロットの選択ボーダーが青色（アクティブ色）であること',
+		'enemyミニテーブルのセルをAlt+クリックした後、左スロットの選択ボーダーが青色（アクティブ色）であること',
 		async ({ page }) => {
 			// quest テーブルを開いて1行目を選択する
 			const mainTable = await openTableAsync(page, 'quest');
@@ -242,8 +242,8 @@ test.describe('ミニテーブルのCtrl+クリック後にクリックしたセ
 			const targetCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 			await expect(targetCell).toBeVisible();
 
-			// enemy ミニテーブルのセルをCtrl+クリックしてペインスタックを追加する
-			await targetCell.click({ modifiers: ['Control'] });
+			// enemy ミニテーブルのセルをAlt+クリックしてペインスタックを追加する
+			await targetCell.click({ modifiers: ['Alt'] });
 
 			// ペインスタックが追加されてナビゲーションバーが表示されること（前提確認）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();

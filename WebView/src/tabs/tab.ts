@@ -3931,7 +3931,7 @@ export class Tab {
     }
 
     /**
-     * RelationsPanel をペインスタックに追加する（ミニテーブルの Ctrl+Click 時に RelationsPanel.navigateToDefinition から呼ばれる）
+     * RelationsPanel をペインスタックに追加する（ミニテーブルの Alt+Click 時に RelationsPanel.navigateToDefinition から呼ばれる）
      * viewIndex より右にある既存エントリを破棄して新しい RP をスタック末尾に追加し、ビューを右端にシフトする
      */
     pushRelationsPanel(tableName: string, pkValue: string): void {

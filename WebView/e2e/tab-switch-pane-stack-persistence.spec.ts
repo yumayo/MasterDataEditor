@@ -26,7 +26,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   quest:        id, name（クエストマスター。shop等との関係なし）
 //
 //   shopを開いてrow0選択 → RelationsPanelにshop_product（1:N）のミニテーブルが表示される。
-//   shop_productミニテーブルのセルをCtrl+Click → ペインスタックに新しいRPが追加される。
+//   shop_productミニテーブルのセルをAlt+Click → ペインスタックに新しいRPが追加される。
 //   questタブに切替後、shopタブに戻ると、ペインスタックが保持されているはず（現在はリセットされる）。
 // =============================================================================
 
@@ -139,7 +139,7 @@ test.describe('タブ切替後のペインスタック保持', () => {
 	//   1. questテーブルをクリック（タブを開く）
 	//   2. shopテーブルをクリック（タブを開く）
 	//   3. shopのrow0を選択 → 右ペインにshop_productミニテーブルが表示される
-	//   4. shop_productミニテーブルの0行0列セルをCtrl+Click（定義ジャンプ）
+	//   4. shop_productミニテーブルの0行0列セルをAlt+Click（定義ジャンプ）
 	//   5. 定義ジャンプ成功を確認（ナビゲーションバーが表示され "2 / 3" になる）
 	//   6. questタブをクリック
 	//   7. shopタブをクリック
@@ -169,10 +169,10 @@ test.describe('タブ切替後のペインスタック保持', () => {
 				.filter({ hasText: 'shop_product' });
 			await expect(shopProductSection).toBeVisible();
 
-			// 手順4: shop_productミニテーブルのvisibleなデータセルをCtrl+Click（定義ジャンプ）
+			// 手順4: shop_productミニテーブルのvisibleなデータセルをAlt+Click（定義ジャンプ）
 			const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
-			await visibleCell.click({ modifiers: ['Control'] });
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// 手順5: 定義ジャンプ成功を確認
 			//   ペインスタックが3つになり、ナビゲーションバーが表示されインジケーターが "2 / 3" になる

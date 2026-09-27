@@ -157,24 +157,9 @@ test.describe('BottomPanel tabs', () => {
         await page.goto('/');
 
         await openTableAsync(page, 'item');
-        await page.evaluate(async () => {
-            const activeTable = (window as unknown as {
-                editor?: {
-                    activeEditorTable: {
-                        dataColumnOffset(): number;
-                        focusTable(): void;
-                        getSelection(): {
-                            setCopyRange(range: { startRow: number; startColumn: number; endRow: number; endColumn: number }): void;
-                        };
-                    } | false;
-                };
-            }).editor?.activeEditorTable;
-            if (activeTable === undefined || activeTable === false) throw new Error('activeEditorTable が見つかりません');
-            const nameColumn = activeTable.dataColumnOffset() + 1;
-            activeTable.getSelection().setCopyRange({ startRow: 1, startColumn: nameColumn, endRow: 1, endColumn: nameColumn });
-            await navigator.clipboard.writeText('item_1');
-            activeTable.focusTable();
-        });
+        // 実際のコピー操作で、コピー時点のデータとクリップボードを揃える。
+        await clickDataCellAsync(page, 1, 1);
+        await page.keyboard.press('Control+c');
         await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('item_1');
 
         const viewportHeightBefore = await page.locator('.editor-left-pane .editor-table-main-viewport')

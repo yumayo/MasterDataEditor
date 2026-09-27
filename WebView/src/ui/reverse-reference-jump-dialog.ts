@@ -1,7 +1,7 @@
 import type {ReverseReferenceEntry} from "../references/reverse-reference-resolver";
 
 /**
- * 逆参照先ジャンプダイアログ — PK列 Ctrl+Click/F12 で逆参照先が複数あるとき表示する選択モーダル
+ * 逆参照先ジャンプダイアログ — PK列 Alt+Click/F12 で逆参照先が複数あるとき表示する選択モーダル
  *
  * CommitSelectorDialog と同じモーダルパターンだが、Promise ではなくコールバック方式。
  * 呼び出し元が同期メソッド（navigateToReverseReferenceTable）であり、結果を await する必要がないため。

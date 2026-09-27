@@ -249,7 +249,7 @@ test.describe('テスト1: ReverseReferenceEntry に parentColumnName が含ま�
     );
 });
 
-test.describe('テスト1.5: 非PK参照列のCtrl+クリック逆参照ジャンプ', () => {
+test.describe('テスト1.5: 非PK参照列のAlt+クリック逆参照ジャンプ', () => {
     test.beforeEach(async ({ page }) => {
         const fs = createTestFileSystem();
         fs[".masterdataeditor/settings.json"] = JSON.stringify({
@@ -260,14 +260,14 @@ test.describe('テスト1.5: 非PK参照列のCtrl+クリック逆参照ジャ�
     });
 
     test(
-        'shop_product.group_idセルをCtrl+クリックすると、shop.shop_product_group_idへ' +
+        'shop_product.group_idセルをAlt+クリックすると、shop.shop_product_group_idへ' +
         'group_idの値でジャンプすること',
         async ({ page }) => {
             const table = await openTableAsync(page, 'shop_product');
 
             // 行2は id=2, group_id=1。逆参照ジャンプではPK値"2"ではなく
             // クリック列 group_id の値"1"を使って shop.shop_product_group_id を検索する。
-            await getDataCell(table, 1, 1).click({ modifiers: ['Control'] });
+            await getDataCell(table, 1, 1).click({ modifiers: ['Alt'] });
 
             await expect(page.locator('.tab-button-active')).toContainText('shop');
             const shopTable = getActiveTable(page);

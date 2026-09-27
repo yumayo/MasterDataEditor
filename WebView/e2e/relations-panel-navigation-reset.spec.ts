@@ -7,7 +7,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 // RelationsPanelナビゲーション履歴リセットテスト
 //
 // 不具合概要:
-//   定義ジャンプ（Ctrl+Click）でペインスタックを深くした後、←ボタンで戻り、
+//   定義ジャンプ（Alt+Click）でペインスタックを深くした後、←ボタンで戻り、
 //   メインテーブルで別の行を選択しても Tab の paneStack がリセットされない。
 //   updateForRow() は paneStack[1]（グローバルRP）のコンテンツだけ更新するが、
 //   paneStack[2] 以降の追加RPは残ったまま。
@@ -23,7 +23,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   shop_product: id, shop_id（→ shop.id）, item_name（商品名）
 //
 //   shopを開いてrow0選択 → RelationsPanelにshop_product（1:N）のミニテーブルが表示される。
-//   shop_productミニテーブルのセルをCtrl+Click → ペインスタックに新しいRPが追加される。
+//   shop_productミニテーブルのセルをAlt+Click → ペインスタックに新しいRPが追加される。
 //   ←ボタンで戻る → viewIndex が 0 になる（インジケーターは "1 / 3"）
 //   shopテーブルの別の行（row1）を選択する
 //   → paneStack がルートにリセットされ、追加RP（paneStack[2]以降）が破棄されること
@@ -132,7 +132,7 @@ test.describe('メインテーブルで別の行を選択したら、RelationsPa
 	// 再現手順:
 	//   1. shopテーブルを開く
 	//   2. row0を選択 → RelationsPanelにshop_productミニテーブル表示
-	//   3. shop_productミニテーブルのセルをCtrl+Click（定義ジャンプ）→ "2 / 3"
+	//   3. shop_productミニテーブルのセルをAlt+Click（定義ジャンプ）→ "2 / 3"
 	//   4. ←ボタンをクリック → "1 / 3"（paneStackには3エントリが残っている）
 	//   5. shopテーブルのrow1（別の行）をクリック
 	//   → 期待: インジケーターのMが2以下になること（paneStack追加RPが破棄される）
@@ -151,10 +151,10 @@ test.describe('メインテーブルで別の行を選択したら、RelationsPa
 			const shopProductMiniTable = page.locator('.editor-right-slot .relations-panel .editor-table').first();
 			await expect(shopProductMiniTable).toBeVisible();
 
-			// 手順3: shop_productミニテーブルのvisibleなデータセルをCtrl+Click（定義ジャンプ）
+			// 手順3: shop_productミニテーブルのvisibleなデータセルをAlt+Click（定義ジャンプ）
 			const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
-			await visibleCell.click({ modifiers: ['Control'] });
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// 定義ジャンプ成功を確認する（ペインスタックが3つになり "2 / 3" と表示される）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();

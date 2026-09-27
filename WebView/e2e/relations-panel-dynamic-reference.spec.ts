@@ -144,14 +144,14 @@ function getRelationSection(page: Page, tableName: string): Locator {
 }
 
 // =============================================================================
-// ペインスタック上のRelationsPanelで動的参照を持つテーブルの行をCtrl+クリックした際に
+// ペインスタック上のRelationsPanelで動的参照を持つテーブルの行をAlt+クリックした際に
 // resolveEntriesForTableRowAsync が動的参照をスキップするバグの再現テスト
 //
 // 再現シナリオ:
 //   1. quest テーブルを開く
 //   2. quest row0 を選択する → RP1 に quest_reward の 1:N ミニテーブルが表示される
 //      （quest.quest_reward_group_id → quest_reward.group_id の逆参照）
-//   3. RP1 の quest_reward ミニテーブルのセルを Ctrl+クリック → RP2 が右スロットに追加される
+//   3. RP1 の quest_reward ミニテーブルのセルを Alt+クリック → RP2 が右スロットに追加される
 //      RP2 は resolveEntriesForTableRowAsync("quest_reward", "1") で解決される
 //   4. quest_reward テーブルには動的参照（reward_record_id）があるが
 //      resolveEntriesForTableRowAsync は isSimpleReference でない参照をスキップするため
@@ -241,7 +241,7 @@ test.describe('ペインスタック上のRelationsPanelで動的参照を持つ
     });
 
     test(
-        'quest row0 選択後に RP1 の quest_reward ミニテーブルをCtrl+クリックすると RP2 に chara セクションが表示される',
+        'quest row0 選択後に RP1 の quest_reward ミニテーブルをAlt+クリックすると RP2 に chara セクションが表示される',
         async ({ page }) => {
             // quest テーブルを開いて row0（はじまりのクエスト）を選択する
             const questTable = await openTableAsync(page, 'quest');
@@ -264,8 +264,8 @@ test.describe('ペインスタック上のRelationsPanelで動的参照を持つ
             ).first();
             await expect(visibleCell).toBeVisible();
 
-            // Ctrl+クリックでペインスタックに RP2 を追加する
-            await visibleCell.click({ modifiers: ['Control'] });
+            // Alt+クリックでペインスタックに RP2 を追加する
+            await visibleCell.click({ modifiers: ['Alt'] });
 
             // ナビゲーションバーが表示されること（ペインスタックが3つになった）
             await expect(page.locator('.editor-navigation-bar')).toBeVisible();

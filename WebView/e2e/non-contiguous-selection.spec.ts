@@ -252,3 +252,155 @@ test('空文字も離れた選択先に貼り付けられる', async ({page}) =>
     await paste(page, '');
     expect(await readValues(page)).toEqual(values.map((row, r) => [0, 2].includes(r) ? row.map(() => '') : row));
 });
+
+async function selectedCells(page: Page): Promise<number[][]> {
+    return page.evaluate(() => (window as TestWindow).editor.activeEditorTable.getSelection().getSelectedCellRows()
+        .flat().map(cell => [cell.row - 1, cell.column - 1]));
+}
+
+async function expectSelectedCells(table: Locator, positions: number[][]): Promise<void> {
+    // 選択モデルだけでなく、未選択セルと交差位置のDOMクラスも検証する。
+    const selected = await table.locator('.editor-table-grid .editor-table-row .editor-table-cell[data-col]').evaluateAll(cells =>
+        cells.filter(cell => cell.classList.contains('sel-bg') || cell.classList.contains('editor-table-cell-focused'))
+            .map(cell => [Number(cell.closest('[data-row-index]')!.getAttribute('data-row-index')), Number(cell.getAttribute('data-col'))]));
+    expect(selected).toEqual(positions);
+}
+
+test('通常セル: 斜めに離れたセルだけを行ごとにコピーし、異なる長さの行を貼り付けられる', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 2, 3).click();
+    await cell(table, 0, 4).click({modifiers: ['Control']});
+    await cell(table, 0, 1).click({modifiers: ['Meta']});
+    await expectSelectedCells(table, [[0, 1], [0, 4], [2, 3]]);
+    await expect(page.locator('.selection-overlay-border')).toHaveCount(3);
+    const copied = await copy(page);
+    expect(copied.text).toBe('r1c2\tr1c5\nr3c4');
+    expect(copied.html).toBe('<table><tr><td>r1c2</td><td>r1c5</td></tr><tr><td>r3c4</td></tr></table>');
+    await cell(table, 5, 1).click();
+    await paste(page, copied.text);
+    const expected = values.map(row => [...row]);
+    expected[5][1] = 'r1c2';
+    expected[5][2] = 'r1c5';
+    expected[6][1] = 'r3c4';
+    expect(await readValues(page)).toEqual(expected);
+});
+
+test('通常セル: 非連続な貼り付け先の交差位置を変更せず、Undo/Redoで選択も復元する', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await cell(table, 0, 4).click({modifiers: ['Control']});
+    await cell(table, 2, 3).click({modifiers: ['Control']});
+    await paste(page, 'x\ty\nz');
+    const expected = values.map(row => [...row]);
+    expected[0][1] = 'x';
+    expected[0][4] = 'y';
+    expected[2][3] = 'z';
+    expect(await readValues(page)).toEqual(expected);
+    await page.keyboard.press('Control+z');
+    expect(await readValues(page)).toEqual(values);
+    await expectSelectedCells(table, [[0, 1], [0, 4], [2, 3]]);
+    await page.keyboard.press('Control+y');
+    expect(await readValues(page)).toEqual(expected);
+    await expectSelectedCells(table, [[0, 1], [0, 4], [2, 3]]);
+});
+
+test('通常セル: Ctrlドラッグで範囲を追加し、範囲内の1セルだけ選択解除できる', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await cell(table, 1, 2).click({modifiers: ['Shift']});
+    await drag(page, cell(table, 2, 3), cell(table, 3, 4));
+    const positions = [[0, 1], [0, 2], [1, 1], [1, 2], [2, 3], [2, 4], [3, 3], [3, 4]];
+    await expectSelectedCells(table, positions);
+    await cell(table, 1, 1).click({modifiers: ['Control']});
+    const remaining = positions.filter(([r, c]) => r !== 1 || c !== 1);
+    await expectSelectedCells(table, remaining);
+    await paste(page, 'same');
+    const expected = values.map(row => [...row]);
+    for (const [r, c] of remaining) expected[r][c] = 'same';
+    expect(await readValues(page)).toEqual(expected);
+    await page.keyboard.press('Control+z');
+    expect(await readValues(page)).toEqual(values);
+    await expectSelectedCells(table, remaining);
+});
+
+test('通常セル: 選択済みセルからCtrlドラッグして範囲を重ねてもコピーと削除が重複しない', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await cell(table, 1, 2).click({modifiers: ['Shift']});
+    await drag(page, cell(table, 1, 2), cell(table, 2, 3));
+    const positions = [[0, 1], [0, 2], [1, 1], [1, 2], [1, 3], [2, 2], [2, 3]];
+    expect(await selectedCells(page)).toEqual(positions);
+    await expectSelectedCells(table, positions);
+    expect((await copy(page)).text).toBe('r1c2\tr1c3\nr2c2\tr2c3\tr2c4\nr3c3\tr3c4');
+    await page.keyboard.press('Delete');
+    const expected = values.map(row => [...row]);
+    for (const [r, c] of positions) expected[r][c] = '';
+    expect(await readValues(page)).toEqual(expected);
+    await page.keyboard.press('Control+z');
+    expect(await readValues(page)).toEqual(values);
+    await expectSelectedCells(table, positions);
+});
+
+test('通常セル: 選択範囲の中央を解除しても周囲の選択が残り、通常クリックで単独選択に戻る', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await cell(table, 2, 3).click({modifiers: ['Shift']});
+    await cell(table, 1, 2).click({modifiers: ['Control']});
+    const positions = [[0, 1], [0, 2], [0, 3], [1, 1], [1, 3], [2, 1], [2, 2], [2, 3]];
+    expect(await selectedCells(page)).toEqual(positions);
+    await expectSelectedCells(table, positions);
+    await cell(table, 4, 1).click();
+    await expectSelectedCells(table, [[4, 1]]);
+    await cell(table, 4, 1).click({modifiers: ['Control']});
+    await expectSelectedCells(table, [[4, 1]]);
+});
+
+test('通常セル: Shiftで最後の範囲だけを拡張し、Tab/Enterは未選択セルを飛ばす', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await cell(table, 2, 3).click({modifiers: ['Control']});
+    await cell(table, 3, 4).click({modifiers: ['Shift']});
+    await expectSelectedCells(table, [[0, 1], [2, 3], [2, 4], [3, 3], [3, 4]]);
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expectSelectedCells(table, [[0, 1], [2, 3], [3, 3]]);
+    const focus = () => page.evaluate(() => (window as TestWindow).editor.activeEditorTable.getSelection().getFocus());
+    await page.keyboard.press('Enter');
+    expect(await focus()).toEqual({row: 4, column: 4});
+    await page.keyboard.press('Tab');
+    expect(await focus()).toEqual({row: 1, column: 2});
+    await page.keyboard.press('Shift+Tab');
+    expect(await focus()).toEqual({row: 4, column: 4});
+    await page.keyboard.press('Shift+Enter');
+    expect(await focus()).toEqual({row: 3, column: 4});
+    await page.keyboard.press('ArrowRight');
+    await expectSelectedCells(table, [[2, 4]]);
+});
+
+test('通常セル: セルと行の選択を混在させても貼り付けは選択部分だけに適用する', async ({page}) => {
+    const table = await openTable(page);
+    await cell(table, 0, 1).click();
+    await rowHeader(table, 2).click({modifiers: ['Control']});
+    await cell(table, 4, 3).click({modifiers: ['Control']});
+    const positions = [[0, 1], ...Array.from({length: 6}, (_, col) => [2, col]), [4, 3]];
+    await expectSelectedCells(table, positions);
+    await paste(page, '');
+    const expected = values.map(row => [...row]);
+    for (const [r, c] of positions) expected[r][c] = '';
+    expect(await readValues(page)).toEqual(expected);
+});
+
+test('通常セル: 仮想スクロールで画面外になったセルも追加選択とコピーを維持する', async ({page}) => {
+    const table = await openTable(page, 1000);
+    await cell(table, 0, 1).click();
+    await table.locator('.editor-table-main-viewport').evaluate(async element => {
+        element.scrollTop = 8200;
+        element.dispatchEvent(new Event('scroll'));
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    });
+    const visibleCell = table.locator('.editor-table-grid .editor-table-row .editor-table-cell[data-col="3"]').nth(10);
+    const row = await visibleCell.evaluate(el => Number(el.closest('[data-row-index]')!.getAttribute('data-row-index')));
+    expect(row).toBeGreaterThan(100);
+    await visibleCell.click({modifiers: ['Control']});
+    expect(await selectedCells(page)).toEqual([[0, 1], [row, 3]]);
+    expect((await copy(page)).text).toBe(`r1c2\nr${row + 1}c4`);
+});

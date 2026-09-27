@@ -24,7 +24,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   1. skill テーブルを開く
 //   2. skill の行0を選択 → 右スロットのRP（RP1）に chara N:1ミニテーブルと
 //      skill_name N:1ミニテーブルが表示される
-//   3. RP1内の chara ミニテーブルの0,0セルをCtrl+Click
+//   3. RP1内の chara ミニテーブルの0,0セルをAlt+Click
 //      → ペインスタック追加: 左スロット=RP1、右スロット=RP2（charaのrelations）
 //      RP2には skill(1:N), chara_name(1:N), quest_reward(1:N) が表示される
 //   4. 左スロット（RP1）の chara ミニテーブルの0,0セルをクリック → RP2更新
@@ -167,7 +167,7 @@ test.describe('異なるミニテーブル間を切り替えた後のRelationsPa
 	// 前提確認テスト: ペインスタック追加後に右スロットに chara のrelationsが表示されること
 	// ---------------------------------------------------------------------------
 	test(
-		'skill のミニテーブルの chara セルをCtrl+Clickすると右スロットに chara のrelationsが表示されること',
+		'skill のミニテーブルの chara セルをAlt+Clickすると右スロットに chara のrelationsが表示されること',
 		async ({ page }) => {
 			// skill テーブルを開いて row0 を選択する
 			const mainTable = await openTableAsync(page, 'skill');
@@ -184,8 +184,8 @@ test.describe('異なるミニテーブル間を切り替えた後のRelationsPa
 			const charaDataCell = charaSection.locator(MINI_TABLE_DATA_CELL_SELECTOR).first();
 			await expect(charaDataCell).toBeVisible();
 
-			// Ctrl+Clickでペインスタックを追加する
-			await charaDataCell.click({ modifiers: ['Control'] });
+			// Alt+Clickでペインスタックを追加する
+			await charaDataCell.click({ modifiers: ['Alt'] });
 
 			// ペインスタック追加後にナビゲーションバーが表示されること
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -212,7 +212,7 @@ test.describe('異なるミニテーブル間を切り替えた後のRelationsPa
 			await selectRowAsync(mainTable, 0);
 			await waitForRelationsPanelContentAsync(page);
 
-			// ---- ステップ2: RP1内のcharaミニテーブルをCtrl+Click → ペインスタック追加 ----
+			// ---- ステップ2: RP1内のcharaミニテーブルをAlt+Click → ペインスタック追加 ----
 			const rightSlotRP1 = page.locator('.editor-right-slot .relations-panel');
 			await expect(rightSlotRP1).toBeVisible();
 
@@ -221,8 +221,8 @@ test.describe('異なるミニテーブル間を切り替えた後のRelationsPa
 			const charaDataCell = charaSection.locator(MINI_TABLE_DATA_CELL_SELECTOR).first();
 			await expect(charaDataCell).toBeVisible();
 
-			// Ctrl+Clickでペインスタックに RP2 を追加する
-			await charaDataCell.click({ modifiers: ['Control'] });
+			// Alt+Clickでペインスタックに RP2 を追加する
+			await charaDataCell.click({ modifiers: ['Alt'] });
 
 			// ペインスタック追加後のナビゲーションバーを確認する
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();

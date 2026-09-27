@@ -7,7 +7,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 // ペインスタック・ナビゲーションテスト
 //
 // 機能概要:
-//   ミニテーブルのCtrl+Clickで現在のRelationsPanelが左に移動し、
+//   ミニテーブルのAlt+Clickで現在のRelationsPanelが左に移動し、
 //   新しいRelationsPanelが右に表示される「ペインスタック」機能。
 //
 // DOM構造:
@@ -32,8 +32,8 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //   enemy: id, name, area_id  (→ area.id)
 //
 //   world を開いて row0 を選択 → RP1 に area（1:N）が表示される
-//   area ミニテーブルの行をCtrl+Click → RP2 に enemy（1:N）が表示される
-//   enemy ミニテーブルの行をCtrl+Click → RP3 に area（N:1）が表示される
+//   area ミニテーブルの行をAlt+Click → RP2 に enemy（1:N）が表示される
+//   enemy ミニテーブルの行をAlt+Click → RP3 に area（N:1）が表示される
 // =============================================================================
 
 /**
@@ -157,9 +157,9 @@ test.describe('ペインスタックナビゲーション', () => {
 	});
 
 	// ---------------------------------------------------------------------------
-	// テスト2: ミニテーブルのCtrl+Clickでペインが追加されること
+	// テスト2: ミニテーブルのAlt+Clickでペインが追加されること
 	// ---------------------------------------------------------------------------
-	test('areaミニテーブルのCtrl+ClickでRP2が右スロットに表示されること', async ({ page }) => {
+	test('areaミニテーブルのAlt+ClickでRP2が右スロットに表示されること', async ({ page }) => {
 		// world テーブルを開いて row0 を選択する（RP1にareaミニテーブル表示）
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
@@ -173,8 +173,8 @@ test.describe('ペインスタックナビゲーション', () => {
 		const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(visibleCell).toBeVisible();
 
-		// Ctrl+Clickでペインスタックを追加する
-		await visibleCell.click({ modifiers: ['Control'] });
+		// Alt+Clickでペインスタックを追加する
+		await visibleCell.click({ modifiers: ['Alt'] });
 
 		// 右スロットに新しいRelationsPanel（RP2）が表示されること
 		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
@@ -187,9 +187,9 @@ test.describe('ペインスタックナビゲーション', () => {
 	});
 
 	// ---------------------------------------------------------------------------
-	// テスト3: Ctrl+Click後にナビゲーションバーが表示されること
+	// テスト3: Alt+Click後にナビゲーションバーが表示されること
 	// ---------------------------------------------------------------------------
-	test('Ctrl+Click後にナビゲーションバーが表示されインジケーターが"2 / 3"と表示されること', async ({ page }) => {
+	test('Alt+Click後にナビゲーションバーが表示されインジケーターが"2 / 3"と表示されること', async ({ page }) => {
 		// world を開いて row0 を選択 → RP1 に area 表示
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
@@ -198,8 +198,8 @@ test.describe('ペインスタックナビゲーション', () => {
 		const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(visibleCell).toBeVisible();
 
-		// Ctrl+Clickでペインスタックを追加する
-		await visibleCell.click({ modifiers: ['Control'] });
+		// Alt+Clickでペインスタックを追加する
+		await visibleCell.click({ modifiers: ['Alt'] });
 
 		// ナビゲーションバーが表示されること
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -213,14 +213,14 @@ test.describe('ペインスタックナビゲーション', () => {
 	// テスト4: ←ボタンでEditorTableに戻れること
 	// ---------------------------------------------------------------------------
 	test('←ボタンクリックで左スロットにEditorTableが表示されインジケーターが"1 / 3"になること', async ({ page }) => {
-		// world を開いて row0 を選択 → RP1 → Ctrl+Click → RP2 追加
+		// world を開いて row0 を選択 → RP1 → Alt+Click → RP2 追加
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
 		await waitForRelationsPanelContentAsync(page);
 
 		const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(visibleCell).toBeVisible();
-		await visibleCell.click({ modifiers: ['Control'] });
+		await visibleCell.click({ modifiers: ['Alt'] });
 
 		// ナビゲーションバーが表示されるまで待機する
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -248,14 +248,14 @@ test.describe('ペインスタックナビゲーション', () => {
 	// テスト5: →ボタンで進めること
 	// ---------------------------------------------------------------------------
 	test('←で戻った後に→ボタンで進めること（インジケーターが"2 / 3"に戻ること）', async ({ page }) => {
-		// world を開いて row0 を選択 → RP1 → Ctrl+Click → RP2 追加 → ← で戻る
+		// world を開いて row0 を選択 → RP1 → Alt+Click → RP2 追加 → ← で戻る
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
 		await waitForRelationsPanelContentAsync(page);
 
 		const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(visibleCell).toBeVisible();
-		await visibleCell.click({ modifiers: ['Control'] });
+		await visibleCell.click({ modifiers: ['Alt'] });
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
 		// ←で戻る
@@ -277,26 +277,26 @@ test.describe('ペインスタックナビゲーション', () => {
 	});
 
 	// ---------------------------------------------------------------------------
-	// テスト6: 二重ネスト — RP2のミニテーブルをCtrl+Click → RP3が追加されること
+	// テスト6: 二重ネスト — RP2のミニテーブルをAlt+Click → RP3が追加されること
 	// ---------------------------------------------------------------------------
-	test('RP2のenemyミニテーブルをCtrl+ClickするとRP3が右スロットに追加されてインジケーターが"3 / 4"になること', async ({ page }) => {
+	test('RP2のenemyミニテーブルをAlt+ClickするとRP3が右スロットに追加されてインジケーターが"3 / 4"になること', async ({ page }) => {
 		// world を開いて row0 を選択 → RP1（area表示）
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
 		await waitForRelationsPanelContentAsync(page);
 
-		// RP1のareaミニテーブルのvisibleセルをCtrl+Click → RP2（enemy表示）
+		// RP1のareaミニテーブルのvisibleセルをAlt+Click → RP2（enemy表示）
 		const areaVisibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(areaVisibleCell).toBeVisible();
-		await areaVisibleCell.click({ modifiers: ['Control'] });
+		await areaVisibleCell.click({ modifiers: ['Alt'] });
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');
 
 		// この時点で右スロットにRP2（enemyミニテーブル）が表示されている
-		// RP2内のenemyミニテーブルのvisibleセルをCtrl+Click → RP3追加
+		// RP2内のenemyミニテーブルのvisibleセルをAlt+Click → RP3追加
 		const enemyVisibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(enemyVisibleCell).toBeVisible();
-		await enemyVisibleCell.click({ modifiers: ['Control'] });
+		await enemyVisibleCell.click({ modifiers: ['Alt'] });
 
 		// RP3が右スロットに追加されること
 		await expect(page.locator('.editor-right-slot .relations-panel')).toBeVisible();
@@ -310,14 +310,14 @@ test.describe('ペインスタックナビゲーション', () => {
 	// テスト7: タブ切替でスタックがリセットされること
 	// ---------------------------------------------------------------------------
 	test('別タブを開くとナビゲーションバーが非表示になりスタックがリセットされること', async ({ page }) => {
-		// world を開いて row0 を選択 → RP1 → Ctrl+Click → RP2 追加（ペイン3つ）
+		// world を開いて row0 を選択 → RP1 → Alt+Click → RP2 追加（ペイン3つ）
 		const mainTable = await openTableAsync(page, 'world');
 		await selectRowAsync(mainTable, 0);
 		await waitForRelationsPanelContentAsync(page);
 
 		const visibleCell = page.locator(RIGHT_SLOT_MINI_TABLE_VISIBLE_CELL_SELECTOR).first();
 		await expect(visibleCell).toBeVisible();
-		await visibleCell.click({ modifiers: ['Control'] });
+		await visibleCell.click({ modifiers: ['Alt'] });
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
 		// エクスプローラーから area タブを開く（タブ切替）
@@ -343,7 +343,7 @@ test.describe('ペインスタックナビゲーション', () => {
 	//
 	// シナリオ:
 	//   world の row0（id=1, forest）を選択 → RP1 に area の1:N（forest_north, forest_south）表示
-	//   RP1 の area ミニテーブルで forest_north（area.id=1）をCtrl+Click → RP2 追加
+	//   RP1 の area ミニテーブルで forest_north（area.id=1）をAlt+Click → RP2 追加
 	//   （RP2 には area.id=1 を参照する enemy: slime, dragon が 2 rows で表示される）
 	//   viewIndex=1 の状態で 左スロット=RP1, 右スロット=RP2
 	//   RP1 の area ミニテーブルで forest_south（area.id=2）の行を通常クリック
@@ -361,14 +361,14 @@ test.describe('ペインスタックナビゲーション', () => {
 		const rightSlotMiniTable = page.locator('.editor-right-slot .relations-panel .editor-table').first();
 		await expect(rightSlotMiniTable).toBeVisible();
 
-		// RP1 の area ミニテーブルで forest_north（area.id=1, 1行目）のデータセルを Ctrl+Click → RP2 追加
-		// Ctrl+Click は createCell の mousedown ハンドラ（navigateToDefinition）で処理されるため、
+		// RP1 の area ミニテーブルで forest_north（area.id=1, 1行目）のデータセルを Alt+Click → RP2 追加
+		// Alt+Click は createCell の mousedown ハンドラ（navigateToDefinition）で処理されるため、
 		// 行ヘッダーではなくデータセル（editor-table-cell かつ非ヘッダー）をクリックする
 		const firstRowDataCell = rightSlotMiniTable
 			.locator('.editor-table-cell:not(.editor-table-row-header):not(.editor-table-column-header):not(.editor-table-corner-cell)')
 			.first();
 		await expect(firstRowDataCell).toBeVisible();
-		await firstRowDataCell.click({ modifiers: ['Control'] });
+		await firstRowDataCell.click({ modifiers: ['Alt'] });
 
 		// RP2 が追加されてインジケーターが "2 / 3" になることを確認する
 		await expect(page.locator('.editor-navigation-bar .nav-indicator')).toHaveText('2 / 3');

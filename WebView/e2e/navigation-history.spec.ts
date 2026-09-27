@@ -12,7 +12,7 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //
 // 対象操作:
 //   1. タブ切替 (tab-switch) — 実装済み
-//   2. 定義ジャンプ (navigate-definition) — ミニテーブルのCtrl+Clickで paneStack 深化
+//   2. 定義ジャンプ (navigate-definition) — ミニテーブルのAlt+Clickで paneStack 深化
 //   3. REFERENCESパネルからのジャンプ (navigate-row) — 別テーブルの特定行へジャンプ
 //   4. 検索パネルからのジャンプ (navigate-cell) — 別テーブルの特定セルへジャンプ
 //   5. フォームパネル開閉 (form-panel-open) — PKセル右クリックでフォームパネルを開く
@@ -90,7 +90,7 @@ function createWideNavigationTestFileSystem(): MockFileSystem {
  *   area:  id, name, world_id（エリア。world.idをFKとして参照）
  *
  * worldを開いてrow0を選択 → RelationsPanelにareaの1:Nミニテーブルが表示される。
- * areaミニテーブルのセルをCtrl+Click → paneStackにRelationsPanelが追加される（定義ジャンプ）。
+ * areaミニテーブルのセルをAlt+Click → paneStackにRelationsPanelが追加される（定義ジャンプ）。
  */
 function createDefinitionJumpTestFileSystem(): MockFileSystem {
 	return {
@@ -190,6 +190,8 @@ async function openTableAsync(page: Page, tableName: string): Promise<void> {
 }
 
 async function setActiveTableScrollLeftAsync(page: Page, scrollLeft: number): Promise<number> {
+	// The tab button becomes active before the table finishes loading.
+	await expect(page.locator('.editor-left-pane .tab-wrapper:not([style*="display: none"]) .editor-table-main-viewport')).toBeVisible();
 	await page.evaluate((value) => {
 		const wrappers = Array.from(document.querySelectorAll('.editor-left-pane .tab-wrapper')) as HTMLElement[];
 		const activeWrapper = wrappers.find(wrapper => wrapper.style.display !== 'none');
@@ -392,12 +394,12 @@ test.describe('ブラウザ History API によるタブナビゲーション', (
 });
 
 // =============================================================================
-// 定義ジャンプ（Ctrl+Click on ミニテーブル）による paneStack 深化の履歴テスト (RED)
+// 定義ジャンプ（Alt+Click on ミニテーブル）による paneStack 深化の履歴テスト (RED)
 //
 // 操作フロー:
 //   worldテーブルを開いてrow0を選択
 //   → RelationsPanelにareaの1:Nミニテーブルが表示される
-//   → areaミニテーブルのセルをCtrl+Click
+//   → areaミニテーブルのセルをAlt+Click
 //   → Tab.pushRelationsPanel が呼ばれてpaneStackが深化（viewIndex が1→2）
 //   → history.state に { type: 'pane-push', viewIndex: 2 } が積まれること
 //
@@ -414,12 +416,12 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 	});
 
 	// ---------------------------------------------------------------------------
-	// テスト5: ミニテーブルのCtrl+Click（定義ジャンプ）で history.state に pane-push が記録される
+	// テスト5: ミニテーブルのAlt+Click（定義ジャンプ）で history.state に pane-push が記録される
 	//
-	// worldを開いてrow0選択 → areaミニテーブルのCtrl+Click後に
+	// worldを開いてrow0選択 → areaミニテーブルのAlt+Click後に
 	// history.state が { type: 'pane-push' } を含むことを確認する。
 	// ---------------------------------------------------------------------------
-	test('ミニテーブルのCtrl+Clickで history.state に pane-push が記録される', async ({ page }) => {
+	test('ミニテーブルのAlt+Clickで history.state に pane-push が記録される', async ({ page }) => {
 		// worldテーブルを開いてrow0を選択する
 		await openTableAsync(page, 'world');
 		const mainTable = getLeftSlotTable(page);
@@ -427,10 +429,10 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 		await selectRowAsync(mainTable, 0);
 		await waitForRelationsPanelAsync(page);
 
-		// areaミニテーブルの最初のデータセルをCtrl+ClickしてpaneStackを深化させる
+		// areaミニテーブルの最初のデータセルをAlt+ClickしてpaneStackを深化させる
 		const firstCell = getFirstMiniTableVisibleCell(page);
 		await expect(firstCell).toBeVisible();
-		await firstCell.click({ modifiers: ['Control'] });
+		await firstCell.click({ modifiers: ['Alt'] });
 
 		// ナビゲーションバーが表示されるまで待機する（paneStack深化の確認）
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -443,7 +445,7 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 	// ---------------------------------------------------------------------------
 	// テスト6: 定義ジャンプ後にブラウザの戻るで paneStack が元の深さに戻る
 	//
-	// Ctrl+Click でpaneStackを深化させた後、goBack() で
+	// Alt+Click でpaneStackを深化させた後、goBack() で
 	// ナビゲーションバーが非表示になる（paneStack深さが初期の2に戻る）ことを確認する。
 	// ---------------------------------------------------------------------------
 	test('定義ジャンプ後にgoBackでpaneStackが元の深さに戻る（ナビゲーションバーが非表示になる）', async ({ page }) => {
@@ -456,7 +458,7 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 
 		const firstCell = getFirstMiniTableVisibleCell(page);
 		await expect(firstCell).toBeVisible();
-		await firstCell.click({ modifiers: ['Control'] });
+		await firstCell.click({ modifiers: ['Alt'] });
 
 		// paneStack深化を確認する（ナビゲーションバーが表示される）
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -472,7 +474,7 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 	// ---------------------------------------------------------------------------
 	// テスト7: 定義ジャンプ後にgoBack→goForwardでpaneStackが再深化する
 	//
-	// Ctrl+Click → goBack（paneStack戻る）→ goForward で
+	// Alt+Click → goBack（paneStack戻る）→ goForward で
 	// 再びナビゲーションバーが表示されることを確認する。
 	// ---------------------------------------------------------------------------
 	test('定義ジャンプ後にgoBack→goForwardでpaneStackが再深化する', async ({ page }) => {
@@ -485,7 +487,7 @@ test.describe('定義ジャンプ（paneStack深化）の履歴記録', () => {
 
 		const firstCell = getFirstMiniTableVisibleCell(page);
 		await expect(firstCell).toBeVisible();
-		await firstCell.click({ modifiers: ['Control'] });
+		await firstCell.click({ modifiers: ['Alt'] });
 		await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 
 		// goBack で定義ジャンプ前の深さへ戻り、左スロットに元のメインテーブルが表示される。
@@ -768,10 +770,10 @@ test.describe('フォームパネル開閉の履歴記録', () => {
 		await expect(page.locator('.form-panel')).toBeHidden();
 		await expect.poll(() => page.evaluate(() => history.state?.type)).toBe('tab-switch');
 
-		// enemy_id の参照先へ Ctrl+クリックで移動する。
+		// enemy_id の参照先へ Alt+クリックで移動する。
 		const enemyIdCell = questTable.locator('.editor-table-row').nth(0)
 			.locator('.editor-table-cell:not(.editor-table-row-header)').nth(2);
-		await enemyIdCell.click({ modifiers: ['Control'] });
+		await enemyIdCell.click({ modifiers: ['Alt'] });
 		await expect(page.locator('.tab-button-active')).toContainText('enemy');
 		expect(await page.evaluate(() => history.state)).toMatchObject({ type: 'navigate-cell' });
 

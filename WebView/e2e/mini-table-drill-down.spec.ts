@@ -8,19 +8,19 @@ import { enableRelationsPanelAsync } from './fixtures/test-utils';
 //
 // 背景:
 //   EditorTable.navigateToDefinition() はミニテーブル（RelationsPanel内）で
-//   Ctrl+クリック/F12した場合、ペインスタックに新しい RelationsPanel を追加する。
+//   Alt+クリック/F12した場合、ペインスタックに新しい RelationsPanel を追加する。
 //
 // 期待動作:
-//   - ミニテーブルのどのセルでCtrl+クリック/F12しても: ペインスタックに新しい RP が追加される
+//   - ミニテーブルのどのセルでAlt+クリック/F12しても: ペインスタックに新しい RP が追加される
 //     （Tab.pushRelationsPanel が呼ばれ、右スロットに新しい RP が表示される）
-//   - 通常テーブル（左ペイン）でのCtrl+クリック/F12: FK参照先テーブルへジャンプ（既存動作を維持）
+//   - 通常テーブル（左ペイン）でのAlt+クリック/F12: FK参照先テーブルへジャンプ（既存動作を維持）
 //
 // テーブル構成（N:1参照ミニテーブルのシナリオ）:
 //   enemy: id, ja（enemyテーブル、参照なし列のみ）
 //   quest: id, name, enemy_id（questテーブル。enemy.id をFKとして参照）
 //
 //   questを開いてrow0選択 → RelationsPanelにenemyのN:1ミニテーブルが表示される。
-//   enemyミニテーブルの ja 列（参照なし）をCtrl+クリック → ペインスタックに RP が追加される。
+//   enemyミニテーブルの ja 列（参照なし）をAlt+クリック → ペインスタックに RP が追加される。
 // =============================================================================
 
 /**
@@ -104,10 +104,10 @@ const MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR = [
 ].join('');
 
 // =============================================================================
-// テストスイート1: ミニテーブルのCtrl+クリック/F12でペインスタックが追加されること
+// テストスイート1: ミニテーブルのAlt+クリック/F12でペインスタックが追加されること
 // =============================================================================
 
-test.describe('ミニテーブルのCtrl+クリックでペインスタックが追加されること', () => {
+test.describe('ミニテーブルのAlt+クリックでペインスタックが追加されること', () => {
 	test.beforeEach(async ({ page }) => {
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
@@ -116,7 +116,7 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 	});
 
 	test(
-		'enemyミニテーブルの非参照列（ja列）をCtrl+クリックするとペインスタックに RP が追加されること',
+		'enemyミニテーブルの非参照列（ja列）をAlt+クリックするとペインスタックに RP が追加されること',
 		async ({ page }) => {
 			// quest テーブルを開いて1行目を選択する
 			const mainTable = await openTableAsync(page, 'quest');
@@ -133,8 +133,8 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 			const visibleCell = page.locator(MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
 
-			// Ctrl+クリックでペインスタックへの追加を実行する
-			await visibleCell.click({ modifiers: ['Control'] });
+			// Alt+クリックでペインスタックへの追加を実行する
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// ナビゲーションバーが表示されること（ペインが3つになった）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -167,7 +167,7 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 	);
 
 	test(
-		'enemyミニテーブルのセルをCtrl+クリックすると右スロットに新しい RP が表示されること',
+		'enemyミニテーブルのセルをAlt+クリックすると右スロットに新しい RP が表示されること',
 		async ({ page }) => {
 			const mainTable = await openTableAsync(page, 'quest');
 			await selectRowAsync(mainTable, 0);
@@ -179,7 +179,7 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 			const visibleCell = page.locator(MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
 
-			await visibleCell.click({ modifiers: ['Control'] });
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// ナビゲーションバーが表示されること（ペインが3つになった）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
@@ -192,10 +192,10 @@ test.describe('ミニテーブルのCtrl+クリックでペインスタックが
 });
 
 // =============================================================================
-// テストスイート2: ミニテーブルの参照列でないセルでもCtrl+クリックでペインスタックが追加されること
+// テストスイート2: ミニテーブルの参照列でないセルでもAlt+クリックでペインスタックが追加されること
 // =============================================================================
 
-test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリックでペインスタックが追加されること', () => {
+test.describe('ミニテーブルは参照列の有無に関わらずAlt+クリックでペインスタックが追加されること', () => {
 	test.beforeEach(async ({ page }) => {
 		const fs = createDrillDownTestFileSystem();
 		await installMockApiAsync(page, fs);
@@ -204,7 +204,7 @@ test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリ
 	});
 
 	test(
-		'参照列がひとつもないenemyミニテーブルの任意のセルでCtrl+クリックするとペインスタックが追加されること',
+		'参照列がひとつもないenemyミニテーブルの任意のセルでAlt+クリックするとペインスタックが追加されること',
 		async ({ page }) => {
 			// quest を開いて row0 を選択することで enemy ミニテーブルを表示させる
 			const mainTable = await openTableAsync(page, 'quest');
@@ -214,14 +214,32 @@ test.describe('ミニテーブルは参照列の有無に関わらずCtrl+クリ
 			const visibleCell = page.locator(MINI_TABLE_VISIBLE_DATA_CELL_SELECTOR).first();
 			await expect(visibleCell).toBeVisible();
 
-			// Ctrl+クリック前はナビゲーションバーが非表示であること
+			// Alt+クリック前はナビゲーションバーが非表示であること
 			await expect(page.locator('.editor-navigation-bar')).toBeHidden();
 
-			// 参照なし列でCtrl+クリック
-			await visibleCell.click({ modifiers: ['Control'] });
+			// 参照なし列でAlt+クリック
+			await visibleCell.click({ modifiers: ['Alt'] });
 
 			// ナビゲーションバーが表示されること（ペインスタックが追加された）
 			await expect(page.locator('.editor-navigation-bar')).toBeVisible();
 		},
 	);
+});
+
+test('ミニテーブルのCtrl+クリックはドリルダウンせず複数セルを選択する', async ({page}) => {
+    await installMockApiAsync(page, createDrillDownTestFileSystem());
+    await page.goto('/');
+    await enableRelationsPanelAsync(page);
+    const table = await openTableAsync(page, 'enemy');
+    await selectRowAsync(table, 0);
+    await waitForRelationsPanelContentAsync(page);
+    // 1:N の quest ミニテーブルには id と name が表示される。
+    const mini = page.locator('.editor-right-slot .relations-panel .editor-table').first();
+    const cells = mini.locator('.editor-table-row[data-row-index="0"] .editor-table-cell[data-col]:visible');
+    await expect(cells.first()).toBeVisible();
+    await cells.nth(0).click();
+    await cells.nth(1).click({modifiers: ['Control']});
+    await expect(page.locator('.editor-navigation-bar')).toBeHidden();
+    await expect(cells.nth(0)).toHaveClass(/sel-bg/);
+    await expect(cells.nth(1)).toHaveClass(/editor-table-cell-focused/);
 });

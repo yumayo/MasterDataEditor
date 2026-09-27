@@ -63,15 +63,30 @@ export function extendSelectionCell(table: EditorTable, selection: Selection, x:
 /** Enter/Tab では、離れた選択範囲の間のセルを飛ばす。 */
 function moveWithinMultipleRanges(selection: Selection, vertical: boolean, step: number): boolean {
     if (!selection.hasMultipleRanges()) return false;
-    const {rows, columns} = selection.getSelectedAxes();
     const focus = selection.getFocus();
-    const row = Math.max(0, rows.indexOf(focus.row));
-    const column = Math.max(0, columns.indexOf(focus.column));
-    const index = vertical ? column * rows.length + row : row * columns.length + column;
-    const total = rows.length * columns.length;
-    const next = (index + step + total) % total;
-    selection.move(rows[vertical ? next % rows.length : Math.floor(next / columns.length)],
-        columns[vertical ? Math.floor(next / rows.length) : next % columns.length]);
+    const major = vertical ? focus.column : focus.row;
+    const minor = vertical ? focus.row : focus.column;
+    const candidates: {major: number; minor: number}[] = [];
+    const ends: {major: number; minor: number}[] = [];
+    for (const range of selection.getSelectionRanges()) {
+        const minMajor = vertical ? range.startColumn : range.startRow;
+        const maxMajor = vertical ? range.endColumn : range.endRow;
+        const minMinor = vertical ? range.startRow : range.startColumn;
+        const maxMinor = vertical ? range.endRow : range.endColumn;
+        let nextMajor = step > 0 ? Math.max(minMajor, major) : Math.min(maxMajor, major);
+        let nextMinor = nextMajor === major
+            ? (step > 0 ? Math.max(minMinor, minor + 1) : Math.min(maxMinor, minor - 1))
+            : (step > 0 ? minMinor : maxMinor);
+        if (nextMinor > maxMinor || nextMinor < minMinor) {
+            nextMajor += step;
+            nextMinor = step > 0 ? minMinor : maxMinor;
+        }
+        if (nextMajor >= minMajor && nextMajor <= maxMajor) candidates.push({major: nextMajor, minor: nextMinor});
+        ends.push({major: step > 0 ? minMajor : maxMajor, minor: step > 0 ? minMinor : maxMinor});
+    }
+    const next = (candidates.length > 0 ? candidates : ends)
+        .sort((a, b) => step * (a.major - b.major || a.minor - b.minor))[0];
+    selection.move(vertical ? next.minor : next.major, vertical ? next.major : next.minor);
     return true;
 }
 
